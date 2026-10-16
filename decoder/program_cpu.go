@@ -62,19 +62,23 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 			case opQKNorm:
 				applyQKNorm(o.qkNorm, q, k, lw, nH, arch.NumKVHeads, hd)
 			case opRope:
-				r := &o.rope
-				ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, cache.mropePos, cache.mropeDelta, r.Interleave, r.MRopeInterleaved)
-				ropeAt(k, arch.NumKVHeads, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, cache.mropePos, cache.mropeDelta, r.Interleave, r.MRopeInterleaved)
+				applyRope(&o.rope, q, k, nH, arch.NumKVHeads, hd, pos, cache.mropePos, cache.mropeDelta)
 			case opAttnTemp:
-				scale := float32(1 + o.temp.Beta*math.Log1p(math.Floor(float64(pos)/o.temp.OrigMaxPos)))
+				scale := o.temp.scale(pos)
 				for j := range q {
 					q[j] *= scale
 				}
 			case opAttention:
-				if o.attn.Order == attnSinksF64 {
+				switch o.attn.Order {
+				case attnSinksF64:
 					attendSinksToken(o.attn, q, k, v, ctx, cache, arch, lw, l, pos)
-				} else if err := attendToken(o.attn, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
-					return nil, err
+				case attnQuery:
+					cache.Append(l, k, v)
+					attendQueryP(o.attn, q, ctx, scr.scoresBuf(cache.storedRows(l, arch.NumKVHeads*hd)), cache, l, pos, arch)
+				default:
+					if err := attendToken(o.attn, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
+						return nil, err
+					}
 				}
 			case opOutGate:
 				gates := scr.gateBuf(lw.GProj.Rows())
@@ -235,8 +239,14 @@ func projQKVToken(be Backend, scr *decodeScratch, lw *LayerWeights, x, q, k, v [
 	}
 }
 
-// applyQKNorm RMS-normalises q and k per head, or each as one vector when p.Whole.
+// applyQKNorm normalises q and k: weighted RMSNorm per head, or over each whole vector when p.Whole; or Llama 4's
+// parameter-free RMS per head.
 func applyQKNorm(p qkNormParams, q, k []float32, lw *LayerWeights, nH, nKV, hd int) {
+	if p.Form == qkL2 {
+		l2NormHeads(q, nH, hd, p.Eps)
+		l2NormHeads(k, nKV, hd, p.Eps)
+		return
+	}
 	if p.Whole {
 		rmsNorm(q, lw.QNorm, 1, nH*hd, p.Eps, p.AddOne)
 		rmsNorm(k, lw.KNorm, 1, nKV*hd, p.Eps, p.AddOne)
@@ -244,6 +254,22 @@ func applyQKNorm(p qkNormParams, q, k []float32, lw *LayerWeights, nH, nKV, hd i
 	}
 	rmsNorm(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
 	rmsNorm(k, lw.KNorm, nKV, hd, p.Eps, p.AddOne)
+}
+
+// applyRope rotates one position's q and k.
+func applyRope(r *ropeParams, q, k []float32, nH, nKV, hd, pos int, mropePos [][3]int, mropeDelta int) {
+	if r.Kernel == ropeMLAKernel {
+		mlaRope(q, nH, hd, pos, r.InvFreq, r.Mscale, r.Interleave)
+		mlaRope(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.Interleave)
+		return
+	}
+	ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+	ropeAt(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+}
+
+// scale is the query's temperature at pos.
+func (p *attnTempParams) scale(pos int) float32 {
+	return float32(1 + p.Beta*math.Log1p(math.Floor(float64(pos+p.PosOffset)/p.OrigMaxPos)))
 }
 
 // attendToken stores this position's k and v in layer l's cache and writes the attention context of q over the attended keys
@@ -302,6 +328,9 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *decodeScratch, ld *loraLayerDelta) error {
 	arch := m.w.arch
 	switch p.Form {
+	case ffnLlama4MoE:
+		m.llama4MoEWith(x, out, lw, &p.MoE, arch.HiddenDim)
+		return nil
 	case ffnGptOss:
 		g, err := m.gptOssMoEWith(x, lw, p, arch.HiddenDim)
 		if err != nil {

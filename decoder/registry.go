@@ -2544,7 +2544,7 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // MoE (moe_layers) blocks; the MoE is top-1 SIGMOID routing (no group, no norm, no scale) plus an always-on UNGATED shared expert, both at
 // intermediate_size. Separate q/k/v/o (no fusion, no bias). Interleaved (complex) RoPE over the full head_dim. The vision tower
 // (early-fusion multimodal) and any MTP heads are dropped: text decoder only. Dedicated loader (buildLlama4Weights) + forward
-// (runLayersLlama4).
+// (Architecture.llama4LayerOps).
 func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NumLocalExperts <= 0 || cfg.NumExpertsPerTok <= 0 {
 		return nil, nil, fmt.Errorf("decoder(llama4): bad MoE (num_local_experts=%d num_experts_per_tok=%d)", cfg.NumLocalExperts, cfg.NumExpertsPerTok)
@@ -2628,7 +2628,7 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		NormPlacement:   NormPre2,
 		Act:             ActSiLU,
 		QKVBias:         false,
-		QKNorm:          false, // Llama 4's QK-norm is parameter-free L2, applied in runLayersLlama4 (not the weighted path)
+		QKNorm:          false, // Llama 4's QK-norm is parameter-free L2, applied by its program's qkL2 norm (not the weighted path)
 		MoE: &MoEConfig{
 			NumExperts:            cfg.NumLocalExperts,
 			TopK:                  cfg.NumExpertsPerTok,

@@ -238,6 +238,11 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		attendQueryI8(q, ctx, scores, cache, layer, pos, global, arch)
 		return
 	}
+	attendQueryP(arch.attnParamsQueryFor(cache, layer, global), q, ctx, scores, cache, layer, pos, arch)
+}
+
+// attendQueryP is attendQuery over an f32 cache with the window, chunk, scale and softcap given: the program walker's form.
+func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, layer, pos int, arch *Architecture) {
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
@@ -255,9 +260,9 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		}
 		return s * kvDim
 	}
-	start := max(cache.WindowStart(pos, global), arch.attnChunkStart(layer, pos))
-	scale := arch.AttnScale // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
-	group := nH / nKV       // GQA: query heads per KV head
+	start := p.start(pos)
+	scale := p.Scale  // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
+	group := nH / nKV // GQA: query heads per KV head
 
 	clear(ctx) // accumulated into below
 	for qh := range nH {
@@ -271,7 +276,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 			for d := range hd {
 				dot += float64(qHead[d]) * float64(kHead[d])
 			}
-			sc := softcapScore(dot*scale, arch.AttnLogitSoftcap)
+			sc := softcapScore(dot*scale, p.Softcap)
 			scores[s] = float32(sc)
 			if sc > maxS {
 				maxS = sc

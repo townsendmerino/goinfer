@@ -1814,6 +1814,27 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   - Log: `docs/measurements/op3-2026-10/op3c-PL.log`.
 - No T1 or S: OP3c changes no walker's existing path.
 
+**OP3d, Llama 4: readings, 2026-10-16 (same branch).**
+- **The build:** Llama 4 walks the program (`Architecture.llama4LayerOps`). Each of its differences from the generic layer is a
+  parameter, or a place in the list:
+  - `rope`'s kernel is `mlaRope`, in its interleaved form, with no mscale;
+  - the QK-norm's form is parameter-free, and it comes after the rope in the list;
+  - the temperature takes a position offset of one;
+  - attention is `attendQuery` (order `attnQuery`) through its parameter form `attendQueryP`, with the chunk as a parameter;
+  - the FFN form is `ffnLlama4MoE`.
+  - `runLayersLlama4` and its table entry are gone.
+  - Its attention order keeps it off rings, int8 and f16 KV, the batched walker and MC3c, as before.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL, `llama4_text` in all three cells. Log: `docs/measurements/op3-2026-10/op3d-identity-tiny.log`.
+- **P and L: PASS.** The new parameters are all live:
+  - `attention.Chunk`: one key per chunk changes every fixture;
+  - `attn-temp.PosOffset`: Llama 4 and Ministral 3;
+  - `qk-norm.Form`;
+  - `rope.Kernel`: same on the NeoX families, where the two kernels coincide; changed on 4.
+  - Log: `docs/measurements/op3-2026-10/op3d-PL.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

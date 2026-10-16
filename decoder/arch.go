@@ -812,8 +812,6 @@ var ownForwards = []ownForwardFamily{
 	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true, false, false}, // Recurrent: KDA state mutates in place per token
 	// deepseek_v2/v3: Multi-head Latent Attention.
 	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false, false, false},
-	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).
-	{"llama4_text", func(a *Architecture) bool { return a.llama4 != nil }, (*Model).runLayersLlama4, false, false, false, false},
 }
 
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or

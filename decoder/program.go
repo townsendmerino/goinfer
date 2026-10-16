@@ -90,13 +90,31 @@ type normParams struct {
 
 type projParams struct{ Bias bool }
 
+// qkNormForm is the QK-norm an opQKNorm computes.
+type qkNormForm uint8
+
+const (
+	qkRMS qkNormForm = iota + 1 // weighted RMSNorm (rmsNorm), four-way sums
+	qkL2                        // Llama 4: parameter-free RMS over each head, sequential float64 (l2NormHeads)
+)
+
 type qkNormParams struct {
-	Whole  bool // one statistic over all heads, not one per head
+	Form   qkNormForm
+	Whole  bool // one statistic over all heads, not one per head (qkRMS)
 	Eps    float64
 	AddOne bool
 }
 
+// ropeKernel is the rotation an opRope computes.
+type ropeKernel uint8
+
+const (
+	ropeAtKernel  ropeKernel = iota + 1 // ropeAt: NeoX or GPT-J pairing, m-RoPE
+	ropeMLAKernel                       // mlaRope: GPT-J pairing by de-interleaving, then NeoX (Llama 4, MLA)
+)
+
 type ropeParams struct {
+	Kernel           ropeKernel
 	InvFreq          []float64 // its length is the rotated half-width
 	Mscale           float64
 	Interleave       bool
@@ -104,7 +122,11 @@ type ropeParams struct {
 	MRopeInterleaved bool
 }
 
-type attnTempParams struct{ Beta, OrigMaxPos float64 }
+// attnTempParams scales the query by 1 + Beta·log1p(floor((pos+PosOffset)/OrigMaxPos)).
+type attnTempParams struct {
+	Beta, OrigMaxPos float64
+	PosOffset        int
+}
 
 // attnOrder is the CPU's reduction order for attention. Families compute attention in different orders today and OP3 moves no
 // number, so each keeps its own; a GPU backend ignores it.
@@ -113,10 +135,12 @@ type attnOrder uint8
 const (
 	attnBatchedAcc64 attnOrder = iota + 1 // attendBatchedHeads with float64 accumulation
 	attnSinksF64                          // gpt-oss: inline float64 dots and softmax with a learned sink per head (attendSinksToken)
+	attnQuery                             // attendQuery: float64 dots, float32 accumulation of the values
 )
 
 type attentionParams struct {
 	Window  int // 0 attends every stored key; else the most recent Window positions
+	Chunk   int // 0 none; else a query attends only within its own block of Chunk positions (Llama 4's RoPE layers)
 	Scale   float64
 	Softcap float64 // 0 = none
 	Order   attnOrder
@@ -130,7 +154,8 @@ const (
 	ffnGated ffnForm = iota + 1
 	ffnNonGated
 	ffnMoE
-	ffnGptOss // gpt-oss: a router with a logit bias, softmax over the top k, clamped SwiGLU experts with biases (gptOssMoEWith)
+	ffnGptOss    // gpt-oss: a router with a logit bias, softmax over the top k, clamped SwiGLU experts with biases (gptOssMoEWith)
+	ffnLlama4MoE // Llama 4: top-k by logit, each expert's INPUT scaled by sigmoid(logit), plus an ungated shared expert (llama4MoEWith)
 )
 
 type ffnParams struct {
@@ -208,6 +233,9 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 		return op{kind: opFFN, in: regX, out: out, ffn: f}
 	}
 
+	if a.llama4 != nil {
+		return a.llama4LayerOps(l, input, ffn)
+	}
 	ops := []op{input(slotPreAttn)}
 	ops = append(ops, a.attentionOps(l)...)
 	if placement == NormParallel {
@@ -228,11 +256,11 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 func (a *Architecture) attentionOps(l int) []op {
 	ops := []op{{kind: opProjQKV, in: regX, proj: projParams{Bias: a.QKVBias}}}
 	if a.QKNorm {
-		ops = append(ops, op{kind: opQKNorm, qkNorm: qkNormParams{Whole: a.QKNormWhole, Eps: a.NormEps, AddOne: a.RMSAddOne}})
+		ops = append(ops, op{kind: opQKNorm, qkNorm: qkNormParams{Form: qkRMS, Whole: a.QKNormWhole, Eps: a.NormEps, AddOne: a.RMSAddOne}})
 	}
 	if !a.LearnedPosEmbed && !a.isNoPELayer(l) {
 		ops = append(ops, op{kind: opRope, rope: ropeParams{
-			InvFreq: a.ropeInvFreq(l), Mscale: a.ropeMscale(l), Interleave: a.ropeInterleave,
+			Kernel: ropeAtKernel, InvFreq: a.ropeInvFreq(l), Mscale: a.ropeMscale(l), Interleave: a.ropeInterleave,
 			MRopeSection: a.MRopeSection, MRopeInterleaved: a.MRopeInterleaved,
 		}})
 	}
@@ -261,18 +289,52 @@ func (k opKind) String() string {
 
 // attnOrder is the attention kernel this family's CPU forward computes in.
 func (a *Architecture) attnOrder() attnOrder {
-	if a.gptoss != nil {
+	switch {
+	case a.gptoss != nil:
 		return attnSinksF64
+	case a.llama4 != nil:
+		return attnQuery
 	}
 	return attnBatchedAcc64
 }
 
-// start is the first key position a query at pos attends.
-func (p attentionParams) start(pos int) int {
-	if p.Window <= 0 {
-		return 0
+// llama4LayerOps is a Llama 4 layer: pre-norm, and attention that varies by layer. A RoPE layer rotates q and k (mlaRope's
+// interleaved form, no mscale), then normalises them without weights, and attends within its chunk; a NoPE layer scales the
+// query by the attention temperature instead. The FFN is dense or Llama 4's MoE (moe_layers).
+func (a *Architecture) llama4LayerOps(l int, input func(normSlot) op, ffn func(opReg) op) []op {
+	lp := a.llama4
+	ops := []op{input(slotPreAttn), {kind: opProjQKV, in: regX}}
+	chunk := 0
+	if lp.useRope[l] {
+		ops = append(ops, op{kind: opRope, rope: ropeParams{Kernel: ropeMLAKernel, InvFreq: a.ropeInvFreq(l), Mscale: 1, Interleave: true}})
+		if lp.useQKNorm {
+			ops = append(ops, op{kind: opQKNorm, qkNorm: qkNormParams{Form: qkL2, Eps: a.NormEps}})
+		}
+		chunk = lp.chunkSize
+	} else if lp.attnTemp {
+		ops = append(ops, op{kind: opAttnTemp, temp: attnTempParams{Beta: lp.attnScale, OrigMaxPos: lp.floorScale, PosOffset: 1}})
 	}
-	return max(pos-p.Window+1, 0)
+	ops = append(ops,
+		op{kind: opAttention, attn: attentionParams{Chunk: chunk, Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: attnQuery}},
+		op{kind: opProjO, out: regA},
+		op{kind: opResidual}, input(slotPreMLP))
+	f := ffn(regA)
+	if lp.isMoE[l] {
+		f.ffn = ffnParams{Form: ffnLlama4MoE, Act: a.Act, MoE: *a.MoE}
+	}
+	return append(ops, f, op{kind: opResidual})
+}
+
+// start is the first key position a query at pos attends: past the window, and inside the query's chunk.
+func (p attentionParams) start(pos int) int {
+	s := 0
+	if p.Window > 0 {
+		s = max(pos-p.Window+1, 0)
+	}
+	if p.Chunk > 0 {
+		s = max(s, (pos/p.Chunk)*p.Chunk)
+	}
+	return s
 }
 
 // attnParamsFor is the attention parameters the loops that do not walk a program read from the Architecture: the cache's window
@@ -281,6 +343,16 @@ func (a *Architecture) attnParamsFor(cache *KVCache, global bool) attentionParam
 	p := attentionParams{Scale: a.AttnScale, Softcap: a.AttnLogitSoftcap, Order: attnBatchedAcc64}
 	if !global && cache.window > 0 {
 		p.Window = cache.window
+	}
+	return p
+}
+
+// attnParamsQueryFor is attnParamsFor for attendQuery's callers, with Llama 4's chunk on its RoPE layers.
+func (a *Architecture) attnParamsQueryFor(cache *KVCache, layer int, global bool) attentionParams {
+	p := a.attnParamsFor(cache, global)
+	p.Order = attnQuery
+	if l4 := a.llama4; l4 != nil && l4.chunkSize > 0 && layer < len(l4.useRope) && l4.useRope[layer] {
+		p.Chunk = l4.chunkSize
 	}
 	return p
 }

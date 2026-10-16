@@ -3,7 +3,6 @@ package decoder
 import (
 	"context"
 	"fmt"
-	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -135,15 +134,12 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 					applyQKNorm(o.qkNorm, row(q, i, qDim), row(k, i, kvDim), lw, nH, nKV, hd)
 				}
 			case opRope:
-				r := &o.rope
 				for i := range K {
-					pos := rowPos(i)
-					ropeAt(row(q, i, qDim), nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, cache.mropePos, cache.mropeDelta, r.Interleave, r.MRopeInterleaved)
-					ropeAt(row(k, i, kvDim), nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, cache.mropePos, cache.mropeDelta, r.Interleave, r.MRopeInterleaved)
+					applyRope(&o.rope, row(q, i, qDim), row(k, i, kvDim), nH, nKV, hd, rowPos(i), cache.mropePos, cache.mropeDelta)
 				}
 			case opAttnTemp:
 				for i := range K {
-					scale := float32(1 + o.temp.Beta*math.Log1p(math.Floor(float64(rowPos(i))/o.temp.OrigMaxPos)))
+					scale := o.temp.scale(rowPos(i))
 					qi := row(q, i, qDim)
 					for j := range qi {
 						qi[j] *= scale
@@ -429,14 +425,12 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 					applyQKNorm(o.qkNorm, row(q, b, qDim), row(k, b, kvDim), lw, nH, nKV, hd)
 				}
 			case opRope:
-				r := &o.rope
 				for b, c := range caches {
-					ropeAt(row(q, b, qDim), nH, hd, pos[b], r.InvFreq, r.Mscale, r.MRopeSection, c.mropePos, c.mropeDelta, r.Interleave, r.MRopeInterleaved)
-					ropeAt(row(k, b, kvDim), nKV, hd, pos[b], r.InvFreq, r.Mscale, r.MRopeSection, c.mropePos, c.mropeDelta, r.Interleave, r.MRopeInterleaved)
+					applyRope(&o.rope, row(q, b, qDim), row(k, b, kvDim), nH, nKV, hd, pos[b], c.mropePos, c.mropeDelta)
 				}
 			case opAttnTemp:
 				for b := range B {
-					scale := float32(1 + o.temp.Beta*math.Log1p(math.Floor(float64(pos[b])/o.temp.OrigMaxPos)))
+					scale := o.temp.scale(pos[b])
 					qb := row(q, b, qDim)
 					for j := range qb {
 						qb[j] *= scale
