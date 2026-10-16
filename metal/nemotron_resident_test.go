@@ -4,7 +4,9 @@ package metal
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -22,10 +24,17 @@ type lockstep struct {
 // runs it against the CPU model it was built from, in greedy lockstep off the CPU: a fixed seed, then the CPU's argmax.
 func residentLockstep(t *testing.T, dir, quant string, steps int) lockstep {
 	t.Helper()
+	return residentLockstepAt(t, filepath.Join("..", "testdata", dir), decoder.Options{Quant: quant}, steps)
+}
+
+// residentLockstepAt is residentLockstep on the checkpoint at path, loaded with opts.
+func residentLockstepAt(t *testing.T, path string, opts decoder.Options, steps int) lockstep {
+	t.Helper()
+	dir, quant := filepath.Base(path), opts.Quant
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	m, err := decoder.Load(filepath.Join("..", "testdata", dir), decoder.Options{Quant: quant})
+	m, err := decoder.Load(path, opts)
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
@@ -204,4 +213,38 @@ func TestNemotronResident_int8Declines(t *testing.T) {
 		t.Error("a Metal load of Nemotron-H at int8int8 went resident")
 	}
 	_ = m.Close()
+}
+
+// TestNemotronResident_tier1Slice is OP2b's tier 1 on Metal on a layer slice (docs/tasks/task-forward-architecture-2026-10.md
+// §4.7, "Tier 1 on a layer slice", registered before any run): layers 0, 1 and 14 of NVIDIA-Nemotron-Nano-9B-v2's Q8_0 GGUF
+// as an int4 .giw, resident on Metal against the CPU model it was built from, 32 steps of greedy lockstep graded from
+// position 2. G2-R's bars: min logit cosine >= 0.88 and argmax agreement >= 50%. The dense Qwen2.5-Coder-1.5B through its
+// int4 Metal .giw runs first through the same harness; under min cosine 0.95 the run is void. A refused load is void too.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 10m -run '^TestNemotronResident_tier1Slice$' -v ./metal/
+func TestNemotronResident_tier1Slice(t *testing.T) {
+	requireHeavyModel(t)
+	const steps = 32
+	home, _ := os.UserHomeDir()
+	ctrlPath := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v16.giw")
+	slicePath := filepath.Join(home, "models", "nemotron", "nemotron-nano-9b-v2.slice-0-1-14.int4-metal.giw")
+	for _, p := range []string{ctrlPath, slicePath} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("VOID: %s is missing", p)
+		}
+	}
+	opts := decoder.Options{Quant: "int4", ResidentContext: 64}
+	ctrl := residentLockstepAt(t, ctrlPath, opts, steps)
+	debug.FreeOSMemory()
+	t.Logf("control, dense 1.5B: min cosine %.6f, argmax %d/%d", ctrl.minCos, ctrl.exact, ctrl.steps)
+	if ctrl.minCos < 0.95 {
+		t.Fatalf("VOID: the control's min cosine %.6f is under 0.95", ctrl.minCos)
+	}
+	nemo := residentLockstepAt(t, slicePath, opts, steps)
+	pass := nemo.minCos >= 0.88 && 2*nemo.exact >= nemo.steps
+	t.Logf("Nemotron-H slice 0,1,14: min cosine %.6f, argmax %d/%d -> %s", nemo.minCos, nemo.exact, nemo.steps,
+		map[bool]string{true: "PASS", false: "FAIL"}[pass])
+	if !pass {
+		t.Errorf("the slice misses G2-R's bars (min cosine >= 0.88, argmax >= 50%%)")
+	}
 }
