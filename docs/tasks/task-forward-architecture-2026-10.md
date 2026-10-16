@@ -994,7 +994,9 @@ operations and a `__fmul_rn` stays a `__fmul_rn` (a fused multiply-add must not 
 - **`glue.ptx` is an audited artifact** (`cuda/testdata/REGEN.md`). Editing `glue.cu` means regenerating it at the pinned NVRTC
   12.6.85 with that file's control. **Registered fallback:** if the per-kernel hash audit shows any kernel other than `attention`
   moving, step 1 does not touch `glue.cu`, `attention` stays unrouted, and a capped model requires `prefillReady` or declines by
-  name. G1-K records `attention`'s digests either way. The other modules were built at the ambient 12.9.86 and are regenerated there.
+  name. G1-K records `attention`'s digests either way. **Which modules were built at 12.6.85 (read from each PTX header, 2026-10-16):**
+  `glue.ptx`, `glue_kv16.ptx` and `mla.ptx`. The other seven modules and their f16 twins were built at the ambient 12.9.86 and are
+  regenerated there. Each is rebuilt unchanged first, at its own toolchain, and must come back byte for byte.
 - **G1-K's instrument** is `TestAttnKernelDigests` (`goinfer_testhooks`, `cuda` tags), built and run at base first.
   - It drives each of the 10 sites' kernels, in every module they ship in (f32 and f16 KV), on fixed pseudo-random inputs, and hashes
     the output bytes. Shapes: head dimensions 64, 128, 256 (512 where a kernel has it); key counts at, one under and one over each
