@@ -454,6 +454,20 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B28 · the peer harness cannot yet run Gemma 2: G2-P (OP1) waits for it, on both backends** — filed 2026-10-16 (owner, from OP1 on
+CUDA). **Not started; not blocking** the CUDA or Metal softcap declarations, which rest on G2-K, G2-D and G2-L
+(docs/tasks/task-forward-architecture-2026-10.md §4.6a).
+
+G2-P is OP1's peer cell: Gemma 2 decoded by goinfer on the GPU, by goinfer on the CPU (the do-nothing arm) and by Ollama, depth 128
+and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot run it today, on either backend:
+- **No model key.** `MODELS` in `scripts/bench_peer.py` has no `gemma2-2b`, with the GGUF Ollama ships as `gemma2:2b` loaded by both
+  engines and `scripts/gguf_same_weights.py` reporting every tensor identical.
+- **No calibrated prompts.** `scripts/bench_prompts_calibrate.py` has not produced Gemma 2's prompts, so a depth cell's token count
+  is not what it says.
+- **No Ollama import** of that GGUF under a name the harness can ask for.
+- **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
+  registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
+  on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
 **B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
 **Built 2026-10-16; the whole-model run PASS** (branch `b26-mamba-int8-giw-v17-2026-10`; filed as B26 and renumbered,
 main's B26 being another item; reading in docs/tasks/task-forward-architecture-2026-10.md §4.7); owner's decisions and the registration below, 2026-10-15,
