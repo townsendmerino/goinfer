@@ -223,8 +223,12 @@ type resident struct {
 	pQ4K, pQ4KResid, pQ4KBias, pW8F32, pW8F32Resid, pW8F32Bias Pipeline
 	pRmsF32Out, pSwF32                                         Pipeline
 	axF32, swF32                                               Buffer
-	pArgFinish                                                 Pipeline // fused block-argmax lm head reduce
-	pArgRowsPart                                               Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
+	// The lane's batched step (batch.go, forwardMultiOut): its projections' rows forms by B, and its norm and SwiGLU over
+	// all rows (batch_rows.go).
+	pQ4KRows, pW8F32Rows       [batchMaxSeqs + 1]Pipeline
+	pRmsF32OutRows, pSwF32Rows Pipeline
+	pArgFinish                 Pipeline // fused block-argmax lm head reduce
+	pArgRowsPart               Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
 	// The split-KV decode-attention lane, gridded by (kvHead, split) instead of by query head: on by default
 	// (decodeAttnFA, from metalAttnFAEnabled; GOINFER_METAL_ATTN_FA=0 opts out). The pipelines are always built;
 	// dispatch is conditional (canUseAttnFA). It covers hd==128 (or hd==64 through the block twin, attnFAHeadDimOK)
@@ -1055,6 +1059,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pQ4K, r.pQ4KResid, r.pQ4KBias = pipe("gemv_q4k_f32"), pipe("gemv_q4k_f32_resid"), pipe("gemv_q4k_f32_bias")
 		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32"), pipe("gemv_w8_f32_resid"), pipe("gemv_w8_f32_bias")
 		r.pRmsF32Out, r.pSwF32 = pipe("rmsnorm_f32_out"), pipe("swiglu_f32")
+		r.pRmsF32OutRows, r.pSwF32Rows = pipe("mc3_rmsnorm_f32_out_rows"), pipe("mc3_swiglu_f32_rows")
+		for B := 1; B <= batchMaxSeqs; B++ {
+			r.pQ4KRows[B], r.pW8F32Rows[B] = pipe(fmt.Sprintf("mc3_gemv_q4k_f32_rows%d", B)), pipe(fmt.Sprintf("mc3_gemv_w8_f32_rows%d", B))
+		}
 	}
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
 	r.pAttnFARows, r.pAttnFACombineRows = pipe("mc3_attention_fa_rows"), pipe("mc3_attention_fa_combine_rows")

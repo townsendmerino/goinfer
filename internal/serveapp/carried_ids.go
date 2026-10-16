@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,12 +102,13 @@ func loadIDsKey(path string) (*idsKey, error) {
 }
 
 // readIDsKeyFile is --ids-key-file: the key is the file's bytes, at least 32 of them, in a file no one but its owner can read.
+// The mode is not checked on Windows, whose mode bits do not carry it (every file reads as 0666).
 func readIDsKeyFile(path string) (*idsKey, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("--ids-key-file: %w", err)
 	}
-	if fi.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("--ids-key-file %s: mode %v lets others read the key; chmod 600 it", path, fi.Mode().Perm())
 	}
 	b, err := os.ReadFile(path)

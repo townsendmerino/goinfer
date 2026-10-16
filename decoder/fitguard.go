@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -465,6 +467,12 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 		return 0, 0 // unknown ⇒ proceed
 	}
 	defer g.Close()
+	// q4k prices each tensor at what its load keeps: a dense projection stored as Q4_K at its own super-blocks
+	// (q4kKeptBytes), every other matrix at int8 W8A8, which q4k makes of them (streamQuantizedRow4).
+	price := q
+	if q == quantQ4K && !q4kPriceAsInt4ForTest {
+		price = quantInt8I8
+	}
 	var sum, exp float64
 	for _, name := range g.Names() {
 		dims, ok := g.Dims(name)
@@ -491,7 +499,10 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 			sum += 4 * float64(n)
 			continue
 		}
-		b := quantBytesPerElem(q) * float64(n)
+		b := quantBytesPerElem(price) * float64(n)
+		if kept, ok := q4kKeptBytes(g, name, dims); ok && q == quantQ4K && !q4kPriceAsInt4ForTest {
+			b = kept
+		}
 		sum += b
 		if strings.Contains(name, "_exps") && !strings.HasSuffix(name, ".bias") {
 			exp += b
@@ -499,6 +510,26 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 	}
 	return int64(sum), int64(exp)
 }
+
+// q4kDenseProj matches the dense layer projections a q4k load keeps as Q4_K when the GGUF stores them so (q4kMat's load
+// sites); the embedding, the head, the router and expert stacks are not among them.
+var q4kDenseProj = regexp.MustCompile(`^blk\.\d+\.(attn_q|attn_k|attn_v|attn_qkv|attn_output|ffn_gate|ffn_up|ffn_down)\.weight$`)
+
+// q4kKeptBytes is a dense projection's resident bytes under q4k when the GGUF stores it as Q4_K: its super-blocks, copied as
+// they are. ok is false for any other tensor. Q4KRaw only slices the mapping, so no tensor data is read.
+func q4kKeptBytes(g *embed.GGUFFile, name string, dims []int) (float64, bool) {
+	if len(dims) != 2 || dims[0]%256 != 0 || !q4kDenseProj.MatchString(name) {
+		return 0, false
+	}
+	_, raw, ok, err := g.Q4KRaw(name)
+	if err != nil || !ok {
+		return 0, false
+	}
+	return float64(len(raw)), true
+}
+
+// q4kPriceAsInt4ForTest restores the int4 price for q4k, for the test that shows it disagrees with a load.
+var q4kPriceAsInt4ForTest = false
 
 // estimateSafetensorsWeightBytes is estimateGGUFWeightBytes's safetensors twin: shape-only, quant-independent accounting (sum every
 // tensor's element count, price 2-D+ tensors at the target quant, 1-D norms/biases at f32), reusing openCheckpointMmap so single-file and

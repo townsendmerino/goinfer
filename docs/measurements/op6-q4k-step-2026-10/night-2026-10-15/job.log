@@ -1,0 +1,80 @@
+=== night job op6-tier1
+=== cmd      env OP6_REV=d1b340ad bash docs/measurements/op6-q4k-step-2026-10/run-tier1-mac.sh
+=== cwd      /Users/francistownsend-merino/tmcode/goinfer
+=== rev      queued at d1b340ad, now d1b340ad
+=== host     macbookpro.lan
+=== est      10.0 min, timeout 30.0 min
+=== by       Claude (Mac session), OP6 Metal tier 1 + PR #41 Phi-3 row
+=== doc      docs/tasks/task-forward-architecture-2026-10.md
+=== START    2026-10-15 21:30:06 PDT  loadavg 1.23
+rev d1b340ad (decoder test sha256 182cc6ad1d9a45a8, metal test sha256 277b6af12bce12ab)
+phi3 8a83c7fb9049a9b2
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+total = 2048.00M  used = 849.25M  free = 1198.75M  (encrypted)
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   216018.
+Pages active:                                 227058.
+Pages inactive:                               385062.
+Pages speculative:                             20804.
+21:30  up 1 day, 32 mins, 1 user, load averages: 1.21 1.32 1.50
+=== 2026-10-16T04:30:14Z START price; swap total = 2048.00M  used = 849.25M  free = 1198.75M  (encrypted)
+=== RUN   TestFitEstimate_q4kAgreesWithResidentWeightBytes
+=== RUN   TestFitEstimate_q4kAgreesWithResidentWeightBytes/Phi-3-mini-4k-instruct-q4.gguf
+    fitguard_q4k_test.go:66: measured 2809588224 bytes; estimate 2832279552 (ratio 1.0081); the int4 price 4299288576 (ratio 1.5302)
+--- PASS: TestFitEstimate_q4kAgreesWithResidentWeightBytes (0.80s)
+    --- PASS: TestFitEstimate_q4kAgreesWithResidentWeightBytes/Phi-3-mini-4k-instruct-q4.gguf (0.80s)
+PASS
+        0.82 real         4.86 user         0.47 sys
+          5227315200  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              320546  page reclaims
+                   1  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                 481  signals received
+                 311  voluntary context switches
+                2564  involuntary context switches
+         26004913624  instructions retired
+         15099663698  cycles elapsed
+          2829668528  peak memory footprint
+=== 2026-10-16T04:30:15Z END price rc=0; swap total = 2048.00M  used = 849.25M  free = 1198.75M  (encrypted)
+=== 2026-10-16T04:30:15Z START tier1; swap total = 2048.00M  used = 849.25M  free = 1198.75M  (encrypted)
+=== RUN   TestQ4KStep_phi3Tier1
+    q4k_step_phi3_real_test.go:53: golden prompt: 0 of 32064 last-row logits and 0 K/V elements differ from the sequential loop
+    q4k_step_phi3_real_test.go:53: 200 tokens: 0 of 32064 last-row logits and 0 K/V elements differ from the sequential loop
+    q4k_step_phi3_real_test.go:81: golden prompt: argmax 3681, golden 3681; cosine 0.7554 (logged: an earlier snapshot)
+[op6-tier1] pair 1: step 4420.9 ms (45 tok/s), sequential 8777.9 ms (23 tok/s), ratio 1.986
+[op6-tier1] pair 2: step 4423.3 ms (45 tok/s), sequential 8779.5 ms (23 tok/s), ratio 1.985
+[op6-tier1] pair 3: step 4425.1 ms (45 tok/s), sequential 8779.1 ms (23 tok/s), ratio 1.984
+[op6-tier1] pair 4: step 4421.1 ms (45 tok/s), sequential 8777.4 ms (23 tok/s), ratio 1.985
+[op6-tier1] pair 5: step 4420.7 ms (45 tok/s), sequential 8761.9 ms (23 tok/s), ratio 1.982
+    q4k_step_phi3_real_test.go:133: speed: median sequential/step 1.985 over 5 pairs, every pair above 1: true — SHIP
+--- PASS: TestQ4KStep_phi3Tier1 (97.20s)
+PASS
+       97.87 real         6.16 user         2.74 sys
+          5486690304  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              808969  page reclaims
+                 443  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                1250  signals received
+                 422  voluntary context switches
+              136324  involuntary context switches
+         47233720285  instructions retired
+         25215767788  cycles elapsed
+          8679365520  peak memory footprint
+=== 2026-10-16T04:31:53Z END tier1 rc=0; swap total = 2048.00M  used = 849.25M  free = 1198.75M  (encrypted)
+
+=== END      2026-10-15 21:31:53 PDT  rc=0
