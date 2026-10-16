@@ -122,6 +122,11 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
   printed "needs ~2.6 GB resident at quant q4k + 0.8 GB KV + 2.2 GB reading the checkpoint = 5.6 GB" against a budget of
   5.2 GB (70% of 7.4 GB available). Its weight-streaming retry declined too: the disk had 3.2 GB free against a sidecar of
   about 4.4 GB. Log: `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-0656.log`. The next step is the owner's.
+- **The fit check again, 2026-10-16 16:13 PDT, with only three VS Code windows open: REFUSED, so not queued.** The same
+  binary and flags printed "needs ~2.6 GB resident at quant q4k + 0.8 GB KV + 2.2 GB reading the checkpoint = 5.6 GB" against
+  a budget of 5.1 GB (70% of 7.2 GB available), about 0.8 GB of available memory short. Its weight-streaming retry declined on
+  the format, not the disk this time ("--quant q4k has no .giw form yet"), so no sidecar was written. A streamed load would
+  have counted as refused for this cell in any case (owner, 2026-10-16). Log: `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-1613.log`.
 - **Cost:** one cell, two engines, about 8 minutes of cells and loads; queued at 20.
 - **What it decides:** the owner's E5 ("yes to the default once the cell is read",
   `docs/tasks/task-forward-architecture-2026-10.md` §7): the cell is read, and Metal's default load for Phi-3/4 becomes

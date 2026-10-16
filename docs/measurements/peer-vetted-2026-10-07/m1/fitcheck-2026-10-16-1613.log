@@ -1,0 +1,12 @@
+2026-10-16 16:13:26 PDT
+16:13  up 4 hrs, 1 user, load averages: 1.33 1.00 1.04
+total = 2048.00M  used = 811.62M  free = 1236.38M  (encrypted)
+swap guard (load): armed for /Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, threshold +512 MB over baseline
+note: "/Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf" does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)
+stream-weights: transcoding Phi-3-mini-4k-instruct-q4.gguf → Phi-3-mini-4k-instruct-q4.q4k.metal.v16.giw (q4k, one-time — minutes + ~model-size on disk)…
+load model (/Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf): decoder: Phi-3-mini-4k-instruct-q4.gguf needs ~2.6 GB resident at quant q4k + 0.8 GB KV + 2.2 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 5.6 GB; this machine currently has 7.2 GB of memory available (budget 5.1 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+  Or run a smaller model.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it (auto weight-streaming retry also failed: write bundle: stream weights: decoder: --quant q4k has no .giw form yet; load the .gguf directly)
+VERDICT REFUSED
