@@ -32,6 +32,7 @@ const (
 	opProjO                       // context → out
 	opFFN                         // in → out
 	opResidual                    // the residual += regA (and regB)
+	opMLA                         // in → out, the whole Multi-head Latent Attention sublayer (mlaAttentionWith)
 )
 
 // opReg names a per-stream buffer an operation reads or writes.
@@ -57,6 +58,7 @@ type op struct {
 	gate    outGateParams
 	ffn     ffnParams
 	res     residualParams
+	mla     mlaOpParams
 }
 
 // normSlot selects which of a layer's norm weights an opNorm applies.
@@ -136,6 +138,7 @@ const (
 	attnBatchedAcc64 attnOrder = iota + 1 // attendBatchedHeads with float64 accumulation
 	attnSinksF64                          // gpt-oss: inline float64 dots and softmax with a learned sink per head (attendSinksToken)
 	attnQuery                             // attendQuery: float64 dots, float32 accumulation of the values
+	attnMLA                               // the family attends through opMLA, over a latent cache
 )
 
 type attentionParams struct {
@@ -147,6 +150,23 @@ type attentionParams struct {
 }
 
 type outGateParams struct{ Sigmoid bool } // sigmoid, else softplus
+
+// mlaOpParams are an opMLA's: the rotation of the rope-carrying dims, the latent and q-LoRA norms' epsilon, the score scale, and
+// whether the optional sigmoid output gate is per head. The ranks and head widths are shapes, read from the Architecture.
+type mlaOpParams struct {
+	InvFreq    []float64
+	Mscale     float64
+	Interleave bool
+	Eps        float64
+	Scale      float64
+	HeadWise   bool
+}
+
+// mlaOpParamsAt is layer l's opMLA parameters.
+func (a *Architecture) mlaOpParamsAt(l int) mlaOpParams {
+	return mlaOpParams{InvFreq: a.ropeInvFreq(l), Mscale: a.ropeMscale(l), Interleave: a.mla.ropeInterleave, Eps: a.NormEps,
+		Scale: a.AttnScale, HeadWise: a.mla.GateGranularity == "head_wise"}
+}
 
 type ffnForm uint8
 
@@ -236,6 +256,10 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 	if a.llama4 != nil {
 		return a.llama4LayerOps(l, input, ffn)
 	}
+	if a.mla != nil {
+		return []op{input(slotPreAttn), {kind: opMLA, in: regX, out: regA, mla: a.mlaOpParamsAt(l)},
+			{kind: opResidual}, input(slotPreMLP), ffn(regA), {kind: opResidual}}
+	}
 	ops := []op{input(slotPreAttn)}
 	ops = append(ops, a.attentionOps(l)...)
 	if placement == NormParallel {
@@ -280,7 +304,7 @@ func (a *Architecture) attentionOps(l int) []op {
 
 func (k opKind) String() string {
 	names := [...]string{opNorm: "norm", opProjQKV: "proj-qkv", opQKNorm: "qk-norm", opRope: "rope", opAttnTemp: "attn-temp",
-		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual"}
+		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla"}
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}
@@ -294,6 +318,8 @@ func (a *Architecture) attnOrder() attnOrder {
 		return attnSinksF64
 	case a.llama4 != nil:
 		return attnQuery
+	case a.mla != nil:
+		return attnMLA
 	}
 	return attnBatchedAcc64
 }

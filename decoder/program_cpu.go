@@ -137,6 +137,9 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 					}
 				}
 				addResidual(h, scr.sub)
+			case opMLA:
+				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
+				lastFFN = false
 			default:
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.kind)
 			}
@@ -148,6 +151,9 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 				}
 			}
 		}
+	}
+	if cache.manualPos {
+		cache.Advance() // a layer that stores no K/V row (a latent, a recurrent state) does not step the position
 	}
 	return h, nil
 }

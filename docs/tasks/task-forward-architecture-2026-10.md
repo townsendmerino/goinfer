@@ -1835,6 +1835,27 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   - `rope.Kernel`: same on the NeoX families, where the two kernels coincide; changed on 4.
   - Log: `docs/measurements/op3-2026-10/op3d-PL.log`.
 
+**OP3e, DeepSeek V2/V3 (MLA): readings, 2026-10-16 (same branch).**
+- **The build:**
+  - DeepSeek walks the program: the generic pre-norm layer with one `opMLA` as its attention sublayer. Its parameters are the
+    rotation (table, mscale, interleave), the norms' epsilon, the score scale and the output gate's granularity; the ranks and
+    head widths are shapes.
+  - The absorbed and naive forms stay a knob and a test seam (`mlaAttentionWith`), as fast attention does.
+  - The per-token walker advances a manual-position cache at the end of the token, as the own loops did.
+  - The batched and multi-sequence walkers now also decline any operation they do not implement (`program.kindsIn`).
+    Without that, an MLA program, which has no `opAttention`, would have passed their attention-order check.
+  - `runLayersDeepseek` and its table entry are gone. Bailing Hybrid still calls `mlaAttention` (now a wrapper) until OP3f.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `deepseek_v3` and `kimi_k2` in all three cells. Log:
+  `docs/measurements/op3-2026-10/op3e-identity-tiny.log`.
+- **P and L: PASS.**
+  - The swap plant now swaps the input norm with whatever operation follows it, since an MLA layer has no `proj-qkv`.
+  - DeepSeek's fixture routes by group, so `ffn.MoE.NGroup` and `TopkGroup` are reached, and come off the unreached list.
+  - Every `mla` parameter is live except `mla.HeadWise`, which is listed: only Bailing's MLA layers carry the gate.
+  - Log: `docs/measurements/op3-2026-10/op3e-PL.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

@@ -196,6 +196,7 @@ func cloneProgram(p *program) *program {
 			o := &c.layers[l][i]
 			o.rope.InvFreq = append([]float64(nil), o.rope.InvFreq...)
 			o.rope.MRopeSection = append([]int(nil), o.rope.MRopeSection...)
+			o.mla.InvFreq = append([]float64(nil), o.mla.InvFreq...)
 		}
 	}
 	return &c
@@ -218,9 +219,9 @@ func TestProgram_P_plants(t *testing.T) {
 			}
 			return append(ops[:i:i], ops[i+1:]...), true
 		}},
-		{"swap layer 0's qk-norm and rope, or its first norm and proj-qkv", func(_ *Architecture, ops []op) ([]op, bool) {
+		{"swap layer 0's qk-norm and rope, or its first norm and the operation after it", func(_ *Architecture, ops []op) ([]op, bool) {
 			qn, rp := indexesOf(ops, opQKNorm), indexesOf(ops, opRope)
-			i, j := 0, indexesOf(ops, opProjQKV)[0]
+			i, j := 0, 1 // the input norm and the operation after it (proj-qkv, or a whole sublayer such as MLA)
 			if len(qn) > 0 && len(rp) > 0 {
 				i, j = qn[0], rp[0]
 			}
@@ -303,9 +304,8 @@ func indexesOf(ops []op, k opKind) []int {
 // programParamUnreached names the (kind, parameter) pairs no tiny fixture's logits can show, each with the reason. Gate L
 // passes a pair only when it changes some fixture's logits, or is listed here; a listed pair that does change is stale.
 var programParamUnreached = map[string]string{
-	"ffn.MoE.NGroup":         "no generic fixture routes by group; one more than 0 is 1, which is still no grouping (deepseek-tiny's own loop has groups)",
-	"ffn.MoE.TopkGroup":      "read only when NGroup > 1, which no generic fixture has",
 	"ffn.Limit":              "gpt-oss's clamp bound: the tiny fixture's gate and up values never reach 7, so a doubled bound clamps nothing either",
+	"mla.HeadWise":           "the MLA output gate's granularity: DeepSeek has no gate; Bailing Hybrid's MLA layers do, and move in OP3f",
 	"ffn.MoE.PerExpertScale": "Gemma 4's router extra, read only by its own loop",
 	"ffn.MoE.RouterPreNorm":  "Gemma 4's router extra, read only by its own loop",
 	"head.Norm.Slot":         "the head has one norm weight; the slot names it and is not read",
@@ -510,6 +510,8 @@ func opParamValue(o *op) (reflect.Value, string, bool) {
 		p = &o.ffn
 	case opResidual:
 		p = &o.res
+	case opMLA:
+		p = &o.mla
 	default:
 		return reflect.Value{}, "", false
 	}

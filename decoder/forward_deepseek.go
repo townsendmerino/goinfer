@@ -4,46 +4,12 @@ import (
 	"math"
 )
 
-// DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3) forward path: Multi-head Latent Attention over a DeepSeekMoE FFN. K/V are compressed
-// to a shared low-rank latent (kv_lora_rank), and only that latent (plus a per-position rope-carrying key) is cached, far smaller
-// than a reconstructed full K+V. Attention either rebuilds per-head K/V from the latent each step (mlaAttentionNaive, bit-identical
-// to HF) or, by default, works in latent space without ever rebuilding them (mlaAttentionAbsorb). Decoupled RoPE rides on a
-// separate qk_rope_head_dim slice of Q and the shared latent key; the no-rope dims and the (different-width) V skip it.
-//
-// The block is a standard Pre2 residual stack (input_layernorm → MLA → +residual → post_attention_layernorm → MoE/dense →
-// +residual), so the FFN reuses the generic mlp() dispatch (dense prefix on l < first_k_dense_replace, DeepSeekMoE elsewhere).
-// Parity-first f32, one token per call (the latent append and causal attend mirror the other own-path families); canBatchN
-// excludes the MLA attention kind.
-func (m *Model) runLayersDeepseek(id int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	hidden := arch.HiddenDim
-	eps := arch.NormEps
-	pos := cache.Pos()
-	if cache.scr == nil { // dense-prefix gatedMLP reuses scratch; tests may skip runLayers' setup
-		cache.scr = newDecodeScratch(arch)
-	}
-
-	h := make([]float32, hidden)
-	m.w.Embed.Row(id, h)
-
-	scr := cache.scr
-	for l := 0; l < arch.NumLayers; l++ {
-		lw := &m.w.Layers[l]
-		// Attention sub-block (Pre2).
-		rmsNormInto(scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
-		attn := m.mlaAttention(scr.norm, lw, arch, cache, l, pos)
-		addResidual(h, attn)
-		// FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm; mlp()
-		// routes dense (l < FirstKDense, Experts nil) vs DeepSeekMoE per layer.
-		rmsNormInto(scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, nil); err != nil {
-			return nil, err
-		}
-		addResidual(h, scr.sub)
-	}
-	cache.Advance() // manualPos: MLA appends only the latent (not via Append), so step pos once per token
-	return h, nil
-}
+// DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3): Multi-head Latent Attention over a DeepSeekMoE FFN. K/V are compressed to a shared
+// low-rank latent (kv_lora_rank), and only that latent (plus a per-position rope-carrying key) is cached, far smaller than a
+// reconstructed full K+V. Attention either rebuilds per-head K/V from the latent each step (mlaAttentionNaive, bit-identical to HF)
+// or, by default, works in latent space without ever rebuilding them (mlaAttentionAbsorb). Decoupled RoPE rides on a separate
+// qk_rope_head_dim slice of Q and the shared latent key; the no-rope dims and the (different-width) V skip it. The layer is the
+// pre-norm program of Architecture.layerOps with one opMLA as its attention sublayer.
 
 // mlaAttention dispatches to the absorb path (default — folds kv_b_proj into q/o so no
 // per-key K/V is ever reconstructed; the perf path) or the naive reconstruct-per-key
@@ -51,10 +17,17 @@ func (m *Model) runLayersDeepseek(id int, cache *KVCache) ([]float32, error) {
 // algebraically identical (cosine ~1.0, not bit-exact — f32 reorder), gated by
 // TestMLAAbsorb_parity on the tiny golden and the V2-Lite/Moonlight real-model gates.
 func (m *Model) mlaAttention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
+	op := arch.mlaOpParamsAt(layer)
+	return m.mlaAttentionWith(&op, n, lw, arch, cache, layer, pos)
+}
+
+// mlaAttentionWith is mlaAttention with the rotation, norm epsilon, score scale and gate granularity given: the program walker's
+// form. The absorbed and naive forms are a knob (GOINFER_MLA_NAIVE) and a test seam, not part of the program, as fast attention is.
+func (m *Model) mlaAttentionWith(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	if mlaForceNaive || m.knobs.mlaNaive() {
-		return m.mlaAttentionNaive(n, lw, arch, cache, layer, pos)
+		return m.mlaAttentionNaive(op, n, lw, arch, cache, layer, pos)
 	}
-	return m.mlaAttentionAbsorb(n, lw, arch, cache, layer, pos)
+	return m.mlaAttentionAbsorb(op, n, lw, arch, cache, layer, pos)
 }
 
 // mlaAttentionNaive is one Multi-head Latent Attention layer. It projects the query
@@ -64,18 +37,18 @@ func (m *Model) mlaAttention(n []float32, lw *LayerWeights, arch *Architecture, 
 // per-position key. The q·k width (qk_head_dim) differs from the v width (v_head_dim), so
 // this can't reuse the uniform attendQuery — it's the new primitive. This is the
 // parity-reference path (bit-identical to HF); the production default is the absorb path.
-func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
+func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	p := arch.mla
 	w := lw.mla
 	hidden := arch.HiddenDim
-	eps := arch.NormEps
+	eps := op.Eps
 	H := arch.NumHeads
 	qkNope, qkRope, vHead := p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim
 	qkHead := qkNope + qkRope
 	rank := p.KVLoRARank
 	latDim := rank + qkRope
-	invFreq := arch.ropeInvFreq(layer)
-	ms := arch.ropeMscale(layer) // YaRN attention_factor folded into cos/sin (1.0 when none)
+	invFreq := op.InvFreq
+	ms := op.Mscale // YaRN attention_factor folded into cos/sin (1.0 when none)
 
 	// 1. Query: optional q_a→norm→q_b LoRA bottleneck, else a direct q_proj. Layout
 	// per head: [qk_nope | qk_rope].
@@ -98,7 +71,7 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 	for hh := range H {
 		copy(qRope[hh*qkRope:(hh+1)*qkRope], q[hh*qkHead+qkNope:hh*qkHead+qkHead])
 	}
-	mlaRope(qRope, H, qkRope, pos, invFreq, ms, p.ropeInterleave)
+	mlaRope(qRope, H, qkRope, pos, invFreq, ms, op.Interleave)
 
 	// 4. Attend causally over every stored latent. Reconstruct per-head k_nope/v from
 	// each position's latent (kv_b_proj on the normalized latent) and rope its shared key.
@@ -113,7 +86,7 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
 		kvUp := matvec(w.kvBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
 		copy(krj, lat[rank:latDim])
-		mlaRope(krj, 1, qkRope, j, invFreq, ms, p.ropeInterleave) // key rope at its own position
+		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave) // key rope at its own position
 		for hh := range H {
 			base := hh * (qkNope + vHead)
 			kNope := kvUp[base : base+qkNope]
@@ -125,7 +98,7 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 			for d := range qkRope {
 				s += qRope[hh*qkRope+d] * krj[d]
 			}
-			scores[hh*nKeys+j] = s * float32(arch.AttnScale)
+			scores[hh*nKeys+j] = s * float32(op.Scale)
 			copy(vKeys[(j*H+hh)*vHead:(j*H+hh+1)*vHead], v)
 		}
 	}
@@ -159,7 +132,7 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 	// applySigmoidGateRow's own comment). nil for every DeepSeek family.
 	if w.gProj != nil {
 		gate := matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
-		applySigmoidGateRow(gate, ctx, p.GateGranularity == "head_wise", H, vHead)
+		applySigmoidGateRow(gate, ctx, op.HeadWise, H, vHead)
 	}
 
 	// 6. Output projection (over the v_head_dim-wide context).
@@ -180,19 +153,19 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 // O(nKeys·H·rank) + O(H·(qkNope+vHead)·rank). Algebraically equal to the naive path
 // (cosine ~1.0; f32 reorder, not bit-exact). The latent append, query projection, and
 // RoPE are identical to the naive path.
-func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
+func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
 	p := arch.mla
 	w := lw.mla
 	hidden := arch.HiddenDim
-	eps := arch.NormEps
+	eps := op.Eps
 	H := arch.NumHeads
 	qkNope, qkRope, vHead := p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim
 	qkHead := qkNope + qkRope
 	rank := p.KVLoRARank
 	latDim := rank + qkRope
 	hRow := qkNope + vHead // per-head output block in kv_b_proj (k_nope rows ‖ v rows)
-	invFreq := arch.ropeInvFreq(layer)
-	ms := arch.ropeMscale(layer)
+	invFreq := op.InvFreq
+	ms := op.Mscale
 
 	// 1. Query (identical to naive): q_a→norm→q_b LoRA bottleneck, or a direct q_proj.
 	var q []float32
@@ -213,7 +186,7 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 	for hh := range H {
 		copy(qRope[hh*qkRope:(hh+1)*qkRope], q[hh*qkHead+qkNope:hh*qkHead+qkHead])
 	}
-	mlaRope(qRope, H, qkRope, pos, invFreq, ms, p.ropeInterleave)
+	mlaRope(qRope, H, qkRope, pos, invFreq, ms, op.Interleave)
 
 	// 4a. Absorb W_UK into the query: qNopeAbs[h] = W_UK_hᵀ · q_nope_h  ([rank] per head).
 	// W_UK_h is the k_nope rows of head h: kv_b_proj rows [h*hRow : h*hRow+qkNope].
@@ -242,7 +215,7 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 		copy(cn, lat[:rank])
 		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
 		copy(krj, lat[rank:latDim])
-		mlaRope(krj, 1, qkRope, j, invFreq, ms, p.ropeInterleave)
+		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave)
 		for hh := range H {
 			qa := qNopeAbs[hh*rank : (hh+1)*rank]
 			var s float32
@@ -253,7 +226,7 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 			for d := range qkRope {
 				s += qr[d] * krj[d]
 			}
-			scores[hh*nKeys+j] = s * float32(arch.AttnScale)
+			scores[hh*nKeys+j] = s * float32(op.Scale)
 		}
 	}
 
@@ -301,7 +274,7 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 	// 6.5. Bailing Hybrid's optional MLA output gate (see mlaAttentionNaive's own comment).
 	if w.gProj != nil {
 		gate := matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
-		applySigmoidGateRow(gate, ctx, p.GateGranularity == "head_wise", H, vHead)
+		applySigmoidGateRow(gate, ctx, op.HeadWise, H, vHead)
 	}
 
 	// 7. Output projection (over the v_head_dim-wide context).

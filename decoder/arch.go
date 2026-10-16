@@ -805,13 +805,9 @@ var ownForwards = []ownForwardFamily{
 	{"granitemoehybrid", func(a *Architecture) bool { return a.granite != nil }, (*Model).runLayersGranite, false, true, false, false},
 	// nemotron_h: single-op-per-block hybrid.
 	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true, false, false},
-	// bailing_hybrid: MLA / KDA hybrid (Ling 3.0). MUST precede deepseek_v2/v3 below —
-	// bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse mlaAttention
-	// directly), so a.mla != nil alone would also match it and misroute to runLayersDeepseek,
-	// which has no KDA branch at all.
+	// bailing_hybrid: MLA / KDA hybrid (Ling 3.0). bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse
+	// mlaAttention directly), so Architecture.layerOps must not build DeepSeek's program for it while it is listed here.
 	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true, false, false}, // Recurrent: KDA state mutates in place per token
-	// deepseek_v2/v3: Multi-head Latent Attention.
-	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false, false, false},
 }
 
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or
