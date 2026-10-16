@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -450,6 +452,33 @@ func oracleOps() int {
 	return 20000
 }
 
+// poolOps is TestOracle_pool's walk length: under -race a seventh of it. The manager starts no goroutine; the seeds,
+// which run in parallel and share only read-only class maps, all still run concurrently there, so the detector still
+// sees anything they share. The full walk runs in CI's race-free root jobs (TestOracle_runsInFullSomewhere).
+func poolOps() int {
+	if raceDetector {
+		return max(1, oracleOps()/7)
+	}
+	return oracleOps()
+}
+
+// TestOracle_runsInFullSomewhere fails when no CI step runs the whole module without -race and without -short, the run
+// in which TestOracle_pool walks its full length.
+func TestOracle_runsInFullSomewhere(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Skipf("no ci.yml to check (%v): this gate only applies in the repo", err)
+	}
+	for line := range strings.SplitSeq(string(b), "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(s, "run:") && strings.Contains(s, "go test") && strings.Contains(s, "./...") &&
+			!strings.Contains(s, "-race") && !strings.Contains(s, "-short") {
+			return
+		}
+	}
+	t.Error("no CI step runs `go test ./...` without -race and -short: TestOracle_pool's full walk would run nowhere")
+}
+
 // TestOracle_pool's seeds are independent walks, each on its own manager and oracle, so they run in parallel.
 func TestOracle_pool(t *testing.T) {
 	for seed := int64(1); seed <= 8; seed++ {
@@ -463,7 +492,7 @@ func TestOracle_pool(t *testing.T) {
 				{Model: "m", Precision: "f16", Namespace: "key-b"},
 			}
 			hits := 0
-			for o.op = 0; o.op < oracleOps(); o.op++ {
+			for o.op = 0; o.op < poolOps(); o.op++ {
 				before := len(o.seqs)
 				o.step()
 				if len(o.seqs) > before && o.seqs[len(o.seqs)-1].s.Published() > 0 {

@@ -16,6 +16,7 @@ import (
 // a huge canvas can no longer drive a ~GB allocation per request ahead of the model mutex. A
 // normal-sized image still preprocesses.
 func TestQwenPreprocess_inputPixelLimit_M15(t *testing.T) {
+	raceSubset(t)
 	cfg := QwenDefaultPreprocess()
 	enc := func(w, h int) []byte {
 		var buf bytes.Buffer
