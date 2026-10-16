@@ -103,7 +103,7 @@ func (r *resident) batchIneligible() string {
 		return "no attention geometry"
 	}
 	for _, L := range r.layers {
-		if L.qGate || L.delta != nil || L.geom == nil || L.geom.kEqV || L.window != 0 ||
+		if L.qGate || L.recurrent() || L.geom == nil || L.geom.kEqV || L.window != 0 ||
 			L.geom.hd != g0.hd || L.geom.kvDim != g0.kvDim || L.geom.nKV != g0.nKV {
 			return "a layer the batched step does not reproduce"
 		}
@@ -331,7 +331,7 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 		return false
 	}
 	L := &r.layers[l]
-	if L.moe != nil || L.g4moe != nil || L.delta != nil || L.qGate || L.window != 0 {
+	if L.moe != nil || L.g4moe != nil || L.recurrent() || L.qGate || L.window != 0 {
 		return false
 	}
 	g := L.geom

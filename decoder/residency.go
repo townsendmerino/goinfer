@@ -953,6 +953,9 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 // all-ZERO table of the same width. The resident rope kernels compute cos=cos(pos·invFreq)·mscale and
 // sin=sin(pos·invFreq)·mscale, so invFreq==0 is the identity rotation ONLY when mscale==1 (RopeMscaleLayer).
 // That holds for every family that sets layerNoPE today; a family combining YaRN with NoPE needs this revisited.
+// Nemotron-H's attention is NoPE as a family (nemotronAttention ropes nothing) and sets no layerNoPE, so its layers get
+// the zero table here too; the feature list does not derive FeatNoPE for it, because a backend that builds Nemotron-H
+// supplies the table this way or its own.
 // A RESIDENT-ONLY accessor: the CPU forward skips ropeAt for a NoPE layer.
 //
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
@@ -967,7 +970,7 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 		width = a.rotaryDim() / 2
 	}
 	out := make([]float32, width)
-	if a.isNoPELayer(i) {
+	if a.isNoPELayer(i) || a.nemotron != nil {
 		return out // all-zero: identity rotation, given mscale==1 on every NoPE layer today
 	}
 	for j, v := range inv {
@@ -1731,6 +1734,43 @@ func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, nu
 
 // Qwen35LinearLayer reports whether layer i is a Gated-DeltaNet mixer (vs gated softmax attention).
 func (m *Model) Qwen35LinearLayer(i int) bool { return m.w.arch.isLinearLayer(i) }
+
+// ResidentMixer is the sequence-mixing operation of one layer in a resident's layer walk.
+type ResidentMixer uint8
+
+const (
+	MixerAttention ResidentMixer = iota // softmax attention over a KV cache
+	MixerDeltaNet                       // the Gated-DeltaNet recurrence (Qwen3.5/3.6, Qwen3-Next, Olmo Hybrid)
+	MixerMamba                          // the Mamba-2 recurrence (Nemotron-H, Granite-4.0-H)
+	MixerNone                           // no mixer: a feed-forward-only block (Nemotron-H's MLP and MoE blocks)
+)
+
+// Recurrent reports whether the mixer keeps per-sequence recurrent state instead of a KV cache.
+func (x ResidentMixer) Recurrent() bool { return x == MixerDeltaNet || x == MixerMamba }
+
+// ResidentLayerOps is layer i's operations in a resident's layer walk: its mixer, then a feed-forward block when ffn is true.
+// It is the smallest form of the operation-list layer program (docs/tasks/task-forward-architecture-2026-10.md §4.1): a
+// backend builds and encodes each layer from these two facts, so a hybrid of existing kinds needs no family branch.
+// Most families give every layer (MixerAttention, true); Nemotron-H's blocks carry one operation each.
+func (m *Model) ResidentLayerOps(i int) (mixer ResidentMixer, ffn bool) {
+	a := m.w.arch
+	switch {
+	case a.nemotron != nil:
+		switch a.nemotron.blockKind[i] {
+		case nemoMamba:
+			return MixerMamba, false
+		case nemoAttn:
+			return MixerAttention, false
+		default: // nemoMLP, nemoMoE
+			return MixerNone, true
+		}
+	case a.qwen35 != nil && a.isLinearLayer(i):
+		return MixerDeltaNet, true
+	case a.granite != nil && a.isMambaLayer(i):
+		return MixerMamba, true
+	}
+	return MixerAttention, true
+}
 
 // Qwen35DeltaWeights returns layer i's DeltaNet parameters. The three dominant projections come
 // back as *linalg.WeightMat because they carry the model's quant (int4/int8/f32) — a backend

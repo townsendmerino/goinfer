@@ -27,7 +27,7 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, r.ctxCap)}
 	case len(r.kvSlotBufs) < 2:
 		return &decoder.KVCopyDecline{Reason: "one KV slot"}
-	case r.dnet != nil:
+	case r.recurrentModel():
 		return &decoder.KVCopyDecline{Reason: "recurrent state is not part of a KV slot"}
 	}
 	if start == end {

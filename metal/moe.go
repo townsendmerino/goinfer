@@ -665,9 +665,12 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 		if L.moe != nil && L.moe.pool != nil {
 			closeDense()
 			e := r.q.Begin() // phase 1: mixer/attention + router -> rIdx/rWgt
-			if L.delta != nil {
+			switch {
+			case L.delta != nil:
 				r.encodeDeltaNetMixer(e, L)
-			} else {
+			case L.mamba != nil:
+				r.encodeMambaMixer(e, L, r.x)
+			case L.geom != nil:
 				r.encodeAttention(e, l)
 			}
 			r.encodeMoERouter(e, L)

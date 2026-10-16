@@ -554,7 +554,7 @@ func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f
 		return nil, e
 	}
 	if pos == 0 {
-		// A fresh sequence re-zeroes any Gated-DeltaNet state left by a prior Generate on this resident (no-op for other families).
+		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other families).
 		a.Reset()
 	}
 	logits := a.r.ForwardEmbMRoPEPipe(embedding, pos, ropePos)
@@ -900,7 +900,7 @@ func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [
 	if len(blocks) == 0 {
 		return nil, fmt.Errorf("metal: no image block")
 	}
-	if !a.r.prefillOK || a.r.pleP > 0 || a.r.dnet != nil || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
+	if !a.r.prefillOK || a.r.pleP > 0 || a.r.recurrentModel() || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
 		return nil, fmt.Errorf("metal: the resident image prefill takes the plain uniform pass; this model's image turn prefills on the CPU")
 	}
 	if !a.fastPrefill() {
@@ -1305,7 +1305,7 @@ func (a *metalResident) TruncateTo(pos int) {}
 // Reset zeroes every Gated-DeltaNet layer's causal-conv ring and recurrent matrix state (no-op for every other family; a.r.dnet is
 // nil). Unlike KV positions this state compounds, so a fresh sequence on the same resident must reset it or it keeps decaying the
 // previous sequence's state (resetDeltaNet).
-func (a *metalResident) Reset() { a.r.resetDeltaNet() }
+func (a *metalResident) Reset() { a.r.resetRecurrent() }
 
 var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
 
