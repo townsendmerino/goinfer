@@ -1985,6 +1985,9 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateNemotron(); err != nil {
 		return nil, nil, err
 	}
+	if cfg.AttentionHeadDim > 0 {
+		cfg.HeadDim = cfg.AttentionHeadDim // NVIDIA's key; without it the width would fall back to hidden/heads, which is not this family's
+	}
 	hd := cfg.headDim()
 	kind := make([]uint8, cfg.NumLayers)
 	hasMoE := false
