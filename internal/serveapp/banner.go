@@ -26,6 +26,7 @@ type bannerFacts struct {
 	headTable    string // the embedding / LM-head table's precision (decoder.Model.HeadTable); "" when unknown
 	prefillPath  string
 	resident     bool // the model decodes through the resident runner (⇒ stateless, no prefix reuse)
+	snapshots    bool // the resident can hold prefix snapshots in host memory (decoder.Model.KVSnapshotsSupported)
 	hasTemplate  bool
 	toolCallForm bool // the template exposes a constrainable tool-call form
 	spec         bool
@@ -92,6 +93,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 		headTable:    lm.model.HeadTable(),
 		prefillPath:  prefillWhy,
 		resident:     lm.model.ResidentActive(),
+		snapshots:    lm.model.KVSnapshotsSupported(),
 		hasTemplate:  lm.tmpl != nil,
 		spec:         lm.spec,
 		blockDrafter: lm.blockSpec != nil,
@@ -266,6 +268,22 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		out = append(out, fmt.Sprintf("session reuse: on (%d conversations kept prefilled)", cfg.kvSessions))
 	default:
 		out = append(out, "session reuse: OFF (--kv-sessions 0)")
+	}
+
+	if f.resident {
+		switch {
+		case cfg.kvHostBytes <= 0:
+			how := cfg.kvHostBytesHow
+			if how == "" {
+				how = "-kv-host-bytes 0"
+			}
+			out = append(out, "prefix snapshots: OFF ("+how+")")
+		case !f.snapshots:
+			out = append(out, "prefix snapshots: not on this backend or model family")
+		default:
+			out = append(out, fmt.Sprintf("prefix snapshots: budget %s (%s), 0 B held; host memory is pinned only while a snapshot is held "+
+				"(taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)", gib(cfg.kvHostBytes), cfg.kvHostBytesHow))
+		}
 	}
 
 	// What it can do, in the terms a harness asks about.

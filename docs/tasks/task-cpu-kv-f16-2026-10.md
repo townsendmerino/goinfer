@@ -1,6 +1,8 @@
 # Task: f16 KV on the CPU as the command-line default, with f32 kept as the reference (2026-10)
 
-> **Status: APPROVED 2026-10-15 (owner), to build after G40 passes; gates registered 2026-10-14 (§5).** The owner asked for it on 2026-10-12 ("can we keep f32
+> **Status: way A BUILT and merged 2026-10-16 (#55) as `--kv f16`, opt-in; `auto` stays f32. F0, F1 and F5 pass; F3's
+> in-process A/B resolves f16 slower at depth (0.925 on the 0.5B at 4,096), so way A cannot become the default (§5b). Way B is
+> the owner's call. Approved 2026-10-15; gates registered 2026-10-14 (§5).** The owner asked for it on 2026-10-12 ("can we keep f32
 > as an option for kv on cpu, but make default f16? f32 would be important for our reference"). On 2026-10-14 the owner
 > asked for a recommendation on the two open decisions (§1, answered in §1a) and for the gates, with building to follow
 > G40 by day if approved. Nothing here is measured yet. The facts about the code were read at main `88665dbe`, re-read
@@ -387,7 +389,35 @@ The build adds `--kv f16`, a real f16 cache on a CPU load, priced and printed as
     - **A row narrowed twice cannot go red,** and is not built: f32 to f16 to f32 to f16 gives the same bits, because every f16
       value is exact in f32.
 - **F5, the library default:** `TestKVF16_F5LibraryDefaultIsF32` PASS, and the forward goldens pass in the parity refresh.
-- **Still owed, before `auto` can move:** F3's in-process A/B by day, then F2, F4 and F3's served cells at night, each
+- **F3's day half, the in-process A/B: f16 is slower at depth; one cell resolves it.** `TestKVF16_F3InProcessAB`
+  (`decoder/kv_f16_ab_test.go`), on this Mac, merged main `2c56d9c6`, under the timing lock. Spotlight was indexing
+  (load average 5.5 at the start); the pairs are interleaved ABBA, so drift falls on both arms. The quantity is f32
+  ms/token ÷ f16 ms/token, the decode-rate ratio f16 ÷ f32, over 24 greedy tokens per generation.
+
+  | cell | pairs | median | range | pairs under 1 | read (TE5(b)) |
+  |---|---|---|---|---|---|
+  | 0.5B, depth 128 | 6 | 0.974 | 0.836–1.072 | 4 | unresolved |
+  | 0.5B, depth 4,096 | 4 | **0.925** | 0.857–0.978 | **4** | **resolved: f16 slower** |
+  | 1.5B, depth 128 | 6 | 0.955 | 0.924–1.088 | 4 | unresolved |
+  | 1.5B, depth 4,096 | 4 | 0.861 | 0.845–1.016 | 3 | unresolved by the sign rule |
+
+  - **The prediction** (§ F3): the 128-key cells within ±2% of 1.00 (0.7), and a deep cell under 0.98 (0.35). The deep
+    cells came in under 0.98, as the second predicted. The 128-key medians sit just outside ±2%, but those cells did not
+    resolve.
+  - **What the resolved cell decides.** Over 142 examined changes, every resolved in-process pair agreed in sign with its
+    served A/B, so the served deep cells would read under 1.00. That reading is parked at best (§ F3's bars) and cannot
+    ship way A as the default. The served cells were registered to decide a default, and this one already has its
+    answer, so they are not queued (CLAUDE.md, "stop as soon as the answer is clear").
+  - **The mechanism,** as §4 put it: way A widens the whole stored history into scratch on every decode step, and that
+    pass grows with depth (1.5B at 4,096: 40.6 against 36.3 ms/token, means).
+  - **The greedy streams differ early,** as an f16 cache may: 3 of 24 tokens agree before the first difference at depth
+    128 on the repeated-" the" prompt the harness uses, 7 to 18 at depth 4,096. F2 is the gate for fidelity, and this
+    prompt is near-tie territory; it is logged, not graded.
+  - Log: `docs/measurements/cpu-kv-f16-2026-10-16/f3-inproc.log`.
+- **Way A stays opt-in (`--kv f16`), and `auto` stays f32.** Whether to build way B, the widening inside the attention
+  kernels (§4, aikit work, whose pushes and tags are the owner's), is the owner's call. F2 and F4 then run for whichever
+  way is a candidate for the default; for way A as an option, F1's exactness and F5 are what it needs, and both passed.
+- **Was still owed, before F3's day half read:** F3's in-process A/B by day, then F2, F4 and F3's served cells at night, each
   fit-checked before it is queued. Until they read, and until the owner says so, the default stays f32 everywhere.
   Record: `docs/measurements/cpu-kv-f16-2026-10-16/`.
 

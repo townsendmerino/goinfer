@@ -97,6 +97,7 @@ type Model struct {
 	resCtxPinned  bool         // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	kvShareOff    bool         // Options.KVShareOff
+	kvSnaps       *kvSnapStore // Options.KVHostBytes: the held prefix snapshots, nil when off
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
@@ -423,6 +424,12 @@ type Options struct {
 	// continuation of a slot's own sequence (KVScope.Off for every request; docs/tasks/task-kv-architecture-2026-10.md
 	// §5.15). serve sets it for -kv-share off and when it answers the network without an API key.
 	KVShareOff bool
+	// KVHostBytes is the host memory budget for prefix snapshots (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): after a cold
+	// first prefill of a long prompt a GPU-resident backend that implements ResidentKVSnapshotter copies the prompt's KV to pinned
+	// host memory, and a later request that starts with the same ids restores it instead of prefilling it. 0 turns it off, and
+	// nothing is held while no snapshot is. Pinned memory is allocated when a snapshot is taken and freed when it is dropped.
+	// serve sets it from -kv-host-bytes.
+	KVHostBytes int64
 	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
 	// forward (MC3c step 2, docs/tasks/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
 	// default) batches an eligible model with at least 2 GiB of dense weights; CPUBatchOn batches every
@@ -488,7 +495,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts),
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, disableFit: opts.DisableFit,
+		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
@@ -850,6 +857,7 @@ func (m *Model) Close() error {
 		_ = m.pager.close()
 		m.pager = nil
 	}
+	m.kvSnaps.releaseAll() // pinned host memory, freed before the device it was pinned for
 	if m.resident != nil {
 		_ = m.resident.Close()
 		m.resident = nil
@@ -1832,7 +1840,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 			// The prompt's rows are final: publish them for a request that arrives while this one decodes. A generation
 			// that ends without its commit forgets them, as it would anything it wrote (before markSlot frees the slot).
-			mc3.exclusive(func() { m.residentPublishPrompt(mc3Slot, prompt, lora) })
+			mc3.exclusive(func() {
+				m.residentPublishPrompt(mc3Slot, prompt, lora)
+				m.residentSnapshotPrompt(mc3Slot, prompt, lora, scope, acq)
+			})
 			defer func() {
 				if !mc3Committed {
 					mc3.exclusive(func() { m.kvSlots().Forget(mc3Slot) })
@@ -1845,9 +1856,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				g.err = err
 				return
 			}
+			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq) // before the first decode step writes past the prompt
 		}
 		g.PrefillReused, g.PrefillSlot, g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
 		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
+		g.KVSnapRestored, g.KVSnapRestore = acq.snapRows, acq.snapDur
 		gpuPos = len(prompt)
 	} else {
 		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
@@ -2407,6 +2420,10 @@ type Generation struct {
 	PrefillShared  int
 	KVCopy         time.Duration
 	KVCopyDeclined string
+	// KVSnapRestored is how many of the PrefillReused rows a host snapshot restored (Options.KVHostBytes), and KVSnapRestore that
+	// restore's wall time. 0 when none did.
+	KVSnapRestored int
+	KVSnapRestore  time.Duration
 	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ResidentImagePrefill, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a

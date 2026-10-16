@@ -785,6 +785,20 @@ to ignore.**
   signature this server did not mint carries nothing. A client sends `tool_use` input back as JSON it parsed, so arguments
   the model spaced return compacted: the closed list above keeps their ids. Not covered: Chat Completions (no carrier), and
   a reply whose calls the client echoes as separate turns.
+- **Prefix snapshots in host memory** (`-kv-host-bytes`). A GPU card with one KV slot loses the previous session's prompt the moment
+  the next session starts, and a coding agent's sessions share almost all of their first prompt (the system prompt, the tool
+  definitions, the environment). After a **cold first prefill of 2,048 ids or more**, a GPU-resident model copies the prompt's full
+  blocks of KV to **pinned host memory**, keyed by the token ids under the same root KV sharing uses (namespace, model, adapter, KV
+  precision); a later request whose prompt starts with those ids **restores** the rows into its slot by device copy and prefills only
+  the rest. The rows are prefill-class rows copied before any decode step, so the restored prefix is the prefix computed and the reply
+  is the cold one. The budget defaults to **a tenth of the machine's RAM, at most 8 GiB** (`-kv-host-bytes` sets it: `0` turns the
+  feature off, or a byte count with an optional K, M or G). Memory is pinned only while a snapshot is held, so an idle server holds
+  none; the least recently restored snapshot goes first, and a longer prompt of a held prefix replaces the shorter snapshot. A
+  snapshot is never written to disk, never crosses a namespace, and `-kv-share off` turns snapshots off too. A windowed model serves
+  a restore only within the window's rollback of the snapshot's end, so a prompt whose part after the shared prefix is longer than
+  that does not qualify; `/admin/status` counts those (`kv_snapshots.<model>.unqualified`) with the snapshots held, taken, restored,
+  evicted and declined by reason. The startup banner states the budget; a restored request's `-log-requests` line ends with
+  `snap=<rows>`. CUDA only today (`docs/tasks/task-kv7-prefix-snapshot-2026-10.md`).
 - **A fast alias for side requests.** A served model `N` also answers to `N-fast`: the same weights, chat template and KV slot,
   with thinking off (the request's own thinking controls are overridden) and nothing else different: its output limit is the
   request's, or the main model's default, with no cap of its own (`-fast-alias=false` turns the alias off). It is for the requests

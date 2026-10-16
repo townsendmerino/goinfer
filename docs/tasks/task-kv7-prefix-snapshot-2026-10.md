@@ -7,6 +7,19 @@ only the rest. Nothing here is built. The data behind it is `docs/measurements/s
 (PR #52): a session's first request is 63 to 122 s of cold prefill, 99.8% of it shared with the previous session, and a one-slot
 card keeps none of it (the previous session ended 760 to 9,932 positions past the shared prefix, against a 448 rollback).
 
+## Owner decisions (2026-10-16): approved to build
+
+- **Budget:** 10% of physical RAM, capped at 8 GiB, by default; **pinned only when a snapshot is taken**, so nothing is held while
+  idle. `-kv-host-bytes` overrides it (`auto`, `0` off, or a byte count); the budget and use are logged at startup and in `/admin/status`.
+- **Admission: first touch.** **The preamble marker is not waited for:** first prompts that do not qualify (the part after the shared
+  prefix past the rollback) are counted (`unqualified`), and tier 1 reports that count.
+- **Gates as designed:** tier 0 bit-identity with all five planted defects; tier 1 the opencode and Codex session-start replay with
+  replies identical on and off, and one Claude Code session start on Qwen3-4B if it fits by day.
+- **Built on `kv7-snapshot-2026-10`; PR merged by hand on green CI after tier 1.**
+- **Status (2026-10-16): built, tier 0 and tier 1 passed** (`docs/measurements/kv7-snapshot-2026-10/kv7-tier1-2026-10-16.md`): opencode and
+  Codex session starts on Mellum2.1 78.3 s and 61.9 s to 0.3 s with equal replies, a Claude Code start on Qwen3-4B 28.4 s to 5.6 s; the
+  take costs more than estimated (185 ms to 1.66 s). The preamble marker remains the second step.
+
 ## 1. Does it work on today's slot storage, without KV4?
 
 **Yes, as `CopyKV` does, with a host endpoint instead of a second slot.** Everything it needs exists:

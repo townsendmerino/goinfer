@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
@@ -241,6 +242,23 @@ func TestSideRequests_sessionStartPrefix(t *testing.T) {
 		100*q(shareFrac, 0), 100*q(shareFrac, .5), 100*q(shareFrac, 1))
 	t.Logf("how far past the shared prefix the previous session ended: min %.0f, median %.0f, max %.0f ids (floor %d)", q(over, 0), q(over, .5), q(over, 1), floor)
 	t.Logf("pairs where a one-slot card could serve the prefix (ended within %d of it): %d of %d", floor, fits, pairs)
+	// A prefix snapshot is taken at the end of the first prefill, b = n/64*64 rows, and serves a later session within the rollback of that
+	// end: it does not qualify when the later session shares less than b-rollback ids with it.
+	disq, worst := 0, 0
+	for i, a := range ss {
+		b := len(a.first) / kvmgr.BlockRows * kvmgr.BlockRows
+		for j, o := range ss {
+			if i == j {
+				continue
+			}
+			past := b - idsLCP(a.first, o.first)
+			worst = max(worst, past)
+			if past > floor {
+				disq++
+			}
+		}
+	}
+	t.Logf("snapshot qualification: of %d pairs (a snapshot taken at the end of one session's first prefill, a later session sharing a prefix), %d do not qualify (the snapshot ends more than %d past the shared prefix); the largest is %d ids past", pairs, disq, floor, worst)
 	for _, x := range ss {
 		t.Logf("  %-28s first prompt %5d ids, %2d requests, final slot %5d ids", x.name, len(x.first), x.n, x.finalL)
 	}
