@@ -1895,6 +1895,31 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
 - **I: PASS** (37 IDENTICAL; `lfm2` in all three cells). **P and L: PASS.** Logs:
   `docs/measurements/op3-2026-10/op3g-identity-tiny.log`, `docs/measurements/op3-2026-10/op3g-PL.log`.
 
+**OP3h, Granite-4.0-H: readings, 2026-10-16 (same branch).**
+- **The build:** Granite walks the program (`Architecture.graniteLayerOps`):
+  - `opMamba2`, whose parameters are the gated norm's epsilon and group count; the heads, state and conv sizes are shapes;
+  - the generic attention list with `attendQuery`;
+  - a MoE FFN;
+  - a new `residual` scale for residual_multiplier;
+  - the embedding multiplier as the embed stage's scale.
+  - Its isolation seams shape the program: GOINFER_SSM_NOMUL sets the multipliers to 1, and GOINFER_SSM_SKIPFFN drops the FFN.
+    The layer-sweep seam truncates the per-token walker.
+  - Its loop goes.
+- **Found while building, fixed:** two rollback-guard tests built hybrid `Architecture`s with no layers, which carry no
+  recurrent operation once the rule reads the layers. Each now gets one recurrent layer, since a family of attention layers
+  only has no in-place state.
+  - LFM2 had failed one of them since OP3g, and my targeted run pattern for OP3g missed it. From here, the whole decoder
+    package runs once per step before its record.
+- **I: PASS.** 37 IDENTICAL; `granite` and `granitemoehybrid` in all three cells. **P and L: PASS.** `residual.Scale` is live
+  on Granite. Logs: `docs/measurements/op3-2026-10/op3h-identity-tiny.log`, `docs/measurements/op3-2026-10/op3h-PL.log`.
+- **The whole decoder package, at the end of OP3h** (`docs/measurements/op3-2026-10/op3h-decoder-full.log`): three red.
+  - `TestDispatchCensus`: the walkers carry copies of `causalAttention`'s and the gated FFN's W8A8 and W4A8 capability guards,
+    and the census records sites by content. They are now declared with that reason, and the fused gate/up entry is re-keyed
+    to its new content.
+  - `TestParityManifest_fresh`: stale between refreshes, as expected; the refresh runs before each push.
+  - `TestFitEstimate_q4kAgreesWithResidentWeightBytes`: the fit guard refused the 1.5B because the Mac had 2.7 GB available
+    at that moment. This is the machine's memory, not this change.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

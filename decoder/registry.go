@@ -1823,7 +1823,7 @@ func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // attention_multiplier instead of 1/√d. The MoE is GraniteMoe-style (fused gate+up
 // experts + an ungated shared expert) but its softmax-top-k routing is identical to
 // the Mixtral path, so moeMLP serves it unchanged once the fused tensors are split
-// at load. Dedicated loader (buildGraniteWeights) + forward (runLayersGranite).
+// at load. Dedicated loader (buildGraniteWeights); its program is Architecture.graniteLayerOps.
 func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGranite(); err != nil {
 		return nil, nil, err
@@ -1892,7 +1892,7 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		// generates the wrong text, which is why this is config-driven and gated by the
 		// real-checkpoint oracle rather than by the tiny fixture (which is roped).
 		layerNoPE:    nopePredicate(cfg.PositionEmbeddingType),
-		EmbedScale:   0, // embedding_multiplier applied in runLayersGranite, not the Gemma sqrt path
+		EmbedScale:   0, // embedding_multiplier is the program's embed scale (Architecture.embedScale), not the Gemma sqrt path
 		TiedLMHead:   false,
 		LogitScale:   logitScale,
 		layerIsMamba: func(i int) bool { return i < len(types) && types[i] == "mamba" },

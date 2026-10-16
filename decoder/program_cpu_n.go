@@ -200,9 +200,12 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 					return nil, err
 				}
 			case opResidual:
-				if o.res.Two {
+				switch {
+				case o.res.Two:
 					addResidual2(h, att, mlpOut)
-				} else {
+				case o.res.Scale != 0:
+					addScaled(h, att, float32(o.res.Scale))
+				default:
 					addResidual(h, att)
 				}
 			default:
@@ -476,8 +479,8 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 				}
 				matmul(be, &lw.DownProj, gate, out, B)
 			case opResidual:
-				if o.res.Two {
-					return nil, fmt.Errorf("decoder: layer %d: the multi-sequence walker has no parallel block", l)
+				if o.res.Two || o.res.Scale != 0 {
+					return nil, fmt.Errorf("decoder: layer %d: the multi-sequence walker has no parallel block or scaled residual", l)
 				}
 				addResidual(h, att)
 			default:

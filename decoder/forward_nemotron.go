@@ -14,7 +14,7 @@ import "unsafe"
 // non-gated relu² experts (nemotronMoE/nemotronExpertFFN below) — NOT moeMLP, which
 // hard-requires gated SwiGLU experts every other MoE family in this tree has. Plain
 // RMSNorm, no multipliers. Parity-first f32, one token per call (prefill drives it
-// sequentially so the Mamba-2 recurrence sees every token), mirroring runLayersGranite.
+// sequentially so the Mamba-2 recurrence sees every token), as Granite-4.0-H does.
 func (m *Model) runLayersNemotron(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup

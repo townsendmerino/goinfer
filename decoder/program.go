@@ -38,10 +38,11 @@ const (
 	opMLA                         // in → out, the whole Multi-head Latent Attention sublayer (mlaAttentionWith)
 	opKDA                         // in → out, the whole Kimi Delta Attention mixer (kdaMixerStep), on the layer's recurrent state
 	opShortConv                   // in → out, LFM2's gated short convolution (shortConvStep), on the layer's conv window
+	opMamba2                      // in → out, the Mamba-2 selective-scan mixer (mamba2Step), on the layer's SSM state
 )
 
 // recurrent reports whether the operation mutates per-layer state in place, which no positional rewind restores.
-func (k opKind) recurrent() bool { return k == opKDA || k == opShortConv }
+func (k opKind) recurrent() bool { return k == opKDA || k == opShortConv || k == opMamba2 }
 
 // genericKinds are the operations of the generic layer: the ones the batched and multi-sequence walkers implement, LoRA's
 // deltas reach (q/k/v, o and the gated FFN), and the layer pager's spans cover.
@@ -72,6 +73,7 @@ type op struct {
 	res     residualParams
 	mla     mlaOpParams
 	kda     kdaOpParams
+	mamba   mamba2OpParams
 }
 
 // normSlot selects which of a layer's norm weights an opNorm applies.
@@ -206,7 +208,19 @@ type ffnParams struct {
 	Alpha, Limit float64   // ffnGptOss: the gate's sigmoid gain and the clamp bound
 }
 
-type residualParams struct{ Two bool } // adds regA and regB, the parallel block's single residual
+// residualParams: Two adds regA and regB, the parallel block's single residual; Scale, when not 0, multiplies what is added
+// (Granite's residual_multiplier).
+type residualParams struct {
+	Two   bool
+	Scale float64
+}
+
+// mamba2OpParams are an opMamba2's: the gated norm's epsilon and its group count (1 normalises the whole inner width). The
+// heads, state and conv sizes are shapes, read from the Architecture.
+type mamba2OpParams struct {
+	Eps        float64
+	NormGroups int
+}
 
 type embedParams struct {
 	Scale      float64 // 0 or 1 = none
@@ -224,7 +238,7 @@ type headParams struct {
 // (first_k_dense_replace) do not, and only the weights say so.
 func buildProgram(a *Architecture, experts func(l int) bool) *program {
 	p := &program{
-		embed: embedParams{Scale: a.EmbedScale, LearnedPos: a.LearnedPosEmbed},
+		embed: embedParams{Scale: a.embedScale(), LearnedPos: a.LearnedPosEmbed},
 		head: headParams{
 			Norm: normParams{Slot: slotFinal, Form: a.normForm(), Eps: a.NormEps, AddOne: a.RMSAddOne, Bias: true},
 			Tied: a.TiedLMHead, Softcap: a.FinalLogitSoftcap, LogitScale: a.LogitScale,
@@ -238,6 +252,18 @@ func buildProgram(a *Architecture, experts func(l int) bool) *program {
 		p.layers[l] = a.layerOps(l, experts != nil && experts(l))
 	}
 	return p
+}
+
+// embedScale is the factor the embedding stage multiplies by: Granite's embedding_multiplier (1 under GOINFER_SSM_NOMUL), else
+// EmbedScale.
+func (a *Architecture) embedScale() float64 {
+	if a.granite != nil {
+		if ssmNoMul {
+			return 1
+		}
+		return float64(a.granite.EmbMul)
+	}
+	return a.EmbedScale
 }
 
 func (a *Architecture) normForm() normForm {
@@ -276,6 +302,9 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 
 	if a.llama4 != nil {
 		return a.llama4LayerOps(l, input, ffn)
+	}
+	if a.granite != nil {
+		return a.graniteLayerOps(l, input, ffn)
 	}
 	if a.lfm2 != nil && a.isConvLayer(l) {
 		return []op{input(slotPreAttn), {kind: opShortConv, in: regX, out: regA}, {kind: opResidual}, input(slotPreMLP), ffn(regA), {kind: opResidual}}
@@ -331,7 +360,7 @@ func (a *Architecture) attentionOps(l int) []op {
 
 func (k opKind) String() string {
 	names := [...]string{opNorm: "norm", opProjQKV: "proj-qkv", opQKNorm: "qk-norm", opRope: "rope", opAttnTemp: "attn-temp",
-		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda", opShortConv: "short-conv"}
+		opAttention: "attention", opOutGate: "out-gate", opProjO: "proj-o", opFFN: "ffn", opResidual: "residual", opMLA: "mla", opKDA: "kda", opShortConv: "short-conv", opMamba2: "mamba2"}
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}
@@ -380,10 +409,44 @@ func (a *Architecture) attnOrder() attnOrder {
 		return attnQuery
 	case a.mla != nil:
 		return attnMLA
-	case a.lfm2 != nil:
+	case a.lfm2 != nil, a.granite != nil:
 		return attnQuery
 	}
 	return attnBatchedAcc64
+}
+
+// graniteLayerOps is a Granite-4.0-H layer: pre-norm, a Mamba-2 mixer or GQA attention, each sublayer's output scaled by
+// residual_multiplier before its add, and a MoE FFN. The isolation seams GOINFER_SSM_NOMUL (multipliers 1) and
+// GOINFER_SSM_SKIPFFN (no FFN) shape the program, as they shaped the loop it replaced.
+func (a *Architecture) graniteLayerOps(l int, input func(normSlot) op, ffn func(opReg) op) []op {
+	resid := op{kind: opResidual, res: residualParams{Scale: float64(a.granite.ResidMul)}}
+	if ssmNoMul {
+		resid.res.Scale = 1
+	}
+	ops := []op{input(slotPreAttn)}
+	if a.isMambaLayer(l) {
+		ops = append(ops, op{kind: opMamba2, in: regX, out: regA, mamba: mamba2OpParams{Eps: a.NormEps, NormGroups: 1}})
+	} else {
+		ops = append(ops, a.attentionOps(l)...)
+	}
+	ops = append(ops, resid)
+	if ssmSkipFFN {
+		return ops
+	}
+	return append(ops, input(slotPreMLP), ffn(regA), resid)
+}
+
+// mamba2Shapes is the Mamba-2 geometry of a Granite or Nemotron-H layer, with gated-norm group count g.
+func (a *Architecture) mamba2Shapes(g int) mamba2Params {
+	switch {
+	case a.granite != nil:
+		p := a.granite
+		return mamba2Params{NHeads: p.NHeads, HeadDim: p.HeadDim, DState: p.DState, NGroups: p.NGroups, DConv: p.DConv, Hidden: a.HiddenDim, NormGroups: g}
+	case a.nemotron != nil:
+		p := a.nemotron
+		return mamba2Params{NHeads: p.NHeads, HeadDim: p.HeadDim, DState: p.DState, NGroups: p.NGroups, DConv: p.DConv, Hidden: a.HiddenDim, NormGroups: g}
+	}
+	return mamba2Params{}
 }
 
 // llama4LayerOps is a Llama 4 layer: pre-norm, and attention that varies by layer. A RoPE layer rotates q and k (mlaRope's

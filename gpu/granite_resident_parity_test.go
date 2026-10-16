@@ -12,7 +12,7 @@ import (
 
 // TestGraniteResidentParity is the whole-model integration gate: resident granite-4.0-h-tiny
 // (Mamba SSM mixer + attention + MoE-every-layer + the 4 Granite multipliers) vs the CPU
-// runLayersGranite, feeding the SAME fixed token sequence to both and comparing logits at
+// program walker, feeding the SAME fixed token sequence to both and comparing logits at
 // 1/16/256/1k/2k tokens. State (conv ring + ssm + KV) COMPOUNDS, so an integration error (a wrong
 // multiplier fold, mixer-kind misroute, or pos off-by-one) shows as a cosine that DRIFTS long.
 // GOINFER_SSM_NTOK bounds the run.

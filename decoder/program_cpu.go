@@ -36,6 +36,9 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 	pos := cache.Pos() // this position, stable across layers in one forward
 	var t attnTimer
 	for l, ops := range prog.layers {
+		if ssmStopLayer >= 0 && l > ssmStopLayer {
+			break // the resident-SSM bring-up's layer sweep (SetSSMStopLayerForTest)
+		}
 		if m.layerPager != nil {
 			m.layerPager.enterLayer(l)
 		}
@@ -136,9 +139,17 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
 					}
 				}
-				addResidual(h, scr.sub)
+				if o.res.Scale != 0 {
+					addScaled(h, scr.sub, float32(o.res.Scale))
+				} else {
+					addResidual(h, scr.sub)
+				}
 			case opMLA:
 				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
+				lastFFN = false
+			case opMamba2:
+				mp := arch.mamba2Shapes(o.mamba.NormGroups)
+				copy(m.reg(o.out, h, scr), mamba2Step(m.reg(o.in, h, scr), lw.mamba, mp, o.mamba.Eps, cache.mamba[l]))
 				lastFFN = false
 			case opShortConv:
 				copy(m.reg(o.out, h, scr), shortConvStep(m.reg(o.in, h, scr), lw.shortConv, *arch.lfm2, arch.HiddenDim, cache.conv[l]))
