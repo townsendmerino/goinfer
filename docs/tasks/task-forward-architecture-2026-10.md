@@ -1247,7 +1247,7 @@ guard admitted both loads; nothing was bypassed. Record: `docs/measurements/op2b
 
 - **Control, the dense 1.5B:** min cosine 0.997134, argmax 27/32. Over 0.95, so the run counts.
 - **The Nemotron-H slice:** min cosine 0.994410 against 0.88; argmax 29/32 against 16. **PASS.**
-- **What stays open:** the whole model, for which this Mac has no room, and filed as B26 (`docs/queue-engineering.md`).
+- **What stays open:** the whole model, for which this Mac has no room, and filed as B27 (`docs/queue-engineering.md`).
 
 **Declared, 2026-10-15 (owner: the slice stands in for tier 1 for now): Metal declares `ssm` and `non-gated-relu2`,
 int4 only.**
@@ -1257,7 +1257,7 @@ int4 only.**
   - gate S;
   - the tier 0 kernel tests (K, the norm groups, ReLU²), the guard gate and the int8 decline, each with its plant;
   - the three-layer slice of the real 9B against the CPU, above.
-- **Owed under B26:** the whole-model run. B26 keeps the Mamba projections at int8 in the .giw so the whole 9B fits this Mac
+- **Owed under B27:** the whole-model run. B27 keeps the Mamba projections at int8 in the .giw so the whole 9B fits this Mac
   at night, against the bars above.
 - **The matrices:** Nemotron-H reads resident on Metal. Granite-4.0-H stays on the CPU: its runner-shape bring-up gate holds
   it, `buildMamba` declines it, and only its "missing: `ssm`" reason goes. The admission golden lists Metal for both,

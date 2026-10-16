@@ -54,7 +54,7 @@ type mamba2Weights struct {
 }
 
 // mambaProjInt8 reports whether a load at q holds Nemotron-H's Mamba projections as int8: every integer quant does, and
-// an f32, bf16 or f16 load keeps them f32 (docs/queue-engineering.md, B26).
+// an f32, bf16 or f16 load keeps them f32 (docs/queue-engineering.md, B27).
 func mambaProjInt8(q quantMode) bool {
 	switch q {
 	case quantInt8, quantInt8I8, quantInt4, quantInt4Mix, quantQ4K:
@@ -63,7 +63,7 @@ func mambaProjInt8(q quantMode) bool {
 	return false
 }
 
-// mambaKeepF32ForTest keeps the f32 projections on a quantized load: the f32 arm of B26's fidelity bar, and its planted defect.
+// mambaKeepF32ForTest keeps the f32 projections on a quantized load: the f32 arm of B27's fidelity bar, and its planted defect.
 var mambaKeepF32ForTest bool
 
 // quantizeProjections replaces the f32 projections with their int8 form.

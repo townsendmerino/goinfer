@@ -454,8 +454,8 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
-**B26 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
-**In progress** (branch `b26-mamba-int8-giw-v17-2026-10`); owner's decisions and the registration below, 2026-10-15,
+**B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
+**In progress** (branch `b26-mamba-int8-giw-v17-2026-10`; filed as B26 and renumbered, main's B26 being another item); owner's decisions and the registration below, 2026-10-15,
 before any code.
 
 NVIDIA-Nemotron-Nano-9B-v2's int4 .giw is 19.2 GB: the Mamba in/out projections stay f32 there and in the decoder's host

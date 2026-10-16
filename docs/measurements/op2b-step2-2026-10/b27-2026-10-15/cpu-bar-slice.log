@@ -1,6 +1,6 @@
-=== RUN   TestB26_cpuFidelitySlice
+=== RUN   TestB27_cpuFidelitySlice
 decoder: fit is tight — nemotron-nano-9b-v2-Q8_0.slice-0-1-14.gguf needs ~2.0 GB resident at quant int4 + 0.0 GB KV + 1.5 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 3.5 GB; this machine currently has 6.6 GB of memory available (budget 4.6 GB = 70% of that) (75% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
-    b26_mamba_int8_test.go:289: the slice at int4, int8 Mamba against f32: min cosine 0.995450, argmax 29/32
---- PASS: TestB26_cpuFidelitySlice (2.02s)
+    b27_mamba_int8_test.go:289: the slice at int4, int8 Mamba against f32: min cosine 0.995450, argmax 29/32
+--- PASS: TestB27_cpuFidelitySlice (2.02s)
 PASS
 ok  	github.com/townsendmerino/goinfer/decoder	2.402s
