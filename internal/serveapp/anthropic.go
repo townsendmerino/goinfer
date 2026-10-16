@@ -614,6 +614,9 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "messages must not be empty")
 		return
 	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast(s.cfg.fastMaxTokens)
+	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req, lm) })
 }
 
@@ -806,6 +809,9 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req anthropicReq
 	if !decodeAnthropicJSON(w, r, &req) {
 		return
+	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast(s.cfg.fastMaxTokens)
 	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveCountTokensWith(w, req, lm) })
 }

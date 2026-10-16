@@ -1,5 +1,12 @@
 # Side requests and the one GPU KV slot (2026-10-16): measurement, and a design proposal not built
 
+**Owner decision (2026-10-16): the scratch slot is not built.** The finding to keep: the slow main turns after side requests were
+cold anyway, at session start and after a compaction, given the 448-position rollback; a kept slot would have served none of them.
+What was approved instead is a product change that removes the side requests' own cost: a fast alias that runs them without
+thinking (`<model>-fast`, `-fast-max-tokens`; `connect` points Claude Code's small/fast model and opencode's `small_model` at it).
+Its tier-1 reading is the last section. Interactive Claude Code's mid-session side requests: not run; revisit if a later run shows
+side requests landing between main turns.
+
 Owner item 3 (2026-10-16): measure by day which requests evict the main conversation's slot, what they cost the next main turn,
 and whether Claude Code sends side requests that `connect` now routes to the served model; then propose a design, with the
 direction "a short request does not evict a long cached prefix", and report before building. **Nothing here is built.**

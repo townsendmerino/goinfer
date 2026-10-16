@@ -18,7 +18,13 @@ All three env vars are required. Non-loopback binds refuse to start without `-ap
 `~/.claude/settings.json` with the window the server really serves, and says whether Claude Code's first request fits it.
 `-write` patches the file, keeping your other settings; `connect claude-code -undo` restores it byte for byte.
 
-**It names the served model in every model slot Claude Code reads**, so a subagent, the `opus`/`sonnet`/`haiku`/`fable`
+**The small/fast model is the served model's fast alias.** The server also answers to `<model>-fast`: the same weights, thinking
+off, output capped (`-fast-max-tokens`, 1,024 by default). `connect` points `ANTHROPIC_DEFAULT_HAIKU_MODEL` and
+`ANTHROPIC_SMALL_FAST_MODEL` at it, so the session title and Claude Code's other small requests stop spending seconds of GPU time
+thinking; the main model's settings and every other slot stay the served model. A server without the alias, or started with
+`-fast-max-tokens 0`, gets the old settings, every slot the served model.
+
+**It names the served model in every other model slot Claude Code reads**, so a subagent, the `opus`/`sonnet`/`haiku`/`fable`
 aliases, `opusplan` and background work all reach a model the server serves. The slots are the ones Claude Code's
 [model configuration](https://code.claude.com/docs/en/model-config#environment-variables) and
 [environment variables](https://code.claude.com/docs/en/env-vars) pages list: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_MODEL`,
@@ -46,7 +52,8 @@ Traced that day ([the record](../measurements/integration-harness-2026-10/claude
   effect on compaction is not traced here).
 - Background work (the session title) goes to `ANTHROPIC_DEFAULT_HAIKU_MODEL`, and a subagent to the alias it asks for or
   to `CLAUDE_CODE_SUBAGENT_MODEL`: set every slot `connect` sets (above), or those requests name a model the server does not
-  serve. With two models loaded (`-model main=... -model fast=...`), point the Haiku slot at the small one.
+  serve. `connect` points the Haiku slot at the server's `<model>-fast` alias. With two models loaded
+  (`-model main=... -model fast=...`), you can point it at the small one instead.
 - `--bare` reads `ANTHROPIC_API_KEY`, not `ANTHROPIC_AUTH_TOKEN`.
 
 ```bash

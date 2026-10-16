@@ -389,6 +389,11 @@
    "summary": "Carry a `/v1/responses` reply's token ids back in its reasoning item, signed, so an echoed reply re-tokenizes to the ids the model generated. On by default; `false` re-tokenizes every echoed turn."
   },
   {
+   "name": "fast-max-tokens",
+   "group": "Other",
+   "summary": "A served model `N` is also reachable as `N-fast`: the same weights and chat template, thinking off, output capped at this many tokens. For the side requests an agent sends for its own bookkeeping (a session title, a one-line summary): `connect` points Claude Code's small-model setting and opencode's `small_model` at it. `0` turns the alias off."
+  },
+  {
    "name": "ids-key-file",
    "group": "Other",
    "summary": "A file (32 bytes or more, mode 0600) holding the key that signs the token ids a `/v1/responses` reply carries back in its reasoning item. Default: a random key per start, so after a restart older replies re-tokenize their text instead."

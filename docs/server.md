@@ -785,6 +785,13 @@ to ignore.**
   signature this server did not mint carries nothing. A client sends `tool_use` input back as JSON it parsed, so arguments
   the model spaced return compacted: the closed list above keeps their ids. Not covered: Chat Completions (no carrier), and
   a reply whose calls the client echoes as separate turns.
+- **A fast alias for side requests.** A served model `N` also answers to `N-fast`: the same weights, chat template and KV slot,
+  with thinking off (the request's own thinking controls are overridden) and its output capped at `-fast-max-tokens` (1,024;
+  `0` turns the alias off). It is for the requests an agent sends for its own bookkeeping, a session title or a one-line
+  summary, which a reasoning model otherwise spends seconds of GPU time thinking through. `GET /v1/models` advertises it in the
+  model's own entry (`fast_model`, `fast_max_tokens`); the alias is not an entry of its own, so a listing is still one model. A
+  model served under the alias's name takes the name. `-log-requests` ends a request that named the alias with ` fast=1`. `connect`
+  points Claude Code's small/fast model and opencode's `small_model` at it. A request under the model's own name is unchanged.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

@@ -52,6 +52,7 @@ type reqTrace struct {
 	canon               bool
 	ids                 idsOutcome
 	idsSeen             bool
+	fast                bool // the request named the fast alias (fast_alias.go)
 }
 
 type reqTraceKey struct{}
@@ -250,6 +251,10 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 	if t.idsSeen {
 		ids = t.ids.fields()
 	}
-	return fmt.Sprintf("request: %s model=%s status=%d prompt_tokens=%s completion_tokens=%s ttft=%s total=%dms reused=%s slot=%s div=%s canon=%s %s",
+	line := fmt.Sprintf("request: %s model=%s status=%d prompt_tokens=%s completion_tokens=%s ttft=%s total=%dms reused=%s slot=%s div=%s canon=%s %s",
 		route, model, status, prompt, completion, ttft, end.Sub(t.start).Milliseconds(), reused, slot, div, canon, ids)
+	if t.fast {
+		line += " fast=1" // only a request that named the alias carries the field, so every other line keeps its shape
+	}
+	return line
 }

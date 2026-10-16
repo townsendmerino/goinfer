@@ -98,6 +98,9 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast(s.cfg.fastMaxTokens)
+	}
 	dropUnrunnableTools(w, &req.Tools)
 	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })
 }
