@@ -35,6 +35,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -1009,6 +1010,9 @@ func newServer(cfg config) (*server, error) {
 	if !cfg.noCarryIDs {
 		if s.idsKey, err = loadIDsKey(cfg.idsKeyFile); err != nil {
 			return nil, err
+		}
+		if w := idsKeyFileWarning(runtime.GOOS, cfg.idsKeyFile); w != "" {
+			fmt.Fprintln(os.Stderr, w)
 		}
 	}
 	if cfg.logTokenIDs != "" {

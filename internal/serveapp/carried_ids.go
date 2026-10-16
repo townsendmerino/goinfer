@@ -101,6 +101,15 @@ func loadIDsKey(path string) (*idsKey, error) {
 	return readIDsKeyFile(path)
 }
 
+// idsKeyFileWarning is the startup warning for --ids-key-file on an OS where readIDsKeyFile cannot check who may read the
+// file, "" elsewhere or when no file is named.
+func idsKeyFileWarning(goos, path string) string {
+	if goos != "windows" || path == "" {
+		return ""
+	}
+	return "warning: --ids-key-file " + path + ": permissions not checked on Windows; make sure only this account can read the key"
+}
+
 // readIDsKeyFile is --ids-key-file: the key is the file's bytes, at least 32 of them, in a file no one but its owner can read.
 // The mode is not checked on Windows, whose mode bits do not carry it (every file reads as 0666).
 func readIDsKeyFile(path string) (*idsKey, error) {

@@ -86,6 +86,12 @@ func TestIDsKeyFile(t *testing.T) {
 	if _, err := readIDsKeyFile(filepath.Join(dir, "missing")); err == nil {
 		t.Error("a missing key file was accepted")
 	}
+	if w := idsKeyFileWarning("windows", "k"); !strings.Contains(w, "permissions not checked on Windows") {
+		t.Errorf("windows: warning %q", w)
+	}
+	if idsKeyFileWarning("linux", "k") != "" || idsKeyFileWarning("windows", "") != "" {
+		t.Error("a warning off Windows, or with no key file")
+	}
 	r1, err1 := randomIDsKey()
 	r2, err2 := randomIDsKey()
 	if err1 != nil || err2 != nil || len(r1.key) != 32 || bytes.Equal(r1.key, r2.key) {
