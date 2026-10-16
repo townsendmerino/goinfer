@@ -1688,6 +1688,65 @@ gate is re-run. The bar never moves.
 - the reduction order as an operation parameter, rather than unifying the orders inside OP3;
 - the old loops kept until OP3z, for gate S.
 
+**OP3a's readings, 2026-10-16 (branch `op3-layer-program-2026-10`; gates I, P, L and T1 at `439bd3bf`, gate S at `d5752b99`, which adds only the S test).**
+
+- **I, identity: PASS.** Against `2c56d9c6` on the tiny assets: 37 families IDENTICAL at f32, int8int8 and int4, none
+  different. The six NOT RUN are as listed above. Log: `docs/measurements/op3-2026-10/op3a-identity-tiny.log`.
+- **P, plants: PASS.** Each plant changed the logits on every fixture it applies to:
+
+  | plant | fixtures changed |
+  |---|---|
+  | layer 0's second `residual` dropped | 33 of 33 |
+  | `qk-norm` and `rope` swapped, or `norm` and `proj-qkv` | 33 of 33 |
+  | `rope` one pair short | 32 of 32 |
+  | `attention`'s window one key short | 9 of 9 |
+
+- **L, every parameter is live: PASS.**
+  - Every (kind, parameter) pair the builder emits changes some fixture's logits, or errors when changed (`attention.Order`, read
+    and refused by the walker), except six.
+  - **Listed, with the reason in the test (`decoder/program_test.go:programParamUnreached`):**
+    - `ffn.MoE.NGroup` and `TopkGroup`: no generic fixture routes by group;
+    - `ffn.MoE.NumExperts`: a shape, which the per-token path never reads;
+    - `ffn.MoE.PerExpertScale` and `RouterPreNorm`: Gemma 4's router extras, read only by its own loop;
+    - `head.Norm.Slot`: the head has one norm weight.
+  - **Five pairs only GPT-2 reaches:** learned positions, the norm and head-norm biases, and the q/k/v and o biases.
+    - Every tiny fixture's biases are exactly zero, as HF initialises them, including `glm-tiny-bias`'s. Their goldens cannot
+      see a bias.
+    - `testdata/gpt2` is gitignored, so where it is absent those five report NOT RUN, never pass
+      (`programParamNeeds`).
+  - The m-RoPE pairs are reached by giving the VL fixtures' cache distinct (t, h, w) positions; a text prompt's are equal.
+- **T1, the size-switched paths: PASS.** `gate identity -assets real -only coder-0.5b-q4km -long`: prompts of 145, 621 and
+  2,593 tokens, read from the kept dumps, 32 decode steps each, IDENTICAL. Log:
+  `docs/measurements/op3-2026-10/op3a-T1-real-0.5b.log`.
+- **S, speed: depth 4,096 PASS, depth 128 PARKED.** The in-process A/B on the 0.5B, decode-rate ratio walker ÷ old:
+
+  | cell | pairs | median | range | pairs under 1 | read |
+  |---|---|---|---|---|---|
+  | depth 128 | 6 | 0.980 | 0.905–1.011 | 4 | **parked:** unresolved, under 0.99 |
+  | depth 4,096 | 4 | 0.997 | 0.982–1.026 | 3 | pass |
+
+  - Load average was 7.2 at the end (Spotlight indexing). Log: `docs/measurements/op3-2026-10/op3a-S.log`.
+  - **Diagnostics, by day, not a grade:**
+    - allocations per token are equal, 69 against 69 on `llama-tiny`;
+    - per-token time on `llama-tiny`, where the walker's dispatch is the largest share of a token, is 247–252 µs walker
+      against 249–260 µs old, over four alternating rounds.
+- **Found while building, and fixed in OP3a:**
+  - Four tests changed the `Architecture` after load to simulate another configuration, so they now rebuild the program
+    (`rebuildProgramForTest`).
+  - OP1's softcap-off test hook zeroed the softcap after the program was built, so the CPU would have kept capping. It
+    rebuilds the program now.
+
+**Gate S's served cell (amendment, 2026-10-16, before it runs: the details the registration left open).** The parked cell
+runs at night as registered.
+- The instrument is `docs/measurements/op3-2026-10/run-S-served.sh`: CPU decode on the 0.5B at depth 128, two arms and no
+  peer.
+  - The walker is `d5752b99`, and the old arm is `2c56d9c6`.
+  - Both binaries were built by day and fit-checked: each admits the 0.5B, with 0.3 GB of weights against a 4.1 GB budget.
+- `BENCH_RUNS=5`, two passes, the engine order reversed in the second.
+- **The quantity:** the median decode rate, walker ÷ old, per pass. The reading is the geometric mean of the two passes.
+- **Pass:** at least 0.99. **Fail:** under 0.99, and the walker is fixed before OP3a merges. Pass 2 is not skipped.
+- OP3a merges after this cell reads. OP3b builds on the branch meanwhile.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
