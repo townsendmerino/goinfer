@@ -111,6 +111,30 @@ func (a *Slots) Copied(src, dst, rows int) {
 	a.Touch(src)
 }
 
+// Restored records that the backend restored the first len(tokens) rows (a whole number of blocks; any tail is ignored) of a
+// sequence into dst from a host snapshot: dst now holds that prefix under root, with the given classes, and its full blocks
+// are published, as after Copied. The tokens and classes are the snapshot's own, so a later hit on dst is a hit on exactly the
+// rows that were restored.
+func (a *Slots) Restored(dst int, root Root, tokens []int, classes []ClassRun) {
+	a.drop(dst)
+	a.pend[dst] = pending{}
+	rows := len(tokens) / BlockRows * BlockRows
+	if rows <= 0 {
+		return
+	}
+	t := &Seq{m: a.m, root: root, rootHash: rootHash(root, a.m.parts), slot: int32(dst), tokens: append([]int(nil), tokens[:rows]...),
+		classes: clipClasses(classes, rows)}
+	for i := 0; i*BlockRows < rows; i++ {
+		id, _ := a.m.alloc(int32(dst), int32(i)) // an unlimited manager always has a block
+		t.table = append(t.table, id)
+	}
+	t.Publish()
+	for i := len(t.hashes) - 1; i >= 0; i-- {
+		a.m.unref(t.table[i])
+	}
+	a.seqs[dst] = t
+}
+
 // Prefilled records that the generation announced in slot (Acquired) has finished prefilling prompt, and publishes the
 // prompt's full blocks, so a request that arrives while the generation decodes can copy them. Decode writes only past
 // the prompt, so those rows are final. The slot is live until Commit or Forget: its record belongs to the running

@@ -53,6 +53,7 @@ type reqTrace struct {
 	ids                 idsOutcome
 	idsSeen             bool
 	fast                bool // the request named the fast alias (fast_alias.go)
+	snapRows            int  // rows a host snapshot restored for the first generation (decoder.Generation.KVSnapRestored)
 }
 
 type reqTraceKey struct{}
@@ -79,6 +80,7 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, gen *decoder.Genera
 		t.seen, t.model, t.prompt, t.canon = true, lm.name, len(gr.promptIDs), true
 		if gen != nil {
 			t.reuseKnown, t.reused, t.slot, t.match = true, gen.PrefillReused, gen.PrefillSlot, gen.PrefillMatch
+			t.snapRows = gen.KVSnapRestored
 		}
 	}
 	t.completion += len(ids)
@@ -255,6 +257,9 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 		route, model, status, prompt, completion, ttft, end.Sub(t.start).Milliseconds(), reused, slot, div, canon, ids)
 	if t.fast {
 		line += " fast=1" // only a request that named the alias carries the field, so every other line keeps its shape
+	}
+	if t.snapRows > 0 {
+		line += fmt.Sprintf(" snap=%d", t.snapRows) // rows a host snapshot restored; absent when none did
 	}
 	return line
 }

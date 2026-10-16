@@ -199,6 +199,7 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // Metal keeps 2 slots unless -kv-sessions was given
 	o.ResidentPrefillChunk = cfg.prefillChunk     // chunked prefill under concurrent generation; 0 = off
 	o.KVShareOff = cfg.kvShareOff
+	o.KVHostBytes = cfg.kvHostBytes
 	o.CPUBatchDecode = cfg.cpuBatch // batched CPU decode (-cpu-batch)
 	return o
 }
@@ -326,6 +327,9 @@ type config struct {
 	prefillChunk    int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
 	kvShare         string        // -kv-share: "on" (default) or "off"
 	kvShareOff      bool          // kvShareOffFor's answer, set once the API key and bind are known
+	kvHostBytesFlag string        // -kv-host-bytes: auto, 0, or a byte count
+	kvHostBytes     int64         // the resolved budget for prefix snapshots (0: off); a config built without the flag keeps none
+	kvHostBytesHow  string        // how it was reached, for the startup line
 	jobDir          string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
 	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
@@ -471,6 +475,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		}
 		return nil
 	})
+	fs.StringVar(&cfg.kvHostBytesFlag, "kv-host-bytes", "auto", "host memory the server may hold as prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt, the prompt's KV is copied to pinned host memory, and a later request that starts with the same ids restores it instead of prefilling it. auto (the default) is a tenth of the machine's RAM, at most 8 GiB; 0 turns it off; or a byte count with an optional K, M or G. Memory is pinned only while a snapshot is held, so an idle server holds none. -kv-share off turns snapshots off too")
 	fs.StringVar(&cfg.kvShare, "kv-share", "on", "on|off: whether a conversation may reuse KV rows another conversation computed, such as a shared system prompt, on a GPU-resident model (on: a new conversation copies the shared rows instead of prefilling them; off: a request reuses only its own conversation's rows). Sharing makes time to first token reveal something about what another client sent, so it is off whatever this says when the server answers the network without -api-key (an -allowed-hosts name on a loopback bind)")
 	fs.IntVar(&cfg.prefillChunk, "prefill-chunk", 512, "on a GPU-resident model running several generations at once (MC3), prefill a long prompt that arrives while others are decoding in chunks of this many tokens, one decode step between chunks, instead of stalling them for the whole prompt (replies are unchanged: Metal's prefill is chunk-invariant; 512 graded 2026-09-27: the decoders' longest stall 0.23x); 0 = off")
 	fs.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
@@ -528,6 +533,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.kvShare != "" && cfg.kvShare != "on" && cfg.kvShare != "off" {
 		return fmt.Errorf("-kv-share must be on or off (got %q)", cfg.kvShare)
+	}
+	if _, _, err := parseKVHostBytes(cfg.kvHostBytesFlag); err != nil {
+		return err
 	}
 	if cfg.spec != "" && cfg.spec != "ngram" {
 		return fmt.Errorf("-spec must be \"\" or \"ngram\" (got %q)", cfg.spec)
@@ -810,6 +818,11 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		os.Exit(2)
 	}
 	cfg.kvShareOff = kvShareOffFor(cfg.kvShare, authKey, *addr, cfg.allowedHosts)
+	var kvErr error
+	if cfg.kvHostBytes, cfg.kvHostBytesHow, kvErr = resolveKVHostBytes(cfg.kvHostBytesFlag, decoder.HostRAMBytes()); kvErr != nil {
+		fmt.Fprintln(os.Stderr, kvErr)
+		os.Exit(2)
+	}
 	if cfg.kvShareOff && cfg.kvShare != "off" {
 		fmt.Fprintln(os.Stderr, "KV sharing: off — this server answers the network without -api-key, so one client's time to first token must not reveal what another sent; set -api-key to share a common prompt between conversations")
 	}

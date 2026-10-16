@@ -249,6 +249,15 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogTestedBy("TestSessionLRU_sharesAPreamble"),
 		},
 	),
+	"KVHostBytes": ogMerge(
+		ogCPUNA("snapshots hold a GPU resident's KV in host memory; the CPU path keeps its own session LRU"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogNACell("a snapshot is taken after the prefill, before the first decode step, and restored before the prefill; decode extends the slot's own rows"),
+			pathResidentPrefill:  ogTestedBy("TestKV7_optionKVHostBytes_resident"),
+			pathSpecVerify:       ogNACell("snapshots act as a request takes its slot and as its prefill ends, before any speculative step"),
+			pathSessionLifecycle: ogNACell("a session's own KV is the CPU path's; this is the resident slot's"),
+		},
+	),
 	"ResidentWindowedKV": ogMerge(
 		ogCPUNA("a CUDA resident's KV layout; the CPU cache keeps its own ring"),
 		map[ogPath]ogCell{
