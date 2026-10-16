@@ -820,7 +820,7 @@ var ownForwards = []ownForwardFamily{
 
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or
 // any family with AttnGate == GateSigmoid. One predicate for the forward's two dispatch sites (attention.go, forwardn.go)
-// and the resident feature derived from it (FeatAttnOutputGate).
+// and the resident features derived from it (FeatAttnOutputGateSoftplus, FeatAttnOutputGateSigmoid).
 func (a *Architecture) hasAttnOutputGate() bool { return a.laguna != nil || a.AttnGate == GateSigmoid }
 
 // kvInt8OK reports whether NewCache may store this architecture's K/V as int8: a family with its own layer loop only when
