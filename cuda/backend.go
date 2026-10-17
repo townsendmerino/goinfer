@@ -209,6 +209,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		mlaQA, mlaQB, mlaQ, mlaKVA hostW
 		mlaQANorm, mlaKVANorm      []float32
 		mlaWUK, mlaWUV             []float32
+
+		// Mamba-2 (Nemotron-H, OP2b): the packed projections and small tables of a MixerMamba layer.
+		mamba hostMamba
 	}
 	// MLA geometry (DeepSeek / Kimi).
 	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
@@ -226,6 +229,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			stateElems: dnNV * dnHV * dnHK,
 			qScale:     float32(1 / math.Sqrt(float64(dnHK))),
 		}
+	}
+
+	// Mamba-2 hybrid geometry (Nemotron-H). A block of that family carries one operation (ResidentLayerOps), and its non-gated MoE blocks are not built
+	// here: they decline by name, as does Granite-4.0-H, and an int8 load (buildMambaParams).
+	mambaP, mambaErr := buildMambaParams(m)
+	if mambaErr != nil {
+		return declined(mambaErr)
+	}
+	if mambaP != nil && isMoE {
+		return declined(fmt.Errorf("Nemotron-H's non-gated relu² MoE blocks are not built on CUDA"))
 	}
 
 	sandwich := m.SandwichNormResident()
@@ -268,7 +281,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return declined(fmt.Errorf("layer %d: ResidentLayerOps says %v but the family predicates say DeltaNet %v, MLA %v",
 				l, hl.mixer, dnetOK && m.Qwen35LinearLayer(l), mlaOK))
 		}
-		if hl.mixer != decoder.MixerAttention && hl.mixer != decoder.MixerDeltaNet && hl.mixer != decoder.MixerMLA {
+		switch hl.mixer {
+		case decoder.MixerAttention, decoder.MixerDeltaNet, decoder.MixerMLA:
+		case decoder.MixerMamba, decoder.MixerNone:
+			if mambaP == nil {
+				return declined(fmt.Errorf("layer %d: the %v mixer is built on CUDA for Nemotron-H only", l, hl.mixer))
+			}
+		default:
 			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, hl.mixer))
 		}
 		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
@@ -307,6 +326,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			aWM := linalg.WrapF32(inA, len(dtB), H)
 			proj = []projEnt{{&hl.dnQKV, qkv}, {&hl.dnZ, z}, {&hl.dnOut, outP},
 				{&hl.dnB, &bWM}, {&hl.dnA, &aWM}}
+		case hl.mixer == decoder.MixerMamba:
+			hm, e := packMambaLayer(m, l, H, mambaP)
+			if e != nil {
+				return declined(e)
+			}
+			hl.mamba = hm // packed above; nothing to pack through proj
+		case hl.mixer == decoder.MixerNone:
+			// A feed-forward-only block: the non-gated up and down projections (relu² between them). lw.GateProj is empty by design.
+			proj = []projEnt{{&hl.u, &lw.UpProj}, {&hl.d, &lw.DownProj}}
 		case dnetOK && dnAttnGate:
 			// The same family's gated softmax layer (qwen3_5/qwen3_5_moe/qwen3_next; not every dnetOK family: Olmo Hybrid's
 			// full-attention layer is olmo3's plain scheme, dnAttnGate=false, and falls through to default below). Its weights live
@@ -388,7 +416,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					dst *hostW
 					src *linalg.WeightMat
 				}{&hl.d, g4b.MlpDown})
-		} else if !hl.isMoE {
+		} else if !hl.isMoE && hl.ffn && hl.mixer != decoder.MixerNone {
 			// A routed layer carries no dense FFN — GateProj/UpProj/DownProj are empty, and
 			// packing them would fail on a zero shape rather than mean anything.
 			proj = append(proj,
@@ -533,6 +561,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
+		if hl.mixer == decoder.MixerMamba || hl.mixer == decoder.MixerNone {
+			// A single-operation block: its one pre-norm and the weights packed above, no attention geometry, QK-norm or rope table.
+			if len(hl.preNorm) != H {
+				return declined(fmt.Errorf("layer %d: pre-norm has %d values, want hidden %d", l, len(hl.preNorm), H))
+			}
+			hls[l] = hl
+			continue
+		}
 		if !dnetOK || !dnAttnGate {
 			// A gated dnetOK family's softmax layer keeps its QK-norm weights off lw (packed with its projections above). Everyone
 			// else, including a dnetOK family whose softmax layer is not gated (Olmo Hybrid), reads them like an ordinary GQA/MHA
@@ -541,7 +577,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		// Per-layer RoPE table (Gemma's local 10k vs global 1M base; Mellum's YaRN-on-global).
 		// Uniform-rope families hand back the same slice for every layer.
-		if !hl.isDeltaNet {
+		if mambaP != nil {
+			// Nemotron-H's attention is NoPE: an all-zero table makes rope_kv the identity rotation (cos 0 = 1, sin 0 = 0), as WebGPU's zeroed invFreq does.
+			hl.invFreq = make([]float32, m.RotaryDimAtResident(l)/2)
+		} else if !hl.isDeltaNet {
 			hl.invFreq = m.RopeInvFreqLayerResident(l) // Gemma 4: real per-layer table, not the generic one
 		}
 		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
@@ -603,7 +642,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all — the MLP reuses the
 		// SAME shared input norm the attention branch already computed (segBFFN's r.aq/r.aSc
 		// reuse), so hl.postNorm is legitimately empty for it and must not be required.
-		if !postOnly && !parallelBlock && len(hl.postNorm) == 0 {
+		if hl.ffn && !postOnly && !parallelBlock && len(hl.postNorm) == 0 {
 			return declined(fmt.Errorf("layer %d missing pre-MLP norm", l))
 		}
 		if lw.QBias != nil {
@@ -630,7 +669,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
 	// Computed once: both ctxCap and extraBytes below need it, and a struct literal cannot read a sibling field set in the
 	// same literal.
-	kvSlotsReq := cudaKVSlotsRequest(m, dnetP != nil)
+	kvSlotsReq := cudaKVSlotsRequest(m, dnetP != nil || mambaP != nil)
 	allocSlack := packedAllocSlack([]any{hls, hlm})
 	if allocSlackOffForTest {
 		allocSlack = 0 // the planted defect of TestBuildScratchAccounting_plantedDefect: the plan as it was before the slack was priced
@@ -661,6 +700,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		cacheExperts: m.MoECacheExperts(),
 		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
 		dnet:         dnetP,
+		mamba:        mambaP,
 		isMLA:        mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
@@ -1272,6 +1312,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			r.dnZOut, r.dnCore, r.dnGated = r.af(dp.valueDim), r.af(dp.valueDim), r.af(dp.valueDim)
 			r.dnGq, r.dnGSc = r.ai(dp.valueDim/4), r.af(1)
 		}
+		if mambaP != nil {
+			needNonGated := false
+			for l := range hls {
+				needNonGated = needNonGated || hls[l].mixer == decoder.MixerNone
+			}
+			if e := r.loadMambaKernels(mambaP, needNonGated); e != nil {
+				return e
+			}
+		}
 		if r.isMLA {
 			mlamod, me := r.dev.CompileLibrary(mlaPTX)
 			if me != nil {
@@ -1312,7 +1361,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// non-empty above.
 				L.preNorm = r.up32(h.preNorm)
 			}
-			if (!r.postOnly && !r.parallelBlock) || h.isDeltaNet {
+			if h.ffn && h.mixer != decoder.MixerNone && ((!r.postOnly && !r.parallelBlock) || h.isDeltaNet) {
 				// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor (h.postNorm is 0-length, the same Alloc(0) hazard);
 				// segBFFN reuses segA's r.aq/r.aSc as the MLP input (see Model.ParallelBlockResident).
 				L.postNorm = r.up32(h.postNorm)
@@ -1329,6 +1378,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
 				L.dnWin = r.up32(make([]float32, (dp.convK-1)*dp.convDim))
 				L.dnState = r.up32(make([]float32, dp.stateElems))
+			} else if h.mixer == decoder.MixerMamba {
+				// Nemotron-H Mamba-2 block: the two int8 projections, the small tables, and the conv window and SSM state, zeroed at build and by resetState.
+				L.mbIn, L.mbOut = r.upW(h.mamba.in), r.upW(h.mamba.out)
+				L.mbConvW, L.mbConvB = r.up32(h.mamba.convW), r.up32(h.mamba.convB)
+				L.mbHeadP, L.mbNormW = r.up32(h.mamba.headP), r.up32(h.mamba.normW)
+				L.mbWin = r.up32(make([]float32, (mambaP.dConv-1)*mambaP.convDim))
+				L.mbSSM = r.up32(make([]float32, mambaP.nHeads*mambaP.headDim*mambaP.dState))
+			} else if h.mixer == decoder.MixerNone {
+				// A feed-forward-only block has no attention weights to upload (u and d follow below).
 			} else if h.isMLA {
 				L.isMLA = true
 				if r.mlaQLoRA > 0 {
@@ -1354,7 +1412,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.mscale = float32(m.RopeMscaleLayer(l)) // YaRN attention_factor; 1.0 for every family without it
 				L.qGate = h.qGate
 			}
-			if !h.isMoE {
+			if h.mixer == decoder.MixerNone {
+				L.u, L.d = r.upW(h.u), r.upW(h.d)
+				L.ffnI = L.u.N
+			} else if !h.isMoE && h.ffn {
 				// A routed layer has no dense FFN to upload: its hostW's are empty, and
 				// Alloc(0) is an error rather than a harmless no-op.
 				L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
@@ -1419,9 +1480,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// rotary.
 			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
 			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
-			if h.isDeltaNet {
-				// A DeltaNet layer has no attention geometry to validate or rope table to bind. A non-zero kvDim would make the KV
-				// allocator below size a cache this layer never reads, wasting VRAM on the family that most needs it.
+			if h.isDeltaNet || h.mixer == decoder.MixerMamba || h.mixer == decoder.MixerNone {
+				// A recurrent mixer or a feed-forward-only block has no attention geometry to validate or rope table to bind. A non-zero kvDim would
+				// make the KV allocator below size a cache this layer never reads, wasting VRAM on the family that most needs it.
 				L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0
 				r.layers[l] = L
 				continue
@@ -1492,13 +1553,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// maxQDim (from per-layer qDim) against nH*maxHd (from the accessors independently): a
 		// mismatch means the per-layer geometry drifted from its source. GPU OOB writes don't
 		// reliably fault, so assert at plan time rather than wait for a parity red.
-		if dnetP != nil {
+		if dnetP != nil || mambaP != nil {
 			// A DeltaNet layer reports zero attention geometry, so it must not drag maxQDim/maxHd
 			// to zero for the SOFTMAX layers that share this scratch. Recompute over the
 			// attention layers only, and check the invariant against those.
 			maxQDim, maxKVDim, maxHd = 0, 0, 0
 			for l := range r.layers {
-				if r.layers[l].isDeltaNet {
+				if r.layers[l].noKV() {
 					continue
 				}
 				if q := r.layers[l].qDim; q > maxQDim {
@@ -1512,7 +1573,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 			if maxQDim == 0 {
-				return fmt.Errorf("cuda: every layer is a DeltaNet mixer — no softmax layer to size attention scratch from; this family is 3:1, so a model with none is a loader bug, not a valid shape")
+				return fmt.Errorf("cuda: every layer is a recurrent mixer or a feed-forward block — no softmax layer to size attention scratch from; a hybrid with none is a loader bug, not a valid shape")
 			}
 			if dnAttnGate {
 				// The softmax layers' fused q_proj is double width; both halves live in dnQg
@@ -1541,7 +1602,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.layers {
-			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA && !r.layers[l].isDeltaNet && !r.layers[l].kvShared
+			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA && !r.layers[l].noKV() && !r.layers[l].kvShared
 		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
@@ -1554,7 +1615,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// Each layer's KV cache is sized by its own kvDim (Gemma 4's local 2048 vs global 1024), matching the pos*Ly.kvDim
 			// stride launchToken indexes it with. The kvDim the cache is sized with must equal the one the accessors derive: a stale
 			// model-level kvDim would index off the end into garbage output rather than panic, so fail loudly at plan time.
-			if r.layers[l].isDeltaNet {
+			if r.layers[l].noKV() {
 				// No KV cache for a recurrent mixer. Allocating one would be pure waste on the
 				// family least able to afford it: 3 of every 4 layers are this kind.
 				continue
@@ -1783,7 +1844,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT declines to the live path
 	// (docs/cuda-graphs-investigation.md).
 	// A windowed layer's K/V pointer moves with its base, so a captured graph would replay a stale one: graphs decline under windowed KV.
-	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA && !r.kvWin
+	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA && !r.kvWin && r.mamba == nil
 	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
 	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
 	if e := r.admitGraphs(); e != nil {
