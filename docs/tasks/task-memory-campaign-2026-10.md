@@ -51,7 +51,7 @@ encoder items (MEM14–MEM17), and one correctness item in aikit's audio loaders
 | MEM0 | footprint census of the app path and of tack's load path | both | S | — (it sizes the rest) |
 | MEM1 | a public mapped-load entry point for library callers | goinfer, all | S–M | 7B on Metal: ~9 GB anonymous → ~0.1 GB |
 | MEM2 | Metal tower scratch: release on grow, a real `Close` | goinfer, Metal | S | up to ~2.8 GiB stranded after a 4K image |
-| MEM3 | audio loaders keep their mapping alive (correctness; confirmed, three loaders) | aikit | S | — (use-after-unmap) |
+| MEM3 | audio loaders: the mappings leaked to process exit; now held and closeable (**fixed in aikit `db44648`**, branch) | aikit | S | each audio checkpoint's mapping |
 | MEM4 | towers: alias bf16/f32, drop the host copy after GPU attach | aikit + goinfer | M | Qwen2.5-VL on Metal: ~5.2 GB → ~1.35–2.7 GB |
 | MEM5 | chunk the prefill of the families G40 left whole | goinfer, CPU | M–L | 2–4.5 GiB at a 20K prompt |
 | MEM6 | resident prefill embeds per chunk, not per suffix | goinfer, CUDA/Metal | S | E4B at 20K: ~1.0 GiB |
@@ -186,18 +186,33 @@ resident (or `Close` wired into unload); optionally a patch ceiling with per-seg
 **Gates.** Tier 0: device bytes live after N grows equal the last capacity; after `Close`, zero (mutation: drop the
 release, red). Tier 1: one 4K image turn then unload, Metal footprint returns to the pre-load figure.
 
-### MEM3 · aikit audio loaders keep their mapping alive (S, correctness)
+### MEM3 · aikit audio loaders hold their checkpoint and can close it (S) — FIXED in aikit `db44648`
 
-**Problem (confirmed 2026-10-17, by reading; three loaders).** For an F32 tensor,
-`embed/safetensors.go:SafetensorsFile.TensorF32` returns a zero-copy view into the mapping, and the file's finalizer
-unmaps it once the file is unreachable. Three loaders open the checkpoint mmap'd, keep F32 views, and keep no reference
-to the file, so after a GC the encoder's weights can point into unmapped memory:
+> **Status 2026-10-17: fixed on aikit branch `mem3-audio-mapping-lifetime` (`db44648`, unpushed), and the finding was
+> corrected in the doing.** The use-after-unmap this entry first described is **not reachable today**: each tensor keeps
+> a pointer back to its file (the `owner` field of aikit's safetensors `Tensor`), the file holds its tensors, and Go
+> never runs a finalizer on an object in a cycle — so a dropped file is never unmapped, and the mappings **leaked until
+> process exit** instead. Verified there: a file holding one tensor was still reachable after 10 GCs; one holding none
+> was collected. The fix: the three encoders keep their file and gain an idempotent `Close` (a forward after `Close`
+> returns an error); Voxtral maps its checkpoint once instead of twice; Qwen ASR uses the shared opener. The
+> weak-pointer test cannot fail on today's code (the cycle keeps the file alive) and guards the day the cycle goes away;
+> with the cycle broken, each loader's original bug fails it cleanly, 3/3 rounds per loader. The text below is the
+> entry as first written, kept for the sweep.
+>
+> **Open, owner decision (D6):** the finalizer `OpenSafetensorsMmap` installs never runs for a file that holds any
+> tensor, so its comment's promise (a guard for callers who forget `Close`) is not kept. Making it real (for example
+> with `runtime.AddCleanup`) would turn every caller that drops a file early into a real crash, so it needs an audit of
+> the callers first. Not changed.
 
-| loader | keeps the file? | F32 checkpoint |
-|---|---|---|
-| `audio/whisper_encoder.go:LoadWhisperEncoder` | no | dangling after a GC (whisper-tiny/base/small ship F32) |
-| `audio/voxtral.go:LoadVoxtralAudio` (projector w1/w2) | no | dangling |
-| `audio/qwen3asr_encoder.go:LoadQwenASREncoder` | no | dangling |
+**Problem, as first written (superseded by the status above).** For an F32 tensor,
+`embed/safetensors.go:SafetensorsFile.TensorF32` returns a zero-copy view into the mapping. Three loaders open the
+checkpoint mmap'd, keep F32 views, and keep no reference to the file:
+
+| loader | keeps the file? (before `db44648`) |
+|---|---|
+| `audio/whisper_encoder.go:LoadWhisperEncoder` | no |
+| `audio/voxtral.go:LoadVoxtralAudio` (projector w1/w2) | no |
+| `audio/qwen3asr_encoder.go:LoadQwenASREncoder` | no |
 
 Checked safe, so the sweep is complete at these three: `audio/gemma4_encoder.go:LoadGemma4AudioEncoder` (closes the
 file but copies every tensor out first); all six vision loaders (SigLIP, Qwen2.5-VL, Qwen3-VL, Pixtral, GLM-OCR,
@@ -451,6 +466,8 @@ choice in aikit and a storage choice in ken (**D4**).
 - **D3** (MEM11): per family, bf16 only (bit-identical) or int8 behind the parity bar.
 - **D4** (MEM17): chunk text by reference in aikit's API, and ken's storage.
 - **D5** (MEM8a): whether embed-int4 becomes the Metal default once the head kernel exists, on the CPU/CUDA evidence.
+- **D6** (MEM3): make aikit's mmap finalizer real (after an audit of every caller that drops a file early), or correct
+  its comment to say what it does.
 
 ## 8. Sequencing
 
