@@ -97,5 +97,90 @@ class RunJobFileVanishes(unittest.TestCase):
         self.assertEqual(self.runs(), 1)
 
 
+
+class SwapGuardPlanCheck(unittest.TestCase):
+    """A run plan that pins a serve build carrying the per-process swap guard (its banner text is in the binary) and sets swap_guard_mb is
+    refused at `add` unless the plan records Francis's approval and a date; a plan pinning an older build runs as before."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(dir=_tmp))
+        for d in (night.QUEUE,):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+
+    def binary(self, name, carries):
+        p = self.dir / name
+        p.write_bytes(b"\x7fELF" + b"x" * 5000 + (night.GUARD_MARK if carries else b"an older banner") + b"y" * 5000)
+        return p
+
+    def plan(self, name, serve, **extra):
+        p = self.dir / name
+        p.write_text(json.dumps({"serve": str(serve), "commit": "abc", "swap_guard_mb": 4096, **extra}))
+        return p
+
+    def add(self, cmd, name="swapcheck"):
+        a = type("A", (), dict(name=name, cmd=cmd, est=5, force=False, allow_duplicate=True, cwd=str(self.dir), timeout=None,
+                               priority=50, by="", doc="", note=""))()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            night.cmd_add(a)
+
+    def test_a_new_pin_with_the_key_and_no_approval_is_refused(self):
+        plan = self.plan("plan-new.json", self.binary("serve-new", True))
+        with self.assertRaises(SystemExit):
+            self.add(["python3", "matrix.py", str(plan)])
+        self.assertIn("Francis", night.check_plan(plan, self.dir))
+        self.assertEqual(list(night.QUEUE.glob("*swapcheck*")), [])
+
+    def test_an_old_pin_with_the_key_runs(self):
+        plan = self.plan("plan-old.json", self.binary("serve-old", False))
+        self.assertIsNone(night.check_plan(plan, self.dir))
+        self.add(["python3", "matrix.py", str(plan)])
+        self.assertEqual(len(list(night.QUEUE.glob("*swapcheck*"))), 1)
+
+    def test_approval_needs_francis_and_a_date(self):
+        b = self.binary("serve-new", True)
+        ok = self.plan("p1.json", b, swap_guard_approved_by="Francis", swap_guard_approved_on="2026-10-17")
+        self.assertIsNone(night.check_plan(ok, self.dir))
+        for i, extra in enumerate([{"swap_guard_approved_by": "Francis"},                                  # no date
+                                   {"swap_guard_approved_by": "claude", "swap_guard_approved_on": "2026-10-17"},  # not him
+                                   {"swap_guard_approved_by": "Francis", "swap_guard_approved_on": "today"}]):   # not a date
+            self.assertIsNotNone(night.check_plan(self.plan(f"bad{i}.json", b, **extra), self.dir), extra)
+
+    def test_a_plan_without_the_key_is_not_touched(self):
+        p = self.dir / "plan-nokey.json"
+        p.write_text(json.dumps({"serve": str(self.binary("serve-new", True)), "commit": "abc"}))
+        self.assertIsNone(night.check_plan(p, self.dir))
+
+    def test_a_script_that_names_the_plan_is_followed(self):
+        plan = self.plan("plan-new.json", self.binary("serve-new", True))
+        script = self.dir / "run-x.sh"
+        script.write_text(f"#!/bin/bash\nB={self.dir}\nPLAN=$B/{plan.name}\npython3 matrix.py \"$PLAN\"\n")
+        self.assertEqual(night.plan_files(["bash", str(script)], self.dir), [plan])
+        with self.assertRaises(SystemExit):
+            self.add(["bash", str(script)], "viascript")
+
+    def test_the_queued_form_env_var_assignment_is_followed(self):
+        """`env B=<dir> bash run-night.sh` with the script's own `B=${B:?...}` and `PLAN=$B/...json`: the shape the real night scripts have."""
+        plan = self.plan("plan-new.json", self.binary("serve-new", True))
+        script = self.dir / "run-y.sh"
+        script.write_text("#!/bin/bash\nB=${B:?the pinned directory}\nPLAN=$B/" + plan.name + "\n")
+        self.assertEqual(night.plan_files(["env", f"B={self.dir}", "bash", str(script)], self.dir), [plan])
+        with self.assertRaises(SystemExit):
+            self.add(["env", f"B={self.dir}", "bash", str(script)], "viaenv")
+
+    def test_plant_without_the_check_the_first_case_is_not_refused(self):
+        """The check is what refuses the first case: with it dropped, the same add queues. If this test fails, the first case no longer proves anything."""
+        plan = self.plan("plan-new.json", self.binary("serve-new", True))
+        real = night.check_job_plans
+        night.check_job_plans = lambda cmd, cwd: []
+        try:
+            self.add(["python3", "matrix.py", str(plan)], "planted")
+        finally:
+            night.check_job_plans = real
+        self.assertEqual(len(list(night.QUEUE.glob("*planted*"))), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
