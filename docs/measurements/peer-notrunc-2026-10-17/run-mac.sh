@@ -13,7 +13,7 @@
 set -uo pipefail
 REV=63038121
 BASE=$HOME/goinfer-bench/peer-notrunc-2026-10-17
-WT=$BASE/wt-scripts-19f265b6   # bench_peer.py with the shared truncated preset; the serve binary stays at REV
+WT=$BASE/wt-scripts-e8e8c95d   # bench_peer.py on main: the shared preset, and one seed, context, min_p and quant class per arm; the serve binary stays at REV
 LOG=$HOME/goinfer-logs/peer-notrunc-2026-10-17
 export GOINFER_SERVE_METAL=$BASE/serve-metal-$REV
 export MLX_SERVER_BIN=$HOME/Library/Python/3.12/bin/mlx_lm.server
@@ -30,7 +30,7 @@ import sys; sys.path.insert(0, 'scripts'); import bench_peer as b
 for n in ('temp0.8_topk40_topp0.9', 'temp1.0_notrunc'):
     c = b.CONFIGS[n]
     assert all(k in c[e] for e in ('goinfer', 'ollama', 'mlx') for k in ('temperature', 'top_p', 'top_k')), (n, c)" || exit 1
-echo "started: $(date '+%F %T %Z'); goinfer $REV (sha256 $(shasum -a 256 "$GOINFER_SERVE_METAL" | cut -c1-16)); ollama $($OLLAMA_BIN --version 2>&1 | tail -1); mlx-lm $(python3 -c 'import mlx_lm; print(mlx_lm.__version__)')" | tee "$LOG/provenance.txt"
+echo "started: $(date '+%F %T %Z'); goinfer $REV (sha256 $(shasum -a 256 "$GOINFER_SERVE_METAL" | cut -c1-16)); ollama $($OLLAMA_BIN --version 2>&1 | tail -1); mlx-lm $(python3 -c 'import mlx_lm; print(mlx_lm.__version__)'); MLX checkpoints from huggingface.co: Qwen2.5-Coder-1.5B-Instruct-4bit b3252a2f, Qwen2.5-7B-Instruct-4bit c26a38f6" | tee "$LOG/provenance.txt"
 
 models=0.5B,1.5B
 "$GOINFER_SERVE_METAL" -model "bench=$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf" -backend metal -addr 127.0.0.1:18971 > "$LOG/fitcheck-7B.log" 2>&1 &
