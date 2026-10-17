@@ -228,7 +228,10 @@ func TestOneSlotStep_phi3PrefillAB(t *testing.T) {
 	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
 		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", path)
 	}
-	m, err := decoder.Load(path, decoder.Options{Quant: "q4k", ResidentContext: 2048, ResidentKVSlots: 1})
+	m, err := decoder.Load(path, decoder.Options{Quant: "q4k", Backend: "metal", ResidentContext: 2048, ResidentKVSlots: 1})
+	if err != nil && strings.Contains(err.Error(), "NOT loaded") {
+		t.Skipf("the fit guard declines this load now (never bypassed here): %v", err)
+	}
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
