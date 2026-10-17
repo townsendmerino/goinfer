@@ -93,6 +93,8 @@ from the environment, and `TestEnvVars_docAndCodeAgree` fails on a read that is 
 `docs/env-vars.md` § "Policy — where a new setting goes" for the rules and why (per-call reads change a loaded model mid-flight; two
 models in one process cannot differ); the migration record is `docs/completed/task-env-config-2026-09.md`.
 
+**A change to any guard threshold (swap, fit, memory) needs Francis's word, the same as a bypass flag.**
+
 **Never `git add -A` / `git add .`.** It sweeps generated fixture metadata into git, which makes
 dir-only skip-guards think a fixture exists and flips skips into failures. Stage explicit paths.
 
