@@ -1,10 +1,12 @@
 package decoder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -56,6 +58,19 @@ type ResidentKVSnapshotter interface {
 	KVSnapshotBytes(end int) int64
 	// KVSnapshotRollback is how many positions before a snapshot's end a windowed layer still serves a restore; 0 with no windowed layer.
 	KVSnapshotRollback() int
+}
+
+// ResidentPrefillMarked is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
+// between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
+// can be taken in the middle of a cold prefill (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md).
+type ResidentPrefillMarked interface {
+	Prefiller
+	// PrefillMarkAlign is the width of the passes of a batched prefill, in positions: a mark can fire only at startPos plus a multiple of it.
+	PrefillMarkAlign() int
+	// PrefillLastMarked is PrefillLast that calls at(mark) on the caller's goroutine after the pass that ends exactly at position mark, with no
+	// pass running. A mark that is not at a pass boundary of this prefill (a single pass, a start that is not aligned to it, the passes cut
+	// differently) calls nothing. at must not fail the prefill; a snapshot it cannot take is the caller's to count.
+	PrefillLastMarked(ctx context.Context, embeddings [][]float32, startPos, mark int, at func(pos int)) ([]float32, error)
 }
 
 // KVSnapshotStats is a model's host snapshots, for /admin/status and the request log.
@@ -138,8 +153,36 @@ func (s *kvSnapStore) best(root kvmgr.Root, prompt []int) (*kvSnap, int) {
 	return out, lcp
 }
 
+// snapMatch is a held snapshot and how many leading ids it shares with a prompt.
+type snapMatch struct {
+	x   *kvSnap
+	lcp int
+}
+
+// candidates are the held snapshots under root that share at least one block of leading ids with prompt, the ones that can restore the most
+// first (by min(shared ids, rows)): a request restores the first that its window can serve, not merely the longest match, which may be a
+// snapshot taken at the end of a long prompt whose ring no longer holds the shared prefix.
+func (s *kvSnapStore) candidates(root kvmgr.Root, prompt []int) []snapMatch {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []snapMatch
+	for _, x := range s.list {
+		if x.root != root {
+			continue
+		}
+		if n := commonPrefixLen(x.ids, prompt); n >= kvmgr.BlockRows {
+			out = append(out, snapMatch{x, n})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return min(out[i].lcp, out[i].x.h.Rows()) > min(out[j].lcp, out[j].x.h.Rows())
+	})
+	return out
+}
+
 // covering is the held snapshot under root that already serves a prompt whose full blocks end at b: it shares all but at most
-// slack of min(its rows, b) leading ids with it. Taking another from that prompt would hold the same prefix twice.
+// slack of min(its rows, b) leading ids with it, and its window can serve that share. Taking another from that prompt would hold the same
+// prefix twice.
 func (s *kvSnapStore) covering(root kvmgr.Root, prompt []int, b, slack int) *kvSnap {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -147,7 +190,13 @@ func (s *kvSnapStore) covering(root kvmgr.Root, prompt []int, b, slack int) *kvS
 		if x.root != root {
 			continue
 		}
-		if commonPrefixLen(x.ids, prompt) >= min(x.h.Rows(), b)-slack {
+		lcp := commonPrefixLen(x.ids, prompt)
+		if lcp < min(x.h.Rows(), b)-slack {
+			continue
+		}
+		// It must also be able to serve what it shares: a snapshot much longer than b has a ring that no longer holds the rows behind a shorter
+		// prefix, and does not cover it (a boundary snapshot beside an end-of-prompt one of the same family).
+		if q := min(lcp, x.h.Rows(), b) / kvmgr.BlockRows * kvmgr.BlockRows; q > 0 && x.h.Serves(q) {
 			return x
 		}
 	}
@@ -304,28 +353,46 @@ func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVSc
 	}
 	st := m.kvSnaps
 	root := m.kvRootIn(nil, sc.Namespace)
-	x, lcp := st.best(root, prompt)
-	if x == nil || lcp < kvmgr.BlockRows {
+	n, cm := len(prompt), m.kvClassMap()
+	// The first candidate whose window can serve its share wins. With one snapshot per family this is the old rule; with a boundary snapshot
+	// and an end snapshot of the same family held, a longer match that the window cannot serve does not hide the one that can.
+	var x *kvSnap
+	var q int
+	var sawWindow, sawClass bool
+	cands := st.candidates(root, prompt)
+	if len(cands) == 0 {
 		return
 	}
-	n, cm := len(prompt), m.kvClassMap()
-	q := min(lcp, x.h.Rows()) / kvmgr.BlockRows * kvmgr.BlockRows
-	q = min(q, (n-1)/kvmgr.BlockRows*kvmgr.BlockRows) // a token is left to compute, for the first logits
-	q = cm.CapHit(n, q)
-	if q <= acq.reuse {
-		return // the slot's own rows, or a copy from another slot, serve as much
+	for _, c := range cands {
+		cq := min(c.lcp, c.x.h.Rows()) / kvmgr.BlockRows * kvmgr.BlockRows
+		cq = min(cq, (n-1)/kvmgr.BlockRows*kvmgr.BlockRows) // a token is left to compute, for the first logits
+		cq = cm.CapHit(n, cq)
+		if cq <= acq.reuse {
+			continue // the slot's own rows, or a copy from another slot, serve as much
+		}
+		if !c.x.h.Serves(cq) {
+			if c.lcp >= kvSnapMinShared {
+				sawWindow = true
+			}
+			continue
+		}
+		if !classesEqual(clipRuns(c.x.classes, cq), clipRuns(cm.ColdClasses(n), cq)) {
+			sawClass = true
+			continue
+		}
+		x, q = c.x, cq
+		break
 	}
-	if !x.h.Serves(q) {
-		if lcp >= kvSnapMinShared {
+	if x == nil {
+		switch {
+		case sawWindow:
 			st.mu.Lock()
 			st.st.Unqualified++
 			st.mu.Unlock()
+			st.decline("window")
+		case sawClass:
+			st.decline("class")
 		}
-		st.decline("window")
-		return
-	}
-	if !classesEqual(clipRuns(x.classes, q), clipRuns(cm.ColdClasses(n), q)) {
-		st.decline("class")
 		return
 	}
 	a := m.kvSlots()
@@ -365,6 +432,83 @@ func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVSc
 // was cold, or began from a restore) and that no held snapshot already serves within the window's rollback. A longer prompt
 // replaces a shorter snapshot of the same prefix. The budget is made by dropping the least recently used.
 func (m *Model) residentSnapshotPrompt(slot int, prompt []int, lora *loraRuntime, sc KVScope, acq kvAcquired) {
+	// One snapshot per prompt. When the prompt's tail after the stable section is longer than the rollback the boundary snapshot is the one that can
+	// serve a later session, and the end-of-prompt snapshot (whose ring no longer holds the shared prefix) would replace or sit beside it for nothing:
+	// skip it when the boundary one was taken, declined or restored, and fall back to it only when the mark never fired.
+	if q, ok := m.kvBoundaryPlan(prompt, sc, lora); ok {
+		if acq.markFired || acq.snapRows > 0 {
+			return
+		}
+		if st := m.kvSnaps; st != nil && st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, m.kvSnapSlack()) != nil {
+			st.decline("held")
+			return
+		}
+	}
+	m.residentSnapshotRows(slot, prompt, len(prompt)/kvmgr.BlockRows*kvmgr.BlockRows, lora, sc, acq)
+}
+
+// kvSnapSlack is how many positions behind a snapshot's end a windowed layer still serves a restore.
+func (m *Model) kvSnapSlack() int {
+	if sn := m.snapshotter(); sn != nil {
+		if r := sn.KVSnapshotRollback(); r > 0 {
+			return r
+		}
+	}
+	return kvmgr.RollbackFloor
+}
+
+// kvBoundaryPlan is the position at which this request's prefill should take its snapshot instead of at the end of the prompt: the prefix boundary the
+// route computed (KVScope.Boundary) rounded down to a pass of the resident's batched prefill, when the part of the prompt after the boundary is longer
+// than a windowed layer's rollback, so an end-of-prompt snapshot could not serve a later prompt that diverges there. ok is false when the resident
+// cannot mark its passes, there is no boundary, the prompt is short, or the part after the boundary fits the rollback (the end snapshot serves).
+func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q int, ok bool) {
+	sn := m.snapshotter()
+	mp, hasMark := m.resident.(ResidentPrefillMarked)
+	if sn == nil || !hasMark || sc.Boundary <= 0 || lora != nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
+		return 0, false
+	}
+	n, align := len(prompt), mp.PrefillMarkAlign()
+	if align <= 0 || n < kvSnapMinPrompt || sc.Boundary >= n || n-sc.Boundary <= m.kvSnapSlack() {
+		return 0, false
+	}
+	q = sc.Boundary / align * align
+	if q < kvSnapMinShared || q%kvmgr.BlockRows != 0 {
+		return 0, false
+	}
+	return q, true
+}
+
+// kvPrefillMark returns the mark a cold prefill of prompt from position from should carry: the boundary position and the function that takes the
+// snapshot there. nil when no boundary snapshot applies, when from does not start on a pass boundary the mark could meet, or when a held snapshot
+// already serves the prefix (this request restored it, or another one covers it).
+func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntime, sc KVScope, acq *kvAcquired) *prefillMark {
+	q, ok := m.kvBoundaryPlan(prompt, sc, lora)
+	if !ok || acq.snapRows > 0 || q <= from {
+		return nil
+	}
+	mp := m.resident.(ResidentPrefillMarked)
+	if (q-from)%mp.PrefillMarkAlign() != 0 {
+		return nil // the passes of this prefill do not end at q
+	}
+	if st := m.kvSnaps; st != nil && st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, m.kvSnapSlack()) != nil {
+		st.decline("held")
+		return nil
+	}
+	return &prefillMark{q: q, at: func(pos int) {
+		acq.markFired = true
+		m.residentSnapshotRows(slot, prompt, pos, lora, sc, *acq)
+	}}
+}
+
+// prefillMark is a position at which a batched prefill is to call back between two passes.
+type prefillMark struct {
+	q  int
+	at func(pos int)
+}
+
+// residentSnapshotRows takes a snapshot of prompt's first b rows from slot, which holds them: at the end of the prefill (b the full blocks of the
+// prompt, residentSnapshotPrompt) or between two passes of it (b the boundary, kvPrefillMark). It is the same admission either way.
+func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRuntime, sc KVScope, acq kvAcquired) {
 	sn := m.snapshotter()
 	if sn == nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
 		return
@@ -388,7 +532,6 @@ func (m *Model) residentSnapshotPrompt(slot int, prompt []int, lora *loraRuntime
 		st.decline("class")
 		return
 	}
-	b := n / kvmgr.BlockRows * kvmgr.BlockRows
 	slack := sn.KVSnapshotRollback()
 	if slack == 0 {
 		slack = kvmgr.RollbackFloor

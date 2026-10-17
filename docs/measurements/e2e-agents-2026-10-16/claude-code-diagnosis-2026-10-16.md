@@ -8,6 +8,15 @@ The run kept no request bodies and no token ids. What it did keep: serve's reque
 
 **The rebuild is checked against serve's own numbers, not assumed.** Rebuilt prompts are 18,726, 18,712 and 18,715 ids against 18,568, 18,554 and 18,557 logged: 158 too long in all three, so the skeleton's system prompt is not the run's exactly (the 158 sits before every divergence below). With it removed, the divergence is 16,471 - 158 = 16,313 against 16,312 logged, and the ids after it are 2,255, 2,241, 2,244 against 2,256, 2,242, 2,245. The second post-compaction request diverges from the first at rebuilt 16,578, which is the logged 16,420 + 158 exactly.
 
+**Correction, 2026-10-17: where the 158 came from.** `cc_rebuild.py` wrote its bodies with `json.dump`'s default escaping, so an em dash in a tool description
+became the six characters `\u2014`, which serve renders verbatim as tool JSON: **109 of the 158 ids are that.** Written as Claude Code writes them (compact,
+characters as they are; this reproduces a recorded request byte for byte), the rebuilt prompts are 18,617, 18,603 and 18,606 ids, **49** over the logged ones,
+and the 49 still sit before every divergence. The numbers above stand with 158 read as "the escaped skeleton's offset": the same readings with the
+corrected bodies are the divergence at 16,362 (less 49: 16,313 against 16,312 logged), the ids after it unchanged, and the second post-compaction request
+at 16,469 (less 49: 16,420, the logged one, exactly). What the other 49 are is not established (a difference in the skeleton's system prompt that none of
+the readings depends on). The script is fixed. KV7 step 2's tier 1 first ran its compaction-shaped request from an escaped body and read it cold for that
+reason: `docs/measurements/kv7-step2-2026-10-17/`.
+
 ## 1. Session starts (requests 2 and 3 of the run: `div=16312`)
 
 The rebuilt prompt, in order (ids as rebuilt, less 158 for logged): system prompt and tools to 16,391; the first user message from 16,391, whose first block is the `gitStatus` reminder; the commit hash at **16,470**; the attribution reminder from 16,531; the task text from 16,666; and then a **trailing system-role message** from about 16,690 to the end, 2,000 ids of the environment, the agent listing, the skill listing, the token count and the date, which Claude Code attaches after the user message.

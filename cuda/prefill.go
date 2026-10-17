@@ -132,6 +132,21 @@ func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, 
 	return r.prefillChunked(ctx, embeddings, startPos, tailLastLogits, nil)
 }
 
+var _ decoder.ResidentPrefillMarked = (*cudaResident)(nil)
+
+// markLatePlantForTest calls the mark's callback one pass late, when the slot's ring has moved on: KV7 step 2's planted defect, set by tests only.
+var markLatePlantForTest bool
+
+// PrefillMarkAlign (decoder.ResidentPrefillMarked) is the width of this prefill's passes: a mark fires only at startPos plus a multiple of it.
+func (r *cudaResident) PrefillMarkAlign() int { return r.prefillPassRows() }
+
+// PrefillLastMarked (decoder.ResidentPrefillMarked) is PrefillLast that calls at(mark) between two of its passes, after the one that ends exactly at
+// position mark and before the next starts: the prompt's first mark rows are written, a windowed layer's ring holds what a prompt of mark ids would
+// leave, and nothing newer has moved it. A prompt of one pass, or a mark that is not at a pass boundary, calls nothing.
+func (r *cudaResident) PrefillLastMarked(ctx context.Context, embeddings [][]float32, startPos, mark int, at func(pos int)) ([]float32, error) {
+	return r.prefillChunkedMarked(ctx, embeddings, startPos, tailLastLogits, nil, mark, at)
+}
+
 // PrefillImageLast satisfies decoder.ResidentImagePrefill: PrefillLast for a turn whose prompt carries a bidirectional
 // image block [imgStart,imgEnd) (docs/multimodal.md; decoder/kvcache.go's SetImageBlocks/attendHi is the CPU reference
 // it must match bit for bit). embeddings already carry the spliced vision features.
@@ -359,7 +374,14 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 // one pass, and a chunked run would leave a block drafter holding the last chunk's rows only, a silent wrong answer. It
 // runs as one pass instead.
 func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int, finalTail int, mropePos [][3]int) ([]float32, error) {
+	return r.prefillChunkedMarked(ctx, embeddings, startPos, finalTail, mropePos, 0, nil)
+}
+
+// prefillChunkedMarked is prefillChunked that calls at(mark) after the non-final pass that ends at position mark (none with mark <= 0). at runs on the
+// caller's goroutine with no pass in flight, so a snapshot it takes is an executor job ordered after the pass that wrote the rows.
+func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]float32, startPos int, finalTail int, mropePos [][3]int, mark int, at func(pos int)) ([]float32, error) {
 	M := len(embeddings)
+	markLateFired := false
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
 	}
@@ -417,6 +439,16 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 			return outs[len(outs)-1], nil
 		}
 		i += n
+		if at != nil && mark > 0 {
+			if pos := startPos + i; markLatePlantForTest {
+				if pos > mark && !markLateFired {
+					markLateFired = true
+					at(mark)
+				}
+			} else if pos == mark {
+				at(mark)
+			}
+		}
 	}
 	// Unreachable: the i+n==M pass returns above. Kept as a real error rather than a panic so a
 	// future edit to the loop bounds surfaces as a decline the caller can survive.

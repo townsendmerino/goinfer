@@ -926,6 +926,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writePrepareErr(w, err)
 		return
 	}
+	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
@@ -1139,6 +1140,9 @@ type genRequest struct {
 	think *thinkOut
 	// outcome receives what streamTokens saw of the answer (emptyAnswerOf reads it). Set by prepare.
 	outcome *turnOutcome
+	// boundary is how many leading ids of promptIDs are the stable system-and-tools section (loadedModel.prefixBoundary), 0 when unknown. It reaches the
+	// decoder as KVScope.Boundary, where a prefix snapshot may be taken at it during the cold prefill.
+	boundary int
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
@@ -1568,6 +1572,8 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	// turn continuing off the reused warm prefix drops to CPU, since compute-time LoRA is not wired into the resident
 	// prefix-reuse path.
 	if lm.model.ResidentActive() && lm.adapter == "" {
+		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
+		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: gr.boundary})
 		if lm.blockSpec != nil && gr.masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
@@ -1575,16 +1581,16 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, gr.sp); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
 			}
 		} else if lm.spec && gr.masker == nil {
 			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
 			}
 		} else {
-			stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+			stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
 		finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 		cr := cancelledReason(g, parent, stopHit)

@@ -26,7 +26,7 @@ them are cold, about 198 s each at 94 ids a second.
 content segment is a gap between genuine special tokens, so no token merges across a segment boundary. The boundary `p1` is the number of ids the
 segments before the first turn's opening marker produce (the system text, the tools block, and any BOS). It is a by-product of the render serve already
 does; no second tokenization of the prompt is needed, only of the prefix segments, whose ids are the first `p1` ids of the full prompt by that property.
-For Claude Code on the e2e run `p1 ≈ 16,233` ids (rebuilt 16,391, less the 158 the rebuild differs by).
+For Claude Code on the e2e run `p1 ≈ 16,233` ids (rebuilt 16,391, less the 158 the first rebuild differed by, 109 of which were JSON escaping in the rebuild script).
 
 What is *after* `p1` and why it is not in the boundary: the first user message begins with `<system-reminder>` blocks that belong to the client and the
 repository (`gitStatus`, `CLAUDE.md`, the attribution block). They are stable within one repository state and change when the repository does, so the
@@ -154,7 +154,7 @@ greedy token ids identical on and off (hard), `VmSwap` flat (hard); between 0.2 
 
 **Tier 2, night, the rerun with bodies and token ids:** the e2e run's Claude Code configuration (`e2e-claude-code`, read/search/edit, one rep, serve
 with step 2) with `"bodies": true` and `"token_ids": true` in the plan, so the requests are the real ones and not rebuilt. It answers two things the
-tier 1 cannot: the true bodies replace the rebuild (the 158-id difference, the divergence of the summariser request, which PR #77 left open), and the
+tier 1 cannot: the true bodies replace the rebuild (the residual 49-id difference, the divergence of the summariser request, which PR #77 left open), and the
 effect is read on the real traffic. Estimate **about 15 minutes** (a cold start, then restores; the off arm is the existing 27-minute run, cited and
 labelled cross-session, not re-run). Why tiers 0 and 1 cannot answer it: the compaction and summariser requests only exist in a real agent session.
 Pre-registered readings: every Claude Code session start after the first restores (`snap=` present, `ttft` under 0.2 of the cold one), every request after

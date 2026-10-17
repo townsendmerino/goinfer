@@ -6,9 +6,8 @@
 Each transcript attachment carries `rendered`: the exact reminder text and its role. A role-`system` reminder goes to the trailing system-role message (joined by a
 blank line, the <system-reminder> wrapper removed); a role-`user` one to the first user message, before the task. The skeleton (system prompt, the 21 tools) comes
 from BASE_BODY, a recorded Claude Code 2.1.296 first request. Writes read/search/edit (the session starts) and post1A/B, post2A/B (the request after each
-compaction, with the summary before or after the attribution reminder; B is the order that reproduces the logged divergence). The rebuilt prompts are 158 ids
-longer than the logged ones, the same 158 in every session: the skeleton's system prompt is not the run's exactly. Render them with
-TestSideRequests_ccDiag (internal/serveapp) and read lengths and divergences relative to that constant.
+compaction, with the summary before or after the attribution reminder; B is the order that reproduces the logged divergence). Render them with TestSideRequests_ccDiag (internal/serveapp). The first version wrote the bodies with json.dump's default
+escaping, which made every prompt 158 ids longer than the logged one (an em dash in a tool description became six characters); the form below matches.
 """
 import copy, glob, gzip, json, os, re, sys
 
@@ -31,7 +30,10 @@ def put(name, user_blocks, sys_blocks):
     b = copy.deepcopy(base)
     b['messages'][0]['content'] = [{'type': 'text', 'text': t} for t in user_blocks]
     b['messages'][1]['content'] = [{'type': 'text', 'text': "\n\n".join(inner(t) for t in sys_blocks)}]
-    json.dump(b, gzip.open(f"{out}/{name}.req.json.gz", "wt"))
+    # Claude Code sends compact JSON with the characters as they are; json.dump's default escaping (\u2014 for an em dash in a tool description) changes the
+    # prompt, because serve renders a tool's schema verbatim. This form reproduces a recorded request byte for byte.
+    with gzip.open(f"{out}/{name}.req.json.gz", "wt", encoding="utf-8") as f:
+        json.dump(b, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def split(ents):

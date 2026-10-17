@@ -1508,6 +1508,13 @@ func warnPrefillDeclined(n int, err error) {
 // decode: plausible, wrong, HTTP 200. This mirrors the CPU rule: the canBatchN caller in forwardn.go declines batched prefill
 // whenever cache.lora != nil, because compute-time LoRA is wired only into the sequential forward.
 func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int, hasAdapter bool) ([]float32, error) {
+	return m.residentPrefillSeedMarked(ctx, prompt, from, hasAdapter, nil)
+}
+
+// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (ResidentPrefillMarked) call it back between two
+// passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
+// A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
+func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token, whose logits start decode
 	}
@@ -1547,7 +1554,12 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 			// places the run at an offset.
 			if perr == nil {
 				var lg []float32
-				if lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from); perr == nil {
+				if mp, ok := pf.(ResidentPrefillMarked); ok && mk != nil {
+					lg, perr = mp.PrefillLastMarked(ctx, embed(prompt[from:]), from, mk.q, mk.at)
+				} else {
+					lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from)
+				}
+				if perr == nil {
 					return lg, nil
 				}
 			}
@@ -1846,7 +1858,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		} else {
 			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
-			if logits, err = m.residentPrefillSeed(ctx, prompt, acq.reuse, lora != nil); err != nil {
+			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
+			if logits, err = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk); err != nil {
 				g.err = err
 				return
 			}
