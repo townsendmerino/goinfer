@@ -17,6 +17,63 @@
 
 ## What is open
 
+- **P29 · Phi-3 at q4k on Metal prefills one token at a time when the memory guard allows one KV slot, and the decline
+  message blames geometry — OPEN, filed 2026-10-17 (owner). Measure the prefill cost against OP6's batched step first.**
+  `mac`.
+
+  - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
+    -ctx 2048`): the load went `metal-resident (q4k)`, and the banner said `prefill path: sequential — arch/geometry not
+    supported by f16 MMA prefill kernel`. `-require-backend` then refused it. The record is
+    `docs/measurements/peer-vetted-2026-10-07-macbook.md`, "Amendment, 2026-10-17", on branch
+    `m1-phi3-q4k-cell-2026-10` until that branch merges.
+  - **The cause, from the source at that commit, is not geometry:**
+    - The q4k lane never takes the f16 MMA pass: `metal/model.go`'s `prefillOK` excludes `q4kLane` outright.
+    - The fallback is OP6's batched step ("decode rows on the batched step kernels"). It needs at least two resident KV
+      slots: `metal/batch.go:resident.batchIneligible` returns "one resident KV slot". At `-ctx 2048` each slot cost
+      768 MB, and the memory guard allowed one ("1 resident KV slots of 2 requested").
+    - `metal/backend.go:metalResident.PrefillPath` reports both cases with the same "arch/geometry" text.
+  - **First, from the code (owner, 2026-10-17): why does OP6's batched step need two resident KV slots, and can a single-slot
+    load use it for its own prompt (one sequence, 8 rows per step)?** Answered from main at 3c845917:
+    - **The minimum belongs to MC3, not to the step's arithmetic.** The step was built for concurrent decode, one sequence
+      per slot. Its eligibility says so ("on at least two resident KV slots": `metal/batch.go:resident.batchIneligible`).
+      OP6 then reused it for one sequence's prompt and inherited the gate. `metal/batch.go:resident.forwardMultiOut`
+      already accepts several rows on one slot when they are one sequence's consecutive positions (the speculative verify's
+      shape). That is exactly a prompt's prefill.
+    - **One slot fails on construction, not semantics.** `metal/model.go:buildResident` fills `kvSlotBufs` and sets `kvContig`
+      only when `kvSlots > 1`. The step reaches every row's KV as `kvSlotBufs[0]`'s buffer plus a per-row offset (one
+      allocation per layer, because a dispatch binds at most 16 buffers). With one slot, `kvSlotBufs` is empty, so
+      `metal/batch.go:metalResident.VerifyCost` returns nil and the prompt routes in
+      `metal/backend.go:metalResident.PrefillPath` and `metal/backend.go:metalResident.PrefillKernelFloor` fall back to
+      sequential. Yet a one-slot resident's `kc`/`vc` already have the step's layout: slot 0 at offset 0 of a one-slot
+      allocation.
+    - **What lifting it would take:**
+      1. At one slot without int8 KV, build `kvSlotBufs` with that one entry and mark it contiguous. Already correct at
+         one slot: `resident.useKVSlot` (a no-op), `resident.kvHostOff` (offset 0) and `metal/kvcopy.go`'s CopyKV, which
+         keeps its "one KV slot" decline.
+      2. Let `batchIneligible` take one slot.
+      3. Price the step's scratch (8 rows' buffers) in the one-slot fit plan, since the one-slot load is the tight one.
+      4. Decide one side effect: a non-nil `VerifyCost` also gives the speculative paths a step verify cost
+         (`decoder/spec_adaptive.go`). Either accept that and gate it, or split "prefills on the step" from "verifies on
+         the step".
+      - **Nothing in the decoder needs changing for concurrency:** `decoder/mc3_batch.go:Model.EnableResidentConcurrency`
+        and the batcher already require two slots. `metal/batch.go:metalResident.BatchStepRange` should still report
+        (0, 0) under two slots.
+      - **The gates would be:** tier 0 bit-identity of a one-slot step prefill against sequential, on both sides of the floor;
+        the same-slot verify test at one slot; and a planted defect.
+    - **Why this likely matters more than the 1-vs-2 slot measurement:** the cliff is not Phi-3's. Every Metal resident
+      whose memory guard allows one slot loses the step for its prompt, and the step is what serves:
+      - the q4k lane, always;
+      - a family the f16 MMA pass does not take (`!prefillOK`);
+      - the short warm-turn suffix above the floor, for every model (`PrefillKernelFloor` requires `VerifyCost`).
+
+      On a 16 GB Mac that is the large models: the loads where prefill time is largest.
+  - **The measurement (tier 1, by day, after the question above):** Phi-3 mini 4k at q4k on Metal, cold prefill tok/s at one prompt length. One arm
+    holds one KV slot (sequential); the other holds two (OP6's step), by a `-kv-sessions` or `-ctx` the guard admits with
+    two slots. Read each arm's banner `prefill path:` line, so the arm is the path it claims to be. A few minutes; holds the
+    timing lock.
+  - **Then two separate decisions, not one fix:** whether the step's two-slot minimum should apply to a one-request prefill,
+    and a decline message that names the condition that applied (a one-line fix that needs no measurement).
+
 - **P28 · Gemma 4 E2B and E4B: time to first token on Metal is 20-35x Qwen2.5-1.5B's at the same prompt — OPEN, filed
   2026-10-16 (owner). Measure first, by day; report before any fix.** `mac`.
 
