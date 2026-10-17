@@ -26,6 +26,11 @@ type snapFake struct {
 	serveFloor                int
 	taken, restored, released int
 	failTake                  error
+	// KV7 step 2 (kvsnap_step2_test.go): markAlign is the width of a batched pass (0: the fake cannot mark), marks the callbacks fired, ringAhead how many
+	// rows a slot may be past a snapshot's end for the take to succeed (a ring that has moved on has lost the rows; 0: no limit), markLate calls the
+	// callback one pass after the mark.
+	markAlign, marks, ringAhead int
+	markLate                    bool
 }
 
 type snapFakeSnap struct {
@@ -59,6 +64,9 @@ func (f *snapFake) SnapshotKV(slot, end int) (ResidentKVSnapshot, error) {
 	if len(f.hist[slot]) < end {
 		return nil, &KVCopyDecline{Reason: "snapFake: the rows are not there"}
 	}
+	if f.ringAhead > 0 && len(f.hist[slot])-end > f.ringAhead {
+		return nil, &KVCopyDecline{Reason: "snapFake: the ring has moved past the rows"}
+	}
 	f.taken++
 	return &snapFakeSnap{f: f, rows: end, hist: slices.Clone(f.hist[slot][:end])}, nil
 }
@@ -91,21 +99,29 @@ func (f *snapFake) RestoreKV(h ResidentKVSnapshot, slot, end int) error {
 
 type snapFakeBackend struct {
 	Backend
-	rf         *snapFake
-	plant      string
-	serveFloor int
+	rf                   *snapFake
+	plant                string
+	serveFloor           int
+	markAlign, ringAhead int
+	markLate             bool
 }
 
 func (b *snapFakeBackend) BuildResident(m *Model) (ResidentForward, bool, error) {
 	_, _, _, _, _, _, vocab := m.Dims()
-	b.rf = &snapFake{mc3Fake: newMC3Fake(vocab, 1), plant: b.plant, serveFloor: b.serveFloor}
+	b.rf = &snapFake{mc3Fake: newMC3Fake(vocab, 1), plant: b.plant, serveFloor: b.serveFloor, markAlign: b.markAlign, ringAhead: b.ringAhead, markLate: b.markLate}
 	return b.rf, true, nil
 }
 func (b *snapFakeBackend) Close() error { return nil }
 
 func loadWithSnapFake(t *testing.T, budget int64, plant string, serveFloor int) (*Model, *snapFake) {
 	t.Helper()
-	be := &snapFakeBackend{plant: plant, serveFloor: serveFloor}
+	return loadWithSnapFakeMarked(t, budget, plant, serveFloor, 0, 0, false)
+}
+
+// loadWithSnapFakeMarked is loadWithSnapFake over a fake that can mark its passes (markAlign > 0).
+func loadWithSnapFakeMarked(t *testing.T, budget int64, plant string, serveFloor, markAlign, ringAhead int, markLate bool) (*Model, *snapFake) {
+	t.Helper()
+	be := &snapFakeBackend{plant: plant, serveFloor: serveFloor, markAlign: markAlign, ringAhead: ringAhead, markLate: markLate}
 	name := fmt.Sprintf("fake-snap-%d", mc3FakeBackends.Add(1))
 	RegisterBackend(name, func() (Backend, error) {
 		cpu, err := NewBackend("cpu")

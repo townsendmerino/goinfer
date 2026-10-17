@@ -8,6 +8,10 @@ import "context"
 type KVScope struct {
 	Namespace string // "" is the single local namespace; serve sets one per API key
 	Off       bool   // no rows from another sequence: a continuation of a slot's sequence only
+	// Boundary is how many leading ids of the request's prompt are the stable system-and-tools section, the part before the first conversation turn
+	// (chat.Template.PrefixBoundary), 0 when the route does not know. A prefix snapshot is taken there during the cold prefill when the part of the
+	// prompt after it is longer than a windowed layer's rollback (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md).
+	Boundary int
 }
 
 type kvScopeKey struct{}
