@@ -67,7 +67,7 @@ func TestDeltaNetSnapshotCUDA(t *testing.T) {
 	total := 0
 	for l := range rf.layers {
 		L := &rf.layers[l]
-		if !L.isDeltaNet {
+		if !L.isDeltaNet() {
 			continue
 		}
 		s := st{win: L.dnWin, state: L.dnState, nWin: L.dnWin.Len(), nSt: L.dnState.Len()}

@@ -192,20 +192,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		layerScalar                                         float32
 
 		// mixer and ffn are this layer's operations from decoder.Model.ResidentLayerOps: its sequence mixer, then a feed-forward block when ffn.
-		// isDeltaNet and isMLA below are derived from mixer, kept for the readers that predate it.
+		// Nothing else decides which kind of layer this is.
 		mixer decoder.ResidentMixer
 		ffn   bool
 
-		// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). isDeltaNet layers carry NO
+		// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
 		// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
 		// qGate marks the family's SOFTMAX layers, whose q_proj is double width.
-		isDeltaNet                            bool
 		qGate                                 bool
 		dnQKV, dnZ, dnOut, dnB, dnA           hostW
 		dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
 
 		// MLA (DeepSeek / Kimi, FeatMLA)
-		isMLA                      bool
 		mlaQA, mlaQB, mlaQ, mlaKVA hostW
 		mlaQANorm, mlaKVANorm      []float32
 		mlaWUK, mlaWUV             []float32
@@ -275,12 +273,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		var hl hlayer
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
 		hl.mixer, hl.ffn = m.ResidentLayerOps(l)
-		// Transitional (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2a): ResidentLayerOps replaces the per-family predicates as the
-		// dispatch input. Until those predicates are retired, a layer where the two disagree is declined by name and not built as either.
-		if (hl.mixer == decoder.MixerDeltaNet) != (dnetOK && m.Qwen35LinearLayer(l)) || (hl.mixer == decoder.MixerMLA) != mlaOK {
-			return declined(fmt.Errorf("layer %d: ResidentLayerOps says %v but the family predicates say DeltaNet %v, MLA %v",
-				l, hl.mixer, dnetOK && m.Qwen35LinearLayer(l), mlaOK))
-		}
 		switch hl.mixer {
 		case decoder.MixerAttention, decoder.MixerDeltaNet, decoder.MixerMLA:
 		case decoder.MixerMamba, decoder.MixerNone:
@@ -306,7 +298,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// projections carry the model's quant; inB/inA are f32 on the CPU by deliberate
 			// choice (they feed the write/decay gates) and packWeight quantizes them to int8
 			// here — the one place this port is knowingly coarser than the reference.
-			hl.isDeltaNet = true
 			qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(l)
 			hl.dnConvW, hl.dnDtBias, hl.dnNegExpA, hl.dnNormW = cW, dtB, negA, nW
 			// Name the missing tensor. Every one of these becomes a device up32, and an empty
@@ -350,7 +341,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			proj = []projEnt{{&hl.q, qP}, {&hl.k, kP}, {&hl.v, vP}, {&hl.o, oP}}
 		case hl.mixer == decoder.MixerMLA:
-			hl.isMLA = true
 			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(l)
 			hl.mlaQANorm, hl.mlaKVANorm = qANorm, kvANorm
 			latDim := kvLoRA + qkRope
@@ -580,14 +570,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if mambaP != nil {
 			// Nemotron-H's attention is NoPE: an all-zero table makes rope_kv the identity rotation (cos 0 = 1, sin 0 = 0), as WebGPU's zeroed invFreq does.
 			hl.invFreq = make([]float32, m.RotaryDimAtResident(l)/2)
-		} else if !hl.isDeltaNet {
+		} else if hl.mixer != decoder.MixerDeltaNet {
 			hl.invFreq = m.RopeInvFreqLayerResident(l) // Gemma 4: real per-layer table, not the generic one
 		}
 		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
 		if m.LayerIsLocalResident(l) {
 			hl.window = int32(m.SlidingWindowResident())
 		}
-		if hl.isDeltaNet {
+		if hl.mixer == decoder.MixerDeltaNet {
 			// A DeltaNet layer has no attention geometry, QK-norm or rope table, which the checks below read; its own shapes are
 			// validated at upload, where the state buffers are sized from dnetParams. postOnly is a model-level flag, but a DeltaNet
 			// layer reaches NormPre2 through NormPlacementLinear: it needs real preNorm/postNorm (checked here) and has no
@@ -598,7 +588,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hls[l] = hl
 			continue
 		}
-		if hl.isMLA {
+		if hl.mixer == decoder.MixerMLA {
 			if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
 				return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
 			}
@@ -1363,23 +1353,22 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		for l := range nLayers {
 			h := &hls[l]
 			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn}
-			if !r.postOnly || h.isDeltaNet {
+			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
 				// non-empty above.
 				L.preNorm = r.up32(h.preNorm)
 			}
-			if h.ffn && h.mixer != decoder.MixerNone && ((!r.postOnly && !r.parallelBlock) || h.isDeltaNet) {
+			if h.ffn && h.mixer != decoder.MixerNone && ((!r.postOnly && !r.parallelBlock) || h.mixer == decoder.MixerDeltaNet) {
 				// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor (h.postNorm is 0-length, the same Alloc(0) hazard);
 				// segBFFN reuses segA's r.aq/r.aSc as the MLP input (see Model.ParallelBlockResident).
 				L.postNorm = r.up32(h.postNorm)
 			}
-			if h.isDeltaNet {
+			if h.mixer == decoder.MixerDeltaNet {
 				// Gated-DeltaNet mixer layer: no q/k/v/o, rope table or KV cache. It has two persistent state buffers instead, zeroed at
 				// build and re-zeroed per generation: the recurrence compounds, so unlike a KV cache the next sequence cannot overwrite
 				// it.
 				dp := r.dnet
-				L.isDeltaNet = true
 				L.dnQKV, L.dnZ, L.dnOut = r.upW(h.dnQKV), r.upW(h.dnZ), r.upW(h.dnOut)
 				L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
 				L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
@@ -1395,8 +1384,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.mbSSM = r.up32(make([]float32, mambaP.nHeads*mambaP.headDim*mambaP.dState))
 			} else if h.mixer == decoder.MixerNone {
 				// A feed-forward-only block has no attention weights to upload (u and d follow below).
-			} else if h.isMLA {
-				L.isMLA = true
+			} else if h.mixer == decoder.MixerMLA {
 				if r.mlaQLoRA > 0 {
 					L.mlaQA = r.upW(h.mlaQA)
 					L.mlaQB = r.upW(h.mlaQB)
@@ -1439,20 +1427,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// bundle's value. Zero, the skip sentinel segB's dense tail checks, for every non-gemma4 family.
 				L.layerScalar = m.Gemma4DenseLayerScalarAtResident(l)
 			}
-			if (r.sandwich || r.postOnly) && !h.isDeltaNet {
-				// h.isDeltaNet: postOnly is model-level, but Olmo Hybrid's DeltaNet layers use NormPre2 and were never given
+			if (r.sandwich || r.postOnly) && h.mixer != decoder.MixerDeltaNet {
+				// h.mixer == decoder.MixerDeltaNet: postOnly is model-level, but Olmo Hybrid's DeltaNet layers use NormPre2 and were never given
 				// postAttnNorm/postMLPNorm (see the validation loop's DeltaNet continue).
 				L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
 			}
 			// Both of these are ATTENTION side tables: a DeltaNet mixer layer has neither, and
 			// its nil slices would become 0-byte allocations (a hard error, not a no-op).
-			if h.hasBias && !h.isDeltaNet && !h.isMLA {
+			if h.hasBias && h.mixer != decoder.MixerDeltaNet && h.mixer != decoder.MixerMLA {
 				L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
 			}
-			if h.hasOBias && !h.isDeltaNet {
+			if h.hasOBias && h.mixer != decoder.MixerDeltaNet {
 				L.ob, L.hasOBias = r.up32(h.ob), true
 			}
-			if r.qkNorm && !h.isDeltaNet && !h.isMLA {
+			if r.qkNorm && h.mixer != decoder.MixerDeltaNet && h.mixer != decoder.MixerMLA {
 				L.qNorm = r.up32(h.qNorm)
 				if len(h.kNorm) > 0 { // empty on a KV-shared layer, and Alloc(0) is an error
 					L.kNorm = r.up32(h.kNorm)
@@ -1488,14 +1476,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// rotary.
 			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
 			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
-			if h.isDeltaNet || h.mixer == decoder.MixerMamba || h.mixer == decoder.MixerNone {
+			if h.mixer == decoder.MixerDeltaNet || h.mixer == decoder.MixerMamba || h.mixer == decoder.MixerNone {
 				// A recurrent mixer or a feed-forward-only block has no attention geometry to validate or rope table to bind. A non-zero kvDim would
 				// make the KV allocator below size a cache this layer never reads, wasting VRAM on the family that most needs it.
 				L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0
 				r.layers[l] = L
 				continue
 			}
-			if h.isMLA {
+			if h.mixer == decoder.MixerMLA {
 				L.hd = r.mlaQKHead
 				L.nKV = 1
 				L.rhalf = r.mlaQKRope / 2
@@ -1610,7 +1598,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.layers {
-			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA && !r.layers[l].noKV() && !r.layers[l].kvShared
+			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA() && !r.layers[l].noKV() && !r.layers[l].kvShared
 		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
@@ -1628,7 +1616,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// family least able to afford it: 3 of every 4 layers are this kind.
 				continue
 			}
-			if r.layers[l].isMLA {
+			if r.layers[l].isMLA() {
 				if r.layers[l].kvDim != r.mlaLatDim {
 					return fmt.Errorf("cuda: layer %d MLA latent cache kvDim=%d != latDim=%d", l, r.layers[l].kvDim, r.mlaLatDim)
 				}

@@ -119,9 +119,13 @@ func packMambaLayer(m *decoder.Model, l, hidden int, p *mambaParams) (hostMamba,
 	return hm, nil
 }
 
+// isDeltaNet and isMLA say what kind of layer this is, from mixer alone (decoder.Model.ResidentLayerOps).
+func (L *cudaLayer) isDeltaNet() bool { return L.mixer == decoder.MixerDeltaNet }
+func (L *cudaLayer) isMLA() bool      { return L.mixer == decoder.MixerMLA }
+
 // noKV reports whether the layer holds no attention K/V: the recurrent mixers and a feed-forward-only block.
 func (L *cudaLayer) noKV() bool {
-	return L.isDeltaNet || L.mixer == decoder.MixerMamba || L.mixer == decoder.MixerNone
+	return L.isDeltaNet() || L.mixer == decoder.MixerMamba || L.mixer == decoder.MixerNone
 }
 
 // loadMambaKernels compiles mamba.ptx and nongated_act.ptx and binds the pipelines, and allocates the mixer's per-token scratch. needNonGated is true when

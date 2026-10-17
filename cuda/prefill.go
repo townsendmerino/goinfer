@@ -245,7 +245,7 @@ func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings
 		return nil, fmt.Errorf("cuda prefill: %d DeepStack sets over %d image rows for %d layers: %w", len(deep), imgLen, r.nLayers, errPrefillDeclined)
 	}
 	for l := range r.layers {
-		if Ly := &r.layers[l]; Ly.isMoE || Ly.g4moe || Ly.isDeltaNet {
+		if Ly := &r.layers[l]; Ly.isMoE || Ly.g4moe || Ly.isDeltaNet() {
 			return nil, fmt.Errorf("cuda prefill: DeepStack is claimed for plain dense layers only (layer %d is not one): %w", l, errPrefillDeclined)
 		}
 	}
@@ -274,7 +274,7 @@ func (r *cudaResident) HybridMRoPEPrefill() bool {
 		if r.layers[l].isMoE || r.layers[l].g4moe {
 			return false
 		}
-		delta = delta || r.layers[l].isDeltaNet
+		delta = delta || r.layers[l].isDeltaNet()
 	}
 	return delta
 }
@@ -496,7 +496,7 @@ func (r *cudaResident) prefillStaticDecline() error {
 		}
 	}
 	// Gated-DeltaNet layers, whose conv ring and matrix state must advance one token at a time in order, are handled inside
-	// the pass: prefillCore branches on Ly.isDeltaNet and runs the recurrence through row-batched twins of decode's kernels
+	// the pass: prefillCore branches on Ly.isDeltaNet() and runs the recurrence through row-batched twins of decode's kernels
 	// (prefillDeltaNetRows, docs/tasks/task-cuda-deltanet-prefill-2026-09.md). Dispatch is on the layer's kind, not on which
 	// weights happen to be absent (a dense attention stack once ran over conv layers that load no q/k/v/o), and
 	// nonBatchableKind checks the projections each kind binds. ForwardN (spec verify) stays sequential for this family:
@@ -646,7 +646,7 @@ func nonBatchableKind(Ly *cudaLayer) string {
 	if Ly.pleGate.N > 0 || Ly.pleProj.N > 0 { // the E-model per-layer embedding branch runs through the batched GEMVs too
 		ws = append(ws, Ly.pleGate, Ly.pleProj)
 	}
-	if Ly.isDeltaNet {
+	if Ly.isDeltaNet() {
 		// A Gated-DeltaNet layer has no q/k/v/o; prefillDeltaNetRows binds these five instead.
 		ws = []cudaWQ{Ly.dnQKV, Ly.dnB, Ly.dnA, Ly.dnZ, Ly.dnOut}
 	}
@@ -1053,7 +1053,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 			}
 			t := r.profTic()
-			if Ly.isDeltaNet {
+			if Ly.isDeltaNet() {
 				// Gated-DeltaNet mixer (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): replaces segA + rope +
 				// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
 				// the recurrence row by row in order. The FFN below is the shared one.
@@ -1320,7 +1320,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					return e
 				}
 				r.profToc(gemvCat, t)
-			} // !Ly.isDeltaNet
+			} // !Ly.isDeltaNet()
 
 			// FFN: dense batches; MoE runs row by row off the batched residual. The routed-expert GEMVs are indexed by a device-side
 			// routing decision that differs per token, so there is no M-wide form without an expert-major gather (the expert-major
@@ -1365,7 +1365,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				t = r.profTic()
 				// segBFFN's postOnlyHere: a Gated-DeltaNet layer in a post-only model (Olmo Hybrid) replaces only the
 				// attention half, so its FFN takes the normal pre-MLP norm and in-place down projection.
-				postOnlyHere := r.postOnly && !Ly.isDeltaNet
+				postOnlyHere := r.postOnly && !Ly.isDeltaNet()
 				gqB, gScB := mqB, mScB
 				if r.parallelBlock {
 					// Cohere/Command-R: reuse segA's shared input norm (aqB/aScB) — MLP consumes the SAME

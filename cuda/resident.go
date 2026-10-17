@@ -199,7 +199,7 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 		if layers[i].kvHalf {
 			elem = 2
 		}
-		if layers[i].isMLA {
+		if layers[i].isMLA() {
 			perPos += int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer holds window+slack positions however long the context (kvwindow.go), and decoder.cudaKVBytes prices the same
@@ -460,15 +460,14 @@ type cudaLayer struct {
 	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
 
 	// mixer and ffn are this layer's operations (decoder.Model.ResidentLayerOps): the sequence mixer, then a feed-forward block when ffn. launchToken
-	// dispatches on mixer; isDeltaNet and isMLA below are derived from it and stay for the sites that read them directly.
+	// dispatches on mixer, and isDeltaNet and isMLA (methods below) read it, so nothing else decides a layer's kind.
 	mixer decoder.ResidentMixer
 	ffn   bool
-	// Gated-DeltaNet mixer layer. When isDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
+	// Gated-DeltaNet mixer layer. When mixer is MixerDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
 	// instead of attention: no KV cache, no q/k/v/o, and TWO persistent state buffers updated in place per token.
 	// dnState is [nv*hv*hk], stored TRANSPOSED relative to the CPU's [hk,hv] so each thread owns a contiguous row;
 	// dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND, so both are re-zeroed per generation (Reset),
 	// unlike a KV cache, which the next sequence simply overwrites.
-	isDeltaNet                   bool
 	dnQKV, dnZ, dnOut, dnB, dnA  cudaWQ // the five DeltaNet projections
 	dnConvW, dnDtBias, dnNegExpA Buffer // conv taps, dt bias, precomputed -exp(A_log)
 	dnNormW                      Buffer // [hv] gated-RMSNorm weight, shared across heads
@@ -485,7 +484,6 @@ type cudaLayer struct {
 	qGate bool
 
 	// MLA (DeepSeek / Kimi, FeatMLA)
-	isMLA                      bool
 	mlaQA, mlaQB, mlaQ, mlaKVA cudaWQ
 	mlaQANorm, mlaKVANorm      Buffer
 	mlaWUK, mlaWUV             Buffer
@@ -2336,7 +2334,7 @@ func (r *cudaResident) resetState() error {
 	stZ := make([]float32, dp.stateElems)
 	for i := range r.layers {
 		L := &r.layers[i]
-		if !L.isDeltaNet {
+		if !L.isDeltaNet() {
 			continue
 		}
 		if e := gpu.Upload(L.dnWin, winZ); e != nil {
@@ -3369,7 +3367,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	// mixer replaces segA+attention, not the FFN half). A DeltaNet layer reaches NormPre2 via NormPlacementLinear
 	// regardless of the model-level placement and has a real Ly.postNorm (and no postMLPNorm; see BuildResident's
 	// DeltaNet-continue comment), so it must take the normal branches.
-	postOnlyHere := r.postOnly && !Ly.isDeltaNet
+	postOnlyHere := r.postOnly && !Ly.isDeltaNet()
 	// This layer's own FFN width: Gemma 4 E-models mix 6144 and 12288 (docs/tasks/task-multimodal-support-2026-10.md), and the
 	// scratch is sized to the widest layer, so every launch below takes the layer's width and never the model-level r.inter.
 	ffnI := Ly.ffnI
@@ -3558,7 +3556,7 @@ func (r *cudaResident) segC(Ly *cudaLayer, l int, x Buffer) error {
 func (r *cudaResident) captureGraphs() error {
 	for l := range r.layers {
 		Ly, ll := &r.layers[l], l
-		if Ly.isDeltaNet {
+		if Ly.isDeltaNet() {
 			// A Gated-DeltaNet layer is MORE graph-static than an attention one: no rope and no attention, so no per-token
 			// dynamic uniform. The recurrence's only per-token input is the residual, which is buffer CONTENTS, and replay
 			// reads current contents (TestCUDA_graphReplay). So the whole pre-routing half captures as ONE segment, mixer +
@@ -3582,7 +3580,7 @@ func (r *cudaResident) captureGraphs() error {
 			}
 			continue
 		}
-		if Ly.isMLA {
+		if Ly.isMLA() {
 			// For MLA, segA is dynamic (rope and attention depend on pos) and graphs are disabled.
 			continue
 		}
