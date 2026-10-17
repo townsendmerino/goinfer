@@ -11987,6 +11987,14 @@ Load writes the EOS ids generation_config.json adds back into the config a bundl
 the stream writes the config in its head, before any layer, so it resolves them first (StreamTranscodeGGUF's M-04).
 ```
 
+## SelfSwapBytes
+
+`SwapWatch` is generic over a `SwapReader`; `internal/swapguard.Select` chooses the readers. On Linux the server's own swap is `SelfSwapBytes`: `VmSwap` from `/proc/<pid>/status`, summed over the process and every
+descendant (parents come from the `stat` line, counted from its last `)` because a command name may hold spaces and parentheses). It is unknown, not zero, when the process's own `VmSwap` line is missing, and the guard then
+falls back to `SwapUsedBytes` (system-wide) at the same threshold. A second Linux source watches `SwapUsedBytes` at a 4096 MB backstop (`swapguard.BackstopMB`). macOS and the other platforms have no per-process swap
+figure (`SelfSwapReader` reports why), so they keep the system-wide guard alone. A guard that watches the server's own swap does not see a server that pushes other processes into swap while holding none itself; the backstop is what covers that.
+Evidence for the change: `docs/measurements/kv7-step2-2026-10-17/README.md`, "Swap during the replay".
+
 ## dropped.swapwatch.35
 
 Moved from `decoder/swapwatch.go` (a comment block rewritten to the rule; it carried tracker ids, dates or a provenance note) on 2026-10-09.

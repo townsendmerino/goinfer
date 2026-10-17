@@ -27,6 +27,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
+	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -452,7 +453,7 @@ type server struct {
 	// swapguard.go. The zero values mean not armed yet: startSwapGuard sets swapWatch during newServer, and a nil
 	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
 	swapGuardTripped atomic.Bool
-	swapWatch        *decoder.SwapWatch
+	swapWatch        *swapguard.Watch
 }
 
 // lookupLocked resolves a request's model name to a loaded entry: an exact served-name match, else the sole model

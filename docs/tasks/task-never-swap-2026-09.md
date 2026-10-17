@@ -1216,3 +1216,9 @@ no kernel math.
   cache are not file-backed, and its memory-hog arm was not run (2026-10-01, C-D01 in `docs/audit-metal-2026-09-30.md`).
 
 <!-- doc-reviewed: 2026-09-22 -->
+
+## Addendum, 2026-10-17: the serving figure is the server's own swap on Linux
+
+The tripwire read system-wide swap-used, and on nobara about 9 GB of swap sits in idle processes whose figure drifts by 0.5 to 1 GB between runs, so the 512 MB default halted runs on noise (`docs/measurements/kv7-step2-2026-10-17/README.md`, "Swap during the replay"). On Linux the 512 MB
+threshold now applies to `VmSwap` summed over the server's pid and descendants (`decoder.SelfSwapBytes`), and system-wide swap is a second trip at a fixed 4096 MB backstop (Francis's decision, 2026-10-17). Where `VmSwap` cannot be read, and on macOS (no per-process figure), the guard is the system-wide one at the
+threshold, and the banner names the reader. Run plans that set `swap_guard_mb` 4096 as a workaround drop it once a build carries this.
