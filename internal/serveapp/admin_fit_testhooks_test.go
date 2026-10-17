@@ -17,6 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 )
 
 // TestAdminFit_answerIsWhatTheLoadDoes: POST /admin/models/fit says what the load then does with the same body. Where it
@@ -39,6 +40,10 @@ func TestAdminFit_answerIsWhatTheLoadDoes(t *testing.T) {
 	registerAdminRoutes(mux, srv, 1<<20, func(h http.HandlerFunc) http.HandlerFunc { return h })
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
+	body := func(path string) string { // json.Marshal: a Windows path's backslashes are not valid in a JSON string as written
+		b, _ := json.Marshal(map[string]string{"path": path})
+		return string(b)
+	}
 	post := func(route, body string) (int, string) {
 		r, err := http.Post(ts.URL+route, "application/json", strings.NewReader(body))
 		if err != nil {
@@ -69,9 +74,9 @@ func TestAdminFit_answerIsWhatTheLoadDoes(t *testing.T) {
 
 	var ms runtime.MemStats
 	live := func() uint64 { runtime.GC(); runtime.ReadMemStats(&ms); return ms.HeapInuse }
-	fit(`{"path":"` + path + `"}`) // a first call settles one-time state (the quant byte-cost table)
+	fit(body(path)) // a first call settles one-time state (the quant byte-cost table)
 	heap, allocs := live(), decoder.WeightAllocsForTest()
-	a := fit(`{"path":"` + path + `"}`)
+	a := fit(body(path))
 	if grew := int64(live()) - int64(heap); grew > 1<<20 {
 		t.Errorf("the fit call left %d more bytes of live heap", grew)
 	}
@@ -104,7 +109,7 @@ func TestAdminFit_answerIsWhatTheLoadDoes(t *testing.T) {
 
 	restore := decoder.SetHostRAMAvailableForTest(64 << 10)
 	defer restore()
-	a = fit(`{"path":"` + path + `"}`)
+	a = fit(body(path))
 	if a.Fits == nil || *a.Fits || a.Decline == "" {
 		t.Fatalf("a load that does not fit: %+v", a)
 	}
@@ -136,6 +141,13 @@ func TestAdminFit_unbuiltSidecarIsUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !prequant.DefaultToSidecar(false) {
+		// This platform loads a .gguf directly (no sidecar default), so the answer prices the .gguf itself.
+		if got["fits"] != true || got["load_path"] != path {
+			t.Fatalf("no sidecar default here, so the .gguf is priced directly: %v", got)
+		}
+		return
+	}
 	if got["fits"] != nil || !strings.HasPrefix(got["unknown"].(string), ".giw not built") || got["build"] == nil {
 		t.Fatalf("an unbuilt sidecar: %v", got)
 	}
@@ -153,6 +165,9 @@ func TestAdminFit_builtSidecarIsPricedWithoutLoading(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "glm-tiny.gguf")
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if !prequant.DefaultToSidecar(false) {
+		t.Skip("this platform loads a .gguf directly, with no sidecar .giw to price (prequant.DefaultToSidecar)")
 	}
 	srv, err := newServer(config{allowAdmin: true, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}})
 	if err != nil {
