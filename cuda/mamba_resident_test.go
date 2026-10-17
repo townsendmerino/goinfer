@@ -233,3 +233,54 @@ func TestNemotronResidentCUDA_int8Declines(t *testing.T) {
 		t.Error("with the build's int8 decline planted off, int8int8 still does not go resident: this test cannot see a missing decline")
 	}
 }
+
+// TestNemotronResidentCUDA_blockKinds: each block of nemotron-tiny is built as the one operation the family's own block kind says (Mamba-2 mixer with no
+// feed-forward, attention with none, feed-forward only), read from decoder.Model.NemotronBlockKind and not from ResidentLayerOps. A Mamba block owns its two
+// state buffers and no KV; a feed-forward-only block owns u and d and no norm after the pre-norm.
+func TestNemotronResidentCUDA_blockKinds(t *testing.T) {
+	requireCUDADevice(t)
+	defer nemotronFeaturesForTest()()
+	m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not resident (%s): %s", m.DecodePath(), m.ResidentDecline())
+	}
+	count := map[decoder.ResidentMixer]int{}
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		var wantMixer decoder.ResidentMixer
+		var wantFFN bool
+		switch m.NemotronBlockKind(l) {
+		case 0:
+			wantMixer, wantFFN = decoder.MixerMamba, false
+		case 1:
+			wantMixer, wantFFN = decoder.MixerAttention, false
+		case 2:
+			wantMixer, wantFFN = decoder.MixerNone, true
+		default:
+			t.Fatalf("layer %d: block kind %d is not built in this test", l, m.NemotronBlockKind(l))
+		}
+		if Ly.mixer != wantMixer || Ly.ffn != wantFFN {
+			t.Errorf("layer %d: built as (%v, ffn %v), the family says (%v, ffn %v)", l, Ly.mixer, Ly.ffn, wantMixer, wantFFN)
+		}
+		count[Ly.mixer]++
+		hasState := Ly.mbWin.Len() > 0 && Ly.mbSSM.Len() > 0
+		if hasState != (wantMixer == decoder.MixerMamba) {
+			t.Errorf("layer %d: Mamba state buffers present = %v for a %v block", l, hasState, wantMixer)
+		}
+		if Ly.noKV() != (wantMixer != decoder.MixerAttention) || (Ly.kvDim == 0) != (wantMixer != decoder.MixerAttention) {
+			t.Errorf("layer %d: noKV %v, kvDim %d for a %v block", l, Ly.noKV(), Ly.kvDim, wantMixer)
+		}
+		if wantMixer == decoder.MixerNone && (Ly.u.N == 0 || Ly.d.N == 0 || Ly.ffnI != Ly.u.N) {
+			t.Errorf("layer %d: feed-forward-only block has u %d, d %d, ffnI %d", l, Ly.u.N, Ly.d.N, Ly.ffnI)
+		}
+	}
+	t.Logf("nemotron-tiny blocks by operation: %v", count)
+	if count[decoder.MixerMamba] == 0 || count[decoder.MixerAttention] == 0 || count[decoder.MixerNone] == 0 {
+		t.Errorf("VOID: nemotron-tiny no longer has all three block kinds (%v)", count)
+	}
+}
