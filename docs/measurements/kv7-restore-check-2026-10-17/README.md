@@ -37,7 +37,7 @@ large request of a run, which restored a 1,792-row snapshot (`snap=1792`). Is a 
 
 Restore is cleared for the pilot failures: on the three requests that restored, the restored and cold runs are the same bits where it was measured (4 greedy runs of task 1, 4 of task 5, 6 first-position
 distributions). The garbage in task 5 is therefore not cache damage. The sampling the pilot ran with is the next suspect: opencode sent no `temperature`, `top_p` or `top_k` (the captured bodies carry only
-`model, max_tokens, messages, tools, tool_choice, stream, stream_options`), and `internal/serveapp/openai.go:prepare` then samples at temperature 1.0 over the whole vocabulary. That is a reading of the code
+`model, max_tokens, messages, tools, tool_choice, stream, stream_options`), and `internal/serveapp/openai.go:loadedModel.prepare` then samples at temperature 1.0 over the whole vocabulary. That is a reading of the code
 and of the bodies; whether it produced `ồng` and `tolua` was not replayed (a sampled run is not reproducible without its seed).
 
 ## Limits
