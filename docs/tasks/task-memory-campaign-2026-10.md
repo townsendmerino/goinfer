@@ -51,7 +51,7 @@ encoder items (MEM14–MEM17), and one correctness item in aikit's audio loaders
 | MEM0 | footprint census of the app path and of tack's load path | both | S | — (it sizes the rest) |
 | MEM1 | a public mapped-load entry point for library callers | goinfer, all | S–M | 7B on Metal: ~9 GB anonymous → ~0.1 GB |
 | MEM2 | Metal tower scratch: release on grow, a real `Close` | goinfer, Metal | S | up to ~2.8 GiB stranded after a 4K image |
-| MEM3 | audio loaders keep their mapping alive (correctness) | aikit | S | — (use-after-unmap) |
+| MEM3 | audio loaders keep their mapping alive (correctness; confirmed, three loaders) | aikit | S | — (use-after-unmap) |
 | MEM4 | towers: alias bf16/f32, drop the host copy after GPU attach | aikit + goinfer | M | Qwen2.5-VL on Metal: ~5.2 GB → ~1.35–2.7 GB |
 | MEM5 | chunk the prefill of the families G40 left whole | goinfer, CPU | M–L | 2–4.5 GiB at a 20K prompt |
 | MEM6 | resident prefill embeds per chunk, not per suffix | goinfer, CUDA/Metal | S | E4B at 20K: ~1.0 GiB |
@@ -188,17 +188,34 @@ release, red). Tier 1: one 4K image turn then unload, Metal footprint returns to
 
 ### MEM3 · aikit audio loaders keep their mapping alive (S, correctness)
 
-**Problem (checked in part).** `audio/whisper_encoder.go:LoadWhisperEncoder` opens the checkpoint through
-`openSafetensorsDir` (an mmap'd `SafetensorsFile`) and keeps no reference to it in the returned encoder. For an F32
-checkpoint (whisper-tiny/base/small), `embed/safetensors.go:SafetensorsFile.TensorF32` returns zero-copy views into the
-mapping, and the file's finalizer unmaps it once the file is unreachable — so the encoder's weights can point into
-unmapped memory after a GC. The other pass reported the same shape in the Voxtral projector and Qwen ASR loaders (not
-re-read here). BF16 checkpoints are safe: they are widened into the heap. Not reproduced.
+**Problem (confirmed 2026-10-17, by reading; three loaders).** For an F32 tensor,
+`embed/safetensors.go:SafetensorsFile.TensorF32` returns a zero-copy view into the mapping, and the file's finalizer
+unmaps it once the file is unreachable. Three loaders open the checkpoint mmap'd, keep F32 views, and keep no reference
+to the file, so after a GC the encoder's weights can point into unmapped memory:
 
-**Fix shape.** Retain the `SafetensorsFile` in each encoder (as the vision loaders and `encoder` do), with a `Close`.
+| loader | keeps the file? | F32 checkpoint |
+|---|---|---|
+| `audio/whisper_encoder.go:LoadWhisperEncoder` | no | dangling after a GC (whisper-tiny/base/small ship F32) |
+| `audio/voxtral.go:LoadVoxtralAudio` (projector w1/w2) | no | dangling |
+| `audio/qwen3asr_encoder.go:LoadQwenASREncoder` | no | dangling |
 
-**Gates.** Tier 0: load an F32 tiny fixture, drop every other reference, force two GCs and run the finalizers, then run
-the encoder; output equals a run with the file held (red before the fix, by construction).
+Checked safe, so the sweep is complete at these three: `audio/gemma4_encoder.go:LoadGemma4AudioEncoder` (closes the
+file but copies every tensor out first); all six vision loaders (SigLIP, Qwen2.5-VL, Qwen3-VL, Pixtral, GLM-OCR,
+Gemma 4 — each copies out, then closes); aikit `encoder` (keeps the file on its weights); and goinfer's own loaders
+(main weights, LoRA, DFlash, DSpark — each keeps its `SafetensorsFile`). BF16 checkpoints are safe in any loader: they
+are widened into the heap. goinfer reaches all three bad loaders: serve loads Qwen ASR and Voxtral lazily
+(`internal/serveapp/vision_serve.go`) and `internal/whisper/transcribe.go` loads Whisper. Not reproduced.
+
+**Fix shape.** Retain the `SafetensorsFile` in each of the three encoders, with a `Close`. On the goinfer side, at the
+next aikit bump: close serve's lazily loaded Qwen ASR and Voxtral encoders on model unload, and close the Whisper
+encoder after a transcription, so the mappings do not live to process exit.
+
+**Gates.** Tier 0. A read of unmapped memory is a SIGSEGV that kills the test binary rather than failing a test, so
+either run the encoder under `debug.SetPanicOnFault(true)` (the fault becomes a recoverable panic), or — preferred,
+crash-free and deterministic — a test hook records the file the loader opened, the test takes a `weak.Pointer` to it,
+runs several `runtime.GC()` cycles with the encoder still alive, and asserts the pointer is not nil (red before the fix,
+since nothing holds the file). Confirm Go's weak-pointer semantics for an object with a finalizer before relying on the
+second form.
 
 ### MEM4 · Towers: alias instead of widening, drop the host copy after GPU attach (M)
 
