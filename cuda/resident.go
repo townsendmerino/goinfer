@@ -459,6 +459,10 @@ type cudaLayer struct {
 	perExpertScaleB                                        Buffer  // [nE] learned scale on the renormalized top-k weights
 	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
 
+	// mixer and ffn are this layer's operations (decoder.Model.ResidentLayerOps): the sequence mixer, then a feed-forward block when ffn. launchToken
+	// dispatches on mixer; isDeltaNet and isMLA below are derived from it and stay for the sites that read them directly.
+	mixer decoder.ResidentMixer
+	ffn   bool
 	// Gated-DeltaNet mixer layer. When isDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
 	// instead of attention: no KV cache, no q/k/v/o, and TWO persistent state buffers updated in place per token.
 	// dnState is [nv*hv*hk], stored TRANSPOSED relative to the CPU's [hk,hv] so each thread owns a contiguous row;
@@ -3622,7 +3626,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	gC := useGraphs && (r.graphMask == "" || strings.Contains(r.graphMask, "C"))
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
-		if Ly.isDeltaNet {
+		if Ly.mixer == decoder.MixerDeltaNet {
 			// Gated-DeltaNet mixer: replaces segA + rope + attention + o-proj (no KV cache, nothing positional: the state IS
 			// the history). The FFN sub-block and the router-readback gap below are the ordinary ones, so this rejoins the
 			// shared path at segBFFN. Captured as ONE segment (gSegA) when graphs are on: with no rope/attention gap there is
@@ -3649,7 +3653,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 			}
 			continue
 		}
-		if Ly.isMLA {
+		if Ly.mixer == decoder.MixerMLA {
 			if e := r.segAMLA(Ly, l, pos, ropePos); e != nil {
 				return e
 			}
