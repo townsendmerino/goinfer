@@ -22,13 +22,15 @@ export GOINFER_SERVE_METAL=$B/serve-metal-$REV OLLAMA_BIN=/opt/homebrew/bin/olla
 { echo "rev $REV (serve sha256 $(shasum -a 256 "$GOINFER_SERVE_METAL" | cut -c1-16))"; echo "ollama $($OLLAMA_BIN --version 2>&1 | tail -1)"
   echo "phi3 $(shasum -a 256 "$PHI3" | cut -c1-16)"; sw_vers | tr '\n' ' '; echo; pmset -g batt | head -1
   sysctl -n vm.swapusage; df -h ~ | tail -1; uptime; } | tee "$OUT/provenance.txt"
+# No -require-backend (the record's 2026-10-17 amendment): it refuses this load for its sequential prefill, and the cell
+# measures decode, which the decode-path checks here and in bench_peer.py hold to metal-resident (q4k).
 # The fit check is the job's first step (owner, 2026-10-16): the pinned server with the cell's flags, read until it serves
 # or refuses. The cell runs only on a resident q4k load; a refusal, a weight-streaming fallback or any other decode path
 # ends the job VOID-refused, with the figures in $OUT/fitcheck.log. The server is stopped the moment a refusal is printed,
 # before a streaming retry can write a sidecar.
 FIT=$OUT/fitcheck.log
 { echo "=== $(date '+%F %T %Z') / $(date -u +%T) UTC fit check"; sysctl -n vm.swapusage; uptime; } > "$FIT"
-"$GOINFER_SERVE_METAL" -model "bench=$PHI3" -backend metal -addr 127.0.0.1:18931 -quant q4k -ctx 2048 -require-backend >>"$FIT" 2>&1 &
+"$GOINFER_SERVE_METAL" -model "bench=$PHI3" -backend metal -addr 127.0.0.1:18931 -quant q4k -ctx 2048 >>"$FIT" 2>&1 &
 fpid=$!
 fit=TIMEOUT
 for _ in $(seq 1 600); do # 5 minutes: a cold read of the 2.4 GB file
@@ -51,7 +53,7 @@ if [ "$fit" != RESIDENT ]; then
 fi
 sleep 5 # the check's memory is released before the cell's own loads
 export BENCH_RUNS=3 BENCH_ENGINES=goinfer,ollama BENCH_DEPTHS=none BENCH_BACKENDS=metal BENCH_CTX=2048
-export BENCH_QUANT_OVERRIDE="M35=int4mix,phi3-mini=q4k,G20=default,G26Q=default" BENCH_REQUIRE_BACKEND=1
+export BENCH_QUANT_OVERRIDE="M35=int4mix,phi3-mini=q4k,G20=default,G26Q=default"
 export BENCH_SWAP_VOID_MB=0 BENCH_SWAP_KILL_MB=1024 BENCH_SERVE_LOG_DIR=$OUT/serve-logs
 cd "$ROOT" || exit 1
 echo "=== $(date -u +%FT%TZ) START Phi-3 q4k on Metal"

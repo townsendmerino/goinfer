@@ -146,6 +146,25 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
   declined on the format ("--quant q4k has no .giw form yet"), so no sidecar was written. Two VS Code windows with Claude
   sessions were open; available memory had been 9.4 GB at 21:08. Re-queued for another night (owner). Log:
   `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-2300.log`.
+- **Night 2026-10-16, 23:21 PDT: VOID, refused by `-require-backend`.** The fit check admitted the load (9.2 GB available,
+  87% of budget) and the server went `metal-resident (q4k)`. Then `-require-backend` refused it: "model "bench" declined the
+  batched prefill: sequential — arch/geometry not supported by f16 MMA prefill kernel". Log:
+  `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-2321.log`.
+
+### Amendment, 2026-10-17, before any timed run: M1 drops `-require-backend` (owner: "option (a), on my word")
+
+- **The change:** `-require-backend` comes off both the cell (`BENCH_REQUIRE_BACKEND` is no longer set) and the job's fit
+  check. Everything else in the cell is as registered.
+- **The reason:** M1 measures decode, and `-require-backend` also refuses a load whose prefill is not batched. The
+  decode-path gate is unchanged. The fit check proceeds only on `decode path: metal-resident (q4k)`, and `bench_peer.py`
+  voids any run whose decode path is anything else.
+- **Why this load's prefill is sequential** (read from the pinned binary's source, 42d72319, `metal/model.go` and
+  `metal/batch.go`): not Phi-3's geometry, although the message says "arch/geometry".
+  - The q4k lane never takes the f16 MMA pass: `prefillOK` excludes `q4kLane` outright.
+  - The fallback, OP6's batched step, needs at least two resident KV slots (`batchIneligible`: "one resident KV slot"). At
+    `-ctx 2048` each slot costs 768 MB, and the memory guard allowed one.
+  - The message names a cause that is not the one that applied. Queue item P29 tracks both that and the prefill cost.
+- Re-queued for the night of 2026-10-17.
 - **Cost:** one cell, two engines, about 8 minutes of cells and loads; queued at 20.
 - **What it decides:** the owner's E5 ("yes to the default once the cell is read",
   `docs/tasks/task-forward-architecture-2026-10.md` §7): the cell is read, and Metal's default load for Phi-3/4 becomes

@@ -1,0 +1,20 @@
+=== 2026-10-16 23:21:54 PDT / 06:21:54 UTC fit check
+total = 3072.00M  used = 1401.81M  free = 1670.19M  (encrypted)
+23:21  up 11:08, 1 user, load averages: 1.19 1.64 2.08
+swap guard (load): armed for /Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, threshold +512 MB over baseline
+decoder: fit is tight — Phi-3-mini-4k-instruct-q4.gguf needs ~2.6 GB resident at quant q4k + 0.8 GB KV + 2.2 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 5.6 GB; this machine currently has 9.2 GB of memory available (budget 6.4 GB = 70% of that) (87% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+metal: 1 resident KV slots of 2 requested — each costs 768 MB of KV at the resident context, and the memory guard allows 1
+swap guard (load): baseline 1.47 GB swap-used
+loaded "bench": 32-layer model (vocab 32064) in 3.44s [chat: phi3_orig]
+  decode path: metal-resident (q4k)
+  prefill path: sequential — arch/geometry not supported by f16 MMA prefill kernel
+  head table: int8
+  context: 2048 tokens (--ctx; model maximum 4096) · KV f16
+  harness: 2048 tokens is short for a coding agent — its first request is about 11k tokens (opencode: 11137) and will be refused (context_length_exceeded); the model's own maximum is 4096, so --ctx cannot raise it to 16384
+  fit: 2048-token cap needs 0.8 GB KV (weights 2.6 GB, budget 2.8 GB, 2.1 GB left for a request's own prefill)
+  KV plan: 1 conversation x 2048 positions (4 asked for; --ctx 2048)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+--require-backend: model "bench" declined the batched prefill: sequential — arch/geometry not supported by f16 MMA prefill kernel
+=== fit check: EXITED
