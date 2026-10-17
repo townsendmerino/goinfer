@@ -293,7 +293,9 @@ the CUDA suite twice, and most of it re-checked what the previous run had alread
 
 - **Check a change with `python3 scripts/touched.py`.** It gofmts the touched files, builds and vets the touched modules (the tagged variants they
   need) and tests the touched packages; in a package whose cold run is over a minute (`decoder`: 310 s) it runs the tests of the test file beside each
-  touched file, or the `-run` you name. It takes seconds. It is not a gate.
+  touched file, or the `-run` you name. It also runs every source-scan test that reads a changed file, from any package or module and for any kind of
+  file (`scripts/touched_scans.py`: a census, a switch's case labels, every route's guard; a `.cu` or a doc counts). A new test that reads the repo's
+  own source goes in that table, or `scripts/test_touched.py` fails. It takes seconds. It is not a gate.
 - **Do not run `go run ./cmd/gate quick`, a whole-module or whole-package `go test`, or the CUDA suite by day.** CI runs them on every push, and the night queue
   runs the heavy tier. `gate quick` is the pre-tag tier (RELEASING.md): run it when cutting a release or when the owner asks.
 - **One run of each thing a push requires, once, immediately before the push, after the last merge of `main`.** The parity refresh
