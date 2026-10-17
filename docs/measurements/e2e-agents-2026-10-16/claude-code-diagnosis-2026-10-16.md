@@ -27,7 +27,7 @@ The edit run is two compactions (Claude Code's own summaries, at +679 s and +1,1
 | 8 | 16,420 | the first request after compaction 2 | 51 ids into the **second summary** (both summaries open with the same sentence) |
 | 7 | 17,567 | the request that produced summary 2 | inside the trailing system message, about 360 ids after its start. **Not established**: its prompt includes the assistant turn's ids and the summariser's instruction, which the transcript cannot rebuild |
 
-Requests 6 and 8 share 16.4k ids with the slot they find; the slot holds 22.5k and 18.7k, so the divergence lies 6,000 and 3,000 positions behind its end, against a rollback of 448. They are cold for the same reason the session starts are.
+Requests 6 and 8 share 16.4k ids with the slot they find; the slots hold 22,524 and 22,627 ids, so the divergence lies about 6,200 positions behind each slot's end, against a rollback of 448. They are cold for the same reason the session starts are.
 
 ## Which fix each points to
 
