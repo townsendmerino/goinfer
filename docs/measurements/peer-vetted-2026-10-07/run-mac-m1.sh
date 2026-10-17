@@ -32,7 +32,9 @@ FIT=$OUT/fitcheck.log
 fpid=$!
 fit=TIMEOUT
 for _ in $(seq 1 600); do # 5 minutes: a cold read of the 2.4 GB file
-  if grep -qE 'does not fit resident RAM|NOT loaded|stream-weights|weight streaming' "$FIT"; then fit=REFUSED; break; fi
+  # The refusal's own lines. A "fit is tight" advisory names -stream-weights as a remedy on a load that goes ahead, so the
+  # word alone is not a refusal; a load that did stream is caught by the decode path below.
+  if grep -qE 'does not fit resident RAM|NOT loaded' "$FIT"; then fit=REFUSED; break; fi
   if grep -q 'goinfer serving on' "$FIT"; then
     if grep -qE 'decode path: metal-resident \(q4k\)' "$FIT"; then fit=RESIDENT; else fit=NOT-RESIDENT; fi
     break

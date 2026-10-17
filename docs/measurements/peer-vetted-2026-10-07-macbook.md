@@ -134,6 +134,13 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
   results' `fitcheck.log`. The job is queued after `op3a-S-served`, so it reads whatever memory is free with the box
   otherwise idle. Checked against three stand-in servers (this refusal's real output, a resident q4k banner, a CPU decode
   path): REFUSED and NOT-RESIDENT exit 2, RESIDENT proceeds.
+- **Night 2026-10-16, 21:08 PDT: VOID by a defect in the job's own gate, not a refusal.** The server admitted the load: "fit is
+  tight … 5.6 GB; this machine currently has 9.4 GB of memory available (budget 6.6 GB = 70% of that) (85% of budget)". That
+  advisory suggests `-stream-weights` as a remedy, and the gate counted any mention of `stream-weights` as a refusal, so it
+  stopped the server and the cell did not run. Fixed: a refusal is now only the server's own refusal lines (`does not fit
+  resident RAM`, `NOT loaded`), and a load that streamed is still caught by the decode-path check. Checked against four
+  stand-in servers, the fourth replaying this night's "fit is tight" output and then serving resident: the fixed gate reads
+  RESIDENT, the old one REFUSED. The cell is re-queued unchanged. Log: `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-2108.log`.
 - **Cost:** one cell, two engines, about 8 minutes of cells and loads; queued at 20.
 - **What it decides:** the owner's E5 ("yes to the default once the cell is read",
   `docs/tasks/task-forward-architecture-2026-10.md` §7): the cell is read, and Metal's default load for Phi-3/4 becomes

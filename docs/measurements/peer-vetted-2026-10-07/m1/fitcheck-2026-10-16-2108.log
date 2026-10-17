@@ -1,0 +1,6 @@
+=== 2026-10-16 21:08:17 PDT / 04:08:17 UTC fit check
+total = 3072.00M  used = 1481.81M  free = 1590.19M  (encrypted)
+21:08  up  8:55, 1 user, load averages: 1.33 1.65 1.83
+swap guard (load): armed for /Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, threshold +512 MB over baseline
+decoder: fit is tight — Phi-3-mini-4k-instruct-q4.gguf needs ~2.6 GB resident at quant q4k + 0.8 GB KV + 2.2 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 5.6 GB; this machine currently has 9.4 GB of memory available (budget 6.6 GB = 70% of that) (85% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+=== fit check: REFUSED
