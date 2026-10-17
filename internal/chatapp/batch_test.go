@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/batchio"
 )
 
@@ -503,5 +504,49 @@ func TestBatchContextMessage(t *testing.T) {
 	own := batchContextMessage(40000, 32768, 32768)
 	if strings.Contains(own, "-ctx") || !strings.Contains(own, "context_length_exceeded") {
 		t.Errorf("the model's own window is the limit; message = %s", own)
+	}
+}
+
+// A line takes the model's recommended value for each sampling field that neither it nor a flag sets, by serve's rule: a
+// line field wins, then a flag, then the model, then the API default; a line that asks for greedy is left as sent.
+func TestBatchDefaults_fillRecommended(t *testing.T) {
+	parse := func(args ...string) batchDefaults {
+		fs := flag.NewFlagSet("t", flag.ContinueOnError)
+		cf := registerFlags(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		explicit := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+		return newBatchDefaults(cf, explicit)
+	}
+	f := func(v float64) *float64 { return &v }
+	k := func(v int) *int { return &v }
+	rec := &decoder.RecommendedSampling{Source: "generation_config.json", Temperature: f(0.7), TopP: f(0.8), TopK: k(20), MinP: f(0.05)}
+	for _, c := range []struct {
+		name  string
+		flags []string
+		req   batchChatReq
+		want  decoder.SamplingParams
+	}{
+		{"line sets nothing", nil, batchChatReq{}, decoder.SamplingParams{Temperature: 0.7, TopP: 0.8, TopK: 20, MinP: 0.05}},
+		{"line sets temperature", nil, batchChatReq{Temperature: f(0.2)}, decoder.SamplingParams{Temperature: 1, TopP: 0.8, TopK: 20, MinP: 0.05}},
+		{"a flag wins over the model", []string{"-top-k", "5"}, batchChatReq{}, decoder.SamplingParams{Temperature: 0.7, TopP: 0.8, TopK: 5, MinP: 0.05}},
+		{"greedy line", nil, batchChatReq{Temperature: f(0)}, decoder.SamplingParams{Temperature: 1}},
+	} {
+		bd := parse(c.flags...)
+		bd.rec = rec
+		sp := bd.sp
+		bd.fillRecommended(&sp, c.req)
+		// The line's own fields are applied after the fill (batchLine), so a line-set field reads here as the default.
+		if sp.Temperature != c.want.Temperature || sp.TopP != c.want.TopP || sp.TopK != c.want.TopK || sp.MinP != c.want.MinP {
+			t.Errorf("%s: got T %v top_p %v top_k %v min_p %v, want %+v", c.name, sp.Temperature, sp.TopP, sp.TopK, sp.MinP, c.want)
+		}
+	}
+	bd := parse()
+	sp := bd.sp
+	bd.fillRecommended(&sp, batchChatReq{})
+	if sp.Temperature != 1 || sp.TopP != 0 || sp.TopK != 0 || sp.MinP != 0 || sp.PresencePenalty != 0 {
+		t.Errorf("a model with no recommendation changed the defaults: %+v", sp)
 	}
 }

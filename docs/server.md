@@ -72,6 +72,22 @@ streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
 
+**Sampling defaults.** A sampling field a request leaves out takes the model's own recommended value, when the checkpoint
+carries one; a field the request sends always wins. The values come from a Hugging Face directory's
+`generation_config.json`, or from a GGUF's `general.sampling.*` metadata (`temp`, `top_p`, `top_k`, `min_p`). A bare `.gguf`
+reads only its own metadata, never a `generation_config.json` in its folder, which may hold other models. A `.giw` keeps what
+its source carried. The fields are `temperature`, `top_p`, `top_k`, `min_p` (which has no request field, so a recommended
+one always applies) and `presence_penalty`; `do_sample: false` means greedy. A request that asks for greedy
+(`temperature` 0) is left as sent. `repetition_penalty` is never applied: transformers divides logits by it, and this
+sampler's penalties are OpenAI's subtractive ones. A model that carries no values keeps the server default: temperature
+1.0 over the whole vocabulary, no `top_k`, `top_p` or `min_p`.
+
+The load banner says which applies, for example `sampling: generation_config.json recommends temperature 0.7, top_p 0.8,
+top_k 20, applied to the fields a request leaves out; not applied: repetition_penalty 1.05 (…)`, or `sampling: the model
+recommends none; …`. With `-log-requests`, a request that took fields from the model ends its line with
+`sampling_from_model=temperature,top_p,top_k`, naming them. `goinfer-chat --batch` applies the same rule, except that an
+explicit flag (`--temp`, `--top-p`, …) wins over the model.
+
 **Per-field confidence (`goinfer_confidence`, opt-in).** Add `"goinfer_confidence": true` to a
 `/v1/chat/completions` or `/v1/completions` request that carries `response_format: {"type": "json_schema", …}`,
 and the response gains a top-level `goinfer_confidence` array, one record per reported field. Streaming sends the
@@ -921,9 +937,10 @@ the replies are identical, line for line.
   crash, a Ctrl-C or a power cut and lines whose `custom_id` is already in the output are skipped; a final line the process died
   in the middle of is cut off and run again. A line that failed is not done, so a rerun retries it (`out.errors.jsonl` is
   rewritten each run and holds only that run's failures). A run with nothing left to do exits without loading the model.
-- **A line that states no sampling settings gets the API's defaults** (temperature 1, no top-k/top-p, 512 tokens, a random
-  seed, no system prompt), not `goinfer-chat`'s interactive ones — unless you pass the flag (`--temp 0`, `--seed`, `--max`,
-  `--system`…), which is an instruction about this run. Put `temperature` and `seed` in the line for a reproducible file.
+- **A line that states no sampling settings gets the API's defaults** (the model's recommended sampling where it carries
+  one, else temperature 1 with no top-k/top-p; 512 tokens, a random seed, no system prompt; "Sampling defaults" above), not
+  `goinfer-chat`'s interactive ones — unless you pass the flag (`--temp 0`, `--seed`, `--max`, `--system`…), which is an
+  instruction about this run. Put `temperature` and `seed` in the line for a reproducible file.
 - **Scope is text chat,** as over HTTP. Supported per line: `messages` (string or text-part content, `system`/`developer`,
   replayed `reasoning_content`), `temperature`, `top_p`, `top_k`, `max_tokens` / `max_completion_tokens`, `seed`,
   `frequency_penalty`, `presence_penalty`, `stop`, `response_format` (`json_object`, `json_schema`), and the thinking controls

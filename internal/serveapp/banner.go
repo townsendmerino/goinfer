@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -84,6 +85,9 @@ type bannerFacts struct {
 	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps
 	// (decoder.Model.EnableCPUBatch).
 	cpuBatched bool
+
+	// sampling: the checkpoint's recommended sampling (decoder.Config.Sampling), nil when it carries none.
+	sampling *decoder.RecommendedSampling
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -116,6 +120,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 		f.residentDecline = lm.model.ResidentDecline()
 	}
 	f.concurrent = lm.concurrent
+	f.sampling = lm.sampling
 	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true
 	}
@@ -146,6 +151,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		}
 		out = append(out, line)
 	}
+	out = append(out, samplingLine(f.sampling))
 
 	// How much context, and at what KV precision: the two numbers that decide whether a harness's turn fits at all.
 	// The line prints the resolved limit, ctxWindow (what prepare enforces and /v1/models publishes), and says what
@@ -439,6 +445,26 @@ func kvPlanLine(f bannerFacts, cfg config) string {
 	}
 	if len(why) > 0 {
 		line += " (" + strings.Join(why, "; ") + ")"
+	}
+	return line
+}
+
+// samplingLine says which sampling a request that leaves fields out gets: the checkpoint's recommended values and where
+// they came from, what is recorded but not applied, or that there are none and the server default applies.
+func samplingLine(rs *decoder.RecommendedSampling) string {
+	if rs == nil {
+		return "sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary"
+	}
+	set := rs.Applied()
+	line := "sampling: " + rs.Source + " recommends "
+	if len(set) == 0 {
+		line += "nothing the sampler applies"
+	} else {
+		line += strings.Join(set, ", ") + ", applied to the fields a request leaves out"
+	}
+	if rs.RepetitionPenalty != nil {
+		line += "; not applied: repetition_penalty " + strconv.FormatFloat(*rs.RepetitionPenalty, 'g', -1, 64) +
+			" (it divides logits; the sampler's penalties are subtractive)"
 	}
 	return line
 }

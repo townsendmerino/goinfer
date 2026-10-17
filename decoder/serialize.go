@@ -294,6 +294,9 @@ func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk 
 	if err := json.Unmarshal(cfgJSON, &cfg); err != nil {
 		return nil, &SerializeError{"config json: " + err.Error()}
 	}
+	if cfg.Sampling != nil {
+		cfg.Sampling = cfg.Sampling.normalized() // the bundle's bytes are input, held to the same ranges as the checkpoint's
+	}
 	arch, _, err := resolveArchitecture(&cfg)
 	if err != nil {
 		return nil, &SerializeError{"arch: " + err.Error()}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 )
@@ -346,6 +347,10 @@ type Config struct {
 	// either a scalar or a list, so it's kept raw and decoded by EOSIDs.
 	// omitempty: nil must not round-trip through .giw as the literal `null`.
 	EOSTokenID json.RawMessage `json:"eos_token_id,omitempty"`
+
+	// Sampling is the checkpoint's recommended sampling, read by loadConfig (generation_config.json) or ggufConfig. It is
+	// not a config.json key; the name only carries it through a .giw.
+	Sampling *RecommendedSampling `json:"goinfer_recommended_sampling,omitempty"`
 
 	// Gemma 2 fields that MUST be absent/zero in a Gemma 3 checkpoint.
 	// ValidateAssumptions rejects a checkpoint that still sets them so we
@@ -1296,7 +1301,7 @@ func eosFromGenerationConfig(fsys fs.FS, name string) []int {
 	return gc.EOSIDs()
 }
 
-// loadConfig reads and parses config.json from fsys.
+// loadConfig reads and parses config.json from fsys, and the recommended sampling from the generation_config.json beside it.
 func loadConfig(fsys fs.FS, name string) (*Config, error) {
 	b, err := fs.ReadFile(fsys, name)
 	if err != nil {
@@ -1328,6 +1333,7 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 			return nil, fmt.Errorf("decoder: parse %s: %w", name, err)
 		}
 	}
+	c.Sampling = samplingFromGenerationConfig(fsys, path.Join(path.Dir(name), "generation_config.json"))
 	return &c, nil
 }
 

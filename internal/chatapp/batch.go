@@ -247,10 +247,16 @@ type batchDefaults struct {
 	seedSet bool // --seed was passed: a line without a seed uses it; otherwise each gets a fresh random one, as serve does
 	maxTok  int
 	system  string
+	// rec is the model's recommended sampling, which a line takes for each field that neither it nor a flag sets, as serve's
+	// prepare does (a flag is an instruction about this run, so it wins); flagSet records which of those fields a flag set.
+	rec     *decoder.RecommendedSampling
+	flagSet struct{ temp, topP, topK, minP, presence bool }
 }
 
 func newBatchDefaults(cf *chatFlags, explicit map[string]bool) batchDefaults {
 	bd := batchDefaults{sp: decoder.SamplingParams{Temperature: 1.0}, maxTok: apiDefaultMaxTokens}
+	bd.flagSet.temp, bd.flagSet.topP, bd.flagSet.topK = explicit["temp"], explicit["top-p"], explicit["top-k"]
+	bd.flagSet.minP, bd.flagSet.presence = explicit["min-p"], explicit["presence-penalty"]
 	if explicit["temp"] {
 		bd.sp.Temperature = *cf.temp
 	}
@@ -285,6 +291,30 @@ func newBatchDefaults(cf *chatFlags, explicit map[string]bool) batchDefaults {
 		bd.system = *cf.system
 	}
 	return bd
+}
+
+// fillRecommended sets each sampling field of sp that neither the line nor a flag sets from the model's recommended
+// sampling, by serve's rule (serveapp.withRecommended): nothing changes a line that asks for greedy (temperature 0).
+func (bd batchDefaults) fillRecommended(sp *decoder.SamplingParams, req batchChatReq) {
+	r := bd.rec
+	if r == nil || (req.Temperature != nil && *req.Temperature == 0) {
+		return
+	}
+	if r.Temperature != nil && req.Temperature == nil && !bd.flagSet.temp {
+		sp.Temperature = *r.Temperature
+	}
+	if r.TopP != nil && req.TopP == nil && !bd.flagSet.topP {
+		sp.TopP = *r.TopP
+	}
+	if r.TopK != nil && req.TopK == nil && !bd.flagSet.topK {
+		sp.TopK = *r.TopK
+	}
+	if r.MinP != nil && !bd.flagSet.minP {
+		sp.MinP = *r.MinP
+	}
+	if r.PresencePenalty != nil && req.PresencePenalty == nil && !bd.flagSet.presence {
+		sp.PresencePenalty = *r.PresencePenalty
+	}
 }
 
 // batchChatReq is the subset of an OpenAI chat request a batch line may carry. Unknown keys are ignored, as serve ignores them;
@@ -492,8 +522,9 @@ func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName str
 		}
 	}
 
-	// Sampling, validated as serve's prepare validates it.
+	// Sampling, validated as serve's prepare validates it, after the model's recommended values fill what is left out.
 	sp := bd.sp
+	bd.fillRecommended(&sp, req)
 	if req.Temperature != nil {
 		if *req.Temperature < 0 {
 			return lineErr(400, "invalid_request_error", fmt.Sprintf("temperature must be >= 0 (got %v); 0 selects greedy/deterministic decoding", *req.Temperature))

@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,8 @@ type reqTrace struct {
 	snapRows            int  // rows a host snapshot restored for the first generation (decoder.Generation.KVSnapRestored)
 	// prefill records a declined batched prefill and the path that ran the prompt instead (decoder.PrefillReport)
 	prefill *decoder.PrefillReport
+	// fromModel names the first generation's sampling fields taken from the model (genRequest.fromModel)
+	fromModel []string
 }
 
 type reqTraceKey struct{}
@@ -82,6 +85,7 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, gen *decoder.Genera
 	t.mu.Lock()
 	if !t.seen {
 		t.seen, t.model, t.prompt, t.canon = true, lm.name, len(gr.promptIDs), true
+		t.fromModel = gr.fromModel
 		if gen != nil {
 			t.reuseKnown, t.reused, t.slot, t.match = true, gen.PrefillReused, gen.PrefillSlot, gen.PrefillMatch
 			t.snapRows = gen.KVSnapRestored
@@ -269,6 +273,9 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 	}
 	if t.snapRows > 0 {
 		line += fmt.Sprintf(" snap=%d", t.snapRows) // rows a host snapshot restored; absent when none did
+	}
+	if len(t.fromModel) > 0 {
+		line += " sampling_from_model=" + strings.Join(t.fromModel, ",") // absent when the request set every field it uses
 	}
 	if path, _ := t.prefill.Fallback(); path != "" {
 		line += " prefill_fallback=" + path // the batched prefill declined; its reason is on stderr and in the token-id log

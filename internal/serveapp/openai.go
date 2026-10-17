@@ -65,7 +65,10 @@ type loadedModel struct {
 	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. It is attached once at load:
 	// the weight upload is a per-process cost, and paying it per request is a several-fold slowdown (docs/spec/08-dspark-dflash.md).
 	blockSpec *decoder.BlockSpec
-	sessions  *sessionLRU // prefix-keyed KV reuse across requests
+	// sampling is the checkpoint's recommended sampling (decoder.Config.Sampling), which prepare applies to the fields a
+	// request leaves out; nil when it carries none.
+	sampling *decoder.RecommendedSampling
+	sessions *sessionLRU // prefix-keyed KV reuse across requests
 	// head is the entry's trained decision head, nil for label scoring. The decider POST /v1/systemone answers with
 	// is built on first use, since its label tokens are resolved once per tokenizer.
 	head *decide.Head
@@ -604,6 +607,8 @@ type sampling struct {
 	// and silently drop the result.
 	Confidence   bool `json:"goinfer_confidence"`
 	confidenceOK bool
+	// minP has no request field; withRecommended sets it from the model's recommended sampling.
+	minP *float64
 	// fixedTokens measures the request's fixed part (system prompt and tool definitions) in tokens, for a route that
 	// has one. prepare calls it only when the prompt overflows, to choose the refusal's wording (overflow.go).
 	fixedTokens func() int
@@ -1143,6 +1148,8 @@ type genRequest struct {
 	// boundary is how many leading ids of promptIDs are the stable system-and-tools section (loadedModel.prefixBoundary), 0 when unknown. It reaches the
 	// decoder as KVScope.Boundary, where a prefix snapshot may be taken at it during the cold prefill.
 	boundary int
+	// fromModel names the sampling fields prepare took from the model's recommended sampling (withRecommended).
+	fromModel []string
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
@@ -1211,8 +1218,10 @@ func (lm *loadedModel) residentPath() bool {
 // lm.residentPath(), and vision requests pass false (GenerateVL is CPU-prefilled; the resident image-reuse path
 // checks its own cap in decoder/generate_vl.go).
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
+	sm, fromModel := withRecommended(sm, lm.sampling)
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
+		MinP:        deref(sm.minP, 0),
 		Seed:        seedOrRandom(sm.Seed), // omitted seed: fresh random, not seed 0
 		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
@@ -1275,6 +1284,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		maxTokens:   deref(maxTok, defaultMaxTokens),
 		stopStrings: stops,
 		outcome:     &turnOutcome{},
+		fromModel:   fromModel,
 	}
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {

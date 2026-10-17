@@ -1121,7 +1121,7 @@ func (s *server) loadAdapters(cfg config) error {
 		fp := base.fp + "+adapter:" + spec.name // distinct snapshot namespace from the base + sibling adapters
 		lm := &loadedModel{
 			tk: base.tk, model: base.model, tmpl: base.tmpl, stopIDs: base.stopIDs,
-			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name,
+			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name, sampling: base.sampling,
 			spec:         cfg.spec == "ngram",
 			specAdaptive: cfg.specAdaptive,
 			sessions:     newSessionLRU(base.model, cfg.kvSessions, 0, fp),
@@ -1631,6 +1631,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
 		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
+		sampling:     mcfg.Sampling,
 		spec:         cfg.spec == "ngram",
 		specAdaptive: cfg.specAdaptive,
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to

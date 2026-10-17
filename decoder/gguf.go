@@ -25,10 +25,19 @@ import (
 // Architectures: whatever registry.go's `registry` map carries, not restated here (a short list reads as a limit rather
 // than an example). Quant types: F32/F16, Q8_0/Q4_0/Q5_0, the K-quants Q2_K/Q3_K/Q4_K/Q5_K/Q6_K, and IQ4_NL/IQ4_XS.
 
-// ggufConfig synthesizes a Config from GGUF metadata, dispatching on
+// ggufConfig is ggufFamilyConfig plus the file's recommended sampling (ggufSampling).
+func ggufConfig(g *embed.GGUFFile) (*Config, error) {
+	cfg, err := ggufFamilyConfig(g)
+	if err == nil && cfg != nil {
+		cfg.Sampling = ggufSampling(g)
+	}
+	return cfg, err
+}
+
+// ggufFamilyConfig synthesizes a Config from GGUF metadata, dispatching on
 // general.architecture. The resolved Config feeds resolveArchitecture, so a
 // GGUF reuses the same per-family adapter as the safetensors path.
-func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
+func ggufFamilyConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	arch, _ := g.Str("general.architecture")
 	// Hostile metadata can drive a family builder into an integer divide-by-zero (a missing head_count makes hidden/0) or a
 	// similar panic before validateGGUFDims runs. Any such panic becomes a typed error, so the loader keeps its never-panic
