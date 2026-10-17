@@ -1593,6 +1593,22 @@ sides on different drivers; the control failing; a refused load.
 5. Not in this build: Granite-4.0-H, Nemotron-3-Nano's MoE unless admitted, int8int8, a batched prefill for recurrent families, a
    speed gate.
 
+**OP2b on CUDA, read 2026-10-16: gate F, tier 1 and the declaration** (branch `op2b-cuda-tier1-2026-10`, on step 2d; record
+`docs/measurements/op2b-cuda-2026-10-16/tier1-and-declaration-2026-10-16.md`). **For the owner before merging.**
+- **Gate F, the resident's own plan** (7,235 MiB free before the load, the desktop holding the rest):
+  - The 4B (CUDA int4 bundle, 3.41 GiB): admitted whole at 16,384 positions, 3,243 MiB left after the load, and at 65,536 with 1,833 MiB left;
+    131,072 is refused (4.29 GB of KV against 4.06 GB free). **The prediction holds.** One detail was wrong: its KV is f32, 32 KB a position
+    over 4 attention layers (512 MiB at 16,384), not the f16 256 MiB the prediction priced; the Mamba state is 98.5 MiB, not about 88.
+  - The 9B (CUDA int4 bundle 7,273,734,558 bytes, 6,937 MiB, as predicted): **admitted at the plan's default context of 4,314 positions**
+    with 373 MiB left, and refused at 16,384 by 8 MB (a guard pin). **The prediction was wrong:** it said refused, or admitted under 2,048,
+    falsified at 4,096 or more.
+- **Tier 1** (32 steps of greedy lockstep off the CPU at int4, the bars min cosine >= 0.88 and argmax >= 50%; the dense 1.5B control read
+  0.997580, 29/32 in every session): the **4B whole** 0.993996, 30/32 PASS; the **9B slice** (layers 0, 1, 14) 0.990851, 25/32 PASS; the
+  **whole 9B** 0.953892, 28/32 PASS (47.4 tokens a second, recorded, not graded).
+- **Declared: CUDA declares `ssm`, `non-gated-mlp` and `non-gated-relu2`**, int4 only; Nemotron-H reads resident on CUDA in the matrix.
+  Granite-4.0-H, an int8 load and Nemotron-3-Nano's MoE blocks stay on the CPU. The identity gate reads Nemotron-H DIFFERENT, as it must
+  (it now runs resident; the reference gates are the tier 1 above), and the other 28 families IDENTICAL.
+
 **OP2c, KDA.**
 - **Delivers:** Kimi Linear resident.
 - **Size:** M–L.
