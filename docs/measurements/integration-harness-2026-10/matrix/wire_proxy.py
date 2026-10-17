@@ -121,9 +121,10 @@ class H(BaseHTTPRequestHandler):
             c.close()
             if resp_file:
                 resp_file.close()
-        # The tail holds the final usage on every route but Messages streaming, whose input_tokens is only in message_start.
+        # The tail holds the final usage on every route. On Messages the prompt is input_tokens (prefilled) plus
+        # cache_read_input_tokens (reused); a stream's message_delta has the split, its message_start the whole prompt.
         usage = {}
-        for key in ("prompt_tokens", "input_tokens", "completion_tokens", "output_tokens"):
+        for key in ("prompt_tokens", "input_tokens", "cache_read_input_tokens", "completion_tokens", "output_tokens"):
             m = re.findall(r'"%s":\s*(\d+)' % key, tail) or re.findall(r'"%s":\s*(\d+)' % key, head)
             if m:
                 usage[key] = int(m[-1])

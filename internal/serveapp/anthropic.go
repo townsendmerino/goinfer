@@ -730,7 +730,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		calls                         []chat.ToolCall
 		lead                          string
 		finish, stopSeq, cancelReason string
-		nComp                         int
+		nComp, reused                 int
 		gerr                          error
 		fromReasoning                 bool
 	)
@@ -738,11 +738,11 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		// The shared tool turn (tool_turn.go) — buffered here: nothing to stream on this path.
 		var t toolTurn
 		t, gerr = s.runToolTurn(r.Context(), lm, gr, tools, nil, nil)
-		text, calls, lead, finish, stopSeq, cancelReason, nComp = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp
+		text, calls, lead, finish, stopSeq, cancelReason, nComp, reused = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp, t.reused
 		fromReasoning = t.fromReasoning && len(t.calls) > 0
 	} else {
 		var sb strings.Builder
-		finish, nComp, _, stopSeq, _, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+		finish, nComp, _, stopSeq, reused, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 		text = sb.String()
 	}
 	if gerr != nil {
@@ -791,7 +791,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		"content":       content,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
-		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
+		"usage":         anthropicUsage(len(gr.promptIDs), reused, nComp),
 	}
 	if e := emptyAnswerOf(gr, finish, stopSeq, len(calls), nComp); e != nil {
 		msg["goinfer_empty_answer"] = e
@@ -800,6 +800,15 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		msg[fromReasoningField] = true
 	}
 	writeJSON(w, http.StatusOK, msg)
+}
+
+// anthropicUsage is a finished Messages reply's usage, in the Messages API's split: cache_read_input_tokens is the leading
+// prompt tokens a prior turn's KV made unnecessary (drive's prefillReused, what /v1/responses reports as cached_tokens), and
+// input_tokens the rest, the tokens this request prefilled, so the prompt is their sum. Anthropic's clients add the two to size
+// the context. cache_creation_input_tokens is left out: every prefilled prefix is kept, so there is no separate cache write.
+func anthropicUsage(promptLen, reused, nComp int) map[string]any {
+	reused = min(max(reused, 0), promptLen)
+	return map[string]any{"input_tokens": promptLen - reused, "cache_read_input_tokens": reused, "output_tokens": nComp}
 }
 
 // handleCountTokens renders the prompt exactly as /v1/messages would (system +

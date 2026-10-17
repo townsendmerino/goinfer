@@ -370,7 +370,8 @@ def run(base, model, mx):
         if thinking:
             body["thinking"] = {"type": thinking, "budget_tokens": 1024} if thinking == "enabled" else {"type": thinking}
         ct = post(base + "/v1/messages/count_tokens", body)["input_tokens"]
-        gen = post(base + "/v1/messages", {**body, "max_tokens": 4, "temperature": 0})["usage"]["input_tokens"]
+        u = post(base + "/v1/messages", {**body, "max_tokens": 4, "temperature": 0})["usage"]
+        gen = u["input_tokens"] + u.get("cache_read_input_tokens", 0)  # the prompt: prefilled + reused
         cell(f"anthropic/{thinking}: count_tokens == generation input_tokens ({ct})", ct == gen, f"{ct} vs {gen}")
 
     # ---- history: replayed reasoning reaches the model the way its own template would put it there ---------------------
@@ -392,8 +393,8 @@ def run(base, model, mx):
 
     def anth_tokens(msgs):
         body = {"model": model, "max_tokens": 1, "temperature": 0, "tools": [ATOOL], "messages": msgs}
-        r = post(base + "/v1/messages", body)
-        return r["usage"]["input_tokens"], post(base + "/v1/messages/count_tokens", {k: v for k, v in body.items() if k != "temperature"})["input_tokens"]
+        u = post(base + "/v1/messages", body)["usage"]
+        return u["input_tokens"] + u.get("cache_read_input_tokens", 0), post(base + "/v1/messages/count_tokens", {k: v for k, v in body.items() if k != "temperature"})["input_tokens"]
     tu = {"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": {"city": "Paris"}}
     th = {"type": "thinking", "thinking": R, "signature": ""}
     def aloop(thinking, reminder):

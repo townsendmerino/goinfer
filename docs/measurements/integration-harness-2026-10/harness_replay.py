@@ -38,7 +38,7 @@ for d in sorted(glob.glob(os.path.join(root, "*"))):
         elif path == "/v1/messages": b["max_tokens"] = 1
         st, hdr, j = post(path, b)
         u = j.get("usage") or {}
-        tok = u.get("prompt_tokens", u.get("input_tokens"))
+        tok = u.get("prompt_tokens", u["input_tokens"] + u.get("cache_read_input_tokens", 0) if "input_tokens" in u else None)
         dropped = hdr.get("X-Goinfer-Tools-Dropped") or hdr.get("x-goinfer-tools-dropped")
         err = (j.get("error") or {}).get("message") if isinstance(j.get("error"), dict) else j.get("error")
         print(f"{os.path.basename(d)} {os.path.basename(f)} {path}: status {st}, prompt tokens {tok}, tools sent {len(b.get('tools') or [])}"

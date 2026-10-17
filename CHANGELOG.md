@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **On `/v1/messages`, `input_tokens` now counts only the tokens prefilled for that request; reused tokens are reported as
+  `cache_read_input_tokens`, matching Anthropic's definitions.** The prompt is their sum. Before, `input_tokens` was the
+  whole prompt and no reuse was reported, so a cold request reads as before. A client that took `input_tokens` as the prompt
+  size adds `cache_read_input_tokens`, as Claude Code already does. A stream's `message_delta` carries the split, and its
+  `message_start` the whole prompt (`docs/server.md`, "usage on /v1/messages").
 - **`--kv f16` now gives the CPU an f16 KV cache** (half the KV bytes; each stored row rounded to f16) for the generic families
   without MoE. Other families stay f32 and the banner says why. `--kv auto` and the library default stay f32, the reference.
   A CPU load given `--kv f16` was priced at f16 over an f32 cache before; it is now priced at what it builds.
