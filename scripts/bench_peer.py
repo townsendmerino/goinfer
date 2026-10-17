@@ -1048,6 +1048,12 @@ CONFIGS = {
         "ollama": {"temperature": 0.8, "top_p": 0.9, "top_k": 40, "seed": 1},
         "note": "temperature=0.8, top_k=40, top_p=0.9 every arm (the shared truncated preset)",
     },
+    # One truncated preset shared by every arm (2026-10-17): temperature 1.0, top_k 40, top_p 0.9, all three sent explicitly.
+    "temp1.0_topk40_topp0.9": {
+        "goinfer": {"temperature": 1.0, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "ollama": {"temperature": 1.0, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "note": "temperature=1.0, top_k=40, top_p=0.9, all arms",
+    },
     "own_defaults": {
         "goinfer": {},
         "ollama": {},
