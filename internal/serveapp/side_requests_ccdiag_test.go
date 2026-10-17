@@ -85,7 +85,7 @@ func TestSideRequests_ccDiag(t *testing.T) {
 		}
 		if n == "post2B" {
 			l1 := idsLCP(ids2["post1B"], x)
-			t.Logf("  post2B vs post1B: LCP %d (logged div for the request after the second compaction, +158: %d)", l1, 16420+158)
+			t.Logf("  post2B vs post1B: LCP %d (logged div for the request after the second compaction, 16,420, plus the rebuild's constant offset: 49 with the compact serialization)", l1)
 		}
 
 	}
