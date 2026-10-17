@@ -41,6 +41,8 @@ assert all(k in c[e] for e in ('goinfer', 'ollama', 'llamacpp') for k in ('tempe
 print('temp1.0_notrunc sends', {e: c[e] for e in ('goinfer', 'ollama', 'llamacpp')})" || exit 1
 [ "${PREFLIGHT:-}" = 1 ] && { echo "$(ts) PREFLIGHT DONE"; exit 0; }
 
+# The build just loaded the box: wait for idle, as the 09-29 script did before each step (the harness refuses above 1.0).
+for i in $(seq 1 90); do l=$(cut -d' ' -f1 /proc/loadavg); awk -v l="$l" 'BEGIN{exit !(l<0.8)}' && break; echo "=== waiting for idle: loadavg $l"; sleep 20; done
 echo "=== $(ts) START notrunc cells"; t0=$(date +%s)
 BENCH_MODELS=0.5B,gemma3-1b,phi3-mini BENCH_BACKENDS=cuda BENCH_DEPTHS=none BENCH_CONFIGS=temp1.0_notrunc \
   python3 -u scripts/bench_peer.py "$W/f-sampled.json"
