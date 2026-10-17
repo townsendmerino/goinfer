@@ -677,11 +677,17 @@ func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 // invisible here and the math is byte-identical to append-forever. Per-query masking stays in absolute positions
 // (WindowStart/attendHi), mapped to physical columns by s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+	attendBatchedHeadsP(q, ctx, keys, vals, base, cache, layer, startPos, K, arch.attnParamsFor(cache, global), arch, useAcc64, pool)
+}
+
+// attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
+// form (attentionParams). arch supplies the shapes and the knobs.
+func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
-	scale := arch.AttnScale
+	scale := ap.Scale
 	nKeys := len(keys) / kvDim
 	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
 	// accumulate each dot in f64 (bit-identical to the sequential f64 reference); dense MLPs tolerate the f32 error. There is no
@@ -690,7 +696,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 
 	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask or logit softcap.
 	// Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
-	fusedOK := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0
+	fusedOK := !useAcc64 && cache.treeMask == nil && ap.Softcap == 0
 	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently
 	// across heads and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is
 	// unchanged and its ctx write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial
@@ -724,7 +730,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				for i := range kt {
 					gi := t0 + i
 					pos := startPos + gi
-					fs.lo[i] = cache.WindowStart(pos, global) - base
+					fs.lo[i] = ap.start(pos) - base
 					fs.hi[i] = cache.attendHi(pos) - base
 				}
 				if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
@@ -758,7 +764,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// TREE attention (05): row i attends to the whole committed prefix
 				// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
 				if cache.treeMask != nil {
-					loP := cache.WindowStart(pos, global) - base
+					loP := ap.start(pos) - base
 					batchCol0 := startPos - base
 					allowed := func(s int) bool {
 						if s < batchCol0 {
@@ -770,7 +776,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					maxS := math.Inf(-1)
 					for s := range nKeys {
 						if allowed(s) {
-							sc := softcapScore(float64(rowS[s])*scale, arch.AttnLogitSoftcap)
+							sc := softcapScore(float64(rowS[s])*scale, ap.Softcap)
 							rowS[s] = float32(sc)
 							if sc > maxS {
 								maxS = sc
@@ -800,7 +806,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// key bound: pos for a causal text query, or the image-block end for a
 				// bidirectional image position (so it also attends to the block's
 				// future tokens). Equals pos with no image blocks — inert for text.
-				loP := cache.WindowStart(pos, global) - base
+				loP := ap.start(pos) - base
 				hiP := cache.attendHi(pos) - base
 				if loP < 0 {
 					loP = 0
@@ -813,7 +819,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+						sc := softcapScore(float64(v)*scale, ap.Softcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc
@@ -875,7 +881,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		gScores := ws.groupScores[:group*nKeys]
 		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
 		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
-		loP := cache.WindowStart(pos, global) - base
+		loP := ap.start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -890,7 +896,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				_ = active[len(active)-1]
 				maxS := math.Inf(-1)
 				for s, v := range active {
-					sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+					sc := softcapScore(float64(v)*scale, ap.Softcap)
 					active[s] = float32(sc)
 					if sc > maxS {
 						maxS = sc
@@ -972,7 +978,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		})
 
 		pos := startPos
-		loP := cache.WindowStart(pos, global) - base
+		loP := ap.start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -992,7 +998,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+						sc := softcapScore(float64(v)*scale, ap.Softcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc

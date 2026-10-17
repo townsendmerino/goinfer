@@ -85,6 +85,7 @@ type Model struct {
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	kvH           bool         // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
+	prog          *program     // the forward as operations (buildProgram), built once by modelFromOptions
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
@@ -491,7 +492,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 			}
 		}
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline,
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts),
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
@@ -1029,8 +1030,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// RMSNorm) divides out a global scalar, so the difference only survives in
 	// the residual and stays well under the ≥1−1e-4 cosine bar. If that bar is
 	// ever tightened past ~1e-5, round the scale to bf16.
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		scale := float32(arch.EmbedScale)
+	emb := m.program().embed
+	if emb.Scale != 0 && emb.Scale != 1 {
+		scale := float32(emb.Scale)
 		for i := range h {
 			h[i] *= scale
 		}
@@ -1038,7 +1040,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// Learned absolute position embedding (GPT-2): add wpe[pos], where pos is
 	// this token's absolute position (the cache advances on Append inside
 	// attention, so cache.Pos() here is still this step's position).
-	if arch.LearnedPosEmbed {
+	if emb.LearnedPos {
 		pe := make([]float32, hidden)
 		m.w.PosEmbed.Row(cache.Pos(), pe)
 		for i := range h {
@@ -1058,10 +1060,23 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 // passing through embed_tokens. Generic path only (gemma4/qwen35 have their own
 // runLayers and grow the same seam when those families go multimodal).
 func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
 	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
-		cache.scr = newDecodeScratch(arch)
+		cache.scr = newDecodeScratch(m.w.arch)
 	}
+	if programWalkOffForTest {
+		return m.runLayersFromEmbedLoop(h, cache)
+	}
+	prog := m.program()
+	if prog.layers == nil {
+		return nil, fmt.Errorf("decoder: %s has no layer program (it runs its own loop)", m.w.arch.Name)
+	}
+	return m.walkToken(prog, h, cache)
+}
+
+// runLayersFromEmbedLoop is the per-token loop the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step.
+func (m *Model) runLayersFromEmbedLoop(h []float32, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
 	scr := cache.scr
 	hidden := arch.HiddenDim
 	if m.layerPager != nil {
@@ -1229,10 +1244,9 @@ func addResidual2(h, sub, sub2 []float32) {
 // text/image embedding sequence (text positions via this, image positions via
 // the projected vision features) and drive runLayersFromEmbed per position.
 func (m *Model) embedToken(id int, dst []float32) {
-	arch := m.w.arch
 	m.w.Embed.Row(id, dst)
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		scale := float32(arch.EmbedScale)
+	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+		scale := float32(emb.Scale)
 		for i := range dst {
 			dst[i] *= scale
 		}
@@ -1379,26 +1393,30 @@ func softcapParallel(logits []float32, softcap float32) {
 // the next-token logits ([VocabSize]). One home for the head math, shared by
 // forward and forwardFromEmbed.
 func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
-	arch := m.w.arch
-	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
+	hp := &m.program().head
+	b := m.w.FinalNormBias
+	if !hp.Norm.Bias {
+		b = nil
+	}
+	applyNorm(hp.Norm, h, h, m.w.FinalNorm, b, m.w.arch.HiddenDim)
 	return m.logitsFromNormed(h, cache)
 }
 
 // logitsFromNormed is logitsFromHidden for a hidden state that has ALREADY been through the final norm (the batched
 // Qwen3.5 forward returns its rows normed): the LM head, softcap and logit scale, exactly as logitsFromHidden runs them.
 func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
-	arch := m.w.arch
+	hp := &m.program().head
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
-	if arch.TiedLMHead {
+	if hp.Tied {
 		matmulInto(cache.scr.ws, m.be, &m.w.Embed, h, logits, 1) // tied: embedding doubles as the head
 	} else {
 		matmulInto(cache.scr.ws, m.be, &m.w.LMHead, h, logits, 1) // separate output projection
 	}
-	if arch.FinalLogitSoftcap > 0 {
-		softcapParallel(logits, float32(arch.FinalLogitSoftcap))
+	if hp.Softcap > 0 {
+		softcapParallel(logits, float32(hp.Softcap))
 	}
-	if arch.LogitScale != 0 && arch.LogitScale != 1 { // Granite logits_scaling: logits /= scale
-		inv := float32(1 / arch.LogitScale)
+	if hp.LogitScale != 0 && hp.LogitScale != 1 { // Granite logits_scaling: logits /= scale
+		inv := float32(1 / hp.LogitScale)
 		n := len(logits)
 		if n > 0 {
 			_ = logits[n-1]

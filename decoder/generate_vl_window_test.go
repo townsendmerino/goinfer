@@ -33,9 +33,10 @@ func TestGenerateVL_refusesImageBlockLongerThanWindow(t *testing.T) {
 	}
 	defer m.Close()
 	saved := m.w.arch.SlidingWindow
-	defer func() { m.w.arch.SlidingWindow = saved }()
+	defer func() { m.w.arch.SlidingWindow = saved; m.rebuildProgramForTest() }()
 	run := func(window int) (int, bool, error) {
 		m.w.arch.SlidingWindow = window
+		m.rebuildProgramForTest()
 		towerRan := false
 		features := func() ([]float32, error) { towerRan = true; return g.ImageFeatures, nil }
 		stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, 2, SamplingParams{Temperature: 0})

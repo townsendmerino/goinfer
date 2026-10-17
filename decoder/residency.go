@@ -1130,6 +1130,7 @@ var attnSoftcapOffForTest atomic.Bool
 func (m *Model) withResidency() *Model {
 	if attnSoftcapOffForTest.Load() {
 		m.w.arch.AttnLogitSoftcap = 0
+		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program
 	}
 	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
 		return m // force the per-matmul staged path (decision-matrix measurement)

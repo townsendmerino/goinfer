@@ -2,7 +2,7 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -1620,6 +1620,8 @@ sides on different drivers; the control failing; a refused load.
 
 #### OP3 — the layer program, on the CPU
 
+**Registered 2026-10-16 in §4.8, with the design and the steps.** The sketch below is the plan it registered from.
+
 - **Delivers:** every registry family built as a per-layer program that the CPU executes, with its logits bit-identical to
   today's generic loop and own forwards.
 - **Size and box:** L, on the Mac. The CPU is either box; the Mac, because it stays on OP.
@@ -1809,6 +1811,216 @@ sides on different drivers; the control failing; a refused load.
     family's own modelling code, at a size either box holds.
   - Such a checkpoint is still not trained weights. Its scores sit near zero, as `CLAUDE.md`'s minimal-repro rule warns. Its
     registration has to say which effects a random init leaves identically zero, as G2-D did for the softcap.
+
+### 4.8 OP3: design and registered gates (2026-10-16, before any OP3 code)
+
+Read at main `2c56d9c6`, with CPU f16 KV merged (#55) and G40 merged, which §4.7 makes OP3's precondition.
+
+**What the CPU forward is today.** Three generic paths, not two:
+- the per-token loop, `decoder/model.go:Model.runLayersFromEmbed`;
+- the batched loop, `decoder/forwardn.go:Model.runLayersFromEmbedNFloor`;
+- MC3c's multi-sequence step, `decoder/cpu_batch.go:Model.decodeMultiStep`.
+
+Beside them are the nine own loops of `decoder/arch.go:ownForwards`, two of which have batched twins:
+`decoder/forward_gemma4_batched.go:Model.runLayersGemma4FromEmbedN` and `decoder/forward_qwen35_n.go:Model.runLayersQwen35N`.
+
+**The same mathematics is computed in more than one floating-point order across them:**
+- **Attention:** `attendBatchedHeads` with float64 accumulation in the generic paths; `attendQuery` in the qwen35, lfm2,
+  granite, nemotron and llama4 loops; a float32 `MatmulBT` in gemma4's; an inline float64 softmax with sinks in gpt-oss's;
+  and the absorbed and naive MLA forms.
+- **Norms:** four-way partial sums in `rmsNormInto` and `layerNormInto`, sequential sums in `rmsNormNoWeight`,
+  `l2NormHeads` and the recurrent mixers' gated norms.
+- **RoPE:** `mlaRope` for llama4 and MLA, gemma4's zero-padded table, and `applyRoPE` called directly by lfm2 and granite.
+
+OP3 moves no number, so each of these orders survives it.
+
+**The design.**
+- **The program** is a value built once at load from the resolved `Architecture`. It holds an embedding stage, one list of
+  operations per layer, and a head stage.
+  - Each operation has a kind from a closed set, its parameters, and the operands it reads and writes.
+  - The operands are a small fixed set of per-stream registers: the residual, the normed input, and two sublayer outputs. So
+    the parallel block is a list (norm, attention into one output, FFN from the same input into the other, one residual add of
+    both), not a branch.
+  - The types are unexported in OP3. OP4 exports what the backends read, when they first read it.
+- **The kinds for the generic families,** following §4.1:
+  - the embedding stage: `embed` {scale} and `learned-pos`;
+  - `norm` {slot, rms or layer or none, eps, (1+w), bias};
+  - `proj-qkv` {bias};
+  - `qk-norm` {per head or whole vector, eps, (1+w)};
+  - `rope` {table, mscale, interleave, m-RoPE section and interleave};
+  - `attn-temp` {beta, original length};
+  - `attention` {window, softcap, scale, order};
+  - `out-gate` {activation, per head or per element};
+  - `proj-o` {bias};
+  - `ffn` {gated with its activation, non-gated with its activation and biases, or MoE with its router's parameters};
+  - `residual` {one output or two};
+  - the head stage: the final norm, the head (tied or not), the final softcap and the logit scale.
+- **The own loops add their mixers and their variants as kinds:**
+  - `deltanet`, `mamba2`, `kda`, `short-conv`;
+  - MLA as an `attention` order with its own projections;
+  - gemma4's per-layer embedding and shared KV;
+  - gpt-oss's sinks and expert;
+  - llama4's chunked and NoPE layers.
+  
+  Each is added in the step that moves its family.
+- **The CPU's reduction order is a parameter of each operation that has more than one.** `attention`'s order is one of the
+  forms listed above, and a norm's is four-way or sequential. Each family keeps the order it computes in today. A GPU backend
+  ignores the parameter. Unifying the orders would move numbers, so it is a separate change with its own validation, not
+  part of OP3.
+- **Every implementation reads its parameters from the operation, not from the `Architecture`.** That is why a planted
+  parameter can go red, and gate L checks it for every parameter.
+- **What is not an operation stays outside the program,** as a hook in the walker around the operations:
+  - LoRA;
+  - the sublayer capture and the layer capture;
+  - the layer pager, the expert pager and per-layer cancellation;
+  - `decodeTiming` and the test seams.
+- **Three walkers,** one per generic path, run the one program.
+  - A path that declines today declines by operation kind or parameter instead: `canBatchN`, and the multi-sequence
+    step's eligibility.
+  - The declines' outcomes do not change in OP3.
+- **The old generic loops stay in the tree until OP3's last step,** behind a test hook. Gate S needs both arms in one
+  process. The last step deletes them.
+
+**Steps.** Each step is its own PR, merged by hand on green CI, and each passes gates I, P and L before it merges.
+- **OP3a:** the program, the builder for the generic families, and the per-token walker.
+- **OP3b:** the batched walker and the multi-sequence walker.
+- **OP3c to OP3k:** the own loops, one family per step, each with its batched twin where it has one, and its
+  `ownForwards` entry removed as it moves. The order is gpt-oss, llama4, deepseek, bailing_hybrid, lfm2, granitemoehybrid,
+  nemotron_h, qwen3_5_moe, gemma4: the smallest loops first, the two with batched twins last.
+- **OP3z:** the old loops and the table go.
+
+**Gates.**
+- **I, identity (tier 0, every step).**
+  - The instrument: `go run ./cmd/gate identity <base> <head> -backend cpu -assets tiny`, all families, quants f32,
+    int8int8 and int4, the default steps.
+  - The base is the commit the step branched from. For OP3a that is main `2c56d9c6`, or the merge it branches from if main
+    has moved.
+  - **Pass:** every family that runs is IDENTICAL. A DIFFERENT or WITHIN TOLERANCE family is red.
+  - NOT RUN cells are listed and never counted. Today's are mellum (a 4.2 GB slice), qwen2 and qwen3 (no tiny asset),
+    deepseek_v2 (no tiny fixture: deepseek_v3's covers the MLA loop), and qwen3_asr and voxtral (their goldens are zips).
+  - **Identity runs `Generate`, so it does not reach every path.** It misses the multimodal seams, LoRA, the captures, MC3c
+    and speculative verify. Those are covered by the touched packages' own tests (`scripts/touched.py`) and, once before each
+    push, by the goldens-gated parity refresh.
+- **P, plants (tier 0, every step, on the walkers it adds).** A test hook changes the built program before a run on the tiny
+  fixtures. Each plant must change the logits of at least one family the step covers:
+  - **a dropped operation:** layer 0's second `residual`;
+  - **two swapped operations:** layer 0's `qk-norm` and `rope` on a family with a QK-norm, and its `norm` and `proj-qkv`
+    on one without;
+  - **a parameter off by one:** `rope`'s rotary width one pair short, and `attention`'s window one key short on a family
+    with a window.
+- **L, every parameter is live (tier 0, every step).**
+  - For each (kind, parameter) pair the builder emits for a family the step covers, one test changes that parameter alone
+    and requires the logits to change. An integer parameter goes off by one; any other is doubled, or toggled if it is a
+    flag. Each change runs on a family whose fixture carries the parameter.
+  - A pair that no fixture reaches is listed by name in the step's record, never counted as passing.
+  - This gate is what shows an implementation reads the program and not the `Architecture`. P checks three parameters;
+    L checks all of them.
+- **T1, the size-switched paths (tier 1, by day, on the steps that change a walker: OP3a, OP3b, and qwen3_5_moe's
+  batched twin).**
+  - The instrument: `gate identity -assets real -only coder-0.5b-q4km`.
+  - The real prompts are 145 and 621 tokens. Those cross the grouped kernel's 128 keys and the fast-attention floor at
+    512 (on by default). A third, long prompt is added to the set, about 2,500 tokens, so the prefill crosses G40's
+    2,048-row chunk.
+  - **Pass:** IDENTICAL. About 3 minutes.
+- **S, speed (tier 1, by day, OP3a and OP3b).**
+  - The instrument: a whole-token in-process A/B, the walker against the old loop (the test hook), interleaved ABBA in
+    one process. The shape is F3's harness (`decoder/kv_f16_ab_test.go`). The cells are the 0.5B at depths 128 and 4,096,
+    with 6 and 4 pairs. The quantity is the decode-rate ratio, walker ÷ old.
+  - **Pass:** the median is at least 0.99 at both cells.
+  - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99. The walker is fixed before the
+    step merges.
+  - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate
+    (`BENCH_ENGINES=goinfer,goinfer_old`) at night, fit-checked first.
+  - About 8 minutes, under the timing lock.
+- **No other night run.** Identity inherits each family's validation (TE6(b)).
+
+**Void conditions:**
+- an identity run whose base is not the named commit;
+- a NOT RUN cell counted as a pass;
+- gate S run while another timed run holds the lock, or run without the lock.
+
+**Stopping rule.** Each gate runs once per step, at the step's head, after its last merge of main. A red is fixed and the
+gate is re-run. The bar never moves.
+
+**Predictions:**
+- I is IDENTICAL at every step (0.9). The risk is an own loop whose order this census misread.
+- S is within 0.99 at both cells (0.85). The walker adds one dispatch per operation, about 15 per layer per token.
+
+**For the owner,** if either should be otherwise:
+- the reduction order as an operation parameter, rather than unifying the orders inside OP3;
+- the old loops kept until OP3z, for gate S.
+
+**OP3a's readings, 2026-10-16 (branch `op3-layer-program-2026-10`). P, L and T1 ran at `439bd3bf`. S ran at `d5752b99`, which adds only the S test. I ran at `1ce5f447`, which has the same code as `d5752b99` plus this record.**
+
+- **I, identity: PASS.** Against `2c56d9c6` on the tiny assets: 37 families IDENTICAL at f32, int8int8 and int4, none
+  different. The six NOT RUN are as listed above. Log: `docs/measurements/op3-2026-10/op3a-identity-tiny.log`.
+- **P, plants: PASS.** Each plant changed the logits on every fixture it applies to:
+
+  | plant | fixtures changed |
+  |---|---|
+  | layer 0's second `residual` dropped | 33 of 33 |
+  | `qk-norm` and `rope` swapped, or `norm` and `proj-qkv` | 33 of 33 |
+  | `rope` one pair short | 32 of 32 |
+  | `attention`'s window one key short | 9 of 9 |
+
+- **L, every parameter is live: PASS.**
+  - Every (kind, parameter) pair the builder emits changes some fixture's logits, or errors when changed (`attention.Order`, read
+    and refused by the walker), except six.
+  - **Listed, with the reason in the test (`decoder/program_test.go:programParamUnreached`):**
+    - `ffn.MoE.NGroup` and `TopkGroup`: no generic fixture routes by group;
+    - `ffn.MoE.NumExperts`: a shape, which the per-token path never reads;
+    - `ffn.MoE.PerExpertScale` and `RouterPreNorm`: Gemma 4's router extras, read only by its own loop;
+    - `head.Norm.Slot`: the head has one norm weight.
+  - **Five pairs only GPT-2 reaches:** learned positions, the norm and head-norm biases, and the q/k/v and o biases.
+    - Every tiny fixture's biases are exactly zero, as HF initialises them, including `glm-tiny-bias`'s. Their goldens cannot
+      see a bias.
+    - `testdata/gpt2` is gitignored, so where it is absent those five report NOT RUN, never pass
+      (`programParamNeeds`).
+  - The m-RoPE pairs are reached by giving the VL fixtures' cache distinct (t, h, w) positions; a text prompt's are equal.
+- **T1, the size-switched paths: PASS.** `gate identity -assets real -only coder-0.5b-q4km -long`: prompts of 145, 621 and
+  2,593 tokens, read from the kept dumps, 32 decode steps each, IDENTICAL. Log:
+  `docs/measurements/op3-2026-10/op3a-T1-real-0.5b.log`.
+- **S, speed: depth 4,096 PASS, depth 128 PARKED.** The in-process A/B on the 0.5B, decode-rate ratio walker ÷ old:
+
+  | cell | pairs | median | range | pairs under 1 | read |
+  |---|---|---|---|---|---|
+  | depth 128 | 6 | 0.980 | 0.905–1.011 | 4 | **parked:** unresolved, under 0.99 |
+  | depth 4,096 | 4 | 0.997 | 0.982–1.026 | 3 | pass |
+
+  - Load average was 7.2 at the end (Spotlight indexing). Log: `docs/measurements/op3-2026-10/op3a-S.log`.
+  - **Diagnostics, by day, not a grade:**
+    - allocations per token are equal, 69 against 69 on `llama-tiny`;
+    - per-token time on `llama-tiny`, where the walker's dispatch is the largest share of a token, is 247–252 µs walker
+      against 249–260 µs old, over four alternating rounds.
+- **Found while building, and fixed in OP3a:**
+  - Four tests changed the `Architecture` after load to simulate another configuration, so they now rebuild the program
+    (`rebuildProgramForTest`).
+  - OP1's softcap-off test hook zeroed the softcap after the program was built, so the CPU would have kept capping. It
+    rebuilds the program now.
+
+**Gate S's served cell (amendment, 2026-10-16, before it runs: the details the registration left open).** The parked cell
+runs at night as registered.
+- The instrument is `docs/measurements/op3-2026-10/run-S-served.sh`: CPU decode on the 0.5B at depth 128, two arms and no
+  peer.
+  - The walker is `d5752b99`, and the old arm is `2c56d9c6`.
+  - Both binaries were built by day and fit-checked: each admits the 0.5B, with 0.3 GB of weights against a 4.1 GB budget.
+- `BENCH_RUNS=5`, two passes, the engine order reversed in the second.
+- **The quantity:** the median decode rate, walker ÷ old, per pass. The reading is the geometric mean of the two passes.
+- **Pass:** at least 0.99. **Fail:** under 0.99, and the walker is fixed before OP3a merges. Pass 2 is not skipped.
+- OP3a merges after this cell reads. OP3b builds on the branch meanwhile.
+
+**Gate S's served cell, read 2026-10-16 21:01-21:03 PDT (night queue, the MacBook): PASS, 0.9989.** As registered: CPU decode
+on the 0.5B at depth 128, the walker `d5752b99` against `2c56d9c6`, `BENCH_RUNS=5`, two passes with the engine order reversed.
+
+| pass | order | walker median | old median | walker ÷ old |
+|---|---|---|---|---|
+| 1 | walker first | 119.50 tok/s | 117.34 tok/s | 1.0184 |
+| 2 | old first | 117.02 tok/s | 119.45 tok/s | 0.9797 |
+
+The reading is the geometric mean of the two, 0.9989, against the 0.99 bar. Each pass favours the arm that ran first, so the
+order matters about as much as the arm, and reversing it is what nets that out. The load average was 1.36 at pass 1 and 2.53
+at pass 2, with a tack session open on the desktop through both passes (it was opened before the run). Records: `S-served-pass1.json` and
+`S-served-pass2.json` in the run's bench directory, with the night log `op3a-S-served.log`.
 
 ## 5. Track RF — one ragged forward pass
 
