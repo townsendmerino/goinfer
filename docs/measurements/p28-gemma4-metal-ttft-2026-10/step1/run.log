@@ -1,0 +1,19 @@
+=== 2026-10-17 07:34:51 PDT / 14:34:51 UTC P28 START
+=== 07:34:51 PDT / 14:34:51 UTC START gemma4-e2b-q40
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)
+  07:34:55 PDT / 14:34:55 UTC gemma4-e2b-q40 4096 tokens: sending
+  07:35:24 PDT / 14:35:24 UTC gemma4-e2b-q40 4096 tokens: 28.4 s, 144.3 tok/s, reused 0
+  07:35:24 PDT / 14:35:24 UTC gemma4-e2b-q40 8192 tokens: sending
+  07:39:22 PDT / 14:39:22 UTC gemma4-e2b-q40 8192 tokens: 238.5 s, 34.3 tok/s, reused 4
+=== 07:39:22 PDT / 14:39:22 UTC END gemma4-e2b-q40
+=== 07:39:22 PDT / 14:39:22 UTC START qwen2.5-coder-1.5b-q4km
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA from 32 prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)
+  07:39:24 PDT / 14:39:24 UTC qwen2.5-coder-1.5b-q4km 4097 tokens: sending
+  07:39:29 PDT / 14:39:29 UTC qwen2.5-coder-1.5b-q4km 4097 tokens: 4.6 s, 900.0 tok/s, reused 0
+  07:39:29 PDT / 14:39:29 UTC qwen2.5-coder-1.5b-q4km 8193 tokens: sending
+  07:39:39 PDT / 14:39:39 UTC qwen2.5-coder-1.5b-q4km 8193 tokens: 10.3 s, 796.2 tok/s, reused 24
+=== 07:39:39 PDT / 14:39:39 UTC END qwen2.5-coder-1.5b-q4km
+records: /Users/francistownsend-merino/goinfer-bench/p28/results-2026-10-17-0734
+=== 2026-10-17 07:39:39 PDT P28 END rc=0
