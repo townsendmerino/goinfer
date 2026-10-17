@@ -97,6 +97,11 @@ func TestNemotronResidentCUDA_guards(t *testing.T) {
 			if c.fixture == "nemotron-tiny" && (static == nil || !strings.Contains(static.Error(), "Mamba-2 mixer")) {
 				t.Errorf("the batched prefill on nemotron-tiny: %v, want a decline naming the Mamba-2 mixer", static)
 			}
+			if c.fixture == "nemotron-tiny" {
+				if batched, why := r.PrefillPath(); batched || !strings.Contains(why, "Mamba-2 mixer has no batched kernel") {
+					t.Errorf("PrefillPath on nemotron-tiny = (%v, %q), want a sequential path that names the Mamba-2 mixer and not a projection precision", batched, why)
+				}
+			}
 			if c.fixture == "qwen35-tiny" && static != nil {
 				t.Errorf("the batched prefill declines qwen35-tiny (%v), which runs the DeltaNet recurrence batched", static)
 			}

@@ -34,6 +34,9 @@ any surface may still change.
 - **Nemotron-H resident on Metal, at int4.** The Mamba-2 mixer and the squared-ReLU MLP run on the GPU; an int8
   Nemotron-H stays on the CPU rather than re-quantize. Gated on tiny models, a three-layer slice of the real
   Nemotron-Nano-9B-v2, and the whole 9B against the CPU (min logit cosine 0.929, argmax 27 of 32).
+- **Nemotron-H resident on CUDA, at int4.** The same operations on the 8 GB card: the 4B whole (min logit cosine 0.994,
+  argmax 30 of 32 against the CPU), a three-layer slice of the 9B, and the whole 9B (0.954, 28 of 32; 47 tokens a second,
+  at a 4,096-position context). An int8 Nemotron-H and Nemotron-3-Nano's MoE blocks stay on the CPU; Granite-4.0-H does too.
 - **Faster q4k prefill on Metal.** A model loaded at `--quant q4k` (Phi-3) prefills eight rows a step on the batched
   step's kernels instead of one token at a time, with bit-identical results: 1.99x on Phi-3 mini at 200 tokens.
 - **The memory-fit guard prices `--quant q4k` at what the load keeps** (Q4_K blocks and int8), not as int4 with its
