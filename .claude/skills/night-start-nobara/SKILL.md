@@ -33,6 +33,9 @@ directly, never through a pipe.
    - `start --dry-run` refuses outright if a runner is already going — stop and report `night.py status`
      instead of starting.
    - An empty queue: say so and stop.
+   - It names the command the runner runs before the first job (`before the first job: …`, from
+     `~/.config/goinfer/night-hooks.toml`'s `before_queue`), or that there is none. Report it. A hooks file it cannot read
+     refuses the start; a command that fails at the start of the night starts no job, and SUMMARY.md says why.
 2. **The timing lock:** `python3 scripts/timing_lock.py status` must say `free`.
    - If a timed run holds it, every queued job that wraps a timed harness will wait for it or refuse.
    - Name the holder. **Never delete the lock file** to get past it.

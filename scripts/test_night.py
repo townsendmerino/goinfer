@@ -13,6 +13,7 @@ from pathlib import Path
 _tmp = tempfile.mkdtemp(prefix="night-test-")
 os.environ["NIGHT_DIR"] = os.path.join(_tmp, "night")  # read when night.py is imported
 os.environ["GOINFER_TIMING_LOCK_FILE"] = os.path.join(_tmp, "timing.lock")
+os.environ["NIGHT_HOOKS"] = os.path.join(_tmp, "night-hooks.toml")  # read when night.py is imported; absent unless a test writes it
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import night  # noqa: E402
 
@@ -180,6 +181,81 @@ class SwapGuardPlanCheck(unittest.TestCase):
         finally:
             night.check_job_plans = real
         self.assertEqual(len(list(night.QUEUE.glob("*planted*"))), 1)
+
+
+class BeforeQueue(unittest.TestCase):
+    """G6: the runner runs the box's before_queue command before its first job, and starts nothing when it fails."""
+
+    def setUp(self):
+        for d in (night.QUEUE, night.RUNNING):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+        night.HOOKS.unlink(missing_ok=True)
+        self.addCleanup(night.HOOKS.unlink, missing_ok=True)
+        self.log = Path(_tmp) / f"order-{self.id().rsplit('.', 1)[-1]}"
+        self.log.unlink(missing_ok=True)
+        self.rundir = Path(tempfile.mkdtemp(dir=_tmp))
+
+    def hooks(self, text):
+        night.HOOKS.write_text(text)
+
+    def run_queue(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            Runner(night.now() + dt.timedelta(hours=1), self.rundir).run()
+        return (self.rundir / "SUMMARY.md").read_text()
+
+    def order(self):
+        return self.log.read_text().split() if self.log.exists() else []
+
+    def test_the_stop_runs_before_the_first_job(self):
+        self.hooks(f"before_queue = \"/bin/sh -c 'echo stop >> {self.log}'\"\n")
+        queue_job("first", self.log)
+        summary = self.run_queue()
+        self.assertEqual(self.order(), ["stop", "ran"])
+        self.assertIn("exit 0", summary)
+
+    def test_a_failing_stop_starts_nothing(self):
+        self.hooks("before_queue = \"/bin/sh -c 'echo cannot stop; exit 3'\"\n")
+        f = queue_job("first", self.log)
+        summary = self.run_queue()
+        self.assertEqual(self.order(), [], "a job ran after the stop failed")
+        self.assertTrue(f.exists(), "the job left the queue")
+        self.assertIn("FAILED: exit 3", summary)
+        self.assertIn("No job was started", summary)
+        self.assertIn("cannot stop", summary)
+
+    def test_no_hooks_file_runs_the_queue(self):
+        queue_job("first", self.log)
+        summary = self.run_queue()
+        self.assertEqual(self.order(), ["ran"])
+        self.assertIn("sets no before_queue", summary)
+
+    def test_an_unreadable_hooks_file_starts_nothing(self):
+        self.hooks("before_queue = [not toml\n")
+        queue_job("first", self.log)
+        summary = self.run_queue()
+        self.assertEqual(self.order(), [])
+        self.assertIn("not readable TOML", summary)
+
+    def test_a_stop_that_hangs_starts_nothing(self):
+        self.hooks("before_queue = \"/bin/sleep 5\"\n")
+        queue_job("first", self.log)
+        prev, night.HOOK_TIMEOUT_S = night.HOOK_TIMEOUT_S, 1
+        try:
+            summary = self.run_queue()
+        finally:
+            night.HOOK_TIMEOUT_S = prev
+        self.assertEqual(self.order(), [])
+        self.assertIn("timed out after 1 s", summary)
+
+    def test_the_stop_runs_under_the_timing_lock(self):
+        status = Path(_tmp) / "lock-during-stop"
+        lock_py = Path(__file__).resolve().parent / "timing_lock.py"
+        self.hooks(f"before_queue = \"/bin/sh -c '{sys.executable} {lock_py} status > {status}'\"\n")
+        queue_job("first", self.log)
+        self.run_queue()
+        self.assertIn("night.py before_queue", status.read_text())
 
 
 if __name__ == "__main__":

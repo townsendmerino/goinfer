@@ -32,6 +32,12 @@ the environment of whoever ran `start`, in the directory it was queued from. Its
 
 Everything lives under $NIGHT_DIR (default ~/goinfer-logs/night): queue/, runs/<date>/, runner.pid.
 The queue is per machine — the Mac and nobara each have their own.
+
+Before its first job the runner runs the box's `before_queue` command, if one is set in $NIGHT_HOOKS (default
+~/.config/goinfer/night-hooks.toml, outside the repo), under the timing lock: for example
+`before_queue = "/home/francis/tack-runs/serve/stop"`, which stops a server still running from the day. It must exit 0,
+also when there is nothing to stop. If it fails, times out, or the file cannot be read, no job starts; SUMMARY.md says
+which.
 """
 import argparse
 import datetime as dt
@@ -64,6 +70,8 @@ SETTLE_MAX_S = int(os.environ.get("NIGHT_SETTLE_MAX_S", "300"))
 POLL_S = 10
 LOCK_WAIT_MIN = float(os.environ.get("NIGHT_LOCK_WAIT_MIN", "30"))  # TE9: minutes a job waits for another timed run's lock
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+HOOKS = Path(os.environ.get("NIGHT_HOOKS", str(Path.home() / ".config" / "goinfer" / "night-hooks.toml"))).expanduser()
+HOOK_TIMEOUT_S = int(os.environ.get("NIGHT_HOOK_TIMEOUT_S", "120"))
 
 
 # ---------------------------------------------------------------- helpers
@@ -319,6 +327,24 @@ def cmd_add(a):
           f"{' +dirty' if job['dirty'] else ''}). Tonight's queue: {len(jobs)} job(s), {fmt_min(total)}.")
 
 
+def before_queue_cmd():
+    """The box's before_queue command from HOOKS: (command, None), (None, None) when none is set, or (None, why) when the
+    file cannot be read: a set but unreadable hook must not be read as no hook."""
+    if not HOOKS.exists():
+        return None, None
+    try:
+        import tomllib
+        cfg = tomllib.loads(HOOKS.read_text())
+    except Exception as e:
+        return None, f"{HOOKS} is not readable TOML ({e})"
+    cmd = cfg.get("before_queue")
+    if cmd is None:
+        return None, None
+    if not isinstance(cmd, str) or not shlex.split(cmd):
+        return None, f"{HOOKS}: before_queue must be a non-empty command string"
+    return cmd, None
+
+
 def cmdline(j, width=110):
     """The command as a shell line, shown by `list` so a session can see whether a queued job already covers its run."""
     c = shlex.join(j["cmd"])
@@ -396,6 +422,10 @@ def cmd_start(a):
     cmd_list(a)
     if not rows:
         die(f"nothing fits before {hm(deadline)}. Pass a later --deadline, or split the jobs.")
+    hook, herr = before_queue_cmd()
+    if herr:
+        die(f"not started: {herr}")
+    print(f"before the first job: {hook} (exit 0 or no job starts)" if hook else f"before the first job: nothing ({HOOKS} sets no before_queue)")
     if a.dry_run:
         print("(dry run — not started)")
         return
@@ -438,6 +468,7 @@ class Runner:
         self.results = [read_json(f) for f in sorted(self.jobsdir.glob("*.json"))]
         self.results = [r for r in self.results if r]
         self.why_left = {}
+        self.hook = None  # what before_queue did: {"cmd", "outcome", "ok", "secs", "tail"}
 
     def log(self, msg):
         print(f"[{now().strftime('%F %T %Z')}] {msg}", flush=True)
@@ -480,6 +511,45 @@ class Runner:
             time.sleep(15)
             waited += 15
         self.log(f"settle gave up after {SETTLE_MAX_S}s at loadavg {os.getloadavg()[0]:.2f}; starting anyway")
+
+    def before_queue(self):
+        """Runs the box's before_queue command (before_queue_cmd) once, before the first job, holding the timing lock so no
+        timed run, or a server start that checks the lock, lands in between. Records what happened in self.hook and returns
+        whether the queue may start."""
+        cmd, err = before_queue_cmd()
+        t0 = time.time()
+        if err:
+            self.hook = {"cmd": None, "ok": False, "outcome": f"FAILED: {err}", "secs": 0, "tail": []}
+        elif cmd is None:
+            self.hook = {"cmd": None, "ok": True, "outcome": f"nothing to run ({HOOKS} sets no before_queue)", "secs": 0, "tail": []}
+        else:
+            try:
+                lock = timing_lock.acquire(label="night.py before_queue", wait_s=LOCK_WAIT_MIN * 60, cmd=cmd)
+            except timing_lock.Held as e:
+                self.hook = {"cmd": cmd, "ok": False, "outcome": f"FAILED: timing lock held ({e})", "secs": 0, "tail": []}
+            else:
+                try:
+                    r = subprocess.run(shlex.split(cmd), stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                       timeout=HOOK_TIMEOUT_S)
+                    ok, outcome, out = r.returncode == 0, f"exit {r.returncode}", r.stdout + r.stderr
+                except subprocess.TimeoutExpired as e:
+                    ok, outcome = False, f"timed out after {HOOK_TIMEOUT_S} s"
+                    out = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+                except OSError as e:
+                    ok, outcome, out = False, f"could not run ({e})", ""
+                finally:
+                    lock.release()
+                self.hook = {"cmd": cmd, "ok": ok, "outcome": outcome if ok else "FAILED: " + outcome,
+                             "secs": round(time.time() - t0, 1), "tail": out.strip().splitlines()[-10:]}
+        h = self.hook
+        self.log(f"before the queue: {h['cmd'] or '-'}: {h['outcome']}" + (f" in {h['secs']} s" if h["cmd"] else ""))
+        for line in h["tail"]:
+            self.log(f"  | {line}")
+        if not h["ok"]:
+            for j in queued():
+                self.why_left[j["name"]] = "not started: the before_queue command failed"
+        self.summary()
+        return h["ok"]
 
     def kill_job(self, why):
         if not self.proc or self.proc.poll() is not None:
@@ -621,6 +691,14 @@ class Runner:
                      f"{self.deadline.strftime('%H:%M')}" +
                      (f", ended {now().strftime('%H:%M')} ({fmt_min((now() - self.started).total_seconds() / 60)})."
                       if final else "."))
+        if self.hook:
+            h = self.hook
+            lines += ["", f"Before the queue: `{h['cmd']}` {h['outcome']}" + (f" in {h['secs']} s." if h["cmd"] else ".") if h["cmd"]
+                      else f"Before the queue: {h['outcome']}."]
+            if not h["ok"]:
+                lines.append("**No job was started.** Fix the command (or the hooks file) and start again.")
+            if h["tail"]:
+                lines += ["", "```", *h["tail"], "```"]
         ok = sum(1 for r in rs if r["outcome"] == "ok")
         lines += ["", f"{ok} of {len(rs)} job(s) ok.", "",
                   "| # | job | result | ran | est | queued at rev | log |", "|---|---|---|---|---|---|---|"]
@@ -683,6 +761,8 @@ class Runner:
                 self.settle()
                 if self.stop_now or STOPFLAG.exists():
                     continue
+                if self.hook is None and not self.before_queue():
+                    break
                 self.log(f"starting {pick['name']} (est {fmt_min(pick['est_min'])})")
                 self.run_job(pick)
         finally:
