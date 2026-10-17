@@ -141,6 +141,11 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
   resident RAM`, `NOT loaded`), and a load that streamed is still caught by the decode-path check. Checked against four
   stand-in servers, the fourth replaying this night's "fit is tight" output and then serving resident: the fixed gate reads
   RESIDENT, the old one REFUSED. The cell is re-queued unchanged. Log: `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-2108.log`.
+- **Night 2026-10-16, 23:00 PDT (the fixed gate): VOID-refused, a real refusal.** The server printed "needs … = 5.6 GB; this
+  machine currently has 5.6 GB of memory available (budget 3.9 GB = 70% of that)", NOT loaded. Its weight-streaming retry
+  declined on the format ("--quant q4k has no .giw form yet"), so no sidecar was written. Two VS Code windows with Claude
+  sessions were open; available memory had been 9.4 GB at 21:08. Re-queued for another night (owner). Log:
+  `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-2300.log`.
 - **Cost:** one cell, two engines, about 8 minutes of cells and loads; queued at 20.
 - **What it decides:** the owner's E5 ("yes to the default once the cell is read",
   `docs/tasks/task-forward-architecture-2026-10.md` §7): the cell is read, and Metal's default load for Phi-3/4 becomes
