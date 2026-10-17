@@ -176,12 +176,30 @@
       - the short warm-turn suffix above the floor, for every model (`PrefillKernelFloor` requires `VerifyCost`).
 
       On a 16 GB Mac that is the large models: the loads where prefill time is largest.
-  - **The measurement (tier 1, by day, after the question above):** Phi-3 mini 4k at q4k on Metal, cold prefill tok/s at one prompt length. One arm
-    holds one KV slot (sequential); the other holds two (OP6's step), by a `-kv-sessions` or `-ctx` the guard admits with
-    two slots. Read each arm's banner `prefill path:` line, so the arm is the path it claims to be. A few minutes; holds the
-    timing lock.
-  - **Then two separate decisions, not one fix:** whether the step's two-slot minimum should apply to a one-request prefill,
-    and a decline message that names the condition that applied (a one-line fix that needs no measurement).
+  - **Built (owner, 2026-10-17, "build the one-slot lift, ahead of OP4 on the Mac"):** branch `p29-one-slot-step-2026-10`.
+    - **The step at one slot:** a one-slot resident fills `kvSlotBufs` with its slot, marked contiguous, and
+      `batchIneligible` takes it.
+    - **The capability is split.** `metalResident.stepPrefill` ("prefills on the step") drives the prompt routes.
+      `VerifyCost` ("verifies on the step"), `BatchStepRange` and `BatchGreedyDraw` still need two slots, so speculation's
+      verify cost on one slot stays nil.
+    - **The step's scratch is priced** against the headroom the memory guard leaves beside a one-slot build. A miss declines
+      the step for that load, logged, and never the load.
+    - **Tier 0 is in `metal/one_slot_step_test.go`:**
+      - bit-identity against sequential (last-row logits, every K/V byte, a continuation), on the MC3 fixture at 2-64
+        tokens and on the q4k 0.5B;
+      - a planted row offset, which goes red;
+      - verify and batched decode off at one slot;
+      - the guard's exact edge through `metalBackend.BuildResident`: the load is admitted with the step declined at need, and
+        the step is built at need plus its price. The price covers the driver's count (4.28 MB priced, 3.13 MB counted on
+        the fixture).
+  - **The measurement (tier 1, by day; registered 2026-10-17 before it runs):** `TestOneSlotStep_phi3PrefillAB`.
+    - **The run:** Phi-3 mini 4k at q4k on one KV slot (`-ctx 2048`), one 512-token prompt from position 0. The two arms are
+      production's sequential decode and the step route, interleaved in one process with the arm order alternating:
+      1 warm-up each, then 5 pairs.
+    - **The quantity:** each pair's sequential ÷ step wall time; the reading is their median. Expected about 2x (owner).
+      It is reported, not graded against a bar.
+    - **The setup:** the load passes Metal's memory guard first or the test skips, and the run holds the timing lock.
+  - **Then the decline message:** it names the condition that applied, which is a one-line fix and needs no measurement.
 
 - **P28 · Gemma 4 E2B and E4B: time to first token on Metal is 20-35x Qwen2.5-1.5B's at the same prompt — OPEN, filed
   2026-10-16 (owner). Measure first, by day; report before any fix.** `mac`.
