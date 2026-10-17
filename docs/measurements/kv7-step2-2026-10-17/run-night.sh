@@ -32,6 +32,13 @@ rc=${PIPESTATUS[0]}
   echo; echo "## Restored prefixes against the ids an earlier request wrote"; echo '```'
   (cd "$B/wt" && SIDE_OUT="$OUT" SIDE_CONFIG=kv7s2-claude-code go test -count=1 -timeout 20m -run '^TestSideRequests_snapshotPrefixes$' -v ./internal/serveapp/ 2>&1 | grep -E '^\s+side_requests|^(---|ok|FAIL)')
   echo '```'
+  echo; echo "## Report-only: how much of a session start is shared past the boundary (owner's question, 2026-10-17)"
+  echo "Across this run's session starts (a sandbox with no CLAUDE.md: the leading reminder is gitStatus) and the five recorded real sessions of side-req-2026-10 (p1 to p5, with CLAUDE.md)."
+  echo '```'
+  S=$HOME/goinfer-bench/side-req-2026-10
+  (cd "$B/wt" && SIDE_BODIES="$OUT/bodies-kv7s2-claude-code,$S/p1/req/00002.req.json.gz,$S/p2/req/00002.req.json.gz,$S/p3/req/00002.req.json.gz,$S/p4/req/00002.req.json.gz,$S/p5/req/00002.req.json.gz" \
+    go test -count=1 -timeout 20m -run '^TestSideRequests_sessionStartShare$' -v ./internal/serveapp/ 2>&1 | grep -E 'side_requests|^(---|ok|FAIL)')
+  echo '```'
 } > "$OUT/kv7s2-metrics.md" 2>&1
 echo "finished: $(date '+%F %T %Z'); figures in $OUT/kv7s2-metrics.md" | tee -a "$OUT/job.log"
 exit 0

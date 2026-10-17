@@ -45,3 +45,13 @@ snapshot. nobara-pc, RTX 2070 SUPER, driver 595.91.07, GPU runs under the timing
 `pin-kv7s2.sh`, `plan-kv7s2.json`, `run-night.sh`: the e2e run's Claude Code configuration against the pinned build, `"bodies": true` and `"token_ids": true`, then the extractor's table and
 `TestSideRequests_snapshotPrefixes` (every restored prefix against the ids an earlier request wrote). Queued; read in the morning. Registered readings: every session start after the first restores
 (`snap=` present, time to first token under 0.2 of the cold one), every request after a compaction does too, `unqualified` is 0.
+
+## Report-only question for tonight's record (owner, 2026-10-17)
+
+Across real sessions, how often is the `CLAUDE.md` reminder after the boundary byte-identical between sessions, and what would a boundary after it save? **No change to the boundary.**
+`TestSideRequests_sessionStartShare` (`SIDE_BODIES`) answers it from request bodies; `run-night.sh` runs it over tonight's session starts and the five recorded real sessions and puts the output in `kv7s2-metrics.md`.
+
+**Read today, from the five recorded real sessions** (p1 to p5, Claude Code 2.1.296 from your real HOME, so the first user block is your `CLAUDE.md` with the memory index in it):
+- The leading reminder is byte-identical in **all five** (one hash). But only **one pair, p3 and p5, shares the stable section**: the other four ran in other working directories, and Claude Code writes the working directory into the system prompt early, so those pairs agree for just **705 ids** and no boundary helps them (the same finding as the KV7 tier 1 record: "two sessions in different working directories share only 659 ids").
+- For that pair the prompts agree for **17,880 ids**: **2,008 ids past the pass boundary** (15,872), which a boundary after the `CLAUDE.md` and attribution reminders would also restore: **21.4 s** of prefill at 93.7 ids/s per session start, out of the 47.5 s the boundary at the first turn leaves. What is left after it is the task text and the trailing system message (about 2,350 ids).
+- **Limits, stated:** one same-directory pair is a sample of one. The five were recorded the same day through a stub; the `CLAUDE.md` block includes the auto-memory index, which changes whenever a memory is saved, so across days the reminder will differ more often than it did across these five. Tonight's sessions have no `CLAUDE.md` (the sandbox), so they cannot answer the `CLAUDE.md` part; they show the same question for `gitStatus`, the leading reminder there.
