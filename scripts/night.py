@@ -38,6 +38,11 @@ Before its first job the runner runs the box's `before_queue` command, if one is
 `before_queue = "/home/francis/tack-runs/serve/stop"`, which stops a server still running from the day. It must exit 0,
 also when there is nothing to stop. If it fails, times out, or the file cannot be read, no job starts; SUMMARY.md says
 which.
+
+The same file sets the jobs' PATH once for the box: `path_prepend = ["/usr/local/go/bin"]` goes in front of the PATH every job
+(and the before_queue command) runs with, and `require_on_path = ["go", "nvidia-smi"]` names tools that must be found on that
+final PATH. `start` and `start --dry-run` check them; a missing tool refuses the start (no job starts, every job stays queued,
+SUMMARY.md names what was missing), with no warning-only mode.
 """
 import argparse
 import datetime as dt
@@ -327,22 +332,74 @@ def cmd_add(a):
           f"{' +dirty' if job['dirty'] else ''}). Tonight's queue: {len(jobs)} job(s), {fmt_min(total)}.")
 
 
+def hooks_config():
+    """The box's hooks file as (dict, None); ({}, None) when there is none; ({}, why) when it cannot be read: a set but unreadable
+    file must not be read as no settings."""
+    if not HOOKS.exists():
+        return {}, None
+    try:
+        import tomllib
+        return tomllib.loads(HOOKS.read_text()), None
+    except Exception as e:
+        return {}, f"{HOOKS} is not readable TOML ({e})"
+
+
 def before_queue_cmd():
     """The box's before_queue command from HOOKS: (command, None), (None, None) when none is set, or (None, why) when the
     file cannot be read: a set but unreadable hook must not be read as no hook."""
-    if not HOOKS.exists():
-        return None, None
-    try:
-        import tomllib
-        cfg = tomllib.loads(HOOKS.read_text())
-    except Exception as e:
-        return None, f"{HOOKS} is not readable TOML ({e})"
+    cfg, err = hooks_config()
+    if err:
+        return None, err
     cmd = cfg.get("before_queue")
     if cmd is None:
         return None, None
     if not isinstance(cmd, str) or not shlex.split(cmd):
         return None, f"{HOOKS}: before_queue must be a non-empty command string"
     return cmd, None
+
+
+def hook_list(key):
+    """HOOKS' list of non-empty strings under key: (list, None), ([], None) when unset, or ([], why) when it is not such a list."""
+    cfg, err = hooks_config()
+    if err:
+        return [], err
+    v = cfg.get(key)
+    if v is None:
+        return [], None
+    if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+        return [], f"{HOOKS}: {key} must be a list of non-empty strings"
+    return v, None
+
+
+def queue_path():
+    """The PATH every job and the before_queue command runs with: HOOKS' path_prepend in front of the starter's PATH."""
+    pre, _ = hook_list("path_prepend")
+    return os.pathsep.join([*(str(Path(x).expanduser()) for x in pre), os.environ.get("PATH", "")])
+
+
+def queue_env(**extra):
+    """The environment a job (or the hook) runs with: the starter's, its PATH widened by path_prepend, plus extra."""
+    return dict(os.environ, PATH=queue_path(), **extra)
+
+
+def missing_required():
+    """(tools HOOKS' require_on_path names that the final PATH does not find, None), or ([], why) when the settings cannot be read."""
+    req, err = hook_list("require_on_path")
+    if err:
+        return [], err
+    _, err = hook_list("path_prepend")
+    if err:
+        return [], err
+    path = queue_path()
+    return [t for t in req if not shutil.which(t, path=path)], None
+
+
+def required_report():
+    """One line per required tool for `start`/`--dry-run`: (lines, missing)."""
+    req, _ = hook_list("require_on_path")
+    miss, _ = missing_required()
+    path = queue_path()
+    return [f"  {t}: {shutil.which(t, path=path) or 'NOT FOUND'}" for t in req], miss
 
 
 def cmdline(j, width=110):
@@ -408,6 +465,18 @@ def cmd_drop(a):
 
 # ---------------------------------------------------------------- start / run
 
+def write_refused_summary(start, jobs, miss):
+    """SUMMARY.md for a start that was refused before any runner existed: what was missing, and that every job is still queued."""
+    rundir = RUNS / start.strftime("%Y-%m-%d")
+    rundir.mkdir(parents=True, exist_ok=True)
+    lines = [f"# Night run {rundir.name} — {platform.node()}", "",
+             f"**Not started.** Required on PATH but not found: {', '.join(f'`{t}`' for t in miss)}.",
+             f"No job was started. Fix `{HOOKS}` (`path_prepend`, `require_on_path`) or the PATH of the shell that starts the queue, then start again.", "",
+             f"PATH searched: `{queue_path()}`", "", "## Still queued (not started)", ""]
+    lines += [f"- {j['name']} (est {fmt_min(j['est_min'])})" for j in jobs]
+    (rundir / "SUMMARY.md").write_text("\n".join(lines) + "\n")
+
+
 def cmd_start(a):
     pid = runner_pid()
     if pid:
@@ -426,6 +495,20 @@ def cmd_start(a):
     if herr:
         die(f"not started: {herr}")
     print(f"before the first job: {hook} (exit 0 or no job starts)" if hook else f"before the first job: nothing ({HOOKS} sets no before_queue)")
+    pre, _ = hook_list("path_prepend")
+    if pre:
+        print(f"job PATH: {', '.join(pre)} in front of the starter's PATH")
+    lines, miss = required_report()
+    if lines:
+        print("required on PATH:", *lines, sep="\n")
+    _, rerr = missing_required()
+    if rerr:
+        die(f"not started: {rerr}")
+    if miss:
+        why = f"not started: required on PATH but not found: {', '.join(miss)} (searched {queue_path()}). Fix {HOOKS} (path_prepend / require_on_path) or the starting shell's PATH; every job stays queued."
+        if not a.dry_run:
+            write_refused_summary(start, jobs, miss)
+        die(why)
     if a.dry_run:
         print("(dry run — not started)")
         return
@@ -518,8 +601,12 @@ class Runner:
         whether the queue may start."""
         cmd, err = before_queue_cmd()
         t0 = time.time()
+        miss, rerr = missing_required()
         if err:
             self.hook = {"cmd": None, "ok": False, "outcome": f"FAILED: {err}", "secs": 0, "tail": []}
+        elif rerr or miss:
+            self.hook = {"cmd": None, "ok": False, "secs": 0, "tail": [],
+                         "outcome": "FAILED: " + (rerr or f"required on PATH but not found: {', '.join(miss)}")}
         elif cmd is None:
             self.hook = {"cmd": None, "ok": True, "outcome": f"nothing to run ({HOOKS} sets no before_queue)", "secs": 0, "tail": []}
         else:
@@ -530,7 +617,7 @@ class Runner:
             else:
                 try:
                     r = subprocess.run(shlex.split(cmd), stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                                       timeout=HOOK_TIMEOUT_S)
+                                       timeout=HOOK_TIMEOUT_S, env=queue_env())
                     ok, outcome, out = r.returncode == 0, f"exit {r.returncode}", r.stdout + r.stderr
                 except subprocess.TimeoutExpired as e:
                     ok, outcome = False, f"timed out after {HOOK_TIMEOUT_S} s"
@@ -547,7 +634,7 @@ class Runner:
             self.log(f"  | {line}")
         if not h["ok"]:
             for j in queued():
-                self.why_left[j["name"]] = "not started: the before_queue command failed"
+                self.why_left[j["name"]] = "not started: the before_queue step failed (the hook, or a required tool missing from PATH)"
         self.summary()
         return h["ok"]
 
@@ -631,7 +718,7 @@ class Runner:
     def _run_locked(self, j, name, cwd, t0, logp, f):
         """The job itself: run_job calls this with the log open and the timing lock held."""
         cmd = j["cmd"] if len(j["cmd"]) > 1 else ["/bin/bash", "-c", j["cmd"][0]]
-        env = dict(os.environ, NIGHT_JOB=name, NIGHT_LOG=str(logp), NIGHT_RUNDIR=str(self.rundir))
+        env = queue_env(NIGHT_JOB=name, NIGHT_LOG=str(logp), NIGHT_RUNDIR=str(self.rundir))
         try:
             if not Path(cwd).is_dir():
                 raise FileNotFoundError(f"the directory it was queued from is gone: {cwd}")

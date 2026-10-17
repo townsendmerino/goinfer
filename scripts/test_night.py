@@ -258,5 +258,134 @@ class BeforeQueue(unittest.TestCase):
         self.assertIn("night.py before_queue", status.read_text())
 
 
+class QueueEnvironment(unittest.TestCase):
+    """The box's hooks file sets the jobs' PATH once (path_prepend) and names tools that must be found on it (require_on_path):
+    a missing tool refuses the start, with every job still queued and SUMMARY.md saying what was missing."""
+
+    def setUp(self):
+        for d in (night.QUEUE, night.RUNNING):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+        self.dir = Path(tempfile.mkdtemp(dir=_tmp))
+        self.hooks = self.dir / "night-hooks.toml"
+        self._hooks = night.HOOKS
+        night.HOOKS = self.hooks
+        self.summary = night.RUNS / night.now().strftime("%Y-%m-%d") / "SUMMARY.md"
+        self.summary.unlink(missing_ok=True)
+
+    def tearDown(self):
+        night.HOOKS = self._hooks
+
+    def toml(self, body):
+        self.hooks.write_text(body)
+
+    def job(self, name="envjob", script="true"):
+        night.QUEUE.mkdir(parents=True, exist_ok=True)
+        _seq[0] += 1
+        seq = 2_000_000 + _seq[0]
+        f = night.QUEUE / f"{seq}-{name}.json"
+        f.write_text(json.dumps({"name": name, "cmd": ["/bin/sh", "-c", script], "cwd": str(self.dir), "est_min": 1.0,
+                                 "timeout_min": 2.0, "priority": 50, "seq": seq}))
+        return f
+
+    def start(self, dry_run):
+        a = type("A", (), dict(deadline=night.DEFAULT_DEADLINE, dry_run=dry_run, frm=None))()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                night.cmd_start(a)
+            except SystemExit as e:
+                return out.getvalue(), e.code
+        return out.getvalue(), None
+
+    def run_queue(self):
+        rundir = Path(tempfile.mkdtemp(dir=_tmp))
+        with contextlib.redirect_stdout(io.StringIO()):
+            Runner(night.now() + dt.timedelta(hours=1), rundir).run()
+        return rundir
+
+    def test_the_job_environment_gets_the_prepended_path(self):
+        bindir = self.dir / "bin"
+        bindir.mkdir()
+        self.toml(f'path_prepend = ["{bindir}"]\n')
+        out = self.dir / "path-seen"
+        self.job(script=f'printf %s "$PATH" > {out}')
+        self.run_queue()
+        seen = out.read_text()
+        self.assertTrue(seen.startswith(str(bindir) + os.pathsep), seen)
+        self.assertIn(os.environ["PATH"], seen)
+
+    def test_a_missing_required_tool_refuses_the_start_and_leaves_the_queue_intact(self):
+        self.toml('require_on_path = ["no-such-tool-for-night-test"]\n')
+        f = self.job()
+        spawned = []
+        real = night.subprocess.Popen
+        night.subprocess.Popen = lambda *a, **k: spawned.append(a) or (_ for _ in ()).throw(AssertionError("a runner was spawned"))
+        try:
+            out, code = self.start(dry_run=False)
+        finally:
+            night.subprocess.Popen = real
+        self.assertEqual(code, 1, out)
+        self.assertEqual(spawned, [], "no runner may be spawned")
+        self.assertTrue(f.exists(), "the job's queue file must stay")
+        self.assertIsNone(night.runner_pid(), "no runner may have been started")
+        text = self.summary.read_text()
+        self.assertIn("no-such-tool-for-night-test", text)
+        self.assertIn("Not started", text)
+        self.assertIn("envjob", text)
+
+    def test_the_dry_run_prints_the_result(self):
+        self.job()
+        self.toml('require_on_path = ["sh", "no-such-tool-for-night-test"]\n')
+        out, code = self.start(dry_run=True)
+        self.assertEqual(code, 1)
+        self.assertIn("NOT FOUND", out)
+        self.assertRegex(out, r"sh: /\S+/sh")
+        self.assertFalse(self.summary.exists(), "a dry run writes no SUMMARY.md")
+        self.toml('require_on_path = ["sh"]\n')
+        out, code = self.start(dry_run=True)
+        self.assertIsNone(code, out)
+        self.assertIn("(dry run — not started)", out)
+
+    def test_path_prepend_makes_a_tool_found(self):
+        bindir = self.dir / "bin"
+        bindir.mkdir()
+        tool = bindir / "night-test-tool"
+        tool.write_text("#!/bin/sh\n")
+        tool.chmod(0o755)
+        self.job()
+        self.toml(f'require_on_path = ["night-test-tool"]\n')
+        self.assertEqual(self.start(dry_run=True)[1], 1)
+        self.toml(f'path_prepend = ["{bindir}"]\nrequire_on_path = ["night-test-tool"]\n')
+        self.assertIsNone(self.start(dry_run=True)[1])
+
+    def test_a_malformed_setting_refuses_too(self):
+        self.job()
+        self.toml('require_on_path = "go"\n')
+        out, code = self.start(dry_run=True)
+        self.assertEqual(code, 1)
+
+    def test_the_runner_checks_as_well(self):
+        self.toml('require_on_path = ["no-such-tool-for-night-test"]\n')
+        f = self.job(script=f"echo ran > {self.dir / 'ran'}")
+        rundir = self.run_queue()
+        self.assertFalse((self.dir / "ran").exists(), "no job may start")
+        self.assertTrue(f.exists())
+        self.assertIn("no-such-tool-for-night-test", (rundir / "SUMMARY.md").read_text())
+
+    def test_plant_without_the_check_the_start_is_not_refused(self):
+        """With the check skipped the same dry run goes through: the refusal tests above need the check to be what refuses."""
+        self.toml('require_on_path = ["no-such-tool-for-night-test"]\n')
+        self.job()
+        real = night.missing_required
+        night.missing_required = lambda: ([], None)
+        try:
+            out, code = self.start(dry_run=True)
+        finally:
+            night.missing_required = real
+        self.assertIsNone(code, out)
+
+
 if __name__ == "__main__":
     unittest.main()
