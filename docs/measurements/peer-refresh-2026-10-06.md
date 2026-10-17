@@ -57,6 +57,8 @@ T = 1.0, spreads under 0.3%). Per the rule, the row keeps its 2026-09-17 reading
 so the 0.94× describes a configuration a default load no longer takes. Whether a Metal phi3-mini row should be read at
 another quantization (int4, which the 2026-09-17 row may have used) is a question for the owner, not this record.
 
+Ollama's T = 1.0 cell: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
+
 **2. The 1.5B's long-prompt TTFT: VALID.** Every engine started in both cells, and every cache check was healthy (fresh
 prompts miss each engine's prefix cache). Graded per pair as the 2026-10-05 short-prompt table (level 0.97–1.03, ahead
 > 1.03, behind < 0.97, all pairs decide, an engine spread over 5% caps the cell):

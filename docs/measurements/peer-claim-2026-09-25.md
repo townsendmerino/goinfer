@@ -180,6 +180,8 @@ them.
 | h | Metal TTFT, 1.5B, K = 512 / 3900 (2) | **AMBIGUOUS-LOW** at 512 (spread cap; all 6 pairs behind) · **BEHIND** at 3900 | 0.377 / 0.239 (6 pairs each) | Ollama 591 / 4184 ms vs goinfer 1580 / 17510 ms (medians) | — |
 | i | CPU arm64, 0.5B / 1.5B @128 (2) | 0.5B **AMBIGUOUS-LOW** (peer spread cap) · 1.5B **VOID** | 0.5B 1.166 (pairs 0.874, 1.166, 1.168); 1.5B 0.804, void | Ollama 0.5B 125.2 / 93.7 / 93.1; 1.5B 61.8 / 60.3 / 62.0 | 0.5B BEHIND (0.842); 1.5B VOID |
 
+The t1.0 cells: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
+
 
 ### Cells a–f in detail (nobara-pc, 2026-09-25)
 
@@ -274,6 +276,8 @@ unique-prefix requests per prefill cell. Depth 8000 used `BENCH_CTX=8192` on all
 | phi3-mini | 128 | greedy | 143.4 / 143.1 / 143.0 | 125.8 / 125.7 / 125.6 | 1.140 1.139 1.138 | **AHEAD** (1.139) | 127.3 / 127.8 / 127.3 | AHEAD (1.123) | 1536 / 1536 / 1536 |
 | phi3-mini | 128 | temp0.8_topp0.95 | 129.3 / 128.9 / 129.7 | 125.9 / 125.8 / 125.8 | 1.027 1.024 1.031 | **AMBIGUOUS-HIGH** (1.027) | 127.3 / 127.5 / 127.8 | LEVEL (1.015) | 1536 / 1536 / 1536 |
 | phi3-mini | 128 | temp1.0_notrunc | 142.9 / 142.9 / 143.0 | 125.8 / 125.6 / 125.6 | 1.136 1.138 1.139 | **AHEAD** (1.138) | 127.9 / 128.6 / 127.4 | AHEAD (1.118) | 1536 / 1536 / 1463 |
+
+The temp1.0_notrunc rows: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
 
 **Cell d** (TTFT; r = Ollama TTFT ÷ goinfer TTFT, one pair per unique-prefix request)
 
@@ -464,6 +468,7 @@ reading in this paragraph is provisional: see "Post-run findings" above.)* For s
 (F) at depth 128:
 - temperature 0.8 with top_p 0.95: ahead on the 0.5B (1.19×) and level on phi3-mini (1.03×, AMBIGUOUS-HIGH);
 - temperature 1.0: ahead on phi3-mini (1.14×); the 0.5B cell is void.
+  Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
 
 Gemma 4 26B-A4B on an 8 GB card (C): goinfer, keeping every expert on the GPU (host↔VRAM streaming), decodes at
 1.82× Ollama's rate with its CPU offload (AHEAD). The checkpoints differ (int4 `.giw` against Q4_K_M), so this is an

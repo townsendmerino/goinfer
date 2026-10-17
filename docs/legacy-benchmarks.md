@@ -92,6 +92,7 @@
 > **That loss is RESOLVED (G26, 2026-08-28): about half of it was the anchor cell's own spread, the
 > real effect is −2.6%, the cause is optimistic forward, and it is fixed in `c9a79b4`. See the
 > resolution box in §B5.1 — the −5.8% figure should not be quoted forward.**
+> The temperature 1.0 cells: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
 >
 > **§B4 (26B host↔VRAM) DISCHARGED 2026-08-27** — the throughput did not move (11.42 vs 11.3 at
 > the same 16 slots); the grantable slot cap did, 38 → 30. See §B4.1.
@@ -861,6 +862,7 @@ prefill penalty. **goinfer's total-time advantage is a small-model, short-prompt
 > `temp+top_p`, +8–9% on the 0.5B and gemma3-1b elsewhere, against an Ollama side that did not
 > move. One went the other way and is recorded rather than explained: **phi3-mini at
 > `temperature 1.0` lost 5.8%**. The rows below stay as the `595.58.03` / v0.32.6 record they are.
+> The temperature 1.0 cells: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
 
 One binary for every cell. Supersedes the sampled rows in the README's G11 section; the older rows
 elsewhere on this page keep their own binary and peer version and are NOT updated in place.
@@ -887,6 +889,8 @@ nor the peer version bump moved the greedy path, and the sampled deltas below ar
 | qwen2.5-coder-0.5b (152k) | temp+top_p 0.95 | 190.3 ±1.6 | 266.2 ±0.3 | Ollama 1.40× |
 | gemma3-1b (262k) ᵈ | temp-only | 131.7 ±6.1 ᵉ | 149.1 ±0.5 | Ollama 1.13× |
 | gemma3-1b (262k) ᵈ | temp+top_p 0.95 | 115.2 ±2.3 | 149.6 ±0.4 | Ollama 1.30× |
+
+The three temp-only rows: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
 
 ᵈ **The phi3-mini and gemma3-1b rows were RE-MEASURED on 2026-08-09 and supersede the originals**
 (goinfer `ca29d6c`, Ollama v0.32.6, 5 runs × 8 completions, both engines **interleaved in one
@@ -1400,6 +1404,8 @@ holds nearly flat (269 → 260 on 0.5B) while goinfer decays (321 → 201).
 | `temperature 1.0`, no truncation (goinfer's default) | 219.2 | 269.0 | 131.7 ᵈ | 149.1 ᵈ |
 | `temperature 0.8` + `top_p 0.95` | 190.3 | 266.2 | 115.2 ᵈ | 149.6 ᵈ |
 
+The `temperature 1.0`, no truncation row: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
+
 ᵇ `top_k` row carried from the previous campaign (Ollama v0.32.5) — not re-measured in this pass.
 
 ᵈ gemma3-1b cells **re-measured 2026-08-09** with both engines interleaved in one session (the
@@ -1413,6 +1419,7 @@ configurations, down from 2.1–2.9× before the parallel-normalization work (`6
 cell has been **re-measured and published** (99.4 ±0.6, a 0.6% spread against the 5% threshold —
 Ollama 1.22×), together with its `temp-only` row, as a fresh same-session interleaved pair;
 `docs/benchmarks.md` §B5 records the re-measure and what the original row got wrong.
+The temperature-only figures in this range: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
 
 Absolute tok/s are **not** comparable across the CUDA and Metal sections — that would compare two
 graphics cards, not two engines. Method, hardware and history:
