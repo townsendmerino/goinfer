@@ -1,0 +1,120 @@
+=== RUN   TestProgram_S_walkerSpeed
+=== RUN   TestProgram_S_walkerSpeed/0.5B-d128
+[S 0.5B-d128] depth 128, 6 pairs
+DECODE TIMING (24 tok, gpu=false): forward 10.2 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.73 ms | MLP 5.62 ms | LM head 1.65 ms | residual 0.22 ms /token
+DECODE SPLIT MLP: gate+up matmuls 3.11 ms | activation 0.89 ms | down matmul 1.61 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.63 ms | rope+KV+scores/softmax/AV core 1.67 ms | o matmul 0.43 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 9.0 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.44 ms | MLP 5.08 ms | LM head 1.31 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.76 ms | activation 0.80 ms | down matmul 1.50 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.51 ms | rope+KV+scores/softmax/AV core 1.53 ms | o matmul 0.40 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 8.7 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.32 ms | MLP 4.93 ms | LM head 1.24 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.66 ms | activation 0.79 ms | down matmul 1.46 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.53 ms | rope+KV+scores/softmax/AV core 1.40 ms | o matmul 0.38 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 8.8 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.33 ms | MLP 4.96 ms | LM head 1.30 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.70 ms | activation 0.80 ms | down matmul 1.45 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.50 ms | rope+KV+scores/softmax/AV core 1.44 ms | o matmul 0.38 ms /token
+    program_ab_test.go:31: walker (0.5B-d128) pair 0: ON 8.68 | OFF 8.77 ms/tok | ON is 1.011x faster
+DECODE TIMING (24 tok, gpu=false): forward 8.7 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.31 ms | MLP 4.87 ms | LM head 1.32 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.65 ms | activation 0.80 ms | down matmul 1.41 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.50 ms | rope+KV+scores/softmax/AV core 1.43 ms | o matmul 0.38 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 8.9 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.38 ms | MLP 4.99 ms | LM head 1.35 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.73 ms | activation 0.79 ms | down matmul 1.45 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.53 ms | rope+KV+scores/softmax/AV core 1.47 ms | o matmul 0.38 ms /token
+    program_ab_test.go:31: walker (0.5B-d128) pair 1: ON 8.92 | OFF 8.68 ms/tok | ON is 0.973x faster
+DECODE TIMING (24 tok, gpu=false): forward 8.8 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.32 ms | MLP 4.92 ms | LM head 1.41 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.66 ms | activation 0.80 ms | down matmul 1.45 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.53 ms | rope+KV+scores/softmax/AV core 1.42 ms | o matmul 0.38 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 8.6 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.28 ms | MLP 4.81 ms | LM head 1.34 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.60 ms | activation 0.80 ms | down matmul 1.39 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.50 ms | rope+KV+scores/softmax/AV core 1.41 ms | o matmul 0.37 ms /token
+    program_ab_test.go:31: walker (0.5B-d128) pair 2: ON 8.83 | OFF 8.61 ms/tok | ON is 0.975x faster
+DECODE TIMING (24 tok, gpu=false): forward 8.7 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.31 ms | MLP 4.84 ms | LM head 1.32 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.61 ms | activation 0.81 ms | down matmul 1.41 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.50 ms | rope+KV+scores/softmax/AV core 1.43 ms | o matmul 0.38 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 9.6 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.55 ms | MLP 5.36 ms | LM head 1.45 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.98 ms | activation 0.81 ms | down matmul 1.55 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.56 ms | rope+KV+scores/softmax/AV core 1.58 ms | o matmul 0.40 ms /token
+    program_ab_test.go:31: walker (0.5B-d128) pair 3: ON 9.56 | OFF 8.65 ms/tok | ON is 0.905x faster
+DECODE TIMING (24 tok, gpu=false): forward 8.6 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.30 ms | MLP 4.80 ms | LM head 1.31 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.61 ms | activation 0.79 ms | down matmul 1.39 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.52 ms | rope+KV+scores/softmax/AV core 1.41 ms | o matmul 0.37 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 8.6 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.30 ms | MLP 4.84 ms | LM head 1.32 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.62 ms | activation 0.81 ms | down matmul 1.40 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.50 ms | rope+KV+scores/softmax/AV core 1.43 ms | o matmul 0.37 ms /token
+    program_ab_test.go:31: walker (0.5B-d128) pair 4: ON 8.60 | OFF 8.64 ms/tok | ON is 1.004x faster
+DECODE TIMING (24 tok, gpu=false): forward 8.6 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.29 ms | MLP 4.79 ms | LM head 1.30 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.59 ms | activation 0.80 ms | down matmul 1.38 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.51 ms | rope+KV+scores/softmax/AV core 1.41 ms | o matmul 0.37 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 8.7 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.29 ms | MLP 4.89 ms | LM head 1.37 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.67 ms | activation 0.79 ms | down matmul 1.42 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.52 ms | rope+KV+scores/softmax/AV core 1.40 ms | o matmul 0.37 ms /token
+    program_ab_test.go:31: walker (0.5B-d128) pair 5: ON 8.74 | OFF 8.56 ms/tok | ON is 0.980x faster
+    program_ab_test.go:31: walker (0.5B-d128): mean ON 8.89 OFF 8.65 ms/tok | paired median 0.980x (min 0.905 max 1.011, n=6)
+[S 0.5B-d128] paired median rate walker/old 0.980 (bar 0.99)
+=== RUN   TestProgram_S_walkerSpeed/0.5B-d4096
+[S 0.5B-d4096] depth 4096, 4 pairs
+DECODE TIMING (24 tok, gpu=false): forward 19.8 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.23 ms | MLP 5.10 ms | LM head 1.23 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.78 ms | activation 0.80 ms | down matmul 1.51 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.54 ms | rope+KV+scores/softmax/AV core 12.31 ms | o matmul 0.38 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.5 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.07 ms | MLP 5.05 ms | LM head 1.23 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.71 ms | activation 0.81 ms | down matmul 1.50 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.51 ms | rope+KV+scores/softmax/AV core 12.17 ms | o matmul 0.38 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.7 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.18 ms | MLP 5.08 ms | LM head 1.24 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.76 ms | activation 0.81 ms | down matmul 1.50 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.53 ms | rope+KV+scores/softmax/AV core 12.26 ms | o matmul 0.38 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.6 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.13 ms | MLP 5.09 ms | LM head 1.23 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.74 ms | activation 0.82 ms | down matmul 1.51 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.51 ms | rope+KV+scores/softmax/AV core 12.23 ms | o matmul 0.38 ms /token
+    program_ab_test.go:31: walker (0.5B-d4096) pair 0: ON 19.69 | OFF 19.63 ms/tok | ON is 0.997x faster
+DECODE TIMING (24 tok, gpu=false): forward 20.0 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.36 ms | MLP 5.16 ms | LM head 1.27 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.78 ms | activation 0.83 ms | down matmul 1.54 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.52 ms | rope+KV+scores/softmax/AV core 12.45 ms | o matmul 0.39 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 20.3 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.63 ms | MLP 5.22 ms | LM head 1.30 ms | residual 0.20 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.85 ms | activation 0.80 ms | down matmul 1.55 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.55 ms | rope+KV+scores/softmax/AV core 12.68 ms | o matmul 0.40 ms /token
+    program_ab_test.go:31: walker (0.5B-d4096) pair 1: ON 20.34 | OFF 19.98 ms/tok | ON is 0.982x faster
+DECODE TIMING (24 tok, gpu=false): forward 20.1 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.51 ms | MLP 5.18 ms | LM head 1.25 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.81 ms | activation 0.82 ms | down matmul 1.54 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.55 ms | rope+KV+scores/softmax/AV core 12.58 ms | o matmul 0.39 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 20.1 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.43 ms | MLP 5.19 ms | LM head 1.24 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.81 ms | activation 0.82 ms | down matmul 1.54 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.53 ms | rope+KV+scores/softmax/AV core 12.50 ms | o matmul 0.39 ms /token
+    program_ab_test.go:31: walker (0.5B-d4096) pair 2: ON 20.13 | OFF 20.06 ms/tok | ON is 0.996x faster
+DECODE TIMING (24 tok, gpu=false): forward 20.4 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.71 ms | MLP 5.22 ms | LM head 1.29 ms | residual 0.20 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.84 ms | activation 0.81 ms | down matmul 1.55 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.52 ms | rope+KV+scores/softmax/AV core 12.79 ms | o matmul 0.40 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.9 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.36 ms | MLP 5.11 ms | LM head 1.23 ms | residual 0.19 ms /token
+DECODE SPLIT MLP: gate+up matmuls 2.79 ms | activation 0.80 ms | down matmul 1.51 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.54 ms | rope+KV+scores/softmax/AV core 12.43 ms | o matmul 0.39 ms /token
+    program_ab_test.go:31: walker (0.5B-d4096) pair 3: ON 19.90 | OFF 20.41 ms/tok | ON is 1.026x faster
+    program_ab_test.go:31: walker (0.5B-d4096): mean ON 20.02 OFF 20.02 ms/tok | paired median 0.997x (min 0.982 max 1.026, n=4)
+[S 0.5B-d4096] paired median rate walker/old 0.997 (bar 0.99)
+--- PASS: TestProgram_S_walkerSpeed (159.10s)
+    --- PASS: TestProgram_S_walkerSpeed/0.5B-d128 (6.63s)
+    --- PASS: TestProgram_S_walkerSpeed/0.5B-d4096 (152.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	159.634s

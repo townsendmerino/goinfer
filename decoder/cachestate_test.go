@@ -213,14 +213,14 @@ func TestCacheStateGrid_rewindNeverLeavesMultimodalStatePastPos(t *testing.T) {
 	}
 }
 
-// TestCacheStateGrid_rewindCellsOnRealCaches runs every own-forward family's real cache (the
+// TestCacheStateGrid_rewindCellsOnRealCaches runs every registered family's real cache (the
 // allocation production uses) through a partial rewind. A family holding a kind declared inexact
 // must get an inexact report; one holding none must get an exact one (nothing has run, so no ring
 // has wrapped).
 func TestCacheStateGrid_rewindCellsOnRealCaches(t *testing.T) {
-	for _, f := range ownForwards {
-		t.Run(f.Name, func(t *testing.T) {
-			_, c := realCacheFor(t, f)
+	for _, mt := range modelTypes(t) {
+		t.Run(mt, func(t *testing.T) {
+			_, c := realCacheForType(t, mt)
 			var inexact []cacheState
 			for _, s := range cacheStates {
 				if c.holdsState(s) && cacheStateGrid[s][lcRewind].h == hInexact {
@@ -285,9 +285,9 @@ func TestCacheStateGrid_snapshotCells(t *testing.T) {
 // TestCacheStateGrid_specRollbackCells: a family whose real cache holds a kind declared refused for
 // speculative rollback must have specRollbackSafe() false.
 func TestCacheStateGrid_specRollbackCells(t *testing.T) {
-	for _, f := range ownForwards {
-		t.Run(f.Name, func(t *testing.T) {
-			m, c := realCacheFor(t, f)
+	for _, mt := range modelTypes(t) {
+		t.Run(mt, func(t *testing.T) {
+			m, c := realCacheForType(t, mt)
 			for _, s := range cacheStates {
 				if c.holdsState(s) && cacheStateGrid[s][lcSpecRollback].h == hRefused && m.specRollbackSafe() {
 					t.Errorf("the cache holds %q, declared refused for speculative rollback, but "+

@@ -130,7 +130,7 @@ func (m *Model) resumeHidden(ctx context.Context, cp *prefixCheckpoint, suffix [
 		}
 	}
 	out := append([]float32(nil), h[:a.HiddenDim]...)
-	normalize(a, out, m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+	m.finalNorm(out)
 	return out, nil
 }
 

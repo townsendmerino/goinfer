@@ -185,13 +185,17 @@ func TestQwen3VLMoe_tinyPlantedDefects(t *testing.T) {
 
 	// 2. The router not renormalised over the top k.
 	m.w.arch.MoE.NormTopKProb = false
+	m.rebuildProgramForTest()
 	red("router not renormalised", worstPositionCosine(qwen3vlmoeText(t, m, g.Text.IDs), g.Text.Logits, len(g.Text.IDs)))
 	m.w.arch.MoE.NormTopKProb = true
+	m.rebuildProgramForTest()
 
 	// 3. The m-RoPE not interleaved (Qwen2.5-VL's chunked layout): visible only where t, h and w differ, so on the image.
 	m.w.arch.MRopeInterleaved = false
+	m.rebuildProgramForTest()
 	red("m-RoPE chunked, not interleaved", worstPositionCosine(qwen3vlmoeImage(t, m, g, mp, g.Image.Deepstack), g.Image.Logits, len(g.Image.IDs)))
 	m.w.arch.MRopeInterleaved = true
+	m.rebuildProgramForTest()
 
 	// 4. Each DeepStack set one layer late: an empty set first, so set l lands after layer l+1.
 	late := append([][]float32{make([]float32, len(g.Image.Deepstack[0]))}, g.Image.Deepstack...)

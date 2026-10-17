@@ -46,9 +46,9 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 	if w.arch.MoE != nil || len(mapping) == 0 {
 		return nil
 	}
-	// Own-forward families run their own layer loop, which never calls enterLayer, so a pager would print a RAM-bound
-	// banner it cannot deliver. Only the generic dense forward pages. Derived from the dispatch table (ownForward).
-	if _, own := w.arch.ownForward(); own {
+	// Only a layer made of the generic operations pages: an own loop never calls enterLayer, and the spans below cover the
+	// generic layer's weights, not a mixer's (Architecture.genericKindsOnly).
+	if !w.arch.genericKindsOnly() {
 		return nil
 	}
 	base := uintptr(unsafe.Pointer(&mapping[0]))

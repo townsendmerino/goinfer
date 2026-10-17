@@ -77,14 +77,9 @@ var attnGroupedRuns int64
 // and no learned position embedding (GPT-2-style models take the sequential fallback). Sparse MoE batches its attention, but its
 // FFN stays per row because the router picks different experts per token.
 func (m *Model) canBatchN(K int) bool {
-	a := m.w.arch
-	// Every family with its own sequential forward is excluded, derived from the dispatch table (ownForward) rather than restated
-	// here: a restated list once fell a family behind, and a 2-token prompt ran the dense attention stack over conv layers that load
-	// no q/k/v/o.
-	if _, own := a.ownForward(); own {
-		return false
-	}
-	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed
+	// The program decides (program.batchEligible), not a family list: a restated list once fell a family behind, and a 2-token
+	// prompt ran the dense attention stack over conv layers that load no q/k/v/o.
+	return K > 1 && m.w.Embed.Rows() != 0 && m.program().batchEligible()
 }
 
 // hasRecurrentState reports whether this model carries state mutated in place per token (a conv window, an SSM state, a
@@ -99,8 +94,7 @@ func (m *Model) hasRecurrentState() bool {
 	if m == nil || m.w == nil || m.w.arch == nil {
 		return false
 	}
-	f, own := m.w.arch.ownForward()
-	return own && f.Recurrent
+	return m.w.arch.recurrent()
 }
 
 // specRollbackSafe reports whether speculative decode's rollback (KVCache.TruncateTo after a partial accept) correctly restores
@@ -145,13 +139,12 @@ func (m *Model) embedN(ids []int) []float32 {
 
 // embedNInto is embedN into h, which holds exactly len(ids)*HiddenDim floats.
 func (m *Model) embedNInto(h []float32, ids []int) []float32 {
-	arch := m.w.arch
-	hidden := arch.HiddenDim
+	hidden := m.w.arch.HiddenDim
 	for i, id := range ids {
 		m.w.Embed.Row(id, h[i*hidden:i*hidden+hidden])
 	}
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		s := float32(arch.EmbedScale)
+	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+		s := float32(emb.Scale)
 		for i := range h {
 			h[i] *= s
 		}
@@ -174,6 +167,15 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 // suffix being prefilled, rather than on this pass's rows: a chunked prefill (Model.prefillLogits) passes every chunk the
 // suffix's length, so a short last chunk keeps the suffix's attention path and its rows equal a single pass's.
 func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
+	if programWalkOffForTest {
+		return m.runLayersFromEmbedNFloorLoop(reqCtx, h, cache, fastAttn, floorK, ps)
+	}
+	return m.walkBatch(reqCtx, m.program(), h, cache, fastAttn, floorK, ps)
+}
+
+// runLayersFromEmbedNFloorLoop is the batched loop the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step.
+func (m *Model) runLayersFromEmbedNFloorLoop(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -677,11 +679,17 @@ func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 // invisible here and the math is byte-identical to append-forever. Per-query masking stays in absolute positions
 // (WindowStart/attendHi), mapped to physical columns by s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+	attendBatchedHeadsP(q, ctx, keys, vals, base, cache, layer, startPos, K, arch.attnParamsFor(cache, global), arch, useAcc64, pool)
+}
+
+// attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
+// form (attentionParams). arch supplies the shapes and the knobs.
+func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
-	scale := arch.AttnScale
+	scale := ap.Scale
 	nKeys := len(keys) / kvDim
 	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
 	// accumulate each dot in f64 (bit-identical to the sequential f64 reference); dense MLPs tolerate the f32 error. There is no
@@ -690,7 +698,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 
 	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask or logit softcap.
 	// Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
-	fusedOK := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0
+	fusedOK := !useAcc64 && cache.treeMask == nil && ap.Softcap == 0
 	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently
 	// across heads and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is
 	// unchanged and its ctx write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial
@@ -724,7 +732,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				for i := range kt {
 					gi := t0 + i
 					pos := startPos + gi
-					fs.lo[i] = cache.WindowStart(pos, global) - base
+					fs.lo[i] = ap.start(pos) - base
 					fs.hi[i] = cache.attendHi(pos) - base
 				}
 				if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
@@ -758,7 +766,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// TREE attention (05): row i attends to the whole committed prefix
 				// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
 				if cache.treeMask != nil {
-					loP := cache.WindowStart(pos, global) - base
+					loP := ap.start(pos) - base
 					batchCol0 := startPos - base
 					allowed := func(s int) bool {
 						if s < batchCol0 {
@@ -770,7 +778,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					maxS := math.Inf(-1)
 					for s := range nKeys {
 						if allowed(s) {
-							sc := softcapScore(float64(rowS[s])*scale, arch.AttnLogitSoftcap)
+							sc := softcapScore(float64(rowS[s])*scale, ap.Softcap)
 							rowS[s] = float32(sc)
 							if sc > maxS {
 								maxS = sc
@@ -800,7 +808,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// key bound: pos for a causal text query, or the image-block end for a
 				// bidirectional image position (so it also attends to the block's
 				// future tokens). Equals pos with no image blocks — inert for text.
-				loP := cache.WindowStart(pos, global) - base
+				loP := ap.start(pos) - base
 				hiP := cache.attendHi(pos) - base
 				if loP < 0 {
 					loP = 0
@@ -813,7 +821,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+						sc := softcapScore(float64(v)*scale, ap.Softcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc
@@ -875,7 +883,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		gScores := ws.groupScores[:group*nKeys]
 		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
 		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
-		loP := cache.WindowStart(pos, global) - base
+		loP := ap.start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -890,7 +898,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				_ = active[len(active)-1]
 				maxS := math.Inf(-1)
 				for s, v := range active {
-					sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+					sc := softcapScore(float64(v)*scale, ap.Softcap)
 					active[s] = float32(sc)
 					if sc > maxS {
 						maxS = sc
@@ -972,7 +980,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		})
 
 		pos := startPos
-		loP := cache.WindowStart(pos, global) - base
+		loP := ap.start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -992,7 +1000,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+						sc := softcapScore(float64(v)*scale, ap.Softcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc
@@ -1155,23 +1163,23 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 // lmHeadN projects M post-final-norm hidden rows (h is [M, HiddenDim]) to logits
 // [M, VocabSize] (+ final-logit softcap), at M=K so the head weights stream once.
 func (m *Model) lmHeadN(h []float32, M int) []float32 {
-	arch := m.w.arch
-	logits := make([]float32, M*arch.VocabSize)
-	if arch.TiedLMHead {
+	hp := &m.program().head
+	logits := make([]float32, M*m.w.arch.VocabSize)
+	if hp.Tied {
 		matmul(m.be, &m.w.Embed, h, logits, M)
 	} else {
 		matmul(m.be, &m.w.LMHead, h, logits, M)
 	}
-	if arch.FinalLogitSoftcap > 0 {
-		sc := float32(arch.FinalLogitSoftcap)
+	if hp.Softcap > 0 {
+		sc := float32(hp.Softcap)
 		for j, val := range logits {
 			logits[j] = sc * float32(math.Tanh(float64(val/sc)))
 		}
 	}
 	// logit_scale (Cohere multiplier stored as goinfer's reciprocal; Granite logits_scaling divisor): mirrors logitsFromHidden's tail.
 	// The sequential path applies it, so batched prefill/verify must too or forwardN diverges for any LogitScale family.
-	if arch.LogitScale != 0 && arch.LogitScale != 1 {
-		inv := float32(1 / arch.LogitScale)
+	if hp.LogitScale != 0 && hp.LogitScale != 1 {
+		inv := float32(1 / hp.LogitScale)
 		for j := range logits {
 			logits[j] *= inv
 		}
@@ -1374,7 +1382,7 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 }
 
 // prefillHiddenLFM2VL is prefillHiddenVLSpans for lfm2 (LFM2-VL, S10): the text embeddings with the image rows spliced
-// in, each run through runLayersLFM2FromEmbed in order (the conv windows see every row, image rows included), and each
+// in, each run through the per-token walker in order (the conv windows see every row, image rows included), and each
 // position's hidden state final-normed, as the batched entry returns them.
 func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
@@ -1389,11 +1397,11 @@ func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []Imag
 			return nil, err
 		}
 		row := h[i*hidden : (i+1)*hidden]
-		out, err := m.runLayersLFM2FromEmbed(row, cache)
+		out, err := m.runLayersFromEmbed(row, cache)
 		if err != nil {
 			return nil, err
 		}
-		normalize(arch, out, m.w.FinalNorm, m.w.FinalNormBias, hidden)
+		m.finalNorm(out)
 	}
 	return h, nil
 }

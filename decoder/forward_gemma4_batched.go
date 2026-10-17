@@ -34,14 +34,14 @@ func gemma4AttendRange(cache *KVCache, pos int, global bool, spans []ImageSpan) 
 	return
 }
 
-// runLayersGemma4FromEmbedN is runLayersGemma4FromEmbed's batched twin: K pre-embedded rows (h, [K*HiddenDim], image positions
+// runLayersGemma4FromEmbedN is runLayersFromEmbedPLE's batched twin: K pre-embedded rows (h, [K*HiddenDim], image positions
 // already spliced with raw projected features by the caller) processed as one prefill pass instead of K sequential per-token
 // calls. That is the only way to let a query inside an image/audio block see later block positions (gemma4AttendRange), which a
 // strict sequential KV-append forward cannot express.
 //
 // It assumes a fresh cache (cache.Pos()==0 at entry; its caller prefillLogitsGemma4VLBidirectional always passes one, as the
 // sequential twin prefillLogitsGemma4VL does). ids[row] is the row's real token id, used only for PLE's token-identity lookup
-// (image rows substitute arch.gemma4.PadTokenID, mirroring the sequential path; see runLayersGemma4FromEmbed). gemma4Attend, the
+// (image rows substitute arch.gemma4.PadTokenID, mirroring the sequential path; see runLayersFromEmbedPLE). gemma4Attend, the
 // unchanged single-query-row kernel, is reused per row with that row's gemma4AttendRange; it already accepts an arbitrary
 // [start,nKeys) range into the full cache arrays, so no new attention math is introduced.
 func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
@@ -264,9 +264,9 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 				}
 			}
 		}
-		// cache.captureResidual (the draft-head hidden-state seam) is deliberately not wired here —
+		// the draft-head hidden-state capture is deliberately not wired here —
 		// a decode-time concern; post-prefill decode resumes via the unchanged
-		// per-token runLayersGemma4 path, which already carries it.
+		// per-token the Gemma 4 program walk path, which already carries it.
 	}
 	cache.advanceTo(startPos + K) // gemma4's manualPos=true: Append never auto-advances pos
 	return h[(K-1)*hidden : K*hidden], nil

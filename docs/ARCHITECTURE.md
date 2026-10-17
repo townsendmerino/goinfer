@@ -142,7 +142,7 @@ Olmo Hybrid.
 - Cached per layer: one low-rank latent (`KVCache.mlaLatent`). Per-head K/V are rebuilt from it at
   each step, with RoPE on a separate slice.
 - Code: `decoder/forward_deepseek.go`. Ling 3.0 (`bailing_hybrid`) alternates MLA with Kimi Delta
-  Attention (`decoder/kda.go`, `kdaState`) in `decoder/forward_bailing.go`.
+  Attention (`decoder/kda.go`, `kdaState`); its layer program is `decoder/program.go:Architecture.layerOps`.
 
 **Mamba-2 hybrid** — Granite-4.0-H (`granitemoehybrid`) and Nemotron-H (`nemotron_h`).
 - Cached per layer: K/V on the attention layers, and a conv window plus SSM state (`mamba2State`) on

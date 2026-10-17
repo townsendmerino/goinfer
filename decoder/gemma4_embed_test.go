@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestGemma4RunLayersFromEmbed_matchesTokenPath proves runLayersGemma4FromEmbed (the embed-by-vector seam, P7) is
-// behavior-preserving for the ordinary text path: feeding it the SAME already-scaled embedding runLayersGemma4 builds, with
-// pleTokenID equal to the real token id, must reproduce runLayersGemma4's own output bit-for-bit (they share every line after
+// TestGemma4RunLayersFromEmbed_matchesTokenPath proves runLayersFromEmbedPLE (the embed-by-vector seam, P7) is
+// behavior-preserving for the ordinary text path: feeding it the SAME already-scaled embedding the Gemma 4 program walk builds, with
+// pleTokenID equal to the real token id, must reproduce the Gemma 4 program walk's own output bit-for-bit (they share every line after
 // the embedding prologue, forward_gemma4.go).
 //
 // Uses the real E2B GGUF (the only local fixture with PLE enabled, hidden_size_per_layer_input=256; every tiny synthetic
@@ -32,15 +32,15 @@ func TestGemma4RunLayersFromEmbed_matchesTokenPath(t *testing.T) {
 	const tokenID = 7001 // an arbitrary real token id (TestGemma4_logitParity's own golden argmax)
 	const padID = 0
 
-	// Reference path: runLayersGemma4 itself.
+	// Reference path: the Gemma 4 program walk itself.
 	cacheA := m.NewCache(4)
-	wantH, err := m.runLayersGemma4(tokenID, cacheA)
+	wantH, err := m.runLayers(tokenID, cacheA)
 	if err != nil {
-		t.Fatalf("runLayersGemma4: %v", err)
+		t.Fatalf("the Gemma 4 program walk: %v", err)
 	}
 
 	// Embed-by-vector path: build the SAME embedding by hand, feed it through
-	// runLayersGemma4FromEmbed with pleTokenID == tokenID (must match exactly).
+	// runLayersFromEmbedPLE with pleTokenID == tokenID (must match exactly).
 	cacheB := m.NewCache(4)
 	h := make([]float32, arch.HiddenDim)
 	m.w.Embed.Row(tokenID, h)
@@ -48,28 +48,28 @@ func TestGemma4RunLayersFromEmbed_matchesTokenPath(t *testing.T) {
 	for i := range h {
 		h[i] *= es
 	}
-	gotH, err := m.runLayersGemma4FromEmbed(h, tokenID, cacheB)
+	gotH, err := m.runLayersFromEmbedPLE(h, tokenID, cacheB)
 	if err != nil {
-		t.Fatalf("runLayersGemma4FromEmbed: %v", err)
+		t.Fatalf("runLayersFromEmbedPLE: %v", err)
 	}
 	if len(gotH) != len(wantH) {
 		t.Fatalf("len(gotH)=%d, want %d", len(gotH), len(wantH))
 	}
 	for i := range wantH {
 		if gotH[i] != wantH[i] {
-			t.Fatalf("runLayersGemma4FromEmbed diverges from runLayersGemma4 at index %d: got %v want %v", i, gotH[i], wantH[i])
+			t.Fatalf("runLayersFromEmbedPLE diverges from the Gemma 4 program walk at index %d: got %v want %v", i, gotH[i], wantH[i])
 		}
 	}
-	t.Logf("runLayersGemma4FromEmbed reproduces runLayersGemma4 bit-for-bit (%d dims)", len(wantH))
+	t.Logf("runLayersFromEmbedPLE reproduces the Gemma 4 program walk bit-for-bit (%d dims)", len(wantH))
 
 	// PAD substitution: SAME h, but pleTokenID = padID (the multimodal-position
 	// case). PLE's token-identity term now comes from a different embedding
 	// row, so the output must differ from the tokenID case — proving the
 	// substitution is actually wired, not a silent no-op.
 	cacheC := m.NewCache(4)
-	gotPad, err := m.runLayersGemma4FromEmbed(h, padID, cacheC)
+	gotPad, err := m.runLayersFromEmbedPLE(h, padID, cacheC)
 	if err != nil {
-		t.Fatalf("runLayersGemma4FromEmbed (pad): %v", err)
+		t.Fatalf("runLayersFromEmbedPLE (pad): %v", err)
 	}
 	same := len(gotPad) == len(wantH)
 	if same {

@@ -117,7 +117,7 @@ func TestLFM2_declinesResidentRunner(t *testing.T) {
 		t.Fatalf("resolveArchitecture: %v", err)
 	}
 	if arch.decodeRunnerEligible() {
-		t.Error("decodeRunnerEligible() = true — LFM2 has its own forward (runLayersLFM2); " +
+		t.Error("decodeRunnerEligible() = true — LFM2's short-convolution layers are not bridged; " +
 			"the resident runner would treat its conv layers as attention")
 	}
 	feats := arch.residentFeatures()

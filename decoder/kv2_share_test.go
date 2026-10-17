@@ -368,6 +368,7 @@ func TestKV2_windowGroupRollback(t *testing.T) {
 	for _, window := range []int{0, 1024} {
 		m, rf := loadWithCopyFake(t, 2, "")
 		m.w.arch.SlidingWindow = window
+		m.rebuildProgramForTest()
 		vocab := m.w.arch.VocabSize
 		first := make([]int, 1000)
 		for i := range first {

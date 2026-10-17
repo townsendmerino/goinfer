@@ -85,6 +85,7 @@ type Model struct {
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	kvH           bool         // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
+	prog          *program     // the forward as operations (buildProgram), built once by modelFromOptions
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
@@ -491,7 +492,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 			}
 		}
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline,
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts),
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
@@ -907,7 +908,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// hasNoAttentionKVAt (arch.go) is the one place that knows all these cases, shared with kvDimAt's pricing.
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, a.hasNoAttentionKVAt)
 	c.scr = newDecodeScratch(a)
-	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see ownForwardFamily.KVInt8 for why a family's
+	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see Architecture.kvInt8OK for why a family's
 	// own loop must opt in. Must precede enableRings so local layers inherit the mode.
 	if m.kvI8 && a.kvInt8OK() {
 		c.setQuant(kvI8, capHint)
@@ -1012,9 +1013,6 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	if m.w.Embed.Rows() == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
-	if f, ok := arch.ownForward(); ok {
-		return f.run(m, id, cache)
-	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)
 	}
@@ -1029,8 +1027,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// RMSNorm) divides out a global scalar, so the difference only survives in
 	// the residual and stays well under the ≥1−1e-4 cosine bar. If that bar is
 	// ever tightened past ~1e-5, round the scale to bf16.
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		scale := float32(arch.EmbedScale)
+	emb := m.program().embed
+	if emb.Scale != 0 && emb.Scale != 1 {
+		scale := float32(emb.Scale)
 		for i := range h {
 			h[i] *= scale
 		}
@@ -1038,14 +1037,14 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// Learned absolute position embedding (GPT-2): add wpe[pos], where pos is
 	// this token's absolute position (the cache advances on Append inside
 	// attention, so cache.Pos() here is still this step's position).
-	if arch.LearnedPosEmbed {
+	if emb.LearnedPos {
 		pe := make([]float32, hidden)
 		m.w.PosEmbed.Row(cache.Pos(), pe)
 		for i := range h {
 			h[i] += pe[i]
 		}
 	}
-	return m.runLayersFromEmbed(h, cache)
+	return m.runLayersFromEmbedPLE(h, id, cache)
 }
 
 // runLayersFromEmbed runs the transformer layers over a precomputed
@@ -1058,10 +1057,29 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 // passing through embed_tokens. Generic path only (gemma4/qwen35 have their own
 // runLayers and grow the same seam when those families go multimodal).
 func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
-		cache.scr = newDecodeScratch(arch)
+	pad := -1
+	if g := m.w.arch.gemma4; g != nil {
+		pad = g.PadTokenID // a row with no token behind it takes the pad id's PLE, as HF's multimodal forward does
 	}
+	return m.runLayersFromEmbedPLE(h, pad, cache)
+}
+
+// runLayersFromEmbedPLE is runLayersFromEmbed with the token id behind h for Gemma 4's per-layer embedding: the id itself for a
+// text row, the checkpoint's pad id for a multimodal row (docs/multimodal.md, P7 entry).
+func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
+	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
+		cache.scr = newDecodeScratch(m.w.arch)
+	}
+	if programWalkOffForTest {
+		return m.runLayersFromEmbedLoop(h, cache)
+	}
+	return m.walkToken(m.program(), h, pleID, cache)
+}
+
+// runLayersFromEmbedLoop is the per-token loop the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step.
+func (m *Model) runLayersFromEmbedLoop(h []float32, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
 	scr := cache.scr
 	hidden := arch.HiddenDim
 	if m.layerPager != nil {
@@ -1229,10 +1247,9 @@ func addResidual2(h, sub, sub2 []float32) {
 // text/image embedding sequence (text positions via this, image positions via
 // the projected vision features) and drive runLayersFromEmbed per position.
 func (m *Model) embedToken(id int, dst []float32) {
-	arch := m.w.arch
 	m.w.Embed.Row(id, dst)
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		scale := float32(arch.EmbedScale)
+	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+		scale := float32(emb.Scale)
 		for i := range dst {
 			dst[i] *= scale
 		}
@@ -1282,11 +1299,8 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // forward(id); the captures are copies that never feed back. Layer indices are 0-based into [0, NumLayers); out[i]
 // corresponds to layers[i].
 //
-// Wired for the generic decode path plus the own-forward families whose ownForwards entry sets Captures (their loops call
-// cache.captureResidual, see capture.go). Every other own-forward family returns an error rather than silently producing nil
-// rows: granite and nemotron_h interleave recurrent mixers whose "residual after layer l" needs deciding, and mla and
-// llama4_text are not done. A family is wired only when both its loop captures and its entry says so, so a half-wired one
-// fails here loudly.
+// Every family's layers run through the program walker, which captures the residual after each layer. The families whose
+// own loop did not capture before OP3 are refused (seam_refusals.go).
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	_, done, err := m.enterCall(context.Background())
 	if err != nil {
@@ -1300,10 +1314,7 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // forwardCapture is ForwardCapture without the lifecycle guard (lifecycle.go).
 func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	// Derived from the dispatch table's Captures bit rather than re-listed: the families whose own loop calls captureResidual are
-	// wired, every other own-forward family is not. A hand-written list once missed LFM2, whose loop never captures and returned
-	// nil rows through a seam documented to fail loudly.
-	if f, own := a.ownForward(); own && !f.Captures {
+	if a.ownLoopFamily() && !a.ownLoopCaptured() {
 		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	for _, l := range layers {
@@ -1325,13 +1336,11 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // MLP contribution to the residual (scr.sub after each sublayer's sandwich-norm, before the add).
 // This is the finer seam ForwardCapture doesn't give: it separates the two sublayers, which is
 // what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
-// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own-forward
-// families (they don't route through runLayersFromEmbed's uniform block).
+// Diagnostic — same byte-identical-output contract as ForwardCapture. Refused for the families that ran their own loop
+// before OP3 (seam_refusals.go).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	// Every own-forward family, derived: this seam needs runLayersFromEmbed's uniform block, which no own-forward loop routes
-	// through.
-	if _, own := a.ownForward(); own {
+	if a.ownLoopFamily() {
 		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers
@@ -1353,7 +1362,7 @@ func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPr
 // forwardFromEmbed is forward for a position whose residual-stream embedding is
 // supplied directly (the multimodal embed-by-vector seam): it runs the layers
 // from h and projects to logits, identical to forward(id) when h is that token's
-// embedding. The generic path only (gemma4/qwen35 keep their own forward).
+// embedding.
 func (m *Model) forwardFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
 	h, err := m.runLayersFromEmbed(h, cache)
 	if err != nil {
@@ -1379,26 +1388,30 @@ func softcapParallel(logits []float32, softcap float32) {
 // the next-token logits ([VocabSize]). One home for the head math, shared by
 // forward and forwardFromEmbed.
 func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
-	arch := m.w.arch
-	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
+	hp := &m.program().head
+	b := m.w.FinalNormBias
+	if !hp.Norm.Bias {
+		b = nil
+	}
+	applyNorm(hp.Norm, h, h, m.w.FinalNorm, b, m.w.arch.HiddenDim)
 	return m.logitsFromNormed(h, cache)
 }
 
 // logitsFromNormed is logitsFromHidden for a hidden state that has ALREADY been through the final norm (the batched
 // Qwen3.5 forward returns its rows normed): the LM head, softcap and logit scale, exactly as logitsFromHidden runs them.
 func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
-	arch := m.w.arch
+	hp := &m.program().head
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
-	if arch.TiedLMHead {
+	if hp.Tied {
 		matmulInto(cache.scr.ws, m.be, &m.w.Embed, h, logits, 1) // tied: embedding doubles as the head
 	} else {
 		matmulInto(cache.scr.ws, m.be, &m.w.LMHead, h, logits, 1) // separate output projection
 	}
-	if arch.FinalLogitSoftcap > 0 {
-		softcapParallel(logits, float32(arch.FinalLogitSoftcap))
+	if hp.Softcap > 0 {
+		softcapParallel(logits, float32(hp.Softcap))
 	}
-	if arch.LogitScale != 0 && arch.LogitScale != 1 { // Granite logits_scaling: logits /= scale
-		inv := float32(1 / arch.LogitScale)
+	if hp.LogitScale != 0 && hp.LogitScale != 1 { // Granite logits_scaling: logits /= scale
+		inv := float32(1 / hp.LogitScale)
 		n := len(logits)
 		if n > 0 {
 			_ = logits[n-1]

@@ -306,7 +306,7 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // (those are Gemma 3n). E2B also has cross-layer KV sharing + variable FFN +
 // final-logit softcap 30.
 //
-// The forward pass (runLayersGemma4) consumes the per-layer deltas; E2B/E4B and
+// The forward pass (the Gemma 4 program walk) consumes the per-layer deltas; E2B/E4B and
 // the 12B dense (K=V) variants are parity-gated against the HF bf16 oracle.
 func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	globalHeadDim, globalKVHeads, err := cfg.gemma4GlobalGeometry()
@@ -1823,7 +1823,7 @@ func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // attention_multiplier instead of 1/√d. The MoE is GraniteMoe-style (fused gate+up
 // experts + an ungated shared expert) but its softmax-top-k routing is identical to
 // the Mixtral path, so moeMLP serves it unchanged once the fused tensors are split
-// at load. Dedicated loader (buildGraniteWeights) + forward (runLayersGranite).
+// at load. Dedicated loader (buildGraniteWeights); its program is Architecture.graniteLayerOps.
 func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateGranite(); err != nil {
 		return nil, nil, err
@@ -1892,7 +1892,7 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		// generates the wrong text, which is why this is config-driven and gated by the
 		// real-checkpoint oracle rather than by the tiny fixture (which is roped).
 		layerNoPE:    nopePredicate(cfg.PositionEmbeddingType),
-		EmbedScale:   0, // embedding_multiplier applied in runLayersGranite, not the Gemma sqrt path
+		EmbedScale:   0, // embedding_multiplier is the program's embed scale (Architecture.embedScale), not the Gemma sqrt path
 		TiedLMHead:   false,
 		LogitScale:   logitScale,
 		layerIsMamba: func(i int) bool { return i < len(types) && types[i] == "mamba" },
@@ -1969,7 +1969,7 @@ func graniteDenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error)
 // family uses. The mamba layers reuse the Mamba-2 mixer (mamba2.go); the attention
 // layers are NoPE GQA (no RoPE — the SSM layers carry position); the mlp layers are
 // non-gated relu². Plain RMSNorm, no multipliers. Dedicated loader + forward
-// (buildNemotronWeights / runLayersNemotron).
+// (buildNemotronWeights; its program is Architecture.nemotronLayerOps).
 func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// Released checkpoints spell the layer sequence as hybrid_override_pattern; only
 	// transformers-instantiated configs carry layers_block_type. Normalize to the latter
@@ -2202,7 +2202,7 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 //
 //   - layer_types is NOT a config.json field for this family: the pattern is computed from layer_group_size (normalizeBailingLayerTypes,
 //     including a tail-cleanup clause).
-//   - MLA is reused via mlaAttention UNCHANGED, parameterized for two departures: both mixers are named self.attention (mlaParams.AttnPrefix)
+//   - MLA is reused via mlaAttentionWith UNCHANGED, parameterized for two departures: both mixers are named self.attention (mlaParams.AttnPrefix)
 //     and the output projection is self.dense (mlaParams.DenseSuffix). An optional per-head sigmoid output gate
 //     (gated_attention_proj_granularity_type) rides the mechanism Laguna's attention-output gate ships, activation aside.
 //   - MoE reuses moeMLP/routeExperts UNCHANGED (sigmoid + expert_bias + group-limited top-k + routed_scaling_factor + an ungated shared expert
@@ -2547,7 +2547,7 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // MoE (moe_layers) blocks; the MoE is top-1 SIGMOID routing (no group, no norm, no scale) plus an always-on UNGATED shared expert, both at
 // intermediate_size. Separate q/k/v/o (no fusion, no bias). Interleaved (complex) RoPE over the full head_dim. The vision tower
 // (early-fusion multimodal) and any MTP heads are dropped: text decoder only. Dedicated loader (buildLlama4Weights) + forward
-// (runLayersLlama4).
+// (Architecture.llama4LayerOps).
 func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NumLocalExperts <= 0 || cfg.NumExpertsPerTok <= 0 {
 		return nil, nil, fmt.Errorf("decoder(llama4): bad MoE (num_local_experts=%d num_experts_per_tok=%d)", cfg.NumLocalExperts, cfg.NumExpertsPerTok)
@@ -2631,7 +2631,7 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		NormPlacement:   NormPre2,
 		Act:             ActSiLU,
 		QKVBias:         false,
-		QKNorm:          false, // Llama 4's QK-norm is parameter-free L2, applied in runLayersLlama4 (not the weighted path)
+		QKNorm:          false, // Llama 4's QK-norm is parameter-free L2, applied by its program's qkL2 norm (not the weighted path)
 		MoE: &MoEConfig{
 			NumExperts:            cfg.NumLocalExperts,
 			TopK:                  cfg.NumExpertsPerTok,
@@ -2970,7 +2970,7 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 		NormEps:          cfg.RMSNormEps,
 		NormPlacement:    NormPre2,
 		Act:              ActSiLU,
-		MoE:              nil, // the one structural difference; runLayersQwen35 branches on it
+		MoE:              nil, // the one structural difference; the program's FFN branches on it
 		QKNorm:           true,
 		AttnScale:        math.Pow(float64(cfg.HeadDim), -0.5),
 		layerIsGlobal:    cfg.IsGlobalLayer,

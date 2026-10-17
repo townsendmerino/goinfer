@@ -10,31 +10,21 @@ import (
 	"testing"
 )
 
-// THE TABLE MUST NAME EVERY FAMILY FORWARD THAT EXISTS.
+// NO FAMILY LOOP OUTSIDE THE PROGRAM.
 //
-// ownForwards is only a chokepoint while it is complete: a runLayersXxx wired in with an `if`
-// ahead of the dispatch loop is exactly the state this replaced, where "runLayers dispatches here"
-// and "the batched path must not touch this" were two hand-written facts and LFM2 was in one of
-// them. A source scan is the only check that notices the SECOND list being born.
-func TestOwnForward_tableNamesEveryFamilyForward(t *testing.T) {
-	named := map[string]bool{}
-	for _, f := range ownForwards {
-		named[f.Name] = true
-	}
-	// The table stores function VALUES, so reflection cannot recover their source names. Match on
-	// the table's own source text instead — the one place the method names are written down.
-	tableSrc, err := os.ReadFile("arch.go")
-	if err != nil {
-		t.Fatalf("read arch.go: %v", err)
-	}
-
+// Every family's layers are a program the walkers run (OP3, docs/tasks/task-forward-architecture-2026-10.md §4.8). A family
+// layer loop written beside it, a runLayersXxx dispatched by an `if`, is a second list of families: "runLayers dispatches here"
+// and "the batched path must not touch this" were once two hand-written facts and LFM2 was in one of them. The source scan
+// notices such a loop being born; the second half checks that every registered model type builds a program whose every
+// operation the per-token walker implements.
+func TestProgram_noFamilyLoopAndEveryFamilyWalks(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sort.Strings(files)
 	re := regexp.MustCompile(`(?m)^func \(m \*Model\) (runLayers[A-Z][A-Za-z0-9]*)\(id int, cache \*KVCache\) \(\[\]float32, error\) \{`)
-	var found []string
+	scanned := 0
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
 			continue
@@ -43,24 +33,37 @@ func TestOwnForward_tableNamesEveryFamilyForward(t *testing.T) {
 		if err != nil {
 			continue
 		}
+		scanned++
 		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
-			found = append(found, m[1])
+			t.Errorf("%s (%s) is a family layer loop outside the program: whatever dispatches to it is a second list of families", m[1], f)
 		}
 	}
-	if len(found) == 0 {
-		// NOT a skip: an empty scan is how this assertion silently stops asserting.
-		t.Fatal("no runLayersXxx found by the scan — the check is broken, not the tree")
+	if scanned == 0 {
+		t.Fatal("the scan read no source file — the check is broken, not the tree")
 	}
-	for _, fn := range found {
-		if !strings.Contains(string(tableSrc), "(*Model)."+fn) {
-			t.Errorf("%s is a family forward that ownForwards does not name. Whatever dispatches to "+
-				"it is a SECOND list, and canBatchN derives its exclusion from the table — so the "+
-				"batched prefill will run the generic attention stack over this family's layers.", fn)
+
+	walked := map[opKind]bool{opNorm: true, opProjQKV: true, opQKNorm: true, opRope: true, opAttnTemp: true, opAttention: true,
+		opOutGate: true, opProjO: true, opFFN: true, opResidual: true, opMLA: true, opKDA: true, opShortConv: true, opMamba2: true,
+		opDeltaNet: true, opGatedAttn: true, opGemma4Attn: true, opGemma4MoE: true, opPLE: true, opLayerScale: true}
+	for _, mt := range modelTypes(t) {
+		arch, _, err := resolveArchitecture(representativeConfig(mt))
+		if err != nil {
+			t.Fatalf("%s: %v", mt, err)
 		}
-	}
-	if len(found) != len(ownForwards) {
-		t.Errorf("scan found %d family forwards (%v) but the table has %d — a stale entry claims a "+
-			"family that no longer exists", len(found), found, len(ownForwards))
+		p := buildProgram(arch, nil)
+		if len(p.layers) != arch.NumLayers {
+			t.Errorf("%s: a program of %d layers for %d", mt, len(p.layers), arch.NumLayers)
+		}
+		for l, ops := range p.layers {
+			if len(ops) == 0 {
+				t.Errorf("%s: layer %d has no operations", mt, l)
+			}
+			for _, o := range ops {
+				if !walked[o.kind] {
+					t.Errorf("%s: layer %d has %v, which the per-token walker does not implement", mt, l, o.kind)
+				}
+			}
+		}
 	}
 }
 
@@ -143,34 +146,26 @@ func TestLFM2_generateMultiTokenPrompt(t *testing.T) {
 	}
 }
 
-// THE OTHER CONSUMERS OF THE SAME FACT (audit §0 theme 1). Each hand-listed the own-forward families and the
-// lists drifted (lfm2 was missing from all of them), so a family reached seams documented to refuse it and got
-// nil rows or a pooled vector. Driven off the table so a family added there is covered without anyone
-// remembering to.
-func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
-	for _, f := range ownForwards {
-		arch := archWithFamily(t, f)
-		m := &Model{w: &Weights{arch: arch}}
-
-		if _, _, _, _, err := m.ForwardSubCapture(0, NewKVCache(1, 1, 1, 0, 4, nil)); err == nil {
-			t.Errorf("%s: ForwardSubCapture returned no error; it needs runLayersFromEmbed's "+
-				"uniform block, which no own-forward loop routes through", f.Name)
+// THE DENSE LAYER PAGER STAYS OFF A FAMILY WITH A LAYER OUTSIDE THE GENERIC OPERATIONS (audit N-13): its spans cover the generic
+// layer's weights, not a mixer's, so its RAM-bound banner would promise what it cannot deliver. Over every registered model type,
+// so a family is covered the day it is registered.
+func TestProgram_pagerStaysOffNonGenericFamilies(t *testing.T) {
+	declined := 0
+	for _, mt := range modelTypes(t) {
+		arch, _, err := resolveArchitecture(representativeConfig(mt))
+		if err != nil {
+			t.Fatalf("%s: %v", mt, err)
 		}
-		if _, err := m.HiddenLast([]int{0}); err == nil {
-			t.Errorf("%s: HiddenLast returned no error for an own-forward family", f.Name)
+		if arch.genericKindsOnly() || arch.MoE != nil {
+			continue
 		}
-		if p := newLayerPager(m.w, []byte{0}, 1<<20); p != nil {
-			t.Errorf("%s: newLayerPager built a pager; the family's loop never calls enterLayer, "+
-				"so the RAM-bound banner promises what it cannot deliver (N-13)", f.Name)
+		if p := newLayerPager(&Weights{arch: arch}, []byte{0}, 1<<20); p != nil {
+			t.Errorf("%s: newLayerPager built a pager for a family with a layer outside the generic operations", mt)
 		}
-		_, _, err := m.ForwardCapture(0, NewKVCache(1, 1, 1, 0, 4, nil), nil)
-		if f.Captures && err != nil && strings.Contains(err.Error(), "seam not wired") {
-			t.Errorf("%s: ForwardCapture refuses a family the table marks as capturing", f.Name)
-		}
-		if !f.Captures && err == nil {
-			t.Errorf("%s: ForwardCapture returned no error, but this family's loop does not call "+
-				"captureResidual — it would hand back nil rows", f.Name)
-		}
+		declined++
+	}
+	if declined == 0 {
+		t.Fatal("no dense family with a non-generic layer was checked: the test would test nothing")
 	}
 }
 
@@ -179,17 +174,18 @@ func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
 // reconcile). A family recurrent in one sense and not the other leaks state across sessions (audit C-02/C-03).
 //
 // TestOwnForward_recurrentBitMatchesTheCacheKinds is DERIVED, not listed: both predicates could omit the same
-// state (KDA) and agree, so the cache is asked directly. Each own-forward family's REAL cache is built by
-// NewCache from its representativeConfig and its recurrent kinds are found by reflection (recurrentKinds); the
-// registry bit, both hasRecurrentState views and speculative rollback must all agree with that.
+// state (KDA) and agree, so the cache is asked directly. Every registered family's REAL cache is built by NewCache
+// from its representativeConfig and its recurrent kinds are found by reflection (recurrentKinds); the architecture's
+// rule (Architecture.recurrent: the own-loop table's bit, or the program's operations), both hasRecurrentState views
+// and speculative rollback must all agree with that.
 func TestOwnForward_recurrentBitMatchesTheCacheKinds(t *testing.T) {
-	for _, f := range ownForwards {
-		t.Run(f.Name, func(t *testing.T) {
-			m, c := realCacheFor(t, f)
+	for _, mt := range modelTypes(t) {
+		t.Run(mt, func(t *testing.T) {
+			m, c := realCacheForType(t, mt)
 			names, _ := recurrentKinds(c)
 			allocated := len(names) > 0
-			if f.Recurrent != allocated {
-				t.Errorf("table Recurrent=%v, but NewCache allocates recurrent kinds %v", f.Recurrent, names)
+			if m.w.arch.recurrent() != allocated {
+				t.Errorf("Architecture.recurrent()=%v, but NewCache allocates recurrent kinds %v", m.w.arch.recurrent(), names)
 			}
 			if got := c.hasRecurrentState(); got != allocated {
 				t.Errorf("KVCache.hasRecurrentState()=%v, but the cache holds recurrent kinds %v — every "+
@@ -204,32 +200,4 @@ func TestOwnForward_recurrentBitMatchesTheCacheKinds(t *testing.T) {
 			}
 		})
 	}
-}
-
-// archWithFamily builds the minimal Architecture that f.is() accepts. It sets the marker through
-// the SAME predicate the table dispatches on, so a family whose marker this helper does not know
-// fails loudly rather than being silently skipped by every assertion above.
-func archWithFamily(t *testing.T, f ownForwardFamily) *Architecture {
-	t.Helper()
-	markers := []func(*Architecture){
-		func(a *Architecture) { a.gemma4 = &gemma4Params{} },
-		func(a *Architecture) { a.qwen35 = &qwen35Params{} },
-		func(a *Architecture) { a.lfm2 = &lfm2Params{} },
-		func(a *Architecture) { a.granite = &graniteParams{} },
-		func(a *Architecture) { a.nemotron = &nemotronParams{} },
-		func(a *Architecture) { a.mla = &mlaParams{} },
-		func(a *Architecture) { a.kda = &kdaParams{} }, // bailing_hybrid; must precede deepseek_v2/v3 in ownForwards
-		func(a *Architecture) { a.llama4 = &llama4Params{} },
-		func(a *Architecture) { a.gptoss = &gptOssParams{} },
-	}
-	for _, set := range markers {
-		a := &Architecture{Name: f.Name, NumLayers: 1, HiddenDim: 1, VocabSize: 8}
-		set(a)
-		if f.is(a) {
-			return a
-		}
-	}
-	t.Fatalf("no marker in this helper satisfies ownForwards[%q].is — add it, or every assertion "+
-		"over that family silently tests nothing", f.Name)
-	return nil
 }

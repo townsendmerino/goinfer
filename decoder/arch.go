@@ -152,7 +152,7 @@ type Architecture struct {
 	// kda, when non-nil, marks Bailing Hybrid's (Ling 3.0) Kimi Delta Attention linear-attention layers, alternating with MLA
 	// (mla, above) every LayerGroupSize-th layer; layerIsLinear picks which, the same hook qwen35 uses. A delta-rule
 	// recurrence like Gated DeltaNet, but with a per-channel decay (one value per row of the state matrix) where Gated DeltaNet
-	// has one scalar per head. Own forward (forward_bailing.go). nil for every other family.
+	// has one scalar per head. Its layers are opKDA (Architecture.layerOps). nil for every other family.
 	kda *kdaParams
 
 	// llama4, when non-nil, marks a Llama 4 text decoder (llama4_text): the iRoPE
@@ -317,7 +317,7 @@ type qwen35Params struct {
 	ONormEps float64
 	// PlainFullAttn (Olmo Hybrid): the full-attention layers are a plain olmo3-shaped self-attention (single-width q/k/v/o,
 	// optional whole-vector QK-norm, generic RoPE/NoPE), not qwen3_5's double-width gated attention. false routes non-linear
-	// layers through loadQwen35Attn / runLayersQwen35's bespoke qwen3.5 attention; true routes them through the shared generic
+	// layers through loadQwen35Attn / the bespoke qwen3.5 attention (opGatedAttn); true routes them through the shared generic
 	// loader path and causalAttention, reusing olmo3's adapter.
 	PlainFullAttn bool
 }
@@ -325,7 +325,7 @@ type qwen35Params struct {
 // gemma4Params describes how Gemma 4's global (full-attention) layers diverge
 // from its local (sliding) layers. Local layers use Architecture.HeadDim /
 // NumKVHeads and full rotary; global layers use these instead. Set by
-// gemma4Architecture; consumed per-layer by the forward pass (runLayersGemma4).
+// gemma4Architecture; consumed per-layer by the forward pass (the Gemma 4 program walk).
 type gemma4Params struct {
 	GlobalHeadDim    int  // global head_dim (e.g. 512); local = Architecture.HeadDim (256)
 	NumGlobalKVHeads int  // global KV-head count; local = Architecture.NumKVHeads. 0 ⇒ same as local
@@ -338,7 +338,7 @@ type gemma4Params struct {
 	HiddenSizePerLayerInput int   // PLE per-layer dim (256); 0 ⇒ no PLE
 	VocabSizePerLayerInput  int   // PLE embedding-table vocab (== main vocab)
 
-	// PadTokenID is the id runLayersGemma4FromEmbed's PLE token-identity lookup uses at a multimodal (image/video/audio)
+	// PadTokenID is the id runLayersFromEmbedPLE's PLE token-identity lookup uses at a multimodal (image/video/audio)
 	// position in place of the caller's real token id, matching the HF multimodal forward's pad substitution
 	// (docs/multimodal.md).
 	PadTokenID int
@@ -636,7 +636,7 @@ func (a *Architecture) isGlobalLayer(i int) bool {
 
 // gemma4KVSrcAt returns the layer whose K/V Gemma 4 layer i attends over: itself for layers before firstShared, else the
 // last non-shared layer of the same attention type (global vs sliding) for a cross-layer-KV-shared tail layer
-// (gemma4.SharedKVLayers). It duplicates the kvSrc closure of runLayersGemma4FromEmbed on purpose, so the resident bridge
+// (gemma4.SharedKVLayers). It duplicates the kvSrc closure of runLayersFromEmbedPLE on purpose, so the resident bridge
 // does not touch the CPU path; TestGemma4KVSrcAt_matchesCPUClosure pins the two together, so change them together.
 func (a *Architecture) gemma4KVSrcAt(i int) int {
 	if a.gemma4 == nil {
@@ -764,102 +764,28 @@ func (a *Architecture) ropeInvFreq(i int) []float64 {
 	return a.ropeInvFreqLocal
 }
 
-// ownForwardFamily is one family whose per-token layer loop is its own, not the generic one.
-type ownForwardFamily struct {
-	// Name is the descriptor name, for reports and for the test that keeps this table complete.
-	Name string
-	// is reports whether an Architecture is this family.
-	is func(*Architecture) bool
-	// run is the family's layer loop. Same signature as the generic path.
-	run func(*Model, int, *KVCache) ([]float32, error)
-	// Captures is true when this family's loop calls cache.captureResidual, i.e. ForwardCapture's
-	// hidden-state seam is wired for it. A family is wired only when BOTH its loop captures and
-	// this is set, so a half-wired one fails loudly instead of returning nil rows.
-	Captures bool
-	// Recurrent is true when this family carries state mutated IN PLACE per token — a conv window,
-	// an SSM state, a linear-attention state — that KVCache.TruncateTo cannot rewind. It is the
-	// arch-side view of KVCache.hasRecurrentState(): the cache knows once it exists, this knows
-	// from the descriptor, and speculative rollback has to decide before either is built.
-	Recurrent bool
-	// KVInt8 is true when this family's loop reads K/V through the int8-aware attention path, so NewCache may store them as int8
-	// (Options.KVQuant == "i8"). KVRings is true when it can read a ring-buffered sliding-window layer. Both default to false: a
-	// loop that sizes its scores from len(cache.Keys(layer)) indexes past an int8 cache's empty f32 store on the first decode
-	// step (TestLFM2_kvQuantI8_generates). See kvInt8OK / kvRingsOK.
-	KVInt8, KVRings bool
-}
-
-// ownForwards is the one list of families that do not use the generic layer loop, so "runLayers dispatches here" and "the
-// batched path must not touch this" are the same fact. A family added here is excluded from the batched path by
-// construction, and TestOwnForward_tableNamesEveryFamilyForward fails if a runLayersXxx is written that is not listed.
-// Keep it a single table: two separate lists once disagreed and sent LFM2 prompts of two or more tokens through the dense
-// attention stack (docs/code-notes/decoder.md#ownForwards).
-var ownForwards = []ownForwardFamily{
-	// Fields: Name, is, run, Captures, Recurrent, KVInt8, KVRings.
-	// Gemma 4: per-layer head_dim, KV-sharing, PLE.
-	{"gemma4", func(a *Architecture) bool { return a.gemma4 != nil }, (*Model).runLayersGemma4, true, false, false, false},
-	// qwen3_5_moe: Gated DeltaNet / softmax hybrid.
-	{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayersQwen35, true, true, false, false},
-	// lfm2: gated short-conv / softmax hybrid.
-	{"lfm2", func(a *Architecture) bool { return a.lfm2 != nil }, (*Model).runLayersLFM2, false, true, false, false},
-	// granitemoehybrid: Mamba-2 / softmax hybrid.
-	{"granitemoehybrid", func(a *Architecture) bool { return a.granite != nil }, (*Model).runLayersGranite, false, true, false, false},
-	// nemotron_h: single-op-per-block hybrid.
-	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true, false, false},
-	// bailing_hybrid: MLA / KDA hybrid (Ling 3.0). MUST precede deepseek_v2/v3 below —
-	// bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse mlaAttention
-	// directly), so a.mla != nil alone would also match it and misroute to runLayersDeepseek,
-	// which has no KDA branch at all.
-	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true, false, false}, // Recurrent: KDA state mutates in place per token
-	// deepseek_v2/v3: Multi-head Latent Attention.
-	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false, false, false},
-	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).
-	{"llama4_text", func(a *Architecture) bool { return a.llama4 != nil }, (*Model).runLayersLlama4, false, false, false, false},
-	// gpt-oss: per-head attention sinks + clamped-SwiGLU MoE.
-	{"gpt-oss", func(a *Architecture) bool { return a.gptoss != nil }, (*Model).runLayersGptOss, true, false, false, false},
-}
-
 // hasAttnOutputGate reports whether this architecture gates the attention context before o_proj: Laguna's softplus gate, or
 // any family with AttnGate == GateSigmoid. One predicate for the forward's two dispatch sites (attention.go, forwardn.go)
 // and the resident features derived from it (FeatAttnOutputGateSoftplus, FeatAttnOutputGateSigmoid).
 func (a *Architecture) hasAttnOutputGate() bool { return a.laguna != nil || a.AttnGate == GateSigmoid }
 
-// kvInt8OK reports whether NewCache may store this architecture's K/V as int8: a family with its own layer loop only when
-// its ownForwards entry says KVInt8; otherwise the generic loop, which reads K/V through the int8-aware attention path,
-// except for MoE, where attention runs the acc64 kernel so expert routing stays bit-stable and a quantized cache would
-// reopen that. It is one rule in the table, replacing two hand-written lists that could disagree with kvRingsOK.
+// kvInt8OK reports whether NewCache may store this architecture's K/V as int8: a family whose attention is the batched kernel
+// (attnOrder), which reads K/V through the int8-aware path, except for MoE, where attention runs the acc64 kernel so expert
+// routing stays bit-stable and a quantized cache would reopen that.
 func (a *Architecture) kvInt8OK() bool {
-	if f, own := a.ownForward(); own {
-		return f.KVInt8
-	}
-	return a.MoE == nil
+	return a.MoE == nil && a.attnOrder() == attnBatchedAcc64
 }
 
-// kvF16OK reports whether NewCache may store this architecture's KV at f16 (Options.KVQuant == "f16"): the generic loop
-// without MoE, the set the gates were registered on (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). Another family keeps
-// f32 until it is checked on its own.
+// kvF16OK reports whether NewCache may store this architecture's KV at f16 (Options.KVQuant == "f16"): a family whose
+// attention is the batched kernel (attnOrder), without MoE, the set the gates were registered on
+// (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). Another family keeps f32 until it is checked on its own.
 func (a *Architecture) kvF16OK() bool {
-	if _, own := a.ownForward(); own {
-		return false
-	}
-	return a.MoE == nil
+	return a.MoE == nil && a.attnOrder() == attnBatchedAcc64
 }
 
 // kvRingsOK reports whether NewCache may ring-buffer this architecture's sliding-window (local) layers, keeping only the W
-// most recent positions. The generic loop reads rings through attendQuery / attendBatchedHeads; a family with its own loop
-// only when its ownForwards entry says KVRings.
+// most recent positions: a family whose attention is the batched kernel (attnOrder), which reads a ring through
+// attendBatchedHeads.
 func (a *Architecture) kvRingsOK() bool {
-	if f, own := a.ownForward(); own {
-		return f.KVRings
-	}
-	return true
-}
-
-// ownForward returns this architecture's own layer loop, if it has one.
-func (a *Architecture) ownForward() (ownForwardFamily, bool) {
-	for _, f := range ownForwards {
-		if f.is(a) {
-			return f, true
-		}
-	}
-	return ownForwardFamily{}, false
+	return a.attnOrder() == attnBatchedAcc64
 }
