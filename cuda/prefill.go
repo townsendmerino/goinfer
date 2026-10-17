@@ -13,6 +13,7 @@ import (
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // errPrefillDeclined marks an arch or geometry decline from the batched path, which covers the plain dense unfused
@@ -622,6 +623,14 @@ func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]i
 // every projection is int4 or int8 (bGemvB: int4 uses gemv_w4a8_batched/_rn, int8 gemv_w8a8_batched; a uniform or mixed
 // int4/int8 bundle all batch). Naming the kind makes the startup message actionable.
 func nonBatchableKind(Ly *cudaLayer) string {
+	// A Mamba-2 mixer and a feed-forward-only block have no batched kernels: their prompts take the sequential path, named here
+	// and not left to the absent q/k/v weights reading as "absent/unquantized".
+	switch Ly.mixer {
+	case decoder.MixerMamba:
+		return "Mamba-2 mixer"
+	case decoder.MixerNone:
+		return "feed-forward-only block"
+	}
 	// Check exactly the projections this layer's batched path binds, and no others. An absent weight has kind "", which the
 	// caller reads as "no problem", so checking an absent weight passes vacuously and tightening the sentinel would turn
 	// that into a wrong refusal; narrow the list instead. Ly.v is absent on a K=V layer (V is derived from k), and Ly.g/u/d
@@ -829,7 +838,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	r.forceExactKernels = tail != tailLastLogits && !(tail == tailKVOnly && r.chunkOrdinary) ||
 		// Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after token, so they
 		// stay off (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
-		r.dnet != nil ||
+		r.recurrent() ||
 		// Gemma 4 E-model: the fast levers have no fidelity evidence on this family, and a real E2B prompt above the floor
 		// diverged from the sequential path. It batches on the exact kernels, bit-identical to decode at every length, until the
 		// levers pass a fidelity gate of their own (docs/tasks/task-multimodal-support-2026-10.md, G3p).

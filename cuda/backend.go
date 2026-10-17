@@ -674,7 +674,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if allocSlackOffForTest {
 		allocSlack = 0 // the planted defect of TestBuildScratchAccounting_plantedDefect: the plan as it was before the slack was priced
 	}
-	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack)
+	// The Mamba layers' conv window and SSM state are device memory the context plan must leave room for: they are allocated at upload, ahead of the
+	// build's own fit check, but the plan runs before the build (a model whose layers hold no such state prices zero).
+	nMamba := 0
+	for l := range hls {
+		if hls[l].mixer == decoder.MixerMamba {
+			nMamba++
+		}
+	}
+	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack+mambaStateBytes(mambaP, nMamba))
 	attnCap := m.AttnLogitSoftcapResident()
 	if attnSoftcapDropForTest {
 		attnCap = 0
