@@ -17,6 +17,34 @@
 
 ## What is open
 
+- **P31 · CUDA decode is behind llama.cpp at matched 4-bit quants: about 9% on the small models, 12% on phi3-mini — OPEN,
+  filed 2026-10-17 (owner). Measure where each arm's decode time goes first; no work on it yet.** `linux`.
+
+  - **What was measured** (nobara-pc, RTX 2070 SUPER, driver 595.91.07, depth 128, 3 runs × 8 × 64 tokens, same session,
+    llama-server 0.4.0-dev `427291b` with `-ngl 99`, the same Q4_K_M files):
+    - goinfer `int4` on the 0.5B and gemma3-1b, and `q4k` on phi3-mini: 4-bit on every arm.
+    - Every arm was sent the same seed, the same context (4096) and the same sampling fields, plus `min_p 0` for llama.cpp.
+
+    | model | shared preset 0.8 / top_k 40 / top_p 0.9 | greedy | no truncation (T = 1.0) |
+    |---|---|---|---|
+    | qwen2.5-coder-0.5b (`int4`) | **0.917** (343.4 vs 375.5 tok/s) | 0.948 | 0.978 |
+    | gemma3-1b (`int4`) | **0.910** (195.7 vs 213.8) | 0.927 | 0.972 |
+    | phi3-mini (`q4k`) | **0.881** (112.6 vs 127.8) | 0.890 | 0.888 |
+
+    goinfer ÷ llama.cpp. The shared-preset column is the record
+    `docs/measurements/peer-sharedtrunc-cuda-2026-10-17/README.md` (harness `e8e8c95d`). The other two are
+    `docs/measurements/peer-notrunc-2026-10-17.md` (harness at `63038121`, before the context and `min_p` fix, so
+    goinfer ran at its own default context and llama.cpp at its default `min_p`).
+  - **The same cells against Ollama:** goinfer is AHEAD on the small models (shared preset 1.312 / 1.272) and BEHIND on
+    phi3-mini (0.895).
+  - **Not known:** where the gap is. It could be in the matvecs, attention, the sampler and host round trip, or launch
+    overhead, and it may differ between the int4 and q4k paths (phi3's q4k path also declines batched prefill, which this
+    decode-only rate does not include).
+  - **First measurement, before any change:** one decode step on each arm on the same model and prompt, split by kernel.
+    For llama.cpp, Nsight Systems or its own timings. For goinfer, its kernel timeline or an `ncu` pass. Compare the
+    totals per token, then the matvec share against the bytes each arm reads per token. A step the two arms do not share
+    is named, not estimated.
+
 - **P30 · An armed tool-call constraint costs about 1.2 ms per token after `<tool_call>`, beyond the masker — OPEN, filed
   2026-10-17 (owner). Not timed by part yet; not being worked on.** `linux` (seen on CUDA; Metal and WebGPU unmeasured).
 

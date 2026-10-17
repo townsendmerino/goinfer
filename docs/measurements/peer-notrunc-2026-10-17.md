@@ -121,6 +121,14 @@ before anything is published.
 - **The temperature-1.0 runs agree where both arms matched.** gemma3-1b reads 1.641 here and 1.658 there; Ollama's rates
   agree within 0.1% on all three models. So this run is cited, with nobara's as the repeat.
 
+## Results: the shared truncated preset, CUDA
+
+Read by nobara's session at harness `e8e8c95d`, matched 4-bit quants on every arm (phi3-mini at `q4k`):
+`docs/measurements/peer-sharedtrunc-cuda-2026-10-17/README.md` (`932f6e4c`). goinfer ÷ peer: 0.5B AHEAD of Ollama 1.312 and
+BEHIND llama.cpp 0.917; gemma3-1b AHEAD 1.272 and BEHIND 0.910; phi3-mini BEHIND both, 0.895 and 0.881. No cell was void.
+This is phi3-mini's matched-quant reading on CUDA; the Metal one is tonight's job. The llama.cpp gap is filed as P31 in
+`docs/queue-performance.md`.
+
 ## Results: Metal
 
 Queued for the night of 2026-10-17 (`notrunc-metal-remeasure`, after M1 and P29). Results to follow.
