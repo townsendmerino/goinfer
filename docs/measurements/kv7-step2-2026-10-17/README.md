@@ -60,6 +60,22 @@ The night run's two sections skipped (the pinned worktree had no tokenizer fixtu
 The report-only question: across 8 session starts, 4 pairs share the stable section and 24 do not (another working directory or tools list); of the sharing pairs the leading reminder is byte-identical in 1 of 4
 (real sessions p3 and p5: 2,008 ids past the boundary, 21.4 s of prefill). Counts and positions only; the boundary is unchanged.
 
+### Swap during the replay (owner question, 2026-10-17)
+
+- **Where 4,096 MB comes from.** `GOINFER_SWAP_GUARD` defaults to 512 MB. The 4,096 is `"swap_guard_mb": 4096` on line 3 of `plan-kv7s2.json`, added in the commit that read tier 1 (`7bf51fe6`, 2026-10-17, this agent's), copied from
+  `plan-e2e.json` (`bd361dd5`, 2026-10-16, an agent's), which took it from the I3 run plan: `docs/tasks/task-integration-harness-2026-10.md`, "Fact: the swap guard halts a long run on this box" ("The matrix sets it to 4,096 MB
+  (still armed; recorded in the job's provenance)"), commit `2b04d8cb`, 2026-10-13. The records show an agent choosing it and writing it down; none shows the owner approving the value. `run-night.sh` and `run-tier1-cc.sh`
+  inherit it; the counter replay's `run-counter-replay.sh` follows the same value. It was not changed.
+- **Attempt 1 of the counter replay tripped the 512 MB guard:** `swap guard: baseline 8.80 GB swap-used`, then `TRIPPED — swap grew 0.65 GB over baseline (9.46 GB used now)` during the first, cold request (`serve-attempt1.log`).
+  Nobody sampled per process at the time, so which process held that 0.65 GB is not recorded.
+- **The same replay again, sampled every 10 s** (`swap-sampler.sh`, `swap-samples-replay.csv`, 550 s, the 12 requests): system swap 9,359 MB at the start, **peak 9,365 MB (+6 MB)**, 9,343 MB at the end; the server's `VmSwap` **0 MB**
+  throughout; its `VmRSS` peaked at 18,359 MB (the 6.9 GB model plus the expert cache and the pinned snapshots; `free` showed 57 GB available). The processes holding swap were the same five the whole run (a cloud-code CLI 494 MB, a
+  VS Code server 302 MB, `dnf-app-center-updater` 114 MB, `tailscaled` 69 MB, `systemd --user` 67 MB): nothing moved. Attempt 2's baseline was 9.86 GB and the sampled run's was 9.36 GB, so the system figure moves by about
+  0.5 GB between runs for reasons outside the workload.
+- **Reading:** this workload did not swap in the run that was sampled, and the server itself held no swap. The 0.65 GB of attempt 1 was system swap growth during that run that a second identical run did not reproduce; whether the server
+  or another process caused it is not known. `vm.swappiness` was 10 for both attempts (`/etc/sysctl.d/99-swappiness.conf`, written 2026-10-17 07:34), where the earlier tier-1 attempt read 100. Not a fit problem on this evidence;
+  a repeat that trips would be one, and would need the per-process sample on the run that trips.
+
 ## Report-only question for tonight's record (owner, 2026-10-17)
 
 Across real sessions, how often is the `CLAUDE.md` reminder after the boundary byte-identical between sessions, and what would a boundary after it save? **No change to the boundary.**
