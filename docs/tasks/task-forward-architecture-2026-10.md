@@ -1581,7 +1581,14 @@ sides on different drivers; the control failing; a refused load.
 1. Merge main into the branch (B27, `.giw` v17, KV7's snapshot code are all in `cuda/resident.go`'s neighbourhood). Gate F's table,
    and the CUDA int4 bundle's size, are written into this section before step 1's code.
 2. Step 1, then K, D, I. A failure: step 2 does not start.
-3. Step 2, then M, G, S, P. A failure: not declared.
+3. Step 2, then M, G, S, P. A failure: not declared. **Step 2 is four PRs, each gated (owner, 2026-10-16):**
+   - **2a** per-layer kinds from `ResidentLayerOps` (attention / DeltaNet / Mamba / none, and whether a feed-forward block follows), replacing the
+     DeltaNet special cases with the general form, no new behaviour. Gate: identity on the tiny fixtures (all IDENTICAL) and the 1,864 digests.
+   - **2b** the Mamba mixer (mirroring `deltaNetMixer`), attention-only and MLP-only blocks, per-layer recurrent state reset with the slot. Gates M and S.
+   - **2c** the eight `r.dnet` guard sites read "recurrent"; KV pricing skips Mamba and MLP layers. Gates G and P, each with a planted defect.
+   - **2d** retire the transitional predicates (`Qwen35LinearLayer` and `mlaOK` as dispatch inputs, the agreement check, the derived `isDeltaNet` and
+     `isMLA` booleans) so `ResidentLayerOps` is the only source of truth. Its own small PR, with the identity gate.
+   Then gate F's real fit plan, tier 1 on the 4B whole, and the declaration, which comes to the owner before it merges.
 4. Tier 1. Declaration on its own branch; the matrix regenerates (`go test ./decoder -run HardwareMatrix -update`).
 5. Not in this build: Granite-4.0-H, Nemotron-3-Nano's MoE unless admitted, int8int8, a batched prefill for recurrent families, a
    speed gate.
