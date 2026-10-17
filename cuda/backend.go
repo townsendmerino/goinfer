@@ -191,6 +191,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		perExpertScale                                      []float32
 		layerScalar                                         float32
 
+		// mixer and ffn are this layer's operations from decoder.Model.ResidentLayerOps: its sequence mixer, then a feed-forward block when ffn.
+		// isDeltaNet and isMLA below are derived from mixer, kept for the readers that predate it.
+		mixer decoder.ResidentMixer
+		ffn   bool
+
 		// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). isDeltaNet layers carry NO
 		// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
 		// qGate marks the family's SOFTMAX layers, whose q_proj is double width.
@@ -256,6 +261,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		lw := &w.Layers[l]
 		var hl hlayer
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
+		hl.mixer, hl.ffn = m.ResidentLayerOps(l)
+		// Transitional (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2a): ResidentLayerOps replaces the per-family predicates as the
+		// dispatch input. Until those predicates are retired, a layer where the two disagree is declined by name and not built as either.
+		if (hl.mixer == decoder.MixerDeltaNet) != (dnetOK && m.Qwen35LinearLayer(l)) || (hl.mixer == decoder.MixerMLA) != mlaOK {
+			return declined(fmt.Errorf("layer %d: ResidentLayerOps says %v but the family predicates say DeltaNet %v, MLA %v",
+				l, hl.mixer, dnetOK && m.Qwen35LinearLayer(l), mlaOK))
+		}
+		if hl.mixer != decoder.MixerAttention && hl.mixer != decoder.MixerDeltaNet && hl.mixer != decoder.MixerMLA {
+			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, hl.mixer))
+		}
 		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
 		hl.g4moe = isG4
 		var proj []struct {
@@ -267,7 +282,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			src *linalg.WeightMat
 		}
 		switch {
-		case dnetOK && m.Qwen35LinearLayer(l):
+		case hl.mixer == decoder.MixerDeltaNet:
 			// Gated-DeltaNet mixer layer: no attention projections at all. The three dominant
 			// projections carry the model's quant; inB/inA are f32 on the CPU by deliberate
 			// choice (they feed the write/decay gates) and packWeight quantizes them to int8
@@ -306,7 +321,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					"(%d/%d) — the loader did not populate them for this container", l, len(qN), len(kN)))
 			}
 			proj = []projEnt{{&hl.q, qP}, {&hl.k, kP}, {&hl.v, vP}, {&hl.o, oP}}
-		case mlaOK:
+		case hl.mixer == decoder.MixerMLA:
 			hl.isMLA = true
 			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(l)
 			hl.mlaQANorm, hl.mlaKVANorm = qANorm, kvANorm
@@ -1290,7 +1305,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.layers = make([]cudaLayer, nLayers)
 		for l := range nLayers {
 			h := &hls[l]
-			L := cudaLayer{idx: l}
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn}
 			if !r.postOnly || h.isDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
