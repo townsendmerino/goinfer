@@ -19,8 +19,8 @@ import (
 // It takes one sequence, so the last token is always the last real token; there is no padded batch whose last slot
 // could be a pad. Callers that want a batch call it per sequence. The returned slice is a fresh copy the caller owns.
 //
-// The families that ran their own layer loop before OP3 are refused (seam_refusals.go), rather than handed a vector no
-// gate has checked.
+// Every family: its layers run through the program walker. Gate H of docs/tasks/task-forward-architecture-2026-10.md §4.8
+// ("OP3's seams PR") holds the row to the forward's final hidden state, bit for bit.
 func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 	_, done, err := m.enterCall(context.Background())
 	if err != nil {
@@ -35,11 +35,6 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("decoder.HiddenLast: empty token sequence")
-	}
-	a := m.w.arch
-	// Refused for the families that ran their own loop before OP3 (seam_refusals.go).
-	if a.ownLoopFamily() {
-		return nil, fmt.Errorf("decoder.HiddenLast: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	if err := m.checkHiddenIDs("decoder.HiddenLast", ids); err != nil {
 		return nil, err
@@ -143,7 +138,7 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 // equal to last_hidden_state[:, -1]. It is the input a Route B decision head reads
 // (docs/tasks/task-constrained-confidence.md): a linear head over the last prompt token's final-norm hidden state.
 //
-// Unlike HiddenLast it serves every family: it runs the per-token forward
+// Like HiddenLast it serves every family: it runs the per-token forward
 // Generate's CPU path runs (runLayers), in a fresh cache, then the final norm logitsFromHidden applies before the LM
 // head, so the hidden state is the one the logits are computed from. Families on the generic batched path (canBatchN)
 // take hiddenLastBatched, which ends at the same final norm, and Qwen3.5 takes runLayersQwen35N;

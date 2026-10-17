@@ -1299,8 +1299,8 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // forward(id); the captures are copies that never feed back. Layer indices are 0-based into [0, NumLayers); out[i]
 // corresponds to layers[i].
 //
-// Every family's layers run through the program walker, which captures the residual after each layer. The families whose
-// own loop did not capture before OP3 are refused (seam_refusals.go).
+// Every family's layers run through the program walker, which captures the residual after each layer (gate C of §4.8's
+// seams PR holds it to the forward cut after that layer, bit for bit).
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	_, done, err := m.enterCall(context.Background())
 	if err != nil {
@@ -1314,9 +1314,6 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // forwardCapture is ForwardCapture without the lifecycle guard (lifecycle.go).
 func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	if a.ownLoopFamily() && !a.ownLoopCaptured() {
-		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
-	}
 	for _, l := range layers {
 		if l < 0 || l >= a.NumLayers {
 			return nil, nil, fmt.Errorf("decoder.ForwardCapture: layer %d out of range [0,%d)", l, a.NumLayers)
@@ -1336,12 +1333,13 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // MLP contribution to the residual (scr.sub after each sublayer's sandwich-norm, before the add).
 // This is the finer seam ForwardCapture doesn't give: it separates the two sublayers, which is
 // what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
-// Diagnostic — same byte-identical-output contract as ForwardCapture. Refused for the families that ran their own loop
-// before OP3 (seam_refusals.go).
+// Diagnostic — same byte-identical-output contract as ForwardCapture. A single-operation block (Nemotron-H) fills one of the
+// two; gate S of §4.8's seams PR rebuilds each layer's residual from them. Refused where a layer has an operation they do not
+// cover (program.subCaptureUncovered).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	if a.ownLoopFamily() {
-		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
+	if m.program().subCaptureUncovered() {
+		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q: a layer has an operation its contributions do not cover (Gemma 4's PLE branch or MoE block)", a.Name)
 	}
 	nL := a.NumLayers
 	cache.subCapture = true

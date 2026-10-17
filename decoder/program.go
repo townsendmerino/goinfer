@@ -461,6 +461,21 @@ func (a *Architecture) recurrent() bool {
 	return false
 }
 
+// subCaptureUncovered reports whether a layer of p has an operation that changes the residual in place without a captured
+// contribution: Gemma 4's PLE branch (E-models) and its parallel dense ‖ MoE block (26B). ForwardSubCapture refuses such a
+// model (owner, 2026-10-16): its contributions do not account for the layer, which is where gate S of §4.8's seams PR could not
+// run.
+func (p *program) subCaptureUncovered() bool {
+	for _, ops := range p.layers {
+		for i := range ops {
+			if ops[i].kind == opPLE || ops[i].kind == opGemma4MoE {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // genericKindsOnly reports whether every layer of a is made of genericKinds, so the generic machinery around the layers applies:
 // LoRA, and the dense layer pager (with the fit guard's retry that mirrors it).
 func (a *Architecture) genericKindsOnly() bool {

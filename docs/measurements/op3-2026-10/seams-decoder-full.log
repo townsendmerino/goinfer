@@ -1,0 +1,854 @@
+11:26:38 [TestA3FastAttentionDivergence] start — 3 items
+11:26:38 [TestA3FastAttentionDivergence] K=256 (acc64 vs f32 prefill) elapsed=0s 0/3
+  A3 divergence K=256   cosine=1.000000000 maxAbs=0  (IDENTICAL — flag had no effect, check the guard)
+11:26:39 [TestA3FastAttentionDivergence] K=1024 (acc64 vs f32 prefill) elapsed=1s 1/3 rate=52/min
+  A3 divergence K=1024  cosine=0.998294924 maxAbs=6.39
+11:26:46 [TestA3FastAttentionDivergence] K=2048 (acc64 vs f32 prefill) elapsed=8s 2/3 rate=9.0/min
+  A3 divergence K=2048  cosine=0.998355925 maxAbs=6.39
+11:27:05 [TestA3FastAttentionDivergence] done elapsed=28s 3/3 rate=3.0/min
+decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu
+decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu
+decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu
+decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: cold.giw is not in memory: reading its 0.0 GB once before the load
+decoder: --stream-weights ignored (no mmap-backed MoE experts to page)
+decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)
+decoder: cold.giw is not in memory: reading its 0.0 GB once before the load
+decoder: cold.giw is not in memory: reading its 0.0 GB once before the load
+decoder: --stream-weights ignored (no mmap-backed MoE experts to page)
+decoder: cold.giw is not in memory: reading its 0.0 GB once before the load
+decoder: .giw context capped at 5120 (model allows 32768) so that KV+scratch fits: needs ~1.50 GB of 2.50 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+--- FAIL: TestFitEstimate_q4kAgreesWithResidentWeightBytes (1.00s)
+    --- FAIL: TestFitEstimate_q4kAgreesWithResidentWeightBytes/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (0.13s)
+        fitguard_q4k_test.go:58: the fit guard refused the measuring load, so this row is unmeasured: decoder: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.2 GB resident at quant q4k + 0.0 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 2.3 GB; this machine currently has 2.7 GB of memory available (budget 1.9 GB = 70% of that).
+              Loading it would page to swap rather than run, so it was NOT loaded.
+              Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+              Or run a smaller model.
+              Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+decoder: .giw context capped at 8192 (model allows 1048576) so that KV+scratch fits: needs ~2.25 GB of 3.25 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: .giw context capped at 1044480 (model allows 1048576) so that KV+scratch fits: needs ~255.25 GB of 256.25 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: .giw context capped at 525312 (model allows 1048576) so that KV+scratch fits: needs ~0.27 GB of 1.27 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[kv2-g0 cpu exact-prefill=false] split@512 (both passes fast): first KV difference at row -1 (-1: none)
+[kv2-g0 cpu exact-prefill=false] split@576 (both passes fast): first KV difference at row -1 (-1: none)
+[kv2-g0 cpu exact-prefill=false] split@984 (second pass 116 rows): first KV difference at row 984 (-1: none)
+[kv2-g0 cpu exact-prefill=false] chunk=64: first KV difference at row 1 (-1: none)
+[kv2-g0 cpu exact-prefill=true] split@512 (both passes fast): first KV difference at row -1 (-1: none)
+[kv2-g0 cpu exact-prefill=true] split@576 (both passes fast): first KV difference at row -1 (-1: none)
+[kv2-g0 cpu exact-prefill=true] split@984 (second pass 116 rows): first KV difference at row -1 (-1: none)
+[kv2-g0 cpu exact-prefill=true] chunk=64: first KV difference at row -1 (-1: none)
+goinfer: batched prefill declined for a 397-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): copyFake: batched prefill declined
+decoder: fit is tight — qwen2.5-coder-0.5b-instruct-q4_k_m.gguf needs ~0.7 GB resident at quant int4 + 0.8 GB KV + 0.5 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 1.9 GB; this machine currently has 2.8 GB of memory available (budget 2.0 GB = 70% of that) (94% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[g40-kv] kv="": 4 chunks, 300 tokens decoded, regrows during decode 0
+[g40-kv] kv="i8": 4 chunks, 300 tokens decoded, regrows during decode 0
+[g40-kv] forced regrow: KV capacity 591.8 MiB (25248 rows); live heap over base 591.8 MiB (bound +16); footprint 1986.0 -> 1854.0 MiB (bound base + KV + 64)
+decoder: .giw context capped at 40000 (model allows 131072) so that KV+scratch fits: needs ~10.02 GB of 11.02 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: .giw context capped at 40000 (model allows 131072) so that KV+scratch fits: needs ~10.02 GB of 11.02 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: expert paging (mmap): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~1696774.48 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (mmap): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~1696774.48 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+[goinfer] GOINFER_ROUTER_CAPTURE: reached 65536 decisions; capture stopped (it is a diagnostic, not a log — unset the variable)
+decoder: expert paging (mmap): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~4644320.37 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (pread): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~4644320.37 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (pread): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~4644320.37 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (pread): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~26902.33 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (mmap): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~10876.63 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (pread): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~26902.33 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (pread): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~4644320.37 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (pread): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~26902.33 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (mmap): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~10876.63 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+decoder: expert paging (pread): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~26902.33 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+--- FAIL: TestParityManifest_fresh (0.35s)
+    parity_manifest_test.go:413: parity stale for 42 validated family(ies) — numerics changed since the noted commit:
+          cohere           stale since 7b50947a  [covers: core+loaders+quant]
+          cohere2          stale since 7b50947a  [covers: core+loaders+quant]
+          deepseek_v2      stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/forward_deepseek.go)]
+          deepseek_v3      stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/forward_deepseek.go)]
+          gemma            stale since 7b50947a  [covers: core+loaders+quant+own(decoder/gemma12.go)]
+          gemma2           stale since 7b50947a  [covers: core+loaders+quant+own(decoder/gemma12.go)]
+          gemma3           stale since 7b50947a  [covers: core+loaders+quant]
+          gemma4           stale since 310a2e44  [covers: core+loaders+quant+own(decoder/forward_gemma4.go)]
+          glm4_moe         stale since 7b50947a  [covers: core+loaders+quant+moe]
+          glm_ocr          stale since 7b50947a  [covers: core+loaders+quant+own(decoder/glm_ocr_test.go,scripts/pin_glm_ocr_tiny.py)]
+          gpt-oss          stale since 25a4711  [covers: core+loaders+quant+moe+own(decoder/forward_gptoss.go,decoder/gptoss120_test.go,decoder/gptoss_safetensors.go,decoder/gptoss_safetensors_test.go)]
+          gpt2             stale since 7b50947a  [covers: core+loaders+quant]
+          granite          stale since 7b50947a  [covers: core+loaders+quant+moe]
+          granitemoehybrid stale since 7b50947a  [covers: core+loaders+quant+moe+mamba2+own(decoder/forward_granite.go)]
+          internlm2        stale since 7b50947a  [covers: core+loaders+quant+own(decoder/internlm2.go,decoder/internlm2_test.go,scripts/pin_internlm2_tiny.py)]
+          kimi_k2          stale since b067007  [covers: core+loaders+quant+moe+own(decoder/forward_deepseek.go)]
+          laguna           stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/laguna_config_test.go,decoder/laguna_test.go,decoder/laguna_slice_test.go,decoder/laguna_gguf_test.go,scripts/pin_laguna_tiny.py,scripts/pin_slice_oracle.py)]
+          lfm2             stale since 7b50947a  [covers: core+loaders+own(decoder/lfm2.go,decoder/forward_lfm2.go)]
+          llama            stale since 7b50947a  [covers: core+loaders+quant]
+          llama4_text      stale since 3f23c96  [covers: core+loaders+quant+moe+own(decoder/forward_llama4.go)]
+          mellum           stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/mellum_slice_test.go,scripts/pin_slice_oracle.py)]
+          mistral          stale since 7b50947a  [covers: core+loaders+quant]
+          mistral3         stale since 7b50947a  [covers: core+loaders+quant]
+          mixtral          stale since 7b50947a  [covers: core+loaders+quant+moe]
+          nemotron_h       stale since 0b74e671  [covers: core+loaders+quant+mamba2+own(decoder/forward_nemotron.go)]
+          olmo3            stale since 7b50947a  [covers: core+loaders+quant]
+          olmo_hybrid      stale since 7b50947a  [covers: core+loaders+quant+deltanet+own(decoder/forward_qwen35.go,decoder/olmo_hybrid_real_test.go,decoder/olmo_hybrid_test.go,scripts/pin_olmo_hybrid_real.py,scripts/pin_olmo_hybrid_tiny.py)]
+          phi3             stale since 7b50947a  [covers: core+loaders+quant]
+          qwen2            stale since 7b50947a  [covers: core+loaders+quant]
+          qwen2_5_vl       stale since 7b50947a  [covers: core+loaders+quant]
+          qwen2_moe        stale since 7b50947a  [covers: core+loaders+quant+moe]
+          qwen3            stale since 7b50947a  [covers: core+loaders+quant]
+          qwen3_5          stale since 7b50947a  [covers: core+loaders+quant+deltanet+own(decoder/forward_qwen35.go,decoder/qwen3_5_test.go,scripts/pin_qwen3_5_forward.py)]
+          qwen3_5_moe      stale since 7b50947a  [covers: core+loaders+quant+moe+deltanet+own(decoder/forward_qwen35.go,decoder/gguf_qwen35.go)]
+          qwen3_asr        stale since 4f84f2c1  [covers: core+loaders+quant]
+          qwen3_moe        stale since 7b50947a  [covers: core+loaders+quant+moe]
+          qwen3_next       stale since 426ca57d  [covers: core+loaders+quant+moe+deltanet+own(decoder/forward_qwen35.go,decoder/qwen3next.go,decoder/qwen3next_real_test.go,decoder/qwen3next_slice_test.go,decoder/qwen3next_test.go,scripts/pin_qwen3next_tiny.py,scripts/pin_slice_oracle.py)]
+          qwen3_vl         stale since 7ee05f0a  [covers: core+loaders+quant]
+          qwen3_vl_moe     stale since 936d2f49  [covers: core+loaders+quant+own(decoder/qwen3vlmoe_test.go,scripts/pin_qwen3vlmoe_tiny.py)]
+          smollm3          stale since 7b50947a  [covers: core+loaders+quant]
+          spark2_5         stale since 7b50947a  [covers: core+loaders+quant+own(decoder/spark25_test.go,decoder/spark25_real_test.go,scripts/pin_spark2_5_tiny.py,scripts/pin_spark2_5_real.py)]
+          voxtral          stale since 8494de25  [covers: core+loaders+quant]
+        Fix: re-run T3 (go run ./cmd/gate parity) then -update; or, for a provably non-numeric core edit (a guarded diagnostic seam, comment, rename), scripts/refresh_parity_hashes.sh.
+goinfer: batched prefill declined for a 27-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): blockFake: this pass declines
+[g40-t0a] chunk 1: 43 allocations of 4 KiB or more ; 361 allocations, 12.99 MiB in all (reported)
+[g40-t0a] chunk 2: 0 allocations of 4 KiB or more ; 239 allocations, 0.01 MiB in all (reported)
+[g40-t0a] chunk 3: 0 allocations of 4 KiB or more ; 263 allocations, 0.01 MiB in all (reported)
+[g40-t0a] chunk 4: 0 allocations of 4 KiB or more ; 260 allocations, 0.01 MiB in all (reported)
+[g40-1     0s] 1/20 cases: exact false, warm false, suffix 255 done
+[g40-1     0s] 2/20 cases: exact false, warm false, suffix 256 done
+[g40-1     0s] 3/20 cases: exact false, warm false, suffix 257 done
+[g40-1     0s] 4/20 cases: exact false, warm false, suffix 529 done
+[g40-1     0s] 5/20 cases: exact false, warm false, suffix 1368 done
+[g40-1     0s] 6/20 cases: exact false, warm true, suffix 255 done
+[g40-1     0s] 7/20 cases: exact false, warm true, suffix 256 done
+[g40-1     0s] 8/20 cases: exact false, warm true, suffix 257 done
+[g40-1     0s] 9/20 cases: exact false, warm true, suffix 529 done
+[g40-1     1s] 10/20 cases: exact false, warm true, suffix 1368 done
+[g40-1     1s] 11/20 cases: exact true, warm false, suffix 255 done
+[g40-1     1s] 12/20 cases: exact true, warm false, suffix 256 done
+[g40-1     1s] 13/20 cases: exact true, warm false, suffix 257 done
+[g40-1     1s] 14/20 cases: exact true, warm false, suffix 529 done
+[g40-1     1s] 15/20 cases: exact true, warm false, suffix 1368 done
+[g40-1     1s] 16/20 cases: exact true, warm true, suffix 255 done
+[g40-1     1s] 17/20 cases: exact true, warm true, suffix 256 done
+[g40-1     1s] 18/20 cases: exact true, warm true, suffix 257 done
+[g40-1     1s] 19/20 cases: exact true, warm true, suffix 529 done
+[g40-1     1s] 20/20 cases: exact true, warm true, suffix 1368 done
+[g40-1     0s] 1/20 cases: exact false, warm false, suffix 255 done
+[g40-1     0s] 2/20 cases: exact false, warm false, suffix 256 done
+[g40-1     0s] 3/20 cases: exact false, warm false, suffix 257 done
+[g40-1     0s] 4/20 cases: exact false, warm false, suffix 529 done
+[g40-1     0s] 5/20 cases: exact false, warm false, suffix 1368 done
+[g40-1     0s] 6/20 cases: exact false, warm true, suffix 255 done
+[g40-1     0s] 7/20 cases: exact false, warm true, suffix 256 done
+[g40-1     0s] 8/20 cases: exact false, warm true, suffix 257 done
+[g40-1     1s] 9/20 cases: exact false, warm true, suffix 529 done
+[g40-1     1s] 10/20 cases: exact false, warm true, suffix 1368 done
+[g40-1     1s] 11/20 cases: exact true, warm false, suffix 255 done
+[g40-1     1s] 12/20 cases: exact true, warm false, suffix 256 done
+[g40-1     1s] 13/20 cases: exact true, warm false, suffix 257 done
+[g40-1     1s] 14/20 cases: exact true, warm false, suffix 529 done
+[g40-1     1s] 15/20 cases: exact true, warm false, suffix 1368 done
+[g40-1     1s] 16/20 cases: exact true, warm true, suffix 255 done
+[g40-1     1s] 17/20 cases: exact true, warm true, suffix 256 done
+[g40-1     1s] 18/20 cases: exact true, warm true, suffix 257 done
+[g40-1     1s] 19/20 cases: exact true, warm true, suffix 529 done
+[g40-1     2s] 20/20 cases: exact true, warm true, suffix 1368 done
+[g40-1     0s] 1/20 cases: exact false, warm false, suffix 255 done
+[g40-1     0s] 2/20 cases: exact false, warm false, suffix 256 done
+[g40-1     0s] 3/20 cases: exact false, warm false, suffix 257 done
+[g40-1     0s] 4/20 cases: exact false, warm false, suffix 529 done
+[g40-1     0s] 5/20 cases: exact false, warm false, suffix 1368 done
+[g40-1     0s] 6/20 cases: exact false, warm true, suffix 255 done
+[g40-1     0s] 7/20 cases: exact false, warm true, suffix 256 done
+[g40-1     0s] 8/20 cases: exact false, warm true, suffix 257 done
+[g40-1     0s] 9/20 cases: exact false, warm true, suffix 529 done
+[g40-1     1s] 10/20 cases: exact false, warm true, suffix 1368 done
+[g40-1     1s] 11/20 cases: exact true, warm false, suffix 255 done
+[g40-1     1s] 12/20 cases: exact true, warm false, suffix 256 done
+[g40-1     1s] 13/20 cases: exact true, warm false, suffix 257 done
+[g40-1     1s] 14/20 cases: exact true, warm false, suffix 529 done
+[g40-1     1s] 15/20 cases: exact true, warm false, suffix 1368 done
+[g40-1     1s] 16/20 cases: exact true, warm true, suffix 255 done
+[g40-1     1s] 17/20 cases: exact true, warm true, suffix 256 done
+[g40-1     1s] 18/20 cases: exact true, warm true, suffix 257 done
+[g40-1     1s] 19/20 cases: exact true, warm true, suffix 529 done
+[g40-1     2s] 20/20 cases: exact true, warm true, suffix 1368 done
+[g40-1     0s] 1/20 cases: exact false, warm false, suffix 255 done
+[g40-1     0s] 2/20 cases: exact false, warm false, suffix 256 done
+[g40-1     0s] 3/20 cases: exact false, warm false, suffix 257 done
+[g40-1     0s] 4/20 cases: exact false, warm false, suffix 529 done
+[g40-1     1s] 5/20 cases: exact false, warm false, suffix 1368 done
+[g40-1     1s] 6/20 cases: exact false, warm true, suffix 255 done
+[g40-1     1s] 7/20 cases: exact false, warm true, suffix 256 done
+[g40-1     1s] 8/20 cases: exact false, warm true, suffix 257 done
+[g40-1     1s] 9/20 cases: exact false, warm true, suffix 529 done
+[g40-1     1s] 10/20 cases: exact false, warm true, suffix 1368 done
+[g40-1     1s] 11/20 cases: exact true, warm false, suffix 255 done
+[g40-1     1s] 12/20 cases: exact true, warm false, suffix 256 done
+[g40-1     2s] 13/20 cases: exact true, warm false, suffix 257 done
+[g40-1     2s] 14/20 cases: exact true, warm false, suffix 529 done
+[g40-1     3s] 15/20 cases: exact true, warm false, suffix 1368 done
+[g40-1     3s] 16/20 cases: exact true, warm true, suffix 255 done
+[g40-1     3s] 17/20 cases: exact true, warm true, suffix 256 done
+[g40-1     3s] 18/20 cases: exact true, warm true, suffix 257 done
+[g40-1     3s] 19/20 cases: exact true, warm true, suffix 529 done
+[g40-1     4s] 20/20 cases: exact true, warm true, suffix 1368 done
+11:28:24 [TestPrefillAttnRowTileInvariance] start — 15 items
+11:28:24 [TestPrefillAttnRowTileInvariance] K=64 elapsed=0s 0/15
+11:28:24 [TestPrefillAttnRowTileInvariance] K=512 elapsed=0s 5/15 rate=613/min
+11:28:36 [TestPrefillAttnRowTileInvariance] K=1200 elapsed=12s 10/15 rate=26/min
+11:29:09 [TestPrefillAttnRowTileInvariance] K=1200 elapsed=45s 12/15 rate=3.6/min
+11:29:32 [TestPrefillAttnRowTileInvariance] done elapsed=1m8s 15/15 rate=7.9/min
+11:30:06 [io] start
+11:30:06 [io] done elapsed=0s
+11:30:06 [io-rate] start
+11:30:06 [io-rate] done elapsed=0s 1 done
+11:30:06 [eta] start — 11 items
+11:30:06 [eta] done elapsed=0s 4/11 eta=3m30s
+[resident] BuildResident declined (ok=false err=resident path declined: the experts need 9 GB of VRAM and 7 GB is free) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=no usable device) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+[resident] startup self-test declined this backend: qwen35vl-tiny decode, 264 positions: worst cosine -0.2149 (floor 0.995, at position 93), worst relative L2 1.007 (ceiling 0.10); llama-tiny decode, 100 positions: worst cosine -0.1636 (floor 0.995, at position 25), worst relative L2 1.136 (ceiling 0.10); gemma3-vl-tiny decode, 48 positions: worst cosine -0.1389 (floor 0.995, at position 20), worst relative L2 1.126 (ceiling 0.10); qwen35-tiny decode, 48 positions: worst cosine -0.1186 (floor 0.995, at position 38), worst relative L2 1.111 (ceiling 0.10) — continuing on the CPU/staged path
+[resident] startup self-test declined this backend: qwen35vl-tiny decode, 264 positions: worst cosine -0.2149 (floor 0.995, at position 93), worst relative L2 1.007 (ceiling 0.10); llama-tiny decode, 100 positions: worst cosine -0.1636 (floor 0.995, at position 25), worst relative L2 1.136 (ceiling 0.10); gemma3-vl-tiny decode, 48 positions: worst cosine -0.1389 (floor 0.995, at position 20), worst relative L2 1.126 (ceiling 0.10); qwen35-tiny decode, 48 positions: worst cosine -0.1186 (floor 0.995, at position 38), worst relative L2 1.111 (ceiling 0.10) — continuing on the CPU/staged path
+[resident] startup self-test declined this backend: qwen35vl-tiny decode, 264 positions: worst cosine -0.2154 (floor 0.995, at position 93), worst relative L2 1.007 (ceiling 0.10); llama-tiny decode, 100 positions: worst cosine -0.1404 (floor 0.995, at position 25), worst relative L2 1.127 (ceiling 0.10); gemma3-vl-tiny decode, 48 positions: worst cosine -0.1283 (floor 0.995, at position 20), worst relative L2 1.126 (ceiling 0.10); qwen35-tiny decode, 48 positions: worst cosine -0.1217 (floor 0.995, at position 38), worst relative L2 1.113 (ceiling 0.10) — continuing on the CPU/staged path
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 192)
+  [0s] token 2/6 (id 60)
+  [0s] token 3/6 (id 38)
+  [0s] token 4/6 (id 150)
+  [0s] token 5/6 (id 192)
+  [0s] token 6/6 (id 134)
+  [0s] token 1/6 (id 192)
+  [0s] token 2/6 (id 60)
+  [0s] token 3/6 (id 38)
+  [0s] token 4/6 (id 150)
+  [0s] token 5/6 (id 192)
+  [0s] token 6/6 (id 134)
+  [0s] token 1/6 (id 6)
+  [0s] token 2/6 (id 19)
+  [0s] token 3/6 (id 155)
+  [0s] token 4/6 (id 202)
+  [0s] token 5/6 (id 17)
+  [0s] token 6/6 (id 155)
+  [0s] token 1/6 (id 6)
+  [0s] token 2/6 (id 19)
+  [0s] token 3/6 (id 155)
+  [0s] token 4/6 (id 202)
+  [0s] token 5/6 (id 17)
+  [0s] token 6/6 (id 155)
+  [0s] token 1/6 (id 5)
+  [0s] token 2/6 (id 157)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 91)
+  [0s] token 5/6 (id 5)
+  [0s] token 6/6 (id 157)
+  [0s] token 1/6 (id 5)
+  [0s] token 2/6 (id 157)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 91)
+  [0s] token 5/6 (id 5)
+  [0s] token 6/6 (id 157)
+  [0s] token 1/6 (id 63)
+  [0s] token 2/6 (id 255)
+  [0s] token 3/6 (id 243)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 163)
+  [0s] token 6/6 (id 215)
+  [0s] token 1/6 (id 63)
+  [0s] token 2/6 (id 255)
+  [0s] token 3/6 (id 243)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 163)
+  [0s] token 6/6 (id 215)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 22)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 22)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 0)
+  [0s] token 3/6 (id 9)
+  [0s] token 4/6 (id 106)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 89)
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 0)
+  [0s] token 3/6 (id 9)
+  [0s] token 4/6 (id 106)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 89)
+  [0s] token 1/6 (id 78)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 78)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 81)
+  [0s] token 3/6 (id 106)
+  [0s] token 4/6 (id 48)
+  [0s] token 5/6 (id 63)
+  [0s] token 6/6 (id 161)
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 81)
+  [0s] token 3/6 (id 106)
+  [0s] token 4/6 (id 48)
+  [0s] token 5/6 (id 63)
+  [0s] token 6/6 (id 161)
+  [0s] token 1/6 (id 71)
+  [0s] token 2/6 (id 174)
+  [0s] token 3/6 (id 6)
+  [0s] token 4/6 (id 138)
+  [0s] token 5/6 (id 251)
+  [0s] token 6/6 (id 157)
+  [0s] token 1/6 (id 71)
+  [0s] token 2/6 (id 174)
+  [0s] token 3/6 (id 6)
+  [0s] token 4/6 (id 138)
+  [0s] token 5/6 (id 251)
+  [0s] token 6/6 (id 157)
+  [0s] token 1/6 (id 97)
+  [0s] token 2/6 (id 83)
+  [0s] token 3/6 (id 240)
+  [0s] token 4/6 (id 29)
+  [0s] token 5/6 (id 174)
+  [0s] token 6/6 (id 83)
+  [0s] token 1/6 (id 97)
+  [0s] token 2/6 (id 83)
+  [0s] token 3/6 (id 240)
+  [0s] token 4/6 (id 29)
+  [0s] token 5/6 (id 174)
+  [0s] token 6/6 (id 83)
+  [0s] token 1/6 (id 33)
+  [0s] token 2/6 (id 33)
+  [0s] token 3/6 (id 33)
+  [0s] token 4/6 (id 33)
+  [0s] token 5/6 (id 33)
+  [0s] token 6/6 (id 33)
+  [0s] token 1/6 (id 33)
+  [0s] token 2/6 (id 33)
+  [0s] token 3/6 (id 33)
+  [0s] token 4/6 (id 33)
+  [0s] token 5/6 (id 33)
+  [0s] token 6/6 (id 33)
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 370)
+  [0s] token 2/6 (id 1)
+  [0s] token 3/6 (id 1)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 1)
+  [0s] token 6/6 (id 1)
+  [0s] token 1/6 (id 370)
+  [0s] token 2/6 (id 1)
+  [0s] token 3/6 (id 1)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 1)
+  [0s] token 6/6 (id 1)
+  [0s] token 1/6 (id 59)
+  [0s] token 2/6 (id 101)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 42)
+  [0s] token 5/6 (id 42)
+  [0s] token 6/6 (id 42)
+  [0s] token 1/6 (id 59)
+  [0s] token 2/6 (id 101)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 42)
+  [0s] token 5/6 (id 42)
+  [0s] token 6/6 (id 42)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 202)
+  [0s] token 2/6 (id 132)
+  [0s] token 3/6 (id 93)
+  [0s] token 4/6 (id 120)
+  [0s] token 5/6 (id 123)
+  [0s] token 6/6 (id 24)
+  [0s] token 1/6 (id 202)
+  [0s] token 2/6 (id 132)
+  [0s] token 3/6 (id 93)
+  [0s] token 4/6 (id 120)
+  [0s] token 5/6 (id 123)
+  [0s] token 6/6 (id 24)
+  [0s] token 1/6 (id 128)
+  [0s] token 2/6 (id 98)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 162)
+  [0s] token 5/6 (id 132)
+  [0s] token 6/6 (id 65)
+  [0s] token 1/6 (id 128)
+  [0s] token 2/6 (id 98)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 162)
+  [0s] token 5/6 (id 132)
+  [0s] token 6/6 (id 65)
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+  [0s] token 1/6 (id 149850)
+  [0s] token 2/6 (id 78462)
+  [0s] token 3/6 (id 123894)
+  [0s] token 4/6 (id 84142)
+  [0s] token 5/6 (id 32299)
+  [0s] token 6/6 (id 6865)
+  [0s] token 1/6 (id 149850)
+  [0s] token 2/6 (id 78462)
+  [0s] token 3/6 (id 123894)
+  [0s] token 4/6 (id 84142)
+  [0s] token 5/6 (id 32299)
+  [0s] token 6/6 (id 6865)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 116)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 116)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 109)
+  [0s] token 5/6 (id 109)
+  [0s] token 6/6 (id 17)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 109)
+  [0s] token 5/6 (id 109)
+  [0s] token 6/6 (id 17)
+  [0s] token 1/6 (id 30)
+  [0s] token 2/6 (id 52)
+  [0s] token 3/6 (id 69)
+  [0s] token 4/6 (id 172)
+  [0s] token 5/6 (id 64)
+  [0s] token 6/6 (id 104)
+  [0s] token 1/6 (id 30)
+  [0s] token 2/6 (id 52)
+  [0s] token 3/6 (id 69)
+  [0s] token 4/6 (id 172)
+  [0s] token 5/6 (id 64)
+  [0s] token 6/6 (id 104)
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+  [0s] token 1/6 (id 22)
+  [0s] token 2/6 (id 194)
+  [0s] token 3/6 (id 49)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 194)
+  [0s] token 1/6 (id 22)
+  [0s] token 2/6 (id 194)
+  [0s] token 3/6 (id 49)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 194)
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 269)
+  [0s] token 2/6 (id 7)
+  [0s] token 3/6 (id 209)
+  [0s] token 4/6 (id 279)
+  [0s] token 5/6 (id 124)
+  [0s] token 6/6 (id 133)
+  [0s] token 1/6 (id 269)
+  [0s] token 2/6 (id 7)
+  [0s] token 3/6 (id 209)
+  [0s] token 4/6 (id 279)
+  [0s] token 5/6 (id 124)
+  [0s] token 6/6 (id 133)
+  [0s] token 1/6 (id 210)
+  [0s] token 2/6 (id 133)
+  [0s] token 3/6 (id 191)
+  [0s] token 4/6 (id 232)
+  [0s] token 5/6 (id 211)
+  [0s] token 6/6 (id 88)
+  [0s] token 1/6 (id 210)
+  [0s] token 2/6 (id 133)
+  [0s] token 3/6 (id 191)
+  [0s] token 4/6 (id 232)
+  [0s] token 5/6 (id 211)
+  [0s] token 6/6 (id 88)
+  [0s] token 1/6 (id 73)
+  [0s] token 2/6 (id 47)
+  [0s] token 3/6 (id 47)
+  [0s] token 4/6 (id 47)
+  [0s] token 5/6 (id 47)
+  [0s] token 6/6 (id 47)
+  [0s] token 1/6 (id 73)
+  [0s] token 2/6 (id 47)
+  [0s] token 3/6 (id 47)
+  [0s] token 4/6 (id 47)
+  [0s] token 5/6 (id 47)
+  [0s] token 6/6 (id 47)
+  [0s] token 1/6 (id 114)
+  [0s] token 2/6 (id 17)
+  [0s] token 3/6 (id 148)
+  [0s] token 4/6 (id 137)
+  [0s] token 5/6 (id 155)
+  [0s] token 6/6 (id 50)
+  [0s] token 1/6 (id 114)
+  [0s] token 2/6 (id 17)
+  [0s] token 3/6 (id 148)
+  [0s] token 4/6 (id 137)
+  [0s] token 5/6 (id 155)
+  [0s] token 6/6 (id 50)
+  [0s] token 1/6 (id 238)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 238)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 273)
+  [0s] token 2/6 (id 409)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 177)
+  [0s] token 5/6 (id 134)
+  [0s] token 6/6 (id 13)
+  [0s] token 1/6 (id 273)
+  [0s] token 2/6 (id 409)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 177)
+  [0s] token 5/6 (id 134)
+  [0s] token 6/6 (id 13)
+  [0s] token 1/6 (id 108)
+  [0s] token 2/6 (id 40)
+  [0s] token 3/6 (id 236)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 97)
+  [0s] token 6/6 (id 247)
+  [0s] token 1/6 (id 108)
+  [0s] token 2/6 (id 40)
+  [0s] token 3/6 (id 236)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 97)
+  [0s] token 6/6 (id 247)
+  [0s] token 1/6 (id 155)
+  [0s] token 2/6 (id 242)
+  [0s] token 3/6 (id 61)
+  [0s] token 4/6 (id 61)
+  [0s] token 5/6 (id 61)
+  [0s] token 6/6 (id 61)
+  [0s] token 1/6 (id 155)
+  [0s] token 2/6 (id 242)
+  [0s] token 3/6 (id 61)
+  [0s] token 4/6 (id 61)
+  [0s] token 5/6 (id 61)
+  [0s] token 6/6 (id 61)
+  [0s] token 1/6 (id 45)
+  [0s] token 2/6 (id 19)
+  [0s] token 3/6 (id 186)
+  [0s] token 4/6 (id 152)
+  [0s] token 5/6 (id 500)
+  [0s] token 6/6 (id 118)
+  [0s] token 1/6 (id 45)
+  [0s] token 2/6 (id 19)
+  [0s] token 3/6 (id 186)
+  [0s] token 4/6 (id 152)
+  [0s] token 5/6 (id 500)
+  [0s] token 6/6 (id 118)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 151)
+  [0s] token 2/6 (id 46)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 59)
+  [0s] token 5/6 (id 4)
+  [0s] token 6/6 (id 78)
+  [0s] token 1/6 (id 151)
+  [0s] token 2/6 (id 46)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 59)
+  [0s] token 5/6 (id 4)
+  [0s] token 6/6 (id 78)
+  [0s] token 1/6 (id 113)
+  [0s] token 2/6 (id 113)
+  [0s] token 3/6 (id 113)
+  [0s] token 4/6 (id 113)
+  [0s] token 5/6 (id 113)
+  [0s] token 6/6 (id 113)
+  [0s] token 1/6 (id 113)
+  [0s] token 2/6 (id 113)
+  [0s] token 3/6 (id 113)
+  [0s] token 4/6 (id 113)
+  [0s] token 5/6 (id 113)
+  [0s] token 6/6 (id 113)
+  [0s] token 1/6 (id 223)
+  [0s] token 2/6 (id 223)
+  [0s] token 3/6 (id 223)
+  [0s] token 4/6 (id 223)
+  [0s] token 5/6 (id 136)
+  [0s] token 6/6 (id 212)
+  [0s] token 1/6 (id 223)
+  [0s] token 2/6 (id 223)
+  [0s] token 3/6 (id 223)
+  [0s] token 4/6 (id 223)
+  [0s] token 5/6 (id 136)
+  [0s] token 6/6 (id 212)
+  [0s] token 1/6 (id 217)
+  [0s] token 2/6 (id 261)
+  [0s] token 3/6 (id 453)
+  [0s] token 4/6 (id 399)
+  [0s] token 5/6 (id 473)
+  [0s] token 6/6 (id 457)
+  [0s] token 1/6 (id 217)
+  [0s] token 2/6 (id 261)
+  [0s] token 3/6 (id 453)
+  [0s] token 4/6 (id 399)
+  [0s] token 5/6 (id 473)
+  [0s] token 6/6 (id 457)
+  [0s] token 1/6 (id 86)
+  [0s] token 2/6 (id 122)
+  [0s] token 3/6 (id 35)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 57)
+  [0s] token 6/6 (id 172)
+  [0s] token 1/6 (id 86)
+  [0s] token 2/6 (id 122)
+  [0s] token 3/6 (id 35)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 57)
+  [0s] token 6/6 (id 172)
+  [0s] token 1/6 (id 90)
+  [0s] token 2/6 (id 191)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 146)
+  [0s] token 5/6 (id 168)
+  [0s] token 6/6 (id 233)
+  [0s] token 1/6 (id 90)
+  [0s] token 2/6 (id 191)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 146)
+  [0s] token 5/6 (id 168)
+  [0s] token 6/6 (id 233)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+  [0s] token 1/8 (id 202)
+  [0s] token 2/8 (id 132)
+  [0s] token 3/8 (id 93)
+  [0s] token 4/8 (id 120)
+  [0s] token 5/8 (id 123)
+  [0s] token 6/8 (id 24)
+  [0s] token 7/8 (id 123)
+  [0s] token 8/8 (id 24)
+  [0s] token 1/8 (id 202)
+  [0s] token 2/8 (id 132)
+  [0s] token 3/8 (id 93)
+  [0s] token 4/8 (id 120)
+  [0s] token 5/8 (id 123)
+  [0s] token 6/8 (id 24)
+  [0s] token 7/8 (id 123)
+  [0s] token 8/8 (id 24)
+  [0s] token 1/8 (id 88)
+  [0s] token 2/8 (id 88)
+  [0s] token 3/8 (id 88)
+  [0s] token 4/8 (id 161)
+  [0s] token 5/8 (id 161)
+  [0s] token 6/8 (id 161)
+  [0s] token 7/8 (id 161)
+  [0s] token 8/8 (id 161)
+  [0s] token 1/8 (id 88)
+  [0s] token 2/8 (id 88)
+  [0s] token 3/8 (id 88)
+  [0s] token 4/8 (id 161)
+  [0s] token 5/8 (id 161)
+  [0s] token 6/8 (id 161)
+  [0s] token 7/8 (id 161)
+  [0s] token 8/8 (id 161)
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	292.771s
+FAIL
+rc=1
