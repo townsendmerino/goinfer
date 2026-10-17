@@ -49,10 +49,13 @@ snapshot. nobara-pc, RTX 2070 SUPER, driver 595.91.07, GPU runs under the timing
 ### Result (run 2026-10-17 08:17:33 to 08:32:45 PDT, serve `e432cb40`, after tack's pilot job 1 had finished; load average 0.94 at the start)
 
 Cells 3: read and search pass, edit fails (the model's own: it wrote `-type file`, and its last answer is a tool call as text). Session starts 203.9 s (cold), 29.5 s and 29.4 s: **0.145 and 0.144 of the cold one**,
-both `snap=15872`. Eight requests restored the 15,872-row snapshot, none declined (the serve log has no decline line; the server's `unqualified` counter itself was not read, so that third reading rests on the absence
-of one). Every restored prefix is the ids an earlier request wrote: `TestSideRequests_snapshotPrefixes` PASS over the twelve requests. The one cold follow-up (#3, 105.9 s, 9,906 ids) is a different agent, not a
+both `snap=15872`. Eight requests restored the 15,872-row snapshot. The server's own counter: the night's server was gone before anyone read `/admin/status`, so the twelve recorded bodies were replayed in order through the same pinned binary
+and flags (`run-counter-replay.sh`, `replay-counter.py`; non-streamed, `max_tokens` 1, `GOINFER_SWAP_GUARD=4096` as the night had it; a first attempt at the default guard tripped it and is kept as
+`run-attempt1-swapguard-tripped.log`). Reading after the twelve: **`unqualified` 0**, `taken` 2 (15,872 and 7,680 rows), `restored` 7 (111,104 rows), `evicted` 0, `declined` `{"held": 3}` (a snapshot already covered the prefix, so no
+new one was taken: benign). It is the replay's counter, not the night's: the replay restored 7 where the night restored 8, because at one-token replies request #5 continued in the live slot (19,317 rows reused) instead of restoring.
+Every restored prefix is the ids an earlier request wrote: `TestSideRequests_snapshotPrefixes` PASS over the twelve requests. The one cold follow-up (#3, 105.9 s, 9,906 ids) is a different agent, not a
 post-compaction request: 13 tools and a 2,783-character system prompt against 21 and 6,266, sharing 20 ids with everything before it; it was the first of its kind, took its own boundary snapshot (7,680 rows), and
-there was nothing to restore from. That reading of "every session start after the first" (the first of each prompt kind) is mine and is stated here.
+there was nothing to restore from. Settled after the data: "every session start after the first" means the first of each prompt kind (accepted by Francis, 2026-10-17).
 The night run's two sections skipped (the pinned worktree had no tokenizer fixture, which is gitignored); they ran after, on the same bodies, and pass: `kv7s2-sections-rerun.md` beside `kv7s2-metrics.md`.
 The report-only question: across 8 session starts, 4 pairs share the stable section and 24 do not (another working directory or tools list); of the sharing pairs the leading reminder is byte-identical in 1 of 4
 (real sessions p3 and p5: 2,008 ids past the boundary, 21.4 s of prefill). Counts and positions only; the boundary is unchanged.
