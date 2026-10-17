@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/swapguard"
 )
 
 // scriptedSwapReader is decoder/swapwatch_test.go's scriptedReader, reimplemented minimally here
@@ -177,4 +179,86 @@ func TestSwapGuard_neverCancelsInFlight(t *testing.T) {
 	if g.reason() != "" {
 		t.Fatalf("the swap guard trip set a cancel reason on an in-flight generation: %q", g.reason())
 	}
+}
+
+// The two-source guard (swapguard.Select): the server's own swap at the default threshold, system swap at the backstop, and the system-wide
+// guard alone where the per-process figure is unavailable. Readers are scripted: a fixed baseline, then a level that holds.
+func constSwap(base, level int64) *scriptedSwapReader {
+	return &scriptedSwapReader{seq: []int64{base, level}}
+}
+
+// ownSwap scripts the per-process reader: Select reads it once to learn that it works, so the first entry is that probe, the second the watch's baseline.
+func ownSwap(base, level int64) *scriptedSwapReader {
+	return &scriptedSwapReader{seq: []int64{base, base, level}}
+}
+
+// armBoth arms a server's guard with a 5 ms poll and returns it with its two readers' tick waits done: enough samples that a trip, if one is coming, has happened.
+func armBoth(t *testing.T, own, sys *scriptedSwapReader) *server {
+	t.Helper()
+	t.Setenv("GOINFER_SWAP_GUARD", "") // the default: 512 MB own, 4096 MB backstop
+	old := swapguard.PollInterval
+	swapguard.PollInterval = 5 * time.Millisecond
+	t.Cleanup(func() { swapguard.PollInterval = old })
+	s := &server{}
+	if own == nil {
+		s.armSwapGuardSources(nil, "test: no per-process reader", sys.Read)
+	} else {
+		s.armSwapGuardSources(own.Read, "", sys.Read)
+	}
+	t.Cleanup(s.swapWatch.Stop)
+	sys.waitTicks(t, 30)
+	if own != nil {
+		own.waitTicks(t, 30)
+	}
+	return s
+}
+
+const (
+	gb = int64(1_000_000_000)
+	mB = int64(1_000_000)
+)
+
+func TestSwapGuard_otherProcessesSwapDoesNotTripTheServerGuard(t *testing.T) {
+	// Other processes push system swap up 2 GB (below the 4096 MB backstop) while the server's own stays flat: no trip.
+	s := armBoth(t, ownSwap(0, 0), constSwap(9*gb, 11*gb))
+	if s.swapGuardTripped.Load() {
+		t.Fatal("system swap +2 GB with the server flat tripped the guard")
+	}
+	// The planted old reader: the same system figure watched alone at 512 MB (the guard as it was) trips on exactly this sequence. If this stops
+	// tripping, the test above no longer distinguishes the two guards.
+	old := armBoth(t, nil, constSwap(9*gb, 11*gb))
+	waitUntil(t, 5*time.Second, func() bool { return old.swapGuardTripped.Load() })
+}
+
+func TestSwapGuard_theServersOwnSwapTrips(t *testing.T) {
+	s := armBoth(t, ownSwap(0, 600*mB), constSwap(9*gb, 9*gb)) // the server (pid and descendants) +600 MB, the system flat
+	waitUntil(t, 5*time.Second, func() bool { return s.swapGuardTripped.Load() })
+	under := armBoth(t, ownSwap(0, 400*mB), constSwap(9*gb, 9*gb)) // +400 MB is under the default
+	if under.swapGuardTripped.Load() {
+		t.Fatal("the server's own swap +400 MB tripped the 512 MB default")
+	}
+}
+
+func TestSwapGuard_systemBackstopTrips(t *testing.T) {
+	s := armBoth(t, ownSwap(0, 0), constSwap(9*gb, 14*gb)) // system +5 GB with the server flat: the backstop at 4096 MB
+	waitUntil(t, 5*time.Second, func() bool { return s.swapGuardTripped.Load() })
+	under := armBoth(t, ownSwap(0, 0), constSwap(9*gb, 12*gb)) // +3 GB is under it
+	if under.swapGuardTripped.Load() {
+		t.Fatal("system swap +3 GB with the server flat tripped the 4096 MB backstop")
+	}
+}
+
+func TestSwapGuard_fallsBackToSystemWideWithoutAPerProcessReader(t *testing.T) {
+	s := armBoth(t, nil, constSwap(9*gb, 9*gb+600*mB)) // no per-process reader: system-wide +600 MB trips the 512 MB default
+	waitUntil(t, 5*time.Second, func() bool { return s.swapGuardTripped.Load() })
+	// A per-process reader that cannot read (no VmSwap) falls back the same way.
+	t.Setenv("GOINFER_SWAP_GUARD", "")
+	old := swapguard.PollInterval
+	swapguard.PollInterval = 5 * time.Millisecond
+	defer func() { swapguard.PollInterval = old }()
+	sys := constSwap(9*gb, 9*gb+600*mB)
+	u := &server{}
+	u.armSwapGuardSources(func() (int64, bool) { return 0, false }, "", sys.Read)
+	defer u.swapWatch.Stop()
+	waitUntil(t, 5*time.Second, func() bool { return u.swapGuardTripped.Load() })
 }

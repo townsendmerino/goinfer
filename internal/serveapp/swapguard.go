@@ -1,11 +1,10 @@
 package serveapp
 
 import (
-	"context"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/swapguard"
@@ -44,50 +43,45 @@ func (s *server) startSwapGuard() {
 	if testing.Testing() && os.Getenv("GOINFER_SWAP_GUARD") == "" {
 		return
 	}
-	s.armSwapGuard(decoder.SwapUsedBytes)
+	own, why := decoder.SelfSwapReader()
+	s.armSwapGuardSources(own, why, decoder.SwapUsedBytes)
 }
 
-// armSwapGuard is startSwapGuard with the swap-used probe injectable, so a test can wire the
-// whole trip -> haltGate -> resume path against a scripted reader without touching the real OS
-// probe (decoder/swapwatch_test.go's own scriptedReader tests the watch's decision logic in
-// isolation already; this is the integration seam one level up).
+// armSwapGuard is armSwapGuardSources with no per-process reader: the system-wide figure alone at GOINFER_SWAP_GUARD, the guard as it was before the
+// per-process reader. Tests drive the trip -> haltGate -> resume path through it with a scripted reader.
 func (s *server) armSwapGuard(read decoder.SwapReader) {
-	threshold, thresholdMB, on := swapguard.ThresholdBytes()
+	s.armSwapGuardSources(nil, "no per-process reader was supplied", read)
+}
+
+// armSwapGuardSources arms the swap watch over the sources swapguard.Select picks (see there for the two-trip rule and the fallback), logging
+// which reader is armed and why. The guard is tripped while any one source is past its threshold and re-opens when every tripped source has been
+// back within its threshold for 30 s.
+func (s *server) armSwapGuardSources(own decoder.SwapReader, ownWhy string, sys decoder.SwapReader) {
+	srcs, banner, on := swapguard.Select(own, ownWhy, sys)
 	if !on {
 		fmt.Fprintln(os.Stderr, "swap guard: disabled (GOINFER_SWAP_GUARD=off)")
 		return
 	}
-	fmt.Fprintf(os.Stderr, "swap guard: armed, threshold +%d MB over baseline\n", thresholdMB)
+	fmt.Fprintf(os.Stderr, "swap guard: armed — %s\n", banner)
 
-	// bannerOnce wraps read so the ONE startup banner naming the real baseline uses the watch's own first successful reading,
-	// not a separate call to read() before starting the watch: that would burn a syscall the watch's bookkeeping never sees
-	// and shift a scripted test reader's sequence by one entry against the watch's own index.
-	bannerPrinted := false
-	bannerOnce := func() (int64, bool) {
-		used, ok := read()
-		if !bannerPrinted {
-			bannerPrinted = true
-			if ok {
-				fmt.Fprintf(os.Stderr, "swap guard: baseline %.2f GB swap-used\n", float64(used)/1e9)
-			} else {
-				fmt.Fprintln(os.Stderr, "swap guard: this platform's swap-used probe reports unknown on the first sample — the guard will never trip until it reports a real reading")
-			}
-		}
-		return used, ok
-	}
-
-	s.swapWatch = decoder.StartSwapWatch(context.Background(), decoder.SwapWatchOptions{
-		Read:         bannerOnce,
-		PollInterval: 2 * time.Second,
-		Threshold:    threshold,
-		ResumeAfter:  30 * time.Second,
-		OnTrip: func(used, delta int64) {
+	var mu sync.Mutex
+	tripped := map[string]bool{}
+	s.swapWatch = swapguard.Start(srcs, swapguard.ResumeAfter,
+		func(src swapguard.Source, used, delta int64) {
+			mu.Lock()
+			tripped[src.Name] = true
+			mu.Unlock()
 			s.swapGuardTripped.Store(true)
-			fmt.Fprintf(os.Stderr, "swap guard: TRIPPED — swap grew %.2f GB over baseline (%.2f GB used now); refusing new requests until it recovers\n", float64(delta)/1e9, float64(used)/1e9)
+			fmt.Fprintf(os.Stderr, "swap guard: TRIPPED — %s grew %.2f GB over baseline (%.2f GB used now); refusing new requests until it recovers\n", src.Name, float64(delta)/1e9, float64(used)/1e9)
 		},
-		OnResume: func() {
-			s.swapGuardTripped.Store(false)
-			fmt.Fprintln(os.Stderr, "swap guard: recovered — swap-used back within threshold of baseline for 30s; admitting new requests again")
-		},
-	})
+		func(src swapguard.Source) {
+			mu.Lock()
+			delete(tripped, src.Name)
+			clear := len(tripped) == 0
+			mu.Unlock()
+			if clear {
+				s.swapGuardTripped.Store(false)
+				fmt.Fprintf(os.Stderr, "swap guard: recovered — %s back within threshold of baseline for %s; admitting new requests again\n", src.Name, swapguard.ResumeAfter)
+			}
+		})
 }

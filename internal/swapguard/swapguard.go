@@ -11,14 +11,12 @@
 package swapguard
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -55,7 +53,12 @@ func StartLoad(loadPath string, opts decoder.Options, advice string) (abort <-ch
 	if testing.Testing() && os.Getenv("GOINFER_SWAP_GUARD") == "" {
 		return nil, func(err error) error { return err }, func() {}
 	}
-	return ArmLoad(loadPath, opts, advice, decoder.SwapUsedBytes)
+	own, why := decoder.SelfSwapReader()
+	srcs, banner, on := Select(own, why, decoder.SwapUsedBytes)
+	if !on {
+		return nil, func(err error) error { return err }, func() {}
+	}
+	return armLoad(loadPath, opts, advice, srcs, banner)
 }
 
 // ArmLoad arms a watch scoped to exactly one decoder.Load call — S3's load-time half.
@@ -77,56 +80,44 @@ func StartLoad(loadPath string, opts decoder.Options, advice string) (abort <-ch
 // advice is what the abort message tells the user to do instead, in the calling command's own flag
 // names (serve: "use -stream-weights or a smaller quant").
 func ArmLoad(loadPath string, opts decoder.Options, advice string, read decoder.SwapReader) (abort <-chan struct{}, wrapErr func(error) error, stop func()) {
-	noop := func(err error) error { return err }
 	threshold, thresholdMB, on := ThresholdBytes()
 	if !on {
-		return nil, noop, func() {}
+		return nil, func(err error) error { return err }, func() {}
 	}
+	return armLoad(loadPath, opts, advice, []Source{{"swap", read, threshold}}, fmt.Sprintf("swap +%d MB over baseline", thresholdMB))
+}
 
+// armLoad is ArmLoad over the sources Select chose: any one of them passing its threshold closes the abort channel, and the abort message
+// names it.
+func armLoad(loadPath string, opts decoder.Options, advice string, srcs []Source, banner string) (abort <-chan struct{}, wrapErr func(error) error, stop func()) {
 	abortCh := make(chan struct{})
 	var mu sync.Mutex
 	var tripped bool
+	var trippedName string
 	var trippedUsed, trippedDelta int64
 
-	fmt.Fprintf(os.Stderr, "swap guard (load): armed for %s, threshold +%d MB over baseline\n", loadPath, thresholdMB)
-	bannerPrinted := false
-	bannerOnce := func() (int64, bool) {
-		used, ok := read()
-		if !bannerPrinted {
-			bannerPrinted = true
-			if ok {
-				fmt.Fprintf(os.Stderr, "swap guard (load): baseline %.2f GB swap-used\n", float64(used)/1e9)
-			}
+	fmt.Fprintf(os.Stderr, "swap guard (load): armed for %s: %s\n", loadPath, banner)
+	watch := Start(srcs, 0, func(src Source, used, delta int64) {
+		mu.Lock()
+		first := !tripped
+		if first {
+			tripped, trippedName, trippedUsed, trippedDelta = true, src.Name, used, delta
 		}
-		return used, ok
-	}
-
-	watch := decoder.StartSwapWatch(context.Background(), decoder.SwapWatchOptions{
-		Read:         bannerOnce,
-		PollInterval: 2 * time.Second,
-		Threshold:    threshold,
-		OnTrip: func(used, delta int64) {
-			mu.Lock()
-			first := !tripped
-			if first {
-				tripped, trippedUsed, trippedDelta = true, used, delta
-			}
-			mu.Unlock()
-			if first {
-				close(abortCh) // the actual signal parallelLayers' abort select observes
-			}
-			fmt.Fprintf(os.Stderr, "swap guard (load): TRIPPED — swap grew %.2f GB over baseline (%.2f GB used now); aborting the load of %s\n", float64(delta)/1e9, float64(used)/1e9, loadPath)
-		},
-	})
+		mu.Unlock()
+		if first {
+			close(abortCh) // the actual signal parallelLayers' abort select observes
+		}
+		fmt.Fprintf(os.Stderr, "swap guard (load): TRIPPED — %s grew %.2f GB over baseline (%.2f GB used now); aborting the load of %s\n", src.Name, float64(delta)/1e9, float64(used)/1e9, loadPath)
+	}, nil)
 
 	wrap := func(err error) error {
 		if err == nil || !errors.Is(err, decoder.ErrLoadAborted) {
 			return err
 		}
 		mu.Lock()
-		used, delta := trippedUsed, trippedDelta
+		name, used, delta := trippedName, trippedUsed, trippedDelta
 		mu.Unlock()
-		reason := fmt.Sprintf("swap grew %.2f GB over baseline during load (%.2f GB swap-used now)", float64(delta)/1e9, float64(used)/1e9)
+		reason := fmt.Sprintf("%s grew %.2f GB over baseline during load (%.2f GB now)", name, float64(delta)/1e9, float64(used)/1e9)
 		if desc, derr := decoder.FitDescribe(loadPath, opts); derr == nil {
 			return fmt.Errorf("load aborted: %s — %s; %s: %w", reason, desc, advice, err)
 		}

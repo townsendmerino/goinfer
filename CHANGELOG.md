@@ -15,6 +15,7 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **The swap guard watches the server's own swap on Linux.** The 512 MB default now applies to `VmSwap` summed over the server's pid and its descendants, so another process's swap growth (an idle CLI, an editor) no longer halts a run; system-wide swap is a second trip at a fixed 4096 MB backstop. Where `VmSwap` is not readable, and on macOS, the guard stays system-wide at the threshold, and the startup banner names the reader. `GOINFER_SWAP_GUARD` is unchanged.
 - **A request that leaves a sampling field out now gets the model's recommended value, where the checkpoint carries one.**
   Before, every omitted field fell to temperature 1.0 over the whole vocabulary. The values come from a Hugging Face
   directory's `generation_config.json` or a GGUF's `general.sampling.*` keys; a bare `.gguf` never reads a
