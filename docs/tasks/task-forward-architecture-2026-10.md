@@ -1973,6 +1973,19 @@ runs at night as registered.
 - **Pass:** at least 0.99. **Fail:** under 0.99, and the walker is fixed before OP3a merges. Pass 2 is not skipped.
 - OP3a merges after this cell reads. OP3b builds on the branch meanwhile.
 
+**Gate S's served cell, read 2026-10-16 21:01-21:03 PDT (night queue, the MacBook): PASS, 0.9989.** As registered: CPU decode
+on the 0.5B at depth 128, the walker `d5752b99` against `2c56d9c6`, `BENCH_RUNS=5`, two passes with the engine order reversed.
+
+| pass | order | walker median | old median | walker ÷ old |
+|---|---|---|---|---|
+| 1 | walker first | 119.50 tok/s | 117.34 tok/s | 1.0184 |
+| 2 | old first | 117.02 tok/s | 119.45 tok/s | 0.9797 |
+
+The reading is the geometric mean of the two, 0.9989, against the 0.99 bar. Each pass favours the arm that ran first, so the
+order matters about as much as the arm, and reversing it is what nets that out. The load average was 1.36 at pass 1 and 2.53
+at pass 2, because a tack session was opened on the desktop during the run. Records: `S-served-pass1.json` and
+`S-served-pass2.json` in the run's bench directory, with the night log `op3a-S-served.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
