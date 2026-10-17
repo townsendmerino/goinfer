@@ -1983,7 +1983,7 @@ on the 0.5B at depth 128, the walker `d5752b99` against `2c56d9c6`, `BENCH_RUNS=
 
 The reading is the geometric mean of the two, 0.9989, against the 0.99 bar. Each pass favours the arm that ran first, so the
 order matters about as much as the arm, and reversing it is what nets that out. The load average was 1.36 at pass 1 and 2.53
-at pass 2, because a tack session was opened on the desktop during the run. Records: `S-served-pass1.json` and
+at pass 2, with a tack session open on the desktop through both passes (it was opened before the run). Records: `S-served-pass1.json` and
 `S-served-pass2.json` in the run's bench directory, with the night log `op3a-S-served.log`.
 
 ## 5. Track RF — one ragged forward pass
