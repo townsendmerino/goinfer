@@ -1,0 +1,8 @@
+<tool_call>
+{"name": "task", "arguments": {"description": "Add two constructors to package 'linalg' that wrap caller-owned, already-quantized arrays without copying or re-quantizing", "prompt": "linalg can build a WeightMat only by quantizing float32 weights (QuantizeInt8, QuantizeInt4). A caller that already holds quantized arrays, such as weights read from a memory-mapped file, has to rebuild them from float32 and copy. Add two constructors to package 'linalg' that wrap caller-owned, already-quantized arrays without copying or re-quantizing:
+
+- WrapInt8(q8 []int8, scales []float32, rows, cols int, w8a8 bool) WeightMat: row-wise int8 with one scale per row, as QuantizeRowsInt8 returns them;
+- WrapInt4(q4 []byte, q4s []float32, rows, cols, group int) WeightMat: group-wise int4, as QuantizeGroupsInt4 returns them.
+
+A wrapped matrix must behave exactly like the one QuantizeInt8 or QuantizeInt4 builds from the same values: MatmulBT and Row give bit-identical results. Its Int8() and Int4() accessors must return the very slices passed in (aliased, not copied) and report w8a8 and group as given. Arrays whose lengths do not match the shape must panic.", "subagent_type": "general"}}
+</tool_call>

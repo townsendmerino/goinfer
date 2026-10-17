@@ -233,6 +233,19 @@ Every other output, and every other family, gets exactly what ParseToolCalls
 returns.
 ```
 
+## tolerantBlockCall
+
+Inside a `<tool_call>` block that `callFromJSON` rejects, and only when the request's tool list is supplied (`parseChatMLTools`), two slips of a small Qwen model are read:
+
+- a raw newline, carriage return or tab inside a JSON string (`escapeControlInStrings` escapes them, only inside string literals), and
+- the tool named under `"function"` instead of `"name"`, as a string or as an OpenAI-shaped object `{"name", "arguments"}` (Qwen2.5's template prints each tool as
+  `{"type":"function","function":{...}}`, so the word is in the prompt).
+
+The name must equal an offered tool's name, `arguments`/`parameters` must be an object or a string holding one, and nothing else is repaired (a truncated body, a trailing
+comma, a missing quote are still prose). Text outside a block is never read this way: `bareToolCall`'s rules are unchanged, and a prose example of a call stays prose.
+Evidence: the three replies of tack's E1 pilot job 1 in `chat/testdata/tool_calls_as_text`; the streaming path (`runToolTurn`) settles its calls through the same parser, so a
+repaired call is the same streamed or not (`TestToolCallsAsText_sameStreamedOrNot`). A reply whose markers were sampled as other tokens (task 5) is not a block and is not read.
+
 ## tojsonEscape
 
 Moved from `chat/tools.go` (the comment above `tojsonEscape`) on 2026-10-09.

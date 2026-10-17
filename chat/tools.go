@@ -337,7 +337,7 @@ func (t *Template) renderChatMLTools(system string, turns []Turn, tools []Tool, 
 
 // parseChatMLTools reads every <tool_call> block: the JSON form goinfer prompts for ({"name": …, "arguments": {…}}) and, where the body is
 // instead Qwen3.5's own `<function=NAME><parameter=K>…` form, that — so a model that writes either is not silently ignored. tools (may be
-// nil) types the XML form's parameters from the schema.
+// nil) types the XML form's parameters from the schema. A JSON body the strict reader rejects gets tolerantBlockCall's two repairs, when tools is supplied.
 func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
 	lead := out
 	if before, _, ok := strings.Cut(out, "<tool_call>"); ok {
@@ -358,6 +358,8 @@ func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
 		}
 		if c, ok := callFromJSON(strings.TrimSpace(body), "arguments"); ok {
 			calls = append(calls, c)
+		} else if c, ok := tolerantBlockCall(strings.TrimSpace(body), tools); ok {
+			calls = append(calls, c)
 		} else if strings.Contains(body, "<function=") {
 			if c, ok := parseQwenXMLCall(body, tools); ok {
 				calls = append(calls, c)
@@ -368,6 +370,102 @@ func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
 		}
 	}
 	return calls, strings.TrimSpace(lead)
+}
+
+// tolerantBlockCall reads the two ways a small Qwen model slips inside a `<tool_call>` block that callFromJSON rejects: a raw newline, carriage return
+// or tab inside a JSON string (the model writes a multi-line argument literally), and the call's name under "function" instead of "name" (the tool
+// list in its prompt is {"type":"function","function":{...}}), as a string or as an OpenAI-shaped object {"name", "arguments"}.
+//
+// It is narrow on purpose, and only ever runs on the body of a block the model opened with the tag:
+//   - tools must be supplied and the name must equal one of them exactly, so it never produces a call to a tool the caller did not offer
+//     (callFromJSON itself, which runs first, accepts any name);
+//   - the body must be a JSON object once the control characters inside strings are escaped; nothing else is repaired (a missing quote, a trailing
+//     comma, a truncated object are still prose);
+//   - "arguments" (or "parameters"), when present, must be an object or a string holding one.
+//
+// Text outside a block is never read here: a prose example of a call stays prose (bareToolCall's rules are unchanged).
+func tolerantBlockCall(body string, tools []Tool) (ToolCall, bool) {
+	if len(tools) == 0 || !strings.HasPrefix(body, "{") {
+		return ToolCall{}, false
+	}
+	var raw map[string]json.RawMessage
+	if json.NewDecoder(strings.NewReader(escapeControlInStrings(body))).Decode(&raw) != nil {
+		return ToolCall{}, false
+	}
+	name, args, id := "", json.RawMessage(nil), ""
+	pick := func(m map[string]json.RawMessage) json.RawMessage {
+		if a, ok := m["arguments"]; ok {
+			return a
+		}
+		return m["parameters"]
+	}
+	if v, ok := raw["name"]; ok {
+		if json.Unmarshal(v, &name) != nil {
+			return ToolCall{}, false
+		}
+		args = pick(raw)
+	} else if v, ok := raw["function"]; ok {
+		var inner map[string]json.RawMessage
+		if json.Unmarshal(v, &name) == nil {
+			args = pick(raw)
+		} else if json.Unmarshal(v, &inner) == nil {
+			if json.Unmarshal(inner["name"], &name) != nil {
+				return ToolCall{}, false
+			}
+			if args = pick(inner); args == nil {
+				args = pick(raw)
+			}
+		}
+	}
+	known := false
+	for _, tl := range tools {
+		known = known || (name != "" && tl.Name == name)
+	}
+	if !known {
+		return ToolCall{}, false
+	}
+	if args = normalizeArgs(args); !strings.HasPrefix(strings.TrimSpace(string(args)), "{") {
+		return ToolCall{}, false
+	}
+	if v, ok := raw["id"]; ok {
+		_ = json.Unmarshal(v, &id)
+	}
+	return ToolCall{ID: id, Name: name, Arguments: args}, true
+}
+
+// escapeControlInStrings returns s with every raw control character (below 0x20) inside a JSON string literal written as its escape; bytes outside
+// strings, and escapes already present, are left as they are, so valid JSON comes back unchanged.
+func escapeControlInStrings(s string) string {
+	var b strings.Builder
+	inStr, esc := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case !inStr:
+			inStr = c == '"'
+			b.WriteByte(c)
+		case esc:
+			esc = false
+			b.WriteByte(c)
+		case c == '\\':
+			esc = true
+			b.WriteByte(c)
+		case c == '"':
+			inStr = false
+			b.WriteByte(c)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case c < 0x20:
+			fmt.Fprintf(&b, `\u%04x`, c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // --- Mistral ---

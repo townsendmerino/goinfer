@@ -20,6 +20,7 @@ any surface may still change.
   call constraint for every tool in the request, silently, so a malformed call could come back as text. Tool parameters
   now compile leniently: unchecked assertions are left to the tool, and an untyped or composite value may be any JSON value.
   A tool list that still cannot be constrained is reported on stderr. `response_format: json_schema` is unchanged.
+- **A `<tool_call>` block with a raw newline inside a string, or with the tool named under `"function"`, is now read as a call** (Qwen-style chat templates, `/v1/chat/completions`, `/v1/messages`, `/v1/responses`, streamed or not), when the name is one of the request's tools. A small model writing either slip had its call returned as text and the agent ended its run. Nothing outside a `<tool_call>` block is read this way, and a call to a tool the request did not offer is still prose.
 - **On `/v1/messages`, `input_tokens` now counts only the tokens prefilled for that request; reused tokens are reported as
   `cache_read_input_tokens`, matching Anthropic's definitions.** The prompt is their sum. Before, `input_tokens` was the
   whole prompt and no reuse was reported, so a cold request reads as before. A client that took `input_tokens` as the prompt
