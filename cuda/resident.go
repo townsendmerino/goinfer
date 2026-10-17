@@ -473,6 +473,12 @@ type cudaLayer struct {
 	dnConvW, dnDtBias, dnNegExpA Buffer // conv taps, dt bias, precomputed -exp(A_log)
 	dnNormW                      Buffer // [hv] gated-RMSNorm weight, shared across heads
 	dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state
+	// Mamba-2 mixer layer (Nemotron-H; mamba_resident.go): in_proj [projDim, hidden] and out_proj [hidden, dInner] as int8 with per-row scales, the conv
+	// taps and bias, headP = {-exp(aLog), dtBias, D} per head, the gated-norm weight, and TWO persistent buffers updated in place per token: mbWin is the
+	// conv window [(K-1)*convDim], mbSSM the SSM state [nHeads*headDim*dState]. Both compound, so resetState re-zeroes them per generation.
+	mbIn, mbOut               cudaWQ
+	mbConvW, mbConvB, mbHeadP Buffer
+	mbNormW, mbWin, mbSSM     Buffer
 	// qGate marks a SOFTMAX layer of the same family: q_proj is double width ([query ‖ gate] per
 	// head) and the context is scaled by sigmoid(gate) before o_proj. The weight stays fused
 	// because it is quantized; the split happens on the activation.
@@ -747,6 +753,10 @@ type cudaResident struct {
 	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
 	dnQSplit, dnAttnGate                                         Pipeline // the family's fused double-width q_proj + output gate
 	dnet                                                         *dnetParams
+	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
+	mamba                                     *mambaParams
+	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
+	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc Buffer
 
 	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the kernels stay bit-identical): the
 	// clamped interleaved-SwiGLU expert epilogue, plus the per-layer attention sinks and the per-expert gate‖up bias
@@ -2300,7 +2310,7 @@ func (r *cudaResident) UseKVSlot(i int) error {
 // *Model decodes from the previous one's state. The state buffers are allocated zeroed, so the FIRST generation is
 // correct either way, which is exactly what makes the omission invisible to a single-sequence test.
 func (r *cudaResident) Reset() {
-	if r.dnet == nil {
+	if r.dnet == nil && r.mamba == nil {
 		return
 	}
 	// Reset satisfies the cross-backend ResidentForward interface and returns nothing, so a failed re-zero cannot be
@@ -2315,6 +2325,9 @@ func (r *cudaResident) Reset() {
 // the goroutine that services reqCh and deadlocks — a hang, not an error, and one that only appears
 // once graphs are actually admitted for a recurrent model.
 func (r *cudaResident) resetState() error {
+	if e := r.resetMambaState(); e != nil {
+		return e
+	}
 	if r.dnet == nil {
 		return nil
 	}
@@ -3334,6 +3347,9 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			}
 		}
 	}
+	if !Ly.ffn {
+		return nil // a single-operation block (Nemotron-H attention): the o-projection above was the whole layer
+	}
 	return r.segBFFN(Ly, l, x)
 }
 
@@ -3647,6 +3663,23 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 				if e := r.segBFFN(Ly, l, r.x); e != nil {
 					return e
 				}
+			}
+			if e := r.layerTail(Ly, l, gC, r.x); e != nil {
+				return e
+			}
+			continue
+		}
+		if Ly.mixer == decoder.MixerMamba || Ly.mixer == decoder.MixerNone {
+			// A Nemotron-H block carries one operation. Mamba-2 replaces segA + attention + o-proj (no KV, no position); a feed-forward-only
+			// block is the up GEMV, relu2_quant and the down GEMV. Neither has a router readback gap, so both go straight to the layer tail.
+			var e error
+			if Ly.mixer == decoder.MixerMamba {
+				e = r.mambaMixer(Ly)
+			} else {
+				e = r.nonGatedMLP(Ly)
+			}
+			if e != nil {
+				return e
 			}
 			if e := r.layerTail(Ly, l, gC, r.x); e != nil {
 				return e
