@@ -2,8 +2,8 @@ package serveapp
 
 import (
 	"compress/gzip"
-	"fmt"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
