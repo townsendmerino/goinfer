@@ -986,7 +986,12 @@ def mlx_payload(model_id, prompt, cfg):
     p.update(cfg.get("mlx", {}))
     return p
 
-# Sampling configurations. Each records EXACTLY what is sent to each side.
+# Sampling configurations. Each records EXACTLY what is sent to each side. Every sampled config (temperature > 0) sends
+# temperature, top_p and top_k to every arm, "off" values included (top_p 1.0, top_k 0): an omitted field takes the engine's
+# own default, which since goinfer 352fea05 is the model's recommended value where the checkpoint carries one (and is
+# Ollama's top_k 40 / top_p 0.9 on that side), so it would apply to one arm only. test_bench_peer_sampling.py holds every
+# arm's payload to it. Readings of these configs between 352fea05 and this change are not comparable
+# (docs/benchmarks.md, "Sampling changes that move comparability").
 CONFIGS = {
     "greedy": {
         "goinfer": {"temperature": 0},
@@ -994,17 +999,17 @@ CONFIGS = {
         "note": "temperature=0 both sides (deterministic)",
     },
     "temp0.8_topp0.95": {
-        "goinfer": {"temperature": 0.8, "top_p": 0.95, "seed": 1},
-        "ollama": {"temperature": 0.8, "top_p": 0.95, "seed": 1},
-        "note": "temperature=0.8, top_p=0.95 both sides",
+        "goinfer": {"temperature": 0.8, "top_p": 0.95, "top_k": 0, "seed": 1},
+        "ollama": {"temperature": 0.8, "top_p": 0.95, "top_k": 0, "seed": 1},
+        "note": "temperature=0.8, top_p=0.95, no top_k, both sides",
     },
     # §B5's "temp-only" rows: temperature 1.0 with NO truncation, which is goinfer's own default.
     # Sent EXPLICITLY to both sides rather than relying on own_defaults, because the two engines'
     # defaults differ — own_defaults measures "each side's default", which is a different question
     # and would not reproduce the §B5 row.
     "temp1.0_notrunc": {
-        "goinfer": {"temperature": 1.0},
-        "ollama": {"temperature": 1.0, "seed": 1},
+        "goinfer": {"temperature": 1.0, "top_p": 1.0, "top_k": 0},
+        "ollama": {"temperature": 1.0, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=1.0, no truncation, both sides",
     },
     # G26 follow-up: the temp-only ladder. optimistic forward (6a4e0ae) runs on sampled decode only
@@ -1012,28 +1017,28 @@ CONFIGS = {
     # its on/off value is a FUNCTION of temperature and two endpoints cannot locate the crossover.
     # Same shape as temp1.0_notrunc -- temperature only, no truncation, sent explicitly to both.
     "temp0.2_notrunc": {
-        "goinfer": {"temperature": 0.2},
-        "ollama": {"temperature": 0.2, "seed": 1},
+        "goinfer": {"temperature": 0.2, "top_p": 1.0, "top_k": 0},
+        "ollama": {"temperature": 0.2, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.2, no truncation, both sides",
     },
     "temp0.4_notrunc": {
-        "goinfer": {"temperature": 0.4},
-        "ollama": {"temperature": 0.4, "seed": 1},
+        "goinfer": {"temperature": 0.4, "top_p": 1.0, "top_k": 0},
+        "ollama": {"temperature": 0.4, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.4, no truncation, both sides",
     },
     "temp0.6_notrunc": {
-        "goinfer": {"temperature": 0.6},
-        "ollama": {"temperature": 0.6, "seed": 1},
+        "goinfer": {"temperature": 0.6, "top_p": 1.0, "top_k": 0},
+        "ollama": {"temperature": 0.6, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.6, no truncation, both sides",
     },
     "temp0.8_notrunc": {
-        "goinfer": {"temperature": 0.8},
-        "ollama": {"temperature": 0.8, "seed": 1},
+        "goinfer": {"temperature": 0.8, "top_p": 1.0, "top_k": 0},
+        "ollama": {"temperature": 0.8, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.8, no truncation, both sides",
     },
     "temp0.8_topk40": {
-        "goinfer": {"temperature": 0.8, "top_k": 40, "seed": 1},
-        "ollama": {"temperature": 0.8, "top_k": 40, "seed": 1},
+        "goinfer": {"temperature": 0.8, "top_p": 1.0, "top_k": 40, "seed": 1},
+        "ollama": {"temperature": 0.8, "top_p": 1.0, "top_k": 40, "seed": 1},
         "note": "temperature=0.8, top_k=40 both sides",
     },
     "own_defaults": {

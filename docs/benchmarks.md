@@ -313,6 +313,24 @@ pinned versions, dated, thermal note, verified-idle box).
     message.
   - Qwen 3, Mellum and every family whose template declares no default are unchanged.
 
+### Sampling changes that move comparability
+
+- **2026-10-17: sampled configs send temperature, top_p and top_k to every arm.** Since goinfer `352fea05`, a request that
+  omits a sampling field gets the model's recommended value where the checkpoint carries one (`docs/server.md`, "Sampling
+  defaults"); Ollama already applied its own (top_k 40, top_p 0.9). `scripts/bench_peer.py`'s sampled configs now send all
+  three to every arm, "off" values included (top_p 1.0, top_k 0), and `scripts/test_bench_peer_sampling.py` holds every
+  arm's payload to it.
+  - **A sampled-config reading taken after `352fea05` and before this change is not comparable**, with peers or with
+    goinfer before `352fea05`, for a model that carries recommended values: goinfer's arm took e.g. top_k 64 on a Gemma 4
+    GGUF that no other arm received.
+  - **The "notrunc" rows before this change sent no top_k or top_p**, so Ollama's arm took its own (documented defaults
+    top_k 40 and top_p 0.9, unless the model's Modelfile sets others; not checked per model) while goinfer's sampled the
+    whole vocabulary. A new reading of the same config does not continue those rows.
+  - `greedy` (temperature 0) and `own_defaults` (nothing sent, by design) are unchanged.
+  - **Not covered: `min_p`.** goinfer has no `min_p` request field, so a model that recommends one gets it on goinfer's arm
+    only (no checkpoint in the Mac bench set carries one, checked 2026-10-17), and llama-server applies its own default
+    `min_p` when none is sent.
+
 ## Model storage — archive remote, benchmark local
 
 > **This section is the authority on where a measurement may read its checkpoint from.**

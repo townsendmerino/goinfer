@@ -216,6 +216,11 @@ jobs:
       - name: night queue tests
         run: python3 scripts/test_night.py
 
+      # bench_peer.py's sampled configs must send temperature, top_p and top_k to every arm: an omitted field takes that
+      # engine's default (for goinfer, the model's recommended value), which applies to one arm only. Stdlib, milliseconds.
+      - name: bench_peer sampling payloads
+        run: python3 -B scripts/test_bench_peer_sampling.py
+
       # C3's zero-match guard: the `changes` gate decides "docs-only" partly by detecting which
       # docs/ files Go tests READ (scripts/ci_docs_only.sh). If that detection ever stops seeing
       # a file a test is known to read, the gate has silently widened what gets skipped -- this
