@@ -52,7 +52,7 @@ func (r *cudaResident) kvWindowSetup(m *decoder.Model) {
 	r.kvSlack = kvWindowSlack
 	for l := range r.layers {
 		Ly := &r.layers[l]
-		if Ly.isMLA || Ly.isDeltaNet || Ly.window <= 0 || int(Ly.window) != window || !m.WindowedKVLayer(l) {
+		if Ly.isMLA() || Ly.isDeltaNet() || Ly.window <= 0 || int(Ly.window) != window || !m.WindowedKVLayer(l) {
 			continue
 		}
 		Ly.kvWin = true

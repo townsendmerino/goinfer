@@ -17,6 +17,105 @@
 
 ## What is open
 
+- **P29 · Phi-3 at q4k on Metal prefills one token at a time when the memory guard allows one KV slot, and the decline
+  message blames geometry — OPEN, filed 2026-10-17 (owner). Measure the prefill cost against OP6's batched step first.**
+  `mac`.
+
+  - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
+    -ctx 2048`): the load went `metal-resident (q4k)`, and the banner said `prefill path: sequential — arch/geometry not
+    supported by f16 MMA prefill kernel`. `-require-backend` then refused it. The record is
+    `docs/measurements/peer-vetted-2026-10-07-macbook.md`, "Amendment, 2026-10-17", on branch
+    `m1-phi3-q4k-cell-2026-10` until that branch merges.
+  - **The cause, from the source at that commit, is not geometry:**
+    - The q4k lane never takes the f16 MMA pass: `metal/model.go`'s `prefillOK` excludes `q4kLane` outright.
+    - The fallback is OP6's batched step ("decode rows on the batched step kernels"). It needs at least two resident KV
+      slots: `metal/batch.go:resident.batchIneligible` returns "one resident KV slot". At `-ctx 2048` each slot cost
+      768 MB, and the memory guard allowed one ("1 resident KV slots of 2 requested").
+    - `metal/backend.go:metalResident.PrefillPath` reports both cases with the same "arch/geometry" text.
+  - **First, from the code (owner, 2026-10-17): why does OP6's batched step need two resident KV slots, and can a single-slot
+    load use it for its own prompt (one sequence, 8 rows per step)?** Answered from main at 3c845917:
+    - **The minimum belongs to MC3, not to the step's arithmetic.** The step was built for concurrent decode, one sequence
+      per slot. Its eligibility says so ("on at least two resident KV slots": `metal/batch.go:resident.batchIneligible`).
+      OP6 then reused it for one sequence's prompt and inherited the gate. `metal/batch.go:resident.forwardMultiOut`
+      already accepts several rows on one slot when they are one sequence's consecutive positions (the speculative verify's
+      shape). That is exactly a prompt's prefill.
+    - **One slot fails on construction, not semantics.** `metal/model.go:buildResident` fills `kvSlotBufs` and sets `kvContig`
+      only when `kvSlots > 1`. The step reaches every row's KV as `kvSlotBufs[0]`'s buffer plus a per-row offset (one
+      allocation per layer, because a dispatch binds at most 16 buffers). With one slot, `kvSlotBufs` is empty, so
+      `metal/batch.go:metalResident.VerifyCost` returns nil and the prompt routes in
+      `metal/backend.go:metalResident.PrefillPath` and `metal/backend.go:metalResident.PrefillKernelFloor` fall back to
+      sequential. Yet a one-slot resident's `kc`/`vc` already have the step's layout: slot 0 at offset 0 of a one-slot
+      allocation.
+    - **What lifting it would take:**
+      1. At one slot without int8 KV, build `kvSlotBufs` with that one entry and mark it contiguous. Already correct at
+         one slot: `resident.useKVSlot` (a no-op), `resident.kvHostOff` (offset 0) and `metal/kvcopy.go`'s CopyKV, which
+         keeps its "one KV slot" decline.
+      2. Let `batchIneligible` take one slot.
+      3. Price the step's scratch (8 rows' buffers) in the one-slot fit plan, since the one-slot load is the tight one.
+      4. Decide one side effect: a non-nil `VerifyCost` also gives the speculative paths a step verify cost
+         (`decoder/spec_adaptive.go`). Either accept that and gate it, or split "prefills on the step" from "verifies on
+         the step".
+      - **Nothing in the decoder needs changing for concurrency:** `decoder/mc3_batch.go:Model.EnableResidentConcurrency`
+        and the batcher already require two slots. `metal/batch.go:metalResident.BatchStepRange` should still report
+        (0, 0) under two slots.
+      - **The gates would be:** tier 0 bit-identity of a one-slot step prefill against sequential, on both sides of the floor;
+        the same-slot verify test at one slot; and a planted defect.
+    - **Why this likely matters more than the 1-vs-2 slot measurement:** the cliff is not Phi-3's. Every Metal resident
+      whose memory guard allows one slot loses the step for its prompt, and the step is what serves:
+      - the q4k lane, always;
+      - a family the f16 MMA pass does not take (`!prefillOK`);
+      - the short warm-turn suffix above the floor, for every model (`PrefillKernelFloor` requires `VerifyCost`).
+
+      On a 16 GB Mac that is the large models: the loads where prefill time is largest.
+  - **The measurement (tier 1, by day, after the question above):** Phi-3 mini 4k at q4k on Metal, cold prefill tok/s at one prompt length. One arm
+    holds one KV slot (sequential); the other holds two (OP6's step), by a `-kv-sessions` or `-ctx` the guard admits with
+    two slots. Read each arm's banner `prefill path:` line, so the arm is the path it claims to be. A few minutes; holds the
+    timing lock.
+  - **Then two separate decisions, not one fix:** whether the step's two-slot minimum should apply to a one-request prefill,
+    and a decline message that names the condition that applied (a one-line fix that needs no measurement).
+
+- **P28 · Gemma 4 E2B and E4B: time to first token on Metal is 20-35x Qwen2.5-1.5B's at the same prompt — OPEN, filed
+  2026-10-16 (owner). Measure first, by day; report before any fix.** `mac`.
+
+  - **What was seen** (tack's E0 survey on the MacBook, 2026-10-16, goinfer 0e598d3f; tack's harness, exploratory, not
+    this repo's provenance gate). Both Gemma 4 E-models loaded `metal-resident (int4)` at `-ctx 16384` with fit headroom
+    (E2B: 3.5 GB of weights against a 6.1 GB budget). Cold time to first token, median of 3 (1 at 15,360), as prefill tok/s:
+
+    | model | 4,096 | 8,192 | 15,360 tokens |
+    |---|---|---|---|
+    | Gemma 4 E2B q4_0 | 41 (99.8 s) | 34 (238 s) | 26 (582 s) |
+    | Gemma 4 E4B q4_0 | 26 (160 s) | 22 (365 s) | 18 (855 s) |
+    | Qwen2.5-Coder-1.5B q4_k_m | 915 (4.5 s) | 795 (10.3 s) | 660 (23.3 s) |
+    | Qwen2.5-7B q4_k_m | 206 (19.8 s) | 191 (43.0 s) | 172 (89.3 s) |
+
+    The E-models' rate falls with length, and even the 7B prefills five times faster than E2B. That fits a one-token-at-a-time
+    prefill, but it is not established: no prefill path was recorded. Both E-model arms then ran past their tack timeouts.
+  - **The measurement (tier 1, by day):** prefill tok/s on Metal for Gemma 4 E2B (`gemma-4-E2B_q4_0-it.gguf`, at tack's
+    int4) against Qwen2.5-Coder-1.5B q4_k_m (tack's 1.5B file), cold, at 4,096 and 8,192 tokens. For each, the prefill path
+    the server takes (its banner's `prefill path:` line: batched, or one token at a time) and any decline reason logged.
+    No logged reason, where the path is per-token, is itself a finding.
+  - **Cost and stopping rule:** E2B cold at 4,096 and 8,192 is about 340 s, and the 1.5B about 15 s: about 6 minutes with
+    loads. 15,360 alone took 582 s on E2B, past tier 1's 10 minutes, so it runs only if 4,096 and 8,192 disagree on the path,
+    or the rate's fall with length is the question. Otherwise it goes to the night queue with a reason. Runs hold the timing
+    lock and not beside a timed job.
+  - **Report before any fix:** the two rates, each model's prefill path and decline reason, and where E2B's time goes if the
+    path is batched. A fix is a separate decision.
+
+- **P27 · CPU f16 KV, way B: widen the stored rows inside the attention kernels — PARKED 2026-10-16 (owner). Revisit if CPU KV
+  memory becomes the limit for a real user.** `mac`, aikit kernel work.
+
+  - **The finding that parked way A as the default:** CPU f16 KV way A (`--kv f16`, opt-in since #55) narrows rows to f16 on
+    append and widens the whole stored history into scratch on every decode step. F3's in-process A/B put it slower at depth:
+    0.925 on the 0.5B at 4,096 keys, 4 of 4 pairs under 1 (resolved), and 0.861 on the 1.5B (3 of 4). So `auto` stays f32
+    (`docs/tasks/task-cpu-kv-f16-2026-10.md` §5b).
+  - **Way B** (that doc's §4) reads f16 in the register, inside the kernels. Because the float64 path reads K and V in place, this
+    is not one kernel: it is an f16 form of each of the four attention kernels (two of them arm64-only), plus the fast prefill's
+    gather. Those kernels are aikit's, and its pushes and tags are the owner's.
+  - **What reopens it:** a real user whose CPU context is bounded by KV memory (f16 halves it: 0.94 GB to 0.47 GB at 16,384
+    positions on Qwen2.5-1.5B). Not speed: way B's best case is f32's speed at half the bytes.
+  - **Gates when it reopens:** the task doc's F1–F5 as registered, with F3 against way B; F1's exactness rule (the f32 path with
+    each stored row rounded to f16 by hand) carries over unchanged.
+
 - **P25 · `breakEvenTokensPerRound` is one constant (2.5) for every (target, backend); it does not
   transfer to a CPU MoE target and would NOT have caught a real regression.** Filed 2026-09-13 from
   `docs/task-laguna.md`'s DFlash pairing measurement, moved here at archival so the finding has a

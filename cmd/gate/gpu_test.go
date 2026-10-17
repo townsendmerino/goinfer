@@ -519,7 +519,7 @@ func TestGatePTX_nothingVerifiedIsRed(t *testing.T) {
 	}
 	all, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))
 	if want := fmt.Sprintf("zero of %d artifacts verified", len(all)); len(all) == 0 || !strings.Contains(out.String(), want) {
-		t.Errorf("gate ptx did not count every committed .ptx (%d of them, the f16-KV twins included), want %q in:\n%s", len(all), want, out.String())
+		t.Errorf("gate ptx did not count every committed .ptx (%d of them, the f16-KV and softcap twins included), want %q in:\n%s", len(all), want, out.String())
 	}
 }
 

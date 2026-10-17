@@ -473,7 +473,7 @@ func windowedUploadKV(t *testing.T, fx string) {
 	}
 	for l := range full.layers {
 		Ly := &full.layers[l]
-		if Ly.kvShared || Ly.isDeltaNet || Ly.isMLA {
+		if Ly.kvShared || Ly.isDeltaNet() || Ly.isMLA() {
 			continue
 		}
 		keys, vals := make([]float32, n*Ly.kvDim), make([]float32, n*Ly.kvDim)

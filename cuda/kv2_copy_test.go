@@ -318,7 +318,7 @@ func TestKV2_copyExact_otherLayouts(t *testing.T) {
 			g := kv2Load(t, kv2WideFixture(t, dir, 2048), decoder.Options{ResidentKVSlots: 3, ResidentContext: 2048})
 			mla, shared := 0, 0
 			for l := range g.r.layers {
-				if g.r.layers[l].isMLA {
+				if g.r.layers[l].isMLA() {
 					mla++
 				}
 				if g.r.layers[l].kvShared {

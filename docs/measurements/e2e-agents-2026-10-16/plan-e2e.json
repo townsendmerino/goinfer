@@ -1,0 +1,43 @@
+{
+ "serve": "PINNED-AT-PIN-TIME",
+ "swap_guard_mb": 4096,
+ "port": 18090,
+ "proxy_port": 18095,
+ "box": "nobara-pc (RTX 2070 SUPER 8 GB, driver 595.91.07)",
+ "commit": "PINNED-AT-PIN-TIME",
+ "configs": [
+  {
+   "name": "e2e-opencode",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": ["--moe-cache-experts"],
+   "agents": ["opencode"],
+   "tasks": ["read", "search", "edit"],
+   "reps": 1,
+   "run_timeout": 900,
+   "label": {"gate": "e2e-v0.24", "regime": "Mellum2.1 int4mix, C' expert streaming, -ctx 16384, KV f32; agent configured by `serve connect -write`, file unedited"}
+  },
+  {
+   "name": "e2e-codex",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 16384,
+   "serve_args": ["--moe-cache-experts"],
+   "agents": ["codex"],
+   "tasks": ["read", "search", "edit"],
+   "reps": 1,
+   "run_timeout": 900,
+   "label": {"gate": "e2e-v0.24", "regime": "Mellum2.1 int4mix, C' expert streaming, -ctx 16384, KV f32; agent configured by `serve connect -write`, file unedited"}
+  },
+  {
+   "name": "e2e-claude-code",
+   "model": "/home/francis/models/mellum2.1-thinking",
+   "ctx": 32768,
+   "serve_args": ["--moe-cache-experts"],
+   "agents": ["claude-code"],
+   "tasks": ["read", "search", "edit"],
+   "reps": 1,
+   "run_timeout": 1200,
+   "label": {"gate": "e2e-v0.24", "regime": "Mellum2.1 int4, sliding-window KV, -ctx 32768, one KV slot; agent configured by `serve connect -write`, file unedited"}
+  }
+ ]
+}

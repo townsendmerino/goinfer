@@ -14,8 +14,8 @@ facts:
 doesnt:
   - title: "It doesn't hold across machines or operating systems."
     text: "The report ends by saying identity is per machine and per backend. goinfer's CPU path is bit-identical within one CPU architecture, not across: the Go compiler fuses `x*y + z` into one rounding on arm64 (such as Apple Silicon) and not in amd64's default build, so 93% of the logits differ between the two, by amounts the project's parity policy measured as far below what changes a token."
-  - title: "It doesn't cover CUDA."
-    text: "The command has no CUDA backend: `-backend` accepts cpu, metal or webgpu. A CUDA build has to be compared on a machine that has an NVIDIA GPU, with a tool that supports it."
+  - title: "CUDA needs a machine with an NVIDIA GPU."
+    text: "`-backend cuda` builds the dump program with the cuda tag and runs it on the card, so it only works on a machine that has one. It has been run on one Linux machine, an RTX 2070 SUPER, and the logits it compares are that card's."
   - title: "It doesn't say the answers are right."
     text: "Identical to the old build means the same as the old build, including any mistake it had. Whether the old build matches the model's own reference implementation is a separate check (\"Checked against the reference\")."
   - title: "It compares a small slice."
@@ -96,7 +96,7 @@ The figures come from the project's [test-efficiency task record](https://github
 
 - `go run ./cmd/gate identity HEAD~1 HEAD` from the repository root compares your last commit with the one before it, on the CPU with the small test models. On the 16 GB MacBook that is the 43–46 s run above.
 - In general, `go run ./cmd/gate identity <old-rev> <new-rev>`. The two revisions can sit before, between or after the flags.
-- `-backend cpu|metal|webgpu` (default `cpu`). Identity is per backend.
+- `-backend cpu|metal|webgpu|cuda` (default `cpu`). Identity is per backend.
 - `-assets tiny|real` (default `tiny`: the small test models the repo's own parity tests use; `real` uses small real checkpoints under `~/models`).
 - `-families a,b` and `-only <asset name>` narrow the run; `-quant q,...` and `-steps N` change what is compared.
 - `-keep` keeps the dumps, binaries and logs. `-timeout` bounds each dump process (default 15 minutes).

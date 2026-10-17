@@ -468,6 +468,52 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B31 · Nemotron-H 4B Instruct has no chat template in the loader: replies run on past their sentence** — filed 2026-10-16 (owner, from OP2b's
+declaration smoke). **Not started; not CUDA-specific** (the loader and `chat.Detect` are backend-free; the CPU prints the same banner).
+The real `serve` on `nemotron-h-4b-instruct-128k` prints `[chat: raw (no template)]` and a greedy reply to "What is the capital of France?" opens
+correctly and then continues with `<|im_start|>assistant ... What is the currency of Japan?`: no turn markers, and no stop at the end of the answer.
+- **The checkpoint does ship a template.** Its `tokenizer_config.json` holds a `chat_template` (397 characters; eos `<SPECIAL_11>`, bos `<s>`), which the
+  tokenizer loader reads (`tokenizer/bytelevel.go`, `chatTemplate`). What is missing is a renderer for it: `chat.Detect` picks a native Go renderer by a
+  fingerprint in the template string and has none for this family, so it returns nil and the prompt is rendered raw.
+- **The template, as shipped:** `<SPECIAL_10>System`, then each system message's stripped content on its own line, a newline, then each user turn as
+  `\n<SPECIAL_11>User\n{content}\n<SPECIAL_11>Assistant\n` and each assistant turn as its stripped content. No tools, no reasoning block.
+- **What to build:** a renderer for that family (fingerprint `<SPECIAL_10>System`), the stop on `<SPECIAL_11>`, and a golden against HuggingFace's
+  `apply_chat_template` on the checkpoint's own tokenizer for a system+user prompt, a multi-turn one and no system message, as every other native
+  renderer has (`chat/templates.go`). Whether the Nemotron-Nano-9B-v2 checkpoint's template is the same family is **not read here**: check it with the same golden.
+- **Gate (tier 0, seconds):** the golden, and a test that a request through `serve`'s Chat Completions renders with the markers and stops at `<SPECIAL_11>`.
+  The 4B is the by-day tier 1 model for it (it loads in 5 s on the card).
+
+**B30 · an auto-picked resident context the fit guard then refuses: the picker must never choose it** — filed 2026-10-16 (owner, from OP2b's tier 1).
+**Not started.** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
+guard pinned a context of **12,353** positions and the CUDA build then refused it: 0.40 GB of KV against 0.80 GB free, with 384 MiB reserved
+(`checkKVFits`), short by about 8 MB, so the model ran on the CPU. With an explicit `ResidentContext: 4096` it ran resident (the same weights, 135 MiB of KV).
+- **Why it is not trimmed (INFERRED from `cuda/resident.go` and `decoder/model.go`; not stepped through):** the guard's pin sets
+  `ResidentContextRequest() > 0` while `ResidentContextPinned()` stays false, and the build's `ctxExplicit` is `ResidentContextRequest() > 0`, so
+  `checkKVFits`'s trim of an *unpinned* context (`trimUnpinnedCtx`, which would have given 12,124) is skipped for a guard pin and the build declines.
+  The plan (`resolveCtxCapFitSlack`) treats a guard pin as a ceiling, but nothing makes the ceiling fit this card's free memory net of the reserve.
+- **The rule:** a context the caller did not ask for is never one the build then refuses. Either the picker prices the build's own margin, or the build trims a
+  guard pin as it trims an unpinned context (a guard pin is a ceiling, not a choice, per `resolveCtxCapFit`'s own doc). An explicit `-ctx` stays untouched.
+- **Gate (tier 0, seconds, no model):** `checkKVFits` and the plan with free VRAM stubbed, as `kv_slots_test.go` stubs it: sweep the free memory across the
+  margin edge for a guard-pinned and an unpinned context, and assert the build either fits the context it is given or trims to one that fits, and refuses
+  only when even `cudaCtxCapDefault` does not fit; a planted defect (the trim skipped for a guard pin, as now) must go red. Then the 9B load itself as the by-day tier 1.
+
+**B29 · the CUDA context plan does not price a Gated-DeltaNet model's recurrent state: measure what pricing it would change before deciding** — filed 2026-10-16
+(owner, from OP2b step 2c). **Not started; not blocking.** Step 2c made the plan price the Mamba-2 state (`mambaStateBytes` in `cuda/mamba_resident.go`,
+added to the allocation slack `resolveCtxCapFitSlack` is given, `cuda/backend.go`). The DeltaNet families' state is allocated at upload exactly the same way
+(`dnWin` and `dnState` per linear layer) and is not priced, so the context the plan picks before the build is chosen against that much more free VRAM than the
+build will find. The build's own fit check (`checkKVFits`) reads free VRAM after the upload, so it sees the state; only the pre-build plan does not. Pricing it
+changes the plan of every shipped DeltaNet model that fits the card, so it is a measurement first.
+- **Size, INFERRED from the models' `config.json` (not measured on a resident):** the state is `(convK-1)*convDim*4 + nv*hv*hk*4` bytes per linear layer.
+  Qwen3.5-0.8B 19.3 MiB (18 linear layers of 24); Qwen3.5-9B 50.2 MiB (24 of 32); Olmo Hybrid 7B 53.8 MiB (24 of 32); Qwen3.6-35B-A3B 62.8 MiB (30 of 40).
+  Each buffer is under the driver's 2 MiB allocation quantum, so the rounding slack is zero.
+- **What it would change, to measure:** the context `resolveCtxCapFitSlack` returns for each of those models on this card, with and without the term, at the
+  same free VRAM. At 32 KiB of KV a position (the 9B's 8 softmax layers at f16, INFERRED) 50 MiB is about 1,600 positions. The 35B-A3B runs on the expert cache
+  (`MoECacheExperts`), which returns before the plan, so its context cannot move. Seconds, tier 0: the plan is a function, and no model needs loading beyond its
+  config.
+- **Decide after the reading:** price it for every recurrent family, only where the plan's context moves by more than the planner's own step, or leave it. If
+  priced, a test that the plan's state bytes equal the resident's state buffers (as `TestNemotronResidentCUDA_pricing` does for Mamba-2), and a planted
+  defect with the term dropped.
+
 **B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
 **Built 2026-10-16; the whole-model run PASS** (branch `b26-mamba-int8-giw-v17-2026-10`; filed as B26 and renumbered,
 main's B26 being another item; reading in docs/tasks/task-forward-architecture-2026-10.md §4.7); owner's decisions and the registration below, 2026-10-15,

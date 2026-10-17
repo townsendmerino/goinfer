@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // The load-time prefill report (decoder.PrefillPathReporter).
@@ -166,7 +168,7 @@ func TestPrefillPath_deltaNetBindsItsOwnProjections(t *testing.T) {
 	r := declineFixture(2, "int4")
 	r.dnet = &dnetParams{}
 	for i := range r.layers {
-		r.layers[i].isDeltaNet = true
+		r.layers[i].mixer = decoder.MixerDeltaNet
 	}
 	err := r.prefillStaticDecline()
 	if err == nil {

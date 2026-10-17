@@ -395,14 +395,36 @@ class Runner:
         except ProcessLookupError:
             pass
 
+    def claim(self, j):
+        """Moves a picked job's file from queue/ to running/ and returns the job as that file holds it, or None if the file is
+        no longer in queue/. The pick was read before settle(), so a drop or a re-add (a new file) in the meantime can take
+        the file away; the move is the claim, a vanished file is skipped, and the loop reads the queue again, where a
+        re-added job is picked from its new entry. The log says which happened."""
+        src = Path(j["_file"])
+        RUNNING.mkdir(parents=True, exist_ok=True)
+        moved = RUNNING / src.name
+        try:
+            src.replace(moved)
+        except FileNotFoundError:
+            how = ("re-added, so it runs from its new entry" if any(q["name"] == j["name"] for q in queued())
+                   else "dropped, so it does not run")
+            self.log(f"{j['name']}: skipped, its queue file {src.name} left the queue before it started ({how})")
+            return None
+        c = read_json(moved)
+        if not c:
+            moved.replace(src)  # an unreadable file is not a job: queued() passes it over
+            self.log(f"{j['name']}: skipped, its queue file {src.name} became unreadable before it started")
+            return None
+        c["_file"] = str(moved)
+        return c
+
     def run_job(self, j):
+        j = self.claim(j)
+        if j is None:
+            return None
         name = j["name"]
         logp = self.rundir / f"{name}.log"
         cwd = j["cwd"]
-        RUNNING.mkdir(parents=True, exist_ok=True)
-        moved = RUNNING / Path(j["_file"]).name
-        Path(j["_file"]).replace(moved)
-        j["_file"] = str(moved)
         rev_now = git(cwd, "rev-parse", "--short", "HEAD")
         t0 = now()
         write_json(STATE, {"name": name, "started": t0.isoformat(timespec="seconds"), "est_min": j["est_min"],

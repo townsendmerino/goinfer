@@ -196,6 +196,52 @@ func TestOpenAISDK(t *testing.T) {
 	})
 }
 
+// The official Anthropic Go SDK reads a reused prompt prefix as Usage.CacheReadInputTokens, on a reply and on a stream it
+// accumulates, and InputTokens is the rest of the prompt: the two sum to count_tokens.
+func TestAnthropicSDK_cacheRead(t *testing.T) {
+	client := anthropic.NewClient(aoption.WithBaseURL("http://goinfer"), aoption.WithAPIKey("unused"),
+		aoption.WithHTTPClient(tinyClient(t)), aoption.WithMaxRetries(0))
+	ctx := context.Background()
+	turns := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(strings.Repeat("a shared prefix ", 16)))}
+	next := func(prev []anthropic.MessageParam, reply string) []anthropic.MessageParam {
+		return append(append([]anthropic.MessageParam{}, prev...),
+			anthropic.NewAssistantMessage(anthropic.NewTextBlock(reply)), anthropic.NewUserMessage(anthropic.NewTextBlock("go on")))
+	}
+	check := func(what string, msgs []anthropic.MessageParam, u anthropic.Usage) {
+		t.Helper()
+		ct, err := client.Messages.CountTokens(ctx, anthropic.MessageCountTokensParams{Model: "tiny", Messages: msgs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u.CacheReadInputTokens <= 0 || u.InputTokens+u.CacheReadInputTokens != ct.InputTokens {
+			t.Errorf("%s: InputTokens %d, CacheReadInputTokens %d; want a reused prefix, the two summing to count_tokens' %d",
+				what, u.InputTokens, u.CacheReadInputTokens, ct.InputTokens)
+		}
+	}
+	if _, err := client.Messages.New(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 4, Temperature: anthropic.Float(0), Messages: turns}); err != nil {
+		t.Fatal(err)
+	}
+	turns = next(turns, "ok")
+	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 4, Temperature: anthropic.Float(0), Messages: turns})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("message", turns, resp.Usage)
+
+	turns = next(turns, "more")
+	stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{Model: "tiny", MaxTokens: 4, Temperature: anthropic.Float(0), Messages: turns})
+	var msg anthropic.Message
+	for stream.Next() {
+		if err := msg.Accumulate(stream.Current()); err != nil {
+			t.Fatalf("accumulate: %v", err)
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+	check("stream", turns, msg.Usage)
+}
+
 // The official Anthropic Go SDK against the in-process server: a message, a stream, a forced tool use, and a context
 // overflow in the words Claude Code matches.
 func TestAnthropicSDK(t *testing.T) {

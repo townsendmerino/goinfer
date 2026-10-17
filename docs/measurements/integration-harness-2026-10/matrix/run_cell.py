@@ -63,7 +63,7 @@ def overflow_tokens(r):
 def summarize_wire(recs):
     main = [r for r in recs if r.get("method") == "POST" and r.get("path", "").split("?")[0] in MAIN_ROUTES]
     gen = [r for r in main if (r.get("tools") or 0) > 0] or main
-    tok = lambda r: (r.get("usage") or {}).get("prompt_tokens", (r.get("usage") or {}).get("input_tokens"))
+    tok = lambda r: (lambda u: u.get("prompt_tokens", u["input_tokens"] + u.get("cache_read_input_tokens", 0) if "input_tokens" in u else None))(r.get("usage") or {})
     def overflow(r):
         b = (r.get("error_body") or "").lower()
         return r.get("status") == 400 and any(k in b for k in ("too long", "context_length", "maximum context", "shortening the conversation")) \

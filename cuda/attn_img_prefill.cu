@@ -38,6 +38,8 @@
 //
 // Regenerate with:  ./build_ptx.sh attn_img_prefill
 
+#include "attnscore.cuh"
+
 extern "C" {
 
 __global__ void attn_img_batched(const float* __restrict__ q, const float* __restrict__ kc,
@@ -82,7 +84,7 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
         for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
-        dot *= scale; sc[s - winStart] = dot; lm = fmaxf(lm, dot);
+        dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }

@@ -176,7 +176,7 @@ func kv0LoadCtx(t *testing.T, path, kv string, ctxCap int, tokens func(vocab int
 		t.Fatalf("%s: windowed KV is on; this gate reads whole-context caches", path)
 	}
 	for l := range r.layers {
-		if r.layers[l].kvHalf != (kv == "f16") || r.layers[l].isMLA || r.layers[l].isDeltaNet {
+		if r.layers[l].kvHalf != (kv == "f16") || r.layers[l].isMLA() || r.layers[l].isDeltaNet() {
 			t.Fatalf("%s: layer %d: KV precision asked for %q, layer holds f16=%v (or it is latent or recurrent KV)", path, l, kv, r.layers[l].kvHalf)
 		}
 	}

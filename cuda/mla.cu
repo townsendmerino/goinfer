@@ -10,6 +10,7 @@
 // 4. mla_attn: causal attention over latDim keys, value accumulation over rank prefix ONLY.
 
 #include <cuda_runtime.h>
+#include "attnscore.cuh"
 
 extern "C" __global__ void mla_latent_store(const float* __restrict__ kvDown,
                                             const float* __restrict__ normW,
@@ -146,7 +147,7 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
         for (int d = d4 << 2; d < latDim; d++) {
             dot = __fmaf_rn(qh[d], ks[d], dot);
         }
-        dot = __fmul_rn(dot, scale);
+        dot = attn_score_rn(dot, scale);
         sc[s - winStart] = dot;
         lm = fmaxf(lm, dot);
     }

@@ -24,7 +24,7 @@ var lintedKernels = []string{
 	"router_f32.cu", "argmax.cu", "attn_block.cu", "gptoss_act.cu", "deltanet.cu",
 	"attn_fused.cu", "attn_fused_bm.cu", "attn_fused_vit.cu", "gemm_w4a8_mma.cu", "lora.cu", "attn_img_prefill.cu", "rope_mrope_prefill.cu", "rope_pairwise.cu",
 	"layernorm_quant.cu", "gelu_quant.cu", "mla.cu", "topk.cu", "gumbel.cu", "decode_fa.cu", "fused_qkv_rows.cu", "fused_gu_rows.cu",
-	"actgroup.cu", "tower_base.cu", "moe_fold.cu", "audio_encoder.cu",
+	"actgroup.cu", "tower_base.cu", "moe_fold.cu", "audio_encoder.cu", "mamba.cu", "nongated_act.cu",
 }
 
 // fmaLintExempt lists embedded PTX deliberately outside the lint, with the reason. Anything else
@@ -135,7 +135,7 @@ func TestKernelFMALint_coversEmbeddedPTX(t *testing.T) {
 		linted[f] = true
 	}
 	for _, m := range embedded {
-		cu := strings.TrimSuffix(m[1], "_kv16") + ".cu" // a _kv16 twin is its base source built with -DKV_F16, linted as that source
+		cu := func() string { s, _ := ptxSourceName(m[1]); return s }() + ".cu" // a _kv16, _cap or _kv16_cap twin is its base source built with a define, linted as that source
 		if linted[cu] {
 			continue
 		}
