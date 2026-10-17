@@ -468,6 +468,23 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B29 · the CUDA context plan does not price a Gated-DeltaNet model's recurrent state: measure what pricing it would change before deciding** — filed 2026-10-16
+(owner, from OP2b step 2c). **Not started; not blocking.** Step 2c made the plan price the Mamba-2 state (`mambaStateBytes` in `cuda/mamba_resident.go`,
+added to the allocation slack `resolveCtxCapFitSlack` is given, `cuda/backend.go`). The DeltaNet families' state is allocated at upload exactly the same way
+(`dnWin` and `dnState` per linear layer) and is not priced, so the context the plan picks before the build is chosen against that much more free VRAM than the
+build will find. The build's own fit check (`checkKVFits`) reads free VRAM after the upload, so it sees the state; only the pre-build plan does not. Pricing it
+changes the plan of every shipped DeltaNet model that fits the card, so it is a measurement first.
+- **Size, INFERRED from the models' `config.json` (not measured on a resident):** the state is `(convK-1)*convDim*4 + nv*hv*hk*4` bytes per linear layer.
+  Qwen3.5-0.8B 19.3 MiB (18 linear layers of 24); Qwen3.5-9B 50.2 MiB (24 of 32); Olmo Hybrid 7B 53.8 MiB (24 of 32); Qwen3.6-35B-A3B 62.8 MiB (30 of 40).
+  Each buffer is under the driver's 2 MiB allocation quantum, so the rounding slack is zero.
+- **What it would change, to measure:** the context `resolveCtxCapFitSlack` returns for each of those models on this card, with and without the term, at the
+  same free VRAM. At 32 KiB of KV a position (the 9B's 8 softmax layers at f16, INFERRED) 50 MiB is about 1,600 positions. The 35B-A3B runs on the expert cache
+  (`MoECacheExperts`), which returns before the plan, so its context cannot move. Seconds, tier 0: the plan is a function, and no model needs loading beyond its
+  config.
+- **Decide after the reading:** price it for every recurrent family, only where the plan's context moves by more than the planner's own step, or leave it. If
+  priced, a test that the plan's state bytes equal the resident's state buffers (as `TestNemotronResidentCUDA_pricing` does for Mamba-2), and a planted
+  defect with the term dropped.
+
 **B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
 **Built 2026-10-16; the whole-model run PASS** (branch `b26-mamba-int8-giw-v17-2026-10`; filed as B26 and renumbered,
 main's B26 being another item; reading in docs/tasks/task-forward-architecture-2026-10.md §4.7); owner's decisions and the registration below, 2026-10-15,

@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **On `/v1/messages`, `input_tokens` now counts only the tokens prefilled for that request; reused tokens are reported as
+  `cache_read_input_tokens`, matching Anthropic's definitions.** The prompt is their sum. Before, `input_tokens` was the
+  whole prompt and no reuse was reported, so a cold request reads as before. A client that took `input_tokens` as the prompt
+  size adds `cache_read_input_tokens`, as Claude Code already does. A stream's `message_delta` carries the split, and its
+  `message_start` the whole prompt (`docs/server.md`, "usage on /v1/messages").
 - **`--kv f16` now gives the CPU an f16 KV cache** (half the KV bytes; each stored row rounded to f16) for the generic families
   without MoE. Other families stay f32 and the banner says why. `--kv auto` and the library default stay f32, the reference.
   A CPU load given `--kv f16` was priced at f16 over an f32 cache before; it is now priced at what it builds.
@@ -29,6 +34,9 @@ any surface may still change.
 - **Nemotron-H resident on Metal, at int4.** The Mamba-2 mixer and the squared-ReLU MLP run on the GPU; an int8
   Nemotron-H stays on the CPU rather than re-quantize. Gated on tiny models, a three-layer slice of the real
   Nemotron-Nano-9B-v2, and the whole 9B against the CPU (min logit cosine 0.929, argmax 27 of 32).
+- **Nemotron-H resident on CUDA, at int4.** The same operations on the 8 GB card: the 4B whole (min logit cosine 0.994,
+  argmax 30 of 32 against the CPU), a three-layer slice of the 9B, and the whole 9B (0.954, 28 of 32; 47 tokens a second,
+  at a 4,096-position context). An int8 Nemotron-H and Nemotron-3-Nano's MoE blocks stay on the CPU; Granite-4.0-H does too.
 - **Faster q4k prefill on Metal.** A model loaded at `--quant q4k` (Phi-3) prefills eight rows a step on the batched
   step's kernels instead of one token at a time, with bit-identical results: 1.99x on Phi-3 mini at 200 tokens.
 - **The memory-fit guard prices `--quant q4k` at what the load keeps** (Q4_K blocks and int8), not as int4 with its

@@ -45,7 +45,7 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 		return fmt.Errorf("cuda: CopyKV rows [%d, %d) are not whole %d-row blocks", start, end, decoder.KVBlockRows)
 	case end > r.ctxCap:
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, r.ctxCap)}
-	case r.dnet != nil:
+	case r.recurrent():
 		return &decoder.KVCopyDecline{Reason: "recurrent state is not part of a KV slot"}
 	case r.kvF16 && !kvCopyF16:
 		return &decoder.KVCopyDecline{Reason: "copies of an f16 KV cache are off (kvCopyF16)"}

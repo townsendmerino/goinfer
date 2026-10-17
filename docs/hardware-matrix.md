@@ -35,7 +35,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Ministral 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Nemotron-H | ✅ | ✅ resident | CPU | ✅ resident |
+| Nemotron-H | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Olmo 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Olmo Hybrid | ✅ | CPU | ✅ resident | ✅ resident |
 | Phi-3 / Phi-4 | ✅ | CPU | CPU | CPU |
@@ -106,17 +106,15 @@ admission runs.
 | Command-R7B | WebGPU | missing: `layer-norm`, `nope`, `pairwise-rope`, `parallel-block` |
 | GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
-| GPT-2 | CUDA | missing: `learned-pos`, `non-gated-gelu-tanh`, `non-gated-mlp` |
+| GPT-2 | CUDA | missing: `learned-pos`, `non-gated-gelu-tanh` |
 | Gemma 2 | WebGPU | missing: `attn-logit-softcap` |
-| Granite-4.0-H | WebGPU, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
-| Granite-4.0-H | CUDA | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); missing: `ssm` |
+| Granite-4.0-H | WebGPU, CUDA, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
 | Kimi K2 | Metal | router capacity: 384 experts, the kernel routes 256 |
 | LFM2.5 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged; missing: `short-conv` |
 | Laguna | WebGPU, CUDA, Metal | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-softplus`, `per-layer-query-heads` |
 | Ling 3.0 | WebGPU, CUDA, Metal | missing: `kda` |
 | Llama 4 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged |
 | Ministral 3 | WebGPU | missing: `attn-temp` |
-| Nemotron-H | CUDA | missing: `non-gated-mlp`, `non-gated-relu2`, `ssm` |
 | Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
 | Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
 | Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |

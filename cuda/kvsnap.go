@@ -85,7 +85,7 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 	switch {
 	case end > r.ctxCap:
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, r.ctxCap)}
-	case r.dnet != nil:
+	case r.recurrent():
 		return &decoder.KVCopyDecline{Reason: "recurrent state is not part of a KV slot"}
 	}
 	if r.kvWin {

@@ -34,3 +34,45 @@ committed artifacts. Fixed in `f5098c12` and the test's count. The heavy-group t
 
 **Not run by day, queued for the night after the merge:** G1-M and G2-I on real checkpoints (`gate identity -backend cuda -assets real`), the
 device gate, G2-S (speed, no model got slower), G2-P (Gemma 2 against our CPU and Ollama).
+
+## The device gate (`gate gpu`), 2026-10-16
+
+**First run, `b04b0273`, night job `op1-gate-gpu-cuda`, 10:36 to 12:52 PDT: FAIL, with three causes, none in OP1's code.** Passed: PTX 48/48
+byte-identical at their recorded NVRTC (the six new `_cap` twins included), graphs replayed against live launches, the drain group, the resident
+parity gates, every heavy group but two, hygiene. Failed:
+1. **Check 2a** did not build: `cuda/kv2_optionoff_test.go` used helpers defined under `goinfer_testhooks` with only `cuda` as its tag, which CI
+   never builds. Fixed by #66 (the file's tag, and a CI step that vets the cuda tests with `-tags cuda` alone).
+2. **Ten heavy-tier tests** (the 26B and 35B groups and two fresh-process tests) read v16 `.giw` sidecars the v17 build refuses
+   ("format v16, this build reads v17"). The v16 sidecars were deleted and the two rebuilt at v17 (26B in 80 s, 35B in 153 s,
+   `cmd/prequant -quant int4 -target canonical`, sources named by `docs/measurements/giw-v16-transcode-2026-10/README.md`).
+3. The other sidecar-dependent tests ride on 2.
+
+**Re-run of the failed parts, night job `op1-gate-rerun-cuda` at `c3a81a9f` (main with #58, #63 and #66), 13:42 to 14:08 PDT:**
+
+| part | result |
+|---|---|
+| check 2a, `-tags cuda` alone, `-short` | PASS |
+| `TestP20ExpertLocality`, fresh process | PASS |
+| `TestSpecPagerInteraction`, fresh process | PASS |
+| heavy group `gemma4-26b` | PASS, 0 skips |
+| heavy group `qwen3.6-35b` | **VOID** (below) |
+
+**The 35B group is void, not failed.** Its `TestQwen36_35B_cache` died at about 14:05 to 14:08 with `CUDA_ERROR_OUT_OF_MEMORY` allocating 508 MB
+during the resident build, after which the 35B ran on the CPU. The owner's reading, recorded here as his and not as measured by this run: the Mac's
+`tack` session loaded a 7B server (6.3 GB of VRAM) on nobara from 14:08:03, during the test's last seconds, and that was likely also the 35B's first
+load after the sidecar rebuild (a 48 GB peak into deep swap). A server of 5,958 MiB was seen holding the card at 14:27. The rule for a timed or
+GPU-exclusive run is one holder at a time (`timing_lock.py`); this window had two. The device gate is **not recorded green** until
+`TestQwen36_35B_cache` passes alone, in a fresh process, with the v17 sidecar already built.
+
+**`TestQwen36_35B_cache` alone, night job `op1-35b-alone-cuda`, 2026-10-16 15:18 to 15:19 PDT: PASS. The void part is settled and the device gate is
+recorded green.** `c3a81a9f`, a fresh process (the test binary built with `go test -c` and run directly), the v17 sidecar built before the run
+(20,046,085,520 bytes, written 13:02), nothing else on the card: the per-second `nvidia-smi` samples show only `cuda.test` (6.1 GB) and the desktop's
+17 MiB. `--- PASS: TestQwen36_35B_cache (71.58s)`, 0 skips, `loaded 35B resident + C' staging in 1m9s (decode path cuda-resident (int4))`, 48
+tokens at 21.88 tok/s. **VmHWM peak 37,212 MB, back under the 44,000 MB budget** (B23's reading for this model: 41,805 MB in `TestPagerDeterminism`,
+45,211 MB in `TestQwen36_35B_cache` in its group), VmSwap peak 994 MB (system swap before the run: 11,244 MB of 78,863). Logs:
+`~/goinfer-bench/op1-cuda-2026-10/35b-alone-1518/`.
+
+**The device gate, as it stands:** the first run's parts that passed (PTX 48/48, graphs, drain group, resident parity, the other heavy groups,
+hygiene), plus the re-run's check 2a, both fresh-process tests and the 26B group, plus this. The 35B group's other tests passed in the re-run
+(`TestPagerDeterminism`, `TestGridVisionCUDA_real`) and `TestQwen36_35B_cache` passes alone. **Green, for `c3a81a9f`.** Not re-run as one `gate gpu`
+invocation: the record is assembled from these runs, and says so.

@@ -1533,6 +1533,19 @@ applies the same check to each step's logits.
 - **F, fit, by day, before any tier 1:** every load tier 1 makes is started alone with the server's own flags and its `fit:` and
   `KV plan:` banner read, or its refusal. A refused load is VOID, not FAIL, and no guard is bypassed.
 
+**Gate F's prediction, written before the server's plan exists (2026-10-16, owner's instruction).** This is arithmetic, not the gate: F is the server's own
+`fit:` and `KV plan:` banner on a resident, which can be read only once step 2 builds one. The card is 8,192 MiB with 445 MiB held by the desktop,
+so **7,747 MiB (7.57 GiB) is free**; the owner's "about 7.7 GiB" was a rounding of that.
+- **The 4B:** its CUDA int4 bundle (`cmd/prequant -quant int4 -target cuda`, measured) is 3,665,816,296 bytes, **3,496 MiB (3.41 GiB)**. That leaves
+  about 4,250 MiB. Against it: the process's CUDA context and driver-JIT modules (INFERRED, a few hundred MiB), scratch for one decode row (tens
+  of MiB), the Mamba state (24 layers x 112 x 64 x 128 f32 = 3.7 MB each, about 88 MiB plus the conv windows), and the KV of the 4 attention layers
+  (8 KV heads x 128 x K and V x f16 = 16 KiB a token, 256 MiB at 16,384 positions). **Predicted: admitted whole at a context of 16,384 or more,
+  with 3 GiB or more of headroom.** Falsified if the plan refuses it, or caps its context under 8,192.
+- **The 9B:** Metal's v17 bundle is 7.27 GB, **6,935 MiB**; the CUDA counterpart should be within a few percent. That leaves about 810 MiB for the
+  context, the scratch, the state and the KV. **Predicted: refused, or admitted only at a context under 2,048.** Falsified if it is admitted at 4,096
+  or more.
+- Both readings, and the plan's own numbers beside these, go in the record when the resident exists. A wrong prediction is recorded as wrong.
+
 **Tier 1, by day, under the timing lock, about 10 minutes.** The checkpoint is `nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf` in
 nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it on nobara with `cmd/prequant -target cuda`.
 - **The whole-model cell, decided now (owner, 2026-10-16), in this order, before any data:**
@@ -1568,10 +1581,33 @@ sides on different drivers; the control failing; a refused load.
 1. Merge main into the branch (B27, `.giw` v17, KV7's snapshot code are all in `cuda/resident.go`'s neighbourhood). Gate F's table,
    and the CUDA int4 bundle's size, are written into this section before step 1's code.
 2. Step 1, then K, D, I. A failure: step 2 does not start.
-3. Step 2, then M, G, S, P. A failure: not declared.
+3. Step 2, then M, G, S, P. A failure: not declared. **Step 2 is four PRs, each gated (owner, 2026-10-16):**
+   - **2a** per-layer kinds from `ResidentLayerOps` (attention / DeltaNet / Mamba / none, and whether a feed-forward block follows), replacing the
+     DeltaNet special cases with the general form, no new behaviour. Gate: identity on the tiny fixtures (all IDENTICAL) and the 1,864 digests.
+   - **2b** the Mamba mixer (mirroring `deltaNetMixer`), attention-only and MLP-only blocks, per-layer recurrent state reset with the slot. Gates M and S.
+   - **2c** the eight `r.dnet` guard sites read "recurrent"; KV pricing skips Mamba and MLP layers. Gates G and P, each with a planted defect.
+   - **2d** retire the transitional predicates (`Qwen35LinearLayer` and `mlaOK` as dispatch inputs, the agreement check, the derived `isDeltaNet` and
+     `isMLA` booleans) so `ResidentLayerOps` is the only source of truth. Its own small PR, with the identity gate.
+   Then gate F's real fit plan, tier 1 on the 4B whole, and the declaration, which comes to the owner before it merges.
 4. Tier 1. Declaration on its own branch; the matrix regenerates (`go test ./decoder -run HardwareMatrix -update`).
 5. Not in this build: Granite-4.0-H, Nemotron-3-Nano's MoE unless admitted, int8int8, a batched prefill for recurrent families, a
    speed gate.
+
+**OP2b on CUDA, read 2026-10-16: gate F, tier 1 and the declaration** (branch `op2b-cuda-tier1-2026-10`, on step 2d; record
+`docs/measurements/op2b-cuda-2026-10-16/tier1-and-declaration-2026-10-16.md`). **For the owner before merging.**
+- **Gate F, the resident's own plan** (7,235 MiB free before the load, the desktop holding the rest):
+  - The 4B (CUDA int4 bundle, 3.41 GiB): admitted whole at 16,384 positions, 3,243 MiB left after the load, and at 65,536 with 1,833 MiB left;
+    131,072 is refused (4.29 GB of KV against 4.06 GB free). **The prediction holds.** One detail was wrong: its KV is f32, 32 KB a position
+    over 4 attention layers (512 MiB at 16,384), not the f16 256 MiB the prediction priced; the Mamba state is 98.5 MiB, not about 88.
+  - The 9B (CUDA int4 bundle 7,273,734,558 bytes, 6,937 MiB, as predicted): **admitted at the plan's default context of 4,314 positions**
+    with 373 MiB left, and refused at 16,384 by 8 MB (a guard pin). **The prediction was wrong:** it said refused, or admitted under 2,048,
+    falsified at 4,096 or more.
+- **Tier 1** (32 steps of greedy lockstep off the CPU at int4, the bars min cosine >= 0.88 and argmax >= 50%; the dense 1.5B control read
+  0.997580, 29/32 in every session): the **4B whole** 0.993996, 30/32 PASS; the **9B slice** (layers 0, 1, 14) 0.990851, 25/32 PASS; the
+  **whole 9B** 0.953892, 28/32 PASS (47.4 tokens a second, recorded, not graded).
+- **Declared: CUDA declares `ssm`, `non-gated-mlp` and `non-gated-relu2`**, int4 only; Nemotron-H reads resident on CUDA in the matrix.
+  Granite-4.0-H, an int8 load and Nemotron-3-Nano's MoE blocks stay on the CPU. The identity gate reads Nemotron-H DIFFERENT, as it must
+  (it now runs resident; the reference gates are the tier 1 above), and the other 28 families IDENTICAL.
 
 **OP2c, KDA.**
 - **Delivers:** Kimi Linear resident.
