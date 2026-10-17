@@ -77,6 +77,7 @@ func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 // TCP registration rather than adding to it (docs/tasks/task-halt-2026-09.md).
 func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func(http.HandlerFunc) http.HandlerFunc) {
 	mux.HandleFunc("POST /admin/models/load", wrap(maxBytes(textCap, s.handleAdminLoad)))
+	mux.HandleFunc("POST /admin/models/fit", wrap(maxBytes(textCap, s.handleAdminFit)))
 	mux.HandleFunc("POST /admin/models/unload", wrap(maxBytes(textCap, s.handleAdminUnload)))
 	mux.HandleFunc("GET /admin/generations", wrap(s.handleAdminGenerationsList))
 	mux.HandleFunc("POST /admin/generations/{id}/cancel", wrap(maxBytes(textCap, s.handleAdminGenerationCancel)))
@@ -148,8 +149,21 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", name))
 		return
 	}
-	// Per-request quant/lora override the global defaults; everything else
-	// (backend, kv-sessions, session-dir) comes from the server config.
+	lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, s.adminLoadConfig(req))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !s.publishLoaded(lm) {
+		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", lm.name))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
+}
+
+// adminLoadConfig is the server config an admin load of req runs with (handleAdminLoad, handleAdminFit): the request's
+// quant and LoRA over the server's; everything else (backend, ctx, kv-sessions, session-dir) is the server's.
+func (s *server) adminLoadConfig(req adminLoadReq) config {
 	c := s.cfg
 	// The request is the authority for its own load. explicitQuant() drives the .giw baked-quant mismatch check and
 	// reads cfg.load.QuantSet, which the CLI set and which says nothing about THIS request. Inheriting it is wrong both
@@ -165,16 +179,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	if req.Lora != "" {
 		c.load.LoRA = req.Lora
 	}
-	lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, c)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !s.publishLoaded(lm) {
-		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", lm.name))
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
+	return c
 }
 
 // publishLoaded makes a freshly loaded model routable, or, when another load of the same name published first, closes it

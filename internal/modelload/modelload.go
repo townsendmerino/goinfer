@@ -134,36 +134,31 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	// key keeps it distinct from a plain-head sidecar of the same source and quant) — it no longer
 	// forces a direct load.
 	loadPath := src
-	if opts.Quant == "q4k" && strings.HasSuffix(src, ".gguf") {
-		// q4k has no .giw form yet (docs/tasks/task-int4-weight-quality-2026-09.md): load the .gguf
-		// directly, never through the sidecar cache.
-		if opts.StreamWeights {
-			return nil, fmt.Errorf("--quant q4k cannot stream weights yet (it has no .giw form); drop -stream-weights")
+	route, err := routeFor(src, opts, req.DirectLoad)
+	if err != nil {
+		return nil, err
+	}
+	switch route {
+	case routeStreamSidecar:
+		if loadPath, err = ensureGIW(); err != nil {
+			return nil, fmt.Errorf("stream-weights cache (%s): %w", src, err)
 		}
-	} else if opts.StreamWeights {
-		if strings.HasSuffix(src, ".gguf") {
-			if loadPath, err = ensureGIW(); err != nil {
-				return nil, fmt.Errorf("stream-weights cache (%s): %w", src, err)
-			}
-		} else if fi, serr := os.Stat(src); serr == nil && fi.IsDir() {
-			// M-30: -stream-weights is a no-op for a safetensors directory; say so rather than leave a
-			// later fit refusal reading as "should have worked".
-			fmt.Fprintf(os.Stderr, "note: -stream-weights only applies to a .gguf source; %q is a "+
-				"safetensors directory — see cmd/prequant to build a streamable .giw from it\n", src)
-		}
-	} else if strings.HasSuffix(src, ".gguf") && prequant.DefaultToSidecar(req.DirectLoad) {
+	case routeSidecar:
 		if loadPath, err = ensureGIW(); err != nil {
 			return nil, fmt.Errorf("sidecar cache (%s): %w — pass -direct-load (or GOINFER_GGUF_DIRECT=1) to load this .gguf straight into the heap instead", src, err)
 		}
-	} else if dirSidecarApplies(src, opts) && prequant.DefaultToSidecar(req.DirectLoad) {
-		// S18 (docs/tasks/task-multimodal-support-2026-10.md): a safetensors directory resolves to a sidecar too, so its
-		// weights are mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the
-		// weights counted once and counted twice. The one-time build loads the directory whole (no streaming transcode
-		// for safetensors yet), so a build that fails, the fit guard's refusal included, keeps today's direct load.
+	case routeDirSidecar:
 		if p, gerr := ensureGIW(); gerr == nil {
 			loadPath = p
 		} else {
 			fmt.Fprintf(os.Stderr, "note: loading %s directly: its sidecar .giw could not be built (%v)\n", src, gerr)
+		}
+	default:
+		if opts.StreamWeights && isDir(src) {
+			// M-30: -stream-weights is a no-op for a safetensors directory; say so rather than leave a
+			// later fit refusal reading as "should have worked".
+			fmt.Fprintf(os.Stderr, "note: -stream-weights only applies to a .gguf source; %q is a "+
+				"safetensors directory — see cmd/prequant to build a streamable .giw from it\n", src)
 		}
 	}
 
@@ -209,6 +204,96 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		return nil, fmt.Errorf("--model %q: %w", req.Spec, err)
 	}
 	return &Result{Source: src, LoadPath: loadPath, Tokenizer: tk, Model: model, Opts: opts, LoadTime: loadTime}, nil
+}
+
+// sourceRoute is how Load opens a source: directly, or through its sidecar .giw.
+type sourceRoute int
+
+const (
+	routeDirect        sourceRoute = iota
+	routeStreamSidecar             // -stream-weights on a .gguf: the sidecar is required
+	routeSidecar                   // a .gguf's default sidecar (S1): a failed build is the load's error
+	routeDirSidecar                // a safetensors directory's sidecar (S18): a failed build falls back to the direct load
+)
+
+// routeFor is the one place Load and Plan choose how a source is opened. q4k has no .giw form yet
+// (docs/tasks/task-int4-weight-quality-2026-09.md), so a q4k .gguf always loads directly. A directory's sidecar keeps its
+// weights as mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the weights
+// counted once and counted twice (docs/tasks/task-multimodal-support-2026-10.md, S18).
+func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, error) {
+	gguf := strings.HasSuffix(src, ".gguf")
+	switch {
+	case opts.Quant == "q4k" && gguf:
+		if opts.StreamWeights {
+			return routeDirect, fmt.Errorf("--quant q4k cannot stream weights yet (it has no .giw form); drop -stream-weights")
+		}
+		return routeDirect, nil
+	case opts.StreamWeights:
+		if gguf {
+			return routeStreamSidecar, nil
+		}
+		return routeDirect, nil
+	case gguf && prequant.DefaultToSidecar(directLoad):
+		return routeSidecar, nil
+	case dirSidecarApplies(src, opts) && prequant.DefaultToSidecar(directLoad):
+		return routeDirSidecar, nil
+	}
+	return routeDirect, nil
+}
+
+// Planned is the file a Load of a Request would open and the options it would open it with, resolved without fetching a
+// reference or building a .giw (Plan).
+type Planned struct {
+	Source   string          // the resolved source path
+	LoadPath string          // what Load would open: Source, or its sidecar .giw
+	Opts     decoder.Options // as Load would pass them to decoder.Load (the quant after activationSafeQuant)
+	// Unknown is set when only a step Plan does not take could tell what Load opens: a reference to fetch, or a sidecar .giw
+	// that Load builds first. Build names that sidecar.
+	Unknown string
+	Build   string
+	Notes   []string // what Load would print about the choice (activationSafeQuant's note)
+	// RetryStreams is whether Load, refused by the fit guard with a dense-streamable decline, retries with weight
+	// streaming (a .giw build) instead of returning the refusal.
+	RetryStreams bool
+}
+
+// Plan resolves req as Load does, step for step, but takes neither the network nor a transcode: a reference that is not
+// a path, or a sidecar that does not exist yet, is reported in Unknown. An error is one Load returns before it opens
+// anything.
+func Plan(req Request) (Planned, error) {
+	p := Planned{Source: req.Spec, LoadPath: req.Spec, Opts: req.Opts}
+	if pull.IsRef(req.Spec) {
+		p.Unknown = "the model is a reference (hf:/demo:), which the load resolves over the network: ask with its local path"
+		return p, nil
+	}
+	src, opts := req.Spec, req.Opts
+	if opts.LoRA != "" && (strings.HasSuffix(src, ".gguf") || strings.HasSuffix(src, ".giw")) {
+		return p, fmt.Errorf("--lora %s: a LoRA adapter is merged into a safetensors base at load, and %q is not one", opts.LoRA, src)
+	}
+	var msg string
+	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, req.ExplicitQuant, opts.Backend); msg != "" {
+		p.Notes = append(p.Notes, msg)
+	}
+	p.Opts = opts
+	route, err := routeFor(src, opts, req.DirectLoad)
+	if err != nil {
+		return p, err
+	}
+	if route != routeDirect {
+		// Not SidecarPathIfFresh: its freshness check loads the bundle. A sidecar whose header is current but which does
+		// not load is the load's to find; it then rebuilds it.
+		switch path, state := prequant.SidecarPathIfCurrent(src, opts.Quant, opts.Backend, opts.EmbedInt4); state {
+		case prequant.SidecarCurrent:
+			p.LoadPath = path
+		case prequant.SidecarLegacy:
+			p.Unknown = "only a legacy-named sidecar exists: the load adopts it as " + path + " if it loads, or builds that"
+		default:
+			p.Build = path
+			p.Unknown = ".giw not built: the load first builds " + path + " (a one-time transcode, minutes); its fit is the .giw's"
+		}
+	}
+	p.RetryStreams = p.LoadPath == src && strings.HasSuffix(src, ".gguf") && !opts.StreamWeights && !opts.DisableFit
+	return p, nil
 }
 
 // dirSidecarApplies reports whether a safetensors directory source takes the sidecar default (S18): not with a LoRA to

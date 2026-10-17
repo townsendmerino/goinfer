@@ -314,6 +314,37 @@ func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string
 	return "", false
 }
 
+// SidecarState is what SidecarPathIfCurrent found.
+type SidecarState int
+
+const (
+	SidecarMissing SidecarState = iota // no sidecar, a stale one, or one in another format: the load builds it
+	SidecarCurrent                     // the sidecar the load opens, as far as its header can tell
+	SidecarLegacy                      // only a legacy-named one, which the load adopts if it loads, else rebuilds
+)
+
+// SidecarPathIfCurrent is SidecarPathIfFresh without the load: the sidecar exists, is newer than the source, and its
+// header is this build's format (decoder.GIWHeaderCheck). It never loads the bundle, so it does not prove the bundle loads:
+// a truncated payload or a missing tensor is found by the load's own freshness check, which then rebuilds it. For a
+// caller that must not load (POST /admin/models/fit).
+func SidecarPathIfCurrent(src, quant, backend string, embedInt4 bool) (string, SidecarState) {
+	target := decoder.GIWTargetForBackend(backend)
+	cache := streamCachePath(src, quant, embedInt4, target)
+	if cacheNewer(cache, src) && decoder.GIWHeaderCheck(cache) == nil {
+		return cache, SidecarCurrent
+	}
+	if _, err := os.Stat(cache); err != nil && cacheNewer(legacyCachePath(src, quant, embedInt4, target), src) {
+		return cache, SidecarLegacy
+	}
+	return cache, SidecarMissing
+}
+
+// SidecarPath is the sidecar .giw a load of ggufPath (a .gguf or a safetensors directory) at quant/backend's target and
+// embedInt4 setting opens, or builds first when it is not there or not fresh (EnsureCachedGIW). It reads nothing.
+func SidecarPath(ggufPath, quant, backend string, embedInt4 bool) string {
+	return streamCachePath(ggufPath, quant, embedInt4, decoder.GIWTargetForBackend(backend))
+}
+
 // DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default: the
 // .gguf direct heap load is the opt-out, not the default. True on darwin (where the swap incidents
 // happened) and on linux (the sidecar showed no CPU decode cost and a load that maps instead of

@@ -236,23 +236,28 @@ func (f fitCheck) declineErr() *FitDeclineError {
 // auto-pinned to it, reported, and proceeds; an unpinned load that does not fit even at ctxFloor is refused. KV is always priced, at the
 // model's own maximum when nothing is pinned, because nothing else bounds the CPU cache's growth.
 func guardFit(f fitCheck) (int, error) {
-	if f.noGuard {
-		return 0, nil
-	}
-	if !f.known() {
-		return 0, nil
-	}
-	if !f.fits() {
-		if ctx, ok := f.smallerFittingContext(); ok {
-			fmt.Fprintln(os.Stderr, f.capNote(ctx))
-			return ctx, nil
-		}
-		return 0, f.declineErr()
-	}
-	if f.ratio() >= fitWarnRatio {
+	ctx, decline := f.decide()
+	switch {
+	case decline != nil:
+		return 0, decline
+	case ctx > 0:
+		fmt.Fprintln(os.Stderr, f.capNote(ctx))
+	case f.known() && !f.noGuard && f.ratio() >= fitWarnRatio:
 		fmt.Fprintln(os.Stderr, f.warning())
 	}
-	return 0, nil
+	return ctx, nil
+}
+
+// decide is guardFit's decision without its stderr lines, for a caller that reports it instead (FitQuery): the context to
+// pin (0 = leave the request alone), or the refusal.
+func (f fitCheck) decide() (pinCtx int, decline *FitDeclineError) {
+	if f.noGuard || !f.known() || f.fits() {
+		return 0, nil
+	}
+	if ctx, ok := f.smallerFittingContext(); ok {
+		return ctx, nil
+	}
+	return 0, f.declineErr()
 }
 
 // giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/tasks/task-never-swap-2026-09.md, item 1).
@@ -272,40 +277,63 @@ const giwMemMargin = 1 << 30 // 1 GB
 // decoder cannot import metal, so pricing it needs its own hook, which is not built; CPU is this function's only backend. Recorded in
 // docs/tasks/task-never-swap-2026-09.md ("Not priced").
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
-	if loadKnob(opts, knobNoFitGuard) != "" {
-		return 0, nil
+	d := decideGIWFit(cfg, opts)
+	if d.note != "" {
+		fmt.Fprint(os.Stderr, d.note)
 	}
-	if cfg == nil {
-		return 0, nil
+	return d.pinCtx, d.err
+}
+
+// giwFit is guardGIWFit's decision and the numbers behind it. known is false when it could not price (every unknown
+// proceeds).
+type giwFit struct {
+	known               bool
+	avail, budget, need int64 // need is KV + scratch at ctx
+	ctx                 int   // the context priced: the pin, the model's window, or the capped one
+	pinned              bool
+	pinCtx              int // the smaller context the guard pins an unpinned load to, 0 for none
+	err                 error
+	note                string // what guardGIWFit prints when it caps
+}
+
+// decideGIWFit is guardGIWFit without its stderr line, for a caller that reports it instead (FitQuery).
+func decideGIWFit(cfg *Config, opts Options) giwFit {
+	var d giwFit
+	if loadKnob(opts, knobNoFitGuard) != "" || cfg == nil {
+		return d
 	}
 	avail := hostRAMAvailable()
 	if avail <= 0 {
-		return 0, nil
+		return d
 	}
 	budget := max(avail-giwMemMargin, 0)
 	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling
 	if !ok {
-		return 0, nil // no pin and the model's own max is unknown ⇒ can't price KV; proceed
+		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
 	pinned, effCtx, kvF16, kvI8 := p.pinned, p.ctx, p.kvF16, p.kvI8
 	needAt := func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget }
 	need := needAt(effCtx)
+	d = giwFit{known: true, avail: avail, budget: budget, need: need, ctx: effCtx, pinned: pinned}
 	if need <= budget {
-		return 0, nil
+		return d
 	}
 	if pinned {
-		return 0, fmt.Errorf(
+		d.err = fmt.Errorf(
 			"decoder: pinned context %d needs ~%.2f GB (KV + scratch) but only %.2f GB of this "+
 				"machine's %.2f GB currently-available memory would be left as a %.0f GB safety "+
 				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
 			effCtx, float64(need)/fitGB, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+		return d
 	}
 	if floorNeed := needAt(ctxFloor); floorNeed > budget {
-		return 0, fmt.Errorf(
+		d.ctx, d.need = ctxFloor, floorNeed
+		d.err = fmt.Errorf(
 			"decoder: this model needs ~%.2f GB (KV + scratch) even at the %d-token floor, but only "+
 				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
 				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
 			float64(floorNeed)/fitGB, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+		return d
 	}
 	lo, hi := ctxFloor, effCtx
 	for lo < hi {
@@ -316,11 +344,12 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 			hi = mid - 1
 		}
 	}
-	fmt.Fprintf(os.Stderr,
+	d.pinCtx, d.ctx, d.need = lo, lo, needAt(lo)
+	d.note = fmt.Sprintf(
 		"decoder: .giw context capped at %d (model allows %d) so that KV+scratch fits: needs ~%.2f GB "+
 			"of %.2f GB available (%.0f GB margin) — pass -ctx to choose, or free memory to lift\n",
 		lo, effCtx, float64(needAt(lo))/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
-	return lo, nil
+	return d
 }
 
 // resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: vm_stat on
@@ -885,3 +914,7 @@ func (f fitCheck) capNote(ctx int) string {
 // deduction from the error text; a guard placed one line too late produces the same error and the
 // same swap storm.
 var weightAllocs atomic.Int64
+
+// loadCalls counts entries into Load, of any source: a .giw load maps and walks its weights without entering loadWeights,
+// so "nothing was loaded" is this count, not weightAllocs alone.
+var loadCalls atomic.Int64
