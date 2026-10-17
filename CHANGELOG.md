@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`POST /admin/models/fit` says whether a load would fit, without loading.** It takes the load's body and returns the
+  load's own memory check, priced now (`fits`, the context priced, need, budget, weight and KV bytes, the refusal), the
+  file the load would open, and the decode path where that is known before the weights are opened. A `.gguf` whose sidecar
+  `.giw` is not built yet answers `unknown`, naming the build (`docs/server.md`, "Admin: would this load fit?").
 - **The swap guard watches the server's own swap on Linux.** The 512 MB default now applies to `VmSwap` summed over the server's pid and its descendants, so another process's swap growth (an idle CLI, an editor) no longer halts a run; system-wide swap is a second trip at a fixed 4096 MB backstop. Where `VmSwap` is not readable, and on macOS, the guard stays system-wide at the threshold, and the startup banner names the reader. `GOINFER_SWAP_GUARD` is unchanged.
 - **A request that leaves a sampling field out now gets the model's recommended value, where the checkpoint carries one.**
   Before, every omitted field fell to temperature 1.0 over the whole vocabulary. The values come from a Hugging Face

@@ -640,3 +640,11 @@ func SetResidentFeaturesForTest(backend string, add ...ResidentFeature) (restore
 		}
 	}
 }
+
+// WeightAllocsForTest is how many times a load has entered loadWeights (weightAllocs), for a test outside the package that
+// asserts a call loaded no weights.
+func WeightAllocsForTest() int64 { return weightAllocs.Load() }
+
+// LoadCallsForTest is how many times Load has been entered (loadCalls), for a test outside the package that asserts a call
+// loaded nothing.
+func LoadCallsForTest() int64 { return loadCalls.Load() }

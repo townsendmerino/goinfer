@@ -510,6 +510,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 // into the binary falls back to cpu. A model that would not fit this machine's memory is refused with an
 // error wrapping ErrWontFitResident.
 func Load(dir string, opts Options) (*Model, error) {
+	loadCalls.Add(1)
 	ensureCPUSelfTest() // once per process, before any kernel runs concurrently (H2): a CPU kernel tier that disagrees with its reference is stepped down, not trusted
 	opts = opts.withAutoBackend()
 	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below before withResidency, because

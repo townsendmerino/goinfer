@@ -183,6 +183,23 @@ finish, returning `200` if that completes within `--unload-drain-wait` (default 
 and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a full queue
 returns 429 + Retry-After (no continuous batching).
 
+**Admin: would this load fit?** `POST /admin/models/fit` takes the load's body (`path`, and `quant` / `lora` when the load
+would name them) and answers what `POST /admin/models/load` would do with it, without loading anything. It resolves the
+path as the load does: the same choice of the `.gguf` itself or its sidecar `.giw`, and the same quant (a family that per-vector
+int8 activations break gets the load's substitute, named in `notes`). Then it runs the load's own memory check, priced
+against the memory available now: `guard` is `resident` (weights, KV and the mapped source against 70% of available
+memory) or `giw` (KV and scratch against available memory less 1 GB, because a `.giw`'s weights are file-backed). The answer carries
+`fits`, `ctx` (the context priced; `ctx_capped` when the load would lower an unpinned one to fit), `ctx_pinned`,
+`max_ctx`, `need_bytes`, `budget_bytes`, `weight_bytes`, `kv_bytes`, `available_bytes`, and `decline`, the load's
+refusal text, when it does not fit. `retry` says when the load, refused, retries with weight streaming instead.
+`decode_path` is the path the load reports (`cpu (int8int8)`) where that is fixed before the weights are opened: the
+CPU backend, a GPU backend this binary does not carry, or an architecture Metal's feature gate refuses. Otherwise it is
+`unknown`, and `decode_path_unknown` says why: a GPU backend decides residency after the weights are opened. `fits` is
+`null`, and `unknown` says why, when only a step the route does not take could tell: a `.gguf` whose sidecar `.giw` is
+not built yet (`build` names it; the load builds it first), or an `hf:`/`demo:` reference (ask with its local path). The
+route never loads a model: it takes a sidecar as current from its age and its header, where the load also checks that it
+loads, so a sidecar that is current by header and does not load is priced here and rebuilt by the load.
+
 **`--max-concurrent N` (default 4) lets one CPU model run N generations at once** (Experimental; MC3c of
 `docs/tasks/parked/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
 serialization). Each generation runs on its own session KV, so each

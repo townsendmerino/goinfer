@@ -258,24 +258,40 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	return loadSerializedWeightsHook(data, crcAlreadyVerified, nil)
 }
 
-// loadSerializedWeightsHook is loadSerializedWeights with beforeWalk, when non-nil, called once the header is read
-// and its architecture resolved, before any weight matrix is: the point at which a caller that holds the file's
-// mapping can prepare the page cache for the walk over the matrices (prepareColdLoad).
-func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture)) (*Weights, error) {
+// readGIWHead reads a bundle's header: its Config JSON and baked quant label ("" for a streamed bundle, whose quant is then
+// inferred from the tensors). It validates the magic and version and nothing past the header.
+func readGIWHead(data []byte) (cfgJSON []byte, bakedQuant string, err error) {
+	_, cfgJSON, bakedQuant, err = readGIWHeadReader(data)
+	return cfgJSON, bakedQuant, err
+}
+
+// readGIWHeadReader is readGIWHead, also returning the reader positioned after the header.
+func readGIWHeadReader(data []byte) (*giwReader, []byte, string, error) {
 	r := &giwReader{data: data}
 	if got := r.rawN(len(giwMagic)); string(got) != giwMagic {
-		return nil, &SerializeError{fmt.Sprintf("bad magic %q (want %q)", got, giwMagic)}
+		return nil, nil, "", &SerializeError{fmt.Sprintf("bad magic %q (want %q)", got, giwMagic)}
 	}
 	if v := r.u32(); r.err == nil && v != giwVersion {
-		return nil, &SerializeError{fmt.Sprintf("format v%d, this build reads v%d — delete the sidecar (it rebuilds) "+
+		return nil, nil, "", &SerializeError{fmt.Sprintf("format v%d, this build reads v%d — delete the sidecar (it rebuilds) "+
 			"or rebuild with `go run ./cmd/prequant …`", v, giwVersion)}
 	}
 	_ = r.str() // id — stored for tooling, not validated here
 	cfgJSON := r.bytesField()
-	bakedQuant := r.str() // the resolved quant label; "" for a streamed bundle, which is then inferred from the tensors
+	bakedQuant := r.str()
 	r.alignHead()
 	if r.err != nil {
-		return nil, &SerializeError{"truncated header"}
+		return nil, nil, "", &SerializeError{"truncated header"}
+	}
+	return r, cfgJSON, bakedQuant, nil
+}
+
+// loadSerializedWeightsHook is loadSerializedWeights with beforeWalk, when non-nil, called once the header is read
+// and its architecture resolved, before any weight matrix is: the point at which a caller that holds the file's
+// mapping can prepare the page cache for the walk over the matrices (prepareColdLoad).
+func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture)) (*Weights, error) {
+	r, cfgJSON, bakedQuant, err := readGIWHeadReader(data)
+	if err != nil {
+		return nil, err
 	}
 
 	// CRC: verify the whole payload (everything before the trailing crc word)
