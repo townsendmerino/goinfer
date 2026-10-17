@@ -330,6 +330,17 @@ func (r *resident) prefillExactAttn() bool {
 	return false
 }
 
+// exactAttnHeadDim is the widest head dim among the attention layers the exact kernel serves (prefillExactAttn), or 0.
+func (r *resident) exactAttnHeadDim() int {
+	fusedOn, hd := r.prefillFusedOn(), 0
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil && !(fusedOn && g.hd%8 == 0 && g.hd <= 128) {
+			hd = max(hd, g.hd)
+		}
+	}
+	return hd
+}
+
 // prefillGeom is the attention geometry the pass uses for every attention layer: the first attention layer's. A
 // Gated-DeltaNet hybrid's layer 0 is a DeltaNet layer, which has none (D-B01); every other admitted family's layer 0
 // has it.

@@ -30,7 +30,9 @@ import (
 // integration-harness-2026-10/id-roundtrip-step0-2026-10-15.md, §(e)): reused (Generation.PrefillReused), slot (the bound
 // slot's record length before the request, PrefillSlot), div (the first position the prompt left that record, when it left
 // it before its end, else -), canon (1 when every generation's ids are, run by run between added tokens, the tokenizer's
-// own encoding of their text), ids=<used>/<carried> and ids_fallback (carried_ids.go). No content is written.
+// own encoding of their text), ids=<used>/<carried> and ids_fallback (carried_ids.go). prefill_fallback=<path> follows when
+// the batched prefill declined and another path ran the prompt (decoder.PrefillReport); the reason is on stderr. No content
+// is written.
 //
 // --log-token-ids writes one JSON line per generation to its file, for measurement runs: time, route, response id, prompt
 // length and SHA-256 (idsSHA256), reused, slot, the generated ids and canon.
@@ -54,6 +56,8 @@ type reqTrace struct {
 	idsSeen             bool
 	fast                bool // the request named the fast alias (fast_alias.go)
 	snapRows            int  // rows a host snapshot restored for the first generation (decoder.Generation.KVSnapRestored)
+	// prefill records a declined batched prefill and the path that ran the prompt instead (decoder.PrefillReport)
+	prefill *decoder.PrefillReport
 }
 
 type reqTraceKey struct{}
@@ -91,6 +95,9 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, gen *decoder.Genera
 			"prompt_len": len(gr.promptIDs), "prompt_sha256": idsSHA256(gr.promptIDs), "gen": ids, "canon": b2i(canon)}
 		if gen != nil {
 			line["reused"], line["slot"] = gen.PrefillReused, gen.PrefillSlot
+		}
+		if path, reason := t.prefill.Fallback(); path != "" {
+			line["prefill_fallback"], line["prefill_fallback_reason"] = path, reason
 		}
 		t.tl.write(line)
 	}
@@ -218,7 +225,9 @@ func (s *server) traceRequests(out io.Writer, h http.HandlerFunc) http.HandlerFu
 	return func(w http.ResponseWriter, r *http.Request) {
 		tr := &reqTrace{start: time.Now(), route: r.URL.Path, out: out, tl: s.tokenLog}
 		rec := &statusRecorder{ResponseWriter: w}
-		h(rec, r.WithContext(context.WithValue(r.Context(), reqTraceKey{}, tr)))
+		ctx, rep := decoder.WithPrefillReport(context.WithValue(r.Context(), reqTraceKey{}, tr))
+		tr.prefill = rep
+		h(rec, r.WithContext(ctx))
 		if out != nil {
 			fmt.Fprintln(out, tr.line(r.Method+" "+r.URL.Path, rec.status, time.Now()))
 		}
@@ -260,6 +269,9 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 	}
 	if t.snapRows > 0 {
 		line += fmt.Sprintf(" snap=%d", t.snapRows) // rows a host snapshot restored; absent when none did
+	}
+	if path, _ := t.prefill.Fallback(); path != "" {
+		line += " prefill_fallback=" + path // the batched prefill declined; its reason is on stderr and in the token-id log
 	}
 	return line
 }

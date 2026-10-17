@@ -9,6 +9,19 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
+// seamPlantForTest plants one defect in a hidden-state seam, so the seams' gates (decoder/seams_test.go) can show they go red.
+// Zero in production.
+var seamPlantForTest seamPlant
+
+type seamPlant uint8
+
+const (
+	plantNone           seamPlant = iota
+	plantHiddenNoNorm             // HiddenLast's sequential path skips the head's norm (finalNorm)
+	plantCaptureEarly             // ForwardCapture copies the residual before the layer's last operation
+	plantSubPrePostNorm           // ForwardSubCapture records the attention contribution before its post-attention norm
+)
+
 // programWalkOffForTest runs the per-token layers through the loop the walker replaced (runLayersFromEmbedLoop), so gate S of
 // docs/tasks/task-forward-architecture-2026-10.md §4.8 can time both in one process. It goes when OP3's last step deletes that loop.
 var programWalkOffForTest bool
@@ -62,11 +75,18 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 		q, k, v := scr.q[:nH*hd], scr.k, scr.v
 		ctx := scr.ctx[:nH*hd]
 		lastFFN := false // which sublayer the next single residual add belongs to, for the sublayer capture
+		var planted []float32
 		for i := range ops {
+			if seamPlantForTest == plantCaptureEarly && i == len(ops)-1 {
+				m.captureLayer(cache, l, h)
+			}
 			o := &ops[i]
 			switch o.kind {
 			case opNorm:
 				src, dst := m.reg(o.in, h, scr), m.reg(o.out, h, scr)
+				if seamPlantForTest == plantSubPrePostNorm && cache.subCapture && o.norm.Slot == slotPostAttn {
+					planted = append(planted[:0], src...)
+				}
 				w, b := lw.normWeights(o.norm)
 				applyNorm(o.norm, dst, src, w, b, arch.HiddenDim)
 			case opProjQKV:
@@ -148,9 +168,12 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 					continue
 				}
 				if cache.subCapture { // the contribution about to reach the residual
-					if lastFFN {
+					switch {
+					case lastFFN:
 						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
-					} else {
+					case planted != nil:
+						cache.subAttn[l] = append(cache.subAttn[l][:0], planted...)
+					default:
 						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
 					}
 				}
@@ -205,14 +228,8 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 		if g4traceHidden != nil && arch.gemma4 != nil {
 			g4traceHidden(l, h)
 		}
-		// The hidden-state seam the block drafters read: the residual AFTER layer l is complete (HF's output_hidden_states
-		// shifted by one: its index 0 is the embedding, ours is layer 0's output), copied, since later layers mutate h.
-		if cache.captureLayers != nil {
-			for i, cl := range cache.captureLayers {
-				if cl == l {
-					cache.captured[i] = append(cache.captured[i][:0], h...)
-				}
-			}
+		if seamPlantForTest != plantCaptureEarly {
+			m.captureLayer(cache, l, h)
 		}
 	}
 	if cache.manualPos {
@@ -221,9 +238,23 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 	return h, nil
 }
 
+// captureLayer is the hidden-state seam the block drafters read: the residual AFTER layer l is complete (HF's
+// output_hidden_states shifted by one: its index 0 is the embedding, ours is layer 0's output), copied, since later layers
+// mutate h.
+func (m *Model) captureLayer(cache *KVCache, l int, h []float32) {
+	for i, cl := range cache.captureLayers {
+		if cl == l {
+			cache.captured[i] = append(cache.captured[i][:0], h...)
+		}
+	}
+}
+
 // finalNorm applies the head stage's norm to one row in place: the norm logitsFromHidden applies before the head, for the seams
 // that stop before it (the hidden states).
 func (m *Model) finalNorm(x []float32) {
+	if seamPlantForTest == plantHiddenNoNorm {
+		return
+	}
 	hp := &m.program().head
 	b := m.w.FinalNormBias
 	if !hp.Norm.Bias {

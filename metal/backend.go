@@ -479,6 +479,48 @@ func residentMemoryDecline(m *decoder.Model) string {
 		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, tightened, moeHint)
 }
 
+// exactAttnNote is PrefillPath's account of the exact attention kernel's key bound, "" when every attention layer has a
+// fused kernel: past the bound the batched pass declines, and fallback names the path that then runs the prompt.
+func (a *metalResident) exactAttnNote(fallback string) string {
+	if !a.r.prefillExactAttn() {
+		return ""
+	}
+	return fmt.Sprintf("; past %d keys the exact attention kernel (head dim %d has no fused kernel, or fused attention is off) declines it to %s",
+		prefillExactAttnMaxKeys, a.r.exactAttnHeadDim(), fallback)
+}
+
+// exactAttnKeysForTest, when positive, lowers the key bound batchedPrefill enforces for the exact attention kernel, so a test
+// reaches the decline on a short prompt. Zero in production: the kernel's own score buffer is prefillExactAttnMaxKeys.
+var exactAttnKeysForTest = 0
+
+// exactAttnKeyBound is the key count past which batchedPrefill declines a pass that runs the exact attention kernel.
+func exactAttnKeyBound() int {
+	if exactAttnKeysForTest > 0 {
+		return min(exactAttnKeysForTest, prefillExactAttnMaxKeys)
+	}
+	return prefillExactAttnMaxKeys
+}
+
+// emodelFallbackSeen holds each E-model prefill decline reason already reported, with its digits masked.
+var emodelFallbackSeen sync.Map
+
+// warnEModelFallback reports, once per distinct reason, that the batched pass declined a Gemma 4 E-model's prompt and the
+// layer-major pass ran it instead. The decoder reports its own declines the same way (warnPrefillDeclined); this one
+// never reaches the decoder, because PrefillLast takes the fallback itself.
+func warnEModelFallback(err error) {
+	key := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return '#'
+		}
+		return r
+	}, err.Error())
+	if _, seen := emodelFallbackSeen.LoadOrStore(key, true); seen {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "metal: the batched prefill declined a Gemma 4 E-model prompt (%v); the layer-major pass runs it on decode's kernels, "+
+		"bit-identical to sequential (each distinct reason is reported once)\n", err)
+}
+
 func (b *metalBackend) Close() error {
 	if b.resident != nil {
 		return b.resident.Close()
@@ -731,7 +773,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if a.emodelLayerMajor() {
 		if a.emodelBatched() && a.fastPrefill() {
 			floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-			return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)", floor)
+			return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)", floor) + a.exactAttnNote("the layer-major pass")
 		}
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)"
 	}
@@ -752,12 +794,12 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
-		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor())
+		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path")
 	}
 	if floor > 0 {
-		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", a.prefillKernelFloor())
+		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path")
 	}
-	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)"
+	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)" + a.exactAttnNote("the per-token path")
 }
 
 // g4LayerMajor reports whether this resident's prompts take prefillG4Paged: a paged Gemma 4 MoE with no learned
@@ -792,9 +834,12 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 			ok = ok && len(e) == a.embLen()
 		}
 		if ok {
-			if lg, err := a.batchedPrefill(embeddings, startPos, 0, nil, nil); err == nil {
+			lg, err := a.batchedPrefill(embeddings, startPos, 0, nil, nil)
+			if err == nil {
 				return lg, nil
 			}
+			warnEModelFallback(err)
+			decoder.NotePrefillFallback(ctx, "layer-major", err.Error())
 		}
 	}
 	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
@@ -952,9 +997,9 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	}
 	// The exact attention kernel (no fused kernel for this head dim, or fused attention off) holds at most prefillExactAttnMaxKeys
 	// scores; the sequential path's decode kernels tile theirs.
-	if a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys {
-		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off); using sequential path",
-			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.prefillGeom().hd)
+	if bound := exactAttnKeyBound(); a.r.prefillExactAttn() && startPos+len(embeddings) > bound {
+		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off)",
+			startPos+len(embeddings), bound, a.r.exactAttnHeadDim())
 	}
 	// A fresh sequence starts a Gated-DeltaNet hybrid's recurrent state from zero, as Forward(pos 0) does; a continuation keeps the
 	// conv window and state the resident holds. No-op for every other family.
