@@ -77,6 +77,12 @@
 - **P28 · Gemma 4 E2B and E4B: time to first token on Metal is 20-35x Qwen2.5-1.5B's at the same prompt — OPEN, filed
   2026-10-16 (owner). Measure first, by day; report before any fix.** `mac`.
 
+  - **Step 1 read 2026-10-17 (`docs/measurements/p28-gemma4-metal-ttft-2026-10/README.md`): not per-token below 4,096
+    tokens.** E2B ran the batched pass: 144 tok/s at 4,096 tokens, against the 1.5B's 900. At 8,192 it fell to 34 tok/s,
+    8.4x the time for twice the prompt. The code says why the knee should sit at 4,097 keys: E2B's head dims have no fused
+    kernel, the exact kernel holds 4,096 scores, and past that the pass declines silently to the layer-major one. Step 2,
+    registered there, tests that against memory pressure.
+
   - **What was seen** (tack's E0 survey on the MacBook, 2026-10-16, goinfer 0e598d3f; tack's harness, exploratory, not
     this repo's provenance gate). Both Gemma 4 E-models loaded `metal-resident (int4)` at `-ctx 16384` with fit headroom
     (E2B: 3.5 GB of weights against a 6.1 GB budget). Cold time to first token, median of 3 (1 at 15,360), as prefill tok/s:

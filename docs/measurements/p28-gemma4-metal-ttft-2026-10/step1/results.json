@@ -1,0 +1,54 @@
+{
+  "rev": "784e7c82",
+  "host": "macbookpro.lan",
+  "rows": [
+    {
+      "model": "gemma4-e2b-q40",
+      "path": "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+      "decode_path": "metal-resident (int4)",
+      "prefill_path": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)",
+      "declines": [],
+      "target": 4096,
+      "prompt_tokens": 4096,
+      "reused": 0,
+      "wall_s": 28.381,
+      "tok_s": 144.3
+    },
+    {
+      "model": "gemma4-e2b-q40",
+      "path": "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+      "decode_path": "metal-resident (int4)",
+      "prefill_path": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)",
+      "declines": [],
+      "target": 8192,
+      "prompt_tokens": 8192,
+      "reused": 4,
+      "wall_s": 238.517,
+      "tok_s": 34.3
+    },
+    {
+      "model": "qwen2.5-coder-1.5b-q4km",
+      "path": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "decode_path": "metal-resident (int4)",
+      "prefill_path": "batched f16-MMA from 32 prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)",
+      "declines": [],
+      "target": 4096,
+      "prompt_tokens": 4097,
+      "reused": 0,
+      "wall_s": 4.552,
+      "tok_s": 900.0
+    },
+    {
+      "model": "qwen2.5-coder-1.5b-q4km",
+      "path": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "decode_path": "metal-resident (int4)",
+      "prefill_path": "batched f16-MMA from 32 prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)",
+      "declines": [],
+      "target": 8192,
+      "prompt_tokens": 8193,
+      "reused": 24,
+      "wall_s": 10.291,
+      "tok_s": 796.2
+    }
+  ]
+}
