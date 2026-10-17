@@ -2189,7 +2189,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// tiny. A recurrent (Gated-DeltaNet) family always takes the loop: the weight-stationary pass has no notion of
 	// recurrent state, which must advance one token at a time and in order, and the loop is the same r.step this
 	// family's decode uses, so prefill and decode see the same state evolution.
-	if r.prefillReady && r.dnet == nil {
+	if r.batchedVerifyOK() {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
 		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, nil, nil, nil); err == nil {
@@ -2221,7 +2221,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 // VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes
 // a batched weight-stationary pass or falls back to a sequential per-row loop.
 func (r *cudaResident) VerifyPath() (bool, string) {
-	if !r.prefillReady || r.dnet != nil {
+	if !r.batchedVerifyOK() {
 		return false, "sequential — arch/geometry not supported by batched verify"
 	}
 	return true, "batched weight-stationary CUDA pass"
