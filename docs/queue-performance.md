@@ -17,6 +17,25 @@
 
 ## What is open
 
+- **P30 · An armed tool-call constraint costs about 1.2 ms per token after `<tool_call>`, beyond the masker — OPEN, filed
+  2026-10-17 (owner). Not timed by part yet; not being worked on.** `linux` (seen on CUDA; Metal and WebGPU unmeasured).
+
+  - **What was measured** (nobara, Qwen2.5-7B-Instruct q4_k_m GGUF on CUDA, the pinned build at e0b1a966, tack's E1 tool
+    list of 19 tools, `tool_choice: auto`, a greedy 121-token `write` call, n=8 per arm, interleaved off/on/off/on under
+    the timing lock, 2026-10-17): decode ms per call **1804 with the constraint off (`GOINFER_TOOL_UNION=0`), 2011 with
+    it on: +207 ms per call** (66.5 vs 59.7 tok/s). Both arms produced the same 121 tokens.
+  - **What the masker accounts for:** about 62 ms of it. That is the masker's own per-step time over the same call on
+    nobara's CPU with Qwen's 152k vocabulary (`constrain.Masker.Process`, the minimum of 5 runs: 62.1 ms with 19 tools,
+    55.9 ms with one).
+  - **The other ~145 ms is unattributed.** The working guess, not checked: once the lazy constraint arms, the
+    `LogitProcessorGate` opens and each step leaves the on-device greedy path. It then copies the full logits to the host
+    and picks the token there. That is about 1.2 ms per token over the ~115 tokens after the opener.
+  - **Why it matters:** an agent turn pays it on every call, scaled by the call's length. The pre-name cost this was found
+    beside (about 0.5 s per call) was fixed by the masker prefilter (31418112).
+  - **First measurement, before any change:** split one armed step on CUDA into the logits copy, the masker and the host
+    pick, at tier 0 or 1, on the same request. A part that is not near 1.2 ms per token means the guess is wrong.
+  - Records: the run directory `e1-prefilter-onoff-20261017-1007` under `~/goinfer-bench` on nobara (not committed).
+
 - **P29 · Phi-3 at q4k on Metal prefills one token at a time when the memory guard allows one KV slot, and the decline
   message blames geometry — OPEN, filed 2026-10-17 (owner). Measure the prefill cost against OP6's batched step first.**
   `mac`.
