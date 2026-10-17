@@ -1041,6 +1041,13 @@ CONFIGS = {
         "ollama": {"temperature": 0.8, "top_p": 1.0, "top_k": 40, "seed": 1},
         "note": "temperature=0.8, top_k=40 both sides",
     },
+    # The shared truncated preset (owner, 2026-10-17): one truncation every arm is sent, the same as Ollama's own defaults
+    # (temperature 0.8, top_k 40, top_p 0.9), so the main sampled row compares the engines rather than their defaults.
+    "temp0.8_topk40_topp0.9": {
+        "goinfer": {"temperature": 0.8, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "ollama": {"temperature": 0.8, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "note": "temperature=0.8, top_k=40, top_p=0.9 every arm (the shared truncated preset)",
+    },
     "own_defaults": {
         "goinfer": {},
         "ollama": {},
