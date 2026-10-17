@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job (2026-10-17): the Metal no-truncation cells re-measured with temperature, top_p and top_k sent to every arm
+# Night job (2026-10-17): the Metal shared-truncation (top_k 40, top_p 0.9) and no-truncation cells, measured with temperature, top_p and top_k sent to every arm
 # (scripts/bench_peer.py since 0600855e). Pre-registered in docs/measurements/peer-notrunc-2026-10-17.md, "Metal (the Mac,
 # night of 2026-10-17)". The 2026-10-04 refresh's shape (metal-audit-2026-10/run-peer-refresh.sh): Metal, depth 128,
 # 3 runs, goinfer / mlx-lm / Ollama, the 0.5B, 1.5B and 7B (no MLX 0.5B checkpoint); bench_peer.py adds its greedy cells at
@@ -13,13 +13,13 @@
 set -uo pipefail
 REV=63038121
 BASE=$HOME/goinfer-bench/peer-notrunc-2026-10-17
-WT=$BASE/wt-$REV
+WT=$BASE/wt-scripts-19f265b6   # bench_peer.py with the shared truncated preset; the serve binary stays at REV
 LOG=$HOME/goinfer-logs/peer-notrunc-2026-10-17
 export GOINFER_SERVE_METAL=$BASE/serve-metal-$REV
 export MLX_SERVER_BIN=$HOME/Library/Python/3.12/bin/mlx_lm.server
 export OLLAMA_BIN=/opt/homebrew/bin/ollama OLLAMA_MODELS=$HOME/.ollama/models
 export BENCH_BACKENDS=metal BENCH_DEPTH_BACKEND=metal BENCH_SAMPLED_BACKEND=metal BENCH_DEPTHS=none
-export BENCH_CONFIGS=temp1.0_notrunc BENCH_ENGINES=goinfer,mlx,ollama BENCH_RUNS=3
+export BENCH_CONFIGS=temp0.8_topk40_topp0.9,temp1.0_notrunc BENCH_ENGINES=goinfer,mlx,ollama BENCH_RUNS=3
 export BENCH_SERVE_LOG_DIR=$LOG/serve-logs
 mkdir -p "$LOG" "$LOG/serve-logs"
 for f in "$GOINFER_SERVE_METAL" "$MLX_SERVER_BIN" "$OLLAMA_BIN"; do [ -x "$f" ] || { echo "missing $f"; exit 1; }; done
@@ -27,8 +27,9 @@ for f in "$GOINFER_SERVE_METAL" "$MLX_SERVER_BIN" "$OLLAMA_BIN"; do [ -x "$f" ] 
 cd "$WT"
 python3 -c "
 import sys; sys.path.insert(0, 'scripts'); import bench_peer as b
-c = b.CONFIGS['temp1.0_notrunc']
-assert all(k in c[e] for e in ('goinfer', 'ollama', 'mlx') for k in ('temperature', 'top_p', 'top_k')), c" || exit 1
+for n in ('temp0.8_topk40_topp0.9', 'temp1.0_notrunc'):
+    c = b.CONFIGS[n]
+    assert all(k in c[e] for e in ('goinfer', 'ollama', 'mlx') for k in ('temperature', 'top_p', 'top_k')), (n, c)" || exit 1
 echo "started: $(date '+%F %T %Z'); goinfer $REV (sha256 $(shasum -a 256 "$GOINFER_SERVE_METAL" | cut -c1-16)); ollama $($OLLAMA_BIN --version 2>&1 | tail -1); mlx-lm $(python3 -c 'import mlx_lm; print(mlx_lm.__version__)')" | tee "$LOG/provenance.txt"
 
 models=0.5B,1.5B

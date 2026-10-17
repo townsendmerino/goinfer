@@ -45,6 +45,19 @@ night of 2026-10-17 on the Mac and get their own record.
 - **Grading:** the same bands and void rules as the CUDA cells above; a cell not on `metal-resident` is VOID.
 - **Use:** the readings replace the TL;DR Metal row's T = 1.0 figures. The old figures stay, with their note.
 
+## The shared truncated preset: pre-registration (2026-10-17, before either run)
+
+Publishing order (owner, 2026-10-17): greedy first; then one shared truncated preset sent to every arm as the main sampled
+row; the untruncated rows last, labelled "no truncation (top_p 1, top_k 0)".
+
+- **Preset:** `temp0.8_topk40_topp0.9` (`bench_peer.py` `19f265b6`), sent to every arm: temperature 0.8, top_k 40,
+  top_p 0.9, seed 1. These are Ollama's own defaults, made explicit.
+- **Metal:** added to tonight's Mac job. The script and cell set are as above, the configs are this preset and
+  `temp1.0_notrunc`, and the serve binary is unchanged. 8 more cells; the job's estimate goes from 20 to 30 min.
+- **CUDA:** the same three models against Ollama and llama.cpp at depth 128, 3 runs. These are for nobara's session to run
+  by day, through its own session or queue.
+- **Grading and use:** the bands and void rules above. The readings are the main sampled row of the TL;DR and §B5.1.
+
 ## Results: CUDA (nobara-pc, read 2026-10-17)
 
 Run 2026-10-17 12:13–12:22 PDT (557 s), `run-nobara.sh` at `63038121`. Driver 595.91.07, Ollama 0.32.5, llama-server
