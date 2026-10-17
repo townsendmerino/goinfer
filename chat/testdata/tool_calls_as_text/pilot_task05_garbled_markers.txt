@@ -1,0 +1,12 @@
+Let's focus on the prepare functions in `adapter_test.go`. The relevant line is on line 73:
+
+```go
+m, err := decoder.Load(base, decoder.Options{Backend: "cpu"})
+```
+
+This is where the model is loaded using the `Load` function from the `decoder` package. No `top_p: 0` param or similar setup is found in this file.
+
+Next, let's search for the prepare functions in `main.go`:
+ồng
+{"name": "read", "arguments": {"filePath":"/home/francis/tack-runs/e1/pilot-2026-10-17-job1/task-05/A0/repo/cmd/serve/main.go"}}
+tolua

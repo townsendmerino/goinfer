@@ -1,0 +1,3 @@
+<tool_call>
+{"function": "task", "arguments": {"description": "Update the lookup from extension to grammar to be case-insensitive.", "prompt": "Update Arm B enrichment to ignore case when looking up file extensions.", "subagent_type": "general"}}
+</tool_call>
