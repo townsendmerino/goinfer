@@ -81,13 +81,14 @@ func TestSpecRollbackSafetyGuard(t *testing.T) {
 		t.Error("plain (softmax/GQA) arch must be spec-rollback-safe")
 	}
 	recurrent := map[string]*Model{
-		"granite":  {w: &Weights{arch: &Architecture{granite: &graniteParams{}}}},
-		"nemotron": {w: &Weights{arch: &Architecture{nemotron: &nemotronParams{}}}},
-		"qwen35":   {w: &Weights{arch: &Architecture{qwen35: &qwen35Params{}}}},
+		// One recurrent layer each: a family whose layers are all attention carries no in-place state.
+		"granite":  {w: &Weights{arch: &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}}},
+		"nemotron": {w: &Weights{arch: &Architecture{NumLayers: 1, nemotron: &nemotronParams{blockKind: []uint8{nemoMamba}}}}},
+		"qwen35":   {w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}},
 		// lfm2's short-conv window is the same kind of state and was admitted here, so all six
 		// speculative entry points would have rolled a rejected draft back with a TruncateTo that
 		// touches only K/V — leaving the window advanced past the committed KV (C-02).
-		"lfm2": {w: &Weights{arch: &Architecture{lfm2: &lfm2Params{}}}},
+		"lfm2": {w: &Weights{arch: &Architecture{NumLayers: 1, lfm2: &lfm2Params{}, layerIsConv: func(int) bool { return true }}}},
 	}
 	for name, m := range recurrent {
 		if m.specRollbackSafe() {

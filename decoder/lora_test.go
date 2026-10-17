@@ -329,56 +329,40 @@ func writeSafetensors(t *testing.T, path string, tensors map[string]stTensor) {
 }
 
 // TestLoadAdapter_rejectsEveryOwnForwardFamily pins V-12 (docs/review-2026-09-04.md): LoadAdapter derives the
-// own-forward rejection from arch.ownForward(), the single table (decoder/arch.go's ownForwards) runLayers
-// dispatches on, rather than a hand-list. A family missing from a hand-list (LFM2) would validate and register an
-// adapter that silently does nothing, since runLayersLFM2 takes no lora parameter: the "one predicate, many
-// consumers" bug class canBatchN (decoder/forwardn.go) was also fixed for.
+// rejection from the family's operations (Architecture.genericKindsOnly), over every registered model type, rather
+// than a hand-list. A family missing from a hand-list (LFM2) would validate and register an adapter that silently does
+// nothing, since a short convolution takes no LoRA delta: the "one predicate, many consumers" bug class canBatchN
+// (decoder/forwardn.go) was also fixed for.
 //
 // The rejection happens before any file I/O (loadLoRA is only called after the switch), so a bogus dir is enough
 // to isolate the check.
 func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 	schema := &tensorSchema{}
-	for _, fam := range ownForwards {
-		t.Run(fam.Name, func(t *testing.T) {
-			arch := &Architecture{Name: fam.Name}
-			// Set exactly the field this family's predicate checks, mirroring how
-			// gguf.go/weights.go resolve a real checkpoint into one of these.
-			switch fam.Name {
-			case "gemma4":
-				arch.gemma4 = &gemma4Params{}
-			case "qwen3_5_moe":
-				arch.qwen35 = &qwen35Params{}
-			case "lfm2":
-				arch.lfm2 = &lfm2Params{} // the actual V-12 regression
-			case "granitemoehybrid":
-				arch.granite = &graniteParams{}
-			case "nemotron_h":
-				arch.nemotron = &nemotronParams{}
-			case "deepseek_v2/v3":
-				arch.mla = &mlaParams{}
-			case "bailing_hybrid":
-				arch.kda = &kdaParams{} // must precede deepseek_v2/v3 in ownForwards; also sets arch.mla
-			case "llama4_text":
-				arch.llama4 = &llama4Params{}
-			case "gpt-oss":
-				arch.gptoss = &gptOssParams{}
-			default:
-				t.Fatalf("ownForwards grew a family (%s) this test doesn't know how to build — "+
-					"add a case above", fam.Name)
-			}
-			if _, own := arch.ownForward(); !own {
-				t.Fatalf("test setup: %s does not read back as its own ownForward() entry", fam.Name)
-			}
+	rejected := map[string]bool{}
+	for _, mt := range modelTypes(t) {
+		cfg := representativeConfig(mt)
+		arch, _, err := resolveArchitecture(cfg)
+		if err != nil {
+			t.Fatalf("resolveArchitecture(%s): %v", mt, err)
+		}
+		if arch.genericKindsOnly() {
+			continue
+		}
+		t.Run(mt, func(t *testing.T) {
 			m := &Model{w: &Weights{schema: schema, arch: arch}}
 			err := m.LoadAdapter("a", "/nonexistent-adapter-dir")
 			if err == nil {
-				t.Fatalf("LoadAdapter accepted an own-forward family (%s) — the adapter would "+
-					"register and silently never apply (V-12)", fam.Name)
+				t.Fatalf("LoadAdapter accepted %s, whose layers are not all generic operations — the adapter would "+
+					"register and silently never apply to them (V-12)", mt)
 			}
 			if !strings.Contains(err.Error(), "own forward path") {
-				t.Errorf("%s: got %q, want the own-forward-path rejection (V-12)", fam.Name, err)
+				t.Errorf("%s: got %q, want the own-forward-path rejection (V-12)", mt, err)
 			}
+			rejected[mt] = true
 		})
+	}
+	if !rejected["lfm2"] { // the actual V-12 regression
+		t.Error("lfm2 was not among the rejected families")
 	}
 }
 
@@ -387,9 +371,6 @@ func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 // (a different error), or this test would be trivially satisfied by rejecting everything.
 func TestLoadAdapter_denseFamilyDoesNotHitOwnForwardRejection(t *testing.T) {
 	arch := &Architecture{Name: "qwen2"}
-	if _, own := arch.ownForward(); own {
-		t.Fatal("test setup: qwen2 unexpectedly reads as an own-forward family")
-	}
 	m := &Model{w: &Weights{schema: &tensorSchema{}, arch: arch}}
 	err := m.LoadAdapter("a", "/nonexistent-adapter-dir")
 	if err == nil {

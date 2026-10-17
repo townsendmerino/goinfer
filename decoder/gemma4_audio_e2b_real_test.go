@@ -164,9 +164,9 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 			var err error
 			if i >= apos && i < apos+in.AudioLen {
 				off := (i - apos) * hidden
-				h, err = m.runLayersGemma4FromEmbed(append([]float32(nil), rows[off:off+hidden]...), pleTok, cache)
+				h, err = m.runLayersFromEmbedPLE(append([]float32(nil), rows[off:off+hidden]...), pleTok, cache)
 			} else {
-				h, err = m.runLayersGemma4(id, cache)
+				h, err = m.runLayers(id, cache)
 			}
 			if err != nil {
 				t.Fatal(err)

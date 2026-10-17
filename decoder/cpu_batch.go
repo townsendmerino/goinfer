@@ -107,16 +107,14 @@ func runStep(f func() ([][]float32, error)) (out [][]float32, err error) {
 // committed family it admits to bit-identity with the production forward.
 func (m *Model) cpuBatchModelEligible() error {
 	a := m.w.arch
-	if _, own := a.ownForward(); own {
+	if a.ownLoopFamily() {
 		return fmt.Errorf("cpu batch: %s has its own forward", a.Name)
 	}
-	if a.MoE != nil || a.NonGatedMLP || a.LearnedPosEmbed || a.hasAttnOutputGate() || m.layerPager != nil || m.w.Embed.Rows() == 0 {
+	if m.layerPager != nil || m.w.Embed.Rows() == 0 {
 		return fmt.Errorf("cpu batch: %s is not a plain gated dense family", a.Name)
 	}
-	for l := 0; l < a.NumLayers; l++ {
-		if p := a.normPlacementAt(l); p == NormSandwich4 || p == NormPostOnly || p == NormParallel {
-			return fmt.Errorf("cpu batch: layer %d norm placement %v", l, p)
-		}
+	if err := m.program().multiStepEligible(); err != nil {
+		return fmt.Errorf("cpu batch: %s: %w", a.Name, err)
 	}
 	return nil
 }
@@ -175,6 +173,36 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 			return nil, fmt.Errorf("cache %d: %w", i, err)
 		}
 	}
+	if programWalkOffForTest {
+		return m.decodeMultiStepLoop(ids, caches)
+	}
+	prog := m.program()
+	hidden, vocab := m.w.arch.HiddenDim, m.w.arch.VocabSize
+	h := make([]float32, len(ids)*hidden)
+	for b, id := range ids {
+		hb := h[b*hidden : (b+1)*hidden]
+		m.w.Embed.Row(id, hb)
+		if s := prog.embed.Scale; s != 0 && s != 1 {
+			for j := range hb {
+				hb[j] *= float32(s)
+			}
+		}
+	}
+	h, err := m.walkMulti(prog, h, caches)
+	if err != nil {
+		return nil, err
+	}
+	flat := m.lmHeadN(h, len(ids))
+	out := make([][]float32, len(ids))
+	for b := range out {
+		out[b] = flat[b*vocab : (b+1)*vocab]
+	}
+	return out, nil
+}
+
+// decodeMultiStepLoop is the multi-sequence step the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step. Its caller has checked eligibility.
+func (m *Model) decodeMultiStepLoop(ids []int, caches []*KVCache) ([][]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	B := len(ids)

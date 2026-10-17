@@ -25,7 +25,7 @@ import (
 // arch guard and byte-identical-output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	if _, own := a.ownForward(); own {
+	if a.ownLoopFamily() {
 		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers
@@ -49,7 +49,7 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 // and the LM head in a resident bisect. It does not project to logits; that is the head.
 func (m *Model) FinalNormForTest(h []float32) []float32 {
 	out := append([]float32(nil), h...)
-	normalize(m.w.arch, out, m.w.FinalNorm, m.w.FinalNormBias, m.w.arch.HiddenDim)
+	m.finalNorm(out)
 	return out
 }
 
@@ -191,7 +191,7 @@ func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, top
 }
 
 // gemma4HiddenBuf accumulates a copy of the residual stream after each layer (index 0 = post-embedding, from g4traceHidden's
-// layer -1; index i+1 = after layer i) on every runLayersGemma4 call while capture is on; it backs the per-layer localization of
+// layer -1; index i+1 = after layer i) on every the Gemma 4 program walk call while capture is on; it backs the per-layer localization of
 // a resident-vs-CPU gate. It lives here, not beside g4traceHidden, because only SetGemma4HiddenCaptureForTest appends to it
 // (production sees only the nil-by-default g4traceHidden seam): off-tag it would be an unused package var (staticcheck U1000).
 var gemma4HiddenBuf [][]float32

@@ -11,7 +11,7 @@ import (
 )
 
 // TestNemotronResidentParity is the whole-model parity gate: resident Nemotron-H
-// (single-op-per-block Mamba-2 / NoPE-GQA / relu² MLP) vs the CPU runLayersNemotron, feeding the
+// (single-op-per-block Mamba-2 / NoPE-GQA / relu² MLP) vs the CPU program walker, feeding the
 // SAME fixed token sequence to both and comparing logits at 1/16/256/1k/2k. State (conv ring +
 // ssm + KV) COMPOUNDS, so a wiring error (a block-kind misroute, NoPE slip, single-op pairing
 // bug, or pos off-by-one) shows as a cosine that DRIFTS long. Matched precision (resident int8 vs

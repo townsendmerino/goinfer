@@ -2,7 +2,7 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; the two batched twins and OP3z part 2 remain (§4.8, "Left in OP3").** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -114,7 +114,7 @@
   - `decoder/registry.go:resolveArchitecture` turns a checkpoint's config into a `decoder/arch.go:Architecture`. Every
     `Architecture` passes `decoder/registry.go:Architecture.validateResolved`.
   - A family's specifics are fields: norms, attention options, position scheme, FFN kind, MoE configuration.
-  - Nine families run their own layer loop: the nine entries of the `ownForwards` table (`decoder/arch.go:ownForwardFamily`),
+  - Nine families run their own layer loop: the nine entries of the `ownForwards` table (`ownForwardFamily`; the table was removed in OP3z),
     one `runLayers*` function each, across twelve files named `forward_*.go` in `decoder/`. They are:
     - the recurrent hybrids: Gated DeltaNet, short conv, two Mamba-2 families, and KDA with MLA;
     - MLA itself (DeepSeek);
@@ -1821,7 +1821,7 @@ Read at main `2c56d9c6`, with CPU f16 KV merged (#55) and G40 merged, which §4.
 - the batched loop, `decoder/forwardn.go:Model.runLayersFromEmbedNFloor`;
 - MC3c's multi-sequence step, `decoder/cpu_batch.go:Model.decodeMultiStep`.
 
-Beside them are the nine own loops of `decoder/arch.go:ownForwards`, two of which have batched twins:
+Beside them are the nine own loops of the `ownForwards` table, two of which have batched twins:
 `decoder/forward_gemma4_batched.go:Model.runLayersGemma4FromEmbedN` and `decoder/forward_qwen35_n.go:Model.runLayersQwen35N`.
 
 **The same mathematics is computed in more than one floating-point order across them:**
@@ -2021,6 +2021,290 @@ The reading is the geometric mean of the two, 0.9989, against the 0.99 bar. Each
 order matters about as much as the arm, and reversing it is what nets that out. The load average was 1.36 at pass 1 and 2.53
 at pass 2, with a tack session open on the desktop through both passes (it was opened before the run). Records: `S-served-pass1.json` and
 `S-served-pass2.json` in the run's bench directory, with the night log `op3a-S-served.log`.
+
+**OP3b's gate S (amendment, 2026-10-16, before it runs).** S's cells name a decode rate, but OP3b's walkers run the batched
+prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
+- **The batched walker:** prefill rate, walker ÷ old, on the 0.5B. The prompts are 128 tokens, which is batched with exact
+  attention, and 4,096, which is fast attention over two G40 chunks. Pairs: 6 and 4.
+- **The multi-sequence walker:** MC3c's step rate, walker ÷ old, on the 0.5B with four sequences at depth 128, 24 steps a
+  generation, 6 pairs.
+- The instrument is `decoder/program_ab_test.go:TestProgram_S_batchedSpeed`, interleaved ABBA in one process under the timing
+  lock.
+- The bars and bands are S's: pass at a median of at least 0.99; fail when a cell resolves slower with its median under 0.99;
+  parked when a cell does not resolve and its median is under 0.99, which sends it to a served gate at night.
+
+**OP3b's readings, 2026-10-16, at `51693631` (stacked on OP3a, same branch).**
+- **The build:**
+  - The batched walker (`Model.walkBatch`) and the multi-sequence walker (`Model.walkMulti`). The old loops stay behind
+    `programWalkOffForTest`.
+  - `canBatchN` and MC3c's eligibility read the program (`program.batchEligible`, `program.multiStepEligible`).
+  - The batched embedding and head read the program.
+- **I, identity: PASS.** 37 families IDENTICAL against `2c56d9c6`, none different. Log:
+  `docs/measurements/op3-2026-10/op3b-identity-tiny.log`.
+- **P, plants: PASS on each walker.**
+  - Every plant changed the logits on every fixture it applies to: 32 of 32 batched, and 13 of 13 multi-sequence for the
+    three plants that apply there.
+  - The window plant is NOT RUN on the multi-sequence walker: it admits no windowed cache.
+- **L, every parameter is live: PASS.**
+  - The per-token reading is OP3a's.
+  - Each parameter that changes a fixture's per-token logits also changes that fixture's batched and multi-sequence logits,
+    on every fixture those walkers run: 33 parameters checked on the batched walker and 24 on the multi-sequence walker.
+    The rest are NOT RUN there, because no fixture those walkers admit shows them per token.
+  - **An amendment made at the build, before this reading:** only a per-token *change* binds the other walkers, not a
+    per-token error. One more than an expert's width overruns the per-token scratch and errors there. The batched path
+    allocates per call, and the extra all-zero column cannot reach the logits. So `ffn.MoE.IntermediateDim` and
+    `SharedIntermediateDim` are shapes, read by no walker as behaviour.
+  - Log: `docs/measurements/op3-2026-10/op3b-PL.log`.
+- **T1: PASS.** The real 0.5B with prompts of 145, 621 and 2,593 tokens is IDENTICAL. The long prompt's prefill runs the
+  batched walker with fast attention, over two chunks. Log: `docs/measurements/op3-2026-10/op3b-T1-real-0.5b.log`.
+- **S: PASS in every cell.** The cells are as amended above; each pair's two arms gave the same logits, bit for bit. Load
+  averages were 3.2 to 6.8. Log: `docs/measurements/op3-2026-10/op3b-S.log`.
+
+  | cell | pairs | median, walker ÷ old | range | under 1 |
+  |---|---|---|---|---|
+  | prefill, 128 tokens | 6 | 1.014 | 0.965–1.219 | 2 |
+  | prefill, 4,096 tokens | 4 | 1.001 | 0.995–1.005 | 2 |
+  | MC3c step, 4 × depth 128 | 6 | 1.008 | 0.995–1.022 | 1 |
+
+**OP3c, gpt-oss: readings, 2026-10-16 (same branch, stacked on OP3b).**
+- **The build:**
+  - gpt-oss walks the program. Its layer is the generic pre-norm list with two kinds of its own:
+    - the attention order `attnSinksF64` (`decoder/forward_gptoss.go:attendSinksToken`, its kernel moved verbatim);
+    - the FFN form `ffnGptOss`, whose gate's sigmoid gain and clamp bound are parameters.
+  - `runLayersGptOss` and its table entry are gone.
+- **The rules the table entry answered now decline by operation:**
+  - ring storage, int8 KV and f16 KV need the batched attention kernel (`Architecture.attnOrder`);
+  - the batched walker and MC3c need it too (`program.attnOrderIs`).
+  - So gpt-oss keeps an append-forever f32 cache and the per-token prefill, as before.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- The hidden-state seams' final norm now reads the program's head (`Model.finalNorm`).
+- **I: PASS.** 37 families IDENTICAL against `2c56d9c6`, gpt-oss in all three cells. Log:
+  `docs/measurements/op3-2026-10/op3c-identity-tiny.log`.
+- **P and L: PASS.** The fixtures now include the tiny GGUFs: 37 per token, gpt-oss among them.
+  - gpt-oss's fixture has non-zero q/k/v and o biases, so those two pairs no longer depend on GPT-2.
+  - `ffn.MoE.NumExperts` errors when changed on gpt-oss (its router logits are allocated by it), so it is no longer listed.
+  - `ffn.Limit` is listed: the fixture's gate and up values never reach the clamp bound of 7.
+  - Log: `docs/measurements/op3-2026-10/op3c-PL.log`.
+- No T1 or S: OP3c changes no walker's existing path.
+
+**OP3d, Llama 4: readings, 2026-10-16 (same branch).**
+- **The build:** Llama 4 walks the program (`Architecture.llama4LayerOps`). Each of its differences from the generic layer is a
+  parameter, or a place in the list:
+  - `rope`'s kernel is `mlaRope`, in its interleaved form, with no mscale;
+  - the QK-norm's form is parameter-free, and it comes after the rope in the list;
+  - the temperature takes a position offset of one;
+  - attention is `attendQuery` (order `attnQuery`) through its parameter form `attendQueryP`, with the chunk as a parameter;
+  - the FFN form is `ffnLlama4MoE`.
+  - `runLayersLlama4` and its table entry are gone.
+  - Its attention order keeps it off rings, int8 and f16 KV, the batched walker and MC3c, as before.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL, `llama4_text` in all three cells. Log: `docs/measurements/op3-2026-10/op3d-identity-tiny.log`.
+- **P and L: PASS.** The new parameters are all live:
+  - `attention.Chunk`: one key per chunk changes every fixture;
+  - `attn-temp.PosOffset`: Llama 4 and Ministral 3;
+  - `qk-norm.Form`;
+  - `rope.Kernel`: same on the NeoX families, where the two kernels coincide; changed on 4.
+  - Log: `docs/measurements/op3-2026-10/op3d-PL.log`.
+
+**OP3e, DeepSeek V2/V3 (MLA): readings, 2026-10-16 (same branch).**
+- **The build:**
+  - DeepSeek walks the program: the generic pre-norm layer with one `opMLA` as its attention sublayer. Its parameters are the
+    rotation (table, mscale, interleave), the norms' epsilon, the score scale and the output gate's granularity; the ranks and
+    head widths are shapes.
+  - The absorbed and naive forms stay a knob and a test seam (`mlaAttentionWith`), as fast attention does.
+  - The per-token walker advances a manual-position cache at the end of the token, as the own loops did.
+  - The batched and multi-sequence walkers now also decline any operation they do not implement (`program.kindsIn`).
+    Without that, an MLA program, which has no `opAttention`, would have passed their attention-order check.
+  - `runLayersDeepseek` and its table entry are gone. Bailing Hybrid still calls `mlaAttention` (now a wrapper) until OP3f.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `deepseek_v3` and `kimi_k2` in all three cells. Log:
+  `docs/measurements/op3-2026-10/op3e-identity-tiny.log`.
+- **P and L: PASS.**
+  - The swap plant now swaps the input norm with whatever operation follows it, since an MLA layer has no `proj-qkv`.
+  - DeepSeek's fixture routes by group, so `ffn.MoE.NGroup` and `TopkGroup` are reached, and come off the unreached list.
+  - Every `mla` parameter is live except `mla.HeadWise`, which is listed: only Bailing's MLA layers carry the gate.
+  - Log: `docs/measurements/op3-2026-10/op3e-PL.log`.
+
+**OP3f, Bailing Hybrid (MLA and KDA): readings, 2026-10-16 (same branch).**
+- **The build:**
+  - Bailing walks the program: the pre-norm layer with `opKDA` on its linear layers and `opMLA` on the rest. `opKDA`'s
+    parameters are the output norm's epsilon and the decay gate's lower bound. The safe gate is not a parameter: the CPU
+    implements only that form, and the adapter refuses a checkpoint without it.
+  - Its loop file, `decoder/forward_bailing.go`, is gone.
+- **The rule that matters most here:** the table's `Recurrent` bit kept speculative rollback off a family with in-place state.
+  - It is now `Architecture.recurrent`: the table's bit for a family still listed, otherwise any recurrent operation in the
+    family's layers.
+  - `Model.hasRecurrentState` and the hybrid image prefill's check (`imageTurnDecodesResident`) read it.
+- **Tests that iterated the own-loop table** would have lost each family as it moved, while staying green. They now iterate every
+  registered model type: the recurrent-state census, the cache-state grid's rewind and rollback cells, and the check that the
+  recurrence rule agrees with the cache NewCache allocates (227 subtests).
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `bailing_hybrid` in all three cells. Log: `docs/measurements/op3-2026-10/op3f-identity-tiny.log`.
+- **P and L: PASS.** `mla.HeadWise` is now reached, since Bailing's fixture has the gate, and is off the list. `kda.Eps` and
+  `kda.LowerBound` are live. Log: `docs/measurements/op3-2026-10/op3f-PL.log`.
+
+**OP3g, LFM2: readings, 2026-10-16 (same branch).**
+- **The build:**
+  - LFM2 walks the program: `opShortConv` on its conv layers, which has no behavioural parameter (the conv width and taps are
+    shapes), and the generic attention list with `attendQuery` on the rest.
+  - The LFM2-VL prefill runs its rows through the per-token walker's embedding entry.
+  - Its loop goes.
+- **Three rules the table answered now read the operations** (`Architecture.genericKindsOnly`: every layer made of the generic
+  kinds):
+  - LoRA, which would otherwise have accepted LFM2 and silently not applied its conv-layer deltas (V-12's own regression);
+  - the dense layer pager;
+  - the fit guard's streaming retry, which mirrors the pager.
+  - Each stays off LFM2, as before. The LoRA rejection test now iterates every registered model type and requires LFM2 among
+    the rejected families.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS** (37 IDENTICAL; `lfm2` in all three cells). **P and L: PASS.** Logs:
+  `docs/measurements/op3-2026-10/op3g-identity-tiny.log`, `docs/measurements/op3-2026-10/op3g-PL.log`.
+
+**OP3h, Granite-4.0-H: readings, 2026-10-16 (same branch).**
+- **The build:** Granite walks the program (`Architecture.graniteLayerOps`):
+  - `opMamba2`, whose parameters are the gated norm's epsilon and group count; the heads, state and conv sizes are shapes;
+  - the generic attention list with `attendQuery`;
+  - a MoE FFN;
+  - a new `residual` scale for residual_multiplier;
+  - the embedding multiplier as the embed stage's scale.
+  - Its isolation seams shape the program: GOINFER_SSM_NOMUL sets the multipliers to 1, and GOINFER_SSM_SKIPFFN drops the FFN.
+    The layer-sweep seam truncates the per-token walker.
+  - Its loop goes.
+- **Found while building, fixed:** two rollback-guard tests built hybrid `Architecture`s with no layers, which carry no
+  recurrent operation once the rule reads the layers. Each now gets one recurrent layer, since a family of attention layers
+  only has no in-place state.
+  - LFM2 had failed one of them since OP3g, and my targeted run pattern for OP3g missed it. From here, the whole decoder
+    package runs once per step before its record.
+- **I: PASS.** 37 IDENTICAL; `granite` and `granitemoehybrid` in all three cells. **P and L: PASS.** `residual.Scale` is live
+  on Granite. Logs: `docs/measurements/op3-2026-10/op3h-identity-tiny.log`, `docs/measurements/op3-2026-10/op3h-PL.log`.
+- **The whole decoder package, at the end of OP3h** (`docs/measurements/op3-2026-10/op3h-decoder-full.log`): three red.
+  - `TestDispatchCensus`: the walkers carry copies of `causalAttention`'s and the gated FFN's W8A8 and W4A8 capability guards,
+    and the census records sites by content. They are now declared with that reason, and the fused gate/up entry is re-keyed
+    to its new content.
+  - `TestParityManifest_fresh`: stale between refreshes, as expected; the refresh runs before each push.
+  - `TestFitEstimate_q4kAgreesWithResidentWeightBytes`: the fit guard refused the 1.5B because the Mac had 2.7 GB available
+    at that moment. This is the machine's memory, not this change.
+
+**OP3i, Nemotron-H: readings, 2026-10-16 (same branch).**
+- **The build:** Nemotron-H walks the program (`Architecture.nemotronLayerOps`). Each layer is one operation, pre-norm, with a
+  residual add:
+  - `opMamba2` with per-group gated norms;
+  - NoPE GQA attention through `attendQuery`;
+  - the generic non-gated FFN, now with relu² and the width read from the weights (it varies by layer);
+  - `ffnNemotronMoE`.
+  - A layer whose rope table is empty now gets no `rope` operation; it rotated nothing before.
+  - `nemotronMLP` and the loop are gone.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `nemotron_h` in all six cells (two fixtures). **P and L: PASS.**
+- **The whole decoder package: PASS** apart from the parity manifest's staleness between refreshes. Logs:
+  `docs/measurements/op3-2026-10/op3i-identity-tiny.log`, `docs/measurements/op3-2026-10/op3i-PL.log`,
+  `docs/measurements/op3-2026-10/op3i-decoder-full.log`.
+
+**OP3j, the Qwen3.5 family (qwen3_5_moe, qwen3_5, qwen3_next, olmo_hybrid): readings, 2026-10-16 (same branch).**
+- **The build:** the per-token loop walks the program. The family's layer is the generic layer with
+  `Architecture.mixerOps`' mixer:
+  - `opDeltaNet` on the linear layers, whose parameters are the norm epsilon, the output norm's own epsilon and the widened
+    write gate;
+  - `opGatedAttn` on qwen3.5's attention layers, whose parameters are the generic QK-norm, rotation and attention
+    parameters;
+  - the generic attention on Olmo Hybrid's plain layers, in the batched kernel's order, which is what `causalAttention`
+    computed.
+  - The family-level attention order, which the cache-layout rules read, stays `attnQuery`, so the cache is unchanged.
+- **Split from the registration's plan:** the batched twin, `runLayersQwen35N`, is unchanged in this step. It is dispatched by
+  its own check (`qwen35BatchN`), and it is not bit-identical to the per-token forward by design. Moving it onto the batched
+  walker is its own step, with its T1, after Gemma 4.
+- **Found while building, fixed:**
+  - `opGatedAttn` ignored its QK-norm form and its attention order. It now uses the shared QK-norm, and refuses an order it does
+    not run. L caught both.
+  - **The whole decoder package found seven test fixtures that build a recurrent family's `Architecture` with no layers, or
+    assert the own-loop table.** Two of them had failed since OP3g, which my targeted run patterns missed.
+    - `recurrentTestModel` and the MTP eligibility fixture now carry one linear layer.
+    - The PromptHidden tests check the family, not the table.
+- **I: PASS.** 37 IDENTICAL: `qwen3_5_moe` in six cells, and `qwen3_5`, `qwen3_next` and `olmo_hybrid` in three each.
+  **P and L: PASS.**
+- Logs: `docs/measurements/op3-2026-10/op3j-identity-tiny.log`, `docs/measurements/op3-2026-10/op3j-PL.log`, and the two
+  whole-package runs: the first, red as described (`docs/measurements/op3-2026-10/op3j-decoder-full-1.log`), and the second,
+  green apart from the manifest's staleness (`docs/measurements/op3-2026-10/op3j-decoder-full-2.log`).
+
+**OP3k, Gemma 4: readings, 2026-10-16 (same branch). The own-loop table is now empty.**
+- **The build:** Gemma 4 walks the program (`Architecture.gemma4LayerOps`).
+  - `opGemma4Attn`. Its parameters are the q/k/v norms' epsilon and (1+w), the layer's rope table and scale, the window, the
+    score scale, and the layer whose K/V it attends with whether it stores its own. Cross-layer KV sharing is now a parameter.
+  - Gemma 4's dense GeGLU in its own call form, at the per-layer width.
+  - `opGemma4MoE`, which replaces the whole layer output on the 26B.
+  - `opPLE` and `opLayerScale`.
+  - **The embedding stage carries PLE.** The walker computes the per-layer inputs from the token id, or from the pad id for a
+    row with no token behind it, through `runLayersFromEmbedPLE`. It does this before layer 0, from the embedding, as the loop
+    did.
+  - The family-level attention order (`attnGemma4`) keeps the cache as it was: no rings, no int8 or f16.
+- **Not moved in this step:** the bidirectional image prefill's batched twin, `runLayersGemma4FromEmbedN`. Like qwen3.5's twin, it
+  is its own later step.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `gemma4` in all 15 cells (five fixtures, three quants). **P and L: PASS.** Every Gemma 4 parameter
+  is live: changing `KVSrc` or `OwnsKV` errors, the rest change the logits. Logs:
+  `docs/measurements/op3-2026-10/op3k-identity-tiny.log`, `docs/measurements/op3-2026-10/op3k-PL.log`.
+
+**OP3z, part 1: the own-loop table goes (2026-10-16, same branch).**
+- **The table had been empty since OP3k.** Every rule it answered now reads the family's operations:
+  - the cache layout (rings, int8, f16) reads the family's attention kernel (`Architecture.attnOrder`);
+  - recurrence (`Architecture.recurrent`) reads its recurrent operations;
+  - LoRA, the dense pager and the fit guard's retry read whether its layers are all generic operations
+    (`Architecture.genericKindsOnly`);
+  - the batched walkers read the kinds and attention orders they implement.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- `captureResidual`, `mlaAttention` and `gptOssExpert` had no caller left and are gone; staticcheck is clean under the default,
+  testhooks and realckpt tags.
+- **The table's tests become program invariants over every registered model type:**
+  - `TestProgram_noFamilyLoopAndEveryFamilyWalks`: no family layer loop outside the program (a source scan), and every
+    family's program is made of operations the per-token walker implements.
+  - `TestProgram_pagerStaysOffNonGenericFamilies`: the dense pager stays off any family with a layer outside the generic
+    operations.
+- **I: PASS** (37 IDENTICAL). **The whole decoder package: PASS** apart from the manifest's staleness. Logs:
+  `docs/measurements/op3-2026-10/op3z1-identity-tiny.log`, `docs/measurements/op3-2026-10/op3z1-decoder-full.log` (and Gemma
+  4's own run, `docs/measurements/op3-2026-10/op3k-decoder-full.log`, where the old table test had nothing left to scan).
+
+**Left in OP3:**
+- **OP3a's parked S cell** is served tonight (`op3a-S-served`). The old per-token, batched and multi-sequence loops stay
+  behind `programWalkOffForTest` until it reads: if the walker must change, S runs again in process.
+- **The two batched twins:** qwen3.5's (`runLayersQwen35N`), with its registered T1, and Gemma 4's bidirectional
+  (`runLayersGemma4FromEmbedN`). Neither is bit-identical to its family's per-token forward by design, and gate I (through
+  `Generate`) does not reach either. Moving them onto the batched walker needs their own gate: the PromptHidden and bidirectional
+  VL tests that already bound them.
+- **OP3z, part 2:** once S reads, the old loops, `causalAttention`, the old `mlp` dispatch and `programWalkOffForTest` go.
+- **The seams PR (owner, 2026-10-16).** OP3 keeps every pre-OP3 own-loop family's seam refusals exactly
+  (`decoder/seam_refusals.go`, pinned by `TestSeams_ownLoopFamiliesStillRefuse`). Enabling `HiddenLast`, `ForwardSubCapture`
+  and `ForwardCapture` for them is a separate PR, with a gate per seam and a planted defect, which goes to the owner before it
+  merges.
+
+**#62 rebuilt one commit per step (2026-10-16), on the owner's condition that each commit passes the whole decoder package.**
+- Each step's commit is the tree that step ended at, with:
+  - the seam refusals;
+  - the test-fixture fixes found at later steps, moved into the step that first needed them (the dispatch census, the
+    layered recurrent fixtures, the PromptHidden family check);
+  - its own goldens-gated manifest refresh.
+- OP3k and OP3z part 1 are one commit: at OP3k the old table test had nothing left to scan.
+- The final tree differs from the pre-rebuild branch only in the refusals, their test, the removed seam test, these records
+  and the manifest's hashes.
+- **The per-commit check runs at night**, about 85 minutes, beyond the day budget:
+  `docs/measurements/op3-2026-10/run-steps-sweep.sh`, over every rebuilt commit and #61's head. It runs in a worktree that
+  carries the main checkout's gitignored fixtures as clones, so it runs the same tests the main checkout does.
+
 
 ## 5. Track RF — one ragged forward pass
 
@@ -2428,7 +2712,7 @@ separate architecture doc while this is a proposal.
 Code, read at `9593bd70`:
 - **The descriptor and admission:**
   - `decoder/registry.go:resolveArchitecture`, `decoder/registry.go:Architecture.validateResolved`;
-  - `decoder/arch.go:Architecture`, `decoder/arch.go:ownForwardFamily`;
+  - `decoder/arch.go:Architecture`, `ownForwardFamily` (removed in OP3z);
   - `decoder/residency.go:Model.residentAdmission`, `decoder/residency.go:Model.decodeRunnerDecline`,
     `decoder/residency.go:Architecture.decodeRunnerEligible`, `decoder/residency.go:Architecture.ropeResidentCompatible`,
     `decoder/residency.go:DeclineResident`;

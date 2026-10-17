@@ -496,8 +496,12 @@ func nonGatedMLPWith(h []float32, lw *LayerWeights, act ActKind, inter, hidden i
 		for i := range mid {
 			mid[i] = geluErf(mid[i])
 		}
+	case ActReLU2: // Nemotron-H's mlp blocks
+		for i := range mid {
+			mid[i] = relu2(mid[i])
+		}
 	default:
-		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu)", act)
+		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu, relu²)", act)
 	}
 	out := make([]float32, hidden)
 	matmul(be, &lw.DownProj, mid, out, 1)
@@ -640,11 +644,15 @@ var moeExpertMajorRuns int64
 //   - a live pager: touch order is the demand signal that drives eviction, so reordering it changes which experts are resident.
 //     Expert-major is likely better for paging, but different is not better until measured.
 func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager, dst []float32) (bool, error) {
-	moe := arch.MoE
+	return moeMLPBatchWith(rows, n, lw, arch.MoE, arch.Act, arch.HiddenDim, be, pager, dst)
+}
+
+// moeMLPBatchWith is moeMLPBatch with the routing, activation and width given: the program walker's form.
+func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, pager *expertPager, dst []float32) (bool, error) {
 	if moe == nil || len(lw.Experts) == 0 || moeSelOverride != nil || moeSelTrace != nil || pager != nil {
 		return false, nil
 	}
-	if arch.Act != ActSiLU {
+	if act != ActSiLU {
 		return false, nil
 	}
 	// The shared expert is added after the routed fold in moeMLP. Refuse up front so a fall-back costs nothing: a partial
@@ -652,7 +660,7 @@ func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be
 	if moe.SharedIntermediateDim > 0 {
 		return false, nil
 	}
-	hidden, nE, k := arch.HiddenDim, moe.NumExperts, moe.TopK
+	nE, k := moe.NumExperts, moe.TopK
 	inter := moe.IntermediateDim
 
 	// Router for the whole chunk in one matmul (M=n), instead of a matmul and an nE-sized allocation per row.

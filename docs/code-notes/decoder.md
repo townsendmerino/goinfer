@@ -832,7 +832,7 @@ picks which, the SAME hook qwen35's Gated-DeltaNet hybrid uses. Structurally a d
 recurrence like Gated DeltaNet, but with a PER-CHANNEL decay (one value per row of the state
 matrix) where Gated DeltaNet's is one scalar per head — verified against fla-org/
 flash-linear-attention's actual source, not the HF modeling file's opaque Triton-kernel
-call. Own forward (forward_bailing.go). nil for every other family.
+call. Its layers are opKDA (decoder/program.go:Architecture.layerOps). nil for every other family.
 ```
 
 ## llama4Params.chunkSize

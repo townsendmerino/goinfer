@@ -20,9 +20,10 @@ func TestSpecRollbackSafe_refusesWindowedAndRecurrent(t *testing.T) {
 		{"plain (no window, no recurrent)", &Architecture{}, true},
 		{"sliding-window (Gemma-3 local / Mistral / Phi-3)", &Architecture{SlidingWindow: 512}, false},
 		{"sliding-window even with a resident-eligible dense arch", &Architecture{SlidingWindow: 4096}, false},
-		{"recurrent: granite (Mamba-2)", &Architecture{granite: &graniteParams{}}, false},
-		{"recurrent: nemotron-h", &Architecture{nemotron: &nemotronParams{}}, false},
-		{"recurrent: qwen3_5_moe (Gated DeltaNet)", &Architecture{qwen35: &qwen35Params{}}, false},
+		// One recurrent layer each: a family whose layers are all attention carries no in-place state.
+		{"recurrent: granite (Mamba-2)", &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}, false},
+		{"recurrent: nemotron-h", &Architecture{NumLayers: 1, nemotron: &nemotronParams{blockKind: []uint8{nemoMamba}}}, false},
+		{"recurrent: qwen3_5_moe (Gated DeltaNet)", &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}, false},
 	} {
 		if got := mk(c.arch).specRollbackSafe(); got != c.want {
 			t.Errorf("%s: specRollbackSafe = %v, want %v", c.name, got, c.want)

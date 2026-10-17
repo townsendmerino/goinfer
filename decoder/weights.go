@@ -68,7 +68,7 @@ type LayerWeights struct {
 
 	// AttnSinks is gpt-oss's per-head learned attention-sink logit ([NumHeads]):
 	// an extra term in each head's softmax denominator (exp(sink_h)) with no value,
-	// bleeding attention mass. nil for every other family. Consumed by gptOssAttention.
+	// bleeding attention mass. nil for every other family. Consumed by attendSinksToken.
 	AttnSinks []float32
 
 	// Shared expert (Qwen-MoE / Qwen2-MoE; set when arch.MoE.SharedIntermediateDim
@@ -941,7 +941,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 				return err
 			}
 			// Cross-layer KV sharing (num_kv_shared_layers): the last N layers carry no k_proj/k_norm/v_proj tensors in the
-			// checkpoint; they reuse an earlier layer's KV at forward time (runLayersGemma4FromEmbed's kvSrc). The GGUF loader
+			// checkpoint; they reuse an earlier layer's KV at forward time (runLayersFromEmbedPLE's kvSrc). The GGUF loader
 			// (loadG4) does the same. l.KVShared is the per-layer "reuses an earlier layer's KV" flag (LayerWeights.KVShared), not
 			// arch.gemma4.KVShared, which is attention_k_eq_v (V reuses K's projection on global layers): same field name, different
 			// struct, different meaning (see arch.go).
@@ -1186,7 +1186,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		// Per-Layer-Embedding (PLE) model-level inputs: the same three tensors GGUF loads, at the same precisions. The token
 		// table takes the embedding policy and streams a row at a time; the projection is a plain matmul weight; the norm is
 		// taken as-is (safetensors norms carry the HF convention already, where GGUF's vnorm has to undo llama.cpp's baked +1).
-		// Leaving them nil would crash runLayersGemma4FromEmbed's rmsNorm on an E-model.
+		// Leaving them nil would crash runLayersFromEmbedPLE's rmsNorm on an E-model.
 		if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
 			pleVocab := arch.gemma4.VocabSizePerLayerInput
 			if pleVocab == 0 {

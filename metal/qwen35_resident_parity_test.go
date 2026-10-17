@@ -13,7 +13,7 @@ import (
 // TestQwen35ResidentParityMetal is the Metal twin of cuda's TestQwen35ResidentParityCUDA — the
 // whole-model gate the "Done means" bar in the porting task requires before FeatDeltaNet is real,
 // not just declared. Read that file's header comment; this mirrors its structure exactly: the
-// resident runner vs the CPU runLayersQwen35, fed the same fixed token sequence, run LONG (three
+// resident runner vs the CPU program walker, fed the same fixed token sequence, run LONG (three
 // of every four layers carry compounding recurrent state, so a wiring bug shows as a decaying
 // cosine, not a bad first token), then a REPLAY after Reset to prove the state actually resets
 // rather than merely starting zeroed.

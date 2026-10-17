@@ -10,9 +10,9 @@ import (
 // prefillLogitsGemma4VL sequentially prefills a Gemma 4 multimodal prompt (ids with a run of imgLen image-placeholder
 // ids at [imgPos, imgPos+imgLen)) and returns the last-position logits.
 //
-// Unlike prefillLogitsVL and prefillLogitsQwenVL, this walks ids one token at a time via runLayersGemma4 and
-// runLayersGemma4FromEmbed (forward_gemma4.go): Gemma 4's own-forward layer loop has no batched variant (gemma4 is
-// dispatched via arch.ownForward(), not the generic runLayersFromEmbedN path). That is exact for a checkpoint that ships
+// Unlike prefillLogitsVL and prefillLogitsQwenVL, this walks ids one token at a time via the Gemma 4 program walk and
+// runLayersFromEmbedPLE: Gemma 4's program has no batched causal walk (the batched walker declines its operations, and its
+// batched twin serves only the bidirectional spans). That is exact for a checkpoint that ships
 // use_bidirectional_attention="" (the E-models, docs/multimodal.md P7 entry): the reference attends to the image block
 // strictly causally too, so a sequential per-position walk is that forward. A checkpoint with
 // use_bidirectional_attention="vision" needs the batched, blockwise-masked forward
@@ -42,15 +42,15 @@ func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, image
 		}
 		if r, in := imageSpanRow(spans, i); in {
 			off := r * hidden
-			// runLayersGemma4FromEmbed names this case: a multimodal caller substitutes a projected embedding for the token-id
+			// runLayersFromEmbedPLE names this case: a multimodal caller substitutes a projected embedding for the token-id
 			// lookup, and pleTokenID must be the checkpoint's pad_token_id, not the placeholder's own id, because the reference
 			// substitutes the PAD token's embedding at every image position before computing PLE's token-identity term. The feature
-			// row is used as is, with no embed_scale: that scaling is runLayersGemma4's job for a real token embedding, and a
+			// row is used as is, with no embed_scale: that scaling is the Gemma 4 program walk's job for a real token embedding, and a
 			// tower's projected output is already in the target embedding space.
 			row := append([]float32(nil), imageEmbeds[off:off+hidden]...)
-			h, err = m.runLayersGemma4FromEmbed(row, padID, cache)
+			h, err = m.runLayersFromEmbedPLE(row, padID, cache)
 		} else {
-			h, err = m.runLayersGemma4(id, cache)
+			h, err = m.runLayers(id, cache)
 		}
 		if err != nil {
 			return nil, err
@@ -184,7 +184,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 				return l, err
 			}
 			// Decode reuses the plain per-token path unmodified: m.forward already
-			// dispatches to runLayersGemma4 via arch.ownForward(), so no
+			// runs the Gemma 4 program walk, so no
 			// gemma4-specific decode step is needed once the image is prefilled.
 			return m.forward(next, cache)
 		})
@@ -250,7 +250,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 
 // gemma4ResidentMediaRow is the resident row for one image or audio position of a Gemma 4 E-model: the projected
 // feature, unscaled (as the CPU's prefillLogitsGemma4VL splices it), then for an E-model the PLE inputs from PAD's token
-// identity (as runLayersGemma4FromEmbed computes them).
+// identity (as runLayersFromEmbedPLE computes them).
 func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
 	hidden := m.w.arch.HiddenDim
 	row := make([]float32, m.ResidentEmbedLen())

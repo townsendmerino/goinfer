@@ -131,7 +131,7 @@ func TestGemma4VL_imageParity(t *testing.T) {
 		t.Errorf("image-prompt argmax = %d, want %d", gotArg, g.Argmax)
 	}
 	// Sequential (one-token-at-a-time) prefill through the exact same
-	// runLayersGemma4/runLayersGemma4FromEmbed path plain decode uses — no
+	// the Gemma 4 program walk/runLayersFromEmbedPLE path plain decode uses — no
 	// separate batched-attention kernel in play here, so this holds to the
 	// same bit-tight bar as the text-only test, not the batched-attention
 	// 0.99 floor Gemma 3's image gate uses.

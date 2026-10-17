@@ -49,6 +49,8 @@ var declaredIdentityDispatch = map[string]string{
 	"decoder/mlp.go|} else if w4a8BatchEnabled && isW4A8(&lw.GateProj) && isW4A8(&lw.UpProj) {":                                "fused gate+up batched W4A8 kernel (audit R-06) — same capability guard as the W8A8 site above, one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
 	"decoder/program_cpu.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                  "the per-token program walker's proj-qkv (projQKVToken): causalAttention's fused QKV W8A8 capability guard, moved with it",
 	"decoder/program_cpu.go|} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {":       "the per-token program walker's proj-qkv: causalAttention's fused QKV W4A8 capability guard, moved with it",
+	"decoder/program_cpu_n.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                "the batched and multi-sequence program walkers' proj-qkv: forwardn.go's and cpu_batch.go's fused QKV W8A8 capability guard, moved with them",
+	"decoder/program_cpu_n.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                                 "the batched and multi-sequence program walkers' gated FFN: the fused gate+up W8A8 capability guard, moved with them",
 	"decoder/weightmat.go|if isW8A8(w) {": "matmulInto's W8A8 branch. Legitimate SINCE P7 (91f359f): it now selects the " +
 		"W8A8-specific QuantBackend kernel, and the int4 branch beside it reaches the same Workspace. " +
 		"Before P7 this was the defect — the else-path silently excluded every other quantization",

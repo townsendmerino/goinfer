@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// The batched Qwen3.5 forward: runLayersQwen35FromEmbed over K rows at once, for PromptHidden (Route B's hidden state,
+// The batched Qwen3.5 forward: the per-token program over K rows at once, for PromptHidden (Route B's hidden state,
 // docs/tasks/task-constrained-confidence.md). The per-token forward reads every weight once per token, which on a CPU is decode
 // speed and memory-bandwidth bound. Here every projection is one M=K matmul, so a weight is read once per prompt:
 //

@@ -26,7 +26,7 @@ import (
 //     text position_ids arrive 2-D and are expanded to three IDENTICAL components, so the
 //     interleaved overwrite is a no-op). If that reduction were wrong, this diverges.
 func TestQwen3_5_textParity(t *testing.T) {
-	// Both siblings against the same oracle. They share one forward (runLayersQwen35 branches
+	// Both siblings against the same oracle. They share one program (Architecture.mixerOps; it differs
 	// only at the FFN), so a regression in the shared 90% shows in either — but the FFN branch
 	// itself, and the descriptor assertions that keep the two adapters from swapping, need one
 	// case each.

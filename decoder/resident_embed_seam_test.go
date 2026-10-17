@@ -82,9 +82,6 @@ func TestSeam_HiddenLastUsesResidentWhenAvailable(t *testing.T) {
 	if !m.ResidentActive() {
 		t.Skip("fixture is not resident-eligible; the other seam tests still gate the wiring")
 	}
-	if _, own := m.w.arch.ownForward(); own {
-		t.Skip("fixture arch has its own runLayers; HiddenLast declines it before touching residency")
-	}
 	out, err := m.HiddenLast([]int{1, 2, 3})
 	if err != nil {
 		t.Fatalf("HiddenLast: %v", err)
@@ -117,9 +114,6 @@ func TestSeam_HiddenLastFallsBackToCPUWhenResidentBusy(t *testing.T) {
 	m, be := loadWithFakeHiddenLastResident(t)
 	if !m.ResidentActive() {
 		t.Skip("fixture is not resident-eligible")
-	}
-	if _, own := m.w.arch.ownForward(); own {
-		t.Skip("fixture arch has its own runLayers; HiddenLast declines it before touching residency")
 	}
 	ids := []int{1, 2, 3}
 	want, err := m.hiddenLastBatched(ids)
@@ -163,9 +157,6 @@ func TestSeam_HiddenLastFallsBackToCPUOnResidentDecline(t *testing.T) {
 	m, be := loadWithFakeHiddenLastResident(t)
 	if !m.ResidentActive() {
 		t.Skip("fixture is not resident-eligible")
-	}
-	if _, own := m.w.arch.ownForward(); own {
-		t.Skip("fixture arch has its own runLayers; HiddenLast declines it before touching residency")
 	}
 	be.rf.fail = true
 

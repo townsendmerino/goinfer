@@ -191,7 +191,7 @@ func (m *Model) CPUKVF16DeclineReason() string {
 	if !m.kvH || m.w.arch.kvF16OK() || (m.kvI8 && m.w.arch.kvInt8OK()) {
 		return ""
 	}
-	if _, own := m.w.arch.ownForward(); own {
+	if m.w.arch.ownLoopFamily() {
 		return "this family's own forward loop is not checked for f16 KV yet"
 	}
 	return "MoE families are not checked for f16 KV yet"

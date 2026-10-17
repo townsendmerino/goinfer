@@ -908,7 +908,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// hasNoAttentionKVAt (arch.go) is the one place that knows all these cases, shared with kvDimAt's pricing.
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, a.hasNoAttentionKVAt)
 	c.scr = newDecodeScratch(a)
-	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see ownForwardFamily.KVInt8 for why a family's
+	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see Architecture.kvInt8OK for why a family's
 	// own loop must opt in. Must precede enableRings so local layers inherit the mode.
 	if m.kvI8 && a.kvInt8OK() {
 		c.setQuant(kvI8, capHint)
@@ -1013,9 +1013,6 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	if m.w.Embed.Rows() == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
-	if f, ok := arch.ownForward(); ok {
-		return f.run(m, id, cache)
-	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)
 	}
@@ -1047,7 +1044,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 			h[i] += pe[i]
 		}
 	}
-	return m.runLayersFromEmbed(h, cache)
+	return m.runLayersFromEmbedPLE(h, id, cache)
 }
 
 // runLayersFromEmbed runs the transformer layers over a precomputed
@@ -1060,17 +1057,23 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 // passing through embed_tokens. Generic path only (gemma4/qwen35 have their own
 // runLayers and grow the same seam when those families go multimodal).
 func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
+	pad := -1
+	if g := m.w.arch.gemma4; g != nil {
+		pad = g.PadTokenID // a row with no token behind it takes the pad id's PLE, as HF's multimodal forward does
+	}
+	return m.runLayersFromEmbedPLE(h, pad, cache)
+}
+
+// runLayersFromEmbedPLE is runLayersFromEmbed with the token id behind h for Gemma 4's per-layer embedding: the id itself for a
+// text row, the checkpoint's pad id for a multimodal row (docs/multimodal.md, P7 entry).
+func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
 	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
 		cache.scr = newDecodeScratch(m.w.arch)
 	}
 	if programWalkOffForTest {
 		return m.runLayersFromEmbedLoop(h, cache)
 	}
-	prog := m.program()
-	if prog.layers == nil {
-		return nil, fmt.Errorf("decoder: %s has no layer program (it runs its own loop)", m.w.arch.Name)
-	}
-	return m.walkToken(prog, h, cache)
+	return m.walkToken(m.program(), h, pleID, cache)
 }
 
 // runLayersFromEmbedLoop is the per-token loop the program walker replaced, kept for gate S's in-process A/B
@@ -1296,11 +1299,8 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // forward(id); the captures are copies that never feed back. Layer indices are 0-based into [0, NumLayers); out[i]
 // corresponds to layers[i].
 //
-// Wired for the generic decode path plus the own-forward families whose ownForwards entry sets Captures (their loops call
-// cache.captureResidual, see capture.go). Every other own-forward family returns an error rather than silently producing nil
-// rows: granite and nemotron_h interleave recurrent mixers whose "residual after layer l" needs deciding, and mla and
-// llama4_text are not done. A family is wired only when both its loop captures and its entry says so, so a half-wired one
-// fails here loudly.
+// Every family's layers run through the program walker, which captures the residual after each layer. The families whose
+// own loop did not capture before OP3 are refused (seam_refusals.go).
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	_, done, err := m.enterCall(context.Background())
 	if err != nil {
@@ -1314,10 +1314,7 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // forwardCapture is ForwardCapture without the lifecycle guard (lifecycle.go).
 func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	// Derived from the dispatch table's Captures bit rather than re-listed: the families whose own loop calls captureResidual are
-	// wired, every other own-forward family is not. A hand-written list once missed LFM2, whose loop never captures and returned
-	// nil rows through a seam documented to fail loudly.
-	if f, own := a.ownForward(); own && !f.Captures {
+	if a.ownLoopFamily() && !a.ownLoopCaptured() {
 		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	for _, l := range layers {
@@ -1339,13 +1336,11 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // MLP contribution to the residual (scr.sub after each sublayer's sandwich-norm, before the add).
 // This is the finer seam ForwardCapture doesn't give: it separates the two sublayers, which is
 // what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
-// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own-forward
-// families (they don't route through runLayersFromEmbed's uniform block).
+// Diagnostic — same byte-identical-output contract as ForwardCapture. Refused for the families that ran their own loop
+// before OP3 (seam_refusals.go).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	// Every own-forward family, derived: this seam needs runLayersFromEmbed's uniform block, which no own-forward loop routes
-	// through.
-	if _, own := a.ownForward(); own {
+	if a.ownLoopFamily() {
 		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers
@@ -1367,7 +1362,7 @@ func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPr
 // forwardFromEmbed is forward for a position whose residual-stream embedding is
 // supplied directly (the multimodal embed-by-vector seam): it runs the layers
 // from h and projects to logits, identical to forward(id) when h is that token's
-// embedding. The generic path only (gemma4/qwen35 keep their own forward).
+// embedding.
 func (m *Model) forwardFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
 	h, err := m.runLayersFromEmbed(h, cache)
 	if err != nil {

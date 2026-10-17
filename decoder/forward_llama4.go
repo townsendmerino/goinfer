@@ -5,90 +5,12 @@ import (
 	"unsafe"
 )
 
-// Llama 4 (llama4_text) forward path, the iRoPE text decoder. Each block is a standard Pre2 residual stack (input_layernorm →
-// attention → +residual → post_attention_layernorm → FFN → +residual), but two things vary per layer:
+// Llama 4 (llama4_text): the iRoPE text decoder. Its program is Architecture.llama4LayerOps: a pre-norm layer whose attention
+// varies per layer (RoPE layers rotate, normalise q and k without weights, and attend within a chunk of attention_chunk_size;
+// NoPE layers scale the query by the attention temperature instead) and whose FFN is dense or the MoE below.
 //
-//   - Attention: RoPE layers (no_rope_layers[l]==1) apply interleaved RoPE over the full head_dim then a parameter-free L2
-//     (RMS-over-head-dim) QK-norm; NoPE layers skip RoPE and instead scale the query by an attention "temperature"
-//     (log1p(floor((pos+1)/floor_scale))·attn_scale + 1) for length generalization.
-//   - FFN: dense layers vs MoE layers (moe_layers), handled by the shared mlp() dispatch (dense: gatedMLP; MoE: llama4MoE below,
-//     top-1 sigmoid routing plus an ungated shared expert).
-//
-// Chunked (local) attention on the RoPE layers: a query at position p attends only within its own chunk, [(p/C)*C, p], where C is
-// attention_chunk_size (8192 on Scout/Maverick). Below C that is identical to full causal, which is all the parity gates
-// exercise, so they cannot catch a dropped chunk bound: from position C on the RoPE layers would see keys HF masks out. The bound
-// comes from Architecture.attnChunkStart, max()'d with the window start in attendQuery. NoPE layers stay full-causal. Parity-first
-// f32, one token per call; canBatchN excludes it.
-func (m *Model) runLayersLlama4(id int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	hidden := arch.HiddenDim
-	eps := arch.NormEps
-	pos := cache.Pos()
-	if cache.scr == nil {
-		cache.scr = newDecodeScratch(arch)
-	}
-	h := make([]float32, hidden)
-	m.w.Embed.Row(id, h)
-
-	scr := cache.scr
-	for l := 0; l < arch.NumLayers; l++ {
-		lw := &m.w.Layers[l]
-		rmsNormInto(scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
-		attn := m.llama4Attention(scr.norm, lw, arch, cache, l, pos)
-		addResidual(h, attn)
-		rmsNormInto(scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		if arch.llama4.isMoE[l] {
-			m.llama4MoE(scr.norm, scr.sub, lw, arch) // input-scaled experts + ungated shared (Llama 4-specific)
-		} else if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, nil); err != nil {
-			return nil, err // dense layer → gatedMLP
-		}
-		addResidual(h, scr.sub)
-	}
-	// No explicit Advance: every layer runs standard attention + cache.Append, so the
-	// last layer's Append auto-advances pos (like llama/qwen). manualPos is NOT set.
-	return h, nil
-}
-
-// llama4Attention is one Llama 4 attention layer: GQA with the per-layer iRoPE behavior.
-// RoPE layers rope (interleaved, full head_dim) then L2-normalize q/k per head; NoPE layers
-// scale q by the attention temperature instead. Standard causal attention over the KV cache
-// at 1/√head_dim.
-func (m *Model) llama4Attention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	lp := arch.llama4
-	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
-	hidden := arch.HiddenDim
-	eps := arch.NormEps
-	q := make([]float32, nH*hd)
-	k := make([]float32, nKV*hd)
-	v := make([]float32, nKV*hd)
-	matmul(m.be, &lw.QProj, n, q, 1)
-	matmul(m.be, &lw.KProj, n, k, 1)
-	matmul(m.be, &lw.VProj, n, v, 1)
-
-	if lp.useRope[layer] {
-		invFreq := arch.ropeInvFreq(layer)
-		mlaRope(q, nH, hd, pos, invFreq, 1, true) // interleaved (complex) RoPE over the full head_dim
-		mlaRope(k, nKV, hd, pos, invFreq, 1, true)
-		if lp.useQKNorm { // parameter-free L2 (RMS-over-head-dim) QK-norm, AFTER rope (HF order)
-			l2NormHeads(q, nH, hd, eps)
-			l2NormHeads(k, nKV, hd, eps)
-		}
-	} else if lp.attnTemp { // NoPE layers: attention-temperature tuning on the query
-		scale := float32(math.Log1p(math.Floor(float64(pos+1)/lp.floorScale))*lp.attnScale + 1.0)
-		for i := range q {
-			q[i] *= scale
-		}
-	}
-
-	cache.Append(layer, k, v)
-	ctx := cache.scr.ctxBuf(nH * hd) // R-17: from the scratch; attendQuery clears it
-	nKeys := len(cache.Keys(layer)) / (nKV * hd)
-	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*no sliding window; chunking applies inside*/, arch)
-
-	out := make([]float32, hidden)
-	matmul(m.be, &lw.OProj, ctx, out, 1)
-	return out
-}
+// Chunked attention: below the chunk size it equals full causal, which is all the parity gates exercise, so they cannot catch a
+// dropped chunk bound (TestLlama4_attendQueryHonoursTheChunk pins the bound).
 
 // llama4MoE is Llama 4's mixture-of-experts FFN. Unlike the standard moeMLP (which scales
 // each expert's OUTPUT by its router weight), Llama 4 scales the expert's INPUT by the
@@ -97,8 +19,11 @@ func (m *Model) llama4Attention(n []float32, lw *LayerWeights, arch *Architectur
 // sigmoid(logit) of the top-k experts (top-1 by default); the always-on shared expert runs
 // on the unscaled h and is added ungated. out = shared(h) + Σ_topk expert_e(sigmoid(logit_e)·h).
 func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture) {
-	moe := arch.MoE
-	hidden := arch.HiddenDim
+	m.llama4MoEWith(h, out, lw, arch.MoE, arch.HiddenDim)
+}
+
+// llama4MoEWith is llama4MoE with the routing and width given: the program walker's form.
+func (m *Model) llama4MoEWith(h, out []float32, lw *LayerWeights, moe *MoEConfig, hidden int) {
 	logits := make([]float32, moe.NumExperts)
 	matmul(m.be, &lw.Router, h, logits, 1)
 	idx, _ := topK(logits, moe.TopK) // top-k by raw logit (== top-k by sigmoid, monotonic)

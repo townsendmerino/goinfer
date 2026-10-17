@@ -226,7 +226,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 `
 
 // moeExpertGptOssDownGEMVWGSL (FeatAttnSink's down-projection combine): moeExpertGEMVWGSL's
-// mode-1 epilogue plus a per-(expert,row) bias — decoder/forward_gptoss.go's gptOssExpert
+// mode-1 epilogue plus a per-(expert,row) bias — decoder/forward_gptoss.go's gptOssExpertWith
 // computes `dst = Down·h + downBias` BEFORE the router weight scales the result
 // (gptOssMoE: `out += wgt·dst`), so the combine is `wgt[slot]*(r + bias[idx[slot]*N+row])`, NOT
 // a plain `+= bias[row]` — mirrors metal/moe.go's gemv_w4a8_moe_wacc_bias exactly, including its

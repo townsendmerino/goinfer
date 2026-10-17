@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"unsafe"
 )
@@ -10,36 +11,58 @@ import (
 // holds, and generic fill / check-zero over them, so no test here carries a list of kinds or families to forget. A new kind
 // is covered the day its field is added.
 
-// ownForwardModelType maps an ownForwards table name to the model_type representativeConfig
-// takes. Only names that differ appear; an unknown family makes realCacheFor fail loudly.
-func ownForwardModelType(name string) string {
-	switch name {
-	case "deepseek_v2/v3":
-		return "deepseek_v3"
-	case "gpt-oss":
-		return "gpt_oss"
-	}
-	return name
-}
-
-// realCacheFor builds family f's REAL cache via NewCache from its representative config — the
-// allocation production uses — rather than setting a cache field by hand.
-func realCacheFor(t *testing.T, f ownForwardFamily) (*Model, *KVCache) {
+// realCacheForType builds model type mt's REAL cache via NewCache from its representative config — the allocation production
+// uses — rather than setting a cache field by hand.
+func realCacheForType(t *testing.T, mt string) (*Model, *KVCache) {
 	t.Helper()
-	cfg := representativeConfig(ownForwardModelType(f.Name))
+	cfg := representativeConfig(mt)
 	if cfg == nil {
-		t.Fatalf("representativeConfig has no case for own-forward family %q — add one, or this "+
-			"family's cache is never inspected by the recurrent-state census", f.Name)
+		t.Fatalf("representativeConfig has no case for %q", mt)
 	}
 	arch, _, err := resolveArchitecture(cfg)
 	if err != nil {
-		t.Fatalf("resolveArchitecture(%s): %v", f.Name, err)
-	}
-	if !f.is(arch) {
-		t.Fatalf("representativeConfig(%q) does not resolve to an arch the table routes to %s", ownForwardModelType(f.Name), f.Name)
+		t.Fatalf("resolveArchitecture(%s): %v", mt, err)
 	}
 	m := &Model{w: &Weights{arch: arch}}
 	return m, m.NewCache(8)
+}
+
+// modelTypes is every registered model type with a representative config, read from the registry rather than the own-loop
+// table, which shrinks as families move to the program walker.
+func modelTypes(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, mt := range strings.Split(knownModelTypes(), ", ") {
+		if representativeConfig(mt) != nil {
+			out = append(out, mt)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("no registered model type has a representative config")
+	}
+	return out
+}
+
+// recurrentModelTypes is every registered model type whose architecture carries in-place state (Architecture.recurrent),
+// read from the registry rather than the own-loop table, which shrinks as families move to the program walker.
+func recurrentModelTypes(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, mt := range strings.Split(knownModelTypes(), ", ") {
+		cfg := representativeConfig(mt)
+		if cfg == nil {
+			continue
+		}
+		arch, _, err := resolveArchitecture(cfg)
+		if err != nil || !arch.recurrent() {
+			continue
+		}
+		out = append(out, mt)
+	}
+	if len(out) == 0 {
+		t.Fatal("no registered model type is recurrent: the census would test nothing")
+	}
+	return out
 }
 
 // recurrentKinds returns KVCache's allocated recurrent-state kinds: every []*struct field except
@@ -142,12 +165,12 @@ func recurrentDirt(names []string, fields []reflect.Value) []string {
 // per-position history), and TruncateTo(0) must zero every kind (the next conversation must not
 // start on the last one's state).
 func TestKVCache_recurrentKindsResetAndRewindHonestly(t *testing.T) {
-	for _, f := range ownForwards {
-		t.Run(f.Name, func(t *testing.T) {
-			_, c := realCacheFor(t, f)
+	for _, mt := range recurrentModelTypes(t) {
+		t.Run(mt, func(t *testing.T) {
+			_, c := realCacheForType(t, mt)
 			names, fields := recurrentKinds(c)
 			if len(names) == 0 {
-				return // no recurrent kinds: nothing to rewind dishonestly
+				t.Fatalf("%s is recurrent but NewCache allocated no recurrent kind", mt)
 			}
 			fillRecurrent(t, fields)
 			for range 3 {
@@ -171,16 +194,7 @@ func TestKVCache_recurrentKindsResetAndRewindHonestly(t *testing.T) {
 // sessionLRU evicts the coldest conversation at the default --kv-sessions, must not hand the next
 // conversation this one's state.
 func TestSession_bailingHybridNeverReusesKDAState(t *testing.T) {
-	var fam ownForwardFamily
-	for _, f := range ownForwards {
-		if f.Name == "bailing_hybrid" {
-			fam = f
-		}
-	}
-	if fam.Name == "" {
-		t.Fatal("bailing_hybrid is no longer in ownForwards — this gate would test nothing")
-	}
-	m, _ := realCacheFor(t, fam)
+	m, _ := realCacheForType(t, "bailing_hybrid")
 	s := m.NewSession(8)
 	names, fields := recurrentKinds(s.cache)
 	if len(names) == 0 {
@@ -212,16 +226,7 @@ func TestSession_bailingHybridNeverReusesKDAState(t *testing.T) {
 // recurrent cache. The other half matters more: every case where the skip must NOT happen is pinned too, because a wrongly skipped reset is the
 // cross-conversation state leak audit C-01 and C-03 closed.
 func TestSession_cleanCacheSkipsTheSecondRecurrentReset(t *testing.T) {
-	var fam ownForwardFamily
-	for _, f := range ownForwards {
-		if f.Name == "bailing_hybrid" {
-			fam = f
-		}
-	}
-	if fam.Name == "" {
-		t.Fatal("bailing_hybrid is no longer in ownForwards — this gate would test nothing")
-	}
-	m, _ := realCacheFor(t, fam)
+	m, _ := realCacheForType(t, "bailing_hybrid")
 	prompt := []int{4, 5, 6}
 
 	t.Run("new session: no reset at all before the first generation", func(t *testing.T) {

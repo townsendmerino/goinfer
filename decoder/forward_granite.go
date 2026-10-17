@@ -3,108 +3,19 @@ package decoder
 import "os"
 
 // SSM forward test/isolation seams, read once at init (the package convention) rather
-// than per layer/token inside the decode loop.
+// than per layer/token inside the decode loop. The first two shape Granite's program (Architecture.graniteLayerOps).
 var (
 	ssmNoMul   = os.Getenv("GOINFER_SSM_NOMUL") != ""
 	ssmSkipFFN = os.Getenv("GOINFER_SSM_SKIPFFN") != ""
-	// ssmStopLayer truncates the forward after this layer (-1 = run every layer): the resident-SSM bring-up's layer-sweep seam. Only
-	// tests set it, through SetSSMStopLayerForTest (testhooks.go).
+	// ssmStopLayer truncates the per-token walker after this layer (-1 = run every layer): the resident-SSM bring-up's layer-sweep
+	// seam. Only tests set it, through SetSSMStopLayerForTest (testhooks.go).
 	ssmStopLayer = -1
 )
 
-// Granite-4.0-H (granitemoehybrid) forward path — the hybrid: each layer is either a
-// Mamba-2 selective-scan mixer (recurrent state in the cache) or GQA softmax
-// attention (KV cache), every layer a routed+shared MoE. Four Granite scalars apply:
-// embedding_multiplier scales the embedding, attention_multiplier is the attention
-// q·k scale (arch.AttnScale), residual_multiplier scales every residual add, and
-// logits_scaling divides the final logits (applied at the shared head). Parity-first
-// f32, allocate-per-call, one token per call (prefill drives it sequentially so the
-// Mamba-2 recurrence sees every token), mirroring runLayersQwen35.
-func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
-		cache.scr = newDecodeScratch(arch)
-	}
-	g := arch.granite
-	hidden := arch.HiddenDim
-	eps := arch.NormEps
-	pos := cache.Pos()
-	mp := mamba2Params{
-		NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState,
-		NGroups: g.NGroups, DConv: g.DConv, Hidden: hidden, NormGroups: 1,
-	}
-
-	embMul, residMul := g.EmbMul, g.ResidMul
-	if ssmNoMul { // isolation seam (matches GraniteResidentParams)
-		embMul, residMul = 1, 1
-	}
-	h := make([]float32, hidden)
-	m.w.Embed.Row(id, h)
-	for i := range h {
-		h[i] *= embMul // embedding_multiplier
-	}
-
-	stopLayer := ssmStopLayer // layer-sweep seam: truncate to localize a resident SSM divergence
-	for l := 0; l < arch.NumLayers; l++ {
-		if stopLayer >= 0 && l > stopLayer {
-			break
-		}
-		lw := &m.w.Layers[l]
-
-		// Sequence-mixer sub-block (Pre2: norm → mix → ×residual_multiplier → add).
-		rmsNormInto(cache.scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
-		var mix []float32
-		if arch.isMambaLayer(l) {
-			mix = mamba2Step(cache.scr.norm, lw.mamba, mp, eps, cache.mamba[l])
-		} else {
-			mix = m.graniteAttention(cache.scr.norm, lw, arch, cache, l, pos)
-		}
-		addScaled(h, mix, residMul)
-
-		// MoE FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
-		if !ssmSkipFFN {
-			rmsNormInto(cache.scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-			ffn, err := moeMLP(cache.scr.norm, lw, arch, m.be, cache.scr, m.pager)
-			if err != nil {
-				return nil, err
-			}
-			addScaled(h, ffn, residMul)
-		}
-	}
-	cache.Advance() // manualPos: the mamba layers never Append, so step pos once per token
-	return h, nil
-}
-
-// graniteAttention is a plain GQA softmax attention layer: q/k/v/o projections, full rotary RoPE (or none, see below), causal
-// attention over the KV cache scaled by attention_multiplier (arch.AttnScale), with no QK-norm, no bias and no output gate.
+// Granite-4.0-H (granitemoehybrid): each layer is a Mamba-2 selective-scan mixer (recurrent state in the cache) or GQA softmax
+// attention (KV cache), every layer a routed+shared MoE. Four Granite scalars apply: embedding_multiplier scales the embedding,
+// attention_multiplier is the attention q·k scale (Architecture.AttnScale), residual_multiplier scales every residual add, and
+// logits_scaling divides the final logits (at the shared head). Its program is Architecture.graniteLayerOps.
 //
-// RoPE is skipped entirely when the checkpoint sets position_embedding_type "nope", which the released granite-4.0-h models do (HF
-// then builds no rotary_emb and passes position_embeddings=None). The tiny fixture is roped, so only the real-checkpoint oracle
-// exercises the nope path; applying RoPE unconditionally agrees with every T1 gate and decodes the shipped checkpoints with
-// positional rotations HF never applies.
-func (m *Model) graniteAttention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
-	hidden := arch.HiddenDim
-	q := make([]float32, nH*hd)
-	k := make([]float32, nKV*hd)
-	v := make([]float32, nKV*hd)
-	matmul(m.be, &lw.QProj, n, q, 1)
-	matmul(m.be, &lw.KProj, n, k, 1)
-	matmul(m.be, &lw.VProj, n, v, 1)
-
-	if !arch.isNoPELayer(layer) {
-		invFreq := arch.ropeInvFreq(layer)
-		ms := arch.ropeMscale(layer)
-		applyRoPE(q, nH, hd, pos, invFreq, ms)
-		applyRoPE(k, nKV, hd, pos, invFreq, ms)
-	}
-
-	cache.Append(layer, k, v)
-	ctx := cache.scr.ctxBuf(nH * hd) // R-17: from the scratch; attendQuery clears it
-	nKeys := len(cache.Keys(layer)) / (nKV * hd)
-	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*full attention*/, arch)
-
-	out := make([]float32, hidden)
-	matmul(m.be, &lw.OProj, ctx, out, 1)
-	return out
-}
+// RoPE is skipped on a layer when the checkpoint sets position_embedding_type "nope", which the released granite-4.0-h models do
+// (HF then builds no rotary_emb). The tiny fixture is roped, so only the real-checkpoint oracle exercises the nope path.

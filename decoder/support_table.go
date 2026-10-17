@@ -27,7 +27,7 @@ func imageTurnDecodesResident(cfg *Config, a *Architecture, backend string) bool
 	if !ResidentEligible(a, backend) {
 		return false
 	}
-	if f, own := a.ownForward(); own && f.Recurrent && !HybridImagePrefillDeclared(backend, a.MoE != nil) {
+	if a.recurrent() && !HybridImagePrefillDeclared(backend, a.MoE != nil) {
 		return false
 	}
 	if a.gemma4 != nil && !gemma4ImageDecodeResident(cfg.UseBidirectionalAttention != "", gemma4IsEModel(a)) {

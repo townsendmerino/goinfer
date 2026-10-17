@@ -14,8 +14,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Whole-model parity for the Gated-DeltaNet hybrid: the resident runner vs the CPU
-// runLayersQwen35, fed the SAME fixed token sequence, logits compared as the run gets long.
+// Whole-model parity for the Gated-DeltaNet hybrid: the resident runner vs the
+// CPU program walker, fed the SAME fixed token sequence, logits compared as the run gets long.
 //
 // Long is the point. Three of every four layers carry a recurrent state that COMPOUNDS, so the
 // wiring errors this family invites — a mixer misroute, a conv ring slip, the state left un-reset,

@@ -97,7 +97,7 @@ func (m *Model) residualAllResident(ctx context.Context, rr ResidentResidualAll,
 		if len(row) != a.HiddenDim {
 			return nil, fmt.Errorf("decoder: resident residual row %d is %d wide, want %d", i, len(row), a.HiddenDim)
 		}
-		normalize(a, row, m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+		m.finalNorm(row)
 	}
 	return rows, nil
 }
@@ -118,7 +118,7 @@ func (m *Model) promptHiddenAllSequential(ctx context.Context, prompt []int) ([]
 		}
 		// Copy before normalizing: h aliases the decode scratch and normalize mutates in place.
 		row := append([]float32(nil), h[:a.HiddenDim]...)
-		normalize(a, row, m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+		m.finalNorm(row)
 		out[i] = row
 	}
 	return out, nil

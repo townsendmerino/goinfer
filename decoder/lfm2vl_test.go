@@ -12,7 +12,7 @@ import (
 
 // S10, LFM2.5-VL (docs/tasks/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"): the causal image entry on the tracked
 // lfm2-tiny decoder. lfm2 has no batched pass, so prefillHiddenLFM2VL runs the spliced rows one at a time through
-// runLayersLFM2FromEmbed. Three properties:
+// the per-token walker (runLayersFromEmbed). Three properties:
 //   - with the text embeddings themselves spliced in as the "image" rows, it equals the plain per-token forward over the
 //     ids bit for bit (the embedding entry is the id entry);
 //   - with real features, it equals a hand splice of the <image> positions, and a planted splice that also covers the
@@ -58,7 +58,7 @@ func TestLfm2VLCausalSpans_tiny(t *testing.T) {
 	cache := m.NewCache(len(ids))
 	var plain []float32
 	for _, id := range ids {
-		h, err := m.runLayersLFM2(id, cache)
+		h, err := m.runLayers(id, cache)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +86,7 @@ func TestLfm2VLCausalSpans_tiny(t *testing.T) {
 		}
 		c := m.NewCache(len(ids))
 		for i := range ids {
-			out, err := m.runLayersLFM2FromEmbed(h[i*hidden:(i+1)*hidden], c)
+			out, err := m.runLayersFromEmbed(h[i*hidden:(i+1)*hidden], c)
 			if err != nil {
 				t.Fatal(err)
 			}

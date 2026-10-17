@@ -1471,7 +1471,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			L.window = h.window
 			// Per-layer attention geometry, from the same accessors the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer through
-			// the *Resident wrappers), never a recomputed interleave, so the runner cannot drift from runLayersGemma4. Uniform
+			// the *Resident wrappers), never a recomputed interleave, so the runner cannot drift from the Gemma 4 program walk. Uniform
 			// families collapse to the model-level fields; Gemma 4's global layers report the wide head, fewer KV heads and partial
 			// rotary.
 			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2

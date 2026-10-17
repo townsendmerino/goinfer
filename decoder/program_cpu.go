@@ -21,13 +21,17 @@ func (m *Model) program() *program {
 	return buildProgram(m.w.arch, m.w.hasExperts)
 }
 
-// hasExperts reports whether layer l carries MoE experts.
-func (w *Weights) hasExperts(l int) bool { return l < len(w.Layers) && w.Layers[l].Experts != nil }
+// hasExperts reports whether layer l carries MoE experts (Gemma 4's 26B carries them in its own block).
+func (w *Weights) hasExperts(l int) bool {
+	return l < len(w.Layers) && (w.Layers[l].Experts != nil || w.Layers[l].gemma4moe != nil)
+}
 
 // walkToken runs prog's layers for one position over h ([hidden], the residual stream, updated in place) and returns h. Each
 // operation reads its parameters from prog; the walker supplies the stream's buffers, the cache, and the hooks that are not
 // operations (the layer pager, LoRA, the captures, decodeTiming).
-func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32, error) {
+//
+// pleID is the token id behind h for the embedding stage's PLE inputs (Gemma 4); an image row passes the pad id.
+func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	scr := cache.scr
 	if m.layerPager != nil {
@@ -35,7 +39,17 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 	}
 	pos := cache.Pos() // this position, stable across layers in one forward
 	var t attnTimer
+	var g4 *gemma4Token // Gemma 4's per-token state: its PLE inputs are computed from the embedding, before layer 0
+	if arch.gemma4 != nil {
+		g4 = m.newGemma4Token(prog, h, pleID, pos)
+		if g4traceHidden != nil {
+			g4traceHidden(-1, h)
+		}
+	}
 	for l, ops := range prog.layers {
+		if ssmStopLayer >= 0 && l > ssmStopLayer {
+			break // the resident-SSM bring-up's layer sweep (SetSSMStopLayerForTest)
+		}
 		if m.layerPager != nil {
 			m.layerPager.enterLayer(l)
 		}
@@ -60,19 +74,25 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 				projQKVToken(m.be, scr, lw, m.reg(o.in, h, scr), q, k, v, ld, o.proj)
 				t.qkv()
 			case opQKNorm:
-				applyQKNorm(o.qkNorm, q, k, lw, nH, arch.NumKVHeads, hd)
+				applyQKNorm(o.qkNorm, q, k, lw.QNorm, lw.KNorm, nH, arch.NumKVHeads, hd)
 			case opRope:
-				r := &o.rope
-				ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, cache.mropePos, cache.mropeDelta, r.Interleave, r.MRopeInterleaved)
-				ropeAt(k, arch.NumKVHeads, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, cache.mropePos, cache.mropeDelta, r.Interleave, r.MRopeInterleaved)
+				applyRope(&o.rope, q, k, nH, arch.NumKVHeads, hd, pos, cache.mropePos, cache.mropeDelta)
 			case opAttnTemp:
-				scale := float32(1 + o.temp.Beta*math.Log1p(math.Floor(float64(pos)/o.temp.OrigMaxPos)))
+				scale := o.temp.scale(pos)
 				for j := range q {
 					q[j] *= scale
 				}
 			case opAttention:
-				if err := attendToken(o.attn, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
-					return nil, err
+				switch o.attn.Order {
+				case attnSinksF64:
+					attendSinksToken(o.attn, q, k, v, ctx, cache, arch, lw, l, pos)
+				case attnQuery:
+					cache.Append(l, k, v)
+					attendQueryP(o.attn, q, ctx, scr.scoresBuf(cache.storedRows(l, arch.NumKVHeads*hd)), cache, l, pos, arch)
+				default:
+					if err := attendToken(o.attn, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
+						return nil, err
+					}
 				}
 			case opOutGate:
 				gates := scr.gateBuf(lw.GProj.Rows())
@@ -104,7 +124,11 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 					t0 = time.Now()
 				}
 				out := m.reg(o.out, h, scr)
-				if err := m.ffnToken(&o.ffn, m.reg(o.in, h, scr), out, lw, scr, ld); err != nil {
+				if o.ffn.Form == ffnGemma4Dense {
+					if err := m.gemma4DenseFFN(o.ffn.Act, m.reg(o.in, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
+						return nil, err
+					}
+				} else if err := m.ffnToken(&o.ffn, m.reg(o.in, h, scr), out, lw, scr, ld); err != nil {
 					return nil, err
 				}
 				if decodeTiming {
@@ -130,11 +154,59 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
 					}
 				}
-				addResidual(h, scr.sub)
+				if o.res.Scale != 0 {
+					addScaled(h, scr.sub, float32(o.res.Scale))
+				} else {
+					addResidual(h, scr.sub)
+				}
+			case opGemma4Attn:
+				m.gemma4AttnToken(&o.g4, m.reg(o.in, h, scr), m.reg(o.out, h, scr), lw, cache, l, pos, g4)
+				lastFFN = false
+			case opGemma4MoE:
+				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.norms.Eps, o.norms.AddOne, h, lw.gemma4moe, m.pager))
+			case opPLE:
+				m.gemma4PLEBranch(h, g4.ple(l), lw, &o.norms, scr.sub)
+			case opLayerScale:
+				if lw.LayerScalar != 0 {
+					for i := range h {
+						h[i] *= lw.LayerScalar
+					}
+				}
+			case opMLA:
+				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
+				lastFFN = false
+			case opDeltaNet:
+				dp := *arch.qwen35
+				dp.ONormEps, dp.NegEigval = o.delta.ONormEps, o.delta.NegEigval
+				copy(m.reg(o.out, h, scr), gatedDeltaNetStep(m.be, m.reg(o.in, h, scr), lw.delta, dp, arch.HiddenDim, o.delta.Eps, cache.delta[l]))
+				lastFFN = false
+			case opGatedAttn:
+				if o.gated.Attn.Order != attnQuery {
+					return nil, fmt.Errorf("decoder: layer %d: gated attention runs attendQuery only, not order %d", l, o.gated.Attn.Order)
+				}
+				copy(m.reg(o.out, h, scr), m.qwen35AttentionWith(&o.gated, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
+				lastFFN = false
+			case opMamba2:
+				mp := arch.mamba2Shapes(o.mamba.NormGroups)
+				copy(m.reg(o.out, h, scr), mamba2Step(m.reg(o.in, h, scr), lw.mamba, mp, o.mamba.Eps, cache.mamba[l]))
+				lastFFN = false
+			case opShortConv:
+				copy(m.reg(o.out, h, scr), shortConvStep(m.reg(o.in, h, scr), lw.shortConv, *arch.lfm2, arch.HiddenDim, cache.conv[l]))
+				lastFFN = false
+			case opKDA:
+				kp := *arch.kda
+				kp.LowerBound = o.kda.LowerBound
+				copy(m.reg(o.out, h, scr), kdaMixerStep(m.be, m.reg(o.in, h, scr), lw.kda, kp, arch.HiddenDim, o.kda.Eps, cache.kda[l]))
+				lastFFN = false
 			default:
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.kind)
 			}
 		}
+		if g4traceHidden != nil && arch.gemma4 != nil {
+			g4traceHidden(l, h)
+		}
+		// The hidden-state seam the block drafters read: the residual AFTER layer l is complete (HF's output_hidden_states
+		// shifted by one: its index 0 is the embedding, ours is layer 0's output), copied, since later layers mutate h.
 		if cache.captureLayers != nil {
 			for i, cl := range cache.captureLayers {
 				if cl == l {
@@ -143,7 +215,21 @@ func (m *Model) walkToken(prog *program, h []float32, cache *KVCache) ([]float32
 			}
 		}
 	}
+	if cache.manualPos {
+		cache.Advance() // a layer that stores no K/V row (a latent, a recurrent state) does not step the position
+	}
 	return h, nil
+}
+
+// finalNorm applies the head stage's norm to one row in place: the norm logitsFromHidden applies before the head, for the seams
+// that stop before it (the hidden states).
+func (m *Model) finalNorm(x []float32) {
+	hp := &m.program().head
+	b := m.w.FinalNormBias
+	if !hp.Norm.Bias {
+		b = nil
+	}
+	applyNorm(hp.Norm, x, x, m.w.FinalNorm, b, m.w.arch.HiddenDim)
 }
 
 // reg resolves an operand to the stream's buffer.
@@ -222,15 +308,37 @@ func projQKVToken(be Backend, scr *decodeScratch, lw *LayerWeights, x, q, k, v [
 	}
 }
 
-// applyQKNorm RMS-normalises q and k per head, or each as one vector when p.Whole.
-func applyQKNorm(p qkNormParams, q, k []float32, lw *LayerWeights, nH, nKV, hd int) {
-	if p.Whole {
-		rmsNorm(q, lw.QNorm, 1, nH*hd, p.Eps, p.AddOne)
-		rmsNorm(k, lw.KNorm, 1, nKV*hd, p.Eps, p.AddOne)
+// applyQKNorm normalises q and k: weighted RMSNorm per head, or over each whole vector when p.Whole; or Llama 4's
+// parameter-free RMS per head.
+func applyQKNorm(p qkNormParams, q, k, qw, kw []float32, nH, nKV, hd int) {
+	if p.Form == qkL2 {
+		l2NormHeads(q, nH, hd, p.Eps)
+		l2NormHeads(k, nKV, hd, p.Eps)
 		return
 	}
-	rmsNorm(q, lw.QNorm, nH, hd, p.Eps, p.AddOne)
-	rmsNorm(k, lw.KNorm, nKV, hd, p.Eps, p.AddOne)
+	if p.Whole {
+		rmsNorm(q, qw, 1, nH*hd, p.Eps, p.AddOne)
+		rmsNorm(k, kw, 1, nKV*hd, p.Eps, p.AddOne)
+		return
+	}
+	rmsNorm(q, qw, nH, hd, p.Eps, p.AddOne)
+	rmsNorm(k, kw, nKV, hd, p.Eps, p.AddOne)
+}
+
+// applyRope rotates one position's q and k.
+func applyRope(r *ropeParams, q, k []float32, nH, nKV, hd, pos int, mropePos [][3]int, mropeDelta int) {
+	if r.Kernel == ropeMLAKernel {
+		mlaRope(q, nH, hd, pos, r.InvFreq, r.Mscale, r.Interleave)
+		mlaRope(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.Interleave)
+		return
+	}
+	ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+	ropeAt(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
+}
+
+// scale is the query's temperature at pos.
+func (p *attnTempParams) scale(pos int) float32 {
+	return float32(1 + p.Beta*math.Log1p(math.Floor(float64(pos+p.PosOffset)/p.OrigMaxPos)))
 }
 
 // attendToken stores this position's k and v in layer l's cache and writes the attention context of q over the attended keys
@@ -289,6 +397,18 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *decodeScratch, ld *loraLayerDelta) error {
 	arch := m.w.arch
 	switch p.Form {
+	case ffnGemma4Dense:
+		return errNotImplemented // the walker runs Gemma 4's dense FFN itself (it shares the token's quantized input)
+	case ffnLlama4MoE:
+		m.llama4MoEWith(x, out, lw, &p.MoE, arch.HiddenDim)
+		return nil
+	case ffnGptOss:
+		g, err := m.gptOssMoEWith(x, lw, p, arch.HiddenDim)
+		if err != nil {
+			return err
+		}
+		copy(out, g)
+		return nil
 	case ffnMoE:
 		g, err := moeMLPWith(x, lw, &p.MoE, p.Act, arch.HiddenDim, m.be, scr, m.pager)
 		if err != nil {
@@ -296,8 +416,11 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		}
 		copy(out, g)
 		return nil
+	case ffnNemotronMoE:
+		copy(out, m.nemotronMoEWith(x, lw, &p.MoE, arch.HiddenDim))
+		return nil
 	case ffnNonGated:
-		g, err := nonGatedMLPWith(x, lw, p.Act, arch.IntermediateDim, arch.HiddenDim, m.be)
+		g, err := nonGatedMLPWith(x, lw, p.Act, lw.UpProj.Rows(), arch.HiddenDim, m.be)
 		if err != nil {
 			return err
 		}

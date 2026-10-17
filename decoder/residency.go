@@ -641,7 +641,7 @@ func (a *Architecture) runnerShapeDecline() string {
 	case a.llama4 != nil:
 		return runnerShapeOwnForward
 	case a.lfm2 != nil:
-		// LFM2/LFM2.5: own forward (runLayersLFM2), not bridged. Declining HERE and not only via FeatShortConv is
+		// LFM2/LFM2.5: its short-convolution layers (opShortConv) are not bridged. Declining HERE and not only via FeatShortConv is
 		// deliberate: decodeRunnerEligible is an ARCH-SHAPE predicate, and 22 of 30 layers run a gated short
 		// convolution with a rolling window that no uniform-layer runner can express, a property of the family
 		// rather than of any backend's kernels. It also keeps the capability matrix honest: its GPU-resident
@@ -868,7 +868,7 @@ func (m *Model) LayerIsLocalResident(i int) bool {
 // HeadDimAtResident / KVHeadsAtResident / RotaryDimAtResident expose layer i's attention
 // geometry to a resident runner that plumbs per-layer widths (9a-P2). They delegate to the
 // SAME arch methods the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer), so the runner's
-// interleave can never drift from runLayersGemma4's — Gemma 4's global layers report the
+// interleave can never drift from the Gemma 4 program walk's — Gemma 4's global layers report the
 // wider head_dim / fewer KV heads / partial rotary; every uniform family collapses to the
 // model-level Architecture fields.
 func (m *Model) HeadDimAtResident(i int) int { return m.w.arch.headDimAt(i) }
@@ -1703,7 +1703,7 @@ func (m *Model) GptOssExpertBiasResident(l int) []float32 {
 // GptOssExpertDownBiasResident returns layer l's per-expert down-projection bias table,
 // expert-major (biasRow = idx[slot]*hidden), matching gemv_w4a8_moe_wacc_bias's addressing —
 // the down-combine kernel adds this INSIDE the expert before the router weight scales the
-// result (decoder/forward_gptoss.go's gptOssExpert: dst = Down·h + downBias; gptOssMoE then
+// result (decoder/forward_gptoss.go's gptOssExpertWith: dst = Down·h + downBias; gptOssMoE then
 // combines out += w·dst), unlike GPT-2's plain post-hoc += bias[row]. nil for every family
 // without per-expert down biases.
 func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
@@ -1723,7 +1723,7 @@ func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
 }
 
 // Qwen3.5/3.6-MoE / Qwen3-Next / Qwen3.8 resident bridge (Gated-DeltaNet hybrid). The family's
-// forward is its own (runLayersQwen35) because two things in it are not the uniform-layer shape:
+// forward has its own operations (opDeltaNet, opGatedAttn) because two things in it are not the uniform-layer shape:
 // most layers replace softmax attention with a recurrent delta rule, and the full-attention layers
 // carry a per-head output gate fused into a double-width q_proj. These accessors expose both to a
 // backend without exporting the family's internals.
