@@ -224,7 +224,7 @@ var admissionGolden = map[string][]string{
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels
 	// (gpu.TestGptOssResidentParityWebGPU).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
-	"granitemoehybrid": {"metal", "webgpu"},         // feature-admitted; its runner-shape bring-up gate keeps it on the CPU (hardware matrix)
+	"granitemoehybrid": {"cuda", "metal", "webgpu"}, // feature-admitted; its runner-shape bring-up gate keeps it on the CPU (hardware matrix)
 	"kimi_k2":          {"cuda", "metal", "webgpu"}, // feature-admitted; the 384-expert router cap keeps it off Metal (hardware matrix)
 	"bailing_hybrid":   {},                          // FeatKDA undeclared everywhere -- new this pass
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
@@ -263,7 +263,7 @@ var admissionGolden = map[string][]string{
 	"mistral3":   {"cuda", "metal"},
 	"ministral3": {"cuda", "metal"},
 	"mixtral":    {"cuda", "metal", "webgpu"},
-	"nemotron_h": {"metal", "webgpu"}, // Metal since OP2b step 2, int4 only (metal/mamba.go:buildMamba declines int8)
+	"nemotron_h": {"cuda", "metal", "webgpu"}, // Metal since OP2b step 2, CUDA since OP2b step 2d's declaration, int4 only (buildMamba declines int8 on both)
 	"phi3":       {"cuda", "metal", "webgpu"},
 	"qwen2":      {"cuda", "metal", "webgpu"},
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
@@ -353,6 +353,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			// control, and TestGemma2Softcap_lanesCUDA.
 			FeatAttnLogitSoftcap,
 			FeatMLA,
+			// Nemotron-H's Mamba-2 mixer and non-gated squared-ReLU MLP, int4 only (§4.7, OP2b on CUDA).
+			FeatSSM, FeatNonGatedMLP, FeatNonGatedReLU2,
 			// FeatPairwiseRoPE/FeatPairwiseMRoPE: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
 			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the real Aya/R7B gate.
 			// FeatGemma4EModel: the PLE branch from existing kernels, KV-shared layers aliasing their source's cache, per-layer FFN

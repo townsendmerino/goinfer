@@ -526,6 +526,14 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatParallelBlock: true,
 		FeatLogitScale:    true,
 		FeatMLA:           true, // latent-KV attention (DeepSeek, Kimi)
+		// Nemotron-H's Mamba-2 mixer (cuda/mamba.cu: mamba_conv, mamba_ssm, mamba_gnorm around two int8 projections), its squared-ReLU MLP
+		// (cuda/nongated_act.cu: relu2_quant) and the non-gated up/down structure, at int4 only: BuildResident declines an int8 load, whose
+		// projections would be re-quantized to int4, and the family's non-gated MoE blocks. Granite-4.0-H stays on the CPU. The declaration rests on
+		// the tier 0 gates (K, D, I, M, S, G, P) and on tier 1 against the CPU: the 4B whole, a three-layer slice of the 9B, and the whole 9B on this
+		// 8 GB card (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"; docs/measurements/op2b-cuda-2026-10-16/).
+		FeatSSM:           true,
+		FeatNonGatedMLP:   true,
+		FeatNonGatedReLU2: true,
 		// GPT-J pairwise rotation via cuda/rope_pairwise.cu (rope_kv_pw, rope_kv_batched_pw, rope_kv_mrope_batched_pw), bound in place of the NeoX
 		// rope pipelines when Model.PairwiseRoPEResident(). Gated by a peaked-attention test that goes red on the NeoX kernels
 		// (TestPairwiseRoPEResidentParityCUDA), TestGlmOcrResidentParityCUDA and the real-checkpoint TestCohereRealResidentParityCUDA (heavy).

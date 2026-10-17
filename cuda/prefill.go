@@ -676,6 +676,12 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 	}
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
+	for l := range r.layers {
+		if r.layers[l].mixer == decoder.MixerMamba {
+			// Not a precision problem: the Mamba-2 recurrence has no batched kernel, so a prompt runs one forward per token at any quant.
+			return false, "sequential — the Mamba-2 mixer has no batched kernel, so a prompt runs one forward per token (slower TTFT)"
+		}
+	}
 	if len(r.layers) > 0 {
 		if k := nonBatchableKind(&r.layers[0]); k != "" {
 			return false, fmt.Sprintf("sequential — batched prefill needs int4 or int8 projections (%s weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt", k)
