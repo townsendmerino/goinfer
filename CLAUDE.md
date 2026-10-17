@@ -87,6 +87,13 @@ the next natural point (your next push, the start of the next task, and always b
 the moment you see it: red does not announce itself, and a break rides along under every later push until someone looks.
 Waiting on CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wait-2026-10.md`).
 
+**Don't push product code to main while CI for the previous push is still running.** Owner rule, 2026-10-17: wait for it
+to finish green, so a red run points at one commit. Check `gh run list --branch main --limit 3` before the push; while it
+runs, keep working and committing locally rather than holding the turn on it. Two reasons. A new push to `main` cancels
+the run in progress, so the earlier commit never gets a verdict. And a red run over several commits has to be
+bisected. On 2026-10-17 three pushes in twenty minutes cancelled each other's runs, and the one that finished was red for
+a commit two pushes back.
+
 **No new production env reads.** `testdata/env_reads.txt` lists every `GOINFER_*` variable production code reads
 from the environment, and `TestEnvVars_docAndCodeAgree` fails on a read that is not on it. A new operator choice is a
 `decoder.Options` field with a per-model accessor; a new diagnostic is a test hook. The list only shrinks — see
