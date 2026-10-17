@@ -328,9 +328,16 @@ pinned versions, dated, thermal note, verified-idle box).
     top_k 40 and top_p 0.9, unless the model's Modelfile sets others; not checked per model) while goinfer's sampled the
     whole vocabulary. A new reading of the same config does not continue those rows.
   - `greedy` (temperature 0) and `own_defaults` (nothing sent, by design) are unchanged.
-  - **Not covered: `min_p`.** goinfer has no `min_p` request field, so a model that recommends one gets it on goinfer's arm
-    only (no checkpoint in the Mac bench set carries one, checked 2026-10-17), and llama-server applies its own default
-    `min_p` when none is sent.
+  - **`min_p`:** goinfer has no `min_p` request field, so a model that recommends one gets it on goinfer's arm only (no
+    checkpoint in the Mac bench set carries one, checked 2026-10-17).
+- **2026-10-17, later: the same seed, context, `min_p` and quant class on every arm.**
+  - Every sampled config sends `seed 1` to every arm, and `min_p 0` to Ollama and llama-server (goinfer has none).
+  - Every arm gets the same context: goinfer `-ctx`, Ollama `num_ctx` and llama-server `--ctx-size` are all 4096 unless the
+    run pins one. Before, goinfer ran at its own default context. mlx-lm has no context setting, and its cells record that.
+  - A run whose arms load different quant classes is refused unless it is marked unmatched. The classes are read from the
+    peer's file and goinfer's decode path, and each cell records both labels. phi3-mini's default is now `q4k`, 4-bit like
+    its Q4_K_M peers. Before, it was `int8int8`.
+  - A reading before this change is not continued by one after it.
 
 ## Model storage — archive remote, benchmark local
 

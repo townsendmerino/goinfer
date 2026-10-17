@@ -26,6 +26,12 @@ night of 2026-10-17 on the Mac and get their own record.
   waits.
 - **Use:** the readings replace the TL;DR and §B5.1 temperature-1.0 CUDA figures. The old rows stay, with their note. No
   stop rule beyond the fixed cells, and no re-run until a cell passes.
+- **Matched quants (added 2026-10-17, owner, before any figure is published):** a cell is comparable only when goinfer and
+  each peer load the same quant class, read from the files (the Ollama tag's manifest blob, the llama.cpp GGUF, mlx-lm's
+  `config.json`) and from goinfer's reported decode path. goinfer has no mode that keeps a Q4_K_M file's Q5_K and Q6_K
+  tensors native, so a match is by class (4-bit against 4-bit), never tensor for tensor. From `bench_peer.py` after this
+  change, a run whose arms do not share a class is refused unless `BENCH_UNMATCHED=1`, and then every cell records
+  `quant_matched: false`.
 
 ## Metal (the Mac, night of 2026-10-17): pre-registration
 
@@ -88,6 +94,32 @@ Ratio r = goinfer ÷ peer, the median of the 3 pairs (range in brackets), graded
 - **Not covered:** llama-server applies its own default `min_p` when none is sent, and goinfer has no `min_p` request
   field, so the llama.cpp arm may still truncate there (`docs/benchmarks.md`, "Sampling changes that move
   comparability").
+
+### The quant each arm loaded
+
+The same for both nobara runs, except goinfer on phi3-mini:
+
+| model | goinfer, this run | goinfer, nobara's run (`peer-sampled-cuda-2026-10-17`) | Ollama (tag → manifest blob) | llama.cpp (file) |
+|---|---|---|---|---|
+| qwen2.5-coder-0.5b | `int4` (`cuda-resident (int4)`) | `int4` | Q4_K_M | Q4_K_M |
+| gemma3-1b | `int4` | `int4` | Q4_K_M | Q4_K_M |
+| phi3-mini | `q4k` (`cuda-resident (q4k)`: the file's 81 Q4_K tensors kept exact; its 32 Q5_K and 17 Q6_K tensors at int8) | `int8int8` (every weight int8; the harness's old default override) | `p3m-local` → `sha256-01ec9e…`, Q4_K_M | `Phi-3-mini-4k-instruct-q4.gguf`, Q4_K_M |
+
+Ollama's blob and the llama.cpp file are the same file: 2,393,231,072 bytes, file type 15, and the same tensor census
+(81 q4_K, 32 q5_K, 17 q6_K, 65 f32). By class, this run's phi3-mini matches (4-bit against 4-bit) and nobara's does not
+(8-bit against 4-bit). By the owner's ruling (2026-10-17), phi3-mini's cells wait for a matched-quant reading on both boxes
+before anything is published.
+
+### nobara's record (`peer-sampled-cuda-2026-10-17`, `e96737b8`)
+
+- **Its 0.5B and gemma3-1b cells feed the §B5.1 rows that sent one field.** Its arms were sent both fields explicitly: the
+  top_p 0.95 cells sent `top_k 0`, and the top_k 40 cells sent `top_p 1.0`.
+- **Its phi3-mini cells are excluded:** goinfer ran `int8int8` against Ollama's Q4_K_M `p3m-local`.
+- **Its shared-preset run used temperature 1.0,** not the pre-registered 0.8. It is kept as a record only.
+- **Its 0.5B goinfer `temp1.0_notrunc` cell is VOID:** one completion ended at 10 of 64 tokens, under the token gate's 32 (a
+  sampled end-of-sequence). Its rate, 354.4 tok/s, agrees with this run's 355.2.
+- **The temperature-1.0 runs agree where both arms matched.** gemma3-1b reads 1.641 here and 1.658 there; Ollama's rates
+  agree within 0.1% on all three models. So this run is cited, with nobara's as the repeat.
 
 ## Results: Metal
 
