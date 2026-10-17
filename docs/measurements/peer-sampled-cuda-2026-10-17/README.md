@@ -2,7 +2,7 @@
 
 > **Run 2 (the shared truncated preset below) is NOT pre-registered: temperature 1.0.** The pre-registered shared preset is the Mac's `temp0.8_topk40_topp0.9` (temperature 0.8, `docs/measurements/peer-notrunc-2026-10-17.md`, "The shared truncated preset"); run 2 sent temperature 1.0, top_k 40, top_p 0.9 on an owner message that gave 1.0, later corrected to 0.8. Its readings are a record, not the pre-registered cells.
 >
-> **Run 1 went over the day budget:** 24 cells, 12 minutes of wall time (12:22–12:34 PDT), where the day rule is nothing estimated over about 10 minutes (CLAUDE.md, "Run budget"). The estimate was made before the run and said about 12; the owner's by-day instruction was the override. Run 2 took 6 minutes.
+> **Run 1 went over the day budget:** 24 cells, 12 minutes of wall time (12:22–12:34 PDT), where the day rule is nothing estimated over about 10 minutes (CLAUDE.md, "Run budget"). The run's duration was not stated to the owner before it started (CLAUDE.md asks for that); the owner's by-day instruction was taken as the override. Run 2 took 6 minutes.
 
 Tier 1, by day, through the timing lock (`bench_peer.py` holds it for its whole run), nobara-pc. **Exploratory and ungraded**: no decision rule was registered for these runs, so no AHEAD/BEHIND grade is given, only ratios.
 Made for the Mac session, which is updating the published figures; the published docs were not edited here. Question asked (owner, 2026-10-17): re-measure the eight CUDA peer cells of
