@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Tool calls are constrained for real agent tool lists.** A tool whose parameter schema used a keyword the grammar does not
+  check (opencode's own `bash` and `read` use `maximum` and `exclusiveMinimum`), or an untyped property, used to drop the
+  call constraint for every tool in the request, silently, so a malformed call could come back as text. Tool parameters
+  now compile leniently: unchecked assertions are left to the tool, and an untyped or composite value may be any JSON value.
+  A tool list that still cannot be constrained is reported on stderr. `response_format: json_schema` is unchanged.
 - **On `/v1/messages`, `input_tokens` now counts only the tokens prefilled for that request; reused tokens are reported as
   `cache_read_input_tokens`, matching Anthropic's definitions.** The prompt is their sum. Before, `input_tokens` was the
   whole prompt and no reuse was reported, so a cold request reads as before. A client that took `input_tokens` as the prompt

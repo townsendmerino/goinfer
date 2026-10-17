@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -294,6 +295,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		// grammar-fused speculative decode applies.
 		g, err := constrain.ToolCallsGrammar(prefix, suffix, argsKey, array, specs)
 		if err != nil {
+			warnToolUnionOff(err)
 			return
 		}
 		m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
@@ -308,6 +310,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	if trigger == "" {
 		g, err := constrain.ToolCallsGrammar("", suffix, argsKey, array, specs)
 		if err != nil {
+			warnToolUnionOff(err)
 			return
 		}
 		lazy := constrain.NewCallKeyLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), "<|python_tag|>")
@@ -317,6 +320,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	}
 	g, err := constrain.ToolCallsGrammar(trigger, suffix, argsKey, array, specs)
 	if err != nil {
+		warnToolUnionOff(err)
 		return
 	}
 	// A LogitProcessor only: gr.masker stays nil, because the grammar-fused speculative path
@@ -325,6 +329,17 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	lazy := constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger)
 	gr.sp.LogitProcessor = lazy.Process
 	gr.sp.LogitProcessorGate = lazy.Gate
+}
+
+// toolUnionOffSeen holds each reason a request's tool calls went unconstrained, already reported.
+var toolUnionOffSeen sync.Map
+
+// warnToolUnionOff reports, once per distinct reason, that a request's tool calls are not constrained: the union could not
+// be built, so a malformed call can reach the parser.
+func warnToolUnionOff(err error) {
+	if _, seen := toolUnionOffSeen.LoadOrStore(err.Error(), true); !seen {
+		fmt.Fprintf(os.Stderr, "goinfer: tool calls are not constrained for these tools (each distinct reason is reported once): %v\n", err)
+	}
 }
 
 // toAPICalls renders parsed calls in the OpenAI response shape (arguments is a

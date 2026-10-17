@@ -23,6 +23,9 @@ const (
 	fsStrU                   // inside a string, reading \uXXXX (num = hex left)
 	fsNum                    // inside a number (num = sub-state)
 	fsEnum                   // matching a fixed literal set (cand mask, pos)
+	fsFreeKey                // a free object's key string (anyObjNode): any string, then ':'
+	fsFreeKeyEsc             // a free key, after '\'
+	fsFreeKeyU               // a free key, reading \uXXXX (num = hex left)
 )
 
 // number sub-states (held in frame.num while state == fsNum).
@@ -180,7 +183,7 @@ func (g *schemaGrammar) step(b byte) bool {
 				}
 				return false
 			}
-			if b == '"' && g.objHasUnseen(f) {
+			if b == '"' && (f.n.free || g.objHasUnseen(f)) {
 				g.enterKey(f)
 				return true
 			}
@@ -190,7 +193,7 @@ func (g *schemaGrammar) step(b byte) bool {
 			if isWS(b) {
 				return g.wsStep()
 			}
-			if b == '"' && g.objHasUnseen(f) {
+			if b == '"' && (f.n.free || g.objHasUnseen(f)) {
 				g.enterKey(f)
 				return true
 			}
@@ -199,12 +202,46 @@ func (g *schemaGrammar) step(b byte) bool {
 		case fsObjKeyStr:
 			return g.keyStep(f, b)
 
+		case fsFreeKey:
+			switch {
+			case b == '"':
+				f.state = fsObjColon
+			case b == '\\':
+				f.state = fsFreeKeyEsc
+			case b < 0x20:
+				return false
+			}
+			return true
+
+		case fsFreeKeyEsc:
+			switch b {
+			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+				f.state = fsFreeKey
+				return true
+			case 'u':
+				f.state, f.num = fsFreeKeyU, 4
+				return true
+			}
+			return false
+
+		case fsFreeKeyU:
+			if !isHex(b) {
+				return false
+			}
+			if f.num--; f.num == 0 {
+				f.state = fsFreeKey
+			}
+			return true
+
 		case fsObjColon:
 			if isWS(b) {
 				return g.wsStep()
 			}
 			if b == ':' {
-				child := f.n.props[f.sel].schema
+				child := anyNode
+				if !f.n.free {
+					child = f.n.props[f.sel].schema
+				}
 				f.state = fsObjComma
 				g.push(child)
 				return true
@@ -215,7 +252,7 @@ func (g *schemaGrammar) step(b byte) bool {
 			if isWS(b) {
 				return g.wsStep()
 			}
-			if b == ',' && g.objHasUnseen(f) {
+			if b == ',' && (f.n.free || g.objHasUnseen(f)) {
 				f.state = fsObjKey
 				return true
 			}
@@ -358,6 +395,23 @@ func (g *schemaGrammar) dispatch(f *frame, b byte) bool {
 			f.state = fsNum
 			return true
 		}
+	case kAny: // the first byte picks the shape, and the frame continues as that shape
+		if (b == '{' || b == '[') && len(g.stack) > maxSchemaDepth {
+			return false // free nesting is bounded as a schema's is (M-40): deeper output would make each mask step's stack copy unbounded
+		}
+		switch {
+		case b == '{':
+			f.n = anyObjNode
+		case b == '[':
+			f.n = anyArrNode
+		case b == '"':
+			f.n = anyStrNode
+		case b == 't' || b == 'f' || b == 'n':
+			f.n = anyLitNode
+		default:
+			f.n = anyNumNode
+		}
+		return g.dispatch(f, b)
 	case kEnum:
 		var cand uint64
 		for i, e := range f.n.enum {
@@ -406,6 +460,10 @@ func (g *schemaGrammar) objHasUnseen(f *frame) bool {
 
 // enterKey begins matching an object key against the property names not yet seen.
 func (g *schemaGrammar) enterKey(f *frame) {
+	if f.n.free {
+		f.state = fsFreeKey
+		return
+	}
 	all := uint64(0)
 	if len(f.n.props) < 64 {
 		all = (uint64(1) << uint(len(f.n.props))) - 1

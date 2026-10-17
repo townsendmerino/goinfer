@@ -334,6 +334,18 @@ supply, with any number of tools:
   follows prose in the same reply is still only parsed. A server started with speculative decoding leaves `auto` unconstrained, to
   keep its drafter.
 
+**What the arguments are held to.** The call's form, the tool's name and the argument keys a tool declares are always
+constrained. Within the arguments, a value is held to the type the schema gives it, and what the grammar cannot check is the
+tool's to validate:
+- numeric bounds other than `minimum: 0`, string length and pattern, and similar assertions are not enforced;
+- a value with no type, several types, or a composite keyword (`anyOf`, `oneOf`, `$ref`, …) may be any JSON value;
+- an object that declares no properties may be any object, and one that also allows undeclared keys is held to its declared
+  ones.
+
+So an agent's real tool list (opencode's tools use `maximum` and `exclusiveMinimum`) is constrained rather than dropped. A
+tool list that still cannot be constrained is reported on stderr, once per reason, and those calls are parsed only.
+`response_format: json_schema` stays strict: an unsupported keyword there is a 400.
+
 Families without a JSON call form (Gemma 4's own call syntax, gpt-oss's channel message, and families with no tool template) are parsed only. This constrains the
 call's FORM, not the model's choice of tool. `GOINFER_TOOL_UNION=0` turns the multi-tool constraint off. Measured in
 `docs/measurements/tool-union-2026-09-24.md`: on the Qwen2.5-7B agent transcript that produced 14 unusable calls and 10 calls with

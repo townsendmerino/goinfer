@@ -502,13 +502,17 @@ func TestToolCallGrammar_noArgumentSchemas(t *testing.T) {
 		})
 	}
 
-	// NOT narrowed: an explicit additionalProperties:true is still a freeform object, still
-	// unconstrainable, and must still be refused rather than silently turned into "{} only".
-	// Without this, the fix would look identical to one that accepts everything.
-	if _, err := ToolCallGrammar("", "", "arguments", "ping", false,
-		[]byte(`{"type":"object","properties":{},"additionalProperties":true}`)); err == nil {
-		t.Error("additionalProperties:true compiled — a freeform object was silently narrowed " +
-			"to the empty object, which is tighter than the schema means")
+	// NOT narrowed: an explicit additionalProperties:true is a freeform object. The tool path compiles it to any object,
+	// never to "{} only", which would be tighter than the schema means.
+	g, err := ToolCallGrammar("", "", "arguments", "ping", false,
+		[]byte(`{"type":"object","properties":{},"additionalProperties":true}`))
+	if err != nil {
+		t.Fatalf("additionalProperties:true: %v", err)
+	}
+	for _, call := range []string{`{"name":"ping","arguments":{}}`, `{"name":"ping","arguments":{"x":[1,{"y":null}],"z":"s"}}`} {
+		if !g.TryBytes([]byte(call)) {
+			t.Errorf("additionalProperties:true was narrowed: %s rejected", call)
+		}
 	}
 }
 
@@ -781,7 +785,23 @@ func TestToolCallGrammar_depthIsBounded(t *testing.T) {
 	// synthetic top-level one.
 	paramSchema := []byte(`{"type":"object","additionalProperties":false,"properties":{"x":` +
 		string(deep) + `}}`)
-	if _, err := ToolCallGrammar("", "", "arguments", "t", false, paramSchema); err == nil {
-		t.Fatal("ToolCallGrammar compiled a tool argument schema 100x past the depth cap — M-40 is not fixed")
+	// The tool path compiles leniently, so the over-deep schema compiles. What M-40 bounds is the grammar's nesting,
+	// which a free value moves into the output: on an untyped property, a value nested past the cap is refused and one
+	// within it is not.
+	if _, err := ToolCallGrammar("", "", "arguments", "t", false, paramSchema); err != nil {
+		t.Fatal(err)
+	}
+	g, err := ToolCallGrammar("", "", "arguments", "t", false, []byte(`{"type":"object","properties":{"x":{}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nest := func(d int) string {
+		return `{"name":"t","arguments":{"x":` + strings.Repeat("[", d) + strings.Repeat("]", d) + `}}`
+	}
+	if !g.TryBytes([]byte(nest(8))) {
+		t.Error("a value nested 8 deep was refused")
+	}
+	if g.TryBytes([]byte(nest(maxSchemaDepth + 5))) {
+		t.Fatal("a value nested past the depth cap was accepted — M-40's bound does not hold for a free value")
 	}
 }
