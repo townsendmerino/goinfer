@@ -15,9 +15,8 @@ import (
 // declined where a Gated-DeltaNet one is; and the KV plan prices attention layers only, plus the Mamba state.
 
 type guardCase struct {
-	fixture  string
-	quant    string
-	features bool
+	fixture string
+	quant   string
 }
 
 func loadGuardResident(t *testing.T, c guardCase) (*decoder.Model, *cudaResident) {
