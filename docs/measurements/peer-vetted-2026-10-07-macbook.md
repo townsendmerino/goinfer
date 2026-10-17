@@ -127,6 +127,13 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
   a budget of 5.1 GB (70% of 7.2 GB available), about 0.8 GB of available memory short. Its weight-streaming retry declined on
   the format, not the disk this time ("--quant q4k has no .giw form yet"), so no sidecar was written. A streamed load would
   have counted as refused for this cell in any case (owner, 2026-10-16). Log: `peer-vetted-2026-10-07/m1/fitcheck-2026-10-16-1613.log`.
+- **The fit check moves into the job (owner, 2026-10-16 evening):** "don't run M1's fit check by hand. Queue M1 as a job
+  whose first step is the fit check". `run-mac-m1.sh` now starts the pinned server with the cell's flags first and reads it
+  until it serves or refuses. The cell runs only when the server serves with `decode path: metal-resident (q4k)` and printed
+  no refusal or weight-streaming note. Anything else ends the job VOID-refused (exit 2), with the figures in the
+  results' `fitcheck.log`. The job is queued after `op3a-S-served`, so it reads whatever memory is free with the box
+  otherwise idle. Checked against three stand-in servers (this refusal's real output, a resident q4k banner, a CPU decode
+  path): REFUSED and NOT-RESIDENT exit 2, RESIDENT proceeds.
 - **Cost:** one cell, two engines, about 8 minutes of cells and loads; queued at 20.
 - **What it decides:** the owner's E5 ("yes to the default once the cell is read",
   `docs/tasks/task-forward-architecture-2026-10.md` §7): the cell is read, and Metal's default load for Phi-3/4 becomes
