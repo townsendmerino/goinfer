@@ -45,6 +45,37 @@ night of 2026-10-17 on the Mac and get their own record.
 - **Grading:** the same bands and void rules as the CUDA cells above; a cell not on `metal-resident` is VOID.
 - **Use:** the readings replace the TL;DR Metal row's T = 1.0 figures. The old figures stay, with their note.
 
-## Results
+## Results: CUDA (nobara-pc, read 2026-10-17)
 
-Run: `run-nobara.sh` from `~/goinfer-bench/peer-notrunc-2026-10-17` on nobara-pc. Results to follow.
+Run 2026-10-17 12:13–12:22 PDT (557 s), `run-nobara.sh` at `63038121`. Driver 595.91.07, Ollama 0.32.5, llama-server
+0.4.0-dev `427291b`. Every arm was sent `temperature 1.0, top_p 1.0, top_k 0` (Ollama also `seed 1`); the script checked
+this before the run. A first attempt was refused by the harness's idle gate (loadavg 1.16 after the build) and measured
+nothing (`nobara/run-refused-1.log`). Records: `peer-notrunc-2026-10-17/nobara/` (`f-sampled.json`, `grade.jsonl`,
+`provenance.txt`, `run.log`).
+
+Ratio r = goinfer ÷ peer, the median of the 3 pairs (range in brackets), graded by the pre-registered bands:
+
+| model | peer | goinfer tok/s | peer tok/s | r | verdict |
+|---|---|---:|---:|---|---|
+| qwen2.5-coder-0.5b | Ollama | 355.2 | 214.8 | 1.650 (1.646–1.667) | **AHEAD** |
+| qwen2.5-coder-0.5b | llama.cpp | 355.2 | 365.5 | 0.978 (0.967–0.991) | AMBIGUOUS-LOW |
+| gemma3-1b | Ollama | 202.2 | 123.2 | 1.641 (1.633–1.664) | **AHEAD** |
+| gemma3-1b | llama.cpp | 202.2 | 208.7 | 0.972 (0.966–0.979) | AMBIGUOUS-LOW |
+| phi3-mini | Ollama | 113.7 | 123.5 | 0.921 (0.921–0.921) | **BEHIND** |
+| phi3-mini | llama.cpp | 113.7 | 128.2 | 0.888 (0.886–0.889) | **BEHIND** |
+
+- **What changed is Ollama's side.** Untruncated, Ollama decodes 214.8 / 123.2 / 123.5 tok/s, against 264.3 / 151.3 / 125.9
+  greedy in the same session. The old rows' Ollama figures (268.6 / 149.8 / 125.8) sat at its greedy rate, which fits
+  the old rows sampling with Ollama's own `top_k` and `top_p` defaults. goinfer's untruncated rate is within 1% of its
+  own greedy rate on all three models.
+- **Greedy controls, same session (not part of the claim):**
+  - 0.5B: AHEAD of Ollama 1.334, BEHIND llama.cpp 0.948.
+  - gemma3-1b: AHEAD of Ollama 1.313, BEHIND llama.cpp 0.927.
+  - phi3-mini: BEHIND both (0.905 / 0.890).
+- **Not covered:** llama-server applies its own default `min_p` when none is sent, and goinfer has no `min_p` request
+  field, so the llama.cpp arm may still truncate there (`docs/benchmarks.md`, "Sampling changes that move
+  comparability").
+
+## Results: Metal
+
+Queued for the night of 2026-10-17 (`notrunc-metal-remeasure`, after M1 and P29). Results to follow.
