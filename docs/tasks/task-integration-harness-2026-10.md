@@ -565,6 +565,7 @@ and the work to run I3 turned up four defects and four facts. Each was found by 
   came up, and swap here grows by that much in minutes with 48 GB free (it was 6.3 GB at the first start of the day and 9.4 GB by
   the fourth). Mellum2.1 tripped it on its first request, twice; the 7B once. A tripped guard answers every request with a 503
   `halted` until swap falls back, which it does not. The matrix sets it to 4,096 MB (still armed; recorded in the job's provenance),
+  *(Added 2026-10-17: an agent chose the 4,096 on 2026-10-13 without Francis's approval. Francis decided on 2026-10-17, after the fact, that it stays for nobara's run plans until the guard watches the server's own swap; the default stays 512 MB.)*
   voids any run that saw a `halted` answer, restarts the server and redoes the cell, up to two more times.
 - **Fact: opencode needs a `ripgrep` it downloads on first use.** In the first sandboxed pilot its `grep` and `glob` tools all failed
   with "ripgrep execution failed", which would have scored opencode's cells as model failures. The sandbox provides the `rg` Codex

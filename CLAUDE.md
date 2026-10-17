@@ -93,7 +93,7 @@ from the environment, and `TestEnvVars_docAndCodeAgree` fails on a read that is 
 `docs/env-vars.md` § "Policy — where a new setting goes" for the rules and why (per-call reads change a loaded model mid-flight; two
 models in one process cannot differ); the migration record is `docs/completed/task-env-config-2026-09.md`.
 
-**A change to any guard threshold (swap, fit, memory) needs Francis's word, the same as a bypass flag.**
+**A change to any guard threshold (swap, fit, memory) needs Francis's word, the same as a bypass flag.** The swap guard's default is 512 MB. Nobara's run plans set `swap_guard_mb` 4096 only as Francis's decision of 2026-10-17, made after the fact (an agent first set it on 2026-10-13 without approval), and only until the guard watches the server's own swap (its pid and children) and the default fits again; no other plan, script or box takes it on its own.
 
 **Never `git add -A` / `git add .`.** It sweeps generated fixture metadata into git, which makes
 dir-only skip-guards think a fixture exists and flips skips into failures. Stage explicit paths.

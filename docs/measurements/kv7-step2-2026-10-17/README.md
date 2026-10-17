@@ -66,6 +66,7 @@ The report-only question: across 8 session starts, 4 pairs share the stable sect
   `plan-e2e.json` (`bd361dd5`, 2026-10-16, an agent's), which took it from the I3 run plan: `docs/tasks/task-integration-harness-2026-10.md`, "Fact: the swap guard halts a long run on this box" ("The matrix sets it to 4,096 MB
   (still armed; recorded in the job's provenance)"), commit `2b04d8cb`, 2026-10-13. The records show an agent choosing it and writing it down; none shows the owner approving the value. `run-night.sh` and `run-tier1-cc.sh`
   inherit it; the counter replay's `run-counter-replay.sh` follows the same value. It was not changed.
+- **Decision (Francis, 2026-10-17, made after the fact):** 4,096 MB stays for nobara's run plans (`plan-kv7s2.json` and the others that carry it) until the guard watches the server's own swap; the default stays 512 MB. It was first set by an agent on 2026-10-13 without approval. CLAUDE.md now says a guard threshold change needs his word.
 - **Attempt 1 of the counter replay tripped the 512 MB guard:** `swap guard: baseline 8.80 GB swap-used`, then `TRIPPED — swap grew 0.65 GB over baseline (9.46 GB used now)` during the first, cold request (`serve-attempt1.log`).
   Nobody sampled per process at the time, so which process held that 0.65 GB is not recorded.
 - **The same replay again, sampled every 10 s** (`swap-sampler.sh`, `swap-samples-replay.csv`, 550 s, the 12 requests): system swap 9,359 MB at the start, **peak 9,365 MB (+6 MB)**, 9,343 MB at the end; the server's `VmSwap` **0 MB**
