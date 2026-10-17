@@ -53,6 +53,9 @@ type Masker struct {
 	stopAtEnd bool         // once CanEnd, mask everything but EOS to force a stop
 	committed int          // how many generated tokens have been folded into g
 	conf      *confCapture // per-field confidence capture (CaptureConfidence); nil = off
+	// walkAll turns the first-byte prefilter off, so every id gets the full grammar walk. Tests set it to build the
+	// reference the prefilter is checked against.
+	walkAll bool
 }
 
 // eosAt reports whether id is an end/stop token. Bounds-checked because logits can be the
@@ -144,8 +147,10 @@ func (m *Masker) MaskAt(g Grammar, logits []float32) {
 	neg := float32(math.Inf(-1))
 	canEnd := g.CanEnd()
 	plain := inPlainString(g)
+	var next nextTable
+	m.nextBytes(g, &next)
 	for id := range logits {
-		if m.maskID(g, id, canEnd, plain) {
+		if m.maskID(g, id, canEnd, plain, &next) {
 			logits[id] = neg
 		}
 	}
@@ -208,8 +213,10 @@ func (m *Masker) Process(generated []int, logits []float32) {
 	neg := float32(math.Inf(-1))
 	canEnd := m.g.CanEnd()
 	plain := inPlainString(m.g)
+	var next nextTable
+	m.nextBytes(m.g, &next)
 	for id := range logits {
-		if m.maskID(m.g, id, canEnd, plain) {
+		if m.maskID(m.g, id, canEnd, plain, &next) {
 			logits[id] = neg
 		}
 	}
@@ -222,8 +229,8 @@ func (m *Masker) Process(generated []int, logits []float32) {
 // rule: Process and MaskAt both call it, so the two cannot drift.
 //
 // canEnd is passed in rather than recomputed: both callers need it for the EOS branch
-// and CanEnd is not free on every grammar.
-func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool) bool {
+// and CanEnd is not free on every grammar. next is nextBytes' table for g.
+func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool, next *nextTable) bool {
 	if m.eosAt(id) {
 		return !canEnd // EOS only once the document is complete
 	}
@@ -244,7 +251,7 @@ func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool) bool {
 	// vacuously true, so leaving it legal would let the sampler pick an id that never progresses
 	// and livelock to maxTokens. Mask it (EOS was handled above). tokenBytes bounds-checks id,
 	// so a model-vocab-length logits slice cannot index m.tokens out of range.
-	if len(b) == 0 || !g.TryBytes(b) {
+	if len(b) == 0 || !next.admits(b) || !g.TryBytes(b) {
 		return true
 	}
 	// StopWhenComplete suppresses the WHITESPACE the grammars permit at structural boundaries
@@ -257,6 +264,67 @@ func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool) bool {
 		return true
 	}
 	return false
+}
+
+// singleBytes[b] is the one-byte slice {b}, shared and read-only, so nextBytes' first-byte probes allocate nothing.
+var singleBytes = func() (t [256][]byte) {
+	for b := range t {
+		t[b] = []byte{byte(b)}
+	}
+	return t
+}()
+
+// maxSecondByteRows bounds the second-byte table: it is filled only when at most this many first bytes are legal (a
+// structural position), at 256 two-byte probes per legal first byte. Inside a string nearly every byte is legal and
+// the plain-string bitmap already decides most ids.
+const maxSecondByteRows = 16
+
+// nextTable is the prefilter maskID consults before a grammar walk. first[b] says whether the grammar accepts byte b
+// next; when second is filled, bit c of second[b] says whether it accepts b then c.
+type nextTable struct {
+	first  [256]bool
+	two    bool
+	second [256][4]uint64
+}
+
+// admits reports whether b's first one or two bytes pass the table. A false is exact; a true still needs TryBytes.
+func (t *nextTable) admits(b []byte) bool {
+	if !t.first[b[0]] {
+		return false
+	}
+	return !t.two || len(b) < 2 || t.second[b[0]][b[1]>>6]&(1<<(b[1]&63)) != 0
+}
+
+// nextBytes fills t for grammar state g. It is exact because every grammar walks a token's bytes in order and refuses
+// at the first bad one, so a token whose first byte, or first two bytes, are refused cannot pass TryBytes, and maskID
+// rejects it with a table lookup instead of a walk. That matters where a grammar has many live branches, as a tool
+// union does before the tool name is decided. A Grammar that accepts a byte string without accepting each of its
+// prefixes would break this; TestMasker_firstBytePrefilterExact holds every grammar here to it.
+func (m *Masker) nextBytes(g Grammar, t *nextTable) {
+	rows := 0
+	for b := range t.first {
+		t.first[b] = m.walkAll || g.TryBytes(singleBytes[b])
+		if t.first[b] {
+			rows++
+		}
+	}
+	if m.walkAll || rows > maxSecondByteRows {
+		return
+	}
+	t.two = true
+	probe := make([]byte, 2)
+	for b := range t.first {
+		if !t.first[b] {
+			continue
+		}
+		probe[0] = byte(b)
+		for c := 0; c < 256; c++ {
+			probe[1] = byte(c)
+			if g.TryBytes(probe) {
+				t.second[b][c>>6] |= 1 << (c & 63)
+			}
+		}
+	}
 }
 
 // allJSONSpace reports whether b is non-empty and entirely RFC 8259 whitespace — the
