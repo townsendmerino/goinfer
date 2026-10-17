@@ -475,8 +475,9 @@ type resident struct {
 	kc, vc                   []Buffer
 	ks, vs                   []Buffer // int8 KV scales (paddedCtxCap * nKV floats)
 	// kvSlotBufs: MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md), each a full copy of the per-layer
-	// kc/vc (and int8 ks/vs) buffers; kc/vc/ks/vs above are the BOUND slot's, and useKVSlot rebinds them. nil with one
-	// slot. kvSlot is the bound index.
+	// kc/vc (and int8 ks/vs) buffers; kc/vc/ks/vs above are the BOUND slot's, and useKVSlot rebinds them. One entry for one
+	// contiguous slot, so the batched step can prefill a prompt on it; nil for one slot that is not (int8 KV, MLA).
+	// kvSlot is the bound index.
 	kvSlotBufs []kvSlotBuf
 	kvSlot     int
 	// kvContig: the slots of each layer are one allocation (kc/vc are views into it at kvSlot*kvSlotBytes[l]) — MC3
@@ -488,6 +489,10 @@ type resident struct {
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState
 	preciseMath bool
+	// stepHeadroom is the bytes the memory guard leaves beside a one-slot build (metalOneSlotStepHeadroom), and stepDecline
+	// why that build has no batched step when its scratch did not fit ("" otherwise). Both are unused with two or more slots.
+	stepHeadroom int64
+	stepDecline  string
 	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
 	pQKNormRows                                                Pipeline           // E-P07: qk_norm over the step's rows (batch_rows.go)
@@ -1080,6 +1085,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// buffers while the base it is compared with (residentNeedBytes) still counts them, so the weights would be
 	// counted twice and too few slots granted.
 	kvSlots := metalKVSlots(m)
+	stepHeadroom := int64(0)
+	if kvSlots == 1 {
+		stepHeadroom = metalOneSlotStepHeadroom(m)
+	}
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
@@ -1128,7 +1137,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return p
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
-	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath}
+	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom}
 	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
@@ -1722,7 +1731,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// one buffer plus a per-row offset — aikit binds at most 16 buffers per dispatch, too few to pass 8 slots'
 			// K and V separately. Each slot keeps its own padded region, so C-01's over-read stays inside it.
 			allocSlots := 1
-			if kvSlots > 1 && !r.kvI8 {
+			if !r.kvI8 { // one slot is this layout's one-slot case: slot 0 at offset 0
 				allocSlots = kvSlots
 				r.kvContig = true
 			}
@@ -1775,6 +1784,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			}
 			r.kvSlotBufs[s] = b
 		}
+	} else if r.kvContig {
+		r.kvSlotBufs = []kvSlotBuf{{r.kc, r.vc, r.ks, r.vs}}
 	}
 	r.finalNorm = NewBufferFloats(d, w.FinalNorm)
 	if r.layerNorm && r.layerNormBias {
