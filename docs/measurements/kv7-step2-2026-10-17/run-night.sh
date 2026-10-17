@@ -30,6 +30,8 @@ rc=${PIPESTATUS[0]}
   echo "# KV7 step 2 night rerun: extractor output ($(date '+%F %T %Z'))"
   python3 -I e2e_metrics.py "$OUT" --label "this run (serve $(cut -c1-8 "$B/bin/serve-cuda-kv7s2.rev"))"
   echo; echo "## Restored prefixes against the ids an earlier request wrote"; echo '```'
+  # the tokenizer fixture is gitignored, so a pinned worktree has none: link the main checkout's (a section that skips reads as SKIP in the output below, and the night has not read it)
+  ln -sfn "$HOME/mycode/goinfer/testdata/mellum2-tokenizer" "$B/wt/testdata/mellum2-tokenizer"
   (cd "$B/wt" && SIDE_OUT="$OUT" SIDE_CONFIG=kv7s2-claude-code go test -count=1 -timeout 20m -run '^TestSideRequests_snapshotPrefixes$' -v ./internal/serveapp/ 2>&1 | grep -E '^\s+side_requests|^(---|ok|FAIL)')
   echo '```'
   echo; echo "## Report-only: how much of a session start is shared past the boundary (owner's question, 2026-10-17)"

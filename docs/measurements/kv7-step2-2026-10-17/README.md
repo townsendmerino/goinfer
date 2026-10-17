@@ -46,6 +46,17 @@ snapshot. nobara-pc, RTX 2070 SUPER, driver 595.91.07, GPU runs under the timing
 `TestSideRequests_snapshotPrefixes` (every restored prefix against the ids an earlier request wrote). Queued; read in the morning. Registered readings: every session start after the first restores
 (`snap=` present, time to first token under 0.2 of the cold one), every request after a compaction does too, `unqualified` is 0.
 
+### Result (run 2026-10-17 08:17:33 to 08:32:45 PDT, serve `e432cb40`, after tack's pilot job 1 had finished; load average 0.94 at the start)
+
+Cells 3: read and search pass, edit fails (the model's own: it wrote `-type file`, and its last answer is a tool call as text). Session starts 203.9 s (cold), 29.5 s and 29.4 s: **0.145 and 0.144 of the cold one**,
+both `snap=15872`. Eight requests restored the 15,872-row snapshot, none declined (the serve log has no decline line; the server's `unqualified` counter itself was not read, so that third reading rests on the absence
+of one). Every restored prefix is the ids an earlier request wrote: `TestSideRequests_snapshotPrefixes` PASS over the twelve requests. The one cold follow-up (#3, 105.9 s, 9,906 ids) is a different agent, not a
+post-compaction request: 13 tools and a 2,783-character system prompt against 21 and 6,266, sharing 20 ids with everything before it; it was the first of its kind, took its own boundary snapshot (7,680 rows), and
+there was nothing to restore from. That reading of "every session start after the first" (the first of each prompt kind) is mine and is stated here.
+The night run's two sections skipped (the pinned worktree had no tokenizer fixture, which is gitignored); they ran after, on the same bodies, and pass: `kv7s2-sections-rerun.md` beside `kv7s2-metrics.md`.
+The report-only question: across 8 session starts, 4 pairs share the stable section and 24 do not (another working directory or tools list); of the sharing pairs the leading reminder is byte-identical in 1 of 4
+(real sessions p3 and p5: 2,008 ids past the boundary, 21.4 s of prefill). Counts and positions only; the boundary is unchanged.
+
 ## Report-only question for tonight's record (owner, 2026-10-17)
 
 Across real sessions, how often is the `CLAUDE.md` reminder after the boundary byte-identical between sessions, and what would a boundary after it save? **No change to the boundary.**
