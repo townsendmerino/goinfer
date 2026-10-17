@@ -15,7 +15,9 @@ pick up from. See root CLAUDE.md, "Run budget: quick by day, long by night".
 
 usage:
   night.py add NAME --est MIN [--timeout MIN] [--priority N] [--by WHO] [--doc PATH] -- CMD [ARGS...]
-                                     (refuses a command already queued from the same directory)
+                                     (refuses a command already queued from the same directory, and a run plan that pins a
+                                     serve build carrying the per-process swap guard yet sets swap_guard_mb without Francis's
+                                     recorded approval: see check_plan)
   night.py list [--from HH:MM]       the queue in run order, with estimates and projected finish
   night.py start [--deadline HH:MM]  bedtime: detach and run the queue (default deadline 06:30)
   night.py status                    what is running now and what finished tonight
@@ -161,6 +163,106 @@ def latest_run_dir():
     return dirs[-1] if dirs else None
 
 
+# ---------------------------------------------------------------- the swap-guard plan check
+
+# A serve build at or after dba04134 (PR #90) watches the server's own swap at GOINFER_SWAP_GUARD (512 MB by default) and system swap at a
+# 4096 MB backstop. A run plan that also sets swap_guard_mb raises the own-swap trip to that value, and CLAUDE.md puts every guard threshold
+# change behind Francis's word. A plan that pins such a build and sets the key is refused at `add` unless it records his approval:
+# "swap_guard_approved_by": "Francis" and "swap_guard_approved_on": "YYYY-MM-DD". Plans that pin an older build are untouched: that build has the
+# system-wide guard alone and needs the larger value to run.
+GUARD_COMMIT = "dba04134"
+GUARD_MARK = b"VmSwap of this process and its descendants"  # the per-process guard's banner text, present in a binary that carries it
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _carries_guard(plan, cwd):
+    """True/False for whether the build the plan pins carries the per-process guard, None when that cannot be told (no binary on disk, no
+    usable rev). The binary is read for the guard's banner text; without it, the pin's rev (`<serve>.rev`, else `commit`) is placed against
+    GUARD_COMMIT in the repo's history."""
+    serve = plan.get("serve")
+    if serve and Path(serve).expanduser().is_file():
+        with open(Path(serve).expanduser(), "rb") as f:
+            tail = b""
+            while chunk := f.read(8 << 20):
+                if GUARD_MARK in tail + chunk:
+                    return True
+                tail = chunk[-len(GUARD_MARK):]
+        return False
+    rev = ""
+    if serve and Path(str(serve) + ".rev").expanduser().is_file():
+        rev = Path(str(serve) + ".rev").expanduser().read_text().strip()
+    rev = rev or str(plan.get("commit") or "")
+    if not re.fullmatch(r"[0-9a-f]{7,40}", rev):
+        return None
+    try:
+        r = subprocess.run(["git", "-C", str(cwd), "merge-base", "--is-ancestor", GUARD_COMMIT, rev], capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: True, 1: False}.get(r.returncode)
+
+
+def check_plan(path, cwd):
+    """The refusal message for a run plan that pins a build carrying the per-process swap guard and sets swap_guard_mb without recorded approval,
+    else None (no key, an older pin, an unreadable pin, or an approved one)."""
+    try:
+        plan = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(plan, dict) or "swap_guard_mb" not in plan:
+        return None
+    if _carries_guard(plan, cwd) is not True:
+        return None
+    if plan.get("swap_guard_approved_by") == "Francis" and _DATE_RE.match(str(plan.get("swap_guard_approved_on", ""))):
+        return None
+    return (f"{path}: sets swap_guard_mb {plan['swap_guard_mb']} and pins a serve build that carries the per-process swap guard ({GUARD_COMMIT} or later), "
+            f"where the default (512 MB on the server's own swap, 4096 MB system-wide as a backstop) applies. A change to a guard threshold needs Francis's "
+            f"word (CLAUDE.md): drop the key, or record his approval in the plan as \"swap_guard_approved_by\": \"Francis\" and "
+            f"\"swap_guard_approved_on\": \"YYYY-MM-DD\".")
+
+
+def plan_files(cmd, cwd):
+    """The run-plan JSON files a job's command names: a .json argument, or one a script argument names (`PLAN=$B/plan.json`, with the script's own
+    simple VAR=value assignments and the environment expanded). A reference built any other way is not found."""
+    out = []
+    given = dict(t.split("=", 1) for t in cmd if re.match(r"^[A-Za-z_]\w*=", t))  # `env B=/dir bash run.sh`: the queued form
+    for tok in cmd:
+        p = Path(tok).expanduser()
+        p = p if p.is_absolute() else Path(cwd) / p
+        if not p.is_file():
+            continue
+        if p.suffix == ".json":
+            out.append(p)
+            continue
+        try:
+            text = p.read_text() if p.stat().st_size < (1 << 20) else ""
+        except (OSError, UnicodeDecodeError):
+            continue
+        env = {**os.environ, **given}
+        for m in re.finditer(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(\S+)", text, re.M):
+            if m.group(1) not in given and not re.search(r"\$\{[^}]*[:?=+-]|\$\(", m.group(2)):  # a default or a command substitution is not a value
+                env[m.group(1)] = _expand(m.group(2).strip("\"'"), env)
+        for m in re.finditer(r"[^\s\"'()=;]+\.json", text):
+            q = Path(_expand(m.group(0), env)).expanduser()
+            if q.is_file() and q not in out:
+                out.append(q)
+    return out
+
+
+def _expand(s, env):
+    """$VAR and ${VAR} from env, a few rounds (a variable defined from another); an unknown name is left as written."""
+    for _ in range(4):
+        n = re.sub(r"\$(?:\{(\w+)\}|(\w+))", lambda m: env.get(m.group(1) or m.group(2), m.group(0)), s)
+        if n == s:
+            break
+        s = n
+    return s
+
+
+def check_job_plans(cmd, cwd):
+    """The refusal messages for every run plan the command names (see check_plan)."""
+    return [m for m in (check_plan(p, cwd) for p in plan_files(cmd, cwd)) if m]
+
+
 # ---------------------------------------------------------------- add / list / drop
 
 def cmd_add(a):
@@ -178,6 +280,8 @@ def cmd_add(a):
     if any(j["name"] == a.name for j in queued()):
         die(f"a job named {a.name!r} is already queued (night.py drop {a.name} first)")
     cwd = Path(a.cwd or os.getcwd()).resolve()
+    if problems := check_job_plans(cmd, cwd):
+        die("refusing to queue: " + " | ".join(problems))
     # ONE COPY OF EACH RUN. The same command from the same directory is the same run tonight, whatever rev each
     # session was on when it queued it: a tree-relative command runs on tonight's tree, and a run-*.sh runs
     # whatever that script says tonight. Two sessions queueing the same gate is the case this exists for.
