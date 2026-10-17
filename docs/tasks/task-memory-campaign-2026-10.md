@@ -1,0 +1,448 @@
+# Task: the memory campaign — what is left after the KV program (MEM0–MEM17), 2026-10
+
+> **Status: SCOPED 2026-10-17. Nothing started, nothing measured for it.** Written on the owner's ask after a Cowork
+> conversation the same day ("can you list the large data structures that we need in aikit and goinfer, like weights,
+> vocabulary, etc. with a typical percent of memory, so we can see if we're handling them in the most efficient way?
+> could we do better memory management? assume the kv work is completed", then "yes to task doc, 'memory campaign'").
+>
+> - Code read at goinfer `main` `f0d11c70` and aikit `main` `fd12e14` (goinfer pins aikit v1.70.2). Static reading by
+>   three parallel passes plus hand checks of the headline claims; the claims marked *checked* were re-read in the tree
+>   by the author of this doc.
+> - **The KV program is assumed finished** (`task-kv-architecture-2026-10.md`, KV0–KV11, owner's framing). KV appears
+>   below only as the reference row that other terms are sized against. KV11's single residency manager is the home for
+>   anything here that is a residency policy (MEM9).
+> - Every figure is byte arithmetic from the code and the configs unless it names a measurement record. Every gate is a
+>   sketch: whoever starts an item registers its gates first (rule, void conditions, stopping rule, cost basis, tier), as
+>   `CLAUDE.md` requires.
+> - One doc for both repos, on the owner's standing preference for one consolidated task doc. The aikit items
+>   (MEM14–MEM17) are worked in aikit and released through its own ritual; goinfer picks them up on the next bump.
+>
+> **Siblings.** [`task-never-swap-2026-09.md`](task-never-swap-2026-09.md) (S0–S6: why the default app path is already
+> file-backed; this doc starts where it stopped) · [`task-memory-accounting-2026-09.md`](task-memory-accounting-2026-09.md)
+> (one bytes-needed function per backend; every new term here must land in it) ·
+> [`task-cpu-prefill-memory-2026-10.md`](task-cpu-prefill-memory-2026-10.md) (G40: the CPU prefill chunking MEM5
+> extends) · [`task-kv-architecture-2026-10.md`](task-kv-architecture-2026-10.md) · [`../ideas-weight-memory.md`](../ideas-weight-memory.md)
+> (the June weight-memory menu; its shelved items are listed in §6 so nobody re-proposes them) ·
+> [`task-int4-layout-2026-09.md`](task-int4-layout-2026-09.md) (the up-front representation policy).
+
+## 0. Summary
+
+**What is already right.** On the app path (`serve`, `chat`, `fit`), a `.gguf` or safetensors source becomes a sidecar
+`.giw` by default on darwin and linux, and the weights are one physical copy: zero-copy aliases of a read-only mapping
+on the CPU, no-copy MTLBuffers over a `MAP_SHARED` mapping on Metal (S6). After load, a 7B on Metal holds about 0.1 GB
+that is not file-backed (`docs/measurements/s6-alias-2026-09-24.md`). The Gemma 4 E-model per-layer embedding table is
+gathered on the host from the mapping, so only the rows a prompt uses are resident. MoE experts page on the CPU (pool
+mode on darwin) and through slot pools on Metal and CUDA. G40 chunks the plain CPU prefill and returns its memory.
+
+**What is left** falls in three groups:
+
+1. **Paths that miss the sidecar** — the library entry point (`decoder.Load` from another module), unpaged MoE on Metal,
+   CUDA's expert cache, and the f32 "parity-first" islands (MEM1, MEM9–MEM11).
+2. **Multimodal towers** — f32 heap copies of bf16 checkpoints, a host copy kept beside the GPU copy, and Metal tower
+   scratch that is never freed (MEM2–MEM4).
+3. **Prefill scratch** — whole-prompt passes for the families G40 did not reach, whole-suffix host embeddings on the
+   resident paths, and a fixed 512 MiB Metal block (MEM5–MEM7).
+
+Plus the Metal int8 head pin (MEM8), the CPU heap's GC headroom (MEM12), small heap items (MEM13), the aikit index and
+encoder items (MEM14–MEM17), and one correctness item in aikit's audio loaders (MEM3).
+
+| item | what | repo / backend | size | bytes at stake (one example) |
+|---|---|---|---|---|
+| MEM0 | footprint census of the app path and of tack's load path | both | S | — (it sizes the rest) |
+| MEM1 | a public mapped-load entry point for library callers | goinfer, all | S–M | 7B on Metal: ~9 GB anonymous → ~0.1 GB |
+| MEM2 | Metal tower scratch: release on grow, a real `Close` | goinfer, Metal | S | up to ~2.8 GiB stranded after a 4K image |
+| MEM3 | audio loaders keep their mapping alive (correctness) | aikit | S | — (use-after-unmap) |
+| MEM4 | towers: alias bf16/f32, drop the host copy after GPU attach | aikit + goinfer | M | Qwen2.5-VL on Metal: ~5.2 GB → ~1.35–2.7 GB |
+| MEM5 | chunk the prefill of the families G40 left whole | goinfer, CPU | M–L | 2–4.5 GiB at a 20K prompt |
+| MEM6 | resident prefill embeds per chunk, not per suffix | goinfer, CUDA/Metal | S | E4B at 20K: ~1.0 GiB |
+| MEM7 | Metal prefill block sized to the machine | goinfer, Metal | S | 512 MiB fixed = ~21% of a 1.5B session |
+| MEM8 | Metal int4 LM head; gather-only tables decoupled from the head pin | goinfer, Metal | M | tied tables −44%; E2B PLE file 2.35 → 1.32 GB |
+| MEM9 | MoE on Metal: stack-major aliasable experts; writer gaps; pool → KV11 | goinfer, Metal | M | M26 unpaged: 12.85 GB anonymous |
+| MEM10 | CUDA expert cache registered from the mapping | goinfer, CUDA | M–L | M26 12.85 GB / M35 18.1 GB pinned host |
+| MEM11 | f32 islands: LFM2 conv, MLA, drafters | goinfer, all | S–M each | LFM2: over half of resident weight bytes |
+| MEM12 | CPU heap: GC headroom and per-request churn | goinfer, CPU | M | up to ~1× the live heap (KV-dominated) |
+| MEM13 | small heap items (tokenizer, sampler, job store, feature cache, …) | goinfer | S each | ~15–60 MB each |
+| MEM14 | BM25: incremental build and one postings arena | aikit | M | 1M chunks: ~5.6 GB build peak; ~25% of the index |
+| MEM15 | HNSW graph as CSR, mapped | aikit | S–M | ~55–100 B/node |
+| MEM16 | encoder tables (BERT word embeddings, Q8 `WordEmb`, Model2Vec, SPLADE, annmetal) | aikit | S each | bge-m3: 0.5–0.77 GB |
+| MEM17 | chunk text by reference, not by copy | aikit API + ken | S (owner decision) | 1M chunks: ~1.4 GB (39% of the index side) |
+
+## 1. Where the memory is (the grounding)
+
+### 1.1 goinfer, one conversation, app path, M1 Pro 16 GB
+
+Metal, int4, f16 KV at 32K context, in the middle of a 20K-token prompt. Arithmetic from the configs and the code; the
+weight totals agree with the measured `.giw` sizes (1.29 / 5.18 GB, `docs/measurements/cpu-giw-vs-direct-2026-09-24.md`,
+CPU target) and with `docs/measurements/memory-accounting-metal-2026-09-25.md` (5.170 GB for the 7B metal `.giw`).
+
+| structure | how it is held | Qwen2.5-Coder-7B | Qwen2.5-Coder-1.5B |
+|---|---|---|---|
+| MLP projections | int4, group 32, f16 scales (0.5625 B/weight), aliased | 3.19 GB · 47% | 0.65 GB · 25% |
+| attention projections | same | 0.48 GB · 7% | 0.09 GB · 3% |
+| LM head | int8 on Metal (the pin, MEM8); int4 on CPU/CUDA since 2026-09-28 | 0.55 GB · 8% | 0.23 GB · 9% (tied: the same table) |
+| input embedding | gathered on the host from the mapping; touched rows only | ~0.02 GB · <1% | (tied) |
+| KV — reference row, the KV program's | f16 | 1.88 GB · 28% | 0.94 GB · 37% |
+| Metal prefill scratch | one 512 MiB block per pass (`metal/backend.go:prefillBlockScratch`) | 0.54 GB · 8% | 0.54 GB · 21% |
+| tokenizer, sampler, logits, runtime | heap | ~0.1 GB · 1.5% | ~0.1 GB · 4% |
+| **total** | | **~6.8 GB** | **~2.6 GB** |
+
+Other models, weights only (`.giw` payload; share of weight bytes):
+
+| model | the biggest structures |
+|---|---|
+| Gemma 4 E2B | per-layer embedding table 2.35 GB int8 on Metal (62%) / 1.32 GB int4 elsewhere (51%) — gather-only, so its *resident* share is small; MLP 23–34% |
+| Gemma 4 26B-A4B (M26) | routed experts 12.85 GB (88–90%), 3.35 MB per expert, one slot across 30 layers ≈ 100 MB |
+| Qwen3.6-35B-A3B (M35) | routed experts 18.12 GB (90–92%), of which int4 group scales 2.0 GB |
+
+Other runtime terms that matter when they are in play: vision and audio towers (0.35–2.8 GB f32 each; Qwen2.5-VL on Metal
+≈ 5.2 GB host + device), DFlash/DSpark drafters (f32 from bf16; 2.1 GB for the 4B pairing), and on the CPU the Go
+heap's GC headroom over a KV-dominated live heap (no `GOGC`/`GOMEMLIMIT` is set).
+
+### 1.2 aikit, a code-search index (what ken holds)
+
+Corpus shapes: the aikit tree itself as the small case (1,905 chunks in the M1 Pro bench corpus, Model2Vec 256-d); the
+BM25 rates — 111 postings and 256 tokens per chunk, 1.32× append slack — come from a Python emulation of the BM25
+tokenizer over aikit's tree, not a Go measurement.
+
+| | aikit tree, Model2Vec, FlatI8 | 100k chunks × 768-d, CodeRankEmbed Q8 | 1M chunks × 768-d |
+|---|---|---|---|
+| embedding model | 64 MB · 87% | 209 MB · 36% | 209 MB · 6% |
+| tokenizer + memo | ~4 MB · 5% | ~20 MB · 3% | ~20 MB · <1% |
+| vectors (`ann/flat_i8.go:FlatI8`) | 0.5 MB · 1% | 77 MB · 13% | 772 MB · 21% |
+| BM25 (`bm25/index.go:Index`) | 3 MB · 4% | ~134 MB · 23% | ~1.2 GB · 33% |
+| chunk text (held by ken) | 2 MB · 3% | ~139 MB · 24% | ~1.39 GB · 39% |
+| **total** | **~74 MB** | **~580 MB** | **~3.6 GB** |
+| build-time transient | <15 MB | tokens ~560 MB + f32 vectors 310 MB | tokens ~5.6 GB + f32 vectors 3.1 GB |
+
+## 2. What must not change
+
+1. **Numerics.** At the same precision, every item here is bit-identical to the tree before it (aliasing, chunking at
+   invariant boundaries, freeing, pooling). An item that changes precision (MEM8's int4 head, MEM11's int8 islands) is
+   an opt-in or an owner-decided default with its own quality gate, as `--embed-int4` was.
+2. **The never-swap rules.** Gates that read memory read the test process (`VmHWM`/`VmSwap` on Linux, `footprint` on
+   macOS), not the system, per `CLAUDE.md`. A budget guard keys on a quantity we compute, never on RSS (the
+   inverted-guard lesson in `CLAUDE.md` "Measurement discipline").
+3. **One accounting path.** Any term this campaign adds, moves or removes lands in `decoder/residentneed.go` (the
+   `ResidentNeedBytes` family) in the same change, so `fit` and the guards keep agreeing.
+4. **No new production env reads.** A new choice is a `decoder.Options` field (`docs/env-vars.md`).
+5. **Tiers.** Most items here are answerable at tier 0 (allocation counters, bytes reserved, bit-identity on tiny
+   fixtures). Footprint on a real model is tier 1 (0.5B or 1.5B, by day, under 10 minutes). Nothing here needs a timed
+   night run except where an item changes a kernel or a block size (MEM4's widen, MEM7).
+
+## 3. MEM0 — a footprint census first (S)
+
+**Why first.** §1 is arithmetic. Before any build, one tier-1 run per cell measures what the arithmetic predicts, so each
+item is sized by the tree and not by this doc.
+
+- Cells (Mac, Metal and CPU): 1.5B and 7B int4 at a 20K prompt; Gemma 4 E2B at a 20K prompt (the per-layer table's
+  touched pages); one image turn on the Qwen2.5-VL or Gemma 4 tower; a library-path load (MEM1's "before").
+- Read per cell: `footprint` categories after load, at the end of prefill and 10 s after; Go heap in use; the Metal
+  device ledger.
+- **tack's load path.** Read how tack loads its models (its repo is not in this doc's reading). If it calls
+  `decoder.Load` on a `.gguf`, MEM1 is the first build item; if it goes through the sidecar, MEM1 drops to "library
+  users only".
+
+## 4. The goinfer items
+
+### MEM1 · A public mapped-load entry point (S–M)
+
+**Problem (checked).** The sidecar policy lives under `internal/`: `internal/prequant/prequant.go:EnsureCachedGIW`
+and `internal/prequant/prequant.go:DefaultToSidecar`, reached only through `internal/modelload/modelload.go`. A caller
+in another module that calls `decoder.Load` on a `.gguf` or a safetensors dir gets the weights built into the Go heap.
+`docs/use-from-go.md` shows `decoder.Load(path, decoder.Options{})`, which loads f32. Two multipliers sit on that heap:
+
+- `decoder/weightmat.go:wantsCanonicalInt4` returns true for any backend name other than `"cpu"`, including the empty
+  default, and `decoder/weightmat.go:wantsRow4Fallback` adds a row4 copy everywhere except Metal, so an `Options{}`
+  int4 load on arm64 keeps canonical *and* row4 (`decoder/fitguard.go:quantBytesPerElem` prices it at about twice the
+  encoding).
+- With `Backend: "metal"` the heap `WeightMat`s stay beside the MTLBuffers — the host-copy term
+  `task-memory-accounting-2026-09.md` measured at the whole dense term (2.1 GB on the 1.5B from a direct `.gguf`).
+
+Example: a 7B int4 library load on Metal ≈ 4.5 GB heap + ≈ 4.5 GB in buffers; the app path holds ≈ 0.1 GB.
+
+**Fix shape.** Export the sidecar step: either a `decoder.Options` field that asks `Load` to resolve a fresh sidecar
+(transcoding once when absent), or a small public package over `EnsureCachedGIW` that returns the `.giw` path. Update
+`docs/use-from-go.md` to lead with it. Owner decision **D1**: API shape, and whether a library `.gguf` load should take
+the sidecar by default as the apps do.
+
+**Gates (sketch).** Tier 0: on a tiny fixture through the public entry point, heap in use after load stays under a
+stated bound and the weights report mmap-aliased; logits byte-identical to the internal path. Tier 1: 0.5B footprint
+after load, library path before vs after.
+
+### MEM2 · Metal tower scratch: free what grows, and close (S)
+
+**Problem (checked).** The Metal tower accelerators reassign their buffers on growth without releasing the old ones —
+`metal/gemma4_vision.go:g4vAccel.grow`, `metal/gemma4_audio.go:g4aAccel.grow`, `metal/embeddinggemma2.go:eg2Accel.grow`,
+and the grid tower in `metal/grid_vision.go` — and all four `Close` methods return nil
+(`metal/gemma4_vision.go:g4vAccel.Close`, `metal/grid_vision.go:gridVAccel.Close`, `metal/gemma4_audio.go:g4aAccel.Close`,
+`metal/embeddinggemma2.go:eg2Accel.Close`). Each accelerator also owns its own device ledger, so the resident's
+release-all never reaches it. Scratch at about 90 KiB per patch (Qwen3-VL-8B-class tower, f32) makes a 1080p frame
+~0.7 GiB and a 4K screenshot ~2.8 GiB, held for the life of the process; a video sums its frames. CUDA's towers
+allocate per call and release; Metal's text prefill releases per pass.
+
+**Fix shape.** Release the old buffers in `grow`; a `Close` that frees scratch and uploaded weights; one ledger with the
+resident (or `Close` wired into unload); optionally a patch ceiling with per-segment passes.
+
+**Gates.** Tier 0: device bytes live after N grows equal the last capacity; after `Close`, zero (mutation: drop the
+release, red). Tier 1: one 4K image turn then unload, Metal footprint returns to the pre-load figure.
+
+### MEM3 · aikit audio loaders keep their mapping alive (S, correctness)
+
+**Problem (checked in part).** `audio/whisper_encoder.go:LoadWhisperEncoder` opens the checkpoint through
+`openSafetensorsDir` (an mmap'd `SafetensorsFile`) and keeps no reference to it in the returned encoder. For an F32
+checkpoint (whisper-tiny/base/small), `embed/safetensors.go:SafetensorsFile.TensorF32` returns zero-copy views into the
+mapping, and the file's finalizer unmaps it once the file is unreachable — so the encoder's weights can point into
+unmapped memory after a GC. The other pass reported the same shape in the Voxtral projector and Qwen ASR loaders (not
+re-read here). BF16 checkpoints are safe: they are widened into the heap. Not reproduced.
+
+**Fix shape.** Retain the `SafetensorsFile` in each encoder (as the vision loaders and `encoder` do), with a `Close`.
+
+**Gates.** Tier 0: load an F32 tiny fixture, drop every other reference, force two GCs and run the finalizers, then run
+the encoder; output equals a run with the file held (red before the fix, by construction).
+
+### MEM4 · Towers: alias instead of widening, drop the host copy after GPU attach (M)
+
+**Problem.** The vision and audio towers (aikit `vision/`, `audio/`) load f32 into the heap: bf16 checkpoints are
+widened 2× (`vision/qmat.go:newQMat` copies; f32 checkpoints are copied too), and a GPU-resident tower keeps its host
+blocks (`vision/qwen_resident.go:QwenVisionEncoder.EnableResident` sets a flag; goinfer's Metal and CUDA tower builders
+read the host weights and keep the encoder). Only SigLIP has a head-only load with streamed blocks. Examples: Qwen2.5-VL
+ViT ≈ 676M params = 2.70 GB host f32 + ≈ 2.52 GB device on Metal; Voxtral's audio tower ≈ 2.55 GB heap (1.27 GB as
+stored). goinfer's default `-vision-quant` is f32.
+
+**Fix shape.** Two independent halves:
+
+- (a) Alias. aikit already has zero-copy bf16/f16 `WeightMat` wrappers over a mapping (`WrapBF16`/`WrapF16`, bit-identical
+  to f32 `MatmulBT`, no caller yet); route `newQMat` through them, and alias f32 checkpoints. Caveat: the arm64 widen is
+  scalar per tile, so this is a speed question on the Mac (in-process A/B by day, TE5(b)).
+- (b) After GPU attach, release the host blocks; the CPU fallback reloads them lazily from the mapping. Generalize
+  SigLIP's head-plus-streamed-blocks shape to the other towers. Owner decision **D2**: is a lazy reload on CPU fallback
+  acceptable latency?
+
+**Gates.** Tier 0: logits/features bit-identical aliased vs widened on each tower's tiny fixture; heap after attach
+under a stated bound. Tier 1: one image turn on the Mac, footprint before/after. Speed: in-process A/B for (a) on arm64.
+
+### MEM5 · Chunk the prefill of the families G40 left whole (M–L)
+
+**Problem (checked).** `decoder/kvcache.go:KVCache.prefillChunkable` is false for a cache with image blocks, m-RoPE
+positions, DeepStack, captures, tree verify, or `manualPos` — and `manualPos` is set for Gemma 4, the Qwen3.5 hybrids,
+LFM2, Granite-H, Nemotron-H, MLA and KDA (`decoder/model.go`). The fast-attention ring case also keeps one pass. Those
+prompts run `runLayersFromEmbedN` over every row: at about 108 KiB of activations per row on the 1.5B shape and
+236 KiB on the 7B, a 20K prompt is 2.1–4.5 GiB — the pre-G40 shape (`task-cpu-prefill-memory-2026-10.md` §2), on the
+newest families and on every image turn.
+
+**Fix shape.** Per family, not at once:
+
+- recurrent / `manualPos`: the state already carries across calls in decode; chunking needs a per-family
+  chunk-invariance gate;
+- ring + fast attention: blocked on G40-1's invariance question, or chunk with exact attention;
+- VL: chunk boundaries outside image blocks.
+
+**Gates.** Tier 0 per family: chunked vs whole logits byte-identical on the tiny fixture at two chunk sizes, one
+boundary inside each layer kind. Tier 1: one family's 20K footprint before/after (the G40 harness).
+
+### MEM6 · Resident prefill embeds per chunk (S)
+
+**Problem.** On the resident paths that do not block the prompt (CUDA's chunked prefill, Metal's layer-major and E-model
+routes), the host embeds the whole suffix up front, one allocation per row
+(`decoder/prefill_chunk_scratch.go` says the path "does allocate in full"). Gemma 4 E4B's resident embed row is
+hidden + layers × 256 floats ≈ 52 KiB → ~1.0 GiB at 20K; CUDA dense 117–273 MiB at 20K.
+
+**Fix shape.** Embed per chunk into one reused slab (a callback, or a cut at the chunk size).
+
+**Gates.** Tier 0: bytes allocated by a 2,048-row prefill on the tiny fixture fall from O(prompt) to O(chunk); logits
+byte-identical.
+
+### MEM7 · Size the Metal prefill block to the machine (S)
+
+**Problem.** `metal/backend.go:prefillBlockScratch` is a fixed 512 MiB per pass, allocated and released each pass. On a
+1.5B 32K session that is about a fifth of the process; on a 7B it is 8%. It does not consult the KV plan's free-memory
+reading.
+
+**Fix shape.** Derive block rows from the same free-memory probe the fit plan uses, with the current 512 MiB as a
+ceiling; count the block in `ResidentNeedBytes`. Open question: does a persistent arena beat allocate-and-zero per pass
+on a 16 GB machine?
+
+**Gates.** Tier 0: logits byte-identical across block sizes (blocking is already invariant; pin it at two sizes).
+Speed: TTFT at the smaller block, in-process A/B by day (TE5(b)); a served gate only if unresolved.
+
+### MEM8 · Metal int4 LM head; gather-only tables decoupled from the head pin (M)
+
+**Problem (checked).** `internal/loadflags/loadflags.go:Flags.embedInt4` returns false on Metal unless the flag is set
+explicitly, because Metal has no int4 head GEMV — an int4 table made a plain Metal load decline to the CPU. So tied
+tables stay int8 on Metal (1.5B 234 vs 131 MB; M26 739 vs 415 MB), and every table that shares the policy follows:
+Gemma 4 E2B's per-layer embedding table is 2.35 GB int8 against 1.32 GB int4. That table is only gathered on the host
+(`decoder/residency.go:Model.embedResidentInto`), so its resident cost is small either way; its full size shows up on
+disk and once at transcode (MEM8b).
+
+**Fix shape.**
+
+- (a) A Metal int4 head GEMV (W4 over f16 activations, the existing int4 projection kernel's shape at N = vocab), then
+  let `embedInt4` follow the CPU/CUDA default on Metal.
+- (b) Independently: key gather-only tables (per-layer embedding, an untied input embedding) on their own precision
+  instead of the head pin.
+- (b′) The transcode builds logit tables whole in heap before the layers stream (E2B's per-layer table: 2.35 GB once);
+  stream them in row blocks.
+
+**Gates.** (a) Tier 0: kernel bit-identity against the CPU int4 head reference; quality is the existing embed-int4 bar
+(it is already the CPU/CUDA default), plus `ideas-weight-memory.md` §3's rare-token caution. (b) tier 0: gathered rows
+identical to a dequantized reference at each precision. (b′) tier 1: transcode peak heap on E2B.
+
+### MEM9 · MoE on Metal: aliasable experts, the two writer gaps, the pool to KV11 (M)
+
+**Problem.**
+
+- Unpaged MoE copies every expert into stacked anonymous buffers (`metal/moe.go:buildMoELayer`): concatenation cannot
+  alias because the writer emits per-expert records. M26 unpaged = 12.85 GB anonymous. On the 16 GB Mac M26 always
+  pages, so this matters on larger Macs.
+- The shared-expert gate|up and qwen35's K‖V are still copied (~50 MB on M35; S6's "two writer gaps").
+- The paged pool is per layer with a fixed N, unlike the CPU's single global pool (`decoder/moepool.go:expertBufferPool`);
+  it cannot follow skew across layers.
+
+**Fix shape.** A stack-major expert layout under `-target metal`, the fused-group trick applied to experts; close the two
+writer gaps in the same format bump (folds into the planned `.giw` v16 work); the per-layer pool goes into KV11's
+residency manager rather than its own rewrite.
+
+**Gates.** Tier 0: byte-identical logits aliased vs copied on the MoE tiny fixtures; device ledger shows no expert
+copy. Tier 1: footprint on the smallest MoE that runs unpaged on the Mac.
+
+### MEM10 · CUDA expert cache from the mapping (M–L, nobara)
+
+**Problem.** With `--moe-cache-experts`, the whole expert stack is packed into a fresh heap copy and registered as
+pinned host memory (M26 12.85 GB, M35 18.1 GB page-locked), and the build repacks each tensor through a full host
+copy (`cuda/resident.go:packWeight`) with the scales round-tripped f16 → f32 → f16. The `"cuda"` `.giw` target exists
+in the cache key but still writes the canonical kind.
+
+**Fix shape.** A pre-permuted cuda target, so registration and upload read the mapping directly; the scales stay f16 end
+to end.
+
+**Gates.** Tier 0 (GPU, tiny fixtures): uploaded bytes identical to today's packing; tier 1 on nobara: host footprint
+of the 26B with the expert cache before/after (`VmHWM`, the CUDA box rules in `CLAUDE.md`).
+
+### MEM11 · f32 islands (S–M each)
+
+**Problem.**
+
+- **LFM2 short-conv.** `decoder/lfm2.go:shortConvWeights` holds `inProj` [3·convDim × hidden] and `outProj` at f32,
+  with convDim = hidden. That is 4·hidden² f32 per conv layer, which by arithmetic is over half of an LFM2 model's
+  resident weight bytes at int4 — the loader comment's "~0.6% of the model's bytes" counts the depthwise kernel, not the
+  projections. Measure with `ResidentWeightBytes` on a real checkpoint before acting.
+- **MLA.** `decoder/weights.go:mlaWeights` is all f32 and copied on `.giw` load (DeepSeek-V2-Lite ≈ 1.49 GB, ~15% of an
+  int4 load); Metal builds int8 copies on the GPU (`metal/mla.go:int8Proj`) while the host keeps the f32.
+- **Drafters.** `decoder/dflash.go:LoadDFlashDrafter` widens bf16 to f32 heap (2.1 GB for the 4B pairing); CUDA keeps
+  the host f32 beside its int8 device copy.
+
+**Fix shape.** For bf16 sources, the bf16 `WeightMat` kind (half the bytes, bit-identical to the widened f32); int8
+where a family's parity bar allows, as an owner decision per family (**D3**); release host copies after upload.
+
+**Gates.** Tier 0 per family: bf16 kind vs widened f32 bit-identical; int8 only behind the family's existing parity
+gate.
+
+### MEM12 · The CPU heap: GC headroom and per-request churn (M)
+
+**Problem.** The CPU KV lives on the Go heap (f32 by default), and no `GOGC` or `GOMEMLIMIT` is set, so the heap may
+grow to about twice a KV-dominated live heap (1.1 GiB of KV at 20K on the 1.5B, 2.3 GiB on the 7B). G40 measured GOGC=10
+cutting a 6K footprint from 1,039 to 684 MiB but fixed only the prefill, with targeted returns. Churn that keeps the
+pacer busy: the MoE expert-major branch allocates a K × hidden output per layer per pass (22 MiB/layer per 2,048 rows,
+215 MiB/layer on the unchunked 26B at 20K), the LM head allocates M × vocab per verify round and per prefill
+(4.6–8 MiB / 0.6–1 MiB), the sampler builds six vocab-sized buffers per request (7–12 MiB), and tokenization allocates
+~13 MB per 24K-token prompt.
+
+**Fix shape.** Measure first (MEM0): live heap vs footprint at 20K on the CPU. Then, in order: hold the MoE output in
+`decoder/forwardn.go:prefillPassScratch`, a cache-owned K × vocab logits buffer, pooled sampler scratch; only then
+consider off-heap (anonymous-mmap) arenas for KV and session scratch, or a pacing rule. `GOMEMLIMIT` is refuted (§6).
+
+**Gates.** Tier 0: `testing.AllocsPerRun` / bytes allocated per decode token and per verify round fall to the stated
+bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
+
+### MEM13 · Small heap items (S each)
+
+| item | where | bytes | fix |
+|---|---|---|---|
+| tokenizer kept size and load spike | `tokenizer/sentencepiece.go:Tokenizer`; aikit's GGUF metadata reader boxes every string | 25.8 MB kept, 92.9 MB allocated per load (measured on a Go 1.24 copy) | merge ranks keyed by `(leftID, rightID)` as one uint64 (10.2 → 4.7 MB), a size hint for the rank map, a typed metadata reader (~half the spike); ~15–18 MB per model |
+| job store keeps prompt ids with no journal | `internal/serveapp/job.go:jobStore` | ~41 MB at its cap with 20K prompts | `[]int32`, or keep them only with `-job-dir` |
+| feature cache not priced | `internal/serveapp/feature_cache.go:featureCacheBudget` | 256 MiB per vision model | count it in the fit plan, or size it from free memory |
+| token bytes per adapter | `internal/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
+| heap-only quant | q4k (phi3's default on CPU/CUDA) has no `.giw` form; on the arm64 heap path o_proj, down_proj and experts keep the dual copy even with `Backend: "cpu"` | model-sized | after MEM1, decide whether the heap path still matters |
+
+## 5. The aikit items
+
+### MEM14 · BM25: an incremental build and one postings arena (M)
+
+**Problem.** The BM25 build takes the whole tokenized corpus at once — about 5.6 KB per chunk, ~4.7× the finished index
+(~5.6 GB peak at 1M chunks), and a rebuild-and-swap holds the old index, the new tokens and the new index together. The
+postings are one slice per term with ~1.32× append slack plus a 24 B header each, and there is no index format
+(roadmap N4, N6 deferred as API decisions).
+
+**Fix shape.** A builder that adds documents one at a time (N6), so peak is the index plus one document; one flat
+`[]posting` arena with per-term offsets (~20–30% smaller), which is also the shape an N4 format can map.
+
+**Gates.** Tier 0: identical scores on the existing BM25 golden corpus; bytes allocated by a build fall to O(index).
+
+### MEM15 · HNSW graph as CSR, mapped (S–M)
+
+**Problem.** `ann/hnsw.go:HNSW` holds per-node neighbor slices (~58 B of headers on ~100 B of ids), decodes the graph
+into heap even under the mapped load, and in-process builds carry append slack (~260 B/node measured vs ~160 loaded). At
+256-d int8 the graph is about 60% of the index.
+
+**Fix shape.** Offsets plus one flat id array, written in the v-next blob and aliased from the mapping; pre-size the
+build from n.
+
+**Gates.** Tier 0: identical search results on the HNSW goldens; heap after a mapped load under a stated bound.
+
+### MEM16 · Encoder tables and small copies (S each)
+
+- **BERT/GTE have no int8 path** (`encoder/bert.go:BERT`); the word-embedding table is 45–69% of those models (bge-m3:
+  1.02 of 2.27 GB) and is only gathered, so per-row int8 or f16 saves 0.5–0.77 GB.
+- **`encoder/weights_q8.go:WeightsQ8` clones `WordEmb` to heap f32**: 94 MB, ~45% of the Q8 model; alias it or store it
+  per-row int8.
+- **Model2Vec defaults to a heap copy** (`embed/model.go:StaticModel`, 64 MB); make the mapped load the default for app
+  bundles such as tack.
+- **SPLADE materializes L × vocab logits** only to max-reduce them (`encoder/splade.go:SPLADE.expandIDs`): 62.5 MB per
+  512-token expand per worker; max over row tiles is exact and ~2 MB.
+- **annmetal** copies the int8 index into a device buffer while the host copy stays (2× on unified memory) and allocates
+  an M × N buffer per call; since it loses to the CPU on Apple, the cheap fix is not enabling it there; the full one is a
+  no-copy buffer over the mapped index.
+
+### MEM17 · Chunk text by reference (owner decision)
+
+**Problem.** `chunk/chunk.go:Chunk` copies its text out of the source, and ken keeps it: ~1.4 GB at 1M chunks, the
+largest term on the index side.
+
+**Fix shape.** A file + byte-range form of a chunk, with the text read through a mapping when needed. This is an API
+choice in aikit and a storage choice in ken (**D4**).
+
+## 6. Already decided or refuted — do not re-propose
+
+| idea | status | where |
+|---|---|---|
+| native K-quant `WeightMat` kind, frequency row-blocked embed, 3-bit rotation, calibration scorer, cross-model dedup | shelved / rejected | `../ideas-weight-memory.md` |
+| `DropCanonical` | rejected for the up-front representation policy | `task-int4-layout-2026-09.md` |
+| `GOMEMLIMIT` after load | dropped: halved throughput where it bound | `task-never-swap-2026-09.md` S4 item 4 |
+| `MADV_DONTNEED` eviction on darwin | a no-op on a read-only mapping; why pool mode is the darwin default | never-swap S5; aikit perf-dead-ends |
+| `F_NOCACHE` on the expert pread fd | measured, no effect | Metal code notes |
+| f32 routers, f32 matrices copied on `.giw` load | deliberate (discrete top-k; small) | the `.giw` writer's kind choice |
+| embed-int4 as the CPU/CUDA default | owner decision 2026-09-28 | `internal/loadflags/loadflags.go` |
+| PQ / IVF in aikit | int8 already took the 4× | aikit perf-dead-ends, "Reasoned out, not built" |
+| CPU vision scratch pooling; folding worker scratch | measured, no gain | aikit roadmap §3 (A-4, A-5) |
+| RoPE tables | none are precomputed; nothing to save | — |
+| LM head on every prompt token; fused-attention scratch per decode token; KV regrowth garbage | fixed | audit-metal-2026-09-12; G40 |
+
+## 7. Owner decisions
+
+- **D1** (MEM1): the public API shape, and whether a library `.gguf` load takes the sidecar by default.
+- **D2** (MEM4b): a lazy host reload of tower weights on CPU fallback — acceptable?
+- **D3** (MEM11): per family, bf16 only (bit-identical) or int8 behind the parity bar.
+- **D4** (MEM17): chunk text by reference in aikit's API, and ken's storage.
+- **D5** (MEM8a): whether embed-int4 becomes the Metal default once the head kernel exists, on the CPU/CUDA evidence.
+
+## 8. Sequencing
+
+1. **MEM0** (by day, tier 1) — and its tack reading decides MEM1's rank.
+2. **MEM2, MEM3** — bugs, small, tier 0.
+3. **MEM1** if tack is on the library path; **MEM6, MEM7** — small, tier 0/1.
+4. **MEM4** (towers) and **MEM5** (per family) — the large anonymous terms on image turns and new families.
+5. **MEM8**, **MEM9** (with the `.giw` v16 format work), **MEM11** per family, **MEM12**.
+6. **MEM10** on nobara when that box is free.
+7. aikit: **MEM16** (small, independent), then **MEM14/MEM15** together (one format bump), **MEM17** after D4.
+
+<!-- doc-reviewed: 2026-10-17 -->

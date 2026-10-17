@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (77: 68 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (78: 69 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -106,6 +106,13 @@ checkpointed second pool. It lists what today's per-slot design costs, what must
 gates, and the owner decisions. The first, D1, is decided: the owner un-parked paged KV on 2026-10-13, for memory and
 reuse, with continuous batching still parked. KV11, added the same day, puts KV blocks and paged MoE experts under one
 memory budget in place of today's fixed split.
+
+[`task-memory-campaign-2026-10.md`](tasks/task-memory-campaign-2026-10.md) (MEM0–MEM17, filed 2026-10-17, scoped)
+picks up where never-swap and the KV program stop: every large structure in goinfer and aikit with its share of a
+typical session, how each is held today, and the briefs for what is left — a public mapped load for library callers,
+multimodal towers (f32 heap copies, host copies beside GPU copies, Metal tower scratch never freed), prefill scratch
+for the families G40 did not chunk, the Metal int8 head pin, MoE expert copies on Metal and CUDA, f32 islands, the CPU
+heap, and aikit's BM25, HNSW, encoder and chunk-text items.
 
 [`task-forward-architecture-2026-10.md`](tasks/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
 2026-10-13; OP0 done the same day, the rest not started) is the compute half of the same redesign.
