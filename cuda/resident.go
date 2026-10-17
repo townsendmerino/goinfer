@@ -199,7 +199,7 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 		if layers[i].kvHalf {
 			elem = 2
 		}
-		if layers[i].isMLA {
+		if layers[i].isMLA() {
 			perPos += int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer holds window+slack positions however long the context (kvwindow.go), and decoder.cudaKVBytes prices the same
@@ -459,23 +459,31 @@ type cudaLayer struct {
 	perExpertScaleB                                        Buffer  // [nE] learned scale on the renormalized top-k weights
 	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
 
-	// Gated-DeltaNet mixer layer. When isDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
+	// mixer and ffn are this layer's operations (decoder.Model.ResidentLayerOps): the sequence mixer, then a feed-forward block when ffn. launchToken
+	// dispatches on mixer, and isDeltaNet and isMLA (methods below) read it, so nothing else decides a layer's kind.
+	mixer decoder.ResidentMixer
+	ffn   bool
+	// Gated-DeltaNet mixer layer. When mixer is MixerDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
 	// instead of attention: no KV cache, no q/k/v/o, and TWO persistent state buffers updated in place per token.
 	// dnState is [nv*hv*hk], stored TRANSPOSED relative to the CPU's [hk,hv] so each thread owns a contiguous row;
 	// dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND, so both are re-zeroed per generation (Reset),
 	// unlike a KV cache, which the next sequence simply overwrites.
-	isDeltaNet                   bool
 	dnQKV, dnZ, dnOut, dnB, dnA  cudaWQ // the five DeltaNet projections
 	dnConvW, dnDtBias, dnNegExpA Buffer // conv taps, dt bias, precomputed -exp(A_log)
 	dnNormW                      Buffer // [hv] gated-RMSNorm weight, shared across heads
 	dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state
+	// Mamba-2 mixer layer (Nemotron-H; mamba_resident.go): in_proj [projDim, hidden] and out_proj [hidden, dInner] as int8 with per-row scales, the conv
+	// taps and bias, headP = {-exp(aLog), dtBias, D} per head, the gated-norm weight, and TWO persistent buffers updated in place per token: mbWin is the
+	// conv window [(K-1)*convDim], mbSSM the SSM state [nHeads*headDim*dState]. Both compound, so resetState re-zeroes them per generation.
+	mbIn, mbOut               cudaWQ
+	mbConvW, mbConvB, mbHeadP Buffer
+	mbNormW, mbWin, mbSSM     Buffer
 	// qGate marks a SOFTMAX layer of the same family: q_proj is double width ([query ‖ gate] per
 	// head) and the context is scaled by sigmoid(gate) before o_proj. The weight stays fused
 	// because it is quantized; the split happens on the activation.
 	qGate bool
 
 	// MLA (DeepSeek / Kimi, FeatMLA)
-	isMLA                      bool
 	mlaQA, mlaQB, mlaQ, mlaKVA cudaWQ
 	mlaQANorm, mlaKVANorm      Buffer
 	mlaWUK, mlaWUV             Buffer
@@ -528,6 +536,7 @@ type cudaResident struct {
 	nH             int
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
+	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
 	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, docs/tasks/task-gpu-paths-2026-09.md): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
@@ -742,6 +751,10 @@ type cudaResident struct {
 	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
 	dnQSplit, dnAttnGate                                         Pipeline // the family's fused double-width q_proj + output gate
 	dnet                                                         *dnetParams
+	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
+	mamba                                     *mambaParams
+	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
+	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc Buffer
 
 	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the kernels stay bit-identical): the
 	// clamped interleaved-SwiGLU expert epilogue, plus the per-layer attention sinks and the per-expert gate‖up bias
@@ -1073,6 +1086,10 @@ func allocRoundSlack(n int64) int64 {
 
 // allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
 var allocSlackOffForTest bool
+
+// attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
+// OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
+var attnSoftcapDropForTest bool
 
 var hostWType = reflect.TypeFor[hostW]()
 
@@ -2170,7 +2187,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// tiny. A recurrent (Gated-DeltaNet) family always takes the loop: the weight-stationary pass has no notion of
 	// recurrent state, which must advance one token at a time and in order, and the loop is the same r.step this
 	// family's decode uses, so prefill and decode see the same state evolution.
-	if r.prefillReady && r.dnet == nil {
+	if r.batchedVerifyOK() {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
 		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, nil, nil, nil); err == nil {
@@ -2202,7 +2219,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 // VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes
 // a batched weight-stationary pass or falls back to a sequential per-row loop.
 func (r *cudaResident) VerifyPath() (bool, string) {
-	if !r.prefillReady || r.dnet != nil {
+	if !r.batchedVerifyOK() {
 		return false, "sequential — arch/geometry not supported by batched verify"
 	}
 	return true, "batched weight-stationary CUDA pass"
@@ -2291,7 +2308,7 @@ func (r *cudaResident) UseKVSlot(i int) error {
 // *Model decodes from the previous one's state. The state buffers are allocated zeroed, so the FIRST generation is
 // correct either way, which is exactly what makes the omission invisible to a single-sequence test.
 func (r *cudaResident) Reset() {
-	if r.dnet == nil {
+	if r.dnet == nil && r.mamba == nil {
 		return
 	}
 	// Reset satisfies the cross-backend ResidentForward interface and returns nothing, so a failed re-zero cannot be
@@ -2306,6 +2323,9 @@ func (r *cudaResident) Reset() {
 // the goroutine that services reqCh and deadlocks — a hang, not an error, and one that only appears
 // once graphs are actually admitted for a recurrent model.
 func (r *cudaResident) resetState() error {
+	if e := r.resetMambaState(); e != nil {
+		return e
+	}
 	if r.dnet == nil {
 		return nil
 	}
@@ -2314,7 +2334,7 @@ func (r *cudaResident) resetState() error {
 	stZ := make([]float32, dp.stateElems)
 	for i := range r.layers {
 		L := &r.layers[i]
-		if !L.isDeltaNet {
+		if !L.isDeltaNet() {
 			continue
 		}
 		if e := gpu.Upload(L.dnWin, winZ); e != nil {
@@ -2585,8 +2605,8 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	// for the staged q: splitkv_scores stages the block-invariant q vector once instead of every thread re-loading it
 	// from global (docs/measurements/splitkv-stall-profile-2026-09-13.md).
 	if e := r.launch(r.skScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(Ly.hd * 4)},
-		Arg(r.qB), Arg(r.kvK(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin))); e != nil {
+		r.withCap(Arg(r.qB), Arg(r.kvK(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin)))...); e != nil {
 		return e
 	}
 	// 2. softmax in place (block 128 — MUST match attn_batched for byte-identical max/denominator).
@@ -3325,6 +3345,9 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			}
 		}
 	}
+	if !Ly.ffn {
+		return nil // a single-operation block (Nemotron-H attention): the o-projection above was the whole layer
+	}
 	return r.segBFFN(Ly, l, x)
 }
 
@@ -3344,7 +3367,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	// mixer replaces segA+attention, not the FFN half). A DeltaNet layer reaches NormPre2 via NormPlacementLinear
 	// regardless of the model-level placement and has a real Ly.postNorm (and no postMLPNorm; see BuildResident's
 	// DeltaNet-continue comment), so it must take the normal branches.
-	postOnlyHere := r.postOnly && !Ly.isDeltaNet
+	postOnlyHere := r.postOnly && !Ly.isDeltaNet()
 	// This layer's own FFN width: Gemma 4 E-models mix 6144 and 12288 (docs/tasks/task-multimodal-support-2026-10.md), and the
 	// scratch is sized to the widest layer, so every launch below takes the layer's width and never the model-level r.inter.
 	ffnI := Ly.ffnI
@@ -3533,7 +3556,7 @@ func (r *cudaResident) segC(Ly *cudaLayer, l int, x Buffer) error {
 func (r *cudaResident) captureGraphs() error {
 	for l := range r.layers {
 		Ly, ll := &r.layers[l], l
-		if Ly.isDeltaNet {
+		if Ly.isDeltaNet() {
 			// A Gated-DeltaNet layer is MORE graph-static than an attention one: no rope and no attention, so no per-token
 			// dynamic uniform. The recurrence's only per-token input is the residual, which is buffer CONTENTS, and replay
 			// reads current contents (TestCUDA_graphReplay). So the whole pre-routing half captures as ONE segment, mixer +
@@ -3557,7 +3580,7 @@ func (r *cudaResident) captureGraphs() error {
 			}
 			continue
 		}
-		if Ly.isMLA {
+		if Ly.isMLA() {
 			// For MLA, segA is dynamic (rope and attention depend on pos) and graphs are disabled.
 			continue
 		}
@@ -3617,7 +3640,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	gC := useGraphs && (r.graphMask == "" || strings.Contains(r.graphMask, "C"))
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
-		if Ly.isDeltaNet {
+		if Ly.mixer == decoder.MixerDeltaNet {
 			// Gated-DeltaNet mixer: replaces segA + rope + attention + o-proj (no KV cache, nothing positional: the state IS
 			// the history). The FFN sub-block and the router-readback gap below are the ordinary ones, so this rejoins the
 			// shared path at segBFFN. Captured as ONE segment (gSegA) when graphs are on: with no rope/attention gap there is
@@ -3644,7 +3667,24 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 			}
 			continue
 		}
-		if Ly.isMLA {
+		if Ly.mixer == decoder.MixerMamba || Ly.mixer == decoder.MixerNone {
+			// A Nemotron-H block carries one operation. Mamba-2 replaces segA + attention + o-proj (no KV, no position); a feed-forward-only
+			// block is the up GEMV, relu2_quant and the down GEMV. Neither has a router readback gap, so both go straight to the layer tail.
+			var e error
+			if Ly.mixer == decoder.MixerMamba {
+				e = r.mambaMixer(Ly)
+			} else {
+				e = r.nonGatedMLP(Ly)
+			}
+			if e != nil {
+				return e
+			}
+			if e := r.layerTail(Ly, l, gC, r.x); e != nil {
+				return e
+			}
+			continue
+		}
+		if Ly.mixer == decoder.MixerMLA {
 			if e := r.segAMLA(Ly, l, pos, ropePos); e != nil {
 				return e
 			}
@@ -3767,12 +3807,12 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		// the glue launch, so decode stays byte-identical. The glue `attention` (audited) is UNTOUCHED and is the fallback
 		// below.
 		if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l)); err != nil {
+			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...); err != nil {
 			return err
 		}
 	} else {
 		if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx)); err != nil {
+			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...); err != nil {
 			return err
 		}
 	}

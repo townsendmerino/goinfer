@@ -311,6 +311,17 @@ content blocks (`text`, `tool_use`/`tool_result` replay), `tools` (note:
 and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
 → `message_delta` → `message_stop`, no `[DONE]`).
 
+**`usage` on `/v1/messages` follows the Messages API's split.** `cache_read_input_tokens` is the prompt tokens a prior turn's
+KV already held, so their prefill was skipped: the count `/v1/responses` reports as `cached_tokens`, and the request log as
+`reused=`. `input_tokens` is the rest, the tokens this request prefilled, so the prompt is `input_tokens +
+cache_read_input_tokens` (what `count_tokens` returns). That is the sum Anthropic's clients take: Claude Code sizes its context
+from it. Reporting the whole prompt as `input_tokens`, with the reused count as a subset of it, would make every warm turn read
+as up to twice its size there, and compact early. `cache_creation_input_tokens` is not reported: every prefix serve prefills it
+keeps, with no separate cache write. A streamed reply's `message_start` goes out before the prefill decides the reuse, so it
+reports the whole prompt as `input_tokens` and no `cache_read_input_tokens`. Its `message_delta` carries the final split, as a
+whole-message total that replaces `message_start`'s, which is how the Anthropic SDKs accumulate it. The vision route and
+message batches report it the same way. Until 2026-10-16, `input_tokens` was the whole prompt and no reuse was reported.
+
 **What `tool_choice` actually constrains** (N-18, closed 2026-09-24): on the families with a JSON call form — chatml and mellum2
 (`<tool_call>`), mistral (`[TOOL_CALLS]`) and llama3 (bare JSON) — a tool call cannot be malformed and cannot name a tool you did not
 supply, with any number of tools:

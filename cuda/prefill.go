@@ -13,6 +13,7 @@ import (
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // errPrefillDeclined marks an arch or geometry decline from the batched path, which covers the plain dense unfused
@@ -244,7 +245,7 @@ func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings
 		return nil, fmt.Errorf("cuda prefill: %d DeepStack sets over %d image rows for %d layers: %w", len(deep), imgLen, r.nLayers, errPrefillDeclined)
 	}
 	for l := range r.layers {
-		if Ly := &r.layers[l]; Ly.isMoE || Ly.g4moe || Ly.isDeltaNet {
+		if Ly := &r.layers[l]; Ly.isMoE || Ly.g4moe || Ly.isDeltaNet() {
 			return nil, fmt.Errorf("cuda prefill: DeepStack is claimed for plain dense layers only (layer %d is not one): %w", l, errPrefillDeclined)
 		}
 	}
@@ -273,7 +274,7 @@ func (r *cudaResident) HybridMRoPEPrefill() bool {
 		if r.layers[l].isMoE || r.layers[l].g4moe {
 			return false
 		}
-		delta = delta || r.layers[l].isDeltaNet
+		delta = delta || r.layers[l].isDeltaNet()
 	}
 	return delta
 }
@@ -495,7 +496,7 @@ func (r *cudaResident) prefillStaticDecline() error {
 		}
 	}
 	// Gated-DeltaNet layers, whose conv ring and matrix state must advance one token at a time in order, are handled inside
-	// the pass: prefillCore branches on Ly.isDeltaNet and runs the recurrence through row-batched twins of decode's kernels
+	// the pass: prefillCore branches on Ly.isDeltaNet() and runs the recurrence through row-batched twins of decode's kernels
 	// (prefillDeltaNetRows, docs/tasks/task-cuda-deltanet-prefill-2026-09.md). Dispatch is on the layer's kind, not on which
 	// weights happen to be absent (a dense attention stack once ran over conv layers that load no q/k/v/o), and
 	// nonBatchableKind checks the projections each kind binds. ForwardN (spec verify) stays sequential for this family:
@@ -622,6 +623,14 @@ func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]i
 // every projection is int4 or int8 (bGemvB: int4 uses gemv_w4a8_batched/_rn, int8 gemv_w8a8_batched; a uniform or mixed
 // int4/int8 bundle all batch). Naming the kind makes the startup message actionable.
 func nonBatchableKind(Ly *cudaLayer) string {
+	// A Mamba-2 mixer and a feed-forward-only block have no batched kernels: their prompts take the sequential path, named here
+	// and not left to the absent q/k/v weights reading as "absent/unquantized".
+	switch Ly.mixer {
+	case decoder.MixerMamba:
+		return "Mamba-2 mixer"
+	case decoder.MixerNone:
+		return "feed-forward-only block"
+	}
 	// Check exactly the projections this layer's batched path binds, and no others. An absent weight has kind "", which the
 	// caller reads as "no problem", so checking an absent weight passes vacuously and tightening the sentinel would turn
 	// that into a wrong refusal; narrow the list instead. Ly.v is absent on a K=V layer (V is derived from k), and Ly.g/u/d
@@ -637,7 +646,7 @@ func nonBatchableKind(Ly *cudaLayer) string {
 	if Ly.pleGate.N > 0 || Ly.pleProj.N > 0 { // the E-model per-layer embedding branch runs through the batched GEMVs too
 		ws = append(ws, Ly.pleGate, Ly.pleProj)
 	}
-	if Ly.isDeltaNet {
+	if Ly.isDeltaNet() {
 		// A Gated-DeltaNet layer has no q/k/v/o; prefillDeltaNetRows binds these five instead.
 		ws = []cudaWQ{Ly.dnQKV, Ly.dnB, Ly.dnA, Ly.dnZ, Ly.dnOut}
 	}
@@ -667,6 +676,12 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 	}
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
+	for l := range r.layers {
+		if r.layers[l].mixer == decoder.MixerMamba {
+			// Not a precision problem: the Mamba-2 recurrence has no batched kernel, so a prompt runs one forward per token at any quant.
+			return false, "sequential — the Mamba-2 mixer has no batched kernel, so a prompt runs one forward per token (slower TTFT)"
+		}
+	}
 	if len(r.layers) > 0 {
 		if k := nonBatchableKind(&r.layers[0]); k != "" {
 			return false, fmt.Sprintf("sequential — batched prefill needs int4 or int8 projections (%s weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt", k)
@@ -769,6 +784,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, nil, e
 	}
+	if len(blocks) > 0 && r.attnCap != 0 {
+		return nil, nil, fmt.Errorf("cuda prefill: an image block on a model with an attention softcap; attn_img_batched has no cap")
+	}
 	if r.eModel {
 		// Gemma 4 E-model: text prompts batch. A step (its rows' PLE tails and KV slots are not staged by the step path), an
 		// image block and m-RoPE (no E-model has it) stay sequential.
@@ -826,7 +844,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	r.forceExactKernels = tail != tailLastLogits && !(tail == tailKVOnly && r.chunkOrdinary) ||
 		// Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after token, so they
 		// stay off (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
-		r.dnet != nil ||
+		r.recurrent() ||
 		// Gemma 4 E-model: the fast levers have no fidelity evidence on this family, and a real E2B prompt above the floor
 		// diverged from the sequential path. It batches on the exact kernels, bit-identical to decode at every length, until the
 		// levers pass a fidelity gate of their own (docs/tasks/task-multimodal-support-2026-10.md, G3p).
@@ -1041,7 +1059,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 			}
 			t := r.profTic()
-			if Ly.isDeltaNet {
+			if Ly.isDeltaNet() {
 				// Gated-DeltaNet mixer (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): replaces segA + rope +
 				// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
 				// the recurrence row by row in order. The FFN below is the shared one.
@@ -1264,7 +1282,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						}
 					} else {
 						attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-							BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, attnArgs...)
+							BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.withCap(attnArgs...)...)
 					}
 					if attnErr == nil && laneFrom < M {
 						attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
@@ -1308,7 +1326,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					return e
 				}
 				r.profToc(gemvCat, t)
-			} // !Ly.isDeltaNet
+			} // !Ly.isDeltaNet()
 
 			// FFN: dense batches; MoE runs row by row off the batched residual. The routed-expert GEMVs are indexed by a device-side
 			// routing decision that differs per token, so there is no M-wide form without an expert-major gather (the expert-major
@@ -1353,7 +1371,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				t = r.profTic()
 				// segBFFN's postOnlyHere: a Gated-DeltaNet layer in a post-only model (Olmo Hybrid) replaces only the
 				// attention half, so its FFN takes the normal pre-MLP norm and in-place down projection.
-				postOnlyHere := r.postOnly && !Ly.isDeltaNet
+				postOnlyHere := r.postOnly && !Ly.isDeltaNet()
 				gqB, gScB := mqB, mScB
 				if r.parallelBlock {
 					// Cohere/Command-R: reuse segA's shared input norm (aqB/aScB) — MLP consumes the SAME
@@ -1838,7 +1856,7 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 // including TestPipelineLint_boundKernelsAreLaunched, which flags a field bound at every model load and launched by
 // nothing.
 func (r *cudaResident) useAttnFused(hd, M int) (uint32, bool) {
-	if r.forceExactKernels || !r.fastAttn || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
+	if r.forceExactKernels || !r.fastAttn || r.attnCap != 0 || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
 		return 0, false
 	}
 	p, sh := r.attnFusedFor(hd)

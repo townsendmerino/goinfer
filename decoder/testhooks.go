@@ -615,3 +615,28 @@ func TakeMoESelTraceForTest() ([][]int, [][]float32) {
 
 // StopMoESelTraceForTest stops the recording.
 func StopMoESelTraceForTest() { moeSelTrace, moeWtsTrace = nil, nil }
+
+// SetResidentFeaturesForTest adds the given features to backend's declared set and returns a function that restores it. A backend's build
+// seam that is gated but not yet declared (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b on CUDA) is reachable from its own
+// tests only through this: production admission reads the unexported map and never sees a feature a test added after restore. It is not
+// safe for parallel tests, and it panics on a backend that declares no set, so a typo cannot pass as a no-op.
+func SetResidentFeaturesForTest(backend string, add ...ResidentFeature) (restore func()) {
+	set, ok := residentBackendFeatures[backend]
+	if !ok {
+		panic("decoder.SetResidentFeaturesForTest: no feature set declared for backend " + backend)
+	}
+	prev := make(map[ResidentFeature]bool, len(add))
+	for _, f := range add {
+		prev[f] = set[f]
+		set[f] = true
+	}
+	return func() {
+		for f, was := range prev {
+			if was {
+				set[f] = true
+			} else {
+				delete(set, f)
+			}
+		}
+	}
+}

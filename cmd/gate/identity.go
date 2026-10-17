@@ -77,10 +77,10 @@ func runIdentity(argv []string, w io.Writer) int {
 	fs.SetOutput(os.Stderr)
 	var o identityOpts
 	var fams, quants, only, configs string
-	fs.StringVar(&o.Backend, "backend", "cpu", "cpu | metal | webgpu")
+	fs.StringVar(&o.Backend, "backend", "cpu", "cpu | metal | webgpu | cuda")
 	fs.StringVar(&fams, "families", "", "comma-separated parity-manifest families (default: all)")
 	fs.StringVar(&o.Assets, "assets", "tiny", "tiny (the forward goldens' fixtures) | real (small checkpoints under ~/models)")
-	fs.StringVar(&quants, "quant", "", "comma-separated quants (default: cpu f32,int8int8,int4; metal int4,int8int8; webgpu int4; -assets real int4)")
+	fs.StringVar(&quants, "quant", "", "comma-separated quants (default: cpu f32,int8int8,int4; metal and cuda int4,int8int8; webgpu int4; -assets real int4)")
 	fs.StringVar(&only, "only", "", "comma-separated asset names to keep (e.g. coder-0.5b-q4km)")
 	fs.BoolVar(&o.Long, "long", false, "-assets real: add a third prompt of about 2,500 tokens, past the CPU prefill's 2,048-row chunk")
 	fs.IntVar(&o.Steps, "steps", 0, "tokens generated per prompt; logits are dumped for each (default: tiny 8, real 32)")
@@ -104,7 +104,7 @@ func runIdentity(argv []string, w io.Writer) int {
 		rest = fs.Args()[1:]
 	}
 	if len(pos) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu] [-families a,b] [-assets tiny|real] [-quant q,…] [-steps N] [-keep] [-giw bytes|logits [-configs q:target[:e4h],…]]")
+		fmt.Fprintln(os.Stderr, "usage: gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu|cuda] [-families a,b] [-assets tiny|real] [-quant q,…] [-steps N] [-keep] [-giw bytes|logits [-configs q:target[:e4h],…]]")
 		return 2
 	}
 	o.OldRev, o.NewRev = pos[0], pos[1]
@@ -130,9 +130,9 @@ func runIdentity(argv []string, w io.Writer) int {
 		return 2
 	}
 	switch o.Backend {
-	case "cpu", "metal", "webgpu":
+	case "cpu", "metal", "webgpu", "cuda":
 	default:
-		fmt.Fprintf(os.Stderr, "gate identity: -backend %q: want cpu, metal or webgpu\n", o.Backend)
+		fmt.Fprintf(os.Stderr, "gate identity: -backend %q: want cpu, metal, webgpu or cuda\n", o.Backend)
 		return 2
 	}
 	if o.Assets != "tiny" && o.Assets != "real" {
@@ -210,6 +210,9 @@ func identityMain(o identityOpts, w io.Writer) int {
 	}
 	if o.Backend == "metal" && runtime.GOOS != "darwin" {
 		return refuse("-backend metal needs darwin (this is %s)", runtime.GOOS)
+	}
+	if o.Backend == "cuda" && runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+		return refuse("-backend cuda needs linux or windows (this is %s)", runtime.GOOS)
 	}
 	if o.Giw == "bytes" {
 		return identityGiwBytes(o, w)
@@ -467,6 +470,8 @@ func identityBuildDesc(backend string) string {
 		return "dumper in metal/ (registers the backend), ephemeral go.work: . ./metal"
 	case "webgpu":
 		return "dumper in gpu/ with -tags gpu, ephemeral go.work: . ./gpu"
+	case "cuda":
+		return "dumper in cuda/ with -tags cuda, ephemeral go.work: . ./cuda"
 	}
 	return "dumper in the root module, GOWORK=off -mod=readonly (CI's root build)"
 }
@@ -539,6 +544,8 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 		modDir, register = filepath.Join(s.WT, "metal"), `_ "github.com/townsendmerino/goinfer/metal"`
 	case "webgpu":
 		modDir, register, tags = filepath.Join(s.WT, "gpu"), `_ "github.com/townsendmerino/goinfer/gpu"`, "gpu"
+	case "cuda":
+		modDir, register, tags = filepath.Join(s.WT, "cuda"), `_ "github.com/townsendmerino/goinfer/cuda"`, "cuda"
 	}
 	if o.Backend == "cpu" {
 		set["GOWORK"], set["GOFLAGS"] = "off", "-mod=readonly"

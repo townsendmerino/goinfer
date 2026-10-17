@@ -1092,10 +1092,17 @@ func (g *gpuGate) cudaPTX() {
 	for _, f := range ptxFiles {
 		base := strings.TrimSuffix(filepath.Base(f), ".ptx")
 		// kernel is what build_ptx.sh is asked for. <k>_kv16.ptx has no source of its own name: it is <k>.cu built with
-		// the KV cache as f16, which build_ptx.sh writes whenever it builds <k>.
+		// the KV cache as f16, and <k>_cap.ptx and <k>_kv16_cap.ptx are <k>.cu built with the attention softcap (at f32 and at f16
+		// KV); build_ptx.sh writes each whenever it builds <k>.
 		kernel := base
 		if _, err := os.Stat(filepath.Join("cuda", base+".cu")); err != nil {
-			kernel = strings.TrimSuffix(base, "_kv16")
+			kernel = base
+			for _, suffix := range []string{"_kv16_cap", "_cap", "_kv16"} {
+				if k := strings.TrimSuffix(base, suffix); k != base {
+					kernel = k
+					break
+				}
+			}
 			if _, err := os.Stat(filepath.Join("cuda", kernel+".cu")); kernel == base || err != nil {
 				continue // no source ⇒ not ours to reproduce
 			}

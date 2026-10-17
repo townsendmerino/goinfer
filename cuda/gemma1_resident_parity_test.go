@@ -3,7 +3,6 @@
 package cuda
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -52,21 +51,4 @@ func TestGemma1ResidentParityCUDA(t *testing.T) {
 	if worst < 0.999 {
 		t.Errorf("worst logit cosine %.6f < 0.999", worst)
 	}
-}
-
-// TestGemma2DeclinesResidentCUDA: Gemma 2 needs the attention-score softcap, which no resident backend implements,
-// so a CUDA load must decline to the CPU and say why, rather than go resident and silently drop the cap.
-func TestGemma2DeclinesResidentCUDA(t *testing.T) {
-	m, err := decoder.Load("../testdata/gemma2-tiny", decoder.Options{Backend: "cuda", Quant: "int4"})
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	defer m.Close()
-	if m.ResidentForwardForTest() != nil {
-		t.Fatalf("gemma2-tiny went resident on CUDA (%s), which has no attention-softcap kernel", m.DecodePath())
-	}
-	if d := m.ResidentDecline(); !strings.Contains(d, string(decoder.FeatAttnLogitSoftcap)) {
-		t.Fatalf("the decline does not name the attention softcap: %q", d)
-	}
-	t.Logf("decline: %s", m.ResidentDecline())
 }

@@ -211,6 +211,11 @@ jobs:
       - name: book link lint
         run: python3 scripts/book_link_lint.py
 
+      # The night queue's runner (scripts/night.py): a job file dropped or re-added while the runner holds its pick must
+      # be skipped and logged, not crash the runner with the rest of the queue unrun. Stdlib unittest, under a second.
+      - name: night queue tests
+        run: python3 scripts/test_night.py
+
       # C3's zero-match guard: the `changes` gate decides "docs-only" partly by detecting which
       # docs/ files Go tests READ (scripts/ci_docs_only.sh). If that detection ever stops seeing
       # a file a test is known to read, the gate has silently widened what gets skipped -- this
@@ -709,6 +714,13 @@ jobs:
       # missing its //go:build cuda line breaks them while every tagged step above stays green.
       - name: vet, untagged
         run: go vet ./cuda/...
+
+      # `gate gpu`'s kernel-level suite (check 2a) builds the cuda tests with -tags cuda and NOTHING else, to prove the kernel tests need no
+      # test hooks. A _test.go file that uses a helper defined under goinfer_testhooks without its own tag compiles in every step above and
+      # fails only there (cuda/kv2_optionoff_test.go did, 2026-10-16: the device gate's 2a was red on a build error CI never saw).
+      # `go vet` compiles the tests; this step type-checks that exact tag set.
+      - name: vet -tags cuda alone (the device gate's 2a build)
+        run: go vet -tags cuda ./cuda/...
 
       # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       # CGO_ENABLED=0 dropped here: it only affects Go compilation (go build/run/test), and this

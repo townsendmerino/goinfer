@@ -17,6 +17,48 @@
 
 ## What is open
 
+- **P28 · Gemma 4 E2B and E4B: time to first token on Metal is 20-35x Qwen2.5-1.5B's at the same prompt — OPEN, filed
+  2026-10-16 (owner). Measure first, by day; report before any fix.** `mac`.
+
+  - **What was seen** (tack's E0 survey on the MacBook, 2026-10-16, goinfer 0e598d3f; tack's harness, exploratory, not
+    this repo's provenance gate). Both Gemma 4 E-models loaded `metal-resident (int4)` at `-ctx 16384` with fit headroom
+    (E2B: 3.5 GB of weights against a 6.1 GB budget). Cold time to first token, median of 3 (1 at 15,360), as prefill tok/s:
+
+    | model | 4,096 | 8,192 | 15,360 tokens |
+    |---|---|---|---|
+    | Gemma 4 E2B q4_0 | 41 (99.8 s) | 34 (238 s) | 26 (582 s) |
+    | Gemma 4 E4B q4_0 | 26 (160 s) | 22 (365 s) | 18 (855 s) |
+    | Qwen2.5-Coder-1.5B q4_k_m | 915 (4.5 s) | 795 (10.3 s) | 660 (23.3 s) |
+    | Qwen2.5-7B q4_k_m | 206 (19.8 s) | 191 (43.0 s) | 172 (89.3 s) |
+
+    The E-models' rate falls with length, and even the 7B prefills five times faster than E2B. That fits a one-token-at-a-time
+    prefill, but it is not established: no prefill path was recorded. Both E-model arms then ran past their tack timeouts.
+  - **The measurement (tier 1, by day):** prefill tok/s on Metal for Gemma 4 E2B (`gemma-4-E2B_q4_0-it.gguf`, at tack's
+    int4) against Qwen2.5-Coder-1.5B q4_k_m (tack's 1.5B file), cold, at 4,096 and 8,192 tokens. For each, the prefill path
+    the server takes (its banner's `prefill path:` line: batched, or one token at a time) and any decline reason logged.
+    No logged reason, where the path is per-token, is itself a finding.
+  - **Cost and stopping rule:** E2B cold at 4,096 and 8,192 is about 340 s, and the 1.5B about 15 s: about 6 minutes with
+    loads. 15,360 alone took 582 s on E2B, past tier 1's 10 minutes, so it runs only if 4,096 and 8,192 disagree on the path,
+    or the rate's fall with length is the question. Otherwise it goes to the night queue with a reason. Runs hold the timing
+    lock and not beside a timed job.
+  - **Report before any fix:** the two rates, each model's prefill path and decline reason, and where E2B's time goes if the
+    path is batched. A fix is a separate decision.
+
+- **P27 · CPU f16 KV, way B: widen the stored rows inside the attention kernels — PARKED 2026-10-16 (owner). Revisit if CPU KV
+  memory becomes the limit for a real user.** `mac`, aikit kernel work.
+
+  - **The finding that parked way A as the default:** CPU f16 KV way A (`--kv f16`, opt-in since #55) narrows rows to f16 on
+    append and widens the whole stored history into scratch on every decode step. F3's in-process A/B put it slower at depth:
+    0.925 on the 0.5B at 4,096 keys, 4 of 4 pairs under 1 (resolved), and 0.861 on the 1.5B (3 of 4). So `auto` stays f32
+    (`docs/tasks/task-cpu-kv-f16-2026-10.md` §5b).
+  - **Way B** (that doc's §4) reads f16 in the register, inside the kernels. Because the float64 path reads K and V in place, this
+    is not one kernel: it is an f16 form of each of the four attention kernels (two of them arm64-only), plus the fast prefill's
+    gather. Those kernels are aikit's, and its pushes and tags are the owner's.
+  - **What reopens it:** a real user whose CPU context is bounded by KV memory (f16 halves it: 0.94 GB to 0.47 GB at 16,384
+    positions on Qwen2.5-1.5B). Not speed: way B's best case is f32's speed at half the bytes.
+  - **Gates when it reopens:** the task doc's F1–F5 as registered, with F3 against way B; F1's exactness rule (the f32 path with
+    each stored row rounded to f16 by hand) carries over unchanged.
+
 - **P25 · `breakEvenTokensPerRound` is one constant (2.5) for every (target, backend); it does not
   transfer to a CPU MoE target and would NOT have caught a real regression.** Filed 2026-09-13 from
   `docs/task-laguna.md`'s DFlash pairing measurement, moved here at archival so the finding has a

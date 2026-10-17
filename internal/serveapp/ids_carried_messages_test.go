@@ -166,7 +166,8 @@ func TestIDsCarriedMessages_tinyFallbackAndKV(t *testing.T) {
 		name                string
 		content             []map[string]any
 		text                string
-		inTok, reused, slot int
+		inTok, cacheRead    int
+		reused, slot        int
 		div, canon, ids, fb string
 		promptSHA           string
 		gen, promptIDs      []int
@@ -195,12 +196,16 @@ func TestIDsCarriedMessages_tinyFallbackAndKV(t *testing.T) {
 				a.text = fmtString(c["text"])
 			}
 		}
-		a.inTok = int(msg["usage"].(map[string]any)["input_tokens"].(float64))
+		u := msg["usage"].(map[string]any)
+		a.inTok, a.cacheRead = int(u["input_tokens"].(float64)), int(u["cache_read_input_tokens"].(float64))
 		m := lineRE.FindStringSubmatch(strings.TrimSpace(logbuf.String()))
 		if m == nil {
 			t.Fatalf("%s: the -log-requests line does not have the documented shape: %q", name, logbuf.String())
 		}
 		a.reused, _ = strconv.Atoi(m[3])
+		if a.cacheRead != a.reused {
+			t.Errorf("%s: reused=%d on the line, cache_read_input_tokens %d in the response", name, a.reused, a.cacheRead)
+		}
 		a.slot, _ = strconv.Atoi(m[4])
 		a.div, a.canon, a.ids, a.fb = m[5], m[6], m[7], m[8]
 		f, err := os.Open(logPath)
@@ -239,8 +244,8 @@ func TestIDsCarriedMessages_tinyFallbackAndKV(t *testing.T) {
 			t.Fatal(err)
 		}
 		sum := sha256.Sum256(idsBytes(a.promptIDs))
-		if len(a.promptIDs) != int(tl["prompt_len"].(float64)) || hex.EncodeToString(sum[:]) != a.promptSHA || len(a.promptIDs) != a.inTok {
-			t.Fatalf("%s: the route's render (%d ids) is not what the handler prefilled (%v ids, input_tokens %d)", name, len(a.promptIDs), tl["prompt_len"], a.inTok)
+		if len(a.promptIDs) != int(tl["prompt_len"].(float64)) || hex.EncodeToString(sum[:]) != a.promptSHA || len(a.promptIDs) != a.inTok+a.cacheRead {
+			t.Fatalf("%s: the route's render (%d ids) is not what the handler prefilled (%v ids, input_tokens %d + cache_read_input_tokens %d)", name, len(a.promptIDs), tl["prompt_len"], a.inTok, a.cacheRead)
 		}
 		return a
 	}
