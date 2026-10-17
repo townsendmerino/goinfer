@@ -17,6 +17,28 @@
 
 ## What is open
 
+- **P29 · Phi-3 at q4k on Metal prefills one token at a time when the memory guard allows one KV slot, and the decline
+  message blames geometry — OPEN, filed 2026-10-17 (owner). Measure the prefill cost against OP6's batched step first.**
+  `mac`.
+
+  - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
+    -ctx 2048`): the load went `metal-resident (q4k)`, and the banner said `prefill path: sequential — arch/geometry not
+    supported by f16 MMA prefill kernel`. `-require-backend` then refused it. The record is
+    `docs/measurements/peer-vetted-2026-10-07-macbook.md`, "Amendment, 2026-10-17", on branch
+    `m1-phi3-q4k-cell-2026-10` until that branch merges.
+  - **The cause, from the source at that commit, is not geometry:**
+    - The q4k lane never takes the f16 MMA pass: `metal/model.go`'s `prefillOK` excludes `q4kLane` outright.
+    - The fallback is OP6's batched step ("decode rows on the batched step kernels"). It needs at least two resident KV
+      slots: `metal/batch.go:resident.batchIneligible` returns "one resident KV slot". At `-ctx 2048` each slot cost
+      768 MB, and the memory guard allowed one ("1 resident KV slots of 2 requested").
+    - `metal/backend.go:metalResident.PrefillPath` reports both cases with the same "arch/geometry" text.
+  - **The measurement (tier 1, by day):** Phi-3 mini 4k at q4k on Metal, cold prefill tok/s at one prompt length. One arm
+    holds one KV slot (sequential); the other holds two (OP6's step), by a `-kv-sessions` or `-ctx` the guard admits with
+    two slots. Read each arm's banner `prefill path:` line, so the arm is the path it claims to be. A few minutes; holds the
+    timing lock.
+  - **Then two separate decisions, not one fix:** whether the step's two-slot minimum should apply to a one-request prefill,
+    and a decline message that names the condition that applied (a one-line fix that needs no measurement).
+
 - **P28 · Gemma 4 E2B and E4B: time to first token on Metal is 20-35x Qwen2.5-1.5B's at the same prompt — OPEN, filed
   2026-10-16 (owner). Measure first, by day; report before any fix.** `mac`.
 
