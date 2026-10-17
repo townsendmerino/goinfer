@@ -1222,3 +1222,5 @@ no kernel math.
 The tripwire read system-wide swap-used, and on nobara about 9 GB of swap sits in idle processes whose figure drifts by 0.5 to 1 GB between runs, so the 512 MB default halted runs on noise (`docs/measurements/kv7-step2-2026-10-17/README.md`, "Swap during the replay"). On Linux the 512 MB
 threshold now applies to `VmSwap` summed over the server's pid and descendants (`decoder.SelfSwapBytes`), and system-wide swap is a second trip at a fixed 4096 MB backstop (Francis's decision, 2026-10-17). Where `VmSwap` cannot be read, and on macOS (no per-process figure), the guard is the system-wide one at the
 threshold, and the banner names the reader. Run plans that set `swap_guard_mb` 4096 as a workaround drop it once a build carries this.
+
+Merged as PR #90 (`dba04134`). The nobara CUDA serve built from it prints `swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop`. No existing run plan runs a build that carries it (each names a binary pinned earlier), so none was edited; a plan pinned to a build at or after it omits `swap_guard_mb`.

@@ -67,6 +67,11 @@ The report-only question: across 8 session starts, 4 pairs share the stable sect
   (still armed; recorded in the job's provenance)"), commit `2b04d8cb`, 2026-10-13. The records show an agent choosing it and writing it down; none shows the owner approving the value. `run-night.sh` and `run-tier1-cc.sh`
   inherit it; the counter replay's `run-counter-replay.sh` follows the same value. It was not changed.
 - **Decision (Francis, 2026-10-17, made after the fact):** 4,096 MB stays for nobara's run plans (`plan-kv7s2.json` and the others that carry it) until the guard watches the server's own swap; the default stays 512 MB. It was first set by an agent on 2026-10-13 without approval. CLAUDE.md now says a guard threshold change needs his word.
+- **After the per-process guard landed (PR #90, merged at `dba04134`, 2026-10-17):** nobara's serve was rebuilt from main (`~/goinfer-bench/serve-cuda-dba04134`) and its startup banner reads
+  `swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop`, with a baseline line for each (`9.64 GB (system swap)`, `0.00 GB (server swap)`).
+  Plan cleanup: `swap_guard_mb` 4096 is dropped from a plan that runs a build carrying the guard, and **no existing plan does**: `plan-kv7s2.json`, `plan-e2e.json`, `plan-ids3.json` and the I1/I3 plans each name a pinned
+  binary built before `dba04134`, which has the system-wide guard alone and still needs the 4096 to run. They are left as the records of those runs. A new pin of a build at or after `dba04134` omits the key (the 512 default then
+  applies to the server's own swap); setting `swap_guard_mb` 4096 on it would raise the own-swap trip to 4096 too, which CLAUDE.md puts behind Francis's word.
 - **Attempt 1 of the counter replay tripped the 512 MB guard:** `swap guard: baseline 8.80 GB swap-used`, then `TRIPPED — swap grew 0.65 GB over baseline (9.46 GB used now)` during the first, cold request (`serve-attempt1.log`).
   Nobody sampled per process at the time, so which process held that 0.65 GB is not recorded.
 - **The same replay again, sampled every 10 s** (`swap-sampler.sh`, `swap-samples-replay.csv`, 550 s, the 12 requests): system swap 9,359 MB at the start, **peak 9,365 MB (+6 MB)**, 9,343 MB at the end; the server's `VmSwap` **0 MB**
