@@ -203,8 +203,9 @@ func toolsConstrainedFromStart(forced *chat.Tool, namedForce bool, union string,
 // constrainForcedTool wires constrained decoding for a forced/lone tool call. When the caller explicitly NAMED the function
 // (namedForce), a family/schema that cannot be constrained returns an error the handler renders as a 400: OpenAI and Anthropic
 // both guarantee a named tool_choice produces that call, so silently decoding unconstrained (the model may emit prose, or a
-// different tool) defeats the guarantee. The lone-tool convenience (namedForce=false) never errors: it is only an
-// optimization, and the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses and the
+// different tool) defeats the guarantee. A must-call choice (union "required": OpenAI required, Anthropic any) on a family
+// with no JSON call form runs unconstrained and is checked after generation (genRequest.callPostCheck). The lone-tool
+// convenience under auto never errors: it is only an optimization, and the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses and the
 // Anthropic Messages surface so all three degrade identically.
 //
 // union ("", "auto" or "required") says what to do when no single tool is forced (usually two or more tools; also Anthropic
@@ -239,6 +240,7 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 		if namedForce {
 			return fmt.Errorf("tool_choice forces function %q but this model's chat template has no constrainable tool-call form", forced.Name)
 		}
+		gr.callPostCheck = union == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
 		return nil
 	}
 	g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters)
@@ -268,8 +270,9 @@ var (
 )
 
 // constrainToolUnion wires the multi-tool union for a request with 2+ tools and no single forced
-// tool. It never errors: a family with no JSON call form, or a tool schema the grammar cannot
-// compile, leaves the request unconstrained — today's behaviour — rather than refusing it.
+// tool. It never errors: a tool schema the grammar cannot compile leaves the request unconstrained
+// rather than refusing it, and a family with no JSON call form marks a required request for the
+// post-check (genRequest.callPostCheck) instead.
 func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []chat.Tool) {
 	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
 		return
@@ -283,6 +286,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
 	if !ok {
+		gr.callPostCheck = mode == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
 		return
 	}
 	specs := make([]constrain.ToolSpec, len(tools))
@@ -329,6 +333,23 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	lazy := constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger)
 	gr.sp.LogitProcessor = lazy.Process
 	gr.sp.LogitProcessorGate = lazy.Gate
+}
+
+// forcedCallEnforcement is how a must-call tool_choice (OpenAI required, Anthropic any) is enforced on tm, as /v1/models
+// and /health publish it per model: "grammar" (a family with a JSON call form: the call is constrained from the first
+// token), "post-check" (a family with none: the reply runs unconstrained, and one with no parsed call is an error,
+// runToolTurn), "off" (GOINFER_TOOL_UNION=0: neither). "" for a template that takes no tools.
+func forcedCallEnforcement(tm *chat.Template) string {
+	switch {
+	case tm == nil || !tm.SupportsTools():
+		return ""
+	case !toolUnionEnabled:
+		return "off"
+	}
+	if _, _, _, _, ok := tm.ToolCallWrapper(); ok {
+		return "grammar"
+	}
+	return "post-check"
 }
 
 // toolUnionOffSeen holds each reason a request's tool calls went unconstrained, already reported.

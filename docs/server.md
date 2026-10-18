@@ -377,6 +377,16 @@ supply, with any number of tools:
   follows prose in the same reply is still only parsed. A server started with speculative decoding leaves `auto` unconstrained, to
   keep its drafter.
 
+**On a family with no JSON call form** (Gemma 4, gpt-oss, a ChatML model under `-tool-format template`), a call is parsed, not
+constrained. A named tool is a 400. `required` / `any` runs unconstrained and is checked once the reply is parsed: a reply with no
+call is an error (a 500, or an error event on a stream), never prose, and no prose streams before the check.
+
+**How each model enforces a forced call** is in its `/v1/models` entry (and `/health`) as `forced_tool_call`:
+- `grammar`: chatml, mellum2, mistral and llama3, as above;
+- `post-check`: a family with no JSON call form;
+- `off`: `GOINFER_TOOL_UNION=0`, where `required` / `any` over several tools is neither constrained nor checked.
+The field is absent for a model whose template takes no tools.
+
 **What the arguments are held to.** The call's form, the tool's name and the argument keys a tool declares are always
 constrained. Within the arguments, a value is held to the type the schema gives it, and what the grammar cannot check is the
 tool's to validate:
@@ -935,8 +945,8 @@ to ignore.**
   `namespace functions { … }` — and a call and its result replay as the template renders them; both are pinned byte for byte against
   HuggingFace's rendering of the template from the GGUF, quirks included. Limits, stated plainly:
   - **A call's form is parsed, not constrained.** gpt-oss's call is a channel message, not a JSON wrapper a grammar can govern, so a
-    named `tool_choice` is a 400 (as for Gemma 4) and `required` / `auto` run unconstrained: the model may answer in prose where
-    `required` asked for a call. An argument object that is not valid JSON is left out rather than passed on.
+    named `tool_choice` is a 400 (as for Gemma 4) and `required` / `auto` run unconstrained. A `required` reply that holds no call
+    is an error (`forced_tool_call` `post-check`). An argument object that is not valid JSON is left out rather than passed on.
   - **Prose is buffered, not streamed** on a tool-capable request; the reasoning still streams as `reasoning_content`.
   - Only `functions.NAME` recipients are calls: gpt-oss's built-in `browser` and `python` are never declared and are ignored if the
     model reaches for them. The model stops at the first call, so parallel calls in one turn do not occur; a history that carries

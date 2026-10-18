@@ -28,6 +28,10 @@ type toolTurn struct {
 // on. Unreachable by construction — the prose streamer only releases bytes that precede the family's
 // call opener, and lead is the raw prefix before it — but streamed bytes cannot be recalled, so a
 // front end that ever sees it must say so rather than emit a stream that disagrees with itself.
+// errNoForcedCall is a post-checked must-call turn (genRequest.callPostCheck) whose reply holds no tool call.
+var errNoForcedCall = errors.New("tool_choice required a tool call and the model answered without one (this model's calls " +
+	"are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)")
+
 var errProseDiverged = errors.New("internal: streamed prose diverged from the parsed lead; the tool-call " +
 	"stream for this family is not prefix-safe (G21)")
 
@@ -42,7 +46,7 @@ var errProseDiverged = errors.New("internal: streamed prose diverged from the pa
 // is partial). errProseDiverged is returned alongside a filled toolTurn.
 func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest, tools []chat.Tool, ss *sseWriter, onProse func(string)) (toolTurn, error) {
 	var prose *chat.ProseStreamer
-	if onProse != nil && lm.tmpl != nil {
+	if onProse != nil && lm.tmpl != nil && !gr.callPostCheck { // a post-checked turn may yet be an error: no prose leaves before the parse
 		if opener, ok := lm.tmpl.ToolCallOpener(); ok {
 			// A family that also accepts a bare call must not stream an output that opens with '{'
 			// — it may yet parse as a call with an empty lead (ParseToolCallsFor).
@@ -89,6 +93,9 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	turn.calls, parsedLead, turn.fromReasoning = settleCalls(lm.tmpl, turn.raw, tools, gr.think)
 	var err error
 	turn.lead, turn.rest, err = reconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
+	if err == nil && gr.callPostCheck && len(turn.calls) == 0 {
+		err = errNoForcedCall
+	}
 	return turn, err
 }
 

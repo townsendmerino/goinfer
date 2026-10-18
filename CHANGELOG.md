@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **A `tool_choice` of `required` (OpenAI) or `any` (Anthropic) on a family with no JSON call form is an error when the reply
+  holds no call,** instead of prose. Those families (Gemma 4, gpt-oss, a model under `-tool-format template`) are parsed, not
+  constrained, so the check runs once the reply is parsed, and no prose streams before it. Each model's `/v1/models` and `/health`
+  entry reports how a forced call is enforced: `forced_tool_call` is `grammar`, `post-check` or `off` (`GOINFER_TOOL_UNION=0`).
 - **On Metal, a prompt past 4,096 tokens stays on the batched prefill for a model whose attention head dim the fused kernel does
   not take (Gemma 4 E2B and E4B: 256 and 512).** The exact attention kernel held 4,096 scores, and a longer prompt fell back to
   a pass about 4× slower (E2B at 8,192 tokens: 34 tok/s against 144 at 4,096). Past 4,096 keys it now tiles its scores. A prompt

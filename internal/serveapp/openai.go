@@ -566,6 +566,9 @@ func (s *server) pathFields(name string) map[string]any {
 	// vision reports whether image content parts are accepted, by the same visionCapable the vision path checks, so a
 	// client can hide image input on a model that would refuse it.
 	f["vision"] = lm.visionCapable()
+	if e := forcedCallEnforcement(lm.tmpl); e != "" {
+		f["forced_tool_call"] = e // how a tool_choice required / any is enforced on this model (forcedCallEnforcement)
+	}
 	return f
 }
 
@@ -1151,6 +1154,9 @@ type genRequest struct {
 	boundary int
 	// fromModel names the sampling fields prepare took from the model's recommended sampling (withRecommended).
 	fromModel []string
+	// callPostCheck is a must-call tool_choice on a family with no JSON call form (forcedCallEnforcement "post-check"):
+	// runToolTurn streams no prose and returns errNoForcedCall when the reply holds no call.
+	callPostCheck bool
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
