@@ -236,6 +236,13 @@ jobs:
       - name: cuda-device-suite verdict
         run: python3 -B scripts/test_cuda_device_suite.py
 
+      # The same job turns its verdict into a GitHub issue (red opens one or comments on the open one, green closes it) and an 18:00 systemd timer queues it each
+      # evening unless it is already queued. Both are fed a fake gh and a fake night.py, with a plant that reads every verdict as green. Stdlib, under a second.
+      - name: cuda-device-suite issue and queue
+        run: |
+          python3 -B scripts/test_cuda_device_suite_issue.py
+          python3 -B scripts/test_cuda_device_suite_queue.py
+
       # The pre-push guard (scripts/main_ci_guard.py) refuses a push to main while main's latest CI run is unfinished, names
       # the run, and refuses on a failed read; fed fake `gh run list` output. Stdlib, under a second.
       - name: main CI guard
