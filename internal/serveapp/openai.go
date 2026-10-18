@@ -91,6 +91,9 @@ type loadedModel struct {
 	// (vocab, tokenizer), so it is built once per model, not per constrained request.
 	tokenBytesOnce sync.Once
 	tokenBytes     [][]byte
+	// tokenBytesFrom, when set, is the base model whose table this adapter reads: an adapter has its base's tokenizer and
+	// vocabulary, so the table is the same bytes, held once.
+	tokenBytesFrom *loadedModel
 	// idsIdent is the model-and-tokenizer identity carried-id blobs name (idsIdentity), computed once.
 	idsIdentOnce sync.Once
 	idsIdent     string
@@ -182,6 +185,9 @@ type loadedModel struct {
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
 // constrained requests.
 func (lm *loadedModel) cachedTokenBytes() [][]byte {
+	if lm.tokenBytesFrom != nil {
+		return lm.tokenBytesFrom.cachedTokenBytes()
+	}
 	lm.tokenBytesOnce.Do(func() {
 		lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)
 	})
