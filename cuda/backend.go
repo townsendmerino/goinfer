@@ -267,6 +267,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return declined(fmt.Errorf("per-32 activations need hidden (%d) and FFN width (%d) to be multiples of 32", H, I))
 		}
 	}
+	if planStartForTest != nil {
+		planStartForTest()
+	}
 	hls := make([]hlayer, nLayers)
 	for l := range nLayers {
 		lw := &w.Layers[l]
@@ -432,7 +435,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hl.postPLENorm = lw.PostPLENorm
 		}
 		for _, p := range proj {
-			hw, e := packWeight(p.src)
+			hw, e := planWeight(p.src) // validated now, packed into the device buffer at upload
 			if e != nil {
 				return declined(e)
 			}
@@ -650,9 +653,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if w.LMHead.Rows() == 0 {
 		lmSrc = &w.Embed // tied embeddings
 	}
-	hlm, e := packWeight(lmSrc)
+	hlm, e := planWeight(lmSrc)
 	if e != nil {
 		return declined(e)
+	}
+	if planCompleteForTest != nil {
+		planCompleteForTest()
 	}
 
 	// ---- resident + pinned executor ----
@@ -1776,6 +1782,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return e
 		}
 		r.kvGrantRollback() // last: everything it must not cost is allocated
+		r.pk = nil          // the packing staging blocks: the garbage the build leaves behind is a few blocks, not a packed copy
 		return r.setupErr
 	})
 	if setupErr != nil {
