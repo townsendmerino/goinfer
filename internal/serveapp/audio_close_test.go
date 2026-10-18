@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -89,5 +90,75 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 				t.Error("the entry still holds an encoder after its unload")
 			}
 		})
+	}
+}
+
+// fakeWhisperDevice stands in for a backend's device tower: an output of the encoder's shape until Close, an error after.
+type fakeWhisperDevice struct {
+	n      int
+	closed bool
+}
+
+func (d *fakeWhisperDevice) Forward([]float32) ([]float32, error) {
+	if d.closed {
+		return nil, errors.New("fake device: used after Close")
+	}
+	return make([]float32, d.n), nil
+}
+
+func (d *fakeWhisperDevice) Close() error { d.closed = true; return nil }
+
+// TestUnload_closesOnlyItsOwnAudioDevice: two Voxtral entries on one device backend each get their own device from the
+// backend's factory (multimodal.UseWhisperDevice). Unloading one closes its device, and the other still encodes a clip on
+// its own. The factory here builds a device per encoder, as the CUDA one does (newAudioTower, one Device each).
+func TestUnload_closesOnlyItsOwnAudioDevice(t *testing.T) {
+	vox, err := filepath.Abs(filepath.Join("..", "..", "testdata", "voxtral-tiny"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const backend = "test-audio-device"
+	multimodal.RegisterWhisperDevice(backend, func(enc *audio.WhisperEncoder) (audio.WhisperDevice, error) {
+		return &fakeWhisperDevice{n: enc.Cfg.MaxPositions * enc.Cfg.DModel}, nil
+	})
+	clip, _ := multimodal.DecodeWAVAnyRate(sineWAV(32000, 16000))
+	wins, err := audio.WhisperFeaturesWindows(clip, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &server{models: map[string]*loadedModel{}, liveness: map[*decoder.Model]*modelLiveness{}, draining: map[string]struct{}{},
+		cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
+	entry := func(name string) *loadedModel {
+		m := &decoder.Model{}
+		lm := &loadedModel{name: name, model: m, voxtralDir: vox, voxtralBackend: backend}
+		s.models[name], s.liveness[m] = lm, &modelLiveness{refs: 1}
+		enc, err := lm.voxtralEncoder()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lm.voxtralDevice == nil {
+			t.Fatalf("%s: the tower did not go on the test device", name)
+		}
+		if _, err := enc.Embed(wins); err != nil {
+			t.Fatalf("%s: a clip on the device: %v", name, err)
+		}
+		return lm
+	}
+	a, b := entry("a"), entry("b")
+	t.Cleanup(b.closeEntryNatives)
+	dev := a.voxtralDevice.(*fakeWhisperDevice)
+	w := httptest.NewRecorder()
+	s.handleAdminUnload(w, httptest.NewRequest("POST", "/admin/models/unload", strings.NewReader(`{"name":"a"}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("unload: %d %s", w.Code, w.Body.String())
+	}
+	if !dev.closed {
+		t.Error("the unloaded entry's device was not closed")
+	}
+	enc, err := b.voxtralEncoder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := enc.Embed(wins); err != nil {
+		t.Errorf("the other entry, after the first one's unload: %v", err)
 	}
 }
