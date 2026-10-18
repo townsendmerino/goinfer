@@ -225,3 +225,32 @@ Records: `peer-notrunc-2026-10-17/mac/mlx-seed/` (`mlx-seed.json`, `provenance.t
   This is a cross-session ratio, so it is not graded, and the bands do not apply to it
   (`docs/measurements/noise-registry.md`, TE3). A same-session greedy cell, goinfer and seeded MLX interleaved, would
   grade it.
+
+## Same-session greedy against MLX's single-request path: pre-registration (2026-10-17, before the run)
+
+**Why.** 2d's greedy MLX row must come from mlx-lm's single-request path, and it must be same-session (owner, 2026-10-17). The
+earlier Metal run's greedy MLX cells ran the batch engine. The path check measured seeded greedy, but without a goinfer arm
+beside it, so its ratio to goinfer is cross-session and not graded.
+
+- **Job:** `peer-notrunc-2026-10-17/run-mlx-greedy.sh`, a Mac night job on 2026-10-18.
+  - The goinfer server is `serve-metal-63038121`, the binary the earlier Metal run measured, and `bench_peer.py` is
+    pinned at `e90e82b9`.
+  - Greedy only (phase A), Metal, depth 128, 3 runs × 8 completions × 64 tokens.
+  - goinfer and mlx-lm interleaved, the 1.5B and 7B.
+  - Every arm is sent `temperature 0, seed 1`. The script asserts the MLX cells run `single-request` before any timed run,
+    and each MLX cell records its `mlx_path`.
+  - About 10 minutes.
+- **Fit:** by day (2026-10-17 23:00) both loads fit-checked `metal-resident (int4)`. The 1.5B needs 1.1 GB of weights
+  against a 3.4 GB budget, and the 7B 4.4 GB against 3.2 GB. The job checks the 7B again at its start, and measures it only
+  if it loads `metal-resident`; otherwise the 7B cell is recorded as not measured. The guard is not bypassed.
+- **Grading:** `mac/grade_mlx.py`, i.e. `grade.py`'s rules, imported unchanged.
+  - r = goinfer run i ÷ MLX run i.
+  - AHEAD: every r > 1.03.
+  - LEVEL: every r in [0.97, 1.03].
+  - AMBIGUOUS-HIGH / -LOW: the pairs straddle a band edge.
+  - BEHIND: every r < 0.97.
+  - The 5% spread cap applies, the token gate voids, and a goinfer cell not on `metal-resident` is VOID. An MLX cell that
+    did not run `single-request` is VOID.
+- **Use:** this is 2d's greedy MLX row. The earlier run's batch-path row stays as a note, and the path check's
+  cross-session ratios (0.67, 0.75) are not quoted.
+- **No stop rule beyond the fixed cells,** and no re-run until a cell passes.
