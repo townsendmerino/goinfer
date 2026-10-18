@@ -84,8 +84,10 @@ func TestPrefill_declinesInt8KV(t *testing.T) {
 }
 
 // F-C02: the exact attention_prefill kernel keeps `threadgroup float sc[4096]`, indexed by absolute key, and ran past it
-// above 4096 keys. It runs when the fused kernel cannot; GOINFER_METAL_FUSED_ATTENTION=0 forces it on this hd-16 fixture.
-func TestPrefill_exactAttentionDeclinesPast4096Keys(t *testing.T) {
+// above 4096 keys. A pass past that bound now takes attention_prefill_tiled (P28) instead of declining, and a pass that fits
+// still runs attention_prefill. The exact kernel runs when the fused kernel cannot; GOINFER_METAL_FUSED_ATTENTION=0 forces
+// it on this hd-16 fixture.
+func TestPrefill_exactAttentionTilesPast4096Keys(t *testing.T) {
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 	t.Setenv("GOINFER_METAL_FUSED_ATTENTION", "0")
 	a := tinyPrefillResident(t, decoder.Options{Quant: "int8int8", ResidentContext: 8192}, 8192)
@@ -95,11 +97,9 @@ func TestPrefill_exactAttentionDeclinesPast4096Keys(t *testing.T) {
 	if fused, _ := a.r.prefillAttnKernels(); fused {
 		t.Fatal("the fused kernel is still selected; the test proves nothing")
 	}
-	if _, err := a.PrefillLast(context.Background(), tinyEmbs(32), prefillExactAttnMaxKeys-16); err == nil ||
-		!strings.Contains(err.Error(), "exact prefill attention kernel") {
-		t.Errorf("a pass reaching %d keys on the exact kernel: err %v, want the decline", prefillExactAttnMaxKeys+16, err)
+	if _, err := a.PrefillLast(context.Background(), tinyEmbs(32), prefillExactAttnMaxKeys-16); err != nil {
+		t.Errorf("a pass reaching %d keys on the exact kernel declined: %v", prefillExactAttnMaxKeys+16, err)
 	}
-	// up to the bound it still runs in a batch
 	if _, err := a.PrefillLast(context.Background(), tinyEmbs(32), prefillExactAttnMaxKeys-32); err != nil {
 		t.Errorf("a pass ending exactly at %d keys declined: %v", prefillExactAttnMaxKeys, err)
 	}
@@ -117,5 +117,22 @@ func TestPrefillExactAttnBound(t *testing.T) {
 	}
 	if want := fmt.Sprintf("threadgroup float sc[%d];", prefillExactAttnMaxKeys); !strings.Contains(body, want) {
 		t.Errorf("attention_prefill does not declare %q; prefillExactAttnMaxKeys has drifted from the kernel", want)
+	}
+	// attention_prefill_tiled holds one tile in the same buffer, so its tile may never exceed it.
+	i = strings.Index(prefillKernels, "kernel void attention_prefill_tiled(")
+	if i < 0 {
+		t.Fatal("attention_prefill_tiled is not in prefillKernels")
+	}
+	tiled := prefillKernels[i:]
+	if j := strings.Index(tiled[1:], "kernel void "); j > 0 {
+		tiled = tiled[:j+1]
+	}
+	if want := fmt.Sprintf("threadgroup float sc[%d];", prefillExactAttnMaxKeys); !strings.Contains(tiled, want) {
+		t.Errorf("attention_prefill_tiled does not declare %q", want)
+	}
+	for _, keys := range []int{prefillExactAttnMaxKeys + 1, 32768, 1 << 20} {
+		if tile := exactAttnTile(keys); tile < 1 || tile > prefillExactAttnMaxKeys {
+			t.Errorf("exactAttnTile(%d) = %d: outside the tiled kernel's 1..%d", keys, tile, prefillExactAttnMaxKeys)
+		}
 	}
 }

@@ -102,6 +102,8 @@ type prefillState struct {
 	pAttnFused Pipeline
 	// R19: attention_prefill_steel, the head-dim-128 prefill attention (it replaces pAttnFused there).
 	pAttnSteel Pipeline
+	// attention_prefill_tiled: pAttn for a pass past prefillExactAttnMaxKeys keys (exactAttnTile).
+	pAttnTiled Pipeline
 
 	// Expert-major MoE prefill pipelines
 	pRouterGemm       Pipeline
@@ -180,7 +182,7 @@ func (r *resident) ensurePrefill() {
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pAttnImg: p("attention_prefill_img"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"), pResScaled: p("residual_f16_scaled"),
-		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"),
+		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"), pAttnTiled: p("attention_prefill_tiled"),
 
 		pRouterGemm:       p("router_gemm_f16"),
 		pMoeRouteBatch:    p("moe_route_batch"),
@@ -247,6 +249,26 @@ func parallelEmbedsF32ToF16Scaled(dst []uint16, embs [][]float32, H int, inv flo
 // reaches 32768 for an explicit -ctx or a guard-pinned load, so metalResident.PrefillLast declines such a pass to the
 // sequential path. TestPrefillExactAttnBound ties this to the kernel source.
 const prefillExactAttnMaxKeys = 4096
+
+// exactAttnTiledMaxHD is attention_prefill_tiled's widest head dim: each of its tgReduceAttn threads keeps at most 4 output
+// dims in registers.
+const exactAttnTiledMaxHD = 4 * tgReduceAttn
+
+// exactAttnTileForTest, when positive, makes every exact-attention pass take attention_prefill_tiled with tiles of that many
+// keys, so a test compares it with attention_prefill on a short prompt.
+var exactAttnTileForTest = 0
+
+// exactAttnTile is the tile attention_prefill_tiled takes for a pass reaching keys keys, or 0 for attention_prefill: a
+// pass that fits the exact kernel's score buffer runs it unchanged.
+func exactAttnTile(keys int) int {
+	if exactAttnTileForTest > 0 {
+		return exactAttnTileForTest
+	}
+	if keys > prefillExactAttnMaxKeys {
+		return prefillExactAttnMaxKeys
+	}
+	return 0
+}
 
 // prefillWidths is the batched pass's scratch widths per row: the q|k|v projection, the attention output and the
 // feed-forward width, each the largest over the layers (a Gemma 4 E-model varies the attention geometry and the FFN
@@ -478,6 +500,8 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
 	uMReal := NewBufferU32(d, uint32(M))
+	attnTile := exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
+	uTile := NewBufferU32(d, uint32(max(attnTile, 1)))
 	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
 	// Allocated unconditionally (cheap — H floats) rather than gated on whether any layer is
 	// MoE, avoiding a nil-buffer special case in the loop below.
@@ -755,6 +779,8 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
 			} else if lu.fused {
 				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+			} else if attnTile > 0 {
+				e.Dispatch(pf.pAttnTiled, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uTile)
 			} else {
 				e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow)
 			}

@@ -17,6 +17,20 @@
 
 ## What is open
 
+- **P32 · Gemma 4 E-models prefill at 144 tok/s on Metal where Qwen2.5-1.5B does 900: a fused attention kernel for head dims
+  256 and 512 — OPEN, filed 2026-10-17 (owner). Not built.** `mac`, Metal kernel work.
+
+  - **The gap** (`docs/measurements/p28-gemma4-metal-ttft-2026-10/README.md`, steps 1 and 2): under 4,096 prompt tokens
+    E2B's batched prefill runs at 143.5 tok/s, against Qwen2.5-Coder-1.5B's 900 on the same Mac.
+  - **Why the kernel is the suspect:** E2B's head dims are 256 and 512, above `attention_prefill_fused`'s 128
+    (`metal/prefill.go:resident.prefillAttnKernels`). So every attention layer runs the exact kernel, `attention_prefill`:
+    one threadgroup per row and head, a scalar dot per key, and a serial P·V scan.
+  - **The work:** raise the fused (flash) kernel's `ATTN_MAXHD` to 512. That means a threadgroup and register budget per
+    head dim, and tuning. Its online-softmax rescale is not bit-identical to the exact kernel (the P19 category, as the
+    fused kernel is today).
+  - **First measurement, before building:** E2B's prefill time split between attention and the rest (projections, FFN),
+    at 4,096 tokens. If attention is not most of it, a fused kernel cannot close the gap.
+
 - **P31 · CUDA decode is behind llama.cpp at matched 4-bit quants: about 9% on the small models, 12% on phi3-mini — OPEN,
   filed 2026-10-17 (owner). Measure where each arm's decode time goes first; no work on it yet.** `linux`.
 
@@ -137,6 +151,16 @@
     - Fixes scoped there, not built: log the decline (small); tile the exact kernel's scores past 4,096 keys (the smaller
       kernel change, bit-identical); a fused kernel for head dims 256 and 512 (larger; the only one that also speeds up
       prompts of 4,096 or fewer).
+  - **Fixes 1 and 2 built 2026-10-17 (owner's yes); fix 3 filed as P32.** The decline was already logged on main from
+    `292211eb`, after step 2's pinned build. Fix 1 makes the stderr note once per request, with the prompt's length, and puts
+    the reason in the `-log-requests` line. Fix 2 (`attention_prefill_tiled`) runs a pass past 4,096 keys on the batched pass:
+    - at ≤ 4,096 keys the pass still runs `attention_prefill` unchanged;
+    - the tiled kernel's output does not depend on its tile size;
+    - against `attention_prefill` it is bit-identical at head dims up to 256 and within 1 f16 ulp at 512 (fast-math codegen
+      of the per-thread output sums, not the tiling);
+    - past 4,096 keys it is within 4e-3 of a float64 reference;
+    - on the tiny E-model it is bit-identical to the untiled pass and within the batched pass's bar of the layer-major one.
+    The timed reading (4,096 / 6,144 / 8,192 on E2B) is a night job.
 
   - **What was seen** (tack's E0 survey on the MacBook, 2026-10-16, goinfer 0e598d3f; tack's harness, exploratory, not
     this repo's provenance gate). Both Gemma 4 E-models loaded `metal-resident (int4)` at `-ctx 16384` with fit headroom

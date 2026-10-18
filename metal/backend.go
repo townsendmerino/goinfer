@@ -11,6 +11,7 @@ package metal
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
@@ -485,21 +486,20 @@ func (a *metalResident) exactAttnNote(fallback string) string {
 	if !a.r.prefillExactAttn() {
 		return ""
 	}
-	return fmt.Sprintf("; past %d keys the exact attention kernel (head dim %d has no fused kernel, or fused attention is off) declines it to %s",
-		prefillExactAttnMaxKeys, a.r.exactAttnHeadDim(), fallback)
-}
-
-// exactAttnKeysForTest, when positive, lowers the key bound batchedPrefill enforces for the exact attention kernel, so a test
-// reaches the decline on a short prompt. Zero in production: the kernel's own score buffer is prefillExactAttnMaxKeys.
-var exactAttnKeysForTest = 0
-
-// exactAttnKeyBound is the key count past which batchedPrefill declines a pass that runs the exact attention kernel.
-func exactAttnKeyBound() int {
-	if exactAttnKeysForTest > 0 {
-		return min(exactAttnKeysForTest, prefillExactAttnMaxKeys)
+	if hd := a.r.exactAttnHeadDim(); hd > exactAttnTiledMaxHD {
+		return fmt.Sprintf("; past %d keys the exact attention kernel (head dim %d has no fused kernel, or fused attention is off, and is wider than its tiled form's %d) declines it to %s",
+			prefillExactAttnMaxKeys, hd, exactAttnTiledMaxHD, fallback)
 	}
-	return prefillExactAttnMaxKeys
+	return fmt.Sprintf("; past %d keys the exact attention kernel (head dim %d has no fused kernel, or fused attention is off) tiles its scores",
+		prefillExactAttnMaxKeys, a.r.exactAttnHeadDim())
 }
+
+// prefillDeclineForTest, when non-nil, is the error batchedPrefillImg declines every pass with, so a test reaches a fallback
+// without a model that trips a real one.
+var prefillDeclineForTest error
+
+// emodelFallbackOut is where an E-model prefill fallback is announced; a variable so a test reads it.
+var emodelFallbackOut io.Writer = os.Stderr
 
 // emodelFallbackSeen holds each E-model prefill decline reason already reported, with its digits masked.
 var emodelFallbackSeen sync.Map
@@ -517,7 +517,7 @@ func warnEModelFallback(err error) {
 	if _, seen := emodelFallbackSeen.LoadOrStore(key, true); seen {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "metal: the batched prefill declined a Gemma 4 E-model prompt (%v); the layer-major pass runs it on decode's kernels, "+
+	fmt.Fprintf(emodelFallbackOut, "metal: the batched prefill declined a Gemma 4 E-model prompt (%v); the layer-major pass runs it on decode's kernels, "+
 		"bit-identical to sequential (each distinct reason is reported once)\n", err)
 }
 
@@ -838,8 +838,14 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 			if err == nil {
 				return lg, nil
 			}
-			warnEModelFallback(err)
-			decoder.NotePrefillFallback(ctx, "layer-major", err.Error())
+			// Once per request where the request carries a prefill report (serve attaches one to every generation), else once
+			// per distinct reason: the pass may be called several times in one generation (a block or a chunk at a time).
+			if first, tracked := decoder.NotePrefillFallback(ctx, "layer-major", err.Error()); first {
+				fmt.Fprintf(emodelFallbackOut, "metal: this request's Gemma 4 E-model prompt (%d tokens) left the batched prefill for the layer-major pass on decode's kernels, bit-identical to sequential: %v\n",
+					startPos+len(embeddings), err)
+			} else if !tracked {
+				warnEModelFallback(err)
+			}
 		}
 	}
 	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
@@ -966,6 +972,9 @@ var (
 
 // batchedPrefillImg is batchedPrefill with optional bidirectional image blocks (nil: none).
 func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) ([]float32, error) {
+	if prefillDeclineForTest != nil {
+		return nil, prefillDeclineForTest
+	}
 	promptLen := startPos + len(embeddings)
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
@@ -995,11 +1004,11 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap() {
 		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, a.ctxCap())
 	}
-	// The exact attention kernel (no fused kernel for this head dim, or fused attention off) holds at most prefillExactAttnMaxKeys
-	// scores; the sequential path's decode kernels tile theirs.
-	if bound := exactAttnKeyBound(); a.r.prefillExactAttn() && startPos+len(embeddings) > bound {
-		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off)",
-			startPos+len(embeddings), bound, a.r.exactAttnHeadDim())
+	// The exact attention kernel (no fused kernel for this head dim, or fused attention off) holds prefillExactAttnMaxKeys
+	// scores; past that the pass takes its tiled twin (exactAttnTile), which keeps at most exactAttnTiledMaxHD output dims.
+	if hd := a.r.exactAttnHeadDim(); a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys && hd > exactAttnTiledMaxHD {
+		return nil, fmt.Errorf("metal: prompt reaches %d keys, past the exact prefill attention kernel's %d, and head dim %d is wider than its tiled form's %d",
+			startPos+len(embeddings), prefillExactAttnMaxKeys, hd, exactAttnTiledMaxHD)
 	}
 	// A fresh sequence starts a Gated-DeltaNet hybrid's recurrent state from zero, as Forward(pos 0) does; a continuation keeps the
 	// conv window and state the resident holds. No-op for every other family.

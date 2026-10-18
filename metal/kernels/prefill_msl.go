@@ -516,6 +516,62 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
 }
 
+// attention_prefill_tiled: attention_prefill for a pass past its 4,096-score buffer (P28). The scores go through sc[] one tile of
+// keys at a time, in two passes: the row's max over every key, then per tile the probabilities, each thread's share of
+// the softmax sum and the P*V accumulation. Each thread owns the same keys in the same order as attention_prefill's, the sum
+// is reduced by the same tree, and P*V walks the keys in order, so the output equals attention_prefill's wherever both run;
+// a score is computed twice (once for the max, once per tile) by the same expression. A thread starts each tile at the first
+// key it owns there, so any tile size keeps that ownership. Needs hd <= 4 * the threadgroup size (out-dim accumulators in
+// registers).
+inline float prefill_score(device const half* qr, device const half* k, uint hd, float scale) {
+    float a=0; uint d=0;
+    if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
+    for (; d<hd; d++) a += float(qr[d])*float(k[d]);
+    return attn_score(a*scale);
+}
+kernel void attention_prefill_tiled(device const half* qkv[[buffer(0)]], device const half* kc[[buffer(1)]],
+    device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
+    constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
+    constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
+    constant uint& tile[[buffer(11)]],
+    uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]]) {
+    uint m = gid / nH, qh = gid % nH;
+    uint kvDim = nKV*hd, kvh = qh/(nH/nKV);
+    uint nKeys = startPos + m + 1u;
+    uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
+    uint qDim = nH*hd;
+    device const half* qr = qkv + m*qStride + qh*hd;
+    device const half* kb = kc + kvh*hd;
+    device const half* vb = vc + kvh*hd;
+    threadgroup float sc[4096];
+    threadgroup float red[128];
+    float mmax=-INFINITY;
+    for (uint s=winStart+tid; s<nKeys; s+=tgs) mmax=max(mmax, prefill_score(qr, kb+s*kvDim, hd, scale));
+    mmax = simd_max(mmax);
+    uint sgidA = tid >> 5u, laneA = tid & 31u;
+    if (laneA == 0) red[sgidA] = mmax;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsgA = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsgA; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ls=0;
+    float acc[4] = {0, 0, 0, 0};
+    for (uint t0=winStart; t0<nKeys; t0+=tile) {
+        uint t1 = min(t0+tile, nKeys);
+        uint own = t0 + (tid + tgs - (t0-winStart)%tgs) % tgs; // this thread's first key in the tile: s - winStart == tid mod tgs
+        for (uint s=own; s<t1; s+=tgs){ float p=exp(prefill_score(qr, kb+s*kvDim, hd, scale)-mx); sc[s-t0]=p; ls+=p; }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint j=0u, d=tid; d<hd; j++, d+=tgs){ float a=acc[j]; for(uint s=t0;s<t1;s++) a += sc[s-t0]*float(vb[s*kvDim+d]); acc[j]=a; }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint st=tgs/2u; st>0u; st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint j=0u, d=tid; d<hd; j++, d+=tgs) out[m*qDim + qh*hd + d]=half(acc[j]/sum);
+}
+
 // attention_prefill_img (S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md): attention_prefill with
 // image blocks [b.x, b.y) in absolute positions that attend BIDIRECTIONALLY, as the CPU's KVCache.attendHi and CUDA's
 // PrefillImageLast: a query inside a block sees keys up to that block's b.y - 1 (its own block only; several blocks for

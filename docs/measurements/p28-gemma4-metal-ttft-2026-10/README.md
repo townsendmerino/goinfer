@@ -85,8 +85,9 @@ Run as registered (`run-p28b.py`, the pinned `serve-metal` at `784e7c82`, `-ctx 
     pass runs the exact `attention_prefill` kernel.
   - That kernel holds at most 4,096 scores (`metal/prefill.go:prefillExactAttnMaxKeys`), so `PrefillLast` drops past it to
     the layer-major pass.
-- **Nothing logged the change.** All three servers print the same banner line (`prefill path: batched f16-MMA from 16
-  prompt tokens ...`), and the long requests' `-log-requests` lines carry no `prefill_fallback` field.
+- **Nothing logged the change in this build.** All three servers print the same banner line (`prefill path: batched
+  f16-MMA from 16 prompt tokens ...`), and the long requests' `-log-requests` lines carry no `prefill_fallback` field. The
+  pinned build `784e7c82` predates `292211eb`, which logs the decline (main from 2026-10-17 08:14).
 
 ### Fixes, scoped (not built; owner to decide)
 
