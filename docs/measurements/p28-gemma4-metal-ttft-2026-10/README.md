@@ -64,3 +64,44 @@ lead token. Records: `step1/`.
   - It falls if 6,144 and 8,192 run at the layer-major pass's rate with flat counters. The cause is then the exact
     kernel's 4,096-key bound and the fallback it forces.
   - Either way, the result is reported before any fix.
+
+## Step 2, read 2026-10-17 17:27-17:34 PDT: the 4,096-key bound, not memory
+
+Run as registered (`run-p28b.py`, the pinned `serve-metal` at `784e7c82`, `-ctx 16384`, `--quant int4`), on Francis's
+"now", holding the timing lock. Records: `step2/` (`results.json`, each length's serve log, `run.log`).
+
+| prompt tokens | prefill | rate | peak footprint | swap-outs | compressions |
+|---|---:|---:|---:|---:|---:|
+| 4,096 | 28.5 s | 143.5 tok/s | 1,626 MB | 0 | 59,462 |
+| 6,144 | 164.1 s | 37.5 tok/s | 1,358 MB | 0 | 0 |
+| 8,192 | 238.6 s | 34.3 tok/s | 1,564 MB | 0 | 0 |
+
+- **The hypothesis falls:** the slow lengths show flat counters. Neither has a swap-out or a compression, and swap used stays
+  at 458 MB throughout. The peak footprint does not climb with length: it is lower at 6,144 and 8,192 than at 4,096.
+  4,096 has the only compressor activity, and it runs at the batched pass's rate.
+- **The knee is past 4,096 keys,** at the layer-major pass's rate: 37.5 and 34.3 tok/s, about 4× under the batched
+  pass's 143.5. That is what the code predicts.
+  - E2B's head dims are above the fused kernel's 128 (`metal/prefill.go:resident.prefillAttnKernels`), so the batched
+    pass runs the exact `attention_prefill` kernel.
+  - That kernel holds at most 4,096 scores (`metal/prefill.go:prefillExactAttnMaxKeys`), so `PrefillLast` drops past it to
+    the layer-major pass.
+- **Nothing logged the change.** All three servers print the same banner line (`prefill path: batched f16-MMA from 16
+  prompt tokens ...`), and the long requests' `-log-requests` lines carry no `prefill_fallback` field.
+
+### Fixes, scoped (not built; owner to decide)
+
+1. **Log the decline (small).** `metalResident.PrefillLast`'s E-model branch keeps the error it drops now, reports it
+   once on stderr with the bound and the head dim, and sets the request's `prefill_fallback`, as the other prefill
+   declines do. No numerics change. A tier 0 test: a pass over 4,096 keys on a wide-head fixture reports the reason.
+2. **Remove the bound in the exact kernel (the smaller kernel change).** Tile `attention_prefill`'s scores over key
+   blocks of at most 4,096. One way is two passes: the row's max over all tiles, then exp, sum and PV. It keeps the exact
+   kernel's summation order, so the output stays bit-identical to the layer-major pass it replaces, past 4,096. The
+   decode kernels already tile their scores this way (`attnScoreTileBound`). Expected: 6,144 and 8,192 run near the
+   batched pass's rate instead of 4× under it. It does not speed up prompts of 4,096 tokens or fewer.
+3. **A fused (flash) kernel for head dims 256 and 512 (larger).** Raise `attention_prefill_fused`'s `ATTN_MAXHD` above 128.
+   That means a new threadgroup and register budget per head dim, and tuning, and the online-softmax rescale is not
+   bit-identical (the P19 category). It is the only option that also speeds up E2B below 4,097 keys, where step 1 put the
+   batched pass at 144 tok/s against Qwen2.5-1.5B's 900. It removes the bound too.
+
+Smaller first: (1), then (2). (3) is the one that would close most of the gap to the 1.5B, and it is its own task.
+

@@ -129,6 +129,14 @@
     8.4x the time for twice the prompt. The code says why the knee should sit at 4,097 keys: E2B's head dims have no fused
     kernel, the exact kernel holds 4,096 scores, and past that the pass declines silently to the layer-major one. Step 2,
     registered there, tests that against memory pressure.
+  - **Step 2 read 2026-10-17 (same record): it is the 4,096-key bound, not memory.**
+    - E2B ran 143.5 tok/s at 4,096 tokens, 37.5 at 6,144 and 34.3 at 8,192.
+    - At the two slow lengths there were no swap-outs and no compressions, and the peak footprint did not climb (1,626 /
+      1,358 / 1,564 MB).
+    - Nothing logged the switch to the slow path.
+    - Fixes scoped there, not built: log the decline (small); tile the exact kernel's scores past 4,096 keys (the smaller
+      kernel change, bit-identical); a fused kernel for head dims 256 and 512 (larger; the only one that also speeds up
+      prompts of 4,096 or fewer).
 
   - **What was seen** (tack's E0 survey on the MacBook, 2026-10-16, goinfer 0e598d3f; tack's harness, exploratory, not
     this repo's provenance gate). Both Gemma 4 E-models loaded `metal-resident (int4)` at `-ctx 16384` with fit headroom
