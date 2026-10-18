@@ -4068,9 +4068,12 @@ caller is unaffected.
 ## fitCheck.deviceKV
 
 A load that will be CUDA-resident (`cudaWillBeResident`: CUDA compiled in, the resolved backend, weights not streamed, the architecture inside CUDA's feature gate) has its KV in VRAM, which the context plan sizes; the host guard
-prices none of it (`kvBytes` 0, and `decideGIWFit` asks no KV or prefill scratch of host memory). `packBytes` is what the build adds beside the canonical weights once the packing streams: one packed layer
-(`weightBytes / layers`) plus `cudaPackStageBytes`. On the direct `.gguf` path `weightBytes + srcFileBytes` is the larger term and stays, because the load (the source mapped while the canonical weights grow) peaks above the build:
-the 7B read 8.4 GiB of RSS at t = 3.3 s, before any packing (`docs/measurements/cuda-build-heap-2026-10-18/README.md`). A resident that declines falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
+prices none of it (`kvBytes` 0, and `decideGIWFit` asks no KV or prefill scratch of host memory). `packBytes` is what the build adds beside the canonical weights: the packed copy of the whole model. On the direct `.gguf` path
+`weightBytes + srcFileBytes` is the larger term and stays, because the load (the source mapped while the canonical weights grow) peaks above the build: the 7B read 8.4 GiB of RSS at t = 3.3 s, before any packing
+(`docs/measurements/cuda-build-heap-2026-10-18/README.md`). A resident that declines falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
+
+The pricing reads under the measured peak on some loads: against main's measured peak VmRSS (2026-10-18, same-session A B B A) the direct 7B is 0.98 and phi3 q4k 0.93. That is inside the approved band (0.90 to 1.15) and covered by the 70% budget (`fitMemFraction`), and
+it is a fact of the record, not a target. If the pricing is revisited, aim for 1.00 or more.
 
 ## fitCheck.cudaBuildBytes
 

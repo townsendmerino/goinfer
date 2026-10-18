@@ -1,0 +1,9 @@
+[Unit]
+Description=Queue the cuda-device-suite night job every evening at 18:00
+
+[Timer]
+OnCalendar=*-*-* 18:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,6 @@
+[Unit]
+Description=Queue tonight's cuda-device-suite on the goinfer night queue (adds the job; does not start the queue)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash %h/mycode/goinfer/docs/measurements/cuda-device-suite-2026-10-18/queue-cuda-device-suite.sh

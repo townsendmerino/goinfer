@@ -15,7 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
-- **A CUDA build no longer holds a packed copy of the model on the host, and the fit guard prices a CUDA load's KV as VRAM.** The dense projections are planned while the build walks the layers (a model that cannot be built is declined before any device memory is taken) and packed into the device buffers in row blocks at upload, so the host holds one staging block, not a second copy of the weights (a 7B through its sidecar peaked at about 4 GB of anonymous memory in the pack alone). The host fit guard prices none of a CUDA-resident load's KV, which is in VRAM and sized by the context plan, and the build as one packed layer beside the weights; the direct `.gguf` path keeps its source-file term, where the load peaks. Device bytes are unchanged.
+- The host fit guard prices a CUDA-resident load's KV as VRAM, not host memory, and prices the build's packed copy of the model where there is no source file. A 7B at a 32K context is no longer priced at 11.9 GiB of host against 8.5 GiB measured; the guard's total is within 2% of the measured peak on the 7B and 8% on phi3.
+
 - **A `tool_choice` of `required` (OpenAI) or `any` (Anthropic) on a family with no JSON call form is an error when the reply
   holds no call,** instead of prose. Those families (Gemma 4, gpt-oss, a model under `-tool-format template`) are parsed, not
   constrained, so the check runs once the reply is parsed, and no prose streams before it. Each model's `/v1/models` and `/health`
