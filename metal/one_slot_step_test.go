@@ -210,24 +210,6 @@ func TestOneSlotStep_scratchPricedNotTheLoad(t *testing.T) {
 	}
 }
 
-// TestOneSlotStep_phi3PrefillAB is P29's tier 1 measurement (docs/queue-performance.md, P29): Phi-3 mini 4k at --quant q4k
-// on one KV slot, one 512-token prompt prefilled from position 0 by production's sequential decode and by the step route,
-// 5 pairs in one process with the arm order alternating. It reports each pair's sequential ÷ step wall time and their
-// median; the registration's reading is that median. It loads the real file, so it runs only with GOINFER_P29_AB=1.
-//
-//	GOINFER_P29_AB=1 go test -count=1 -timeout 20m -run '^TestOneSlotStep_phi3PrefillAB$' -v ./metal/
-func TestOneSlotStep_phi3PrefillAB(t *testing.T) {
-	if os.Getenv("GOINFER_P29_AB") != "1" {
-		t.Skip("set GOINFER_P29_AB=1 (a timed run on the real Phi-3 file)")
-	}
-	path := os.Getenv("GOINFER_PHI3_GGUF")
-	if path == "" {
-		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, "models", "phi3-mini-4k-gguf", "Phi-3-mini-4k-instruct-q4.gguf")
-	}
-	oneSlotPrefillAB(t, path, 2048)
-}
-
 // TestOneSlotStep_qwen05PrefillAB is the same A/B on the 0.5B q4_k_m, forced to one resident KV slot: the load phi3's would
 // get from the memory guard on a 16 GB Mac, on a model that fits beside the owner's session (owner, 2026-10-18).
 func TestOneSlotStep_qwen05PrefillAB(t *testing.T) {
