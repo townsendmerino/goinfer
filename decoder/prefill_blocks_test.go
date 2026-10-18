@@ -22,6 +22,10 @@ type blockFake struct {
 	calls     [][2]int // startPos and rows of every PrefillLast, in order
 	declineAt int      // the 1-based PrefillLast call that declines; 0: none
 	onCall    func(n int)
+	// partialAt is the 1-based PrefillLast call that writes its first partialRows rows and then returns a PrefillPartial, as a windowed
+	// resident whose later pass declines does; from then on a Forward below the rows it wrote fails, as reading a dropped window does.
+	partialAt, partialRows int
+	dropped                int // Forward at a position below this fails; 0: none
 }
 
 func (f *blockFake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {
@@ -35,7 +39,21 @@ func (f *blockFake) PrefillLast(ctx context.Context, embs [][]float32, startPos 
 	if f.declineAt == len(f.calls) {
 		return nil, errors.New("blockFake: this pass declines")
 	}
+	if f.partialAt == len(f.calls) {
+		if _, err := f.mc3Fake.PrefillLast(ctx, embs[:f.partialRows], startPos); err != nil {
+			return nil, err
+		}
+		f.dropped = startPos + f.partialRows
+		return nil, &PrefillPartial{Next: f.dropped, Err: errors.New("blockFake: a later pass declines")}
+	}
 	return f.mc3Fake.PrefillLast(ctx, embs, startPos)
+}
+
+func (f *blockFake) Forward(emb []float32, pos int) ([]float32, error) {
+	if pos < f.dropped {
+		return nil, fmt.Errorf("blockFake: position %d is below the window, which holds from %d", pos, f.dropped)
+	}
+	return f.mc3Fake.Forward(emb, pos)
 }
 func (f *blockFake) PrefillBlockRows() int              { return f.block }
 func (f *blockFake) PrefillScratchBytes(rows int) int64 { return int64(rows) * f.perRow }
@@ -178,6 +196,51 @@ func TestPrefillBlocks_aDeclinedBlockKeepsTheOnesBefore(t *testing.T) {
 	if !slices.Equal(lg, wantLg) {
 		t.Error("the seed logits differ from an undeclined prefill's")
 	}
+}
+
+// TestPrefillPartial_resumesWhereThePassesStopped: a batched call whose later pass declines after earlier passes wrote rows returns a
+// PrefillPartial, and the sequential loop continues at its Next, never at the call's own start, whose window a windowed resident may have
+// dropped. Both shapes: the whole suffix of a reused prompt in one call, and a blocked prefill whose second block is the partial one.
+func TestPrefillPartial_resumesWhereThePassesStopped(t *testing.T) {
+	want, _ := loadWithBlockFake(t, nil)
+	prompt := blockPrompt(want, 61)
+	wantLg, err := want.residentPrefillSeed(context.Background(), prompt, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("one call over a reused prompt's suffix", func(t *testing.T) {
+		m, rf := loadWithBlockFake(t, nil)
+		if _, err := m.residentPrefillSeed(context.Background(), prompt, 0, false); err != nil {
+			t.Fatal(err)
+		}
+		rf.partialAt, rf.partialRows, rf.soloFwds = len(rf.calls)+1, 9, 0
+		lg, err := m.residentPrefillSeed(context.Background(), prompt, 12, false)
+		if err != nil {
+			t.Fatalf("the prefill failed after a partial pass: %v", err)
+		}
+		if rf.soloFwds != 61-21 {
+			t.Errorf("%d sequential forwards, want the %d rows from position 21, where the partial call stopped", rf.soloFwds, 61-21)
+		}
+		if !slices.Equal(lg, wantLg) {
+			t.Error("the seed logits differ from an undeclined prefill's")
+		}
+	})
+	t.Run("a blocked prefill", func(t *testing.T) {
+		m, rf := loadWithBlockFake(t, func(f *blockFake) { f.block, f.partialAt, f.partialRows = 10, 2, 4 })
+		lg, err := m.residentPrefillSeed(context.Background(), prompt, 0, false)
+		if err != nil {
+			t.Fatalf("the prefill failed after a partial pass: %v", err)
+		}
+		if !slices.Equal(rf.calls, [][2]int{{0, 10}, {10, 10}}) {
+			t.Errorf("PrefillLast calls = %v, want the first block and the partial second", rf.calls)
+		}
+		if rf.soloFwds != 61-14 {
+			t.Errorf("%d sequential forwards, want the %d rows from position 14", rf.soloFwds, 61-14)
+		}
+		if !slices.Equal(lg, wantLg) {
+			t.Error("the seed logits differ from an undeclined prefill's")
+		}
+	})
 }
 
 // TestPrefillBlocks_cancelledBetweenBlocks: a context cancelled during one pass stops the prefill before the next and

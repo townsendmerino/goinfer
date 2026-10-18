@@ -368,7 +368,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 //
 // A chunk that OOMs is retried at half the width from the same position (the earlier passes stay committed in the
 // positional KV). Only errPrefillOOM is retried: a static decline is independent of M and would spin, so it is checked
-// once up front.
+// once up front. Any other failure after the first pass returns a decoder.PrefillPartial naming the first unwritten position.
 //
 // Not chunked while a batched hidden-state capture is armed (r.capBTaps): the taps record the residual for all M rows of
 // one pass, and a chunked run would leave a block drafter holding the last chunk's rows only, a silent wrong answer. It
@@ -405,6 +405,7 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 	r.chunkOrdinary = finalTail == tailLastLogits
 	r.chunkPromptLen = startPos + M
 	defer func() { r.chunkOrdinary, r.chunkPromptLen = false, 0 }()
+	pass := 0
 	for i := 0; i < M; {
 		// Between passes: bounds a cancelled request to one chunk's work.
 		if e := ctx.Err(); e != nil {
@@ -426,14 +427,21 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 		if last {
 			tail = finalTail
 		}
-		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, nil, mropePos, nil)
+		pass++
+		var outs [][]float32
+		var err error
+		if pass == prefillDeclinePassForTest {
+			err = fmt.Errorf("cuda prefill: pass %d declined by the test seam: %w", pass, errPrefillDeclined)
+		} else {
+			outs, _, err = r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, nil, mropePos, nil)
+		}
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 				chunk = max(chunk/2, prefillMinChunk)
 				r.prefillChunkCap.Store(int64(chunk)) // remember: do not re-OOM on the next prompt
 				continue                              // same i: nothing was committed by the pass that failed to allocate
 			}
-			return nil, err
+			return nil, prefillPartialAt(startPos, i, err)
 		}
 		if last {
 			return outs[len(outs)-1], nil
@@ -454,6 +462,18 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 	// future edit to the loop bounds surfaces as a decline the caller can survive.
 	return nil, fmt.Errorf("cuda prefill: chunked loop ended without heading the last row (M=%d)", M)
 }
+
+// prefillPartialAt is a failed pass's error as prefillChunkedMarked returns it: once the call's first i rows from startPos are committed it is
+// a decoder.PrefillPartial, so the caller resumes after them rather than at startPos, which a windowed layer's base may already have passed.
+func prefillPartialAt(startPos, i int, err error) error {
+	if i == 0 {
+		return err
+	}
+	return &decoder.PrefillPartial{Next: startPos + i, Err: err}
+}
+
+// prefillDeclinePassForTest is the 1-based pass of a chunked prefill that declines without running, set by tests only.
+var prefillDeclinePassForTest int
 
 // PrefillLastN is the speculative-decode verify primitive: the same batched pass, returning logits at all M positions
 // (row m predicts position startPos+m+1). The final norm and LM head run per row exactly as in the sequential path, so

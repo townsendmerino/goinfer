@@ -220,3 +220,24 @@ Now a compaction moves the base only far enough to keep `slack - step` positions
 step 64: a floor of 448 at the unchanged 512 slack, so a compaction every 65 positions), and `cudaResident.kvGrantRollback` adds up to 576
 positions from VRAM left over once the context, slots and expert cache are fixed (a rollback of up to 1,024; none for an expert-cache load).
 The plan and the price are unchanged. Gates and the night speed guard: the record above, sections 5 and 8.
+
+## 15. Fix 2026-10-18: a prefill that declines partway resumes after the passes it committed
+
+Found by tack's C1 calibration (gemma-4 E4B, RTX 2070 SUPER, goinfer `0de92cd9`): 4 of 8 E0 time-to-first-token requests at
+15,360 tokens failed with "cuda: windowed KV: position 7552 needs history from position 7041 but this slot holds only from
+10625". CUDA prefills a suffix in passes inside one `PrefillLast` call. Nine passes ran from the reused position 7,552 to
+12,160, which moved the base to 10,625 (12,160 − 511 − the 1,024 rollback). The tenth pass declined on shared memory (the exact
+batched attention past 48 KB), and the decoder, told nothing had been written, restarted the per-token loop at 7,552, below the
+window. Any windowed load whose batched prefill declines after its first pass could hit it. A decline at the first pass, or a
+family that never takes the batched path, could not.
+
+The fix: a pass that fails after earlier passes of the same call committed returns `decoder.PrefillPartial{Next}`
+(`cuda/prefill.go:prefillPartialAt`), and the decoder's two fallback sites continue from `Next` (`decoder/residency.go:prefillResume`).
+Resuming at a pass's first row is always valid, because `kvWindowNextBase` never moves the base past that row's window.
+
+Gates:
+- `decoder` `TestPrefillPartial_resumesWhereThePassesStopped` (a fake resident that refuses a position below what its partial call
+  wrote) fails with the C1 symptom when the resume is planted out.
+- `cuda` `TestPrefillPartial_windowedResumesAfterTheCommittedPasses` and `TestPrefillPartial_windowedGenerationAfterADecline`, on the
+  three window fixtures, bit-identical to the full-KV resident, and both red with CUDA's `PrefillPartial` planted out. Run on nobara
+  2026-10-18 13:53 (night job `prefill-partial-cuda-tests-2`): VERDICT PASS; logs `~/goinfer-bench/prefill-partial/results/` on nobara.

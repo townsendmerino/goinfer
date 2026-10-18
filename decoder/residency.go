@@ -228,6 +228,30 @@ type Prefiller interface {
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
+// PrefillPartial is the error a batched prefill returns when one of its passes declined or failed after earlier passes of the same call
+// committed their rows: positions [startPos, Next) are written and the caller continues from Next, not from startPos. A windowed resident
+// requires it, because the committed passes may have moved its window past startPos, so a restart there reads history it has dropped.
+// Unwrap is the failing pass's own error, so errors.Is(err, a decline sentinel) still holds.
+type PrefillPartial struct {
+	Next int
+	Err  error
+}
+
+func (e *PrefillPartial) Error() string {
+	return fmt.Sprintf("%v (positions before %d are written)", e.Err, e.Next)
+}
+func (e *PrefillPartial) Unwrap() error { return e.Err }
+
+// prefillResume is where a prefill continues after a batched call that started at from returned err: PrefillPartial's Next when it names a
+// later position, else from.
+func prefillResume(from int, err error) int {
+	var p *PrefillPartial
+	if errors.As(err, &p) && p.Next > from {
+		return p.Next
+	}
+	return from
+}
+
 // ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
 // startPos..startPos+len-1 and return the LAST position's hidden state AFTER the model's final norm — the resident
 // twin of Prefiller, stopping before the LM head. Used by HiddenLast (G4) so an embedding request on a GPU box does

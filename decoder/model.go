@@ -1547,7 +1547,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 			// A resident whose pass allocates scratch per row takes a long suffix in blocks (prefillBlockRows), each
 			// continuing the last at its position, so the scratch and the host embeddings are a block's and not the
 			// prompt's. The last pass keeps at least prefillTailMinRows rows. A block the pass declines leaves `from` at
-			// its first row: everything before it is written, and the rest takes the sequential loop below.
+			// its first row, or where its PrefillPartial says: everything before it is written, and the rest takes the sequential loop below.
 			var perr error
 			for B := m.prefillBlockRows(len(prompt)); B > 0 && perr == nil && len(prompt)-from >= B+m.prefillTailMinRows(); {
 				if perr = ctx.Err(); perr != nil {
@@ -1576,6 +1576,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 			if errors.Is(perr, context.Canceled) || errors.Is(perr, context.DeadlineExceeded) {
 				return nil, perr
 			}
+			from = prefillResume(from, perr) // the passes before the one that declined are written (PrefillPartial)
 			warnPrefillDeclined(len(prompt)-from, perr)
 			NotePrefillFallback(ctx, "sequential", perr.Error())
 			// The rest runs on decode's kernels, which is not the class the KV manager was told this pass writes (and
@@ -1678,8 +1679,9 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil, err
 			}
-			// The batched prefill declined (or failed) on this chunk: everything before `from` is already written,
-			// so the remainder, this chunk included, goes through the ordinary path below.
+			// The batched prefill declined (or failed) on this chunk: everything before `from` is already written, and so is
+			// the part of the chunk a PrefillPartial names, so the remainder goes through the ordinary path below.
+			from = prefillResume(from, err)
 			break
 		}
 		from = end
