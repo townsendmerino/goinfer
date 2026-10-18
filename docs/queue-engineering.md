@@ -468,6 +468,20 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B32 · After a fit refusal, the automatic weight-streaming retry starts a sidecar transcode even for a load that has no
+`.giw` form (`--quant q4k`), so it cannot help** — filed 2026-10-18 (owner, from the phi3 `q4k` fit check on Metal). **Not
+started; not fixed yet** (owner).
+- **What happens:** `internal/modelload/modelload.go:Load` retries a refused dense `.gguf` with weight streaming. It prints
+  "automatically retrying with weight streaming" and starts a sidecar `.giw` transcode
+  ("stream-weights: transcoding … → ….q4k.metal.v17.giw"). The transcode then fails, because `--quant q4k` has no `.giw` form
+  (`decoder/serialize.go`: "--quant q4k has no .giw form yet; load the .gguf directly").
+- **Cost:** a refusal reads as a retry, and the load spends the transcode's start before the real reason surfaces. Seen
+  2026-10-17 21:54 (peer-vetted M1's fit check) and 2026-10-18 07:11 (the by-day fit check). Neither left a file behind.
+- **The fix, once approved:** the retry checks first whether the load's quant has a `.giw` form, the same fact `routeFor` keys
+  on. Where it has none, it skips the transcode and says why ("q4k has no .giw form, so weight streaming cannot load
+  it"), and returns the refusal as it was. The gate is a tier 0 test that a refused `q4k` load starts no transcode, with a
+  plant.
+
 **B31 · Nemotron-H 4B Instruct has no chat template in the loader: replies run on past their sentence** — filed 2026-10-16 (owner, from OP2b's
 declaration smoke). **Not started; not CUDA-specific** (the loader and `chat.Detect` are backend-free; the CPU prints the same banner).
 The real `serve` on `nemotron-h-4b-instruct-128k` prints `[chat: raw (no template)]` and a greedy reply to "What is the capital of France?" opens
