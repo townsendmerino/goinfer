@@ -515,6 +515,8 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // round-trip per token. BuildResident decides which families it takes (dense, MoE, MLA, Gated-DeltaNet, ...), with
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
+	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
+	pk    *packPool
 	reqCh chan func() error
 	ackCh chan error
 
@@ -1000,6 +1002,9 @@ func (r *cudaResident) upu16(v []uint16) Buffer {
 	return b
 }
 func (r *cudaResident) upW(h hostW) cudaWQ {
+	if h.src != nil {
+		return r.streamW(h)
+	}
 	w := cudaWQ{kind: h.kind, W: r.upu32(h.wpk), N: h.N, K: h.K}
 	switch h.kind {
 	case "int4":
@@ -1121,9 +1126,12 @@ func packedAllocSlack(v any) int64 {
 			return n
 		case reflect.Struct:
 			if rv.Type() == hostWType {
-				n := allocRoundSlack(int64(rv.FieldByName("wpk").Len()) * 4)
-				n += allocRoundSlack(int64(rv.FieldByName("ws").Len()) * 4)
-				n += allocRoundSlack(int64(rv.FieldByName("ws16").Len()) * 2)
+				elems := func(packed, planned string) int64 { // a planned hostW carries its counts, a packed one its slices
+					return max(int64(rv.FieldByName(packed).Len()), rv.FieldByName(planned).Int())
+				}
+				n := allocRoundSlack(elems("wpk", "nWpk") * 4)
+				n += allocRoundSlack(elems("ws", "nWs") * 4)
+				n += allocRoundSlack(elems("ws16", "nWs16") * 2)
 				return n
 			}
 			var n int64
@@ -3879,6 +3887,11 @@ type hostW struct {
 	ws   []float32 // int8 row scales
 	ws16 []uint16  // int4 group scales (f16)
 	N, K int
+
+	// A planned weight (planWeight) has no packed data: src is the weight, packed at upload (streamW), and nWpk, nWs, nWs16 are the element counts of
+	// the three device buffers upW allocates for it.
+	src              *linalg.WeightMat
+	nWpk, nWs, nWs16 int
 }
 
 func packI8(q8 []int8, N, K int) []uint32 {
@@ -3892,26 +3905,13 @@ func packI8(q8 []int8, N, K int) []uint32 {
 // packWeight quantizes/repacks a projection into the resident device layout, or errors
 // (so BuildResident can decline gracefully → staged fallback) for shapes it can't handle.
 func packWeight(w *linalg.WeightMat) (hostW, error) {
-	N, K := w.Rows(), w.Cols()
-	if K%4 != 0 {
-		return hostW{}, fmt.Errorf("cuda: K=%d not a multiple of 4", K)
+	if _, err := planWeight(w); err != nil {
+		return hostW{}, err
 	}
+	N, K := w.Rows(), w.Cols()
 	switch w.Kind() {
 	case "int4":
-		if K%32 != 0 {
-			return hostW{}, fmt.Errorf("cuda: int4 K=%d not a multiple of 32", K)
-		}
-		// Kind() reports precision, not layout, and stays "int4" for a repacked-only tensor, so this switch alone cannot
-		// tell canonical from repacked-only; without the ok, a repacked-only tensor's nil q4 would index out of range
-		// below instead of declining cleanly (decoder/weightmat.go's wantsCanonicalInt4 doc has the policy). Repacked-only
-		// activates only for Options.Backend=="cpu", never "cuda", so this is defense in depth, not a path expected to
-		// fire (docs/code-notes/cuda.md#packWeight.int4).
-		q4, sc, _, ok := decoder.Int4F32(w)
-		if !ok {
-			return hostW{}, fmt.Errorf("cuda: int4 tensor has no canonical bytes (layout %s-only): "+
-				"model was loaded for a CPU-only backend; load with Options.Backend set to "+
-				"\"cuda\" to keep canonical bytes for residency", w.Int4Layout())
-		}
+		q4, sc, _, _ := decoder.Int4F32(w)
 		wpk := make([]uint32, N*(K/8))
 		for i := range wpk {
 			b := q4[i*4 : i*4+4]
@@ -3926,22 +3926,16 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 		q8, sc, _, _ := w.Int8()
 		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
 	case "q4k":
-		// GGUF Q4_K super-blocks verbatim (--quant q4k), as little-endian words: 36 per 256 weights.
 		raw, _ := w.Q4K()
-		if K%256 != 0 || len(raw) != N*K/256*144 {
-			return hostW{}, fmt.Errorf("cuda: q4k tensor %dx%d with %d bytes", N, K, len(raw))
-		}
 		wpk := make([]uint32, len(raw)/4)
 		for i := range wpk {
 			wpk[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
 		}
 		return hostW{kind: "q4k", wpk: wpk, N: N, K: K}, nil
-	case "f32":
+	default: // "f32": planWeight has refused every other kind
 		f32, _ := w.F32()
 		q8, sc := linalg.QuantizeRowsInt8(f32, N, K)
 		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
-	default:
-		return hostW{}, fmt.Errorf("cuda: unsupported projection kind %q", w.Kind())
 	}
 }
 

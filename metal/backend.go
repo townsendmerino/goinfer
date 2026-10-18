@@ -282,6 +282,9 @@ func fitsResidentBudget(need int64, ram uint64) bool {
 // allowed. live<=0 (no probe, or unknown) leaves the static ceiling; ram==0 (an unreadable hw.memsize) returns 0, which every
 // caller reads as "unknown".
 func metalMemoryCeiling(ram uint64) int64 {
+	if metalMemoryCeilingForTest > 0 {
+		return metalMemoryCeilingForTest
+	}
 	if ram == 0 {
 		return 0
 	}
@@ -290,6 +293,24 @@ func metalMemoryCeiling(ram uint64) int64 {
 		return live
 	}
 	return ceiling
+}
+
+// metalMemoryCeilingForTest, when positive, is the ceiling metalMemoryCeiling returns, so a test can size a load against it to
+// the byte. Zero in production.
+var metalMemoryCeilingForTest int64
+
+// metalOneSlotStepHeadroom is the bytes the memory guard leaves beside a one-slot build, read before any buffer exists for
+// metalKVSlots' reason. The batched step's scratch must fit in it, or buildBatch declines the step for this load and the load
+// goes ahead. The guard's override leaves it unlimited; an unreadable RAM size leaves -1, which declines the step.
+func metalOneSlotStepHeadroom(m *decoder.Model) int64 {
+	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		return math.MaxInt64
+	}
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
+		return -1
+	}
+	return metalMemoryCeiling(ram) - residentNeedBytes(m)
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the strconv.Atoi and validation that moe.go and
@@ -790,7 +811,7 @@ func (a *metalResident) prefillKernelFloor() int {
 		return 0
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
+	if floor > 0 && a.stepPrefill() && !a.r.promptStepOff {
 		return max(floor, metalStepPrefillCeiling)
 	}
 	return floor
@@ -817,7 +838,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
 	}
 	if !a.r.prefillOK {
-		if a.fastPrefill() && a.VerifyCost() != nil && !a.r.promptStepOff { // promptStepOK takes every prompt
+		if a.fastPrefill() && a.stepPrefill() && !a.r.promptStepOff { // promptStepOK takes every prompt
 			return true, "decode rows on the batched step kernels at every length (bit-identical to sequential; the f16 MMA pass does not take this model)"
 		}
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
@@ -826,7 +847,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		return false, "sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)"
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
+	if floor > 0 && a.stepPrefill() && !a.r.promptStepOff {
 		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path")
 	}
 	if floor > 0 {
@@ -1495,5 +1516,5 @@ func (a *metalResident) PrefillTailExact() bool { return true }
 // inStepRange: a prompt of promptLen tokens is in the range the batched step takes on this resident (promptStepOK's
 // length test, without its two-row minimum).
 func (a *metalResident) inStepRange(promptLen, floor int) bool {
-	return !a.r.promptStepOff && a.VerifyCost() != nil && floor > 0 && promptLen < max(floor, metalStepPrefillCeiling)
+	return !a.r.promptStepOff && a.stepPrefill() && floor > 0 && promptLen < max(floor, metalStepPrefillCeiling)
 }

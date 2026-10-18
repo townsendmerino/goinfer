@@ -79,12 +79,12 @@ type batchSeq struct {
 }
 
 // batchIneligible is why this resident cannot run a batched step ("" if it can): MC3 covers the plain dense W4A8 decode
-// path — the family flags every per-row kernel in forwardMulti assumes — on at least two resident KV slots.
+// path — the family flags every per-row kernel in forwardMulti assumes — with each layer's KV slots in one f16
+// allocation. One slot is enough to prefill a prompt on the step (one sequence's consecutive rows); batched decode and the
+// step verify need two, which BatchStepRange, BatchGreedyDraw and VerifyCost check.
 func (r *resident) batchIneligible() string {
 	switch {
-	case len(r.kvSlotBufs) < 2:
-		return "one resident KV slot"
-	case !r.kvContig || r.kvF32:
+	case len(r.kvSlotBufs) == 0 || !r.kvContig || r.kvF32:
 		return "KV slots that are not one f16 allocation per layer"
 	case r.moe != nil || r.g4moe != nil:
 		return "MoE"
@@ -127,6 +127,18 @@ func (r *resident) batchIneligible() string {
 func (r *resident) buildBatch() {
 	if why := r.batchIneligible(); why != "" {
 		return
+	}
+	if len(r.kvSlotBufs) == 1 { // the one-slot build is the memory-tight one: its scratch is priced, and a miss declines the step, not the load
+		if need := r.stepScratchBytes(); need > r.stepHeadroom {
+			if r.stepHeadroom < 0 {
+				r.stepDecline = "this machine's RAM size is unreadable, so the batched step's scratch cannot be priced"
+			} else {
+				r.stepDecline = fmt.Sprintf("the batched step's %.1f MB of scratch does not fit beside one KV slot (the memory guard leaves %.1f MB)",
+					float64(need)/(1<<20), float64(r.stepHeadroom)/(1<<20))
+			}
+			fmt.Fprintf(os.Stderr, "metal: batched step off: %s; prompts prefill one token at a time\n", r.stepDecline)
+			return
+		}
 	}
 	compile := r.d.CompileLibrary
 	if r.preciseMath {
@@ -194,6 +206,52 @@ func (r *resident) buildBatch() {
 	}
 	r.batch = b
 	r.calibrateRows()
+}
+
+// stepScratchBytes is what buildBatch allocates, each buffer rounded up to the page Metal allocates in, so the one-slot price
+// does not under-count (TestP29_oneSlotStepScratchPriced holds it against the driver's own count). A buffer added to
+// buildBatch is added here.
+func (r *resident) stepScratchBytes() int64 {
+	const B = batchMaxSeqs
+	page := os.Getpagesize()
+	g0 := r.layers[0].geom
+	nHhd := r.nH * g0.hd
+	qkvRows := nHhd + 2*g0.kvDim
+	var n int64
+	add := func(bytes, count int) { n += int64(count) * int64((bytes+page-1)/page*page) }
+	f := func(floats, count int) { add(4*floats, count) }
+	f(B*r.H, 1)                     // xB
+	f(B*qkvRows, 1)                 // qkvB
+	f(B*2*r.I, 1)                   // guB
+	f(B*r.V, 1)                     // logitsB
+	add(B*r.H, 2)                   // aqB, mqB
+	add(B*nHhd, 1)                  // cqB
+	add(B*r.I, 1)                   // dqB
+	f(B, 4)                         // aScB, cScB, mScB, dScB
+	add(2*max(r.H, nHhd, r.I)*8, 1) // aT
+	add(2*r.H*8, 1)                 // aTp
+	f(1, 7)                         // uM, uQKV, uGU, uV, uMode
+	f(max(r.H, 2*r.I), 1)           // noBias
+	f(1, 9*B)                       // the per-row uniforms
+	f(B, 1)                         // gOut
+	f(2*B*batchArgmaxParts, 1)      // amaxPart
+	f(B, 1)                         // amaxTok
+	f(1, 1)                         // uAmaxP
+	f(B, 2)                         // posB, qtB
+	f(B*nHhd, 1)                    // ctxB
+	f(B, 5)                         // nKeysB, rowmapB, slotOffB, nSplitB, rowmapFA
+	f(1, 1)                         // uMaxS
+	if r.attnFAPartialLen > 0 {
+		f(B*r.attnFAPartialLen, 1) // faPartB
+		f(1, 1)                    // uPartStride
+	}
+	f(1, B+1) // uCount
+	if r.q4kLane {
+		f(B*r.H, 1) // axB
+		f(B*r.I, 1) // swB
+		f(1, 5)     // uLd, at most one per distinct width
+	}
+	return n
 }
 
 // mc3W8RowsOn runs a native int8 resident's step projections as mc3_gemv_w8a8_rows (each weight row read once for all
@@ -367,6 +425,10 @@ type multiOut int
 // for the test that compares the two and the A/B that times them. Tests only.
 var stepPrefillAllHeads = false
 
+// stepSlotOffsetPlantForTest shifts every step row's KV slot offset by this many rows: the planted defect that the one-slot
+// step-prefill identity check must catch. Zero in production.
+var stepSlotOffsetPlantForTest = 0
+
 const (
 	multiFull    multiOut = iota // every row's logits, or a draw row's id
 	multiArgmax                  // every row's argmax, read in place
@@ -429,7 +491,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uQTemp[m].Floats()[0] = scale
 		b.posB.U32s()[m] = uint32(q.pos)
 		b.nKeysB.U32s()[m] = uint32(q.pos + 1)
-		b.slotOffB.U32s()[m] = uint32(q.slot * r.kvSlotBytes[0] / 2) // f16 elements; batchIneligible: uniform layers
+		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[0]/2 + stepSlotOffsetPlantForTest*r.layers[0].geom.kvDim) // f16 elements; batchIneligible: uniform layers
 		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
 			ns := r.attnFASplitFor(q.pos+1, r.attnFANKV)
@@ -743,12 +805,12 @@ func (r *resident) transformedRow(raw []float32) []float32 {
 
 // BatchGreedyDraw is decoder.ResidentBatchGreedy's (E-P08): a step returns a Greedy draw row's argmax id, the argmax of
 // the row forwardMulti would have returned, first maximum on a tie.
-func (a *metalResident) BatchGreedyDraw() bool { return a.r.batch != nil }
+func (a *metalResident) BatchGreedyDraw() bool { return a.r.batch != nil && len(a.r.kvSlotBufs) >= 2 }
 
 // BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
 // of batchMaxSeqs and the slot count), or (0, 0) when this resident cannot batch.
 func (a *metalResident) BatchStepRange() (lo, hi int) {
-	if a.r.batch == nil {
+	if a.r.batch == nil || len(a.r.kvSlotBufs) < 2 {
 		return 0, 0
 	}
 	return batchMinSeqs, min(batchMaxSeqs, len(a.r.kvSlotBufs))
@@ -780,10 +842,17 @@ var (
 	_ decoder.VerifyCostReporter = (*metalResident)(nil)
 )
 
+// stepPrefill reports whether a prompt can prefill on the step kernels: the step exists and no logit transform separates
+// its rows from Forward's. One KV slot is enough, since a prompt is one sequence's consecutive rows.
+func (a *metalResident) stepPrefill() bool {
+	return a.r != nil && a.r.batch != nil && len(a.r.kvSlotBufs) > 0 && a.r.finalSoftcap == 0 && (a.r.logitScale == 0 || a.r.logitScale == 1)
+}
+
 // VerifyCost (decoder.VerifyCostReporter): the argmax-only verify's cost curve when this resident can run it on the
-// step kernels, nil otherwise.
+// step kernels, nil otherwise. It needs two KV slots: a one-slot resident prefills on the step but gives speculation no
+// verify cost, and enabling one there is its own decision with its own gate.
 func (a *metalResident) VerifyCost() []float64 {
-	if a.r == nil || a.r.batch == nil || len(a.r.kvSlotBufs) == 0 || a.r.finalSoftcap > 0 || (a.r.logitScale != 0 && a.r.logitScale != 1) {
+	if !a.stepPrefill() || len(a.r.kvSlotBufs) < 2 {
 		return nil
 	}
 	return stepVerifyCost
@@ -840,14 +909,14 @@ const promptStepMaxAboveFloor = 32
 // longer than promptStepMaxAboveFloor.
 var promptStepAboveFloor = false
 
-// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos: the resident runs the step-kernel
-// verify (VerifyCost: the batched step exists, and no logit transform separates its rows from Forward's), and the prompt ends
+// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos: the resident prefills on the step
+// (stepPrefill: the batched step exists, and no logit transform separates its rows from Forward's), and the prompt ends
 // below the fast-prefill floor, where the batched pass declines and the decoder would run the sequential loop. The step's
 // rows are that loop's bits, so this route changes no output. Above the floor the route is promptStepAboveFloor, off: it
 // would replace the pass's numerics with decode's, and a chunked prefill's short tail must equal the whole pass
 // (TestMC5_prefillChunkInvariance; docs/code-notes/metal.md#promptStepOK).
 func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
-	if a.r.promptStepOff || n < 2 || a.VerifyCost() == nil {
+	if a.r.promptStepOff || n < 2 || !a.stepPrefill() {
 		return false
 	}
 	if !a.r.prefillOK { // the pass never runs here (the q4k lane), so every prompt would otherwise take the sequential loop

@@ -39,3 +39,25 @@ on its default path is kept as a control.
 - **The 7B control:** both builds are expected to stay far under W. A load that grows swap is reported.
 - **VOID:** a guard refuses a load (the job records it and never bypasses), or a load does not reach `metal-resident (int4)`.
 - **No stop rule** beyond the six loads.
+
+## Result, read 2026-10-18: FIXED
+
+Run 2026-10-18 13:02–13:04 PDT as night job `int4-staging-heap`. The owner started the queue by day, with VS Code and the Claude
+app open (load about 3.5). The grade reads memory, not timing. Records: `results-2026-10-18/` beside this file (`results.json`
+and one log per load).
+
+| load | case | build | largest Go heap | lifetime peak footprint | swap growth |
+|---|---|---|---|---|---|
+| 0 | 1.5B direct | before (a2732f00) | 2,044 MB | 2,999 MB | 0 |
+| 1 | 1.5B direct | main (53267aee) | 1,227 MB | 2,175 MB | 0 |
+| 2 | 1.5B direct | main (53267aee) | 1,227 MB | 2,179 MB | 0 |
+| 3 | 1.5B direct | before (a2732f00) | 1,995 MB | 2,947 MB | 0 |
+| 4 | 7B sidecar | before | 68 MB | 92 MB | 0 |
+| 5 | 7B sidecar | main | 64 MB | 90 MB | 0 |
+
+- **Graded, the 1.5B direct (W = 1.1 GB, so the band is at most 1,375 MB):** main's largest Go heap is 1,227 MB in both loads,
+  about 1.12 × W, and neither load grows swap. That is **FIXED**.
+- **The contrast:** the before build reads 1,995–2,044 MB, about 1.8 × W. So the int4 staging was the cause, and the fix removes
+  about 0.8 GB of Go heap and of peak footprint from a 1.5B direct load.
+- **The 7B control:** both builds stay under 100 MB on the sidecar path, which never runs `int4Concat`, as registered.
+- **VOID:** none. Every load reached `metal-resident (int4)`.

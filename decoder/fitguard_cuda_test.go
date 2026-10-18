@@ -7,7 +7,7 @@ import (
 )
 
 // The host fit guard's CUDA case (docs/measurements/cuda-build-heap-2026-10-18/README.md): a load that will be CUDA-resident has its KV in VRAM, so
-// it adds none to the host need, and its build adds the packed copy of the model beside the canonical weights.
+// it adds none to the host need, and its build adds one packed layer and the staging blocks beside the canonical weights.
 
 // withFakeCUDACompiled registers a stand-in "cuda" backend, so cudaWillBeResident sees CUDA as compiled into the binary (the real one lives in the cuda
 // module, which decoder's tests do not link).
@@ -86,7 +86,7 @@ func TestKVPricingFor_cudaNotCompiledKeepsCPUPricing(t *testing.T) {
 }
 
 // G-F1: the 7B at 32,768 positions is admitted by the CUDA guard where the CPU's pricing (and the tree before this change) refused it, and the CUDA host
-// term is the weights plus the source file on the direct path, the weights plus the packed copy where there is no source.
+// term is the weights plus the source file on the direct path, the weights plus one packed layer and the staging blocks where there is no source.
 func TestFitCheck_cudaResident7BAt32KIsAdmitted(t *testing.T) {
 	withFakeCUDACompiled(t)
 	const GiB = int64(1) << 30
@@ -109,10 +109,10 @@ func TestFitCheck_cudaResident7BAt32KIsAdmitted(t *testing.T) {
 	if !strings.Contains(cuda.arithmetic(), "KV is in VRAM") {
 		t.Errorf("the arithmetic does not say where the KV is: %q", cuda.arithmetic())
 	}
-	// No source term (a safetensors directory): the packed copy is what the build adds beside the weights.
+	// No source term (a safetensors directory): one packed layer and the staging blocks are what the build adds beside the weights.
 	nosrc := fitCheck{weightBytes: 4 * GiB, availBytes: 14 * GiB}.priceCtxAndKV(cfg, Options{Backend: "cuda"})
-	if want := 4*GiB + 4*GiB; nosrc.need() != want {
-		t.Errorf("no-source need %d, want weights + the packed copy %d", nosrc.need(), want)
+	if want := 4*GiB + 4*GiB/28 + cudaPackStageBytes; nosrc.need() != want {
+		t.Errorf("no-source need %d, want weights + one layer + staging %d", nosrc.need(), want)
 	}
 	// The C' expert-cache term is untouched and stays the larger.
 	moe := fitCheck{weightBytes: 4 * GiB, srcFileBytes: 4 * GiB, cudaBuildBytes: 20 * GiB, expertBytes: 12 * GiB, availBytes: 64 * GiB}.priceCtxAndKV(cfg, Options{Backend: "cuda"})

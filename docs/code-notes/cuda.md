@@ -1649,6 +1649,15 @@ be unreachable in practice (repacked-only only activates for Options.Backend=="c
 literally, never "cuda"), so this is defense in depth, not a path expected to fire.
 ```
 
+## planWeight
+
+A dense projection is planned in `BuildResident`'s layer loop and packed at upload. `cuda/pack_stream.go:planWeight` makes `packWeight`'s accept-or-decline decision with no packing (and `packWeight`
+now begins by calling it, so there is one decision); the `hostW` it returns carries the weight and the element counts of the three device buffers `upW` allocates. `streamW` allocates them and packs row
+blocks through one reused staging block (`stagePackWords`, 8 MiB of words), uploading each block at its offset: every row's packed words and scales depend on that row alone, so the device bytes are
+`packWeight`'s (`TestPackStream_deviceBytesIdenticalToPackWeight`). A model is therefore accepted or declined in full before the first device allocation (`TestPackStream_buildAllocatesNothingBeforeEveryLayerIsAccepted`),
+and `packedAllocSlack` reads a planned weight's counts. The expert stacks, the shared experts, Mamba and the drafter still call `packWeight`, because their host copy is the design (the C′ pinned stack) or
+small. Evidence: `docs/measurements/cuda-build-heap-2026-10-18/README.md`; gates: `docs/measurements/cuda-stream-pack-2026-10-18/README.md`.
+
 ## packWeightStack.reserve
 
 Moved from `cuda/resident.go` (the comment above `packWeightStack.reserve`) on 2026-10-09.

@@ -305,6 +305,12 @@ hidden + layers × 256 floats ≈ 52 KiB → ~1.0 GiB at 20K; CUDA dense 117–2
 **Gates.** Tier 0: bytes allocated by a 2,048-row prefill on the tiny fixture fall from O(prompt) to O(chunk); logits
 byte-identical.
 
+**Added 2026-10-18 (owner; MEM0's nobara half):** the host embeddings of a 20K prompt were measured **held after the request**
+(+218 MiB on the 1.5B, +476 MiB on the 7B, still there 10 s later: `docs/measurements/mem0-2026-10/README.md`). The fix must embed per chunk
+**and return the memory afterwards**; its gate adds: `RssAnon` 10 s after a 20K cold prompt is within 64 MiB of its value after load plus the
+session's retained state, on the 1.5B and the 7B (`mem0_linux.py`'s cells). Registered with the CUDA streaming change
+(`docs/measurements/cuda-stream-pack-2026-10-18/README.md`).
+
 ### MEM7 · Size the Metal prefill block to the machine (S)
 
 **Problem.** `metal/backend.go:prefillBlockScratch` is a fixed 512 MiB per pass, allocated and released each pass. On a

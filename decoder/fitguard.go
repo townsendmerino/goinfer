@@ -77,8 +77,8 @@ type fitCheck struct {
 	expertBytes    int64
 
 	// deviceKV is true for a load that will be CUDA-resident (cudaWillBeResident): its KV is allocated in VRAM, which the VRAM plan sizes, so kvBytes stays 0
-	// here; the host pays only for the weights and the build. packBytes is the host the build adds beside the canonical weights on that path: the packed
-	// copy of the whole model, which BuildResident holds until the upload. On the direct .gguf path weightBytes+srcFileBytes is the larger term (the
+	// here; the host pays only for the weights and the build. packBytes is the host the build adds beside the canonical weights on that path: one packed
+	// layer and the staging blocks cuda/pack_stream.go streams it through (BuildResident no longer holds a packed copy of the model). On the direct .gguf path weightBytes+srcFileBytes is the larger term (the
 	// load, with the source mapped, peaks above the build), so packBytes binds only where there is no source term. The measurement:
 	// docs/measurements/cuda-build-heap-2026-10-18/README.md.
 	deviceKV  bool
@@ -128,6 +128,9 @@ func (f fitCheck) ratio() float64 {
 }
 
 const fitGB = 1 << 30
+
+// cudaPackStageBytes is the staging memory cuda/pack_stream.go streams packed weights through: up to four blocks of 8 MiB of words with their scale scratch (20 MiB each).
+const cudaPackStageBytes = 80 << 20
 
 // arithmetic is the one line both the warning and the refusal share, so the two can never quote
 // different numbers for the same load.
@@ -795,7 +798,7 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	if p.deviceKV {
 		f.deviceKV = true
 		if f.cudaBuildBytes == 0 {
-			f.packBytes = f.weightBytes
+			f.packBytes = f.weightBytes/int64(max(cfg.NumLayers, 1)) + cudaPackStageBytes
 		}
 		return f
 	}
