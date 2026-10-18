@@ -1,0 +1,6 @@
+# 07:45:47 7b-sidecar
+{"cell": "7b-sidecar", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096"], "ready_s": 10.89, "samples": 276, "peak_anon_mib": 4121, "peak_anon_at_s": 9.93, "peak_rss_mib": 8021, "peak_rss_at_s": 9.93, "hwm_mib": 8035, "peak_swap_mib": 0, "final_anon_mib": 93, "final_file_mib": 3899, "gc_cycles": 25, "gc_max_before_mb": 4018, "gc_max_live_mb": 2999}
+# 07:46:01 7b-direct
+{"cell": "7b-direct", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096", "-direct-load"], "ready_s": 15.44, "samples": 366, "peak_anon_mib": 8677, "peak_anon_at_s": 14.13, "peak_rss_mib": 8791, "peak_rss_at_s": 14.13, "hwm_mib": 8793, "peak_swap_mib": 1, "final_anon_mib": 4191, "final_file_mib": 104, "gc_cycles": 26, "gc_max_before_mb": 8634, "gc_max_live_mb": 4846}
+# 07:46:20 phi3-q4k
+{"cell": "phi3-q4k", "model": "/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "extra": ["-ctx", "4096", "-quant", "q4k"], "ready_s": 2.53, "samples": 111, "peak_anon_mib": 5314, "peak_anon_at_s": 2.43, "peak_rss_mib": 5421, "peak_rss_at_s": 2.43, "hwm_mib": 5430, "peak_swap_mib": 0, "final_anon_mib": 2725, "final_file_mib": 101, "gc_cycles": 17, "gc_max_before_mb": 5283, "gc_max_live_mb": 4160}
