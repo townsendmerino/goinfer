@@ -76,6 +76,14 @@ type fitCheck struct {
 	cudaBuildBytes int64
 	expertBytes    int64
 
+	// deviceKV is true for a load that will be CUDA-resident (cudaWillBeResident): its KV is allocated in VRAM, which the VRAM plan sizes, so kvBytes stays 0
+	// here; the host pays only for the weights and the build. packBytes is the host the build adds beside the canonical weights on that path: the packed
+	// copy of the whole model, which BuildResident holds until the upload. On the direct .gguf path weightBytes+srcFileBytes is the larger term (the
+	// load, with the source mapped, peaks above the build), so packBytes binds only where there is no source term. The measurement:
+	// docs/measurements/cuda-build-heap-2026-10-18/README.md.
+	deviceKV  bool
+	packBytes int64
+
 	// cfg, effCtx, pinned, kvF16, kvI8 carry what re-pricing needs to recompute KV at a SMALLER context when the load does not fit and the
 	// caller never pinned one (see smallerFittingContext). cfg is nil when the GGUF's config could not be read: kvBytes stays 0 and unknown
 	// proceeds.
@@ -99,6 +107,9 @@ type fitCheck struct {
 
 func (f fitCheck) need() int64 {
 	n := max(f.cudaBuildBytes, f.weightBytes+f.kvBytes+f.srcFileBytes)
+	if f.packBytes > 0 {
+		n = max(n, f.weightBytes+f.packBytes)
+	}
 	return n
 }
 func (f fitCheck) budget() int64 { return int64(float64(f.availBytes) * fitMemFraction) }
@@ -130,6 +141,9 @@ func (f fitCheck) arithmetic() string {
 		return b.String()
 	}
 	fmt.Fprintf(&b, "%s needs ~%.1f GB resident at quant %s", f.name, float64(f.weightBytes)/fitGB, f.quant)
+	if f.deviceKV {
+		b.WriteString(" (its KV is in VRAM, which the context plan sizes)")
+	}
 	if f.kvBytes > 0 {
 		fmt.Fprintf(&b, " + %.1f GB KV", float64(f.kvBytes)/fitGB)
 	}
@@ -312,7 +326,12 @@ func decideGIWFit(cfg *Config, opts Options) giwFit {
 		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
 	pinned, effCtx, kvF16, kvI8 := p.pinned, p.ctx, p.kvF16, p.kvI8
-	needAt := func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget }
+	needAt := func(ctx int) int64 {
+		if p.deviceKV {
+			return 0 // CUDA-resident: the KV and the prefill scratch are VRAM, which the context plan sizes
+		}
+		return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget
+	}
 	need := needAt(effCtx)
 	d = giwFit{known: true, avail: avail, budget: budget, need: need, ctx: effCtx, pinned: pinned}
 	if need <= budget {
@@ -773,6 +792,13 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 		return f // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
 	}
 	f.effCtx, f.kvF16, f.kvI8 = p.ctx, p.kvF16, p.kvI8
+	if p.deviceKV {
+		f.deviceKV = true
+		if f.cudaBuildBytes == 0 {
+			f.packBytes = f.weightBytes
+		}
+		return f
+	}
 	f.kvBytes = estimateKVBytes(cfg, f.effCtx, f.kvF16, f.kvI8)
 	return f
 }
@@ -783,6 +809,7 @@ type kvPrice struct {
 	pinned      bool
 	kvF16, kvI8 bool
 	metalSizing bool // priced as the Metal resident will allocate, not at the CPU's per-request ceiling
+	deviceKV    bool // the load will be CUDA-resident: its KV is in VRAM, so a host guard prices none of it (ctx is still the context in play)
 }
 
 // kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what the load will
@@ -825,6 +852,7 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 		}
 		return p, true
 	}
+	p.deviceKV = cudaWillBeResident(cfg, opts)
 	switch {
 	case p.pinned:
 		p.ctx = opts.ResidentContext
@@ -852,6 +880,21 @@ func metalWillBeResident(cfg *Config, opts Options) bool {
 		return false
 	}
 	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) == 0
+}
+
+// cudaWillBeResident reports whether this load will build a CUDA resident, as far as load time can tell: CUDA is compiled into this binary, it is
+// the resolved backend, the weights are not streamed, and the architecture passes the CUDA feature gate. Its KV is then device memory. A resident that
+// declines (the build, or the VRAM plan) falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
+func cudaWillBeResident(cfg *Config, opts Options) bool {
+	if opts.Backend != "cuda" || opts.StreamWeights || !slices.Contains(CompiledBackends(), "cuda") {
+		return false
+	}
+	c := *cfg
+	arch, _, err := resolveArchitecture(&c)
+	if err != nil {
+		return false
+	}
+	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"])) == 0
 }
 
 // smallerFittingContext solves for the largest context <= f.effCtx whose weights+KV fit the budget, floored at ctxFloor. Only meaningful

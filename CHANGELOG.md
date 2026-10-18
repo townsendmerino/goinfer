@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+- The host fit guard prices a CUDA-resident load's KV as VRAM, not host memory, and prices the build's packed copy of the model where there is no source file. A 7B at a 32K context is no longer priced at 11.9 GiB of host against 8.5 GiB measured; the guard's total is within 2% of the measured peak on the 7B and 8% on phi3.
+
 - **A `tool_choice` of `required` (OpenAI) or `any` (Anthropic) on a family with no JSON call form is an error when the reply
   holds no call,** instead of prose. Those families (Gemma 4, gpt-oss, a model under `-tool-format template`) are parsed, not
   constrained, so the check runs once the reply is parsed, and no prose streams before it. Each model's `/v1/models` and `/health`
