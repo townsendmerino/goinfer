@@ -91,8 +91,7 @@ On main the same loads were priced 8.8, 11.9 (the 7B at 32K) and 7.9 GiB; the 7B
 nothing, as before; its peak VmRSS is now 4.0 GiB, almost all the mapped sidecar (final file 3873 MiB), not heap.
 
 **Load time (`ready_s`) is up in every cell, 1.3–1.6x the before, above the 1.10x mark that is reported.** The before and now are different sessions, so this is not a ratio
-(`docs/measurements/noise-registry.md`, TE3): all it says is that streaming is not shown to be free. A same-session interleaved main/branch pair is waiting on the timing lock
-(tack's calibration holds it); its result is appended here.
+(`docs/measurements/noise-registry.md`, TE3): all it says is that streaming is not shown to be free. The same-session pair is below.
 
 ### Deviations from the instruction and the registration
 
@@ -100,3 +99,20 @@ nothing, as before; its peak VmRSS is now 4.0 GiB, almost all the mapped sidecar
 2. **"The 7B at 32K is admitted on nobara" is tested with injected availability** (`TestFitCheck_cudaResident7BAt32KIsAdmitted`): this 64 GB box already admitted it under the old
    pricing. The measured 32K start above is the end-to-end half.
 3. `testdata/fitdescribe.go` here is a copy of the earlier one that compiles the CUDA backend in; the earlier copy prices the CPU path, because the root module registers no backend.
+
+### Load time, same session, interleaved A B B A (main's binary, the branch's, the branch's, main's), 09:34-09:42 PDT, `raw/ab/`
+
+`ready_s`, two runs per arm per cell (the two main runs are runs 1 and 4, the two branch runs 2 and 3):
+
+| cell | main | branch | branch / main (ratio of means) |
+|---|---|---|---|
+| 7B sidecar | 11.03, 11.03 | 16.78, 16.96 | **1.53** |
+| 7B `-direct-load` | 13.39, 13.15 | 18.47, 18.14 | **1.38** |
+| phi3 q4k | 2.68, 2.27 | 3.49, 3.34 | **1.38** |
+
+The order effect is small beside the difference (the two main runs agree within 0.4 s on the 7B and the two branch runs within 0.4 s): the branch is slower in every cell, by 5-6 s on the 7B. Peak anonymous memory
+reproduced the first reading (sidecar 104, 108 MiB against 4179, 4128; direct 4217, 4202 against 8627, 8635; phi3 2737, 2736 against 5314, 5314).
+
+**Read.** Streaming saves 0.4-8.5 GiB of host memory per load and costs 1.4-1.5x the load time, above the 1.10x mark, so by the rule set for this change the streaming is held until it is no slower and the fit-guard
+correction (KV priced as VRAM) goes on its own. The cause is not measured. Where the cost may sit: the eager path packed on the first loop and uploaded in a second job, and the streamed path packs one block, uploads it
+(`gpu.Upload`, synchronous), then packs the next, so pack and upload no longer overlap and each pays its own latency; a pipeline (pack block n+1 while block n uploads) is the first thing to try.
