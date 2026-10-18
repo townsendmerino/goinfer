@@ -139,3 +139,11 @@ is unchanged (8.5 GiB, the load phase), as before.
 
 **Fit guard, streaming half.** With streaming, `packBytes` is one packed layer plus the staging blocks (`cudaPackStageBytes`, 80 MiB), where #97 priced the packed copy of the whole model; the source-file term is unchanged on the direct path.
 
+### After the merge (2026-10-18)
+
+#95 merged as `510b0065` once its 22 checks and main's CI were green (one `root-windows` run had died with a Go runtime `fatal error: found pointer to free object` in the `decoder` tests and passed on re-run; this change touches no
+code that job builds beyond the fit guard's pricing). Francis's call on G-F2: the 7B sidecar row is out of scope, because its 4.0 GiB is mostly the mapped `.giw` (reclaimable page cache) with about 120 MiB of heap, and pricing mapped pages as
+committed would refuse loads that fit. A serve binary built from the merge is `~/serve-cuda-<main sha8>` on nobara (tack's `~/tack-runs/bin/goinfer-serve-cuda-<sha>` pins are its own and were left alone).
+Not changed, noted: the user unit `~/.config/systemd/user/goinfer.service` names `~/goinfer/serve-cuda-local`, which does not exist, and the unit is inactive.
+The `.giw` load-time swap watch is scoped as B33 (`docs/queue-engineering.md`), not built.
+
