@@ -20,7 +20,7 @@
 # CI remains the enforcement, and nothing here can be relied upon by anyone else's clone.
 #
 # Install:  bash scripts/install-git-hooks.sh
-# Bypass:   git push --no-verify        (for a genuinely intentional push over a red lint)
+# Bypass:   none. A hold you believe is wrong is reported to Francis, never skipped with --no-verify (CLAUDE.md).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 hook="$(git rev-parse --git-common-dir)/hooks/pre-push" # the shared hooks directory, which a linked worktree uses too
@@ -77,7 +77,7 @@ if [ "$status" -ne 0 ]; then
     echo "  A rebase or amend rewrites SHAs; a cited one then resolves nowhere for anybody else." >&2
     echo "  Re-point the citation, or run --update if it is only the index that is stale." >&2
     echo "  If the red is a doc you have not committed yet, commit it — do not move it out of the tree." >&2
-    echo "  Deliberate push over a red lint: git push --no-verify" >&2
+    echo "  If you believe the hold is wrong, stop and report it to Francis. Never --no-verify." >&2
     exit 1
 fi
 
@@ -98,7 +98,7 @@ if [ "$pstatus" -ne 0 ]; then
     echo "  Numeric change:      re-run T3 (go run ./cmd/gate parity), then -update." >&2
     echo "  Provably non-numeric: scripts/refresh_parity_hashes.sh — it runs the forward goldens" >&2
     echo "                        as independent proof and REFUSES if any fail." >&2
-    echo "  Deliberate push over a red gate: git push --no-verify" >&2
+    echo "  If you believe the hold is wrong, stop and report it to Francis. Never --no-verify." >&2
     exit 1
 fi
 
