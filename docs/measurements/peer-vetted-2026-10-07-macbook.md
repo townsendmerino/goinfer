@@ -188,3 +188,28 @@ and no guard bypassed.
   CUDA only, and says so.
 - **Not explained:** the swap growth in goinfer's own cell, on an otherwise idle 16 GB Mac, after both guards admitted
   the load. It is recorded, not diagnosed.
+
+### M1 on the fixed build: registered 2026-10-18, before it runs
+
+The owner asked for M1 to be re-run on the q4k upload fix (`a2732f00`, `docs/tasks/task-never-swap-2026-09.md`, "Addendum,
+2026-10-18"). It is the same cell, rules and grader as before, with three differences, all in
+`peer-vetted-2026-10-07/run-mac-m1-fix.sh`:
+- the serve binary is built at `a2732f00`;
+- the records go to `results-mac-m1-fix`;
+- the fit check's server runs with `GODEBUG=gctrace=1`, and its lifetime peak physical footprint is read once it serves
+  (`peer-vetted-2026-10-07/footprint.py`, `proc_pid_rusage` `ri_lifetime_max_phys_footprint`). That records the load's
+  peak from the process's start, not from the moment the server is up.
+
+`GODEBUG` is not set on the timed cell, so Ollama's arm is unchanged.
+
+- **By day (2026-10-18 07:11), the fit guard refused the load** with this session open. Swap did not move (143 MB before
+  and after).
+- **Read at night:**
+  - the swap growth across the load and the cell, against the 0 MB bar, as before;
+  - the load's lifetime peak footprint, beside what the guards priced (the fit guard 5.6 GB; Metal's 5.98 GB for one slot,
+    about 6.75 GB for two);
+  - the Go heap at each collection during the load.
+- **What counts as fixed:** goinfer's cell grows no swap, and the load's peak footprint is within what Metal's guard
+  priced. A cell that measures is graded by `grade.py`, as before.
+- **Not fixed:** swap grows again, or the peak exceeds the priced figure. The diagnosis is then incomplete, and the
+  footprint and GC trace say by how much.

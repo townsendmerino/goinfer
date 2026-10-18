@@ -110,6 +110,25 @@
       memory tightened the static 11.20 GB ceiling.
     - `q4k` has no `.giw` form that would take the mapped file out of the fit guard's price.
     - Not re-queued: it is back with the owner for options (owner, 2026-10-17).
+  - **The A/B on the 0.5B, forced to one slot: registered 2026-10-18, before it runs (owner: queue it on the 0.5B).**
+    - **Counter test first** (`metal/p29_route_test.go`, by day, the 0.5B q4_k_m):
+      - main reads the sequential loop at one resident KV slot (1 row per step) and the batched step at two (8);
+      - the lift branch `p29-one-slot-step-2026-10` (88a08574) reads the step at both.
+      The batched step does not apply on main, so P29 stays open.
+    - **Job:** `run-p29-ab-qwen05.sh` (`docs/measurements/`), a Mac night job, running `TestOneSlotStep_qwen05PrefillAB`
+      from a worktree pinned at 88a08574.
+      - The 0.5B q4_k_m at `--quant q4k`, `-ctx 2048`, one resident KV slot.
+      - A 512-token prompt, prefilled one token at a time (production's Forward) against the one-slot step (PrefillLast).
+      - One untimed warm-up of each arm, then 5 interleaved pairs in alternating order.
+      - r = sequential ÷ step per pair; the median is read.
+      - The one-slot step is bit-identical to the sequential loop at tier 0 (`TestOneSlotStep_q4kLaneBitIdentical`, with
+        its plant), so this measures speed only.
+    - **Bands:**
+      - **SHIP:** a median of at least 1.02 with every pair above 1.00. The lift fast-forwards to main.
+      - **PARK:** a median in [1.00, 1.02), or pairs straddling 1.00. Reported, not merged.
+      - **OFF:** a median under 1.00. Reported, not merged.
+      - **VOID:** a guard declines the load (the test skips).
+    - **No stop rule** beyond the five pairs, and no re-run until the job has run once.
 
   - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
     -ctx 2048`): the load went `metal-resident (q4k)`, and the banner said `prefill path: sequential — arch/geometry not
