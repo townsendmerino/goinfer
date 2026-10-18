@@ -225,10 +225,34 @@ func TestOneSlotStep_phi3PrefillAB(t *testing.T) {
 		home, _ := os.UserHomeDir()
 		path = filepath.Join(home, "models", "phi3-mini-4k-gguf", "Phi-3-mini-4k-instruct-q4.gguf")
 	}
+	oneSlotPrefillAB(t, path, 2048)
+}
+
+// TestOneSlotStep_qwen05PrefillAB is the same A/B on the 0.5B q4_k_m, forced to one resident KV slot: the load phi3's would
+// get from the memory guard on a 16 GB Mac, on a model that fits beside the owner's session (owner, 2026-10-18).
+func TestOneSlotStep_qwen05PrefillAB(t *testing.T) {
+	if os.Getenv("GOINFER_P29_AB") != "1" {
+		t.Skip("set GOINFER_P29_AB=1 (a timed run on the real 0.5B file)")
+	}
+	path := os.Getenv("GOINFER_QWEN05_GGUF")
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	}
+	oneSlotPrefillAB(t, path, 2048)
+}
+
+// oneSlotPrefillAB loads path at --quant q4k on Metal with one resident KV slot and ctx positions, and times a 512-token
+// prompt prefilled one token at a time (production's Forward) against the one-slot step (PrefillLast), 5 interleaved
+// pairs in alternating order after one untimed warm-up of each. It skips, never fails, when a guard declines the load.
+func oneSlotPrefillAB(t *testing.T, path string, ctx int) {
 	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
 		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", path)
 	}
-	m, err := decoder.Load(path, decoder.Options{Quant: "q4k", Backend: "metal", ResidentContext: 2048, ResidentKVSlots: 1})
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s", path)
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "q4k", Backend: "metal", ResidentContext: ctx, ResidentKVSlots: 1})
 	if err != nil && strings.Contains(err.Error(), "NOT loaded") {
 		t.Skipf("the fit guard declines this load now (never bypassed here): %v", err)
 	}
