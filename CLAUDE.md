@@ -90,7 +90,8 @@ Waiting on CI was 16% of both boxes' session time over 30 days (`docs/measuremen
 wait for it, read it, then push. A docs-only push (`scripts/ci_docs_only.sh`: `docs/**`, `RELEASING.md` and `.claude/**`,
 none read by Go code or tests) goes straight through and runs only CI's light lint job. Every push to main gets a
 complete run: main's workflows do not cancel one push's run for the next. **If a hook holds a push you believe is wrong,
-stop and report it to Francis. Never `--no-verify`.**
+stop and report it to Francis. Never `--no-verify`.** A background push job pushes a named commit (`git push origin <sha>:main`), never `HEAD`, and runs in a worktree no one
+else edits while it waits.
 
 **Don't push product code to main while CI for the previous push is still running.** Owner rule, 2026-10-17: wait for it
 to finish green, so a red run points at one commit. Check `gh run list --branch main --limit 3` before the push; while it
