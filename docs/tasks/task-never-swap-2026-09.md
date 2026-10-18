@@ -1292,3 +1292,18 @@ buffer at its final size and copies every part straight into it at its offset, s
   path; a dense CUDA build's second host copy is not priced. nobara has 62 GB of RAM, so it has not shown there.
 - **WebGPU** (`gpu/residency.go:Context.uploadProj`) uploads each projection's bytes straight. It stages only in the
   fallback for a K that is not a multiple of 32.
+
+## Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)
+
+Scoped, not built (`docs/queue-engineering.md` B33). The load-time watch (S3) is armed for a direct `.gguf` build only; a `.giw` load prints "not armed" and runs unwatched until the serving watch arms once the server is up.
+What stops a watch from simply being turned on there:
+
+- **No abort point.** `Options.LoadAbort` is read in one place, `parallelLayers` (the direct GGUF weight build). The `.giw` loader maps the file and the CUDA resident build then uploads from the mapping;
+  neither polls anything, so a trip on that path would print and keep loading.
+- **The CUDA build cannot see the channel.** `cuda.BuildResident` is handed a `*decoder.Model` and nothing else, and the Model does not retain `LoadAbort` (it is documented as nil in effect after the weight build). The build
+  needs a per-model accessor for it; `decoder.ErrLoadAborted` is exported, so the cuda module can return it. It must come back as a real error: a `DeclineResident` falls back to the CPU and the load continues.
+- **Where to poll in the CUDA build:** the per-layer loop (planning) and `streamBlocks` (`cuda/pack_stream.go`), once per block, which is cheap.
+
+Gates (tier 0): a scripted swap reader through `armLoad` against a fake load that polls the channel per layer; the planted trip aborts at the layer where the reader crosses and the same fake load without the poll runs to the end.
+Not at issue on this box: the 7B sidecar load measured 0 swap and about 120 MiB of heap, and the mapped `.giw` is reclaimable page cache (the S0 table above); the item protects heavier models and smaller machines.
+

@@ -468,6 +468,20 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the
+cuda-stream-pack scoping). **Not started; scoped only** (owner: file it, do not build it). Brief: `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
+- **What happens:** `internal/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
+  "swap guard (load): not armed for <path>" for a `.giw` (or streamed, or HF-directory) load. `Options.LoadAbort` has one consumer, `parallelLayers` in the direct GGUF weight
+  build, so arming it elsewhere would log a trip and keep loading.
+- **Scope, once approved:** (1) arm the watch on the `.giw` path (the sources, per-process `VmSwap` with the system backstop, are path-agnostic);
+  (2) poll `LoadAbort` in the `.giw` loader's per-layer loop and in the CUDA resident build's per-layer loop and per-block loop (`streamBlocks`), returning `decoder.ErrLoadAborted`
+  as a real error, not a decline (a decline falls back to the CPU and keeps loading); (3) give the CUDA build the channel: `cuda.BuildResident` receives only a `*decoder.Model`, and the
+  Model keeps no `LoadAbort`, so it needs a per-model accessor (the policy in `docs/env-vars.md`: an `Options` field with an accessor, not an env read); (4) tier 0 with a scripted swap
+  reader (`decoder.SwapReader`) driving `armLoad` against a fake load that polls the channel, and a planted trip: a load whose reader crosses the threshold at layer 3 must return
+  `ErrLoadAborted` having built no more than layer 3, and with the poll removed the same fake load runs to the end.
+- **Why not urgent:** the 7B sidecar load measured 0 swap and about 120 MiB of heap here (`docs/measurements/cuda-stream-pack-2026-10-18/README.md`), and a mapped `.giw` is reclaimable page cache; this protects
+  heavier models and smaller machines. Size: S to M.
+
 **B32 · After a fit refusal, the automatic weight-streaming retry starts a sidecar transcode even for a load that has no
 `.giw` form (`--quant q4k`), so it cannot help** — filed 2026-10-18 (owner, from the phi3 `q4k` fit check on Metal). **Not
 started; not fixed yet** (owner).
