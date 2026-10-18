@@ -64,7 +64,9 @@ func tinyTS(t *testing.T) (*Transcriber, tsGolden) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Transcriber{Mels: enc.Cfg.MelBins, Enc: enc, Dec: dec, Gen: gen}, g
+	tr := &Transcriber{Mels: enc.Cfg.MelBins, Enc: enc, Dec: dec, Gen: gen}
+	t.Cleanup(func() { tr.Close() })
+	return tr, g
 }
 
 // diff names how a result differs from the reference's, or "" when it does not.
