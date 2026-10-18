@@ -1,0 +1,2 @@
+{"model": "1.5B", "config": "greedy", "peer": "mlx", "mlx_path": "single-request", "pairs": [0.668, 0.663, 0.666], "median": 0.666, "goinfer": [92.3, 91.6, 91.9], "peer_runs": [138.2, 138.2, 138.0], "outcome": "BEHIND", "capped": false, "token_gates": ["ok", "ok"]}
+{"model": "7B", "config": "greedy", "peer": "mlx", "mlx_path": "single-request", "pairs": [0.743, 0.741, 0.742], "median": 0.742, "goinfer": [29.7, 29.7, 29.7], "peer_runs": [40.0, 40.1, 40.0], "outcome": "BEHIND", "capped": false, "token_gates": ["ok", "ok"]}

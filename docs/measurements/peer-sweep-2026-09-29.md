@@ -74,7 +74,7 @@ r is shown, the outcome is decided by every pair):
 | f | CUDA sampled @128, 0.5B, t=0.8 top-p 0.95 / t=1.0 | **BEHIND** / **VOID** (goinfer: one reply ended at 12 of 64 tokens, under the gate's 32) | 0.922 / (1.381) | AHEAD 1.194 / void |
 | f | CUDA sampled @128, phi3-mini, t=0.8 top-p 0.95 / t=1.0 | **BEHIND** ×2 | 0.889 / 0.896 | AMBIG-HIGH 1.027 / AHEAD 1.138 — not like-for-like then |
 
-The t=1.0 cells: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
+The t=1.0 cells: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on 2026-10-17, like for like: [`peer-notrunc-2026-10-17.md`](peer-notrunc-2026-10-17.md) (`docs/benchmarks.md` §B11).
 
 **What it says, in order of weight.**
 1. **Dense CUDA greedy decode: AHEAD of Ollama in all 12 cells**, 1.045× to 1.474×, none void (09-25: 9 ahead, 1 level, 2 void). The
@@ -97,7 +97,7 @@ The t=1.0 cells: Sampled with no top_k/top_p sent; each peer used its own defaul
 6. **TTFT** is unchanged in substance: far ahead at K=512 (medians 95.4 against 425.5 ms, capped by Ollama's own 17.9% spread), level at K=3900
    (medians 965.1 against 938.2 ms), now capped LOW by Ollama's 6.6% spread.
 
-The untruncated t=1.0 figures: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
+The untruncated t=1.0 figures: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on 2026-10-17, like for like: [`peer-notrunc-2026-10-17.md`](peer-notrunc-2026-10-17.md) (`docs/benchmarks.md` §B11).
 
 **Against llama.cpp** (reported beside, as 09-25 did; the claims name Ollama): CUDA 1.5B ahead at 128–3900 (1.079–1.191) and level at
 8000; 7B ahead at 128 / 2048 (1.093 / 1.052), AMBIGUOUS-HIGH at 3900 (1.029), level at 8000 (0.974); **0.5B behind at 2048 / 3900

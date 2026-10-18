@@ -82,6 +82,16 @@
   message blames geometry — OPEN, filed 2026-10-17 (owner). Measure the prefill cost against OP6's batched step first.**
   `mac`.
 
+  - **The tier 1 A/B (`p29-one-slot-ab`) voided three times, 2026-10-17 and 2026-10-18.** No guard was bypassed.
+    - **Twice (19:23, 21:49), the fit guard refused** its phi3 `q4k` load from the `.gguf`. The load needs 5.6 GB: 2.6 GB
+      of weights, 0.8 GB of KV and 2.2 GB for the mapped checkpoint. The guard's budget is 70% of available memory, and
+      available was 6.4 GB, then 7.7 GB.
+    - **The third time (00:08, after a restart with nothing else open), the fit guard passed, and Metal's resident memory
+      guard refused.** The build needs 5.98 GB (weights, host copy and KV), against a budget of 4.34 GB once live-available
+      memory tightened the static 11.20 GB ceiling.
+    - `q4k` has no `.giw` form that would take the mapped file out of the fit guard's price.
+    - Not re-queued: it is back with the owner for options (owner, 2026-10-17).
+
   - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
     -ctx 2048`): the load went `metal-resident (q4k)`, and the banner said `prefill path: sequential — arch/geometry not
     supported by f16 MMA prefill kernel`. `-require-backend` then refused it. The record is

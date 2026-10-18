@@ -254,3 +254,19 @@ beside it, so its ratio to goinfer is cross-session and not graded.
 - **Use:** this is 2d's greedy MLX row. The earlier run's batch-path row stays as a note, and the path check's
   cross-session ratios (0.67, 0.75) are not quoted.
 - **No stop rule beyond the fixed cells,** and no re-run until a cell passes.
+
+## Results: same-session greedy against MLX's single-request path (read 2026-10-18)
+
+Run 2026-10-17 23:45–23:48 PDT, `run-mlx-greedy.sh`, a Mac night job after a restart with nothing else open. The
+settle step gave up, so the job started at a load average of 1.3 to 2.0, with swap at 0. The 7B's start-time fit check
+read `metal-resident (int4)`. Every goinfer cell decoded `metal-resident (int4)`, every MLX cell ran `single-request`,
+every token gate passed, no cell grew swap, and no cell hit the spread cap. Records: `peer-notrunc-2026-10-17/mac/mlx-greedy/`
+(`mlx-greedy.json`, `provenance.txt`, `fitcheck-7B.log`, `run.log`, `grade-mlx.jsonl`).
+
+| model | goinfer | MLX (single-request) | r = goinfer ÷ MLX (median; pairs) | grade |
+|---|---|---|---|---|
+| 1.5B | 92.3 / 91.6 / 91.9 | 138.2 / 138.2 / 138.0 | **0.666** (0.668, 0.663, 0.666) | **BEHIND** |
+| 7B | 29.7 / 29.7 / 29.7 | 40.0 / 40.1 / 40.0 | **0.742** (0.743, 0.741, 0.742) | **BEHIND** |
+
+This is 2d's greedy MLX row (`docs/benchmarks.md` §B11). It agrees with the cross-session reading the path check gave
+(0.67 and 0.75).

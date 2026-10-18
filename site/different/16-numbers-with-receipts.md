@@ -107,7 +107,7 @@ Three habits carry most of the weight.
 
 **Count tokens from the engine's own `usage` field, not from streamed chunks.** A chunk is not a token. One chunk can carry several tokens, so counting chunks under-reads, and the error does not cancel in a ratio. Across 130 recorded measurements, goinfer read 1.0000 to 1.0456 tokens per chunk and Ollama 1.0000 to 1.0909.
 
-The Ollama figures come from temperature-only measurements: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on (date to come): (link to come).
+The Ollama figures come from temperature-only measurements: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on 2026-10-17, like for like: [the re-measure's record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-notrunc-2026-10-17.md).
 
 **A short reply is not a slow one.** With an older prompt, replies ended early, and 7 of 24 decode measurements in one run could not be counted. Which ones stopped early was noise. So the prompt now asks for a long reply, and a measurement is not counted if a completion returns too few tokens.
 

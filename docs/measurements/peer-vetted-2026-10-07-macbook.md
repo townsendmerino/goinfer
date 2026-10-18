@@ -172,3 +172,19 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
 - **M1, Phi-3:** the code fix is built (`docs/tasks/task-metal-q4k-2026-10.md`). Its gates on the real file (G-Q2,
   G-Q3) come before an M1 cell, then the cell by an amendment here.
 
+
+### M1 on 2026-10-17/18: VOID three times, not re-queued
+
+Each attempt ran the pinned `serve-metal-42d72319` at `-quant q4k -ctx 2048`, with its start-time fit check unchanged
+and no guard bypassed.
+
+- **19:15:** the fit check read RESIDENT, and the cell's decode path was `metal-resident (q4k)`. goinfer's cell was voided
+  because system swap grew +232.5 MB during it, against a 0 MB bar. Ollama's arm measured 41.6 tok/s ×3.
+- **21:54:** the fit check refused the load: 5.6 GB needed against a budget of 70% of available. The server's automatic
+  weight-streaming retry failed too, because `q4k` has no `.giw` form.
+- **00:13, after a restart with nothing else open and swap at 0:** the fit check read RESIDENT. goinfer's cell was voided
+  again on swap growth, +310.6 MB. Ollama measured 41.6 tok/s ×3.
+- **Use (owner, 2026-10-17):** the third VOID ends the attempts. `docs/benchmarks.md` §B11 publishes phi3-mini from
+  CUDA only, and says so.
+- **Not explained:** the swap growth in goinfer's own cell, on an otherwise idle 16 GB Mac, after both guards admitted
+  the load. It is recorded, not diagnosed.
