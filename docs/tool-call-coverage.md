@@ -8,21 +8,29 @@ Which families get **constrained** tool calls (a call cannot be malformed or nam
 ## How a family gets its tool behaviour
 
 goinfer does not assign a chat template per family. It fingerprints the **checkpoint's own template** (`chat.Detect`, `chat/chat.go`)
-into one of eight renderers, and the renderer decides tools:
+into one of ten renderers, and the renderer decides tools:
 
 | renderer | tools | call form | `required` / named | `auto` |
 |---|---|---|---|---|
 | chatml, mellum2 | yes | `<tool_call>{…}</tool_call>` | constrained from token 1 | constrained from the opener |
 | mistral (v0.3) | yes | `[TOOL_CALLS] [{…}]` | constrained from token 1 | constrained from the opener |
 | llama3 | yes | bare `{…}` | constrained from token 1 | constrained when the reply begins `{"name": "`; a call after prose is parsed only |
-| gemma4 | yes | its own call syntax | parsed only | parsed only |
-| gemma3, harmony (gpt-oss), ministral | no | — | 400 on a named choice | — |
+| gemma4 | yes | its own call syntax | named: 400; `required` / `any`: unconstrained, and a reply with no call is an error | parsed only |
+| harmony (gpt-oss) | yes | a Harmony message to `functions.NAME` (`chat/harmony_tools.go`) | named: 400; `required` / `any`: unconstrained, and a reply with no call is an error | parsed only |
+| gemma3, ministral, phi3, phi3_orig | no | — | 400 on a named choice | — |
 | none recognised | no | — | raw completion | — |
 
 On chatml/mellum2 an unwrapped call that names a supplied tool is also accepted (Qwen2.5-Coder writes calls without the wrapper).
+A ChatML model under `-tool-format template` takes its own XML form and is parsed only, as gemma4 and harmony are. Each
+model's `/v1/models` entry says how a forced call is enforced on it (`forced_tool_call`: `grammar`, `post-check` or `off`;
+`docs/server.md`).
 Under `auto` the constraint is off on a server running speculative decoding, which keeps its drafter.
 
 ## Census, 2026-09-24
+
+> **Superseded in two rows since the census (checked 2026-10-18 at main `0de92cd9`):** gpt-oss (harmony) now has tools,
+> parsed and post-checked, not none; Phi-3 is now recognised (`phi3`, `phi3_orig`), still without tools. The rows below
+> keep the census's own reading, with the change noted.
 
 **Method.** Every checkpoint on `nobara-pc` (`~/models` and the `/srv/models` archive; metadata read only) loaded through the same
 tokenizer loaders `serve` uses, then `chat.Detect`, `SupportsTools` and `ToolCallWrapper` — the real code path, not a reading of names.
@@ -44,7 +52,7 @@ pruned copies without their released template, the row says so instead of guessi
 | Llama (3.x) | llama-3.2-1b-instruct Q4_K_M | llama3 | **constrained** under `required`; under `auto` **when the reply begins as a call** | option (c), 2026-09-24: of the calls that armed, 0 invented names / broken bodies / invalid arguments; unusable calls 12/185 → 4/185 overall, the rest are prose-then-JSON or a non-`name`-first shape |
 | Gemma 4 | E2B, 12B, 26B-A4B (HF and GGUF) | gemma4 | **parsed only** | bespoke call syntax, no JSON form |
 | Gemma 3 | gemma-3-4b-it, gemma3-1b | gemma3 | none | template has no tool form in goinfer |
-| gpt-oss | gpt-oss-20b (HF, MXFP4 GGUF), 120b partial | harmony | none | harmony has no tool support in goinfer |
+| gpt-oss | gpt-oss-20b (HF, MXFP4 GGUF), 120b partial | harmony | none | harmony had no tool support at the census. **Since then:** parsed only, `required` / `any` post-checked (`chat/harmony_tools.go`) |
 | Granite 4.2 | granite-4.2-3b + the released template (`ibm-granite/granite-4.2-3b` @ `e459acceac`) | chatml | **constrained** | released template verified 2026-09-24: chatml turns, Hermes `<tool_call>` JSON — the form goinfer renders, parses and constrains |
 | SmolLM3 | smollm3-3b + the released template (`HuggingFaceTB/SmolLM3-3B` @ `a07cc9a04f`) | none (declined) | none | the released template carries `## Metadata`; `chat.Detect` declines it on purpose (M-36). The local copy has no template and resolves to chatml by the vocab fallback — serve the released checkpoint, not a pruned one |
 | Olmo 3 | olmo3-7b-think + the released templates (`allenai/Olmo-3-7B-Think` @ `d97e442d7c`, `allenai/Olmo-3-7B-Instruct` @ main) | none (declined) | none | both released templates use `<functions>`/`<function_calls>` XML; declined on purpose (M-36). Same pruned-local-copy caveat as SmolLM3 |
@@ -56,7 +64,7 @@ pruned copies without their released template, the row says so instead of guessi
 | DeepSeek-V2 | deepseek-v2-lite (HF, GGUF) | none | none | template not recognised |
 | GLM-4.5/4.6 | GLM-4.5-Air Q2_K | none | none | template not recognised |
 | Llama 4 | Llama-4-Scout GGUF | none | none | template not recognised |
-| Phi-3 / Phi-4 | Phi-3-mini-4k Q4 GGUF | none | none | template not recognised |
+| Phi-3 / Phi-4 | Phi-3-mini-4k Q4 GGUF | none | none | template not recognised at the census. **Since then:** recognised as `phi3` / `phi3_orig`, still no tools |
 | Ministral 3 | ministral3-3b-bf16 | none | none | local copy has no template; the released one routes to `ministral` (no tools) |
 | Mistral | mistral-7b-instruct-v0.1 Q4_K_M | none | none | v0.1 has no tool form; v0.3 (`[TOOL_CALLS]`) would be constrained — no v0.3 checkpoint here |
 | DeepSeek-V3, Kimi K2, Ling 3.0, GPT-2, InternLM2, Qwen3-VL, Spark-X2.5, Mixtral | — | not checked | — | no local checkpoint with a loadable tokenizer.json/GGUF template |
@@ -79,7 +87,7 @@ and no wider.
 2. **List-form `chat_template` is ignored** (Cohere's named `default` / `tool_use` / `rag` templates) — a documented choice in
    `tokenizer/bytelevel.go`, recorded here because it is why both Command-R families have no chat template at all.
 3. Several GGUF templates are not recognised by any fingerprint (DeepSeek-V2, GLM-4.5, Llama 4, Phi-3, Granite-4.0-H, Nemotron-Nano
-   9B): raw completion, no tools.
+   9B): raw completion, no tools. Phi-3 is recognised since (`phi3`, `phi3_orig`), still without tools.
 4. **LFM2.5 advertises tools in a format it does not use.** `chat.Detect` routes its template to chatml (the turn markers match), so
    `SupportsTools` is true and tool definitions are rendered Hermes-style, but the model's trained call syntax is
    `<|tool_call_start|>[name(arg=…)]<|tool_call_end|>`. Its calls are therefore not parsed as calls, and the union never arms.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ci_docs_only.sh BASE HEAD   -> prints "true" or "false"
+# ci_docs_only.sh --read PATH -> prints "read" or "not-read", rule 2's decision for one repo-relative path
 # ci_docs_only.sh --selfcheck -> exits 1 if the read-detection below has stopped catching the
 #                                docs files tests are KNOWN to read (a zero-match guard)
 #
@@ -19,7 +20,9 @@
 #     477da08a is the precedent: a docs-only fix to env-vars.md flipped a test from red to green,
 #     so skipping `test` on a "docs-only" push would have left main red with nothing watching.
 #     Detection is DYNAMIC, not a curated list (a list drifts as tests are added): a changed file's
-#     basename appearing on a Go line that looks like a file read. Plain mentions in comments and
+#     FULL repo path on a Go line that looks like a file read, either contiguous ("../docs/api-tiers.md") or as its
+#     components in order, each a quoted literal (filepath.Join(root, "docs", "env-vars.md")). Not its basename alone:
+#     that held every docs/**/README.md and run.py as read, because Go tests read the root README.md (2026-10-18). Plain mentions in comments and
 #     error strings do NOT count -- this repo's code cites task docs constantly, and counting those
 #     left only 2 of the 11 eligible (the measured alternative). --selfcheck pins that the
 #     read-shaped detection still catches the known reads, so a regex regression goes red in `lint`
@@ -33,16 +36,24 @@ set -u
 
 read_re='ReadFile|ReadAll|Open\(|OpenFile|Stat\(|Lstat\(|ReadDir|WalkDir|Glob\(|filepath\.Join|path\.Join|go:embed|Path'
 
-# read_by_go BASENAME -> exit 0 if some non-vendor Go line mentions BASENAME in a read-shaped context
+# read_by_go PATH -> exit 0 if some non-vendor, read-shaped Go line names PATH (repo-relative): the path itself, or each of
+# its components as a quoted literal, in order.
 read_by_go() {
-  git grep -F -e "$1" -- '*.go' ':!vendor' 2>/dev/null | grep -qE "$read_re"
+  local path="$1" base comps re c
+  base="$(basename "$path")"
+  re=""
+  IFS=/ read -r -a comps <<<"$path"
+  for c in "${comps[@]}"; do
+    re="${re:+$re.*}\"$(printf '%s' "$c" | sed 's/[][\.*^$+?(){}|]/\\&/g')\""
+  done
+  git grep -F -e "$base" -- '*.go' ':!vendor' 2>/dev/null | grep -E "$read_re" | grep -qE -e "$(printf '%s' "$path" | sed 's/[][\.*^$+?(){}|]/\\&/g')" -e "$re"
 }
 
 selfcheck() {
   # Every entry here is a docs/ file a test READS today (see the header). If detection stops
   # seeing one, the gate has silently widened; fail loudly.
   local ok=0
-  for b in env-vars.md capability-matrix.json hardware-matrix.md api-tiers.md audit-metal-2026-09-12.md; do
+  for b in docs/env-vars.md docs/capability-matrix.json docs/hardware-matrix.md docs/api-tiers.md docs/audit-metal-2026-09-12.md; do
     if ! read_by_go "$b"; then
       echo "ci_docs_only: SELF-CHECK FAILED: '$b' is read by a Go test but the read-detection no longer sees it" >&2
       ok=1
@@ -50,6 +61,11 @@ selfcheck() {
   done
   return $ok
 }
+
+if [ "${1:-}" = "--read" ]; then # ci_docs_only.sh --read PATH -> "read" or "not-read": rule 2's decision for one path
+  read_by_go "${2:-}" && echo read || echo not-read
+  exit 0
+fi
 
 if [ "${1:-}" = "--selfcheck" ]; then
   selfcheck && echo "ci_docs_only: self-check OK (read-detection still catches the known test-read docs)"
@@ -77,7 +93,7 @@ while IFS= read -r f; do
 done <<<"$files"
 
 while IFS= read -r f; do
-  read_by_go "$(basename "$f")" && say_false
+  read_by_go "$f" && say_false
 done <<<"$files"
 
 echo true

@@ -89,7 +89,9 @@ Waiting on CI was 16% of both boxes' session time over 30 days (`docs/measuremen
 (`scripts/main_ci_guard.py`, installed by `bash scripts/install-git-hooks.sh`; owner rule, 2026-10-18). It names the run;
 wait for it, read it, then push. A docs-only push (`scripts/ci_docs_only.sh`: `docs/**`, `RELEASING.md` and `.claude/**`,
 none read by Go code or tests) goes straight through and runs only CI's light lint job. Every push to main gets a
-complete run: main's workflows do not cancel one push's run for the next.
+complete run: main's workflows do not cancel one push's run for the next. **If a hook holds a push you believe is wrong,
+stop and report it to Francis. Never `--no-verify`.** A background push job pushes a named commit (`git push origin <sha>:main`), never `HEAD`, and runs in a worktree no one
+else edits while it waits.
 
 **Don't push product code to main while CI for the previous push is still running.** Owner rule, 2026-10-17: wait for it
 to finish green, so a red run points at one commit. Check `gh run list --branch main --limit 3` before the push; while it
@@ -467,7 +469,8 @@ traps worth knowing before you hit them:
   long green-scope epilogue either way, which is exactly what makes the misread easy. Redirect to
   a file and check `$?`, or the hook will be the first thing that tells you.
 
-`git push --no-verify` exists and is almost never the right answer — the lint is usually right.
+`git push --no-verify` is never the answer (owner rule, 2026-10-18): a lint or hook you believe is wrong is reported to
+Francis, not skipped.
 
 <!-- citation-lint: allow-path file.go the placeholder in this repo's own descriptions of the citation forms (file.go:NNN, file.go:NN), not a citation -->
 <!-- citation-lint: allow-path path.go the placeholder in the symbol-citation examples (path.go:Name, path.go:Type.Method), not a citation -->

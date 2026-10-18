@@ -9,8 +9,8 @@ The pre-push hook (scripts/install-git-hooks.sh) runs it only for a push to refs
 docs-only range goes straight through: scripts/ci_docs_only.sh decides, the same script CI's gate runs (docs/**,
 RELEASING.md and .claude/**, none read by Go code or tests), so the guard and CI agree on what is product code. It reads
 the runs with `gh run list`; MAIN_CI_GUARD_RUNS names a JSON file of the same shape instead, and MAIN_CI_GUARD_DOCS_ONLY
-(true or false) stands in for the classifier, for the tests. A failed read refuses rather than passing silently. Bypass
-for a deliberate push: git push --no-verify.
+(true or false) stands in for the classifier, for the tests. A failed read refuses rather than passing silently. A hold you
+believe is wrong is reported to the owner, never bypassed (CLAUDE.md, "Push finished work").
 
 Usage: python3 scripts/main_ci_guard.py [BASE HEAD]"""
 import json
@@ -63,7 +63,7 @@ def main(argv):
         rs = runs()
     except Exception as e:  # noqa: BLE001 — any failure to read is a refusal, never a silent pass
         print(f"main-ci-guard REFUSED: could not read main's CI runs ({e}).", file=sys.stderr)
-        print("  Read them yourself (gh run list --branch main --limit 5); a deliberate push: git push --no-verify", file=sys.stderr)
+        print("  Read them yourself (gh run list --branch main --limit 5). If you believe the hold is wrong, stop and report it to Francis.", file=sys.stderr)
         return 1
     busy = unfinished(rs)
     if not busy:
@@ -72,7 +72,7 @@ def main(argv):
           f"({busy[0].get('displayTitle', '')[:70]}):", file=sys.stderr)
     for r in busy:
         print(f"  run {r['databaseId']} {r.get('workflowName', '')}: {r.get('status')} — {r.get('url', '')}", file=sys.stderr)
-    print("  Wait for it to finish and read it, then push. A deliberate push: git push --no-verify", file=sys.stderr)
+    print("  Wait for it to finish and read it, then push. If you believe the hold is wrong, stop and report it to Francis.", file=sys.stderr)
     return 1
 
 
