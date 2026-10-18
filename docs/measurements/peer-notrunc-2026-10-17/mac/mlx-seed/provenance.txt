@@ -1,0 +1,2 @@
+started: 2026-10-17 21:37:42 PDT; bench_peer e90e82b9; mlx-lm 0.31.3; MLX checkpoints Qwen2.5-Coder-1.5B-Instruct-4bit b3252a2f, Qwen2.5-7B-Instruct-4bit c26a38f6
+finished: 2026-10-17 21:43:59 PDT, bench_peer exit 0

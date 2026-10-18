@@ -140,3 +140,27 @@ fix can only shorten it. Fit-checked by day at that build: `fit: 16384-token cap
     ratio quotable.
 - **Footprint:** the tiled kernel allocates no device memory beyond a 4-byte tile argument. The peak footprint is
   reported, not graded.
+
+## Fix 2's reading, 2026-10-17 19:06–19:10 PDT: the knee is gone
+
+Run as registered (`run-p28c.py`, the pinned `serve-metal` at `27e917d7`) as a Mac night job holding the timing lock.
+Records: `fix2/` (`results.json`, each length's serve log, `run.log`).
+
+The runner's settle gave up and started the job at a load average of 1.09 with a Claude session still active, and it
+started the second and third lengths without settling. The effect is far outside that noise.
+
+| prompt tokens | prefill | rate | vs step 2 | band | peak footprint | swap-outs |
+|---|---:|---:|---:|---|---:|---:|
+| 4,096 (control) | 28.2 s | 145.3 tok/s | 1.01× (143.5) | within ±5%: the control passes | 1,621 MB | 0 |
+| 6,144 | 62.6 s | 98.1 tok/s | **2.62×** (37.5) | **≥ 2×: the knee is gone** | 2,074 MB | 0 |
+| 8,192 | 103.1 s | 79.5 tok/s | **2.32×** (34.3) | **≥ 2×: the knee is gone** | 2,518 MB | 0 |
+
+- **The path passes.** Neither long request line carries `prefill_fallback`, and no server printed the layer-major note.
+  Both long lengths stayed on the batched pass, on the tiled exact kernel.
+- **Against 4,096:** 6,144 runs at 0.68 of the 4,096 rate and 8,192 at 0.55. That is attention's quadratic term, as
+  registered.
+- **Footprint (reported, not graded):** it now grows with length, because the batched pass now runs at these lengths.
+  Step 2's figures were flat because the layer-major pass ran instead. The 8,192 request compressed 126,815 pages and
+  swapped out none.
+- **What is left:** E2B under 4,096 keys is still 143.5 tok/s against the 1.5B's 900. That is P32, the fused kernel for
+  head dims 256 and 512.

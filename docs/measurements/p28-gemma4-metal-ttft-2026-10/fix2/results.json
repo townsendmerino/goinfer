@@ -1,0 +1,88 @@
+{
+  "rev": "27e917d7",
+  "host": "macbookpro.lan",
+  "model": "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+  "rows": [
+    {
+      "target": 4096,
+      "prompt_tokens": 4096,
+      "reused": 0,
+      "wall_s": 28.185,
+      "tok_s": 145.3,
+      "prefill_path_banner": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential); past 4096 keys the exact attention kernel (head dim 512 has no fused kernel, or fused attention is off) tiles its scores",
+      "footprint_before_mb": 741,
+      "footprint_after_mb": 1095,
+      "peak_footprint_mb": 1621,
+      "vm_delta_pages": {
+        "Pageouts": 14,
+        "Swapins": 0,
+        "Swapouts": 0,
+        "Compressions": 0,
+        "Decompressions": 3,
+        "Pages occupied by compressor": 0,
+        "Pages stored in compressor": -3,
+        "Pages free": 34186
+      },
+      "swap_before": "total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted)",
+      "swap_after": "total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted)",
+      "page_bytes": 16384,
+      "prefill_fallback": null,
+      "layer_major_note": false,
+      "request_line": "request: POST /v1/chat/completions model=bench status=200 prompt_tokens=4096 completion_tokens=1 ttft=28145ms total=28183ms reused=0 slot=0 div=- canon=1 ids=- ids_fallback=-"
+    },
+    {
+      "target": 6144,
+      "prompt_tokens": 6144,
+      "reused": 0,
+      "wall_s": 62.633,
+      "tok_s": 98.1,
+      "prefill_path_banner": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential); past 4096 keys the exact attention kernel (head dim 512 has no fused kernel, or fused attention is off) tiles its scores",
+      "footprint_before_mb": 741,
+      "footprint_after_mb": 1285,
+      "peak_footprint_mb": 2074,
+      "vm_delta_pages": {
+        "Pageouts": 65,
+        "Swapins": 0,
+        "Swapouts": 0,
+        "Compressions": 0,
+        "Decompressions": 207,
+        "Pages occupied by compressor": -47,
+        "Pages stored in compressor": -207,
+        "Pages free": -7724
+      },
+      "swap_before": "total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted)",
+      "swap_after": "total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted)",
+      "page_bytes": 16384,
+      "prefill_fallback": null,
+      "layer_major_note": false,
+      "request_line": "request: POST /v1/chat/completions model=bench status=200 prompt_tokens=6144 completion_tokens=1 ttft=62584ms total=62631ms reused=0 slot=0 div=- canon=1 ids=- ids_fallback=-"
+    },
+    {
+      "target": 8192,
+      "prompt_tokens": 8192,
+      "reused": 0,
+      "wall_s": 103.089,
+      "tok_s": 79.5,
+      "prefill_path_banner": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential); past 4096 keys the exact attention kernel (head dim 512 has no fused kernel, or fused attention is off) tiles its scores",
+      "footprint_before_mb": 753,
+      "footprint_after_mb": 1466,
+      "peak_footprint_mb": 2518,
+      "vm_delta_pages": {
+        "Pageouts": 214,
+        "Swapins": 68,
+        "Swapouts": 0,
+        "Compressions": 126815,
+        "Decompressions": 8910,
+        "Pages occupied by compressor": 80380,
+        "Pages stored in compressor": 111849,
+        "Pages free": -1653
+      },
+      "swap_before": "total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted)",
+      "swap_after": "total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted)",
+      "page_bytes": 16384,
+      "prefill_fallback": null,
+      "layer_major_note": false,
+      "request_line": "request: POST /v1/chat/completions model=bench status=200 prompt_tokens=8192 completion_tokens=1 ttft=103032ms total=103088ms reused=0 slot=0 div=- canon=1 ids=- ids_fallback=-"
+    }
+  ]
+}

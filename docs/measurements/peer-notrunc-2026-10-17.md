@@ -172,3 +172,56 @@ each MLX cell's `mlx_path`.
   - Each row says which path it ran.
   - The run above's unseeded greedy row is kept only as a note.
   - No stop rule beyond the fixed cells.
+
+## Results: Metal (the Mac, read 2026-10-17)
+
+Run 2026-10-17 19:28–19:46 PDT, `run-mac.sh`: goinfer `63038121`, Ollama 0.32.5, mlx-lm 0.31.3. The 7B's fit check at the
+job's start read `metal-resident (int4)`, so all three models ran. Records: `peer-notrunc-2026-10-17/mac/`
+(`g-metal-decode.json`, `provenance.txt`, `fitcheck-7B.log`, `run.log`, `grade.jsonl`, `grade-mlx.jsonl`).
+
+`grade.py`, unchanged, grades the Ollama pairs. `mac/grade_mlx.py` grades the mlx pairs with `grade.py`'s own outcome,
+spread and token-gate rules, imported unchanged; the registered grader pairs with Ollama and llama.cpp only. There is no
+MLX 0.5B checkpoint, so the three MLX 0.5B cells are MISSING, as registered. The runner started the job at a load average
+of 2.37 after its settle gave up. Every cell's three runs agree within 1.5%, and no cell hit the spread cap.
+
+goinfer ÷ peer, the median of 3 pairs, with its grade:
+
+| config | model | goinfer | Ollama | ÷ Ollama | MLX (path) | ÷ MLX |
+|---|---|---:|---:|---|---:|---|
+| greedy | 0.5B | 198.5 | 145.2 | 1.366 **AHEAD** | — | — |
+| greedy | 1.5B | 93.4 | 85.1 | 1.099 **AHEAD** | 110.8 (batch) | 0.845 BEHIND |
+| greedy | 7B | 30.0 | 25.0 | 1.199 **AHEAD** | 36.2 (batch) | 0.827 BEHIND |
+| shared preset | 0.5B | 172.9 | 146.0 | 1.185 **AHEAD** | — | — |
+| shared preset | 1.5B | 86.5 | 85.1 | 1.017 LEVEL | 122.2 (single-request) | 0.711 **BEHIND** |
+| shared preset | 7B | 29.3 | 25.0 | 1.172 **AHEAD** | 38.7 (single-request) | 0.757 **BEHIND** |
+| untruncated | 0.5B | 204.0 | 136.0 | 1.498 **AHEAD** | — | — |
+| untruncated | 1.5B | 94.2 | 81.9 | 1.150 **AHEAD** | 136.2 (single-request) | 0.693 **BEHIND** |
+| untruncated | 7B | 30.1 | 24.7 | 1.221 **AHEAD** | 40.1 (single-request) | 0.752 **BEHIND** |
+
+**The greedy MLX rows are kept as a note only** (owner, 2026-10-17). They ran mlx-lm's batch engine because the greedy config
+sent no seed, so they do not compare with the single-request rows. "MLX's two server paths", below, measures that.
+
+## Results: MLX's two server paths (read 2026-10-17)
+
+Run 2026-10-17 21:37–21:43 PDT, `run-mlx-seed.sh` (`bench_peer.py` at `e90e82b9`). It was a Mac night job, started at a
+load average of 1.3 to 2.2. Every cell records its `mlx_path`, every spread is under 1%, and every token gate passed.
+Records: `peer-notrunc-2026-10-17/mac/mlx-seed/` (`mlx-seed.json`, `provenance.txt`, `run.log`, `grade.txt`).
+
+| model | greedy, seeded | untruncated, seeded | preset, seeded | preset, unseeded |
+|---|---:|---:|---:|---:|
+| | single-request | single-request | single-request | batch |
+| 1.5B | 138.9 / 138.3 / 138.9 | 136.2 / 136.3 / 136.2 | 121.8 ×3 | 99.8 / 99.7 / 99.7 |
+| 7B | 40.2 / 40.2 / 40.1 | 40.1 / 39.9 / 39.8 | 38.6 ×3 | 35.4 / 35.5 / 35.4 |
+
+- **Prediction 1 holds** for both models: seeded greedy ≥ untruncated. The pairs are 1.020 / 1.015 / 1.020 (1.5B) and
+  1.004 / 1.007 / 1.008 (7B), every r ≥ 1.00.
+- **Prediction 2 holds** for both models: the unseeded preset is slower than the seeded one. The pairs are 0.818–0.819 (1.5B)
+  and 0.917–0.918 (7B), every r < 0.97.
+- **Reading:** the seed alone moves mlx-lm between its two server paths, and its one-request path is the faster for one
+  client. The single-request preset also matches the earlier run's within 0.3% (121.8 against 122.2, and 38.6 against
+  38.7).
+- **goinfer against MLX's seeded greedy, cross-session:** 93.4 ÷ 138.6 = 0.67 on the 1.5B, and 30.0 ÷ 40.2 = 0.75 on the 7B,
+  where the median of the 3 MLX runs is 138.6 on the 1.5B and 40.2 on the 7B. goinfer's figures are from the earlier run.
+  This is a cross-session ratio, so it is not graded, and the bands do not apply to it
+  (`docs/measurements/noise-registry.md`, TE3). A same-session greedy cell, goinfer and seeded MLX interleaved, would
+  grade it.

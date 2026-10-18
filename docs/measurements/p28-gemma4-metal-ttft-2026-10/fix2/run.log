@@ -1,0 +1,21 @@
+=== night job p28-fix2-reading
+=== cmd      python3 -u /Users/francistownsend-merino/goinfer-bench/p28/run-p28c.py
+=== cwd      /Users/francistownsend-merino/goinfer-bench/p28
+=== rev      queued at ?, now ?
+=== host     macbookpro.lan
+=== est      10.0 min, timeout 30.0 min
+=== by       Mac session, P28 fix 2 night reading
+=== doc      docs/measurements/p28-gemma4-metal-ttft-2026-10/README.md
+=== START    2026-10-17 19:06:30 PDT  loadavg 1.09
+=== 19:06:30 PDT / 02:06:30 UTC START 4096
+  19:07:03 PDT / 02:07:03 UTC 4096 tokens: 28.2 s, 145.3 tok/s, reused 0; peak footprint 1621 MB; vm deltas {'Pageouts': 14, 'Swapins': 0, 'Swapouts': 0, 'Compressions': 0, 'Decompressions': 3, 'Pages occupied by compressor': 0, 'Pages stored in compressor': -3, 'Pages free': 34186}; swap total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted) -> total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted); prefill_fallback None, layer-major note False
+=== 19:07:03 PDT / 02:07:03 UTC END 4096
+=== 19:07:03 PDT / 02:07:03 UTC START 6144
+  19:08:07 PDT / 02:08:07 UTC 6144 tokens: 62.6 s, 98.1 tok/s, reused 0; peak footprint 2074 MB; vm deltas {'Pageouts': 65, 'Swapins': 0, 'Swapouts': 0, 'Compressions': 0, 'Decompressions': 207, 'Pages occupied by compressor': -47, 'Pages stored in compressor': -207, 'Pages free': -7724}; swap total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted) -> total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted); prefill_fallback None, layer-major note False
+=== 19:08:07 PDT / 02:08:07 UTC END 6144
+=== 19:08:07 PDT / 02:08:07 UTC START 8192
+  19:09:52 PDT / 02:09:52 UTC 8192 tokens: 103.1 s, 79.5 tok/s, reused 0; peak footprint 2518 MB; vm deltas {'Pageouts': 214, 'Swapins': 68, 'Swapouts': 0, 'Compressions': 126815, 'Decompressions': 8910, 'Pages occupied by compressor': 80380, 'Pages stored in compressor': 111849, 'Pages free': -1653}; swap total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted) -> total = 1024.00M  used = 175.44M  free = 848.56M  (encrypted); prefill_fallback None, layer-major note False
+=== 19:09:52 PDT / 02:09:52 UTC END 8192
+records: /Users/francistownsend-merino/goinfer-bench/p28/results-fix2-2026-10-17-1906
+
+=== END      2026-10-17 19:09:52 PDT  rc=0
