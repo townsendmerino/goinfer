@@ -8,8 +8,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	_ "github.com/townsendmerino/goinfer/cuda"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 func main() {
