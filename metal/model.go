@@ -807,51 +807,79 @@ func int4BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, e
 		if sc, ok := a.scales16(d, []*linalg.WeightMat{w}); ok { // the scales are in the mapping: bound in place too
 			return nib, sc, nil
 		}
-		_, q4s, _, _ := decoder.Int4F32(w)
-		scales := make([]uint16, len(q4s))
-		for i, s := range q4s {
-			scales[i] = f32ToF16(s) // the same conversion int4DirectWords applies
-		}
-		a.addCopy(int64(2 * len(scales)))
+		_, q4s16, _, _ := w.Int4F16()
+		sb := gpu.NewBufferLenOf[uint16](d, len(q4s16))
+		copy(sb.U16s(), q4s16) // the scales as stored: int4DirectWords' f32 round trip returns these bits
+		a.addCopy(int64(2 * len(q4s16)))
 		if a != nil {
 			a.f16Converted++
 		}
-		return nib, NewBufferU16s(d, scales), nil
+		return nib, sb, nil
 	}
-	if words, scales, ok := int4DirectWords(w); ok {
-		a.addCopy(int64(4*len(words) + 2*len(scales)))
-		return NewBufferUint32s(d, words), NewBufferU16s(d, scales), nil
-	}
-	q8, sc, _, ok := w.Int8()
-	if !ok {
+	if _, _, ok := w4a8Size(w); !ok {
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kind())
 	}
-	N, K := w.Rows(), w.Cols()
-	words := make([]uint32, N*(K/8))
-	scales := make([]uint16, N*(K/32)) // f16 group scales (L1: −10% token traffic, parity-neutral)
-	for n := range N {
-		wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
-		copy(words[n*(K/8):(n+1)*(K/8)], wd)
-		for g, s := range sd {
-			scales[n*(K/32)+g] = f32ToF16(s)
-		}
+	nw, ns, _ := w4a8Size(w)
+	wb, sb := gpu.NewBufferLenOf[uint32](d, nw), gpu.NewBufferLenOf[uint16](d, ns)
+	if w4a8Into(w, wb.U32s(), sb.U16s()) {
+		a.addCopy(int64(4*nw + 2*ns))
 	}
-	return NewBufferUint32s(d, words), NewBufferU16s(d, scales), nil
+	return wb, sb, nil
+}
+
+// w4a8Size is the uint32 words and f16 group scales w's W4A8 upload takes, ok=false when w is neither group-32 int4 nor
+// int8.
+func w4a8Size(w *linalg.WeightMat) (words, scales int, ok bool) {
+	if _, _, group, ok := w.Int4F16(); ok && group == 32 {
+		n, k := w.Rows(), w.Cols()
+		return n * k / 8, n * k / 32, true
+	}
+	if _, _, _, ok := w.Int8(); ok {
+		n, k := w.Rows(), w.Cols()
+		return n * (k / 8), n * (k / 32), true
+	}
+	return 0, 0, false
+}
+
+// w4a8Into writes w's W4A8 words and f16 group scales into words and scales (views of the device buffers, sized by
+// w4a8Size) with no whole-tensor staging copy: a group-32 int4 weight's nibbles and binary16 scales verbatim
+// (int4DirectWords' bytes, whose f32 round trip of a scale returns its stored bits; reported true), else its int8 rows
+// re-quantized one row at a time (false). It must be called on a weight w4a8Size accepts.
+func w4a8Into(w *linalg.WeightMat, words []uint32, scales []uint16) (direct bool) {
+	if q4, q4s16, group, ok := w.Int4F16(); ok && group == 32 {
+		if len(q4) > 0 {
+			copy(unsafe.Slice((*byte)(unsafe.Pointer(&words[0])), len(q4)), q4)
+		}
+		copy(scales, q4s16)
+		return true
+	}
+	q8, sc, _, _ := w.Int8()
+	N, K := w.Rows(), w.Cols()
+	row, sd := make([]float32, K), make([]float32, K/32) // one row's scratch, reused: nothing allocated per row
+	for n := range N {
+		for k, q := range q8[n*K : (n+1)*K] {
+			row[k] = float32(q) * sc[n] // the int8 weight, dequantized to f32 for the W4A8 re-pack
+		}
+		packW4A8RowInto(row, words[n*(K/8):(n+1)*(K/8)], sd)
+		f16Into(scales[n*(K/32):(n+1)*(K/32)], sd)
+	}
+	return false
+}
+
+// f16Into narrows src to f16 bits in dst (len(dst) >= len(src)).
+func f16Into(dst []uint16, src []float32) {
+	for i, s := range src {
+		dst[i] = f32ToF16(s)
+	}
 }
 
 // int4Concat re-quantizes and row-concatenates several same-K WeightMats into ONE W4A8
 // buffer — the fusion enabler (combined QKV → one GEMV, combined gate/up → one GEMV).
 func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
-	// Pre-size from the final shape (N*K/8 words and N*K/32 f16 scales per group-32 tensor, the formula int4BufA's
-	// int8 branch allocates by) instead of growing two nil slices by append.
+	// The buffers are allocated at their final size (N*K/8 words and N*K/32 f16 scales per group-32 tensor) and every part
+	// is written straight into them: a whole-projection staging copy is garbage the build does not collect
+	// (docs/tasks/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
 	var totalWords, totalScales int
-	for _, w := range wms {
-		n, k := w.Rows(), w.Cols()
-		totalWords += n * k / 8
-		totalScales += n * k / 32
-	}
-	words := make([]uint32, 0, totalWords)
-	scales := make([]uint16, 0, totalScales) // f16 group scales (L1)
 	for _, w := range wms {
 		// K%32==0 is a hard W4A8 invariant (group=32); see int4BufA. int4Concat has no error return and runs only on the
 		// build path, so it panics; buildResident's recover turns that into a clean CPU decline, as with its wrong-kind
@@ -859,18 +887,12 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 		if k := w.Cols(); k%32 != 0 {
 			panic(fmt.Sprintf("metal: W4A8 concat needs K%%32==0 (group=32), got K=%d (audit M-10)", k))
 		}
-		if dw, ds, ok := int4DirectWords(w); ok { // int4-direct: consume nibbles verbatim
-			words = append(words, dw...)
-			scales = append(scales, ds...)
-			continue
-		}
-		q8, sc, _, ok := w.Int8()
+		nw, ns, ok := w4a8Size(w)
 		if !ok {
-			// int4DirectWords already declined (the weight has no canonical int4 bytes) and this is not int8 either. The
-			// common cause is the repacked-only int4 policy (wantsCanonicalInt4): a tensor built with Backend "cpu", or
-			// loaded generically and handed to BuildResident out of band, may have no canonical bytes left. Name that
-			// condition specifically; a tensor that is neither int8 nor int4 at all (a programming error) gets the generic
-			// message.
+			// Neither group-32 int4 nor int8. The common cause is the repacked-only int4 policy (wantsCanonicalInt4): a
+			// tensor built with Backend "cpu", or loaded generically and handed to BuildResident out of band, may have no
+			// canonical bytes left. Name that condition specifically; a tensor that is neither int8 nor int4 at all (a
+			// programming error) gets the generic message.
 			if w.IsInt4() {
 				panic(fmt.Sprintf("metal: int4 tensor has no canonical bytes (layout %s-only): "+
 					"model was loaded for a CPU-only backend; load with Options.Backend set to "+
@@ -878,16 +900,16 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 			}
 			panic(fmt.Sprintf("metal: int4Concat weight kind %q not int8 or int4", w.Kind()))
 		}
-		N, K := w.Rows(), w.Cols()
-		for n := range N {
-			wd, sd := packW4A8Row(dequantInt8ToF32Row(q8[n*K:(n+1)*K], sc[n], K, K))
-			words = append(words, wd...)
-			for _, s := range sd {
-				scales = append(scales, f32ToF16(s))
-			}
-		}
+		totalWords, totalScales = totalWords+nw, totalScales+ns
 	}
-	return NewBufferUint32s(d, words), NewBufferU16s(d, scales)
+	wb, sb := gpu.NewBufferLenOf[uint32](d, totalWords), gpu.NewBufferLenOf[uint16](d, totalScales) // f16 group scales (L1)
+	words, scales := wb.U32s(), sb.U16s()
+	for _, w := range wms {
+		nw, ns, _ := w4a8Size(w)
+		w4a8Into(w, words[:nw], scales[:ns]) // int4-direct consumes nibbles verbatim; int8 re-quantizes row by row
+		words, scales = words[nw:], scales[ns:]
+	}
+	return wb, sb
 }
 
 // nativeInt8 turns the native int8 path on (w8Eligible). Tests turn it off for the int4 re-quant arm; it is not an

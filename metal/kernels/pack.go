@@ -11,9 +11,16 @@ import (
 // at bit 4·(k%8). Returns the packed words (K/8) and per-group scales (K/32). Validated
 // bit-exact by TestLayerB_gemvW4A8Parity.
 func PackW4A8Row(row []float32) (words []uint32, scales []float32) {
+	words, scales = make([]uint32, len(row)/8), make([]float32, len(row)/32)
+	PackW4A8RowInto(row, words, scales)
+	return
+}
+
+// PackW4A8RowInto is PackW4A8Row into caller-owned words (len(row)/8, overwritten) and scales (len(row)/32), so a caller
+// packing many rows allocates nothing per row.
+func PackW4A8RowInto(row []float32, words []uint32, scales []float32) {
 	K := len(row)
-	words = make([]uint32, K/8)
-	scales = make([]float32, K/32)
+	clear(words[:K/8])
 	for g := 0; g < K/32; g++ {
 		mx := float32(0)
 		for k := g * 32; k < g*32+32; k++ {
@@ -32,7 +39,6 @@ func PackW4A8Row(row []float32) (words []uint32, scales []float32) {
 			words[k/8] |= uint32(q+8) << (4 * (uint(k) % 8))
 		}
 	}
-	return
 }
 
 // QuantG32 is tower_gemm_w8's weight form (S18): each row of w [rows, cols] in groups of 32 along cols, each group
