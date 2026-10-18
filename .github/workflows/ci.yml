@@ -230,6 +230,12 @@ jobs:
       - name: touched.py scan selection
         run: python3 -B scripts/test_touched.py
 
+      # The night job cuda-device-suite judges `go test -json` of the CUDA module run with a device: a failed test, a failed package and a
+      # skip that says "no device" are red, whatever go test's exit status. Fed fake streams, with a plant that treats skips as passes.
+      # Stdlib, under a second.
+      - name: cuda-device-suite verdict
+        run: python3 -B scripts/test_cuda_device_suite.py
+
       # The pre-push guard (scripts/main_ci_guard.py) refuses a push to main while main's latest CI run is unfinished, names
       # the run, and refuses on a failed read; fed fake `gh run list` output. Stdlib, under a second.
       - name: main CI guard
