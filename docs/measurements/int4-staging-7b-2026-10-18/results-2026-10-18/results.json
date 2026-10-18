@@ -1,0 +1,150 @@
+{
+  "builds": {
+    "before": "/Users/francistownsend-merino/goinfer-bench/int4-heap/serve-metal-a2732f00",
+    "after": "/Users/francistownsend-merino/goinfer-bench/int4-heap/serve-metal-53267aee"
+  },
+  "plan": [
+    [
+      "1.5B-direct",
+      "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      [
+        "-direct-load"
+      ],
+      "before"
+    ],
+    [
+      "1.5B-direct",
+      "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      [
+        "-direct-load"
+      ],
+      "after"
+    ],
+    [
+      "1.5B-direct",
+      "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      [
+        "-direct-load"
+      ],
+      "after"
+    ],
+    [
+      "1.5B-direct",
+      "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      [
+        "-direct-load"
+      ],
+      "before"
+    ],
+    [
+      "7B-sidecar",
+      "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+      [],
+      "before"
+    ],
+    [
+      "7B-sidecar",
+      "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+      [],
+      "after"
+    ]
+  ],
+  "rows": [
+    {
+      "load": 0,
+      "case": "1.5B-direct",
+      "build": "before",
+      "state": "SERVING",
+      "load_wall_s": 4.95,
+      "decode_path": "metal-resident (int4)",
+      "fit": "4096-token cap needs 0.1 GB KV (weights 1.1 GB, budget 3.8 GB, 3.7 GB left for a request's own prefill)",
+      "gc_count": 25,
+      "go_heap_max_mb": 2044,
+      "lifetime_peak_footprint_mb": 2999,
+      "footprint": "phys_footprint 2970 MB, lifetime_max_phys_footprint 2999 MB, resident 2275 MB",
+      "swap_before_mb": 398.31,
+      "swap_after_mb": 398.31,
+      "swap_growth_mb": 0.0
+    },
+    {
+      "load": 1,
+      "case": "1.5B-direct",
+      "build": "after",
+      "state": "SERVING",
+      "load_wall_s": 1.59,
+      "decode_path": "metal-resident (int4)",
+      "fit": "4096-token cap needs 0.1 GB KV (weights 1.1 GB, budget 4.3 GB, 4.2 GB left for a request's own prefill)",
+      "gc_count": 24,
+      "go_heap_max_mb": 1227,
+      "lifetime_peak_footprint_mb": 2175,
+      "footprint": "phys_footprint 2134 MB, lifetime_max_phys_footprint 2175 MB, resident 2201 MB",
+      "swap_before_mb": 398.31,
+      "swap_after_mb": 398.31,
+      "swap_growth_mb": 0.0
+    },
+    {
+      "load": 2,
+      "case": "1.5B-direct",
+      "build": "after",
+      "state": "SERVING",
+      "load_wall_s": 1.32,
+      "decode_path": "metal-resident (int4)",
+      "fit": "4096-token cap needs 0.1 GB KV (weights 1.1 GB, budget 4.1 GB, 4.0 GB left for a request's own prefill)",
+      "gc_count": 25,
+      "go_heap_max_mb": 1227,
+      "lifetime_peak_footprint_mb": 2179,
+      "footprint": "phys_footprint 2138 MB, lifetime_max_phys_footprint 2179 MB, resident 2201 MB",
+      "swap_before_mb": 398.31,
+      "swap_after_mb": 398.31,
+      "swap_growth_mb": 0.0
+    },
+    {
+      "load": 3,
+      "case": "1.5B-direct",
+      "build": "before",
+      "state": "SERVING",
+      "load_wall_s": 1.57,
+      "decode_path": "metal-resident (int4)",
+      "fit": "4096-token cap needs 0.1 GB KV (weights 1.1 GB, budget 4.1 GB, 4.0 GB left for a request's own prefill)",
+      "gc_count": 25,
+      "go_heap_max_mb": 1995,
+      "lifetime_peak_footprint_mb": 2947,
+      "footprint": "phys_footprint 2920 MB, lifetime_max_phys_footprint 2947 MB, resident 2970 MB",
+      "swap_before_mb": 398.31,
+      "swap_after_mb": 398.31,
+      "swap_growth_mb": 0.0
+    },
+    {
+      "load": 4,
+      "case": "7B-sidecar",
+      "build": "before",
+      "state": "SERVING",
+      "load_wall_s": 1.32,
+      "decode_path": "metal-resident (int4)",
+      "fit": "4096-token cap needs 0.2 GB KV (weights 4.4 GB, budget 4.7 GB, 4.5 GB left for a request's own prefill)",
+      "gc_count": 18,
+      "go_heap_max_mb": 68,
+      "lifetime_peak_footprint_mb": 92,
+      "footprint": "phys_footprint 70 MB, lifetime_max_phys_footprint 92 MB, resident 119 MB",
+      "swap_before_mb": 398.31,
+      "swap_after_mb": 398.31,
+      "swap_growth_mb": 0.0
+    },
+    {
+      "load": 5,
+      "case": "7B-sidecar",
+      "build": "after",
+      "state": "SERVING",
+      "load_wall_s": 1.06,
+      "decode_path": "metal-resident (int4)",
+      "fit": "4096-token cap needs 0.2 GB KV (weights 4.4 GB, budget 4.7 GB, 4.4 GB left for a request's own prefill)",
+      "gc_count": 19,
+      "go_heap_max_mb": 64,
+      "lifetime_peak_footprint_mb": 90,
+      "footprint": "phys_footprint 76 MB, lifetime_max_phys_footprint 90 MB, resident 115 MB",
+      "swap_before_mb": 398.31,
+      "swap_after_mb": 398.31,
+      "swap_growth_mb": 0.0
+    }
+  ]
+}

@@ -98,7 +98,8 @@
   - Records: the run directory `e1-prefilter-onoff-20261017-1007` under `~/goinfer-bench` on nobara (not committed).
 
 - **P29 · Phi-3 at q4k on Metal prefills one token at a time when the memory guard allows one KV slot, and the decline
-  message blames geometry — OPEN, filed 2026-10-17 (owner). Measure the prefill cost against OP6's batched step first.**
+  message blames geometry — SHIPPED 2026-10-18: a one-slot load prefills on the batched step (measured on the 0.5B, 2.27×).
+  Filed 2026-10-17 (owner).**
   `mac`.
 
   - **The tier 1 A/B (`p29-one-slot-ab`) voided three times, 2026-10-17 and 2026-10-18.** No guard was bypassed.
@@ -129,6 +130,15 @@
       - **OFF:** a median under 1.00. Reported, not merged.
       - **VOID:** a guard declines the load (the test skips).
     - **No stop rule** beyond the five pairs, and no re-run until the job has run once.
+    - **Result, read 2026-10-18: SHIP.**
+      - Run 12:47–12:52 PDT as night job `p29-ab-qwen05-one-slot`, at 88a08574. The owner started the queue by day, with VS
+        Code and the Claude app open (load about 3.5).
+      - The median r is 2.270. The five pairs are 2.269, 2.275, 2.256, 2.283 and 2.270, all above 1.00: sequential about
+        192 tok/s, the step about 438 tok/s over the 512-token prompt.
+      - The desktop's load cannot move a paired ratio that far from 1.02.
+      - The lift fast-forwarded to main as registered, rebased on main with its tier 0 re-run. Its Phi-3 A/B moved to
+        `metal/one_slot_step_phi3_test.go` so the asset registry resolves the file.
+      - Log: `~/goinfer-logs/night/runs/2026-10-18/p29-ab-qwen05-one-slot.log` on the Mac.
 
   - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
     -ctx 2048`): the load went `metal-resident (q4k)`, and the banner said `prefill path: sequential — arch/geometry not
