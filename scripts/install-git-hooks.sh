@@ -43,11 +43,16 @@ cd "$(git rev-parse --show-toplevel)"
 # git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref on stdin; read it before anything else can.
 refs="$(cat)"
 
-# A push to main waits for main's latest CI run to finish (scripts/main_ci_guard.py; CLAUDE.md, "Push finished work"). A
-# checkout older than the guard says so and skips it rather than blocking.
-if printf '%s\n' "$refs" | awk '{print $3}' | grep -qx 'refs/heads/main'; then
+# A push to main that changes product code waits for main's latest CI run to finish (scripts/main_ci_guard.py; CLAUDE.md,
+# "Push finished work"); a docs-only one goes straight through. The guard gets the push's range: the remote's main, or
+# the merge base for a new ref. A checkout older than the guard says so and skips it rather than blocking.
+mainline="$(printf '%s\n' "$refs" | awk '$3 == "refs/heads/main"' | head -1)"
+if [ -n "$mainline" ]; then
+    lsha="$(printf '%s' "$mainline" | awk '{print $2}')"
+    rsha="$(printf '%s' "$mainline" | awk '{print $4}')"
+    case "$rsha" in 0000000000000000000000000000000000000000) rsha="$(git merge-base "$lsha" origin/main 2>/dev/null || true)" ;; esac
     if [ -f scripts/main_ci_guard.py ]; then
-        if ! python3 scripts/main_ci_guard.py; then
+        if ! python3 scripts/main_ci_guard.py ${rsha:+"$rsha"} ${rsha:+"$lsha"}; then
             exit 1
         fi
     else

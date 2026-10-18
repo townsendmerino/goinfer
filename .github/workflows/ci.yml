@@ -22,13 +22,17 @@ permissions:
 # real multi-commit-burst days (85 commits in two days, 2026-09-08-10). Safe to cancel mid-way
 # (unlike book-pages.yml's Pages deploy, which explicitly does not): a cancelled CI run has no
 # external side effect, it just stops checking a commit that is no longer the tip of the ref.
+# A push to main gets its own group, keyed on the commit, and is never cancelled: every main push gets a complete run,
+# so a docs push landing on a running code push does not cancel it (owner, 2026-10-18). cancel-in-progress: false alone
+# is not enough, because a group still cancels its pending run when a newer one queues. Branches and pull requests keep
+# one group per ref and cancel the superseded run.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ !(github.ref == 'refs/heads/main' && github.event_name == 'push') }}
 
 jobs:
   # C3 (docs/completed/task-ci-speed-2026-09.md): change detection, at the JOB level. A push that
-  # changes only files under docs/ -- and none that Go code or tests READ (scripts/ci_docs_only.sh
+  # changes only docs/**, RELEASING.md or .claude/** -- and none that Go code or tests READ (scripts/ci_docs_only.sh
   # decides; 477da08a is the precedent: a docs-only env-vars.md fix flipped
   # TestEnvVars_docAndCodeAgree, so "docs-only" cannot mean "skip tests" without that read check)
   # -- runs `lint` alone. Every other job `needs:` this one and skips when docs_only == 'true'.

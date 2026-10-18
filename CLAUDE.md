@@ -85,9 +85,11 @@ or when a finished body of work merges. A push to a branch takes seconds and run
 of about 8 minutes. Do not hold a turn open on CI, poll it, or schedule wake-ups for it. Read `gh run list --limit 5` at
 the next natural point (your next push, the start of the next task, and always before a merge or a tag) and report a red
 the moment you see it: red does not announce itself, and a break rides along under every later push until someone looks.
-Waiting on CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wait-2026-10.md`). **The pre-push hook refuses a push to main while main's latest CI run is unfinished** (`scripts/main_ci_guard.py`,
-installed by `bash scripts/install-git-hooks.sh`; owner rule, 2026-10-18). It names the run; wait for it, read it, then push.
-Stack a docs commit under the code push instead of pushing twice.
+Waiting on CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wait-2026-10.md`). **The pre-push hook refuses a push to main that changes product code while main's latest CI run is unfinished**
+(`scripts/main_ci_guard.py`, installed by `bash scripts/install-git-hooks.sh`; owner rule, 2026-10-18). It names the run;
+wait for it, read it, then push. A docs-only push (`scripts/ci_docs_only.sh`: `docs/**`, `RELEASING.md` and `.claude/**`,
+none read by Go code or tests) goes straight through and runs only CI's light lint job. Every push to main gets a
+complete run: main's workflows do not cancel one push's run for the next.
 
 **Don't push product code to main while CI for the previous push is still running.** Owner rule, 2026-10-17: wait for it
 to finish green, so a red run points at one commit. Check `gh run list --branch main --limit 3` before the push; while it
