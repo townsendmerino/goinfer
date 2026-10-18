@@ -1275,3 +1275,20 @@ the heap peak beside the bytes the guard prices.
 
 The same staging shape exists on Metal's other upload paths (`int4DirectWords` makes a scales slice), which a sweep
 would check.
+
+**Fixed 2026-10-18 (option 1, the owner's choice).** `metal/model.go:q4kLaneBuf` now allocates each projection's device
+buffer at its final size and copies every part straight into it at its offset, so there is no staging slice.
+- **Go heap during a q4k-lane resident build of the 0.5B q4_k_m:** 3 MB beside 581 MB of resident weights. The old
+  build allocated 514 MB. The gate is `metal/q4k_upload_alloc_test.go`.
+- **Output:** bit-identical to the old build (the same sha256 over 24 positions of logits, and the q4k step tests pass).
+- **The phi3 cell:** re-run on the fixed build at night, with the load's peak recorded from the process's start.
+
+**The same shape on other paths (reported, not changed):**
+- **Metal's default int4 lane** (`metal/model.go:int4Concat`) builds each projection's words and scales in Go slices
+  sized to the whole projection, then copies them into the device buffer. Every int4 Metal load from a `.gguf` makes a
+  full staging copy, collected only after the build. A `.giw` load aliases its mapping (S6) and does not.
+- **CUDA's resident build** host-packs every layer on the Go heap before uploading (`cuda/backend.go`, "host pack all
+  weights"). The fit guard prices that peak (its `cudaBuildBytes` field, `decoder/fitguard.go:fitCheck`) only for the expert-cache
+  path; a dense CUDA build's second host copy is not priced. nobara has 62 GB of RAM, so it has not shown there.
+- **WebGPU** (`gpu/residency.go:Context.uploadProj`) uploads each projection's bytes straight. It stages only in the
+  fallback for a K that is not a multiple of 32.

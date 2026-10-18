@@ -14,6 +14,7 @@ import (
 	"sync"
 	"unsafe"
 
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -647,29 +648,53 @@ func q4kLaneProj(d *Device, wms ...*linalg.WeightMat) []q4kSeg {
 
 // q4kLaneBuf uploads parts of one kind for the q4k lane (docs/tasks/task-metal-q4k-2026-10.md): GGUF Q4_K super-blocks
 // verbatim when every part is Q4_K (the scale buffer unused), else int8 rows with their per-row scales. Any other
-// kind, or a mix, panics; buildResident recovers that into a decline.
+// kind, or a mix, panics; buildResident recovers that into a decline. Each part is copied straight into the device buffer
+// at its offset, with no host-side concatenation: a staging slice per projection is garbage the build does not collect,
+// and on a 16 GB Mac it pushed phi3's load into swap (docs/tasks/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
 func q4kLaneBuf(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	if _, ok := wms[0].Q4K(); ok {
-		var all []byte
+		n := 0
 		for _, w := range wms {
 			raw, ok := w.Q4K()
 			if !ok {
 				panic(fmt.Sprintf("metal: q4k lane: a fused group mixes Q4_K with %q", w.Kind()))
 			}
-			all = append(all, raw...)
+			n += len(raw)
 		}
-		return NewBufferInt8(d, unsafe.Slice((*int8)(unsafe.Pointer(&all[0])), len(all))), Buffer{}
+		buf := gpu.NewBufferLenOf[int8](d, n)
+		off := 0
+		for _, w := range wms {
+			raw, _ := w.Q4K()
+			mustUpload(buf.At(off), raw)
+			off += len(raw)
+		}
+		return buf, Buffer{}
 	}
-	var q []int8
-	var sc []float32
+	nq, ns := 0, 0
 	for _, w := range wms {
 		q8, s8, _, ok := w.Int8()
 		if !ok {
 			panic(fmt.Sprintf("metal: q4k lane: weight kind %q is neither q4k nor int8", w.Kind()))
 		}
-		q, sc = append(q, q8...), append(sc, s8...)
+		nq, ns = nq+len(q8), ns+len(s8)
 	}
-	return NewBufferInt8(d, q), NewBufferFloats(d, sc)
+	q, sc := gpu.NewBufferLenOf[int8](d, nq), gpu.NewBufferLenOf[float32](d, ns)
+	offQ, offS := 0, 0
+	for _, w := range wms {
+		q8, s8, _, _ := w.Int8()
+		mustUpload(q.At(offQ), q8)
+		mustUpload(sc.At(4*offS), s8)
+		offQ, offS = offQ+len(q8), offS+len(s8)
+	}
+	return q, sc
+}
+
+// mustUpload copies src into b at b's offset, panicking on an overrun as a short buffer is a build bug (buildResident
+// recovers a panic into a decline).
+func mustUpload[T gpu.Scalar](b Buffer, src []T) {
+	if err := gpu.Upload(b, src); err != nil {
+		panic(err)
+	}
 }
 
 func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
