@@ -1,0 +1,51 @@
+{
+ "cell": "cuda-e2b",
+ "model_file": "/home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+ "swap_before": 8342458368,
+ "mem_available_before": 58960994304,
+ "started": "2026-10-18T07:27:33",
+ "load_secs": 6.0,
+ "after_load": {
+  "VmHWM": 2934190080,
+  "VmRSS": 1544966144,
+  "RssAnon": 147152896,
+  "RssFile": 1385230336,
+  "RssShmem": 12582912,
+  "VmSwap": 0
+ },
+ "vram_after_load": 3584032768,
+ "request_secs": 320.6,
+ "usage": {
+  "prompt_tokens": 20966,
+  "completion_tokens": 2,
+  "total_tokens": 20968,
+  "prefill_reused_tokens": 0
+ },
+ "at_end": {
+  "VmHWM": 3679313920,
+  "VmRSS": 2283560960,
+  "RssAnon": 381255680,
+  "RssFile": 1595105280,
+  "RssShmem": 307200000,
+  "VmSwap": 0
+ },
+ "peak_during_request": {
+  "VmHWM": 3680403456,
+  "VmRSS": 3680403456,
+  "RssAnon": 2072846336,
+  "RssFile": 1595105280,
+  "RssShmem": 307200000,
+  "VmSwap": 0
+ },
+ "after_10s": {
+  "VmHWM": 3679313920,
+  "VmRSS": 2283565056,
+  "RssAnon": 381259776,
+  "RssFile": 1595105280,
+  "RssShmem": 307200000,
+  "VmSwap": 0
+ },
+ "vram_peak": 3711959040,
+ "vram_after_10s": 3584032768,
+ "swap_after": 8342454272
+}

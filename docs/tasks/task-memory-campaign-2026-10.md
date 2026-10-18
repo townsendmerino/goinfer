@@ -5,8 +5,8 @@
 > and MEM4(a) (after MEM0). **goinfer, 2026-10-18: the aikit bump and MEM3's `Close` follow-ups are on `main`** (`3763d83e` aikit
 > v1.70.2 → v1.71.0 in all five modules; `58d5dc3e` the whisper decoder and `Transcriber` gain a `Close`; `ba54d206` serve's unload
 > closes the lazily loaded Voxtral and Qwen3-ASR encoders and Voxtral's attached device; `635d63ee` the parity refresh; `69fc3bfc`
-> the Voxtral device-close test), so **MEM3 is closed on both sides**. The rest of MEM0–MEM13 is not started; the next step is MEM0
-> (the nobara half first: CPU and CUDA cells; the Metal cells are the Mac's), then MEM13's job-store and per-adapter token-bytes items.
+> the Voxtral device-close test), so **MEM3 is closed on both sides**. The rest of MEM0–MEM13 is not started; MEM0's nobara half
+> is read (`docs/measurements/mem0-2026-10/README.md`; the Metal cells are the Mac's), and MEM13's job-store and per-adapter token-bytes items are in PR #94.
 >
 > **Scoped 2026-10-17.** Written on the owner's ask after a Cowork
 > conversation the same day ("can you list the large data structures that we need in aikit and goinfer, like weights,
