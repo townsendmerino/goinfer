@@ -89,6 +89,7 @@ type Model struct {
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
+	planResidency bool         // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
@@ -457,6 +458,10 @@ type Options struct {
 	// Load sets it when Backend is "auto"; a caller that resolved auto itself (the CLIs, for their own checks by name)
 	// sets it beside the name.
 	BackendAuto bool
+
+	// planResidency is set only by FitQuery's open of a .giw: withResidency builds nothing, so FitQuery can ask the backend what
+	// its build would decide (Model.plannedDecodePath).
+	planResidency bool
 }
 
 // ErrLoadAborted is returned (wrapped) from Load when opts.LoadAbort closed mid-build. Check
@@ -499,7 +504,8 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest}
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest,
+		planResidency: opts.planResidency}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a

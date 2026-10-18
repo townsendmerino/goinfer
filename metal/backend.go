@@ -42,6 +42,7 @@ func init() {
 var (
 	_ decoder.Backend               = (*metalBackend)(nil)
 	_ decoder.ResidencyBackend      = (*metalBackend)(nil)
+	_ decoder.ResidencyPricer       = (*metalBackend)(nil)
 	_ decoder.ResidentForward       = (*metalResident)(nil)
 	_ decoder.ResidentContextNoted  = (*metalResident)(nil)
 	_ decoder.ResidentMRoPE         = (*metalResident)(nil)
@@ -78,33 +79,10 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 			rf, ok, err = nil, false, decoder.DeclineResident("metal build panicked: %v", p)
 		}
 	}()
-	// The Metal kernels implement a subset of what DecodeRunnerEligible admits (decoder.ResidentBackendFeatures("metal")). A model
-	// that needs anything outside it must DECLINE (CPU fallback), never run with the feature silently dropped.
-	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
-		return nil, false, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
-	}
-	// An explicit -ctx above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable budget): refuse it
-	// with a named error carrying the numbers, as cuda's errKVWontFit does, rather than folding it into the generic decline below.
-	//
-	// Memory guard: Metal's unified memory is host RAM and it wires the mmap pages a command buffer touches, so a model larger than
-	// RAM pages until swap is exhausted and the load neither completes nor declines. The guard is keyed on two quantities we compute
-	// (the model's own bytes and physical RAM, via metalMemoryCeiling), never on the OS's account of free memory: darwin's UBC reclaim
-	// makes "available" report what survived, so a guard keyed on it inverts when it is needed. Evidence:
-	// docs/code-notes/metal.md#metalBackend.BuildResident.guard.
-	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
-		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
-		return nil, false, cerr
-	}
-	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
-	// slot count, the KV sizing) must see one number.
-	fit := metalFitNow(m)
-	metalFitChoice.Store(m, fit)
+	fit, from, perr := residentPreBuild(m)
 	defer metalFitChoice.Delete(m)
-	from, _ := resolveMetalCtxCap(m)
-	if why := residentMemoryDecline(m); why != "" {
-		if !shrinkCtxToFit(m) {
-			return nil, false, decoder.DeclineResident("%s", why)
-		}
+	if perr != nil {
+		return nil, false, perr
 	}
 	res, e := buildResident(m)
 	if e != nil {
@@ -128,6 +106,61 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprint(os.Stderr, metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
 	}
 	return b.resident, true, nil
+}
+
+// residentPreBuild is BuildResident's decisions before buildResident allocates anything, which PriceResident asks too. It
+// leaves the unpinned context's choice in metalFitChoice, which the caller deletes, and a context the memory guard lowered in
+// metalCtxCeiling. err is BuildResident's own return for a refusal.
+func residentPreBuild(m *decoder.Model) (fit decoder.MetalFit, from int, err error) {
+	// The Metal kernels implement a subset of what DecodeRunnerEligible admits (decoder.ResidentBackendFeatures("metal")). A model
+	// that needs anything outside it must DECLINE (CPU fallback), never run with the feature silently dropped.
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
+		return fit, 0, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
+	}
+	// An explicit -ctx above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable budget): refuse it
+	// with a named error carrying the numbers, as cuda's errKVWontFit does, rather than folding it into the generic decline below.
+	//
+	// Memory guard: Metal's unified memory is host RAM and it wires the mmap pages a command buffer touches, so a model larger than
+	// RAM pages until swap is exhausted and the load neither completes nor declines. The guard is keyed on two quantities we compute
+	// (the model's own bytes and physical RAM, via metalMemoryCeiling), never on the OS's account of free memory: darwin's UBC reclaim
+	// makes "available" report what survived, so a guard keyed on it inverts when it is needed. Evidence:
+	// docs/code-notes/metal.md#metalBackend.BuildResident.guard.
+	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
+		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
+		return fit, 0, cerr
+	}
+	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
+	// slot count, the KV sizing) must see one number.
+	fit = metalFitNow(m)
+	metalFitChoice.Store(m, fit)
+	from, _ = resolveMetalCtxCap(m)
+	if why := residentMemoryDecline(m); why != "" {
+		if !shrinkCtxToFit(m) {
+			return fit, from, decoder.DeclineResident("%s", why)
+		}
+	}
+	return fit, from, nil
+}
+
+// PriceResident (decoder.ResidencyPricer) is BuildResident's answer before it allocates: residentPreBuild, with the
+// context the resident would hold. Whether an int8 load runs natively or re-quantized to int4 is decided inside the build
+// (w8Eligible reads the resident it is building), so for those quants the label is left to the load.
+func (b *metalBackend) PriceResident(m *decoder.Model) (decoder.ResidentPrice, error) {
+	_, _, err := residentPreBuild(m)
+	defer metalFitChoice.Delete(m)
+	defer metalCtxCeiling.Delete(m)
+	if err != nil {
+		return decoder.ResidentPrice{}, err
+	}
+	ctx, _ := resolveMetalCtxCap(m)
+	p := decoder.ResidentPrice{Ctx: ctx}
+	switch q := m.Quant(); q {
+	case "int4", "q4k":
+	default:
+		p.Unknown = fmt.Sprintf("metal goes resident at this load's memory and context; whether its %s weights run natively or "+
+			"re-quantized to int4 is decided by the build", q)
+	}
+	return p, nil
 }
 
 // metalFitChoice is the fit-by-default context of the BuildResident in progress, per model (metalFitFor reads it).

@@ -192,9 +192,19 @@ memory) or `giw` (KV and scratch against available memory less 1 GB, because a `
 `fits`, `ctx` (the context priced; `ctx_capped` when the load would lower an unpinned one to fit), `ctx_pinned`,
 `max_ctx`, `need_bytes`, `budget_bytes`, `weight_bytes`, `kv_bytes`, `available_bytes`, and `decline`, the load's
 refusal text, when it does not fit. `retry` says when the load, refused, retries with weight streaming instead.
-`decode_path` is the path the load reports (`cpu (int8int8)`) where that is fixed before the weights are opened: the
-CPU backend, a GPU backend this binary does not carry, or an architecture Metal's feature gate refuses. Otherwise it is
-`unknown`, and `decode_path_unknown` says why: a GPU backend decides residency after the weights are opened. `fits` is
+`decode_path` is the path the load reports. It is known before the weights are opened for the CPU backend, a GPU backend
+this binary does not carry, or an architecture Metal's feature gate refuses (`cpu (int8int8)`).
+- **A `.giw` on Metal:** the route opens the bundle without building a resident (mapped, its weights untouched; about
+  3 MB of footprint, given back on close) and asks the checks Metal's build makes before it allocates: the features, the
+  context, and the memory guard, which lowers an unpinned context before it declines. `decode_path` is then
+  `metal-resident (int4)` with `resident_ctx`, the context the resident would hold, or the CPU path with the decline
+  the load would report.
+- **Not foreseen:** a decline inside the build itself, or by the startup self-test after it.
+- **Otherwise it is `unknown`,** and `decode_path_unknown` says why: a `.gguf` or a directory on a GPU backend (opening
+  one quantizes it), a backend whose residency is decided only by building it (CUDA, WebGPU), or a Metal int8 load,
+  whose build decides between its native int8 kernels and a re-quantization to int4.
+
+`fits` is
 `null`, and `unknown` says why, when only a step the route does not take could tell: a `.gguf` whose sidecar `.giw` is
 not built yet (`build` names it; the load builds it first), or an `hf:`/`demo:` reference (ask with its local path). The
 route never loads a model: it takes a sidecar as current from its age and its header, where the load also checks that it

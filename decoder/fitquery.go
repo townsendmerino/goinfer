@@ -29,11 +29,13 @@ type FitAnswer struct {
 	Decline                                                  string // Load's refusal when it does not fit, "" otherwise
 	// Streamable is the refusal's DenseStreamable: modelload.Load retries such a .gguf with weight streaming.
 	Streamable bool
-	// DecodePath is the decode path Load would report, where that is known before the weights are opened: "cpu (<quant>)",
-	// as DecodePath begins, when the load runs on the CPU. "" when only the load can tell (a GPU backend that may go
-	// resident); DecodeUnknown then says why.
+	// DecodePath is the decode path Load would report: "cpu (<quant>)", as DecodePath begins, when the load runs on the CPU,
+	// or, for a .giw on a backend whose pre-build checks can be asked (ResidencyPricer), the resident or the decline they
+	// decide. "" when only the load can tell; DecodeUnknown then says why.
 	DecodePath    string
 	DecodeUnknown string
+	// ResidentCtx is the context a resident decode path would hold, when DecodePath names one (0 otherwise).
+	ResidentCtx int
 }
 
 // FitQuery answers FitAnswer for path and opts. An error is a load that would fail before its memory check, for a reason
@@ -56,6 +58,9 @@ func FitQuery(path string, opts Options) (FitAnswer, error) {
 			a.Decline = d.err.Error()
 		}
 		a.DecodePath, a.DecodeUnknown = decodePathBeforeLoad(cfg, opts, baked)
+		if a.DecodePath == "" && a.Fits {
+			a.DecodePath, a.DecodeUnknown, a.ResidentCtx = planGIWResidency(path, opts)
+		}
 		return a, nil
 	}
 	quant, err := parseQuant(opts.Quant)
@@ -109,11 +114,24 @@ func decodePathBeforeLoad(cfg *Config, opts Options, quant string) (path, unknow
 		(be == "metal" && cfg != nil && !metalWillBeResident(cfg, opts))
 	switch {
 	case !cpu:
-		return "", fmt.Sprintf("%s residency is decided after the weights are opened (its memory guard and plan)", be)
+		return "", fmt.Sprintf("%s residency is decided once the weights are opened (its memory guard and plan); a .giw is opened to ask", be)
 	case quant == "":
 		return "", "the quant is read from the weights"
 	}
 	return fmt.Sprintf("cpu (%s)", quant), ""
+}
+
+// planGIWResidency is a .giw load's decode path on a GPU backend: the bundle opened as Load opens it (mapped, its weights
+// file-backed and untouched) but with no resident built, the backend's own pre-build checks asked (Model.plannedDecodePath),
+// then closed.
+func planGIWResidency(path string, opts Options) (decodePath, unknown string, ctx int) {
+	opts.planResidency = true
+	m, err := Load(path, opts)
+	if err != nil {
+		return "", "the .giw does not open: " + err.Error(), 0
+	}
+	defer m.Close()
+	return m.plannedDecodePath()
 }
 
 // GIWHeaderCheck reports whether path is a .giw this build reads, from its header alone: the bundle container, the weights

@@ -77,6 +77,9 @@ func (s *server) fitAnswer(req adminLoadReq) (map[string]any, error) {
 	if !a.Fits && p.RetryStreams && a.Streamable {
 		resp["retry"] = "the load retries with -stream-weights (it builds a .giw first) instead of refusing; --fit=off keeps the refusal"
 	}
+	if a.ResidentCtx > 0 {
+		resp["resident_ctx"] = a.ResidentCtx
+	}
 	if a.DecodePath != "" {
 		resp["decode_path"] = a.DecodePath
 	} else {

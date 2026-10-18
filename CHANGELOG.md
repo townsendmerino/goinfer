@@ -24,6 +24,9 @@ any surface may still change.
   load's own memory check, priced now (`fits`, the context priced, need, budget, weight and KV bytes, the refusal), the
   file the load would open, and the decode path where that is known before the weights are opened. A `.gguf` whose sidecar
   `.giw` is not built yet answers `unknown`, naming the build (`docs/server.md`, "Admin: would this load fit?").
+  For a `.giw` on Metal it also opens the bundle without building a resident and asks Metal's own checks before its build,
+  so `decode_path` says `metal-resident (int4)` with the context the resident would hold (`resident_ctx`), or the CPU path
+  with the decline the load would report. CUDA, a `.gguf` on a GPU backend, and a Metal int8 load still answer `unknown`.
 - **The swap guard watches the server's own swap on Linux.** The 512 MB default now applies to `VmSwap` summed over the server's pid and its descendants, so another process's swap growth (an idle CLI, an editor) no longer halts a run; system-wide swap is a second trip at a fixed 4096 MB backstop. Where `VmSwap` is not readable, and on macOS, the guard stays system-wide at the threshold, and the startup banner names the reader. `GOINFER_SWAP_GUARD` is unchanged.
 - **A request that leaves a sampling field out now gets the model's recommended value, where the checkpoint carries one.**
   Before, every omitted field fell to temperature 1.0 over the whole vocabulary. The values come from a Hugging Face

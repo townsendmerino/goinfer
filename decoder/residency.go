@@ -483,6 +483,22 @@ type ResidencyBackend interface {
 	BuildResident(m *Model) (rf ResidentForward, ok bool, err error)
 }
 
+// ResidencyPricer is a ResidencyBackend that can say what BuildResident's own checks before it allocates (its features, its
+// context, its memory guard) decide for m, without building: FitQuery's decode path on that backend. err is what BuildResident
+// would return for that decision (a DeclineResident, or the failure it would report). It must not touch the device or keep
+// state on m.
+type ResidencyPricer interface {
+	PriceResident(m *Model) (ResidentPrice, error)
+}
+
+// ResidentPrice is a ResidencyPricer's answer for a build its checks admit.
+type ResidentPrice struct {
+	// Quant is the resident quant DecodePath would report, "" for residentQuantLabel's. Unknown, when set, is why only the build
+	// can name it.
+	Quant, Unknown string
+	Ctx            int // the context the resident would hold
+}
+
 // ResidentDeclineError is a backend's reason for not building a resident path: an ordinary decline
 // (unsupported shape, too big for the router, doesn't fit memory), not a device failure.
 type ResidentDeclineError struct{ Reason string }
@@ -1132,37 +1148,14 @@ func (m *Model) withResidency() *Model {
 		m.w.arch.AttnLogitSoftcap = 0
 		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program
 	}
+	if m.planResidency {
+		return m // FitQuery's open: plannedDecodePath asks the backend instead
+	}
 	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
 		return m // force the per-matmul staged path (decision-matrix measurement)
 	}
-	rb, ok := m.be.(ResidencyBackend)
-	if !ok {
-		// Either the CPU backend (expected), or a GPU backend name that resolved to the CPU
-		// fallback because the module wasn't built in (`--backend cuda` without `-tags cuda`):
-		// NewBackend returns a cpuBackend + a note there, so the request is already lost by here.
-		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
-		return m
-	}
-	if m.quant == "q4k" && m.be.Name() != "cuda" && m.be.Name() != "metal" {
-		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal has the q4k lane
-		// (f32 activations over Q4_K and int8 weights, docs/tasks/task-metal-q4k-2026-10.md); WebGPU has no Q4_K kernel yet.
-		m.resDecline = "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
-		return m
-	}
-	if why := autoMetalPrecision(m.backendAuto, m.be.Name(), m.Quant()); why != "" {
-		m.resDecline = why
-		return m
-	}
-	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
-		// Nemotron 3 Nano / 3.5 Lightning's fourth block kind (MoE FFN) has no GPU resident implementation on cuda/metal.
-		// decodeRunnerEligible already declines it, but as a bare bool, so the generic "arch is not eligible" message
-		// would hide WHY; check here, ahead of the generic call, so DecodePath/`serve check` name the gap. webgpu is
-		// excluded: it implements the block (nemoKMoE) and decodeRunnerDecline admits it
-		// (docs/tasks/task-gpu-paths-2026-09.md, G7).
-		m.resDecline = "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
-		return m
-	}
-	if why := m.residentAdmission(); why != "" {
+	rb, why := m.residencyGate()
+	if why != "" {
 		m.resDecline = why
 		return m
 	}
@@ -1172,18 +1165,8 @@ func (m *Model) withResidency() *Model {
 		// CPU, and the runtime's contract is to say so rather than quietly get slower.
 		fmt.Fprintf(os.Stderr, "[resident] BuildResident declined (ok=%v err=%v) — continuing on the CPU/staged path\n", ok, err)
 		// Falls back for correctness (a decline must never be fatal mid-load) but keeps the REASON: on a GPU backend this
-		// is the whole forward moving to CPU. A decline carries its reason as a *ResidentDeclineError; any other non-nil
-		// err is a driver or device failure (`--backend cuda` on a box with no usable GPU lands here: the cuda factory
-		// always succeeds and the device is only touched at build time).
-		var d *ResidentDeclineError
-		switch {
-		case errors.As(err, &d):
-			m.resDecline = d.Reason // the backend's own reason, kept for DecodePath / `serve check`
-		case err != nil:
-			m.resDecline = "backend failed to build a resident path: " + err.Error()
-		default:
-			m.resDecline = "backend declined to build a resident path (no reason given)"
-		}
+		// is the whole forward moving to CPU.
+		m.resDecline = buildDeclineReason(err)
 		return m
 	}
 	if why := autoMetalKeepsPrecision(m.backendAuto, m.be.Name(), m.Quant(), rf); why != "" {
@@ -1207,6 +1190,85 @@ func (m *Model) withResidency() *Model {
 	// model's whole point is that the host copy is no longer needed.
 	releaseHostMemory()
 	return m
+}
+
+// residencyGate is withResidency's checks before it asks the backend to build: the backend's residency, the quant's resident
+// kernels, -backend auto's precision rule and admission. why is the decline they record, "" with the backend to build on.
+func (m *Model) residencyGate() (rb ResidencyBackend, why string) {
+	rb, ok := m.be.(ResidencyBackend)
+	if !ok {
+		// Either the CPU backend (expected), or a GPU backend name that resolved to the CPU
+		// fallback because the module wasn't built in (`--backend cuda` without `-tags cuda`):
+		// NewBackend returns a cpuBackend + a note there, so the request is already lost by here.
+		return nil, "backend does not implement residency (not built in, or the CPU backend)"
+	}
+	if m.quant == "q4k" && m.be.Name() != "cuda" && m.be.Name() != "metal" {
+		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal has the q4k lane
+		// (f32 activations over Q4_K and int8 weights, docs/tasks/task-metal-q4k-2026-10.md); WebGPU has no Q4_K kernel yet.
+		return nil, "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
+	}
+	if why := autoMetalPrecision(m.backendAuto, m.be.Name(), m.Quant()); why != "" {
+		return nil, why
+	}
+	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
+		// Nemotron 3 Nano / 3.5 Lightning's fourth block kind (MoE FFN) has no GPU resident implementation on cuda/metal.
+		// decodeRunnerEligible already declines it, but as a bare bool, so the generic "arch is not eligible" message
+		// would hide WHY; check here, ahead of the generic call, so DecodePath/`serve check` name the gap. webgpu is
+		// excluded: it implements the block (nemoKMoE) and decodeRunnerDecline admits it
+		// (docs/tasks/task-gpu-paths-2026-09.md, G7).
+		return nil, "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
+	}
+	if why := m.residentAdmission(); why != "" {
+		return nil, why
+	}
+	return rb, ""
+}
+
+// buildDeclineReason is the ResidentDecline a failed or declined BuildResident leaves: a decline's own reason, or the failure
+// (a driver or device error: `--backend cuda` on a box with no usable GPU lands here, since the device is touched only at
+// build time).
+func buildDeclineReason(err error) string {
+	var d *ResidentDeclineError
+	switch {
+	case errors.As(err, &d):
+		return d.Reason
+	case err != nil:
+		return "backend failed to build a resident path: " + err.Error()
+	}
+	return "backend declined to build a resident path (no reason given)"
+}
+
+// plannedDecodePath is the decode path a load of m would report, decided by the checks withResidency and the backend's
+// BuildResident make before the build allocates (ResidencyPricer), on a model opened with Options.planResidency. "" with the
+// reason when only the build can tell. A decline found inside the build itself, or by the startup self-test after it, is not
+// foreseen.
+func (m *Model) plannedDecodePath() (path, unknown string, ctx int) {
+	if m.knobs.get(knobNoResidency) != "" {
+		return m.DecodePath(), "", 0
+	}
+	rb, why := m.residencyGate()
+	if why == "" {
+		p, ok := rb.(ResidencyPricer)
+		if !ok {
+			return "", m.be.Name() + " decides its residency only by building it", 0
+		}
+		price, err := p.PriceResident(m)
+		if err == nil {
+			if price.Unknown != "" {
+				return "", price.Unknown, price.Ctx
+			}
+			label := price.Quant
+			if label == "" {
+				label = residentQuantLabel(m.be.Name(), m.Quant())
+			}
+			return fmt.Sprintf("%s-resident (%s)", m.be.Name(), label), "", price.Ctx
+		}
+		why = buildDeclineReason(err)
+	}
+	saved := m.resDecline
+	m.resDecline = why
+	defer func() { m.resDecline = saved }()
+	return m.DecodePath(), "", 0
 }
 
 // releaseHostMemory returns freed heap to the OS. A variable so a test can observe that a successful resident
