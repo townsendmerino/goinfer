@@ -1,6 +1,11 @@
 # Task: the memory campaign — what is left after the KV program (MEM0–MEM17), 2026-10
 
-> **Status: SCOPED 2026-10-17. Nothing started, nothing measured for it.** Written on the owner's ask after a Cowork
+> **Status 2026-10-17 (late): the aikit side SHIPPED in aikit v1.71.0 and `gpu/annmetal/v0.2.1`** — MEM3, MEM14, MEM15 and
+> MEM16 done, D6 decided (§5's status blocks carry the commits and gate results). Still open on the aikit side: MEM17 (D4)
+> and MEM4(a) (after MEM0). **The goinfer items (MEM0–MEM13) are not started**; the first goinfer step is the aikit bump
+> with MEM3's `Close` follow-ups (§4, MEM3).
+>
+> **Scoped 2026-10-17.** Written on the owner's ask after a Cowork
 > conversation the same day ("can you list the large data structures that we need in aikit and goinfer, like weights,
 > vocabulary, etc. with a typical percent of memory, so we can see if we're handling them in the most efficient way?
 > could we do better memory management? assume the kv work is completed", then "yes to task doc, 'memory campaign'").
@@ -51,7 +56,7 @@ encoder items (MEM14–MEM17), and one correctness item in aikit's audio loaders
 | MEM0 | footprint census of the app path and of tack's load path | both | S | — (it sizes the rest) |
 | MEM1 | a public mapped-load entry point for library callers | goinfer, all | S–M | 7B on Metal: ~9 GB anonymous → ~0.1 GB |
 | MEM2 | Metal tower scratch: release on grow, a real `Close` | goinfer, Metal | S | up to ~2.8 GiB stranded after a 4K image |
-| MEM3 | audio loaders: the mappings leaked to process exit; now held and closeable (**fixed in aikit `db44648`**, branch) | aikit | S | each audio checkpoint's mapping |
+| MEM3 | audio loaders: the mappings leaked to process exit; now held and closeable (**shipped, aikit v1.71.0**; goinfer `Close` follow-up open) | aikit + goinfer | S | each audio checkpoint's mapping |
 | MEM4 | towers: alias bf16/f32, drop the host copy after GPU attach | aikit + goinfer | M | Qwen2.5-VL on Metal: ~5.2 GB → ~1.35–2.7 GB |
 | MEM5 | chunk the prefill of the families G40 left whole | goinfer, CPU | M–L | 2–4.5 GiB at a 20K prompt |
 | MEM6 | resident prefill embeds per chunk, not per suffix | goinfer, CUDA/Metal | S | E4B at 20K: ~1.0 GiB |
@@ -62,9 +67,9 @@ encoder items (MEM14–MEM17), and one correctness item in aikit's audio loaders
 | MEM11 | f32 islands: LFM2 conv, MLA, drafters | goinfer, all | S–M each | LFM2: over half of resident weight bytes |
 | MEM12 | CPU heap: GC headroom and per-request churn | goinfer, CPU | M | up to ~1× the live heap (KV-dominated) |
 | MEM13 | small heap items (tokenizer, sampler, job store, feature cache, …) | goinfer | S each | ~15–60 MB each |
-| MEM14 | BM25: incremental build and one postings arena | aikit | M | 1M chunks: ~5.6 GB build peak; ~25% of the index |
-| MEM15 | HNSW graph as CSR, mapped | aikit | S–M | ~55–100 B/node |
-| MEM16 | encoder tables (BERT word embeddings, Q8 `WordEmb`, Model2Vec, SPLADE, annmetal) | aikit | S each | bge-m3: 0.5–0.77 GB |
+| MEM14 | BM25: incremental build and one postings arena (**shipped, v1.71.0**) | aikit | M | index −20%; build 4.4× the index (was ~4.7× plus the corpus) |
+| MEM15 | HNSW graph as CSR, mapped (**shipped, v1.71.0**, blob v5) | aikit | S–M | mapped load 6.9 → 0.001 MiB heap |
+| MEM16 | encoder tables (BERT word embeddings, Q8 `WordEmb`, Model2Vec, SPLADE, annmetal) (**shipped, v1.71.0 / annmetal v0.2.1**) | aikit | S each | see §5 |
 | MEM17 | chunk text by reference, not by copy | aikit API + ken | S (owner decision) | 1M chunks: ~1.4 GB (39% of the index side) |
 
 ## 1. Where the memory is (the grounding)
@@ -186,7 +191,16 @@ resident (or `Close` wired into unload); optionally a patch ceiling with per-seg
 **Gates.** Tier 0: device bytes live after N grows equal the last capacity; after `Close`, zero (mutation: drop the
 release, red). Tier 1: one 4K image turn then unload, Metal footprint returns to the pre-load figure.
 
-### MEM3 · aikit audio loaders hold their checkpoint and can close it (S) — FIXED in aikit `db44648`
+### MEM3 · aikit audio loaders hold their checkpoint and can close it (S) — SHIPPED in aikit v1.71.0
+
+> **Released 2026-10-17 in aikit v1.71.0. D6 decided the same day: no KeepAlive discipline.** The finalizer, the
+> `Tensor.owner` back-pointer and the KeepAlives that existed only for it were deleted (aikit `5e4d3c5`); `Close` is the only
+> release, and a pin test reads a dropped file's view after the file is collected (red 8/8 with the old finalizer forced to
+> run). Consequence for goinfer: a `SafetensorsFile` dropped without `Close` now keeps its mapping until exit, by contract.
+> Checked at goinfer `main`: every other opener closes after copying or keeps its file (main weights, LoRA, DFlash, DSpark,
+> embeddinggemma2, the clef head, the multimodal projectors), so **the goinfer follow-up is exactly: close serve's lazily
+> loaded `qwenASR` and `voxtral` encoders on unload, and give `internal/whisper`'s decoder and `Transcriber` a `Close`**
+> (the whisper decoder keeps views and drops its file).
 
 > **Status 2026-10-17: fixed on aikit branch `mem3-audio-mapping-lifetime` (`db44648`, unpushed), and the finding was
 > corrected in the doing.** The use-after-unmap this entry first described is **not reachable today**: each tensor keeps
@@ -410,6 +424,12 @@ postings are one slice per term with ~1.32× append slack plus a 24 B header eac
 
 **Gates.** Tier 0: identical scores on the existing BM25 golden corpus; bytes allocated by a build fall to O(index).
 
+> **SHIPPED in aikit v1.71.0.** Postings arena (`74a9365`): scores bit-identical, index 20% smaller. `Builder.Add` and a saved,
+> mappable index (`06c5619`): identical to `Build`; a build allocates 4.4× the index (bar 5×); a mapped load adds 0.66 MiB of
+> heap. Night A/B against v1.70.2 on nobara, pre-registered at ≤ 1.10×: `Build` 1.026× (100k synthetic chunks) and 1.030×
+> (aikit's tree) — ACCEPT; `Builder.Add` costs the same as `Build` (1.000× / 1.020×), so ken can move to it for the memory win
+> at no time cost.
+
 ### MEM15 · HNSW graph as CSR, mapped (S–M)
 
 **Problem.** `ann/hnsw.go:HNSW` holds per-node neighbor slices (~58 B of headers on ~100 B of ids), decodes the graph
@@ -421,7 +441,28 @@ build from n.
 
 **Gates.** Tier 0: identical search results on the HNSW goldens; heap after a mapped load under a stated bound.
 
+> **SHIPPED in aikit v1.71.0.** Build pre-sizing (`e9f1c41`): results and saved graph byte-identical; allocations per `Add`
+> 69 → 2. CSR graph, blob v5 (`50f9780`): results identical, v4 blobs still load, a mapped load adds 0.001 MiB of heap (6.9
+> before).
+
 ### MEM16 · Encoder tables and small copies (S each)
+
+> **SHIPPED in aikit v1.71.0 and `gpu/annmetal/v0.2.1`, with one correction to this entry.** The "saves 0.5–0.77 GB" line
+> below was wrong for F32 checkpoints: a gather-only F32 table read from the mapping already costs only the touched rows,
+> as clean reclaimable pages, which an f16 heap copy cannot beat (+386 MiB on arctic2-m). What shipped instead:
+>
+> - **Word-embedding tables native-precision, mapped** (`a15bfa9`): F32 stays a mapped view; F16/BF16 are now mapped 16-bit
+>   views widened one row per token (before: widened whole onto the heap); a misaligned data offset falls back to the copy.
+>   Bit-identical across all 65,536 F16/BF16 patterns; minilm as F16/BF16 holds 43.3 MiB after load against 88.0 widened.
+>   `WordEmbF16`/`WordEmbInt8` stay opt-ins (f16 cosine ≥ 0.9999999, int8 ≥ 0.99992 on four fixtures, `cb0c08b`).
+> - **SPLADE row tiling** (`6e9609d`): bit-identical; a 512-token expand allocates 89.4 → 7.0 MiB (32-row tiles).
+> - **Q8 `WordEmb` from the mapping** (`7bfd399`): bit-identical; heap after load 200.0 → 110.5 MiB.
+> - **Model2Vec mapped by default** (`6284cb0`): bit-identical across 1,753 texts; time to first result 0.74× on the M1 and
+>   0.71×/0.68× on nobara (July's +17% did not reproduce). A dropped mapped model is no longer freed: callers that reload
+>   must call `StaticModel.Close` (ken).
+> - **annmetal** (`0f20f32`): a mapped `FlatI8` is aliased, not copied (`EnableGPU` adds 0.45 MiB against 49.3 copied), batch
+>   scratch reused, still opt-in. Released as `gpu/annmetal/v0.2.1` (v0.2.0 is the same code; its tag message failed the
+>   evidence format check).
 
 - **BERT/GTE have no int8 path** (`encoder/bert.go:BERT`); the word-embedding table is 45–69% of those models (bge-m3:
   1.02 of 2.27 GB) and is only gathered, so per-row int8 or f16 saves 0.5–0.77 GB.
@@ -466,8 +507,11 @@ choice in aikit and a storage choice in ken (**D4**).
 - **D3** (MEM11): per family, bf16 only (bit-identical) or int8 behind the parity bar.
 - **D4** (MEM17): chunk text by reference in aikit's API, and ken's storage.
 - **D5** (MEM8a): whether embed-int4 becomes the Metal default once the head kernel exists, on the CPU/CUDA evidence.
-- **D6** (MEM3): make aikit's mmap finalizer real (after an audit of every caller that drops a file early), or correct
-  its comment to say what it does.
+- **D6** (MEM3): **DECIDED 2026-10-17** — no KeepAlive discipline; the finalizer and `Tensor.owner` are deleted and `Close`
+  is the only release (aikit `5e4d3c5`). The audit found one goinfer caller (the whisper decoder) that would have crashed
+  under a real cleanup.
+- **D7** (MEM16): **DECIDED 2026-10-17** — word-embedding tables load native-precision and mapped; f16/int8 heap tables
+  are opt-ins.
 
 ## 8. Sequencing
 
@@ -477,6 +521,9 @@ choice in aikit and a storage choice in ken (**D4**).
 4. **MEM4** (towers) and **MEM5** (per family) — the large anonymous terms on image turns and new families.
 5. **MEM8**, **MEM9** (with the `.giw` v16 format work), **MEM11** per family, **MEM12**.
 6. **MEM10** on nobara when that box is free.
-7. aikit: **MEM16** (small, independent), then **MEM14/MEM15** together (one format bump), **MEM17** after D4.
+7. aikit: **MEM16, MEM14, MEM15 shipped** in v1.71.0 (2026-10-17); **MEM17** after D4; **MEM4(a)** after MEM0 (the mapped
+   16-bit view MEM16 built for word embeddings is the same shape the towers need).
+
+**Next, goinfer:** bump aikit to v1.71.0 with MEM3's `Close` follow-ups; then MEM0.
 
 <!-- doc-reviewed: 2026-10-17 -->
