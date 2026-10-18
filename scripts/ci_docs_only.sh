@@ -4,10 +4,12 @@
 #                                docs files tests are KNOWN to read (a zero-match guard)
 #
 # C3 (docs/completed/task-ci-speed-2026-09.md). "true" iff EVERY file changed between BASE and HEAD is
-# under docs/ AND NONE of them is read by Go code or tests. Two rules, both load-bearing:
+# on a non-code path AND NONE of them is read by Go code or tests. Two rules, both load-bearing:
 #
-#  1. Only docs/** counts. Root *.md (README.md, CHANGELOG.md, RELEASING.md) and everything else
-#     run the full matrix -- readme-smoke exists because a README install line once shipped broken.
+#  1. Only docs/**, RELEASING.md and .claude/** (the repo's agent skills) count. Every other root file
+#     (README.md, CHANGELOG.md, CLAUDE.md, go.mod, ...) and everything else run the full matrix --
+#     readme-smoke exists because a README install line once shipped broken, and Go tests read
+#     README.md, CHANGELOG.md and CLAUDE.md, which rule 2 would catch anyway.
 #
 #  2. A docs file that Go code READS is not "docs-only", whatever its path. Measured 2026-09-22
 #     over the 30 most recent commits on main: 11 were docs-only by rule 1, and 4 of those touched
@@ -69,7 +71,7 @@ files=$(git diff --name-only "$base" "$head" 2>/dev/null) || say_false
 
 while IFS= read -r f; do
   case "$f" in
-    docs/*) ;;
+    docs/*|RELEASING.md|.claude/*) ;;
     *) say_false ;;
   esac
 done <<<"$files"

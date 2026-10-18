@@ -32,12 +32,51 @@ on:
 permissions:
   contents: read
 
+# A push to main gets its own group, keyed on the commit, and is never cancelled: every main push gets a complete run,
+# so a docs push landing on a running code push does not cancel it (owner, 2026-10-18). cancel-in-progress: false alone
+# is not enough, because a group still cancels its pending run when a newer one queues. Branches and pull requests keep
+# one group per ref and cancel the superseded run.
 concurrency:
-  group: coverage-${{ github.ref }}
-  cancel-in-progress: true
+  group: coverage-${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ !(github.ref == 'refs/heads/main' && github.event_name == 'push') }}
 
 jobs:
+  # A docs-only push (scripts/ci_docs_only.sh: docs/**, RELEASING.md and .claude/**, none read by Go code or tests) skips
+  # the coverage run, as ci.yml's heavy jobs do; ci.yml's lint job still runs the citation and book lints on it. The same
+  # second condition as ci.yml's gate: the commit it builds on already has a successful coverage run. Fail-open: any doubt
+  # runs coverage.
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      docs_only: ${{ steps.gate.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: docs-only push?
+        id: gate
+        env:
+          BASE: ${{ github.event.before }}
+          HEAD: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(scripts/ci_docs_only.sh "$BASE" "$HEAD")
+          base_run="(not checked)"
+          if [ "$v" = "true" ]; then
+            base_run=$(gh run list --workflow coverage.yml --commit "$BASE" --json conclusion --jq '.[0].conclusion' 2>/dev/null || true)
+            if [ "$base_run" != "success" ]; then
+              v=false
+            fi
+          fi
+          echo "docs_only=$v" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$v  (base=$BASE head=$HEAD; base's last coverage run: '${base_run:-none}')"
+
   coverage:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
