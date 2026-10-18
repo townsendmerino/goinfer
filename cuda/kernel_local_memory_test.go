@@ -179,6 +179,7 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		"rope_kv_mrope_batched_pw": 32,
 		"mla_q_rope":               32, // mla.ptx (FeatMLA)
 		"mla_latent_store":         32, // mla.ptx (FeatMLA)
+		"mamba_conv":               32, // mamba.ptx (Mamba-2 conv); the same 1.2 MiB at full occupancy as the 32 B rope kernels above
 		// deltanet.ptx, the batched Gated-DeltaNet prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): the
 		// scan holds its 128-float state row in registers across the rows and spills 24 floats of it at 255
 		// registers (launch_bounds(128, 1) gives the same 96 B). That is 3.8 MiB at full occupancy, accepted
