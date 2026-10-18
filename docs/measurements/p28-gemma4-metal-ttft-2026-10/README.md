@@ -106,3 +106,37 @@ Run as registered (`run-p28b.py`, the pinned `serve-metal` at `784e7c82`, `-ctx 
 
 Smaller first: (1), then (2). (3) is the one that would close most of the gap to the 1.5B, and it is its own task.
 
+
+## Fix 2's reading (registered 2026-10-17, before it runs): does the tiled kernel remove the knee
+
+Fixes 1 and 2 are on main at `27e917d7`. Past 4,096 keys the exact kernel now runs `attention_prefill_tiled`, so E2B's
+batched pass no longer declines there.
+
+`run-p28c.py`: step 2's run unchanged except the server, a `serve-metal` pinned at `27e917d7` (`-ctx 16384 --quant int4`).
+It is a Mac night job (`night.py`, holding the timing lock), about 10 minutes. Step 2's own run took 7.3 minutes, and the
+fix can only shorten it. Fit-checked by day at that build: `fit: 16384-token cap needs 0.3 GB KV (weights 3.5 GB, budget
+4.4 GB, 4.1 GB left for a request's own prefill)`, with the banner naming the tiled kernel past 4,096 keys.
+
+- **Arms:** E2B cold at 4,096, 6,144 and 8,192 prompt tokens, each on a fresh server, with step 2's counters and footprint.
+  The script also records each request's `-log-requests` line and whether the server printed the layer-major note.
+- **Path (read first; pass or fail):**
+  - It passes if the 6,144 and 8,192 request lines carry no `prefill_fallback` and the servers print no layer-major note.
+  - If either appears, the batched pass still declines in production. That is reported as the result, and the rates
+    are not graded.
+- **4,096 (control; the kernel there is unchanged):**
+  - Read against step 2's 143.5 tok/s. That comparison is cross-session, so it is a check, not a ratio.
+  - Outside about ±5%, the difference is investigated before the long rows are quoted.
+- **6,144 and 8,192 (the effect), each against its step 2 rate (37.5 and 34.3 tok/s):**
+
+  | verdict | band | 6,144 | 8,192 |
+  |---|---|---|---|
+  | the knee is gone | at least 2× | ≥ 75.0 tok/s | ≥ 68.6 tok/s |
+  | ambiguous, parked | 1.2–2× | | |
+  | no effect | under 1.2× | ≤ 45.0 tok/s | ≤ 41.2 tok/s |
+
+  - The reading also states each rate as a fraction of 4,096's. Attention's quadratic term should leave it under 1.
+  - Step 2 and this run are separate sessions. The bands sit far outside cross-session drift (3.6% for goinfer,
+    `docs/measurements/noise-registry.md`, TE3), so a cross-session reading can decide this question. It does not make a
+    ratio quotable.
+- **Footprint:** the tiled kernel allocates no device memory beyond a 4-byte tile argument. The peak footprint is
+  reported, not graded.
