@@ -337,6 +337,16 @@ pinned versions, dated, thermal note, verified-idle box).
   - A run whose arms load different quant classes is refused unless it is marked unmatched. The classes are read from the
     peer's file and goinfer's decode path, and each cell records both labels. phi3-mini's default is now `q4k`, 4-bit like
     its Q4_K_M peers. Before, it was `int8int8`.
+- **2026-10-17, evening: every config sends every arm `seed 1`, greedy and `own_defaults` included.**
+  - mlx_lm.server routes a request by its seed (0.31.3, `server.py` `_is_batchable`). With a seed it takes the one-request
+    `stream_generate` loop; without one, the batch engine, whose one-client decode is slower.
+  - Before, the greedy config sent MLX no seed and the sampled configs did. MLX's greedy rows therefore ran the batch
+    engine and its sampled rows the one-request loop: the 2026-10-17 Metal run read MLX 110.8 tok/s greedy and 136.2
+    untruncated on the 1.5B (`docs/measurements/peer-notrunc-2026-10-17.md`).
+  - **An MLX greedy row from before this change is not comparable with one after it.** goinfer, Ollama and llama-server
+    rows are unaffected: none of them changes path on a seed.
+  - Each MLX cell records `mlx_path`. `temp0.8_topk40_topp0.9_unseeded` is a diagnostic that sends no arm a seed, and it is
+    never a comparison row.
   - A reading before this change is not continued by one after it.
 
 ## Model storage — archive remote, benchmark local

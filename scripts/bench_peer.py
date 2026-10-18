@@ -998,7 +998,7 @@ def mlx_payload(model_id, prompt, cfg):
 # (docs/benchmarks.md, "Sampling changes that move comparability").
 CONFIGS = {
     "greedy": {
-        "goinfer": {"temperature": 0},
+        "goinfer": {"temperature": 0, "seed": 1},
         "ollama": {"temperature": 0, "seed": 1},
         "note": "temperature=0 both sides (deterministic)",
     },
@@ -1059,9 +1059,17 @@ CONFIGS = {
         "note": "temperature=1.0, top_k=40, top_p=0.9, all arms",
     },
     "own_defaults": {
-        "goinfer": {},
-        "ollama": {},
-        "note": "UNMATCHED — no sampling params sent; each side uses its own defaults",
+        "goinfer": {"seed": 1},
+        "ollama": {"seed": 1},
+        "note": "UNMATCHED — no sampling params sent but the shared seed; each side uses its own defaults",
+    },
+    # A diagnostic, never a comparison row: the shared preset with no seed on any arm, which sends mlx_lm.server down its
+    # batch engine (mlx_server_path). Every other config sends every arm the same seed.
+    "temp0.8_topk40_topp0.9_unseeded": {
+        "goinfer": {"temperature": 0.8, "top_p": 0.9, "top_k": 40},
+        "ollama": {"temperature": 0.8, "top_p": 0.9, "top_k": 40},
+        "unseeded": True,
+        "note": "DIAGNOSTIC — the shared preset with no seed on any arm (mlx_lm.server's batch path)",
     },
 }
 # llama-server speaks goinfer's own OpenAI sampling dialect (same field names), so every config
@@ -1075,6 +1083,13 @@ for _cfg in CONFIGS.values():
 
 # ---- like for like (owner, 2026-10-17): the same seed, context, min_p and quant class on every arm -----------------------
 # test_bench_peer_sampling.py holds each one.
+
+def mlx_server_path(payload):
+    """The path mlx_lm.server (0.31.3, server.py _is_batchable) runs a request on: one with a seed takes the one-request
+    stream_generate loop, one without takes the batch engine, whose one-client decode is slower. Every config but an
+    "unseeded" diagnostic sends a seed, so MLX runs one path throughout."""
+    return "single-request" if payload.get("seed") is not None else "batch"
+
 
 def is_sampled(cfg):
     """A config that samples (temperature > 0): it sends temperature, top_p, top_k and the same seed to every arm, and
@@ -2032,6 +2047,7 @@ def main():
                "prompt_format": prompt_format(depth, mk) if phase in ("A", "B", "C") else None,
                "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
                "ctx": None if engine == "mlx" else cell_ctx(),
+               "mlx_path": mlx_server_path(mlx_payload("", "", CONFIGS[cfg])) if engine == "mlx" else None,
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
                "machine": machine,
                "secs": round(time.time() - t0, 1)}

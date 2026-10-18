@@ -25,13 +25,18 @@ def arm_payloads(cfg):
     }
 
 
+def fields_for(cfg):
+    """FIELDS, less the seed for the unseeded diagnostic, which withholds it from every arm on purpose."""
+    return tuple(f for f in FIELDS if not (f == "seed" and cfg.get("unseeded")))
+
+
 class SampledConfigsSendAllThree(unittest.TestCase):
     def test_every_sampled_config_every_arm(self):
         sampled = [n for n, c in bench_peer.CONFIGS.items() if c.get("goinfer", {}).get("temperature", 0) > 0]
         self.assertGreaterEqual(len(sampled), 7, "the sampled configs went missing: this test checks nothing")
         for name in sampled:
             for arm, body in arm_payloads(bench_peer.CONFIGS[name]).items():
-                for f in FIELDS:
+                for f in fields_for(bench_peer.CONFIGS[name]):
                     with self.subTest(config=name, arm=arm, field=f):
                         self.assertIn(f, body, f"{name}: the {arm} arm's request omits {f}, so its engine's default applies")
 
@@ -50,9 +55,34 @@ class SampledConfigsSendAllThree(unittest.TestCase):
             if cfg.get("goinfer", {}).get("temperature", 0) <= 0:
                 continue
             bodies = arm_payloads(cfg)
-            for f in FIELDS:
+            for f in fields_for(cfg):
                 with self.subTest(config=name, field=f):
                     self.assertEqual(len({bodies[a][f] for a in bodies}), 1, f"{name}: the arms send different {f}")
+
+class EveryArmGetsTheSameSeed(unittest.TestCase):
+    def test_every_config_every_arm(self):
+        """Greedy included: mlx_lm.server routes a request by whether it carries a seed (mlx_server_path), so a config that
+        seeds one arm and not another runs MLX on a different path from config to config."""
+        seeded = [n for n, c in bench_peer.CONFIGS.items() if not c.get("unseeded")]
+        self.assertIn("greedy", seeded)
+        for name in seeded:
+            for arm, body in arm_payloads(bench_peer.CONFIGS[name]).items():
+                with self.subTest(config=name, arm=arm):
+                    self.assertEqual(body.get("seed"), 1, f"{name}: the {arm} arm's request carries no shared seed")
+
+    def test_the_unseeded_diagnostic_seeds_no_arm(self):
+        diag = [n for n, c in bench_peer.CONFIGS.items() if c.get("unseeded")]
+        self.assertEqual(diag, ["temp0.8_topk40_topp0.9_unseeded"])
+        for arm, body in arm_payloads(bench_peer.CONFIGS[diag[0]]).items():
+            with self.subTest(arm=arm):
+                self.assertNotIn("seed", body)
+
+    def test_the_mlx_path_each_config_runs(self):
+        for name, cfg in bench_peer.CONFIGS.items():
+            want = "batch" if cfg.get("unseeded") else "single-request"
+            with self.subTest(config=name):
+                self.assertEqual(bench_peer.mlx_server_path(bench_peer.mlx_payload("m", "p", cfg)), want)
+
 
 class EveryArmGetsTheSameContext(unittest.TestCase):
     def test_goinfer_ollama_and_llamacpp(self):
