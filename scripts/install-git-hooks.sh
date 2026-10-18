@@ -23,7 +23,7 @@
 # Bypass:   git push --no-verify        (for a genuinely intentional push over a red lint)
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-hook=".git/hooks/pre-push"
+hook="$(git rev-parse --git-common-dir)/hooks/pre-push" # the shared hooks directory, which a linked worktree uses too
 
 cat > "$hook" <<'HOOK'
 #!/usr/bin/env bash
@@ -42,6 +42,18 @@ cd "$(git rev-parse --show-toplevel)"
 
 # git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref on stdin; read it before anything else can.
 refs="$(cat)"
+
+# A push to main waits for main's latest CI run to finish (scripts/main_ci_guard.py; CLAUDE.md, "Push finished work"). A
+# checkout older than the guard says so and skips it rather than blocking.
+if printf '%s\n' "$refs" | awk '{print $3}' | grep -qx 'refs/heads/main'; then
+    if [ -f scripts/main_ci_guard.py ]; then
+        if ! python3 scripts/main_ci_guard.py; then
+            exit 1
+        fi
+    else
+        echo "pre-push: scripts/main_ci_guard.py is not in this checkout; main's CI was not checked" >&2
+    fi
+fi
 
 if [ ! -f scripts/queue_citation_lint.py ]; then
     echo "pre-push: scripts/queue_citation_lint.py is missing — not silently passing." >&2
@@ -103,9 +115,9 @@ HOOK
 
 chmod +x "$hook"
 echo "installed $hook"
-echo "checks: queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
+echo "checks: main_ci_guard.py (a push to main only), queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
 echo "verifying it fires and that it passes on a clean tree:"
-if bash "$hook" >/dev/null 2>&1; then
+if bash "$hook" </dev/null >/dev/null 2>&1; then # no refs on stdin: the hook reads it first, and would wait
     echo "  clean tree -> hook exits 0 (push allowed)"
 else
     echo "  clean tree -> hook exits NON-ZERO; the lint is currently red"

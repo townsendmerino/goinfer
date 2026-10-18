@@ -226,6 +226,11 @@ jobs:
       - name: touched.py scan selection
         run: python3 -B scripts/test_touched.py
 
+      # The pre-push guard (scripts/main_ci_guard.py) refuses a push to main while main's latest CI run is unfinished, names
+      # the run, and refuses on a failed read; fed fake `gh run list` output. Stdlib, under a second.
+      - name: main CI guard
+        run: python3 -B scripts/test_main_ci_guard.py
+
       # C3's zero-match guard: the `changes` gate decides "docs-only" partly by detecting which
       # docs/ files Go tests READ (scripts/ci_docs_only.sh). If that detection ever stops seeing
       # a file a test is known to read, the gate has silently widened what gets skipped -- this
