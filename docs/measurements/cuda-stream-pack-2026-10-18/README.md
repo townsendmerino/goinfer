@@ -57,4 +57,46 @@ session's retained state, on the 1.5B and the 7B (`docs/measurements/mem0-2026-1
 
 ## Results
 
-(appended when read)
+### Tier 0 (branch `cuda-stream-pack`, 2026-10-18, on the RTX 2070 SUPER)
+
+G-S1, G-S2a, G-S2b, G-S3 and the decline-allocates-nothing test pass (`cuda/pack_stream_test.go`, run with `-v` and read for `--- PASS`). The fit-guard tests in
+`decoder/fitguard_cuda_test.go` pass, `gofmt -l` is empty for `cuda/` and `decoder/`, and `go vet` is clean for `./cuda/` (tags `cuda goinfer_testhooks`) and `./decoder/`.
+`scripts/touched.py` is RED on one test that is not this change's: `TestKernelLocalMemoryCensus` fails with
+`PINNED: mamba_conv declares 32 B/thread of local memory and is not in the pinned set`, and it fails identically on a clean `origin/main` (`1ba40e335`) worktree. The branch changes no kernel.
+
+### Tier 1: `build_peak.py`, one run per cell, 09:14–09:16 PDT, binary built from the branch (`CGO_ENABLED=0 go build -tags cuda cuda/cmd/serve`), raw in `raw/`
+
+| cell | peak anon, before | peak anon, now | bar | peak VmRSS, now (when) | final anon / file | `ready_s` before → now |
+|---|---|---|---|---|---|---|
+| 7B sidecar, ctx 4096 | 4121 MiB | **113 MiB** | ≤ 0.6 GiB: pass | 4019 MiB (t = 16.6 s) | 88 / 3873 MiB | 10.89 → 17.58 |
+| 7B `-direct-load`, ctx 4096 | 8677 MiB | **4202 MiB** | ≤ 5.0 GiB: pass | 8627 MiB (t = 3.2 s) | 4184 / 78 MiB | 15.44 → 20.14 |
+| phi3 q4k, ctx 4096 | 5314 MiB | **2737 MiB** | ≤ 3.3 GiB: pass | 4970 MiB (t = 0.8 s) | 2724 / 78 MiB | 2.53 → 3.54 |
+| 7B `-direct-load`, ctx 32768 | — | 4209 MiB | starts: pass | 8524 MiB (t = 1.3 s) | 4186 / 78 MiB | 17.62 |
+
+No cell grew swap (`peak_swap_mib` 0). The "before" column is `cuda-build-heap-2026-10-18/raw/` from main, in another session.
+
+**The direct path's peak VmRSS did not fall, and the record predicted that.** The peak moved from t = 14 s (the pack phase) to t = 1–3 s (the load phase: canonical weights growing on
+the heap while the source is mapped). Streaming removed the second peak, which was the higher by 0.3 GiB; the first is untouched and is why the guard keeps the source-file term on the
+direct path (the deviation stated above).
+
+**G-F2** (`testdata/fitdescribe.go`, the CUDA backend compiled in; `fitGB` is 1 GiB; the guard prints one decimal):
+
+| cell | guard prices | measured peak VmRSS | ratio | band [0.90, 1.15] |
+|---|---|---|---|---|
+| 7B `-direct-load`, ctx 4096 | 8.4 GiB (4.0 weights + 4.4 reading the checkpoint; KV in VRAM) | 8627 MiB = 8.42 GiB | 0.997 | pass |
+| 7B `-direct-load`, ctx 32768 | 8.4 GiB (the same: KV is no longer host) | 8524 MiB = 8.32 GiB | 1.009 | pass |
+| phi3 q4k, ctx 4096 | 4.9 GiB (2.6 + 2.2) | 4970 MiB = 4.85 GiB | 1.010 | pass |
+
+On main the same loads were priced 8.8, 11.9 (the 7B at 32K) and 7.9 GiB; the 7B at 32K was over-priced against the 8.5 GiB it measures, and phi3 by 1.5x. The sidecar load is priced at
+nothing, as before; its peak VmRSS is now 4.0 GiB, almost all the mapped sidecar (final file 3873 MiB), not heap.
+
+**Load time (`ready_s`) is up in every cell, 1.3–1.6x the before, above the 1.10x mark that is reported.** The before and now are different sessions, so this is not a ratio
+(`docs/measurements/noise-registry.md`, TE3): all it says is that streaming is not shown to be free. A same-session interleaved main/branch pair is waiting on the timing lock
+(tack's calibration holds it); its result is appended here.
+
+### Deviations from the instruction and the registration
+
+1. **The source-file term stays on the direct `.gguf` path** (stated before the run; G-F2 above is the evidence it is right: dropping it would price 4.2 GiB against an 8.4 GiB process).
+2. **"The 7B at 32K is admitted on nobara" is tested with injected availability** (`TestFitCheck_cudaResident7BAt32KIsAdmitted`): this 64 GB box already admitted it under the old
+   pricing. The measured 32K start above is the end-to-end half.
+3. `testdata/fitdescribe.go` here is a copy of the earlier one that compiles the CUDA backend in; the earlier copy prices the CPU path, because the root module registers no backend.
