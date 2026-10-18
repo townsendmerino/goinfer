@@ -2,8 +2,11 @@
 
 > **Status 2026-10-17 (late): the aikit side SHIPPED in aikit v1.71.0 and `gpu/annmetal/v0.2.1`** — MEM3, MEM14, MEM15 and
 > MEM16 done, D6 decided (§5's status blocks carry the commits and gate results). Still open on the aikit side: MEM17 (D4)
-> and MEM4(a) (after MEM0). **The goinfer items (MEM0–MEM13) are not started**; the first goinfer step is the aikit bump
-> with MEM3's `Close` follow-ups (§4, MEM3).
+> and MEM4(a) (after MEM0). **goinfer, 2026-10-18: the aikit bump and MEM3's `Close` follow-ups are on `main`** (`3763d83e` aikit
+> v1.70.2 → v1.71.0 in all five modules; `58d5dc3e` the whisper decoder and `Transcriber` gain a `Close`; `ba54d206` serve's unload
+> closes the lazily loaded Voxtral and Qwen3-ASR encoders and Voxtral's attached device; `635d63ee` the parity refresh; `69fc3bfc`
+> the Voxtral device-close test), so **MEM3 is closed on both sides**. The rest of MEM0–MEM13 is not started; the next step is MEM0
+> (the nobara half first: CPU and CUDA cells; the Metal cells are the Mac's), then MEM13's job-store and per-adapter token-bytes items.
 >
 > **Scoped 2026-10-17.** Written on the owner's ask after a Cowork
 > conversation the same day ("can you list the large data structures that we need in aikit and goinfer, like weights,
@@ -146,6 +149,10 @@ item is sized by the tree and not by this doc.
 - **tack's load path.** Read how tack loads its models (its repo is not in this doc's reading). If it calls
   `decoder.Load` on a `.gguf`, MEM1 is the first build item; if it goes through the sidecar, MEM1 drops to "library
   users only".
+  - **Read 2026-10-18, from nobara's night-queue jobs and serve logs (tack's repo itself not read): through the sidecar.** Tack's
+    E0 and E1 jobs run the `goinfer-serve` binary as a subprocess (`-goinfer-serve <binary> -model-path <file>.gguf`), not
+    `decoder.Load`, and the serve logs show the `.giw` sidecar being loaded (`swap guard (load): not armed for …int4.e4h.cuda.v17.giw`).
+    So MEM1 is **library users only**, not the first build item.
 
 ## 4. The goinfer items
 
@@ -524,6 +531,6 @@ choice in aikit and a storage choice in ken (**D4**).
 7. aikit: **MEM16, MEM14, MEM15 shipped** in v1.71.0 (2026-10-17); **MEM17** after D4; **MEM4(a)** after MEM0 (the mapped
    16-bit view MEM16 built for word embeddings is the same shape the towers need).
 
-**Next, goinfer:** bump aikit to v1.71.0 with MEM3's `Close` follow-ups; then MEM0.
+**Next, goinfer:** MEM0 (nobara half, then the Mac's cells); then MEM13's job-store and per-adapter token-bytes items. The aikit bump and MEM3's follow-ups are done (status block).
 
 <!-- doc-reviewed: 2026-10-17 -->
