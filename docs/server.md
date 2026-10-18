@@ -856,13 +856,15 @@ to ignore.**
   evicted and declined by reason. The startup banner states the budget; a restored request's `-log-requests` line ends with
   `snap=<rows>`. CUDA only today (`docs/tasks/task-kv7-prefix-snapshot-2026-10.md`).
 - **A declined batched prefill is visible.** When the batched prefill declines and another path runs the prompt:
-  - stderr says why, once per distinct reason;
-  - that request's `-log-requests` line ends with `prefill_fallback=<path>`, where `sequential` is the token-by-token loop and
-    `layer-major` is a Gemma 4 E-model's pass on decode's kernels;
+  - stderr says why: a Gemma 4 E-model on Metal once per request, with the prompt's length; otherwise once per distinct
+    reason;
+  - that request's `-log-requests` line ends with `prefill_fallback=<path> prefill_fallback_reason="<why>"`, where
+    `sequential` is the token-by-token loop and `layer-major` is a Gemma 4 E-model's pass on decode's kernels;
   - `--log-token-ids` carries the path and the reason (`prefill_fallback`, `prefill_fallback_reason`).
 
   On Metal, a model with a head dim the fused attention kernel does not take (over 128) runs the exact kernel, which holds
-  4,096 keys. Its banner's `prefill path:` line says so, and names the path a longer prompt takes.
+  4,096 keys. Past that it tiles its scores (head dims up to 512) and the prompt stays on the batched pass. Its banner's
+  `prefill path:` line says so.
 - **A fast alias for side requests.** A served model `N` also answers to `N-fast`: the same weights, chat template and KV slot,
   with thinking off (the request's own thinking controls are overridden) and nothing else different: its output limit is the
   request's, or the main model's default, with no cap of its own (`-fast-alias=false` turns the alias off). It is for the requests

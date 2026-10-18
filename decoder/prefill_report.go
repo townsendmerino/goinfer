@@ -22,20 +22,24 @@ func WithPrefillReport(ctx context.Context) (context.Context, *PrefillReport) {
 }
 
 // NotePrefillFallback records on ctx's report, when it carries one, that the batched prefill declined for reason and
-// the prompt ran on path instead: "sequential" (the decoder's token-by-token loop) or a backend's own pass.
-func NotePrefillFallback(ctx context.Context, path, reason string) {
+// the prompt ran on path instead: "sequential" (the decoder's token-by-token loop) or a backend's own pass. tracked says
+// whether ctx carries a report; first, whether this call recorded the request's first fallback, so a backend that
+// announces its fallback can do so once per request.
+func NotePrefillFallback(ctx context.Context, path, reason string) (first, tracked bool) {
 	if ctx == nil {
-		return
+		return false, false
 	}
 	r, _ := ctx.Value(prefillReportKey{}).(*PrefillReport)
 	if r == nil {
-		return
+		return false, false
 	}
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.path == "" {
 		r.path, r.reason = path, reason
+		return true, true
 	}
-	r.mu.Unlock()
+	return false, true
 }
 
 // Fallback is the path the prompt fell back to and why; both are "" when no batched prefill declined.

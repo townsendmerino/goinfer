@@ -216,15 +216,21 @@ func (w *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (w *statusRecorder) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// logRequests wraps h so each request writes one line to out when it finishes. out == nil returns h untouched: the flag off costs nothing.
+// logRequests wraps h so each request writes one line to out when it finishes. With out == nil it writes nothing and only
+// attaches the request's prefill report (traceRequests).
 func logRequests(out io.Writer, h http.HandlerFunc) http.HandlerFunc {
 	return (&server{}).traceRequests(out, h)
 }
 
-// traceRequests is logRequests with the server's --log-token-ids file: h is untouched when both are off.
+// traceRequests is logRequests with the server's --log-token-ids file. With both off it only attaches a prefill report.
 func (s *server) traceRequests(out io.Writer, h http.HandlerFunc) http.HandlerFunc {
 	if out == nil && s.tokenLog == nil {
-		return h
+		// No log, but every generation still carries a prefill report: a backend announces its prefill fallback once per
+		// request off it (decoder.NotePrefillFallback).
+		return func(w http.ResponseWriter, r *http.Request) {
+			ctx, _ := decoder.WithPrefillReport(r.Context())
+			h(w, r.WithContext(ctx))
+		}
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		tr := &reqTrace{start: time.Now(), route: r.URL.Path, out: out, tl: s.tokenLog}
@@ -277,8 +283,8 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 	if len(t.fromModel) > 0 {
 		line += " sampling_from_model=" + strings.Join(t.fromModel, ",") // absent when the request set every field it uses
 	}
-	if path, _ := t.prefill.Fallback(); path != "" {
-		line += " prefill_fallback=" + path // the batched prefill declined; its reason is on stderr and in the token-id log
+	if path, reason := t.prefill.Fallback(); path != "" {
+		line += fmt.Sprintf(" prefill_fallback=%s prefill_fallback_reason=%q", path, reason) // the batched prefill declined, and why
 	}
 	return line
 }
