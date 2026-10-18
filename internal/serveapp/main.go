@@ -1122,9 +1122,10 @@ func (s *server) loadAdapters(cfg config) error {
 		lm := &loadedModel{
 			tk: base.tk, model: base.model, tmpl: base.tmpl, stopIDs: base.stopIDs,
 			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name, sampling: base.sampling,
-			spec:         cfg.spec == "ngram",
-			specAdaptive: cfg.specAdaptive,
-			sessions:     newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+			spec:           cfg.spec == "ngram",
+			specAdaptive:   cfg.specAdaptive,
+			sessions:       newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+			tokenBytesFrom: base,
 		}
 		lm.sessions.adapter = spec.name
 		if cfg.maxQueue > 0 {
