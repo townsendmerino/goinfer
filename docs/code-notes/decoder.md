@@ -4072,6 +4072,9 @@ prices none of it (`kvBytes` 0, and `decideGIWFit` asks no KV or prefill scratch
 `weightBytes + srcFileBytes` is the larger term and stays, because the load (the source mapped while the canonical weights grow) peaks above the build: the 7B read 8.4 GiB of RSS at t = 3.3 s, before any packing
 (`docs/measurements/cuda-build-heap-2026-10-18/README.md`). A resident that declines falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
 
+The pricing reads under the measured peak on some loads: against main's measured peak VmRSS (2026-10-18, same-session A B B A) the direct 7B is 0.98 and phi3 q4k 0.93. That is inside the approved band (0.90 to 1.15) and covered by the 70% budget (`fitMemFraction`), and
+it is a fact of the record, not a target. If the pricing is revisited, aim for 1.00 or more.
+
 ## fitCheck.cudaBuildBytes
 
 Moved from `decoder/fitguard.go` (the comment above `cudaBuildBytes` in `fitCheck`) on 2026-10-09.
