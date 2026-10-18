@@ -516,7 +516,7 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
 	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
-	pk    *packStage
+	pk    *packPool
 	reqCh chan func() error
 	ackCh chan error
 

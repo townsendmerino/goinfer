@@ -116,3 +116,26 @@ reproduced the first reading (sidecar 104, 108 MiB against 4179, 4128; direct 42
 **Read.** Streaming saves 0.4-8.5 GiB of host memory per load and costs 1.4-1.5x the load time, above the 1.10x mark, so by the rule set for this change the streaming is held until it is no slower and the fit-guard
 correction (KV priced as VRAM) goes on its own. The cause is not measured. Where the cost may sit: the eager path packed on the first loop and uploaded in a second job, and the streamed path packs one block, uploads it
 (`gpu.Upload`, synchronous), then packs the next, so pack and upload no longer overlap and each pays its own latency; a pipeline (pack block n+1 while block n uploads) is the first thing to try.
+
+### Where the load time went, and the parallel pack (2026-10-18 13:58-14:00 PDT)
+
+**Diagnosis** (a throwaway build that timed the streamed path; not committed). On the 7B sidecar `streamW` took 14.0 s in all: the word-permute loop 12.4 s, the scale conversion 0.9 s, `gpu.Upload` 0.6 s. The upload was not the cost and
+overlapping it alone could not have helped; the single-threaded pack, which reads the mapped source at about 12 ns a word, was. The change: `streamBlocks` packs row blocks on goroutines, one per free staging block (a pool of up to four, `GOMAXPROCS/2`),
+while the executor thread, which owns the device context, uploads each block as it finishes; every block carries its own offset, so the device bytes are unchanged. Host staging is at most four blocks of about 20 MiB.
+
+**Tier 0 on the device, with the change:** G-S1 (device bytes identical to `packWeight`'s), G-S2a (the host bound, now `stageCount()` blocks), G-S2b, the decline test and G-S3 all PASS (`-v`); `go vet` (tagged and untagged), gofmt over the tree and staticcheck
+(`./decoder/...`, and `./cuda/...` with the cuda tags) are clean.
+
+**Same-session A B B A, `ready_s`** (main's binary, the overlap build, the overlap build, main's; two runs per arm; `raw/ab2/`):
+
+| cell | main | overlap build | overlap / main | peak anon, main -> overlap |
+|---|---|---|---|---|
+| 7B sidecar | 10.93, 10.88 | 7.44, 7.29 | **0.68** | 4189, 4129 -> 125, 120 MiB |
+| 7B `-direct-load` | 11.94, 11.94 | 8.70, 8.55 | **0.72** | 8666, 8634 -> 4227, 4231 MiB |
+| phi3 q4k | 3.19, 2.12 | 2.03, 2.08 | **0.77** | 5311, 5312 -> 2759, 2762 MiB |
+
+The overlap build loads faster than main in every cell (the bar was 1.10x main). The first phi3 main run (3.19 s) is slower than its second (2.12 s); the cell is short, and the ratio of means is 0.77 with either reading (0.97 of the second main run alone). Peak VmRSS on the direct path
+is unchanged (8.5 GiB, the load phase), as before.
+
+**Fit guard, streaming half.** With streaming, `packBytes` is one packed layer plus the staging blocks (`cudaPackStageBytes`, 80 MiB), where #97 priced the packed copy of the whole model; the source-file term is unchanged on the direct path.
+

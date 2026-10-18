@@ -158,7 +158,7 @@ func TestPackStream_hostBytesAreTheStagingBlockNotTheTensor(t *testing.T) {
 		}
 	})
 	packed := uint64(tensors) * uint64(N*K/2+N*K/32*2)
-	bound := uint64(stagePackWords)*4*2 + uint64(tensors)*64<<10 // the staging block (words, scales and their widening), plus headers
+	bound := uint64(stageCount())*uint64(stagePackWords)*4*2 + uint64(tensors)*64<<10 // the staging blocks (words, scales and their widening), plus headers
 	if eagerBytes < packed {
 		t.Fatalf("VOID: the eager path allocated %d host bytes for %d packed: the fixture is too small to see the difference", eagerBytes, packed)
 	}

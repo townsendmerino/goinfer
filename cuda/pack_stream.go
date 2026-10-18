@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"runtime"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -68,12 +69,16 @@ func planWeight(w *linalg.WeightMat) (hostW, error) {
 	}
 }
 
-// packStage is the build's staging memory: one block of packed words and one of scales, reused for every tensor and dropped when the build's setup job
-// ends (cudaResident.pk).
+// packStage is one staging block of the build: scratch for the packed words and scales of a run of rows, and the slices the upload reads. The build keeps a
+// small pool of them (packPool), reused for every tensor and dropped when the build's setup job ends (cudaResident.pk).
 type packStage struct {
 	u32 []uint32
 	u16 []uint16
 	f32 []float32
+	// what pack produced for upload: the packed words, and the block's scales (f16 for int4, f32 for a quantized f32 weight)
+	outW []uint32
+	outH []uint16
+	outS []float32
 }
 
 func (s *packStage) words(n int) []uint32 {
@@ -95,17 +100,73 @@ func (s *packStage) floats(n int) []float32 {
 	return s.f32[:n]
 }
 
-// streamW is upW for a planned weight: it allocates the weight's device buffers (the same sizes upW allocates for a packed one), then packs row blocks into
-// the staging block and uploads each at its offset. Every block holds whole rows, and each row's packed words and scales depend on that row alone, so
-// the device bytes are the bytes packWeight produces. An upload error is recorded as upW's are (recordUpload).
-func (r *cudaResident) streamW(h hostW) cudaWQ {
-	if r.pk == nil {
-		r.pk = &packStage{}
+// packPool is the staging blocks and the channel that hands them to packers: a block is free until a packer takes it and again once its upload is done,
+// so the host never holds more than len(stages) blocks of packed data.
+type packPool struct {
+	stages []*packStage
+	free   chan *packStage
+}
+
+// packStageCount is how many staging blocks the build keeps: packing reads the (mapped) source at a few ns per word on one core, so several blocks are packed
+// on other cores while the executor thread uploads. A test sets it to pin the host bound.
+var packStageCount = 0
+
+func stageCount() int {
+	if packStageCount > 0 {
+		return packStageCount
 	}
+	return max(1, min(4, runtime.GOMAXPROCS(0)/2))
+}
+
+func newPackPool() *packPool {
+	n := stageCount()
+	p := &packPool{free: make(chan *packStage, n)}
+	for range n {
+		st := &packStage{}
+		p.stages = append(p.stages, st)
+		p.free <- st
+	}
+	return p
+}
+
+// streamBlocks packs the N rows of a tensor in blocks of `block` rows and calls up on each packed block. pack runs on goroutines (at most one per free staging
+// block), up runs on the calling goroutine, which owns the device context, in whatever order the blocks finish: every block names its own offset.
+func (r *cudaResident) streamBlocks(N, block int, pack func(st *packStage, r0, rows int), up func(st *packStage, r0, rows int)) {
+	if r.pk == nil {
+		r.pk = newPackPool()
+	}
+	nb := (N + block - 1) / block
+	type done struct {
+		st       *packStage
+		r0, rows int
+	}
+	ready := make(chan done, len(r.pk.stages))
+	go func() {
+		for b := 0; b < nb; b++ {
+			st := <-r.pk.free
+			r0 := b * block
+			rows := min(block, N-r0)
+			go func() {
+				pack(st, r0, rows)
+				ready <- done{st, r0, rows}
+			}()
+		}
+	}()
+	for range nb {
+		d := <-ready
+		up(d.st, d.r0, d.rows)
+		r.pk.free <- d.st
+	}
+}
+
+// streamW is upW for a planned weight: it allocates the weight's device buffers (the same sizes upW allocates for a packed one), then packs row blocks into
+// staging blocks (streamBlocks) and uploads each at its offset. Every block holds whole rows, and each row's packed words and scales depend on that row
+// alone, so the device bytes are the bytes packWeight produces. An upload error is recorded as upW's are (recordUpload).
+func (r *cudaResident) streamW(h hostW) cudaWQ {
 	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: r.au32(h.nWpk)}
 	N, K := h.N, h.K
 	rowsFor := func(wordsPerRow int) int { return max(1, stagePackWords/max(wordsPerRow, 1)) }
-	putWords := func(dst Buffer, off int, src []uint32) { r.recordUpload(gpu.Upload(dst.At(off*4), src)) }
+	putWords := func(st *packStage, r0, wpr int) { r.recordUpload(gpu.Upload(w.W.At(r0*wpr*4), st.outW)) }
 	switch h.kind {
 	case "int4":
 		q4, s16, _, ok := h.src.Int4F16()
@@ -116,66 +177,62 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 		allocSeen(h.nWs16 * 2)
 		w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, h.nWs16)
 		wpr, gpr := K/8, K/32
-		block := rowsFor(wpr)
-		for r0 := 0; r0 < N; r0 += block {
-			rows := min(block, N-r0)
-			words := r.pk.words(rows * wpr)
+		r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
+			words := st.words(rows * wpr)
 			src := q4[r0*wpr*4 : (r0+rows)*wpr*4]
 			for i := range words {
 				b := src[i*4 : i*4+4]
 				words[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 			}
-			putWords(w.W, r0*wpr, words)
+			st.outW = words
 			// The scales go through the same f16 -> f32 -> f16 trip packWeight makes, so a non-canonical payload comes out the same.
 			n := rows * gpr
-			wide := r.pk.floats(n)
+			wide := st.floats(n)
 			linalg.F16ToF32Slice(wide, s16[r0*gpr:r0*gpr+n])
-			gs := r.pk.halves(n)
+			gs := st.halves(n)
 			for i, v := range wide {
 				gs[i] = f32tof16(v)
 			}
-			r.recordUpload(gpu.Upload(w.ws16.At(r0*gpr*2), gs))
-		}
+			st.outH = gs
+		}, func(st *packStage, r0, rows int) {
+			putWords(st, r0, wpr)
+			r.recordUpload(gpu.Upload(w.ws16.At(r0*gpr*2), st.outH))
+		})
 	case "int8":
+		wpr := K / 4
 		if h.src.Kind() == "int8" {
 			q8, sc, _, _ := h.src.Int8()
-			wpr := K / 4
-			block := rowsFor(wpr)
-			for r0 := 0; r0 < N; r0 += block {
-				rows := min(block, N-r0)
-				words := r.pk.words(rows * wpr)
+			r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
+				words := st.words(rows * wpr)
 				packI8Into(words, q8[r0*K:(r0+rows)*K])
-				putWords(w.W, r0*wpr, words)
-			}
+				st.outW = words
+			}, func(st *packStage, r0, rows int) { putWords(st, r0, wpr) })
 			w.ws = r.up32(sc)
 			return w
 		}
 		// An f32 weight, quantized to int8 row by row here as packWeight does.
 		f32, _ := h.src.F32()
 		w.ws = r.af(h.nWs)
-		wpr := K / 4
-		block := rowsFor(wpr)
-		for r0 := 0; r0 < N; r0 += block {
-			rows := min(block, N-r0)
+		r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
 			q8, sc := linalg.QuantizeRowsInt8(f32[r0*K:(r0+rows)*K], rows, K)
-			words := r.pk.words(rows * wpr)
+			words := st.words(rows * wpr)
 			packI8Into(words, q8)
-			putWords(w.W, r0*wpr, words)
-			r.recordUpload(gpu.Upload(w.ws.At(r0*4), sc))
-		}
+			st.outW, st.outS = words, sc
+		}, func(st *packStage, r0, rows int) {
+			putWords(st, r0, wpr)
+			r.recordUpload(gpu.Upload(w.ws.At(r0*4), st.outS))
+		})
 	case "q4k":
 		raw, _ := h.src.Q4K()
 		wpr := K / 256 * 36
-		block := rowsFor(wpr)
-		for r0 := 0; r0 < N; r0 += block {
-			rows := min(block, N-r0)
-			words := r.pk.words(rows * wpr)
+		r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
+			words := st.words(rows * wpr)
 			src := raw[r0*wpr*4 : (r0+rows)*wpr*4]
 			for i := range words {
 				words[i] = uint32(src[4*i]) | uint32(src[4*i+1])<<8 | uint32(src[4*i+2])<<16 | uint32(src[4*i+3])<<24
 			}
-			putWords(w.W, r0*wpr, words)
-		}
+			st.outW = words
+		}, func(st *packStage, r0, rows int) { putWords(st, r0, wpr) })
 	default:
 		r.recordUpload(fmt.Errorf("cuda: unsupported planned kind %q", h.kind))
 	}

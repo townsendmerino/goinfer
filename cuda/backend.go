@@ -1782,7 +1782,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return e
 		}
 		r.kvGrantRollback() // last: everything it must not cost is allocated
-		r.pk = nil          // the packing staging block: the garbage the build leaves behind is one block, not a packed copy
+		r.pk = nil          // the packing staging blocks: the garbage the build leaves behind is a few blocks, not a packed copy
 		return r.setupErr
 	})
 	if setupErr != nil {

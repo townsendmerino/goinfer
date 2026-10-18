@@ -1,0 +1,36 @@
+== tier 0 13:58:22
+--- PASS: TestDeclineAdvice (0.00s)
+--- PASS: TestDeclineAdvice_wiredIntoBuildResident (0.00s)
+--- PASS: TestPackStream_deviceBytesIdenticalToPackWeight (0.37s)
+--- PASS: TestPackStream_hostBytesAreTheStagingBlockNotTheTensor (0.30s)
+--- PASS: TestPackStream_planningPacksNothing (0.00s)
+--- PASS: TestPackStream_aDeclineAllocatesNothing (0.20s)
+--- PASS: TestPackStream_buildAllocatesNothingBeforeEveryLayerIsAccepted (1.11s)
+ok  	github.com/townsendmerino/goinfer/cuda	2.043s
+== build 13:58:28
+== A B B A 13:58:30
+[1 main] # 13:58:30 7b-sidecar
+[1 main] {"cell": "7b-sidecar", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096"], "ready_s": 10.93, "samples": 277, "peak_anon_mib": 4189, "peak_anon_at_s": 9.97, "peak_rss_mib": 8086, "peak_rss_at_s": 9.97, "hwm_mib": 8092, "peak_swap_mib": 0, "final_anon_mib": 95, "final_file_mib": 3873, "gc_cycles": 26, "gc_max_before_mb": 3979, "gc_max_live_mb": 3176}
+[1 main] # 13:58:44 7b-direct
+[1 main] {"cell": "7b-direct", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096", "-direct-load"], "ready_s": 11.94, "samples": 297, "peak_anon_mib": 8666, "peak_anon_at_s": 11.03, "peak_rss_mib": 8773, "peak_rss_at_s": 11.03, "hwm_mib": 8773, "peak_swap_mib": 0, "final_anon_mib": 4189, "final_file_mib": 78, "gc_cycles": 26, "gc_max_before_mb": 8614, "gc_max_live_mb": 4935}
+[1 main] # 13:58:59 phi3-q4k
+[1 main] {"cell": "phi3-q4k", "model": "/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "extra": ["-ctx", "4096", "-quant", "q4k"], "ready_s": 3.19, "samples": 124, "peak_anon_mib": 5311, "peak_anon_at_s": 3.14, "peak_rss_mib": 5411, "peak_rss_at_s": 3.14, "hwm_mib": 5420, "peak_swap_mib": 0, "final_anon_mib": 2723, "final_file_mib": 78, "gc_cycles": 17, "gc_max_before_mb": 5282, "gc_max_live_mb": 3918}
+[2 overlap] # 13:59:06 7b-sidecar
+[2 overlap] {"cell": "7b-sidecar", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096"], "ready_s": 7.44, "samples": 208, "peak_anon_mib": 125, "peak_anon_at_s": 6.53, "peak_rss_mib": 4033, "peak_rss_at_s": 6.53, "hwm_mib": 4033, "peak_swap_mib": 0, "final_anon_mib": 88, "final_file_mib": 3873, "gc_cycles": 25, "gc_max_before_mb": 89, "gc_max_live_mb": 71}
+[2 overlap] # 13:59:16 7b-direct
+[2 overlap] {"cell": "7b-direct", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096", "-direct-load"], "ready_s": 8.7, "samples": 233, "peak_anon_mib": 4227, "peak_anon_at_s": 7.75, "peak_rss_mib": 8508, "peak_rss_at_s": 1.37, "hwm_mib": 8629, "peak_swap_mib": 0, "final_anon_mib": 4182, "final_file_mib": 78, "gc_cycles": 24, "gc_max_before_mb": 4241, "gc_max_live_mb": 4129}
+[2 overlap] # 13:59:28 phi3-q4k
+[2 overlap] {"cell": "phi3-q4k", "model": "/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "extra": ["-ctx", "4096", "-quant", "q4k"], "ready_s": 2.03, "samples": 101, "peak_anon_mib": 2759, "peak_anon_at_s": 1.98, "peak_rss_mib": 4611, "peak_rss_at_s": 0.61, "hwm_mib": 4999, "peak_swap_mib": 0, "final_anon_mib": 2727, "final_file_mib": 78, "gc_cycles": 16, "gc_max_before_mb": 2731, "gc_max_live_mb": 2687}
+[3 overlap] # 13:59:34 7b-sidecar
+[3 overlap] {"cell": "7b-sidecar", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096"], "ready_s": 7.29, "samples": 205, "peak_anon_mib": 120, "peak_anon_at_s": 6.33, "peak_rss_mib": 4020, "peak_rss_at_s": 6.33, "hwm_mib": 4044, "peak_swap_mib": 0, "final_anon_mib": 88, "final_file_mib": 3873, "gc_cycles": 24, "gc_max_before_mb": 97, "gc_max_live_mb": 71}
+[3 overlap] # 13:59:44 7b-direct
+[3 overlap] {"cell": "7b-direct", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096", "-direct-load"], "ready_s": 8.55, "samples": 230, "peak_anon_mib": 4231, "peak_anon_at_s": 7.6, "peak_rss_mib": 8549, "peak_rss_at_s": 1.32, "hwm_mib": 8630, "peak_swap_mib": 0, "final_anon_mib": 4188, "final_file_mib": 78, "gc_cycles": 25, "gc_max_before_mb": 4552, "gc_max_live_mb": 4129}
+[3 overlap] # 13:59:56 phi3-q4k
+[3 overlap] {"cell": "phi3-q4k", "model": "/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "extra": ["-ctx", "4096", "-quant", "q4k"], "ready_s": 2.08, "samples": 102, "peak_anon_mib": 2762, "peak_anon_at_s": 1.98, "peak_rss_mib": 4984, "peak_rss_at_s": 0.66, "hwm_mib": 4997, "peak_swap_mib": 0, "final_anon_mib": 2730, "final_file_mib": 78, "gc_cycles": 15, "gc_max_before_mb": 2731, "gc_max_live_mb": 2687}
+[4 main] # 14:00:01 7b-sidecar
+[4 main] {"cell": "7b-sidecar", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096"], "ready_s": 10.88, "samples": 276, "peak_anon_mib": 4129, "peak_anon_at_s": 9.97, "peak_rss_mib": 8030, "peak_rss_at_s": 9.97, "hwm_mib": 8030, "peak_swap_mib": 0, "final_anon_mib": 96, "final_file_mib": 3873, "gc_cycles": 26, "gc_max_before_mb": 4018, "gc_max_live_mb": 2999}
+[4 main] # 14:00:15 7b-direct
+[4 main] {"cell": "7b-direct", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096", "-direct-load"], "ready_s": 11.94, "samples": 297, "peak_anon_mib": 8634, "peak_anon_at_s": 11.03, "peak_rss_mib": 8741, "peak_rss_at_s": 11.03, "hwm_mib": 8741, "peak_swap_mib": 0, "final_anon_mib": 4187, "final_file_mib": 78, "gc_cycles": 26, "gc_max_before_mb": 8586, "gc_max_live_mb": 5060}
+[4 main] # 14:00:30 phi3-q4k
+[4 main] {"cell": "phi3-q4k", "model": "/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "extra": ["-ctx", "4096", "-quant", "q4k"], "ready_s": 2.12, "samples": 103, "peak_anon_mib": 5312, "peak_anon_at_s": 2.02, "peak_rss_mib": 5412, "peak_rss_at_s": 2.02, "hwm_mib": 5422, "peak_swap_mib": 0, "final_anon_mib": 2725, "final_file_mib": 78, "gc_cycles": 16, "gc_max_before_mb": 5282, "gc_max_live_mb": 5033}
+== done 14:00:36
