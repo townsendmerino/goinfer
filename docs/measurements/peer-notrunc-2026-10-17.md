@@ -132,3 +132,43 @@ This is phi3-mini's matched-quant reading on CUDA; the Metal one is tonight's jo
 ## Results: Metal
 
 Queued for the night of 2026-10-17 (`notrunc-metal-remeasure`, after M1 and P29). Results to follow.
+
+## MLX's two server paths: pre-registration (2026-10-17, evening, before the run)
+
+**Why.** In the Metal run above, MLX's sampled rows ran faster than its greedy ones: on the 1.5B, 110.8 tok/s greedy, 122.2
+on the shared preset and 136.2 untruncated. The harness times every arm the same way: the engine's reported completion
+tokens less one, over the harness's own clock from the first stream event to the last. Every completion was 64 tokens,
+tokens per streamed event were about 1.0, and MLX's greedy cells ran at the lowest load of the night.
+
+The cause is in mlx-lm 0.31.3's `server.py`. `_is_batchable` sends a request with no seed to the batch engine
+(`BatchGenerator`), and one with a seed to the one-request `stream_generate` loop. The greedy config sent MLX no seed, while
+both sampled configs sent `seed 1`. `bench_peer.py` now sends every arm `seed 1` in every config (`e90e82b9`) and records
+each MLX cell's `mlx_path`.
+
+- **Job:** `peer-notrunc-2026-10-17/run-mlx-seed.sh`, a Mac night job on 2026-10-17 with `bench_peer.py` pinned at
+  `e90e82b9`.
+  - mlx-lm only, Metal, depth 128, the 1.5B and 7B, 3 runs × 8 completions × 64 tokens.
+  - Cells:
+    - greedy with seed 1 (`single-request`);
+    - `temp0.8_topk40_topp0.9_unseeded`, the preset with no seed (`batch`);
+    - two same-session controls with seed 1, the preset and `temp1.0_notrunc` (`single-request`).
+  - 8 cells, about 10 minutes.
+- **Prediction 1, the owner's:** seeded greedy ≥ the untruncated rate, per model. Argmax costs less than sampling the
+  whole vocabulary, so on one server path greedy should not be the slower config.
+  - Graded against the same-session untruncated control, as r = greedy run i ÷ untruncated run i for the 3 pairs.
+  - **Holds:** every r ≥ 1.00.
+  - **Ambiguous:** pairs straddle 1.00, or all fall in [0.97, 1.00).
+  - **Fails:** every r < 0.97.
+- **Prediction 2:** the unseeded preset runs slower than the seeded preset, by about what separated the batch-path greedy
+  row from the one-request sampled rows above.
+  - r = unseeded run i ÷ seeded run i.
+  - **Holds:** every r < 0.97.
+  - **Ambiguous:** a straddle of 0.97, or all r in [0.97, 1.03].
+  - **Fails:** every r > 1.03. The seed would then not be what moved MLX's rate.
+- **Spread cap and voids:** as above. A run-to-run spread over 5% caps a cell at ambiguous, and the harness's token gate
+  voids.
+- **Use (owner, 2026-10-17):**
+  - 2d quotes MLX rows from the one-request path only: the run above's sampled rows and this job's seeded greedy.
+  - Each row says which path it ran.
+  - The run above's unseeded greedy row is kept only as a note.
+  - No stop rule beyond the fixed cells.
