@@ -17,6 +17,25 @@
 
 ## What is open
 
+- **P33 · Metal decode is 0.67–0.76 of mlx-lm's single-request path at matched settings — OPEN, filed 2026-10-18 (owner).
+  Measure first; no work yet.** `mac`.
+
+  - **The gap** (`docs/benchmarks.md` §B11, same-session, depth 128, 3 runs × 8 × 64 tokens, the same seed and sampling
+    fields on both arms; mlx-lm 0.31.3 on mlx-community 4-bit):
+    - greedy: 1.5B 0.666 (92.0 vs 138.2 tok/s), 7B 0.742 (29.7 vs 40.0);
+    - the shared preset: 0.71 / 0.76;
+    - untruncated: 0.69 / 0.75.
+  - **The quants differ in kind.** goinfer runs `int4` (its group-32 W4A8 weights), and mlx-lm runs its own 4-bit
+    group quantisation. Both are 4-bit, so the classes match, but the kernels and layouts are each engine's own.
+  - **First, where the decode time goes on each arm:**
+    - goinfer's per-token split: the GEMVs by projection, attention, norms and the head, and the CPU-side time between
+      command buffers;
+    - the same split for mlx-lm, from its own trace;
+    - each GEMV's achieved bandwidth against the M1 Pro's.
+    The July "dispatch-bound" reading was refuted 2026-09-26 (GEMVs are weight-work-bound), so this starts from a
+    measurement, not that assumption.
+  - **Not before the split:** any kernel work, or any claim about which side's quantisation is "faster".
+
 - **P32 · Gemma 4 E-models prefill at 144 tok/s on Metal where Qwen2.5-1.5B does 900: a fused attention kernel for head dims
   256 and 512 — OPEN, filed 2026-10-17 (owner). Not built.** `mac`, Metal kernel work.
 

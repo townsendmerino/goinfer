@@ -1224,3 +1224,54 @@ threshold now applies to `VmSwap` summed over the server's pid and descendants (
 threshold, and the banner names the reader. Run plans that set `swap_guard_mb` 4096 as a workaround drop it once a build carries this.
 
 Merged as PR #90 (`dba04134`). The nobara CUDA serve built from it prints `swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop`. No existing run plan runs a build that carries it (each names a binary pinned earlier), so none was edited; a plan pinned to a build at or after it omits `swap_guard_mb`.
+
+## Addendum, 2026-10-18: phi3 at `q4k` on Metal swaps during the resident build — diagnosed, not changed
+
+**What happened.** peer-vetted M1 (Phi-3-mini 4k at `--quant q4k -ctx 2048`, `serve-metal-42d72319`) passed both guards
+and still grew system swap in goinfer's own cell:
+- **2026-10-17 19:15:** +232.5 MB.
+- **2026-10-18 00:13:** +310.6 MB, on a Mac restarted with nothing else open, with swap at 0.
+
+Ollama's cell beside it grew none. The record is `docs/measurements/peer-vetted-2026-10-07-macbook.md`, "M1 on
+2026-10-17/18".
+
+**From the records (no new run, owner 2026-10-18):**
+- **The swap grew during the load, not the decode.** The serve log's swap guard reads 0.00 GB at the load's start and
+  0.33 GB once the server was up (00:14). The 19:17 load reads 0.18 GB, then 0.22 GB.
+- **What the guards priced:**
+  - The fit guard: 2.6 GB of weights, 0.8 GB of KV (one slot) and 2.2 GB of mapped checkpoint, 5.6 GB against 70% of
+    10.2 GB available.
+  - Metal's resident guard: weights, the host copy and KV. That is 5.98 GB for one slot (P29's refusal of the same load);
+    the build took two slots, about 6.75 GB.
+- **Measured RSS does not answer it.** The harness samples RSS only from the moment the server is up, so the load's peak
+  is never sampled. On darwin, RSS is also what survived reclaim: the same load read 3.04 GB at 19:15 and 7.78 GB at
+  00:13. Neither figure is the load's peak.
+
+**The term neither guard prices: the upload's staging copies, read from the code.**
+- `metal/model.go:q4kLaneBuf` builds each projection's upload by appending its parts into a new Go slice, with no
+  preallocation, so growth adds intermediates of its own. `NewBufferInt8` (aikit `NewBufferOf`, `newBufferWithBytes`)
+  then copies that slice into a device buffer. The slice is garbage once the call returns, and so are the int8 path's
+  `q` and `sc`.
+- Nothing collects that garbage during the build. The decoder returns freed heap only after `BuildResident` returns
+  (`decoder/residency.go:releaseHostMemory`), and Go's collector lets the heap grow to about twice its live size first.
+- **The live heap is the 2.6 GB host copy, so up to about 2.6 GB of staging garbage can sit beside it.** That gives a
+  peak of about host 2.6 + staging up to 2.6 + device 2.6 + KV 1.6 ≈ 9.4 GB, against the 6.75 GB the guards priced.
+  Against 10.2 GB available, with the system's own working set, that is where swap starts.
+- The .gguf mapping is not part of this peak: `decoder/gguf.go:loadGGUFWeights` closes it before the resident build.
+
+**Not established, because the records cannot show it:**
+- the build's actual heap peak;
+- how much of the 2.6 GB of headroom the collector really let accumulate;
+- how much the host copy and the device copy share (on unified memory, both are anonymous).
+
+A tier 0 counter would settle the first two: the bytes allocated during `buildResident`, from `runtime.MemStats`, and
+the heap peak beside the bytes the guard prices.
+
+**Candidate fixes, not built (the owner's call):**
+1. Write each part straight into the device buffer (`NewBufferLenOf`, then copy into its contents), so there is no
+   staging slice. That removes the term rather than pricing it.
+2. Collect between layers during the build, which bounds the garbage at about one layer.
+3. Price the staging in Metal's guard, which keeps the copies and refuses more loads.
+
+The same staging shape exists on Metal's other upload paths (`int4DirectWords` makes a scales slice), which a sweep
+would check.
