@@ -4,6 +4,14 @@
 `docs/measurements/cuda-build-heap-2026-10-18/README.md`). Branch `cuda-stream-pack`. The results are appended below the line when they are read, and no bar
 above is moved afterwards without a mechanism.
 
+## Provenance of the decision
+
+The memory work is the owner's, started from `docs/tasks/task-memory-campaign-2026-10.md`. The order to stream (rather than only price the packed copy) reached the nobara session as a
+relayed note on 2026-10-18, and the note did not name the document or whose decision it was. The owner confirmed the same day that the memory work is his and that this branch continues
+as planned: branch cells when the timing lock frees, then a PR for his yes, no merge. That campaign document has no section that poses stream-versus-price: it names the CUDA host copy only
+in MEM10 (the expert-cache registration, which this change leaves alone) and registers MEM6's gate with this change. The stream-versus-price question was posed by the
+scoping note that preceded the build (the Mac's swap work), and the choice of "stream" is the owner's confirmed decision as relayed.
+
 ## The change
 
 1. **Streaming (cuda/).** A dense projection is no longer packed in `BuildResident`'s first loop and uploaded in a second job. The first loop *plans* it
