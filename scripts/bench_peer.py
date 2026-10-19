@@ -738,9 +738,105 @@ def provenance():
         "ctx_pin": CTX_PIN,
     }
 
+def free_mem_mb():
+    """This box's available memory in MB, as goinfer's fit guard reads it (decoder.HostRAMAvailableBytes): MemAvailable on
+    Linux; free + inactive + speculative + purgeable pages from vm_stat on darwin. None when it cannot be read."""
+    try:
+        if sys.platform == "darwin":
+            return _vmstat_available_mb(_sh(["vm_stat"]))
+        with open("/proc/meminfo") as f:
+            for ln in f:
+                if ln.startswith("MemAvailable:"):
+                    return int(ln.split()[1]) // 1024
+    except Exception:
+        pass
+    return None
+
+
+def _vmstat_available_mb(out):
+    """parseVMStatAvailable's twin: None when the page size or any of the four fields is missing."""
+    m = re.search(r"page size of (\d+) bytes", out or "")
+    if not m:
+        return None
+    pages = 0
+    for key in ("Pages free:", "Pages inactive:", "Pages speculative:", "Pages purgeable:"):
+        f = re.search(re.escape(key) + r"\s+(\d+)\.", out)
+        if not f:
+            return None
+        pages += int(f.group(1))
+    return pages * int(m.group(1)) // (1 << 20)
+
+
+# THE HEAVY-LOAD VOID (owner rule 2026-10-19; CLAUDE.md "Run budget", docs/measurements/noise-registry.md §8). A cell is VOID if,
+# at its start, this box (the one doing the timed work) has a 1-minute load average above half its cores, or free memory below the
+# fit guard's need for the cell's load plus 2 GB. A void start is listed in the cell's record and the cell re-runs in place; it is
+# never run and averaged. The need is weights + KV from goinfer's own `fit:` banner for the model (learned from its goinfer cells),
+# BENCH_FIT_NEED_GB when set ("5.6", or per model "phi3-mini=5.6,M7=9.3"), else the checkpoint's file size, recorded as such.
+VOID_HEADROOM_MB = 2048
+_FIT_NEED = {}   # model key -> MB, from a goinfer fit banner
+
+
+def fit_need(model_key):
+    """(MB, source) the fit guard needs for model_key's load, or (None, None) for a cell with no model load."""
+    env = os.environ.get("BENCH_FIT_NEED_GB", "").strip()
+    if env:
+        if "=" not in env:
+            return int(float(env) * 1024), "BENCH_FIT_NEED_GB"
+        for kv in env.split(","):
+            k, _, v = kv.partition("=")
+            if k.strip() == model_key and v.strip():
+                return int(float(v) * 1024), "BENCH_FIT_NEED_GB"
+    if model_key in _FIT_NEED:
+        return _FIT_NEED[model_key], "fit banner"
+    path = (MODELS.get(model_key) or (None,))[0]
+    if path and os.path.exists(path):
+        return os.path.getsize(path) >> 20, "file size"
+    return None, None
+
+
+def learn_fit_need(model_key, log_text):
+    """Records weights + KV from the last `fit: … needs X GB KV (weights Y GB …` line in a goinfer serve log."""
+    found = None
+    for m in re.finditer(r"needs ([\d.]+) GB KV \(weights ([\d.]+) GB", log_text or ""):
+        found = (float(m.group(1)) + float(m.group(2))) * 1024
+    if found:
+        _FIT_NEED[model_key] = int(found)
+
+
+def heavy_void(state, need_mb):
+    """The reason a cell starting in machine state `state` is void, or None. state carries loadavg, free_mem_mb and ncores."""
+    la, ncores, free = state.get("loadavg"), state.get("ncores"), state.get("free_mem_mb")
+    if la and ncores and la[0] > ncores / 2:
+        return f"load {la[0]:.2f} above half of {ncores} cores"
+    if need_mb is not None and free is not None and free < need_mb + VOID_HEADROOM_MB:
+        return f"free memory {free} MB below the fit need {need_mb} MB + {VOID_HEADROOM_MB} MB"
+    return None
+
+
+def start_clean(sample, need_mb, run, wait=time.sleep, limit_s=None):
+    """Runs a cell only from a start that is not void: each void start is listed (its reason and machine state) and the
+    start is retried after BENCH_VOID_WAIT seconds (default 20). Refuses past BENCH_IDLE_WAIT, as the idle gate does.
+    Returns (run's result, the clean start's state, the void starts)."""
+    limit = float(os.environ.get("BENCH_IDLE_WAIT", "600")) if limit_s is None else limit_s
+    step = float(os.environ.get("BENCH_VOID_WAIT", "20"))
+    voids, waited = [], 0.0
+    while True:
+        state = sample()
+        why = heavy_void(state, need_mb)
+        if not why:
+            return run(), state, voids
+        voids.append(dict(state, void=why))
+        print(f"# cell VOID at start: {why}; re-running in place ({waited:.0f}/{limit:.0f}s)", flush=True)
+        if waited >= limit:
+            sys.exit(f"REFUSED mid-sweep: every start for {waited:.0f}s was void ({why}). NOT measuring anyway.")
+        wait(step)
+        waited += step
+
+
 def machine_state():
-    """Recorded at the START of each cell. See the note above: a record, not a gate."""
-    m = {"loadavg": _loadavg(), "gpu": _gpu_state()}
+    """Recorded at the START of each cell: the load average, free memory and core count the void rule reads (heavy_void), and
+    the GPU and thermal state as a record."""
+    m = {"loadavg": _loadavg(), "free_mem_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state()}
     th = thermal_state()
     if th:
         m["therm"] = th
@@ -1457,6 +1553,12 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             return None, swap.void_reason() or "server did not come up", {"swap": swap.stop()}
         if engine in ("goinfer", "goinfer_old"):
             decode_path = decode_path_since(serve_log_path, log_offset)
+            try:
+                with open(serve_log_path, "rb") as f:
+                    f.seek(log_offset)
+                    learn_fit_need(model_key, f.read().decode("utf-8", "replace"))
+            except OSError:
+                pass
             bad = decode_path_mismatch(decode_path, backend)
             # BENCH_ALLOW_CPU_FALLBACK=1 keeps such a cell and records its path: for a run whose POINT is the CPU fallback of a
             # GPU backend (phi3-metal-2026-09-29: a Metal user's Phi-3 runs on the CPU, and that is what is being timed).
@@ -2029,15 +2131,18 @@ def main():
             print(f"# skip (done): {key}", flush=True)
             continue
         gate = gate_cell_idle()
+        need, need_src = fit_need(mk) if phase in ("A", "B", "C") else (None, None)
+
+        def _run():
+            if phase == "D":
+                return run_embed_cell(engine, depth, n_embed_inputs)
+            if phase == "E":
+                return run_vision_cell(engine)
+            return run_cell(engine, mk, depth, cfg, backend)
         t0 = time.time()
-        machine = machine_state()
+        (rates, err, counts), machine, void_starts = start_clean(machine_state, need, _run)
         machine["gate"] = gate
-        if phase == "D":
-            rates, err, counts = run_embed_cell(engine, depth, n_embed_inputs)
-        elif phase == "E":
-            rates, err, counts = run_vision_cell(engine)
-        else:
-            rates, err, counts = run_cell(engine, mk, depth, cfg, backend)
+        machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
         # MODELS keys and D's "depth" is an approximate embeddings length, not a calibrated one, so
         # phases D/E record None here rather than raising a KeyError against prompts.json.
@@ -2053,6 +2158,8 @@ def main():
                "secs": round(time.time() - t0, 1)}
         if block is not None:
             rec["block"] = block
+        if void_starts:
+            rec["void_starts"] = void_starts   # listed, never averaged: the cell re-ran in place from a clean start
         unmatched = ""
         if phase in ("A", "B", "C"):
             if engine in ("goinfer", "goinfer_old"):

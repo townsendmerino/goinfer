@@ -225,6 +225,11 @@ jobs:
       - name: bench_peer sampling payloads
         run: python3 -B scripts/test_bench_peer_sampling.py
 
+      # bench_peer.py voids a cell whose start finds the box under heavy load (load above half the cores, or free memory under
+      # the fit need plus 2 GB), lists it and re-runs it in place, never averaging it in. Stdlib, milliseconds.
+      - name: bench_peer heavy-load void
+        run: python3 -B scripts/test_bench_peer_heavy.py
+
       # touched.py runs each source-scan test when a file it reads changes (scripts/touched_scans.py), and the table must name
       # every test that reads Go source: a scanner missing from it is the day loop going green on a change CI then fails.
       - name: touched.py scan selection
