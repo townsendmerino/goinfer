@@ -290,3 +290,25 @@ The branch (`kv3-tiled-2026-10`) was merged onto main with one trivial conflict 
   5. **Plants in the kernel,** each regenerated, run and restored: the window start from the widened count (the coupled formula) turns the image kernel gate and the image forced-route gate red; the V-sum ignoring the block table does the same; a V-sum that accumulates with a separate multiply and add turns the kernel gates and the Gemma 4 forced-route gates red.
 - **Not covered, said plainly.** The Qwen3.5 gate is the MoE hybrid fixture (`qwen35-tiny`, model type `qwen3_5_moe_text`); there is no tiny dense Qwen3.5 fixture, so the 9B's dense feed-forward is not in it. The `PrefillSpanScratchBytes` admission figure takes no image blocks, so an image pass's score scratch is bounded by the 64 MiB budget rather than priced (`prefillSplitKVBudget`). The tensor-core GEMM stays off for the whole of a prompt past the bound (owner decision, §11).
 
+### 13.1 Results read the next morning (2026-10-19)
+
+**The full CUDA suite on the first head of this branch (`cuda-device-suite-kv3`, REV `3996c59b`, 638 s): 717 passed, 1 failed, 0 device skips.** The one failure, `TestAttnKernelDigests_tableCoversTheSource`, is the G1-K census: `splitkv_scores_rows`, `splitkv_softmax_rows` and `splitkv_vsum_rows` are attention kernels the digest table did not
+drive. Fixed in `40efb708`: 128 digest cases for the row-batched kernels (f32 and f16 caches, head dims, plain and windowed, with and without an image block, sinks), recorded on the table's own anchor (RTX 2070 SUPER, driver 595.91.07), with the 1,864 existing digests
+unchanged (the file only gained lines). `TestAttnKernelDigests` and its census half pass on the fixed head, and on the head merged with main (which now holds the streaming pack and the `.giw` swap watch) the relevant CUDA gates pass again: the abort and streaming tests, the KV3 families,
+the kernel-equality tests, the digests, the local-memory census, the pipeline lint, and the parity manifest is fresh. A full-suite rerun on the final head is queued for tonight; it has not run.
+
+**The 9B's cold prefill, same session, one server per binary, a fresh nonce on every prompt, `/v1/completions`, one new token, `-ctx 32768`, 22:50 to 23:50 PDT (`~/goinfer-logs/kv3-ttft-2026-10-18/`), main `794a1359` against this branch:**
+
+| prompt tokens | before (main) | after (this branch) | after / before |
+|---|---|---|---|
+| 4,080 | 15.30 s (267 tok/s) | 15.37 s (265 tok/s) | 1.00 (unchanged, below the bound) |
+| 8,128 | 38.65 s (210 tok/s) | 38.46 s (211 tok/s) | 1.00 (unchanged, below the bound) |
+| 16,223 | 136.91 s (118 tok/s) | 102.62 s (158 tok/s) | 0.75 (1.33x faster) |
+| 31,403 | 414.39 s (76 tok/s) | 310.41 s (101 tok/s) | 0.75 (1.33x faster) |
+
+Tack's C3 run read 15.3, 38.8 and 421.5 s at 4k, 8k and 31.7k on `f20f0d93`; the "before" column agrees with it. One run per cell (the cells past the bound are minutes long and the difference is a third of the time).
+
+**What the number says, and does not.** Past 12,160 keys the 9B no longer falls to the sequential path, and its prefill runs bit-identical to the per-token path (the gates above), but it is 1.33x faster than the sequential fallback, not several times: the whole prompt runs on the exact kernels with the tensor-core GEMM off
+(the owner's decision, §11), and the row-batched attention itself is not a fast kernel (one thread per output dim folds its row's keys in ascending order, which is what makes it bit-identical). The prefill past the bound is still about 2.6x slower per token than below it (101 against 265 tok/s). Making it faster is a different change with its own fidelity gate (a head-dim-256 fused
+attention, or a tiled exact kernel), not this one.
+
