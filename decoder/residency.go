@@ -1184,6 +1184,11 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	rf, ok, err := rb.BuildResident(m)
+	if errors.Is(err, ErrLoadAborted) {
+		// The swap tripwire stopped the build: not a decline (which would continue on the CPU and keep loading), but the load's error.
+		m.loadAbortErr = err
+		return m
+	}
 	if err != nil || !ok {
 		// Unconditional, for the same reason as the cuda side: a decline moves the entire forward to
 		// CPU, and the runtime's contract is to say so rather than quietly get slower.
@@ -1215,6 +1220,22 @@ func (m *Model) withResidency() *Model {
 	releaseHostMemory()
 	return m
 }
+
+// withResidencyOrAbort is withResidency for Load: a resident build that the swap tripwire aborted (Options.LoadAbort closed during it)
+// closes the model and returns the build's error, which wraps ErrLoadAborted, instead of continuing on the CPU path.
+func (m *Model) withResidencyOrAbort() (*Model, error) {
+	m = m.withResidency()
+	if err := m.loadAbortErr; err != nil {
+		_ = m.Close()
+		return nil, err
+	}
+	return m, nil
+}
+
+// LoadAbort is Options.LoadAbort as the load that built this model passed it: a backend's resident build polls it between layers and
+// between upload blocks and returns an error wrapping ErrLoadAborted once it is closed. Nil (never fires) when the load was not guarded.
+// It is meaningful during BuildResident only; nothing reads it after Load returns.
+func (m *Model) LoadAbort() <-chan struct{} { return m.loadAbort }
 
 // residencyGate is withResidency's checks before it asks the backend to build: the backend's residency, the quant's resident
 // kernels, -backend auto's precision rule and admission. why is the decline they record, "" with the backend to build on.

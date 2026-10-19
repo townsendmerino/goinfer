@@ -343,17 +343,18 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 }
 
 // loadGuarded is decoder.Load under S3's load-time swap tripwire (docs/tasks/task-never-swap-2026-09.md).
-// Only a .gguf direct build observes Options.LoadAbort, so a .giw / HF-dir / streamed load arms nothing.
+// A .gguf direct build and a .giw load observe Options.LoadAbort (the .giw loader's CRC pass and layer walk, and the resident build through
+// Model.LoadAbort), so both arm the watch; an HF-dir or streamed load arms nothing.
 func loadGuarded(path string, opts decoder.Options, advice string) (*decoder.Model, error) {
 	loadOpts := opts
 	wrapLoadErr := func(err error) error { return err }
 	stopLoadGuard := func() {}
-	if !opts.StreamWeights && strings.HasSuffix(path, ".gguf") {
+	if !opts.StreamWeights && (strings.HasSuffix(path, ".gguf") || strings.HasSuffix(path, ".giw")) {
 		loadOpts.LoadAbort, wrapLoadErr, stopLoadGuard = startLoadGuard(path, opts, advice)
 	} else {
 		// Say so: a cold-user run (2026-10-05, gemma-4-26b-a4b) loaded a non-.gguf source for 20 s with an
 		// empty log, and its operator could not tell "guarded and quiet" from "not guarded at all".
-		fmt.Fprintf(loadNoticeOut, "swap guard (load): not armed for %s — only a direct .gguf build is watched, "+
+		fmt.Fprintf(loadNoticeOut, "swap guard (load): not armed for %s — only a direct .gguf or a .giw build is watched, "+
 			"so a swap-growing load is not stopped here; the serving watch arms once the server is up\n", path)
 	}
 	model, err := decoder.Load(path, loadOpts)

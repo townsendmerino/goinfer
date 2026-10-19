@@ -262,3 +262,67 @@ func TestSwapGuard_fallsBackToSystemWideWithoutAPerProcessReader(t *testing.T) {
 	defer u.swapWatch.Stop()
 	waitUntil(t, 5*time.Second, func() bool { return u.swapGuardTripped.Load() })
 }
+
+// The halt a runtime load causes, and its cure (B34 step 1): the serving watch is armed before a runtime (admin) load, the load's swap trips it, and since swapped-out
+// pages stay in swap the gate never re-opens by itself. publishLoaded re-baselines when a load has finished: the gate re-opens at once, and growth past
+// the threshold over the NEW baseline trips it again.
+func TestSwapGuard_rebaselineAfterALoadReopensTheGateAndTripsOnNewGrowth(t *testing.T) {
+	t.Setenv("GOINFER_SWAP_GUARD", "500")
+	old := swapguard.PollInterval
+	swapguard.PollInterval = time.Millisecond
+	t.Cleanup(func() { swapguard.PollInterval = old })
+	const base = int64(1_000_000_000)
+	var cur, reads atomic.Int64
+	cur.Store(base)
+	s := &server{}
+	s.armSwapGuard(func() (int64, bool) { reads.Add(1); return cur.Load(), true })
+	defer s.swapWatch.Stop()
+	waitUntil(t, 10*time.Second, func() bool { return reads.Load() >= 3 }) // the baseline has landed
+
+	cur.Store(base + 900_000_000) // the model load puts 900 MB in swap
+	waitUntil(t, 10*time.Second, func() bool { return s.swapGuardTripped.Load() })
+
+	// The old behaviour, as a control: nothing but time passes and the figure does not fall, so the gate stays shut.
+	n := reads.Load()
+	waitUntil(t, 10*time.Second, func() bool { return reads.Load() >= n+20 })
+	if !s.swapGuardTripped.Load() {
+		t.Fatal("VOID: the gate re-opened by itself with the swap still in place, so the re-baseline below proves nothing")
+	}
+
+	s.rebaselineSwapGuard("m35") // publishLoaded does this once the load has finished
+	waitUntil(t, 10*time.Second, func() bool { return !s.swapGuardTripped.Load() })
+
+	cur.Store(base + 900_000_000 + 400_000_000) // under the threshold over the new baseline
+	n = reads.Load()
+	waitUntil(t, 10*time.Second, func() bool { return reads.Load() >= n+20 })
+	if s.swapGuardTripped.Load() {
+		t.Error("400 MB over the new baseline tripped the gate; want quiet under a 500 MB threshold")
+	}
+	cur.Store(base + 900_000_000 + 600_000_000)
+	waitUntil(t, 10*time.Second, func() bool { return s.swapGuardTripped.Load() })
+
+	(&server{}).rebaselineSwapGuard("no watch armed") // GOINFER_SWAP_GUARD=off leaves swapWatch nil: a no-op, not a panic
+}
+
+// publishLoaded is the caller that matters (the admin load and the web UI's both end there): a finished load re-opens a gate the load itself tripped.
+// (The lost-race arm closes the loaded model, which needs a real one; it re-baselines at the same line, before the race is decided.)
+func TestSwapGuard_publishLoadedRebaselines(t *testing.T) {
+	t.Setenv("GOINFER_SWAP_GUARD", "500")
+	old := swapguard.PollInterval
+	swapguard.PollInterval = time.Millisecond
+	t.Cleanup(func() { swapguard.PollInterval = old })
+	const base = int64(1_000_000_000)
+	var cur, reads atomic.Int64
+	cur.Store(base)
+	s := &server{models: map[string]*loadedModel{}}
+	s.armSwapGuard(func() (int64, bool) { reads.Add(1); return cur.Load(), true })
+	defer s.swapWatch.Stop()
+	waitUntil(t, 10*time.Second, func() bool { return reads.Load() >= 3 })
+	cur.Store(base + 900_000_000)
+	waitUntil(t, 10*time.Second, func() bool { return s.swapGuardTripped.Load() })
+
+	if !s.publishLoaded(&loadedModel{name: "m"}) {
+		t.Fatal("publishLoaded refused a fresh name")
+	}
+	waitUntil(t, 10*time.Second, func() bool { return !s.swapGuardTripped.Load() })
+}

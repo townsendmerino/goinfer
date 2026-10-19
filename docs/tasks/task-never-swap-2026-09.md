@@ -1313,3 +1313,11 @@ Tack's C3 run (goinfer f20f0d93, Qwen3.6-35B-A3B, `--moe-cache-experts`, 2070 SU
 The watch took its 0.00 GB baseline at server start; the model loads after that, and a page swapped out stays in swap, so the figure could not come back down. The `.giw` guard prices KV and scratch only: the 18.1 GB pinned expert copy and the 19.6 GB `.giw` read into page cache beside it are in neither the fit line nor the watch's baseline.
 The full reading, what the logs do not give (the anonymous/file split of the 33.1 GB peak) and the proposed fixes: `docs/measurements/c3-logs-reading-2026-10-18.md` §1. Queue item B34; the load-time half is B33. Scoped, not built.
 
+## Addendum, 2026-10-18: B33 and B34 step 1 built
+
+One change (owner's word; branch `swap-giw-load-watch`, unmerged until the CUDA gates and his yes). The load-time watch now arms for a `.giw` load; the `.giw` loader (CRC pass, layer walk), the CUDA resident build (per-layer planning, before each
+layer's upload, between streamed upload blocks) poll `Options.LoadAbort`, through the new `Model.LoadAbort`; an aborted build is the load's error, wrapping `ErrLoadAborted`, not a CPU decline. The serving watch re-baselines when a runtime load finishes
+(`publishLoaded`), so swap a finished load left behind is no longer charged to serving; a load that grew swap past the threshold is aborted by the load-time watch and never reaches the re-baseline.
+Tier 0: a scripted swap reader through `ArmLoad` against a fake load (aborts a few layers after the growth; with the polls removed it runs to the end); the re-baseline at the watch, and through `publishLoaded` at the gate; the `.giw` loader and a fake residency
+backend; on the device, the real CUDA build stops where it polls, with a plant for each of its three polls (each goes red when removed). Not built: pricing the pinned expert copy (PR #100), not pre-reading the whole `.giw`.
+

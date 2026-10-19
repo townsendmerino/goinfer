@@ -289,6 +289,24 @@ func readGIWHeadReader(data []byte) (*giwReader, []byte, string, error) {
 // and its architecture resolved, before any weight matrix is: the point at which a caller that holds the file's
 // mapping can prepare the page cache for the walk over the matrices (prepareColdLoad).
 func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture)) (*Weights, error) {
+	return loadSerializedWeightsAbortable(data, crcAlreadyVerified, beforeWalk, nil)
+}
+
+// giwCRCChunk is the span the CRC pass checksums between looks at the abort channel: 64 MiB, a few milliseconds of checksum, so an abort
+// is seen within a blink of the watch closing it.
+const giwCRCChunk = 64 << 20
+
+// loadSerializedWeightsAbortable is loadSerializedWeightsHook with abort, Options.LoadAbort, polled during the CRC pass (which reads every
+// page of the mapping) and between layers of the walk. A closed abort returns an error wrapping ErrLoadAborted; nil never fires.
+func loadSerializedWeightsAbortable(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture), abort <-chan struct{}) (*Weights, error) {
+	aborted := func() bool {
+		select {
+		case <-abort:
+			return true
+		default:
+			return false
+		}
+	}
 	r, cfgJSON, bakedQuant, err := readGIWHeadReader(data)
 	if err != nil {
 		return nil, err
@@ -301,7 +319,14 @@ func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk 
 	}
 	if !crcAlreadyVerified {
 		body, want := data[:len(data)-4], binary.LittleEndian.Uint32(data[len(data)-4:])
-		if got := crc32.ChecksumIEEE(body); got != want {
+		var got uint32
+		for off := 0; off < len(body); off += giwCRCChunk {
+			if aborted() {
+				return nil, fmt.Errorf("decoder: .giw load aborted during the CRC pass: %w", ErrLoadAborted)
+			}
+			got = crc32.Update(got, crc32.IEEETable, body[off:min(off+giwCRCChunk, len(body))])
+		}
+		if got != want {
 			return nil, &SerializeError{fmt.Sprintf("CRC mismatch (got %08x want %08x) — corrupt or truncated", got, want)}
 		}
 	}
@@ -361,6 +386,9 @@ func loadSerializedWeightsHook(data []byte, crcAlreadyVerified bool, beforeWalk 
 	}
 	w.Layers = make([]LayerWeights, n)
 	for i := range w.Layers {
+		if aborted() {
+			return nil, fmt.Errorf("decoder: .giw load aborted at layer %d of %d: %w", i, n, ErrLoadAborted)
+		}
 		r.layer(&w.Layers[i])
 	}
 	if r.err != nil {
