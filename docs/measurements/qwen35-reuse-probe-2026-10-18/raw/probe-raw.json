@@ -1,0 +1,29 @@
+{
+ "serve": "/home/francis/serve-cuda-794a1359",
+ "model": "/home/francis/models/Qwen3.5-9B-Q4_K_M.gguf",
+ "rows": [
+  {
+   "turn": 1,
+   "ttft_s": 15.184,
+   "prompt_tokens": 4058,
+   "generated": "\nThe text is a sequence of fragmented and repetitive sentences describing a task scheduling and cache management process. It involves a \""
+  },
+  {
+   "turn": 2,
+   "ttft_s": 0.043,
+   "prompt_tokens": 4084,
+   "generated": " Warms\" task, a \" Before: Tree Cache\" task, and a \" Before: Shared\" task. The"
+  },
+  {
+   "turn": 3,
+   "ttft_s": 0.042,
+   "prompt_tokens": 4110,
+   "generated": " Warms task reads from a pending queue and a while loop, then drains a scheduler list. The Before: Tree Cache"
+  },
+  {
+   "turn": "cold control",
+   "ttft_s": 15.645,
+   "prompt_tokens": 4158
+  }
+ ]
+}

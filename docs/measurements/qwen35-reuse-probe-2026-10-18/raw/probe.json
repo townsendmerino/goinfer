@@ -1,0 +1,56 @@
+{
+ "serve": "/home/francis/serve-cuda-794a1359",
+ "model": "/home/francis/models/Qwen3.5-9B-Q4_K_M.gguf",
+ "rows": [
+  {
+   "size": 4096,
+   "results": [
+    {
+     "turn": 1,
+     "ttft_s": 15.358,
+     "prompt_tokens": 4098
+    },
+    {
+     "turn": 2,
+     "ttft_s": 15.507,
+     "prompt_tokens": 4130
+    },
+    {
+     "turn": 3,
+     "ttft_s": 15.58,
+     "prompt_tokens": 4150
+    },
+    {
+     "turn": "cold control (turn-3 length)",
+     "ttft_s": 15.632,
+     "prompt_tokens": 4172
+    }
+   ]
+  },
+  {
+   "size": 8192,
+   "results": [
+    {
+     "turn": 1,
+     "ttft_s": 38.956,
+     "prompt_tokens": 8146
+    },
+    {
+     "turn": 2,
+     "ttft_s": 39.152,
+     "prompt_tokens": 8177
+    },
+    {
+     "turn": 3,
+     "ttft_s": 39.355,
+     "prompt_tokens": 8197
+    },
+    {
+     "turn": "cold control (turn-3 length)",
+     "ttft_s": 39.449,
+     "prompt_tokens": 8219
+    }
+   ]
+  }
+ ]
+}

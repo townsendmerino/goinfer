@@ -76,7 +76,7 @@ func TestLoadGuarded_saysWhenTheLoadIsNotGuarded(t *testing.T) {
 	loadNoticeOut = &buf
 	loadGuarded(gguf, decoder.Options{Quant: "int4", StreamWeights: true}, "x") //nolint:errcheck // only the notice is under test
 	got := buf.String()
-	if !strings.Contains(got, "not armed for "+gguf) || !strings.Contains(got, "only a direct .gguf build is watched") {
+	if !strings.Contains(got, "not armed for "+gguf) || !strings.Contains(got, "only a direct .gguf or a .giw build is watched") {
 		t.Errorf("an unguarded (streamed) load printed %q, want the not-armed notice naming %s", got, gguf)
 	}
 
@@ -84,5 +84,24 @@ func TestLoadGuarded_saysWhenTheLoadIsNotGuarded(t *testing.T) {
 	loadGuarded(gguf, decoder.Options{Quant: "int4"}, "x") //nolint:errcheck // only the notice is under test
 	if buf.Len() != 0 {
 		t.Errorf("a .gguf direct build, which the guard covers, printed the not-armed notice: %q", buf.String())
+	}
+}
+
+// A .giw load arms the load-time watch (B33): the .giw loader and the resident build observe Options.LoadAbort, so there is something to stop. A
+// streamed load, which neither polls, still arms nothing. The seam is stubbed to record who asked.
+func TestLoadGuarded_armsForAGiw(t *testing.T) {
+	orig := startLoadGuard
+	t.Cleanup(func() { startLoadGuard = orig })
+	var armed []string
+	startLoadGuard = func(path string, _ decoder.Options, _ string) (<-chan struct{}, func(error) error, func()) {
+		armed = append(armed, path)
+		return nil, func(err error) error { return err }, func() {}
+	}
+	missing := filepath.Join(t.TempDir(), "m.int4.cuda.v17.giw")
+	loadGuarded(missing, decoder.Options{}, "x")                    //nolint:errcheck // the load fails (no file); only the arming is under test
+	loadGuarded(missing, decoder.Options{StreamWeights: true}, "x") //nolint:errcheck // streamed: not armed
+	loadGuarded("dir-without-suffix", decoder.Options{}, "x")       //nolint:errcheck // an HF directory: not armed
+	if len(armed) != 1 || armed[0] != missing {
+		t.Errorf("armed for %v, want exactly the unstreamed .giw %s", armed, missing)
 	}
 }

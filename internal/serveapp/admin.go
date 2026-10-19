@@ -186,6 +186,7 @@ func (s *server) adminLoadConfig(req adminLoadReq) config {
 // and reports false. Shared by the admin load and the web UI's load (webui.go) so the close-on-race and the session
 // restore live in one place.
 func (s *server) publishLoaded(lm *loadedModel) bool {
+	s.rebaselineSwapGuard(lm.name)                    // the load has finished; see there
 	if line := lm.setConcurrency(s.cfg); line != "" { // before the model is routable
 		fmt.Fprintf(os.Stderr, "%q %s\n", lm.name, line)
 	}

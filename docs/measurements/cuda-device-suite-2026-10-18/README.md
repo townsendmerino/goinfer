@@ -19,6 +19,8 @@ directory (`git pull` there): a checkout without it makes the unit fail loudly (
 **The verdict as an issue.** After the run the job calls `scripts/cuda_device_suite_issue.py`: red opens "cuda-device-suite red on <short sha>" with the summary, the failing names and the last 40 lines of the log (home paths shortened),
 or comments the same on the newest open issue of that title; green closes every open one with a comment. A log with no verdict line (the job died in setup) opens and closes nothing; `SUMMARY.md` has it. The issues are public, as the repo is.
 
+**Other revisions.** `REV=<sha-or-ref>` runs the same suite on a branch (queue it as `env REV=<sha> bash …/run-cuda-device-suite.sh` with its own job name); only `origin/main` files or closes the issue.
+
 **Overlap.** `gate gpu` (pre-tag, about 2 h 20 min with its heavy tier) runs this suite as its step 2a/2b; this job is the cheap daily slice of it. `night.py` has no recurring jobs: it is queued
 each night it should run (`night.py add cuda-device-suite ...`, line in the script header).
 

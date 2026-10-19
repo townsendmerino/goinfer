@@ -31,6 +31,35 @@ was read, and the peak cannot be split between them from the logs. A sampled loa
 3. **Price the pinned expert copy** in `decideGIWFit` when `--moe-cache-experts` is on (the `.giw`'s expert bytes), so a box that cannot hold 18.1 GB pinned beside its page cache is refused or told to use a smaller cache.
 4. **Do not pre-read the whole `.giw`** when the C′ stream will read it anyway, or drop the range from page cache (`posix_fadvise` DONTNEED) after it is copied, so the cache and the pinned copy are not both held.
 
+### 1.1 Accounting for the 33.1 GB peak against the 16.9 GiB the guard prices (follow-up, from the logs, no runs)
+
+**What the figure is.** Tack's `footprint` record for the arm: `rss_peak_bytes` 33,064,402,944 (30.8 GiB), taken as `getrusage` `Maxrss` of the serve process after it exits (the `PeakRSS` method of tack's model supervisor): the high-water mark of the
+resident set over the process's whole life, load included, anonymous and file-backed pages together. The guard's 16.9 GiB is 18.12 GB (decimal); the gap is 14.9 GB, or 13.9 GiB, not 16.
+
+**What it is not.** It is not the sidecar being written: the C3 server loaded an existing `.giw` (built by an earlier job that day, 19,599,109,648 bytes), and the C3 load log has no transcode line. No request completed on this arm (every one was `503 halted`), so none of the
+request-phase host memory is in it.
+
+**What it is made of, by arithmetic from the logs (not sampled; the logs hold no `RssAnon`/`RssFile`):**
+
+| term | bytes | kind | priced by #100? |
+|---|---|---|---|
+| the routed experts, one page-locked copy (the memory campaign's 18.12 GB for this model) | about 18.1e9 | anonymous, not reclaimable | yes |
+| the dense weights, packed on the Go heap by the build tack ran (f20f0d93 predates the streaming pack): the `.giw`'s 19.5e9 less the experts | about 1.4e9 | anonymous, transient | no (gone with the streaming pack, #95) |
+| CUDA context, pinned logits and the rest of the process | about 1e9 | anonymous | no |
+| the mapped `.giw`: resident pages of a 19.6e9-byte file that the load read through once ("reading its 19.6 GB once before the load") | the remainder, about 12.5e9 of the 19.6e9 (a share of the file had been evicted by the time of the peak) | file-backed, reclaimable | no, by design |
+
+The same record shows the other arms with a constant excess of about 7.4 GB over their sidecars (granite 9.43 GB RSS for a 2.07 GB file, Qwen3-4B 9.73 GB for 2.27 GB): that is request-phase host memory, mostly the prefix snapshots (a budget of 6.3 GiB of pinned host memory, "taken after a cold
+first prefill of 2048 ids or more", per their load banners) and the pre-streaming packed copy. The 35B arm never got to a request, which is why its excess is smaller than the file-backed share would suggest.
+
+**So the ~14 GiB the guard does not price is, on this reading, mostly the file's resident pages (reclaimable, counted in RSS) plus about 2.4 GB of transient and process-level anonymous memory, not a second unpriced anonymous copy.** The only non-reclaimable term was the pinned expert copy, which #100 now prices. The arithmetic
+cannot prove the split (RSS cannot tell the two kinds apart), and it does not say when the peak happened or how much of it was swap pressure on other processes' pages.
+
+**Proposal (nothing built, nothing run).**
+1. **#100 stays as it is.** It prices the one anonymous, non-reclaimable term; pricing the file-backed remainder would refuse loads that fit (the owner's call on the sidecar row of the stream-pack gate).
+2. **Replace the inference with a measurement before #100 merges:** `docs/measurements/cuda-build-heap-2026-10-18/build_peak.py` on the 35B with `-serve-option moe-cache-experts` at `-ctx 32768`, on the current main build (which has the streaming pack), sampling `RssAnon`, `RssFile`, `VmSwap` and the system's swap every 50 ms from spawn. About 5 minutes of GPU; a night job
+   (the load alone is 65 s, and the first reading is the one that matters). It says how much of the peak was the pinned copy, how much the mapping, and when.
+3. **Then decide the page-cache question from that record** (item 4 of §1's fixes, the pre-read of the whole file): if the mapping's resident share at the moment the pinned copy is allocated is what pushes the process's own pages into swap, the pre-read is the term to cut, and it is a separate change from pricing.
+
 ## 2. Qwen3.5-9B on the same build
 
 Model facts (GGUF metadata): 32 layers, `full_attention_interval` 4 (so 8 full-attention layers and 24 Gated-DeltaNet layers), head dim (`attention.key_length`) **256**, 16 heads, 4 KV heads.
@@ -40,13 +69,12 @@ Model facts (GGUF metadata): 32 layers, `full_attention_interval` 4 (so 8 full-a
 - **Tack's "reused" cell** (`internal/eval/runner.go` in tack: `measure("reused", …, prefix+tailAt(10+rep))`) sends "the previous prompt with only its last 512 tokens changed". For a recurrent model that is the one request that can never be reused: continuing at the unchanged prefix needs the
   recurrent state as it was 512 tokens before the end, and the state is mutated in place with no history. The cache-state grid says so (`decoder/cachestate.go`, `recurrentCells`: rewind inexact, snapshot refused, share "only a strict extension of the whole sequence continues, from exactly where the state stopped; anything else is cold").
   So cold equal to reused at every size (15.3 vs 15.7 s at 4k, 38.8 vs 38.8 s at 8k, 421.3 vs 421.5 s at 31.7k) is the designed behaviour for that request. Qwen3-8B and Qwen3-4B differ only because their positional KV rewinds exactly.
-- **The append-only request is served.** `internal/kvmgr/slots.go:scoreRecurrent` reuses the whole held sequence when the request's tokens start with all of them and are longer. So a follow-up whose ids are (previous prompt ids, the tokens the model generated, new text) skips the
-  held part, with no end-of-prompt snapshot (there is none for recurrent state, and the model keeps one slot). This is a code reading; it has not been run on the 9B.
-- **Where the real loop can still miss.** The held sequence is the prompt *plus the generated tokens*. The next request is re-rendered by the chat template from the message list. If that history drops earlier reasoning, re-renders a tool call's arguments with different whitespace, or tokenizes the reply
-  text into different ids than were sampled, the request is not an extension of the held ids at some token. The rule then returns 0 (cold) with no partial credit, because the state cannot be rewound to that token. Whether tack's loop hits this is an empirical question.
-- **To settle it** (scope, not run): a three-turn chat through the chat endpoint at 4k and 8k prompt tokens with tack's real system prompt and tool form, each turn appending the previous reply, comparing time-to-first-token for turns 2 and 3 against a cold request of the same length. About 5 minutes of GPU on f20f0d93 or a newer build.
-- **If the real loop does miss** and a fix is wanted, the fix is a recurrent-state checkpoint: a host copy of the DeltaNet state and conv windows at the end of each prompt (and at the end of its reply, if the next request matches it), restored for a request that shares that prefix. The state of 24 layers is tens of MB, so a host copy and a copy back take milliseconds. Pass-boundary alignment
-  matters for bit-identity with a cold run (the KV7 restore test's rule). Effort: M to L; it needs the snapshot format work, which today refuses recurrent state. Not scoped further until the three-turn run says it is needed.
+- **The append-only request is served by the engine, and the chat endpoint does not send one.** `internal/kvmgr/slots.go:scoreRecurrent` reuses the whole held sequence when the request's tokens start with all of them and are longer. Measured the same evening
+  (`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`): on plain `/v1/completions`, turn 2 and turn 3 start in 0.04 s against 15.2 s cold; through `/v1/chat/completions` the same conversation gets no reuse at 4k or 8k. The cause is the template: its history render drops the
+  empty `<think>\n\n</think>\n\n` that the generation prompt ends with, so the next prompt shares only the first 22 of the previous 26 prompt ids (rendered offline with the 9B's own template), and a recurrent state cannot be continued from there.
+- **Other ways the real loop can miss** (beyond the think block above): the held sequence is the prompt *plus the generated tokens*, and the next request is re-rendered from the message list, so a history that drops earlier reasoning, re-renders a tool call's arguments with different whitespace, or tokenizes the reply text into different ids than were sampled is also not an extension, and the rule then returns 0 with no partial credit.
+- **The fix** (options in the probe record) is a recurrent-state checkpoint at the end of the prompt minus the generation-prompt tail (the 4 think-block ids), restored for a request that shares that prefix; or, as a fidelity change the owner decides, rendering the history turn with the empty think block. The checkpoint is a host copy of the DeltaNet state and conv windows. The state of 24 layers is tens of MB, so a host copy and a copy back take milliseconds. Pass-boundary alignment
+  matters for bit-identity with a cold run (the KV7 restore test's rule). Effort: M to L; it needs the snapshot format work, which today refuses recurrent state.
 
 ### (b) Cold prefill 260 → 75 tok/s between 4k and 31k: the same 48 KiB shared-memory limit as Gemma 4's finding 1
 

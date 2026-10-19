@@ -1725,6 +1725,17 @@ ctx-cancellation, checked at a different granularity) do NOT check this yet — 
 doc's own S3 status note for why this pass stopped here rather than threading it further.
 ```
 
+### Consumers added for the `.giw` path (B33)
+
+Besides the direct GGUF build, three places poll the channel now:
+
+- the `.giw` loader (`loadSerializedWeightsAbortable`): the CRC pass in 64 MiB chunks, and between layers of the walk;
+- a backend's resident build, through `Model.LoadAbort`. The model keeps `Options.LoadAbort` only for `BuildResident` to read; nothing reads it after `Load` returns. The CUDA build polls it while planning each layer, before uploading each layer,
+  and between the blocks of a streamed weight upload;
+- `withResidency` treats a build error wrapping `ErrLoadAborted` as the load's error (`withResidencyOrAbort` closes the model and returns it), where every other build error is a decline that goes on on the CPU.
+
+`internal/modelload.loadGuarded` arms the load-time watch for a `.giw` as well as a direct `.gguf`. A streamed load, an HF directory and a transcode are still unwatched.
+
 ## modelFromOptions
 
 Moved from `decoder/model.go` (the comment above `modelFromOptions`) on 2026-10-09.
