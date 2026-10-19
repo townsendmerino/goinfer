@@ -72,12 +72,15 @@ func (r *cudaResident) prefillPastBoundExact(keys int) bool {
 // prefillSplitKVPlan sizes the score scratch of an ordinary pass of M rows whose last row attends keys keys: stride is the widest
 // row over the layers that route to the row-batched kernels (0 when none does), and rows the rows one launch group takes. fused
 // says whether the fused attention serves a head dim in this pass, as checkPrefillShmem's argument does.
-func (r *cudaResident) prefillSplitKVPlan(M, keys int, fused func(hd int) bool) (stride, rows int) {
+func (r *cudaResident) prefillSplitKVPlan(M, keys int, fused func(hd int) bool, blocks [][2]int) (stride, rows int) {
 	for l := range r.layers {
 		Ly := &r.layers[l]
 		maxNWin := keys
 		if Ly.window > 0 && int(Ly.window) < maxNWin {
 			maxNWin = int(Ly.window)
+		}
+		if len(blocks) > 0 {
+			maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks) // the widest row an image block gives this layer, as attn_img_batched sizes it
 		}
 		if !r.prefillSplitKVServes(maxNWin) || (fused != nil && fused(Ly.hd)) {
 			continue
@@ -106,7 +109,7 @@ func (r *cudaResident) PrefillSpanScratchBytes(rows, keys int) int64 {
 		p, _ := r.attnFusedFor(hd)
 		return p != (Pipeline{})
 	}
-	stride, R := r.prefillSplitKVPlan(rows, keys, fused)
+	stride, R := r.prefillSplitKVPlan(rows, keys, fused, nil)
 	if stride == 0 {
 		return 0
 	}
@@ -116,30 +119,38 @@ func (r *cudaResident) PrefillSpanScratchBytes(rows, keys int) int64 {
 // prefillSplitKVAttn is the exact attention of layer l for the M rows of a pass at startPos, written to cctxB as attn_batched
 // writes it: three launches a group of R rows (scores over keys, the softmax at attn_batched's block width, the V fold over
 // output dims). scB is [R][nH][stride] floats and invB [R][nH].
-func (r *cudaResident) prefillSplitKVAttn(l, startPos, M int, qBb, cctxB, scB, invB Buffer, stride, R int) error {
+func (r *cudaResident) prefillSplitKVAttn(l, startPos, M int, qBb, cctxB, scB, invB Buffer, stride, R int, imgBlk Buffer, nBlocks int) error {
 	Ly := &r.layers[l]
 	const dTile = 32
+	// The image-block table of attn_img_batched's contract ([start,end) int32 pairs), or null with nBlocks 0 for the causal case.
+	blocksArg := ArgNull()
+	if nBlocks > 0 {
+		blocksArg = Arg(imgBlk)
+	}
 	for row0 := 0; row0 < M; row0 += R {
 		n := min(R, M-row0)
 		widest := startPos + row0 + n // the last row of the group attends this many keys before its window
 		if Ly.window > 0 && int(Ly.window) < widest {
 			widest = int(Ly.window)
 		}
+		if nBlocks > 0 {
+			widest = stride // a row inside an image block sees past its own position: launch the plan's widest span, the surplus tiles return at once
+		}
 		if e := r.launch(r.psScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((widest + 127) / 128), GridZ: uint32(n), BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(Ly.hd * 4)},
 			Arg(qBb), Arg(r.kvK(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 			gpu.ArgValue(int32(startPos)), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(row0)), gpu.ArgValue(r.attnScale),
-			Arg(scB), gpu.ArgValue(int32(stride))); e != nil {
+			Arg(scB), gpu.ArgValue(int32(stride)), blocksArg, gpu.ArgValue(int32(nBlocks))); e != nil {
 			return e
 		}
 		// Block 128: the softmax partition and ladder are attn_batched's only at that width.
 		if e := r.launch(r.psSoftmax, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(n), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
 			Arg(scB), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(row0)),
-			gpu.ArgValue(int32(stride)), Arg(invB), r.sinkArg(l)); e != nil {
+			gpu.ArgValue(int32(stride)), Arg(invB), r.sinkArg(l), blocksArg, gpu.ArgValue(int32(nBlocks))); e != nil {
 			return e
 		}
 		if e := r.launch(r.psVsum, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((Ly.hd + dTile - 1) / dTile), GridZ: uint32(n), BlockX: dTile, BlockY: 1, BlockZ: 1},
 			Arg(scB), Arg(r.kvV(l)), Arg(invB), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(startPos)), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(row0)), gpu.ArgValue(int32(stride)), Arg(cctxB)); e != nil {
+			gpu.ArgValue(int32(startPos)), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(row0)), gpu.ArgValue(int32(stride)), Arg(cctxB), blocksArg, gpu.ArgValue(int32(nBlocks))); e != nil {
 			return e
 		}
 		r.psLaunches++

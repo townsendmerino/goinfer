@@ -12,10 +12,18 @@
 // Its own module, so no shipped PTX changes. Regenerate with:  ./build_ptx.sh prefill_splitkv
 #include "kvtype.cuh"
 
-// The row's key range, as attn_batched computes it.
-#define ROW_RANGE(m)                                                              \
-    int nKeys = startPos + (m) + 1;                                               \
-    int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;           \
+// The row's key range, as attn_batched computes it, or as attn_img_batched computes it when blocks (nBlocks int pairs [start,end)) are
+// given: a row whose own position lies inside a block sees that whole block, every other row stays causal, and the window start comes from the
+// plain causal count, never the widened one (attn_img_prefill.cu's header says why). With nBlocks == 0 this is attn_batched's formula exactly.
+#define ROW_RANGE(m)                                                                          \
+    int nKeysCausal = startPos + (m) + 1;                                                     \
+    int nKeys = nKeysCausal;                                                                  \
+    for (int b_ = 0; b_ < nBlocks; b_++)                                                      \
+        if (nKeysCausal - 1 >= blocks[2 * b_] && nKeysCausal - 1 < blocks[2 * b_ + 1]) {      \
+            nKeys = blocks[2 * b_ + 1];                                                       \
+            break;                                                                            \
+        }                                                                                     \
+    int winStart = (window > 0 && nKeysCausal > window) ? nKeysCausal - window : 0;           \
     int nWin = nKeys - winStart;
 
 // splitkv_scores_rows: grid nH x ceil(maxNWin/128) x R, block 128, shared hd floats. One thread per key of one row.
@@ -23,7 +31,7 @@
 extern "C" __global__ void splitkv_scores_rows(
     const float* __restrict__ q, const KV_T* __restrict__ kc,
     int nH, int nKV, int hd, int startPos, int window, int row0, float scale,
-    float* __restrict__ scStore, int stride) {
+    float* __restrict__ scStore, int stride, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
     int z = blockIdx.z, m = row0 + z;
     ROW_RANGE(m)
@@ -57,7 +65,7 @@ extern "C" __global__ void splitkv_scores_rows(
 // invStore[z*nH + h] its 1/denominator. sinks is gpt-oss's per-head sink logit (it joins the max and the denominator), or NULL.
 extern "C" __global__ void splitkv_softmax_rows(
     float* __restrict__ scStore, int nH, int startPos, int window, int row0, int stride,
-    float* __restrict__ invStore, const float* __restrict__ sinks) {
+    float* __restrict__ invStore, const float* __restrict__ sinks, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;
     int z = blockIdx.y, m = row0 + z;
     ROW_RANGE(m)
@@ -95,13 +103,12 @@ extern "C" __global__ void splitkv_softmax_rows(
 extern "C" __global__ void splitkv_vsum_rows(
     const float* __restrict__ scStore, const KV_T* __restrict__ vc,
     const float* __restrict__ invStore, int nH, int nKV, int hd, int startPos, int window, int row0,
-    int stride, float* __restrict__ ctx) {
+    int stride, float* __restrict__ ctx, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;
     int d = blockIdx.y * blockDim.x + threadIdx.x;
     if (d >= hd) return;
     int z = blockIdx.z, m = row0 + z;
-    int nKeys = startPos + m + 1;
-    int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
+    ROW_RANGE(m)
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
     const float* sc = scStore + ((long)z * nH + h) * stride;
     float acc = 0.f;

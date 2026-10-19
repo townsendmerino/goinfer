@@ -155,13 +155,13 @@ func psRowsCases[T gc.Supported](t *testing.T, cx *gc.Context, batPTX, rowsPTX [
 						}
 						launch(fnSc, gc.LaunchConfig{GridX: uint32(nH), GridY: uint32((widest + 127) / 128), GridZ: uint32(n), BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(hd * 4)},
 							gc.Arg(dQ), gc.Arg(dKc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
-							gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)), gc.ArgValue(scale), gc.Arg(dSc), gc.ArgValue(int32(stride)))
+							gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)), gc.ArgValue(scale), gc.Arg(dSc), gc.ArgValue(int32(stride)), gc.ArgDevicePtr(0), gc.ArgValue(int32(0)))
 						launch(fnSm, gc.LaunchConfig{GridX: uint32(nH), GridY: uint32(n), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
 							gc.Arg(dSc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(startPos)), gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)),
-							gc.ArgValue(int32(stride)), gc.Arg(dInv), sinkArg)
+							gc.ArgValue(int32(stride)), gc.Arg(dInv), sinkArg, gc.ArgDevicePtr(0), gc.ArgValue(int32(0)))
 						launch(fnVs, gc.LaunchConfig{GridX: uint32(nH), GridY: uint32((hd + 31) / 32), GridZ: uint32(n), BlockX: 32, BlockY: 1, BlockZ: 1},
 							gc.Arg(dSc), gc.Arg(dVc), gc.Arg(dInv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
-							gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)), gc.ArgValue(int32(stride)), gc.Arg(dCtx))
+							gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)), gc.ArgValue(int32(stride)), gc.Arg(dCtx), gc.ArgDevicePtr(0), gc.ArgValue(int32(0)))
 					}
 					if e := stream.Synchronize(bg); e != nil {
 						t.Fatal(e)

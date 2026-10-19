@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+- A prompt past 12,160 attended keys no longer falls to the sequential prefill on CUDA for a model whose attention the fused kernel does not serve (head dim other than 64 and 128: Gemma 2, 3 and 4, Phi-3, Qwen3.5): row-batched kernels run the exact attention, bit-identical to the single-block kernel and to the per-token path, for text and for an image-block pass.
+
 - A CUDA build packs each dense projection's weights in row blocks on a few cores and uploads them as they finish, instead of holding a packed copy of the model on the host. Peak host memory of a 7B load falls from about 4.1 GiB to 0.1 GiB through the sidecar and from 8.7 to 4.2 GiB on the direct `.gguf` path, and the load is faster (0.68x to 0.77x of the previous load time, same-session A B B A). The fit guard prices one packed layer plus the staging blocks.
 
 - The host fit guard prices a CUDA-resident load's KV as VRAM, not host memory, and prices the build's packed copy of the model where there is no source file. A 7B at a 32K context is no longer priced at 11.9 GiB of host against 8.5 GiB measured; the guard's total is within 2% of the measured peak on the 7B and 8% on phi3.

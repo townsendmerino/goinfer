@@ -273,3 +273,20 @@ reached=36`. Every part ran: the main process 30 PASS, 0 FAIL, 6 SKIP; the four 
 
 **Where this leaves the branch.** On the build that carries §11's rule every registered gate reads PASS (G4's Gemma-3 default arm stays recorded FAILED for the build
 §10 read), and the suite has no red of its own. It merges after `kv3-cuda-2026-10`, in a release later than v0.23.0.
+
+## 13. Brought onto main, with the image-block twin and the family gates (2026-10-18)
+
+The branch (`kv3-tiled-2026-10`) was merged onto main with one trivial conflict (the FMA lint's kernel list), after the owner's yes of 2026-10-18, with three additions the owner named:
+
+- **The image-block twin.** The three row-batched kernels take the image-block table (`blocks`, `nBlocks`; a null table with 0 blocks is the causal case, the formula `attn_batched` has): a row whose own position is inside a block attends the whole block, every other row stays causal, and the
+  window start comes from the CAUSAL count, never the widened one (the decoupling `attn_img_prefill.cu`'s header explains). `prefillCore` routes an image-block pass whose widest layer is past the shared-memory bound to them; `checkPrefillShmemImgBlocks` no longer declines a layer they serve.
+  `prefill_splitkv.ptx` and its f16 twin were regenerated with NVRTC 12.9.86, the version the file already recorded.
+- **Gates, each bit-equal to the exact kernel, with plants:**
+  1. `TestPrefillSplitKV_rowsEqualAttnImgBatched`: the kernels against `attn_img_batched`, head dims 64, 128, 256 and 512, one and two blocks, a plain and a sliding-window layer with the block well over a window into the sequence, groups of 1, 7 and every row. Plant in the test: the block table withheld must differ.
+  2. `TestKV3Families_forcedRouteEqualsAttnBatched`: on the Gemma 4 dense fixtures (`gemma4-dense-twogeom-tiny`: head dim 16 and a global head dim of 512, K = V; `gemma4-dense-scaled`: 256 and 512, 12 layers, a sliding window) and on the Qwen3.5 hybrid (`qwen35-tiny`), the route forced below the bound against `attn_batched`, with the tensor-core GEMM off and on, at 300, 1,000 and 2,600 tokens.
+     Result: 0 logits and 0 KV elements differ in all 18 cases (KV elements compared per case from 19,200 to 37,273,600).
+  3. `TestKV3Families_pastBoundBatchedEqualsPerToken`: at 12,400 tokens, past the bound, batched on the row kernels against the per-token path on `gemma4-dense-twogeom-tiny` (26,188,800 KV elements, 0 differ, 0 of 256 logits) and `qwen35-tiny` (793,600 KV elements, 0 differ, 0 of 256 logits); the negative arm: with the module absent, the same prompt declines by name.
+  4. `TestKV3Families_imageBlockForcedRouteEqualsAttnImgBatched`: Gemma 3 VL, two blocks, the route forced against `attn_img_batched`: 0 of 262 logits, 0 of 44,800 KV elements differ. `TestKV3Families_imageBlockPastTheBound`: an image pass that starts past 12,160 keys prefills with no decline and finite logits (there is no per-token oracle for a bidirectional block, so the numbers rest on gates 1 and 4), and declines by name with the module absent.
+  5. **Plants in the kernel,** each regenerated, run and restored: the window start from the widened count (the coupled formula) turns the image kernel gate and the image forced-route gate red; the V-sum ignoring the block table does the same; a V-sum that accumulates with a separate multiply and add turns the kernel gates and the Gemma 4 forced-route gates red.
+- **Not covered, said plainly.** The Qwen3.5 gate is the MoE hybrid fixture (`qwen35-tiny`, model type `qwen3_5_moe_text`); there is no tiny dense Qwen3.5 fixture, so the 9B's dense feed-forward is not in it. The `PrefillSpanScratchBytes` admission figure takes no image blocks, so an image pass's score scratch is bounded by the 64 MiB budget rather than priced (`prefillSplitKVBudget`). The tensor-core GEMM stays off for the whole of a prompt past the bound (owner decision, §11).
+
