@@ -472,7 +472,7 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 `docs/measurements/c3-logs-reading-2026-10-18.md` §1; background in `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: the C3 trip on the 35B-A3B".
 - **What happened:** with `--moe-cache-experts` the server's own `VmSwap` grew 0.83 and 0.90 GB over its 0.00 GB baseline during the load (512 MB threshold), the watch tripped, and every later request was `503 halted`. The baseline was taken at server start; the load runs after it; swapped pages
   do not return to baseline, so the halt cannot recover. The whole C3 arm was void.
-- **Proposed, in order (none built):** re-baseline the serving watch when the load completes; B33 for the load itself; price the 18.7 GB pinned expert copy in `decideGIWFit`; do not hold the `.giw` in page cache beside the pinned copy.
+- **Proposed, in order (none built):** re-baseline the serving watch when the load completes; B33 for the load itself; price the 18.1 GB pinned expert copy in `decideGIWFit`; do not hold the `.giw` in page cache beside the pinned copy.
 - **Gate once approved:** tier 0, a scripted reader that grows `VmSwap` during a fake load: today the watch trips and stays tripped, after the change it re-baselines at "loaded" and serves; plant: remove the re-baseline and the test must go red.
 
 **B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the

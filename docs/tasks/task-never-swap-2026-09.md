@@ -1310,6 +1310,6 @@ Not at issue on this box: the 7B sidecar load measured 0 swap and about 120 MiB 
 ## Addendum, 2026-10-18: the C3 trip on the 35B-A3B
 
 Tack's C3 run (goinfer f20f0d93, Qwen3.6-35B-A3B, `--moe-cache-experts`, 2070 SUPER, 62 GB of RAM) loaded, then tripped the serving watch on the server's own `VmSwap` (+0.90 GB against a 512 MB threshold; the system backstop did not fire) and returned `503 halted` to every request.
-The watch took its 0.00 GB baseline at server start; the model loads after that, and a page swapped out stays in swap, so the figure could not come back down. The `.giw` guard prices KV and scratch only: the 18.7 GB pinned expert copy and the 19.6 GB `.giw` read into page cache beside it are in neither the fit line nor the watch's baseline.
+The watch took its 0.00 GB baseline at server start; the model loads after that, and a page swapped out stays in swap, so the figure could not come back down. The `.giw` guard prices KV and scratch only: the 18.1 GB pinned expert copy and the 19.6 GB `.giw` read into page cache beside it are in neither the fit line nor the watch's baseline.
 The full reading, what the logs do not give (the anonymous/file split of the 33.1 GB peak) and the proposed fixes: `docs/measurements/c3-logs-reading-2026-10-18.md` §1. Queue item B34; the load-time half is B33. Scoped, not built.
 

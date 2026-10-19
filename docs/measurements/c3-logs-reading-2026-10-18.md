@@ -13,11 +13,11 @@ the arm's cells (TTFT at 4096, 8192 and 31744 tokens, decode, the check) are voi
 The same log says `swap guard (load): not armed for …int4.e4h.cuda.v17.giw — only a direct .gguf build is watched` and `swap guard: baseline 0.00 GB (server swap)`. So the serving watch took its baseline before the load began, and swap the load caused was charged to serving.
 A page swapped out stays in swap until it is touched, so `VmSwap` never fell back toward that baseline: "until it recovers" could not happen, and the halt lasted for the life of the server.
 
-**What was priced.** `fit: 32768-token cap needs 1.2 GB KV (weights 18.2 GB, budget 26.6 GB, 25.4 GB left for a request's own prefill)`. The `.giw` guard (`decoder/fitguard.go:decideGIWFit`) prices KV and prefill scratch only. It does not price the C′ expert cache, which
-`stream-weights: cache ready (18691 MB)` shows is an 18.7 GB host copy (pinned, so not reclaimable). And "reading its 19.6 GB once before the load" brings the whole `.giw` into page cache beside it. The 70% budget (26.6 GB) was compared with KV plus scratch (about 1.2 GB), not with
-18.7 GB pinned plus 19.6 GB cached. The box already carried 9.8 GB of system swap (7.2 GB of it in zram) before the load started.
+**What was priced.** `fit: 32768-token cap needs 1.2 GB KV (weights 18.2 GB, budget 26.6 GB, 25.4 GB left for a request's own prefill)`. The `.giw` guard (`decoder/fitguard.go:decideGIWFit`) prices KV and prefill scratch only. It does not price the C′ expert cache: the model's routed experts are 18.12 GB (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0's table), and on the C′ path they are packed into a page-locked host copy that cannot be reclaimed
+(MEM10). (The line `stream-weights: cache ready (18691 MB)` in the earlier sidecar-build log is the `.giw` file being written, not that copy.) And "reading its 19.6 GB once before the load" brings the whole `.giw` into page cache beside it. The 70% budget (26.6 GB) was compared with KV plus scratch (about 1.2 GB), not with
+18.1 GB pinned plus 19.6 GB cached. The box already carried 9.8 GB of system swap (7.2 GB of it in zram) before the load started.
 
-**The 33.1 GB peak: the split is not in these logs.** The two terms are known (at most 18.7 GB anonymous and pinned; the 19.6 GB mapped file, some part of it resident), but they sum to 38.3 GB, more than 33.1 GB, so some of the file's pages had been evicted by the time the peak
+**The 33.1 GB peak: the split is not in these logs.** The two terms are known (about 18.1 GB anonymous and pinned; the 19.6 GB mapped file, some part of it resident), but they sum to 37.7 GB, more than 33.1 GB, so some of the file's pages had been evicted by the time the peak
 was read, and the peak cannot be split between them from the logs. A sampled load gives the split: `docs/measurements/cuda-build-heap-2026-10-18/build_peak.py` (RssAnon, RssFile and VmSwap every 50 ms) with `-serve-option moe-cache-experts`, about 4 minutes, as a night job.
 
 **Which term let it through:**
@@ -28,7 +28,7 @@ was read, and the peak cannot be split between them from the logs. A sampled loa
 **Proposed fix, not built, in order of cost:**
 1. **Re-baseline the serving watch when the load completes** (arm it from the "loaded" hook). Smallest change; it removes the false permanent halt. The load itself stays unwatched until B33.
 2. **B33** (`docs/queue-engineering.md`): arm the load-time watch on the `.giw` path with an abort point in the CUDA build, so a swap-growing C′ stream stops with a named error.
-3. **Price the pinned expert copy** in `decideGIWFit` when `--moe-cache-experts` is on (the `.giw`'s expert bytes), so a box that cannot hold 18.7 GB pinned beside its page cache is refused or told to use a smaller cache.
+3. **Price the pinned expert copy** in `decideGIWFit` when `--moe-cache-experts` is on (the `.giw`'s expert bytes), so a box that cannot hold 18.1 GB pinned beside its page cache is refused or told to use a smaller cache.
 4. **Do not pre-read the whole `.giw`** when the C′ stream will read it anyway, or drop the range from page cache (`posix_fadvise` DONTNEED) after it is copied, so the cache and the pinned copy are not both held.
 
 ## 2. Qwen3.5-9B on the same build
