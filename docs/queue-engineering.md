@@ -468,6 +468,13 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Not started; scoped only.** Reading and proposals:
+`docs/measurements/c3-logs-reading-2026-10-18.md` §1; background in `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: the C3 trip on the 35B-A3B".
+- **What happened:** with `--moe-cache-experts` the server's own `VmSwap` grew 0.83 and 0.90 GB over its 0.00 GB baseline during the load (512 MB threshold), the watch tripped, and every later request was `503 halted`. The baseline was taken at server start; the load runs after it; swapped pages
+  do not return to baseline, so the halt cannot recover. The whole C3 arm was void.
+- **Proposed, in order (none built):** re-baseline the serving watch when the load completes; B33 for the load itself; price the 18.7 GB pinned expert copy in `decideGIWFit`; do not hold the `.giw` in page cache beside the pinned copy.
+- **Gate once approved:** tier 0, a scripted reader that grows `VmSwap` during a fake load: today the watch trips and stays tripped, after the change it re-baselines at "loaded" and serves; plant: remove the re-baseline and the test must go red.
+
 **B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the
 cuda-stream-pack scoping). **Not started; scoped only** (owner: file it, do not build it). Brief: `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
 - **What happens:** `internal/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
