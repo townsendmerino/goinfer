@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -38,7 +39,18 @@ func TestPrefillDecomp(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	opts := decoder.Options{Backend: "cuda", Quant: "int4"}
+	if os.Getenv("GOINFER_DECOMP_MOECACHE") != "" { // an MoE checkpoint that does not fit the card: the shipped configuration holds its experts in pinned host memory
+		opts.MoECacheExperts = true
+		opts.ResidentContext = 8192
+		if v, err := strconv.Atoi(os.Getenv("GOINFER_DECOMP_CTX")); err == nil && v > 0 {
+			opts.ResidentContext = v
+		}
+	}
+	if os.Getenv("GOINFER_DECOMP_GIW") != "" {
+		opts.Quant = "" // a .giw bundle is already quantized
+	}
+	mc, err := decoder.Load(path, opts)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -56,7 +68,11 @@ func TestPrefillDecomp(t *testing.T) {
 		return embs
 	}
 
-	t.Logf("%-6s %10s %10s %10s %10s %8s", "N", "gemv", "attn", "glue", "catSum", "attn%")
+	t.Logf("%-6s %10s %10s %10s %10s %10s %8s", "N", "gemv", "attn", "glue", "moeFFN", "catSum", "moeFFN%")
+	runs := 3
+	if v, err := strconv.Atoi(os.Getenv("GOINFER_DECOMP_RUNS")); err == nil && v > 0 {
+		runs = v
+	}
 	// Depths overridable (GOINFER_DECOMP_K=128,512,2048,3900): the fixed list stops
 	// at 2048, but the question this instrument is asked -- what share of
 	// CUDA prefill is attention, and therefore what a fused/FlashAttention schedule
@@ -74,26 +90,31 @@ func TestPrefillDecomp(t *testing.T) {
 	}
 	for _, n := range depths {
 		embs := build(n)
-		// warm once (JIT/caches), then take the best of 3 by category sum.
+		// warm once (JIT/caches), then take the best of `runs` by category sum. The warm pass is the unprofiled, pipelined wall time.
+		w0 := time.Now()
 		if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 			t.Fatalf("warm n=%d: %v", n, e)
 		}
+		wall := time.Since(w0)
+		fmt.Fprintf(os.Stderr, "[decomp] N=%d unprofiled pass done in %v; %d profiled run(s) next\n", n, wall.Round(time.Millisecond), runs)
+		t.Logf("N=%d unprofiled wall %v (%.1f tok/s, %.2f ms/token)", n, wall.Round(time.Millisecond), float64(n)/wall.Seconds(), 1000*wall.Seconds()/float64(n))
 		var best prefillProf
 		bestSum := time.Duration(1<<62 - 1)
-		for range 3 {
+		for range runs {
 			rf.prof = &prefillProf{}
 			if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 				t.Fatalf("prof n=%d: %v", n, e)
 			}
 			p := rf.prof
 			rf.prof = nil
-			sum := p.gemv + p.attn + p.glue
+			sum := p.gemv + p.attn + p.glue + p.moe
 			if sum < bestSum {
 				best, bestSum = *p, sum
 			}
 		}
-		sum := best.gemv + best.attn + best.glue
-		t.Logf("%-6d %10v %10v %10v %10v %7.1f%%", n, best.gemv, best.attn, best.glue, sum,
-			100*float64(best.attn)/float64(sum))
+		sum := best.gemv + best.attn + best.glue + best.moe
+		fmt.Fprintf(os.Stderr, "[decomp] N=%d profiled: gemv %v attn %v glue %v moeFFN %v (sum %v)\n", n, best.gemv, best.attn, best.glue, best.moe, sum)
+		t.Logf("%-6d %10v %10v %10v %10v %10v %7.1f%%  (attn %.1f%%)", n, best.gemv, best.attn, best.glue, best.moe, sum,
+			100*float64(best.moe)/float64(sum), 100*float64(best.attn)/float64(sum))
 	}
 }
