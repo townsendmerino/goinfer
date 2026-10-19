@@ -97,7 +97,7 @@ var ogLoadOnly = map[string]string{
 	"DisableFit":                 "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
 	"ExtraResidentBytes":         "prices a companion allocation when the resident is planned",
 	"ExtraResidentKVPerPosition": "prices a companion allocation's K/V when the resident context is chosen",
-	"LoadAbort":                  "checked between layers during a GGUF weight build; nil afterwards in effect",
+	"LoadAbort":                  "checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect",
 	"BackendAuto":                "tells a backend at load that \"auto\" chose it, so it may decline a precision it would requantize",
 	"ResidentKVSlotsDefault":     "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
 }

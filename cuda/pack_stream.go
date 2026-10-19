@@ -143,6 +143,10 @@ func (r *cudaResident) streamBlocks(N, block int, pack func(st *packStage, r0, r
 	ready := make(chan done, len(r.pk.stages))
 	go func() {
 		for b := 0; b < nb; b++ {
+			if r.loadAborted() { // the tripwire fired: pack nothing more, but tell the consumer every remaining block is skipped
+				ready <- done{}
+				continue
+			}
 			st := <-r.pk.free
 			r0 := b * block
 			rows := min(block, N-r0)
@@ -154,7 +158,14 @@ func (r *cudaResident) streamBlocks(N, block int, pack func(st *packStage, r0, r
 	}()
 	for range nb {
 		d := <-ready
-		up(d.st, d.r0, d.rows)
+		if d.st == nil || r.loadAborted() {
+			r.recordUpload(fmt.Errorf("cuda: resident build aborted while uploading a weight: %w", decoder.ErrLoadAborted))
+			if d.st == nil {
+				continue
+			}
+		} else {
+			up(d.st, d.r0, d.rows)
+		}
 		r.pk.free <- d.st
 	}
 }

@@ -516,9 +516,11 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
 	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
-	pk    *packPool
-	reqCh chan func() error
-	ackCh chan error
+	pk *packPool
+
+	loadAbort <-chan struct{} // decoder.Model.LoadAbort: closed by the swap tripwire to stop the build; nil never fires
+	reqCh     chan func() error
+	ackCh     chan error
 
 	// knob reads this model's operator knobs (decoder.Model.Knob): the snapshot taken at Load, with
 	// Options.Knobs applied, never the live environment (docs/tasks/task-env-config-2026-09.md).
@@ -1001,6 +1003,17 @@ func (r *cudaResident) upu16(v []uint16) Buffer {
 	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
+
+// loadAborted reports whether the swap tripwire has closed the load's abort channel. Cheap enough for every layer and every upload block.
+func (r *cudaResident) loadAborted() bool {
+	select {
+	case <-r.loadAbort:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *cudaResident) upW(h hostW) cudaWQ {
 	if h.src != nil {
 		return r.streamW(h)

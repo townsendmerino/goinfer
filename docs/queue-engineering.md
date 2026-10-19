@@ -483,6 +483,7 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Not the fix:** rendering the history turn with the empty think block (a fidelity change to the prompt the model sees; the owner chose against it).
 
 **B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Not started; scoped only.** Reading and proposals:
+**B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Step 1 (re-baseline when a runtime load finishes) built 2026-10-18** with B33, which is step 2 (branch `swap-giw-load-watch`, not merged); step 3 is PR #100; step 4 is not started. Reading and proposals:
 `docs/measurements/c3-logs-reading-2026-10-18.md` §1; background in `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: the C3 trip on the 35B-A3B".
 - **What happened:** with `--moe-cache-experts` the server's own `VmSwap` grew 0.83 and 0.90 GB over its 0.00 GB baseline during the load (512 MB threshold), the watch tripped, and every later request was `503 halted`. The baseline was taken at server start; the load runs after it; swapped pages
   do not return to baseline, so the halt cannot recover. The whole C3 arm was void.
@@ -490,7 +491,7 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Gate once approved:** tier 0, a scripted reader that grows `VmSwap` during a fake load: today the watch trips and stays tripped, after the change it re-baselines at "loaded" and serves; plant: remove the re-baseline and the test must go red.
 
 **B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the
-cuda-stream-pack scoping). **Not started; scoped only** (owner: file it, do not build it). Brief: `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
+cuda-stream-pack scoping). **Built 2026-10-18** (owner's word, with B34 step 1, as one change; branch `swap-giw-load-watch`, not merged). Brief: `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
 - **What happens:** `internal/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
   "swap guard (load): not armed for <path>" for a `.giw` (or streamed, or HF-directory) load. `Options.LoadAbort` has one consumer, `parallelLayers` in the direct GGUF weight
   build, so arming it elsewhere would log a trip and keep loading.
