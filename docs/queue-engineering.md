@@ -482,6 +482,18 @@ cuda-stream-pack scoping). **Not started; scoped only** (owner: file it, do not 
 - **Why not urgent:** the 7B sidecar load measured 0 swap and about 120 MiB of heap here (`docs/measurements/cuda-stream-pack-2026-10-18/README.md`), and a mapped `.giw` is reclaimable page cache; this protects
   heavier models and smaller machines. Size: S to M.
 
+**B33 · Qwen3.6-35B-A3B with `--moe-cache-experts` at 32k grew into swap and was halted by the swap guard** — filed
+2026-10-18 (owner, low priority). **Not started.**
+- **Seen:** tack's E0 amendment C3 (nobara, goinfer `f20f0d93`, q4_k_m, `--moe-cache-experts`, `-ctx 32768`). The swap
+  guard tripped in E0's check phase, at a host RSS of 33.1 GB, and every later request was a 503 ("halted: swap guard
+  tripped").
+- **Why it matters:** the guard did its job, but a load the fit check admits should not grow swap at all (the never-swap
+  rule, `docs/tasks/task-never-swap-2026-09.md`). Either the host-side price of the expert-cache path or the box's state
+  (nobara was already about 8.7 GB into system swap earlier that day) let it through.
+- **First step:** from the records only, read the load's fit banner, the guard's baseline and trip lines, and the RSS
+  curve against the price, then report before any change.
+- **Data:** tack `docs/measurements/e0-nobara-c3-2026-10-18.md`; raw records `~/tack-runs/e0/c3-2026-10-18/` on nobara.
+
 **B32 · After a fit refusal, the automatic weight-streaming retry starts a sidecar transcode even for a load that has no
 `.giw` form (`--quant q4k`), so it cannot help** — filed 2026-10-18 (owner, from the phi3 `q4k` fit check on Metal). **Not
 started; not fixed yet** (owner).

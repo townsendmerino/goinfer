@@ -17,6 +17,39 @@
 
 ## What is open
 
+- **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
+  (sm_75) — PARKED 2026-10-18 (owner: "not needed for now; don't build it").** `linux`.
+
+  - **Found by:** tack's C1 calibration (gemma-4 E4B, RTX 2070 SUPER, goinfer `0de92cd9`). Every request past the limit
+    logged `prefill_fallback=sequential`. Time to first token was 48–128 s on 11–26k-token prompts: batched ran about
+    227 tok/s, the fallback about 52.
+  - **Cause:** the exact batched attention keeps a whole row of scores in shared memory (`(nWin+128)*4` bytes,
+    `cuda/resident.go:attnShmemBytes`), so it cannot run past about 12,160 keys on 48 KB. The fused attention, whose
+    shared memory does not grow with the span, serves only head dims 64 and 128 (`cuda/prefill.go:cudaResident.checkPrefillShmem`).
+  - **Scoped options (none built):**
+    - A, a tiled exact kernel: one pass for the max, a second tile by tile for the exponent sum and the value sum, in the
+      original order. Bit-identical by construction, about 1 day.
+    - B, a batched split-KV kernel like decode's: about 1.5–2 days, because its score scratch needs sub-batching and pricing.
+    - C, the fused kernel for head dims 256 and 512: fast-class, needs a fidelity gate, several days.
+    - The owner approved A, then parked it: tack's candidate models do not need it.
+  - **Re-open** when a model tack or a user needs runs gemma-4 past 12k keys on a 48 KB card.
+
+- **P34 · Qwen3.5-9B never reuses a prefix on CUDA — OPEN, filed 2026-10-18 (owner, medium priority). Not tonight's
+  work.** `linux`.
+
+  - **Seen:** tack's E0 amendment C3 (nobara, goinfer `f20f0d93`, Qwen3.5-9B Q4_K_M, `-ctx 32768`). Time to first token
+    with the prefix reused equals cold at every size: 4k 15.3 vs 15.7 s, 8k 38.8 vs 38.8 s, 31.7k 421.3 vs 421.5 s. Qwen3-8B,
+    Qwen3-4B and Granite-4.2-3B on the same build reused normally, about 1–2 s at 15–30k.
+  - **E0's reused cell** resends the previous prompt with only its last 512 tokens changed, so the follow-up diverges 512
+    tokens before the end.
+  - **Owner's reading, unconfirmed:** its Gated-DeltaNet layers' recurrent state. The state exists only at the end of the
+    previous sequence, so a prompt that diverges earlier cannot reuse it without a saved copy at the divergence point (P26
+    is the image-turn form of the same limit).
+  - **Also seen, not explained:** cold prefill slows from about 260 tok/s at 4k to about 75 tok/s at 31k.
+  - **First step:** from the records only, confirm which rule refused the reuse (the request log's `reused=` and `div=`
+    fields), and whether a pure continuation, with nothing changed before the end, reuses on this family.
+  - **Data:** tack `docs/measurements/e0-nobara-c3-2026-10-18.md`; raw records `~/tack-runs/e0/c3-2026-10-18/` on nobara.
+
 - **P33 · Metal decode is 0.67–0.76 of mlx-lm's single-request path at matched settings — OPEN, filed 2026-10-18 (owner).
   Measure first; no work yet.** `mac`.
 
