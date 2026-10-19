@@ -6,7 +6,8 @@ REPO=${GOINFER_NIGHT_REPO:-$HOME/mycode/goinfer}
 cd "$REPO" || { echo "FATAL: $REPO is missing"; exit 1; }
 SCRIPT=docs/measurements/cuda-device-suite-2026-10-18/run-cuda-device-suite.sh
 [ -f "$SCRIPT" ] || { echo "FATAL: $REPO has no $SCRIPT (is this checkout behind origin/main?)"; exit 1; }
-if python3 scripts/night.py list 2>&1 | grep -q 'cuda-device-suite'; then
+# the exact job name: a branch's `cuda-device-suite-<x>` queued beside it must not suppress main's
+if python3 scripts/night.py list 2>&1 | grep -q -E '(^|[[:space:]])cuda-device-suite([[:space:]]|$)'; then
   echo "cuda-device-suite is already queued; skipping"; exit 0
 fi
 exec python3 scripts/night.py add cuda-device-suite --est 10 --by "systemd timer, device-only failures" \

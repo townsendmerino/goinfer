@@ -53,6 +53,11 @@ class Queue(unittest.TestCase):
         p, calls = run(fake_repo("1  gate-gpu-cuda  est 150\n2  b13-dark-gates  est 8\n"))
         self.assertEqual(len([c for c in calls if c.startswith("add ")]), 1, calls)
 
+    def test_aBranchJobWithAPrefixOfTheNameDoesNotSuppressIt(self):
+        p, calls = run(fake_repo("1  cuda-device-suite-kv3-final  est 10 min\n2  cuda-device-suite-swap-giw  est 10 min\n"))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(len([c for c in calls if c.startswith("add ")]), 1, calls)
+
     def test_aCheckoutWithoutTheScriptFailsLoudly(self):
         p, calls = run(fake_repo("the night queue is empty\n", with_script=False))
         self.assertNotEqual(p.returncode, 0)
