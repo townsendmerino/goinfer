@@ -305,7 +305,8 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 // proceeds).
 type giwFit struct {
 	known               bool
-	avail, budget, need int64 // need is KV + scratch at ctx
+	avail, budget, need int64 // need is KV + scratch + pinnedExperts at ctx
+	pinnedExperts       int64 // the page-locked host copy of the routed experts a C' expert cache builds (0 when none); the same at every ctx
 	ctx                 int   // the context priced: the pin, the model's window, or the capped one
 	pinned              bool
 	pinCtx              int // the smaller context the guard pins an unpinned load to, 0 for none
@@ -329,32 +330,37 @@ func decideGIWFit(cfg *Config, opts Options) giwFit {
 		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
 	pinned, effCtx, kvF16, kvI8 := p.pinned, p.ctx, p.kvF16, p.kvI8
+	pinnedExperts := giwPinnedExpertBytes(cfg, opts)
+	what := "KV + scratch"
+	if pinnedExperts > 0 {
+		what += " + the pinned MoE expert copy"
+	}
 	needAt := func(ctx int) int64 {
 		if p.deviceKV {
-			return 0 // CUDA-resident: the KV and the prefill scratch are VRAM, which the context plan sizes
+			return pinnedExperts // CUDA-resident: the KV and the prefill scratch are VRAM, which the context plan sizes
 		}
-		return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget
+		return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget + pinnedExperts
 	}
 	need := needAt(effCtx)
-	d = giwFit{known: true, avail: avail, budget: budget, need: need, ctx: effCtx, pinned: pinned}
+	d = giwFit{known: true, avail: avail, budget: budget, need: need, ctx: effCtx, pinned: pinned, pinnedExperts: pinnedExperts}
 	if need <= budget {
 		return d
 	}
 	if pinned {
 		d.err = fmt.Errorf(
-			"decoder: pinned context %d needs ~%.2f GB (KV + scratch) but only %.2f GB of this "+
+			"decoder: pinned context %d needs ~%.2f GB (%s) but only %.2f GB of this "+
 				"machine's %.2f GB currently-available memory would be left as a %.0f GB safety "+
 				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			effCtx, float64(need)/fitGB, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+			effCtx, float64(need)/fitGB, what, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
 		return d
 	}
 	if floorNeed := needAt(ctxFloor); floorNeed > budget {
 		d.ctx, d.need = ctxFloor, floorNeed
 		d.err = fmt.Errorf(
-			"decoder: this model needs ~%.2f GB (KV + scratch) even at the %d-token floor, but only "+
+			"decoder: this model needs ~%.2f GB (%s) even at the %d-token floor, but only "+
 				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
 				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			float64(floorNeed)/fitGB, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+			float64(floorNeed)/fitGB, what, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
 		return d
 	}
 	lo, hi := ctxFloor, effCtx
@@ -372,6 +378,24 @@ func decideGIWFit(cfg *Config, opts Options) giwFit {
 			"of %.2f GB available (%.0f GB margin) — pass -ctx to choose, or free memory to lift\n",
 		lo, effCtx, float64(needAt(lo))/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
 	return d
+}
+
+// giwPinnedExpertBytes is the host memory a CUDA C' expert cache (--moe-cache-experts) holds for a .giw load that will be resident: every routed
+// expert, packed into one page-locked copy that is not file-backed and cannot be reclaimed. It is the only anonymous term a .giw guard did not price
+// (the KV and scratch are VRAM, the rest of the weights alias the mapping). Estimated from the config, so Load and FitQuery agree: the MoE layers
+// x experts x 3 projections x expert width x hidden, at int4 with f16 group-32 scales (9/16 byte a weight). 0 when no cache is requested, the load will
+// not be CUDA-resident, or the model is not MoE. docs/code-notes/decoder.md#giwPinnedExpertBytes.
+func giwPinnedExpertBytes(cfg *Config, opts Options) int64 {
+	if cfg == nil || !(opts.MoECacheExperts || loadKnob(opts, knobMoECacheExperts) != "") || !cudaWillBeResident(cfg, opts) {
+		return 0
+	}
+	c := *cfg
+	arch, _, err := resolveArchitecture(&c)
+	if err != nil || arch.MoE == nil || arch.MoE.NumExperts <= 0 || arch.MoE.IntermediateDim <= 0 {
+		return 0
+	}
+	layers := max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
+	return int64(layers) * int64(arch.MoE.NumExperts) * 3 * int64(arch.MoE.IntermediateDim) * int64(c.HiddenDim) * 9 / 16
 }
 
 // resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: vm_stat on

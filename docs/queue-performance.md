@@ -42,21 +42,16 @@
     - C, the fused kernel for head dims 256 and 512: fast-class, needs a fidelity gate, several days.
     - The owner approved A, then parked it, then dropped it once `kv3-tiled-2026-10` was found to cover the case.
 
-- **P34 · Qwen3.5-9B never reuses a prefix on CUDA — OPEN, filed 2026-10-18 (owner, medium priority). Not tonight's
-  work.** `linux`.
+- **P34 · Qwen3.5-9B never reuses a prefix on CUDA — CLOSED 2026-10-19 as a duplicate of B35** (`docs/queue-engineering.md`).
+  `linux`.
 
-  - **Seen:** tack's E0 amendment C3 (nobara, goinfer `f20f0d93`, Qwen3.5-9B Q4_K_M, `-ctx 32768`). Time to first token
-    with the prefix reused equals cold at every size: 4k 15.3 vs 15.7 s, 8k 38.8 vs 38.8 s, 31.7k 421.3 vs 421.5 s. Qwen3-8B,
-    Qwen3-4B and Granite-4.2-3B on the same build reused normally, about 1–2 s at 15–30k.
-  - **E0's reused cell** resends the previous prompt with only its last 512 tokens changed, so the follow-up diverges 512
-    tokens before the end.
-  - **Owner's reading, unconfirmed:** its Gated-DeltaNet layers' recurrent state. The state exists only at the end of the
-    previous sequence, so a prompt that diverges earlier cannot reuse it without a saved copy at the divergence point (P26
-    is the image-turn form of the same limit).
-  - **Also seen, not explained:** cold prefill slows from about 260 tok/s at 4k to about 75 tok/s at 31k.
-  - **First step:** from the records only, confirm which rule refused the reuse (the request log's `reused=` and `div=`
-    fields), and whether a pure continuation, with nothing changed before the end, reuses on this family.
-  - **Data:** tack `docs/measurements/e0-nobara-c3-2026-10-18.md`; raw records `~/tack-runs/e0/c3-2026-10-18/` on nobara.
+  - **Seen:** tack's E0 amendment C3 (nobara, `f20f0d93`, `-ctx 32768`). With the prefix reused, time to first token equalled
+    cold at 4k, 8k and 31.7k.
+  - **Cause, found on nobara:** the engine does reuse an appended request on this family (0.04 s against 15.2 s cold on
+    `/v1/completions`). But Qwen3.5's chat template renders history turns without the empty `<think></think>` that the
+    generation prompt ends with. So each chat request diverges from the point where the recurrent state stopped, and the
+    turn is a cold prefill. Record: `docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`.
+  - **The fix is scoped as B35:** save the DeltaNet state before the generation tail.
 
 - **P33 · Metal decode is 0.67–0.76 of mlx-lm's single-request path at matched settings — OPEN, filed 2026-10-18 (owner).
   Measure first; no work yet.** `mac`.

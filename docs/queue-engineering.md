@@ -482,16 +482,15 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Size:** L (a resident save/restore of DeltaNet state on CUDA, the chunker cut, the snapshot payload, the template tail, the gates). It touches Metal's and the CPU's recurrent models only through the grid and the interface; CUDA first.
 - **Not the fix:** rendering the history turn with the empty think block (a fidelity change to the prompt the model sees; the owner chose against it).
 
-**B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Not started; scoped only.** Reading and proposals:
-**B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Step 1 (re-baseline when a runtime load finishes) built 2026-10-18** with B33, which is step 2 (branch `swap-giw-load-watch`, not merged); step 3 is PR #100; step 4 is not started. Reading and proposals:
+**B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Steps 1 and 2 DONE: merged to main in #101 (333407c3), 2026-10-19:** step 1 re-baselines the serving watch when a runtime load finishes, and step 2 is B33 below. Step 3 is PR #100; step 4 is not started. Reading and proposals:
 `docs/measurements/c3-logs-reading-2026-10-18.md` §1; background in `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: the C3 trip on the 35B-A3B".
 - **What happened:** with `--moe-cache-experts` the server's own `VmSwap` grew 0.83 and 0.90 GB over its 0.00 GB baseline during the load (512 MB threshold), the watch tripped, and every later request was `503 halted`. The baseline was taken at server start; the load runs after it; swapped pages
   do not return to baseline, so the halt cannot recover. The whole C3 arm was void.
-- **Proposed, in order (none built):** re-baseline the serving watch when the load completes; B33 for the load itself; price the 18.1 GB pinned expert copy in `decideGIWFit`; do not hold the `.giw` in page cache beside the pinned copy.
+- **Proposed, in order (steps 1 and 2 merged in #101):** re-baseline the serving watch when the load completes; B33 for the load itself; price the 18.1 GB pinned expert copy in `decideGIWFit`; do not hold the `.giw` in page cache beside the pinned copy.
 - **Gate once approved:** tier 0, a scripted reader that grows `VmSwap` during a fake load: today the watch trips and stays tripped, after the change it re-baselines at "loaded" and serves; plant: remove the re-baseline and the test must go red.
 
 **B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the
-cuda-stream-pack scoping). **Built 2026-10-18** (owner's word, with B34 step 1, as one change; branch `swap-giw-load-watch`, not merged). Brief: `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
+cuda-stream-pack scoping). **DONE: merged to main in #101 (333407c3), 2026-10-19**, with B34 step 1, as one change (branch `swap-giw-load-watch`). Brief: `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
 - **What happens:** `internal/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
   "swap guard (load): not armed for <path>" for a `.giw` (or streamed, or HF-directory) load. `Options.LoadAbort` has one consumer, `parallelLayers` in the direct GGUF weight
   build, so arming it elsewhere would log a trip and keep loading.
@@ -504,17 +503,9 @@ cuda-stream-pack scoping). **Built 2026-10-18** (owner's word, with B34 step 1, 
 - **Why not urgent:** the 7B sidecar load measured 0 swap and about 120 MiB of heap here (`docs/measurements/cuda-stream-pack-2026-10-18/README.md`), and a mapped `.giw` is reclaimable page cache; this protects
   heavier models and smaller machines. Size: S to M.
 
-**B33 · Qwen3.6-35B-A3B with `--moe-cache-experts` at 32k grew into swap and was halted by the swap guard** — filed
-2026-10-18 (owner, low priority). **Not started.**
-- **Seen:** tack's E0 amendment C3 (nobara, goinfer `f20f0d93`, q4_k_m, `--moe-cache-experts`, `-ctx 32768`). The swap
-  guard tripped in E0's check phase, at a host RSS of 33.1 GB, and every later request was a 503 ("halted: swap guard
-  tripped").
-- **Why it matters:** the guard did its job, but a load the fit check admits should not grow swap at all (the never-swap
-  rule, `docs/tasks/task-never-swap-2026-09.md`). Either the host-side price of the expert-cache path or the box's state
-  (nobara was already about 8.7 GB into system swap earlier that day) let it through.
-- **First step:** from the records only, read the load's fit banner, the guard's baseline and trip lines, and the RSS
-  curve against the price, then report before any change.
-- **Data:** tack `docs/measurements/e0-nobara-c3-2026-10-18.md`; raw records `~/tack-runs/e0/c3-2026-10-18/` on nobara.
+**B33 (number clash) · Qwen3.6-35B-A3B with `--moe-cache-experts` at 32k grew into swap and was halted by the swap guard** —
+filed 2026-10-18. **CLOSED 2026-10-19 as a duplicate of B34**, which records the same C3 incident with its cause (the serving
+watch's baseline was taken before the load). It was filed under B33 at the same time as the `.giw` load-time watch above.
 
 **B32 · After a fit refusal, the automatic weight-streaming retry starts a sidecar transcode even for a load that has no
 `.giw` form (`--quant q4k`), so it cannot help** — filed 2026-10-18 (owner, from the phi3 `q4k` fit check on Metal). **Not

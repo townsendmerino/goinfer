@@ -171,6 +171,8 @@ EXCLUDED = {
     "TestSuffixProbe_step1": "prompt corpus, env-gated",
     "TestKV3_admissionPricesTheChunk": "prompt corpus (kv0TextTokens)",
     "TestKV3_batchedPrefillPastTheSpanBound_real1p5B": "prompt corpus, heavy-gated",
+    "TestKV3Tiled_forcedRouteOnGemma3": "prompt corpus (kv0TextTokens), real-checkpoint gated",
+    "TestKV3Tiled_batchedEqualsPerToken_real": "prompt corpus (kv0TextTokens), real-checkpoint gated",
     "TestWindowedKV_offsetsFastClass_real1p5B": "prompt corpus, heavy-gated",
     # Covered before a push by scripts/refresh_parity_hashes.sh (CLAUDE.md, "Day loop"); red on every decoder edit until then.
     "TestParityManifest_fresh": "the parity refresh's job",
