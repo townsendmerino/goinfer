@@ -26,7 +26,10 @@ type FitAnswer struct {
 	CtxCapped                                                bool
 	MaxCtx                                                   int // the model's own window, 0 when it declares none
 	NeedBytes, BudgetBytes, WeightBytes, KVBytes, AvailBytes int64
-	Decline                                                  string // Load's refusal when it does not fit, "" otherwise
+	// PinnedExpertBytes is the page-locked host copy of the routed experts that a CUDA expert cache (--moe-cache-experts) builds from a .giw, priced into
+	// NeedBytes; 0 for every other load.
+	PinnedExpertBytes int64
+	Decline           string // Load's refusal when it does not fit, "" otherwise
 	// Streamable is the refusal's DenseStreamable: modelload.Load retries such a .gguf with weight streaming.
 	Streamable bool
 	// DecodePath is the decode path Load would report: "cpu (<quant>)", as DecodePath begins, when the load runs on the CPU,
@@ -49,7 +52,7 @@ func FitQuery(path string, opts Options) (FitAnswer, error) {
 		}
 		d := decideGIWFit(cfg, opts)
 		a := FitAnswer{Guard: "giw", Fits: d.err == nil, Ctx: d.ctx, CtxPinned: d.pinned, CtxCapped: d.pinCtx > 0,
-			MaxCtx: cfg.MaxPositions, NeedBytes: d.need, BudgetBytes: d.budget, KVBytes: d.need - prefillAttnScratchBudget, AvailBytes: d.avail}
+			MaxCtx: cfg.MaxPositions, NeedBytes: d.need, BudgetBytes: d.budget, KVBytes: max(d.need-d.pinnedExperts-prefillAttnScratchBudget, 0), PinnedExpertBytes: d.pinnedExperts, AvailBytes: d.avail}
 		if !d.known {
 			a.Unpriced = unpricedReason(opts, cfg != nil)
 			a.KVBytes = 0
