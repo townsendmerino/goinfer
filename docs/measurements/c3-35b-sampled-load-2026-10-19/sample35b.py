@@ -71,6 +71,21 @@ def main():
         "final_RssAnon_GB": round(s[-1]["RssAnon"] / G, 2), "final_RssFile_GB": round(s[-1]["RssFile"] / G, 2),
         "prereg_bar_GB": 19.6, "verdict": "PASS" if pa["RssAnon"] / G <= 19.6 else "FAIL",
     }
+    # The Go heap from the collector's own lines in the serve log (GODEBUG=gctrace=1): "gc N @T s ...: A->B->C MB" is the heap before the collection, after
+    # it, and the live heap; the timeline here is the cycle times with those three figures, and the peaks.
+    import re
+    cyc = []
+    try:
+        for m in re.finditer(r"gc \d+ @([\d.]+)s \d+%: .*?\s(\d+)->(\d+)->(\d+) MB", open(os.path.join(a.out, "serve-sampled.log")).read()):
+            cyc.append((float(m.group(1)), int(m.group(2)), int(m.group(4))))
+    except OSError:
+        pass
+    if cyc:
+        rep["heap_peak_alloc_MB"], rep["heap_peak_live_MB"] = max(c[1] for c in cyc), max(c[2] for c in cyc)
+        rep["heap_timeline_s_alloc_live_MB"] = [c for c in cyc if c[0] > 12][::2]
+    # RssAnon / RssFile / VmSwap / Mlocked about every 2 s, for the timeline the README asks for
+    step = max(1, int(2.0 / 0.05))
+    rep["timeline_t_anon_file_swap_mlocked_GB"] = [[x["t"], round(x["RssAnon"] / G, 2), round(x.get("RssFile", 0) / G, 2), round(x.get("VmSwap", 0) / G, 3), round(x.get("SysMlocked", 0) / G, 2)] for x in s[::step]]
     print(json.dumps(rep, indent=1))
     json.dump(rep, open(os.path.join(a.out, "report.json"), "w"), indent=1)
 
