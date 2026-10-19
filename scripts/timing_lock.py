@@ -74,6 +74,50 @@ def describe(h):
     return f"pid {h.get('pid', '?')} on {h.get('host', '?')}, `{h.get('cmd', '?')}`, started {started}{age}{label}"
 
 
+def pid_alive(pid):
+    """Whether a process with this pid exists on this host (a pid we may not signal still exists)."""
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def fd_holders(path=None):
+    """(pid, cmdline) of every other process of ours that has the lock file open, from /proc/*/fd. This is who keeps a flock alive when the
+    recorded holder is gone: a child that inherited the descriptor. Processes we cannot inspect are not listed. Read-only."""
+    path = str(path or lock_path())
+    out = []
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit() or int(d.name) == os.getpid():
+            continue
+        try:
+            if not any(_same_file(str(f), path) for f in (d / "fd").iterdir()):
+                continue
+            cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace").strip()
+        except OSError:
+            continue
+        out.append((int(d.name), cmd))
+    return out
+
+
+def _same_file(fdlink, path):
+    try:
+        return os.path.samefile(fdlink, path)
+    except OSError:
+        return False
+
+
+def recorded_pid_state(h):
+    """'alive', 'DEAD' or 'unknown' (another host, or no pid recorded) for the pid in a holder record."""
+    pid = h.get("pid") if h else None
+    if not isinstance(pid, int) or h.get("host") not in (None, platform.node()):
+        return "unknown"
+    return "alive" if pid_alive(pid) else "DEAD"
+
+
 class Held(Exception):
     def __init__(self, holder, path):
         self.holder, self.path = holder, path
@@ -215,12 +259,27 @@ def cmd_status(_a):
     path = lock_path()
     h = held_by_other()
     if h is not None:
-        print(f"HELD: {describe(h)}")
+        state = recorded_pid_state(h)
+        print(f"HELD: {describe(h)} [recorded pid {state}]")
+        if state == "DEAD":
+            print("  the recorded holder is gone but the flock is still held: a process that inherited the lock descriptor is keeping it.")
+        holders = fd_holders(path)
+        if holders:
+            print("  processes with the lock file open (the holder, its children, and runs waiting for it):")
+            for pid, cmd in holders:
+                print(f"    pid {pid}: {cmd[:200]}")
+        elif state == "DEAD":
+            print("  no process we can inspect has the file open (one of another user's, or a mapping we cannot read).")
+        if state == "DEAD":
+            print("  nothing is cleared or deleted here: end the process listed above (a person's call), or wait; the kernel drops the flock when it exits.")
         return 1
     mine = os.environ.get(TOKEN_ENV)
     holder = read_holder(path) if path.exists() else {}
     if mine and holder.get("token") == mine:
         print(f"free to this run (inherited from {describe(holder)})")
+    elif holder and recorded_pid_state(holder) == "DEAD":
+        print(f"free ({path}; stale record left by a dead holder, pid {holder.get('pid')}: {describe(holder)}; the flock is not held, "
+              "so the next run overwrites it)")
     else:
         print(f"free ({path}{'' if path.exists() else ' does not exist'})")
     return 0
