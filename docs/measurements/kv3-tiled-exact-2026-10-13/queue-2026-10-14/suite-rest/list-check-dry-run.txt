@@ -1,0 +1,6 @@
+# list-only dry run of the fixed run-night.sh (go test -list, no device), 2026-10-14; the list before the fix:
+FATAL: listed but not built under -tags 'cuda goinfer_testhooks': TestAudioEncoder_realMatchesCPU TestAudioEncoderSpeed_record TestLoRACostMeasure TestWhisperSmall_clipsOnDevice
+exit 2
+# the list after the fix:
+list check: 36 listed, all built under the run's tags
+exit 0

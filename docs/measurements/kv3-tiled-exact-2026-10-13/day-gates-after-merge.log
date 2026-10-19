@@ -1,0 +1,123 @@
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:114: all float MACs in 33 contracted kernels are explicit intrinsics ✓
+--- PASS: TestKernelFMALint (0.03s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:143: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:149: 42 embedded PTX kernels: 33 linted, 1 exempt
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+=== RUN   TestKV0_prefillInvariance_tiny
+=== RUN   TestKV0_prefillInvariance_tiny/f32
+    kv0_invariance_test.go:355: KV precision f32
+[kv0] fixture loaded, KV f16=false, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 512401 of 1024000 elements differ (first at position 0, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 131178 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.017): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 261833 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.016): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 7685 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.02): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 154112 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+=== RUN   TestKV0_prefillInvariance_tiny/f16
+    kv0_invariance_test.go:355: KV precision f16
+[kv0] fixture loaded, KV f16=true, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 475476 of 1024000 elements differ (first at position 1, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 127303 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0186): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@256                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 245953 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0151): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@511                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 6569 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0203): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 152933 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+--- PASS: TestKV0_prefillInvariance_tiny (1.90s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f32 (1.27s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f16 (0.55s)
+=== RUN   TestKV3_prefillScratchBytes_matchesThePass
+    kv3_longprefill_test.go:223: KV precision f16
+[kv3] tiny M=16: scratch 209152 B (0.2 MiB) = the pass's allocations
+[kv3] tiny M=300: scratch 3921600 B (3.7 MiB) = the pass's allocations
+[kv3] tiny M=512: scratch 6692864 B (6.4 MiB) = the pass's allocations
+--- PASS: TestKV3_prefillScratchBytes_matchesThePass (0.22s)
+=== RUN   TestKV3_residentReportsItsChunks
+    kv3_longprefill_test.go:243: KV precision f16
+--- PASS: TestKV3_residentReportsItsChunks (0.22s)
+=== RUN   TestKV3_chunkerKeepsPassStartsOnTheGrid
+--- PASS: TestKV3_chunkerKeepsPassStartsOnTheGrid (0.00s)
+=== RUN   TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny
+    kv3_tiled_test.go:45: KV precision f32
+[kv3-tiled] forced route kv=f32 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+    kv3_tiled_test.go:45: KV precision f16
+[kv3-tiled] forced route kv=f16 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+--- PASS: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny (1.54s)
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_tiny
+    kv3_tiled_test.go:90: KV precision f32
+[kv3-tiled] past the bound kv=f32 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 0.98 s (6 groups), per-token 6.33 s
+[kv3-tiled] past the bound kv=f32 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.78 s (36 groups), per-token 10.22 s
+    kv3_tiled_test.go:90: KV precision f16
+[kv3-tiled] past the bound kv=f16 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 0.95 s (6 groups), per-token 6.20 s
+[kv3-tiled] past the bound kv=f16 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.54 s (36 groups), per-token 10.06 s
+--- PASS: TestKV3Tiled_batchedEqualsPerToken_tiny (39.02s)
+=== RUN   TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines
+    kv3_tiled_test.go:140: KV precision f16
+--- PASS: TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines (2.05s)
+=== RUN   TestKV3Tiled_spanScratchMatchesThePass
+    kv3_tiled_test.go:163: KV precision f16
+[kv3-tiled] scratch levers=true start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=16: 209152 B + span 4194560 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=300: 3921600 B + span 60822208 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=512: 6692864 B + span 67114096 B = the pass's allocations
+--- PASS: TestKV3Tiled_spanScratchMatchesThePass (0.39s)
+=== RUN   TestPipelineLint_boundKernelsAreLaunched
+    pipeline_lint_test.go:82: pipeline lint: 88 Pipeline fields, 0 bound-and-dead, 0 launched-but-unbound
+--- PASS: TestPipelineLint_boundKernelsAreLaunched (0.98s)
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32
+    prefill_splitkv_test.go:207: 180 cases bit-identical to attn_batched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16
+    prefill_splitkv_test.go:207: 180 cases bit-identical to attn_batched
+--- PASS: TestPrefillSplitKV_rowsEqualAttnBatched (1.38s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32 (0.45s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16 (0.70s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	47.788s

@@ -1,0 +1,244 @@
+=== RUN   TestSpecResidentPrefillRegression
+    spec_prefill_regression_test.go:36: set GOINFER_HEAVY_TESTS=1 GOINFER_SPEC_PREFILL_REGRESSION=1
+--- SKIP: TestSpecResidentPrefillRegression (0.00s)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.31 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.31 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.31 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.31 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate
+    spec_twoturn_test.go:238: block-spec, turn2=Generate: turn1 1 tok (reused 0), turn2 1 tok (reused 24, want 24, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream
+    spec_twoturn_test.go:242: block-spec, turn2=GenerateStream: turn1 1 tok (reused 0), turn2 1 tok (reused 0, want 24, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate
+    spec_twoturn_test.go:238: block-spec, turn2=Generate: turn1 17 tok (reused 0), turn2 17 tok (reused 40, want 40, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream
+    spec_twoturn_test.go:242: block-spec, turn2=GenerateStream: turn1 17 tok (reused 0), turn2 17 tok (reused 0, want 40, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate
+    spec_twoturn_test.go:238: block-spec, turn2=Generate: turn1 48 tok (reused 0), turn2 48 tok (reused 71, want 71, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream
+    spec_twoturn_test.go:242: block-spec, turn2=GenerateStream: turn1 48 tok (reused 0), turn2 48 tok (reused 0, want 71, checked=false)
+--- PASS: TestBlockSpec_twoTurnsMatchPlain (104.65s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1 (34.38s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate (11.50s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream (11.42s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17 (34.51s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate (11.69s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream (11.86s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48 (35.33s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate (11.92s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream (12.08s)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=1
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:294: n-gram spec: turn1 1 tok (reused 0), turn2 1 tok (reused 24, want 24, checked=true)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=17
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:294: n-gram spec: turn1 17 tok (reused 0), turn2 17 tok (reused 40, want 40, checked=true)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=48
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+cuda: resident context 15541, trimmed from 15750 at the build, so one KV slot fits beside the weights (4755 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:294: n-gram spec: turn1 48 tok (reused 0), turn2 48 tok (reused 71, want 71, checked=true)
+--- PASS: TestNgramSpec_twoTurnsMatchPlain (66.04s)
+    --- PASS: TestNgramSpec_twoTurnsMatchPlain/N=1 (21.29s)
+    --- PASS: TestNgramSpec_twoTurnsMatchPlain/N=17 (21.76s)
+    --- PASS: TestNgramSpec_twoTurnsMatchPlain/N=48 (22.68s)
+=== RUN   TestSpecVerifyCeiling
+    spec_verify_ceiling_test.go:80: single decode (M=1) @depth 1024: 4.623 ms
+    spec_verify_ceiling_test.go:81: k    batched(M=k)   k×sequential     cheaper by   → spec ceiling
+    spec_verify_ceiling_test.go:100: 2    6.818          9.409            1.38        × (ceiling ≈ 1.38× if 100% accept)
+    spec_verify_ceiling_test.go:100: 4    8.431          18.765           2.23        × (ceiling ≈ 2.23× if 100% accept)
+    spec_verify_ceiling_test.go:100: 6    9.375          28.116           3.00        × (ceiling ≈ 3.00× if 100% accept)
+    spec_verify_ceiling_test.go:100: 8    11.321         37.638           3.32        × (ceiling ≈ 3.32× if 100% accept)
+    spec_verify_ceiling_test.go:100: 16   33.570         75.711           2.26        × (ceiling ≈ 2.26× if 100% accept)
+    spec_verify_ceiling_test.go:103: Read: spec-decode replaces k sequential decodes with 1 batched verify + 1 draft (n-gram=free).
+    spec_verify_ceiling_test.go:104: If 'cheaper by' ≫ 1 at k=4-8, D1 can win (× accept rate); if ≈ 1, batching doesn't amortize → no D1.
+--- PASS: TestSpecVerifyCeiling (4.39s)
+=== RUN   TestDecodeVerifyDivergence_keyedOnTheSpike
+--- PASS: TestDecodeVerifyDivergence_keyedOnTheSpike (0.00s)
+=== RUN   TestSpecDecode
+    specdecode_test.go:138: LOSSLESS: 200 spec tokens == plain greedy, byte-for-byte
+    specdecode_test.go:146: plain:  200 tok in 1237.7 ms = 161.6 tok/s
+    specdecode_test.go:147: spec:   200 tok in 655.2 ms = 305.3 tok/s  →  1.89×
+    specdecode_test.go:148: rounds=94 (plain-fallback=11)  tokens/round=2.13  drafted=170 accepted=106 (accept-rate=0.62)  verify-toks=264
+--- PASS: TestSpecDecode (4.87s)
+=== RUN   TestSplitKV_bitIdentical
+    splitkv_bitident_test.go:114: SPLIT-KV BIT-IDENTICAL: 24-token decode stream + final logits (151936) match attn_batched(M=1) at depth 2048
+--- PASS: TestSplitKV_bitIdentical (4.01s)
+=== RUN   TestSplitKV_bitIdentical_gemma3
+cuda: resident context 15627, trimmed from 15885 at the build, so one KV slot fits beside the weights (4535 MB free, less 384 MB reserved)
+    splitkv_bitident_test.go:208: SPLIT-KV BIT-IDENTICAL (gemma3, hd=256, windowed): stream + logits (262144) match at depth 1536
+--- PASS: TestSplitKV_bitIdentical_gemma3 (10.68s)
+=== RUN   TestSplitKVCrossover
+    splitkv_crossover_test.go:78: depth    attn_batched split-KV     ratio   
+    splitkv_crossover_test.go:82: 128      253.3        237.7        0.938×
+    splitkv_crossover_test.go:82: 256      243.1        230.5        0.948×
+    splitkv_crossover_test.go:82: 384      233.2        228.0        0.978×
+    splitkv_crossover_test.go:82: 512      222.3        225.4        1.014×
+    splitkv_crossover_test.go:82: 768      204.0        218.2        1.070×
+    splitkv_crossover_test.go:82: 1024     186.7        209.7        1.123×
+    splitkv_crossover_test.go:82: 2048     142.6        175.8        1.233×
+--- PASS: TestSplitKVCrossover (25.09s)
+=== RUN   TestSplitKVGate_measuredGeometries
+--- PASS: TestSplitKVGate_measuredGeometries (0.00s)
+=== RUN   TestSplitKVGate_neverClassIsUnreachable
+--- PASS: TestSplitKVGate_neverClassIsUnreachable (0.00s)
+=== RUN   TestSplitKVGate_conservativeDefault
+--- PASS: TestSplitKVGate_conservativeDefault (0.00s)
+=== RUN   TestSupportTable_cudaDeclarations
+--- PASS: TestSupportTable_cudaDeclarations (0.00s)
+=== RUN   TestThetaAB
+    theta_ab_test.go:35: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_AB=1
+--- SKIP: TestThetaAB (0.00s)
+=== RUN   TestThetaProbe_CUDA
+    theta_probe_test.go:36: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_PROBE=1
+--- SKIP: TestThetaProbe_CUDA (0.00s)
+=== RUN   TestTopKSelect_matchesReference
+    topk_test.go:125: 272 (vocab × shape × K) rows identical to the reference order; Z within 1e-6
+    topk_test.go:145: launch-only V=151936 K=256 wantZ=false: 164 µs/call
+    topk_test.go:145: launch-only V=151936 K=256 wantZ=true: 177 µs/call
+    topk_test.go:161: V=151936 K=256 wantZ=false: 257 µs/call (includes the upload the hook adds)
+    topk_test.go:161: V=151936 K=256 wantZ=true: 280 µs/call (includes the upload the hook adds)
+--- PASS: TestTopKSelect_matchesReference (4.36s)
+=== RUN   TestTowerAttn_matchesFloat64
+=== RUN   TestTowerAttn_matchesFloat64/siglip_4096_x_16_x_72
+[S17 lever A] siglip 4096 x 16 x 72              max |err| vs float64 3.47e-06
+=== RUN   TestTowerAttn_matchesFloat64/qwen3.5/glm_3136_x_12_x_64
+[S17 lever A] qwen3.5/glm 3136 x 12 x 64         max |err| vs float64 4.86e-06
+=== RUN   TestTowerAttn_matchesFloat64/80_ragged_1000_x_16
+[S17 lever A] 80 ragged 1000 x 16                max |err| vs float64 2.77e-06
+=== RUN   TestTowerAttn_matchesFloat64/ragged_4093_x_4_x_72,_last_rows
+[S17 lever A] ragged 4093 x 4 x 72, last rows    max |err| vs float64 6.96e-06
+=== RUN   TestTowerAttn_matchesFloat64/one_key
+[S17 lever A] one key                            max |err| vs float64 0.00e+00
+=== RUN   TestTowerAttn_matchesFloat64/7
+[S17 lever A] 7                                  max |err| vs float64 4.67e-07
+=== RUN   TestTowerAttn_matchesFloat64/33
+[S17 lever A] 33                                 max |err| vs float64 3.61e-06
+=== RUN   TestTowerAttn_matchesFloat64/65
+[S17 lever A] 65                                 max |err| vs float64 3.70e-06
+=== RUN   TestTowerAttn_matchesFloat64/two_segments_120+180
+[S17 lever A] two segments 120+180               max |err| vs float64 5.18e-06
+--- PASS: TestTowerAttn_matchesFloat64 (1.36s)
+    --- PASS: TestTowerAttn_matchesFloat64/siglip_4096_x_16_x_72 (0.61s)
+    --- PASS: TestTowerAttn_matchesFloat64/qwen3.5/glm_3136_x_12_x_64 (0.33s)
+    --- PASS: TestTowerAttn_matchesFloat64/80_ragged_1000_x_16 (0.09s)
+    --- PASS: TestTowerAttn_matchesFloat64/ragged_4093_x_4_x_72,_last_rows (0.07s)
+    --- PASS: TestTowerAttn_matchesFloat64/one_key (0.00s)
+    --- PASS: TestTowerAttn_matchesFloat64/7 (0.00s)
+    --- PASS: TestTowerAttn_matchesFloat64/33 (0.00s)
+    --- PASS: TestTowerAttn_matchesFloat64/65 (0.00s)
+    --- PASS: TestTowerAttn_matchesFloat64/two_segments_120+180 (0.05s)
+=== RUN   TestTowerAttn_plantedDefects
+[S17 lever A] planted (1) no rescale when the running max moves: max |err| 2.687e+00 (unplanted 5.4e-06)
+[S17 lever A] planted (2) key mask one past the segment: max |err| 1.441e-02 (unplanted 1.1e-07)
+[S17 lever A] planted (3) V tile read one key late: max |err| 2.018e+00 (unplanted 1.4e-06)
+--- PASS: TestTowerAttn_plantedDefects (0.25s)
+=== RUN   TestTowerAttn_speed
+[S17 lever A] SigLIP layer attention: fused 43.0 ms (1.80 TFLOPS), aikit 637.1 ms (0.12 TFLOPS), 14.8x (includes the upload and download; exploratory)
+--- PASS: TestTowerAttn_speed (3.04s)
+=== RUN   TestTowerBase_gemmBranches
+    tower_base_test.go:158: M=128 N=128 K=64: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:158: M=100 N=70 K=48: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:158: M=37 N=50 K=1176: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:158: M=5 N=9 K=20: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:158: M=2520 N=192 K=768: gemm, gemmBias and gemmBiasAdd match float64
+--- PASS: TestTowerBase_gemmBranches (0.91s)
+=== RUN   TestTowerBase_normsAndActivations
+--- PASS: TestTowerBase_normsAndActivations (0.22s)
+=== RUN   TestTowerBase_kernels
+=== RUN   TestTowerBase_kernels/clamp
+=== RUN   TestTowerBase_kernels/posAdd
+=== RUN   TestTowerBase_kernels/ropeAxial
+=== RUN   TestTowerBase_kernels/ropeHalf
+=== RUN   TestTowerBase_kernels/mulAndScale
+--- PASS: TestTowerBase_kernels (0.22s)
+    --- PASS: TestTowerBase_kernels/clamp (0.00s)
+    --- PASS: TestTowerBase_kernels/posAdd (0.00s)
+    --- PASS: TestTowerBase_kernels/ropeAxial (0.00s)
+    --- PASS: TestTowerBase_kernels/ropeHalf (0.00s)
+    --- PASS: TestTowerBase_kernels/mulAndScale (0.00s)
+=== RUN   TestTowerBase_attention
+--- PASS: TestTowerBase_attention (8.70s)
+=== RUN   TestTowerOps_contextVRAM
+[S7 CUDA tower base VRAM] free before 7221 MiB, after newTowerOps (context + ViT module + tower_base module) 7219 MiB: the base holds 2 MiB before any weight
+--- PASS: TestTowerOps_contextVRAM (0.43s)
+=== RUN   TestImagePrefillResident_twoImagesTinyCUDA
+    two_images_resident_test.go:101: interleaved: resident two-image prefill: worst cos 0.999784, worst relL2 0.0208 (last token + 8 steps)
+    two_images_resident_test.go:101: adjacent: resident two-image prefill: worst cos 0.999627, worst relL2 0.0273 (last token + 8 steps)
+--- PASS: TestImagePrefillResident_twoImagesTinyCUDA (0.25s)
+=== RUN   TestRecordUpload_capturesFirstError
+--- PASS: TestRecordUpload_capturesFirstError (0.00s)
+=== RUN   TestUploadKV_matchesSequentialForward
+=== RUN   TestUploadKV_matchesSequentialForward/base0_unwrapped
+cuda: resident context 10740, trimmed from 10759 at the build, so one KV slot fits beside the weights (3237 MB free, less 384 MB reserved)
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.40 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.40 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.40 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+    uploadkv_parity_test.go:139: decode step 0: cosine(ground-truth, hybrid) = 1.00000000
+    uploadkv_parity_test.go:139: decode step 1: cosine(ground-truth, hybrid) = 1.00000000
+    uploadkv_parity_test.go:139: decode step 2: cosine(ground-truth, hybrid) = 1.00000000
+    uploadkv_parity_test.go:139: decode step 3: cosine(ground-truth, hybrid) = 1.00000000
+=== RUN   TestUploadKV_matchesSequentialForward/baseN_ringWrapped
+cuda: resident context 10740, trimmed from 10759 at the build, so one KV slot fits beside the weights (3237 MB free, less 384 MB reserved)
+    uploadkv_parity_test.go:139: decode step 0: cosine(ground-truth, hybrid) = 1.00000000
+    uploadkv_parity_test.go:139: decode step 1: cosine(ground-truth, hybrid) = 1.00000000
+    uploadkv_parity_test.go:139: decode step 2: cosine(ground-truth, hybrid) = 1.00000000
+    uploadkv_parity_test.go:139: decode step 3: cosine(ground-truth, hybrid) = 1.00000000
+--- PASS: TestUploadKV_matchesSequentialForward (114.02s)
+    --- PASS: TestUploadKV_matchesSequentialForward/base0_unwrapped (13.13s)
+    --- PASS: TestUploadKV_matchesSequentialForward/baseN_ringWrapped (100.89s)
+=== RUN   TestVisionEncoder_forwardPatchesReleasesDeviceScratch
+    vision_encoder_leak_test.go:85: free VRAM before 10 more calls: 6984499200 bytes, after: 6984499200 bytes (delta 0 bytes)
+--- PASS: TestVisionEncoder_forwardPatchesReleasesDeviceScratch (46.78s)
+=== RUN   TestVisionTowerTiming
+[vision] run 0/5 warm-up (discarded): 4.080 s   (elapsed 4s)
+[vision] run 1/5 measured: 4.075 s   (elapsed 8s)
+[vision] run 2/5 measured: 4.072 s   (elapsed 12s)
+[vision] run 3/5 measured: 4.075 s   (elapsed 16s)
+[vision] run 4/5 measured: 4.072 s   (elapsed 20s)
+[vision] run 5/5 measured: 4.073 s   (elapsed 24s)
+=== VISION TOWER (resident CUDA, 4096 patches, 27 layers): min 4.072  median 4.073  max 4.075 s over 5 runs ===
+--- PASS: TestVisionTowerTiming (25.82s)
+=== RUN   TestQKNorm_widths
+=== RUN   TestQKNorm_widths/hd128
+    vnorm_test.go:124: hd=128: maxRelErr Q=1.25e-07 K=1.19e-07 V=0.00e+00
+=== RUN   TestQKNorm_widths/hd256
+    vnorm_test.go:124: hd=256: maxRelErr Q=1.62e-07 K=1.53e-07 V=0.00e+00
+=== RUN   TestQKNorm_widths/hd512
+    vnorm_test.go:124: hd=512: maxRelErr Q=1.45e-07 K=1.19e-07 V=0.00e+00
+--- PASS: TestQKNorm_widths (0.00s)
+    --- PASS: TestQKNorm_widths/hd128 (0.00s)
+    --- PASS: TestQKNorm_widths/hd256 (0.00s)
+    --- PASS: TestQKNorm_widths/hd512 (0.00s)
+=== RUN   TestVNorm_scaleless
+    vnorm_test.go:209: scale-less v_norm vs CPU rmsNormNoWeight: maxRelErr=0.00e+00 (a 2x would read ~1.0)
+--- PASS: TestVNorm_scaleless (0.00s)
+=== RUN   TestVsumMechanism
+    vsum_mechanism_test.go:52: S=1 needs GOINFER_SPLITKV_VSUM_SPLIT >= 1 (it sizes the partials buffer at setup); have 0
+--- SKIP: TestVsumMechanism (0.00s)
+=== RUN   TestVsumSplitFidelity
+    vsum_split_fidelity_test.go:62: set GOINFER_SPLITKV_VSUM_SPLIT=<n> so the spike pipelines are loaded
+--- SKIP: TestVsumSplitFidelity (13.37s)
+=== RUN   TestVsumSplitGateVsReference
+    vsum_split_gate_test.go:77: set GOINFER_SPLITKV_VSUM_SPLIT=4 — the spike pipelines are loaded at backend setup, so without it there is no spike arm to score and the gate would compare the exact path to itself
+--- SKIP: TestVsumSplitGateVsReference (0.00s)
+=== RUN   TestSlidingWindowLongContext
+    window_longctx_test.go:125: window=16 engaged over 40 tail positions (of 56): 40/40 exact | worst near-tie 0.000% | min cosine 1.000000 | hard fails 0
+    window_longctx_test.go:128: WINDOW GATE GREEN: CUDA's sliding window matches the CPU with the window actually engaged, on a real Mistral checkpoint
+--- PASS: TestSlidingWindowLongContext (0.12s)
+=== RUN   TestSlidingWindowAttention
+    window_test.go:109: windowed(40 keys, W=12) vs full(last 12 keys): maxAbs=0
+    window_test.go:126: window=0 and window>=nKeys are both exactly full-causal ✓
+--- PASS: TestSlidingWindowAttention (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	439.742s

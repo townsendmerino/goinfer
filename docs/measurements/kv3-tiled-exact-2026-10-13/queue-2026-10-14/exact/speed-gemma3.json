@@ -1,0 +1,79 @@
+{
+ "serve": "/home/francis/goinfer-bench/kv3-tiled-2026-10/bin/serve-cuda-exact",
+ "lengths": [
+  12400,
+  20000
+ ],
+ "models": {
+  "gemma-3-4b": [
+   {
+    "arm": "batched",
+    "cells": {
+     "12400": {
+      "seconds": 31.49,
+      "prompt_tokens": 12297,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 62.96,
+      "prompt_tokens": 19838,
+      "declined": false
+     }
+    }
+   },
+   {
+    "arm": "per-token",
+    "cells": {
+     "12400": {
+      "seconds": 130.47,
+      "prompt_tokens": 12293,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 219.3,
+      "prompt_tokens": 19836,
+      "declined": false
+     }
+    }
+   },
+   {
+    "arm": "batched",
+    "cells": {
+     "12400": {
+      "seconds": 31.63,
+      "prompt_tokens": 12295,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 62.96,
+      "prompt_tokens": 19835,
+      "declined": false
+     }
+    }
+   }
+  ]
+ },
+ "summary": {
+  "gemma-3-4b": {
+   "12400": {
+    "batched": [
+     31.49,
+     31.63
+    ],
+    "per_token": 130.47,
+    "ratio": 4.13,
+    "batched_declined": false
+   },
+   "20000": {
+    "batched": [
+     62.96,
+     62.96
+    ],
+    "per_token": 219.3,
+    "ratio": 3.48,
+    "batched_declined": false
+   }
+  }
+ },
+ "verdict": "PASS"
+}

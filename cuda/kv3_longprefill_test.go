@@ -3,14 +3,12 @@
 package cuda
 
 import (
-	"errors"
 	"fmt"
 	"github.com/townsendmerino/goinfer/decoder"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 )
@@ -217,28 +215,6 @@ func TestKV3_batchedPrefillPastTheSpanBound_real1p5B(t *testing.T) {
 	}
 }
 
-// TestKV3_pastTheSpanBound_exactStillDeclines: with the fused kernel off (the fast-prefill floor above every prompt) the same pass is
-// the exact kernel's, past its bound, and still declines, by name. It is the gate's negative arm (the guard can go red) and the
-// statement of what keeps the bound: a pass the fused kernel does not serve.
-func TestKV3_pastTheSpanBound_exactStillDeclines(t *testing.T) {
-	const base = "../testdata/llama-attnfa-tiny"
-	requireDeviceAndFixture(t, base)
-	g := kv0LoadCtx(t, kv3LongContextCopy(t, base, 32768), "f16", 17000, kv0RandomTokens)
-	e := g.embs(g.tokens(12400, 1))
-	g.floorKnob("1000000")
-	_, err := g.r.PrefillLast(g.ctx, e, 0)
-	if err == nil {
-		t.Fatal("a 12,400-token prompt on the exact kernels prefilled in batched passes: the exact kernel's span bound is not being applied")
-	}
-	if !errors.Is(err, errPrefillDeclined) || !strings.Contains(err.Error(), "layer 0") {
-		t.Errorf("the decline must wrap errPrefillDeclined and name the layer: %v", err)
-	}
-	g.floorKnob("")
-	if _, err := g.r.PrefillLast(g.ctx, e, 0); err != nil {
-		t.Errorf("with the fused kernel on, the same prompt must prefill: %v", err)
-	}
-}
-
 // TestKV3_prefillScratchBytes_matchesThePass holds PrefillScratchBytes to the buffers prefillCore asks for: the figure admission
 // trusts is the sum of each scratch buffer after the allocator's rounding, not an estimate, and it is never under the pass.
 func TestKV3_prefillScratchBytes_matchesThePass(t *testing.T) {
@@ -271,6 +247,9 @@ func TestKV3_residentReportsItsChunks(t *testing.T) {
 	}
 	if _, ok := any(g.r).(decoder.ResidentPrefillTailMin); !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentPrefillTailMin")
+	}
+	if _, ok := any(g.r).(decoder.ResidentPrefillSpanScratch); !ok {
+		t.Fatal("cudaResident does not satisfy decoder.ResidentPrefillSpanScratch")
 	}
 	if c := pc.PrefillChunkRows(); c != 512 || c%64 != 0 {
 		t.Errorf("PrefillChunkRows %d, want the default 512 (a multiple of the block size 64)", c)

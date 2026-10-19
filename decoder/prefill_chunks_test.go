@@ -13,11 +13,15 @@ type chunkFake struct {
 	chunk   int
 	perRow  int64
 	tailMin int
+	perKey  int64 // ResidentPrefillSpanScratch: bytes a pass adds per attended key (0: none)
 }
 
 func (f *chunkFake) PrefillChunkRows() int              { return f.chunk }
 func (f *chunkFake) PrefillScratchBytes(rows int) int64 { return int64(rows) * f.perRow }
 func (f *chunkFake) PrefillTailMinRows() int            { return f.tailMin }
+func (f *chunkFake) PrefillSpanScratchBytes(rows, keys int) int64 {
+	return int64(keys) * f.perKey
+}
 
 type chunkFakeBackend struct {
 	Backend
@@ -93,6 +97,27 @@ func TestAdmitPrefillMemory_pricesAChunkingResidentByItsChunk(t *testing.T) {
 	rf.chunk, rf.perRow = 0, 1000
 	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, true, 1); err == nil {
 		t.Error("a resident that reports no chunk was admitted under the room the whole-prompt price needs")
+	}
+}
+
+// TestAdmitPrefillMemory_addsTheSpanScratch: a chunking resident whose pass allocates more as its rows attend more keys
+// (ResidentPrefillSpanScratch) is priced at its chunk's scratch plus that figure at the request's prompt length, and a request
+// the sum does not fit is refused.
+func TestAdmitPrefillMemory_addsTheSpanScratch(t *testing.T) {
+	injectHostRAM(t, 64<<30)
+	injectHostRAMAvailable(t, 300<<20)
+	const promptTokens, maxTokens = 20000, 4096
+	m, rf := loadWithChunkFake(t, func(f *chunkFake) { f.chunk, f.perRow, f.tailMin, f.perKey = 512, 1000, 16, 100 })
+	want := int64(rf.chunk)*rf.perRow + int64(promptTokens)*rf.perKey + int64(promptTokens)*4*int64(m.ResidentEmbedLen())
+	if got, ok := m.residentPrefillScratch(promptTokens); !ok || got != want {
+		t.Errorf("residentPrefillScratch = %d, %v; want the chunk's scratch, the span scratch at %d keys and the embeddings, %d", got, ok, promptTokens, want)
+	}
+	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, true, 1); err != nil {
+		t.Errorf("a request whose chunk and span scratch fit was refused: %v", err)
+	}
+	rf.perKey = 1 << 20
+	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, true, 1); err == nil {
+		t.Error("a request whose span scratch does not fit was admitted: the figure is not priced")
 	}
 }
 

@@ -1,0 +1,12 @@
+=== RUN   TestKV3Tiled_forcedRouteOnGemma3
+    kv3_tiled_test.go:211: KV precision f32
+[kv3-tiled] gemma-3-4b: 11520-token lead prefilled in 20.6 s
+[kv3-tiled] gemma-3-4b pair 0 rows=false: pass of 512 rows at 12032 keys 1.251 s (0 groups); logits differing 0 of 262144, KV rows differing 0 of 35651584
+[kv3-tiled] gemma-3-4b pair 0 rows=true: pass of 512 rows at 12032 keys 1.399 s (102 groups); logits differing 0 of 262144, KV rows differing 0 of 35651584
+[kv3-tiled] gemma-3-4b pair 1 rows=false: pass of 512 rows at 12032 keys 1.247 s (0 groups); logits differing 0 of 262144, KV rows differing 0 of 35651584
+[kv3-tiled] gemma-3-4b pair 1 rows=true: pass of 512 rows at 12032 keys 1.402 s (102 groups); logits differing 0 of 262144, KV rows differing 0 of 35651584
+[kv3-tiled] gemma-3-4b pair 2 rows=false: pass of 512 rows at 12032 keys 1.246 s (0 groups); logits differing 0 of 262144, KV rows differing 0 of 35651584
+[kv3-tiled] gemma-3-4b pair 2 rows=true: pass of 512 rows at 12032 keys 1.401 s (102 groups); logits differing 0 of 262144, KV rows differing 0 of 35651584
+--- PASS: TestKV3Tiled_forcedRouteOnGemma3 (42.13s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	42.375s
