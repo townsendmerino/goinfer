@@ -19811,3 +19811,11 @@ f32 scales stay in the file, so the CPU path is untouched; the cost is the f16 c
 in place when present and converts as before when not. Compatibility follows the earlier rule: only a
 metal-target file is v14, every other target still writes v12, a pre-v14 reader refuses a v14 file, and a v14
 reader loads every older layout (a v13 metal-target file simply has no f16 scales to alias).
+
+## giwPinnedExpertBytes
+
+A `.giw` load's weights alias the mapping, so its guard prices only what is anonymous: KV and prefill scratch, which are VRAM on a CUDA resident. One anonymous term was missing: with `--moe-cache-experts` on CUDA, every routed expert is
+packed into one page-locked host copy (`cacheWQ`; the memory campaign's MEM10), which cannot be reclaimed. `giwPinnedExpertBytes` prices it from the config (MoE layers x experts x 3 x expert width x hidden, at 9/16 byte a weight: int4 with f16 group-32
+scales), so `Load` and `FitQuery` agree. For Qwen3.6-35B-A3B it is 18.12 GB, the memory campaign's measured figure. The term does not depend on the context, so a refusal here is never cured by a smaller `-ctx`; the message names "the pinned MoE expert copy".
+On the box tack's C3 ran on (38 GiB available) the load is admitted; the term refuses below the copy plus the 1 GiB margin. It is not the cause of C3's halt (`docs/measurements/c3-logs-reading-2026-10-18.md` §1, B33 and B34 are).
+
