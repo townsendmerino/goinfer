@@ -252,10 +252,12 @@ TE2(b)'s pre-registered night (1.5B / 7B CUDA goinfer, one build, 4 restarts × 
 Every pre-registration of a gate or a graded run states these, before the run (the decision rule, its bands and the ambiguous band as well, per `CLAUDE.md`'s measurement discipline):
 
 ```
-Tier: quick | day | night | release  (CLAUDE.md, "Gate tiers").
-Testing tier: 0 (counters and bit-identity on tiny fixtures, seconds) | 1 (one small real model, <=10 min, by day) | 2 (night). For tier 2: why tiers 0 and 1 cannot answer it, and a wall-clock budget (CLAUDE.md, "Testing tiers").
+Tier: quick | day | night | release  (CLAUDE.md, "Gate tiers"). Night only for (a) a Mac job the fit guard refuses while the owner's apps are open, or (b) a job over about 2 hours (CLAUDE.md, "Run budget", owner 2026-10-19).
+Testing tier: 0 (counters and bit-identity on tiny fixtures, seconds) | 1 (one small real model, by day) | 2 (by day by default). For tier 2: why tiers 0 and 1 cannot answer it, and a wall-clock budget (CLAUDE.md, "Testing tiers").
+Interleaving: A B B A in one session on one box, for every comparison.
+Cell validity: each cell records, at its start, the load average and the free memory of the box doing the timed work. A cell is VOID (re-run in order, listed in the record, never averaged) if, at its start, on that box, the 1-minute load average is above half its core count (Mac 8 cores: 4.0; nobara 16 cores: 8.0) or its free memory is below what the fit guard needs for the cell's load plus 2 GB. A box that only drives the harness records its load and never voids a cell.
 Reused readings: <each unchanged arm's last readings, with record and commit>; that arm is not re-run.
-Fit check: <every load the job will make, checked by day, and the result>; a job whose load would be refused is not queued.
+Fit check: <every load the job will make, checked before the run, and the result>; a job whose load would be refused is not run or queued.
 Never-swap: <the test process's VmHWM and peak VmSwap, read from /proc/<pid>/status, decide>; system swap in use is context only (CLAUDE.md, "Testing tiers").
 Instrument: <which>, and why it is the cheapest one that resolves the bar (an in-process whole-token A/B first for a kernel question; two arms for a new/old ratio, the peer read once per lever, after it ships).
 Noise: the registry's noise for the cell is sd <sd> / floor <floor> (<entry id>, <provenance>, n=<n>), source <record:line or commit>.
@@ -263,7 +265,7 @@ power.py N: `power.py <instrument> <cell> --bar <bar> [--expect <r>] --paired` -
 Stopping rule: <fixed N, no early stop> or <the registered skip: pass 2 skipped when pass 1 clears the bar by more than the two passes' own measured spread>. No ad hoc stopping when results look good.
 Ambiguous band: <the parked zone and who decides it>.
 Speed bar: the owner's default, unless the brief says why not: ship >= 1.02x, park 1.00-1.02x, off < 1.00x. The hard preconditions (bit-identity or the fidelity gate, no regression at any cell) stay strict; whether the thesis delivered is reported separately and never gates. Never a 1.2 / 1.5 / 2x ship line (owner 2026-09-26, R18; again 2026-10-04, M26 4b).
-Cost: <estimated wall: cells x runs x per-cell time, plus idle-gate waits>; queued as <night.py job name> or run by day.
+Cost: <expected wall: cells x runs x per-cell time, plus idle-gate waits, as a start and an expected finish time>; run by day, or queued as <night.py job name> with which night case it is.
 ```
 
 **For a gate on the prefill/decode fidelity protocol** (TE12; the protocol is eleven test files, 10 prose prompts per cell x a K ladder x 64 scored positions, on two models, candidate against exact against a reference), add:
