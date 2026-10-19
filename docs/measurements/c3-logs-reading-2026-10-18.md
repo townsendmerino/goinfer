@@ -51,7 +51,7 @@ Model facts (GGUF metadata): 32 layers, `full_attention_interval` 4 (so 8 full-a
 ### (b) Cold prefill 260 → 75 tok/s between 4k and 31k: the same 48 KiB shared-memory limit as Gemma 4's finding 1
 
 - The 9B's load log says `prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)`. Head dim 256 is not served by the fused attention (64 or 128 only), so the 8 full-attention layers take
-  the exact `attn_batched`, whose dynamic shared memory is `(nKeys+128)*4` bytes. The device limit is `singleBlockAttnShmemLimit`, 48 KiB or 49,152 B, which allows **12,160 attended keys**. Gemma's 50,300 B is 12,447 keys on the same formula. Past that bound `cuda/prefill.go:checkPrefillShmem`
+  the exact `attn_batched`, whose dynamic shared memory is `(nKeys+128)*4` bytes. The device limit is `singleBlockAttnShmemLimit`, 48 KiB or 49,152 B, which allows **12,160 attended keys**. Gemma's 50,300 B is 12,447 keys on the same formula. Past that bound `cuda/prefill.go:cudaResident.checkPrefillShmem`
   declines the batched pass (`errPrefillDeclined`) and the prompt is prefilled by the sequential KV-only path.
 - **The throughput numbers fit.** 4,093 tokens in 15.3 s is 267 tok/s, and 8,182 in 38.8 s is 211 tok/s (batched, under the bound; the fall is the attention's quadratic growth). 31,744 tokens in 421.3 s is **75.3 tok/s**, close to the 65 tok/s decode rate:
   the whole 31.7k prompt ran sequentially, as an up-front check on the prompt length would have it.
