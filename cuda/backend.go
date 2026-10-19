@@ -271,7 +271,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		planStartForTest()
 	}
 	hls := make([]hlayer, nLayers)
+	loadAbort := m.LoadAbort() // the swap tripwire's channel (Options.LoadAbort); nil never fires
 	for l := range nLayers {
+		select {
+		case <-loadAbort:
+			return nil, false, fmt.Errorf("cuda: resident build aborted while planning layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
+		default:
+		}
 		lw := &w.Layers[l]
 		var hl hlayer
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
@@ -687,9 +693,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		return declined(fmt.Errorf("an attention softcap on a latent-attention model: mla_attn has no cap"))
 	}
 	r := &cudaResident{
-		knob:   m.Knob,
-		kvF16:  m.KVCacheF16(),
-		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
+		loadAbort: loadAbort,
+		knob:      m.Knob,
+		kvF16:     m.KVCacheF16(),
+		hidden:    H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap,
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: m.HasQKNorm(), qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
@@ -1357,6 +1364,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.layers = make([]cudaLayer, nLayers)
 		for l := range nLayers {
+			if r.loadAborted() {
+				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
+			}
 			h := &hls[l]
 			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn}
 			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
@@ -1790,8 +1800,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// A silent decline suits a shape this backend does not implement (the staged path serves it, slower). It is wrong when
 		// the operator explicitly asked for a resident context that does not fit: degrading quietly turns that into a latency
 		// mystery under load, so errKVWontFit is a hard startup error naming the GB. Everything else keeps the decline.
-		if errors.Is(setupErr, errKVWontFit) {
-			return nil, false, setupErr
+		if errors.Is(setupErr, errKVWontFit) || errors.Is(setupErr, decoder.ErrLoadAborted) {
+			return nil, false, setupErr // the tripwire stopping the load is the load's error, not a decline that carries on on the CPU
 		}
 		return declined(setupErr)
 	}

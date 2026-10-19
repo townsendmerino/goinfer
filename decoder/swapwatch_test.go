@@ -261,3 +261,58 @@ func TestSwapWatch_keyingOnRSSWouldHaveMissedR11c(t *testing.T) {
 		t.Fatal("expected an RSS-keyed watch to (wrongly) resume while its own falling tail holds flat — this is the inversion the guard must never reproduce for real: RSS reporting 'recovered' during a run where swap (the true signal) never stopped climbing")
 	}
 }
+
+// A watch tripped by swap that a load left behind forgets the trip when told to re-baseline (B34): OnResume fires once, the reading at that moment
+// is the new zero, and growth past the threshold over THAT trips again. Without the call the same reading holds the watch tripped for good, because a
+// page swapped out stays in swap until it is touched.
+func TestSwapWatch_rebaselineForgetsATripAndTripsAgainOnNewGrowth(t *testing.T) {
+	const base, thr = int64(1_000_000_000), int64(500_000_000)
+	var cur, reads atomic.Int64
+	cur.Store(base)
+	var trips, resumes atomic.Int64
+	w := StartSwapWatch(t.Context(), SwapWatchOptions{
+		Read:         func() (int64, bool) { reads.Add(1); return cur.Load(), true },
+		PollInterval: time.Millisecond,
+		Threshold:    thr,
+		ResumeAfter:  time.Hour, // hysteresis cannot be what resumes it
+		OnTrip:       func(int64, int64) { trips.Add(1) },
+		OnResume:     func() { resumes.Add(1) },
+	})
+	defer w.Stop()
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s (trips %d, resumes %d)", what, trips.Load(), resumes.Load())
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	waitFor("the baseline reading", func() bool { return reads.Load() >= 3 })
+	cur.Store(base + 900_000_000) // the load's swap
+	waitFor("the first trip", func() bool { return trips.Load() == 1 })
+	time.Sleep(20 * time.Millisecond)
+	if resumes.Load() != 0 {
+		t.Fatalf("VOID: the watch resumed on its own before Rebaseline (resumes %d)", resumes.Load())
+	}
+
+	w.Rebaseline()
+	waitFor("the resume after Rebaseline", func() bool { return resumes.Load() == 1 })
+	time.Sleep(20 * time.Millisecond)
+	if trips.Load() != 1 || resumes.Load() != 1 {
+		t.Errorf("after Rebaseline at the same reading: trips %d resumes %d, want 1 and 1 (the old swap is the new zero)", trips.Load(), resumes.Load())
+	}
+
+	cur.Store(base + 900_000_000 + 400_000_000) // under the threshold over the new baseline: quiet
+	time.Sleep(20 * time.Millisecond)
+	if trips.Load() != 1 {
+		t.Errorf("400 MB over the new baseline tripped (trips %d), want quiet under a 500 MB threshold", trips.Load())
+	}
+	cur.Store(base + 900_000_000 + 600_000_000) // 600 MB over the new baseline: trips again
+	waitFor("the second trip", func() bool { return trips.Load() == 2 })
+
+	var nilWatch *SwapWatch
+	nilWatch.Rebaseline() // safe on nil
+}

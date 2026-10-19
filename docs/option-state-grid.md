@@ -77,7 +77,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 - `ExtraResidentBytes`: prices a companion allocation when the resident is planned
 - `ExtraResidentKVPerPosition`: prices a companion allocation's K/V when the resident context is chosen
 - `LoRA`: merged into the base weights at load ("merged into the base at load"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid
-- `LoadAbort`: checked between layers during a GGUF weight build; nil afterwards in effect
+- `LoadAbort`: checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect
 - `ResidentKVSlotsDefault`: tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count
 - `noSelfTest`: the resident self-test's own fixture loads; read by the self-test at load
 - `planResidency`: FitQuery's open of a .giw, which builds no resident and is closed before it runs anything

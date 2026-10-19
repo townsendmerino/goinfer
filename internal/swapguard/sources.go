@@ -64,6 +64,16 @@ func (w *Watch) Stop() {
 	}
 }
 
+// Rebaseline re-baselines every sampler (decoder.SwapWatch.Rebaseline). Safe on a nil receiver.
+func (w *Watch) Rebaseline() {
+	if w == nil {
+		return
+	}
+	for _, x := range w.ws {
+		x.Rebaseline()
+	}
+}
+
 // Start runs one SwapWatch per source. onTrip fires when a source first passes its threshold; onResume (nil for none) when that source has
 // been back within it for resumeAfter. Each source keeps its own baseline, printed once as it is first read.
 func Start(srcs []Source, resumeAfter time.Duration, onTrip func(src Source, used, delta int64), onResume func(src Source)) *Watch {

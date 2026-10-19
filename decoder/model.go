@@ -101,6 +101,10 @@ type Model struct {
 	kvSnaps       *kvSnapStore // Options.KVHostBytes: the held prefix snapshots, nil when off
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+
+	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
+	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted; Load turns it into the load's error
+
 	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	actGroup      int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
 	extraBytes    int64        // Options.ExtraResidentBytes — see that field's own doc comment
@@ -443,14 +447,13 @@ type Options struct {
 	// Honoured on the CPU and by CUDA residency; other resident backends decline to the CPU path when it is set.
 	ActQuantGroup int
 
-	// LoadAbort, if non-nil, is checked between layers during a direct (non-.giw) GGUF weight build: the load-time consumer of
-	// the swap tripwire. Closing it aborts the load with an error satisfying errors.Is(err, ErrLoadAborted). Load does not know
+	// LoadAbort, if non-nil, is checked between layers during a direct GGUF weight build, during a .giw's CRC pass and layer walk, and by a
+	// backend's resident build (Model.LoadAbort): the load-time consumer of the swap tripwire. Closing it aborts the load with an error satisfying errors.Is(err, ErrLoadAborted). Load does not know
 	// why it closed (it does not own decoder.SwapWatch), so a caller arming a watch is expected to wrap the returned error with
 	// its own reason/pricing detail. A nil channel (the zero value) blocks forever in a select, so it is a genuine no-op.
 	//
-	// Limitation: only the GGUF direct-build path (loadGGUFWeights/buildWeightsFromGGUF's resident, non-streaming branch) checks
-	// it. The safetensors direct-build path and StreamTranscodeGGUF's transcode do not
-	// (docs/code-notes/decoder.md#Options.LoadAbort).
+	// Limitation: the safetensors direct-build path and StreamTranscodeGGUF's transcode do not check it, and a backend's resident build
+	// does only if it polls Model.LoadAbort (docs/code-notes/decoder.md#Options.LoadAbort).
 	LoadAbort <-chan struct{}
 
 	// BackendAuto says Backend was chosen by "auto" rather than named. A backend auto chose declines a model it would
@@ -503,6 +506,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
+		loadAbort:  opts.LoadAbort,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest,
 		planResidency: opts.planResidency}
@@ -569,9 +573,9 @@ func Load(dir string, opts Options) (*Model, error) {
 		gfi, statErr := os.Stat(dir)
 		crcDone := statErr == nil && giwVerified(dir, gfi)
 		afterWalk := func() {}
-		w, lerr := loadSerializedWeightsHook(weightsBlob, crcDone, func(a *Architecture) {
+		w, lerr := loadSerializedWeightsAbortable(weightsBlob, crcDone, func(a *Architecture) {
 			afterWalk = prepareColdLoad(dir, data, a, opts, be)
-		})
+		}, opts.LoadAbort)
 		afterWalk()
 		if lerr != nil {
 			_ = mmap.Unmap(data)
@@ -649,7 +653,7 @@ func Load(dir string, opts Options) (*Model, error) {
 				fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
 			}
 		}
-		return m.withResidency(), nil
+		return m.withResidencyOrAbort()
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -737,7 +741,9 @@ func Load(dir string, opts Options) (*Model, error) {
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.
 	tRes := time.Now()
-	m = m.withResidency()
+	if m, err = m.withResidencyOrAbort(); err != nil {
+		return nil, err
+	}
 	if w.prof != nil {
 		if d := time.Since(tRes); d > time.Millisecond {
 			w.prof.record("resident", d)

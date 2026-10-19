@@ -81,7 +81,20 @@ func (s *server) armSwapGuardSources(own decoder.SwapReader, ownWhy string, sys 
 			mu.Unlock()
 			if clear {
 				s.swapGuardTripped.Store(false)
-				fmt.Fprintf(os.Stderr, "swap guard: recovered — %s back within threshold of baseline for %s; admitting new requests again\n", src.Name, swapguard.ResumeAfter)
+				fmt.Fprintf(os.Stderr, "swap guard: recovered — %s back within threshold of baseline (or re-baselined after a load); admitting new requests again\n", src.Name)
 			}
 		})
+}
+
+// rebaselineSwapGuard is called when a model loaded after the server came up (the admin load, the web UI's) has finished. The serving watch was
+// armed at startup, before this load, so the swap the load itself caused was counted against serving: pages swapped out stay in swap until
+// they are touched, so the figure never falls back and the gate would stay shut for the life of the server (docs/measurements/c3-logs-reading-2026-10-18.md §1).
+// After a load that finished, the current reading is the new baseline. Swap that grew past
+// the threshold DURING the load is not hidden by this: the load-time watch (loadGuarded) aborts such a load, and a failed load never calls here.
+func (s *server) rebaselineSwapGuard(model string) {
+	if s.swapWatch == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "swap guard: re-baselining after the load of %q (swap used during a finished load is not serving's)\n", model)
+	s.swapWatch.Rebaseline()
 }
