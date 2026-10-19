@@ -18,7 +18,16 @@
 ## What is open
 
 - **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
-  (sm_75) — PARKED 2026-10-18 (owner: "not needed for now; don't build it").** `linux`.
+  (sm_75) — SUPERSEDED 2026-10-18: branch `kv3-tiled-2026-10` already covers it, and nobara is bringing that branch onto
+  main. Option A is dropped (owner).** `linux`.
+
+  - **The branch covers it:** its row-batched split-KV prefill kernels (`cuda/prefill_splitkv.cu` on that branch) take the
+    head dim per layer. `TestPrefillSplitKV_rowsEqualAttnBatched` holds them bit-equal to `attn_batched` for head dims 20 to
+    512. Its record (`docs/measurements/kv3-tiled-exact-2026-10-13.md` on that branch) has Gemma-4-E4B at 12,400 tokens, and
+    a served smoke of 12,215 tokens ran in 55.9 s with no decline.
+  - **Not covered there:** the image-block (bidirectional) pass past the bound.
+  - **Left:** bringing the branch onto main, a dense Gemma-4 gate there, and the image-block twin. Not a new kernel. The
+    scoping below is history.
 
   - **Found by:** tack's C1 calibration (gemma-4 E4B, RTX 2070 SUPER, goinfer `0de92cd9`). Every request past the limit
     logged `prefill_fallback=sequential`. Time to first token was 48–128 s on 11–26k-token prompts: batched ran about
@@ -31,8 +40,7 @@
       original order. Bit-identical by construction, about 1 day.
     - B, a batched split-KV kernel like decode's: about 1.5–2 days, because its score scratch needs sub-batching and pricing.
     - C, the fused kernel for head dims 256 and 512: fast-class, needs a fidelity gate, several days.
-    - The owner approved A, then parked it: tack's candidate models do not need it.
-  - **Re-open** when a model tack or a user needs runs gemma-4 past 12k keys on a 48 KB card.
+    - The owner approved A, then parked it, then dropped it once `kv3-tiled-2026-10` was found to cover the case.
 
 - **P34 · Qwen3.5-9B never reuses a prefix on CUDA — OPEN, filed 2026-10-18 (owner, medium priority). Not tonight's
   work.** `linux`.
