@@ -15,6 +15,7 @@ any surface may still change.
 
 ## [Unreleased]
 
+- A prompt past 12,160 attended keys no longer falls to the sequential prefill on CUDA for a model whose attention the fused kernel does not serve (head dim other than 64 and 128: Gemma 2, 3 and 4, Phi-3, Qwen3.5): row-batched kernels run the exact attention, bit-identical to the single-block kernel and to the per-token path, for text and for an image-block pass.
 - The `.giw` fit guard prices the page-locked host copy of the routed experts that a CUDA expert cache (`--moe-cache-experts`) builds, 18.1 GB for Qwen3.6-35B-A3B, and refuses a load whose box cannot hold it. `FitQuery` reports it as `PinnedExpertBytes`.
 - The load-time swap watch now guards a `.giw` load, not only a direct `.gguf` build: the `.giw` loader and the CUDA resident build stop with a named error when the server's own swap grows past the threshold during the load. The serving swap watch re-baselines after a model loaded through the admin endpoint or the web UI, so swap that load left behind no longer shuts the server to requests for good.
 
@@ -113,6 +114,24 @@ any surface may still change.
   on CUDA; the Mac's default context grows toward 16,384; the context-overflow message has new wording
   (`context_length_exceeded` unchanged); some Gemma 4 and Qwen3.5 image replies differ at temperature 0.
 - **aikit v1.70.1** in all five modules.
+
+### Changed — on CUDA, the exact prefill attention also runs past 12,160 attended keys (Gemma 3, Gemma 4 and any exact pass)
+
+A layer the fused attention does not serve (head dimension 256 or 512, an E-model, a pass of 15 rows or fewer) kept the exact
+kernel's shared-memory bound and sent a prompt past 12,160 keys to the per-token path. Such a layer now takes **three row-batched
+kernels** (`cuda/prefill_splitkv.cu`: decode's split-KV attention with the query row on the grid), which hold the scores in a device
+buffer and are bit-identical to the exact kernel row by row. At 12,400 tokens Gemma-4-E4B reaches its first token 3.31 times sooner than on
+the per-token path, bit-identical to it (`docs/measurements/kv3-tiled-exact-2026-10-13.md`); Gemma-3-4B's reading is below.
+
+- **Below the bound nothing changes:** the same kernels as before, and the same digests at 300, 3,900 and 12,000 tokens.
+- **Past it, an exact pass equals the per-token path bit for bit:** logits and every K and V row at 12,400 and 16,384 tokens on the tiny
+  fixture, f32 and f16 KV.
+- **Still falling back past the bound, by name:** an image-block pass. (An MLA model does not batch its prefill at any length.)
+- Admission adds the pass's score scratch (at most 64 MiB) to a request's price when a layer takes these kernels.
+- **A prompt that takes these kernels runs every pass on the exact kernels**, the 4-bit tensor-core GEMM included, so it equals the
+  per-token path bit for bit. With that GEMM on, Gemma-3-4B at 12,400 tokens read cosine 0.9865 against the per-token path, under the
+  0.99 bar; the owner chose exactness. It costs speed: 31.9 s against 23.2 s for that prompt in the test rig. Gemma-3-4B's first token came
+  5.68 times sooner than on the per-token path with the GEMM on; the exact pass is being re-read. Below 12,160 keys, and where the fused attention serves a layer, the fast kernels run as before.
 
 ### Changed — on CUDA, a prompt past 12,160 attended keys prefills in batched passes where the fused attention serves it
 

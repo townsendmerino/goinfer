@@ -1,0 +1,13 @@
+1.5B pair 1 old: K=512 median 119.3 ms, K=3900 median 943.0 ms
+1.5B pair 1 new: K=512 median 118.4 ms, K=3900 median 941.4 ms
+1.5B pair 2 new: K=512 median 119.6 ms, K=3900 median 941.9 ms
+1.5B pair 2 old: K=512 median 118.8 ms, K=3900 median 940.8 ms
+1.5B pair 3 old: K=512 median 119.5 ms, K=3900 median 940.1 ms
+1.5B pair 3 new: K=512 median 118.8 ms, K=3900 median 940.4 ms
+gemma-3-4b pair 1 old: K=512 median 338.3 ms, K=3900 median 4879.1 ms
+gemma-3-4b pair 1 new: K=512 median 341.3 ms, K=3900 median 4886.7 ms
+gemma-3-4b pair 2 new: K=512 median 342.0 ms, K=3900 median 4886.7 ms
+gemma-3-4b pair 2 old: K=512 median 340.0 ms, K=3900 median 4882.8 ms
+gemma-3-4b pair 3 old: K=512 median 342.1 ms, K=3900 median 4891.4 ms
+gemma-3-4b pair 3 new: K=512 median 341.4 ms, K=3900 median 4897.7 ms
+SUMMARY {"1.5B": {"512": {"ratios": [1.007, 0.994, 1.006], "median": 1.006, "verdict": "PASS"}, "3900": {"ratios": [1.002, 0.999, 1.0], "median": 1.0, "verdict": "PASS"}}, "gemma-3-4b": {"512": {"ratios": [0.991, 0.994, 1.002], "median": 0.994, "verdict": "PASS"}, "3900": {"ratios": [0.998, 0.999, 0.999], "median": 0.999, "verdict": "PASS"}}} VERDICT PASS

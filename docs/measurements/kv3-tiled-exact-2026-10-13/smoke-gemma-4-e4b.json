@@ -1,0 +1,48 @@
+{
+ "label": "gemma-4-e4b",
+ "model": "/home/francis/models/gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf",
+ "flags": [
+  "--ctx",
+  "24576"
+ ],
+ "runs": [
+  {
+   "arm": "default",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 3.57,
+    "prompt_tokens": 1491
+   },
+   "long": {
+    "status": 200,
+    "seconds": 55.88,
+    "prompt_tokens": 12215
+   },
+   "declined_lines": [],
+   "serve_log_tail": ""
+  },
+  {
+   "arm": "per-token",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 20.25,
+    "prompt_tokens": 1491
+   },
+   "serve_log_tail": ""
+  }
+ ]
+}

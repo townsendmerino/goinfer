@@ -716,6 +716,8 @@ type cudaResident struct {
 	zeroBias                                     Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
 	skScores, skSoftmax, skVsum                  Pipeline // split-KV decode attention (high-occupancy, bit-identical)
 	skScoreBuf, skInvBuf                         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	psScores, psSoftmax, psVsum                  Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
+	psLaunches                                   int      // launch groups of it, for tests
 	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
 	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)

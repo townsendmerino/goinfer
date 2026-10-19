@@ -1,0 +1,146 @@
+{
+ "serve": "/home/francis/goinfer-bench/kv3-tiled-2026-10/bin/serve-cuda-tiled",
+ "lengths": [
+  12400,
+  20000
+ ],
+ "models": {
+  "gemma-3-4b": [
+   {
+    "arm": "batched",
+    "cells": {
+     "12400": {
+      "seconds": 22.92,
+      "prompt_tokens": 12297,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 48.9,
+      "prompt_tokens": 19838,
+      "declined": false
+     }
+    }
+   },
+   {
+    "arm": "per-token",
+    "cells": {
+     "12400": {
+      "seconds": 130.39,
+      "prompt_tokens": 12293,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 219.22,
+      "prompt_tokens": 19836,
+      "declined": false
+     }
+    }
+   },
+   {
+    "arm": "batched",
+    "cells": {
+     "12400": {
+      "seconds": 23.02,
+      "prompt_tokens": 12295,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 49.04,
+      "prompt_tokens": 19835,
+      "declined": false
+     }
+    }
+   }
+  ],
+  "gemma-4-e4b": [
+   {
+    "arm": "batched",
+    "cells": {
+     "12400": {
+      "seconds": 56.43,
+      "prompt_tokens": 12262,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 119.08,
+      "prompt_tokens": 19771,
+      "declined": false
+     }
+    }
+   },
+   {
+    "arm": "per-token",
+    "cells": {
+     "12400": {
+      "seconds": 186.32,
+      "prompt_tokens": 12265,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 327.48,
+      "prompt_tokens": 19774,
+      "declined": false
+     }
+    }
+   },
+   {
+    "arm": "batched",
+    "cells": {
+     "12400": {
+      "seconds": 56.28,
+      "prompt_tokens": 12265,
+      "declined": false
+     },
+     "20000": {
+      "seconds": 118.98,
+      "prompt_tokens": 19776,
+      "declined": false
+     }
+    }
+   }
+  ]
+ },
+ "summary": {
+  "gemma-3-4b": {
+   "12400": {
+    "batched": [
+     22.92,
+     23.02
+    ],
+    "per_token": 130.39,
+    "ratio": 5.68,
+    "batched_declined": false
+   },
+   "20000": {
+    "batched": [
+     48.9,
+     49.04
+    ],
+    "per_token": 219.22,
+    "ratio": 4.48,
+    "batched_declined": false
+   }
+  },
+  "gemma-4-e4b": {
+   "12400": {
+    "batched": [
+     56.43,
+     56.28
+    ],
+    "per_token": 186.32,
+    "ratio": 3.31,
+    "batched_declined": false
+   },
+   "20000": {
+    "batched": [
+     119.08,
+     118.98
+    ],
+    "per_token": 327.48,
+    "ratio": 2.75,
+    "batched_declined": false
+   }
+  }
+ },
+ "verdict": "PASS"
+}

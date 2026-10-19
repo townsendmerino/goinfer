@@ -863,8 +863,27 @@ KV2 merges when every arm on both boxes is read.
   merges and before its push.
 - **After the census (`docs/measurements/kv3-long-prompt-census-2026-10-13.md`): a tiled exact attention kernel, owner-approved 2026-10-13 (§8 Q7).** The
   dense Gemma families (head dim 256, and 512 on Gemma 4's global layers) still fall to the per-token path past 12,160 keys, at least 183 s and 276 s for a
-  20,000-token prompt against about 17 s and 49 s batched. The paged-expert families do not decline; their cost is expert paging. The kernel's identity
-  target, the facts about decode's split-KV it must match and its gates are registered in a record before any code.
+  20,000-token prompt against about 17 s and 49 s batched. The paged-expert families do not decline; their cost is expert paging. **Built 2026-10-13 on
+  `kv3-tiled-2026-10`** (record: `docs/measurements/kv3-tiled-exact-2026-10-13.md`, registered before the code, three amendments before their runs): three
+  row-batched kernels in their own module (`cuda/prefill_splitkv.cu`, decode's split-KV attention with the query row on the grid), taken by a layer whose
+  exact attention is past the bound; nothing below the bound changes. **Day gates pass:** the kernels equal `attn_batched` bit for bit in 360 cases, a forced
+  route equals `attn_batched` over a whole model pass, a batched exact pass past the bound equals the per-token path bit for bit on the tiny fixture (logits and
+  every K and V row), and admission's figure equals the pass's allocations. **Night readings (2026-10-14, record §10):** speed PASS (Gemma-3-4B 5.68x, Gemma-4-E4B
+  3.31x against the per-token path at 12,400 tokens), no-regression TTFT PASS, the real-model identity PASS on both exact arms (Gemma-4-E4B, Gemma-3-4B levers off,
+  bit for bit) and **FAIL on Gemma-3-4B at default settings: cosine 0.9865 against the 0.99 bar**. The difference is the tensor-core GEMM's, which already reads
+  0.9901 on Gemma-3 at 12,000 tokens below the bound; the branch is the first to run it past 12,160 keys. **Owner decision 2026-10-14: exact** (record §11): a prompt that takes the
+  row kernels runs every pass on the exact kernels. **Read 2026-10-14 (record §12):** G4 on Gemma-3-4B bit-identical in both arms at 12,400 tokens, G5 re-read 4.13x
+  (PASS; 5.68x with the GEMM on). The CUDA suite timed out at 2 hours with only the four reds of the branch below (three fresh-process tests and the tail-rule defect,
+  whose fix is merged here); its remainder, in the gate's partition, read no failure (its job's red was a test list built with `realckpt`, fixed). The branch merges after `kv3-cuda-2026-10`.
+- **Not started: a fidelity gate for the CUDA tensor-core GEMM at depth on Gemma-3 (option (b) of the tiled record's §10; not chosen 2026-10-14).**
+  Why it is owed even with the exact rule: on one prompt Gemma-3-4B's default batched prefill read cosine 0.9963 at 1,200 tokens, 0.9901 at 12,000 and 0.9865 at
+  12,400 against the per-token path, so `main`'s Gemma-3 prefill between 3,900 and 12,160 keys is unmeasured and may already sit under the 0.99 bar the KV3 work
+  uses. The lever's own gate (`docs/completed/task-prefill-gap.md`, L2/L3) was graded on the Qwen models to K = 3,900, never on Gemma-3. What it would register:
+  Gemma-3-4B (and Gemma-2 / dense Gemma-4 if their checkpoints are local), prompts at about 2,000, 4,000, 8,000 and 12,000 tokens, at least eight realistic prompts
+  per depth from a hashed set; default batched prefill against the per-token path; last-token logits cosine and argmax with the near-tie rule (3% of |top-1|), and
+  per-layer KV cosine to name where it diverges; a bar per depth (cosine 0.99 on every prompt and argmax equal outside near ties), a parked band 0.985 to 0.99, and
+  what each outcome triggers (pass: the GEMM may return past the bound under a new registration; fail below the bound: the floor for Gemma-3 moves or the lever goes off
+  for the family). Cost: the per-token side is about 90 rows a second, so about 40 minutes for the four depths on one model (eight prompts each); a night job. Owner to decide whether and when.
 - **Gates (sketch, registered per half in the record):**
   - the 20,199-token request answers on the Mac's 7B, which today is the I7 413 (the KV-pre session);
   - chunk invariance holds per backend (KV0: CUDA and WebGPU measured, Metal's existing test);
