@@ -54,11 +54,17 @@ def cell(serve, name, model, extra, out):
                 break
             time.sleep(0.05)
     finally:
+        # The server may already have exited (a swap-guard abort, a crash): killing a process group that is gone must not lose the samples.
         try:
             os.killpg(proc.pid, signal.SIGTERM)
             proc.wait(timeout=30)
+        except ProcessLookupError:
+            pass
         except Exception:
-            os.killpg(proc.pid, signal.SIGKILL)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
     log.close()
     rec = {"cell": name, "model": model, "extra": extra, "ready_s": t_ready, "samples": len(samples)}
     ok = [s for s in samples if "RssAnon" in s]
