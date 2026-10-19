@@ -41,3 +41,30 @@ Rule 4 voids a run that ends before readiness for a reason other than the swap w
 
 **What it does say.** With the load watch live, this 35B C′ load does not complete on this box at the default threshold: 0.62 GB of the server's own pages went to swap while the Go heap was filling, on a machine with 34 GB free, `vm.swappiness` 10 and 9.4 GB already in swap from other processes (7.5 GB of it in zram). Tack's C3 run on the build without the watch lost 0.83 and 0.90 GB the same way and was halted for good. The unpriced term is not identified by this run; the data it would need is the lost samples.
 
+### Run 2, 2026-10-19 07:17:31 to 07:18:19 PDT (the same job run by hand under the timing lock, the guard on, the fixed harness; `~/goinfer-logs/c3-35b-sampled-load-rerun-2026-10-19/`): the same abort, and the samples
+
+The load watch tripped again (0.61 GB of the server's swap over its baseline, at layer 23 of 40, about 46 s in), and this time the 50 ms samples were written.
+
+| t (s) | RssAnon | RssFile | VmSwap | Go heap (gctrace): allocated / live |
+|---|---|---|---|---|
+| 2 | 0.96 GB | 10.32 GB | 0 | |
+| 10 | 5.51 | 11.80 | 0 | |
+| 14.9 (the watch armed at 14.2) | 7.85 | 12.56 | 0 | 7.8 / 5.7 GB |
+| 20 to 21 | 9.97 | 13.40 (peak 13.48 at 21.0) | 0 | |
+| 22.5 | 11.69 | 12.56 | 0 | 11.4 / 8.2 GB |
+| 34.2 | 17.14 | 10.62 | 0.015 GB | 16.4 / 11.9 GB |
+| 42.5 | 18.15 | 11.88 | 0.209 GB | |
+| 44.6 | 19.13 | 12.18 | 0.574 GB | |
+| 46.3 (the abort) | 19.88 (peak 19.91 at 46.12) | 1.38 | 0.831 GB | |
+
+`Mlocked` read 0 throughout (the pinned registration comes after the planning loop, which the abort never left); the system's swap grew 1,109 MB; the lowest `MemAvailable` was 39.9 GB; `VmHWM` 32.3 GB (19.9 anonymous + 10.6 file at that instant).
+
+**Against the pre-registered bar: FAIL.** Peak `RssAnon` was 19.91 GB, above 19.6 GB, with the build only 57% through (layer 23 of 40). Rule 2: the unpriced anonymous term is named by the timeline. **It is the Go heap that is not live: `RssAnon` minus the collector's live heap was 2.2 GB at 14.9 s, 3.5 GB at 22.5 s and 5.3 GB at 34.2 s, and growing** (anonymous memory tracks the heap
+*allocated*, 17.1 GB against 16.4 at 34 s, not the 11.9 GB live). It is garbage waiting for the next collection and the headroom the collector allows (its goal is twice the live heap after the previous cycle): `packWeightStack` packs each expert with `packWeight` into its own slices and copies them into the merged stack, so every expert is allocated twice. The pinned copy is the merged stack itself (`cacheWQ` registers
+that slice in place, `RegisterMappedHostBuffer`), so the heap is not a second copy of it, and #100 prices that one. This term is on top.
+
+**The mapped file is not the remainder, contrary to the reading in `c3-logs-reading-2026-10-18.md` §1.1.** `RssFile` peaked at 13.5 GB at 21 s and fell back to 1.4 GB as the heap grew: the kernel evicted the file's pages to make room, then swapped a little of the server's own (0.83 GB).
+
+**Why pages were swapped with 39.9 GB available system-wide: a memory limit on the user's slice.** `/etc/systemd/system/user-1000.slice.d/50-oom-protect.conf` sets `MemoryHigh=52G` on the whole user slice (to keep `systemd-oomd` from killing the desktop and editor). Page cache and mapped files are charged to the slice as well, so a load that holds 20 GB of anonymous heap, the file's pages and everything else the slice caches can cross 52 GiB while the machine as a whole is
+far from full, and the kernel then reclaims from the slice, anonymous pages included. The slice's own counters: `memory.events` `high` 13,830,234, `memory.swap.current` 9.4 GiB. This run did not sample the slice's `memory.current`, so it is the likely mechanism, not a measured one.
+

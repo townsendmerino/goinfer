@@ -90,3 +90,9 @@ Model facts (GGUF metadata): 32 layers, `full_attention_interval` 4 (so 8 full-a
   prefill and the `.giw` changes, so it has to be brought onto main, and a Qwen3.5 tiny fixture must prove the route (bit-identity below the bound with the route forced; above the bound against the per-token path).
 - **Estimate (not built):** merge or rebase of the branch onto current main with its conflicts: S to M. A Qwen3.5 tier-0 gate (tiny fixture, route forced, bit-identity): S. A tier-1 timing of the 9B at 13k, 20k and 31k tokens, cold, against the sequential path: about 15 minutes. The gain is bounded by what the exact path costs per row; if it
   is far from the batched rate, the alternative is a fused-attention variant for head dim 256 (the fused kernel stages 64 keys at a time and has no length bound), which is a new kernel: L.
+
+### 1.2 Correction after the sampled load (2026-10-19)
+
+§1.1 read the 14 GiB above the priced 16.9 GiB as mostly the mapped `.giw`'s resident pages. The sampled load (`docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`, run 2) shows otherwise: the file's pages peaked at 13.5 GB early and were evicted as the build went on, while anonymous memory climbed to 19.9 GB at layer 23 of 40 with a live Go heap of about 12 GB. The unpriced term is the Go heap that is not live
+(the per-expert intermediates of `packWeightStack`, and the collector's headroom), 5.3 GB and growing at 34 s. The swap is explained by `MemoryHigh=52G` on the user's slice, which charges page cache and anonymous memory together, not by the machine running out of memory.
+
