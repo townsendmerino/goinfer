@@ -21,6 +21,7 @@ var (
 	adGlue     = [2]adMod{{"glue", gluePTX}, {"glue_kv16", glueKV16PTX}}
 	adPrefill  = [2]adMod{{"prefill_batched", prefillBatchedPTX}, {"prefill_batched_kv16", prefillBatchedKV16PTX}}
 	adSplit    = [2]adMod{{"decode_splitkv", decodeSplitKVPTX}, {"decode_splitkv_kv16", decodeSplitKVKV16PTX}}
+	adSplitRow = [2]adMod{{"prefill_splitkv", prefillSplitKVPTX}, {"prefill_splitkv_kv16", prefillSplitKVKV16PTX}}
 	adFA       = [2]adMod{{"decode_fa", decodeFAPTX}, {"decode_fa_kv16", decodeFAKV16PTX}}
 	adFused    = [2]adMod{{"attn_fused", attnFusedPTX}, {"attn_fused_kv16", attnFusedKV16PTX}}
 	adFusedBM  = [2]adMod{{"attn_fused_bm", attnFusedBMPTX}, {"attn_fused_bm_kv16", attnFusedBMKV16PTX}}
@@ -157,6 +158,53 @@ func adCasesSplitKV() []adCase {
 							return [][]float32{raw, r.read(sc, nH*nWin), r.read(inv, nH), r.read(ctx, nH*hd), r.read(ctx2, nH*hd)}
 						}
 						cs = append(cs, adCase{"splitkv_scores", "splitkv_scores/" + id, run})
+					}
+				}
+			}
+		}
+	}
+	return cs
+}
+
+// The row-batched exact attention (prefill_splitkv.cu), the batched prefill's attention past attn_batched's shared-memory bound: scores for every row of a
+// launch group, the softmax in place, the V-sum, with the image-block table of attn_img_batched's contract (none, or one block). A case hashes the raw
+// scores, the stored softmaxed scores, the inverse denominators and the context.
+func adCasesSplitKVRows() []adCase {
+	var cs []adCase
+	for kvi, m := range adSplitRow {
+		for _, g := range adHeadDims {
+			for _, sm := range [][2]int{{0, 40}, {100, 60}} {
+				for _, window := range []int{0, 50} {
+					for _, nBlocks := range []int{0, 1} {
+						for _, sink := range []bool{false, true} {
+							f16, nH, nKV, hd, startPos, M := kvi == 1, g.nH, g.nKV, g.hd, sm[0], sm[1]
+							id := fmt.Sprintf("%s/hd%d/s%d_m%d/%s/blocks%d/%s", adKVNames[kvi], hd, startPos, M, adWindowText(window), nBlocks, adSinkText(sink))
+							cs = append(cs, adCase{"splitkv_scores_rows", "splitkv_scores_rows/" + id, func(r *adRig) [][]float32 {
+								nTot, kvDim := startPos+M, nKV*hd
+								blocks := [][2]int{}
+								blkArg, nb := gc.KernelArg(gc.ArgDevicePtr(0)), 0
+								if nBlocks == 1 {
+									blocks = [][2]int{{startPos + 5, startPos + 25}}
+									blkArg, nb = gc.Arg(r.i32([]int32{int32(startPos + 5), int32(startPos + 25)})), 1
+								}
+								stride := nTot
+								if window > 0 && window < stride {
+									stride = window
+								}
+								stride = imgBlocksMaxNWin(stride, window, blocks)
+								q := r.f32(adRand(M*nH*hd, 71, 1))
+								kc, vc := r.kv(adRand(nTot*kvDim, 72, 1), f16), r.kv(adRand(nTot*kvDim, 73, 1), f16)
+								sc, inv, ctx := r.zeros(M*nH*stride), r.zeros(M*nH), r.zeros(M*nH*hd)
+								r.launch(m, "splitkv_scores_rows", adCfg(nH, (stride+127)/128, M, 128, hd*4), gc.Arg(q), kc, adI(nH), adI(nKV), adI(hd),
+									adI(startPos), adI(window), adI(0), gc.ArgValue(adScale(hd)), gc.Arg(sc), adI(stride), blkArg, adI(nb))
+								raw := r.read(sc, M*nH*stride)
+								r.launch(m, "splitkv_softmax_rows", adCfg(nH, M, 1, 128, 128*4), gc.Arg(sc), adI(nH), adI(startPos), adI(window), adI(0),
+									adI(stride), gc.Arg(inv), adSink(r, nH, sink), blkArg, adI(nb))
+								r.launch(m, "splitkv_vsum_rows", adCfg(nH, (hd+31)/32, M, 32, 0), gc.Arg(sc), vc, gc.Arg(inv), adI(nH), adI(nKV), adI(hd),
+									adI(startPos), adI(window), adI(0), adI(stride), gc.Arg(ctx), blkArg, adI(nb))
+								return [][]float32{raw, r.read(sc, M*nH*stride), r.read(inv, M*nH), r.read(ctx, M*nH*hd)}
+							}})
+						}
 					}
 				}
 			}
@@ -345,7 +393,7 @@ func adCasesMLA() []adCase {
 // adAllCases is every driven kernel at every shape, in a fixed order.
 func adAllCases() []adCase {
 	var cs []adCase
-	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesSplitKV, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
+	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesSplitKV, adCasesSplitKVRows, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
 		cs = append(cs, f()...)
 	}
 	return cs
@@ -357,6 +405,7 @@ func adDrivenKernels(cs []adCase) map[string]bool {
 	out := map[string]bool{
 		// driven inside a chain case, after the score kernel that names it
 		"splitkv_softmax": true, "splitkv_vsum": true, "splitkv_vsum_partial": true, "splitkv_vsum_combine": true,
+		"splitkv_softmax_rows": true, "splitkv_vsum_rows": true,
 		"fa_combine": true, "fa_combine_rows": true,
 	}
 	for _, c := range cs {
