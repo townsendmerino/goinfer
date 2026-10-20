@@ -21,7 +21,7 @@ server (decode threads and the prompt just served); nothing else ran (`other GPU
 `TestMoERows_realMellumIdentityAndAB` at 16384 tokens, `-ctx 32768` (two sessions, 17:59:39 and 20:23:26 PDT, the second on a card with only `kwin_wayland` on it): per-pair 2m51.5s / 2m50.7s (95.5 / 96.0 tok/s)
 against grouped 54.3 s (301.5 / 301.8 tok/s): 3.16x and 3.14x, residuals of all 512 rows identical, last-row logits identical.
 That test plans **26 slots per layer** (3.1 GB free after the build) on an empty card, where the server plans 53 with the same flags. The 2.7 GB difference is in how the test builds its options, not a
-process holding the card (none did at 20:23); which option is not found. The slower in-process grouped time (54 s against 45 s served) is the smaller cache.
+process holding the card (none did at 20:23). The option is `Options.ResidentWindowedKV`: serve sets it (`--windowed-kv`, default on, `internal/loadflags`), the library default is off, and the test did not set it, so its 21 sliding-window layers held the whole 32,768-position context: 21 x (32,768 - 1,536) x 4,096 B (f32 K and V, 4 KV heads x 128) = 2.69 GB, the gap (B37; by arithmetic, not yet confirmed by a run). The slower in-process grouped time (54 s against 45 s served) is the smaller cache.
 
 ## What it says
 
