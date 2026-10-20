@@ -62,6 +62,10 @@ type Seq struct {
 	slot     int32
 	released bool
 	first    int // the length of the first prompt of the conversation the sequence holds (slots only; Slots.FirstPrompt)
+	// ckpt is the position of the recurrent checkpoint the resident holds for this sequence (Slots.SetCheckpoint), 0 for none;
+	// ckptKey is its key, (chain hash at ckpt, ckpt) as the task doc's §5.7 keys a checkpoint store.
+	ckpt    int
+	ckptKey Hash
 }
 
 // Len is the number of positions the sequence holds.
@@ -78,6 +82,9 @@ func (s *Seq) Classes() []ClassRun { return s.classes }
 
 // Root is what the sequence was built under.
 func (s *Seq) Root() Root { return s.root }
+
+// Checkpoint is the position of the sequence's recurrent checkpoint and its key; position 0 when it has none.
+func (s *Seq) Checkpoint() (int, Hash) { return s.ckpt, s.ckptKey }
 
 // Table is the sequence's blocks in logical order. The caller must not modify it.
 func (s *Seq) Table() []int32 { return s.table }
