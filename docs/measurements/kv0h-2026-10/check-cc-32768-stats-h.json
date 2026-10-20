@@ -1,0 +1,318 @@
+{
+ "config": "check-qwen35-9b-32768-cc",
+ "definitions": "KV0-H analysis (docs/measurements/kv0h-hybrid-traffic-2026-10.md): classifies every request of a hybrid-model session set as N / A / B / C / D\nagainst its own thread's previous request, from the SERVER's records plus verified prompt ids. Writes statistics only (counts, positions, categories,\nseconds): no ids, bodies or text leave this script except short category names.\n\n  analyze_h.py --sessions sessions.jsonl --wire <dir holding wire-<sid>.jsonl> --ids <ids.jsonl> [--ids ...] --tokenids <tokenids-<cfg>.jsonl>\n               --serve-log <serve-<cfg>.log> --out stats-h.json [--config <name>]\n\nInputs, per configuration: the recorded proxy wire logs and sessions.jsonl (kv0_proxy.py, run_sessions.py), the rendered prompt ids of every recorded\nbody (internal/serveapp/kv0_tokenize_test.go), the server's own --log-token-ids file (per generation: prompt length and SHA-256, generated ids, reuse, slot)\nand its --log-requests lines (prompt tokens, time to first token, reused, slot, div).\n\nGround truth (registration \u00a71.3): a rendering is ACCEPTED only when its length and SHA-256 (little-endian uint32 per id) equal the server's logged\nprompt_len and prompt_sha256 for that request; a request that fails is excluded and listed. The committed sequence of a request is its accepted prompt ids\nplus the ids the server logged as generated. Invariant (amendment A1): slot= of a request equals the prompt_len plus len(gen) of the generation the\nserver served immediately before it; every failure is listed with its difference.\n\nCategories (registration \u00a71.4), against the request's own thread's previous request p (C_p = prompt(p) + gen(p), l = lcp(prompt(k), C_p), n = len(prompt(k))):\n  N  first request of its thread in its session\n  A  l == len(C_p), n > len(C_p), and no request of another thread served between p and k (server order)\n  B  len(prompt(p)) <= l < len(C_p), n > l, and no other thread between\n  C  another thread served between p and k and k is A- or B-shaped against its own thread (C-A / C-B)\n  D  l < len(prompt(p))\n",
+ "requests_total": 10,
+ "accepted": 10,
+ "excluded": [],
+ "logs_aligned": true,
+ "log_inconsistent": [],
+ "slot_invariant": {
+  "checked": 9,
+  "failures": [],
+  "offsets": {}
+ },
+ "cold_rate": {
+  "4096-8191": {
+   "count": 0,
+   "median_tok_s": null
+  },
+  "8192-16383": {
+   "count": 0,
+   "median_tok_s": null
+  },
+  "16384-": {
+   "count": 9,
+   "median_tok_s": 148.07819666903774
+  }
+ },
+ "tokens_processed_today": 166547,
+ "per_agent": {
+  "claude-code": {
+   "requests": 10,
+   "tokens_processed_today": 166547,
+   "carried_ids": {
+    "none": 1,
+    "fmt": 9
+   },
+   "carried_ids_by_category": {
+    "A": {
+     "fmt": 1
+    },
+    "D": {
+     "fmt": 8
+    },
+    "N": {
+     "none": 1
+    }
+   },
+   "categories": {
+    "A": {
+     "count": 1,
+     "tokens_processed_today": 53,
+     "share_of_tokens_today": 0.0003182284880544231,
+     "skip_tokens": 0,
+     "skip_share": 0.0,
+     "median_ttft_s": 0.663,
+     "median_projected_saving_s": 0.0,
+     "projected_s_total": 0.0
+    },
+    "D": {
+     "count": 8,
+     "tokens_processed_today": 148643,
+     "share_of_tokens_today": 0.8924988141485587,
+     "skip_tokens": 0,
+     "skip_share": 0.0,
+     "median_ttft_s": 126.89000000000001,
+     "median_projected_saving_s": null,
+     "projected_s_total": 0
+    },
+    "N": {
+     "count": 1,
+     "tokens_processed_today": 17851,
+     "share_of_tokens_today": 0.10718295736338691,
+     "skip_tokens": 0,
+     "skip_share": 0.0,
+     "median_ttft_s": 119.206,
+     "median_projected_saving_s": null,
+     "projected_s_total": 0
+    }
+   }
+  }
+ },
+ "rule": {
+  "C (parking)": {
+   "skip_tokens": 0,
+   "share_of_tokens_processed_today": 0.0,
+   "affected_requests": 0,
+   "median_projected_saving_s": null,
+   "passes_25pct": false,
+   "passes_5s": false
+  },
+  "B (end-of-prompt checkpoint)": {
+   "skip_tokens": 0,
+   "share_of_tokens_processed_today": 0.0,
+   "affected_requests": 0,
+   "median_projected_saving_s": null,
+   "passes_25pct": false,
+   "passes_5s": false
+  }
+ },
+ "requests": [
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 1,
+   "gi": 0,
+   "n": 17851,
+   "reused": 0,
+   "slot": 0,
+   "ttft_ms": 119206,
+   "log_consistent": true,
+   "gen_len": 70,
+   "carried_class": "none",
+   "ids_fallback": "-",
+   "cat": "N",
+   "lcp_other_session": 0
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 2,
+   "gi": 1,
+   "n": 17974,
+   "reused": 17921,
+   "slot": 17921,
+   "ttft_ms": 663,
+   "log_consistent": true,
+   "gen_len": 56,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 17921,
+   "prev_prompt": 17851,
+   "prev_committed": 17921,
+   "others_between": 0,
+   "shape": "A",
+   "cat": "A",
+   "skip_tokens_if_served": 17921,
+   "projected_saving_s": 0.0
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 3,
+   "gi": 2,
+   "n": 19337,
+   "reused": 0,
+   "slot": 18030,
+   "ttft_ms": 135918,
+   "log_consistent": true,
+   "gen_len": 1346,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 17949,
+   "prev_prompt": 17974,
+   "prev_committed": 18030,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 17949,
+   "divergence_where": "user#4 (+3 of 1386 tokens)"
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 4,
+   "gi": 3,
+   "n": 17595,
+   "reused": 0,
+   "slot": 20683,
+   "ttft_ms": 116832,
+   "log_consistent": true,
+   "gen_len": 60,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 15700,
+   "prev_prompt": 19337,
+   "prev_committed": 20683,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 15700,
+   "divergence_where": "user#1 (+138 of 947 tokens)"
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 5,
+   "gi": 4,
+   "n": 18958,
+   "reused": 0,
+   "slot": 17655,
+   "ttft_ms": 131473,
+   "log_consistent": true,
+   "gen_len": 70,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 16999,
+   "prev_prompt": 17595,
+   "prev_committed": 17655,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 16999,
+   "divergence_where": "user#4 (+140 of 2094 tokens)"
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 6,
+   "gi": 5,
+   "n": 17976,
+   "reused": 0,
+   "slot": 19028,
+   "ttft_ms": 120706,
+   "log_consistent": true,
+   "gen_len": 59,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 16999,
+   "prev_prompt": 18958,
+   "prev_committed": 19028,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 16999,
+   "divergence_where": "user#4 (+140 of 731 tokens)"
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 7,
+   "gi": 6,
+   "n": 19339,
+   "reused": 0,
+   "slot": 18035,
+   "ttft_ms": 135866,
+   "log_consistent": true,
+   "gen_len": 874,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 17951,
+   "prev_prompt": 17976,
+   "prev_committed": 18035,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 17951,
+   "divergence_where": "user#7 (+3 of 1386 tokens)"
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 8,
+   "gi": 7,
+   "n": 17982,
+   "reused": 0,
+   "slot": 20213,
+   "ttft_ms": 120654,
+   "log_consistent": true,
+   "gen_len": 97,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 15734,
+   "prev_prompt": 19339,
+   "prev_committed": 20213,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 15734,
+   "divergence_where": "user#1 (+172 of 1009 tokens)"
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 9,
+   "gi": 8,
+   "n": 19345,
+   "reused": 0,
+   "slot": 18079,
+   "ttft_ms": 136012,
+   "log_consistent": true,
+   "gen_len": 1050,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 17069,
+   "prev_prompt": 17982,
+   "prev_committed": 18079,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 17069,
+   "divergence_where": "user#4 (+140 of 2411 tokens)"
+  },
+  {
+   "session": "check-qwen35-9b-32768-cc-claude-code-chain-r1",
+   "agent": "claude-code",
+   "task": "chain",
+   "seq": 10,
+   "gi": 9,
+   "n": 18111,
+   "reused": 0,
+   "slot": 20395,
+   "ttft_ms": 122307,
+   "log_consistent": true,
+   "gen_len": 133,
+   "carried_class": "fmt",
+   "ids_fallback": "-",
+   "lcp_prev_committed": 15732,
+   "prev_prompt": 19345,
+   "prev_committed": 20395,
+   "others_between": 0,
+   "cat": "D",
+   "divergence_at": 15732,
+   "divergence_where": "user#1 (+170 of 1107 tokens)"
+  }
+ ]
+}
