@@ -147,8 +147,8 @@ func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
 	words := 0
 	for l := range r.layers {
 		Ly := &r.layers[l]
-		if Ly.kvShared {
-			continue
+		if Ly.kvShared || Ly.noKV() {
+			continue // an alias holds its source's rows; a recurrent or feed-forward-only layer has no K/V (snapshotDeltaLayout holds a DeltaNet layer's state)
 		}
 		elem := 4
 		if Ly.kvHalf {
