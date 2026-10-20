@@ -75,6 +75,9 @@ SCANS = [
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
     Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),
     Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json")),
+    # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).
+    Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
+    Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),
     Scan("decoder", "TestParityEmit_methodVocabulary", TREE_T),
     Scan("decoder", "TestResidentMoECap_pinsKernelConstant", F("gpu/moe.go", "cuda/moe.cu")),
     Scan("decoder", "TestResidentMoECap_runtimeDeclineReadsTheDeclaration", F("gpu/residency.go")),

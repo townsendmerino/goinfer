@@ -41,6 +41,12 @@ class PlanSelectsTheScanTests(unittest.TestCase):
     def test_a_doc_a_test_reads_selects_it(self):
         self.assertIn(("decoder", "TestEnvVars_docAndCodeAgree"), selected(["docs/env-vars.md"]))
 
+    def test_a_new_model_fixture_selects_the_fixture_censuses(self):
+        # 1ea85681: a new fixture directory was in neither census, and touched.py ran neither, so CI went red.
+        got = selected(["testdata/gemma4-moe-kv-tiny32/config.json", "testdata/gemma4-moe-kv-tiny32/model.safetensors"])
+        self.assertIn(("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded"), got)
+        self.assertIn(("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun"), got)
+
     def test_an_unscanned_change_selects_nothing_extra(self):
         self.assertEqual(selected(["README.md"]), set())
 
