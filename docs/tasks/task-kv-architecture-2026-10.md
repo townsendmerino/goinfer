@@ -991,6 +991,10 @@ KV2 merges when every arm on both boxes is read.
   - the checkpoint byte budget held;
   - more than one sequence for hybrids on CUDA and Metal, with MC3 identity.
 - **Size:** L. **Closes:** R-01 phase 2, FreeToken Lead 1, and MC4's recurrent item.
+- **Note, 2026-10-20 (KV0-H check, `docs/measurements/kv0h-hybrid-traffic-2026-10.md`, amendment A5):** in the Claude Code check on Qwen3.5-9B (check data, 10 requests, one
+  thread), **2 of the 8 D divergences sat 3 tokens into a new user message**, 25 tokens before the end of the previous prompt. **A message-boundary checkpoint would serve them; an
+  end-of-prompt checkpoint would not.** The other 6 sat 1.5k to 3.6k tokens before the end (a rewritten history). It is two requests, under that study's bar of three, and it bears on
+  where the checkpoint is taken, not only on whether.
 
 ### KV9 — The CPU path (deferred by D2, 2026-10-13)
 

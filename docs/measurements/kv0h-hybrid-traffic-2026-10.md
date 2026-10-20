@@ -199,3 +199,20 @@ reading for nobara: on the 8 GB card Qwen3.5-9B with Claude Code is compaction-b
 turns, 8 of its 9 follow-ups cold at about 2 minutes each, and the task did not complete. **A Claude Code run on a larger card is a follow-up** (a window of about 40k or more, which this card
 cannot hold at f32 for this model). The Claude Code half of the decision rule (§1.7) is therefore read from opencode and Codex only, and the readings say so.
 
+**A5 addendum (2026-10-20, owner's question: why one thread, and did anything go to Anthropic?).**
+1. **Why the check had one thread where KV0's Claude Code `chain` had two (and six requests off the first).** It is not background traffic and not `connect` switching Claude Code's
+   background requests off: *neither run had any.* The wire logs of both show only `POST /v1/messages` with the full 21-tool list and the one served model (KV0: 8 requests; the check:
+   10), the check's server log has 10 request lines, all `/v1/messages`, **none with `fast=1`** (the fast alias a Claude Code title or background request would name), and `claude -p`
+   (headless) sends no title request. The two "threads" of KV0 were the analyzer's first-200-token rule meeting **the per-conversation attribution hash at token 21**: in KV0's chain
+   request 1 and 2 shared it and requests 3 to 8 differed from request 1 at token 21 (first differences at 17,755, then 21 six times). `connect claude-code` has written
+   **`CLAUDE_CODE_ATTRIBUTION_HEADER=0`** since `dceaeb4e` (2026-10-13), after KV0's sessions; the check's settings carry it, and in the check the first 200 tokens are identical in all 10
+   requests (the first differences from request 1 are 17,851 twice, then 15,700 seven times). So a Claude Code conversation is now one thread by this definition even across compactions,
+   which is also why the check had no category C: nothing else ran in between. (`connect` also points `ANTHROPIC_SMALL_FAST_MODEL`, the haiku, sonnet, opus and fable slots and
+   `CLAUDE_CODE_SUBAGENT_MODEL` at goinfer; those slots were never used in this headless run.)
+2. **Nothing went to Anthropic, and nothing could.** The sandbox is `bwrap --unshare-all`: the network is a private loopback, the only route out is the unix-socket relay to goinfer's
+   proxy, and its self-test, run before the check, passed: DNS for `example.com` fails inside it ("Temporary failure in name resolution"), goinfer answers, and the self-test catches
+   its planted `share-net` weakness (`sandbox-selftest.txt`). The agent's own output (stdout 89,405 bytes, stderr 84 bytes) has no mention of `anthropic.com`, a name-resolution error or
+   a network error. A request toward another host would have failed inside the sandbox, not left the machine.
+3. **Statement the readings will carry (registered here, before any reading):** a parking (C) result below the §1.7 bar **applies to opencode and Codex only. It is not evidence against
+   parking for Claude Code on a larger card**, where the check could not measure C (one thread, no other thread in between; the window the card holds is compaction-bound).
+
