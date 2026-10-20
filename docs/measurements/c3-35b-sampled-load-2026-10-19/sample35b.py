@@ -2,7 +2,7 @@
 """A sampled load of one model with the system figures beside the process's (c3-35b-sampled-load-2026-10-19/README.md).
 
 build_peak.py's cell() samples the process's VmRSS/RssAnon/RssFile/VmHWM/VmSwap every 50 ms from spawn; this adds /proc/meminfo's swap in use, MemAvailable, Cached and
-Mlocked to every sample (by replacing its status reader), then reads the per-sample JSON build_peak wrote for the peaks and the instant of each.
+Mlocked, and the user slice's memory.current and memory.events high count, to every sample (by replacing its status reader), then reads the per-sample JSON build_peak wrote for the peaks and the instant of each.
 
   python3 sample35b.py --serve <binary> --model <gguf> --out <dir> [--extra -ctx,32768,-moe-cache-experts]
 """
@@ -28,8 +28,26 @@ def meminfo():
     return d
 
 
+SLICE = "/sys/fs/cgroup/user.slice/user-1000.slice"
+
+
+def slice_figures():
+    """The user slice's memory.current and the 'high' count of memory.events: how often the slice crossed its MemoryHigh and was throttled into reclaim."""
+    d = {}
+    try:
+        d["SliceCur"] = int(open(SLICE + "/memory.current").read())
+        for line in open(SLICE + "/memory.events"):
+            k, _, v = line.partition(" ")
+            if k == "high":
+                d["SliceHigh"] = int(v)
+    except (OSError, ValueError):
+        pass
+    return d
+
+
 def status(pid):
     d = _orig(pid)
+    d.update(slice_figures())
     m = meminfo()
     if "SwapTotal" in m and "SwapFree" in m:
         d["SysSwapUsed"] = m["SwapTotal"] - m["SwapFree"]
@@ -71,6 +89,21 @@ def main():
         "final_RssAnon_GB": round(s[-1]["RssAnon"] / G, 2), "final_RssFile_GB": round(s[-1]["RssFile"] / G, 2),
         "prereg_bar_GB": 19.6, "verdict": "PASS" if pa["RssAnon"] / G <= 19.6 else "FAIL",
     }
+    # The user slice, every 50 ms: does the slice limit still force reclaim? "high" counts the times the slice went over MemoryHigh; its growth over the load,
+    # with memory.current against the limit, is the answer. The setting is read, never changed.
+    sl = [x for x in s if "SliceCur" in x]
+    if sl:
+        try:
+            lim = open(SLICE + "/memory.high").read().strip()
+        except OSError:
+            lim = "unknown"
+        rises = [x["t"] for prev, x in zip(sl, sl[1:]) if x["SliceHigh"] > prev["SliceHigh"]]
+        rep["slice_memory_high"] = lim
+        rep["slice_current_GB_start_peak_end"] = [round(sl[0]["SliceCur"] / G, 2), round(max(x["SliceCur"] for x in sl) / G, 2), round(sl[-1]["SliceCur"] / G, 2)]
+        rep["slice_high_events_start_end_growth"] = [sl[0]["SliceHigh"], sl[-1]["SliceHigh"], sl[-1]["SliceHigh"] - sl[0]["SliceHigh"]]
+        rep["slice_high_samples_that_rose"] = len(rises)
+        if rises:
+            rep["slice_high_first_last_rise_s"] = [rises[0], rises[-1]]
     # The Go heap from the collector's own lines in the serve log (GODEBUG=gctrace=1): "gc N @T s ...: A->B->C MB" is the heap before the collection, after
     # it, and the live heap; the timeline here is the cycle times with those three figures, and the peaks.
     import re

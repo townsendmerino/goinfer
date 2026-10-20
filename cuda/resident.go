@@ -1042,6 +1042,10 @@ func (r *cudaResident) upExperts(h hostW) cudaWQ {
 	if r.cacheExperts && h.kind == "int4" {
 		return r.cacheWQ(h)
 	}
+	if h.srcs != nil {
+		r.recordUpload(fmt.Errorf("cuda: a planned expert stack reached an upload that is not the expert cache"))
+		return cudaWQ{kind: h.kind, N: h.N, K: h.K}
+	}
 	return r.upW(h)
 }
 
@@ -1057,6 +1061,10 @@ func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 	rowsPerExpert := h.N / r.nE
 	w.perExpertW = rowsPerExpert * (h.K / 8)  // uint32 words per expert weight (Kwords = K/8)
 	w.perExpertS = rowsPerExpert * (h.K / 32) // uint16 group scales per expert (Kgroups = K/32)
+	if h.srcs != nil {
+		r.packStackPinned(&w, h)
+		return w
+	}
 	w.srcW = r.mapBytes(u32bytes(h.wpk))
 	w.srcS = r.mapBytes(u16bytes(h.ws16))
 	// Device slot buffers (W/ws16) are NOT allocated here — allocSlots does it after the core +
@@ -3909,6 +3917,9 @@ type hostW struct {
 	// the three device buffers upW allocates for it.
 	src              *linalg.WeightMat
 	nWpk, nWs, nWs16 int
+
+	// A planned expert stack (planWeightStack) names its member weights here, in row order, with src nil: only cacheWQ consumes it.
+	srcs []*linalg.WeightMat
 }
 
 func packI8(q8 []int8, N, K int) []uint32 {

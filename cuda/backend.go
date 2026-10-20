@@ -271,6 +271,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		planStartForTest()
 	}
 	hls := make([]hlayer, nLayers)
+	// Under the C' expert cache the routed experts are packed straight into their pinned host copy when the build uploads, so planning only validates them.
+	expertStack := packWeightStack
+	if m.MoECacheExperts() {
+		expertStack = planWeightStack
+	}
 	loadAbort := m.LoadAbort() // the swap tripwire's channel (Options.LoadAbort); nil never fires
 	for l := range nLayers {
 		select {
@@ -457,10 +462,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// gate‖up), the f32 router (RouterProjScaled, scale folded), the 5 norms + per-expert
 			// scale + layerScalar. The dense g/u/d were packed above via the proj list.
 			var e error
-			if hl.expGU, e = packWeightStack(g4b.ExpertsGateUp...); e != nil {
+			if hl.expGU, e = expertStack(g4b.ExpertsGateUp...); e != nil {
 				return declined(fmt.Errorf("layer %d gemma4 expert gate‖up stack: %w", l, e))
 			}
-			if hl.expDown, e = packWeightStack(g4b.ExpertsDown...); e != nil {
+			if hl.expDown, e = expertStack(g4b.ExpertsDown...); e != nil {
 				return declined(fmt.Errorf("layer %d gemma4 expert down stack: %w", l, e))
 			}
 			if hl.expGU.kind != "int4" || hl.expDown.kind != "int4" {
@@ -510,10 +515,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				dn = append(dn, &ex.Down)
 			}
 			var e error
-			if hl.expGU, e = packWeightStack(gu...); e != nil {
+			if hl.expGU, e = expertStack(gu...); e != nil {
 				return declined(fmt.Errorf("layer %d gate/up stack: %w", l, e))
 			}
-			if hl.expDown, e = packWeightStack(dn...); e != nil {
+			if hl.expDown, e = expertStack(dn...); e != nil {
 				return declined(fmt.Errorf("layer %d down stack: %w", l, e))
 			}
 			// The MoE GEMVs are w4a8 only: they read f16 group scales and unpack nibbles, so an
