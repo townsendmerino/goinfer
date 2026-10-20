@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -50,6 +51,25 @@ func kv8aEmb(m *decoder.Model, ids []int) [][]float32 {
 		rows[i] = m.EmbedResidentForTest(x)
 	}
 	return rows
+}
+
+// kv8aPrefill prefills ids from start as the decoder does: one batched PrefillLast, or, where the resident declines it (Mamba-2 on
+// CUDA runs the sequential path), a forward per token. It returns the last row's logits.
+func kv8aPrefill(t *testing.T, m *decoder.Model, r *cudaResident, ids []int, start int) []float32 {
+	t.Helper()
+	lg, err := r.PrefillLast(context.Background(), kv8aEmb(m, ids), start)
+	if err == nil {
+		return lg
+	}
+	if !strings.Contains(err.Error(), "declined") {
+		t.Fatal(err)
+	}
+	for i, x := range ids {
+		if lg, err = r.Forward(m.EmbedResidentForTest(x), start+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return lg
 }
 
 // kv8aRec downloads every recurrent buffer the checkpoint covers, in its order (conv window, then state, per layer).
@@ -131,9 +151,7 @@ func TestKV8a_checkpointBitExact(t *testing.T) {
 			m, r := kv8aLoad(t, fx)
 			_, _, _, _, _, _, vocab := m.Dims()
 			const n = 300
-			if _, err := r.PrefillLast(context.Background(), kv8aEmb(m, kv8aIDs(1, n, vocab)), 0); err != nil {
-				t.Fatal(err)
-			}
+			kv8aPrefill(t, m, r, kv8aIDs(1, n, vocab), 0)
 			saved := kv8aRec(t, r)
 			if err := r.SaveRecurrentCheckpoint(); err != nil {
 				t.Fatal(err)
@@ -183,17 +201,13 @@ func TestKV8a_restoreEqualsColdPrefill(t *testing.T) {
 				if (n1 < fastPrefillFloor) != (n2 < fastPrefillFloor) {
 					t.Fatalf("turns of %d and %d straddle the fast-prefill floor %d", n1, n2, fastPrefillFloor)
 				}
-				lc, err := rc.PrefillLast(context.Background(), kv8aEmb(mc, b), 0)
-				if err != nil {
-					t.Fatal(err)
-				}
+				lc := kv8aPrefill(t, mc, rc, b, 0)
 				cold := append([][]float32{append([]float32(nil), lc...)}, append(kv8aRec(t, rc), kv8aKV(t, rc, n2)...)...)
 
 				warm := func(plant string) [][]float32 {
 					m, r := kv8aLoad(t, fx)
-					if _, err := r.PrefillLast(context.Background(), kv8aEmb(m, a), 0); err != nil {
-						t.Fatal(err)
-					}
+					kv8aPrefill(t, m, r, a, 0)
+					var err error
 					if err := r.SaveRecurrentCheckpoint(); err != nil {
 						t.Fatal(err)
 					}
@@ -214,10 +228,7 @@ func TestKV8a_restoreEqualsColdPrefill(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					lw, err := r.PrefillLast(context.Background(), kv8aEmb(m, b[from:]), from)
-					if err != nil {
-						t.Fatal(err)
-					}
+					lw := kv8aPrefill(t, m, r, b[from:], from)
 					return append([][]float32{append([]float32(nil), lw...)}, append(kv8aRec(t, r), kv8aKV(t, r, n2)...)...)
 				}
 				for _, plant := range []string{"", "no conv window", "from c-1"} {
