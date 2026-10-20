@@ -11,7 +11,6 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestP20ExpertLocality measures the split expert-major batching depends on (docs/queue-performance.md,
@@ -53,7 +52,7 @@ func TestP20ExpertLocality(t *testing.T) {
 		fmt.Sscanf(v, "%d", &M)
 	}
 	t0 := time.Now()
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", ResidentContext: 8192, MoECacheExperts: true})
+	mc, err := loadLikeServe(t, path, "-backend", "cuda", "-ctx", "8192", "-moe-cache-experts")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
