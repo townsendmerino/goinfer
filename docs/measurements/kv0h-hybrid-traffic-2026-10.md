@@ -188,3 +188,14 @@ Claude Code check at 32,768, classified as check data, not study data): if **3 o
 after opencode and Codex; if it is **nearly all D**, it is not run on this card, the check is recorded as the Claude Code reading for nobara with the note that a Claude Code
 run on a larger card is a follow-up, and that is recorded as an amendment **before the opencode and Codex readings are written**. Nothing else in the registration changes.
 
+**Amendment A5 (2026-10-20, written while the opencode and Codex configuration runs, before any of its readings: the decision A4 asked for).** The Claude Code check at `-ctx 32768`
+(**check data, not study data**; `analyze_h.py` on its 10 requests, 10 of 10 hash-accepted, 0 `slot=` invariant failures) classifies as **N 1, A 1, D 8, B 0, C 0**, and every one of
+the 10 requests carried ids with template formatting replaced except the first (carried-ids classes: fmt 9, none 1; the one A is an `fmt` request). Of the **9 cold turns** (the first
+request is a new conversation, N; 8 follow-ups re-prefilled in full), **B plus C is 0**. The 8 D requests diverge from their thread's previous prompt at 15,700 to 17,951 tokens into prompts
+of 17,595 to 19,345: six of them 1.5k to 3.6k tokens before the end of the previous prompt (a rewritten history, user#1 and user#4), two of them 25 tokens before it (user#4 and
+user#7, +3 tokens into a 1,386-token user message; a deeper, message-boundary checkpoint would serve those two, and even counting them as B it is 2, under the bar of 3). No other
+thread ran in between in the check (one thread), so C cannot appear in it. **By A4's rule ("nearly all D") Claude Code is not run on this card.** The check is recorded as the Claude Code
+reading for nobara: on the 8 GB card Qwen3.5-9B with Claude Code is compaction-bound at the largest context that fits (32,768, with an 8,192-token output reserve), 3 compactions in 12
+turns, 8 of its 9 follow-ups cold at about 2 minutes each, and the task did not complete. **A Claude Code run on a larger card is a follow-up** (a window of about 40k or more, which this card
+cannot hold at f32 for this model). The Claude Code half of the decision rule (§1.7) is therefore read from opencode and Codex only, and the readings say so.
+
