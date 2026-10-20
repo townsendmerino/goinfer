@@ -3,7 +3,7 @@
 against its own thread's previous request, from the SERVER's records plus verified prompt ids. Writes statistics only (counts, positions, categories,
 seconds): no ids, bodies or text leave this script except short category names.
 
-  analyze_h.py --sessions sessions.jsonl --wire <dir of wire-<sid>.jsonl> --ids <ids.jsonl> [--ids ...] --tokenids <tokenids-<cfg>.jsonl>
+  analyze_h.py --sessions sessions.jsonl --wire <dir holding wire-<sid>.jsonl> --ids <ids.jsonl> [--ids ...] --tokenids <tokenids-<cfg>.jsonl>
                --serve-log <serve-<cfg>.log> --out stats-h.json [--config <name>]
 
 Inputs, per configuration: the recorded proxy wire logs and sessions.jsonl (kv0_proxy.py, run_sessions.py), the rendered prompt ids of every recorded
