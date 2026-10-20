@@ -216,3 +216,74 @@ cannot hold at f32 for this model). The Claude Code half of the decision rule (�
 3. **Statement the readings will carry (registered here, before any reading):** a parking (C) result below the §1.7 bar **applies to opencode and Codex only. It is not evidence against
    parking for Claude Code on a larger card**, where the check could not measure C (one thread, no other thread in between; the window the card holds is compaction-bound).
 
+## 2. Readings (the opencode and Codex configuration; for the owner's review, not merged)
+
+*(Written after amendments A1 to A5, which were committed before any study session and, for A5, before any reading. Statistics only: `study-h20-stats-h.json` beside the scripts; ids, bodies and
+text stay outside the repository. Pilot and check data are not in these tables.)*
+
+### 2.1 What ran, and where it falls short of the registration
+
+- **Study:** 2026-10-20 12:23:27 to 12:50:00 PDT (26.5 minutes against the re-estimate of 35 to 70 minutes for this configuration), serve build `94a6b973`, Qwen3.5-9B Q4_K_M, `-ctx 20480`,
+  `--kv-sessions 1`, KV f32, the fixed ids key (A2), the default 512 MiB swap guard (A1). One server process for the whole configuration (the registered design; **no restart**, and **no
+  swap-guard stop and no 503 `halted`**: no session was void or re-run). The timing lock was held by the study alone (the pause guard armed for 13:30 never fired).
+- **Sessions:** 10, KV0's plan: opencode `chain` x2, `fix` x2, `edit` x1, Codex the same. **Requests: 84 (opencode 50, Codex 34), 84 of 84 accepted by the length and SHA-256 check, 0
+  excluded; the `slot=` invariant held on all 83 checked requests (0 failures); the server's two logs agree on every request.** opencode's five sessions all passed their task. **Codex's `chain`
+  r1 and r2 and `edit` r1 did not pass** (they ended after 3, 4 and 7 requests); `fix` r1 and r2 passed. The stopping rule is met for both harnesses (three sessions of five or more requests
+  on two tasks: opencode `chain`, `fix`, `edit`; Codex `fix` x2 and `edit`), so no session was added.
+- **Claude Code was not run** (A4, A5): the check at 32,768 is nobara's Claude Code reading, and the Claude Code half of the decision rule is read from opencode and Codex only.
+
+### 2.2 The categories
+
+| harness | requests | N | A | B | C | D | prompt tokens processed today | share of those tokens in N / A / B |
+|---|---|---|---|---|---|---|---|---|
+| opencode | 50 | 10 | 21 | 19 | 0 | 0 | 198,447 | 19.8% / 3.1% / 77.1% |
+| codex | 34 | 5 | 19 | 10 | 0 | 0 | 100,366 | 29.8% / 2.8% / 67.5% |
+| **both** | 84 | 15 | 40 | 29 | **0** | **0** | **298,813** | 23.2% / 3.0% / **73.9%** |
+
+(N includes each session's 560 to 613-token title request, which opencode sends first, and the main thread's first request. "Processed today" is the sum of n - reused over the valid requests:
+the tokens the server actually prefilled.) **There is no C and no D.** No session ran a second thread in between its main thread's turns, so parking has nothing to serve in these sessions; and
+no turn diverged inside the previous prompt, which is what a compaction or an edit of an earlier message would do (none occurred: 0 compactions in all 10 sessions).
+
+**A and B.** The 40 A requests were served from the live state (reused = the committed length) at a median time to first token of **2.2 s (opencode)** and **0.6 s (Codex)**, and processed 3.0% of the
+tokens. The 29 B requests are the hybrid's cost today: **median time to first token 37.6 s (opencode, 19 requests) and 27.3 s (Codex, 10)**, re-prefilling the whole prompt each time (reused = 0),
+and **73.9% of all the prompt tokens the server processed in the study** (220,740 of 298,813). B turns begin at the main thread's second turn (the previous reply as the template renders it in
+history differs from what was generated) and recur through the sessions (for instance opencode `fix` and `edit` turns 7 to 11), interleaved with A.
+
+### 2.3 Where the B divergences sit
+
+All **29 of 29** sit **inside the previous reply's assistant message** (never in the user or tool messages), **15 to 123 tokens into it** (median 26), in messages of 17 to 360
+tokens. A checkpoint saved where the previous prompt ended would restore the state before the reply, and the request would then process the reply (as the template renders it) and the new messages:
+**71 to 416 tokens re-processed, median 201**, against the full prompt of 6,139 to 9,416 tokens today.
+**History and reasoning:** opencode (`/v1/chat/completions`) sends **no reasoning back** (0 of its 40 requests with assistant history carry any), and its template re-renders the reply without its think block; Codex
+(`/v1/responses`) sends reasoning items back in **24 of its 34 requests**, whose encrypted blobs carry the server's own ids (A2): those requests are the 24 with carried ids and no formatting replaced.
+
+**Carried ids by category** (A2 item 4): opencode 50 requests with none carried; Codex 24 carried-without-formatting and 10 none. **Codex A: 19 of 19 carried ids; opencode A: 21 of 21 with none**: A does
+not need carried ids. Of Codex's 10 B requests, 5 carried ids and 5 did not: carried ids do not by themselves remove B. No request used template formatting replacement (`ids_fmt`) in this configuration.
+
+### 2.4 Time to first token, and the projection (every figure in this subsection is a projection)
+
+Measured today: N median **18.1 s (opencode), 25.2 s (Codex)** (the 6k-7k-token first requests; the 560-613-token title requests answer in 1.7 s); A and B as above. The cold-prefill rate measured in this study
+on requests with reused = 0 and n >= 4,096: **216.7 tok/s at 4,096 to 8,191 tokens (30 requests), 206.2 tok/s at 8,192 to 16,383 (9)**; none at 16,384 and over. **Projected saving, B served by an end-of-prompt
+checkpoint:** tokens skipped = the previous prompt's length less the reuse today (0): **214,143 tokens, 71.7% of the tokens processed today; projected 702 s over opencode's 19 B turns (median 34.9 s a turn)
+and 304 s over Codex's 10 (median 28.5 s); 1,006 s (16.8 minutes) in all, median 34.2 s per affected turn.** The projection uses the band's measured rate, which includes the first token's decode, so it
+slightly under-states the saving.
+
+### 2.5 The decision rule, applied as registered (§1.7)
+
+| | share of prompt tokens processed today it would skip (bar 25%) | median projected saving per affected turn (bar 5 s) | affected requests | verdict |
+|---|---|---|---|---|
+| **B: the end-of-prompt checkpoint** | **71.7%** | **34.2 s** | 29 | **passes both bars** |
+| **C: parking** | 0% | none (no C request) | 0 | does not pass: nothing to measure |
+
+**The end-of-prompt checkpoint is pulled ahead of KV4** by the rule as written. **Parking is not, on this reading: there were no C requests.** *Registered in A5 before any reading: a parking result below the
+bar applies to opencode and Codex only. It is not evidence against parking for Claude Code on a larger card, where the check could not measure C* (one thread, headless, no other thread in between). If both
+had passed, the larger saving would go first; only one passed, so that clause does not apply. The data fit the rule; nothing was re-cut.
+
+### 2.6 What this study does not show
+
+- **Claude Code on a hybrid with interactive-mode background requests** (title, small-fast and haiku slots routed to goinfer): the check was headless and had one thread, and the card holds no window large
+  enough to avoid compaction (A5). C is unmeasured there.
+- **Threads that interleave**: opencode sends its title request first and never returns to it, and Codex sends one thread. A workload that alternates two live conversations (the other kind of C) is not in these sessions.
+- **One model, one card, one set of tasks** (`chain`, `fix`, `edit`), the 9B hybrid at f32 KV; a deeper checkpoint (a message boundary, KV8's note) is not evaluated here beyond the Claude Code check's two near-misses.
+- The cold-prefill rate comes from this study's own cold requests (4k to 16k); a 20k-token Claude Code prompt ran at 150 tok/s in the pilot and check.
+
