@@ -196,7 +196,7 @@ of 17,595 to 19,345: six of them 1.5k to 3.6k tokens before the end of the previ
 user#7, +3 tokens into a 1,386-token user message; a deeper, message-boundary checkpoint would serve those two, and even counting them as B it is 2, under the bar of 3). No other
 thread ran in between in the check (one thread), so C cannot appear in it. **By A4's rule ("nearly all D") Claude Code is not run on this card.** The check is recorded as the Claude Code
 reading for nobara: on the 8 GB card Qwen3.5-9B with Claude Code is compaction-bound at the largest context that fits (32,768, with an 8,192-token output reserve), 3 compactions in 12
-turns, 8 of its 9 follow-ups cold at about 2 minutes each, and the task did not complete. **A Claude Code run on a larger card is a follow-up** (a window of about 40k or more, which this card
+turns, 8 of its 9 follow-ups cold at about 2 minutes each, and the task did not complete. **A Claude Code run on a larger card is a follow-up, and it should exercise interactive-mode background requests (the title request and the small-fast and haiku slots, routed to goinfer), not headless `claude -p` only: headless sends none, so category C cannot appear in it** (a window of about 40k or more, which this card
 cannot hold at f32 for this model). The Claude Code half of the decision rule (§1.7) is therefore read from opencode and Codex only, and the readings say so.
 
 **A5 addendum (2026-10-20, owner's question: why one thread, and did anything go to Anthropic?).**
