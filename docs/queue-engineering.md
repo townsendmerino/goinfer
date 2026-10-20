@@ -535,7 +535,13 @@ its own; the Mac agent waits for Francis's word, and the M1 cell's script gains 
 - **Size:** M (the stack planning and packer, the executor-side buffer allocation, the abort polls, the gates).
 
 **B35 · A recurrent model (Qwen3.5 and its kin) cannot reuse a chat conversation's prefix, because the template's history render drops the generation prompt's tail** — filed 2026-10-18 (owner, from tack's C3 run; measured in
-`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). **Scoped only; build it only if the 9B passes tack's E0** (the owner). Tack's C3 log reads the 9B `eligible` (smoke 19/19, check ok); the E0 table is the word.
+`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). **Built and gated on branch `b35-recurrent-checkpoint-2026-10`; merge on Francis's yes** (PR, 2026-10-20).
+- **State (2026-10-20):** the end-to-end gate PASSED on nobara (`docs/measurements/b35-e2e-2026-10-20/README.md`): Qwen3.5-9B chat turns 2 and 3
+  restored from the kept state match a cold prefill digit for digit, B35's cold output matches the base build's, and time to first token
+  falls to 0.15 of cold at 4k and 0.08 at 8k. As built (the owner's choice of a mid-pass save over a cut at `b`), the state is kept at Keep
+  rounded down to the 512-row pass grid, so a warm turn re-prefills up to about one pass; a cut at Keep is the follow-up that removes it.
+  Step 3's grid cell as built is the recurrent `share` cell, which names the B35 restore. CUDA only; Metal and the CPU keep no recurrent
+  snapshot (`KeepsRecurrentSnapshots` false), and their cold output is unchanged.
 - **What happens:** the engine reuses an appended request (`scoreRecurrent`: 0.04 s against 15.2 s cold on `/v1/completions`), but through `/v1/chat/completions` the next prompt shares only the first 22 of the previous 26 ids, because the history render drops the empty `<think>\n\n</think>\n\n`
   the generation prompt ends with. A recurrent state can only continue from where it stopped, so every chat turn is a cold prefill: 15 s at 4k, 39 s at 8k, 7 minutes at 31k for the 9B.
 - **The fix, exact (the owner's choice over changing the history render):** save the DeltaNet state before the generation tail.
