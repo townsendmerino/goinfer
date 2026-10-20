@@ -44,6 +44,22 @@ func (r *cudaResident) prefillExpertMajorEnabled() bool {
 // refusal cannot pass as a green (TestMoEExpertMajor_bitIdentical).
 var cudaMoeExpertMajorRuns int64
 
+// moeRowsTile must equal MR_ROWS in moe_rows.cu: the pairs one warp carries per weight row, so grid.y is ceil(pairs / moeRowsTile).
+const moeRowsTile = 8
+
+// moeRowsPlantRankSwapForTest (tests only) files each pair's output under the wrong rank, so TestMoERows_plantedRankSwapIsCaught can show its identity gate
+// goes red when the grouped path's indexing is wrong.
+var moeRowsPlantRankSwapForTest bool
+
+// cudaMoeRowsRuns counts the layers/chunks that took the grouped-kernel path: the non-vacuity counter of its identity gates.
+var cudaMoeRowsRuns int64
+
+// prefillMoERowsEligible reports whether an expert-major layer runs its experts through the grouped kernels (moe_rows.cu) rather than one launch set
+// per (row, rank) pair. The result is bit-identical either way; gpt-oss's activation is a different kernel and keeps the per-pair path.
+func (r *cudaResident) prefillMoERowsEligible() bool {
+	return !r.moeRowsOff && r.bMoeRows != (Pipeline{}) && r.bGluRows != (Pipeline{}) && r.gptOssSw == (Pipeline{}) && r.hidden%32 == 0 && r.moeInter%32 == 0
+}
+
 // moeExpertMajorState is the working set of one prefillMoEExpertMajorRun: the per-row quantized activations and routing
 // weights, and the rank-indexed accumulators that are folded in rank order.
 type moeExpertMajorState struct {
@@ -92,10 +108,19 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop (audit R-22)
 	st.emSlot = au(1)
 	st.scratch = make([]Buffer, r.topK)
-	for j := range st.scratch {
-		// Not zeroed: every (row, rank) is routed to exactly one expert, whose plain-store GEMV below writes all of that row's
-		// hidden elements before the fold reads them.
-		st.scratch[j] = af(M * hidden)
+	grouped := r.prefillMoERowsEligible()
+	if grouped {
+		// One allocation, rank j at offset j*M*hidden: the grouped down GEMV addresses a (row, rank) output by one row index.
+		all := af(r.topK * M * hidden)
+		for j := range st.scratch {
+			st.scratch[j] = all.At(j * M * hidden * 4)
+		}
+	} else {
+		for j := range st.scratch {
+			// Not zeroed: every (row, rank) is routed to exactly one expert, whose plain-store GEMV below writes all of that row's
+			// hidden elements before the fold reads them.
+			st.scratch[j] = af(M * hidden)
+		}
 	}
 	st.hostIdx = make([]uint32, M*r.topK)
 
@@ -153,10 +178,8 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 
 	c := Ly.expCache
 	gu := 2 * r.moeInter
-	for _, e := range experts {
-		if e := ctx.Err(); e != nil {
-			return e
-		}
+	// admitExpert makes expert e resident in a cache slot (one DMA if it missed) and points emSlot at it.
+	admitExpert := func(e uint32) error {
 		slotNo, hit := c.admit(e)
 		if !hit {
 			r.expBatch = r.expBatch[:0]
@@ -167,29 +190,95 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 				return ue
 			}
 		}
-		if ue := gpu.Upload(st.emSlot, []uint32{uint32(slotNo)}); ue != nil {
+		return gpu.Upload(st.emSlot, []uint32{uint32(slotNo)})
+	}
+	if grouped {
+		// Grouped (moe_rows.cu): the chunk's (row, rank) pairs sorted by expert, so an expert's pairs are one contiguous range; three launches
+		// per expert (gate||up, glu_quant, down) in place of three per pair. Each output element is the per-pair kernels' value, bit for bit.
+		nPairs := M * r.topK
+		pairRow := make([]uint32, 0, nPairs)  // activation row of pair p
+		pairDst := make([]uint32, 0, nPairs)  // output row of pair p in the rank-major scratch: rank*M + row
+		start := make([]int, 0, len(experts)) // first pair of each expert
+		for _, e := range experts {
+			start = append(start, len(pairRow))
+			for _, s := range byExpert[e] {
+				pairRow = append(pairRow, uint32(s.row))
+				rank := s.rank
+				if moeRowsPlantRankSwapForTest {
+					rank = (rank + 1) % r.topK
+				}
+				pairDst = append(pairDst, uint32(rank*M+s.row))
+			}
+		}
+		dRow, dDst := au(nPairs), au(nPairs)
+		if ue := gpu.Upload(dRow, pairRow); ue != nil {
 			return ue
 		}
-		for _, s := range byExpert[e] {
-			qOff, sOff := st.mqAll.At(s.row*hidden/4*4), st.mScAll.At(s.row*4)
-			if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-				Arg(Ly.expGU.W), Arg(qOff), Arg(Ly.expGU.ws16), Arg(sOff), Arg(st.emSlot), gpu.ArgValue(int32(0)),
-				gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
-				Arg(r.moeGU)); e != nil {
-				return e
+		if ue := gpu.Upload(dDst, pairDst); ue != nil {
+			return ue
+		}
+		tmpGU := af(M * gu) // gate||up of the pairs of the expert being run, compact
+		tq := ai(M * r.moeInter / 4)
+		tsc := af(M)
+		tscr := af(M * r.moeInter)
+		for i, e := range experts {
+			if ce := ctx.Err(); ce != nil {
+				return ce
 			}
-			if e := r.launchGluSplitExpert(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr, Buffer{}, 0); e != nil {
-				return e
+			if ae := admitExpert(e); ae != nil {
+				return ae
 			}
-			// The down projection, stored unweighted: gemv_w4a8_moe is gemv_w4a8_moe_wacc's reduction with dst = facc*aScale.
-			dstOff := st.scratch[s.rank].At(s.row * hidden * 4)
-			if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-				Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(st.emSlot), gpu.ArgValue(int32(0)),
-				gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
-				gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)), Arg(dstOff)); e != nil {
-				return e
+			p0, n := start[i], len(byExpert[e])
+			tiles := uint32((n + moeRowsTile - 1) / moeRowsTile)
+			if le := r.launch(r.bMoeRows, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: tiles, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+				Arg(Ly.expGU.W), Arg(st.mqAll), Arg(Ly.expGU.ws16), Arg(st.mScAll), Arg(st.emSlot),
+				gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+				Arg(dRow.At(p0*4)), ArgNull(), gpu.ArgValue(int32(n)), Arg(tmpGU)); le != nil {
+				return le
+			}
+			if le := r.launch(r.bGluRows, LaunchConfig{GridX: uint32(n), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 32 * 4},
+				Arg(tmpGU), gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.moeInter)), gpu.ArgValue(int32(r.moeInter)),
+				gpu.ArgValue(r.act), Arg(tq), Arg(tsc), Arg(tscr)); le != nil {
+				return le
+			}
+			if le := r.launch(r.bMoeRows, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: tiles, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+				Arg(Ly.expDown.W), Arg(tq), Arg(Ly.expDown.ws16), Arg(tsc), Arg(st.emSlot),
+				gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
+				ArgNull(), Arg(dDst.At(p0*4)), gpu.ArgValue(int32(n)), Arg(st.scratch[0])); le != nil {
+				return le
 			}
 		}
+		cudaMoeRowsRuns++
+	} else {
+		for _, e := range experts {
+			if e := ctx.Err(); e != nil {
+				return e
+			}
+			if ae := admitExpert(e); ae != nil {
+				return ae
+			}
+			for _, s := range byExpert[e] {
+				qOff, sOff := st.mqAll.At(s.row*hidden/4*4), st.mScAll.At(s.row*4)
+				if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+					Arg(Ly.expGU.W), Arg(qOff), Arg(Ly.expGU.ws16), Arg(sOff), Arg(st.emSlot), gpu.ArgValue(int32(0)),
+					gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+					Arg(r.moeGU)); e != nil {
+					return e
+				}
+				if e := r.launchGluSplitExpert(r.moeGU, r.moeInter, r.moeQ, r.moeSc, r.moeScr, Buffer{}, 0); e != nil {
+					return e
+				}
+				// The down projection, stored unweighted: gemv_w4a8_moe is gemv_w4a8_moe_wacc's reduction with dst = facc*aScale.
+				dstOff := st.scratch[s.rank].At(s.row * hidden * 4)
+				if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+					Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc), Arg(st.emSlot), gpu.ArgValue(int32(0)),
+					gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.hidden)),
+					gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)), Arg(dstOff)); e != nil {
+					return e
+				}
+			}
+		}
+
 	}
 
 	// --- Phase 3: fold each row in RANK order with the per-row kernel's own fused multiply-add: topK launches, each over all

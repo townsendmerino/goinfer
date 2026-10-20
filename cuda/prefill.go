@@ -80,6 +80,7 @@ func prefillImageChunkRows(v string) int {
 type prefillProf struct {
 	gemv, attn, glue time.Duration
 	rec              time.Duration // the Gated-DeltaNet recurrence (prefillDeltaNetRows), apart from attention
+	moe              time.Duration // the whole routed-expert FFN of an MoE layer (route, expert DMA, expert GEMVs, fold), which gemv no longer includes
 }
 
 type profCat int
@@ -89,6 +90,7 @@ const (
 	attnCat
 	glueCat
 	recCat
+	moeCat
 )
 
 // profTic syncs the stream and returns a start time when profiling is on; a no-op zero Time otherwise.
@@ -116,6 +118,8 @@ func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
 		r.prof.glue += d
 	case recCat:
 		r.prof.rec += d
+	case moeCat:
+		r.prof.moe += d
 	}
 }
 
@@ -1444,7 +1448,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						}
 					}
 				}
-				r.profToc(gemvCat, t)
+				r.profToc(moeCat, t)
 			} else {
 				t = r.profTic()
 				// segBFFN's postOnlyHere: a Gated-DeltaNet layer in a post-only model (Olmo Hybrid) replaces only the
