@@ -135,4 +135,36 @@ bodies or text (KV0's policy; the bodies stay outside the repository).
 5. **Builds recorded here:** the serve build is main **`94a6b973`** (`~/serve-cuda-94a6b973`, built from main with B36, Option A, B37 and the
    later merges, under the timing lock), and this record's branch is `kv0h-2026-10` (registration at `129fbae0`, driver copy at `bd312720`).
 
-*(The model choice and the contexts go here as amendment A2 after the pilot, before the first study session.)*
+**Amendment A2 (2026-10-20, after the pilot, before any study session).**
+1. **Model: Qwen3.5-9B Q4_K_M** (`~/models/Qwen3.5-9B-Q4_K_M.gguf`), `qwen3_5`, the server's default thinking, int4, `-kv-sessions 1`, serve build `94a6b973`.
+   The fallback (Qwen3.6-35B-A3B) is not needed. **Pilot counts** (kept apart, 2026-10-20 10:11:07 to 10:31:17 PDT; nothing else from the pilot is
+   quoted): opencode `chain` at 20,480: passed, 9 turns, 8 tool calls, 10 requests; Codex `chain` at 20,480: passed, 8 tool calls, 9 requests; Claude
+   Code `chain` at 28,672: 8 requests, ended on its own error (finding 2). Hash-accepted renderings: 10 of 10, 9 of 9 and 4 of 8. `slot=` invariant: 25
+   requests checked, 0 failures.
+2. **Finding: 1.4 x the first request is too small a window for Claude Code with this model.** At `-ctx 28,672` (KV0's Claude Code context, 1.42 x its
+   first request: 20,199 tokens measured by `connect`, 17,851 as served here) the prompts ran 17.5k to 19.3k tokens and the context refilled to the limit
+   within 3 turns of a compaction, three times in a row; Claude Code stopped: "Autocompact is thrashing: the context refilled to the limit within 3 turns of the
+   previous compact, 3 times in a row." The session was `connect`-told a window of 28,672 tokens with an output limit of 6,425, so its usable prompt was about
+   22.2k. Noted under I4 in `docs/tasks/task-integration-harness-2026-10.md`.
+3. **The hash check's 4 of 8 rejections were carried ids.** Requests 2 to 5 of the Claude Code pilot rendered exactly one token shorter than the server's prompt
+   (`ids=1/1 ids_fmt=1`: the server replaced the template's formatting around the reply with the reply's own ids, `internal/serveapp/carried_ids.go`), and the
+   offline renderer, holding no key, could not verify the blob. **Fix, a measurement-tool change only (owner-approved):** the study server runs with
+   `--ids-key-file` (a fixed 48-byte key, mode 600, outside the repository) and the offline renderer in `internal/serveapp/kv0_tokenize_test.go` takes the
+   same key, the served model's name and its quant (`KV0_IDS_KEY_FILE`, `KV0_MODEL_NAME`, `KV0_QUANT`), so a carried blob verifies and the render is the
+   server's. The §1.3 stop condition (more than 10% rejected) stays in force for the study. **No server restart inside a session:** the server stays up
+   across a configuration's sessions as §1.2 registered; **any restart is recorded in the readings** (a restart would also drop the slot, so a restart is
+   listed beside the requests it affects, and the fixed key means ids carried across one still verify, where a per-process key would not).
+   A short Claude Code check (about 5 minutes, outputs kept apart) confirms before the study that the four rejected requests now match by hash.
+4. **Reading added:** per harness, the number of requests whose carried ids were used **with template formatting replaced** (`ids_fmt`), **without**, carried
+   but **not used** (the fallback reason is listed), and **not carried at all**, and the cross-tabulation of those four classes with N, A, B, C and D. Carried
+   ids are likely what produces category A on a hybrid; this shows how much.
+5. **Contexts.** opencode and Codex stay at **20,480**. **Claude Code: the rule, registered now:** *the largest context up to 49,152 that leaves at least
+   512 MiB of the card free after the first Claude Code request*, found in steps of 4,096 by the VRAM the server holds after that request (`nvidia-smi`, in the
+   plan's own run); **the number it lands on is recorded here before the study** and the window Claude Code is told is the served one (`connect -write` reads it
+   from the server; the session record's `connect` line, "context window N tokens", is checked against the served `--ctx`, and a mismatch voids the session).
+   **KV precision: the owner asked for f16 where the qwen3_5 resident path on CUDA supports it. It does not:** `cuda/kvpolicy.go:cudaKVF16Decline` keeps f32 for
+   every family outside llama, mistral, qwen2, qwen3 and phi3 and for Gated-DeltaNet hybrids ("this family's attention is not covered"), and the pilot's banner reads
+   `KV f32`. **Stopped and told the owner; the application of the context rule waits on the owner's answer.** (A hybrid keeps K/V only for its full-attention
+   layers: 64 KiB per position at f32 on the 9B, against 144 KiB at f16 on Qwen3-4B, so the f32 context the rule lands on is still large.)
+
+*(The context Claude Code lands on, and the owner's answer on f32, go here as A3 before the first study session.)*
