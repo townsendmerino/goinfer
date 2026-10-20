@@ -167,4 +167,17 @@ bodies or text (KV0's policy; the bodies stay outside the repository).
    `KV f32`. **Stopped and told the owner, who accepted f32 (the shipped behaviour of qwen3_5 on CUDA, so the do-nothing arm's real configuration): f16 was declined by `cudaKVF16Decline`, f32 is used, and the registered rule chooses the context.** The Claude Code check runs at the context the rule lands on, not at 28,672, so one run checks three things: hash matches on the carried-ids requests, the fit with 512 MiB free, and whether autocompact still thrashes. **If it still thrashes at the chosen context, the result is reported before any study session, and the rule's ceiling (49,152) is not exceeded.** `connect`'s output limit is product behaviour and is not changed for the study. (A hybrid keeps K/V only for its full-attention
    layers: 64 KiB per position at f32 on the 9B, against 144 KiB at f16 on Qwen3-4B, so the f32 context the rule lands on is still large.)
 
-*(The context Claude Code lands on, and the owner's answer on f32, go here as A3 before the first study session.)*
+**Amendment A3 (2026-10-20, after the check, before any study session).** The rule, applied at f32 KV (`docs/measurements/kv0h-2026-10/calibration.json`):
+49,152, 45,056 and 40,960 do not build a resident path; 36,864 builds but leaves **389 MiB** free after the load (under the 512 MiB bar); **32,768** leaves
+**647 MiB** free after the load and after the first request (the pilot's recorded 17,851-token Claude Code request, 120.4 s). **Claude Code runs at `-ctx
+32768`;** opencode and Codex at 20,480. `connect` told Claude Code "context window 32768 tokens (output limit 8192)", the served window.
+**The check at 32,768** (2026-10-20 11:19:55 to 11:40:34 PDT, outputs kept apart): (1) **hash matches: 10 of 10 requests accepted**, every one of them with
+carried ids and template formatting replaced (`ids_fmt`), the class that failed 4 of 8 in the pilot, and 0 `slot=` invariant failures; (2) **fit: 647 MiB free
+after the first request, 7,404 MiB peak in use over the session (788 MiB free)**; (3) **autocompact still fires: 3 compactions in 12 turns**, 9 of the 10
+requests after the first re-prefilled in full (about 2 minutes each), and the task was not completed (`passed: false`, answer cut off at file 3 of 7, no
+"thrashing" error this time). **Reported to the owner before any study session; the study waits for the owner's answer.**
+**Re-estimated length** (from the pilot's and the check's measured times, not KV0's cost basis): opencode and Codex about 12 s a request in the pilot's mix
+(26.8 s cold at 6-7.5k tokens, 2.2 s warm), Claude Code **about 120 s a request** (cold 17.5-19.3k tokens at 150 tok/s: 117-136 s; the check: 10 requests in
+1,214 s), over KV0's per-session request counts (opencode 52, Codex 24, Claude Code about 25; 1.5 x those for the 9B). **Central 2.5 hours, range 1.5 to
+4.5 hours** (high: all cold, twice the Claude Code requests, up to 3 extra `chain` sessions); Claude Code is about 60% of it. The calibration and check took
+25 minutes more and are not in the figure.
