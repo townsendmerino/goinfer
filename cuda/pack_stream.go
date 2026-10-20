@@ -5,6 +5,9 @@ package cuda
 import (
 	"fmt"
 	"runtime"
+	"sync"
+	"sync/atomic"
+	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -258,3 +261,115 @@ func packI8Into(dst []uint32, q8 []int8) {
 }
 
 var _ = decoder.Int4F32 // packWeight still widens whole tensors through it
+
+// planWeightStack is packWeightStack's validation and nothing else: the same errors in the same order for the same weights, no allocation beyond the
+// returned header, and a hostW that names the member weights (srcs) and the element counts of the stack's two host buffers. Only the C' expert cache
+// consumes it (cacheWQ packs the members straight into the pinned copy); every other path takes packWeightStack's packed slices.
+func planWeightStack(ws ...*linalg.WeightMat) (hostW, error) {
+	if len(ws) == 0 {
+		return hostW{}, fmt.Errorf("cuda: packWeightStack needs at least one weight")
+	}
+	var out hostW
+	for i, w := range ws {
+		h, err := planWeight(w)
+		if err != nil {
+			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: %w", i, err)
+		}
+		if i == 0 {
+			out.kind, out.K = h.kind, h.K
+		}
+		if h.kind != out.kind {
+			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: kind %q != %q — a mixed-precision "+
+				"stack cannot share one kernel's unpack path", i, h.kind, out.kind)
+		}
+		if h.K != out.K {
+			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: K=%d != %d — the kernel strides by a "+
+				"single Kwords, so a ragged stack reads across row boundaries", i, h.K, out.K)
+		}
+		out.nWpk += h.nWpk
+		out.nWs += h.nWs
+		out.nWs16 += h.nWs16
+		out.N += h.N
+	}
+	out.srcs = ws
+	return out, nil
+}
+
+// packInt4Into is packWeight's int4 layout written into caller-owned storage: the nibble-permuted words, and the group scales through the f16 -> f32 -> f16
+// trip packWeight makes. It allocates nothing.
+func packInt4Into(dstW []uint32, dstS []uint16, q4 []byte, s16 []uint16) {
+	for i := range dstW {
+		b := q4[i*4 : i*4+4]
+		dstW[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
+	}
+	for i, h := range s16 {
+		dstS[i] = f32tof16(linalg.F16ToF32(h))
+	}
+}
+
+// packStackWorkers bounds the goroutines that pack one expert stack: the sources are mapped files, so more than a few readers only adds page-fault traffic.
+const packStackWorkers = 8
+
+// packStackPinned allocates the pinned host copy of a planned int4 stack (outside the Go heap) and packs every member weight into its row range of it, in
+// parallel, so the host holds the pinned copy and nothing else: the stack is never built in Go memory first. Each member's bytes are the bytes
+// packWeight produces for it, at the offset packWeightStack puts it. An abort, a lost canonical payload or a malformed member is recorded as an upload
+// error and leaves the copy partly filled, which the failed build discards.
+func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
+	srcW, err := r.dev.NewMappedHostBuffer(h.nWpk * 4)
+	if err != nil {
+		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWpk*4, err))
+	}
+	w.srcW = srcW
+	srcS, err := r.dev.NewMappedHostBuffer(h.nWs16 * 2)
+	if err != nil {
+		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWs16*2, err))
+	}
+	w.srcS = srcS
+	var dstW []uint32
+	var dstS []uint16
+	if h.nWpk > 0 {
+		dstW = unsafe.Slice((*uint32)(unsafe.Pointer(&srcW.Bytes()[0])), h.nWpk)
+	}
+	if h.nWs16 > 0 {
+		dstS = unsafe.Slice((*uint16)(unsafe.Pointer(&srcS.Bytes()[0])), h.nWs16)
+	}
+	n := len(h.srcs)
+	rowOff := make([]int, n+1)
+	for i, s := range h.srcs {
+		rowOff[i+1] = rowOff[i] + s.Rows()
+	}
+	wpr, gpr := h.K/8, h.K/32
+	var next atomic.Int64
+	var aborted, bad atomic.Bool
+	var wg sync.WaitGroup
+	for range min(packStackWorkers, runtime.GOMAXPROCS(0), n) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= n {
+					return
+				}
+				if r.loadAborted() {
+					aborted.Store(true)
+					return
+				}
+				q4, s16, _, ok := h.srcs[i].Int4F16()
+				dw, ds := dstW[rowOff[i]*wpr:rowOff[i+1]*wpr], dstS[rowOff[i]*gpr:rowOff[i+1]*gpr]
+				if !ok || len(q4) < len(dw)*4 || len(s16) != len(ds) {
+					bad.Store(true)
+					return
+				}
+				packInt4Into(dw, ds, q4, s16)
+			}
+		}()
+	}
+	wg.Wait()
+	switch {
+	case aborted.Load():
+		r.recordUpload(fmt.Errorf("cuda: resident build aborted while packing an expert stack: %w", decoder.ErrLoadAborted))
+	case bad.Load():
+		r.recordUpload(fmt.Errorf("cuda: an int4 expert lost its canonical bytes between planning and upload, or its payload is the wrong size"))
+	}
+}

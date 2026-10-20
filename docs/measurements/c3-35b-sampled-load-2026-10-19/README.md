@@ -68,3 +68,21 @@ that slice in place, `RegisterMappedHostBuffer`), so the heap is not a second co
 **Why pages were swapped with 39.9 GB available system-wide: a memory limit on the user's slice.** `/etc/systemd/system/user-1000.slice.d/50-oom-protect.conf` sets `MemoryHigh=52G` on the whole user slice (to keep `systemd-oomd` from killing the desktop and editor). Page cache and mapped files are charged to the slice as well, so a load that holds 20 GB of anonymous heap, the file's pages and everything else the slice caches can cross 52 GiB while the machine as a whole is
 far from full, and the kernel then reclaims from the slice, anonymous pages included. The slice's own counters: `memory.events` `high` 13,830,234, `memory.swap.current` 9.4 GiB. This run did not sample the slice's `memory.current`, so it is the likely mechanism, not a measured one.
 
+### Run 3, 2026-10-19 08:48:54 to 08:49:31 PDT (B36 build `ca0c37cf`, `~/serve-cuda-b36-ca0c37cf`, the guard on, no bypass; `~/goinfer-logs/c3-35b-b36-2026-10-19/`): the load completes
+
+The same job as run 2 on the B36 build, which plans the routed-expert stacks and packs them straight into their pinned buffers when the build uploads (`cuda/pack_stream.go:planWeightStack`, `packStackPinned`). One run, by day, under the timing lock; the sampler now also reads `user-1000.slice` `memory.current` and `memory.events` `high` every 50 ms. Load only: no generation was checked on this build.
+
+| | run 2 (`333407c3`, aborted at layer 23 of 40) | run 3 (B36, ready) |
+|---|---|---|
+| ready | never (aborted ~46 s in) | 29.5 s |
+| peak `RssAnon` | 19.91 GB | **0.40 GB** |
+| peak `RssFile` | 13.5 GB | 19.41 GB (the mapped sidecar) |
+| `VmHWM` | 32.3 GB | 37.94 GB |
+| `VmSwap` peak / final | 0.61 GB over baseline (tripped the guard) | **0 / 0** |
+| system swap growth | 1,109 MB | 5 MB |
+| Go heap (gctrace) peak allocated / live | filled to ~19 GB | 412 / 257 MB |
+| lowest `MemAvailable` | 39.9 GB | 41.2 GB |
+
+The slice, at `MemoryHigh` 55.83 GB (52 GiB): `memory.current` 20.8 GB at the start, **46.3 GB at the peak**, 46.2 GB at the end; `memory.events` `high` 13,830,234 before and after, **0 rises in any sample**. With the pinned copy no longer doubled on the heap, this load stays 9.5 GB under the slice limit and the limit forced no reclaim. The setting was read, not changed; whether it would bind a load with other work running is not measured here.
+
+The pre-registered bar (peak `RssAnon` <= 19.6 GB) is met by a wide margin, but the peak `RssAnon` no longer includes the pinned copy at all (`Mlocked` also read 0): `cuMemHostAlloc`ed memory is in neither, so this column cannot be read as "the footprint". The slice's `memory.current` is the figure that includes it.
