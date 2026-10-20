@@ -375,6 +375,14 @@ func (r *resident) prefillGeom() *attnGeom {
 	return nil
 }
 
+// kvCap is how many positions every K/V buffer holds: ctxCap, or metalCtxCapDefault before it is resolved (metalResident.ctxCap's rule).
+func (r *resident) kvCap() int {
+	if r.ctxCap == 0 {
+		return metalCtxCapDefault
+	}
+	return r.ctxCap
+}
+
 // PrefillLast ingests M prompt embeddings at positions startPos..startPos+M-1 in one command buffer via the f16 MMA path
 // (weights read once, amortized across M, unlike the token-by-token decode loop), populating the resident KV cache, and
 // returns the last token's logits[V], what a generator needs to sample the first output token. Correctness-gated against
@@ -431,6 +439,12 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 // attention_prefill_img, the exact kernel with the blocks, in place of the fused and steel kernels, which carry no block
 // mask. No blocks: prefillLast exactly.
 func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
+	// Every K/V buffer holds kvCap positions, and a pass past them writes beyond the buffer. metalResident.checkCap refuses that for
+	// the decoder; an internal caller that skipped it is a programming error, named here rather than left to corrupt memory.
+	if c := r.kvCap(); startPos < 0 || startPos+len(embs) > c {
+		panic(fmt.Sprintf("metal: internal prefill of %d rows at position %d is past the resident KV cap of %d positions "+
+			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", len(embs), startPos, c))
+	}
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
