@@ -164,7 +164,7 @@ bodies or text (KV0's policy; the bodies stay outside the repository).
    from the server; the session record's `connect` line, "context window N tokens", is checked against the served `--ctx`, and a mismatch voids the session).
    **KV precision: the owner asked for f16 where the qwen3_5 resident path on CUDA supports it. It does not:** `cuda/kvpolicy.go:cudaKVF16Decline` keeps f32 for
    every family outside llama, mistral, qwen2, qwen3 and phi3 and for Gated-DeltaNet hybrids ("this family's attention is not covered"), and the pilot's banner reads
-   `KV f32`. **Stopped and told the owner; the application of the context rule waits on the owner's answer.** (A hybrid keeps K/V only for its full-attention
+   `KV f32`. **Stopped and told the owner, who accepted f32 (the shipped behaviour of qwen3_5 on CUDA, so the do-nothing arm's real configuration): f16 was declined by `cudaKVF16Decline`, f32 is used, and the registered rule chooses the context.** The Claude Code check runs at the context the rule lands on, not at 28,672, so one run checks three things: hash matches on the carried-ids requests, the fit with 512 MiB free, and whether autocompact still thrashes. **If it still thrashes at the chosen context, the result is reported before any study session, and the rule's ceiling (49,152) is not exceeded.** `connect`'s output limit is product behaviour and is not changed for the study. (A hybrid keeps K/V only for its full-attention
    layers: 64 KiB per position at f32 on the 9B, against 144 KiB at f16 on Qwen3-4B, so the f32 context the rule lands on is still large.)
 
 *(The context Claude Code lands on, and the owner's answer on f32, go here as A3 before the first study session.)*
