@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +28,33 @@ import (
 //
 // Exploratory by-day reading: not a published number.
 //
+// GOINFER_ROWS_AB_CTX sets the resident context (default 8192; it must exceed GOINFER_ROWS_AB_M). Each A/B run prints the load average, the host memory
+// available and the card's free VRAM as it starts.
+//
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'cuda goinfer_testhooks' -run '^TestMoERows_realMellumIdentityAndAB$' -v ./cuda/
+//
+// boxState is the load average, the host memory available and the card's free VRAM, for the line a cell prints.
+func boxState() string {
+	la, _ := os.ReadFile("/proc/loadavg")
+	avail := ""
+	if mi, err := os.ReadFile("/proc/meminfo"); err == nil {
+		for _, ln := range strings.Split(string(mi), "\n") {
+			if strings.HasPrefix(ln, "MemAvailable:") {
+				avail = strings.TrimSpace(strings.TrimPrefix(ln, "MemAvailable:"))
+			}
+		}
+	}
+	vram := ""
+	if out, err := exec.Command("nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader").Output(); err == nil {
+		vram = strings.TrimSpace(string(out))
+	}
+	f := strings.Fields(string(la))
+	if len(f) >= 3 {
+		la = []byte(strings.Join(f[:3], " "))
+	}
+	return fmt.Sprintf("loadavg %s, MemAvailable %s, VRAM free %s", strings.TrimSpace(string(la)), avail, vram)
+}
+
 func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Mellum2.1)")
@@ -45,8 +73,12 @@ func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 	if v, err := strconv.Atoi(os.Getenv("GOINFER_ROWS_AB_M")); err == nil && v > 0 {
 		M = v
 	}
+	ctxLen := 8192
+	if v, err := strconv.Atoi(os.Getenv("GOINFER_ROWS_AB_CTX")); err == nil && v > 0 {
+		ctxLen = v
+	}
 	t0 := time.Now()
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: 8192})
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: ctxLen})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -105,8 +137,23 @@ func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 	var runs []run
 	for i, grouped := range []bool{false, true, true, false} {
 		r.moeRowsOff = !grouped
+		fmt.Fprintf(os.Stderr, "[rows-ab] run %d/4 grouped=%v starting: %s\n", i+1, grouped, boxState())
 		w := time.Now()
+		stop := make(chan struct{})
+		go func() { // a heartbeat: a 16k run of the per-pair path is minutes long
+			tk := time.NewTicker(45 * time.Second)
+			defer tk.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-tk.C:
+					fmt.Fprintf(os.Stderr, "[rows-ab] run %d/4 grouped=%v still running, %v elapsed\n", i+1, grouped, time.Since(w).Round(time.Second))
+				}
+			}
+		}()
 		lg, err := r.PrefillLast(ctx, embs, 0)
+		close(stop)
 		if err != nil {
 			t.Fatalf("PrefillLast (grouped=%v): %v", grouped, err)
 		}

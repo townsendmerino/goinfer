@@ -53,3 +53,21 @@ path). The plant, each pair's output filed under the wrong rank, makes 2560 of 2
 The last row's logits are identical across all four runs. 16k was not measured; the 3.5x is at M = 4096. Part of the remainder is expert DMA (about 3 MB per admitted expert, synchronous) and the
 dense attention half, and a profile of the grouped path is the next reading if more is wanted.
 
+### 16384 tokens (2026-10-19 17:59:39 to 18:07:34 PDT, test at `c875f294` on main `e006afbb`, under the lock; exploratory, one session)
+
+Same test (`TestMoERows_realMellumIdentityAndAB`), `GOINFER_ROWS_AB_M=16384 GOINFER_ROWS_AB_CTX=32768`, `--moe-cache-experts`, order per-pair, grouped, grouped, per-pair.
+Per run, as it started: load average 2.77 / 3.70 / 4.26 / 4.52 (the test's own threads included), `MemAvailable` 52.0 GB, VRAM free 475 MiB (the process's own).
+
+| | per-pair (before) | grouped |
+|---|---|---|
+| residual of all 512 rows | reference | identical on all 1,179,648 elements |
+| 16384-token cold prefill, runs in order | 2m50.868s, 2m52.178s | 54.335 s, 54.359 s |
+| rate | 95.5 tok/s (10.47 ms/token) | **301.5 tok/s (3.32 ms/token)** |
+| paired ratio | | **3.16x** |
+
+The last-row logits are identical across the four runs. The per-token cost at 16k is higher than at 4k for both arms (10.47 against 9.75 ms, 3.32 against 2.76 ms): the full-attention layers' share grows with the context.
+
+**Plan caveat.** This load capped the expert cache at **26 slots per layer** ("64 slots/layer would need 6.3 GB VRAM but only 3.1 GB free"), not the 52 that `-ctx 32768` plans on a quiet card (5.7 GB free).
+About 2.9 GB of the card was held by something else when the model loaded, and I did not find out what (no tack process was running at 17:59; tack's next one started at 18:08). Both arms ran
+the same 26 slots, so the ratio is a like-for-like reading at that plan; at 52 slots both arms miss the cache less and the ratio may differ. A re-run on a quiet card would settle it.
+
