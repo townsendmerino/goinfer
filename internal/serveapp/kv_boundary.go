@@ -26,7 +26,7 @@ func (lm *loadedModel) prefixBoundary(tm *chat.Template, system string, turns []
 // (Qwen3.5's empty think block) leaves no other point the next turn continues from. 0 for a model whose snapshots do not carry its state,
 // when the next prompt repeats all of ids (the slot's own state serves it), or when nothing is shared.
 func (lm *loadedModel) recurrentKeep(tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ids []int) int {
-	if lm.model == nil || !lm.model.KeepsRecurrentSnapshots() || tm == nil || len(turns) == 0 {
+	if !lm.keepsRecurrentSnapshots() || tm == nil || len(turns) == 0 {
 		return 0
 	}
 	next := chat.NextTurns(turns)
@@ -48,6 +48,14 @@ func (lm *loadedModel) recurrentKeep(tm *chat.Template, system string, turns []c
 		return 0
 	}
 	return k
+}
+
+// keepsRecurrentSnapshots reports whether the model's snapshots carry its recurrent state, so a Keep is worth computing.
+func (lm *loadedModel) keepsRecurrentSnapshots() bool {
+	if lm.scripted != nil {
+		return lm.scriptedRecurrent
+	}
+	return lm.model != nil && lm.model.KeepsRecurrentSnapshots()
 }
 
 // prefixBoundaryOf is prefixBoundary for a server that can use one (the model check is the caller's).

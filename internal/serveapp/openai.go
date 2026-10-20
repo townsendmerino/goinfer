@@ -180,6 +180,10 @@ type loadedModel struct {
 	scripted []int
 	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
 	onScripted func(promptIDs []int)
+	// scriptedRecurrent makes a scripted model one whose snapshots carry its recurrent state (recurrentKeep computes a Keep for it), and
+	// onScriptedScope receives the KV scope each scripted generation would hand the decoder. Test seams, as scripted.
+	scriptedRecurrent bool
+	onScriptedScope   func(decoder.KVScope)
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -1169,6 +1173,11 @@ type genRequest struct {
 	callPostCheck bool
 }
 
+// kvScope is the KV sharing scope the request hands the decoder.
+func (gr *genRequest) kvScope() decoder.KVScope {
+	return decoder.KVScope{Boundary: gr.boundary, Keep: gr.keep}
+}
+
 // confResult is a generation's per-field confidence (or why there is none).
 type confResult struct {
 	fields []constrain.FieldConfidence
@@ -1576,6 +1585,9 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		if lm.onScripted != nil {
 			lm.onScripted(gr.promptIDs)
 		}
+		if lm.onScriptedScope != nil {
+			lm.onScriptedScope(gr.kvScope())
+		}
 		finish, n, stopHit := lm.streamTokens(parent, cancel, scriptedStream(lm.scripted, gr.maxTokens), gr, nil, onText)
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}
@@ -1600,7 +1612,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	// prefix-reuse path.
 	if lm.model.ResidentActive() && lm.adapter == "" {
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
-		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: gr.boundary, Keep: gr.keep})
+		gctx := decoder.WithKVScope(ctx, gr.kvScope())
 		if lm.blockSpec != nil && gr.masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
