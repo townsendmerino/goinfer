@@ -42,16 +42,37 @@
     - C, the fused kernel for head dims 256 and 512: fast-class, needs a fidelity gate, several days.
     - The owner approved A, then parked it, then dropped it once `kv3-tiled-2026-10` was found to cover the case.
 
-- **P34 · Qwen3.5-9B never reuses a prefix on CUDA — CLOSED 2026-10-19 as a duplicate of B35** (`docs/queue-engineering.md`).
-  `linux`.
+- **P34 · Two 32k candidates never reuse a prefix on CUDA — REOPENED 2026-10-19 at HIGH priority (owner), after the work in
+  progress. Two causes, one per model.** `linux`.
 
-  - **Seen:** tack's E0 amendment C3 (nobara, `f20f0d93`, `-ctx 32768`). With the prefix reused, time to first token equalled
-    cold at 4k, 8k and 31.7k.
-  - **Cause, found on nobara:** the engine does reuse an appended request on this family (0.04 s against 15.2 s cold on
-    `/v1/completions`). But Qwen3.5's chat template renders history turns without the empty `<think></think>` that the
-    generation prompt ends with. So each chat request diverges from the point where the recurrent state stopped, and the
-    turn is a cold prefill. Record: `docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`.
-  - **The fix is scoped as B35:** save the DeltaNet state before the generation tail.
+  - **Seen (tack's E0, nobara):** first-token time with the prefix reused equals cold at every size.
+    - Qwen3.5-9B: C3 on `f20f0d93`, at 4k 15.3 vs 15.7 s, 8k 38.8 vs 38.8 s, 31.7k 421.3 vs 421.5 s.
+    - Mellum2.1-12B-A2.5B with `--moe-cache-experts`: amendment 10 on `b2b5e816`, about 93 tok/s prefill either way (tack
+      `docs/measurements/e0-nobara-mellum-2026-10-19.md`, tack 70a5193). The 31.7k probes took about 343 s each.
+  - **Cause 1, the Gated-DeltaNet hybrids (Qwen3.5-9B; Qwen3.6-35B-A3B has the same layers):** the chat template drops the empty
+    think block from history turns, so each chat request diverges from where the recurrent state stopped
+    (`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). The fix is B35, in progress on branch
+    `b35-recurrent-checkpoint-2026-10`.
+  - **Cause 2, Mellum2.1 (21 of 28 layers sliding-window, KV windowed): an expert-cache load gets no rollback grant.** Read from
+    the code and checked by arithmetic, not yet by a run.
+    - `cuda/kvwindow.go:cudaResident.kvGrantRollback` returns at once when `cacheExperts` is set ("its cache was sized to what
+      was free"). The rollback stays at the base slack less the step: 448 positions, up to 512 at the best point of the
+      compaction cycle.
+    - E0's reused cell resends the previous prompt with its last 512 tokens changed. With the template's end-of-turn and
+      assistant-header tokens and the one generated token after them, the resend diverges about 518 positions before the
+      newest. Replaying `kvWindowNextBase` for Mellum's 1,024 window at 4k, 8k, 15k and 31.7k: every resend that diverges 518
+      or more positions back is refused (a cold prefill) without the grant, and reused with it (rollback 1,024).
+    - **Expert streaming does not disable reuse:** `Model.residentReuseDisabled` reads only a test knob.
+    - **What it means for tack's own loop:** a request that appends to the previous one is unaffected. One that rewrites more
+      than about 448 tokens of the end (a client that drops the previous reply, as Codex does) is refused on any
+      expert-cache load of a windowed model.
+  - **Proposed fix for cause 2 (none built):** price the rollback grant before the expert cache is sized, so an expert-cache
+    load gets it too. The cost is the grant's few MB of KV per slot (576 positions across the windowed layers) taken from the
+    expert cache. Gate: a tier 0 replay of `kvWindowNextBase` and the plan over E0's shape, with and without the grant, plus
+    a plant; then one by-day probe on nobara, Mellum at 8k with an edit 400 and 600 tokens from the end, reused after the fix.
+  - **Data:** tack `docs/measurements/e0-nobara-c3-2026-10-18.md` and `e0-nobara-mellum-2026-10-19.md`; raw records under
+    `~/tack-runs/e0/` on nobara. The Mellum run kept no request log (`reused=`, `div=`), so the confirming probe should run with
+    `-log-requests`.
 
 - **P33 · Metal decode is 0.67–0.76 of mlx-lm's single-request path at matched settings — OPEN, filed 2026-10-18 (owner).
   Measure first; no work yet.** `mac`.
