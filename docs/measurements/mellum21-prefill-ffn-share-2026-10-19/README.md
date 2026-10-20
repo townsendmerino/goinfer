@@ -5,7 +5,13 @@ given to Francis, 2026-10-19) is worth building. Run by `run-ffn-share.sh` under
 (RTX 2070 SUPER, driver 595.91.07), nothing else on the card, `~/models/mellum2.1-thinking.int4.e4h.cuda.v17.giw` (local path), serve
 `~/serve-cuda-b2b5e816` for the plans, this branch's test for the phases. Logs: `~/goinfer-logs/mellum21-ffn-share-2026-10-19/`.
 
-## Phases (`TestPrefillDecomp`, `--moe-cache-experts`, `-ctx 8192`, random embeddings, one profiled run after one unprofiled warm pass)
+
+> **Read this first (B37, 2026-10-19).** Every in-process reading in this file except where it says otherwise was taken before the harness loaded the way serve does: `Options.ResidentWindowedKV` was off
+> (serve's default is on), so the expert cache had fewer slots than serve plans at the same flags (55 at `-ctx 8192` here; 26 against serve's 53 at 32768 in the 16k sections). The figure to quote is the served one,
+> `docs/measurements/mellum21-served-16k-2026-10-19/README.md`: 16,308 tokens, 162 s to 45 s, 3.60x, 53 slots. The 4k tables and the FFN-share profile below are labelled "in-process, windowed KV off (pre-B37)";
+> they were not re-run on the serve-shaped harness.
+
+## Phases (in-process, windowed KV off (pre-B37); `TestPrefillDecomp`, `--moe-cache-experts`, `-ctx 8192`, random embeddings, one profiled run after one unprofiled warm pass)
 
 | M | unprofiled wall | gemv | attention | glue | MoE FFN | share of the profiled sum |
 |---|---|---|---|---|---|---|
@@ -41,7 +47,7 @@ down 2304 x 896, a tiny K that is only the ragged tail; 1, 7, 8, 9 and 37 pairs;
 the per-pair path's on both tiny MoE fixtures at M = 5, 40 and 133 with the cache evicting (the existing `TestMoEExpertMajorCUDA_residualIdentical` and `_bitIdentical` also pass, and now run the grouped
 path). The plant, each pair's output filed under the wrong rank, makes 2560 of 2560 residual elements differ.
 
-**Tier 1** (`TestMoERows_realMellumIdentityAndAB`, real Mellum2.1 `.giw`, `--moe-cache-experts -ctx 8192`, 55 slots per layer, 2026-10-19 17:37:28 to 17:39:48 PDT, under the lock, serial; exploratory, one session):
+**Tier 1** (in-process, windowed KV off (pre-B37); `TestMoERows_realMellumIdentityAndAB`, real Mellum2.1 `.giw`, `--moe-cache-experts -ctx 8192`, 55 slots per layer, 2026-10-19 17:37:28 to 17:39:48 PDT, under the lock, serial; exploratory, one session):
 
 | | per-pair (before) | grouped |
 |---|---|---|
