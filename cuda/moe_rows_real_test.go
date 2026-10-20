@@ -14,8 +14,6 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestMoERows_realMellumIdentityAndAB is the tier-1 reading for the grouped expert kernels on the real Mellum2.1 (int4 .giw, --moe-cache-experts, the
@@ -78,7 +76,7 @@ func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 		ctxLen = v
 	}
 	t0 := time.Now()
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: ctxLen})
+	mc, err := loadLikeServe(t, path, "-backend", "cuda", "-ctx", strconv.Itoa(ctxLen), "-moe-cache-experts")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -88,6 +86,7 @@ func TestMoERows_realMellumIdentityAndAB(t *testing.T) {
 	if !ok || !r.cacheExperts {
 		t.Fatal("the C' resident did not engage")
 	}
+	fmt.Fprintf(os.Stderr, "[rows-ab] SLOTS %d expert-cache slots per layer (serve's own plan for these flags is the figure to compare)\n", r.cacheSlots)
 	if !r.prefillMoERowsEligible() {
 		t.Fatal("the grouped kernels are not eligible on this build")
 	}

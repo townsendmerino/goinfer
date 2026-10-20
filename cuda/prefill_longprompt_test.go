@@ -12,7 +12,6 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestPrefillLongPrompt probes the batched prefill path at the prompt lengths a deep-context benchmark uses
@@ -46,16 +45,13 @@ func TestPrefillLongPrompt(t *testing.T) {
 	}
 	t0 := time.Now()
 	fmt.Fprintf(os.Stderr, "[longprompt] loading %s ...\n", path)
-	opts := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 8192}
+	flags := []string{"-backend", "cuda", "-quant", "int4", "-ctx", "8192"}
 	if os.Getenv("GOINFER_LONGPROMPT_MOECACHE") != "" {
 		// The MoE cells (M35/M26/G20) exceed this card, so the bench launches them with
 		// -moe-cache-experts; a probe that omits it is not probing the shipped configuration.
-		opts.MoECacheExperts = true
+		flags = append(flags, "-moe-cache-experts")
 	}
-	if os.Getenv("GOINFER_LONGPROMPT_GIW") != "" {
-		opts.Quant = "" // a kind-4 .giw bundle is already quantized; -quant does not apply
-	}
-	mc, err := decoder.Load(path, opts)
+	mc, err := loadLikeServe(t, path, flags...)
 	if err != nil {
 		t.Fatalf("load (cuda): %v", err)
 	}

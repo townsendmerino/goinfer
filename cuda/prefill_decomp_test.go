@@ -12,7 +12,6 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestPrefillDecomp splits batched-prefill time into GEMV / attention / glue on the real dense
@@ -39,18 +38,15 @@ func TestPrefillDecomp(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
-	opts := decoder.Options{Backend: "cuda", Quant: "int4"}
+	flags := []string{"-backend", "cuda", "-quant", "int4"}
 	if os.Getenv("GOINFER_DECOMP_MOECACHE") != "" { // an MoE checkpoint that does not fit the card: the shipped configuration holds its experts in pinned host memory
-		opts.MoECacheExperts = true
-		opts.ResidentContext = 8192
+		ctxLen := 8192
 		if v, err := strconv.Atoi(os.Getenv("GOINFER_DECOMP_CTX")); err == nil && v > 0 {
-			opts.ResidentContext = v
+			ctxLen = v
 		}
+		flags = append(flags, "-moe-cache-experts", "-ctx", strconv.Itoa(ctxLen))
 	}
-	if os.Getenv("GOINFER_DECOMP_GIW") != "" {
-		opts.Quant = "" // a .giw bundle is already quantized
-	}
-	mc, err := decoder.Load(path, opts)
+	mc, err := loadLikeServe(t, path, flags...)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
