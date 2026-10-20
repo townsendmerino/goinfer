@@ -333,6 +333,20 @@ def day_check(tool, wait_s=0.0, ignore=False):
     return 0
 
 
+def day_hold(tool, wait_s=0.0, ignore=False):
+    """Hold the lock shared, as a loader, for a day tool that loads the box (a build, a test run) for as long as it runs, so a timed
+    run waits for it and it does not start under one. Returns (lock, 0), the caller releasing the lock when done; (None, 75) when a
+    timed run holds it (printed, naming the holder); ignore: (None, 0) with no hold, warning if a timed run holds it."""
+    if ignore:
+        return None, day_check(tool, ignore=True)
+    try:
+        return acquire(label=tool, wait_s=wait_s, shared=True), 0
+    except Held as e:
+        print(f"{tool}: REFUSED: {e}. A build or test run here would load the box under it. Wait for it (`--wait SECONDS`, or "
+              "`python3 scripts/timing_lock.py status`); `--ignore-timing-lock` overrides, for emergencies only.", file=sys.stderr)
+        return None, 75
+
+
 def cmd_check(a):
     return day_check(a.tool, wait_s=a.wait, ignore=a.ignore_timing_lock)
 

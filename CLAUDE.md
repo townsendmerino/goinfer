@@ -376,11 +376,12 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
   - **Work that only adds load holds it shared:** `timing_lock.py run --shared -- <cmd>` (`acquire(shared=True)` in Python) for
     a gate, a test run, or a screen that times another box. Loaders run together. A timed run (exclusive, the default) waits
     for every loader and refuses naming them, and no loader starts under a timed run.
-  - **The day tools check it too.** `touched.py`, `refresh_parity_hashes.sh` and `gate quick` refuse while a timed run holds
-    the lock, naming the holder: a build or test run beside it contaminates its timings. `bench_compare.sh` takes the lock
+  - **The day tools hold it shared.** `touched.py`, `refresh_parity_hashes.sh` and `gate quick` hold the lock shared while
+    they run, so a timed run waits for them, and they refuse while a timed run holds it, naming the holder (exit 75): a
+    build or test run beside it contaminates its timings. `bench_compare.sh` takes the lock
     itself. `--wait SECONDS` waits for the holder, and `--ignore-timing-lock` overrides, for emergencies only, and the
-    overlap then goes in that run's record. Any other build or test you run by hand checks first:
-    `python3 scripts/timing_lock.py check --tool <what>`.
+    overlap then goes in that run's record. Any other build or test you run by hand holds it shared the same way:
+    `python3 scripts/timing_lock.py run --shared --label <what> -- <cmd>`.
   - **A command that touches the other box checks that box's lock in the same command, and ends if it is held:**
     `ssh <box> 'cd <repo> && python3 scripts/timing_lock.py status' && ssh <box> '<the work>'` — one invocation, not a
     check in one call and the work in the next. An ssh session takes no lock of its own, so nothing else stops it: on
