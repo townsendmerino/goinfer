@@ -14,8 +14,9 @@ import (
 // PrefillLast calls, cut at a save point, must leave bit for bit what one call leaves: the last row's logits, every DeltaNet layer's
 // conv window and recurrent state, and every attention layer's K/V rows. Metal runs a call's rows in one command buffer, so a call
 // boundary is the only place the state exists between rows, and the decoder may put one at a save point only if this holds. The save
-// points: mid-prompt (an arbitrary row), on a 64-row block boundary with a second cut after it, and a 4-row tail (Qwen3.5's empty
-// think block). A plant (the state reset between the calls) must differ, so the comparison can see a difference.
+// points: mid-prompt (an arbitrary row), on a block boundary with a second cut after it, and a 4-row tail (Qwen3.5's empty think
+// block). The prompt is up to 160 positions and never more than the resident holds. A plant (the state reset between the calls) must
+// differ, so the comparison can see a difference.
 //
 // It runs on testdata/qwen35-tiny; GOINFER_B35_METAL_MODEL points it at a real checkpoint (~/models/qwen3.5-0.8b).
 func TestB35SplitInvariance(t *testing.T) {
@@ -42,7 +43,12 @@ func TestB35SplitInvariance(t *testing.T) {
 	if !r.recurrentPrefillOK() {
 		t.Skip("this model's DeltaNet layers do not take Metal's batched prefill")
 	}
-	const N = 160
+	// The prompt fits the resident's KV: r.PrefillLast is the unguarded internal entry (metalResident.PrefillLast checks the cap), and a
+	// pass past ctxCap writes beyond the cache, so the comparison would read memory, not the model (qwen35-tiny holds 64 positions).
+	N := min(160, r.ctxCap)
+	if N < 48 {
+		t.Skipf("the resident holds %d positions: too few for the save points", N)
+	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	ids := make([]int, N)
 	for i := range ids {
@@ -92,10 +98,10 @@ func TestB35SplitInvariance(t *testing.T) {
 		cuts  []int
 		plant bool
 	}{
-		{"mid-prompt save at row 97", []int{97}, false},
-		{"on a 64-row block boundary, then row 128", []int{64, 128}, false},
+		{"mid-prompt save", []int{N*3/5 + 1}, false},
+		{"on a block boundary, then another", []int{N / 8 * 4, N / 8 * 6}, false},
 		{"a 4-row tail (B35's shape)", []int{N - 4}, false},
-		{"plant: state reset between the calls at row 97", []int{97}, true},
+		{"plant: state reset between the calls at the mid-prompt save", []int{N*3/5 + 1}, true},
 	} {
 		gotLg, gotW := run(c.plant, c.cuts...)
 		lg, st := 0, 0
