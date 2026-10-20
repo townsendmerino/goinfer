@@ -667,6 +667,72 @@ class Serve(unittest.TestCase):
         self.assertEqual(len(sv.slept), 1)
         self.assertIn("The machine slept", (sv.rundir / "SUMMARY.md").read_text())
 
+    def missed_setup(self):
+        """A night-only job whose night (22:00 yesterday to 06:30 today) has just ended without a start, with one refusal on record."""
+        sv = FakeServer()
+        today = sv.t.replace(hour=6, minute=31, second=0, microsecond=0)
+        sv.t = today
+        nb = (today - dt.timedelta(days=1)).replace(hour=22, minute=0)
+        f = self.job(name="missed", not_before=nb.isoformat(timespec="seconds"), attempts=1,
+                     retry_until=today.replace(hour=6, minute=0).isoformat(timespec="seconds"))
+        return sv, f, today
+
+    def test_a_missed_night_moves_to_the_next(self):
+        sv, f, today = self.missed_setup()
+        sv.la = 9.0
+        sv.t = today - dt.timedelta(minutes=30)  # 06:01: the last wait is the load
+        self.tick(sv)
+        sv.t, sv.la = today, 0.0
+        self.assertEqual(self.tick(sv), "idle")
+        j = json.loads(f.read_text())
+        self.assertEqual(j["not_before"], today.replace(hour=22, minute=0).isoformat(timespec="seconds"))
+        self.assertEqual(j["retry_until"], (today + dt.timedelta(days=1)).replace(hour=6, minute=0).isoformat(timespec="seconds"))
+        self.assertEqual((j["attempts"], j["missed_nights"]), (0, 1))
+        summary = (sv.rundir / "SUMMARY.md").read_text()
+        self.assertIn("## Missed its night", summary)
+        self.assertIn("missed: the night", summary)
+        self.assertIn("would end after the 06:30 deadline", summary)  # its last wait, 06:01 + 30 min
+        sv.t = today.replace(hour=22, minute=1)
+        self.assertEqual(self.tick(sv), "ran")
+        self.assertEqual(self.runs(), 1)
+
+    def test_plant_without_the_move_a_missed_job_never_runs_again(self):
+        sv, f, today = self.missed_setup()
+        sv.roll_missed = lambda j, t: False  # PLANT: no move
+        for t in (today, today.replace(hour=22, minute=1), today.replace(hour=23) + dt.timedelta(days=3)):
+            sv.t = t
+            self.assertEqual(self.tick(sv), "idle", t)
+        self.assertEqual(self.runs(), 0, "with the move removed the job still ran: the move is not what the test above sees")
+
+    def test_status_reports_the_settle_as_busy(self):
+        seen = []
+        sv = FakeServer()
+        sv.since = "x"
+        night.PIDFILE.write_text(str(os.getpid()))
+        self.addCleanup(lambda: [p.unlink(missing_ok=True) for p in (night.PIDFILE, night.SERVEFILE)])
+        sv.on_sleep = lambda: seen.append(night.status_json())
+        self.job(name="settler")
+        self.assertEqual(self.tick(sv), "ran")
+        s = seen[0]
+        self.assertEqual((s["idle"], s["running"], s["phase"]), (False, "settler", "settling"))
+        sv.publish()
+        s = night.status_json()
+        self.assertEqual((s["idle"], s["running"], s["phase"]), (True, None, "idle"))
+
+    def test_plant_without_the_publish_the_settle_reads_idle(self):
+        seen = []
+        sv = FakeServer()
+        sv.since = "x"
+        night.PIDFILE.write_text(str(os.getpid()))
+        night.SERVEFILE.unlink(missing_ok=True)
+        self.addCleanup(lambda: [p.unlink(missing_ok=True) for p in (night.PIDFILE, night.SERVEFILE)])
+        sv.publish = lambda: None  # PLANT: the settle is not published
+        night.write_json(night.SERVEFILE, {"pid": os.getpid(), "since": "x", "phase": "idle"})
+        sv.on_sleep = lambda: seen.append(night.status_json())
+        self.job(name="settler")
+        self.tick(sv)
+        self.assertTrue(seen[0]["idle"], "with the publish removed the settle still read busy: the test does not see the publish")
+
     def test_a_night_job_due_holds_the_machine_awake(self):
         sv = FakeServer()
         self.assertEqual(self.tick(sv), "idle")

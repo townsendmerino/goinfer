@@ -478,6 +478,9 @@ its own; the Mac agent waits for Francis's word, and the M1 cell's script gains 
   ahead, on AC), not from its `--not-before`: a Mac that idles to sleep before the hour never reaches it. The before_queue step runs before
   every job, under the job's lock: a day server started between jobs holds the memory a job's fit check counts. A failed step is retried
   after the backoff.
+- **Added 2026-10-20 (owner's yes):** a night-only job whose night ends without a start moves to the next night, its `--retry-until`
+  shifted with it and its retry count cleared, and the morning SUMMARY.md lists it with its last reason to wait. `status --json` gains
+  `phase` (idle, settling, running); while the runner holds the lock before a job it reads busy: `idle` false, `running` the job.
 - **Why:** both boxes run the queue only when someone types `night.py start`. On 2026-10-19 three queued jobs (B35's CUDA test twice, the M1
   cell) sat unrun because nobody started a runner, and day jobs waited on a session to relay them.
 - **The mode:** `night.py serve` is a long-lived loop over the same queue. Each job runs as `_run` runs one today: same log, timing lock,

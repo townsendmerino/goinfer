@@ -349,8 +349,9 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
   - **A box running `night.py serve` runs its queue itself** (B38; `scripts/install-night-agent.sh` installs it as a
     launchd agent or a systemd user service). Each job starts when its gates allow: its `--not-before` hour, the
     heavy-load rule above, and the timing lock free through a settle that holds the lock. A job that exits 75 is
-    re-queued until its `--retry-until`. **Do not start a second runner, wait on it, or poll it.** `night.py status`
-    says `running <job>` or `idle`; `pause` / `resume` are the owner's.
+    re-queued until its `--retry-until`; a night job whose night ends without a start moves to the next night. **Do not
+    start a second runner, wait on it, or poll it.** `night.py status` says `running <job>`, `settling for <job>` or `idle`;
+    `pause` / `resume` are the owner's.
   - **A box without it:** do not start the queue; the owner does (`night.py start`).
 - **One copy of each run.** `night.py list` shows every queued command; check it before adding. If a queued job
   already answers your question (the same gate or suite on tonight's tree, or a superset of it), do not queue another
