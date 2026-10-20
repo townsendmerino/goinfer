@@ -387,5 +387,54 @@ class QueueEnvironment(unittest.TestCase):
         self.assertIsNone(code, out)
 
 
+class LogFailureMarkers(unittest.TestCase):
+    """A job that exits 0 but prints a failure marker (--- FAIL, a FAIL line, FAILED, VOID) in its own output is FAILED; a line tagged
+    [expected] (a plant's red run) is exempt, and the runner's header (a note naming VOID) is not scanned."""
+
+    def setUp(self):
+        for d in (night.QUEUE, night.RUNNING):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+        self.rundir = Path(tempfile.mkdtemp(dir=_tmp))
+
+    def outcome(self, script, note=None):
+        night.QUEUE.mkdir(parents=True, exist_ok=True)
+        _seq[0] += 1
+        seq = 1_000_000 + _seq[0]
+        job = {"name": f"marker-{seq}", "cmd": ["/bin/sh", "-c", script], "cwd": _tmp, "est_min": 1.0, "timeout_min": 2.0,
+               "priority": 50, "seq": seq}
+        if note:
+            job["note"] = note
+        (night.QUEUE / f"{seq}-marker.json").write_text(json.dumps(job))
+        r = Runner(night.now() + dt.timedelta(hours=1), self.rundir)
+        with contextlib.redirect_stdout(io.StringIO()):
+            r.run()
+        return [x["outcome"] for x in r.results if x["name"] == job["name"]][0]
+
+    def test_markers_in_a_zero_exit_job_fail_it(self):
+        for line in ["--- FAIL: TestSomething (0.01s)", "    --- FAIL: TestSomething/sub (0.00s)", "FAIL\tgithub.com/x/y\t0.5s",
+                     "probe new FAILED", "VOID: no model at /m", "VOID-refused: the fit check read REFUSED"]:
+            got = self.outcome(f"echo 'step one'; echo '{line}'; exit 0")
+            self.assertTrue(got.startswith("FAILED rc=0"), f"{line!r}: outcome {got!r}")
+
+    def test_expected_lines_and_the_header_are_not_markers(self):
+        self.assertEqual(self.outcome("echo '[expected] --- FAIL: TestPlant (0.1s)'; echo '[expected] FAIL'; exit 0"), "ok")
+        self.assertEqual(self.outcome("echo 'all good: 0 FAILURES'; exit 0", note="VOID if the load is refused"), "ok")
+        self.assertEqual(self.outcome("echo clean; exit 0"), "ok")
+
+    def test_a_nonzero_exit_is_still_its_rc(self):
+        self.assertEqual(self.outcome("exit 3"), "FAILED rc=3")
+
+    def test_plant_without_the_scan_a_failure_reads_ok(self):
+        orig = night.failure_marker
+        night.failure_marker = lambda logp, start: None
+        try:
+            got = self.outcome("echo 'probe new FAILED'; exit 0")
+        finally:
+            night.failure_marker = orig
+        self.assertEqual(got, "ok", "with the scan removed the job reads ok: the scan is what catches it")
+
+
 if __name__ == "__main__":
     unittest.main()

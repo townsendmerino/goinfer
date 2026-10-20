@@ -38,8 +38,8 @@ the script exited 0 after failures:
 - **Tier 0:** `TestWindowedKV_expertCacheGetsTheGrant/routed_experts` failed at load. Fixture `gemma4-moe-kv-tiny` has
   moe_intermediate_size 16, and CUDA's int4 MoE needs a multiple of 32. That also made the plant's failure meaningless, since it
   failed at the same load.
-- **The probe:** the prompt was sized at about 4 characters per token. `docs/benchmarks.md` is 12,731 Mellum tokens (2.51 per
-  character-token), over `-ctx 8192`, so every request on both builds was an HTTP 400.
+- **The probe:** the prompt was sized at about 4 characters per token. `docs/benchmarks.md` is 12,731 Mellum tokens (2.51 characters
+  per token), over `-ctx 8192`, so every request on both builds was an HTTP 400.
 
 Changes, none to the prediction or the bands:
 - **Fixture:** the routed subtest loads a new sibling, `gemma4-moe-kv-tiny32`. It is `scripts/pin_gemma4_moe_kv_forward.py` with

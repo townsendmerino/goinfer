@@ -356,7 +356,9 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
   two passes' own measured spread).
 - **A night job must run with nobody watching.** Use the `docs/measurements/<campaign>/run-*.sh` shape: pinned revs
   or pre-built binaries (the tree may move before tonight), durable log/record paths, no prompts, nothing that
-  needs a Claude session alive. Its output also lands in `~/goinfer-logs/night/runs/<date>/<name>.log`.
+  needs a Claude session alive. Its output also lands in `~/goinfer-logs/night/runs/<date>/<name>.log`. `night.py` marks a job FAILED when
+  its own output carries a failure marker (`--- FAIL`, a `FAIL` line, `FAILED`, `VOID`) even if it exits 0; a line a job prints on
+  purpose, such as a plant's red run, is tagged `[expected]`. Still exit non-zero on any failure.
 - **One timed run per box** (TE9, `docs/completed/task-test-efficiency-2026-09.md`).
   - The `bench_peer*.py` harnesses and every `night.py` job hold `~/.goinfer-timing.lock` for their whole run
     (`scripts/timing_lock.py`). A second timed run refuses, naming the holder, and the holder's children inherit it.

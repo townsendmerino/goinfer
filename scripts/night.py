@@ -538,6 +538,28 @@ def cmd_start(a):
     print("In the morning: `python3 scripts/night.py morning`.")
 
 
+# FAILURE_MARKERS are the lines that make a job FAILED even when it exits 0: a script that prints a failure and exits 0 anyway (a missing
+# `exit 1` after a red step) otherwise reads ok in the morning summary. A line tagged "[expected]" is exempt: a plant's red run, which a
+# job prints on purpose, carries that tag.
+FAILURE_MARKERS = re.compile(r"^\s*--- FAIL|^FAIL\b|\bFAILED\b|\bVOID\b")
+
+
+def failure_marker(logp, start):
+    """The first line of the job's own output (logp from byte offset start) that carries a failure marker, or None."""
+    try:
+        with open(logp, "rb") as f:
+            f.seek(start)
+            text = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("=== END "):
+            break
+        if "[expected]" not in line and FAILURE_MARKERS.search(line):
+            return line.strip()
+    return None
+
+
 class Runner:
     def __init__(self, deadline, rundir):
         self.deadline = deadline
@@ -700,6 +722,7 @@ class Runner:
                     f.write(f"=== {k:<8} {j[k]}\n")
             f.write(f"=== START    {t0.strftime('%F %T %Z')}  loadavg {os.getloadavg()[0]:.2f}\n")
             f.flush()
+            j["_out_from"] = f.tell()  # where the job's own output starts: the header above (its note, its cmd) is not scanned
             # TE9: the job holds the timing lock, and its children (a run-*.sh, bench_peer.py) inherit it through the
             # environment. A timed run still going from the day, or from another checkout, is waited for up to
             # LOCK_WAIT_MIN; then this job is skipped, naming the holder, rather than measured on top of it.
@@ -750,6 +773,10 @@ class Runner:
         f.flush()
         if outcome is None:
             outcome = "ok" if rc == 0 else f"FAILED rc={rc}"
+        if outcome == "ok":
+            bad = failure_marker(logp, j.get("_out_from", 0))
+            if bad:
+                outcome = f"FAILED rc=0, log says: {bad[:120]}"
         return self.finish(j, t0, outcome, logp)
 
     def finish(self, j, t0, outcome, logp):
