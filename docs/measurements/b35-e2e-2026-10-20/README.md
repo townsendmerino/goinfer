@@ -42,6 +42,39 @@ The record also reports each warm turn's time as a fraction of cold.
 **Cost:** 7 server loads per size (about 12 s each, the 2026-10-18 probe) and 8 cold prefills per size (about 15 s at 4k, 39 s at 8k);
 about 4 + 7 minutes, plus two builds: queued at 20 minutes, timeout 45.
 
-## Result
+## Result: PASS (2026-10-20, nobara, 09:59:42–10:10:48 PDT)
 
-(after the run)
+`b35-e2e` on nobara's `night.py serve`, under the timing lock, B35 `fbae3175` against base `fa8efaa0`, driver 595.91.07, load
+average 0.34 at the start. Every row of `grade.py` is green at both sizes (`raw/grade.txt`; the record is `raw/gate.json`, the log
+`raw/run.log`).
+
+| size | turn | time to first token | prompt tokens | reused | of cold |
+|---|---|---|---|---|---|
+| 4096 | 1 (cold) | 15.62 s | 4,098 | 0 | |
+| 4096 | 2 | 2.36 s | 4,130 | 3,584 | 0.149 |
+| 4096 | 3 | 2.48 s | 4,150 | 3,584 | 0.157 |
+| 4096 | cold control | 15.82 s | 4,172 | 0 | |
+| 8192 | 1 (cold) | 39.06 s | 8,146 | 0 | |
+| 8192 | 2 | 3.05 s | 8,177 | 7,680 | 0.077 |
+| 8192 | 3 | 3.19 s | 8,197 | 7,680 | 0.080 |
+| 8192 | cold control | 39.76 s | 8,219 | 0 | |
+
+- **I1, warm = cold:** turns 2 and 3 restored from the kept state gave the same tokens and the same logprobs, digit for digit, as a
+  cold prefill of the same request on a fresh server, at both sizes.
+- **I2, cold output unchanged:** B35's cold turns 1, 2 and 3 equal the base build's, digit for digit.
+- **I3:** the streamed and logprob runs gave the same replies.
+- **R1:** warm turns reused 3,584 (4k) and 7,680 (8k) prompt tokens; every cold request reused none.
+- **T1:** each warm turn's time to first token is 1.02–1.17 × the cold control's time scaled to the rows it still prefilled (bar 1.5).
+
+**What the warm turns still prefill.** The kept state lands on the CUDA pass grid (512 rows): turn 1's Keep (4,094 at 4k) rounds
+down to 3,584, so turn 2 prefills 546 rows. Turn 2's own prefill, 3,584 to 4,130, is a single pass with no boundary below its Keep,
+so it keeps nothing newer and turn 3 restores turn 1's state again (566 rows). The kept point advances only when a later prefill
+crosses a pass boundary below its Keep, so a warm turn re-prefills up to about one pass plus whatever the conversation has added since
+the last state kept. Placing the save at Keep itself (a pass split there) would bring a warm turn down to the new messages alone; that
+is a follow-up, not part of this gate.
+
+**Lock overlap:** none during the run. The job took nobara's lock at 09:58:42, when tack's C6 4.1 screen released it. A read-only
+`night.py status` over ssh ran at about 09:59, during the job's settle and before its first timed request, and the next one at 10:17,
+after the job had ended. Earlier that morning the B35 day checks ran on the Mac beside tack's screen, which timed nobara: load on
+tack's harness box only. The three tack cells that overlapped this session's nobara touches at 08:35–08:47 were kept, with the overlap
+listed in tack's own record (Francis, 2026-10-20).
