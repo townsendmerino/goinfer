@@ -1,6 +1,6 @@
 # Task: `--kv f16` and `--kv i8` delivered on every backend, family and path (2026-10)
 
-> **Status: PLAN, not funded phase by phase yet. Filed 2026-10-20 at the owner's request: a KV precision the caller asks for
+> **Status: APPROVED 2026-10-20 (owner: D1 refuse, D2 honor, D3 WebGPU in scope, D4 the recommended order; §6). Phase 0 is next. Filed 2026-10-20 at the owner's request: a KV precision the caller asks for
 > is the precision the caller gets, on every backend, every family and every path. Supersedes B39 (CUDA int8 KV, a
 > candidate), which becomes phase 2 here.** The facts about the code were read at main `8494a91d`. Nothing here is
 > measured; the sizes are estimates.
@@ -14,7 +14,7 @@
    `auto` changes only through its own gate and the owner's word, as the CUDA and CPU f16 defaults did. Nothing in this
    plan moves a default.
 3. The library's zero value stays f32. f32 stays the exact reference every gate compares against.
-4. **An explicit request is honoured whatever its quality reads.** The kernel gates (§4, G1 to G3) decide whether a
+4. **An explicit request is honored whatever its quality reads.** The kernel gates (§4, G1 to G3) decide whether a
    precision is *implemented correctly* on a path; the quality read (G4) is a published number, not a refusal. Quality
    decides only what `auto` may pick and what the docs and the banner say. The one exception is a numeric failure, not a
    quality one: f16 overflow (§4, G5), which is fixed by design, not declined.
@@ -43,7 +43,7 @@ the CPU, Metal and WebGPU int8 caches already use (`decoder/kvcache.go`, `metal/
 | MLA latent cache (DeepSeek, Kimi) | yes | none (CUDA declines, named) | none |
 
 Also wrong today: the `--kv` help text (`kvHelp` in `internal/loadflags/loadflags.go`) claims i8 for "the GPU residency cache", and
-B39's "State today" line says i8 is honoured on Metal and WebGPU without the prefill and family declines above.
+B39's "State today" line says i8 is honored on Metal and WebGPU without the prefill and family declines above.
 
 **aikit** loads no goinfer model and has no KV setting (`go.mod` has no goinfer dependency), so it has nothing to build.
 **tack** starts `goinfer-serve` with its own arguments (tack's `startPilotServer`) and passes `--kv` through when it sets one.
@@ -99,7 +99,7 @@ different cache and its range needs G5 first.
 ### Phase 4 — CPU: f16 and int8 for every family and path (M: 3 to 5 days, Mac)
 
 - MoE: the acc64 attention kernel reads f16 and int8. `kvInt8OK` excludes MoE because a quantized cache "would reopen"
-  expert-routing stability; G4 measures that rather than assuming it, and an explicit request is honoured either way (§1.4).
+  expert-routing stability; G4 measures that rather than assuming it, and an explicit request is honored either way (§1.4).
 - The own-loop families (Gemma 4, Qwen3.5 and the other hybrids) read f16 and int8 through their own attention.
 - CPU batched decode: `cpuBatchCacheEligible` admits f16 and int8 caches.
 
@@ -110,7 +110,7 @@ owner decision D3 can move it out.
 
 ### Phase 6 — cross-cutting paths (M, both boxes)
 
-- Speculative decode and drafters: the drafter's cache follows the target's request unless `--draft-kv` says otherwise;
+- Speculative decode and drafters: the drafter's cache follows the target's request unless a drafter KV flag says otherwise;
   verify runs at the target's precision.
 - Session save and restore on disk: the precision and the scales are in the format, and a restore at another precision
   refuses by name (the share root already separates precisions).
@@ -155,9 +155,13 @@ phase 0's table gives the first real count of cells to move.
 
 ## 6. For the owner
 
+**Owner, 2026-10-20, before any code: D1 refuse the load; D2 honor explicit requests whatever G4 reads; D3 WebGPU stays in
+scope; D4 the recommended order (phase 0 now, CUDA int8 before the CUDA family widening).**
+
+
 - **D1:** an explicit precision that cannot be delivered **refuses the load** (recommended), or loads at f32 with a warning
   on stderr and in the banner. Refusing is the contract; a warning is easy to miss in a script.
-- **D2:** explicit requests are honoured whatever G4 reads, with G4 published and only `auto` held to it (recommended,
+- **D2:** explicit requests are honored whatever G4 reads, with G4 published and only `auto` held to it (recommended,
   §1.4), or a family that fails G4 is refused that precision.
 - **D3:** WebGPU in scope (phase 5 as written), or out of scope with a named refusal.
 - **D4:** order. Recommended: phase 0 now; CUDA int8 (2) before the CUDA family widening (1) if the 8 GB card's context is
