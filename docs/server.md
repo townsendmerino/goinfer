@@ -892,6 +892,10 @@ to ignore.**
   through. `GET /v1/models` advertises it in the model's own entry (`fast_model`); the alias is not an entry of its own, so a listing is still one model. A
   model served under the alias's name takes the name. `-log-requests` ends a request that named the alias with ` fast=1`. `connect`
   points Claude Code's small/fast model and opencode's `small_model` at it. A request under the model's own name is unchanged.
+- **The KV precision a request ran at.** `--kv f32`, `f16` or `i8` is delivered on the path the load resolves to, or the load refuses
+  at startup and says why (`docs/kv-precision-matrix.md` has every backend and family; `auto` is the backend's pick). The banner's
+  context line prints each cache's precision with the one requested, and `-log-requests` gives every generating request ` kv=<f32|f16|i8|n/a>`,
+  the precision of the cache it wrote.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

@@ -170,7 +170,7 @@ func TestIDsCarried_tinyFallbackAndKV(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	lineRE := regexp.MustCompile(`^request: POST /v1/responses model=tiny status=200 prompt_tokens=(\d+) completion_tokens=(\d+) ttft=\S+ total=\d+ms reused=(\d+) slot=(\d+) div=(\S+) canon=([01]) ids=(\d+/\d+) ids_fallback=(\S+)$`)
+	lineRE := regexp.MustCompile(`^request: POST /v1/responses model=tiny status=200 prompt_tokens=(\d+) completion_tokens=(\d+) ttft=\S+ total=\d+ms reused=(\d+) slot=(\d+) div=(\S+) canon=([01]) ids=(\d+/\d+) ids_fallback=(\S+) kv=(f32|f16|i8|n/a)$`)
 	type arm struct {
 		name                 string
 		body                 map[string]any

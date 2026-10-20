@@ -39,7 +39,7 @@ func TestRequestLog_oneLinePerGenerationRequest(t *testing.T) {
 		return resp, b
 	}
 	lines := func() []string { return strings.Split(strings.TrimRight(logbuf.String(), "\n"), "\n") }
-	re := regexp.MustCompile(`^request: POST /v1/chat/completions model=(\S+) status=(\d+) prompt_tokens=(\S+) completion_tokens=(\S+) ttft=(\S+) total=(\d+)ms reused=(\S+) slot=(\S+) div=(\S+) canon=([01-]) ids=(\S+) ids_fallback=(\S+)$`)
+	re := regexp.MustCompile(`^request: POST /v1/chat/completions model=(\S+) status=(\d+) prompt_tokens=(\S+) completion_tokens=(\S+) ttft=(\S+) total=(\d+)ms reused=(\S+) slot=(\S+) div=(\S+) canon=([01-]) ids=(\S+) ids_fallback=(\S+) kv=(f32|f16|i8|n/a)$`)
 
 	// 1. A normal request: the line's counts are the response's own usage.
 	resp, body := post(`{"model":"tiny","max_tokens":4,"temperature":0,"messages":[{"role":"user","content":"Hi"}]}`)
