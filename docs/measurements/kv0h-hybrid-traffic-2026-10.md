@@ -116,4 +116,23 @@ bodies or text (KV0's policy; the bodies stay outside the repository).
 
 ### 1.9 Amendments
 
-*(none yet; the model choice and the contexts go here after the pilot, before the first study session)*
+**Amendment A1 (2026-10-20, before the pilot and before any study session; owner's three additions).**
+1. **The ground-truth reading is confirmed:** a rendering that matches the server's logged length and SHA-256 identifies the prompt ids exactly, so a
+   record exists and nothing is added to the server.
+2. **Per-request invariant.** For every request, `slot=` (the length of the sequence the slot held before it, first generation) must equal the
+   **verified prompt length plus the number of generated ids** (`--log-token-ids`) of the generation the server served immediately before it
+   (server order, last generation of the previous request). Every request that fails it is reported, with the difference, in the readings. A
+   failure is not corrected and not dropped: the study reports whether the failures share one offset (for example one stop token not
+   committed), and for each category boundary it counts the requests whose class would change at that offset, so a reader can see how much of the
+   A/B line rests on an off-by-one. The classification uses the committed sequence as defined in §1.4 (prompt plus generated ids as logged).
+3. **Pilot addition: a Claude Code first-request fit check** of the 9B at its KV0-sized context, about 28K (`-ctx 28672`, KV0's Claude Code
+   context), on nobara. If the server does not build a resident path at that context, or the first request is declined or not served, **the
+   fallback decision (Qwen3.6-35B-A3B) is taken before the study, not during it.**
+4. **Swap guard: this run uses the default guard** (the server's own `VmSwap` over its pid and descendants at 512 MB over baseline, with the system
+   backstop at 4,096 MB), **not KV0's `swap_guard_mb` 4,096 override.** The session driver sets no `GOINFER_SWAP_GUARD` (the plan has no
+   `swap_guard_mb`). If the guard stops a session, it is reported as stopped in the readings and is not dropped; a session whose server answers 503
+   `halted` is re-run as §1.2 says, and both the stop and the re-run are listed.
+5. **Builds recorded here:** the serve build is main **`94a6b973`** (`~/serve-cuda-94a6b973`, built from main with B36, Option A, B37 and the
+   later merges, under the timing lock), and this record's branch is `kv0h-2026-10` (registration at `129fbae0`, driver copy at `bd312720`).
+
+*(The model choice and the contexts go here as amendment A2 after the pilot, before the first study session.)*

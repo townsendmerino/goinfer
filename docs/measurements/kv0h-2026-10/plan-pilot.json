@@ -7,11 +7,39 @@
    "name": "pilot-qwen35-9b-20k",
    "model": "/home/francis/models/Qwen3.5-9B-Q4_K_M.gguf",
    "ctx": 20480,
-   "serve_args": ["--kv-sessions", "1"],
+   "serve_args": [
+    "--kv-sessions",
+    "1"
+   ],
    "run_timeout": 1200,
    "sessions": [
-    {"agent": "opencode", "task": "chain", "rep": 1},
-    {"agent": "codex", "task": "chain", "rep": 1}
+    {
+     "agent": "opencode",
+     "task": "chain",
+     "rep": 1
+    },
+    {
+     "agent": "codex",
+     "task": "chain",
+     "rep": 1
+    }
+   ]
+  },
+  {
+   "name": "pilot-qwen35-9b-28k-cc",
+   "model": "/home/francis/models/Qwen3.5-9B-Q4_K_M.gguf",
+   "ctx": 28672,
+   "serve_args": [
+    "--kv-sessions",
+    "1"
+   ],
+   "run_timeout": 1500,
+   "sessions": [
+    {
+     "agent": "claude-code",
+     "task": "chain",
+     "rep": 1
+    }
    ]
   }
  ]
