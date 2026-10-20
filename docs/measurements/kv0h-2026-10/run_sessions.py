@@ -59,7 +59,8 @@ def main():
         STATE["phase"] = f"serve {c['name']}"
         logdir = os.path.join(a.out, "logs"); os.makedirs(logdir, exist_ok=True)
         argv = [plan["serve"], "--model", c["model"], "--backend", "cuda", "--ctx", str(c["ctx"]), "--addr", f"127.0.0.1:{port}", "--log-requests",
-                "--log-token-ids", os.path.join(logdir, f"tokenids-{c['name']}.jsonl")] + c.get("serve_args", [])
+                "--log-token-ids", os.path.join(logdir, f"tokenids-{c['name']}.jsonl")] \
+               + (["--ids-key-file", plan["ids_key_file"]] if plan.get("ids_key_file") else []) + c.get("serve_args", [])
         slog = open(os.path.join(logdir, f"serve-{c['name']}.log"), "a")
         srv = subprocess.Popen(argv, stdout=slog, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True,
                                env=({**os.environ, "GOINFER_SWAP_GUARD": str(plan["swap_guard_mb"])} if "swap_guard_mb" in plan else dict(os.environ)))

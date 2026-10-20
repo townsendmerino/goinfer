@@ -14,7 +14,9 @@ python3 -u "$K/run_sessions.py" "$PLAN" "$OUT" "$BODIES"; rc=$?
 echo "sessions rc=$rc $(date '+%T')"
 MODEL=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['configs'][0]['model'])" "$PLAN")
 echo "== tokenize the recorded bodies with $MODEL (one model per plan)"
-(cd "$R" && KV0_BODIES="$BODIES" KV0_GGUF="$MODEL" KV0_OUT="$OUT/ids.jsonl" go test -count=1 -run '^TestKV0_tokenizeBodies$' -v ./internal/serveapp/ 2>&1 | tail -4)
+KEYFILE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('ids_key_file',''))" "$PLAN")
+NAME=$(python3 -c "import os,sys; print(os.path.splitext(os.path.basename(sys.argv[1]))[0])" "$MODEL")
+(cd "$R" && KV0_BODIES="$BODIES" KV0_GGUF="$MODEL" KV0_OUT="$OUT/ids.jsonl" KV0_IDS_KEY_FILE="$KEYFILE" KV0_MODEL_NAME="$NAME" go test -count=1 -run '^TestKV0_tokenizeBodies$' -v ./internal/serveapp/ 2>&1 | tail -4)
 for CFG in $(python3 -c "import json,sys; print(' '.join(c['name'] for c in json.load(open(sys.argv[1]))['configs']))" "$PLAN"); do
   [ -f "$OUT/logs/tokenids-$CFG.jsonl" ] || { echo "no token-id log for $CFG"; continue; }
   python3 "$K/analyze_h.py" --sessions "$OUT/sessions.jsonl" --wire "$OUT" --ids "$OUT/ids.jsonl" --tokenids "$OUT/logs/tokenids-$CFG.jsonl" \

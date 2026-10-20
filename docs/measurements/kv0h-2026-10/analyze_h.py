@@ -68,10 +68,17 @@ def parse_serve_log(path):
         def iv(x):
             try:
                 return int(x.rstrip("ms"))
-            except (TypeError, ValueError):
+            except (AttributeError, TypeError, ValueError):
                 return None
+        u, _, c = (d.get("ids") or "").partition("/")
+        used, carried = (int(u) if u.isdigit() else 0), (int(c) if c.isdigit() else 0)
+        fmt = iv(d.get("ids_fmt")) or 0
+        # carried-id class (the owner's per-harness count): the request's carried assistant turns whose ids were used with template formatting replaced,
+        # used without, carried but not used (a fallback reason), or no turn carried ids at all
+        cls = "fmt" if fmt > 0 else ("nofmt" if used > 0 else ("unused" if carried > 0 else "none"))
         rows.append(dict(route=ln.split()[2], status=iv(d.get("status")), n=iv(d.get("prompt_tokens")), ttft_ms=iv(d.get("ttft")), reused=iv(d.get("reused")),
-                         slot=iv(d.get("slot")), div=iv(d.get("div")), canon=d.get("canon")))
+                         slot=iv(d.get("slot")), div=iv(d.get("div")), canon=d.get("canon"), ids_used=used, ids_carried=carried, ids_fmt=fmt, carried_class=cls,
+                         ids_fallback=d.get("ids_fallback")))
     return rows
 
 
@@ -125,6 +132,7 @@ def main():
         q["gen"] = g["gen"]; q["reused"] = g.get("reused"); q["slot"] = g.get("slot"); q["n"] = g["prompt_len"]
         sl = slog[q["gi"]] if aligned else None
         q["ttft_ms"] = sl["ttft_ms"] if sl else None
+        q["carried_class"] = sl["carried_class"] if sl else None; q["ids_fallback"] = sl["ids_fallback"] if sl else None
         q["log_consistent"] = (sl is not None and sl["n"] == q["n"] and sl["reused"] == q["reused"] and sl["slot"] == q["slot"])
     order = sorted(ok, key=lambda q: q["gi"])
     # 2. the invariant: slot == prompt_len + len(gen) of the generation served immediately before (server order, all generations, not only accepted ones)
@@ -144,7 +152,8 @@ def main():
         s = q["s"]; ids = q["ids"]; n = len(ids)
         tkey = (s["id"], hash(tuple(ids[:200]))); thread_of[id(q)] = tkey
         row = dict(session=s["id"], agent=s["agent"], task=s["task"], seq=q["w"]["seq"], gi=q["gi"], n=n, reused=q["reused"], slot=q["slot"],
-                   ttft_ms=q["ttft_ms"], log_consistent=q["log_consistent"], gen_len=len(q["gen"]))
+                   ttft_ms=q["ttft_ms"], log_consistent=q["log_consistent"], gen_len=len(q["gen"]),
+                   carried_class=q["carried_class"], ids_fallback=q["ids_fallback"])
         p = last.get(tkey)
         if p is None:
             row["cat"] = "N"
@@ -203,7 +212,11 @@ def main():
                 if br:
                     c["projected_s"].append(sk / br)
         denom = sum(max(0, r["n"] - (r["reused"] or 0)) for r in rs)
-        agg[agent] = dict(requests=len(rs), tokens_processed_today=denom, categories={k: dict(count=v["count"], tokens_processed_today=v["tokens_today"],
+        cc = collections.Counter(r["carried_class"] for r in rs)
+        cross = collections.defaultdict(lambda: collections.Counter())
+        for r in rs:
+            cross[r["cat"]][r["carried_class"]] += 1
+        agg[agent] = dict(requests=len(rs), tokens_processed_today=denom, carried_ids=dict(cc), carried_ids_by_category={k: dict(v) for k, v in sorted(cross.items())}, categories={k: dict(count=v["count"], tokens_processed_today=v["tokens_today"],
                           share_of_tokens_today=(v["tokens_today"] / denom if denom else None), skip_tokens=v["skip_tokens"], skip_share=(v["skip_tokens"] / denom if denom else None),
                           median_ttft_s=statistics.median(v["ttft_s"]) if v["ttft_s"] else None, median_projected_saving_s=statistics.median(v["projected_s"]) if v["projected_s"] else None,
                           projected_s_total=sum(v["projected_s"])) for k, v in sorted(cats.items())})
