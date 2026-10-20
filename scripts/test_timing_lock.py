@@ -168,7 +168,7 @@ class TimingLockTest(unittest.TestCase):
         """A git repo holding copies of touched.py and timing_lock.py and no .go file, so touched.py has nothing to build."""
         repo = os.path.join(self.dir.name, "repo")
         os.makedirs(os.path.join(repo, "scripts"))
-        for f in ("touched.py", "timing_lock.py"):
+        for f in ("touched.py", "touched_scans.py", "timing_lock.py"):
             shutil.copy(os.path.join(HERE, f), os.path.join(repo, "scripts", f))
         for c in (["init", "-q"], ["add", "."], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
             subprocess.run(["git", *c], cwd=repo, check=True, capture_output=True)
@@ -203,6 +203,90 @@ class TimingLockTest(unittest.TestCase):
             r = subprocess.run(["bash", os.path.join(HERE, script)], cwd=root, env=self.env, capture_output=True, text=True)
             self.assertEqual(r.returncode, 75, f"{script}: {r.stdout}{r.stderr}")
             self.assertIn(f"pid {h.pid}", r.stderr, script)
+
+    # --- status names a dead recorded holder and whoever keeps the flock; it never changes or deletes the file ---
+
+    def dead_pid(self):
+        p = subprocess.Popen([sys.executable, "-c", "pass"])
+        p.wait()
+        return p.pid
+
+    def write_record(self, pid):
+        import json
+        rec = {"pid": pid, "host": __import__("platform").node(), "label": "gone", "token": "t", "cmd": "the-dead-run",
+               "start": "2026-10-19T09:36:05-07:00"}
+        with open(self.lock, "w") as f:
+            f.write(json.dumps(rec) + "\n")
+
+    def orphan_holder(self):
+        """A parent takes the lock and exits without releasing it; its child, which inherited the descriptor, keeps the flock."""
+        code = (
+            "import os, subprocess, sys; sys.path.insert(0, %r); import timing_lock as t\n"
+            "l = t.acquire(label='parent')\n"
+            "c = subprocess.Popen([sys.executable, '-c', 'import time; print(1, flush=True); time.sleep(60)'], pass_fds=[l.fd], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)\n"
+            "c.stdout.readline()\n"
+            "print(os.getpid(), c.pid, flush=True)\n"
+            "os._exit(0)\n"
+        ) % HERE
+        r = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True, timeout=30)
+        parent, child = map(int, r.stdout.split())
+        self.addCleanup(lambda: os.kill(child, signal.SIGKILL) if timing_lock.pid_alive(child) else None)
+        return parent, child
+
+    def status(self):
+        return subprocess.run([sys.executable, TL, "status"], env=self.env, capture_output=True, text=True)
+
+    def test_status_shows_a_live_holder_alive_and_lists_the_fd_holders(self):
+        h = self.holder()
+        r = self.status()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("recorded pid alive", r.stdout)
+        self.assertIn(f"pid {h.pid}:", r.stdout)
+        self.assertNotIn("DEAD", r.stdout)
+
+    def test_status_names_a_dead_recorded_holder_whose_flock_a_child_keeps(self):
+        parent, child = self.orphan_holder()
+        self.assertFalse(timing_lock.pid_alive(parent))
+        with open(self.lock) as f:
+            before = f.read()
+        r = self.status()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("recorded pid DEAD", r.stdout)
+        self.assertIn(f"pid {child}:", r.stdout)  # the process actually keeping the flock
+        self.assertIn("nothing is cleared or deleted", r.stdout)
+        with open(self.lock) as f:
+            self.assertEqual(f.read(), before, "status must not touch the lock file")
+        self.assertEqual(self.status().returncode, 1, "reading it twice changes nothing")
+
+    def test_status_calls_a_dead_record_with_a_free_flock_stale_and_leaves_it(self):
+        self.write_record(self.dead_pid())
+        with open(self.lock) as f:
+            before = f.read()
+        r = self.status()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("stale record left by a dead holder", r.stdout)
+        with open(self.lock) as f:
+            self.assertEqual(f.read(), before)
+
+    def test_plant_a_pid_check_that_always_says_alive_loses_the_dead_signal(self):
+        import contextlib
+        import io
+        parent, child = self.orphan_holder()
+
+        def out():
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                timing_lock.cmd_status(None)
+            return buf.getvalue()
+
+        self.assertIn("recorded pid DEAD", out())  # the real check
+        real = timing_lock.pid_alive
+        timing_lock.pid_alive = lambda pid: True
+        try:
+            planted = out()
+        finally:
+            timing_lock.pid_alive = real
+        self.assertNotIn("recorded pid DEAD", planted, "the plant must make the dead-holder assertions above fail, or they prove nothing")
 
 
 if __name__ == "__main__":
