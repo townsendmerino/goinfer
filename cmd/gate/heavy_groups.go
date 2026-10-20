@@ -43,6 +43,7 @@ var heavyFamilies = []heavyFamily{
 	{Group: "gpt-oss-20b", Large: true, Rank: 98, re: regexp.MustCompile(`(?i)gpt-oss-20b`)},
 	{Group: "7b-8b", Large: true, Rank: 90, re: regexp.MustCompile(`(?i)qwen2\.5-7b|command-r7b|aya-expanse-8b`)},
 	{Group: "nemotron-h", Large: true, Rank: 85, re: regexp.MustCompile(`(?i)nemotron-h-4b|nemotron-nano-9b|nvidia_NVIDIA-Nemotron`)},
+	{Group: "mellum2.1", Large: true, Rank: 75, re: regexp.MustCompile(`(?i)mellum2\.1`)},
 	{Group: "gemma4-e4b", Large: true, Rank: 80, re: regexp.MustCompile(`(?i)gemma-4-e4b`)},
 	{Group: "gemma3-4b", Rank: 50, re: regexp.MustCompile(`(?i)gemma-3-4b`)},
 	{Group: "qwen3-4b", Rank: 49, re: regexp.MustCompile(`(?i)qwen3-4b`)},
