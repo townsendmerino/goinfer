@@ -12,6 +12,9 @@ type KVScope struct {
 	// (chat.Template.PrefixBoundary), 0 when the route does not know. A prefix snapshot is taken there during the cold prefill when the part of the
 	// prompt after it is longer than a windowed layer's rollback (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md).
 	Boundary int
+	// checkpoint: the caller restores a recurrent checkpoint when the acquire scores one (residentCheckpointRestore). Set only by
+	// a path that also saves one after its prefill (generateInto); every other path keeps today's strict-extension rule.
+	checkpoint bool
 }
 
 type kvScopeKey struct{}

@@ -222,20 +222,20 @@ func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *
 // residentReuseLenIn is residentReuseLen for a request under scope sc that takes the bound slot as it is: the caller
 // prefills into it and commits there.
 func (m *Model) residentReuseLenIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope) int {
-	n := m.boundReuseLen(prompt, imgs, lora, sc.Namespace)
+	n := m.boundReuseLen(prompt, imgs, lora, sc.Namespace, false)
 	m.kvSetNS(m.kvSlots().Bound(), sc.Namespace)
 	return n
 }
 
-// boundReuseLen scores the bound slot for prompt. A live slot's announcement is a running generation's, so it is not
-// marked unrecorded.
-func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string) int {
+// boundReuseLen scores the bound slot for prompt; ckpt lets a recurrent sequence's checkpoint score (kvmgr.Request.Checkpoint).
+// A live slot's announcement is a running generation's, so it is not marked unrecorded.
+func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string, ckpt bool) int {
 	a := m.kvSlots()
 	m.kvAdopt(a)
 	if !a.Live(a.Bound()) {
 		a.Unrecorded(a.Bound())
 	}
-	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora, ns))
+	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora, ns, ckpt))
 }
 
 // ResidentKVCopier is the optional capability of a resident with several KV slots (ResidentKVSlotter) to copy rows
@@ -280,11 +280,12 @@ func (m *Model) residentReuseFloor(reuse int) int {
 
 // reuseLenOf is how many leading tokens of prompt the sequence in slot holds, the bound slot's or a parked one's,
 // before the resident's own floor.
-func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string) int {
+func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string, ckpt bool) int {
 	if m.residentReuseDisabled() {
 		return 0
 	}
-	return m.kvSlots().Score(slot, kvmgr.Request{Root: m.kvRootIn(lora, ns), Tokens: prompt, Images: kvSpansOfClaims(imgs)}, m.hasRecurrentState())
+	req := kvmgr.Request{Root: m.kvRootIn(lora, ns), Tokens: prompt, Images: kvSpansOfClaims(imgs), Checkpoint: ckpt}
+	return m.kvSlots().Score(slot, req, m.hasRecurrentState())
 }
 
 // residentSlotCount is how many resident KV slots a generation may choose among: what the resident allocated
@@ -330,6 +331,11 @@ type kvAcquired struct {
 	// slotLen and match are the bound slot's record length before this request and the prompt's common prefix with it
 	// (Generation.PrefillSlot and PrefillMatch).
 	slotLen, match int
+	// ckptRestored is the position a recurrent checkpoint was restored at (0: none), ckptDur the copy's time, and ckptDeclined why a
+	// checkpoint hit fell back to a cold prefill (residentCheckpointRestore).
+	ckptRestored int
+	ckptDur      time.Duration
+	ckptDeclined string
 }
 
 // residentAcquireIn is residentAcquireSlot for a request under scope sc. When another slot's published blocks hold
@@ -348,6 +354,9 @@ func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora 
 		a := m.kvSlots()
 		if sq := a.Seq(a.Bound()); sq != nil {
 			acq.slotLen, acq.match = sq.Len(), commonPrefixLen(sq.Tokens(), prompt)
+		}
+		if sc.checkpoint {
+			m.residentCheckpointRestore(prompt, &acq) // before the manager records what the request skips
 		}
 		a.Acquired(a.Bound(), acq.reuse, prompt)
 		m.kvSetNS(a.Bound(), sc.Namespace)
@@ -372,16 +381,16 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 	a := m.kvSlots()
 	a.Resize(n)
 	if n <= 1 {
-		return kvAcquired{reuse: m.boundReuseLen(prompt, imgs, lora, sc.Namespace), src: -1}
+		return kvAcquired{reuse: m.boundReuseLen(prompt, imgs, lora, sc.Namespace, sc.checkpoint), src: -1}
 	}
 	scores, lens, firsts, uses := make([]int, n), make([]int, n), make([]int, n), make([]uint64, n)
 	bound := a.Bound()
 	if bound >= len(busy) || !busy[bound] { // a busy slot is never picked, and its record is another generation's
-		scores[bound] = m.boundReuseLen(prompt, imgs, lora, sc.Namespace) // adopts the bound record first, and asks its window
+		scores[bound] = m.boundReuseLen(prompt, imgs, lora, sc.Namespace, false) // adopts the bound record first, and asks its window
 	}
 	for i := range n {
 		if i != bound {
-			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace)
+			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace, false)
 		}
 		lens[i], firsts[i], uses[i] = a.Len(i), a.FirstPrompt(i), a.Use(i)
 	}
@@ -562,6 +571,10 @@ func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentI
 	a := m.kvSlots()
 	a.Commit(a.Bound(), m.kvRootIn(lora, m.kvNSOf(a.Bound())), ids, kvSpansOfBlocks(m.resImgBlocks), len(prompt), m.kvClassMap())
 	m.kvSetLora(a.Bound(), lora)
+	if m.resCkptPrompt != nil && slices.Equal(m.resCkptPrompt, prompt) {
+		a.SetCheckpoint(a.Bound(), len(prompt)) // this generation saved the state at the end of this prompt
+	}
+	m.resCkptPrompt = nil
 }
 
 // residentPublishPrompt publishes the full blocks of prompt, which the generation in slot has just finished
@@ -582,6 +595,7 @@ func (m *Model) residentForgetIDs() {
 	m.resIDs = nil
 	m.resImgBlocks = nil
 	m.resDrafterSynced = nil // any resident write invalidates a block drafter's own reuse too
+	m.resCkptPrompt = nil
 	if m.kv != nil {
 		m.kv.Forget(m.kv.Bound())
 	}

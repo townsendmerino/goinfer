@@ -66,6 +66,9 @@ type Model struct {
 	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
 	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
 	resImgBlocks []residentImageBlock
+	// resCkptPrompt is the prompt whose end the resident's recurrent checkpoint holds, saved by the running generation and
+	// recorded on its sequence by the commit (residentCheckpointSave, residentCommitIDs); nil otherwise.
+	resCkptPrompt []int
 	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with resIDs; nil means no drafter context is
 	// trustworthy for reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit resIDs without
 	// touching a block drafter's context, so the token prefix can match while the drafter's state does not reflect it. Cleared
@@ -1871,6 +1874,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 			}()
 		} else {
+			scope.checkpoint = m.recurrentCheckpointer() != nil      // KV8a: this path restores, and saves after its prefill
 			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
 			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
@@ -1878,11 +1882,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				g.err = err
 				return
 			}
-			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq) // before the first decode step writes past the prompt
+			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq)           // before the first decode step writes past the prompt
+			g.CheckpointSave, g.CheckpointSaved = m.residentCheckpointSave(prompt) // likewise: the state at the end of the prompt
 		}
 		g.PrefillReused, g.PrefillSlot, g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
 		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
 		g.KVSnapRestored, g.KVSnapRestore = acq.snapRows, acq.snapDur
+		g.CheckpointRestored, g.CheckpointRestore, g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
 		gpuPos = len(prompt)
 	} else {
 		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
@@ -2446,6 +2452,14 @@ type Generation struct {
 	// restore's wall time. 0 when none did.
 	KVSnapRestored int
 	KVSnapRestore  time.Duration
+	// CheckpointRestored is the position a recurrent checkpoint was restored at for this prefill (0: none), CheckpointRestore its
+	// copy's time, CheckpointDeclined why a checkpoint hit prefilled cold instead; CheckpointSaved reports whether the state at the
+	// end of this prompt was saved for the next request, CheckpointSave that copy's time (KV8a, residentCheckpointSave).
+	CheckpointRestored int
+	CheckpointRestore  time.Duration
+	CheckpointDeclined string
+	CheckpointSaved    bool
+	CheckpointSave     time.Duration
 	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ResidentImagePrefill, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a
