@@ -46,6 +46,19 @@ No host fallback is built.
 | **4. The cost on every turn** | (a) Tier 0: the save is ordered before the first chained decode step (`decoder/residency.go:ResidentGreedyChain`, `ResidentSampleChain`), checked through the caller with a recording fake; plant: the save moved after the first step goes red. (b) Tier 1, inside gate 5's run: each request logs the save's own device time; **p95 ≤ 12 ms** (2% of Codex's 0.6 s A median). (c) A turns' median time to first token is reported beside KV0-H's (2.2 s opencode, 0.6 s Codex) as context, not graded as a ratio, since the two runs are different sessions (`CLAUDE.md`, TE3). | The save time is not logged on every request. | (b) every request of gate 5. | Inside gate 5. |
 | **5. The measured win** (tier 1, nobara, day run, detached) | KV0-H's opencode and Codex configuration exactly: `plan-study-h20.json` (10 sessions, KV0's tasks and repetitions), Qwen3.5-9B Q4_K_M, `-ctx 20480`, `--kv-sessions 1`, f32 KV, the ids key, the default swap guard, the same KV0-H driver commit (`2272c3cf9`), with the serve build swapped for KV8a's. **Bar: the pooled median time to first token of B turns is at least 17.1 s (half of the projected 34.2 s) below KV0-H's pooled B median.** A turns as gate 4(c). KV0-H's readings are the do-nothing arm. | A session that KV0-H's own rules would void (the length and SHA-256 check, the swap guard, a 503 `halted`); the timing lock shared with another timed run; the 2026-10-19 heavy-load rule at a request's start; a different driver than KV0-H's 595.91.07. | KV0-H's plan once. If fewer than 10 B turns occur, add one `chain` session per harness (KV0-H's own stopping rule), once. | KV0-H took 26.5 min, with B turns cold at 27–38 s; with KV8a, about 15–20 min. Queued at 30, timeout 60. |
 
+**Gate 2(b)'s source, the owner's answer (2026-10-20, before any run):** the pilot holds 27 recorded bodies, so 24 consecutive pairs; only
+`/v1/chat/completions` returns logprobs, and only opencode's 9 pairs use it. **Every pilot pair runs on its own route:** opencode (chat
+completions) compared on the served tokens and the text of every logprob; Codex (`/v1/responses`) and Claude Code (`/v1/messages`) on the
+served token ids and the prompt hash from `--log-token-ids`. Any difference fails. opencode and Codex at `-ctx 20480`, Claude Code at
+`-ctx 32768` (KV0-H amendment A3's rule context), each with `--kv-sessions 1`, f32 KV and the ids key.
+- **Arms:** one warm server per context: for each pair, turn 1 (the earlier body) then turn 2 (the next), greedy, 24 new tokens, not
+  streamed. Turn 2 restores the checkpoint at turn 1's end, since the server's own 24-token reply is not the reply the client recorded.
+  Turn 1 must report a cold prefill (`reused=0`), or that server is restarted and turn 1 sent again. The cold arm is one server per context
+  with resident reuse off (`GOINFER_NO_RESIDENT_REUSE=1`): every request on it prefills from position 0.
+- **Void per request:** a turn 2 that does not report a restore at turn 1's prompt length (a title request's pair, or a strict extension)
+  did not test the restore. The gate is void below 15 tested pairs.
+- **Cost:** about 40 minutes on nobara (17 pairs at about 65 s, 7 Claude Code pairs at about 170 s, four loads).
+
 **Corrected 2026-10-20, before any run:** gate 2(a) first said "another prompt takes the slot's live state" between the turns. On the one
 slot KV8a serves that would overwrite the attention rows before `c` that the restore relies on, so it is not the case KV8a meets; decode
 steps moving the live state are. **Scope of the bar:** bit-identity holds where every row before `c` was written by a prefill of the same
