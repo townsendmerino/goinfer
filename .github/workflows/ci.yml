@@ -220,6 +220,11 @@ jobs:
       - name: night queue tests
         run: python3 scripts/test_night.py
 
+      # The timing lock (scripts/timing_lock.py): one timed run per box, loaders shared. Its own tests, and that touched.py,
+      # gate quick and refresh_parity_hashes.sh hold it shared while they run (a timed run tried beside them is refused). About 20 s.
+      - name: timing lock tests
+        run: cd scripts && python3 test_timing_lock.py && python3 test_day_loaders.py
+
       # bench_peer.py's sampled configs must send temperature, top_p and top_k to every arm: an omitted field takes that
       # engine's default (for goinfer, the model's recommended value), which applies to one arm only. Stdlib, milliseconds.
       - name: bench_peer sampling payloads

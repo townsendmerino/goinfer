@@ -349,8 +349,9 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
   - **A box running `night.py serve` runs its queue itself** (B38; `scripts/install-night-agent.sh` installs it as a
     launchd agent or a systemd user service). Each job starts when its gates allow: its `--not-before` hour, the
     heavy-load rule above, and the timing lock free through a settle that holds the lock. A job that exits 75 is
-    re-queued until its `--retry-until`. **Do not start a second runner, wait on it, or poll it.** `night.py status`
-    says `running <job>` or `idle`; `pause` / `resume` are the owner's.
+    re-queued until its `--retry-until`; a night job whose night ends without a start moves to the next night. **Do not
+    start a second runner, wait on it, or poll it.** `night.py status` says `running <job>`, `settling for <job>` or `idle`;
+    `pause` / `resume` are the owner's.
   - **A box without it:** do not start the queue; the owner does (`night.py start`).
 - **One copy of each run.** `night.py list` shows every queued command; check it before adding. If a queued job
   already answers your question (the same gate or suite on tonight's tree, or a superset of it), do not queue another
@@ -371,12 +372,16 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
   - A `run-*.sh` whose timed step is not one of those harnesses (a `go test` measurement gate, a sweep loop) wraps it:
     `python3 scripts/timing_lock.py run --label <name> -- <cmd>`.
   - A refusal means another run is measuring on this box. Wait for it (`timing_lock.py status` names it); never delete
-    the lock file to get past it.
-  - **The day tools check it too.** `touched.py`, `refresh_parity_hashes.sh` and `gate quick` refuse while a timed run holds
-    the lock, naming the holder: a build or test run beside it contaminates its timings. `bench_compare.sh` takes the lock
+    the lock file to get past it: its holder keeps its flock on the deleted file, and the next run takes a new one beside it.
+  - **Work that only adds load holds it shared:** `timing_lock.py run --shared -- <cmd>` (`acquire(shared=True)` in Python) for
+    a gate, a test run, or a screen that times another box. Loaders run together. A timed run (exclusive, the default) waits
+    for every loader and refuses naming them, and no loader starts under a timed run.
+  - **The day tools hold it shared.** `touched.py`, `refresh_parity_hashes.sh` and `gate quick` hold the lock shared while
+    they run, so a timed run waits for them, and they refuse while a timed run holds it, naming the holder (exit 75): a
+    build or test run beside it contaminates its timings. `bench_compare.sh` takes the lock
     itself. `--wait SECONDS` waits for the holder, and `--ignore-timing-lock` overrides, for emergencies only, and the
-    overlap then goes in that run's record. Any other build or test you run by hand checks first:
-    `python3 scripts/timing_lock.py check --tool <what>`.
+    overlap then goes in that run's record. Any other build or test you run by hand holds it shared the same way:
+    `python3 scripts/timing_lock.py run --shared --label <what> -- <cmd>`.
   - **A command that touches the other box checks that box's lock in the same command, and ends if it is held:**
     `ssh <box> 'cd <repo> && python3 scripts/timing_lock.py status' && ssh <box> '<the work>'` — one invocation, not a
     check in one call and the work in the next. An ssh session takes no lock of its own, so nothing else stops it: on

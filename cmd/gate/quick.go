@@ -46,6 +46,8 @@ type quickOpts struct {
 	RecordDir  string
 	NoLint     bool
 	IgnoreLock bool
+	// UnderLock is set on quick's own re-run under `timing_lock.py run --shared` (quickUnderSharedLock): this process holds the lock.
+	UnderLock  bool
 	Verbose    bool
 	Progress   io.Writer // heartbeat + per-job lines; nil = os.Stderr
 	TimingLock string    // repo-relative lock script; "" = do not check
@@ -72,6 +74,7 @@ func runQuick(argv []string, w io.Writer) int {
 	noRecord := fs.Bool("no-record", false, "with -full, do not write the run's record ("+quickRecordDirDefault+"), which `gate release` reads")
 	fs.BoolVar(&o.NoLint, "no-lint", false, "skip gofmt / vet / build / staticcheck")
 	fs.BoolVar(&o.IgnoreLock, "ignore-timing-lock", false, "run although a timed run holds the timing lock (it will contaminate that run)")
+	fs.BoolVar(&o.UnderLock, "under-timing-lock", false, "internal: set by quick's own re-run under the shared timing lock")
 	fs.BoolVar(&o.Verbose, "v", false, "print every selection reason and every skip")
 	if err := fs.Parse(argv); err != nil {
 		return 2
@@ -88,6 +91,9 @@ func runQuick(argv []string, w io.Writer) int {
 		fmt.Fprintf(os.Stderr, "gate quick: %v\n", err)
 		return 2
 	}
+	if rc, ok := quickUnderSharedLock(root, argv, o.IgnoreLock || o.UnderLock); ok {
+		return rc
+	}
 	qc, err := realQuickConfig(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gate quick: %v\n", err)
@@ -98,6 +104,28 @@ func runQuick(argv []string, w io.Writer) int {
 		o.RecordDir = quickRecordDirDefault
 	}
 	return quickMain(qc, o, w)
+}
+
+// quickUnderSharedLock runs quick again under `scripts/timing_lock.py run --shared` and returns its exit code, with ok true: quick
+// loads every core, so it holds the timing lock shared for its whole run (a timed run waits for it, and it does not start under
+// one; 75 when a timed run holds it). Under a holder already (a loader, or a timed run such as a night job) the wrapper inherits
+// its hold. ok is false, and the caller goes on in this process, when skip is set (-ignore-timing-lock, or this is the re-run,
+// -under-timing-lock) or the tree has no lock script.
+func quickUnderSharedLock(root string, argv []string, skip bool) (int, bool) {
+	script := filepath.Join(root, "scripts", "timing_lock.py")
+	if skip {
+		return 0, false
+	}
+	if _, err := os.Stat(script); err != nil {
+		return 0, false
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return 0, false
+	}
+	cmd := exec.Command("python3", append([]string{script, "run", "--shared", "--label", "gate quick", "--", exe, "quick", "-under-timing-lock"}, argv...)...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return exitCode(cmd.Run()), true
 }
 
 // quickMain returns the exit code: 0 green, 1 red, 2 refused.
@@ -118,7 +146,9 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 	// TE9: one timed run per box. quick is not timed, but it loads every core, so it must not run
 	// under a run that is — two runs on one box measure each other, and nothing downstream can tell.
 	lockNote := "not checked"
-	if o.TimingLock != "" {
+	if o.UnderLock {
+		lockNote = "held shared by this run (a timed run waits for it)"
+	} else if o.TimingLock != "" {
 		if _, err := os.Stat(filepath.Join(qc.Root, o.TimingLock)); err == nil {
 			cmd := exec.Command("python3", o.TimingLock, "status")
 			cmd.Dir = qc.Root

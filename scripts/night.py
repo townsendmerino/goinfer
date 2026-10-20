@@ -26,7 +26,9 @@ usage:
   night.py drop NAME                 remove a queued job
   night.py serve                     the always-on runner (B38), run by scripts/install-night-agent.sh's launchd agent or systemd
                                      user service: starts each job when its gates allow (below), holds no lock while idle
-  night.py status [--json]           under serve the first line is "running <job> ..." or "idle, N queued ..."
+  night.py status [--json]           under serve the first line is "running <job> ...", "settling for <job> ..." (the lock held
+                                     before the job starts) or "idle, N queued ..."; --json's phase is idle, settling or running,
+                                     and a settling runner reads busy (idle false, running names the job)
   night.py pause | resume            serve: start no new job / start again (under serve `stop` is a pause; `stop --now` also
                                      kills the running job, which is re-queued)
   night.py update-runner             move the runner's pinned checkout (~/goinfer-runner) to origin/main; serve restarts on it
@@ -38,6 +40,7 @@ its retry time has passed; the box is not under heavy load (1-min load at most h
 runs the before_queue step and the job under that lock. A job that exits 75 (its own check refused) is re-queued every
 RETRY_BACKOFF_MIN until --retry-until, or RETRY_MAX tries, then recorded VOID-refused. It holds the machine awake while a job
 runs and, on AC power, while a night-only job is due within AWAKE_AHEAD_H hours, and the day's SUMMARY.md says when it slept.
+A night-only job whose night ends without it starting moves to the next night (its retry-until with it); SUMMARY.md lists it.
 
 A job is a SELF-CONTAINED command, normally a docs/measurements/<campaign>/run-*.sh: pinned revs or
 binaries, its own durable log/record paths, nothing interactive, no Claude session needed. It runs with
@@ -872,6 +875,15 @@ class Runner:
                 lines.append("**No job was started.** Fix the command (or the hooks file) and start again.")
             if h["tail"]:
                 lines += ["", "```", *h["tail"], "```"]
+        missed = []
+        try:
+            missed = [json.loads(x) for x in (self.rundir / "missed.jsonl").read_text().splitlines() if x.strip()]
+        except (OSError, ValueError):
+            pass
+        if missed:
+            lines += ["", "## Missed its night (moved to the next)", ""]
+            lines += [f"- {m['name']}: the night {m['night']} ended without a start; last wait: {m['last_wait']}. Now not before "
+                      f"{m['moved_to']}." for m in missed]
         if self.slept:
             lines += ["", "**The machine slept:** " + "; ".join(self.slept) + ". A job running across a sleep was timed over it."]
         ok = sum(1 for r in rs if r["outcome"] == "ok")
@@ -1023,6 +1035,8 @@ class Server(Runner):
         self.exit_when_idle = False
         self.hook_retry_at = None  # a failed before_queue is tried again from here, not every poll
         self.last, self.waits, self.since = None, [], None  # what the last pass did and why each job waits, for status
+        self.phase, self.job = "idle", None  # "settling" (the lock held, before a job) or "running", and that job
+        self.last_why = {}  # each queued job's last reason to wait, for a missed night's record
         self.drift0 = None  # wall clock minus monotonic at the last pass: it grows by however long the machine slept
 
     # The box: methods so a test can stand in a clock, a load and a memory reading.
@@ -1060,6 +1074,32 @@ class Server(Runner):
             if t + dt.timedelta(minutes=j["est_min"]) > end:
                 return f"would end after the {hm(end)} deadline"
         return self.heavy(j)
+
+    def roll_missed(self, j, t):
+        """A night-only job whose night ended without it starting moves to the next night: its not-before, and its retry-until by the
+        same shift, with its retry count cleared. Recorded in the day's missed.jsonl, which SUMMARY.md lists. Returns whether it moved."""
+        nb = dt.datetime.fromisoformat(j["not_before"])
+        end = night_end(nb)
+        if t < end:
+            return False
+        new = night_start(nb.strftime("%H:%M"), t)
+        shift = new - nb
+        q = {k: v for k, v in j.items() if not k.startswith("_")}
+        q["not_before"] = new.isoformat(timespec="seconds")
+        if q.get("retry_until"):
+            q["retry_until"] = (dt.datetime.fromisoformat(q["retry_until"]) + shift).isoformat(timespec="seconds")
+        q.pop("next_try", None)
+        q["attempts"] = 0
+        q["missed_nights"] = j.get("missed_nights", 0) + 1
+        write_json(Path(j["_file"]), q)
+        why = self.last_why.get(j["name"], "no pass saw it")
+        rec = {"name": j["name"], "night": f"{nb.isoformat(timespec='minutes')} to {end.isoformat(timespec='minutes')}",
+               "last_wait": why, "moved_to": q["not_before"]}
+        with open(self.rundir / "missed.jsonl", "a") as f:
+            f.write(json.dumps(rec) + "\n")
+        self.log(f"{j['name']}: its night ({hm(nb)}-{hm(end)}) ended without a start (last wait: {why}); moved to {q['not_before']}")
+        self.summary()
+        return True
 
     def settle_locked(self, j):
         """Waits, holding the lock, for the box to stay quiet for SERVE_SETTLE_S. Returns why it did not, or None."""
@@ -1149,7 +1189,10 @@ class Server(Runner):
         self.hold_awake(self.awake_wanted(t))
         pick, waits = None, []
         for j in queued():
+            if j.get("not_before") and self.roll_missed(j, t):
+                continue
             why = self.eligible(j, t)
+            self.last_why[j["name"]] = why
             if why is None:
                 pick = j
                 break
@@ -1165,6 +1208,7 @@ class Server(Runner):
             return "lock held"
         try:
             self.last = f"settling for {pick['name']}"
+            self.phase, self.job = "settling", pick["name"]
             self.publish()
             if why := self.settle_locked(pick):
                 return f"settle: {why}"
@@ -1176,9 +1220,12 @@ class Server(Runner):
             self.hook_retry_at = None
             self.hold_awake(True)
             self.log(f"starting {pick['name']} (est {fmt_min(pick['est_min'])})")
+            self.phase = "running"
+            self.publish()
             self.run_job(pick, lock=lock)
             return "ran"
         finally:
+            self.phase, self.job = "idle", None
             lock.release()
 
     def publish(self):
@@ -1186,7 +1233,7 @@ class Server(Runner):
         if self.since is None:
             return  # tick() outside serve(): a test
         write_json(SERVEFILE, {"pid": os.getpid(), "since": self.since, "last": self.last, "waits": self.waits,
-                               "at": self.clock().isoformat(timespec="seconds")})
+                               "phase": self.phase, "job": self.job, "at": self.clock().isoformat(timespec="seconds")})
 
     def serve(self):
         PIDFILE.write_text(str(os.getpid()))
@@ -1231,14 +1278,18 @@ def cmd_serve(a):
 
 
 def status_json():
-    """The runner as data, for a launcher that must wait for it: {"runner": "serve"|"night"|None, "running": <job>|None, ...}."""
+    """The runner as data, for a launcher that must wait for it: {"runner": "serve"|"night"|None, "running": <job>|None, "phase":
+    "idle"|"settling"|"running"|None, ...}. A settling runner holds the timing lock for its job: running names it and idle is false."""
     pid, st = runner_pid(), read_json(STATE)
     kind = ("serve" if serve_pid() else "night") if pid else None
     jobs = queued()
     sv = read_json(SERVEFILE) if kind == "serve" else None
     running_job = (st or {}).get("name") if pid else None
+    phase = "running" if running_job else "idle" if pid else None
+    if not running_job and sv and sv.get("phase") == "settling":
+        running_job, phase = sv.get("job"), "settling"  # the lock is held for this job: busy, though it has not started
     return {"runner": kind, "pid": pid, "paused": PAUSEFLAG.exists(), "running": running_job, "idle": running_job is None,
-            "last": (sv or {}).get("last"), "waits": (sv or {}).get("waits") or [],
+            "phase": phase, "last": (sv or {}).get("last"), "waits": (sv or {}).get("waits") or [],
             "queued": [j["name"] for j in jobs], "lock_free": timing_lock.held_by_other() is None}
 
 
@@ -1291,8 +1342,8 @@ def cmd_status(a):
         who = f"(serve, pid {pid}, up since {sv.get('since')})"
         if st:
             print(f"running {st['name']} {who}")
-        elif (sv.get("last") or "").startswith("settling for "):
-            print(f"{sv['last']}, the timing lock held {who}")
+        elif sv.get("phase") == "settling":
+            print(f"settling for {sv.get('job')}, the timing lock held {who}")
         else:
             print(f"{'paused' if PAUSEFLAG.exists() else 'idle'}, {len(queued())} queued {who}: last pass {sv.get('last') or 'none yet'}")
         if not st:

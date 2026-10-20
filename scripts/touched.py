@@ -94,8 +94,18 @@ def main():
             wait, args = float(args[1]), args[2:]
         else:
             ignore, args = True, args[1:]
-    if (rc := timing_lock.day_check("touched.py", wait_s=wait, ignore=ignore)) != 0:
+    lock, rc = timing_lock.day_hold("touched.py", wait_s=wait, ignore=ignore)
+    if rc != 0:
         return rc
+    try:
+        return run(args, run_for)
+    finally:
+        if lock:
+            lock.release()
+
+
+def run(args, run_for):
+    """touched.py's work, run while main holds the timing lock shared."""
     while args and args[0] == "-run":
         run_for[args[2]] = args[1]
         args = args[3:]

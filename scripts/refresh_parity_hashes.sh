@@ -30,13 +30,18 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# The goldens load the box for minutes, so they must not run under a timed run (TE9). `--ignore-timing-lock`
-# as the first argument overrides, for emergencies; `--wait SECONDS` waits for the holder.
-lockargs=()
+# The goldens load the box for minutes, so they hold the timing lock shared for the whole run (TE9): a timed run waits for
+# them, and they do not start under one. `--ignore-timing-lock` as the first argument runs with no hold, for emergencies;
+# `--wait SECONDS` waits for a timed run to finish. Under a holder (a loader or a timed run) the hold is inherited.
+waitargs=() ignore=
 while [ $# -gt 0 ] && { [ "$1" = "--ignore-timing-lock" ] || [ "$1" = "--wait" ]; }; do
-	if [ "$1" = "--wait" ]; then lockargs+=(--wait "$2"); shift 2; else lockargs+=(--ignore-timing-lock); shift; fi
+	if [ "$1" = "--wait" ]; then waitargs=(--wait "$2"); shift 2; else ignore=1; shift; fi
 done
-python3 scripts/timing_lock.py check --tool refresh_parity_hashes.sh ${lockargs[@]+"${lockargs[@]}"} || exit $?
+if [ -n "$ignore" ]; then
+	python3 scripts/timing_lock.py check --tool refresh_parity_hashes.sh --ignore-timing-lock || exit $?
+elif [ -z "${GOINFER_TIMING_LOCK:-}" ]; then
+	exec python3 scripts/timing_lock.py run --shared --label refresh_parity_hashes.sh ${waitargs[@]+"${waitargs[@]}"} -- bash scripts/refresh_parity_hashes.sh "$@"
+fi
 
 # PRE-FLIGHT: the manifest must be CLEAN before the refresh runs.
 #
