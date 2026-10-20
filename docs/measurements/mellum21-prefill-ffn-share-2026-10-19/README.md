@@ -29,3 +29,27 @@ Both are `decode path: cuda-resident (int4)`, one conversation. (The scoping not
 
 The expert FFN is nearly all of a cold prefill (96.7% at 4096). Attention is 2%. Any lever that does not shorten the expert FFN cannot move Mellum2.1's
 prefill by more than a few percent; one that cuts the FFN by a factor f moves it by about 1 / (0.033 + 0.967 / f).
+
+## Option A: grouped, exact expert kernels (built 2026-10-19, `cuda/moe_rows.cu`)
+
+The 4096-token profile above shows the expert FFN at 96.7% and about 14.5 us per launch (12k launches per layer per 512-row chunk: three per (row, rank) pair), so the expert-major path was launch-bound.
+`gemv_w4a8_moe_rows` and `glu_quant_rows` take all of one expert's pairs in one launch per stage (three launches per expert) and keep each pair's accumulator in the order, with the rounding, of
+`gemv_w4a8_moe` (the audited `moe.ptx`), so the result is the same bits; the weight words are loaded once per tile of 8 pairs.
+
+**Tier 0** (`go test -tags 'cuda goinfer_testhooks' -run '^TestMoERows_'`, 8 s): the kernels equal the per-pair kernels on 228 output sets at Mellum2.1's geometry (gate||up 1792 x 2304,
+down 2304 x 896, a tiny K that is only the ragged tail; 1, 7, 8, 9 and 37 pairs; permuted activation rows and output index; both activations for `glu_quant_rows`). The residual of every prompt row equals
+the per-pair path's on both tiny MoE fixtures at M = 5, 40 and 133 with the cache evicting (the existing `TestMoEExpertMajorCUDA_residualIdentical` and `_bitIdentical` also pass, and now run the grouped
+path). The plant, each pair's output filed under the wrong rank, makes 2560 of 2560 residual elements differ.
+
+**Tier 1** (`TestMoERows_realMellumIdentityAndAB`, real Mellum2.1 `.giw`, `--moe-cache-experts -ctx 8192`, 55 slots per layer, 2026-10-19 17:37:28 to 17:39:48 PDT, under the lock, serial; exploratory, one session):
+
+| | per-pair (before) | grouped |
+|---|---|---|
+| residual of all 512 rows, 28 layers | reference | **identical on all 1,179,648 elements** |
+| 4096-token cold prefill, run order off, on, on, off | 39.896 s, 39.999 s | 11.264 s, 11.325 s |
+| rate | 102.5 tok/s (9.75 ms/token) | **362.6 tok/s (2.76 ms/token)** |
+| paired ratio | | **3.54x** (3.55x and 3.53x in the two pairs) |
+
+The last row's logits are identical across all four runs. 16k was not measured; the 3.5x is at M = 4096. Part of the remainder is expert DMA (about 3 MB per admitted expert, synchronous) and the
+dense attention half, and a profile of the grouped path is the next reading if more is wanted.
+

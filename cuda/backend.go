@@ -1005,6 +1005,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 						r.bMoeFold = Pipeline{}
 					}
 				}
+				// The grouped expert kernels. Optional: without both, expert-major keeps its per-pair launches.
+				if rmod, e7 := r.dev.CompileLibrary(moeRowsPTX); e7 == nil {
+					var e8, e9 error
+					r.bMoeRows, e8 = r.dev.NewComputePipeline(rmod, "gemv_w4a8_moe_rows")
+					r.bGluRows, e9 = r.dev.NewComputePipeline(rmod, "glu_quant_rows")
+					if e8 != nil || e9 != nil {
+						r.bMoeRows, r.bGluRows = Pipeline{}, Pipeline{}
+					}
+				}
 				if lnmod, e6 := r.dev.CompileLibrary(layernormQuantPTX); e6 == nil {
 					load(&r.bLN, lnmod, "layernorm_quant_batched")
 				}

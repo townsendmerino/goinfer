@@ -106,6 +106,12 @@ var argmaxPTX []byte
 //go:embed testdata/moe_fold.ptx
 var moeFoldPTX []byte
 
+// moeRowsPTX: gemv_w4a8_moe_rows and glu_quant_rows, the grouped, bit-exact expert kernels of the expert-major MoE prefill: one launch per expert and
+// stage instead of one per (row, rank) pair. See cuda/moe_rows.cu.
+//
+//go:embed testdata/moe_rows.ptx
+var moeRowsPTX []byte
+
 // audioEncoderPTX: audio_gelu_erf (the exact GELU, aikit's contract kernel on the device) and audio_im2col_k3 (the Whisper-style encoder's two Conv1d stems as
 // GEMMs). See cuda/audio_encoder.cu.
 //
