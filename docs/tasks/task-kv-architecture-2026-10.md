@@ -1,5 +1,12 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **2026-10-20: KV8a added, ahead of KV4.** KV0-H (`docs/measurements/kv0h-hybrid-traffic-2026-10.md`) drove opencode
+> and Codex on Qwen3.5-9B (CUDA, nobara). 29 of its 69 follow-up requests diverged inside the previous reply, where today's
+> exact-extension rule re-prefills the whole prompt. Its registered rule pulls an end-of-prompt checkpoint ahead of KV4
+> (71.7% of the prompt tokens processed would be skipped, 34.2 s median per affected turn; both projections). KV8a (§6)
+> is that checkpoint on today's single slot; KV8 keeps the rest. Parking was not measured (no C requests) and stays in
+> KV7 and KV8. Added on the owner's word ("yes write it") after the KV0-H readings.
+
 > **Status: SCOPED 2026-10-13. KV0 DONE 2026-10-13 (§6, KV0). KV1 DONE 2026-10-14: every gate read PASS
 > (`docs/measurements/kv1-2026-10-13.md`), merged to main. KV2 DONE 2026-10-15: the CUDA and Metal halves merged
 > (`772b1fb2`, PR #26); G5-C, the sharing gate on nobara, PASS (`docs/measurements/kv2-cuda-2026-10-15.md`); the donor
@@ -74,6 +81,7 @@ slot is gone; and every KV feature is built three or four times.
 | KV6 | keep slots with KV2's copies (**decided**, D3) | WebGPU | — | KV2 |
 | KV7 | tiers: host and disk, parking and resume | CUDA first, then all | M–L | KV4 |
 | KV8 | recurrent state pool and checkpoints | CUDA, Metal | L | KV4 (KV5 for Metal) |
+| KV8a | an end-of-prompt recurrent checkpoint on today's single slot (**added 2026-10-20**, pulled ahead of KV4 by KV0-H's rule) | CUDA, then Metal | S–M | KV0-H |
 | KV9 | the CPU path onto the manager (deferred by D2: CPU joins through KV2's copies) | CPU | M–L | KV2, D2 |
 | KV10 | long context and lower-precision blocks | all | M | KV4/KV5 |
 | KV11 | one residency manager for KV blocks and MoE experts (added 2026-10-13) | CUDA, then Metal | L | KV4, KV7 |
@@ -411,6 +419,11 @@ is MC4's identity gate extended to shared preambles.
 - **When to checkpoint.** Every block costs too much: at 62.8 MiB each, 40 blocks would be 2.5 GB. Checkpoints are taken
   only:
   1. **at commit**, the end of a completed generation. That covers the next turn and an edit back to this one;
+     **Corrected 2026-10-20 by KV0-H:** a checkpoint at commit covers only what the live state already continues (a strict
+     extension of the whole sequence). All 29 of KV0-H's B divergences sat inside the previous reply, 15 to 123 tokens in,
+     because the harness sends the reply back other than as generated (opencode drops the think block). The checkpoint that
+     serves the next turn is the one taken **where the prompt ends, before the reply** (KV8a). A checkpoint at commit pays
+     only for a client that sends the reply back exactly, and the live state already serves that client;
   2. **at a preamble boundary** that serve marks from the rendered template (the end of the system message and tools).
      That is where cross-conversation sharing pays;
   3. **optionally every N blocks** under a byte budget, with admission weighed by expected reuse. Marconi's policy, read
@@ -991,10 +1004,71 @@ KV2 merges when every arm on both boxes is read.
   - the checkpoint byte budget held;
   - more than one sequence for hybrids on CUDA and Metal, with MC3 identity.
 - **Size:** L. **Closes:** R-01 phase 2, FreeToken Lead 1, and MC4's recurrent item.
+- **KV8a ships first (2026-10-20):** the end-of-prompt checkpoint on the single slot. KV8 builds the pool, the other
+  checkpoint positions and admission on it, and keys its store as KV8a does.
 - **Note, 2026-10-20 (KV0-H check, `docs/measurements/kv0h-hybrid-traffic-2026-10.md`, amendment A5):** in the Claude Code check on Qwen3.5-9B (check data, 10 requests, one
   thread), **2 of the 8 D divergences sat 3 tokens into a new user message**, 25 tokens before the end of the previous prompt. **A message-boundary checkpoint would serve them; an
   end-of-prompt checkpoint would not.** The other 6 sat 1.5k to 3.6k tokens before the end (a rewritten history). It is two requests, under that study's bar of three, and it bears on
   where the checkpoint is taken, not only on whether.
+
+### KV8a — An end-of-prompt checkpoint on today's single slot (added 2026-10-20)
+
+- **Why (KV0-H, `docs/measurements/kv0h-hybrid-traffic-2026-10.md` §2).** On Qwen3.5-9B under opencode and Codex (CUDA,
+  nobara, f32 KV), 29 of 69 follow-up requests extended the previous prompt but not the previous reply (category B). All 29
+  diverge inside the reply, 15 to 123 tokens in (median 26). opencode sends no reasoning back, and its template re-renders
+  the reply without its think block; half of Codex's B requests carried ids, so carried ids do not remove B. Today each
+  re-prefills its whole 6.1k–9.4k-token prompt: median time to first token 37.6 s (opencode) and 27.3 s (Codex), against
+  2.2 s and 0.6 s for A. Restoring the state saved where the previous prompt ended would re-process 71 to 416 tokens
+  (median 201). Projected: 71.7% of the prompt tokens processed skipped, 34.2 s median per affected turn, 1,006 s over the
+  study's 29 B turns. Both bars of the registered rule (25%, 5 s) pass, so the rule pulls this ahead of KV4.
+- **What it is.** One checkpoint for the one resident slot hybrids already have (`decoder/resident_reuse.go:Model.residentSlotCount`
+  stays 1):
+  - **Save.** Once per request, when prefill has processed the whole prompt and before the first decode step, copy the slot's
+    recurrent state at position `c = len(prompt)`: every recurrent layer's state and its conv window, for both mixers
+    (`decoder/residency.go:ResidentMixer.Recurrent`, DeltaNet and Mamba). Saving at the end of prefill leaves every
+    prefill pass shaped as it is today.
+  - **Keep** the attention layers' KV as today. It is positional, so truncating to `c` is enough.
+  - **Restore** when the next request matches the slot's committed tokens through `c` but not through the end of the
+    committed sequence, and carries at least one token past `c`: copy the checkpoint into the live state, truncate the
+    attention KV to `c`, and prefill from `c`. §2's rule that at least one token is always recomputed holds, since the
+    request has tokens past `c`. A strict extension of the whole sequence keeps today's path (continue from the live state).
+    A divergence before `c`, an identical re-request, or a request with image spans stays cold, as today.
+  - **Score.** `internal/kvmgr/slots.go:scoreRecurrent` returns `c` in the restore case, where today it returns 0. Its image
+    rules are unchanged.
+  - **Where it lives.** Device memory if the load's memory plan admits it, host memory otherwise; the choice is registered
+    per backend before building. Its size comes from the state spec (§5.7: 62.8 MiB for Qwen3.6-35B-A3B, 149.6 MiB for the
+    27B; the 9B is measured in gate 1). The bytes are charged to the memory plan. When they do not fit, KV8a declines and the
+    slot behaves as today: fail closed.
+  - **Keyed** as §5.7's checkpoint store is keyed, `(chain hash at c, c)`, with one entry, so KV8 extends it rather than
+    replacing it.
+- **Not in KV8a** (KV8 keeps them): more than one state slot; checkpoints at commit, at a preamble boundary, at a message
+  boundary (KV8's 2026-10-20 note) or every N blocks; Marconi admission; cross-conversation reuse of recurrent state
+  (`decoder/session_share.go` and `decoder/kvsnap.go` keep refusing hybrids); MC3 batching; the image path
+  (`decoder/generate_vl.go` keeps its recurrent refusal); speculative rollback on hybrids (§5.7, out of scope). Parking
+  stays in KV7 and KV8. KV0-H measured no C requests, and its A5 records that this is not evidence against parking for
+  Claude Code on a larger card.
+- **Gates (sketch; whoever starts KV8a registers them first, as `CLAUDE.md` requires):**
+  1. **Bit-exact save and restore**, conv window included (spec/09: skipping the conv window gives wrong logits with no
+     error). The restored state equals the saved state byte for byte, every recurrent layer, on CUDA. Record the checkpoint's
+     bytes for the 9B.
+  2. **Agreement with a cold prefill.** On B-shaped fixtures (a conversation whose next prompt re-renders the previous reply
+     differently), compare the token stream after restore and suffix prefill against a cold prefill of the same prompt. Hold
+     it to the bar the strict-extension path (R-01 phase 0) was accepted on, since that path already continues from a prompt
+     prefilled in two parts. If that bar is not on record, register one before building.
+  3. **The cache-state grid** (`decoder/cachestate.go:cacheStateGrid`, §2) gains the save and restore paths, with a declared
+     cell for every kind of state. The recurrent `lcShare` cell ("no checkpoint to restore") changes with it. The grid stays
+     fail-closed.
+  4. **The cost on every turn.** The save runs on every request, used or not. Its added time to first token on A turns stays
+     inside noise against KV0-H's A medians (2.2 s opencode, 0.6 s Codex). With device-chained decode
+     (`decoder/residency.go:ResidentGreedyChain`, `decoder/residency.go:ResidentSampleChain`), the save is ordered before the
+     first chained decode step.
+  5. **The measured win.** Rerun KV0-H's opencode and Codex configuration with KV8a on: same model, card, tasks, f32 KV and
+     ids key. The bar: B turns' median time to first token falls by at least half the projected 34.2 s, and A turns do not
+     regress beyond noise. KV0-H's readings are the do-nothing arm.
+- **Order.** CUDA first, on nobara, where KV0-H ran. Metal follows with gates 1 to 4 on the Mac once CUDA passes; gate 5 on
+  Metal is a separate reading, if the owner wants it.
+- **Size:** S–M per backend (an estimate). **Needs:** KV0-H only, nothing from KV4. **Closes:** the B half of R-01 phase 2
+  and of FreeToken Lead 1; KV8 keeps the rest.
 
 ### KV9 — The CPU path (deferred by D2, 2026-10-13)
 
@@ -1086,6 +1160,8 @@ Added on the owner's word the same day, from the conversation that produced `doc
   and the doc records why.
 - **KV7 and KV8 can come before KV5** for CUDA users. **KV6 is closed (keep slots, D3).** **KV9 is deferred (D2).** **KV10 waits on
   KV4/KV5.**
+- **KV8a comes before KV4** (added 2026-10-20). KV0-H's registered rule pulled the end-of-prompt checkpoint forward. It
+  works on today's single slot and leaves the pool and the rest of the checkpoint policy to KV8.
 - **KV11 follows KV4 and KV7,** CUDA first, and is built only if its first measurement shows the fixed split costs
   something.
 - **Every phase leaves the tree consistent:** a backend not yet paged keeps working behind the slot adapter.
