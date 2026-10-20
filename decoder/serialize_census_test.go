@@ -63,7 +63,7 @@ var censusList = []string{
 	"../testdata/gemma4-moe-tiny", "../testdata/tiny-qwen2-moe",
 	// lfm2-tiny covers the conv mixer (shortConv) that serialize.go once dropped entirely (TestLFM2_serializeRoundTripsTheConvMixer).
 	"../testdata/lfm2-tiny", "../testdata/cohere2-tiny", "../testdata/gemma3-vl-tiny",
-	"../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-moe-kv-tiny",
+	"../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-moe-kv-tiny", "../testdata/gemma4-moe-kv-tiny32",
 	"../testdata/gemma4-moe-unified-tiny", "../testdata/glm-tiny-bias",
 	"../testdata/glm-tiny.gguf", "../testdata/qwen25vl-tiny", "testdata/qwen3_5_moe-tiny",
 	"../testdata/qwen3asr-tiny", // S14.3: Qwen3-ASR's decoder in the real checkpoint layout (thinker.*, nested config)
