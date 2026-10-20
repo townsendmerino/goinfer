@@ -1,7 +1,8 @@
 #!/bin/bash
 # KV8a gate 5 with gate 4(b) (README.md here): KV0-H's opencode and Codex configuration rerun with the KV8a serve build, KV0-H's own harness
-# pinned at 2272c3cf9, then grade5.py against KV0-H's readings. Runs only after gate 2(b) has passed. Queued on night.py (the job holds the
-# timing lock) as `bash run-kv8a-gate5.sh <sha>`. Exit 0 PASS, 1 FAIL, 2 VOID or could not run.
+# pinned at 2272c3cf9, then grade5.py against KV0-H's readings. It does not wait on gate 2(b) (the owner, 2026-10-20: gate 5 does not
+# depend on 2(b)'s amendment); the record names 2(b)'s state when it ran. Queued on night.py (the job holds the timing lock) as
+# `bash run-kv8a-gate5.sh <sha>`. Exit 0 PASS, 1 FAIL, 2 VOID or could not run.
 set -u
 SHA=${1:?the KV8a commit}
 B=$HOME/goinfer-bench/kv8a; R=$HOME/mycode/goinfer; H=$B/wt-kv0h; W=$B/wt
@@ -9,7 +10,7 @@ OUT=$B/gate5-$(date +%F-%H%M); BODIES=$B/bodies-gate5-$(date +%F-%H%M); mkdir -p
 exec > >(tee -a "$OUT/run.log") 2>&1
 echo "=== $(date '+%F %T %Z') start, pin $SHA; $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader); $(uptime)"
 G2=$(ls -td "$B"/gate2b-*/ 2>/dev/null | head -1)
-[ -n "$G2" ] && grep -q '^VERDICT PASS' "$G2/run.log" || { echo "VOID: gate 2(b) has not passed (${G2:-no record})"; exit 2; }
+echo "gate 2(b) when this ran: $( [ -n "$G2" ] && grep -h '^VERDICT' "$G2/run.log" || echo 'no record') (${G2:-none})"
 [ "$(nvidia-smi --query-gpu=driver_version --format=csv,noheader)" = 595.91.07 ] || { echo "VOID: driver is not KV0-H's 595.91.07"; exit 2; }
 [ -d "$H" ] || git -C "$R" worktree add -q --detach "$H" 2272c3cf9 || { echo "VOID: harness worktree"; exit 2; }
 [ "$(git -C "$H" rev-parse --short=9 HEAD)" = 2272c3cf9 ] || { echo "VOID: the harness worktree is not at 2272c3cf9"; exit 2; }
