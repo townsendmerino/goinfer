@@ -844,11 +844,16 @@ type cudaResident struct {
 	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
 	launchErr   error // sticky first launch error within a launchToken call (reset per token) — M23
 	layers      []cudaLayer
-	ctxExplicit bool  // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
-	ctxCap      int   // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
-	extraBytes  int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
-	lmW         cudaWQ
-	finalNorm   Buffer
+	ctxExplicit bool // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
+	ctxCap      int  // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): its device bytes (0: none kept), the copies that save and restore it, and
+	// why a load kept none.
+	ckptBytes             int64
+	ckptSave, ckptRestore []gpu.DeviceCopy
+	ckptDeclined          string
+	extraBytes            int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
+	lmW                   cudaWQ
+	finalNorm             Buffer
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
