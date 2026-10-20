@@ -24,6 +24,20 @@ usage:
   night.py stop [--now]              finish the current job, then stop  (--now: kill it too)
   night.py morning                   print the latest night's SUMMARY.md
   night.py drop NAME                 remove a queued job
+  night.py serve                     the always-on runner (B38), run by scripts/install-night-agent.sh's launchd agent or systemd
+                                     user service: starts each job when its gates allow (below), holds no lock while idle
+  night.py status [--json]           under serve the first line is "running <job> ..." or "idle, N queued ..."
+  night.py pause | resume            serve: start no new job / start again (under serve `stop` is a pause; `stop --now` also
+                                     kills the running job, which is re-queued)
+  night.py update-runner             move the runner's pinned checkout (~/goinfer-runner) to origin/main; serve restarts on it
+                                     when idle
+
+serve starts a job when: its --not-before HH:MM has passed and its estimate ends by the deadline after it (a night-only job);
+its retry time has passed; the box is not under heavy load (1-min load at most half the cores, free memory at least the job's
+--fit-need-gb plus 2 GB); and the timing lock is free. It takes the lock, then waits SERVE_SETTLE_S with the box quiet, then
+runs the before_queue step and the job under that lock. A job that exits 75 (its own check refused) is re-queued every
+RETRY_BACKOFF_MIN until --retry-until, or RETRY_MAX tries, then recorded VOID-refused. It holds the machine awake while a job
+runs and, on AC power, while a night-only job is due within AWAKE_AHEAD_H hours, and the day's SUMMARY.md says when it slept.
 
 A job is a SELF-CONTAINED command, normally a docs/measurements/<campaign>/run-*.sh: pinned revs or
 binaries, its own durable log/record paths, nothing interactive, no Claude session needed. It runs with
@@ -77,6 +91,16 @@ LOCK_WAIT_MIN = float(os.environ.get("NIGHT_LOCK_WAIT_MIN", "30"))  # TE9: minut
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 HOOKS = Path(os.environ.get("NIGHT_HOOKS", str(Path.home() / ".config" / "goinfer" / "night-hooks.toml"))).expanduser()
 HOOK_TIMEOUT_S = int(os.environ.get("NIGHT_HOOK_TIMEOUT_S", "120"))
+# The always-on runner (`serve`, docs/queue-engineering.md B38).
+PAUSEFLAG = ROOT / "PAUSE"       # serve starts no new job while this exists (`pause` / `resume`)
+SERVEFILE = ROOT / "serve.json"  # {"pid", "since"}: the runner going is the always-on one
+RETRY_RC = 75                    # EX_TEMPFAIL: a job's own fit check refused; the runner re-queues it after a backoff
+RETRY_BACKOFF_MIN = float(os.environ.get("NIGHT_RETRY_BACKOFF_MIN", "15"))
+RETRY_MAX = int(os.environ.get("NIGHT_RETRY_MAX", "8"))  # attempts when a job sets no --retry-until
+SERVE_POLL_S = float(os.environ.get("NIGHT_SERVE_POLL_S", "30"))
+SERVE_SETTLE_S = float(os.environ.get("NIGHT_SERVE_SETTLE_S", "60"))  # the lock held, the box quiet, this long before a job starts
+AWAKE_AHEAD_H = 12               # hold the machine awake when a night-only job is due within this many hours
+HEADROOM_MB = 2048               # the 2026-10-19 rule: free memory under a job's fit need plus 2 GB is heavy load
 
 
 # ---------------------------------------------------------------- helpers
@@ -305,6 +329,14 @@ def cmd_add(a):
                     f"{' by ' + j['by'] if j.get('by') else ''} (est {fmt_min(j['est_min'])}). It runs on tonight's "
                     f"tree, so a second copy would repeat it — name that job in your report instead. A repeat that "
                     f"is part of a pre-registered design goes in with --allow-duplicate.")
+    t = now()
+    extra = {}
+    if getattr(a, "not_before", None):
+        extra["not_before"] = night_start(a.not_before, t).isoformat(timespec="seconds")
+    if getattr(a, "retry_until", None):
+        extra["retry_until"] = parse_deadline(a.retry_until, t).isoformat(timespec="seconds")
+    if getattr(a, "fit_need_gb", None):
+        extra["fit_need_gb"] = a.fit_need_gb
     seq = int(time.time() * 1000)
     job = {
         "name": a.name,
@@ -321,6 +353,7 @@ def cmd_add(a):
         "host": platform.node(),
         "added": now().isoformat(timespec="seconds"),
         "seq": seq,
+        **extra,
     }
     write_json(QUEUE / f"{seq}-{a.name}.json", job)
     if a.est > SPLIT_WARN_MIN:
@@ -330,6 +363,10 @@ def cmd_add(a):
     total = sum(j["est_min"] for j in jobs)
     print(f"queued {a.name!r} (est {fmt_min(a.est)}, timeout {fmt_min(job['timeout_min'])}, rev {job['rev'] or '?'}"
           f"{' +dirty' if job['dirty'] else ''}). Tonight's queue: {len(jobs)} job(s), {fmt_min(total)}.")
+    if extra.get("not_before"):
+        print(f"night-only: not before {extra['not_before']}")
+    if extra.get("retry_until"):
+        print(f"an exit {RETRY_RC} (its own check refused) re-queues it every {fmt_min(RETRY_BACKOFF_MIN)} until {extra['retry_until']}")
 
 
 def hooks_config():
@@ -574,6 +611,8 @@ class Runner:
         self.results = [r for r in self.results if r]
         self.why_left = {}
         self.hook = None  # what before_queue did: {"cmd", "outcome", "ok", "secs", "tail"}
+        self.retries = False  # serve: an exit of RETRY_RC re-queues the job (finish) instead of failing it
+        self.slept = []  # serve: the sleeps it saw (note_sleep)
 
     def log(self, msg):
         print(f"[{now().strftime('%F %T %Z')}] {msg}", flush=True)
@@ -701,7 +740,9 @@ class Runner:
         c["_file"] = str(moved)
         return c
 
-    def run_job(self, j):
+    def run_job(self, j, lock=None):
+        """Runs one queued job. lock is a timing lock the caller already holds (serve takes it before settling); None: the job takes
+        it here, waiting up to LOCK_WAIT_MIN."""
         j = self.claim(j)
         if j is None:
             return None
@@ -726,17 +767,20 @@ class Runner:
             # TE9: the job holds the timing lock, and its children (a run-*.sh, bench_peer.py) inherit it through the
             # environment. A timed run still going from the day, or from another checkout, is waited for up to
             # LOCK_WAIT_MIN; then this job is skipped, naming the holder, rather than measured on top of it.
-            try:
-                lock = timing_lock.acquire(label=f"night.py job {name}", wait_s=LOCK_WAIT_MIN * 60,
-                                           cmd=shlex.join(j["cmd"]))
-            except timing_lock.Held as e:
-                f.write(f"=== could not start: {e}\n")
-                self.proc = None
-                return self.finish(j, t0, "skipped: timing lock held", logp)
+            own = lock is None
+            if own:
+                try:
+                    lock = timing_lock.acquire(label=f"night.py job {name}", wait_s=LOCK_WAIT_MIN * 60,
+                                               cmd=shlex.join(j["cmd"]))
+                except timing_lock.Held as e:
+                    f.write(f"=== could not start: {e}\n")
+                    self.proc = None
+                    return self.finish(j, t0, "skipped: timing lock held", logp)
             try:
                 return self._run_locked(j, name, cwd, t0, logp, f)
             finally:
-                lock.release()
+                if own:
+                    lock.release()
 
     def _run_locked(self, j, name, cwd, t0, logp, f):
         """The job itself: run_job calls this with the log open and the timing lock held."""
@@ -772,7 +816,7 @@ class Runner:
         f.write(f"\n=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
         f.flush()
         if outcome is None:
-            outcome = "ok" if rc == 0 else f"FAILED rc={rc}"
+            outcome = "ok" if rc == 0 else ("retry" if rc == RETRY_RC and self.retries else f"FAILED rc={rc}")
         if outcome == "ok":
             bad = failure_marker(logp, j.get("_out_from", 0))
             if bad:
@@ -785,6 +829,21 @@ class Runner:
         r.update(started=t0.isoformat(timespec="seconds"), ended=t1.isoformat(timespec="seconds"),
                  ran_min=round((t1 - t0).total_seconds() / 60, 1), outcome=outcome, log=str(logp))
         write_json(self.jobsdir / f"{j['seq']}-{j['name']}.json", r)
+        if outcome == "retry":
+            # The job's own check refused (exit RETRY_RC): back to the queue after a backoff, until its --retry-until (or RETRY_MAX tries).
+            attempts = j.get("attempts", 0) + 1
+            nxt = t1 + dt.timedelta(minutes=RETRY_BACKOFF_MIN)
+            until = dt.datetime.fromisoformat(j["retry_until"]) if j.get("retry_until") else None
+            if (until and nxt > until) or (not until and attempts >= RETRY_MAX):
+                r["outcome"] = outcome = (f"VOID-refused: its check refused {attempts} time(s), "
+                                          + (f"retry-until {hm(until)}" if until else f"{RETRY_MAX} tries"))
+            else:
+                q = {k: v for k, v in j.items() if not k.startswith("_")}
+                q.update(attempts=attempts, next_try=nxt.isoformat(timespec="seconds"))
+                QUEUE.mkdir(parents=True, exist_ok=True)
+                write_json(QUEUE / Path(j["_file"]).name, q)
+                r["outcome"] = outcome = f"retry {attempts} (its check refused; next at {hm(nxt)})"
+            write_json(self.jobsdir / f"{j['seq']}-{j['name']}.json", r)
         if outcome == "stopped":      # the owner needed the machine back; it runs again next time, in its old slot
             QUEUE.mkdir(parents=True, exist_ok=True)
             Path(j["_file"]).replace(QUEUE / Path(j["_file"]).name)
@@ -813,6 +872,8 @@ class Runner:
                 lines.append("**No job was started.** Fix the command (or the hooks file) and start again.")
             if h["tail"]:
                 lines += ["", "```", *h["tail"], "```"]
+        if self.slept:
+            lines += ["", "**The machine slept:** " + "; ".join(self.slept) + ". A job running across a sleep was timed over it."]
         ok = sum(1 for r in rs if r["outcome"] == "ok")
         lines += ["", f"{ok} of {len(rs)} job(s) ok.", "",
                   "| # | job | result | ran | est | queued at rev | log |", "|---|---|---|---|---|---|---|"]
@@ -863,6 +924,10 @@ class Runner:
                     break
                 pick = None
                 for j in jobs:
+                    wait = max((dt.datetime.fromisoformat(j[k]) for k in ("not_before", "next_try") if j.get(k)), default=None)
+                    if wait and wait > now():
+                        self.why_left[j["name"]] = f"not before {hm(wait)}"
+                        continue
                     end = now() + dt.timedelta(minutes=j["est_min"])
                     if end <= self.deadline:
                         pick = j
@@ -894,12 +959,346 @@ def cmd_run(a):
     Runner(dt.datetime.fromisoformat(a.deadline), a.rundir).run()
 
 
+# ---------------------------------------------------------------- the always-on runner (serve, B38)
+
+def fcntl_flock(fd):
+    """An exclusive flock on fd, for a test standing in another holder of the timing lock."""
+    import fcntl
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def free_mem_mb():
+    """This box's available memory in MB, as goinfer's fit guard reads it: MemAvailable on Linux; free + inactive + speculative +
+    purgeable pages from vm_stat on darwin. None when unreadable."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=10).stdout
+            m = re.search(r"page size of (\d+) bytes", out)
+            pages = [re.search(re.escape(k) + r"\s+(\d+)\.", out) for k in
+                     ("Pages free:", "Pages inactive:", "Pages speculative:", "Pages purgeable:")]
+            if not m or not all(pages):
+                return None
+            return sum(int(x.group(1)) for x in pages) * int(m.group(1)) >> 20
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) >> 10
+    except Exception:
+        pass
+    return None
+
+
+def night_start(hhmm, added, deadline=DEFAULT_DEADLINE):
+    """When a job with --not-before hhmm, added at `added`, may first start: hhmm on the night that added falls in, or the next one. A
+    night runs from hhmm to the deadline the next morning; a job added inside one may start at once."""
+    h, m = (int(x) for x in hhmm.split(":"))
+    dh, dm = (int(x) for x in deadline.split(":"))
+    for back in (1, 0):
+        start = (added - dt.timedelta(days=back)).replace(hour=h, minute=m, second=0, microsecond=0)
+        end = start.replace(hour=dh, minute=dm)
+        if end <= start:
+            end += dt.timedelta(days=1)
+        if start <= added < end:
+            return start
+    start = added.replace(hour=h, minute=m, second=0, microsecond=0)
+    return start if start > added else start + dt.timedelta(days=1)
+
+
+def night_end(start, deadline=DEFAULT_DEADLINE):
+    """The deadline that closes the night opening at start."""
+    dh, dm = (int(x) for x in deadline.split(":"))
+    end = start.replace(hour=dh, minute=dm, second=0, microsecond=0)
+    return end if end > start else end + dt.timedelta(days=1)
+
+
+class Server(Runner):
+    """The always-on runner: a loop over the queue that starts each job when its gates allow (eligible) and the timing lock is free. It
+    takes the lock before settling, so no other timed run starts between a job's settle and its start, and holds nothing while idle, so
+    the day tools run between jobs. A job's own refusal (exit RETRY_RC) re-queues it after a backoff. One SUMMARY.md per day."""
+
+    def __init__(self):
+        t = self.clock()
+        super().__init__(night_end(t), RUNS / t.strftime("%Y-%m-%d"))
+        self.retries = True
+        self.awake_proc = None
+        self.exit_when_idle = False
+        self.hook_retry_at = None  # a failed before_queue is tried again from here, not every poll
+        self.last, self.waits, self.since = None, [], None  # what the last pass did and why each job waits, for status
+        self.drift0 = None  # wall clock minus monotonic at the last pass: it grows by however long the machine slept
+
+    # The box: methods so a test can stand in a clock, a load and a memory reading.
+    def clock(self):
+        return now()
+
+    def load1(self):
+        return os.getloadavg()[0]
+
+    def ncores(self):
+        return os.cpu_count() or 1
+
+    def free_mb(self):
+        return free_mem_mb()
+
+    def heavy(self, j):
+        """Why the box is under heavy load for job j now (the 2026-10-19 rule), or None."""
+        la, n = self.load1(), self.ncores()
+        if la > n / 2:
+            return f"load {la:.2f} above half of {n} cores"
+        need = float(j.get("fit_need_gb") or 0) * 1024
+        free = self.free_mb()
+        if need and free is not None and free < need + HEADROOM_MB:
+            return f"free memory {free} MB under the job's fit need {need:.0f} MB + {HEADROOM_MB} MB"
+        return None
+
+    def eligible(self, j, t):
+        """Why j may not start at t, or None."""
+        if j.get("not_before") and dt.datetime.fromisoformat(j["not_before"]) > t:
+            return f"night-only: not before {hm(dt.datetime.fromisoformat(j['not_before']))}"
+        if j.get("next_try") and dt.datetime.fromisoformat(j["next_try"]) > t:
+            return f"retry at {hm(dt.datetime.fromisoformat(j['next_try']))}"
+        if j.get("not_before"):
+            end = night_end(dt.datetime.fromisoformat(j["not_before"]))
+            if t + dt.timedelta(minutes=j["est_min"]) > end:
+                return f"would end after the {hm(end)} deadline"
+        return self.heavy(j)
+
+    def settle_locked(self, j):
+        """Waits, holding the lock, for the box to stay quiet for SERVE_SETTLE_S. Returns why it did not, or None."""
+        waited = 0.0
+        while waited < SERVE_SETTLE_S:
+            if self.stop_now or PAUSEFLAG.exists():
+                return "paused"
+            if why := self.heavy(j):
+                return why
+            step = min(5.0, SERVE_SETTLE_S - waited)
+            self.sleep(step)
+            waited += step
+        return None
+
+    def sleep(self, s):
+        time.sleep(s)
+
+    def drift(self):
+        """Wall clock minus the monotonic clock, which stops while the machine sleeps on darwin and Linux alike."""
+        return time.time() - time.monotonic()
+
+    def note_sleep(self, t):
+        """Records a sleep since the last pass (one over a minute) in the day's summary: a job that ran across it was timed over it."""
+        d = self.drift()
+        if self.drift0 is not None and d - self.drift0 > 60:
+            msg = f"the machine slept about {fmt_min((d - self.drift0) / 60)}, waking before {hm(t)}"
+            self.slept.append(msg)
+            self.log(msg)
+            self.summary()
+        self.drift0 = d
+
+    def day(self, t):
+        """Moves the runner's record to t's day: a new rundir and SUMMARY.md each day."""
+        d = RUNS / t.strftime("%Y-%m-%d")
+        if d != self.rundir:
+            self.rundir, self.jobsdir = d, d / "jobs"
+            self.jobsdir.mkdir(parents=True, exist_ok=True)
+            self.results = [r for r in (read_json(f) for f in sorted(self.jobsdir.glob("*.json"))) if r]
+            self.started, self.deadline, self.slept = t, night_end(t), []
+
+    def on_ac(self):
+        if sys.platform != "darwin":
+            return True
+        try:
+            return "AC Power" in subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=10).stdout
+        except Exception:
+            return True
+
+    def awake_wanted(self, t):
+        """Whether to hold the machine awake while idle: when a night-only job is due within AWAKE_AHEAD_H hours and the box is on AC
+        power (a Mac on battery that never sleeps drains). A running job always holds it (tick)."""
+        if not self.on_ac():
+            return False
+        for j in queued():
+            nb = j.get("not_before")
+            if nb and dt.datetime.fromisoformat(nb) <= t + dt.timedelta(hours=AWAKE_AHEAD_H):
+                return True
+        return False
+
+    def hold_awake(self, on):
+        if on and (self.awake_proc is None or self.awake_proc.poll() is not None):
+            me = str(os.getpid())
+            if sys.platform == "darwin" and shutil.which("caffeinate"):
+                cmd = ["caffeinate", "-i", "-s", "-w", me]
+            elif shutil.which("systemd-inhibit"):
+                cmd = ["systemd-inhibit", "--what=sleep:idle", "--who=goinfer-night", "--why=a queued night job",
+                       "--mode=block", "/bin/sh", "-c", f"while kill -0 {me} 2>/dev/null; do sleep 30; done"]
+            else:
+                return
+            try:
+                self.awake_proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.log(f"holding the machine awake: {cmd[0]}")
+            except OSError as e:
+                self.log(f"WARNING: could not start {cmd[0]}: {e}")
+        elif not on and self.awake_proc is not None and self.awake_proc.poll() is None:
+            self.awake_proc.terminate()
+            self.awake_proc = None
+            self.log("no night job due: the machine may sleep")
+
+    def tick(self):
+        """One pass: starts at most one job. Returns what happened: "paused", "idle", "lock held", "settle: <why>" or "ran"."""
+        t = self.clock()
+        self.day(t)
+        self.note_sleep(t)
+        if PAUSEFLAG.exists():
+            return "paused"
+        self.hold_awake(self.awake_wanted(t))
+        pick, waits = None, []
+        for j in queued():
+            why = self.eligible(j, t)
+            if why is None:
+                pick = j
+                break
+            waits.append(f"{j['name']}: {why}")
+        self.waits = waits
+        if pick is None:
+            return "idle"
+        if self.hook_retry_at and t < self.hook_retry_at:
+            return f"before_queue failed; tried again at {hm(self.hook_retry_at)}"
+        try:
+            lock = timing_lock.acquire(label=f"night.py serve: settling for {pick['name']}", wait_s=0, cmd="night.py serve")
+        except timing_lock.Held:
+            return "lock held"
+        try:
+            self.last = f"settling for {pick['name']}"
+            self.publish()
+            if why := self.settle_locked(pick):
+                return f"settle: {why}"
+            # The box's before_queue step (a day server's stop) runs before every job: a server started between jobs holds the
+            # memory a job's fit check counts. It runs under the lock taken above.
+            if not self.before_queue():
+                self.hook_retry_at = t + dt.timedelta(minutes=RETRY_BACKOFF_MIN)
+                return "before_queue failed"
+            self.hook_retry_at = None
+            self.hold_awake(True)
+            self.log(f"starting {pick['name']} (est {fmt_min(pick['est_min'])})")
+            self.run_job(pick, lock=lock)
+            return "ran"
+        finally:
+            lock.release()
+
+    def publish(self):
+        """SERVEFILE: who the runner is and what its last pass did, for status."""
+        if self.since is None:
+            return  # tick() outside serve(): a test
+        write_json(SERVEFILE, {"pid": os.getpid(), "since": self.since, "last": self.last, "waits": self.waits,
+                               "at": self.clock().isoformat(timespec="seconds")})
+
+    def serve(self):
+        PIDFILE.write_text(str(os.getpid()))
+        self.since, self.waits = self.clock().isoformat(timespec="seconds"), []
+        self.publish()
+        signal.signal(signal.SIGTERM, self.on_term)
+        signal.signal(signal.SIGINT, self.on_term)
+        signal.signal(signal.SIGHUP, lambda *_: setattr(self, "exit_when_idle", True))
+        self.log(f"serve up, pid {os.getpid()}, queue {ROOT}")
+        for f in sorted(RUNNING.glob("*.json")) if RUNNING.exists() else []:
+            f.replace(QUEUE / f.name)
+            self.log(f"re-queued {f.name}: it was mid-run when an earlier runner died")
+        last = None
+        try:
+            while not self.stop_now and not self.exit_when_idle:
+                what = self.tick()
+                if what != last and what != "ran":
+                    self.log(f"serve: {what}" + (f" ({'; '.join(self.waits)})" if what == "idle" and self.waits else ""))
+                last = self.last = what
+                self.publish()
+                if what != "ran":
+                    self.sleep(SERVE_POLL_S)
+        finally:
+            self.hold_awake(False)
+            STATE.unlink(missing_ok=True)
+            if runner_pid() == os.getpid():
+                PIDFILE.unlink(missing_ok=True)
+                SERVEFILE.unlink(missing_ok=True)
+            self.log("serve down")
+
+
+def serve_pid():
+    """The always-on runner's pid when it is the runner going, else None."""
+    pid, sv = runner_pid(), read_json(SERVEFILE)
+    return pid if pid and sv and sv.get("pid") == pid else None
+
+
+def cmd_serve(a):
+    if runner_pid():
+        die(f"a runner is already going (pid {runner_pid()})")
+    Server().serve()
+
+
+def status_json():
+    """The runner as data, for a launcher that must wait for it: {"runner": "serve"|"night"|None, "running": <job>|None, ...}."""
+    pid, st = runner_pid(), read_json(STATE)
+    kind = ("serve" if serve_pid() else "night") if pid else None
+    jobs = queued()
+    sv = read_json(SERVEFILE) if kind == "serve" else None
+    running_job = (st or {}).get("name") if pid else None
+    return {"runner": kind, "pid": pid, "paused": PAUSEFLAG.exists(), "running": running_job, "idle": running_job is None,
+            "last": (sv or {}).get("last"), "waits": (sv or {}).get("waits") or [],
+            "queued": [j["name"] for j in jobs], "lock_free": timing_lock.held_by_other() is None}
+
+
+def cmd_pause(a):
+    PAUSEFLAG.parent.mkdir(parents=True, exist_ok=True)
+    PAUSEFLAG.write_text(now().isoformat(timespec="seconds") + "\n")
+    print("paused: no new job starts (a running one finishes; `night.py resume` to go on)")
+
+
+def cmd_resume(a):
+    PAUSEFLAG.unlink(missing_ok=True)
+    print("resumed")
+
+
+RUNNER_DIR = Path(os.environ.get("NIGHT_RUNNER_DIR", str(Path.home() / "goinfer-runner"))).expanduser()
+
+
+def cmd_update_runner(a):
+    """Moves the pinned runner worktree (RUNNER_DIR, the checkout the service runs night.py from) to origin/main and tells serve to
+    restart on it once idle. Nobody edits RUNNER_DIR: a job runs from the directory it was queued from, not from here."""
+    repo = Path(__file__).resolve().parents[1]
+    if subprocess.run(["git", "-C", str(repo), "fetch", "-q", "origin", "main"]).returncode:
+        die("git fetch failed")
+    if not RUNNER_DIR.exists():
+        if subprocess.run(["git", "-C", str(repo), "worktree", "add", "--detach", str(RUNNER_DIR), "origin/main"]).returncode:
+            die(f"could not add the runner worktree at {RUNNER_DIR}")
+    else:
+        if git(RUNNER_DIR, "status", "--porcelain", "--untracked-files=no"):
+            die(f"{RUNNER_DIR} has local edits; it is the pinned runner checkout and nobody edits it. Look, then `git -C {RUNNER_DIR} checkout .`")
+        if subprocess.run(["git", "-C", str(RUNNER_DIR), "checkout", "-q", "--detach", "origin/main"]).returncode:
+            die("checkout failed")
+    print(f"{RUNNER_DIR} at {git(RUNNER_DIR, 'rev-parse', '--short', 'HEAD')}")
+    pid = serve_pid()
+    if pid:
+        os.kill(pid, signal.SIGHUP)
+        print(f"serve (pid {pid}) exits when idle and its service manager restarts it on this code")
+
+
 # ---------------------------------------------------------------- status / stop / morning
 
 def cmd_status(a):
+    if a.json:
+        print(json.dumps(status_json()))
+        return
     pid = runner_pid()
     st = read_json(STATE)
-    if pid:
+    sv = read_json(SERVEFILE) if serve_pid() else None
+    if sv:
+        # The first line starts with the state, "running <job>" or "idle"/"paused": a launcher reads a box as busy from that prefix.
+        who = f"(serve, pid {pid}, up since {sv.get('since')})"
+        if st:
+            print(f"running {st['name']} {who}")
+        elif (sv.get("last") or "").startswith("settling for "):
+            print(f"{sv['last']}, the timing lock held {who}")
+        else:
+            print(f"{'paused' if PAUSEFLAG.exists() else 'idle'}, {len(queued())} queued {who}: last pass {sv.get('last') or 'none yet'}")
+        if not st:
+            for w in sv.get("waits") or []:
+                print(f"  waits: {w}")
+    elif pid:
         print(f"runner going, pid {pid}")
     else:
         print("no runner going")
@@ -916,6 +1315,8 @@ def cmd_status(a):
             pass
     if STOPFLAG.exists():
         print("  STOP requested — it stops after the current job")
+    if PAUSEFLAG.exists():
+        print("  PAUSED — no new job starts (`night.py resume`)")
     d = latest_run_dir()
     if d:
         rs = [read_json(f) for f in sorted((d / "jobs").glob("*.json"))] if (d / "jobs").exists() else []
@@ -932,6 +1333,13 @@ def cmd_stop(a):
     pid = runner_pid()
     if not pid:
         print("no runner going")
+        return
+    if serve_pid():
+        # The always-on runner is restarted by its service manager, so a stop is a pause: no new job until `resume`.
+        cmd_pause(a)
+        if a.now:
+            os.kill(pid, signal.SIGTERM)
+            print(f"and the current job is killed and re-queued (serve, pid {pid}, restarts paused)")
         return
     STOPFLAG.parent.mkdir(parents=True, exist_ok=True)
     STOPFLAG.write_text(now().isoformat(timespec="seconds") + "\n")
@@ -969,6 +1377,9 @@ def main():
     s.add_argument("--force", action="store_true", help=f"allow --est over {MAX_EST_MIN} (owner's explicit ask only)")
     s.add_argument("--allow-duplicate", action="store_true",
                    help="queue a command that is already queued (a pre-registered repeat only)")
+    s.add_argument("--not-before", metavar="HH:MM", help="night-only: start no earlier than this, and end by the deadline after it")
+    s.add_argument("--retry-until", metavar="HH:MM", help=f"an exit {RETRY_RC} (the job's own check refused) re-queues it until then")
+    s.add_argument("--fit-need-gb", type=float, help="memory the job needs; serve starts it only with this plus 2 GB free")
     s.set_defaults(fn=cmd_add)
 
     s = sp.add_parser("list", help="the queue, in run order")
@@ -986,7 +1397,14 @@ def main():
     s.add_argument("--rundir", required=True)
     s.set_defaults(fn=cmd_run)
 
-    sp.add_parser("status", help="what is running, what finished").set_defaults(fn=cmd_status)
+    s = sp.add_parser("status", help="what is running, what finished")
+    s.add_argument("--json", action="store_true", help="the runner as one JSON object (runner, running, idle, queued, ...)")
+    s.set_defaults(fn=cmd_status)
+
+    sp.add_parser("serve", help="the always-on runner (run by the launchd agent / systemd user service)").set_defaults(fn=cmd_serve)
+    sp.add_parser("pause", help="serve: start no new job").set_defaults(fn=cmd_pause)
+    sp.add_parser("resume", help="serve: start jobs again").set_defaults(fn=cmd_resume)
+    sp.add_parser("update-runner", help="move the pinned runner checkout to origin/main; serve restarts on it when idle").set_defaults(fn=cmd_update_runner)
 
     s = sp.add_parser("stop", help="stop after the current job")
     s.add_argument("--now", action="store_true", help="kill the current job too")

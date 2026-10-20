@@ -343,9 +343,15 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
   python3 scripts/night.py add <name> --est <minutes> --by "<who>, <campaign>" --doc <task doc> -- bash docs/measurements/<campaign>/run-<x>.sh
   ```
 
-  Then tell the owner what you queued and tonight's total (`add` prints it). **Do not start the night queue, wait on
-  it, or poll it.** The owner starts it at bedtime (`night.py start`). The queue is per machine: queue a job on the box
-  that has to measure it.
+  A night case adds `--not-before 22:00`. A job whose own fit check can refuse exits 75 on that refusal and is queued
+  with `--retry-until HH:MM`; `--fit-need-gb` gives the memory the heavy-load gate checks. Tell the owner what you queued
+  and the total (`add` prints it). The queue is per machine: queue a job on the box that has to measure it.
+  - **A box running `night.py serve` runs its queue itself** (B38; `scripts/install-night-agent.sh` installs it as a
+    launchd agent or a systemd user service). Each job starts when its gates allow: its `--not-before` hour, the
+    heavy-load rule above, and the timing lock free through a settle that holds the lock. A job that exits 75 is
+    re-queued until its `--retry-until`. **Do not start a second runner, wait on it, or poll it.** `night.py status`
+    says `running <job>` or `idle`; `pause` / `resume` are the owner's.
+  - **A box without it:** do not start the queue; the owner does (`night.py start`).
 - **One copy of each run.** `night.py list` shows every queued command; check it before adding. If a queued job
   already answers your question (the same gate or suite on tonight's tree, or a superset of it), do not queue another
   — name that job in your report to the owner. `add` refuses an identical command from the same directory outright.
@@ -391,7 +397,7 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
 - **Timed runs use the harness defaults** (on the Mac the instant idle gate since 2026-10-02, TE1; on Linux
   `BENCH_MAX_LOADAVG=1.0`), by day as at night. The void rule above applies on top of them, never instead of them.
 - **Jobs of 3 h or less; never 6.** `add` refuses an estimate over 360 min. Shrink the sample or fix the slow path
-  first, as D6a did. The runner does not START a job whose estimate would end after 06:30, so an over-full queue
+  first, as D6a did. The runner does not START a night job whose estimate would end after 06:30, so an over-full queue
   carries to the next night instead of running into the owner's morning.
 - **Pre-registration is unchanged.** The rule and its bands are written and committed before the run, even when
   the run is twelve hours away.

@@ -6,9 +6,13 @@ disable-model-invocation: true
 
 # Start the Mac's night queue
 
-The owner runs this at bedtime. `CLAUDE.md` ("Run budget: quick by day, long by night") says only the owner starts
-the queue, so **run this only when the owner invokes it**. Never run it on your own initiative, and never because a
+The owner runs this at bedtime. `CLAUDE.md` ("Run budget") says only the owner starts the queue on a box without the
+always-on runner, so **run this only when the owner invokes it**. Never run it on your own initiative, and never because a
 job is waiting.
+
+**First, `python3 scripts/night.py status`.** If its first line starts with `running ` or `idle` (the always-on runner,
+`night.py serve`, B38), the Mac runs its queue itself: do not start anything. Report that line, `night.py list`, and
+whether the runner is paused, and stop. `night.py start` refuses beside it anyway.
 
 Input (optional): a deadline `HH:MM`, passed to `--deadline` (default 06:30: no job *starts* if it would end later).
 

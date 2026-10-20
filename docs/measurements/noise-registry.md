@@ -265,7 +265,7 @@ power.py N: `power.py <instrument> <cell> --bar <bar> [--expect <r>] --paired` -
 Stopping rule: <fixed N, no early stop> or <the registered skip: pass 2 skipped when pass 1 clears the bar by more than the two passes' own measured spread>. No ad hoc stopping when results look good.
 Ambiguous band: <the parked zone and who decides it>.
 Speed bar: the owner's default, unless the brief says why not: ship >= 1.02x, park 1.00-1.02x, off < 1.00x. The hard preconditions (bit-identity or the fidelity gate, no regression at any cell) stay strict; whether the thesis delivered is reported separately and never gates. Never a 1.2 / 1.5 / 2x ship line (owner 2026-09-26, R18; again 2026-10-04, M26 4b).
-Cost: <expected wall: cells x runs x per-cell time, plus idle-gate waits, as a start and an expected finish time>; run by day, or queued as <night.py job name> with which night case it is.
+Cost: <expected wall: cells x runs x per-cell time, plus idle-gate waits, as a start and an expected finish time>; run by day, or queued as <night.py job name> with which night case it is (`--not-before 22:00`; a box running `night.py serve` starts it when its gates allow).
 ```
 
 **For a gate on the prefill/decode fidelity protocol** (TE12; the protocol is eleven test files, 10 prose prompts per cell x a K ladder x 64 scored positions, on two models, candidate against exact against a reference), add:

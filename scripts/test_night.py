@@ -436,5 +436,300 @@ class LogFailureMarkers(unittest.TestCase):
         self.assertEqual(got, "ok", "with the scan removed the job reads ok: the scan is what catches it")
 
 
+class FakeServer(night.Server):
+    """serve with a stand-in clock, load and memory, and a sleep that only moves the clock; on_sleep runs inside each sleep (the settle)."""
+
+    def __init__(self):
+        self.t = night.now()
+        self.la, self.free, self.on_sleep, self.awake_calls = 0.0, 64000, None, []
+        super().__init__()
+
+    def clock(self):
+        return self.t
+
+    def load1(self):
+        return self.la
+
+    def ncores(self):
+        return 8
+
+    def free_mb(self):
+        return self.free
+
+    def on_ac(self):
+        return True
+
+    def sleep(self, s):
+        if self.on_sleep:
+            self.on_sleep()
+        self.t += dt.timedelta(seconds=s)
+
+    def hold_awake(self, on):
+        self.awake_calls.append(on)
+
+
+class Serve(unittest.TestCase):
+    """B38: the always-on runner starts a job only when its gates allow, takes the timing lock before settling, holds nothing while idle,
+    and re-queues a job whose own check refused (exit RETRY_RC)."""
+
+    def setUp(self):
+        for d in (night.QUEUE, night.RUNNING):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+        night.PAUSEFLAG.unlink(missing_ok=True)
+        self.marker = Path(_tmp) / f"ran-{self.id().rsplit('.', 1)[-1]}"
+        self.marker.unlink(missing_ok=True)
+
+    def job(self, name="j", script=None, **extra):
+        night.QUEUE.mkdir(parents=True, exist_ok=True)
+        _seq[0] += 1
+        seq = 1_000_000 + _seq[0]
+        j = {"name": name, "cmd": ["/bin/sh", "-c", script or f"echo ran >> {self.marker}"], "cwd": _tmp, "est_min": 30.0,
+             "timeout_min": 2.0, "priority": 50, "seq": seq, **extra}
+        f = night.QUEUE / f"{seq}-{name}.json"
+        f.write_text(json.dumps(j))
+        return f
+
+    def tick(self, sv):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sv.tick()
+
+    def runs(self):
+        return self.marker.read_text().count("ran") if self.marker.exists() else 0
+
+    def lock_is_free(self):
+        try:
+            night.timing_lock.acquire(label="probe", wait_s=0).release()
+            return True
+        except night.timing_lock.Held:
+            return False
+
+    def test_not_before_waits_then_runs(self):
+        sv = FakeServer()
+        self.job(not_before=(sv.t + dt.timedelta(hours=2)).isoformat(timespec="seconds"))
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertIn("night-only", sv.waits[0])
+        self.assertEqual(self.runs(), 0)
+        sv.t += dt.timedelta(hours=2, minutes=1)
+        self.assertEqual(self.tick(sv), "ran")
+        self.assertEqual(self.runs(), 1)
+
+    def test_a_night_job_that_would_end_after_the_deadline_waits(self):
+        sv = FakeServer()
+        start = sv.t - dt.timedelta(hours=1)
+        end = night.night_end(start)
+        sv.t = end - dt.timedelta(minutes=10)  # a 30-minute job 10 minutes before the deadline
+        self.job(not_before=start.isoformat(timespec="seconds"))
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertIn("would end after", sv.waits[0])
+
+    def test_heavy_load_holds_the_start(self):
+        sv = FakeServer()
+        self.job()
+        sv.la = 4.5  # half of 8 cores is 4.0
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertIn("load 4.50 above half of 8 cores", sv.waits[0])
+        sv.la = 3.9
+        self.assertEqual(self.tick(sv), "ran")
+
+    def test_low_free_memory_holds_the_start(self):
+        sv = FakeServer()
+        self.job(fit_need_gb=4)
+        sv.free = 4 * 1024 + 2048 - 1
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertIn("free memory", sv.waits[0])
+        sv.free = 4 * 1024 + 2048
+        self.assertEqual(self.tick(sv), "ran")
+
+    def test_plant_without_the_heavy_gate_it_runs_under_load(self):
+        sv = FakeServer()
+        sv.heavy = lambda j: None  # PLANT: the gate removed
+        self.job(fit_need_gb=4)
+        sv.la, sv.free = 7.0, 100
+        self.assertEqual(self.tick(sv), "ran", "with the gate removed the job starts: the gate is what held it above")
+
+    def test_load_during_the_settle_holds_the_start_and_frees_the_lock(self):
+        sv = FakeServer()
+        f = self.job()
+        sv.on_sleep = lambda: setattr(sv, "la", 6.0)
+        self.assertTrue(self.tick(sv).startswith("settle: load 6.00"))
+        self.assertEqual(self.runs(), 0)
+        self.assertTrue(f.exists(), "the job left the queue")
+        self.assertTrue(self.lock_is_free(), "the lock was kept after a failed settle")
+
+    def test_the_lock_is_held_through_the_settle(self):
+        seen = []
+        sv = FakeServer()
+        sv.on_sleep = lambda: seen.append(night.timing_lock.read_holder(night.timing_lock.lock_path()).get("label", ""))
+        self.job(name="lockcheck")
+        self.assertEqual(self.tick(sv), "ran")
+        self.assertTrue(seen and all("settling for lockcheck" in x for x in seen), seen)
+
+    def test_plant_without_the_lock_the_settle_is_unguarded(self):
+        seen = []
+        sv = FakeServer()
+        sv.on_sleep = lambda: seen.append(night.timing_lock.read_holder(night.timing_lock.lock_path()).get("label", ""))
+
+        class NoLock:
+            def release(self):
+                pass
+        orig = night.timing_lock.acquire
+        night.timing_lock.acquire = lambda **kw: NoLock()  # PLANT: no lock taken before the settle
+        try:
+            self.job(name="lockcheck")
+            self.tick(sv)
+        finally:
+            night.timing_lock.acquire = orig
+        self.assertFalse(any("settling for" in x for x in seen), "with no lock taken the check still saw one: it cannot see the lock")
+
+    def test_another_holder_means_wait(self):
+        sv = FakeServer()
+        f = self.job()
+        fd = os.open(night.timing_lock.lock_path(), os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            night.fcntl_flock(fd)
+            self.assertEqual(self.tick(sv), "lock held")
+        finally:
+            os.close(fd)
+        self.assertEqual(self.runs(), 0)
+        self.assertTrue(f.exists())
+
+    def test_idle_holds_no_lock(self):
+        sv = FakeServer()
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertTrue(self.lock_is_free())
+        self.job(not_before=(sv.t + dt.timedelta(hours=1)).isoformat(timespec="seconds"))
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertTrue(self.lock_is_free())
+
+    def test_pause_starts_nothing(self):
+        sv = FakeServer()
+        self.job()
+        night.PAUSEFLAG.write_text("x")
+        try:
+            self.assertEqual(self.tick(sv), "paused")
+        finally:
+            night.PAUSEFLAG.unlink()
+        self.assertEqual(self.runs(), 0)
+
+    def test_exit_75_requeues_after_the_backoff(self):
+        sv = FakeServer()
+        self.job(name="refuses", script="echo 'fit: REFUSED'; exit 75",
+                 retry_until=(night.now() + dt.timedelta(hours=3)).isoformat(timespec="seconds"))
+        self.assertEqual(self.tick(sv), "ran")
+        self.assertTrue(sv.results[-1]["outcome"].startswith("retry 1"), sv.results[-1]["outcome"])
+        (q,) = night.queued()
+        self.assertEqual(q["attempts"], 1)
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertIn("retry at", sv.waits[0])
+        sv.t = dt.datetime.fromisoformat(q["next_try"]) + dt.timedelta(seconds=1)
+        self.assertEqual(self.tick(sv), "ran")
+        self.assertEqual(night.queued()[0]["attempts"], 2)
+
+    def test_exit_75_past_retry_until_is_void(self):
+        sv = FakeServer()
+        self.job(name="refuses", script="exit 75", retry_until=(night.now() + dt.timedelta(minutes=5)).isoformat(timespec="seconds"))
+        self.tick(sv)
+        self.assertTrue(sv.results[-1]["outcome"].startswith("VOID-refused: its check refused 1 time(s)"), sv.results[-1]["outcome"])
+        self.assertEqual(night.queued(), [])
+
+    def test_exit_75_without_retry_until_stops_at_retry_max(self):
+        sv = FakeServer()
+        prev, night.RETRY_MAX = night.RETRY_MAX, 2
+        try:
+            self.job(name="refuses", script="exit 75")
+            self.tick(sv)
+            sv.t = dt.datetime.fromisoformat(night.queued()[0]["next_try"]) + dt.timedelta(seconds=1)
+            self.tick(sv)
+        finally:
+            night.RETRY_MAX = prev
+        self.assertTrue(sv.results[-1]["outcome"].startswith("VOID-refused: its check refused 2 time(s), 2 tries"), sv.results[-1]["outcome"])
+        self.assertEqual(night.queued(), [])
+
+    def test_plant_without_retries_exit_75_fails(self):
+        sv = FakeServer()
+        sv.retries = False  # PLANT: the bedtime runner's reading
+        self.job(name="refuses", script="exit 75")
+        self.tick(sv)
+        self.assertEqual(sv.results[-1]["outcome"], "FAILED rc=75")
+
+    def test_a_sleep_is_reported_in_the_summary(self):
+        sv = FakeServer()
+        d = [1000.0]
+        sv.drift = lambda: d[0]
+        self.tick(sv)
+        d[0] += 30  # under a minute: clock noise, not a sleep
+        self.tick(sv)
+        self.assertEqual(sv.slept, [])
+        d[0] += 45 * 60
+        self.tick(sv)
+        self.assertEqual(len(sv.slept), 1)
+        self.assertIn("The machine slept", (sv.rundir / "SUMMARY.md").read_text())
+
+    def test_a_night_job_due_holds_the_machine_awake(self):
+        sv = FakeServer()
+        self.assertEqual(self.tick(sv), "idle")
+        self.assertEqual(sv.awake_calls[-1], False)
+        self.job(not_before=(sv.t + dt.timedelta(hours=3)).isoformat(timespec="seconds"))
+        self.tick(sv)
+        self.assertEqual(sv.awake_calls[-1], True)
+
+
+class ServeStatus(unittest.TestCase):
+    def setUp(self):
+        for f in (night.PIDFILE, night.SERVEFILE, night.STATE):
+            f.unlink(missing_ok=True)
+        self.addCleanup(lambda: [f.unlink(missing_ok=True) for f in (night.PIDFILE, night.SERVEFILE, night.STATE)])
+
+    def test_no_runner(self):
+        s = night.status_json()
+        self.assertIsNone(s["runner"])
+        self.assertTrue(s["idle"])
+
+    def test_serve_idle_then_busy(self):
+        night.PIDFILE.write_text(str(os.getpid()))
+        night.write_json(night.SERVEFILE, {"pid": os.getpid(), "since": "x", "last": "idle", "waits": ["j: load"]})
+        s = night.status_json()
+        self.assertEqual((s["runner"], s["idle"], s["running"], s["waits"]), ("serve", True, None, ["j: load"]))
+        night.write_json(night.STATE, {"name": "busyjob"})
+        s = night.status_json()
+        self.assertEqual((s["idle"], s["running"]), (False, "busyjob"))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            night.cmd_status(type("A", (), {"json": True})())
+        self.assertEqual(json.loads(out.getvalue())["running"], "busyjob")
+
+    def test_the_first_line_names_the_state(self):
+        # tack's launcher reads a box as busy when this line starts with "running " (or "runner going", the bedtime runner).
+        def first():
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                night.cmd_status(type("A", (), {"json": False})())
+            return out.getvalue().splitlines()[0]
+        night.PIDFILE.write_text(str(os.getpid()))
+        night.write_json(night.SERVEFILE, {"pid": os.getpid(), "since": "x", "last": "idle", "waits": []})
+        self.assertTrue(first().startswith("idle, "), first())
+        night.write_json(night.STATE, {"name": "busyjob", "started": night.now().isoformat(), "est_min": 1, "timeout_min": 2, "log": "/nonexistent"})
+        self.assertTrue(first().startswith("running busyjob "), first())
+        night.SERVEFILE.unlink()
+        self.assertTrue(first().startswith("runner going"), first())
+
+    def test_the_bedtime_runner_is_not_serve(self):
+        night.PIDFILE.write_text(str(os.getpid()))
+        self.assertEqual(night.status_json()["runner"], "night")
+
+
+class NightStart(unittest.TestCase):
+    def at(self, h, m=0):
+        return dt.datetime(2026, 10, 20, h, m)
+
+    def test_window(self):
+        self.assertEqual(night.night_start("22:00", self.at(23)), self.at(22))
+        self.assertEqual(night.night_start("22:00", self.at(7)), self.at(22))
+        self.assertEqual(night.night_start("22:00", self.at(2)), self.at(22) - dt.timedelta(days=1))
+        self.assertEqual(night.night_end(self.at(22)), self.at(6, 30) + dt.timedelta(days=1))
+
+
 if __name__ == "__main__":
     unittest.main()

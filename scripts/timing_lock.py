@@ -89,6 +89,8 @@ def fd_holders(path=None):
     """(pid, cmdline) of every other process of ours that has the lock file open, from /proc/*/fd. This is who keeps a flock alive when the
     recorded holder is gone: a child that inherited the descriptor. Processes we cannot inspect are not listed. Read-only."""
     path = str(path or lock_path())
+    if not Path("/proc").is_dir():
+        return _fd_holders_lsof(path)
     out = []
     for d in Path("/proc").iterdir():
         if not d.name.isdigit() or int(d.name) == os.getpid():
@@ -100,6 +102,23 @@ def fd_holders(path=None):
         except OSError:
             continue
         out.append((int(d.name), cmd))
+    return out
+
+
+def _fd_holders_lsof(path):
+    """fd_holders where there is no /proc (darwin): lsof's pids, ps's command lines. No lsof: nobody listed."""
+    try:
+        r = subprocess.run(["lsof", "-n", "-t", "--", path], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    out = []
+    for pid in sorted({int(x) for x in r.stdout.split() if x.isdigit()} - {os.getpid()}):
+        try:
+            cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if cmd:
+            out.append((pid, cmd))
     return out
 
 

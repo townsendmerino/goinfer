@@ -469,8 +469,15 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
 **B38 · An always-on queue runner on both boxes: `night.py serve`, a launchd agent on the Mac and a systemd user service on nobara** — filed
-2026-10-20 (owner's yes, as scoped). **In progress** (Mac session; tooling, pushed on green). nobara installs the systemd unit from this code and
-does not build its own.
+2026-10-20 (owner's yes, as scoped). **Built** (Mac session; tooling, pushed on green): `night.py serve`, `pause`, `resume`, `update-runner`,
+`status --json`, `add --not-before / --retry-until / --fit-need-gb`, and `scripts/install-night-agent.sh`. **Not yet installed on either box.**
+nobara installs the systemd unit from this code (`night.py update-runner`, then `scripts/install-night-agent.sh install`) and does not build
+its own; the Mac agent waits for Francis's word, and the M1 cell's script gains its exit 75 when it is re-queued for it.
+- **As built, where it differs from the scope below:** under serve, `stop` is a pause (the service manager would restart an exited runner);
+  `stop --now` also kills the running job, which is re-queued. The machine is held awake from when a night-only job is queued (up to 12 h
+  ahead, on AC), not from its `--not-before`: a Mac that idles to sleep before the hour never reaches it. The before_queue step runs before
+  every job, under the job's lock: a day server started between jobs holds the memory a job's fit check counts. A failed step is retried
+  after the backoff.
 - **Why:** both boxes run the queue only when someone types `night.py start`. On 2026-10-19 three queued jobs (B35's CUDA test twice, the M1
   cell) sat unrun because nobody started a runner, and day jobs waited on a session to relay them.
 - **The mode:** `night.py serve` is a long-lived loop over the same queue. Each job runs as `_run` runs one today: same log, timing lock,
