@@ -18,6 +18,12 @@ separate RNG so the golden pins those paths; the HF forward stays the oracle.
 
     ~/.venv-vl/bin/python scripts/pin_gemma4_moe_kv_forward.py
     -> testdata/gemma4_moe_kv_forward_golden.json  (+ testdata/gemma4-moe-kv-tiny/ checkpoint)
+
+The CUDA-resident sibling, for the windowed-KV expert-cache test. Every int4 matrix's input width must be a multiple of 32 on CUDA:
+moe_intermediate_size 32 for the experts' down projection, intermediate_size 64 for the dense FFN's. Its golden is not kept.
+
+    PIN_MOE_INTER=32 PIN_INTER=64 PIN_CKPT=testdata/gemma4-moe-kv-tiny32 PIN_OUT=<scratch>/golden.json \
+        python scripts/pin_gemma4_moe_kv_forward.py
 """
 import json
 import os
@@ -27,13 +33,13 @@ from transformers import Gemma4TextConfig
 from transformers.models.gemma4.modeling_gemma4 import Gemma4ForCausalLM
 
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "gemma4_moe_kv_forward_golden.json")
-CKPT = os.path.join(HERE, "..", "testdata", "gemma4-moe-kv-tiny")
+OUT = os.environ.get("PIN_OUT") or os.path.join(HERE, "..", "testdata", "gemma4_moe_kv_forward_golden.json")
+CKPT = os.environ.get("PIN_CKPT") or os.path.join(HERE, "..", "testdata", "gemma4-moe-kv-tiny")
 
 CFG = dict(
     vocab_size=256, hidden_size=64, num_hidden_layers=2,
     num_attention_heads=4, num_key_value_heads=2, head_dim=16,
-    intermediate_size=48, rms_norm_eps=1e-6, tie_word_embeddings=True,
+    intermediate_size=int(os.environ.get("PIN_INTER", "48")), rms_norm_eps=1e-6, tie_word_embeddings=True,
     max_position_embeddings=128, sliding_window=4,
     layer_types=["sliding_attention", "full_attention"],
     hidden_activation="gelu_pytorch_tanh", final_logit_softcapping=30.0,
@@ -42,7 +48,7 @@ CFG = dict(
     # K=V global layers: the global (full-attention) layer has NO v_proj (V is
     # v_norm(k)) and its own KV-head count. This is what the real 26B-A4B does.
     attention_k_eq_v=True, num_global_key_value_heads=1,
-    enable_moe_block=True, num_experts=8, top_k_experts=2, moe_intermediate_size=16,
+    enable_moe_block=True, num_experts=8, top_k_experts=2, moe_intermediate_size=int(os.environ.get("PIN_MOE_INTER", "16")),
 )
 PROMPT = [1, 7, 42, 100, 5, 200, 13, 88]
 N_NEW = 6

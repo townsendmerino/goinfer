@@ -1231,6 +1231,21 @@ func capSlots(free, nLayers int64, strides []int64, topK, request int) (slots in
 	return lo, false
 }
 
+// expertCacheFloorBytes is the smallest expert cache allocSlots accepts, top-k slots on every routed layer (slotRequirement), or 0 for a
+// load with no routed layer or no per-expert stride.
+func (r *cudaResident) expertCacheFloorBytes() int64 {
+	var moeLayers []int
+	for i := range r.layers {
+		if r.layers[i].expGU.srcW != nil {
+			moeLayers = append(moeLayers, i)
+		}
+	}
+	if len(moeLayers) == 0 || r.slotBytesPerLayer(moeLayers[0]) <= 0 {
+		return 0
+	}
+	return slotRequirement(r.topK, int64(len(moeLayers)), r.slotStrides(moeLayers[0]))
+}
+
 // allocSlots caps r.cacheSlots to the MEASURED free device VRAM (with a safety margin) and then
 // allocates each MoE layer's slot buffers + its LRU cache. Called after the resident core + KV +
 // scratch are up, so the cap reflects what is actually left — an over-large GOINFER_MOE_CACHE_SLOTS

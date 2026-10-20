@@ -507,8 +507,9 @@ is MC4's identity gate extended to shared preambles.
   - **The rule chosen for CUDA (the ring fix, built 2026-10-14; `kvwindow-ring-2026-10`, speed guard PASS):**
     - The base compacts in 64-token steps, so the budget never drops below 448. It costs no VRAM; the extra copying is
       about 0.1% of a token's time on Mellum2.1.
-    - Extra rollback, up to 1,024, comes only from VRAM left after planning. It never costs residency, context, a slot
-      or an expert slot, and an expert-cache load gets none.
+    - Extra rollback, up to 1,024, comes only from VRAM left after planning. It never costs residency, context or a slot.
+      An expert-cache load gets it too: since 2026-10-19 the grant is taken just before the expert cache is sized, out
+      of the cache and never below its minimum (P34, cause 2). Before that, an expert-cache load got none.
     - Limit: right after a prefill pass of 448 rows or more, an edit inside that pass has less than 448 until decode
       catches up. Dropping the last reply is always covered.
   - **The paged design keeps the same guarantee.** A window group retains at least the rollback budget behind the

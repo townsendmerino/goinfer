@@ -1803,11 +1803,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
 		// cache to what actually fits (cap-and-log, never OOM) and allocate it.
+		if r.cacheExperts {
+			r.kvGrantRollback(r.expertCacheFloorBytes()) // before the cache is sized: the grant comes out of it, never below its minimum
+		}
 		if e := r.allocSlots(); e != nil {
 			return e
 		}
-		r.kvGrantRollback() // last: everything it must not cost is allocated
-		r.pk = nil          // the packing staging blocks: the garbage the build leaves behind is a few blocks, not a packed copy
+		if !r.cacheExperts {
+			r.kvGrantRollback(0) // last: everything it must not cost is allocated
+		}
+		r.pk = nil // the packing staging blocks: the garbage the build leaves behind is a few blocks, not a packed copy
 		return r.setupErr
 	})
 	if setupErr != nil {

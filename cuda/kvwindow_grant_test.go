@@ -21,7 +21,8 @@ func loadResident(t *testing.T, fx string, opts decoder.Options) (*decoder.Model
 	t.Cleanup(func() { m.Close() })
 	r, ok := m.ResidentForwardForTest().(*cudaResident)
 	if !ok {
-		t.Fatalf("%s not CUDA-resident: %s", fx, m.ResidentDecline())
+		t.Fatalf("%s not CUDA-resident: %s (a tiny fixture must meet the CUDA kernels' shape rules, such as int4 MoE widths in "+
+			"multiples of 32: regenerate it to fit, or use a resident-eligible sibling)", fx, m.ResidentDecline())
 	}
 	return m, r
 }
@@ -49,30 +50,98 @@ func TestWindowedKV_grantArithmetic(t *testing.T) {
 	}
 }
 
-// TestWindowedKV_expertCacheGetsNoGrant: an expert-cache load keeps exactly the planned windowed KV, the window plus the slack the decoder
-// prices at main's 512, and so its rollback stays at the floor, slack less step: the expert cache was sized to what was free, so any grant
-// would come out of it. The control (the same load without the expert cache) is granted, so the test can go red. The 512 is pinned here
-// because the expert-cache path sizes its cache beside it without asking the planner.
-func TestWindowedKV_expertCacheGetsNoGrant(t *testing.T) {
+// TestWindowedKV_expertCacheGetsTheGrant: an expert-cache load of a windowed model is granted rollback like any other load, before its cache
+// is sized (docs/queue-performance.md, P34, cause 2), and a card with only the reserve and the cache's minimum free gets no grant and still
+// loads. The control (the same load without the expert cache) is granted the same, so a skipped grant reads red. The 512 is pinned here
+// because the expert cache is sized beside the planner's figure.
+func TestWindowedKV_expertCacheGetsTheGrant(t *testing.T) {
 	if got := decoder.ResidentWindowedKVCap(1024, 16384); got != 1024+512 {
 		t.Fatalf("decoder prices a 1024-window layer at %d positions, want 1536: the expert cache is sized beside this figure", got)
 	}
-	withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, 64)
+	const rollbackMax = 64
+	withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, rollbackMax)
 	_, ctl := loadResident(t, "mistral-tiny-window", decoder.Options{ResidentWindowedKV: true})
-	if ctl.kvSlack <= kvWindowSlack {
-		t.Fatalf("control: no grant without the expert cache (slack %d): the test cannot tell a skipped grant from no headroom", ctl.kvSlack)
+	if ctl.kvRollback() != rollbackMax {
+		t.Fatalf("control: rollback %d without the expert cache, want the granted %d: the test cannot tell a skipped grant from no headroom", ctl.kvRollback(), rollbackMax)
 	}
 	_, r := loadResident(t, "mistral-tiny-window", decoder.Options{ResidentWindowedKV: true, MoECacheExperts: true})
 	if !r.cacheExperts || !r.kvWin {
 		t.Fatalf("expert cache %v, windowed %v: the load does not have the shape under test", r.cacheExperts, r.kvWin)
 	}
-	if r.kvSlack != kvWindowSlack || r.kvRollback() != kvWindowSlack-kvWindowStep {
-		t.Fatalf("expert-cache load: slack %d, rollback %d, want the planned %d and the floor %d", r.kvSlack, r.kvRollback(), kvWindowSlack, kvWindowSlack-kvWindowStep)
+	if r.kvRollback() != rollbackMax {
+		t.Fatalf("expert-cache load: rollback %d, want the granted %d (slack %d)", r.kvRollback(), rollbackMax, r.kvSlack)
 	}
 	for l := range r.layers {
 		if r.layers[l].kvWin && !r.layers[l].kvShared {
-			if got := heldPositions(r, l); got != r.kvWindow+kvWindowSlack {
-				t.Fatalf("expert-cache load: layer %d holds %d positions, want the planned %d", l, got, r.kvWindow+kvWindowSlack)
+			if got := heldPositions(r, l); got != r.kvWindow+r.kvSlack {
+				t.Fatalf("expert-cache load: layer %d holds %d positions, want the granted %d", l, got, r.kvWindow+r.kvSlack)
+			}
+		}
+	}
+
+	// A routed fixture with windowed layers: the hold-back is the cache's minimum, and the cache is still allocated after the grant.
+	// gemma4-moe-kv-tiny32 is gemma4-moe-kv-tiny at moe_intermediate_size 32 (scripts/pin_gemma4_moe_kv_forward.py, PIN_MOE_INTER), the
+	// width CUDA's int4 MoE needs; the 16-wide original declines residency.
+	t.Run("routed experts", func(t *testing.T) {
+		_, mr := loadResident(t, "gemma4-moe-kv-tiny32", decoder.Options{ResidentWindowedKV: true, MoECacheExperts: true})
+		if !mr.kvWin || !mr.cacheExperts || mr.expertCacheFloorBytes() <= 0 {
+			t.Fatalf("gemma4-moe-kv-tiny32: windowed %v, expert cache %v, floor %d B: not the routed shape", mr.kvWin, mr.cacheExperts, mr.expertCacheFloorBytes())
+		}
+		if mr.kvRollback() <= kvWindowSlack-kvWindowStep {
+			t.Fatalf("routed expert-cache load: rollback %d, the floor: no grant", mr.kvRollback())
+		}
+		if mr.cacheSlots < mr.topK {
+			t.Fatalf("routed expert-cache load: %d cache slots after the grant, under top-%d", mr.cacheSlots, mr.topK)
+		}
+	})
+
+	orig := kvGrantFreeVRAM
+	t.Cleanup(func() { kvGrantFreeVRAM = orig })
+	kvGrantFreeVRAM = func(r *cudaResident) (uint64, error) {
+		return uint64(r.extraBytes + ctxCapMarginBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + r.expertCacheFloorBytes() + 1), nil
+	}
+	_, poor := loadResident(t, "mistral-tiny-window", decoder.Options{ResidentWindowedKV: true, MoECacheExperts: true})
+	kvGrantFreeVRAM = orig
+	if poor.kvSlack != kvWindowSlack {
+		t.Fatalf("expert-cache load with only the reserve and the cache's minimum free: slack %d, want the planned %d", poor.kvSlack, kvWindowSlack)
+	}
+}
+
+// TestWindowedKV_e0ResendReplay replays kvWindowNextBase over the shape of tack's E0 resend on Mellum2.1's 1,024-position window
+// (docs/queue-performance.md, P34, cause 2): a prompt of n positions prefilled in 512-row passes and one generated token, then a resend
+// that diverges d positions before the newest, rounded down to 64-position blocks. At the floor rollback (slack 512, step 64: 448) a
+// resend that diverges 518 or 600 back is refused and one that diverges 406 back is reused; at the granted rollback (1,024) all three
+// are reused. These are the pattern the by-day probe on nobara must show, before and after the fix.
+func TestWindowedKV_e0ResendReplay(t *testing.T) {
+	const window, step, block = 1024, 64, 64
+	reusable := func(n, d, slack int) bool {
+		rollback, capN, base := slack-step, window+slack, 0
+		pos := 0
+		for pos < n {
+			m := min(512, slack+1, n-pos)
+			from, to, err := kvWindowNextBase(base, pos, m, window, capN, rollback)
+			if err != nil {
+				t.Fatalf("prefill at %d: %v", pos, err)
+			}
+			_ = from
+			base, pos = to, pos+m
+		}
+		_, base, err := kvWindowNextBase(base, n, 1, window, capN, rollback)
+		if err != nil {
+			t.Fatalf("decode at %d: %v", n, err)
+		}
+		return kvWindowReusable(base, (n+1-d)/block*block, window)
+	}
+	for _, n := range []int{4096, 8192, 15360, 31744} {
+		for _, c := range []struct {
+			d              int
+			floor, granted bool
+		}{{406, true, true}, {518, false, true}, {600, false, true}} {
+			if got := reusable(n, c.d, 512); got != c.floor {
+				t.Errorf("n=%d, diverging %d back, floor rollback: reusable %v, want %v", n, c.d, got, c.floor)
+			}
+			if got := reusable(n, c.d, 512+576); got != c.granted {
+				t.Errorf("n=%d, diverging %d back, granted rollback: reusable %v, want %v", n, c.d, got, c.granted)
 			}
 		}
 	}
