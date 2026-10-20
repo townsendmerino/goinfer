@@ -30,3 +30,27 @@ the owner's yes.
 - **Cost:** about 15 minutes of nobara (two builds, about 2 minutes of tests, two loads, two or three cold 8k prefills at about
   93 tok/s), after tack's comparison releases the lock (about 20:20 PDT).
 - **Job:** `~/goinfer-bench/p34/run-p34.sh` on nobara, from a bundle of the branch (not on GitHub); logs in `~/goinfer-bench/p34/results/`.
+
+## Amendment, 2026-10-19 ~22:00 PDT, before any valid run
+
+The first run (nobara, 21:34-21:35, night job `p34-mellum-rollback`) is **INVALID** and graded nothing. The runner reported ok because
+the script exited 0 after failures:
+- **Tier 0:** `TestWindowedKV_expertCacheGetsTheGrant/routed_experts` failed at load. Fixture `gemma4-moe-kv-tiny` has
+  moe_intermediate_size 16, and CUDA's int4 MoE needs a multiple of 32. That also made the plant's failure meaningless, since it
+  failed at the same load.
+- **The probe:** the prompt was sized at about 4 characters per token. `docs/benchmarks.md` is 12,731 Mellum tokens (2.51 per
+  character-token), over `-ctx 8192`, so every request on both builds was an HTTP 400.
+
+Changes, none to the prediction or the bands:
+- **Fixture:** the routed subtest loads a new sibling, `gemma4-moe-kv-tiny32`. It is `scripts/pin_gemma4_moe_kv_forward.py` with
+  `PIN_MOE_INTER=32`. The original fixture and its goldens are unchanged (owner).
+- **The probe's sizing is in the server's tokens:**
+  - The filler is the prose `filler()` of `docs/measurements/qwen35-reuse-probe-2026-10-18/probe.py`. Its characters per token
+    come from `/v1/messages/count_tokens`, as `ttft_mellum.py` does.
+  - A is about 7,000 tokens, refused if within 64 of `-ctx 8192`.
+  - Each edit's cut is bisected so the kept prefix counts A's tokens less 400 (or 600). That many tokens of different filler follow it.
+- **The grade is computed:** `grade.py` reads the four request lines of each build's serve log and applies the bands above. It also
+  requires "A-again" reused on both builds and the new build's 400-token edit reused.
+- **Every failure exits non-zero:** a red tier 0, a plant that is not red on the grant assertion, a probe request that fails, and
+  a VOID, FAIL or AMBIGUOUS grade.
+- **Pins:** fix 2a581b97, old build 504da5ab (main before the fix, the branch's base).
