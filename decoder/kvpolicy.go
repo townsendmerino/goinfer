@@ -49,25 +49,6 @@ func kvF16Decline(backend string, a *Architecture, o Options) string {
 	return p.Decline(a.kvFacts(), o)
 }
 
-// kvF16For is whether this load's resident KV cache is f16 for architecture a under these options. A backend with a registered policy resolves it: "f16" asks for
-// it, "auto" (and the zero value) takes the backend's default, "f32" refuses it. Every other backend honours "f16" and nothing else makes it f16; Metal's f16 is
-// unconditional (ResidentKVPrecision) and the CPU has no f16 cache.
-func (o Options) kvF16For(a *Architecture) bool {
-	if p, ok := kvPolicies[o.Backend]; ok {
-		if a == nil {
-			return false
-		}
-		switch o.KVPrecision {
-		case "f16":
-			return p.Decline(a.kvFacts(), o) == ""
-		case "", "auto":
-			return p.Auto() && p.Decline(a.kvFacts(), o) == ""
-		}
-		return false
-	}
-	return o.KVPrecision == "f16"
-}
-
 // KVF16DeclineReason is the reason a load asked for f16 KV is held at f32 by its backend's policy, "" when it is not held back or the backend has none. serve's
 // banner prints it.
 func (m *Model) KVF16DeclineReason() string {

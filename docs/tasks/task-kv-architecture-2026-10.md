@@ -28,7 +28,7 @@
 > 6. KV in host memory.
 >
 > **Lever 3 is in the tree as of 2026-10-13, after this doc was written (KV0 found it).** f16 K/V is now the CUDA default for
-> llama, mistral, qwen2, qwen3 and phi3 (`cuda/kvpolicy.go:cudaKVF16Decline` lists what keeps f32; owner override,
+> llama, mistral, qwen2, qwen3 and phi3 (`decoder/kvresolve.go:CUDAKVF16Decline` lists what keeps f32; owner override,
 > commit 60222412). The text below that says CUDA is f32-only (this note as first written, §1, §4, §5.9, KV4b, D7) described the
 > tree at `e2ffb953`. R6 phase 3 had been parked on 2026-09-26 on a *speed* case: about 1.05× on a GQA 7B at depth 3,900
 > (`docs/prompts/cuda-r6-flash-decode.md`); the case for it was *capacity*, and the override took it on that ground. What
@@ -183,7 +183,7 @@ slot is gone; and every KV feature is built three or four times.
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
 | storage | per sequence, per layer `[]float32` growing by append; a ring per window layer (`decoder/kvcache.go:KVCache`) | per slot, per layer `ctxCap × kvDim`; window layers hold window + 512 (`cuda/kvwindow.go`) | per layer, slots in one allocation (`kvContig`), padded | per slot a whole `runModel` and `DecodeRunner` with bind groups baked over its KV (`gpu/kv_slots.go:webgpuKVSlot`) |
-| precision | f32, or int8 with a scale per position and KV head | **f16 by default for llama, mistral, qwen2, qwen3 and phi3, f32 otherwise** (`decoder/residency.go:Model.ResidentKVPrecision`, `cuda/kvpolicy.go:cudaKVF16Decline`); no int8, no scales | f16, or int8 (f32 compiled out) | f32, f16 or int8 |
+| precision | f32, or int8 with a scale per position and KV head | **f16 by default for llama, mistral, qwen2, qwen3 and phi3, f32 otherwise** (`decoder/residency.go:Model.ResidentKVPrecision`, `decoder/kvresolve.go:CUDAKVF16Decline`); no int8, no scales | f16, or int8 (f32 compiled out) | f32, f16 or int8 |
 | context when unpinned | the model's window; KV allocated per request | fit up to 16,384, floor 4,096 (`cuda/resident.go:resolveCtxCapFit`) | fit up to 16,384 (M2), floor 4,096; `-ctx` up to 32,768 (`metal/model.go:resolveMetalCtxCap`) | a ceiling by precision |
 | several conversations | sessions (`-kv-sessions 4`), MC3c workers / batched decode | MC1 slots (`cuda/resident.go:cudaResident.UseKVSlot`), MC3 (`cuda/batchstep.go:cudaResident.StepBatch`) | MC1, 2 slots by default; MC3 (`metal/batch.go:metalResident.StepBatch`) | MC1 only (clamp-only on discrete GPUs) |
 | hybrids | all four recurrent kinds | DeltaNet, one slot | DeltaNet, one slot | DeltaNet, Mamba-2, one slot |
@@ -452,7 +452,7 @@ is MC4's identity gate extended to shared preambles.
   the root key, so blocks of different precisions never match.
 - **CUDA's f16 is already the default** for llama, mistral, qwen2, qwen3 and phi3 (owner override 2026-10-13, ahead of this
   doc's KV4b); `--kv f32` keeps the reference. D7 is therefore decided for those families. KV4b extends f16 to f16 *pools* and to
-  the families that still decline (`cuda/kvpolicy.go:cudaKVF16Decline`: windowed, MLA, MoE, pairwise RoPE, m-RoPE).
+  the families that still decline (`decoder/kvresolve.go:CUDAKVF16Decline`: windowed, MLA, MoE, pairwise RoPE, m-RoPE).
 - **Lower precision, KV10, research only:** keys and values at different precisions (K8V4), or keys quantized per channel
   (KIVI/KVQuant style).
 

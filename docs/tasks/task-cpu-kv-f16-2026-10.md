@@ -76,7 +76,7 @@ Read in the tree, not run:
   - Both go away once the CPU cache has a real f16 form. Until then they are a small under-count and a wrong line,
     worth confirming with one run and fixing on their own if this task stays parked.
 - **The other backends:** Metal allocates f16 unless int8 is asked; CUDA takes `--kv auto` (the default) as f16 for
-  the dense llama, mistral, qwen2, qwen3 and phi3 families and as f32 for every other (`decoder/kvpolicy.go:Options.kvF16For`);
+  the dense llama, mistral, qwen2, qwen3 and phi3 families and as f32 for every other (`decoder/kvresolve.go:ResolveKV`);
   WebGPU takes f32 (what `auto` gives it), f16 or int8 (`docs/ARCHITECTURE.md`, the K/V precision table).
 - **Who reads the cache.** The int8 cache is the model for a second storage form, and it does not work the way the
   first draft of this document said: nothing in the generic path reads a stored row with its own dot. Every reader is

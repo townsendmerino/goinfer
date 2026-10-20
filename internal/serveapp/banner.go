@@ -56,15 +56,9 @@ type bannerFacts struct {
 	// the price harnessLine quotes; 0 off the resident path.
 	harnessKVBytes int64
 
-	// kvPrec is the KV precision the resident runner actually allocates (decoder.Model.ResidentKVPrecision),
-	// "" off the resident path — where the requested -kv is what applies.
-	kvPrec string
-
-	// kvF16Decline: why a CUDA load that asked for -kv f16 was held at f32 (decoder.Model.KVF16DeclineReason), "" when it was not.
-	kvF16Decline string
-	// cpuKVPrec is the CPU (host) KV cache's precision (decoder.Model.CPUKVPrecision), and cpuKVF16Decline why an f16 request
-	// left it at f32.
-	cpuKVPrec, cpuKVF16Decline string
+	// kv is each cache the load built, with the precision requested, the one delivered, and why they differ
+	// (decoder.Model.KVPrecisionReports): the resident cache, or the CPU cache off the resident path.
+	kv []decoder.KVPrecisionReport
 
 	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
 	residentReuseOff bool
@@ -108,9 +102,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
-	f.kvPrec = lm.model.ResidentKVPrecision()
-	f.kvF16Decline = lm.model.KVF16DeclineReason()
-	f.cpuKVPrec, f.cpuKVF16Decline = lm.model.CPUKVPrecision(), lm.model.CPUKVF16DeclineReason()
+	f.kv = lm.model.KVPrecisionReports()
 	f.ctxNote = lm.model.ResidentContextNote()
 	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.model.ResidentKVSlots()
@@ -193,26 +185,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			cpuNote += "; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)"
 		}
 	}
-	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv
-	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32. "auto", the
-	// flag's default, is not a choice: off the resident path it is f32.
-	switch req := cfg.load.KV; {
-	case f.kvPrec != "":
-		ctxLine += " · KV " + f.kvPrec
-		if f.kvPrec != "f32" && f.kvPrec == req {
-			ctxLine += " (lossy)"
-		}
-	case f.cpuKVPrec != "" && f.cpuKVPrec != "f32": // off the resident path, the CPU cache's own precision
-		ctxLine += " · KV " + f.cpuKVPrec + " (lossy)"
-	default:
-		ctxLine += " · KV f32"
-		if f.cpuKVF16Decline != "" {
-			ctxLine += " (-kv f16 held at f32: " + f.cpuKVF16Decline + ")"
-		}
-	}
-	if f.kvF16Decline != "" {
-		ctxLine += " (-kv f16 held at f32: " + f.kvF16Decline + ")"
-	}
+	ctxLine += kvBannerPart(f.kv)
 	ctxLine += cpuNote
 	out = append(out, ctxLine)
 	if l := harnessLine(f); l != "" {
@@ -467,4 +440,29 @@ func samplingLine(rs *decoder.RecommendedSampling) string {
 			" (it divides logits; the sampler's penalties are subtractive)"
 	}
 	return line
+}
+
+// kvBannerPart is the context line's KV part: for each cache the load built, the precision it holds and the one requested, with the
+// reason when they differ (an explicit request that cannot be delivered refuses the load, so a difference here is auto's pick).
+// "lossy" marks f16 or i8 that the operator asked for by name.
+func kvBannerPart(reps []decoder.KVPrecisionReport) string {
+	if len(reps) == 0 {
+		return " · KV f32"
+	}
+	var s string
+	for i, r := range reps {
+		label := "KV"
+		if i > 0 {
+			label = "CPU KV"
+		}
+		note := "requested " + r.Requested
+		if r.Reason != "" && r.Requested != r.Delivered {
+			note += ": " + r.Reason
+		}
+		if (r.Delivered == "f16" || r.Delivered == "i8") && r.Delivered == r.Requested {
+			note += ", lossy"
+		}
+		s += " · " + label + " " + r.Delivered + " (" + note + ")"
+	}
+	return s
 }

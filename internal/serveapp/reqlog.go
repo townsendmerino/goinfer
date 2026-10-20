@@ -55,8 +55,9 @@ type reqTrace struct {
 	canon               bool
 	ids                 idsOutcome
 	idsSeen             bool
-	fast                bool // the request named the fast alias (fast_alias.go)
-	snapRows            int  // rows a host snapshot restored for the first generation (decoder.Generation.KVSnapRestored)
+	fast                bool   // the request named the fast alias (fast_alias.go)
+	snapRows            int    // rows a host snapshot restored for the first generation (decoder.Generation.KVSnapRestored)
+	kv                  string // the KV precision the model's cache holds (decoder.Model.KVDelivered), "" when unknown
 	// prefill records a declined batched prefill and the path that ran the prompt instead (decoder.PrefillReport)
 	prefill *decoder.PrefillReport
 	// fromModel names the first generation's sampling fields taken from the model (genRequest.fromModel)
@@ -89,6 +90,9 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, gen *decoder.Genera
 		if gen != nil {
 			t.reuseKnown, t.reused, t.slot, t.match = true, gen.PrefillReused, gen.PrefillSlot, gen.PrefillMatch
 			t.snapRows = gen.KVSnapRestored
+			if lm.model != nil {
+				t.kv = lm.model.KVDelivered()
+			}
 		}
 	}
 	t.completion += len(ids)
@@ -274,6 +278,9 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 	}
 	line := fmt.Sprintf("request: %s model=%s status=%d prompt_tokens=%s completion_tokens=%s ttft=%s total=%dms reused=%s slot=%s div=%s canon=%s %s",
 		route, model, status, prompt, completion, ttft, end.Sub(t.start).Milliseconds(), reused, slot, div, canon, ids)
+	if t.kv != "" {
+		line += " kv=" + t.kv // the precision the request's KV cache holds; absent when the route reports no model
+	}
 	if t.fast {
 		line += " fast=1" // only a request that named the alias carries the field, so every other line keeps its shape
 	}

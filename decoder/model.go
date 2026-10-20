@@ -66,6 +66,8 @@ type Model struct {
 	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
 	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
 	resImgBlocks []residentImageBlock
+	// kvOpts is the Options the model was loaded with, which ResolveKV reads for the precision each cache delivers (KVPrecisionReport).
+	kvOpts Options
 	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with resIDs; nil means no drafter context is
 	// trustworthy for reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit resIDs without
 	// touching a block drafter's context, so the token prefix can match while the drafter's state does not reflect it. Cleared
@@ -396,6 +398,9 @@ type Options struct {
 	// resident context THIS model ends up choosing, which is unknowable when ExtraResidentBytes is priced (in loadDecoder). See
 	// Model.ExtraResidentKVPerPosition and decoder.DrafterKVBytesPerPosition. 0 (the default) means no such term.
 	ExtraResidentKVPerPosition int64
+	// Drafter reports that a block drafter will be attached to this model after the load (serve's --drafter). The drafter keeps f32
+	// K/V and attends with the target's kernels, so on CUDA auto resolves the KV to f32, and an explicit f16 refuses (ResolveKV).
+	Drafter bool
 	// ExactPrefill forces bit-exact prompt ingestion on every backend that has a faster, non-exact default: CUDA's tensor-core
 	// batched prefill (GOINFER_CUDA_FAST_PREFILL), Metal's f16-MMA batched prefill (GOINFER_METAL_FAST_PREFILL) and CPU's
 	// f32-attention fast path (GOINFER_CPU_FAST_ATTENTION), all default ON above their own thresholds. false (the default)
@@ -490,17 +495,17 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	}
 	kvF16, kvDecline := opts.KVPrecision == "f16", ""
 	if be != nil {
-		// A backend with a registered KV policy resolves the precision (kvpolicy.go); an explicit "f16" it holds at f32 says why (Model.KVF16DeclineReason).
-		o := opts
-		o.Backend = be.Name()
-		if _, ok := kvPolicies[o.Backend]; ok {
-			kvF16 = o.kvF16For(w.arch)
+		// A backend with a registered KV policy builds what ResolveKV says (kvresolve.go); an explicit "f16" it cannot hold says why
+		// (Model.KVF16DeclineReason), and Load refuses it (kvRefusal).
+		if _, ok := kvPolicies[be.Name()]; ok {
+			got, why := ResolveKV(be.Name(), w.arch, opts)
+			kvF16 = got == kvPrecF16
 			if !kvF16 && opts.KVPrecision == "f16" {
-				kvDecline = kvF16Decline(o.Backend, w.arch, o)
+				kvDecline = why
 			}
 		}
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts),
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,

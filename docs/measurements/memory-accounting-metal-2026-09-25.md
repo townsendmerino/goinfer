@@ -3,6 +3,11 @@
 `docs/tasks/task-memory-accounting-2026-09.md` (items 1, 2 and 4, for Metal). The task doc was written on the Linux box;
 its central claim was re-measured here on the Mac before anything changed.
 
+> **Note, 2026-10-20 (KV precision phase 0, `docs/tasks/task-kv-precision-everywhere-2026-10.md`):** from phase 0 on, a Metal load
+> given `--kv f32` refuses the load by name instead of running f16, until phase 3 restores the f32 KV kernels.
+> `TestResidentKVPrecision_metalReportsWhatRuns` now expects that refusal for an f32 request. This record's figures are f16 figures and
+> stand.
+
 ## What was measured first (M1 Pro, `~/models`, ctx 4096, int4)
 
 | load | Metal resident guard | `Plan("metal")` (what `fit` reports) |
