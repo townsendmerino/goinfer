@@ -942,6 +942,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		return
 	}
 	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
@@ -1158,6 +1159,9 @@ type genRequest struct {
 	// boundary is how many leading ids of promptIDs are the stable system-and-tools section (loadedModel.prefixBoundary), 0 when unknown. It reaches the
 	// decoder as KVScope.Boundary, where a prefix snapshot may be taken at it during the cold prefill.
 	boundary int
+	// keep is how many leading ids of promptIDs the next turn's prompt repeats (loadedModel.recurrentKeep), 0 when unknown or not a recurrent model
+	// whose snapshots carry its state. It reaches the decoder as KVScope.Keep, where the state is kept for the next turn.
+	keep int
 	// fromModel names the sampling fields prepare took from the model's recommended sampling (withRecommended).
 	fromModel []string
 	// callPostCheck is a must-call tool_choice on a family with no JSON call form (forcedCallEnforcement "post-check"):
@@ -1596,7 +1600,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	// prefix-reuse path.
 	if lm.model.ResidentActive() && lm.adapter == "" {
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
-		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: gr.boundary})
+		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: gr.boundary, Keep: gr.keep})
 		if lm.blockSpec != nil && gr.masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with

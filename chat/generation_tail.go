@@ -4,10 +4,11 @@ package chat
 // marker with, so the two renders part ways at the reply, never inside it.
 const generationTailProbe = "\x00goinfer generation tail probe\x00"
 
-// nextTurn is turns followed by a probe reply and a probe user message: the shape of the next request. The user message matters: a
-// template that keeps the reasoning of the turns after the last user query (Qwen3.5's tool-loop rule) renders a trailing assistant
-// turn with its think block, and drops it once a user turn follows.
-func nextTurn(turns []Turn) []Turn {
+// NextTurns is turns followed by a probe reply and a probe user message: the shape of the next request. Rendering it beside turns, with
+// the same system prompt and tools, shows where the next prompt and this one part ways. The user message matters: a template that keeps
+// the reasoning of the turns after the last user query (Qwen3.5's tool-loop rule) renders a trailing assistant turn with its think
+// block, and drops it once a user turn follows.
+func NextTurns(turns []Turn) []Turn {
 	return append(append([]Turn(nil), turns...), Turn{Role: "assistant", Content: generationTailProbe}, Turn{Role: "user", Content: generationTailProbe})
 }
 
@@ -21,17 +22,10 @@ func nextTurn(turns []Turn) []Turn {
 // in tokens from the two renders' common token prefix, not from this string's length.
 func (t *Template) GenerationTail(system string, turns []Turn) string {
 	gen := t.Render(system, turns)
-	next := t.Render(system, nextTurn(turns))
+	next := t.Render(system, NextTurns(turns))
 	i := 0
 	for i < len(gen) && i < len(next) && gen[i] == next[i] {
 		i++
 	}
 	return gen[i:]
-}
-
-// NextTurnRender is Render of the conversation followed by a probe reply and a probe user message: the text whose common token prefix
-// with Render's is where the next turn's prompt and this one part ways. Exposed so a caller can count GenerationTail in its own
-// tokenizer's ids.
-func (t *Template) NextTurnRender(system string, turns []Turn) string {
-	return t.Render(system, nextTurn(turns))
 }

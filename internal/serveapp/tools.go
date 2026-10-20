@@ -64,6 +64,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
 
 	// Tight when unambiguous: a forced function or a lone tool constrains the call to that tool's schema (when the family has
 	// a JSON call form). A NAMED tool_choice that cannot be constrained is a 400, not a silent unconstrained decode.

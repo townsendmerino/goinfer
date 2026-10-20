@@ -20,6 +20,36 @@ func (lm *loadedModel) prefixBoundary(tm *chat.Template, system string, turns []
 	return lm.prefixBoundaryOf(tm, system, turns, tools, ids)
 }
 
+// recurrentKeep is how many leading ids of ids, the prompt rendered from (system, turns, tools), the next turn's prompt repeats: ids rendered
+// again with a reply and a new user message after them (chat.NextTurns) share that many leading ids with ids. A recurrent model's state is
+// kept there (KVScope.Keep, docs/queue-engineering.md B35), because a template that rewrites the end of the prompt in its history render
+// (Qwen3.5's empty think block) leaves no other point the next turn continues from. 0 for a model whose snapshots do not carry its state,
+// when the next prompt repeats all of ids (the slot's own state serves it), or when nothing is shared.
+func (lm *loadedModel) recurrentKeep(tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ids []int) int {
+	if lm.model == nil || !lm.model.KeepsRecurrentSnapshots() || tm == nil || len(turns) == 0 {
+		return 0
+	}
+	next := chat.NextTurns(turns)
+	var segs []chat.Segment
+	if len(tools) > 0 {
+		segs = tm.RenderToolsSegments(system, next, tools)
+	} else {
+		segs = tm.RenderSegments(system, next)
+	}
+	nids, err := lm.tk.EncodeSegments(segs, false)
+	if err != nil {
+		return 0
+	}
+	k := 0
+	for k < len(ids) && k < len(nids) && ids[k] == nids[k] {
+		k++
+	}
+	if k == len(ids) {
+		return 0
+	}
+	return k
+}
+
 // prefixBoundaryOf is prefixBoundary for a server that can use one (the model check is the caller's).
 func (lm *loadedModel) prefixBoundaryOf(tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ids []int) int {
 	if tm == nil || len(turns) == 0 {
