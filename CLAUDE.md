@@ -372,7 +372,10 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
   - A `run-*.sh` whose timed step is not one of those harnesses (a `go test` measurement gate, a sweep loop) wraps it:
     `python3 scripts/timing_lock.py run --label <name> -- <cmd>`.
   - A refusal means another run is measuring on this box. Wait for it (`timing_lock.py status` names it); never delete
-    the lock file to get past it.
+    the lock file to get past it: its holder keeps its flock on the deleted file, and the next run takes a new one beside it.
+  - **Work that only adds load holds it shared:** `timing_lock.py run --shared -- <cmd>` (`acquire(shared=True)` in Python) for
+    a gate, a test run, or a screen that times another box. Loaders run together. A timed run (exclusive, the default) waits
+    for every loader and refuses naming them, and no loader starts under a timed run.
   - **The day tools check it too.** `touched.py`, `refresh_parity_hashes.sh` and `gate quick` refuse while a timed run holds
     the lock, naming the holder: a build or test run beside it contaminates its timings. `bench_compare.sh` takes the lock
     itself. `--wait SECONDS` waits for the holder, and `--ignore-timing-lock` overrides, for emergencies only, and the

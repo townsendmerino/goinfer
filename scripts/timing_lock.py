@@ -15,8 +15,16 @@ times. The kernel drops a flock when its holder exits, crashes or is killed, so 
 
 It is cooperative: a `go test -bench` typed by hand does not take it. The harnesses and the run-*.sh wrapper do.
 
+SHARED. Work that only adds load (a gate, a test run, another project's screen that times a different box) can hold the lock
+SHARED (LOCK_SH: `run --shared`, acquire(shared=True)). Loaders run together; a timed run (exclusive, the default) waits for every
+loader and refuses naming them, and no loader starts under a timed run. Each loader's record is a file in <lock>.shared/, removed
+when it releases; the lock file itself holds only the timed run's record. A loader's children inherit its hold; a timed run asked
+for under a loader is refused at once (it would wait on its own parent).
+
 usage:
-  timing_lock.py run [--wait SECONDS] [--label TEXT] -- CMD [ARGS...]   hold the lock while CMD runs (for run-*.sh)
+  timing_lock.py run [--shared] [--wait SECONDS] [--label TEXT] -- CMD [ARGS...]
+                                                                       hold the lock while CMD runs (for run-*.sh);
+                                                                       --shared: as a loader, not a timed run
   timing_lock.py status                                                who holds it, if anyone (exit 1 when held by
                                                                        a run other than this process's own holder)
   timing_lock.py check --tool NAME [--wait S] [--ignore-timing-lock]  for a day tool that loads the box (a build, a
@@ -51,6 +59,28 @@ POLL_S = 5
 
 def lock_path():
     return Path(os.environ.get("GOINFER_TIMING_LOCK_FILE") or Path.home() / ".goinfer-timing.lock")
+
+
+def shared_dir(path=None):
+    """Where loaders (shared holders) keep their records: one JSON file each, named by token."""
+    return Path(str(path or lock_path()) + ".shared")
+
+
+def shared_holders(path=None):
+    """The records of the loaders holding the lock shared, oldest first. A record whose pid is dead on this host is removed: the
+    kernel dropped that process's flock when it exited."""
+    d = shared_dir(path)
+    out = []
+    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
+        try:
+            h = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        if recorded_pid_state(h) == "DEAD":
+            f.unlink(missing_ok=True)
+            continue
+        out.append(h)
+    return sorted(out, key=lambda h: h.get("start", ""))
 
 
 def read_holder(path=None):
@@ -138,22 +168,32 @@ def recorded_pid_state(h):
 
 
 class Held(Exception):
-    def __init__(self, holder, path):
-        self.holder, self.path = holder, path
-        super().__init__(f"another timed run holds the timing lock ({path}): {describe(holder)}")
+    def __init__(self, holder, path, loaders=None, why=None):
+        self.holder, self.path, self.loaders = holder, path, loaders or []
+        if why:
+            msg = why
+        elif self.loaders:
+            msg = (f"{len(self.loaders)} loader(s) hold the timing lock shared ({path}), and a timed run waits for every one: "
+                   + "; ".join(describe(h) for h in self.loaders))
+        else:
+            msg = f"another timed run holds the timing lock ({path}): {describe(holder)}"
+        super().__init__(msg)
 
 
 class Lock:
     """An acquired (or inherited) timing lock. release() is idempotent."""
 
-    def __init__(self, fd, path, token, inherited):
-        self.fd, self.path, self.token, self.inherited = fd, path, token, inherited
+    def __init__(self, fd, path, token, inherited, shared=False):
+        self.fd, self.path, self.token, self.inherited, self.shared = fd, path, token, inherited, shared
 
     def release(self):
         if self.fd is None:
             return
         try:
-            os.ftruncate(self.fd, 0)
+            if self.shared:
+                (shared_dir(self.path) / f"{self.token}.json").unlink(missing_ok=True)
+            else:
+                os.ftruncate(self.fd, 0)
             fcntl.flock(self.fd, fcntl.LOCK_UN)
         finally:
             os.close(self.fd)
@@ -162,44 +202,66 @@ class Lock:
                 del os.environ[TOKEN_ENV]
 
 
-def acquire(label="", wait_s=0.0, cmd=None):
-    """Take the timing lock, or inherit it from a parent that holds it. Raises Held if another run holds it after
-    waiting wait_s seconds (0 = refuse at once)."""
+SHARED_PREFIX = "sh-"  # a loader's token starts with it
+
+
+def _try_lock(fd, shared):
+    """One non-blocking flock attempt: LOCK_SH for a loader, LOCK_EX for a timed run. Raises OSError when it would block."""
+    fcntl.flock(fd, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+
+
+def acquire(label="", wait_s=0.0, cmd=None, shared=False):
+    """Take the timing lock, or inherit it from a parent that holds it. Raises Held if it is held against this mode after
+    waiting wait_s seconds (0 = refuse at once). shared: as a loader (see SHARED in the module doc); the default is a timed run."""
     path = lock_path()
     mine = os.environ.get(TOKEN_ENV)
+    if mine and mine.startswith(SHARED_PREFIX):
+        parent = next((h for h in shared_holders(path) if h.get("token") == mine), None)
+        if parent is not None:
+            if shared:
+                return Lock(None, path, mine, inherited=True, shared=True)
+            raise Held(parent, path, why=f"this process runs under a loader's shared hold of the timing lock ({path}): "
+                                         f"{describe(parent)}; a timed run cannot start under it, and waiting would wait on its own parent")
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
     deadline = time.monotonic() + max(0.0, wait_s)
     while True:
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _try_lock(fd, shared)
             break
         except OSError as e:
             if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES):
                 os.close(fd)
                 raise
             holder = read_holder(path)
-            if mine and holder.get("token") == mine:  # a parent of ours holds it: proceed under it
+            if mine and holder.get("token") == mine:  # a timed run of ours holds it: its children run inside it
                 os.close(fd)
-                return Lock(None, path, mine, inherited=True)
+                return Lock(None, path, mine, inherited=True, shared=shared)
             if time.monotonic() >= deadline:
                 os.close(fd)
-                raise Held(holder, path)
+                raise Held(holder, path, loaders=[] if shared else shared_holders(path))
             time.sleep(min(POLL_S, max(0.1, deadline - time.monotonic())))
-    token = f"{os.getpid()}-{time.time_ns()}"
-    rec = {"pid": os.getpid(), "host": platform.node(), "label": label, "token": token,
+    token = f"{SHARED_PREFIX if shared else ''}{os.getpid()}-{time.time_ns()}"
+    rec = {"pid": os.getpid(), "host": platform.node(), "label": label, "token": token, "mode": "shared" if shared else "exclusive",
            "cmd": cmd or shlex.join(sys.argv), "start": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
-    os.ftruncate(fd, 0)
-    os.pwrite(fd, (json.dumps(rec) + "\n").encode(), 0)
-    os.fsync(fd)
+    if shared:
+        d = shared_dir(path)
+        d.mkdir(exist_ok=True)
+        tmp = d / f".{token}.tmp"
+        tmp.write_text(json.dumps(rec) + "\n")
+        tmp.replace(d / f"{token}.json")
+    else:
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, (json.dumps(rec) + "\n").encode(), 0)
+        os.fsync(fd)
     os.environ[TOKEN_ENV] = token  # children inherit it
-    return Lock(fd, path, token, inherited=False)
+    return Lock(fd, path, token, inherited=False, shared=shared)
 
 
 @contextlib.contextmanager
-def hold(label="", wait_s=0.0):
+def hold(label="", wait_s=0.0, shared=False):
     """acquire() as a context manager that exits the program, naming the holder, if the lock is taken."""
     try:
-        lk = acquire(label=label, wait_s=wait_s)
+        lk = acquire(label=label, wait_s=wait_s, shared=shared)
     except Held as e:
         sys.exit(f"REFUSED: {e}. One timed run per box (TE9): a second run would measure the first. Wait for it "
                  f"to finish, or pass a wait if the harness has one.")
@@ -213,9 +275,10 @@ def cmd_run(a):
     if not a.cmd:
         sys.exit("timing_lock.py run: no command (usage: run [--wait S] [--label L] -- CMD ARGS...)")
     try:
-        lk = acquire(label=a.label, wait_s=a.wait, cmd=shlex.join(a.cmd))
+        lk = acquire(label=a.label, wait_s=a.wait, cmd=shlex.join(a.cmd), shared=a.shared)
     except Held as e:
-        print(f"REFUSED: {e}. One timed run per box (TE9).", file=sys.stderr)
+        print(f"REFUSED: {e}. One timed run per box (TE9){'; a loader does not start under a timed run' if a.shared else ''}.",
+              file=sys.stderr)
         return 75  # EX_TEMPFAIL: try again later
     child = subprocess.Popen(a.cmd)  # inherits GOINFER_TIMING_LOCK through os.environ
 
@@ -294,6 +357,12 @@ def cmd_status(_a):
         return 1
     mine = os.environ.get(TOKEN_ENV)
     holder = read_holder(path) if path.exists() else {}
+    loaders = shared_holders(path)
+    if loaders:
+        print(f"free to loaders: {len(loaders)} hold it shared ({path}); a timed run waits for every one:")
+        for h in loaders:
+            print(f"  {describe(h)}")
+        return 0
     if mine and holder.get("token") == mine:
         print(f"free to this run (inherited from {describe(holder)})")
     elif holder and recorded_pid_state(holder) == "DEAD":
@@ -310,6 +379,8 @@ def main(argv=None):
     r = sub.add_parser("run", help="hold the lock while CMD runs")
     r.add_argument("--wait", type=float, default=0.0, help="seconds to wait for a holder to finish (default: refuse)")
     r.add_argument("--label", default="", help="shown to a refused contender")
+    r.add_argument("--shared", action="store_true", help="hold it as a loader (gates, tests, a screen timing another box): loaders run "
+                   "together, a timed run waits for them, and none starts under a timed run")
     r.add_argument("cmd", nargs=argparse.REMAINDER)
     sub.add_parser("status", help="who holds the lock")
     c = sub.add_parser("check", help="exit 0 if a day tool may load the box now, 75 if a timed run holds the lock")

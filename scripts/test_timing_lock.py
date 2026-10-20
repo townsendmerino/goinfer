@@ -289,5 +289,138 @@ class TimingLockTest(unittest.TestCase):
         self.assertNotIn("recorded pid DEAD", planted, "the plant must make the dead-holder assertions above fail, or they prove nothing")
 
 
+LOADER = (
+    "import sys, time; sys.path.insert(0, %r); import timing_lock as t\n"
+    "l = t.acquire(label=sys.argv[2], shared=True)\n"
+    "print('ready', flush=True)\n"
+    "time.sleep(float(sys.argv[1]))\n"
+) % HERE
+
+
+class SharedMode(unittest.TestCase):
+    """Loaders (shared holders) run together; a timed run (exclusive) waits for every loader; no loader starts under a timed run.
+    Each direction has a plant that breaks it once, and the test must see the break."""
+
+    setUp, tearDown, holder = TimingLockTest.setUp, TimingLockTest.tearDown, TimingLockTest.holder
+
+    def loader(self, label="loader-under-test", secs=30):
+        p = subprocess.Popen([sys.executable, "-c", LOADER, str(secs), label], env=self.env, stdout=subprocess.PIPE, text=True)
+        self.procs.append(p)
+        self.assertEqual(p.stdout.readline().strip(), "ready", f"loader {label} did not get the lock")
+        return p
+
+    def stop(self, p):
+        p.kill()
+        p.wait()
+
+    def test_loaders_run_together(self):
+        a, b = self.loader("gate"), self.loader("screen")
+        lk = timing_lock.acquire(label="tests", shared=True)  # a third, in this process
+        self.assertFalse(lk.inherited)
+        labels = sorted(h["label"] for h in timing_lock.shared_holders())
+        self.assertEqual(labels, ["gate", "screen", "tests"])
+        lk.release()
+        self.assertEqual(sorted(h["label"] for h in timing_lock.shared_holders()), ["gate", "screen"], "a released loader's record stays")
+        self.assertEqual(timing_lock.held_by_other(), None, "a day tool must read loaders as free to it")
+        for p in (a, b):
+            self.stop(p)
+
+    def test_plant_loaders_taking_it_exclusive_cannot_run_together(self):
+        self.loader("gate")
+        orig = timing_lock._try_lock
+        timing_lock._try_lock = lambda fd, shared: orig(fd, False)  # PLANT: every hold exclusive
+        try:
+            with self.assertRaises(timing_lock.Held):
+                timing_lock.acquire(label="tests", shared=True)
+        finally:
+            timing_lock._try_lock = orig
+
+    def test_a_timed_run_waits_for_every_loader(self):
+        a, b = self.loader("gate"), self.loader("screen")
+        with self.assertRaises(timing_lock.Held) as cm:
+            timing_lock.acquire(label="bench")
+        msg = str(cm.exception)
+        self.assertIn("2 loader(s) hold the timing lock shared", msg)
+        self.assertIn(f"pid {a.pid}", msg)
+        self.assertIn(f"pid {b.pid}", msg)
+        self.stop(a)
+        with self.assertRaises(timing_lock.Held):
+            timing_lock.acquire(label="bench")
+        self.stop(b)
+        lk = timing_lock.acquire(label="bench")  # the last loader gone
+        self.assertEqual(timing_lock.read_holder()["label"], "bench")
+        self.assertEqual(timing_lock.shared_holders(), [], "a dead loader's record is not cleared")
+        lk.release()
+        # the CLI: an exclusive run under a loader refuses with 75 and does not run its command
+        self.loader("gate")
+        marker = os.path.join(self.dir.name, "ran")
+        r = subprocess.run([sys.executable, TL, "run", "--", sys.executable, "-c", f"open({marker!r}, 'w')"],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 75, r.stderr)
+        self.assertIn("loader(s) hold the timing lock shared", r.stderr)
+        self.assertFalse(os.path.exists(marker))
+
+    def test_no_loader_starts_under_a_timed_run(self):
+        h = self.holder()
+        with self.assertRaises(timing_lock.Held) as cm:
+            timing_lock.acquire(label="tests", shared=True)
+        self.assertIn(f"pid {h.pid}", str(cm.exception))
+        marker = os.path.join(self.dir.name, "ran")
+        r = subprocess.run([sys.executable, TL, "run", "--shared", "--", sys.executable, "-c", f"open({marker!r}, 'w')"],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 75, r.stderr)
+        self.assertIn("a loader does not start under a timed run", r.stderr)
+        self.assertFalse(os.path.exists(marker), "a refused loader must not execute its command")
+
+    def test_plant_a_loader_that_takes_no_lock_starts_under_a_timed_run(self):
+        self.holder()
+        orig = timing_lock._try_lock
+        timing_lock._try_lock = lambda fd, shared: None if shared else orig(fd, shared)  # PLANT: a loader takes nothing
+        try:
+            lk = timing_lock.acquire(label="tests", shared=True)
+            lk.release()
+        finally:
+            timing_lock._try_lock = orig
+
+    def test_the_default_stays_exclusive(self):
+        lk = timing_lock.acquire(label="first")
+        try:
+            r = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {HERE!r}); import timing_lock as t\n"
+                                "try:\n    t.acquire(label='second')\nexcept t.Held:\n    print('refused')"],
+                               env=self.env, capture_output=True, text=True)
+            self.assertEqual(r.stdout.strip(), "refused", r.stderr)
+            self.assertEqual(timing_lock.read_holder()["mode"], "exclusive")
+        finally:
+            lk.release()
+
+    def test_a_timed_runs_children_inherit_it_as_loaders(self):
+        inner = (f"import sys; sys.path.insert(0, {HERE!r}); import timing_lock as t; "
+                 "l = t.acquire(label='child', shared=True); print('inherited' if l.inherited else 'own')")
+        r = subprocess.run([sys.executable, TL, "run", "--label", "bench", "--", sys.executable, "-c", inner],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "inherited"), r.stderr)
+
+    def test_a_timed_run_under_a_loader_is_refused_at_once(self):
+        inner = (f"import sys, time; sys.path.insert(0, {HERE!r}); import timing_lock as t\n"
+                 "t0 = time.monotonic()\n"
+                 "try:\n    t.acquire(label='bench', wait_s=20)\n    print('took it')\n"
+                 "except t.Held as e:\n    print(f'refused in {time.monotonic() - t0:.1f}s: {e}')\n"
+                 "l = t.acquire(label='nested loader', shared=True); print('loader inherited' if l.inherited else 'loader own')")
+        r = subprocess.run([sys.executable, TL, "run", "--shared", "--label", "gate", "--", sys.executable, "-c", inner],
+                           env=self.env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = r.stdout.strip()  # the refusal quotes the multi-line command, so read it whole
+        self.assertTrue(out.startswith("refused in 0."), out)
+        self.assertIn("runs under a loader's shared hold", out)
+        self.assertEqual(out.splitlines()[-1], "loader inherited")
+
+    def test_status_lists_the_loaders(self):
+        a = self.loader("gate")
+        r = subprocess.run([sys.executable, TL, "status"], env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("free to loaders: 1 hold it shared", r.stdout)
+        self.assertIn(f"pid {a.pid}", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
