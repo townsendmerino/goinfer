@@ -2,7 +2,9 @@ package decoder
 
 import (
 	"context"
+	"errors"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -76,23 +78,17 @@ func TestPromptHiddenMany_matchesSeparate(t *testing.T) {
 	}
 }
 
-// With an int8 KV cache the checkpoint copies the int8 rows and their scales.
+// An int8 KV cache on a Gated DeltaNet model, the only kind PromptHiddenMany checkpoints, refuses the load: the family's own forward loop keeps
+// an f32 CPU cache until phase 4 of docs/tasks/task-kv-precision-everywhere-2026-10.md, so the int8 rows copyStateFrom can copy have no
+// reachable caller until then.
 func TestPromptHiddenMany_int8KV(t *testing.T) {
 	m, err := Load("testdata/qwen3_5-tiny-normw", Options{KVQuant: "i8"})
-	if err != nil {
-		t.Fatal(err)
+	var r *KVRefusal
+	if !errors.As(err, &r) || r.Path != "cpu" || !strings.Contains(r.Reason, "phase 4") {
+		t.Fatalf("load error %v, want a CPU KV refusal naming phase 4", err)
 	}
-	defer m.Close()
-	prompts := sharedPrompts(m.w.arch.VocabSize, 33, []int{4, 9, 2})
-	got, err := m.PromptHiddenMany(context.Background(), prompts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, p := range prompts {
-		want, _ := m.PromptHidden(context.Background(), p)
-		if r := relL2(got[i], want); r > 1e-6 {
-			t.Errorf("prompt %d: relative L2 %.3g > 1e-6 with an int8 KV cache", i, r)
-		}
+	if m != nil {
+		m.Close()
 	}
 }
 

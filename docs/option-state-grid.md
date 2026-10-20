@@ -18,7 +18,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 | `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
 | `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
 | `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
-| `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision` | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`) | tested: `TestOptionPathMetal_kvPrecision` | tested: `TestOptionPathMetal_kvPrecision` |
+| `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`); CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestOptionPathMetal_kvPrecision`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV7_restoreFull`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) |
 | `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `KVShareOff` | n/a | n/a | n/a | n/a | tested: `TestKV2_optionKVShareOff_resident` | n/a | tested: `TestSessionLRU_sharesAPreamble` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
@@ -74,6 +74,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 - `AcceptSlowMoE`: an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards
 - `BackendAuto`: tells a backend at load that "auto" chose it, so it may decline a precision it would requantize
 - `DisableFit`: selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)
+- `Drafter`: tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses
 - `ExtraResidentBytes`: prices a companion allocation when the resident is planned
 - `ExtraResidentKVPerPosition`: prices a companion allocation's K/V when the resident context is chosen
 - `LoRA`: merged into the base weights at load ("merged into the base at load"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid
