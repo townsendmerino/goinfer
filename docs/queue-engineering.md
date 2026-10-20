@@ -468,6 +468,36 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B38 · An always-on queue runner on both boxes: `night.py serve`, a launchd agent on the Mac and a systemd user service on nobara** — filed
+2026-10-20 (owner's yes, as scoped). **In progress** (Mac session; tooling, pushed on green). nobara installs the systemd unit from this code and
+does not build its own.
+- **Why:** both boxes run the queue only when someone types `night.py start`. On 2026-10-19 three queued jobs (B35's CUDA test twice, the M1
+  cell) sat unrun because nobody started a runner, and day jobs waited on a session to relay them.
+- **The mode:** `night.py serve` is a long-lived loop over the same queue. Each job runs as `_run` runs one today: same log, timing lock,
+  failure markers and summary. Between jobs it holds no lock, so the day tools run as usual.
+- **When a job starts,** all of these hold:
+  - the timing lock has been free for a settle period, and the runner takes the lock **before** settling (closing the 2026-10-19 gap where
+    tack started a run between a job and its settle);
+  - its `--not-before HH:MM` hour has passed (night-only jobs), and its estimate still ends before the morning deadline (06:30);
+  - the box is not under heavy load by the 2026-10-19 rule, for every job: load at most half the cores and free memory at least the job's
+    declared fit need plus 2 GB (`--fit-need-gb`; 0 skips the memory clause).
+- **Retry:** a job whose own fit check refuses exits 75 (EX_TEMPFAIL). The runner re-queues it after a backoff (about 15 minutes) and records
+  it VOID-refused only once `--retry-until HH:MM` passes. Any other non-zero exit is FAILED, as today.
+- **Status:** `night.py status` says idle or busy: "idle, N queued, next eligible at T" or "running <job>". tack's launcher waits for "no
+  job running and the lock free", not for "no runner going", which an always-on runner always is.
+- **Install:**
+  - `scripts/install-night-agent.sh` writes `~/Library/LaunchAgents/com.goinfer.night.plist` (RunAtLoad, KeepAlive) or
+    `~/.config/systemd/user/goinfer-night.service`, checked with `plutil -lint` / `systemd-analyze verify`;
+  - the runner runs from its own worktree pinned to `origin/main`, which `night.py update-runner` moves between jobs, never from a shared
+    checkout another session switches;
+  - `night.py pause` / `resume` stop and restart new starts; `stop` / `stop --now` keep their meanings.
+- **Sleep:** caffeinate (systemd-inhibit on nobara) is held while a job runs and, for night-only jobs, from the earliest `--not-before`
+  until they finish, on AC only; a lid-closed sleep is reported in the summary.
+- **Rule changes with it:** CLAUDE.md "Run budget" (the agent runs jobs as their gates allow; the owner pauses it), the night-start skill,
+  noise-registry §8's queue line, and the M1 cell's script (exit 75 on a fit refusal).
+- **Gate:** tier 0 in `scripts/test_night.py` with a fake clock and lock: each start condition, the exit-75 re-queue and its limit, an idle
+  runner holding no lock, settle under the lock, idle-versus-busy status; a plant per rule; the plist and unit linted.
+
 **B37 · The in-process real-model harnesses load with `decoder.Options` that are not serve's, so their expert cache and KV plan differ from the server's at the same flags** — filed 2026-10-19 (owner, from the Mellum2.1 16k reading). **Scoped, not built** (test code; on Francis's yes).
 - **Measured:** `TestMoERows_realMellumIdentityAndAB` at `-ctx 32768 --moe-cache-experts` planned 26 expert slots per layer (3.1 GB free after the build) on a quiet card (only `kwin_wayland`) in two sessions; the server planned 53 (5.8 GB free) with the same flags minutes apart (`docs/measurements/mellum21-served-16k-2026-10-19/README.md`).
 - **Cause:** `Options.ResidentWindowedKV`. Serve sets it from `--windowed-kv` (default true, `internal/loadflags/loadflags.go`); the library default is false and the harness does not set it, so Mellum2.1's 21 sliding-window layers kept the whole context instead of window + 512 positions: 21 x (32,768 - 1,536) x 4,096 B = 2.686 GB, against the observed 2.7 GB gap. Arithmetic match to three figures; the first gate below turns it into a run.
