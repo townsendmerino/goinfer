@@ -32,9 +32,9 @@ No host fallback is built.
   tens of MiB.
 - **Why no host fallback:** a second storage path doubles the restore code and its gates, for a case the 8 GB card does not hit
   at the 9B's size. A load the plan cannot fit declines, which is what the spec requires.
-- **Bytes for the 9B:** measured in gate 1 from the plan's charge line. From the state spec: every DeltaNet layer's
-  recurrent matrix plus its conv window, at f32. §5.7 gives 62.8 MiB for Qwen3.6-35B-A3B; the 9B's number is entered here once
-  read.
+- **Bytes for the 9B: 50.2 MiB** in 48 device buffers, every one of its 24 DeltaNet layers' conv window and state at f32 (gate 1, read
+  from the load's own line on nobara 2026-10-20 at `-ctx 20480`, which kept its 20480-position KV plan beside it). §5.7 gives 62.8 MiB
+  for Qwen3.6-35B-A3B.
 
 ## Gates
 
