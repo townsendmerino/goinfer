@@ -480,9 +480,9 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Do first, no build:** at f16 the card admits about 20k, so `-ctx 20480` (or the plan's stated maximum) is an option, but **not yet**: tack keeps 16,384 until its C6 series and bundle night finish, because its baseline and every comparison are at 16k; a context change mid-series would break them. After that it is an option; the server's own plan, read on a quiet card, gives the exact ceiling.
 **B38 · An always-on queue runner on both boxes: `night.py serve`, a launchd agent on the Mac and a systemd user service on nobara** — filed
 2026-10-20 (owner's yes, as scoped). **Built** (Mac session; tooling, pushed on green): `night.py serve`, `pause`, `resume`, `update-runner`,
-`status --json`, `add --not-before / --retry-until / --fit-need-gb`, and `scripts/install-night-agent.sh`. **Not yet installed on either box.**
-nobara installs the systemd unit from this code (`night.py update-runner`, then `scripts/install-night-agent.sh install`) and does not build
-its own; the Mac agent waits for Francis's word, and the M1 cell's script gains its exit 75 when it is re-queued for it.
+`status --json`, `add --not-before / --retry-until / --fit-need-gb`, and `scripts/install-night-agent.sh`. **Installed on both boxes
+2026-10-20:** nobara's systemd user service and, on Francis's word, the Mac's launchd agent, each running from its `~/goinfer-runner`
+checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
 - **As built, where it differs from the scope below:** under serve, `stop` is a pause (the service manager would restart an exited runner);
   `stop --now` also kills the running job, which is re-queued. The machine is held awake from when a night-only job is queued (up to 12 h
   ahead, on AC), not from its `--not-before`: a Mac that idles to sleep before the hour never reaches it. The before_queue step runs before
