@@ -1,0 +1,119 @@
+# KV0-H — the traffic study on a hybrid model: how much of each request would a recurrent-state checkpoint or a parked thread serve (2026-10-20)
+
+Owner's task, 2026-10-20: rerun `docs/measurements/kv0-traffic-2026-10-13.md` (KV0) on a hybrid model, to decide whether parts of KV8
+(`docs/tasks/task-kv-architecture-2026-10.md`, "KV8 — Recurrent state pool and checkpoints") move ahead of KV4. KV0 §2.5 says no hybrid was
+tested, so it measures nothing about recurrent-state reuse. **Measure only: no checkpoint or parking is built here, and nothing here changes
+product code.** Machine: nobara-pc (RTX 2070 SUPER 8 GB, driver 595.91.07). Scripts: KV0's, in `docs/measurements/kv0-traffic-2026-10/`
+(`kv0_proxy.py`, `run_sessions.py`, `kv0_run_cell.py`, `analyze.py`), plus `kv0h-2026-10/` beside this record for what is new.
+
+## 1. Registration (written and committed before the first study session)
+
+**What a hybrid does today** (read at main `94a6b9734`): `Model.residentSlotCount` returns 1 when `Model.hasRecurrentState` is true;
+`Model.reuseLenOf` reuses only a strict extension of the whole committed sequence; snapshots and parking are refused. So on a hybrid, the
+only request that reuses anything is one that is the previous request's whole sequence (prompt and reply) plus more tokens, and only if no
+other thread has used the slot since.
+
+**The proxy this replaces.** KV0's opencode data on Qwen3-4B (attention only) read: 34 of 40 same-thread follow-ups extended the whole previous
+sequence; 6 stopped short of the end of the previous reply; every thread switch evicts the one slot (Claude Code switched 5 times in 9
+requests). This study replaces that proxy with a real hybrid and the hybrid's own server.
+
+**The question.** For real multi-turn harness sessions on a hybrid, per request: is it served by today's rule, or would it be served by (B) a
+checkpoint saved where its thread's previous prompt ended, or (C) parking its thread's state while another thread runs, or neither; how many
+prompt tokens and how many seconds of prefill is that, and where do the B divergences sit.
+
+### 1.1 Model
+
+A `qwen3_5` or `qwen3_5_moe` checkpoint from `~/models` on this box, never the archive (`CLAUDE.md`, "Models: stored in the archive, benchmarked
+from local disk"). It must be GPU-resident and must drive tool calls. Candidates in order: **Qwen3.5-9B Q4_K_M** (`~/models/Qwen3.5-9B-Q4_K_M.gguf`
+with its `.giw` sidecar), then **Qwen3.6-35B-A3B** (`--moe-cache-experts`; slower, 15.7 tok/s decode, so a fallback). Qwen3.5-0.8B is below a
+tool-driving model. The choice is made by a short pilot like KV0 §1b: opencode and Codex on the `chain` task, which must reach several
+requests (KV0's Qwen3-4B reached 9). The pilot's outputs are kept apart and only its request counts are quoted. **The choice is reported before
+the study sessions and recorded as an amendment to this file (§1.9).** The server's default thinking mode, int4 weights, the KV the server
+picks (a Gated-DeltaNet hybrid stays f32 KV: `cuda/kvpolicy.go:cudaKVF16Decline`), `-kv-sessions 1`. Context per harness is 1.4 x that
+harness's first request, as KV0 chose it, read from the pilot's first requests.
+
+### 1.2 Harnesses and tasks
+
+opencode, Codex and Claude Code with KV0's tasks (`fix`, `edit` and `chain`, `matrix/tasks.py` and `kv0_run_cell.py`) and KV0's repetitions
+(`plan-kv0-traffic.json`): opencode and Codex each `chain` x2, `fix` x2, `edit` x1 (10 sessions); Claude Code `chain` x1, `fix` x1, one
+subagent session (3). The I3 sandbox and runner; the server stays up across a configuration's sessions with its one slot, so a session's first
+request meets what the previous session left. **Stopping rule (KV0's):** up to 3 more `chain` sessions for a harness with fewer than 3 sessions
+of 5 or more turns, a second subagent session if the first does not spawn one; then stop and report a harness that does not reach it. A session
+whose server returned 503 `halted` (the swap guard) is void and re-run.
+
+### 1.3 Per-request ground truth
+
+For each request: (a) the **committed sequence before it** (the previous request's prompt ids plus the ids it generated), (b) the **reuse the
+server actually applied**, (c) the **time to first token**. What the server itself records today (`internal/serveapp/reqlog.go`):
+
+| | where | what |
+|---|---|---|
+| applied reuse | `-log-requests` `reused=` | `Generation.PrefillReused` of the request's first generation, on every route |
+| the slot's record before the request | `slot=` | the length of the sequence the bound slot held |
+| where the prompt left that record | `div=` | the first position the prompt left it, when it left before its end |
+| time to first token | `ttft=` | from the request's start |
+| the generated ids | `--log-token-ids` | the ids the generation produced, per generation, with `canon` |
+| the prompt | `--log-token-ids` | its **length and SHA-256** (`idsSHA256`), not the ids |
+
+So (b) and (c) are the server's own, and the generated ids in (a) are the server's own. **The prompt ids are not recorded, only their hash.**
+The study does not add a record: it renders each recorded request body with the served model's own tokenizer and chat template (KV0's
+`internal/serveapp/kv0_tokenize_test.go`, which mirrors each route's rendering) and **accepts a rendering only when its length and SHA-256 equal
+the server's logged length and hash for that request**. That is a stronger check than KV0's token-count equality: an accepted request's prompt
+ids are the ids the server prefilled, byte for byte. A request that fails the check is excluded from every statistic and listed. **Stop
+condition:** if more than 10% of requests of a harness fail the hash check (for instance because carried ids, `ids=<used>/<carried>`, make the
+server's prompt differ from a re-rendering), the study stops and I tell Francis before any record is added to the server.
+The committed sequence of a thread's previous request is its accepted prompt ids plus the server's logged generated ids. The mapping of a
+recorded body to a server log line is by time order and, to settle it, by the hash.
+
+### 1.4 Categories
+
+Threads and the rest of KV0's definitions as in KV0 §1 (a *thread* is the requests of one session whose first 200 tokens are identical; a *turn*
+is a request on the session's main thread). Classify each valid request k against **its own thread's previous request p** (committed
+sequence C_p = prompt(p) + generated(p)); l = the longest common prefix of prompt(k) and C_p; n = len(prompt(k)).
+
+- **N, new conversation:** k is the first request of its thread in its session. Its shared preamble is reported separately (the longest common
+  prefix with any earlier request of another session, KV0's `lcp_other`), as it relates to KV8's preamble-boundary item.
+- **A, live:** l = len(C_p) and n > len(C_p) (k strictly extends the committed sequence), and **no request of another thread was served between
+  p and k** (server order). Today's rule continues from the live state.
+- **B, checkpoint:** len(prompt(p)) <= l < len(C_p) and n > l, and no other thread between: k extends the previous prompt but not its
+  generated reply, so a checkpoint saved where the prompt ended would serve it. Recorded: the divergence (message index, role, offset in
+  prompt(k): the `where` function of KV0's `analyze.py`) and the tokens re-processed under a checkpoint, n - len(prompt(p)).
+- **C, parking:** another thread's request was served between p and k, and k would be A or B against its own thread (sub-labelled C-A, C-B).
+  Parking serves it, plus a checkpoint if it is C-B.
+- **D, cold:** l < len(prompt(p)): k diverges inside the previous prompt (compaction, edits); only deeper checkpoints would help.
+
+Also noted per harness: whether it sends the model's reasoning back in its history, and what sits at the B divergences.
+
+### 1.5 The do-nothing arm and the projections
+
+Today's measured time to first token on every request is the baseline. For B and C requests the **tokens skipped** are: A-shaped C: len(C_p);
+B and C-B: len(prompt(p)); in each case less the reuse today's server applied (`reused=`), floored at 0. **Projected saving (seconds)** = tokens
+skipped / the cold-prefill rate measured on that model and box in this study: the median of n / ttft over the study's requests with `reused=0`
+and n >= 4,096, in the bands 4,096-8,191, 8,192-16,383 and 16,384 and over (the band of the request's n; a band with fewer than 5 requests
+uses the nearest). That ttft includes the first token's decode, so the rate is a slight under-statement. **Every projection is labelled as a
+projection**; nothing in the saving columns is a measurement.
+
+### 1.6 Estimate
+
+KV0 took 30-50 minutes on a 4B model; this study runs a 9B hybrid whose cold turns re-process in full today, so I expect **2 to 3 hours** of wall
+time for the 13 planned sessions (more if the stopping rule adds sessions), run **by day** (owner's instruction), detached, heartbeat every 30 s,
+under the timing lock for its whole run (so it waits for any other timed run). The pilot is separate: about 30 minutes.
+
+### 1.7 The decision rule (as proposed by the owner; unchanged)
+
+All shares are over the **prompt tokens processed today in the study**: the sum over valid requests of (n - reused).
+- **Parking is pulled ahead of KV4** if C would skip at least **25%** of those tokens, or at least **5 s median per affected turn**.
+- **The end-of-prompt checkpoint is pulled ahead** under the same bars applied to B.
+- If both pass, the larger saving goes first.
+- If neither passes, KV8 stays where it is, and the reading goes into KV8's section.
+If the data does not fit the rule, I say so; I do not re-cut it.
+
+### 1.8 Readings to report
+
+Per harness: counts and token shares for A, B, C, D, N; measured times to first token; projected savings; where the B divergences sit; the
+rule applied as written. Exploratory timings are quoted as such. Statistics only are committed (counts, positions, categories): never ids,
+bodies or text (KV0's policy; the bodies stay outside the repository).
+
+### 1.9 Amendments
+
+*(none yet; the model choice and the contexts go here after the pilot, before the first study session)*
