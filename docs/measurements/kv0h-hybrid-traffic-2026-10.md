@@ -181,3 +181,10 @@ requests after the first re-prefilled in full (about 2 minutes each), and the ta
 1,214 s), over KV0's per-session request counts (opencode 52, Codex 24, Claude Code about 25; 1.5 x those for the 9B). **Central 2.5 hours, range 1.5 to
 4.5 hours** (high: all cold, twice the Claude Code requests, up to 3 extra `chain` sessions); Claude Code is about 60% of it. The calibration and check took
 25 minutes more and are not in the figure.
+
+**Amendment A4 (2026-10-20, before the study sessions; owner's order change).** The opencode and Codex configuration (`h-qwen35-9b-20k`, `-ctx 20480`, KV0's
+tasks and repetitions: 10 sessions, `plan-study-h20.json`) runs **first**. **Claude Code is decided after the reading of the check data** (the 10 requests of the
+Claude Code check at 32,768, classified as check data, not study data): if **3 or more of the 9 cold turns are B or C rather than D**, Claude Code runs as registered
+after opencode and Codex; if it is **nearly all D**, it is not run on this card, the check is recorded as the Claude Code reading for nobara with the note that a Claude Code
+run on a larger card is a follow-up, and that is recorded as an amendment **before the opencode and Codex readings are written**. Nothing else in the registration changes.
+
