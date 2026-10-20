@@ -79,6 +79,8 @@ type bannerFacts struct {
 	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps
 	// (decoder.Model.EnableCPUBatch).
 	cpuBatched bool
+	// cpuBatchBypass is why a batched model's decode tokens still run per sequence (decoder.Model.CPUBatchKVBypass), "" when they batch.
+	cpuBatchBypass string
 
 	// sampling: the checkpoint's recommended sampling (decoder.Config.Sampling), nil when it carries none.
 	sampling *decoder.RecommendedSampling
@@ -103,6 +105,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kv = lm.model.KVPrecisionReports()
+	f.cpuBatchBypass = lm.model.CPUBatchKVBypass()
 	f.ctxNote = lm.model.ResidentContextNote()
 	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.model.ResidentKVSlots()
@@ -340,7 +343,9 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 		return line
 	case f.concurrent > 1:
 		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)
-		if f.cpuBatched {
+		if f.cpuBatched && f.cpuBatchBypass != "" {
+			line += "; decode runs per sequence: " + f.cpuBatchBypass
+		} else if f.cpuBatched {
 			line = fmt.Sprintf("concurrency: %d generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)", f.concurrent)
 		} else if cfg.cpuBatch == decoder.CPUBatchAuto {
 			line += "; decode runs as independent workers (-cpu-batch auto batches models with 2 GiB or more of weights)"

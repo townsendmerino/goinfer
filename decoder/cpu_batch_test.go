@@ -2,10 +2,12 @@ package decoder
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -209,7 +211,9 @@ func at(v [][]int, i int) []int {
 }
 
 // TestCPUBatch_ineligibleCachesBypass: a model whose family batches but whose caches do not (int8 KV) runs its
-// concurrent generations as step 1's workers — nothing is submitted to the batcher — and still matches alone.
+// concurrent generations as step 1's workers — nothing is submitted to the batcher — and still matches alone. Under batched
+// decode's default, auto: the tiny fixture is under cpuBatchAutoMinBytes, so the test stands in for auto's pick on a model over it.
+// (Batched decode explicitly on with an int8 cache refuses the load: TestCPUBatch_explicitOnRefusesWidenedKV.)
 func TestCPUBatch_ineligibleCachesBypass(t *testing.T) {
 	path := "../testdata/llama-tiny"
 	if _, err := os.Stat(path); err != nil {
@@ -221,10 +225,11 @@ func TestCPUBatch_ineligibleCachesBypass(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	want, _ := cpuBatchConversations(t, ref, 3, 2, 8, greedy, false)
-	m, err := Load(path, Options{KVQuant: "i8", CPUBatchDecode: CPUBatchOn})
+	m, err := Load(path, Options{KVQuant: "i8"})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
+	m.cpuBatchMode = CPUBatchOn // auto's pick on a model over cpuBatchAutoMinBytes
 	if cpuBatchCacheEligible(m.NewCache(16)) == nil {
 		t.Fatal("an int8-KV cache is eligible — this test no longer covers a declined cache")
 	}
@@ -241,6 +246,34 @@ func TestCPUBatch_ineligibleCachesBypass(t *testing.T) {
 	}
 	if st := m.CPUBatchStats(); st.Runs != 0 {
 		t.Errorf("int8-KV generations were submitted to the batcher (%d runs)", st.Runs)
+	}
+}
+
+// TestCPUBatch_explicitOnRefusesWidenedKV: batched decode explicitly on with an f16 or int8 CPU cache refuses the load by name, since
+// the batcher reads f32 KV only (docs/tasks/task-kv-precision-everywhere-2026-10.md, phase 0); under auto the cache is delivered and
+// decodes per sequence, which the banner names (Model.CPUBatchKVBypass).
+func TestCPUBatch_explicitOnRefusesWidenedKV(t *testing.T) {
+	path := "../testdata/llama-tiny"
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	for _, kv := range []string{"f16", "i8"} {
+		m, err := Load(path, Options{KVQuant: kv, CPUBatchDecode: CPUBatchOn})
+		var r *KVRefusal
+		if !errors.As(err, &r) || !strings.Contains(r.Reason, "batched decode") {
+			t.Errorf("-kv %s with batched decode on: load error %v, want a refusal naming batched decode", kv, err)
+		}
+		if m != nil {
+			m.Close()
+		}
+		m, err = Load(path, Options{KVQuant: kv})
+		if err != nil {
+			t.Fatalf("-kv %s under auto: %v", kv, err)
+		}
+		if m.CPUKVPrecision() != kv || !strings.Contains(m.CPUBatchKVBypass(), "per sequence") {
+			t.Errorf("-kv %s under auto: precision %q, bypass %q; want it delivered and the bypass named", kv, m.CPUKVPrecision(), m.CPUBatchKVBypass())
+		}
+		m.Close()
 	}
 }
 

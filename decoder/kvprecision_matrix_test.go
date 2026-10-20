@@ -107,6 +107,10 @@ func kvMatrix(t *testing.T) map[[3]string]kvMatrixCell {
 				c := kvMatrixCell{delivered: got, reason: why}
 				if r := kvRefusal(p.backend, arch, o); r != nil {
 					c.refused, c.reason = true, r.Reason
+				} else if p.backend == "cpu" && o.CPUBatchDecode == CPUBatchAuto && c.reason == "" {
+					if b := cpuBatchKVBypass(got); b != "" { // delivered; batched decode under auto stands aside for it
+						c.reason = "batched decode under auto: " + b
+					}
 				}
 				out[[3]string{p.name, f.group, v}] = c
 			}

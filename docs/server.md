@@ -226,7 +226,7 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 - On the 0.5B, `on` reads 0.73× the workers.
 - On macOS too: on an M1 Pro's CPU the 7B's batched step reads 1.54× (depth 128) and 1.38× (depth 512) the workers
   (`measurements/concurrency-mc2-2026-09-26.md`, "Mac 7B cell"). A served W7 run on the Mac has not been made.
-- Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8`, adapters,
+- Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8` or `f16` (the banner says so; with `-cpu-batch on` either refuses the load), adapters,
   speculative decode and vision.
 - The banner's concurrency line says which mode runs, and serve logs the batcher's step counts at shutdown.
 

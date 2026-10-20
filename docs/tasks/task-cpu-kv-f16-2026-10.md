@@ -1,5 +1,10 @@
 # Task: f16 KV on the CPU as the command-line default, with f32 kept as the reference (2026-10)
 
+> **Note, 2026-10-20 (KV precision phase 0, `docs/tasks/task-kv-precision-everywhere-2026-10.md`):** from phase 0 on, an explicit
+> `--kv f16` on a family outside the f16 cache's set (MoE, and the families with their own forward loop) refuses the load and says why,
+> instead of keeping f32. `TestKVF16_excludedFamilyKeepsF32` now expects that refusal. The F1–F5 verdicts stand: they were read on the
+> families the cache covers, and the run log `docs/measurements/cpu-kv-f16-2026-10-16/f1-f5.log` records that run as it was.
+
 > **Status: way A BUILT and merged 2026-10-16 (#55) as `--kv f16`, opt-in; `auto` stays f32. F0, F1 and F5 pass; F3's
 > in-process A/B resolves f16 slower at depth (0.925 on the 0.5B at 4,096), so way A cannot become the default (§5b). Way B is
 > the owner's call. Approved 2026-10-15; gates registered 2026-10-14 (§5).** The owner asked for it on 2026-10-12 ("can we keep f32

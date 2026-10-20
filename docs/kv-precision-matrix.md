@@ -78,12 +78,12 @@ Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (ho
 
 | family (fixture) | `--kv auto` | `--kv f32` | `--kv f16` | `--kv i8` |
 |---|---|---|---|---|
-| dense (llama) (`llama-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
-| dense (phi3) (`phi3-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| dense (llama) (`llama-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
+| dense (phi3) (`phi3-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
 | MoE (`qwen3moe-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
-| sliding window (`gemma2-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
-| pairwise RoPE (`cohere-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
-| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| sliding window (`gemma2-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
+| pairwise RoPE (`cohere-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
+| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
 | MLA (`deepseek-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
 | Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
 | Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
