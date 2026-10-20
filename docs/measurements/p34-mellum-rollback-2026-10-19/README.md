@@ -54,3 +54,31 @@ Changes, none to the prediction or the bands:
 - **Every failure exits non-zero:** a red tier 0, a plant that is not red on the grant assertion, a probe request that fails, and
   a VOID, FAIL or AMBIGUOUS grade.
 - **Pins:** fix 2a581b97, old build 504da5ab (main before the fix, the branch's base).
+
+## Result, 2026-10-19 22:13-22:15 PDT (nobara, night job `p34-mellum-rollback-3`): PASS
+
+Fix 6203c175 (branch `mellum-rollback-2026-10`), old build 504da5ab. The pins moved from the amendment's 2a581b97 because the sibling
+fixture also needed `intermediate_size` 64: CUDA's int4 packing needs every matrix's input width to be a multiple of 32, and the dense
+FFN's 48 made `-rollback-2` red at tier 0 (22:00), an invalid run with no grade.
+
+- **Tier 0:** every `TestWindowedKV_*` passed at the fix, `TestWindowedKV_expertCacheGetsTheGrant` included, with the routed
+  subtest on the now CUDA-resident fixture.
+- **Plant:** with the pre-fix skip put back, `TestWindowedKV_expertCacheGetsTheGrant` failed on its grant assertion.
+- **The load banners:**
+  - The old build keeps the floor: "a follow-up may diverge 448 before the newest".
+  - The new build is granted: "576 more positions from free VRAM (48 MB of 6186 MB free); a follow-up may now diverge 1024 before
+    the newest".
+- **The probe** (Mellum2.1, `-ctx 8192 -moe-cache-experts -log-requests`, the request log's fields):
+
+| request | prompt tokens | old: ttft, reused | new: ttft, reused |
+|---|---|---|---|
+| A (cold) | 7,012 | 17.3 s, 0 | 17.2 s, 0 |
+| A, last ~400 tokens replaced | 7,127 | 1.4 s, 6,612 | 1.4 s, 6,612 |
+| A again | 7,012 | 0.2 s, 6,976 | 0.2 s, 6,976 |
+| A, last ~600 tokens replaced (diverges at 6,412 of 7,013 held, 601 back) | 7,184 | 17.4 s, 0 | 1.9 s, 6,412 |
+
+- **Grade (`grade.py`, the registered bands): PASS.** The old build reuses the 400-token edit and not the 600-token one; the new build
+  reuses both, and "A again" is reused on both.
+- **Logs:** `~/goinfer-bench/p34/results/*-2026-10-19-2213.log` and `~/goinfer-logs/night/runs/2026-10-19/p34-mellum-rollback-3.log`
+  on nobara.
+- **Merge:** the probe and the CUDA gate both pass, so the fix waits on the owner's yes.
