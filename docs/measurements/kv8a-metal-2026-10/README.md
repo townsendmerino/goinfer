@@ -48,3 +48,15 @@ recommended".
 1. **M5's design: the paired two-build replay**, as proposed above: the 16 opencode and Codex pilot pairs, turn 2 timed on main before
    KV8a (`a8b1c806`) and on the KV8a Metal build in one session, interleaved per pair and order-reversed on a second pass.
 2. **M5's bar: the median paired turn-2 ratio (KV8a ÷ before) ≤ 0.5 PASS; 0.5–0.7 parked for Francis; above 0.7 FAIL.**
+
+## Runners (written 2026-10-21, before any 9B run)
+
+- `run-daycheck.sh` (by day, Francis 2026-10-21 "lets do 2 by day soon", once he has closed his apps): the heavy-load void rule at the
+  start (`common.sh:start_clean`: load average ≤ 4.0, free memory ≥ the 9B's fit need 6.7 GB + 2 GB, both recorded), the fit check at
+  `-ctx 20480` and `32768` (M1's 9B bytes are read from the same loads), then the one-pair probe: opencode pair #1, about 7.3k tokens,
+  through `../kv8a-2026-10/gate2b.py --backend metal --start 1 --limit 1`, which prints no verdict. A refused fit stops the job (exit 3).
+- `run-gate2b-metal.sh` (M2(b)) and `run-m5.sh` with `m5.py` (M5 and M4(b)), on the night queue; each re-queues itself (exit 75) on a
+  start that is not clean or a refused fit. M5 reads turn 2's time to first token from serve's own request log (`ttft`).
+- Pinned inputs: KV8a serve `serve-metal-9488f592`, the before-KV8a serve `serve-metal-a8b1c806` (main before #115), and the 9B's Metal
+  `.giw`; the pilot's bodies, ids and key, copied from nobara, stay outside the repository.
+
