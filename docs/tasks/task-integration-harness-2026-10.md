@@ -2,6 +2,50 @@
 
 <!-- citations-at: 6e50c60941e7 -->
 
+> **Status 2026-10-21 (the close-out sweep).** I1 (the overflow wording), I2 (`connect` for Claude Code, opencode and Codex),
+> I5 (the in-process handler, transport and SDK module) and I8 (Metal block prefill) shipped in v0.23.0; I3 is graded and I4
+> is done. I1-v2, the second live overflow gate, is registered with its scripts and has never run. **Decided by the owner on
+> 2026-10-21:** I6 (honoring Codex's `apply_patch` grammar) is parked, with the trigger a Codex release that sends
+> `apply_patch` to an unknown model. I3's public page waits for the Claude Code cells to re-run on current main; they ran on
+> a binary whose CUDA prefill went token by token past 12,160 keys, which KV3 fixed. I7 moves to KV5 in
+> `docs/tasks/task-kv-architecture-2026-10.md`. Moved the same day: I2's other eight agents to U17 in
+> `docs/queue-presentation.md`, I5's two unrun parts to `docs/tasks/task-embed-and-harness-ux.md`, and
+> `output_config.format` to G49 in `docs/queue-correctness.md`. **Stale below:** §1's "Today" list (fixed by 94dcda6a and
+> 2dd243e1); I3's "leads, not fixed" (the subagent 404 is fixed, and the empty Mellum reply is G41); the 15 continuations
+> marked "not diagnosed" (diagnosed the same day and fixed by carried ids); and the 12,160-key decline "in no doc's plan"
+> (KV3 fixed it).
+
+**Ledger, 2026-10-21.** One row per item, the current state; it supersedes the status notes below where they
+disagree, and is updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| Step 1 | done | — | `docs/integrations/claude-code.md` |
+| H-e, H-f | done | — | e41add80, 1a6021cf |
+| D1–D3 | done | — | 2dd243e1, 0fd30702, 81791568 |
+| I1 | done | — (v0.23.0) | 94dcda6a |
+| I1-live | done | the first live gate, inside I3: Claude Code FAIL, two VOID | aa17242e, 9e3ddc23 |
+| I1-v2 | open | nobara: by day, fit-check the three loads, build the pin, run the pilots (Claude Code's is about 30 min); the two jobs (about 4 h of GPU) go on the night queue | 6947a759, 415296b8 |
+| I2 | done | — (v0.23.0) | aa554787, c2c23566 |
+| I2-rest | moved | U17 in `docs/queue-presentation.md` | — |
+| I3 | done | graded | i3-night-2026-10-13.md |
+| I3-page | blocked | nobara: re-run the Claude Code cells on current main (owner, 2026-10-21), then write `docs/integrations/harness-matrix.md` | — |
+| I4 | done | — | harness-census-2026-10-12.md, -13.md |
+| I4-ttft | killed | answered by KV0 and KV2 | the kv0-traffic and kv2-cuda records |
+| I5 | done | — (v0.23.0) | 9383547f, fabb21d9, 8ee3597d |
+| I5-rest | moved | `docs/tasks/task-embed-and-harness-ux.md`, before §3 | — |
+| I6 | blocked | parked (owner, 2026-10-21); trigger: a Codex release that sends `apply_patch` to an unknown model | the I3 record, "Job D" |
+| I7 | moved | KV5 in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | i7-night-2026-10-12/ |
+| I8 | done | — (v0.23.0) | d7a100ba |
+| G-I8-6 | killed | the owner, 2026-10-13 | 5f3203b8 |
+| out-fmt | moved | G49 in `docs/queue-correctness.md` | — |
+| §5 | open | desk: the three amendments not yet applied (H-c gets I1's shipped rule, H-d gets its lead, and the notes for `task-embed-and-harness-ux.md`); S | §5 |
+| harness-next | open | cherry-pick the owner's 2026-10-13 ruling on Codex's settings (2726ae99; it touches a Go comment, so not in a docs-only push), then drop the branch | 2726ae99 |
+| Codex compaction | killed | the owner kept the cap at 4,096 (2026-10-13 and 2026-10-15) | 2726ae99 |
+| Mellum JSON | killed | read as the model's output; fold into G39 if it recurs | the I3 record |
+
+
 > **Status: STARTED 2026-10-12 (§0a).** Steps 1 and 3 are built and a gap nobody had listed is fixed: Claude Code
 > 2.1.268 could not complete a turn against goinfer (H-e). Its real first request is 19,692 tokens, not 6–10K, which
 > moves the thesis's numbers (§0a). **Was: SCOPED 2026-10-12.** A map across the docs that already own integration work, an order
@@ -1138,3 +1182,5 @@ Desk read 2026-10-12, from each project's own docs or source:
 - Fill-in-the-middle: [llama.cpp server README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md), [llama.vscode](https://github.com/ggml-org/llama.vscode/blob/master/src/llama-server.ts), [Tabby completion](https://github.com/TabbyML/tabby/blob/main/crates/http-api-bindings/src/completion/mod.rs), [Twinny](https://github.com/twinnydotdev/twinny/blob/main/src/common/provider-validation.ts), [JetBrains custom models](https://www.jetbrains.com/help/ai-assistant/use-custom-models.html)
 - Go hooks: [openai-go requestoption.go](https://github.com/openai/openai-go/blob/main/option/requestoption.go), [anthropic-sdk-go requestoption.go](https://github.com/anthropics/anthropic-sdk-go/blob/main/option/requestoption.go), [Genkit compat_oai](https://github.com/firebase/genkit/blob/main/go/plugins/compat_oai/compat_oai.go), [Eino model components](https://github.com/cloudwego/eino-ext/tree/main/components/model), [LangChainGo llms](https://github.com/tmc/langchaingo/tree/main/llms), [ADK-Go openaimodel](https://github.com/google/adk-go/blob/main/model/openaimodel/openaimodel.go)
 - Sidecars: [Tauri sidecar](https://v2.tauri.app/develop/sidecar/), [Jan's llama.cpp worker](https://github.com/janhq/jan/blob/main/src-tauri/plugins/tauri-plugin-llamacpp/src/engine/worker.rs)
+
+<!-- doc-reviewed: 2026-10-21 -->
