@@ -150,3 +150,26 @@ func TestWithFeatureCache_answersBeforeTheTowerRuns(t *testing.T) {
 		t.Errorf("an unseen image did not reach the tower (err %v, ran %v)", err, towerRan)
 	}
 }
+
+// The budget is featureCacheBudget while the fit plan leaves at least that after its KV, what it leaves when that is
+// less, nothing when it leaves nothing, and featureCacheBudget when the plan is unpriced.
+func TestFeatureCacheBudgetFor(t *testing.T) {
+	const mib = 1 << 20
+	for _, c := range []struct {
+		name       string
+		known      bool
+		budget, kv int64
+		want       int
+	}{
+		{"ample", true, 8 << 30, 2 << 30, featureCacheBudget},
+		{"exactly the cap left", true, 2<<30 + featureCacheBudget, 2 << 30, featureCacheBudget},
+		{"less left", true, 2<<30 + 100*mib, 2 << 30, 100 * mib},
+		{"nothing left", true, 2 << 30, 2 << 30, 0},
+		{"KV over budget", true, 1 << 30, 2 << 30, 0},
+		{"unpriced", false, 0, 0, featureCacheBudget},
+	} {
+		if got := featureCacheBudgetFor(c.known, c.budget, c.kv); got != c.want {
+			t.Errorf("%s: featureCacheBudgetFor(%v, %d, %d) = %d, want %d", c.name, c.known, c.budget, c.kv, got, c.want)
+		}
+	}
+}

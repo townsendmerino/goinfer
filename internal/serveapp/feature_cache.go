@@ -18,7 +18,18 @@ import (
 // per loaded model, so a hit is bit-identical to recomputing. Keyed by SHA-256 of the raw bytes rather than the 64-bit
 // imgHash the KV reuse uses: this one hands back numbers instead of skipping a prefix, and a collision there would be a
 // wrong picture, not a missed optimisation.
-const featureCacheBudget = 256 << 20 // bytes of cached features per loaded model
+const featureCacheBudget = 256 << 20 // the most a loaded model's cache holds, in bytes; featureCacheBudgetFor may lower it
+
+// featureCacheBudgetFor is the cache budget for a model whose fit plan has budgetBytes of memory and prices kvBytes of KV
+// against it (decoder.Model.FitBudgetSummary): featureCacheBudget, or what the plan leaves after its KV when that is less,
+// so the cache does not take memory the guard counted on for KV. An unpriced plan (known false) keeps featureCacheBudget,
+// as the guard itself proceeds when it cannot price.
+func featureCacheBudgetFor(known bool, budgetBytes, kvBytes int64) int {
+	if !known {
+		return featureCacheBudget
+	}
+	return int(min(featureCacheBudget, max(budgetBytes-kvBytes, 0)))
+}
 
 type featureCache struct {
 	mu     sync.Mutex
