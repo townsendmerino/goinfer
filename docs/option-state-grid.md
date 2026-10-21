@@ -135,7 +135,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - DeltaNet state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - DeltaNet state × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - DeltaNet state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- DeltaNet state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- DeltaNet state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - DeltaNet state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - DeltaNet state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - DeltaNet state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -145,7 +145,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - short-conv window × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - short-conv window × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - short-conv window × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- short-conv window × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- short-conv window × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - short-conv window × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - short-conv window × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - short-conv window × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -155,7 +155,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - Mamba-2 state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - Mamba-2 state × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - Mamba-2 state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- Mamba-2 state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- Mamba-2 state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - Mamba-2 state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - Mamba-2 state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - Mamba-2 state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -165,7 +165,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - KDA state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - KDA state × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - KDA state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- KDA state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- KDA state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - KDA state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - KDA state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - KDA state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
