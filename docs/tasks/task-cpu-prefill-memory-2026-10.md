@@ -167,7 +167,7 @@ After a prefill of at least **4,096 rows**, `prefillLogits` returns memory to th
 
 - The per-row MoE FFN's allocations (`decoder/mlp.go:moeMLP` with a nil scratch). They are per row and freed per row;
   chunking bounds what accumulates.
-- CPU f16 KV, which is `docs/tasks/task-cpu-kv-f16-2026-10.md`.
+- CPU f16 KV, which is `docs/completed/task-cpu-kv-f16-2026-10.md`.
 
 ### Interplay with KV2 (`kv2-2026-10`)
 

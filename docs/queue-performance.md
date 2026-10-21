@@ -325,7 +325,7 @@
   - **The finding that parked way A as the default:** CPU f16 KV way A (`--kv f16`, opt-in since #55) narrows rows to f16 on
     append and widens the whole stored history into scratch on every decode step. F3's in-process A/B put it slower at depth:
     0.925 on the 0.5B at 4,096 keys, 4 of 4 pairs under 1 (resolved), and 0.861 on the 1.5B (3 of 4). So `auto` stays f32
-    (`docs/tasks/task-cpu-kv-f16-2026-10.md` §5b).
+    (`docs/completed/task-cpu-kv-f16-2026-10.md` §5b).
   - **Way B** (that doc's §4) reads f16 in the register, inside the kernels. Because the float64 path reads K and V in place, this
     is not one kernel: it is an f16 form of each of the four attention kernels (two of them arm64-only), plus the fast prefill's
     gather. Those kernels are aikit's, and its pushes and tags are the owner's.

@@ -601,7 +601,7 @@ the type.
   - (b) the CPU moves to host blocks, so a preamble is stored once, with a contiguous reference kept behind a test switch
     for parity.
 - **Recommendation:** (a) when KV2 lands; (b) at KV9 if the memory case is measured on a real multi-session workload.
-- `docs/tasks/task-cpu-kv-f16-2026-10.md` (CPU f16 by default) is independent of both.
+- `docs/completed/task-cpu-kv-f16-2026-10.md` (CPU f16 by default) is independent of both.
 
 ### 5.15 Sharing scope and the timing side channel
 
@@ -1231,7 +1231,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - **KV-pre:** its block size;
   - **I7** (`docs/tasks/task-integration-harness-2026-10.md`): its slots-against-context question dissolves at KV4/KV5,
     so its code should stay small;
-  - `docs/tasks/task-cpu-kv-f16-2026-10.md`: independent;
+  - `docs/completed/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
   - `docs/option-state-grid.md` (its Policy section; design record `docs/completed/task-option-path-admission-2026-10.md`): new options join its grid;
   - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
@@ -1510,7 +1510,7 @@ Docs and records:
     R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
   - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
     `docs/tasks/task-never-swap-2026-09.md`;
-  - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/tasks/task-cpu-kv-f16-2026-10.md`,
+  - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;
   - `docs/completed/task-gpu-f16-kv.md`, `docs/completed/task-cpu-kv-quant.md`, `docs/spec/09-mtp-heads.md`.
 - **Measurements:**

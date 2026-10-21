@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (70: 61 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (69: 60 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -89,7 +89,7 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
-[`task-cpu-kv-f16-2026-10.md`](tasks/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
+[`task-cpu-kv-f16-2026-10.md`](completed/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
 half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
 decisions (2026-10-14), and its gates, registered that day before any code.
@@ -210,7 +210,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (138)
+## Archive — `completed/` (139)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
