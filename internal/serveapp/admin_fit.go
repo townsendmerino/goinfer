@@ -43,7 +43,7 @@ func (s *server) fitAnswer(req adminLoadReq) (map[string]any, error) {
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
 	if c.drafter != "" {
-		drafterKV(&opts)
+		opts.Drafter = true
 	}
 	p, err := modelload.Plan(modelload.Request{Spec: spec.path, Opts: opts, DirectLoad: c.load.DirectLoad, ExplicitQuant: spec.explicitQuant(c)})
 	if err != nil {

@@ -56,6 +56,18 @@ func (m *Model) EnableCPUBatch(n int) bool {
 	return true
 }
 
+// CPUBatchKVBypass is why this model's decode tokens bypass the CPU batcher although EnableCPUBatch engaged it: its CPU cache is f16 or
+// int8, which decodeMultiStep does not read (cpuBatchCacheEligible), so each generation decodes on its own at that precision. "" when the
+// cache is f32. Batched decode explicitly on with such a cache refuses the load instead (ResolveKV).
+func (m *Model) CPUBatchKVBypass() string { return cpuBatchKVBypass(m.CPUKVPrecision()) }
+
+func cpuBatchKVBypass(prec string) string {
+	if prec != kvPrecF16 && prec != kvPrecI8 {
+		return ""
+	}
+	return "the " + prec + " KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4"
+}
+
 // CPUBatchActive reports whether EnableCPUBatch turned batching on.
 func (m *Model) CPUBatchActive() bool { return m.cpuBatch != nil }
 

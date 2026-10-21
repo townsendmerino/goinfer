@@ -49,13 +49,27 @@ type ogCell struct {
 	test    string // a Test function in this repository (any module) that drives the cell
 	decline string // the function where the path refuses the option
 	why     string
+	// cuda is CUDA's own evidence for this path, per option value, where it differs from the cell's (which names the other residents').
+	cuda []ogValueCell
+}
+
+// ogValueCell is one option value's declaration on one backend.
+type ogValueCell struct {
+	value string
+	ogCell
 }
 
 func ogTestedBy(test string) ogCell { return ogCell{h: ogTested, test: test} }
 func ogDeclinedAt(decline, test string) ogCell {
 	return ogCell{h: ogDeclined, decline: decline, test: test}
 }
-func ogUntestedCell() ogCell           { return ogCell{h: ogUntested} }
+func ogUntestedCell() ogCell { return ogCell{h: ogUntested} }
+
+// ogWithCUDA is c with CUDA's own per-value evidence beside it.
+func ogWithCUDA(c ogCell, cuda ...ogValueCell) ogCell {
+	c.cuda = cuda
+	return c
+}
 func ogNACell(why string) ogCell       { return ogCell{h: ogNA, why: why} }
 func ogAll(c ogCell) map[ogPath]ogCell { return ogFill(nil, c) }
 func ogFill(m map[ogPath]ogCell, c ogCell) map[ogPath]ogCell {
@@ -97,6 +111,7 @@ var ogLoadOnly = map[string]string{
 	"DisableFit":                 "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
 	"ExtraResidentBytes":         "prices a companion allocation when the resident is planned",
 	"ExtraResidentKVPerPosition": "prices a companion allocation's K/V when the resident context is chosen",
+	"Drafter":                    "tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses",
 	"LoadAbort":                  "checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect",
 	"BackendAuto":                "tells a backend at load that \"auto\" chose it, so it may decline a precision it would requantize",
 	"ResidentKVSlotsDefault":     "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
@@ -153,13 +168,19 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 		ogResidentNA("the CPU KV cache's precision (\"selects the CPU KV cache storage precision\"); a resident uses KVPrecision"),
 	),
+	// The cells name Metal's tests; CUDA's own are beside them (f16 by the CUDA f16 build's tests, i8 refused at load until phase 2 of
+	// docs/tasks/task-kv-precision-everywhere-2026-10.md). Every value's delivery, per backend and family, is docs/kv-precision-matrix.md.
 	"KVPrecision": ogMerge(
 		ogCPUNA("\"Ignored off the residency path\""),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_kvPrecision"),
-			pathResidentPrefill:  ogDeclinedAt("PrefillPath", "TestPrefill_declinesInt8KV"),
-			pathSpecVerify:       ogTestedBy("TestOptionPathMetal_kvPrecision"),
-			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_kvPrecision"),
+			pathResidentDecode: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+			pathResidentPrefill: ogWithCUDA(ogDeclinedAt("PrefillPath", "TestPrefill_declinesInt8KV"),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+			pathSpecVerify: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
+				ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+			pathSessionLifecycle: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
+				ogValueCell{"f16", ogTestedBy("TestKV7_restoreFull")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
 		},
 	),
 

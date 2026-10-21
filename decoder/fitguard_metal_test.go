@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -46,7 +47,6 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 		pinned bool
 	}{
 		{"metal, unpinned, -kv unset", q, Options{Backend: "metal"}, MetalCtxDefault, true, true, false},
-		{"metal, -kv f32 still f16", q, Options{Backend: "metal", KVPrecision: "f32"}, MetalCtxDefault, true, true, false},
 		{"metal, pinned 8192", q, Options{Backend: "metal", ResidentContext: 8192}, 8192, true, true, true},
 		{"metal, pin past the window", q, Options{Backend: "metal", ResidentContext: 1 << 20}, 32768, true, true, true},
 		{"cpu, unpinned", q, Options{Backend: "cpu"}, 32768, false, false, false},
@@ -59,6 +59,12 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 		if !ok || p.ctx != c.ctx || p.kvF16 != c.f16 || p.metalSizing != c.metal || p.pinned != c.pinned {
 			t.Errorf("%s: got %+v ok=%v, want ctx %d f16 %v metal %v pinned %v", c.name, p, ok, c.ctx, c.f16, c.metal, c.pinned)
 		}
+	}
+	// An explicit -kv f32 on Metal is not priced at f16 any more: it refuses the load by name, until phase 3 restores the f32 kernels.
+	if arch, _, err := resolveArchitecture(q); err != nil {
+		t.Fatal(err)
+	} else if r := kvRefusal("metal", arch, Options{Backend: "metal", KVPrecision: "f32"}); r == nil || !strings.Contains(r.Reason, "phase 3") {
+		t.Errorf("metal -kv f32: refusal %v, want one naming phase 3", r)
 	}
 	// A window smaller than Metal's default caps it.
 	small := a3Config("qwen2")

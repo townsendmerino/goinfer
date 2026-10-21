@@ -1229,6 +1229,10 @@ func (m *Model) withResidencyOrAbort() (*Model, error) {
 		_ = m.Close()
 		return nil, err
 	}
+	if err := m.kvDeliveredOrRefuse(); err != nil {
+		_ = m.Close()
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -1434,21 +1438,11 @@ func (m *Model) ResidentContextKVBytes(ctx int) int64 {
 // Metal resident model runs f16 KV even when nothing asked for it (docs/tasks/task-memory-accounting-2026-09.md
 // found serve's banner printing "KV f32" there).
 func (m *Model) ResidentKVPrecision() string {
-	if m.resident == nil || m.be == nil {
+	if m.resident == nil || m.be == nil || m.w == nil {
 		return ""
 	}
-	switch {
-	case m.be.Name() == "cuda":
-		if m.kvF16 {
-			return "f16" // kv16_cuda.go: a cleared family's cache, or one asked for by name
-		}
-		return "f32" // everything else on CUDA, whatever --kv asks (ResidentKVBytes' "cuda" branch)
-	case m.kvPrecI8:
-		return "i8"
-	case m.be.Name() == "metal", m.kvF16:
-		return "f16"
-	}
-	return "f32"
+	got, _ := ResolveKV(m.be.Name(), m.w.arch, m.kvOpts)
+	return got
 }
 
 // HeadTable is the precision of the token-embedding / LM-head table this model loaded with: "int4" (--embed-int4), "int8" (the pin), "f32" or "q4k"; "" when the CPU copy is not held.

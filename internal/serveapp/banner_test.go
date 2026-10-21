@@ -117,16 +117,25 @@ func TestBanner_contextAndKV(t *testing.T) {
 		{"unknown", 0, 0, 0, "", []string{"context: unknown"}, nil, ""},
 		// -kv auto is the flag's default, not a request: off the resident path the cache is f32, and it is not lossy.
 		{"no resident, the default -kv auto", 32768, 32768, 0, "auto", []string{"KV f32"}, []string{"KV auto", "lossy"}, ""},
-		// Metal allocates f16 KV whatever -kv says: the banner reports what runs, not the request.
-		{"metal resident, no -kv", 4096, 32768, 0, "", []string{"KV f16"}, []string{"KV f32", "lossy"}, "f16"},
-		{"metal resident, -kv f32 requested", 4096, 32768, 0, "f32", []string{"KV f16"}, []string{"KV f32"}, "f16"},
-		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8", "lossy"}, nil, "i8"},
+		// Metal's auto is f16: the banner reports what runs and what was requested. (An explicit -kv f32 on Metal refuses the load.)
+		{"metal resident, no -kv", 4096, 32768, 0, "", []string{"KV f16 (requested auto"}, []string{"KV f32", "lossy"}, "f16"},
+		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8 (requested i8, lossy)"}, nil, "i8"},
 	} {
-		cpuKV := "" // off the resident path, the CPU cache's own precision: the request, where the family allows it
-		if tc.resKV == "" && (tc.kv == "f16" || tc.kv == "i8") {
-			cpuKV = tc.kv
+		req := tc.kv
+		if req == "" {
+			req = "auto"
 		}
-		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV, cpuKVPrec: cpuKV}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
+		rep := decoder.KVPrecisionReport{Cache: "resident", Requested: req, Delivered: tc.resKV}
+		if tc.resKV == "" { // off the resident path, the CPU cache's own precision: the request, where the family allows it
+			rep = decoder.KVPrecisionReport{Cache: "cpu", Requested: req, Delivered: "f32"}
+			if tc.kv == "f16" || tc.kv == "i8" || tc.kv == "f32" {
+				rep.Delivered = tc.kv
+			}
+		}
+		if rep.Requested != rep.Delivered {
+			rep.Reason = "auto's pick"
+		}
+		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kv: []decoder.KVPrecisionReport{rep}}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
 		got := bannerLine(lines, "context:")
 		for _, want := range tc.want {
 			if !strings.Contains(got, want) {
@@ -267,6 +276,12 @@ func TestConcurrencyLine_cpuBatch(t *testing.T) {
 	batched := concurrencyLine(bannerFacts{concurrent: 4, cpuBatched: true}, config{maxConcurrent: 4, kvSessions: 4})
 	if !strings.Contains(batched, "decode tokens batched on the CPU") || !strings.Contains(batched, "-cpu-batch") {
 		t.Errorf("batched CPU model: %q", batched)
+	}
+	// Batching engaged for the family, but an f16 or int8 cache's tokens decode per sequence: the line says so and why, not "batched".
+	why := "the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4"
+	bypass := concurrencyLine(bannerFacts{concurrent: 4, cpuBatched: true, cpuBatchBypass: why}, config{maxConcurrent: 4, kvSessions: 4})
+	if strings.Contains(bypass, "batched on the CPU") || !strings.Contains(bypass, "decode runs per sequence: "+why) {
+		t.Errorf("CPU model whose int8 cache bypasses the batcher: %q", bypass)
 	}
 	workers := concurrencyLine(bannerFacts{concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchAuto})
 	if !strings.Contains(workers, "independent workers") || strings.Contains(workers, "batched on the CPU") {
@@ -469,12 +484,14 @@ func TestFactsOf_headTableFollowsEmbedInt4(t *testing.T) {
 	}
 }
 
-// TestBanner_f16KVDecline: a CUDA load that asked for -kv f16 and was held at f32 says why on the context line, next to the precision that runs.
+// TestBanner_f16KVDecline: a CUDA load whose auto resolved to f32 says why on the context line, next to the precision that runs. (An explicit
+// -kv f16 the family cannot hold refuses the load: decoder.KVRefusal.)
 func TestBanner_f16KVDecline(t *testing.T) {
-	lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 32768, kvPrec: "f32", kvF16Decline: "sliding-window attention (the windowed KV ring) has no f16 form"},
-		config{load: loadflags.Flags{KV: "f16"}})
+	why := "sliding-window attention (the windowed KV ring) has no f16 form"
+	lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 32768,
+		kv: []decoder.KVPrecisionReport{{Cache: "resident", Requested: "auto", Delivered: "f32", Reason: why}}}, config{load: loadflags.Flags{KV: "auto"}})
 	got := bannerLine(lines, "context:")
-	for _, want := range []string{"KV f32", "-kv f16 held at f32: sliding-window attention"} {
+	for _, want := range []string{"KV f32", "requested auto: sliding-window attention"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("line %q missing %q", got, want)
 		}
@@ -539,12 +556,13 @@ func TestBanner_contextSaysWhyAndWarnsAHarness(t *testing.T) {
 	}
 }
 
-// TestBanner_cpuKVF16HeldAtF32: an f16 request on a CPU load whose family keeps f32 (decoder.Model.CPUKVF16DeclineReason) prints
-// the precision that runs and why, not the request.
-func TestBanner_cpuKVF16HeldAtF32(t *testing.T) {
-	f := bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, cpuKVPrec: "f32", cpuKVF16Decline: "MoE families are not checked for f16 KV yet"}
-	got := bannerLine(modelBannerFrom(f, config{load: loadflags.Flags{KV: "f16"}}), "context:")
-	if !strings.Contains(got, "KV f32") || !strings.Contains(got, "-kv f16 held at f32: MoE") || strings.Contains(got, "lossy") {
-		t.Errorf("an f16 request held at f32 printed %q", got)
+// TestBanner_cpuKVBothCaches: a resident load whose adapter's session path takes the CPU cache prints both caches, each with what was
+// requested and what it holds.
+func TestBanner_cpuKVBothCaches(t *testing.T) {
+	f := bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, kv: []decoder.KVPrecisionReport{
+		{Cache: "resident", Requested: "i8", Delivered: "i8"}, {Cache: "cpu", Requested: "i8", Delivered: "i8"}}}
+	got := bannerLine(modelBannerFrom(f, config{load: loadflags.Flags{KV: "i8"}}), "context:")
+	if !strings.Contains(got, "· KV i8 (requested i8, lossy) · CPU KV i8 (requested i8, lossy)") {
+		t.Errorf("both caches printed %q", got)
 	}
 }

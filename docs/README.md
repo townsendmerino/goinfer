@@ -94,6 +94,10 @@ half-precision KV cache on the CPU as the command lines' default, with f32 kept 
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
 decisions (2026-10-14), and its gates, registered that day before any code.
 
+[`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (plan, filed 2026-10-20) makes
+`--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name: today's
+silent fallbacks, a single resolver and a ratchet test, the phases by backend (CUDA int8 is B39), and the gates.
+
 [`task-cpu-prefill-memory-2026-10.md`](tasks/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
 CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
 keeping the freed heap. It registers the fix (2,048-row chunks with the suffix's fast-attention decision, the KV reserved
