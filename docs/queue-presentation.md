@@ -306,3 +306,11 @@ project's own hedging convention (a claim ships with its own caveat attached, no
 on this), and any row claiming a speed advantage must match what `benchmarks.md` actually says,
 including where goinfer loses (its own CUDA-vs-native figure is already flagged as narrower and
 older than it reads, `docs/positioning.md:26–27`).
+
+**U17 · `goinfer connect` covers three of the eleven agents in the census** — CLI, **OPEN, filed 2026-10-21 (moved from
+`docs/tasks/task-integration-harness-2026-10.md` I2)**
+
+I2 shipped `connect` for Claude Code, opencode and Codex in v0.23.0 (aa554787, c2c23566). The rest of I2 never started: the
+other eight agents of the census (`docs/measurements/integration-harness-2026-10/harness-census-2026-10-12.md`), reading each
+agent's own config schema rather than writing over it, and a warning when `connect` skips an agent it does not know. Filed
+here because `connect` is the first command a harness user runs.

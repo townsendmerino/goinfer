@@ -61,7 +61,7 @@
 > [`task-work-queue-2026-09.md`](../task-work-queue-2026-09.md) (J1/J3/J4 plumbing D5's batch route
 > rides) · [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) (MC1/MC3 slots, D7's
 > concurrency cell) · [`task-site-2026-09.md`](../task-site-2026-09.md) (D9) ·
-> [`task-never-swap-2026-09.md`](../task-never-swap-2026-09.md) (D3's merge-at-load memory) ·
+> [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (D3's merge-at-load memory) ·
 > [`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md) (mode 3, "point my tools at it").
 
 ---

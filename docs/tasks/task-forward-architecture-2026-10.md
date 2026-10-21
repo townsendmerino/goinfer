@@ -16,6 +16,15 @@
 > are in `docs/measurements/forward-arch-baseline-2026-10-13.md`. Every gate below is a sketch: whoever starts a phase
 > registers its gates first (rule, void conditions, stopping rule, cost basis), as `CLAUDE.md` requires.
 
+> **Added 2026-10-21 (owner), from option-path admission's leftovers:** 20 of the 71 registration and bound findings counted on
+> 2026-10-08 (`docs/measurements/audit-classes-2026-10-08.md` §2–§3) were one model family that one path did not know about,
+> six of them Critical. The owner's call is a hybrid. The compute, fit-guard and speculative share is this doc's to close,
+> because Track OP's per-layer programs can declare each layer's weights and state, so those paths read the program instead of
+> hand lists: batched-prefill and `Plan` admission, the backends' tails, declines and dispatch, `BuildResident` branches, the
+> expert pager's hooks, the fit guard's byte and KV accounting, and the speculative entry points' rollback and capture checks
+> (the record's §6 table names each finding). The rest (loading and serializing, tokenizer dispatch, chat-template detection)
+> is G47 in `docs/queue-correctness.md`.
+
 ## 0. Summary
 
 **Where a query's time goes.** Almost all of an agent turn is prefill and decode.
@@ -735,7 +744,7 @@ the same tokens), saved as raw float32 bits.
 **Why it is the same computation.** A `.giw` holds the weights already quantized by the same quantizer a direct `.gguf`
 load runs at load time.
 
-- On record: greedy output byte-identical between the two routes (`docs/tasks/task-never-swap-2026-09.md`, S1), and
+- On record: greedy output byte-identical between the two routes (`docs/completed/task-never-swap-2026-09.md`, S1), and
   CPU logits through the sidecar bit-identical to the direct load's (`docs/tasks/task-multimodal-support-2026-10.md`).
 - **Checked again each run, as a precondition.** Before any arm, the CPU process loads the dense 1.5B both ways (its
   `.gguf` fits the fit guard directly) at int8int8 and int4. It runs the gate's prompt and 24 steps, and requires the

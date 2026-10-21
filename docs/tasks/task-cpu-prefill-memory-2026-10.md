@@ -19,7 +19,7 @@ Measured by `serve -backend cpu` on the M1 Pro 16 GB, with int4 weights from the
 
 **The footprint did not fall in 60 s of idle.** Later sessions' KV copies landed inside it without moving it. The
 20K prefill on the 0.5B put a desktop-loaded 16 GB Mac 1.27 GB into swap. That breaks the never-swap rule
-(`docs/tasks/task-never-swap-2026-09.md`).
+(`docs/completed/task-never-swap-2026-09.md`).
 
 **A 1.5B at 20K was not run:** by §2's arithmetic it would hold about 3.6 GiB live before garbage.
 
@@ -167,7 +167,7 @@ After a prefill of at least **4,096 rows**, `prefillLogits` returns memory to th
 
 - The per-row MoE FFN's allocations (`decoder/mlp.go:moeMLP` with a nil scratch). They are per row and freed per row;
   chunking bounds what accumulates.
-- CPU f16 KV, which is `docs/tasks/task-cpu-kv-f16-2026-10.md`.
+- CPU f16 KV, which is `docs/completed/task-cpu-kv-f16-2026-10.md`.
 
 ### Interplay with KV2 (`kv2-2026-10`)
 

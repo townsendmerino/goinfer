@@ -1707,7 +1707,7 @@ Moved from `decoder/model.go` (the comment above `Options.LoadAbort`) on 2026-10
 
 ```text
 LoadAbort, if non-nil, is checked BETWEEN LAYERS during a direct (non-.giw) GGUF weight
-build — S3 (docs/tasks/task-never-swap-2026-09.md): the swap tripwire's LOAD-TIME
+build — S3 (docs/completed/task-never-swap-2026-09.md): the swap tripwire's LOAD-TIME
 consumer. Closing it aborts the load with an error satisfying errors.Is(err,
 ErrLoadAborted); Load has no view of WHY it closed (it does not own or import
 decoder.SwapWatch — the caller does), so a caller arming a watch for this is expected to
@@ -11042,7 +11042,7 @@ The differences that DO matter, all of which a port gets wrong silently:
 Moved from `decoder/swapwatch.go` (the comment above `swapwatch`) on 2026-10-09.
 
 ```text
-S3 (docs/tasks/task-never-swap-2026-09.md): the swap tripwire. goinfer notices swap growing
+S3 (docs/completed/task-never-swap-2026-09.md): the swap tripwire. goinfer notices swap growing
 during its own run and acts — instead of leaving "kill at swap-used baseline + 500 MB" to a
 human watching `free -m`/`sysctl vm.swapusage` in another terminal, which is exactly what the
 cold-user harness and the R11(c) runs have had to do by hand. The external shell script that
@@ -19441,7 +19441,7 @@ Moved from `decoder/swapwatch_test.go` (the comment above the test) on 2026-10-0
 
 ```text
 TestSwapWatch_keyingOnRSSWouldHaveMissedR11c is the inverting-guard mutation check
-docs/tasks/task-never-swap-2026-09.md S3 asks for, encoded as a test so the mistake it guards
+docs/completed/task-never-swap-2026-09.md S3 asks for, encoded as a test so the mistake it guards
 against cannot come back silently. CLAUDE.md: "A guard that INVERTS under the condition it
 exists for is worse than no guard — it actively reassures." The real R11(c) run
 (docs/measurements/metal-moe-autopager-m26-2026-09-20.md) measured, in the SAME build, both
@@ -19758,7 +19758,7 @@ Compatibility, both ways:
 
 #### File layout: fused groups for Metal (weights format v13, kind 6)
 
-S6 (`docs/tasks/task-never-swap-2026-09.md`) wants a Metal load's dense int4 weights to be **file-backed
+S6 (`docs/completed/task-never-swap-2026-09.md`) wants a Metal load's dense int4 weights to be **file-backed
 views of the mapping** instead of a second, anonymous MTLBuffer copy of every tensor. Metal's fused
 GEMVs read **one buffer** holding q‖k‖v (or gate‖up) rows back to back, and an mmap'd file can only be
 aliased into such a buffer if those rows are *adjacent in the file* — which per-tensor records (a

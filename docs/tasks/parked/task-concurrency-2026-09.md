@@ -156,7 +156,7 @@
 > MC2 absorbs if the owner agrees) · [`../positioning.md`](../../positioning.md) ("not a serving
 > engine") · [`../roadmap.md`](../../roadmap.md) §"Decided and parked" (continuous batching) ·
 > [`task-fit-to-hardware.md`](../task-fit-to-hardware.md) (owns the fit guard MC1 must price) ·
-> [`task-never-swap-2026-09.md`](../task-never-swap-2026-09.md) (MC1's extra KV is anonymous GPU
+> [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (MC1's extra KV is anonymous GPU
 > memory on a 16 GB Mac).
 
 ---

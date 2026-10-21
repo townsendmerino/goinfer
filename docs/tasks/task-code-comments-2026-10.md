@@ -382,7 +382,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
    - **`tokenizer`, `byteLevelKnobs`**: a GGUF with `pre="default"` (or none) is walked with GPT-2's shape; llama.cpp's default is a
      different multi-pass shape and needs a new `splitShape` and goldens. Recorded only in `docs/completed/audit-2026-09-10.md` (N-72).
    - **`Options.LoadAbort` (`decoder/model.go:Options`)** is checked only on the GGUF direct-build path (the safetensors direct build and
-     `StreamTranscodeGGUF` ignore it): owned by `docs/tasks/task-never-swap-2026-09.md`. **`kdaParams`**: the LoRA'd KDA path is not
+     `StreamTranscodeGGUF` ignore it): owned by `docs/completed/task-never-swap-2026-09.md`. **`kdaParams`**: the LoRA'd KDA path is not
      implemented; no queue entry.
    - **`decoder/weights.go:LoadWeights`**: bf16/f16 weights widen to f32 on load, roughly doubling RAM (the old `TODO(M8)`: per-tile
      widening inside matmul). **`repackW4A8Row4IfEligible`**: non-paged `.giw` tensors get no row4 repack (needs the repack sequenced
@@ -402,7 +402,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      adapter model on a resident backend publishes `MaxPositions` but is held to the resident cap (a code inconsistency, comment now
      describes it, not fixed).
    - **`decoder/fitguard.go:guardGIWFit`** does not price Metal's per-projection host buffer copies (needs a hook; decoder cannot
-     import metal): owned by `docs/tasks/task-never-swap-2026-09.md` ("Not priced").
+     import metal): owned by `docs/completed/task-never-swap-2026-09.md` ("Not priced").
    - **Test-side open work, no owner found** (text in the notes files' "Test files" sections): `decoder` `TestNemotronReal_gate`, `TestGlm4MoeAir`, `TestGraniteReal`
      gate a raw completion prompt on an instruction-tuned checkpoint with only a `distinct<3` floor (adopt `TestGemma4_26B_gate`'s chat-template and
      trigram-ratio pattern at the next revalidation); `parityWantInt4ByArch["amd64-vnni"]` was captured under SDE and the first real VNNI host owes it a look;

@@ -1,5 +1,56 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **Status 2026-10-21 (the close-out sweep).** KV0, KV1, KV2 and KV3 are done; KV3's tiled exact prefill kernel merged on
+> 2026-10-18 (#102), after v0.23.0. KV7's first two steps (#57, #86) and KV8a on CUDA (#115) are merged; KV8a on Metal is on
+> branch `kv8a-metal-2026-10`. KV4 has not started, and KV5, the rest of KV7, KV8, KV10 and KV11 wait on it. **Decided by
+> the owner on 2026-10-21:** KV4 goes first among the CUDA KV tracks. KV precision's phase 1 (f16 for the CUDA families that
+> refuse it) folds into KV4b, and its phase 2 (int8, B39) waits for KV4's pools, so no KV kernel is written twice. KV9
+> closes per its step 0: host blocks would save 405 MiB of a 2,159 MiB four-session footprint at 6K on the 0.5B; reopen it
+> on a measured CPU case well beyond that. KV3's WebGPU half (`origin/kv3-webgpu-2026-10`) is rebased and merged. The
+> Gemma 3 GEMM fidelity gate runs by day on nobara (G46 in `docs/queue-correctness.md`). I7, the default context toward
+> 32,768, moves here from the integration doc, into KV5. **Stale below:** KV-pre is merged (64e13303), not in flight; KV8a
+> is built on CUDA, not a sketch; KV7 has two steps merged, not one; KV9's step 0 exists (`docs/measurements/kv9-2026-10/`);
+> KV11's first measurement was made and parked on 2026-09-22; KV3 is CUDA and Metal until its WebGPU half merges. A split
+> of this doc is proposed for the next sweep: the finished KV0–KV3 record to `docs/completed/`, a slim live doc for KV4–KV11,
+> keeping §5's numbering, which code comments cite.
+
+**Ledger, 2026-10-21.** One row per item, the current state; it supersedes the status notes below where they
+disagree, and is updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| KV-pre | done | — | 64e13303 (as I8) |
+| KV0, KV0-H | done | — | the kv0 tile-census, invariance and traffic records; kv0h-hybrid-traffic-2026-10.md |
+| KV1 | done | — | f08b47ca; kv1-2026-10-13.md |
+| KV2 | done | — | 772b1fb2 (#26); G5-C PASS, kv2-cuda-2026-10-15.md §7 |
+| KV2-FU1 | open | Mac: a session's own rollback continues in place (`kvmgr.pickSlot`), with a G3-style gate; S | §6, KV2 follow-up 1 |
+| KV2-FU2 | done | — | 11b29ba5 (#37) |
+| KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
+| KV3-WebGPU | active | rebase `origin/kv3-webgpu-2026-10` onto main and merge (owner, 2026-10-21) | d555247c, 49898b2f |
+| KV3-E4B | open | nobara: read the registered E4B cold-TTFT run | kv3-e4b-cold-ttft-2026-10-19 |
+| KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
+| KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
+| KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
+| KV4 | open | nobara: first among the CUDA KV tracks (owner, 2026-10-21); register its gates before code; L | §6 |
+| KV4a | open | with KV4; its identity gate also reads flash-decode and split-KV through a windowed view, which no test has (from the archived windowed-KV doc) | §6 |
+| KV4b | open | with KV4; takes KV precision's phase 1, f16 for the ten CUDA families that refuse it (owner, 2026-10-21) | §6; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
+| KV5 | blocked | KV4; takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
+| KV6 | done | — (WebGPU keeps slots, D3) | §8 |
+| KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
+| KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool | §6 |
+| KV8 | blocked | KV4 (KV5 for Metal) | §6 |
+| KV8a-CUDA | done | — | fac209c2 (#115) |
+| KV8a-Metal | active | Mac: M2(b) (about 2 h 45 min) and M5 (about 3 h 30 min, as two jobs) on the night queue, then grade and merge | branch `kv8a-metal-2026-10` |
+| KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
+| KV10 | blocked | KV4, KV5 | §6 |
+| KV11 | blocked | KV4 and KV7; its KV-share trade curve needs no pool and can run now (either box, M) | §6; lead4-perlayer-hitrate-2026-09-22.md |
+| §5.16 | blocked | KV4's build list: the reuse-source field, the pool banner, the check row | §5.16 |
+| §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a | §12 |
+| CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3 | from the archived windowed-KV doc |
+| D1–D8, Q1–Q7 | done | — | §8 |
+
+
 > **2026-10-20: KV8a added, ahead of KV4.** KV0-H (`docs/measurements/kv0h-hybrid-traffic-2026-10.md`) drove opencode
 > and Codex on Qwen3.5-9B (CUDA, nobara). 29 of its 69 follow-up requests diverged inside the previous reply, where today's
 > exact-extension rule re-prefills the whole prompt. Its registered rule pulls an end-of-prompt checkpoint ahead of KV4
@@ -151,7 +202,7 @@ slot is gone; and every KV feature is built three or four times.
    paths). The new lifecycle paths (publish, share, demote, promote, restore) join it, and every kind gets a declared
    cell for each.
 5. **One memory formula** (`docs/tasks/task-memory-accounting-2026-09.md`). The pool size, admission and the allocator
-   compute from one function, and the never-swap rules hold on every gate (`docs/tasks/task-never-swap-2026-09.md`).
+   compute from one function, and the never-swap rules hold on every gate (`docs/completed/task-never-swap-2026-09.md`).
 6. **The Hard API tier** (`docs/api-tiers.md`):
    - `decoder.KVCache` stays an opaque handle;
    - `Session`'s methods, `Model.NewCache`, `Model.NewSession` and `Model.LoadSession` keep their signatures;
@@ -207,7 +258,7 @@ slot is gone; and every KV feature is built three or four times.
 - **MC1 and MC3.** Binding a slot and stepping several rows become "pass a sequence's block table" and "pass a table per row".
 - **Chunked prefill.** It is chunk-invariant on Metal: 0 of 14,336,000 KV elements and 0 of 151,936 last-token logits
   differ at chunks of 64–384 (`metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`).
-- **CUDA's windowed KV.** Built 2026-10-10 and on in the CLIs (`docs/tasks/task-cuda-windowed-kv-2026-10.md`). Its
+- **CUDA's windowed KV.** Built 2026-10-10 and on in the CLIs (`docs/completed/task-cuda-windowed-kv-2026-10.md`). Its
   `TestWindowedKV_*` suite becomes the window group's identity oracle.
 - **One memory function**, `Model.ResidentKVBytes` / `Model.ResidentNeedBytes`.
 
@@ -505,7 +556,7 @@ is MC4's identity gate extended to shared preambles.
   buffer. On CUDA there is no rows kernel to extend: `stepAttnRows` loops over rows and rebinds a slot per call, so a table per
   row is new kernel API there.
 - **CUDA graphs.** No KV launch is captured today (graphs capture only the segments around attention), so a table pointer is a launch argument; a table the captured segments read would be a device buffer written before replay. Windowed
-  models get graphs back; today graphs are declined when windowed KV engages (`task-cuda-windowed-kv-2026-10.md` §7). A
+  models get graphs back; today graphs are declined when windowed KV engages (`../completed/task-cuda-windowed-kv-2026-10.md` §7). A
   measured bonus, not a promise.
 
 ### 5.12 Speculation and drafters
@@ -601,7 +652,7 @@ the type.
   - (b) the CPU moves to host blocks, so a preamble is stored once, with a contiguous reference kept behind a test switch
     for parity.
 - **Recommendation:** (a) when KV2 lands; (b) at KV9 if the memory case is measured on a real multi-session workload.
-- `docs/tasks/task-cpu-kv-f16-2026-10.md` (CPU f16 by default) is independent of both.
+- `docs/completed/task-cpu-kv-f16-2026-10.md` (CPU f16 by default) is independent of both.
 
 ### 5.15 Sharing scope and the timing side channel
 
@@ -1077,6 +1128,10 @@ KV2 merges when every arm on both boxes is read.
 - **Gates (if reopened):**
   - the parity manifest bit-identical (the CPU is the reference);
   - the memory saved with four sessions sharing a preamble, measured.
+- **Step 0, measured 2026-10-14 (exploratory):** `docs/measurements/kv9-2026-10/README.md`.
+  - **Recommendation:** close KV9 with KV2's copies as enough. Owner's call.
+  - At 6K on the 0.5B, host blocks would save 405 MiB of a measured 2,159 MiB four-session footprint.
+  - The CPU cold prefill's retained high-water is the larger term.
 - **Size:** M–L if reopened.
 
 ### KV10 — Long context and lower precision
@@ -1227,7 +1282,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - **KV-pre:** its block size;
   - **I7** (`docs/tasks/task-integration-harness-2026-10.md`): its slots-against-context question dissolves at KV4/KV5,
     so its code should stay small;
-  - `docs/tasks/task-cpu-kv-f16-2026-10.md`: independent;
+  - `docs/completed/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
   - `docs/option-state-grid.md` (its Policy section; design record `docs/completed/task-option-path-admission-2026-10.md`): new options join its grid;
   - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
@@ -1504,9 +1559,9 @@ Docs and records:
 - **Task docs:**
   - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
     R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
-  - `docs/tasks/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
-    `docs/tasks/task-never-swap-2026-09.md`;
-  - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/tasks/task-cpu-kv-f16-2026-10.md`,
+  - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
+    `docs/completed/task-never-swap-2026-09.md`;
+  - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;
   - `docs/completed/task-gpu-f16-kv.md`, `docs/completed/task-cpu-kv-quant.md`, `docs/spec/09-mtp-heads.md`.
 - **Measurements:**
@@ -1525,4 +1580,4 @@ External:
 - [Marconi](https://arxiv.org/abs/2411.19379)
 - [Selective KV-cache sharing (SafeKV)](https://arxiv.org/abs/2508.08438)
 
-<!-- doc-reviewed: 2026-10-13 -->
+<!-- doc-reviewed: 2026-10-21 -->

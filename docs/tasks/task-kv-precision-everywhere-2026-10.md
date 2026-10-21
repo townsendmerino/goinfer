@@ -1,5 +1,39 @@
 # Task: `--kv f16` and `--kv i8` delivered on every backend, family and path (2026-10)
 
+> **Status 2026-10-21 (the close-out sweep).** Phase 0 is done and on main, in no tag yet: five commits, ca49bcf1 to
+> c51e13cf (#114, 2026-10-20). One resolver (`decoder.ResolveKV`) decides the precision, an explicit precision that cannot be
+> delivered refuses the load by name (D1), the banner and the request log print requested and delivered, and
+> `docs/kv-precision-matrix.md` is generated and ratcheted. **Decided by the owner on 2026-10-21:** KV4
+> (`docs/tasks/task-kv-architecture-2026-10.md`) goes first. Phase 1 (CUDA f16 for the ten families that refuse it) folds
+> into KV4b, and phase 2 (CUDA int8, B39) waits for KV4's pools, so no KV kernel is written twice. That revises D4's order;
+> phases 3 to 6 stay this doc's. **Stale below:** the status line's "Phase 0 is next"; §2, which is the tree at 8494a91d
+> (the generated matrix is the truth now); §2's `cuda/kvpolicy.go`, since moved to
+> `decoder/kvresolve.go:CUDAKVF16Decline`; and "used by every backend's build", since Metal's and WebGPU's builds still read
+> the raw request (P0a′ below).
+
+**Ledger, 2026-10-21.** One row per item, the current state; it supersedes the status notes below where they
+disagree, and is updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| P0 | done | — | ca49bcf1 to c51e13cf (#114) |
+| P0a′ | open | Mac: Metal's and WebGPU's builds read `ResolveKV`, not the raw request; S | `metal/model.go`, `gpu/residency.go` |
+| §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
+| P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
+| P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
+| P3 | open | Mac: Metal int8 everywhere and f32 back; start after `kv8a-metal-2026-10` merges, which edits `metal/backend.go` and `metal/model.go`; M–L | 12 matrix cells "until phase 3" |
+| P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
+| P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
+| P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
+| G1 | blocked | P1 and P2, with KV4 | — |
+| G2 | blocked | P1–P5 | — |
+| G3 | open | a tier-0 readback of delivered bytes for every cell: CPU and Metal cells on the Mac, CUDA cells on nobara; S–M | `TestResidentKVBytes_matches*Allocation` covers a few fixtures |
+| G4, G5, speed | blocked | each phase | the instrument is in `docs/tasks/task-cuda-f16-kv-2026-10.md` |
+| D1–D3 | done | — | §6 |
+| D4 | done | revised 2026-10-21: KV4 first, phase 2 after the pools | §6; the status block above |
+
+
 > **Status: APPROVED 2026-10-20 (owner: D1 refuse, D2 honor, D3 WebGPU in scope, D4 the recommended order; §6). Phase 0 is next. Filed 2026-10-20 at the owner's request: a KV precision the caller asks for
 > is the precision the caller gets, on every backend, every family and every path. Supersedes B39 (CUDA int8 KV, a
 > candidate), which becomes phase 2 here.** The facts about the code were read at main `8494a91d`. Nothing here is
@@ -166,3 +200,5 @@ scope; D4 the recommended order (phase 0 now, CUDA int8 before the CUDA family w
 - **D3:** WebGPU in scope (phase 5 as written), or out of scope with a named refusal.
 - **D4:** order. Recommended: phase 0 now; CUDA int8 (2) before the CUDA family widening (1) if the 8 GB card's context is
   the pull, since tack's Qwen3-8B is already a cleared dense family.
+
+<!-- doc-reviewed: 2026-10-21 -->

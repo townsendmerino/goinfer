@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The A/A of docs/tasks/task-cuda-windowed-kv-2026-10.md, section 10, Mellum2.1 on nobara: the windowed-KV branch's DEFAULT path (option off) against the commit it branched from, so only the branch's own changes
+# The A/A of docs/completed/task-cuda-windowed-kv-2026-10.md, section 10, Mellum2.1 on nobara: the windowed-KV branch's DEFAULT path (option off) against the commit it branched from, so only the branch's own changes
 # differ. Pre-registered in aa_default_path.py's docstring and the task doc. Timed (night.py holds the timing lock). Pinned: ~/goinfer-bench/windowed-kv/{serve-cuda (branch), serve-cuda-main (merge base)}, revs beside them.
 # Estimate ~10 min (4 loads of ~25 s, 6 short + 3 long requests per session); queue at 20:
-#   python3 scripts/night.py add windowed-kv-aa --est 20 --by "nobara session, CUDA windowed KV A/A" --doc docs/tasks/task-cuda-windowed-kv-2026-10.md -- bash <pinned src>/docs/measurements/cuda-windowed-kv-2026-10/run-windowed-kv-aa.sh
+#   python3 scripts/night.py add windowed-kv-aa --est 20 --by "nobara session, CUDA windowed KV A/A" --doc docs/completed/task-cuda-windowed-kv-2026-10.md -- bash <pinned src>/docs/measurements/cuda-windowed-kv-2026-10/run-windowed-kv-aa.sh
 F=${F:-$HOME/goinfer-bench/windowed-kv}
 source "$(dirname "$0")/../mellum21-2026-10/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/windowed-kv-aa-$(date +%F)}

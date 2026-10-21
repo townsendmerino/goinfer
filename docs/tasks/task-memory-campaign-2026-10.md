@@ -1,5 +1,64 @@
 # Task: the memory campaign — what is left after the KV program (MEM0–MEM17), 2026-10
 
+> **Status 2026-10-21 (the close-out sweep).** The aikit side shipped (aikit v1.71.0, `gpu/annmetal/v0.2.1`): MEM3, MEM14, MEM15
+> and MEM16 are done, and so is MEM13's job-store and token-bytes half (#94, cacaa8ec). MEM0's nobara half is read (33ef5a21);
+> its Mac half is not. The rest of the goinfer items have not started. **The premise that the KV program is finished does not
+> hold** (KV4 has not started), but only MEM9(c) waits on it. **Decided by the owner on 2026-10-21:** D1, library callers get
+> the mapped sidecar through a `decoder.Options` field that is **on by default**, so a library `.gguf` load transcodes once
+> and writes the `.giw` beside the model, as the apps do. D2: after the GPU attaches, the towers' host copy is dropped and
+> reloaded lazily from the mapping on a CPU fallback. D3: bf16 kinds for the f32 islands first, then int8 per family behind
+> its parity bar. D4: aikit's `chunk.Chunk` becomes a file and a byte range read through a mapping, and ken stores chunks that
+> way. D5 stays with O3 (`docs/tasks/parked/task-metal-audit-followups-2026-10.md`), parked with a "defer" call. **Moved here
+> the same day:** MEM12 takes the unused f32 KV reservation from the archived cpu-kv-f16 doc (`NewKVCache` reserves f32
+> capacity and `setQuant` keeps it when the storage form changes; int8 has the same leftover). MEM13 takes the two staging
+> copies from the archived never-swap doc (Metal's int4 lane on a direct `.gguf` load, `metal/model.go:int4Concat`, and
+> CUDA's dense host pack), decided: remove both. **Stale below:** MEM13's "in PR #94" (merged); §8's "Next" line; §0's MEM3
+> row; MEM5's "blocked on G40-1" (answered 2026-10-15, 90d4c789: a single pass kept); MEM9's ".giw v16 work" (v17 shipped);
+> MEM10's full host copy (gone for dense weights in #95 and for expert stacks in #103); and the M35 figure that
+> `decoder/fitguard_giw_pinned_test.go:measuredM35Experts` calls measured, which is §1.1's arithmetic (MEM0 ran no M35 cell).
+
+**Ledger, 2026-10-21.** One row per item, the current state; it supersedes the status notes below where they
+disagree, and is updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| MEM0-nobara | done | — | 33ef5a21; `docs/measurements/mem0-2026-10/README.md` |
+| MEM0-Mac | open | Mac: the Metal and arm64 cells, E2B, the tower image turn; estimate each cell first; one over about 2 h goes on the night queue | the README's "Not done here" |
+| MEM0-tack | done | — | 5310f789 |
+| MEM1 | open | either box: the `decoder.Options` sidecar field, on by default (D1, owner 2026-10-21); M | — |
+| MEM2 | open | Mac: free the Metal tower scratch on grow, and a real `Close`; S | — |
+| MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
+| MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
+| MEM4(b) | open | either box: drop the towers' host copy after attach, with a lazy reload on a CPU fallback (D2, owner 2026-10-21) | — |
+| MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
+| MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
+| MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
+| MEM7 | open | Mac: size the Metal prefill block to the machine, now that B41's reading is on main; S | `prefillBlockScratch` |
+| MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
+| MEM8(b) | open | either box: gather-only tables keyed off the head pin; S–M | — |
+| MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
+| MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
+| MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
+| MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
+| MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
+| MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
+| MEM12-scratch | open | either box: MoE output, logits and sampler scratch, with tier-0 counters; M | — |
+| MEM12-f32res | open | either box: drop the f32 capacity in `setQuant` when the storage form changes (from cpu-kv-f16's F4 c); S, then refresh the parity hashes | — |
+| MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
+| MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
+| MEM13-tokenizer | open | either box: uint64 rank keys, a size hint, a typed reader; S | `mergeRank` |
+| MEM13-features | open | either box: price the 256 MiB feature cache; S | `featureCacheBudget` |
+| MEM13-heapquant | open | after MEM1 | — |
+| MEM13-copies | open | remove Metal's int4-lane copy (Mac) and CUDA's dense host pack (nobara) (owner, 2026-10-21, from never-swap); S–M each | — |
+| MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
+| MEM17 | open | aikit, then ken: `chunk.Chunk` as a file and a byte range through a mapping; ken stores chunks that way (D4, owner 2026-10-21); an aikit minor bump | `chunk.Chunk.Text` |
+| ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |
+| D1–D4 | done | decided 2026-10-21 | the status block above |
+| D5 | moved | O3 (parked, defer) | — |
+| D6, D7 | done | — | aikit 5e4d3c5, a15bfa9 |
+
+
 > **Status 2026-10-17 (late): the aikit side SHIPPED in aikit v1.71.0 and `gpu/annmetal/v0.2.1`** — MEM3, MEM14, MEM15 and
 > MEM16 done, D6 decided (§5's status blocks carry the commits and gate results). Still open on the aikit side: MEM17 (D4)
 > and MEM4(a) (after MEM0). **goinfer, 2026-10-18: the aikit bump and MEM3's `Close` follow-ups are on `main`** (`3763d83e` aikit
@@ -25,7 +84,7 @@
 > - One doc for both repos, on the owner's standing preference for one consolidated task doc. The aikit items
 >   (MEM14–MEM17) are worked in aikit and released through its own ritual; goinfer picks them up on the next bump.
 >
-> **Siblings.** [`task-never-swap-2026-09.md`](task-never-swap-2026-09.md) (S0–S6: why the default app path is already
+> **Siblings.** [`../completed/task-never-swap-2026-09.md`](../completed/task-never-swap-2026-09.md) (S0–S6: why the default app path is already
 > file-backed; this doc starts where it stopped) · [`task-memory-accounting-2026-09.md`](task-memory-accounting-2026-09.md)
 > (one bytes-needed function per backend; every new term here must land in it) ·
 > [`task-cpu-prefill-memory-2026-10.md`](task-cpu-prefill-memory-2026-10.md) (G40: the CPU prefill chunking MEM5
@@ -503,7 +562,7 @@ choice in aikit and a storage choice in ken (**D4**).
 |---|---|---|
 | native K-quant `WeightMat` kind, frequency row-blocked embed, 3-bit rotation, calibration scorer, cross-model dedup | shelved / rejected | `../ideas-weight-memory.md` |
 | `DropCanonical` | rejected for the up-front representation policy | `task-int4-layout-2026-09.md` |
-| `GOMEMLIMIT` after load | dropped: halved throughput where it bound | `task-never-swap-2026-09.md` S4 item 4 |
+| `GOMEMLIMIT` after load | dropped: halved throughput where it bound | `../completed/task-never-swap-2026-09.md` S4 item 4 |
 | `MADV_DONTNEED` eviction on darwin | a no-op on a read-only mapping; why pool mode is the darwin default | never-swap S5; aikit perf-dead-ends |
 | `F_NOCACHE` on the expert pread fd | measured, no effect | Metal code notes |
 | f32 routers, f32 matrices copied on `.giw` load | deliberate (discrete top-k; small) | the `.giw` writer's kind choice |
@@ -539,4 +598,4 @@ choice in aikit and a storage choice in ken (**D4**).
 
 **Next, goinfer:** MEM0 (nobara half, then the Mac's cells); then MEM13's job-store and per-adapter token-bytes items. The aikit bump and MEM3's follow-ups are done (status block).
 
-<!-- doc-reviewed: 2026-10-17 -->
+<!-- doc-reviewed: 2026-10-21 -->

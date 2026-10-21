@@ -187,7 +187,7 @@ the download could only be committed after the final check, which is exactly wha
 
 - `docs/completed/task-model-pull.md` planned a `pull --prequant` and dropped it as redundant once conversion on first
   load existed. This proposal is about disk, not about when conversion happens.
-- `docs/tasks/task-never-swap-2026-09.md` S1 introduced the sidecar default this builds on.
+- `docs/completed/task-never-swap-2026-09.md` S1 introduced the sidecar default this builds on.
 - `docs/giw-bundles.md` documents the `.giw` format and when sidecars are rebuilt.
 
 <!-- doc-reviewed: 2026-10-05 -->
