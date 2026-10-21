@@ -170,3 +170,21 @@ the committed sample). The formula added them a third time, so it read twice the
 run's logged counters with each speculative page counted once, ours less purgeable was within 0.5 MB of the kernel's figure at every
 sample. (A1's estimate of the memory no page counter covers read `vm_stat`'s fields, which do not overlap, so it stands.) B41 does not
 merge on this reading.
+
+## Amendment A5 (2026-10-21, after gate 1a's run under A4)
+
+**Francis, 2026-10-21 about 15:08 PT, verbatim:** "1" (option 1 of four: fix the formula, then a fresh run graded under this amendment).
+The A4 run's reading stays as read above; B41 did not merge on it.
+
+**The formula, fixed:** available = free + file-backed + purgeable pages, where free is `host_statistics64`'s free count less its
+speculative count (`vm_stat`'s "Pages free"), so each speculative page is counted once, inside file-backed. That is the kernel's jetsam
+figure plus the purgeable pages, which Francis chose to count (A1). Built at `7cd82a0f`, with a tier-0 test: free pages that turn
+speculative leave the reading unchanged (the A1 formula and a fix of the free count alone both fail it).
+
+**Gate 1a, registered before its run:** A3's instrument (one `hostmem -oracle` per attempt, bracketed, retaken while memory moved), 30
+samples every 20 s, Francis's usual apps open, under the timing lock, `hostmem` and the runner at `331b5887`. **Pass: at every sample,
+ours less its purgeable pages within 0.05 GiB of the mean jetsam figure.** Recomputed from the A4 run's counters with the fix, that
+residual was within 0.5 MB; a speculative page counted twice shows at any sample whose speculative pages exceed the bar. Logged as
+context: the raw difference, the speculative and purgeable pages, the pressure level, and the number of samples whose speculative pages
+exceed the bar (where a double count would show; the tier-0 test pins the count whatever that number is). On a fail: report, change
+nothing, no merge. **On a pass, B41's merge waits for Francis's yes on the fixed code**, which changed after his yes to merge (A2).
