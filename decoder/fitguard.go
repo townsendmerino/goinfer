@@ -398,8 +398,8 @@ func giwPinnedExpertBytes(cfg *Config, opts Options) int64 {
 	return int64(layers) * int64(arch.MoE.NumExperts) * 3 * int64(arch.MoE.IntermediateDim) * int64(c.HiddenDim) * 9 / 16
 }
 
-// resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: vm_stat on
-// darwin, /proc/meminfo on linux): half of available memory, the same math aikit's mmap.AutoBudget() uses, but AutoBudget is Linux-only and
+// resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: internal/hostmem on
+// darwin and linux): half of available memory, the same math aikit's mmap.AutoBudget() uses, but AutoBudget is Linux-only and
 // falls back to a fixed 8 GB elsewhere, a number with no relation to what the machine has free. An explicit request (> 0) passes through
 // unchanged. When this platform's probe is unavailable too it returns 0 (aikit's own AutoBudget) and logs that, so the fallback is visible.
 func resolveWeightCacheBudget(requested int64) int64 {

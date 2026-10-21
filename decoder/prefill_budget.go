@@ -18,10 +18,9 @@ var prefillEnters atomic.Int64
 // fraction of total RAM); it has no measurement of its own.
 const prefillAvailFraction = fitMemFraction
 
-// availProbeTTL rate-limits the currently-available memory probe: hostRAMAvailable shells out (vm_stat on darwin, a /proc/meminfo
-// read on linux), and AdmitPrefillMemory runs it for every request that reaches prefill, a fork+exec per chat request on darwin.
-// Available memory changes on the timescale of other processes starting and exiting, not per request, so 250 ms of staleness is
-// acceptable.
+// availProbeTTL rate-limits the currently-available memory probe (hostRAMAvailable: a Mach call on darwin, a /proc/meminfo read on
+// linux), which AdmitPrefillMemory runs for every request that reaches prefill. Available memory changes on the timescale of other
+// processes starting and exiting, not per request, so 250 ms of staleness is acceptable.
 const availProbeTTL = 250 * time.Millisecond
 
 var (

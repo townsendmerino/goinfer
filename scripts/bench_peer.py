@@ -739,32 +739,10 @@ def provenance():
     }
 
 def free_mem_mb():
-    """This box's available memory in MB, as goinfer's fit guard reads it (decoder.HostRAMAvailableBytes): MemAvailable on
-    Linux; free + inactive + speculative + purgeable pages from vm_stat on darwin. None when it cannot be read."""
-    try:
-        if sys.platform == "darwin":
-            return _vmstat_available_mb(_sh(["vm_stat"]))
-        with open("/proc/meminfo") as f:
-            for ln in f:
-                if ln.startswith("MemAvailable:"):
-                    return int(ln.split()[1]) // 1024
-    except Exception:
-        pass
-    return None
-
-
-def _vmstat_available_mb(out):
-    """parseVMStatAvailable's twin: None when the page size or any of the four fields is missing."""
-    m = re.search(r"page size of (\d+) bytes", out or "")
-    if not m:
-        return None
-    pages = 0
-    for key in ("Pages free:", "Pages inactive:", "Pages speculative:", "Pages purgeable:"):
-        f = re.search(re.escape(key) + r"\s+(\d+)\.", out)
-        if not f:
-            return None
-        pages += int(f.group(1))
-    return pages * int(m.group(1)) // (1 << 20)
+    """This box's available memory in MiB, the number goinfer's fit guard reads (scripts/hostmem.py, cmd/hostmem; B41). None when it
+    cannot be read."""
+    import hostmem
+    return hostmem.available_mb()
 
 
 # THE HEAVY-LOAD VOID (owner rule 2026-10-19; CLAUDE.md "Run budget", docs/measurements/noise-registry.md §8). A cell is VOID if,

@@ -506,14 +506,16 @@
   },
   {
    "id": "host-ram-darwin",
-   "gate": "Host RAM probe on macOS (hw.memsize)",
+   "gate": "Host RAM probe on macOS (hw.memsize; available memory through host_statistics64, internal/hostmem)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:hw.memsize@goinfer/decoder/hostram_darwin.go"
+    "mem:hw.memsize@goinfer/decoder/hostram_darwin.go",
+    "mem:hw.memsize@goinfer/internal/hostmem/read_darwin.go"
    ],
-   "selected_when": "the CPU fit guard and Plan on darwin",
+   "selected_when": "the CPU fit guard and Plan on darwin; every available-memory reading (decoder.HostRAMAvailableBytes, cmd/hostmem, the scripts' start checks)",
    "files": [
-    "goinfer/decoder/hostram_darwin.go"
+    "goinfer/decoder/hostram_darwin.go",
+    "goinfer/internal/hostmem/read_darwin.go"
    ],
    "our_machines": "the 16 GB Mac",
    "last_executed": [
@@ -541,12 +543,14 @@
    "gate": "Host RAM probe on Linux (/proc/meminfo, also read by memwatch_linux)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:/proc/meminfo@goinfer/decoder/hostram_linux.go"
+    "mem:/proc/meminfo@goinfer/decoder/hostram_linux.go",
+    "mem:/proc/meminfo@goinfer/internal/hostmem/read_linux.go"
    ],
-   "selected_when": "the CPU fit guard, Plan and the Linux swap watch",
+   "selected_when": "the CPU fit guard, Plan, the Linux swap watch, and every available-memory reading (MemAvailable through internal/hostmem, cmd/hostmem)",
    "files": [
     "goinfer/decoder/hostram_linux.go",
-    "goinfer/decoder/memwatch_linux.go"
+    "goinfer/decoder/memwatch_linux.go",
+    "goinfer/internal/hostmem/read_linux.go"
    ],
    "our_machines": "nobara (62 GB); GitHub runners",
    "last_executed": [

@@ -253,7 +253,7 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 }
 
 // availBeforeBuild is the memory available before BuildResident's first upload, for darwinKVSlots — read only on
-// darwin and only when more than one slot is requested (it execs vm_stat), else 0.
+// darwin and only when more than one slot is requested, else 0.
 func availBeforeBuild(m *decoder.Model) int64 {
 	if runtime.GOOS != "darwin" || m.ResidentKVSlotsRequest() <= 1 {
 		return 0

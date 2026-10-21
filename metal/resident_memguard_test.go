@@ -114,6 +114,31 @@ func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {
 	}
 }
 
+// TestResidentFitsMemory_refusesExactlyBelowTheReading: the guard's decision moves with the available-memory reading at a fixed
+// need, whatever formula produced the reading (B41, docs/measurements/hostmem-available-2026-10/README.md, gate 3): a reading one
+// byte short of the need refuses, the need itself and anything above it admits.
+func TestResidentFitsMemory_refusesExactlyBelowTheReading(t *testing.T) {
+	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set in the environment: the guard is disabled, nothing to exercise")
+	}
+	m := tinyDenseModelWithMoESlots(t, 0)
+	need := residentNeedBytes(m)
+	if need <= 0 {
+		t.Skip("tiny fixture reports zero resident bytes: nothing to price")
+	}
+	orig := metalLiveAvailable
+	t.Cleanup(func() { metalLiveAvailable = orig })
+	for _, c := range []struct {
+		avail int64
+		fits  bool
+	}{{need - 1, false}, {need, true}, {2 * need, true}} {
+		metalLiveAvailable = func() int64 { return c.avail }
+		if got := residentFitsMemory(m); got != c.fits {
+			t.Errorf("reading %d for a need of %d: fits %v, want %v", c.avail, need, got, c.fits)
+		}
+	}
+}
+
 // tinyDenseModelWithMoESlots loads a minimal dense fixture (genTinyWeights/writeDense,
 // metal/moe_model_test.go) with the given Options.MoECacheSlots — real MoE structure is
 // irrelevant to what's under test here (the slot REQUEST's resolution, not expert dispatch), so

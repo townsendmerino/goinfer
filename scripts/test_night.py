@@ -45,6 +45,16 @@ class Runner(night.Runner):
             h()
 
 
+class FreeMemoryReading(unittest.TestCase):
+    def test_reads_goinfers_number(self):
+        # B41: the runner's fit-need gate reads the number cmd/hostmem prints (scripts/hostmem.py), the fit guard's own.
+        import hostmem
+        saved = hostmem.available_mb
+        self.addCleanup(setattr, hostmem, "available_mb", saved)
+        hostmem.available_mb = lambda *a, **k: 6789
+        self.assertEqual(night.free_mem_mb(), 6789)
+
+
 class RunJobFileVanishes(unittest.TestCase):
     def setUp(self):
         for d in (night.QUEUE, night.RUNNING):
