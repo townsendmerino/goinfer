@@ -27,7 +27,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV2-FU1 | open | Mac: a session's own rollback continues in place (`kvmgr.pickSlot`), with a G3-style gate; S | §6, KV2 follow-up 1 |
 | KV2-FU2 | done | — | 11b29ba5 (#37) |
 | KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
-| KV3-WebGPU | active | rebase `origin/kv3-webgpu-2026-10` onto main and merge (owner, 2026-10-21) | d555247c, 49898b2f |
+| KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
 | KV3-E4B | open | nobara: read the registered E4B cold-TTFT run | kv3-e4b-cold-ttft-2026-10-19 |
 | KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
