@@ -190,9 +190,10 @@ records what a cold user hit against a published tag, what was fixed, and the pr
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 [`task-library-surface-review-2026-10.md`](tasks/task-library-surface-review-2026-10.md) applies
 the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
-[`task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) treats the audits'
-findings as a dataset: if "an option or family not registered with a guard" is common enough, it becomes a
-fail-closed options × paths gate. Step 1 found it is (27.2% of 261 findings, 2026-10-08). [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
+[`task-option-path-admission-2026-10.md`](completed/task-option-path-admission-2026-10.md) (**closed and archived 2026-10-21**) treated the audits'
+findings as a dataset: "an option or family not registered with a guard" was common enough (27.2% of 261 findings, 2026-10-08) to become a
+fail-closed options × paths gate, built the same day; the grids and the rule for joining one are in [`option-state-grid.md`](option-state-grid.md).
+[`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
 asks how many wire dialects the coding-agent harnesses speak and how often a tool call breaks a whole session.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
@@ -204,7 +205,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (136)
+## Archive — `completed/` (137)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation

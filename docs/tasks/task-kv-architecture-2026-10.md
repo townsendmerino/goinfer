@@ -1229,7 +1229,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
     so its code should stay small;
   - `docs/tasks/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
-  - `docs/tasks/task-option-path-admission-2026-10.md`: new options join its grid;
+  - `docs/option-state-grid.md` (its Policy section; design record `docs/completed/task-option-path-admission-2026-10.md`): new options join its grid;
   - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
     memory planner prices through §5.10's one function.
 - **Doc amendments when phases land:**
