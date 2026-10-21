@@ -21,19 +21,24 @@ func decodeVMStats64(b []byte) (vmStats64, bool) {
 		compressor: u(128), external: u(136), internal: u(140)}, true
 }
 
-// fromVMStats64 is Activity Monitor's Memory split: Memory Used = App Memory + Wired Memory + Compressed, where App Memory is the
-// internal (anonymous) pages less the purgeable ones, and what remains of physical memory (cached files and free pages) is
-// available. Cached files count as available because the kernel reclaims them before it compresses or swaps anything.
+// fromVMStats64 adds up what the kernel can reclaim without compressing or swapping: free, speculative (read-ahead), file-backed
+// (external) and purgeable pages (B41 amendment A1, docs/measurements/hostmem-available-2026-10/README.md). Adding these, rather than
+// subtracting what is used from physical, leaves out the memory no page counter covers (about 0.6 GiB on a 16 GiB Mac). App memory
+// (internal less purgeable), wired and compressed pages are Activity Monitor's Memory Used terms, reported as context.
 func fromVMStats64(s vmStats64, pageSize, physical int64) Reading {
-	app := (int64(s.internal) - int64(s.purgeable)) * pageSize
+	pg := func(n uint32) int64 { return int64(n) * pageSize }
+	app := pg(s.internal) - pg(s.purgeable)
 	if app < 0 {
 		app = 0
 	}
-	wired, compressed := int64(s.wire)*pageSize, int64(s.compressor)*pageSize
-	avail := physical - (app + wired + compressed)
-	if avail < 0 {
-		avail = 0
-	}
-	return Reading{Physical: physical, App: app, Wired: wired, Compressed: compressed, Available: avail,
-		Source: "macOS host_statistics64: physical - (app + wired + compressed), Activity Monitor's split"}
+	return Reading{Physical: physical, Available: pg(s.free) + pg(s.speculative) + pg(s.external) + pg(s.purgeable),
+		Free: pg(s.free), Speculative: pg(s.speculative), FileBacked: pg(s.external), Purgeable: pg(s.purgeable),
+		App: app, Wired: pg(s.wire), Compressed: pg(s.compressor),
+		Source: "macOS host_statistics64: free + speculative + file-backed + purgeable pages"}
+}
+
+// decodeTaskVM decodes the leading fields of struct task_vm_info (mach/task_info.h) that TaskVM reports.
+func decodeTaskVM(b []byte) TaskVM {
+	u := func(off int) int64 { return int64(binary.LittleEndian.Uint64(b[off:])) }
+	return TaskVM{Resident: u(16), Internal: u(48), Compressed: u(120), CompressedPeak: u(128), PhysFootprint: u(144)}
 }

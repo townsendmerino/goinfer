@@ -1,9 +1,10 @@
 // Command hostmem prints this machine's available memory as goinfer's fit guard reads it (internal/hostmem), for the start checks
 // of scripts/night.py, scripts/bench_peer.py and the job runners, so every reader uses one number.
 //
-//	hostmem       available bytes
-//	hostmem -mb   available MiB, rounded down
-//	hostmem -v    the breakdown and the formula
+//	hostmem          available bytes
+//	hostmem -mb      available MiB, rounded down
+//	hostmem -v       the breakdown and the formula
+//	hostmem -pid N   process N's resident, internal, compressed and footprint bytes (task_info TASK_VM_INFO), one line
 //
 // It exits 1 when this platform has no reading.
 package main
@@ -19,7 +20,18 @@ import (
 func main() {
 	mb := flag.Bool("mb", false, "print MiB instead of bytes")
 	v := flag.Bool("v", false, "print the breakdown")
+	pid := flag.Int("pid", 0, "print this process's memory instead")
 	flag.Parse()
+	if *pid > 0 {
+		t, ok := hostmem.ReadTask(*pid)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "hostmem: no task_info for pid %d\n", *pid)
+			os.Exit(1)
+		}
+		fmt.Printf("resident %d internal %d compressed %d compressed_peak %d phys_footprint %d\n", t.Resident, t.Internal, t.Compressed,
+			t.CompressedPeak, t.PhysFootprint)
+		return
+	}
 	r, ok := hostmem.Read()
 	if !ok {
 		fmt.Fprintln(os.Stderr, "hostmem: no reading on this platform")
@@ -28,8 +40,9 @@ func main() {
 	switch {
 	case *v:
 		g := func(b int64) float64 { return float64(b) / (1 << 30) }
-		fmt.Printf("physical %.2f GiB, app %.2f, wired %.2f, compressed %.2f, available %.2f GiB (%s)\n",
-			g(r.Physical), g(r.App), g(r.Wired), g(r.Compressed), g(r.Available), r.Source)
+		fmt.Printf("physical %.2f GiB, available %.2f (free %.2f, speculative %.2f, file-backed %.2f, purgeable %.2f); app %.2f, wired %.2f, "+
+			"compressed %.2f GiB (%s)\n", g(r.Physical), g(r.Available), g(r.Free), g(r.Speculative), g(r.FileBacked), g(r.Purgeable),
+			g(r.App), g(r.Wired), g(r.Compressed), r.Source)
 	case *mb:
 		fmt.Println(r.Available >> 20)
 	default:

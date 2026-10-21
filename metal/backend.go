@@ -506,6 +506,15 @@ func residentMemoryDecline(m *decoder.Model) string {
 	if need <= 0 {
 		return "" // nothing to compare against; not a reason to refuse
 	}
+	// The GPU's own limit: the Metal allocation (the need less the host copy, which is ordinary RAM) against the device's
+	// recommendedMaxWorkingSetSize (B41 gate 4, docs/measurements/hostmem-available-2026-10/README.md).
+	if wsCap := metalWorkingSetCap(); wsCap > 0 {
+		if alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m)); alloc > wsCap {
+			return fmt.Sprintf(residentMemoryDeclinePrefix+"%.2f GB of Metal allocations (weights, KV and what a companion claims), over this GPU's "+
+				"recommendedMaxWorkingSetSize of %.2f GB. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.",
+				float64(alloc)/(1<<30), float64(wsCap)/(1<<30))
+		}
+	}
 	ram, err := unix.SysctlUint64("hw.memsize")
 	if err != nil || ram == 0 {
 		return ""

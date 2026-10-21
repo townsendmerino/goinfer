@@ -15,12 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
-- **Changes behavior on macOS. The fit guard's available memory counts cached files as available** (B41). It is now physical RAM
-  less Activity Monitor's Memory Used (app + wired + compressed), read through `host_statistics64` without an exec, where it was
-  free + inactive + speculative + purgeable pages from `vm_stat`, which counted the active file cache as used: right after a large
-  model ran, a load could be refused for memory the kernel would hand back at once. It counts app memory the kernel has compressed
-  or made inactive as used, so under heavy compression it can read lower than before. Linux keeps `MemAvailable`. The night runner
-  and the benchmark harness read the same number through a new `cmd/hostmem`.
+- **Changes behavior on macOS. The fit guard's available memory counts cached files as available** (B41). It is now the free,
+  speculative, file-backed and purgeable pages, read through `host_statistics64` without an exec, where it was free + inactive +
+  speculative + purgeable pages from `vm_stat`, which counted the active file cache as used: right after a large model ran, a load
+  could be refused for memory the kernel would hand back at once. Inactive app memory no longer counts as available, so with many
+  apps open it can read lower than before. Linux keeps `MemAvailable`. The night runner and the benchmark harness read the same
+  number through a new `cmd/hostmem`, which also reads a process's own memory (`-pid`, `task_info` `TASK_VM_INFO`).
+- **The Metal memory guard also refuses a load whose Metal allocation exceeds the GPU's `recommendedMaxWorkingSetSize`**, by name.
 - **`logit_bias` on the serve API.** `/v1/chat/completions`, `/v1/completions` and `/v1/responses` take OpenAI's `logit_bias`
   (token id to a value in [-100,100], added to the logit), and `/v1/messages` takes the same field as an extension. Before, the
   field was ignored. The sampler already applied a bias, and its on-device fast paths already stand aside for one. A malformed

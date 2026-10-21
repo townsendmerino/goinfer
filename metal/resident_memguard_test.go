@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestResidentMemGuard pins BOTH directions of the fits-in-memory guard, because each failure
@@ -137,6 +140,42 @@ func TestResidentFitsMemory_refusesExactlyBelowTheReading(t *testing.T) {
 			t.Errorf("reading %d for a need of %d: fits %v, want %v", c.avail, need, got, c.fits)
 		}
 	}
+}
+
+// TestResidentMemoryDecline_workingSetCap: the guard refuses, by name, a load whose Metal allocation (the need less the host copy) is
+// over the device's recommendedMaxWorkingSetSize, and admits one at it (B41 gate 4). The live ceiling is set far above the need so the
+// cap is the only bound.
+func TestResidentMemoryDecline_workingSetCap(t *testing.T) {
+	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set in the environment: the guard is disabled, nothing to exercise")
+	}
+	m := tinyDenseModelWithMoESlots(t, 0)
+	need := residentNeedBytes(m)
+	if need <= 0 {
+		t.Skip("tiny fixture reports zero resident bytes: nothing to price")
+	}
+	alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m))
+	origCap, origLive := metalWorkingSetCap, metalLiveAvailable
+	t.Cleanup(func() { metalWorkingSetCap, metalLiveAvailable = origCap, origLive })
+	metalLiveAvailable = func() int64 { return 1 << 40 }
+	metalWorkingSetCap = func() int64 { return alloc - 1 }
+	if why := residentMemoryDecline(m); !strings.Contains(why, "recommendedMaxWorkingSetSize") {
+		t.Errorf("an allocation of %d over a cap of %d: decline %q, want one naming recommendedMaxWorkingSetSize", alloc, alloc-1, why)
+	}
+	metalWorkingSetCap = func() int64 { return alloc }
+	if why := residentMemoryDecline(m); why != "" {
+		t.Errorf("an allocation of %d at a cap of %d: declined %q", alloc, alloc, why)
+	}
+}
+
+// TestMetalWorkingSetCap_readsTheDevice: the device's recommendedMaxWorkingSetSize is read, and is a plausible share of RAM.
+func TestMetalWorkingSetCap_readsTheDevice(t *testing.T) {
+	ws := deviceWorkingSet()
+	ram, _ := unix.SysctlUint64("hw.memsize")
+	if ws <= 0 || ram == 0 || ws > int64(ram) {
+		t.Fatalf("recommendedMaxWorkingSetSize %d against %d of RAM", ws, ram)
+	}
+	t.Logf("recommendedMaxWorkingSetSize %d bytes (%.2f GiB, %.0f%% of RAM)", ws, float64(ws)/(1<<30), 100*float64(ws)/float64(ram))
 }
 
 // tinyDenseModelWithMoESlots loads a minimal dense fixture (genTinyWeights/writeDense,

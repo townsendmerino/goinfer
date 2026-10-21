@@ -44,6 +44,7 @@ func decodeSysctlU64(b []byte) int64 {
 }
 
 // HostRAMAvailableBytes is this machine's currently available memory, or 0 when it cannot be determined: internal/hostmem's
-// reading, physical RAM less Activity Monitor's Memory Used (app + wired + compressed), so cached files count as available. Not
-// cached: it changes as other processes run. It is a Mach call (host_statistics64), not an exec, so it costs no fork.
+// reading, the free, speculative, file-backed and purgeable pages the kernel can hand back without compressing or swapping, so
+// cached files count as available. Not cached: it changes as other processes run. It is a Mach call (host_statistics64), not an
+// exec, so it costs no fork.
 func HostRAMAvailableBytes() int64 { return hostmem.Available() }

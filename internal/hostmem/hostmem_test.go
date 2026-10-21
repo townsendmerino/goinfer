@@ -27,23 +27,27 @@ func TestDecodeVMStats64_sample(t *testing.T) {
 	}
 }
 
-func TestFromVMStats64_activityMonitorSplit(t *testing.T) {
+func TestFromVMStats64_addsUpReclaimable(t *testing.T) {
 	b, _ := hex.DecodeString(sampleVMStats64)
 	s, _ := decodeVMStats64(b)
 	r := fromVMStats64(s, 16384, 17179869184)
-	if r.App != 5151178752 || r.Wired != 2004516864 || r.Compressed != 6797361152 || r.Available != 3226812416 {
-		t.Fatalf("got %+v; want app 5151178752, wired 2004516864, compressed 6797361152, available 3226812416", r)
+	// free 10569 + speculative 6077 + file-backed 152820 + purgeable 66 = 169532 pages
+	if r.Available != 2777612288 || r.App != 5151178752 || r.Wired != 2004516864 || r.Compressed != 6797361152 {
+		t.Fatalf("got %+v; want available 2777612288, app 5151178752, wired 2004516864, compressed 6797361152", r)
 	}
-	// File-backed (external) pages are not in the sum: twice the cache leaves the reading unchanged, twice the app memory lowers it.
+	// A GiB more of cached file pages is a GiB more available; a GiB more of app pages, wired or compressed pages changes nothing.
 	c := s
-	c.external *= 2
-	if fromVMStats64(c, 16384, 17179869184).Available != r.Available {
-		t.Error("cached file pages lowered the reading")
+	c.external += 65536
+	if got := fromVMStats64(c, 16384, 17179869184).Available - r.Available; got != 1<<30 {
+		t.Errorf("1 GiB of file-backed pages raised the reading by %d", got)
 	}
-	a := s
-	a.internal += 65536 // 1 GiB of anonymous pages
-	if got := r.Available - fromVMStats64(a, 16384, 17179869184).Available; got != 1<<30 {
-		t.Errorf("1 GiB of app memory lowered the reading by %d", got)
+	for name, f := range map[string]func(*vmStats64){"app": func(x *vmStats64) { x.internal += 65536 }, "wired": func(x *vmStats64) { x.wire += 65536 },
+		"compressed": func(x *vmStats64) { x.compressor += 65536 }} {
+		a := s
+		f(&a)
+		if fromVMStats64(a, 16384, 17179869184).Available != r.Available {
+			t.Errorf("1 GiB of %s pages changed the reading", name)
+		}
 	}
 }
 

@@ -464,17 +464,19 @@
   },
   {
    "id": "metal-memory",
-   "gate": "Metal memory ceiling and guards (hw.memsize)",
+   "gate": "Metal memory ceiling and guards (hw.memsize, recommendedMaxWorkingSetSize)",
    "kind": "memory-probe",
    "predicates": [
     "mem:probe:metal@goinfer/metal/backend.go",
     "mem:hw.memsize@goinfer/metal/backend.go",
-    "mem:hw.memsize@goinfer/metal/greedy_chain.go"
+    "mem:hw.memsize@goinfer/metal/greedy_chain.go",
+    "metal:recommendedMaxWorkingSetSize"
    ],
-   "selected_when": "every Metal plan and resident build: metalMemoryCeiling, fitsResidentBudget, the MoE slot budget, the chain embedding table's guard",
+   "selected_when": "every Metal plan and resident build: metalMemoryCeiling, fitsResidentBudget, the MoE slot budget, the chain embedding table's guard; the working-set cap (B41 gate 4)",
    "files": [
     "goinfer/metal/backend.go",
-    "goinfer/metal/greedy_chain.go"
+    "goinfer/metal/greedy_chain.go",
+    "goinfer/metal/workingset.go"
    ],
    "our_machines": "16 GB only",
    "last_executed": [

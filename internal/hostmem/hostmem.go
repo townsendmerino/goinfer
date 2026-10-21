@@ -4,12 +4,24 @@
 // same number through cmd/hostmem, so no reader keeps a second formula (docs/measurements/hostmem-available-2026-10/README.md).
 package hostmem
 
-// Reading is one sample, in bytes. On macOS App, Wired and Compressed are Activity Monitor's Memory terms and Available is Physical
-// less their sum; on Linux they are 0 and Available is the kernel's MemAvailable.
+// Reading is one sample, in bytes. On macOS Available is what the kernel can hand back without compressing or swapping anything: free,
+// speculative, file-backed and purgeable pages; App, Wired and Compressed are Activity Monitor's terms, kept as context. On Linux the
+// macOS fields are 0 and Available is the kernel's MemAvailable.
 type Reading struct {
-	Physical, App, Wired, Compressed, Available int64
-	Source                                      string
+	Physical, Available                      int64
+	Free, Speculative, FileBacked, Purgeable int64
+	App, Wired, Compressed                   int64
+	Source                                   string
 }
+
+// TaskVM is another process's memory as task_info(TASK_VM_INFO) reports it, in bytes. Compressed is its pages in the compressor, held
+// in memory or swapped to disk: macOS keeps no separate per-process disk-swap figure.
+type TaskVM struct {
+	Resident, Internal, Compressed, CompressedPeak, PhysFootprint int64
+}
+
+// ReadTask reads pid's TaskVM; ok is false where the platform has none or the query was refused.
+func ReadTask(pid int) (TaskVM, bool) { return readTask(pid) }
 
 // Read samples the reading now. ok is false where this platform has none or the query failed; callers treat that as "cannot
 // judge", never as no memory.
