@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"testing"
+	"time"
 )
 
 // A vm_statistics64 that host_statistics64 returned on a 16 GiB M1 Pro (2026-10-21, 16 KiB pages), and its fields and Activity
@@ -101,24 +102,59 @@ func TestRead_live(t *testing.T) {
 }
 
 func TestReadWithOracle_live(t *testing.T) {
-	o, ok := ReadWithOracle()
-	if !ok {
-		t.Skip("no oracle on this platform")
+	var o OracleSample
+	for attempt := 1; ; attempt++ {
+		var ok bool
+		if o, ok = ReadWithOracle(); !ok {
+			t.Skip("no oracle on this platform")
+		}
+		d := o.JetsamAfter - o.JetsamBefore
+		t.Logf("attempt %d: ours %d, jetsam %d then %d, fresh %v (speculative %d, purgeable %d)", attempt, o.Ours.Available,
+			o.JetsamBefore, o.JetsamAfter, o.Fresh, o.Ours.Speculative, o.Ours.Purgeable)
+		if o.Fresh && d >= -oracleStill && d <= oracleStill {
+			break
+		}
+		if attempt == oracleAttempts {
+			t.Skipf("no gradable sample in %d attempts: the last was fresh %v, memory moved %d bytes across it", attempt, o.Fresh, d)
+		}
+		time.Sleep(rateLimitWindow) // a new window, so this process's next request is served fresh unless others crowd it
 	}
 	if o.JetsamBefore <= 0 || o.JetsamAfter <= 0 || o.JetsamBefore > o.Ours.Physical || o.Ours.Available <= 0 {
 		t.Fatalf("implausible sample %+v", o)
 	}
-	t.Logf("ours %d, jetsam %d then %d (speculative %d, purgeable %d)", o.Ours.Available, o.JetsamBefore, o.JetsamAfter,
-		o.Ours.Speculative, o.Ours.Purgeable)
 	// Ours less purgeable is the kernel's figure (free + pageable external pages): a speculative page counted twice shows here.
-	if d := o.JetsamAfter - o.JetsamBefore; d < -oracleStill || d > oracleStill {
-		t.Skipf("memory moved %d bytes across the bracket", d)
-	}
 	if diff := o.Ours.Available - o.Ours.Purgeable - (o.JetsamBefore+o.JetsamAfter)/2; diff < -oracleTolerance || diff > oracleTolerance {
 		t.Errorf("ours less purgeable is %d bytes from the kernel's figure (speculative %d)", diff, o.Ours.Speculative)
 	}
 }
 
+// TestReadWithOracle_rateLimitedIsNotFresh: once this process has used up the rate limit's window, the kernel serves the cached reply,
+// and the oracle must say so rather than offer it for grading.
+func TestReadWithOracle_rateLimitedIsNotFresh(t *testing.T) {
+	if _, ok := ReadWithOracle(); !ok {
+		t.Skip("no oracle on this platform")
+	}
+	stale := 0
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 25; j++ { // past the most requests a window serves fresh (10)
+			Read()
+		}
+		if o, _ := ReadWithOracle(); !o.Fresh {
+			stale++
+		}
+	}
+	// Another process's fresh request between the oracle's two reads makes a sample fresh, so one stale sample in five is the bar.
+	if stale == 0 {
+		t.Errorf("no sample reported stale after the window was used up: the oracle cannot see a cached reply")
+	}
+	t.Logf("%d of 5 samples stale", stale)
+}
+
 // oracleStill is gate 1a's bracket (a sample is graded only when the kernel's figure moved at most this much across it), and
-// oracleTolerance its bar (docs/measurements/hostmem-available-2026-10/README.md, amendment A5).
-const oracleStill, oracleTolerance = (1 << 30) / 50, (1 << 30) / 20
+// oracleTolerance its bar (docs/measurements/hostmem-available-2026-10/README.md, amendment A5). A sample that is stale or moved is
+// retaken up to oracleAttempts times, rateLimitWindow apart: XNU's host_statistics64 window is one second (see Read).
+const (
+	oracleStill, oracleTolerance = (1 << 30) / 50, (1 << 30) / 20
+	oracleAttempts               = 3
+	rateLimitWindow              = 1100 * time.Millisecond
+)
