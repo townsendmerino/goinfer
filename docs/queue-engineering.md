@@ -468,6 +468,14 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B41 · One available-memory reading that counts reclaimable memory as free, in the fit guard and every start check** — filed 2026-10-21
+(owner: "seems like reclaimable should count as free or we'll never be able to run anything that isn't tiny.  people use their machines in
+real live", 11:35 PT). **Registered; building.** macOS: physical − (app memory + wired + compressed), Activity Monitor's split, read through
+`host_statistics64` without cgo; Linux keeps `MemAvailable`. The fit guard, `scripts/night.py` and the job scripts (with
+`scripts/bench_peer.py`'s heavy-load void) read one number, through a small `cmd/hostmem`. The 2 GB margin and the swap guards are unchanged;
+the run rule records the change. Gates and the formula's source: `docs/measurements/hostmem-available-2026-10/README.md`. Product code: the
+merge needs Francis's yes after the gates read.
+
 **B40 · CANDIDATE: drop the model file's page cache once a GPU-resident load no longer needs it** — filed 2026-10-21 (owner, from the Metal
 KV8a night plan: after a 9B load exits, macOS keeps the model's `.giw` pages as active file cache, the fit guard's reading counts them as
 used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need until a `purge`, `docs/measurements/kv8a-metal-2026-10/README.md`,
@@ -508,7 +516,7 @@ used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need unti
 - **The fit guard reads active file cache as used** (`decoder/hostram_darwin.go:HostRAMAvailableBytes`: free + inactive + speculative +
   purgeable pages), so on macOS it can refuse a load right after another large model ran, and even a reload of the same model, whose pages
   are already cached and would be reused. Dropping the cache after a GPU load, or at close, addresses the first case. Whether the guard
-  should count reclaimable file cache, the second case, is **a separate question for Francis**, not part of this item.
+  should count reclaimable file cache, the second case, was decided by Francis the same day: it should (B41).
 - **Gates to propose:**
   - Tier 0: `mincore` residency of the file's pages before and after the drop, on a tiny `.giw`; the drop never touches a page a Metal no-copy
     buffer covers (a plant that drops one must break a logits comparison); logits bit-identical with and without the drop, including a CPU
