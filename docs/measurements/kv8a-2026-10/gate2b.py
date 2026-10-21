@@ -52,13 +52,16 @@ class Server:
         self.log.close()
         time.sleep(3)
 
-    def send(self, rec):
-        """Sends one recorded body, greedy, MAX_NEW tokens, not streamed; returns (the token-log line of its generation, logprobs or None)."""
+    def send(self, rec, seed=None):
+        """Sends one recorded body, MAX_NEW tokens, not streamed: greedy, or sampled at temperature 1.0 with seed when one is given. Returns
+        (the token-log line of its generation, logprobs or None)."""
         body = json.loads(rec["body"]) if isinstance(rec["body"], str) else dict(rec["body"])
         path = rec["path"]
         body["stream"] = False
         body.pop("stream_options", None)
         body["temperature"] = 0
+        if seed is not None:
+            body["temperature"], body["seed"] = 1.0, seed
         if path.endswith("/responses"):
             body["max_output_tokens"] = MAX_NEW
         else:
@@ -98,12 +101,13 @@ def main():
         mine = []
         for s, i, f1, f2 in recs:
             t1rec, t2rec = json.load(open(f1)), json.load(open(f2))
-            t1, _ = srv.send(t1rec)
+            # Turn 1 is sampled so its reply is not the recorded one: turn 2 then diverges inside the reply and takes the restore.
+            t1, _ = srv.send(t1rec, seed=1000 + i)
             if t1.get("reused", 0) != 0:  # turn 1 must be a cold prefill: restart the server and send it again
                 say(f"  {s}#{i}: turn 1 reused {t1.get('reused')}; restarting the warm server")
                 srv.close()
                 srv = Server(a, ctx, f"{name}-warm", cold=False)
-                t1, _ = srv.send(t1rec)
+                t1, _ = srv.send(t1rec, seed=1000 + i)
             t2, lp2 = srv.send(t2rec)
             p = {"config": name, "session": s, "pair": i, "route": t2rec["path"], "t1_len": t1["prompt_len"], "t2_len": t2["prompt_len"],
                  "t1_reused": t1.get("reused"), "warm_reused": t2.get("reused"), "warm_sha": t2["prompt_sha256"], "warm_gen": t2["gen"], "warm_lp": lp2}
