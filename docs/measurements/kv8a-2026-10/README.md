@@ -84,7 +84,8 @@ floor are not widened.
 **Amended again 2026-10-20, after the second run's data, on Francis's word ("1", choosing the first of four options put to him that
 evening: forbid turn 1's first token):** turn 1 is greedy with the recorded reply's first token forbidden (the Arms bullet above), on a
 serve build that accepts OpenAI's `logit_bias` on `/v1/chat/completions` and `/v1/responses` and the same field on `/v1/messages` (added
-for this; the sampler already applied a bias). It supersedes the first amendment's sampled turn 1, which the ban makes unnecessary, and
+for this; the sampler already applied a bias; it went to main as `1fff8e2c` before its own yes, and Francis kept it there on
+2026-10-21 07:50 PT: "yes to all four as recommended"). It supersedes the first amendment's sampled turn 1, which the ban makes unnecessary, and
 makes turn 1 reproducible on `/v1/messages`, which takes no seed. Checked before the run on the first run's data: in the 16 opencode and
 Codex pairs whose turn 2 extends turn 1, the forbidden token equals that run's greedy first token, so it is the recorded reply's. KV0-H's
 rendering of the Claude Code bodies is 109 to 110 tokens shorter than the server's, so its forbidden position there is not the reply's
