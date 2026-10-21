@@ -154,6 +154,9 @@ func (t *Transcriber) TranscribeTimestamps(samples []float32, language, task str
 // longer one over its unpadded features. The language is detected once, on the first window, when none is given. A window that needs a fallback is decoded again at the next temperature; the last
 // temperature's result is kept; a window that is silent by both thresholds is skipped; with ConditionOnPrev each window after the first is preceded by the earlier text.
 func (t *Transcriber) TranscribeWith(samples []float32, o TranscribeOptions) (*LongResult, error) {
+	if t.closed {
+		return nil, errTranscriberClosed
+	}
 	g, d := t.Gen, t.Dec
 	if o.NoSpeechThreshold != nil && o.LogprobThreshold == nil {
 		return nil, fmt.Errorf("whisper: no_speech_threshold needs logprob_threshold (a window is skipped only when its logprob is under it too)")

@@ -3,6 +3,9 @@
 package decoder
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -52,4 +55,74 @@ func meminfoFieldOK(meminfo, key string) (int64, bool) {
 		return kb * 1024, true
 	}
 	return 0, false
+}
+
+// SelfSwapReader returns the per-process swap probe: the swap the server and its descendants hold, from /proc/<pid>/status.
+func SelfSwapReader() (r SwapReader, unavailable string) { return SelfSwapBytes, "" }
+
+// SelfSwapBytes is the swap this process and every process descended from it hold, in bytes: the sum of VmSwap over the pid and its
+// children, grandchildren and so on. It is (0, false) when this process's own VmSwap line is missing (a kernel without swap accounting)
+// or its status cannot be read, so a caller falls back to the system-wide figure instead of watching a number that is not there.
+// A descendant that exits mid-scan, or has no VmSwap line, is skipped.
+func SelfSwapBytes() (usedBytes int64, ok bool) { return selfSwapBytes("/proc", os.Getpid()) }
+
+// selfSwapBytes is SelfSwapBytes over a /proc tree rooted at root, so a test can build a machine in a temp dir.
+func selfSwapBytes(root string, pid int) (usedBytes int64, ok bool) {
+	self, haveSelf := procVmSwap(filepath.Join(root, strconv.Itoa(pid), "status"))
+	if !haveSelf {
+		return 0, false
+	}
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		return 0, false
+	}
+	children := map[int][]int{}
+	for _, e := range ents {
+		p, err := strconv.Atoi(e.Name())
+		if err != nil || p == pid {
+			continue
+		}
+		if pp, ok := procParent(filepath.Join(root, e.Name(), "stat")); ok {
+			children[pp] = append(children[pp], p)
+		}
+	}
+	total := self
+	for stack := slices.Clone(children[pid]); len(stack) > 0; {
+		p := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if v, ok := procVmSwap(filepath.Join(root, strconv.Itoa(p), "status")); ok {
+			total += v
+		}
+		stack = append(stack, children[p]...)
+	}
+	return total, true
+}
+
+// procVmSwap reads the VmSwap line of a /proc/<pid>/status file as bytes.
+func procVmSwap(path string) (int64, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	return meminfoFieldOK(string(b), "VmSwap:")
+}
+
+// procParent reads the parent pid from a /proc/<pid>/stat line. The command name is parenthesised and may itself contain spaces and
+// parentheses, so the fields are counted from the last ')'.
+func procParent(path string) (int, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	s := string(b)
+	i := strings.LastIndexByte(s, ')')
+	if i < 0 {
+		return 0, false
+	}
+	f := strings.Fields(s[i+1:])
+	if len(f) < 2 {
+		return 0, false
+	}
+	pp, err := strconv.Atoi(f[1])
+	return pp, err == nil
 }

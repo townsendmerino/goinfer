@@ -464,17 +464,19 @@
   },
   {
    "id": "metal-memory",
-   "gate": "Metal memory ceiling and guards (hw.memsize)",
+   "gate": "Metal memory ceiling and guards (hw.memsize, recommendedMaxWorkingSetSize)",
    "kind": "memory-probe",
    "predicates": [
     "mem:probe:metal@goinfer/metal/backend.go",
     "mem:hw.memsize@goinfer/metal/backend.go",
-    "mem:hw.memsize@goinfer/metal/greedy_chain.go"
+    "mem:hw.memsize@goinfer/metal/greedy_chain.go",
+    "metal:recommendedMaxWorkingSetSize"
    ],
-   "selected_when": "every Metal plan and resident build: metalMemoryCeiling, fitsResidentBudget, the MoE slot budget, the chain embedding table's guard",
+   "selected_when": "every Metal plan and resident build: metalMemoryCeiling, fitsResidentBudget, the MoE slot budget, the chain embedding table's guard; the working-set cap (B41 gate 4)",
    "files": [
     "goinfer/metal/backend.go",
-    "goinfer/metal/greedy_chain.go"
+    "goinfer/metal/greedy_chain.go",
+    "goinfer/metal/workingset.go"
    ],
    "our_machines": "16 GB only",
    "last_executed": [
@@ -506,14 +508,16 @@
   },
   {
    "id": "host-ram-darwin",
-   "gate": "Host RAM probe on macOS (hw.memsize)",
+   "gate": "Host RAM probe on macOS (hw.memsize; available memory through host_statistics64, internal/hostmem)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:hw.memsize@goinfer/decoder/hostram_darwin.go"
+    "mem:hw.memsize@goinfer/decoder/hostram_darwin.go",
+    "mem:hw.memsize@goinfer/internal/hostmem/read_darwin.go"
    ],
-   "selected_when": "the CPU fit guard and Plan on darwin",
+   "selected_when": "the CPU fit guard and Plan on darwin; every available-memory reading (decoder.HostRAMAvailableBytes, cmd/hostmem, the scripts' start checks)",
    "files": [
-    "goinfer/decoder/hostram_darwin.go"
+    "goinfer/decoder/hostram_darwin.go",
+    "goinfer/internal/hostmem/read_darwin.go"
    ],
    "our_machines": "the 16 GB Mac",
    "last_executed": [
@@ -541,12 +545,14 @@
    "gate": "Host RAM probe on Linux (/proc/meminfo, also read by memwatch_linux)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:/proc/meminfo@goinfer/decoder/hostram_linux.go"
+    "mem:/proc/meminfo@goinfer/decoder/hostram_linux.go",
+    "mem:/proc/meminfo@goinfer/internal/hostmem/read_linux.go"
    ],
-   "selected_when": "the CPU fit guard, Plan and the Linux swap watch",
+   "selected_when": "the CPU fit guard, Plan, the Linux swap watch, and every available-memory reading (MemAvailable through internal/hostmem, cmd/hostmem)",
    "files": [
     "goinfer/decoder/hostram_linux.go",
-    "goinfer/decoder/memwatch_linux.go"
+    "goinfer/decoder/memwatch_linux.go",
+    "goinfer/internal/hostmem/read_linux.go"
    ],
    "our_machines": "nobara (62 GB); GitHub runners",
    "last_executed": [

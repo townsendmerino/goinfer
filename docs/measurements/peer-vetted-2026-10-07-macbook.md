@@ -172,3 +172,60 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
 - **M1, Phi-3:** the code fix is built (`docs/tasks/task-metal-q4k-2026-10.md`). Its gates on the real file (G-Q2,
   G-Q3) come before an M1 cell, then the cell by an amendment here.
 
+
+### M1 on 2026-10-17/18: VOID three times, not re-queued
+
+Each attempt ran the pinned `serve-metal-42d72319` at `-quant q4k -ctx 2048`, with its start-time fit check unchanged
+and no guard bypassed.
+
+- **19:15:** the fit check read RESIDENT, and the cell's decode path was `metal-resident (q4k)`. goinfer's cell was voided
+  because system swap grew +232.5 MB during it, against a 0 MB bar. Ollama's arm measured 41.6 tok/s ×3.
+- **21:54:** the fit check refused the load: 5.6 GB needed against a budget of 70% of available. The server's automatic
+  weight-streaming retry failed too, because `q4k` has no `.giw` form.
+- **00:13, after a restart with nothing else open and swap at 0:** the fit check read RESIDENT. goinfer's cell was voided
+  again on swap growth, +310.6 MB. Ollama measured 41.6 tok/s ×3.
+- **Use (owner, 2026-10-17):** the third VOID ends the attempts. `docs/benchmarks.md` §B11 publishes phi3-mini from
+  CUDA only, and says so.
+- **Not explained:** the swap growth in goinfer's own cell, on an otherwise idle 16 GB Mac, after both guards admitted
+  the load. It is recorded, not diagnosed.
+
+### M1 on the fixed build: registered 2026-10-18, before it runs
+
+The owner asked for M1 to be re-run on the q4k upload fix (`a2732f00`, `docs/tasks/task-never-swap-2026-09.md`, "Addendum,
+2026-10-18"). It is the same cell, rules and grader as before, with three differences, all in
+`peer-vetted-2026-10-07/run-mac-m1-fix.sh`:
+- the serve binary is built at `a2732f00`;
+- the records go to `results-mac-m1-fix`;
+- the fit check's server runs with `GODEBUG=gctrace=1`, and its lifetime peak physical footprint is read once it serves
+  (`peer-vetted-2026-10-07/footprint.py`, `proc_pid_rusage` `ri_lifetime_max_phys_footprint`). That records the load's
+  peak from the process's start, not from the moment the server is up.
+
+`GODEBUG` is not set on the timed cell, so Ollama's arm is unchanged.
+
+- **By day (2026-10-18 07:11), the fit guard refused the load** with this session open. Swap did not move (143 MB before
+  and after).
+- **Read at night:**
+  - the swap growth across the load and the cell, against the 0 MB bar, as before;
+  - the load's lifetime peak footprint, beside what the guards priced (the fit guard 5.6 GB; Metal's 5.98 GB for one slot,
+    about 6.75 GB for two);
+  - the Go heap at each collection during the load.
+- **What counts as fixed:** goinfer's cell grows no swap, and the load's peak footprint is within what Metal's guard
+  priced. A cell that measures is graded by `grade.py`, as before.
+- **Not fixed:** swap grows again, or the peak exceeds the priced figure. The diagnosis is then incomplete, and the
+  footprint and GC trace say by how much.
+
+### M1 on the fixed build: read 2026-10-20 — FIXED; the cell grades BEHIND (0.539)
+
+Night job `peer-vetted-m1-phi3-q4k-fixed-3` on the Mac's `night.py serve`, 2026-10-20 22:51:11–22:53:44 PDT, serve built at `a2732f00`
+(sha256 `fbca955cde7a7585`), Ollama 0.32.5, macOS 26.6.2, on AC power, `bench_peer.py`'s instant gate (load average 1.87 at the cell's
+start). Records: `~/goinfer-bench/peer-vetted/results-mac-m1-fix/` (`grade.jsonl`, `fitcheck.log`, `metal-phi3-q4k.json`).
+
+- **Swap: no growth.** System swap in use was 977.50 MB before the load, once the server served, and at the end; the cell's own
+  reading is 0 / 0 MB. Bar 0 MB.
+- **The load's peak footprint is within what Metal's guard priced:** lifetime peak physical footprint 5,311 MB (5,306 MB once
+  serving), against 5.98 GB for one slot. The decode path is `metal-resident (q4k)`.
+- **So, by this section's rule: fixed.** The cell measures and `grade.py` grades it: goinfer 22.6 tok/s (×3), Ollama 41.9 (×3),
+  ratio **0.539**, spread 0.1 on each side: **BEHIND**.
+- **A VOID attempt first:** job `peer-vetted-m1-phi3-q4k-fixed-2` ran 22:43:18–22:45:38 while this Mac's own session ran `go test`
+  beside it (about 22:43–22:44), so it is void and not graded (it read 22.4 against 41.4, 0.54). Its files are kept in
+  `results-mac-m1-fix-VOID-2026-10-20-2243/` with a `VOID.txt`.

@@ -43,7 +43,7 @@ func (m *Model) CanSharePrefix() bool {
 	return m.qwen35BatchN(2, c) && c.delta != nil && c.conv == nil && c.mamba == nil && c.kda == nil && c.mlaLatent == nil && !c.localAny
 }
 
-// copyStateFrom copies src's per-sequence state into c, a fresh cache from the same model: the position, the global layers' KV rows (f32 or int8) and the
+// copyStateFrom copies src's per-sequence state into c, a fresh cache from the same model: the position, the global layers' KV rows (f32, int8 or f16) and the
 // Gated DeltaNet states, deep, so neither cache can reach the other's memory. It refuses what it does not know how to copy.
 func (c *KVCache) copyStateFrom(src *KVCache) error {
 	switch {
@@ -57,6 +57,11 @@ func (c *KVCache) copyStateFrom(src *KVCache) error {
 	c.pos, c.mropeDelta, c.manualPos = src.pos, src.mropeDelta, src.manualPos
 	for l := 0; l < src.numLayers; l++ {
 		c.stride[l] = src.stride[l]
+		if src.quant == kvqF16 {
+			c.keysH[l] = append(c.keysH[l][:0], src.keysH[l]...)
+			c.valsH[l] = append(c.valsH[l][:0], src.valsH[l]...)
+			continue
+		}
 		if src.quant == kvI8 {
 			c.keysQ[l] = append(c.keysQ[l][:0], src.keysQ[l]...)
 			c.valsQ[l] = append(c.valsQ[l][:0], src.valsQ[l]...)
@@ -125,7 +130,7 @@ func (m *Model) resumeHidden(ctx context.Context, cp *prefixCheckpoint, suffix [
 		}
 	}
 	out := append([]float32(nil), h[:a.HiddenDim]...)
-	normalize(a, out, m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+	m.finalNorm(out)
 	return out, nil
 }
 

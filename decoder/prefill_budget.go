@@ -18,10 +18,9 @@ var prefillEnters atomic.Int64
 // fraction of total RAM); it has no measurement of its own.
 const prefillAvailFraction = fitMemFraction
 
-// availProbeTTL rate-limits the currently-available memory probe: hostRAMAvailable shells out (vm_stat on darwin, a /proc/meminfo
-// read on linux), and AdmitPrefillMemory runs it for every request that reaches prefill, a fork+exec per chat request on darwin.
-// Available memory changes on the timescale of other processes starting and exiting, not per request, so 250 ms of staleness is
-// acceptable.
+// availProbeTTL rate-limits the currently-available memory probe (hostRAMAvailable: a Mach call on darwin, a /proc/meminfo read on
+// linux), which AdmitPrefillMemory runs for every request that reaches prefill. Available memory changes on the timescale of other
+// processes starting and exiting, not per request, so 250 ms of staleness is acceptable.
 const availProbeTTL = 250 * time.Millisecond
 
 var (
@@ -93,7 +92,7 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 	// lazily, only on the CPU fallback. Pricing it anyway could reject a request an 8 GB CUDA box would have served entirely in VRAM.
 	var kv int64
 	if !(residentPath && m.ResidentActive()) {
-		kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)
+		kv = estimateKVBytes(cfg, positions, m.hostKVF16(), m.kvI8)
 	}
 	// A resident that splits its prefill into blocks is priced at its own figure for one block; every other request at
 	// the batched CPU sweep's figure over the whole prompt.
@@ -151,7 +150,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 		}
 		ctx = cfg.MaxPositions
 	}
-	kvBytes = estimateKVBytes(cfg, ctx, m.kvF16, m.kvI8)
+	kvBytes = estimateKVBytes(cfg, ctx, m.hostKVF16(), m.kvI8)
 	return ctx, kvBytes, weightBytes, budgetBytes, true
 }
 
@@ -170,4 +169,26 @@ func prefillScratchBytes(cfg *Config, promptTokens int) int64 {
 	}
 	mlp := int64(2*4) * int64(cfg.IntermediateDim) * int64(promptTokens) // gate + up, f32
 	return prefillAttnScratchBudget + mlp
+}
+
+// hostKVF16 reports whether the CPU (host) KV cache this model builds is f16: requested and allowed for the family.
+func (m *Model) hostKVF16() bool { return m.kvH && m.w.arch.kvF16OK() }
+
+// CPUKVPrecision is the precision the CPU (host) KV cache is built at: "i8", "f16" or "f32".
+func (m *Model) CPUKVPrecision() string {
+	if got, _ := ResolveKV("cpu", m.w.arch, m.kvOpts); got != "" {
+		return got
+	}
+	return "f32"
+}
+
+// CPUKVF16DeclineReason is why an f16 request leaves the CPU cache at f32 ("" when f16 was not asked or is built).
+func (m *Model) CPUKVF16DeclineReason() string {
+	if cpuKVRequested(m.kvOpts) != kvPrecF16 {
+		return ""
+	}
+	if got, why := ResolveKV("cpu", m.w.arch, m.kvOpts); got != kvPrecF16 {
+		return why
+	}
+	return ""
 }

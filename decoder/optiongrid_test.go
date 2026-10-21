@@ -67,34 +67,46 @@ func TestOptionGrid_everyOptionClassified(t *testing.T) {
 func TestOptionGrid_cellsCarryEvidence(t *testing.T) {
 	tests, funcs := repoFuncs(t)
 	for name, row := range ogGrid {
-		for p, c := range row {
-			where := fmt.Sprintf("Options.%s × %q", name, p)
-			switch c.h {
-			case ogTested:
-				if c.test == "" {
-					t.Errorf("%s is tested but names no test", where)
-				}
-			case ogDeclined:
-				if c.decline == "" {
-					t.Errorf("%s is declined but names no declining function", where)
-				} else if !funcs[c.decline] {
-					t.Errorf("%s names decline %q, which is not a function in this repository", where, c.decline)
-				}
-			case ogUntested:
-				if c.test != "" || c.decline != "" {
-					t.Errorf("%s is untested but carries evidence (%q, %q): declare it tested or declined", where, c.test, c.decline)
-				}
-			case ogNA:
-				if c.why == "" {
-					t.Errorf("%s is n/a with no reason", where)
-				}
-			default:
-				t.Errorf("%s has handling %q", where, c.h)
+		for p, c0 := range row {
+			cells := []ogValueCell{{"", c0}}
+			for _, v := range c0.cuda {
+				cells = append(cells, ogValueCell{"CUDA " + v.value, v.ogCell})
 			}
-			if c.test != "" && !tests[c.test] {
-				t.Errorf("%s names test %q, which is not a Test function in this repository", where, c.test)
+			for _, vc := range cells {
+				c := vc.ogCell
+				where := fmt.Sprintf("Options.%s × %q %s", name, p, vc.value)
+				ogCheckCell(t, where, c, tests, funcs)
 			}
 		}
+	}
+}
+
+func ogCheckCell(t *testing.T, where string, c ogCell, tests, funcs map[string]bool) {
+	t.Helper()
+	switch c.h {
+	case ogTested:
+		if c.test == "" {
+			t.Errorf("%s is tested but names no test", where)
+		}
+	case ogDeclined:
+		if c.decline == "" {
+			t.Errorf("%s is declined but names no declining function", where)
+		} else if !funcs[c.decline] {
+			t.Errorf("%s names decline %q, which is not a function in this repository", where, c.decline)
+		}
+	case ogUntested:
+		if c.test != "" || c.decline != "" {
+			t.Errorf("%s is untested but carries evidence (%q, %q): declare it tested or declined", where, c.test, c.decline)
+		}
+	case ogNA:
+		if c.why == "" {
+			t.Errorf("%s is n/a with no reason", where)
+		}
+	default:
+		t.Errorf("%s has handling %q", where, c.h)
+	}
+	if c.test != "" && !tests[c.test] {
+		t.Errorf("%s names test %q, which is not a Test function in this repository", where, c.test)
 	}
 }
 
@@ -102,14 +114,7 @@ func TestOptionGrid_cellsCarryEvidence(t *testing.T) {
 // option or path landed without a test; below it, a cell gained one and the ceiling must come down
 // so it cannot be lost again unnoticed.
 func TestOptionGrid_ratchet(t *testing.T) {
-	n := 0
-	for _, row := range ogGrid {
-		for _, c := range row {
-			if c.h == ogUntested {
-				n++
-			}
-		}
-	}
+	n := ogUntestedCount()
 	switch {
 	case n > optionGridUntestedCeiling:
 		t.Errorf("%d option × path cells are admitted untested, above the ceiling of %d: a new cell must name "+
@@ -189,17 +194,19 @@ func renderOptionStateGrid() []byte {
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
 	w("# Option × path and state × lifecycle grids\n\n")
 	w("**Generated** from `decoder/optiongrid.go` and `decoder/cachestate.go` by `TestOptionStateGrid_fresh`; do not edit.\n")
-	w("Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history:\n")
-	w("[`tasks/task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) §4.\n\n")
+	w("Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and history (archived):\n")
+	w("[`completed/task-option-path-admission-2026-10.md`](completed/task-option-path-admission-2026-10.md) §4.\n\n")
+	w("## Policy: how a new option, path or kind of state joins a grid\n\n")
+	w("- A new `decoder.Options` field fails `TestOptionGrid_everyOptionClassified` until `decoder/optiongrid.go` classifies it on every execution path: tested, declined, untested or n/a, with a reason.\n")
+	w("- A cell that names a test or a decline must name one that exists in some module (`TestOptionGrid_cellsCarryEvidence`).\n")
+	w("- The untested count can only fall: a rise fails `TestOptionGrid_ratchet`, and a fall is booked into its ceiling in the same change.\n")
+	w("- A new execution path is not detected on its own: add it to `ogPaths`, which then fails every option until each is classified.\n")
+	w("- A new field on `KVCache` fails `TestKVCache_everyFieldHasAState` until it maps to a kind of state (or is geometry, a counter or scratch, with a reason).\n")
+	w("  A new kind of state needs a cell on every lifecycle path (`TestCacheStateGrid_everyCellDeclared`) and `holdsState` must know it (`TestCacheStateGrid_holdsStateKnowsEveryKind`).\n")
+	w("- This page is generated: a hand edit fails `TestOptionStateGrid_fresh`.\n")
+	w("- A cell moves from untested to tested with the test that drives it, one cell at a time; a path-admission refactor is not required and changes no behaviour by itself.\n\n")
 
-	untested := 0
-	for _, row := range ogGrid {
-		for _, c := range row {
-			if c.h == ogUntested {
-				untested++
-			}
-		}
-	}
+	untested := ogUntestedCount()
 	w("## Load options × execution paths\n\n")
 	w("**tested** names a test that drives the option through the path; **declined** names the function where the path refuses it;\n")
 	w("**untested** runs today with no test that drives it (%d cells; `TestOptionGrid_ratchet` lets that number only fall);\n", untested)
@@ -222,20 +229,11 @@ func renderOptionStateGrid() []byte {
 		w("| `%s` |", n)
 		for _, p := range ogPaths {
 			c := ogGrid[n][p]
-			switch c.h {
-			case ogTested:
-				w(" tested: `%s` |", c.test)
-			case ogDeclined:
-				if c.test != "" {
-					w(" declined at `%s` (`%s`) |", c.decline, c.test)
-				} else {
-					w(" declined at `%s` |", c.decline)
-				}
-			case ogUntested:
-				w(" untested |")
-			case ogNA:
-				w(" n/a |")
+			txt := ogCellText(c)
+			for _, v := range c.cuda {
+				txt += "; CUDA " + v.value + " " + ogCellText(v.ogCell)
 			}
+			w(" %s |", txt)
 		}
 		w("\n")
 	}
@@ -287,4 +285,38 @@ func renderOptionStateGrid() []byte {
 		}
 	}
 	return b.Bytes()
+}
+
+// ogCellText is one cell as the grid doc prints it.
+func ogCellText(c ogCell) string {
+	switch c.h {
+	case ogTested:
+		return fmt.Sprintf("tested: `%s`", c.test)
+	case ogDeclined:
+		if c.test != "" {
+			return fmt.Sprintf("declined at `%s` (`%s`)", c.decline, c.test)
+		}
+		return fmt.Sprintf("declined at `%s`", c.decline)
+	case ogUntested:
+		return "untested"
+	}
+	return "n/a"
+}
+
+// ogUntestedCount is the untested cells, CUDA's own included.
+func ogUntestedCount() int {
+	n := 0
+	for _, row := range ogGrid {
+		for _, c := range row {
+			if c.h == ogUntested {
+				n++
+			}
+			for _, v := range c.cuda {
+				if v.h == ogUntested {
+					n++
+				}
+			}
+		}
+	}
+	return n
 }

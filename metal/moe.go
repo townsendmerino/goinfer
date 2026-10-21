@@ -507,6 +507,11 @@ func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 		e.Dispatch(mo.pRoute, 32, 32, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,
 			mo.uNE, mo.uK, mo.uSigmoid, mo.uNorm, mo.uScale, mo.uNGroup, mo.uTopkGroup)
 	}
+	if r.moeForce.idx != (Buffer{}) { // test-only: this layer's routing replaced by the caller's (moeForce)
+		off := r.encLayer * mo.k * 4
+		e.Dispatch(r.pCopyU32, mo.k, 32, r.moeForce.idx.At(off), mo.rIdx, mo.uK)
+		e.Dispatch(r.pCopyVec, mo.k, 32, r.moeForce.wgt.At(off), mo.rWgt, mo.uK)
+	}
 }
 
 // moeKSlotsOn selects the k-slot dispatches (the k selected experts in four dispatches instead of 3k) where the shape
@@ -665,9 +670,12 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 		if L.moe != nil && L.moe.pool != nil {
 			closeDense()
 			e := r.q.Begin() // phase 1: mixer/attention + router -> rIdx/rWgt
-			if L.delta != nil {
+			switch {
+			case L.delta != nil:
 				r.encodeDeltaNetMixer(e, L)
-			} else {
+			case L.mamba != nil:
+				r.encodeMambaMixer(e, L, r.x)
+			case L.geom != nil:
 				r.encodeAttention(e, l)
 			}
 			r.encodeMoERouter(e, L)

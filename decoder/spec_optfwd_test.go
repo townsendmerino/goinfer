@@ -116,7 +116,7 @@ func TestOptFwdEligible(t *testing.T) {
 	if noResident.optFwdEligible(SamplingParams{Temperature: 0.2}) {
 		t.Error("no resident backend must NOT be eligible")
 	}
-	recurrent := &Model{w: &Weights{arch: &Architecture{qwen35: &qwen35Params{}}}, resident: stubResident{}}
+	recurrent := &Model{w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}, resident: stubResident{}}
 	if recurrent.optFwdEligible(SamplingParams{Temperature: 0.2}) {
 		t.Error("a recurrent (DeltaNet) arch must NOT be eligible -- specRollbackSafe must refuse it")
 	}

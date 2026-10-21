@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -74,6 +76,14 @@ type fitCheck struct {
 	cudaBuildBytes int64
 	expertBytes    int64
 
+	// deviceKV is true for a load that will be CUDA-resident (cudaWillBeResident): its KV is allocated in VRAM, which the VRAM plan sizes, so kvBytes stays 0
+	// here; the host pays only for the weights and the build. packBytes is the host the build adds beside the canonical weights on that path: one packed
+	// layer and the staging blocks cuda/pack_stream.go streams it through (BuildResident no longer holds a packed copy of the model). On the direct .gguf path weightBytes+srcFileBytes is the larger term (the
+	// load, with the source mapped, peaks above the build), so packBytes binds only where there is no source term. The measurement:
+	// docs/measurements/cuda-build-heap-2026-10-18/README.md.
+	deviceKV  bool
+	packBytes int64
+
 	// cfg, effCtx, pinned, kvF16, kvI8 carry what re-pricing needs to recompute KV at a SMALLER context when the load does not fit and the
 	// caller never pinned one (see smallerFittingContext). cfg is nil when the GGUF's config could not be read: kvBytes stays 0 and unknown
 	// proceeds.
@@ -97,6 +107,9 @@ type fitCheck struct {
 
 func (f fitCheck) need() int64 {
 	n := max(f.cudaBuildBytes, f.weightBytes+f.kvBytes+f.srcFileBytes)
+	if f.packBytes > 0 {
+		n = max(n, f.weightBytes+f.packBytes)
+	}
 	return n
 }
 func (f fitCheck) budget() int64 { return int64(float64(f.availBytes) * fitMemFraction) }
@@ -116,6 +129,9 @@ func (f fitCheck) ratio() float64 {
 
 const fitGB = 1 << 30
 
+// cudaPackStageBytes is the staging memory cuda/pack_stream.go streams packed weights through: up to four blocks of 8 MiB of words with their scale scratch (20 MiB each).
+const cudaPackStageBytes = 80 << 20
+
 // arithmetic is the one line both the warning and the refusal share, so the two can never quote
 // different numbers for the same load.
 func (f fitCheck) arithmetic() string {
@@ -128,6 +144,9 @@ func (f fitCheck) arithmetic() string {
 		return b.String()
 	}
 	fmt.Fprintf(&b, "%s needs ~%.1f GB resident at quant %s", f.name, float64(f.weightBytes)/fitGB, f.quant)
+	if f.deviceKV {
+		b.WriteString(" (its KV is in VRAM, which the context plan sizes)")
+	}
 	if f.kvBytes > 0 {
 		fmt.Fprintf(&b, " + %.1f GB KV", float64(f.kvBytes)/fitGB)
 	}
@@ -190,9 +209,8 @@ func (e *FitDeclineError) Error() string { return e.msg }
 func (e *FitDeclineError) Unwrap() error { return ErrWontFitResident }
 
 // denseStreamable mirrors newLayerPager's own exclusions (decoder/layerpaging.go) exactly, so the fit guard's retry decision and the
-// pager's decision to build one cannot disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable), and an
-// own-forward family (resolved through arch.ownForward(), not a hand-written list) runs a layer loop that never calls enterLayer, so
-// layerPager would never engage for it. cfg == nil (header unreadable) answers false: don't know must not attempt a retry the guard cannot
+// pager's decision to build one cannot disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable), and a
+// family whose layers are not all generic operations (Architecture.genericKindsOnly) gets no layerPager. cfg == nil (header unreadable) answers false: don't know must not attempt a retry the guard cannot
 // vouch for.
 func denseStreamable(cfg *Config) bool {
 	if cfg == nil {
@@ -202,8 +220,7 @@ func denseStreamable(cfg *Config) bool {
 	if err != nil || arch == nil || arch.MoE != nil {
 		return false
 	}
-	_, own := arch.ownForward()
-	return !own
+	return arch.genericKindsOnly()
 }
 
 // declineErr is the refusal. It is an error, not a warning, because the measured alternative is a
@@ -236,23 +253,28 @@ func (f fitCheck) declineErr() *FitDeclineError {
 // auto-pinned to it, reported, and proceeds; an unpinned load that does not fit even at ctxFloor is refused. KV is always priced, at the
 // model's own maximum when nothing is pinned, because nothing else bounds the CPU cache's growth.
 func guardFit(f fitCheck) (int, error) {
-	if f.noGuard {
-		return 0, nil
-	}
-	if !f.known() {
-		return 0, nil
-	}
-	if !f.fits() {
-		if ctx, ok := f.smallerFittingContext(); ok {
-			fmt.Fprintln(os.Stderr, f.capNote(ctx))
-			return ctx, nil
-		}
-		return 0, f.declineErr()
-	}
-	if f.ratio() >= fitWarnRatio {
+	ctx, decline := f.decide()
+	switch {
+	case decline != nil:
+		return 0, decline
+	case ctx > 0:
+		fmt.Fprintln(os.Stderr, f.capNote(ctx))
+	case f.known() && !f.noGuard && f.ratio() >= fitWarnRatio:
 		fmt.Fprintln(os.Stderr, f.warning())
 	}
-	return 0, nil
+	return ctx, nil
+}
+
+// decide is guardFit's decision without its stderr lines, for a caller that reports it instead (FitQuery): the context to
+// pin (0 = leave the request alone), or the refusal.
+func (f fitCheck) decide() (pinCtx int, decline *FitDeclineError) {
+	if f.noGuard || !f.known() || f.fits() {
+		return 0, nil
+	}
+	if ctx, ok := f.smallerFittingContext(); ok {
+		return ctx, nil
+	}
+	return 0, f.declineErr()
 }
 
 // giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/tasks/task-never-swap-2026-09.md, item 1).
@@ -272,40 +294,74 @@ const giwMemMargin = 1 << 30 // 1 GB
 // decoder cannot import metal, so pricing it needs its own hook, which is not built; CPU is this function's only backend. Recorded in
 // docs/tasks/task-never-swap-2026-09.md ("Not priced").
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
-	if loadKnob(opts, knobNoFitGuard) != "" {
-		return 0, nil
+	d := decideGIWFit(cfg, opts)
+	if d.note != "" {
+		fmt.Fprint(os.Stderr, d.note)
 	}
-	if cfg == nil {
-		return 0, nil
+	return d.pinCtx, d.err
+}
+
+// giwFit is guardGIWFit's decision and the numbers behind it. known is false when it could not price (every unknown
+// proceeds).
+type giwFit struct {
+	known               bool
+	avail, budget, need int64 // need is KV + scratch + pinnedExperts at ctx
+	pinnedExperts       int64 // the page-locked host copy of the routed experts a C' expert cache builds (0 when none); the same at every ctx
+	ctx                 int   // the context priced: the pin, the model's window, or the capped one
+	pinned              bool
+	pinCtx              int // the smaller context the guard pins an unpinned load to, 0 for none
+	err                 error
+	note                string // what guardGIWFit prints when it caps
+}
+
+// decideGIWFit is guardGIWFit without its stderr line, for a caller that reports it instead (FitQuery).
+func decideGIWFit(cfg *Config, opts Options) giwFit {
+	var d giwFit
+	if loadKnob(opts, knobNoFitGuard) != "" || cfg == nil {
+		return d
 	}
 	avail := hostRAMAvailable()
 	if avail <= 0 {
-		return 0, nil
+		return d
 	}
 	budget := max(avail-giwMemMargin, 0)
 	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling
 	if !ok {
-		return 0, nil // no pin and the model's own max is unknown ⇒ can't price KV; proceed
+		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
 	pinned, effCtx, kvF16, kvI8 := p.pinned, p.ctx, p.kvF16, p.kvI8
-	needAt := func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget }
+	pinnedExperts := giwPinnedExpertBytes(cfg, opts)
+	what := "KV + scratch"
+	if pinnedExperts > 0 {
+		what += " + the pinned MoE expert copy"
+	}
+	needAt := func(ctx int) int64 {
+		if p.deviceKV {
+			return pinnedExperts // CUDA-resident: the KV and the prefill scratch are VRAM, which the context plan sizes
+		}
+		return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget + pinnedExperts
+	}
 	need := needAt(effCtx)
+	d = giwFit{known: true, avail: avail, budget: budget, need: need, ctx: effCtx, pinned: pinned, pinnedExperts: pinnedExperts}
 	if need <= budget {
-		return 0, nil
+		return d
 	}
 	if pinned {
-		return 0, fmt.Errorf(
-			"decoder: pinned context %d needs ~%.2f GB (KV + scratch) but only %.2f GB of this "+
+		d.err = fmt.Errorf(
+			"decoder: pinned context %d needs ~%.2f GB (%s) but only %.2f GB of this "+
 				"machine's %.2f GB currently-available memory would be left as a %.0f GB safety "+
 				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			effCtx, float64(need)/fitGB, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+			effCtx, float64(need)/fitGB, what, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+		return d
 	}
 	if floorNeed := needAt(ctxFloor); floorNeed > budget {
-		return 0, fmt.Errorf(
-			"decoder: this model needs ~%.2f GB (KV + scratch) even at the %d-token floor, but only "+
+		d.ctx, d.need = ctxFloor, floorNeed
+		d.err = fmt.Errorf(
+			"decoder: this model needs ~%.2f GB (%s) even at the %d-token floor, but only "+
 				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
 				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			float64(floorNeed)/fitGB, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+			float64(floorNeed)/fitGB, what, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+		return d
 	}
 	lo, hi := ctxFloor, effCtx
 	for lo < hi {
@@ -316,15 +372,34 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 			hi = mid - 1
 		}
 	}
-	fmt.Fprintf(os.Stderr,
+	d.pinCtx, d.ctx, d.need = lo, lo, needAt(lo)
+	d.note = fmt.Sprintf(
 		"decoder: .giw context capped at %d (model allows %d) so that KV+scratch fits: needs ~%.2f GB "+
 			"of %.2f GB available (%.0f GB margin) — pass -ctx to choose, or free memory to lift\n",
 		lo, effCtx, float64(needAt(lo))/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
-	return lo, nil
+	return d
 }
 
-// resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: vm_stat on
-// darwin, /proc/meminfo on linux): half of available memory, the same math aikit's mmap.AutoBudget() uses, but AutoBudget is Linux-only and
+// giwPinnedExpertBytes is the host memory a CUDA C' expert cache (--moe-cache-experts) holds for a .giw load that will be resident: every routed
+// expert, packed into one page-locked copy that is not file-backed and cannot be reclaimed. It is the only anonymous term a .giw guard did not price
+// (the KV and scratch are VRAM, the rest of the weights alias the mapping). Estimated from the config, so Load and FitQuery agree: the MoE layers
+// x experts x 3 projections x expert width x hidden, at int4 with f16 group-32 scales (9/16 byte a weight). 0 when no cache is requested, the load will
+// not be CUDA-resident, or the model is not MoE. docs/code-notes/decoder.md#giwPinnedExpertBytes.
+func giwPinnedExpertBytes(cfg *Config, opts Options) int64 {
+	if cfg == nil || !(opts.MoECacheExperts || loadKnob(opts, knobMoECacheExperts) != "") || !cudaWillBeResident(cfg, opts) {
+		return 0
+	}
+	c := *cfg
+	arch, _, err := resolveArchitecture(&c)
+	if err != nil || arch.MoE == nil || arch.MoE.NumExperts <= 0 || arch.MoE.IntermediateDim <= 0 {
+		return 0
+	}
+	layers := max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
+	return int64(layers) * int64(arch.MoE.NumExperts) * 3 * int64(arch.MoE.IntermediateDim) * int64(c.HiddenDim) * 9 / 16
+}
+
+// resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: internal/hostmem on
+// darwin and linux): half of available memory, the same math aikit's mmap.AutoBudget() uses, but AutoBudget is Linux-only and
 // falls back to a fixed 8 GB elsewhere, a number with no relation to what the machine has free. An explicit request (> 0) passes through
 // unchanged. When this platform's probe is unavailable too it returns 0 (aikit's own AutoBudget) and logs that, so the fallback is visible.
 func resolveWeightCacheBudget(requested int64) int64 {
@@ -465,6 +540,14 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 		return 0, 0 // unknown ⇒ proceed
 	}
 	defer g.Close()
+	// q4k prices each tensor at what its load keeps: a dense projection stored as Q4_K at its own super-blocks
+	// (q4kKeptBytes), every other matrix at int8 W8A8, which q4k makes of them (streamQuantizedRow4).
+	price := q
+	if q == quantQ4K && !q4kPriceAsInt4ForTest {
+		price = quantInt8I8
+	}
+	ggufArch, _ := g.Str("general.architecture")
+	nemoInt8 := (ggufArch == "nemotron_h" || ggufArch == "nemotron_h_moe") && mambaProjInt8(q)
 	var sum, exp float64
 	for _, name := range g.Names() {
 		dims, ok := g.Dims(name)
@@ -486,12 +569,20 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 			sum += 4 * float64(n)
 			continue
 		}
+		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8).
+		if nemoInt8 && (strings.HasSuffix(name, ".ssm_in.weight") || strings.HasSuffix(name, ".ssm_out.weight")) {
+			sum += quantBytesPerElem(quantInt8I8) * float64(n)
+			continue
+		}
 		// Mamba-2/MLA tensors stay f32 regardless of the requested quant: price them at what they cost, not the ambient rate.
 		if f32PinnedTensorName(name) {
 			sum += 4 * float64(n)
 			continue
 		}
-		b := quantBytesPerElem(q) * float64(n)
+		b := quantBytesPerElem(price) * float64(n)
+		if kept, ok := q4kKeptBytes(g, name, dims); ok && q == quantQ4K && !q4kPriceAsInt4ForTest {
+			b = kept
+		}
 		sum += b
 		if strings.Contains(name, "_exps") && !strings.HasSuffix(name, ".bias") {
 			exp += b
@@ -499,6 +590,26 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 	}
 	return int64(sum), int64(exp)
 }
+
+// q4kDenseProj matches the dense layer projections a q4k load keeps as Q4_K when the GGUF stores them so (q4kMat's load
+// sites); the embedding, the head, the router and expert stacks are not among them.
+var q4kDenseProj = regexp.MustCompile(`^blk\.\d+\.(attn_q|attn_k|attn_v|attn_qkv|attn_output|ffn_gate|ffn_up|ffn_down)\.weight$`)
+
+// q4kKeptBytes is a dense projection's resident bytes under q4k when the GGUF stores it as Q4_K: its super-blocks, copied as
+// they are. ok is false for any other tensor. Q4KRaw only slices the mapping, so no tensor data is read.
+func q4kKeptBytes(g *embed.GGUFFile, name string, dims []int) (float64, bool) {
+	if len(dims) != 2 || dims[0]%256 != 0 || !q4kDenseProj.MatchString(name) {
+		return 0, false
+	}
+	_, raw, ok, err := g.Q4KRaw(name)
+	if err != nil || !ok {
+		return 0, false
+	}
+	return float64(len(raw)), true
+}
+
+// q4kPriceAsInt4ForTest restores the int4 price for q4k, for the test that shows it disagrees with a load.
+var q4kPriceAsInt4ForTest = false
 
 // estimateSafetensorsWeightBytes is estimateGGUFWeightBytes's safetensors twin: shape-only, quant-independent accounting (sum every
 // tensor's element count, price 2-D+ tensors at the target quant, 1-D norms/biases at f32), reusing openCheckpointMmap so single-file and
@@ -548,6 +659,11 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 			continue
 		}
 		// Mamba-2/MLA tensors stay f32 regardless of the requested quant.
+		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8); these compound names are its alone.
+		if mambaProjInt8(q) && (strings.HasSuffix(name, "mixer.in_proj.weight") || strings.HasSuffix(name, "mixer.out_proj.weight")) {
+			total += quantBytesPerElem(quantInt8I8) * float64(n)
+			continue
+		}
 		if f32PinnedTensorName(name) {
 			total += 4 * float64(n)
 			continue
@@ -703,6 +819,13 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 		return f // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
 	}
 	f.effCtx, f.kvF16, f.kvI8 = p.ctx, p.kvF16, p.kvI8
+	if p.deviceKV {
+		f.deviceKV = true
+		if f.cudaBuildBytes == 0 {
+			f.packBytes = f.weightBytes/int64(max(cfg.NumLayers, 1)) + cudaPackStageBytes
+		}
+		return f
+	}
 	f.kvBytes = estimateKVBytes(cfg, f.effCtx, f.kvF16, f.kvI8)
 	return f
 }
@@ -713,6 +836,7 @@ type kvPrice struct {
 	pinned      bool
 	kvF16, kvI8 bool
 	metalSizing bool // priced as the Metal resident will allocate, not at the CPU's per-request ceiling
+	deviceKV    bool // the load will be CUDA-resident: its KV is in VRAM, so a host guard prices none of it (ctx is still the context in play)
 }
 
 // kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what the load will
@@ -731,11 +855,19 @@ type kvPrice struct {
 func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	p.pinned = opts.ResidentContext > 0
 	p.kvF16, p.kvI8 = opts.KVPrecision == "f16", opts.KVQuant == "i8"
-	if _, ok := kvPolicies[opts.Backend]; ok {
-		// A backend with a KV policy (kvpolicy.go) is f16 only where the policy says so (the default included), else f32 whatever was requested.
+	if opts.Backend == "" || opts.Backend == "cpu" { // the CPU cache's precision is KVQuant's, where the family allows it (ResolveKV)
 		p.kvF16 = false
 		if arch, _, err := resolveArchitecture(cfg); err == nil {
-			p.kvF16 = opts.kvF16For(arch)
+			got, _ := ResolveKV("cpu", arch, opts)
+			p.kvF16 = got == kvPrecF16
+		}
+	}
+	if _, ok := kvPolicies[opts.Backend]; ok {
+		// A backend with a KV policy is f16 only where ResolveKV says so (the default included), else f32 whatever was requested.
+		p.kvF16 = false
+		if arch, _, err := resolveArchitecture(cfg); err == nil {
+			got, _ := ResolveKV(opts.Backend, arch, opts)
+			p.kvF16 = got == kvPrecF16
 		}
 	}
 	if metalWillBeResident(cfg, opts) {
@@ -749,6 +881,7 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 		}
 		return p, true
 	}
+	p.deviceKV = cudaWillBeResident(cfg, opts)
 	switch {
 	case p.pinned:
 		p.ctx = opts.ResidentContext
@@ -776,6 +909,21 @@ func metalWillBeResident(cfg *Config, opts Options) bool {
 		return false
 	}
 	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) == 0
+}
+
+// cudaWillBeResident reports whether this load will build a CUDA resident, as far as load time can tell: CUDA is compiled into this binary, it is
+// the resolved backend, the weights are not streamed, and the architecture passes the CUDA feature gate. Its KV is then device memory. A resident that
+// declines (the build, or the VRAM plan) falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
+func cudaWillBeResident(cfg *Config, opts Options) bool {
+	if opts.Backend != "cuda" || opts.StreamWeights || !slices.Contains(CompiledBackends(), "cuda") {
+		return false
+	}
+	c := *cfg
+	arch, _, err := resolveArchitecture(&c)
+	if err != nil {
+		return false
+	}
+	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"])) == 0
 }
 
 // smallerFittingContext solves for the largest context <= f.effCtx whose weights+KV fit the budget, floored at ctxFloor. Only meaningful
@@ -838,3 +986,7 @@ func (f fitCheck) capNote(ctx int) string {
 // deduction from the error text; a guard placed one line too late produces the same error and the
 // same swap storm.
 var weightAllocs atomic.Int64
+
+// loadCalls counts entries into Load, of any source: a .giw load maps and walks its weights without entering loadWeights,
+// so "nothing was loaded" is this count, not weightAllocs alone.
+var loadCalls atomic.Int64

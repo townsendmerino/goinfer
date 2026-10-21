@@ -77,6 +77,7 @@ func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 // TCP registration rather than adding to it (docs/tasks/task-halt-2026-09.md).
 func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func(http.HandlerFunc) http.HandlerFunc) {
 	mux.HandleFunc("POST /admin/models/load", wrap(maxBytes(textCap, s.handleAdminLoad)))
+	mux.HandleFunc("POST /admin/models/fit", wrap(maxBytes(textCap, s.handleAdminFit)))
 	mux.HandleFunc("POST /admin/models/unload", wrap(maxBytes(textCap, s.handleAdminUnload)))
 	mux.HandleFunc("GET /admin/generations", wrap(s.handleAdminGenerationsList))
 	mux.HandleFunc("POST /admin/generations/{id}/cancel", wrap(maxBytes(textCap, s.handleAdminGenerationCancel)))
@@ -110,6 +111,20 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	if len(rb) > 0 {
 		resp["resident_batch"] = rb
 	}
+	// Prefix snapshots (decoder/kvsnap.go) per model that keeps them: the budget and what is held, taken, restored and refused.
+	kv := map[string]any{}
+	for _, lm := range s.modelList() {
+		if lm.model != nil {
+			if st, ok := lm.model.KVSnapshotStats(); ok {
+				kv[lm.name] = st
+			}
+		}
+	}
+	if len(kv) > 0 {
+		resp["kv_snapshots"] = kv
+	}
+	// Carried token ids (carried_ids.go): turns that carried a blob, turns that used its ids, and the fallbacks by reason.
+	resp["carried_ids"] = s.idsStats.report()
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -134,8 +149,21 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", name))
 		return
 	}
-	// Per-request quant/lora override the global defaults; everything else
-	// (backend, kv-sessions, session-dir) comes from the server config.
+	lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, s.adminLoadConfig(req))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !s.publishLoaded(lm) {
+		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", lm.name))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
+}
+
+// adminLoadConfig is the server config an admin load of req runs with (handleAdminLoad, handleAdminFit): the request's
+// quant and LoRA over the server's; everything else (backend, ctx, kv-sessions, session-dir) is the server's.
+func (s *server) adminLoadConfig(req adminLoadReq) config {
 	c := s.cfg
 	// The request is the authority for its own load. explicitQuant() drives the .giw baked-quant mismatch check and
 	// reads cfg.load.QuantSet, which the CLI set and which says nothing about THIS request. Inheriting it is wrong both
@@ -151,22 +179,14 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	if req.Lora != "" {
 		c.load.LoRA = req.Lora
 	}
-	lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, c)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !s.publishLoaded(lm) {
-		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", lm.name))
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
+	return c
 }
 
 // publishLoaded makes a freshly loaded model routable, or, when another load of the same name published first, closes it
 // and reports false. Shared by the admin load and the web UI's load (webui.go) so the close-on-race and the session
 // restore live in one place.
 func (s *server) publishLoaded(lm *loadedModel) bool {
+	s.rebaselineSwapGuard(lm.name)                    // the load has finished; see there
 	if line := lm.setConcurrency(s.cfg); line != "" { // before the model is routable
 		fmt.Fprintf(os.Stderr, "%q %s\n", lm.name, line)
 	}

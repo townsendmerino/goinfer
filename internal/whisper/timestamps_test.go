@@ -64,7 +64,9 @@ func tinyTS(t *testing.T) (*Transcriber, tsGolden) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Transcriber{Mels: enc.Cfg.MelBins, Enc: enc, Dec: dec, Gen: gen}, g
+	tr := &Transcriber{Mels: enc.Cfg.MelBins, Enc: enc, Dec: dec, Gen: gen}
+	t.Cleanup(func() { tr.Close() })
+	return tr, g
 }
 
 // diff names how a result differs from the reference's, or "" when it does not.
@@ -118,6 +120,7 @@ func TestTimestamps_plantedDefectsAreRed(t *testing.T) {
 			r, err := tr.TranscribeTimestamps(tsClip(c.Samples, c.A, c.B), "", "")
 			if err != nil || diffTS(r, c) != "" {
 				red = true
+				break // one differing case is all the gate asks
 			}
 		}
 		t.Logf("%-34s red %v", name, red)

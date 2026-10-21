@@ -28,7 +28,7 @@ import (
 //	window    uint32    | geometry guard — must match the loading model's cache
 //	headDim   uint32    | (else the KV is for a different architecture)
 //	manualPos uint8     |
-//	quant     uint8    /  (0=f32, 1=int8)
+//	quant     uint8    /  (0=f32, 1=int8, 2=f16)
 //	pos       uint32   (stored position count)
 //	tokens    u32 len + len*uint32
 //	  per layer, in cache-structure order (the loader rebuilds the same rings +
@@ -102,7 +102,11 @@ func (s *Session) Snapshot(id string) []byte {
 	if c.manualPos {
 		manualPos = 1
 	}
-	wr.raw([]byte{manualPos, byte(c.quant)})
+	quantByte := byte(c.quant)
+	if kvSnapF16ByteF32ForTest && c.quant == kvqF16 {
+		quantByte = byte(kvqF32) // F1's planted defect: the storage byte left at f32's value
+	}
+	wr.raw([]byte{manualPos, quantByte})
 	wr.u32(uint32(c.pos))
 	wr.ints(s.tokens)
 	// Per layer, in cache-structure order (the loader reconstructs the same rings +
@@ -124,7 +128,16 @@ func (s *Session) Snapshot(id string) []byte {
 				continue // never-written ring: count/nLive/stride suffice
 			}
 			st := r.stride
-			if c.quant == kvI8 {
+			if c.quant == kvqF16 {
+				kb, vb := make([]uint16, nLive*st), make([]uint16, nLive*st)
+				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
+					so, do := (p%r.w)*st, i*st
+					copy(kb[do:do+st], r.kh[so:so+st])
+					copy(vb[do:do+st], r.vh[so:so+st])
+				}
+				wr.scales16(kb)
+				wr.scales16(vb)
+			} else if c.quant == kvI8 {
 				nKV := st / r.headDim
 				kb, vb := make([]int8, nLive*st), make([]int8, nLive*st)
 				ks, vs := make([]float32, nLive*nKV), make([]float32, nLive*nKV)
@@ -138,8 +151,8 @@ func (s *Session) Snapshot(id string) []byte {
 				}
 				wr.i8(kb)
 				wr.i8(vb)
-				wr.f32(ks)
-				wr.f32(vs)
+				wr.f32Body(ks)
+				wr.f32Body(vs)
 			} else {
 				kb, vb := make([]float32, nLive*st), make([]float32, nLive*st)
 				for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
@@ -147,22 +160,28 @@ func (s *Session) Snapshot(id string) []byte {
 					copy(kb[do:do+st], r.k[so:so+st])
 					copy(vb[do:do+st], r.v[so:so+st])
 				}
-				wr.f32(kb)
-				wr.f32(vb)
+				wr.f32Body(kb)
+				wr.f32Body(vb)
 			}
+		} else if c.quant == kvqF16 {
+			wr.scales16(c.keysH[l])
+			wr.scales16(c.valsH[l])
 		} else if c.quant == kvI8 {
 			wr.i8(c.keysQ[l])
 			wr.i8(c.valsQ[l])
-			wr.f32(c.keyScale[l])
-			wr.f32(c.valScale[l])
+			wr.f32Body(c.keyScale[l])
+			wr.f32Body(c.valScale[l])
 		} else {
-			wr.f32(c.keys[l])
-			wr.f32(c.vals[l])
+			wr.f32Body(c.keys[l])
+			wr.f32Body(c.vals[l])
 		}
 	}
 	wr.u32(crc32.ChecksumIEEE(wr.buf))
 	return wr.buf
 }
+
+// kvSnapF16ByteF32ForTest writes an f16 cache's storage byte as f32's: a planted defect for gate F1.
+var kvSnapF16ByteF32ForTest bool
 
 // LoadSession reconstructs a *Session from a Snapshot blob, validating its KV
 // geometry against this model (cache layout must match) before trusting any
@@ -294,11 +313,22 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			}
 			lo := max(0, rr.count-rr.w)
 			nRows := rr.count - lo // copy iterations = payload rows the writer emitted
-			if quant == kvI8 {
+			if quant == kvqF16 {
+				rr.kh, rr.vh = make([]uint16, rr.w*st), make([]uint16, rr.w*st)
+				kb, vb := r.u16View(int(r.u32())), r.u16View(int(r.u32()))
+				if len(kb) < nRows*st || len(vb) < nRows*st {
+					return nil, &SnapshotError{"truncated ring payload"}
+				}
+				for i, p := 0, lo; p < rr.count; i, p = i+1, p+1 {
+					so, do := (p%rr.w)*st, i*st
+					copy(rr.kh[so:so+st], kb[do:do+st])
+					copy(rr.vh[so:so+st], vb[do:do+st])
+				}
+			} else if quant == kvI8 {
 				nKV := st / rr.headDim
 				rr.kq, rr.vq = make([]int8, rr.w*st), make([]int8, rr.w*st)
 				rr.ksc, rr.vsc = make([]float32, rr.w*nKV), make([]float32, rr.w*nKV)
-				kb, vb, ks, vs := r.i8(), r.i8(), r.f32(), r.f32()
+				kb, vb, ks, vs := r.i8(), r.i8(), r.f32Body(), r.f32Body()
 				if len(kb) < nRows*st || len(vb) < nRows*st || len(ks) < nRows*nKV || len(vs) < nRows*nKV {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
@@ -312,7 +342,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				}
 			} else {
 				rr.k, rr.v = make([]float32, rr.w*st), make([]float32, rr.w*st)
-				kb, vb := r.f32(), r.f32()
+				kb, vb := r.f32Body(), r.f32Body()
 				if len(kb) < nRows*st || len(vb) < nRows*st {
 					return nil, &SnapshotError{"truncated ring payload"}
 				}
@@ -322,8 +352,21 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 					copy(rr.v[so:so+st], vb[do:do+st])
 				}
 			}
+		} else if quant == kvqF16 {
+			// Copied, not aliased: the cache outlives the blob it was restored from.
+			ref.keysH[l] = append(ref.keysH[l][:0], r.u16View(int(r.u32()))...)
+			ref.valsH[l] = append(ref.valsH[l][:0], r.u16View(int(r.u32()))...)
+			if e := checkGlobalLen(l, "keysH", len(ref.keysH[l]), pos*kvDim); e != nil {
+				return nil, e
+			}
+			if e := checkGlobalLen(l, "valsH", len(ref.valsH[l]), pos*kvDim); e != nil {
+				return nil, e
+			}
+			if len(ref.keysH[l]) > 0 {
+				ref.stride[l] = kvDim
+			}
 		} else if quant == kvI8 {
-			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32(), r.f32()
+			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32Body(), r.f32Body()
 			// Blob-controlled lengths must be compared, as the ring branch above does for its stride, nLive and payload. The forward derives
 			// nKeys from `keys` and then indexes `vals` at the same positions, so a vals array one row short is an out-of-range read in the
 			// generation goroutine, a panic that takes the process down; the CRC does not help, since it covers the attacker's bytes. 0 is
@@ -347,10 +390,10 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 		} else {
 			// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's
 			// empty-but-non-nil slice so Append/Keys stay well-formed.
-			if k := r.f32(); k != nil {
+			if k := r.f32Body(); k != nil {
 				ref.keys[l] = k
 			}
-			if v := r.f32(); v != nil {
+			if v := r.f32Body(); v != nil {
 				ref.vals[l] = v
 			}
 			// stride[] is set only by Append, which LoadSession bypasses; without the assignment below a restored global layer has stride 0,

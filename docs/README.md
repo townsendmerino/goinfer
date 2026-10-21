@@ -1,6 +1,6 @@
 # The docs, and how they fit together
 
-`docs/` holds ~535 files. They are not one kind of thing, and reading them as if they were is the
+`docs/` holds ~675 files. They are not one kind of thing, and reading them as if they were is the
 main way people get a wrong answer here: a **design record** explains why something is built as it
 is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
 on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (74: 65 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (68: 59 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -77,7 +77,7 @@ CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cel
 projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
 chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.
 
-[`task-never-swap-2026-09.md`](tasks/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22) is its
+[`task-never-swap-2026-09.md`](completed/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22; **complete and archived 2026-10-21**) is its
 memory-side companion: what is anonymous and what is file-backed on each load path (why a plain
 `.gguf` load and a Metal resident build swap on the MacBook and a CPU `.giw` load does not), and the
 briefs for file-backed weights by default, a swap tripwire in the binary, the fit guard on the
@@ -89,17 +89,51 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
-[`task-cpu-kv-f16-2026-10.md`](tasks/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
+[`task-cpu-kv-f16-2026-10.md`](completed/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12; **complete and archived 2026-10-21**: way A shipped as the opt-in `--kv f16`, way B is P27, parked) scoped a
 half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
-its readers are today, why the earlier int8 task rejected f16 and what has changed since, the two decisions still
-open, and the gates to register before any code.
+its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
+decisions (2026-10-14), and its gates, registered that day before any code.
 
-[`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV10, filed 2026-10-13, not started)
+[`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (plan, filed 2026-10-20) makes
+`--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name: today's
+silent fallbacks, a single resolver and a ratchet test, the phases by backend (CUDA int8 is B39), and the gates.
+
+[`task-cpu-prefill-memory-2026-10.md`](tasks/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
+CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
+keeping the freed heap. It registers the fix (2,048-row chunks with the suffix's fast-attention decision, the KV reserved
+once, memory returned after a long prompt) and its parity, memory and speed gates.
+
+[`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV11, filed 2026-10-13; KV0 done the same day)
 proposes one KV architecture for every backend: a manager in the decoder that owns sequences, per-layer-group block
 tables, a content-addressed prefix index and tiers, with backends reduced to block storage and recurrent state as a
 checkpointed second pool. It lists what today's per-slot design costs, what must not change, the phases and their
 gates, and the owner decisions. The first, D1, is decided: the owner un-parked paged KV on 2026-10-13, for memory and
-reuse, with continuous batching still parked.
+reuse, with continuous batching still parked. KV11, added the same day, puts KV blocks and paged MoE experts under one
+memory budget in place of today's fixed split.
+
+[`task-memory-campaign-2026-10.md`](tasks/task-memory-campaign-2026-10.md) (MEM0–MEM17, filed 2026-10-17, scoped)
+picks up where never-swap and the KV program stop: every large structure in goinfer and aikit with its share of a
+typical session, how each is held today, and the briefs for what is left — a public mapped load for library callers,
+multimodal towers (f32 heap copies, host copies beside GPU copies, Metal tower scratch never freed), prefill scratch
+for the families G40 did not chunk, the Metal int8 head pin, MoE expert copies on Metal and CUDA, f32 islands, the CPU
+heap, and aikit's BM25, HNSW, encoder and chunk-text items.
+
+[`task-clairic-2026-10.md`](tasks/task-clairic-2026-10.md) (E0–E5, filed 2026-10-19, waiting on weights) scopes
+Cloudflare's Clairic, a System One extraction model (typed values from unstructured input in one forward pass, no
+output tokens), on goinfer. It sits beside the parked decisions work and does not reopen it; its own trigger is the
+weights published under a licence that permits redistribution, and only E0, desk work on the API, can run before that.
+
+[`task-forward-architecture-2026-10.md`](tasks/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
+2026-10-13; OP0 done the same day, the rest not started) is the compute half of the same redesign.
+- **Track OP** describes a model to the GPU backends as a per-layer list of operations, so a backend implements operations
+  rather than families.
+- **Track RF** replaces the resident's one entry point per request shape with one ragged forward call, which carries decode,
+  verify, prefill and image rows from any number of conversations.
+- **It starts from where a query's time goes** and from why each CPU-only family declines; its baseline record,
+  [`measurements/forward-arch-baseline-2026-10-13.md`](measurements/forward-arch-baseline-2026-10-13.md), has both
+  readings.
+- **Its first steps stand alone:** attention softcapping so Gemma 2 runs on every GPU, per-turn timing on the wire, and
+  run-ahead decode under tool and thinking-budget processors.
 
 [`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
 2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.
@@ -161,21 +195,22 @@ records what a cold user hit against a published tag, what was fixed, and the pr
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 [`task-library-surface-review-2026-10.md`](tasks/task-library-surface-review-2026-10.md) applies
 the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
-[`task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) treats the audits'
-findings as a dataset: if "an option or family not registered with a guard" is common enough, it becomes a
-fail-closed options × paths gate. Step 1 found it is (27.2% of 261 findings, 2026-10-08). [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
+[`task-option-path-admission-2026-10.md`](completed/task-option-path-admission-2026-10.md) (**closed and archived 2026-10-21**) treated the audits'
+findings as a dataset: "an option or family not registered with a guard" was common enough (27.2% of 261 findings, 2026-10-08) to become a
+fail-closed options × paths gate, built the same day; the grids and the rule for joining one are in [`option-state-grid.md`](option-state-grid.md).
+[`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
 asks how many wire dialects the coding-agent harnesses speak and how often a tool call breaks a whole session.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (244)
+## Evidence — `measurements/` (275)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (132)
+## Archive — `completed/` (140)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
@@ -187,13 +222,13 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (12) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (16) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered, and the 4
   left then were each still open (drafted-by-decision, blocked, or unshipped, per their own status).
   Briefs written since are read by their own status headers. Newest:
   `prompts/nobara-mc4-spec-alone-cuda-2026-09.md` (2026-09-28), the nobara brief for MC4's
   "speculate when alone, batch under load" premise measurement.
-- `releases/` (10) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
+- `releases/` (12) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`

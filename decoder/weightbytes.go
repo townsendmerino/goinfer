@@ -215,7 +215,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
 		if mb := l.mamba; mb != nil {
-			dense += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj)
+			dense += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj) + wmBytes(&mb.inQ) + wmBytes(&mb.outQ)
 		}
 		// LFM2's gated short-convolution mixer, kept as f32.
 		if sc := l.shortConv; sc != nil {

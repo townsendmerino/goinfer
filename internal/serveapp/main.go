@@ -35,6 +35,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -197,7 +198,9 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	o.ResidentKVSlots = cfg.kvSessions
 	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // Metal keeps 2 slots unless -kv-sessions was given
 	o.ResidentPrefillChunk = cfg.prefillChunk     // chunked prefill under concurrent generation; 0 = off
-	o.CPUBatchDecode = cfg.cpuBatch               // batched CPU decode (-cpu-batch)
+	o.KVShareOff = cfg.kvShareOff
+	o.KVHostBytes = cfg.kvHostBytes
+	o.CPUBatchDecode = cfg.cpuBatch // batched CPU decode (-cpu-batch)
 	return o
 }
 
@@ -322,6 +325,11 @@ type config struct {
 	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (1 = serialized)
 	cpuBatch        int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff
 	prefillChunk    int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
+	kvShare         string        // -kv-share: "on" (default) or "off"
+	kvShareOff      bool          // kvShareOffFor's answer, set once the API key and bind are known
+	kvHostBytesFlag string        // -kv-host-bytes: auto, 0, or a byte count
+	kvHostBytes     int64         // the resolved budget for prefix snapshots (0: off); a config built without the flag keeps none
+	kvHostBytesHow  string        // how it was reached, for the startup line
 	jobDir          string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
 	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
@@ -332,6 +340,10 @@ type config struct {
 	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	allowedHosts    string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
 	logRequests     bool          // -log-requests: one stderr line per generation request
+	logTokenIDs     string        // -log-token-ids: append one JSON line per generation (prompt hash, generated ids) to this file; "" = off
+	idsKeyFile      string        // -ids-key-file: the key that signs carried token ids; "" = a random key per start
+	noCarryIDs      bool          // -carry-ids=false: do not carry a reply's token ids back in its reasoning item (the zero value carries them)
+	fastAlias       bool          // -fast-alias: serve "<model>-fast", the same model with thinking off, for an agent's side requests
 	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
 	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
 	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener; "" = off
@@ -403,10 +415,14 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model, and pull and load GGUF files or whole safetensors checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
 	fs.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
 	fs.StringVar(&cfg.allowedHosts, "allowed-hosts", "", "comma-separated Host names, beyond localhost, 127.0.0.1, [::1] and the -addr host, that a listener bound to the loopback answers (default none). A request whose Host is any other name gets 421: that is what stops a web page from reaching a loopback server by DNS rebinding. Set it when a reverse proxy on this machine forwards a public name to the loopback port. Has no effect on a listener bound beyond the loopback, which answers any Host and is protected by -api-key")
-	fs.BoolVar(&cfg.logRequests, "log-requests", false, "write one line to stderr per generation request (/v1/chat/completions, /v1/completions, /v1/responses, /v1/messages) when it finishes: route, model, status, prompt and completion tokens, time to first token and total time. Off by default; a request that failed before generating shows `-` for the model and token counts")
+	fs.BoolVar(&cfg.logRequests, "log-requests", false, "write one line to stderr per generation request (/v1/chat/completions, /v1/completions, /v1/responses, /v1/messages) when it finishes: route, model, status, prompt and completion tokens, time to first token and total time, then the first generation's KV reuse (reused, the slot's length before the request, and div, where the prompt left it), canon (1 when the generated ids are the tokenizer's own split of their text), and on /v1/responses and /v1/messages the carried token ids (ids=<used>/<carried>, ids_fallback, the reason for each turn that re-tokenized, and ids_fmt when used turns replaced template-owned formatting). Off by default; a request that failed before generating shows `-` for the model and token counts")
+	fs.StringVar(&cfg.logTokenIDs, "log-token-ids", "", "for measurement runs: append one JSON line per generation to this file — time, route, response id, the prompt's length and SHA-256 (of its ids as little-endian uint32s), reused and slot positions, the generated token ids, and whether they are the tokenizer's own encoding of their text. The file holds the model's output as token ids; it is created 0600. Off by default")
+	fs.Var(invertedBool{&cfg.noCarryIDs}, "carry-ids", "carry a /v1/responses reply's generated token ids back to the server in its reasoning item's encrypted_content (signed), and use them when the reply is echoed, so it re-tokenizes to the ids the model generated. false writes the text-only blob and re-tokenizes every echoed turn, as before this existed")
+	fs.BoolVar(&cfg.fastAlias, "fast-alias", true, "a served model N is also reachable as N-fast: the same weights, template and KV slot, with thinking off and nothing else different, for the side requests an agent sends for its own bookkeeping (a session title). connect points Claude Code's small-model setting and opencode's small_model at it. false turns the alias off")
+	fs.StringVar(&cfg.idsKeyFile, "ids-key-file", "", "a file holding the key (32 bytes or more, mode 0600) that signs the token ids a /v1/responses reply carries back in its reasoning item's encrypted_content, so an echoed reply re-tokenizes to the ids the model generated. Default: a random key made at start and never written, so after a restart, or on another server, older replies fall back to re-tokenizing their text (counted as `key`). Set it to keep carried ids valid across restarts or between servers that share it")
 	fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
 	fs.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
-	fs.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
+	fs.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth, so its directory must be one nobody else can rewrite: not writable by its group or by everyone, unless it is sticky like /tmp). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
 	fs.StringVar(&cfg.visionPath, "vision", "", "vision tower dir for a multimodal --model (auto-discovered per family: SigLIP+projector for Gemma 3, Qwen2.5-VL's own ViT, or Gemma 4's own encoder — N-35, docs/audit-2026-09-10.md); enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	fs.StringVar(&cfg.decisionsTemplate, "decisions-template", "chat-v1", "POST /v1/systemone's prompt template: chat-v1 (the model's chat template; for instruct models) or bare-v1 (JEV's own, no chat template)")
 	fs.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
@@ -459,6 +475,8 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		}
 		return nil
 	})
+	fs.StringVar(&cfg.kvHostBytesFlag, "kv-host-bytes", "auto", "host memory the server may hold as prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt, the prompt's KV is copied to pinned host memory, and a later request that starts with the same ids restores it instead of prefilling it. auto (the default) is a tenth of the machine's RAM, at most 8 GiB; 0 turns it off; or a byte count with an optional K, M or G. Memory is pinned only while a snapshot is held, so an idle server holds none. -kv-share off turns snapshots off too")
+	fs.StringVar(&cfg.kvShare, "kv-share", "on", "on|off: whether a conversation may reuse KV rows another conversation computed, such as a shared system prompt, on a GPU-resident model (on: a new conversation copies the shared rows instead of prefilling them; off: a request reuses only its own conversation's rows). Sharing makes time to first token reveal something about what another client sent, so it is off whatever this says when the server answers the network without -api-key (an -allowed-hosts name on a loopback bind)")
 	fs.IntVar(&cfg.prefillChunk, "prefill-chunk", 512, "on a GPU-resident model running several generations at once (MC3), prefill a long prompt that arrives while others are decoding in chunks of this many tokens, one decode step between chunks, instead of stalling them for the whole prompt (replies are unchanged: Metal's prefill is chunk-invariant; 512 graded 2026-09-27: the decoders' longest stall 0.23x); 0 = off")
 	fs.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
 	fs.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
@@ -511,6 +529,12 @@ func (srv *server) checkpointSessions(cfg config) {
 // own checks (the address, the API key, TLS) stay with the caller.
 func (cfg config) validate() error {
 	if err := sessionDirOK(cfg.sessionDir); err != nil {
+		return err
+	}
+	if cfg.kvShare != "" && cfg.kvShare != "on" && cfg.kvShare != "off" {
+		return fmt.Errorf("-kv-share must be on or off (got %q)", cfg.kvShare)
+	}
+	if _, _, err := parseKVHostBytes(cfg.kvHostBytesFlag); err != nil {
 		return err
 	}
 	if cfg.spec != "" && cfg.spec != "ngram" {
@@ -583,7 +607,7 @@ func (srv *server) routes(cfg config, authKey string, reqLog io.Writer) (*http.S
 	// ...)".
 	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is
 	// logged with its status too.
-	rl := func(h http.HandlerFunc) http.HandlerFunc { return logRequests(reqLog, h) }
+	rl := func(h http.HandlerFunc) http.HandlerFunc { return srv.traceRequests(reqLog, h) }
 	mux.HandleFunc("POST /v1/chat/completions", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat))))))
 	mux.HandleFunc("POST /v1/completions", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions))))))
 	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
@@ -793,6 +817,15 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
+	cfg.kvShareOff = kvShareOffFor(cfg.kvShare, authKey, *addr, cfg.allowedHosts)
+	var kvErr error
+	if cfg.kvHostBytes, cfg.kvHostBytesHow, kvErr = resolveKVHostBytes(cfg.kvHostBytesFlag, decoder.HostRAMBytes()); kvErr != nil {
+		fmt.Fprintln(os.Stderr, kvErr)
+		os.Exit(2)
+	}
+	if cfg.kvShareOff && cfg.kvShare != "off" {
+		fmt.Fprintln(os.Stderr, "KV sharing: off — this server answers the network without -api-key, so one client's time to first token must not reveal what another sent; set -api-key to share a common prompt between conversations")
+	}
 
 	srv, err := newServer(resolveGemma3VisionQuant(cfg, os.Stderr)) // Gemma 3 on CUDA: float32 if the card holds it beside the decoder, else int8, before the plan prices the tower
 	if err != nil {
@@ -989,6 +1022,19 @@ func newServer(cfg config) (*server, error) {
 		files:   newFileStore(256),
 		batches: newBatchStore(256),
 	}
+	if !cfg.noCarryIDs {
+		if s.idsKey, err = loadIDsKey(cfg.idsKeyFile); err != nil {
+			return nil, err
+		}
+		if w := idsKeyFileWarning(runtime.GOOS, cfg.idsKeyFile); w != "" {
+			fmt.Fprintln(os.Stderr, w)
+		}
+	}
+	if cfg.logTokenIDs != "" {
+		if s.tokenLog, err = openTokenIDLog(cfg.logTokenIDs); err != nil {
+			return nil, err
+		}
+	}
 	for _, spec := range cfg.models {
 		if isWhisperDir(spec.path) { // an encoder-decoder speech model: its own registry and route (speech.go)
 			sm, err := loadSpeech(spec, cfg)
@@ -1075,10 +1121,11 @@ func (s *server) loadAdapters(cfg config) error {
 		fp := base.fp + "+adapter:" + spec.name // distinct snapshot namespace from the base + sibling adapters
 		lm := &loadedModel{
 			tk: base.tk, model: base.model, tmpl: base.tmpl, stopIDs: base.stopIDs,
-			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name,
-			spec:         cfg.spec == "ngram",
-			specAdaptive: cfg.specAdaptive,
-			sessions:     newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name, sampling: base.sampling,
+			spec:           cfg.spec == "ngram",
+			specAdaptive:   cfg.specAdaptive,
+			sessions:       newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+			tokenBytesFrom: base,
 		}
 		lm.sessions.adapter = spec.name
 		if cfg.maxQueue > 0 {
@@ -1547,11 +1594,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		// The drafter's own device K/V scales with whatever resident context the target ends up choosing, which is not known yet:
 		// see Options.ExtraResidentKVPerPosition for why this is a rate, not a total, and who multiplies it by what.
 		opts.ExtraResidentKVPerPosition = decoder.DrafterKVBytesPerPosition(drafter)
-		// The drafter keeps an f32 K/V of its own beside the target's attention kernels, so under the default (auto) the pair stays f32 on
-		// CUDA; an explicit -kv f16 reaches the resident's decline and says so.
-		if opts.KVPrecision == "" || opts.KVPrecision == "auto" {
-			opts.KVPrecision = "f32"
-		}
+		opts.Drafter = true // decoder.ResolveKV: auto is f32 on CUDA beside a drafter, and an explicit f16 refuses
 	}
 	// A CUDA vision tower loads after this model and claims VRAM too (tower_reserve.go): price it the same way, so the KV plan leaves room for it.
 	opts.ExtraResidentBytes += towerReserve(cfg, spec.path)
@@ -1585,6 +1628,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
 		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
+		sampling:     mcfg.Sampling,
 		spec:         cfg.spec == "ngram",
 		specAdaptive: cfg.specAdaptive,
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
@@ -1958,4 +2002,16 @@ func qwenTowerPlacement(backend string, int8Tower, asked, require bool, attach f
 		return "CPU (" + backend + " declined)", nil
 	}
 	return name, nil
+}
+
+// kvShareOffFor is whether requests may not take KV rows another conversation computed (decoder.Options.KVShareOff):
+// when -kv-share is off, and when the server answers the network without an API key. serve has one key, so every
+// request that passes it is one sharing scope (docs/tasks/task-kv-architecture-2026-10.md §8, D4). Without a key
+// only loopback may be bound, but a loopback bind answering an -allowed-hosts name is a reverse proxy's public
+// face, and is treated as the network.
+func kvShareOffFor(kvShare, apiKey, addr, allowedHosts string) bool {
+	if kvShare == "off" {
+		return true
+	}
+	return apiKey == "" && (!addrIsLoopback(addr) || strings.TrimSpace(allowedHosts) != "")
 }

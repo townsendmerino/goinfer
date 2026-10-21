@@ -75,6 +75,7 @@ func qwenFeatCases(t *testing.T) (map[string][]byte, []qwenFeatCase, map[string]
 }
 
 func TestQwenASRFeatures_matchTransformers(t *testing.T) {
+	raceSubset(t)
 	files, cases, inputs := qwenFeatCases(t)
 	if len(cases) != 7 {
 		t.Fatalf("golden has %d cases, want 7", len(cases))
@@ -108,6 +109,7 @@ func TestQwenASRFeatures_matchTransformers(t *testing.T) {
 }
 
 func TestQwenASRFeatures_plantedDefectsAreRed(t *testing.T) {
+	raceSubset(t)
 	files, cases, inputs := qwenFeatCases(t)
 	for d := 1; d <= audio.QwenASRDefectCountForTest; d++ {
 		red, how := false, ""

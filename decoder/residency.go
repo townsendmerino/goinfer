@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -225,6 +226,30 @@ type Prefiller interface {
 	// context). Cancellation returns ctx.Err(); the caller stops, rather than falling back to the
 	// sequential loop it was also cancelling.
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
+}
+
+// PrefillPartial is the error a batched prefill returns when one of its passes declined or failed after earlier passes of the same call
+// committed their rows: positions [startPos, Next) are written and the caller continues from Next, not from startPos. A windowed resident
+// requires it, because the committed passes may have moved its window past startPos, so a restart there reads history it has dropped.
+// Unwrap is the failing pass's own error, so errors.Is(err, a decline sentinel) still holds.
+type PrefillPartial struct {
+	Next int
+	Err  error
+}
+
+func (e *PrefillPartial) Error() string {
+	return fmt.Sprintf("%v (positions before %d are written)", e.Err, e.Next)
+}
+func (e *PrefillPartial) Unwrap() error { return e.Err }
+
+// prefillResume is where a prefill continues after a batched call that started at from returned err: PrefillPartial's Next when it names a
+// later position, else from.
+func prefillResume(from int, err error) int {
+	var p *PrefillPartial
+	if errors.As(err, &p) && p.Next > from {
+		return p.Next
+	}
+	return from
 }
 
 // ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
@@ -482,6 +507,22 @@ type ResidencyBackend interface {
 	BuildResident(m *Model) (rf ResidentForward, ok bool, err error)
 }
 
+// ResidencyPricer is a ResidencyBackend that can say what BuildResident's own checks before it allocates (its features, its
+// context, its memory guard) decide for m, without building: FitQuery's decode path on that backend. err is what BuildResident
+// would return for that decision (a DeclineResident, or the failure it would report). It must not touch the device or keep
+// state on m.
+type ResidencyPricer interface {
+	PriceResident(m *Model) (ResidentPrice, error)
+}
+
+// ResidentPrice is a ResidencyPricer's answer for a build its checks admit.
+type ResidentPrice struct {
+	// Quant is the resident quant DecodePath would report, "" for residentQuantLabel's. Unknown, when set, is why only the build
+	// can name it.
+	Quant, Unknown string
+	Ctx            int // the context the resident would hold
+}
+
 // ResidentDeclineError is a backend's reason for not building a resident path: an ordinary decline
 // (unsupported shape, too big for the router, doesn't fit memory), not a device failure.
 type ResidentDeclineError struct{ Reason string }
@@ -519,7 +560,7 @@ func (m *Model) decodeRunnerDecline() string {
 		eligible = true
 	}
 	if !eligible {
-		return "arch is not eligible for the resident decode runner"
+		return "arch is not eligible for the resident decode runner: " + a.runnerShapeDecline()
 	}
 	// Nemotron-H resident is default-on at int4 only: its int4 disagreements with f32 are all at near-tied
 	// positions (docs/completed/nemotron-resident.md). int8 stays OPT-IN behind GOINFER_SSM_RESIDENT.
@@ -561,7 +602,7 @@ func (m *Model) residentAdmission() string {
 }
 
 // actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
-// docs/tasks/task-option-path-admission-2026-10.md §4.3): per-group activation scales are implemented by
+// docs/completed/task-option-path-admission-2026-10.md §4.3): per-group activation scales are implemented by
 // CUDA residency only (actgroup.cu). Metal's and WebGPU's projections read per-vector scales and nothing
 // in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
 // whenever the family had no activation hazard for the gate below to catch. The Options doc has always
@@ -579,6 +620,10 @@ func actGroupResidentDecline(backend string, actGroup int, quant string) string 
 // Nemotron-H default-on residency. Scans for the first attention/MLP projection (the mamba
 // in/out_proj are always f32 in the model and quantized at build, so they don't indicate the
 // load precision).
+// ResidentProjsInt4 is residentProjsInt4, for a backend that runs Nemotron-H resident at int4 only (Metal: it has no native
+// int8 path for a recurrent family, and would otherwise re-quantize int8 projections to int4).
+func (m *Model) ResidentProjsInt4() bool { return m.residentProjsInt4() }
+
 func (m *Model) residentProjsInt4() bool {
 	for i := range m.w.Layers {
 		lw := &m.w.Layers[i]
@@ -595,7 +640,21 @@ func (m *Model) residentProjsInt4() bool {
 // decodeRunnerEligible is the arch-only predicate behind DecodeRunnerEligible —
 // usable directly from a resolved Architecture (e.g. the capability matrix)
 // without a loaded Model.
-func (a *Architecture) decodeRunnerEligible() bool {
+func (a *Architecture) decodeRunnerEligible() bool { return a.runnerShapeDecline() == "" }
+
+// Runner-shape decline reasons. The hardware matrix prints them, so they are short and name no backend.
+const (
+	runnerShapeOwnForward = "own forward, not bridged"
+	runnerShapeBringUp    = "bring-up gate (GOINFER_SSM_RESIDENT unset)"
+	runnerShapeNemoMoE    = "Nemotron MoE block"
+	runnerShapeMoE        = "MoE shape"
+	runnerShapeRoPE       = "local and global RoPE tables differ in length"
+)
+
+// runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
+// the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
+// reports why a model is not resident reads residentGateReasons as well.
+func (a *Architecture) runnerShapeDecline() string {
 	// Own-forward families (their non-uniform forward the uniform-layer runners can't express).
 	// Only Gemma 4 (dense, env-gated) is bridged so far; the rest keep the staged path. A
 	// bridged family does NOT early-return true — it FALLS THROUGH to the common feature/shape
@@ -620,21 +679,24 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// the feature gate, and falling through is what keeps the checks below composing. The MoE siblings also need FeatMoE,
 		// from the ordinary MoE checks.
 	case a.llama4 != nil:
-		return false // own forward, not yet bridged
+		return runnerShapeOwnForward
 	case a.lfm2 != nil:
-		// LFM2/LFM2.5: own forward (runLayersLFM2), not bridged. Declining HERE and not only via FeatShortConv is
+		// LFM2/LFM2.5: its short-convolution layers (opShortConv) are not bridged. Declining HERE and not only via FeatShortConv is
 		// deliberate: decodeRunnerEligible is an ARCH-SHAPE predicate, and 22 of 30 layers run a gated short
 		// convolution with a rolling window that no uniform-layer runner can express, a property of the family
 		// rather than of any backend's kernels. It also keeps the capability matrix honest: its GPU-resident
 		// column is generated from this predicate, and without this case LFM2 would fall through to
 		// ropeResidentCompatible and read "yes".
-		return false
+		return runnerShapeOwnForward
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Guarded during the
 	// parity bring-up (P5b.3/P5b.4); P6 makes this unconditional.
 	if a.granite != nil {
-		return a.knobs.get(knobSSMResident) != ""
+		if a.knobs.get(knobSSMResident) == "" {
+			return runnerShapeBringUp
+		}
+		return ""
 	}
 	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA / relu² MLP,
 	// reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in precision gate is applied
@@ -645,10 +707,13 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// crash-or-garbage risk, not a clean decline. Decline here, at the one predicate every backend's admission
 	// funnels through; decodeRunnerDecline overrides it for webgpu, which implements the block.
 	if a.nemotron != nil {
-		return a.MoE == nil
+		if a.MoE != nil {
+			return runnerShapeNemoMoE
+		}
+		return ""
 	}
 	if a.MoE != nil && !a.moeResidentEligible() {
-		return false
+		return runnerShapeMoE
 	}
 	// FFN / norm / head constraints common to both attention paths (sandwich norms, logit softcap, NonGatedMLP,
 	// LearnedPosEmbed, OutBias) are all representable, and a backend that lacks one declines via the feature gate
@@ -658,14 +723,17 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// MLA (DeepSeek/Kimi) runs its own latent-attention path (gpu/mla.go), so the GQA/RoPE/QK-norm/sliding-window checks
 	// don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
 	if a.mla != nil {
-		return true
+		return ""
 	}
 	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (Lever C1 — per-head
 	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
 	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5), sliding window (Lever C6), and
 	// per-layer-type RoPE (Mellum YaRN-on-global vs default-local invFreq + mscale, Lever
 	// C7). The last gate is ropeResidentCompatible below.
-	return a.ropeResidentCompatible()
+	if !a.ropeResidentCompatible() {
+		return runnerShapeRoPE
+	}
+	return ""
 }
 
 // ropeResidentCompatible is a coarse ARCH-level screen on the GENERIC (finalizeRoPE) local/global inv-freq tables:
@@ -840,7 +908,7 @@ func (m *Model) LayerIsLocalResident(i int) bool {
 // HeadDimAtResident / KVHeadsAtResident / RotaryDimAtResident expose layer i's attention
 // geometry to a resident runner that plumbs per-layer widths (9a-P2). They delegate to the
 // SAME arch methods the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer), so the runner's
-// interleave can never drift from runLayersGemma4's — Gemma 4's global layers report the
+// interleave can never drift from the Gemma 4 program walk's — Gemma 4's global layers report the
 // wider head_dim / fewer KV heads / partial rotary; every uniform family collapses to the
 // model-level Architecture fields.
 func (m *Model) HeadDimAtResident(i int) int { return m.w.arch.headDimAt(i) }
@@ -1085,62 +1153,49 @@ func (m *Model) NormEps() float32 {
 // softcap·tanh(logits/softcap) host-side after readback, mirroring logitsFromHidden.
 func (m *Model) FinalLogitSoftcapResident() float32 { return float32(m.w.arch.FinalLogitSoftcap) }
 
+// AttnLogitSoftcapResident is the attention-score softcap (FeatAttnLogitSoftcap), 0 when the model has none. A
+// resident backend that declares the feature computes cap·tanh(score/cap) on each scaled score before the mask and the
+// softmax, as softcapScore does, in every attention kernel a capped layer can take.
+func (m *Model) AttnLogitSoftcapResident() float32 { return float32(m.w.arch.AttnLogitSoftcap) }
+
 // withResidency builds the GPU resident decoder if the backend supports it and
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
+// attnSoftcapOffForTest removes the attention-score softcap from every model loaded while it is set, on the CPU and on
+// a resident alike, before the resident is built: OP1's real Gemma 2 gate measures its own baseline with it
+// (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-R's arm B). Set only through SetAttnSoftcapOffForTest
+// (goinfer_testhooks).
+var attnSoftcapOffForTest atomic.Bool
+
 func (m *Model) withResidency() *Model {
+	if attnSoftcapOffForTest.Load() {
+		m.w.arch.AttnLogitSoftcap = 0
+		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program
+	}
+	if m.planResidency {
+		return m // FitQuery's open: plannedDecodePath asks the backend instead
+	}
 	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
 		return m // force the per-matmul staged path (decision-matrix measurement)
 	}
-	rb, ok := m.be.(ResidencyBackend)
-	if !ok {
-		// Either the CPU backend (expected), or a GPU backend name that resolved to the CPU
-		// fallback because the module wasn't built in (`--backend cuda` without `-tags cuda`):
-		// NewBackend returns a cpuBackend + a note there, so the request is already lost by here.
-		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
-		return m
-	}
-	if m.quant == "q4k" && m.be.Name() != "cuda" && m.be.Name() != "metal" {
-		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal has the q4k lane
-		// (f32 activations over Q4_K and int8 weights, docs/tasks/task-metal-q4k-2026-10.md); WebGPU has no Q4_K kernel yet.
-		m.resDecline = "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
-		return m
-	}
-	if why := autoMetalPrecision(m.backendAuto, m.be.Name(), m.Quant()); why != "" {
-		m.resDecline = why
-		return m
-	}
-	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
-		// Nemotron 3 Nano / 3.5 Lightning's fourth block kind (MoE FFN) has no GPU resident implementation on cuda/metal.
-		// decodeRunnerEligible already declines it, but as a bare bool, so the generic "arch is not eligible" message
-		// would hide WHY; check here, ahead of the generic call, so DecodePath/`serve check` name the gap. webgpu is
-		// excluded: it implements the block (nemoKMoE) and decodeRunnerDecline admits it
-		// (docs/tasks/task-gpu-paths-2026-09.md, G7).
-		m.resDecline = "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
-		return m
-	}
-	if why := m.residentAdmission(); why != "" {
+	rb, why := m.residencyGate()
+	if why != "" {
 		m.resDecline = why
 		return m
 	}
 	rf, ok, err := rb.BuildResident(m)
+	if errors.Is(err, ErrLoadAborted) {
+		// The swap tripwire stopped the build: not a decline (which would continue on the CPU and keep loading), but the load's error.
+		m.loadAbortErr = err
+		return m
+	}
 	if err != nil || !ok {
 		// Unconditional, for the same reason as the cuda side: a decline moves the entire forward to
 		// CPU, and the runtime's contract is to say so rather than quietly get slower.
 		fmt.Fprintf(os.Stderr, "[resident] BuildResident declined (ok=%v err=%v) — continuing on the CPU/staged path\n", ok, err)
 		// Falls back for correctness (a decline must never be fatal mid-load) but keeps the REASON: on a GPU backend this
-		// is the whole forward moving to CPU. A decline carries its reason as a *ResidentDeclineError; any other non-nil
-		// err is a driver or device failure (`--backend cuda` on a box with no usable GPU lands here: the cuda factory
-		// always succeeds and the device is only touched at build time).
-		var d *ResidentDeclineError
-		switch {
-		case errors.As(err, &d):
-			m.resDecline = d.Reason // the backend's own reason, kept for DecodePath / `serve check`
-		case err != nil:
-			m.resDecline = "backend failed to build a resident path: " + err.Error()
-		default:
-			m.resDecline = "backend declined to build a resident path (no reason given)"
-		}
+		// is the whole forward moving to CPU.
+		m.resDecline = buildDeclineReason(err)
 		return m
 	}
 	if why := autoMetalKeepsPrecision(m.backendAuto, m.be.Name(), m.Quant(), rf); why != "" {
@@ -1164,6 +1219,105 @@ func (m *Model) withResidency() *Model {
 	// model's whole point is that the host copy is no longer needed.
 	releaseHostMemory()
 	return m
+}
+
+// withResidencyOrAbort is withResidency for Load: a resident build that the swap tripwire aborted (Options.LoadAbort closed during it)
+// closes the model and returns the build's error, which wraps ErrLoadAborted, instead of continuing on the CPU path.
+func (m *Model) withResidencyOrAbort() (*Model, error) {
+	m = m.withResidency()
+	if err := m.loadAbortErr; err != nil {
+		_ = m.Close()
+		return nil, err
+	}
+	if err := m.kvDeliveredOrRefuse(); err != nil {
+		_ = m.Close()
+		return nil, err
+	}
+	return m, nil
+}
+
+// LoadAbort is Options.LoadAbort as the load that built this model passed it: a backend's resident build polls it between layers and
+// between upload blocks and returns an error wrapping ErrLoadAborted once it is closed. Nil (never fires) when the load was not guarded.
+// It is meaningful during BuildResident only; nothing reads it after Load returns.
+func (m *Model) LoadAbort() <-chan struct{} { return m.loadAbort }
+
+// residencyGate is withResidency's checks before it asks the backend to build: the backend's residency, the quant's resident
+// kernels, -backend auto's precision rule and admission. why is the decline they record, "" with the backend to build on.
+func (m *Model) residencyGate() (rb ResidencyBackend, why string) {
+	rb, ok := m.be.(ResidencyBackend)
+	if !ok {
+		// Either the CPU backend (expected), or a GPU backend name that resolved to the CPU
+		// fallback because the module wasn't built in (`--backend cuda` without `-tags cuda`):
+		// NewBackend returns a cpuBackend + a note there, so the request is already lost by here.
+		return nil, "backend does not implement residency (not built in, or the CPU backend)"
+	}
+	if m.quant == "q4k" && m.be.Name() != "cuda" && m.be.Name() != "metal" {
+		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal has the q4k lane
+		// (f32 activations over Q4_K and int8 weights, docs/tasks/task-metal-q4k-2026-10.md); WebGPU has no Q4_K kernel yet.
+		return nil, "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
+	}
+	if why := autoMetalPrecision(m.backendAuto, m.be.Name(), m.Quant()); why != "" {
+		return nil, why
+	}
+	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
+		// Nemotron 3 Nano / 3.5 Lightning's fourth block kind (MoE FFN) has no GPU resident implementation on cuda/metal.
+		// decodeRunnerEligible already declines it, but as a bare bool, so the generic "arch is not eligible" message
+		// would hide WHY; check here, ahead of the generic call, so DecodePath/`serve check` name the gap. webgpu is
+		// excluded: it implements the block (nemoKMoE) and decodeRunnerDecline admits it
+		// (docs/tasks/task-gpu-paths-2026-09.md, G7).
+		return nil, "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
+	}
+	if why := m.residentAdmission(); why != "" {
+		return nil, why
+	}
+	return rb, ""
+}
+
+// buildDeclineReason is the ResidentDecline a failed or declined BuildResident leaves: a decline's own reason, or the failure
+// (a driver or device error: `--backend cuda` on a box with no usable GPU lands here, since the device is touched only at
+// build time).
+func buildDeclineReason(err error) string {
+	var d *ResidentDeclineError
+	switch {
+	case errors.As(err, &d):
+		return d.Reason
+	case err != nil:
+		return "backend failed to build a resident path: " + err.Error()
+	}
+	return "backend declined to build a resident path (no reason given)"
+}
+
+// plannedDecodePath is the decode path a load of m would report, decided by the checks withResidency and the backend's
+// BuildResident make before the build allocates (ResidencyPricer), on a model opened with Options.planResidency. "" with the
+// reason when only the build can tell. A decline found inside the build itself, or by the startup self-test after it, is not
+// foreseen.
+func (m *Model) plannedDecodePath() (path, unknown string, ctx int) {
+	if m.knobs.get(knobNoResidency) != "" {
+		return m.DecodePath(), "", 0
+	}
+	rb, why := m.residencyGate()
+	if why == "" {
+		p, ok := rb.(ResidencyPricer)
+		if !ok {
+			return "", m.be.Name() + " decides its residency only by building it", 0
+		}
+		price, err := p.PriceResident(m)
+		if err == nil {
+			if price.Unknown != "" {
+				return "", price.Unknown, price.Ctx
+			}
+			label := price.Quant
+			if label == "" {
+				label = residentQuantLabel(m.be.Name(), m.Quant())
+			}
+			return fmt.Sprintf("%s-resident (%s)", m.be.Name(), label), "", price.Ctx
+		}
+		why = buildDeclineReason(err)
+	}
+	saved := m.resDecline
+	m.resDecline = why
+	defer func() { m.resDecline = saved }()
+	return m.DecodePath(), "", 0
 }
 
 // releaseHostMemory returns freed heap to the OS. A variable so a test can observe that a successful resident
@@ -1226,6 +1380,17 @@ func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBi
 	return w.inProj, w.convW, w.convB, w.aLog, w.d, w.dtBias, w.normW, w.outProj
 }
 
+// MambaProjInt8 returns layer i's Mamba in_proj and out_proj as per-row int8 weight matrices when the load holds them so
+// (a quantized Nemotron-H load), nil otherwise; GraniteMambaWeights then returns nil for those two. They are
+// linalg.QuantizeRowsInt8 of the f32 weights, the codes a backend would make from GraniteMambaWeights itself.
+func (m *Model) MambaProjInt8(i int) (in, out *linalg.WeightMat) {
+	w := m.w.Layers[i].mamba
+	if w == nil || w.inQ.Rows() == 0 {
+		return nil, nil
+	}
+	return &w.inQ, &w.outQ
+}
+
 // ResidentActive reports whether the GPU full-residency decode path is built and
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
 func (m *Model) ResidentActive() bool { return m.resident != nil }
@@ -1273,21 +1438,11 @@ func (m *Model) ResidentContextKVBytes(ctx int) int64 {
 // Metal resident model runs f16 KV even when nothing asked for it (docs/tasks/task-memory-accounting-2026-09.md
 // found serve's banner printing "KV f32" there).
 func (m *Model) ResidentKVPrecision() string {
-	if m.resident == nil || m.be == nil {
+	if m.resident == nil || m.be == nil || m.w == nil {
 		return ""
 	}
-	switch {
-	case m.be.Name() == "cuda":
-		if m.kvF16 {
-			return "f16" // kv16_cuda.go: a cleared family's cache, or one asked for by name
-		}
-		return "f32" // everything else on CUDA, whatever --kv asks (ResidentKVBytes' "cuda" branch)
-	case m.kvPrecI8:
-		return "i8"
-	case m.be.Name() == "metal", m.kvF16:
-		return "f16"
-	}
-	return "f32"
+	got, _ := ResolveKV(m.be.Name(), m.w.arch, m.kvOpts)
+	return got
 }
 
 // HeadTable is the precision of the token-embedding / LM-head table this model loaded with: "int4" (--embed-int4), "int8" (the pin), "f32" or "q4k"; "" when the CPU copy is not held.
@@ -1594,8 +1749,10 @@ func (m *Model) LogitScaleResident() (inv float32, ok bool) {
 	return float32(1 / m.w.arch.LogitScale), true
 }
 
-// GatedActResident returns the gated-MLP activation as its ActKind ordinal, for backends that
-// pass it straight to a kernel (0 = GELU-tanh, 1 = SiLU). Meaningless for non-gated archs.
+// GatedActResident returns the MLP activation as its ActKind ordinal, for backends that pass it straight to a kernel
+// that knows 0 (GELU-tanh) and 1 (SiLU). A gated model past admission returns only those two: residentFeatures gives
+// every other gated activation a feature no backend declares. For a non-gated arch it is the arch's ordinal unchecked,
+// and the backend's FeatNonGatedMLP declaration is what vouches for its kernel.
 func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }
 
 // GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident backend and whether this model
@@ -1647,7 +1804,7 @@ func (m *Model) GptOssExpertBiasResident(l int) []float32 {
 // GptOssExpertDownBiasResident returns layer l's per-expert down-projection bias table,
 // expert-major (biasRow = idx[slot]*hidden), matching gemv_w4a8_moe_wacc_bias's addressing —
 // the down-combine kernel adds this INSIDE the expert before the router weight scales the
-// result (decoder/forward_gptoss.go's gptOssExpert: dst = Down·h + downBias; gptOssMoE then
+// result (decoder/forward_gptoss.go's gptOssExpertWith: dst = Down·h + downBias; gptOssMoE then
 // combines out += w·dst), unlike GPT-2's plain post-hoc += bias[row]. nil for every family
 // without per-expert down biases.
 func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
@@ -1667,7 +1824,7 @@ func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
 }
 
 // Qwen3.5/3.6-MoE / Qwen3-Next / Qwen3.8 resident bridge (Gated-DeltaNet hybrid). The family's
-// forward is its own (runLayersQwen35) because two things in it are not the uniform-layer shape:
+// forward has its own operations (opDeltaNet, opGatedAttn) because two things in it are not the uniform-layer shape:
 // most layers replace softmax attention with a recurrent delta rule, and the full-attention layers
 // carry a per-head output gate fused into a double-width q_proj. These accessors expose both to a
 // backend without exporting the family's internals.
@@ -1691,6 +1848,46 @@ func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, nu
 
 // Qwen35LinearLayer reports whether layer i is a Gated-DeltaNet mixer (vs gated softmax attention).
 func (m *Model) Qwen35LinearLayer(i int) bool { return m.w.arch.isLinearLayer(i) }
+
+// ResidentMixer is the sequence-mixing operation of one layer in a resident's layer walk.
+type ResidentMixer uint8
+
+const (
+	MixerAttention ResidentMixer = iota // softmax attention over a KV cache
+	MixerDeltaNet                       // the Gated-DeltaNet recurrence (Qwen3.5/3.6, Qwen3-Next, Olmo Hybrid)
+	MixerMamba                          // the Mamba-2 recurrence (Nemotron-H, Granite-4.0-H)
+	MixerNone                           // no mixer: a feed-forward-only block (Nemotron-H's MLP and MoE blocks)
+	MixerMLA                            // multi-head latent attention over a latent cache (DeepSeek-V2/V3, Kimi K2)
+)
+
+// Recurrent reports whether the mixer keeps per-sequence recurrent state instead of a KV cache.
+func (x ResidentMixer) Recurrent() bool { return x == MixerDeltaNet || x == MixerMamba }
+
+// ResidentLayerOps is layer i's operations in a resident's layer walk: its mixer, then a feed-forward block when ffn is true.
+// It is the smallest form of the operation-list layer program (docs/tasks/task-forward-architecture-2026-10.md §4.1): a
+// backend builds and encodes each layer from these two facts, so a hybrid of existing kinds needs no family branch.
+// Most families give every layer (MixerAttention, true); Nemotron-H's blocks carry one operation each.
+func (m *Model) ResidentLayerOps(i int) (mixer ResidentMixer, ffn bool) {
+	a := m.w.arch
+	switch {
+	case a.nemotron != nil:
+		switch a.nemotron.blockKind[i] {
+		case nemoMamba:
+			return MixerMamba, false
+		case nemoAttn:
+			return MixerAttention, false
+		default: // nemoMLP, nemoMoE
+			return MixerNone, true
+		}
+	case a.qwen35 != nil && a.isLinearLayer(i):
+		return MixerDeltaNet, true
+	case a.granite != nil && a.isMambaLayer(i):
+		return MixerMamba, true
+	case a.mla != nil:
+		return MixerMLA, true
+	}
+	return MixerAttention, true
+}
 
 // Qwen35DeltaWeights returns layer i's DeltaNet parameters. The three dominant projections come
 // back as *linalg.WeightMat because they carry the model's quant (int4/int8/f32) — a backend

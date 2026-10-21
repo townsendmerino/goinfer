@@ -1,0 +1,67 @@
+{
+ "rule": "largest ctx <= 49152 (steps of 4096) leaving >= 512 MiB free after the first Claude Code request",
+ "min_free_mib": 512,
+ "chosen": 32768,
+ "results": [
+  {
+   "ctx": 49152,
+   "server_up": true,
+   "resident": false,
+   "free_before_mib": 7386,
+   "banner": [
+    "context: 262144 tokens (model maximum) \u00b7 KV f32 \u2014 the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this mo",
+    "fit: 49152-token cap needs 3.0 GB KV (weights 4.7 GB, budget 39.0 GB, 36.0 GB left for a request's own prefill)"
+   ],
+   "passes": false
+  },
+  {
+   "ctx": 45056,
+   "server_up": true,
+   "resident": false,
+   "free_before_mib": 7386,
+   "banner": [
+    "context: 262144 tokens (model maximum) \u00b7 KV f32 \u2014 the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this mo",
+    "fit: 45056-token cap needs 2.8 GB KV (weights 4.7 GB, budget 38.9 GB, 36.2 GB left for a request's own prefill)"
+   ],
+   "passes": false
+  },
+  {
+   "ctx": 40960,
+   "server_up": true,
+   "resident": false,
+   "free_before_mib": 7386,
+   "banner": [
+    "context: 262144 tokens (model maximum) \u00b7 KV f32 \u2014 the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident load caps it with --ctx, but this mo",
+    "fit: 40960-token cap needs 2.5 GB KV (weights 4.7 GB, budget 39.0 GB, 36.5 GB left for a request's own prefill)"
+   ],
+   "passes": false
+  },
+  {
+   "ctx": 36864,
+   "server_up": true,
+   "resident": true,
+   "free_before_mib": 7386,
+   "free_after_load_mib": 389,
+   "banner": [
+    "context: 36864 tokens (--ctx; model maximum 262144) \u00b7 KV f32",
+    "fit: 36864-token cap needs 2.2 GB KV (weights 4.7 GB, budget 38.9 GB, 36.6 GB left for a request's own prefill)"
+   ],
+   "passes": false
+  },
+  {
+   "ctx": 32768,
+   "server_up": true,
+   "resident": true,
+   "free_before_mib": 7386,
+   "free_after_load_mib": 647,
+   "first_request_s": 120.4,
+   "prompt_tokens": 17960,
+   "free_after_first_request_mib": 647,
+   "banner": [
+    "context: 32768 tokens (--ctx; model maximum 262144) \u00b7 KV f32",
+    "fit: 32768-token cap needs 2.0 GB KV (weights 4.7 GB, budget 38.9 GB, 36.9 GB left for a request's own prefill)"
+   ],
+   "passes": true
+  }
+ ]
+}

@@ -144,6 +144,11 @@ func causalAttention(
 		}
 	}
 
+	if kvRoundF16ForTest { // F1's reference: the f32 path with each stored row rounded to f16 by hand
+		roundF16InPlace(k)
+		roundF16InPlace(v)
+	}
+
 	// 4. Append this position's K/V, then attend over the stored history through the same attendBatchedHeads kernel (at K=1) that the
 	// batched prefill/verify (forwardN) uses, with f64 accumulation (acc64), so decode is bit-identical to the batched forward for
 	// dense and MoE alike. Same-model speculative decoding requires it: the target's batched verify must reproduce sequential greedy
@@ -153,7 +158,7 @@ func causalAttention(
 	ctx := cache.scr.ctx[:nH*hd]
 	acc64 := true
 	switch {
-	case cache.rings[layer] != nil && ringDirectDecode && cache.rings[layer].quant != kvI8:
+	case cache.rings[layer] != nil && ringDirectDecode && cache.rings[layer].quant == kvqF32:
 		// Local ring layer, f32 (ringDirectDecode): store this token's K/V first, then read the window [base, pos] in place as one
 		// contiguous slice. The write before the read is safe because the slot it takes holds position pos-W, the one row just outside
 		// the window [pos-W+1, pos] (or is empty before the first wrap). The copy path below moves every resident row into scratch each
@@ -180,9 +185,9 @@ func causalAttention(
 		if !cache.manualPos && layer == cache.numLayers-1 {
 			cache.pos++ // commitBatch doesn't step pos; mirror Append's last-layer advance
 		}
-	case cache.quant == kvI8:
-		// int8-KV global: Append quantizes the new K/V into the layer, then dequant the
-		// full history into f32 scratch for the matmul (mirrors forwardN's int8 branch).
+	case cache.quant.widened():
+		// int8- or f16-KV global: Append narrows the new K/V into the layer, then the full history is widened into f32 scratch for
+		// the matmul (mirrors forwardN's branch).
 		cache.Append(layer, k, v)
 		lk, lv := scr.localBufs(cache.storedRows(layer, kvDim) * kvDim)
 		nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)
@@ -233,6 +238,11 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		attendQueryI8(q, ctx, scores, cache, layer, pos, global, arch)
 		return
 	}
+	attendQueryP(arch.attnParamsQueryFor(cache, layer, global), q, ctx, scores, cache, layer, pos, arch)
+}
+
+// attendQueryP is attendQuery over an f32 cache with the window, chunk, scale and softcap given: the program walker's form.
+func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, layer, pos int, arch *Architecture) {
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
 	keys, vals := cache.Keys(layer), cache.Vals(layer)
@@ -250,9 +260,9 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		}
 		return s * kvDim
 	}
-	start := max(cache.WindowStart(pos, global), arch.attnChunkStart(layer, pos))
-	scale := arch.AttnScale // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
-	group := nH / nKV       // GQA: query heads per KV head
+	start := p.start(pos)
+	scale := p.Scale  // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
+	group := nH / nKV // GQA: query heads per KV head
 
 	clear(ctx) // accumulated into below
 	for qh := range nH {
@@ -266,7 +276,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 			for d := range hd {
 				dot += float64(qHead[d]) * float64(kHead[d])
 			}
-			sc := softcapScore(dot*scale, arch.AttnLogitSoftcap)
+			sc := softcapScore(dot*scale, p.Softcap)
 			scores[s] = float32(sc)
 			if sc > maxS {
 				maxS = sc
@@ -449,5 +459,33 @@ func softcapScore(s, c float64) float64 {
 	if c == 0 {
 		return s
 	}
+	if st := attnScoreStatsForTest.Load(); st != nil {
+		st.observe(s)
+	}
 	return c * math.Tanh(s/c)
+}
+
+// attnScoreStatsForTest, when set, counts the scores softcapScore caps: how many, how many past |15|, and the largest
+// |score|, before the cap. OP1's real Gemma 2 gate reads it (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-R's
+// planted arm). Set only through StartAttnScoreStatsForTest (goinfer_testhooks); nil costs one atomic load per capped
+// score and nothing for a model without a cap.
+var attnScoreStatsForTest atomic.Pointer[attnScoreStats]
+
+type attnScoreStats struct {
+	n, over15  atomic.Int64
+	maxAbsBits atomic.Uint64
+}
+
+func (st *attnScoreStats) observe(s float64) {
+	st.n.Add(1)
+	a := math.Abs(s)
+	if a > 15 {
+		st.over15.Add(1)
+	}
+	for {
+		old := st.maxAbsBits.Load()
+		if a <= math.Float64frombits(old) || st.maxAbsBits.CompareAndSwap(old, math.Float64bits(a)) {
+			return
+		}
+	}
 }

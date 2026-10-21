@@ -61,10 +61,14 @@ func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr
 // them per call. The single-token decode call sites always pass their cache's scr; the batched-prefill call site (forwardN) has
 // none in scope and passes nil, allocating per call, amortized over the K-token batch.
 func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
-	moe := arch.MoE
+	return moeMLPWith(h, lw, arch.MoE, arch.Act, arch.HiddenDim, be, scr, pager)
+}
+
+// moeMLPWith is moeMLP with the routing, activation and width given, not read from an Architecture: the program walker's form.
+func moeMLPWith(h []float32, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
 	nE, k := moe.NumExperts, moe.TopK
-	if arch.Act != ActSiLU {
-		return nil, fmt.Errorf("decoder: MoE expert activation %d unsupported (SwiGLU only)", arch.Act)
+	if act != ActSiLU {
+		return nil, fmt.Errorf("decoder: MoE expert activation %d unsupported (SwiGLU only)", act)
 	}
 
 	// Router logits → top-k experts + weights. softmax-topk (Mixtral/Qwen2-MoE) or
@@ -102,7 +106,6 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 
 	// Weighted sum of the chosen experts (each a SwiGLU MLP). Experts use the
 	// MoE expert width (Mellum's moe_intermediate_size), not the dense one.
-	hidden := arch.HiddenDim
 	// One gate/up pair for the whole token: the experts run sequentially, so k pairs are never simultaneously live.
 	sc := max(moe.SharedIntermediateDim, moe.IntermediateDim)
 	var out, expOut, egate, eup []float32
@@ -474,13 +477,17 @@ func topK(xs []float32, k int) ([]int, []float32) {
 //	mid = act(UpProj·h + UpBias)      // [IntermediateDim]
 //	out = DownProj·mid + DownBias     // [HiddenDim]
 func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]float32, error) {
-	inter, hidden := arch.IntermediateDim, arch.HiddenDim
+	return nonGatedMLPWith(h, lw, arch.Act, arch.IntermediateDim, arch.HiddenDim, be)
+}
+
+// nonGatedMLPWith is nonGatedMLP with the activation and widths given: the program walker's form.
+func nonGatedMLPWith(h []float32, lw *LayerWeights, act ActKind, inter, hidden int, be Backend) ([]float32, error) {
 	mid := make([]float32, inter)
 	matmul(be, &lw.UpProj, h, mid, 1)
 	if lw.UpBias != nil {
 		addBias(mid, lw.UpBias)
 	}
-	switch arch.Act {
+	switch act {
 	case ActGeluTanh: // GPT-2's "gelu_new" is the tanh approximation
 		for i := range mid {
 			mid[i] = geluTanh(mid[i])
@@ -489,8 +496,12 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 		for i := range mid {
 			mid[i] = geluErf(mid[i])
 		}
+	case ActReLU2: // Nemotron-H's mlp blocks
+		for i := range mid {
+			mid[i] = relu2(mid[i])
+		}
 	default:
-		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu)", arch.Act)
+		return nil, fmt.Errorf("decoder: unsupported non-gated activation %d (have gelu-tanh, gelu, relu²)", act)
 	}
 	out := make([]float32, hidden)
 	matmul(be, &lw.DownProj, mid, out, 1)
@@ -509,6 +520,11 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 //	mid  = act(gate) ⊙ up        // [IntermediateDim]
 //	out  = DownProj·mid          // [HiddenDim]
 func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
+	return gatedMLPAct(h, out, lw, arch.Act, be, scr, lora)
+}
+
+// gatedMLPAct is gatedMLP with the activation given: the program walker's form.
+func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
 	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
 	fusedAct := false            // set when the fused path already applied the activation
 	if cpuFusedGateUp && lora == nil {
@@ -516,7 +532,7 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		if decodeTiming {
 			dt0 = time.Now()
 		}
-		if gatedMLPFusedGateUp(h, lw, arch, scr) {
+		if gatedMLPFusedGateUpAct(h, lw, act, scr) {
 			fusedAct = true
 			if decodeTiming {
 				atomic.AddInt64(&dtGU, int64(time.Since(dt0)))
@@ -561,7 +577,7 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		applyLoRA(lora.gate, h, gate, scr)
 		applyLoRA(lora.up, h, up, scr)
 	}
-	switch arch.Act {
+	switch act {
 	case ActGeluTanh:
 		if len(gate) < activationFanoutThreshold {
 			geglu(gate, up)
@@ -587,7 +603,7 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 			})
 		}
 	default:
-		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU/exact-GELU-GLU)", arch.Act)
+		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU/exact-GELU-GLU)", act)
 	}
 	if decodeTiming {
 		atomic.AddInt64(&dtAct, int64(time.Since(dt1)))
@@ -628,11 +644,15 @@ var moeExpertMajorRuns int64
 //   - a live pager: touch order is the demand signal that drives eviction, so reordering it changes which experts are resident.
 //     Expert-major is likely better for paging, but different is not better until measured.
 func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager, dst []float32) (bool, error) {
-	moe := arch.MoE
+	return moeMLPBatchWith(rows, n, lw, arch.MoE, arch.Act, arch.HiddenDim, be, pager, dst)
+}
+
+// moeMLPBatchWith is moeMLPBatch with the routing, activation and width given: the program walker's form.
+func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, pager *expertPager, dst []float32) (bool, error) {
 	if moe == nil || len(lw.Experts) == 0 || moeSelOverride != nil || moeSelTrace != nil || pager != nil {
 		return false, nil
 	}
-	if arch.Act != ActSiLU {
+	if act != ActSiLU {
 		return false, nil
 	}
 	// The shared expert is added after the routed fold in moeMLP. Refuse up front so a fall-back costs nothing: a partial
@@ -640,7 +660,7 @@ func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be
 	if moe.SharedIntermediateDim > 0 {
 		return false, nil
 	}
-	hidden, nE, k := arch.HiddenDim, moe.NumExperts, moe.TopK
+	nE, k := moe.NumExperts, moe.TopK
 	inter := moe.IntermediateDim
 
 	// Router for the whole chunk in one matmul (M=n), instead of a matmul and an nE-sized allocation per row.

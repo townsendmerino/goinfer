@@ -26,8 +26,8 @@ const metalKVPad = 8
 
 // ResidentKVBytes is the KV cache a resident build on backend allocates for ctx positions. On "metal"
 // it is exact to the allocation: f16 (int8 with per-head f32 scales when the model was loaded with an
-// int8 KV cache), the full padded context on every attention layer, nothing for a Gated-DeltaNet
-// linear layer. On "cuda" it is exact to the resident's K/V buffers (cuda/resident.go's kvBytesForCap:
+// int8 KV cache), the full padded context on every attention layer, nothing for a layer whose mixer is not
+// attention (ResidentLayerOps: DeltaNet, Mamba, or none). On "cuda" it is exact to the resident's K/V buffers (cuda/resident.go's kvBytesForCap:
 // f32 always, the full context on every attention layer, one latent buffer on an MLA layer, none on a
 // layer with no attention KV) — before the driver's per-buffer 2 MiB rounding, which the CUDA resident's
 // own fit check does not add either. On any other backend it is Plan's long-standing per-position formula
@@ -45,11 +45,16 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 	padded := int64((ctx + metalKVPad - 1) / metalKVPad * metalKVPad)
 	i8 := m.KVCacheI8()
 	_, nLayers, _, _, _, _, _ := m.Dims()
-	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
 	var total int64
 	for l := range nLayers {
-		if dnetOK && m.Qwen35LinearLayer(l) {
-			continue // no KV cache on a linear-attention layer (metal/model.go leaves r.kc[l]/r.vc[l] zero)
+		mixer, _ := m.ResidentLayerOps(l)
+		if mixer == MixerMLA { // the latent rows, f32 (metal/mla.go)
+			_, kvLoRA, _, qkRope, _, _, _, _, _ := m.MLAResidentParams()
+			total += padded * int64(kvLoRA+qkRope) * 4
+			continue
+		}
+		if mixer != MixerAttention {
+			continue // no KV cache on a recurrent or mixer-less layer (metal/model.go leaves r.kc[l]/r.vc[l] zero)
 		}
 		if m.KVSrcAtResident(l) != l {
 			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (metal/model.go)

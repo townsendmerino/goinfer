@@ -46,13 +46,15 @@ func anthropicStreamErr(ss *sseWriter, msg string) {
 // buffered fully (tools.go decides from the whole output) and emitted as one
 // input_json_delta — Claude Code accepts the single chunk, as it does for
 // llama.cpp.
-func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool, tm *chat.Template, turns []chat.Turn, ts thinkSettings, wantThinking bool) {
+func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool, tm *chat.Template, turns []chat.Turn, ts thinkSettings, wantThinking bool, mint *carriedMint) {
 	ss, ok := anthropicSSEStart(w)
 	if !ok {
 		return
 	}
 	id := "msg_" + reqID()
 	gr.id = id // registers this generation for cancel-by-id
+	// message_start goes out before the prefill decides the reuse, so its input_tokens is the whole prompt and it carries no
+	// cache_read_input_tokens; message_delta's usage, a whole-message total that replaces it, has the split (anthropicUsage).
 	anthropicEvent(ss, "message_start", map[string]any{
 		"type": "message_start",
 		"message": map[string]any{
@@ -65,7 +67,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 
 	// Thinking (think.go): reasoning becomes a `thinking` block at index 0 when the request asked for one, and is dropped
 	// otherwise — an Anthropic client that never asked for thinking must see only text. Everything after it shifts by one.
-	th := &anthropicThink{ss: ss, want: wantThinking}
+	th := &anthropicThink{ss: ss, want: wantThinking, mint: mint}
 	s.routeThink(lm, &gr, tm, turns, ts, th.push)
 
 	if toolsActive {
@@ -74,9 +76,9 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	}
 
 	if wantThinking {
-		streamMessagesThinking(ss, th, func(onText func(string)) (string, int, string, string, error) {
-			finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, onText)
-			return finish, nComp, stopSeq, cancelReason, gerr
+		streamMessagesThinking(ss, th, gr, func(onText func(string)) (string, int, string, int, string, error) {
+			finish, nComp, _, stopSeq, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, onText)
+			return finish, nComp, stopSeq, reused, cancelReason, gerr
 		})
 		return
 	}
@@ -89,7 +91,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	// The ping above is a one-shot liveness check, not a keep-alive: nothing else is sent until the first token, and
 	// on CPU that is after the whole prefill, so a heartbeat keeps a client's idle timeout from firing.
 	stopBeat := sseHeartbeat(ss)
-	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+	finish, nComp, _, stopSeq, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
 			"delta": map[string]any{"type": "text_delta", "text": t},
@@ -103,7 +105,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	}
 	anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
+	anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 }
 
 // streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block while the model
@@ -113,6 +115,9 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 	ts := &anthropicTextStream{ss: ss, think: th}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, ts.push)
 	th.close() // a turn that went straight from thinking to a tool call never pushed prose, which is what closes it
+	if !ts.open {
+		th.carrierOnly()
+	}
 	if gerr != nil && !errors.Is(gerr, errProseDiverged) {
 		anthropicStreamErr(ss, "generation failed: "+gerr.Error())
 		return
@@ -126,14 +131,14 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		// so the stream stays well-formed.
 		ts.close()
 		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
-		anthropicMessageEnd(ss, reason, seq, t.nComp, t.cancelReason)
+		anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), t.cancelReason, nil, false)
 		return
 	}
 
 	if len(t.calls) == 0 { // model declined to call: one text block with the output
 		ts.finish(t.rest, true)
 		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
-		anthropicMessageEnd(ss, reason, seq, t.nComp, "")
+		anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", emptyAnswerOf(gr, t.finish, t.stopSeq, 0, t.nComp), false)
 		return
 	}
 
@@ -155,7 +160,7 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": idx})
 		idx++
 	}
-	anthropicMessageEnd(ss, "tool_use", nil, t.nComp, "")
+	anthropicMessageEnd(ss, "tool_use", nil, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", nil, t.fromReasoning)
 }
 
 // anthropicTextStream is the prose half of a streamed tool turn: text content block 0, opened lazily. Whitespace-only
@@ -223,12 +228,16 @@ func (a *anthropicTextStream) close() {
 // anthropicThink is the thinking half of a streamed turn: a `thinking` content block at index 0, opened lazily when
 // the first reasoning arrives and closed — with its signature_delta, which a client expects before content_block_stop —
 // when the answer (or the end of the turn) begins. With want false (the request did not ask for thinking) reasoning is
-// discarded and no block is ever emitted. A nil *anthropicThink is a turn with no thinking.
+// discarded and no block is ever emitted. A nil *anthropicThink is a turn with no thinking. The signature is mint's blob for the
+// block's text (carried_ids_mint.go): the whole turn's ids when the block closes after the generation, else the ids up to the
+// end of the reasoning.
 type anthropicThink struct {
 	ss   *sseWriter
 	want bool
 	open bool
 	used bool
+	mint *carriedMint
+	text strings.Builder
 }
 
 func (t *anthropicThink) push(text string) {
@@ -242,6 +251,7 @@ func (t *anthropicThink) push(text string) {
 		})
 		t.open, t.used = true, true
 	}
+	t.text.WriteString(text)
 	anthropicEvent(t.ss, "content_block_delta", map[string]any{
 		"type": "content_block_delta", "index": 0,
 		"delta": map[string]any{"type": "thinking_delta", "thinking": text},
@@ -254,10 +264,25 @@ func (t *anthropicThink) close() {
 	}
 	anthropicEvent(t.ss, "content_block_delta", map[string]any{
 		"type": "content_block_delta", "index": 0,
-		"delta": map[string]any{"type": "signature_delta", "signature": ""},
+		"delta": map[string]any{"type": "signature_delta", "signature": t.mint.blob(t.text.String())},
 	})
 	anthropicEvent(t.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 	t.open = false
+}
+
+// carrierOnly emits the carrier for a turn that asked for thinking and had none (redactedCarrierBlock) as block 0. Call it
+// only before any other block has opened; a turn whose prose already streamed carries no ids.
+func (t *anthropicThink) carrierOnly() {
+	if t == nil || !t.want || t.used {
+		return
+	}
+	cb := redactedCarrierBlock(t.mint)
+	if cb == nil {
+		return
+	}
+	anthropicEvent(t.ss, "content_block_start", map[string]any{"type": "content_block_start", "index": 0, "content_block": cb})
+	anthropicEvent(t.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+	t.used = true
 }
 
 // offset is the index the first non-thinking block takes: 1 once a thinking block has been emitted, else 0.
@@ -273,10 +298,10 @@ func (t *anthropicThink) offset() int {
 // thinking block — there is no answer to put in a text block.
 //
 // run is the generation (lm.drive or lm.driveVL), so the text and image routes share this one state machine.
-func streamMessagesThinking(ss *sseWriter, th *anthropicThink, run func(onText func(string)) (finish string, nComp int, stopSeq, cancelReason string, err error)) {
+func streamMessagesThinking(ss *sseWriter, th *anthropicThink, gr genRequest, run func(onText func(string)) (finish string, nComp int, stopSeq string, reused int, cancelReason string, err error)) {
 	text := &anthropicTextStream{ss: ss, think: th}
 	stopBeat := sseHeartbeat(ss)
-	finish, nComp, stopSeq, cancelReason, gerr := run(text.pushPlain)
+	finish, nComp, stopSeq, reused, cancelReason, gerr := run(text.pushPlain)
 	stopBeat()
 	th.close()
 	if gerr != nil {
@@ -289,7 +314,7 @@ func streamMessagesThinking(ss *sseWriter, th *anthropicThink, run func(onText f
 		streamTextBlock(ss, 0, "") // a turn that produced nothing is still one (empty) text block, as it always was
 	}
 	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
+	anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 }
 
 // pushPlain is push without the tool path's whitespace holding: the no-tools route streams every byte.
@@ -324,16 +349,24 @@ func streamTextBlock(ss *sseWriter, index int, text string) {
 	anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": index})
 }
 
-// anthropicMessageEnd writes the closing message_delta (stop reason and final output token count) and message_stop;
+// anthropicMessageEnd writes the closing message_delta (stop reason and the final usage, anthropicUsage's) and message_stop;
 // there is no [DONE] terminator. A non-empty cancelReason adds one more named event with the admin-cancel reason
 // before message_stop: the stop reason alone does not say why, and a client must not mistake this for a natural
-// end_turn.
-func anthropicMessageEnd(ss *sseWriter, reason string, seq any, nComp int, cancelReason string) {
-	anthropicEvent(ss, "message_delta", map[string]any{
+// end_turn. A non-nil empty (a turn with no answer) rides the message_delta as goinfer_empty_answer, and fromReasoning
+// as goinfer_tool_calls_from_reasoning.
+func anthropicMessageEnd(ss *sseWriter, reason string, seq any, usage map[string]any, cancelReason string, empty *emptyAnswer, fromReasoning bool) {
+	md := map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": reason, "stop_sequence": seq},
-		"usage": map[string]any{"output_tokens": nComp},
-	})
+		"usage": usage,
+	}
+	if empty != nil {
+		md["goinfer_empty_answer"] = empty
+	}
+	if fromReasoning {
+		md[fromReasoningField] = true
+	}
+	anthropicEvent(ss, "message_delta", md)
 	if cancelReason != "" {
 		anthropicEvent(ss, "goinfer_cancelled", map[string]any{"type": "goinfer_cancelled", "reason": cancelReason})
 	}

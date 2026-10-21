@@ -1,0 +1,107 @@
+=== RUN   TestIDStep0
+decoder: mellum2.1-thinking.int4.e4h.cuda.v16.giw is not in memory: reading its 6.9 GB once before the load
+swap guard (load): not armed for /home/francis/models/mellum2.1-thinking.int4.e4h.cuda.v16.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+[cuda] C′ cache: 64 slots/layer would need 6.3 GB VRAM but only 4.9 GB free — capping to 44 (4.4 GB)
+loaded "mellum2.1-thinking": 28-layer model (vocab 98304) in 20.36s [chat: mellum2, thinking: template default on, serving template]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  context: 16384 tokens (--ctx; model maximum 131072) · KV f32
+  fit: 16384-token cap needs 1.8 GB KV (weights 6.4 GB, budget 34.2 GB, 32.4 GB left for a request's own prefill)
+  KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"mellum2.1-thinking" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6090 completion_tokens=205 ttft=63237ms total=67098ms
+IDS 1/52 write-r2-041205#0: 67.1s wall, prompt 6090 (night 6108), cached 0, gen 205, lcp-P 205 of 205, elapsed 67s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6331 completion_tokens=137 ttft=2527ms total=5073ms
+IDS 2/52 write-r2-041205#1: 5.1s wall, prompt 6331 (night 6349), cached 6108, gen 137, lcp-P 137 of 137, elapsed 72s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6687 completion_tokens=205 ttft=3309ms total=7101ms
+IDS 3/52 write-r2-041205#2: 7.1s wall, prompt 6687 (night 6705), cached 6380, gen 205, lcp-P 205 of 205, elapsed 79s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7131 completion_tokens=236 ttft=4615ms total=8939ms
+IDS 4/52 write-r2-041205#3: 8.9s wall, prompt 7131 (night 7149), cached 6694, gen 236, lcp-P 236 of 236, elapsed 88s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7858 completion_tokens=825 ttft=7794ms total=23092ms
+IDS 5/52 write-r2-041205#4: 23.1s wall, prompt 7858 (night 7876), cached 7150, gen 825, lcp-P 606 of 825, elapsed 111s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=8548 completion_tokens=2547 ttft=7006ms total=54278ms
+IDS 6/52 write-r2-041205#5: 54.3s wall, prompt 8548 (night 8566), cached 7922, gen 2547, lcp-P 178 of 2547, elapsed 166s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=9893 completion_tokens=49 ttft=14074ms total=15253ms
+IDS 7/52 write-r2-041205#6: 15.3s wall, prompt 9893 (night 9911), cached 8557, gen 49, lcp-P 49 of 49, elapsed 181s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10041 completion_tokens=53 ttft=1793ms total=3030ms
+IDS 8/52 write-r2-041205#7: 3.0s wall, prompt 10041 (night 10059), cached 9895, gen 53, lcp-P 53 of 53, elapsed 184s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10317 completion_tokens=165 ttft=2907ms total=6261ms
+IDS 9/52 write-r2-041205#8: 6.3s wall, prompt 10317 (night 10335), cached 10058, gen 165, lcp-P 165 of 165, elapsed 190s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10632 completion_tokens=62 ttft=3349ms total=4757ms
+IDS 10/52 write-r2-041205#9: 4.8s wall, prompt 10632 (night 10650), cached 10324, gen 62, lcp-P 62 of 62, elapsed 195s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10812 completion_tokens=1305 ttft=2079ms total=27348ms
+IDS 11/52 write-r2-041205#10: 27.3s wall, prompt 10812 (night 10830), cached 10638, gen 1305, lcp-P 1305 of 1305, elapsed 223s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6091 completion_tokens=313 ttft=328ms total=5856ms
+IDS 12/52 fix-r3-052213#0: 5.9s wall, prompt 6091 (night 6109), cached 6072, gen 313, lcp-P 313 of 313, elapsed 228s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6375 completion_tokens=370 ttft=2986ms total=9537ms
+IDS 13/52 fix-r3-052213#1: 9.5s wall, prompt 6375 (night 6393), cached 6094, gen 370, lcp-P 215 of 370, elapsed 238s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7057 completion_tokens=164 ttft=7288ms total=10305ms
+IDS 14/52 fix-r3-052213#2: 10.3s wall, prompt 7057 (night 7075), cached 6378, gen 164, lcp-P 164 of 164, elapsed 248s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7454 completion_tokens=75 ttft=4052ms total=5650ms
+IDS 15/52 fix-r3-052213#3: 5.7s wall, prompt 7454 (night 7472), cached 7065, gen 75, lcp-P 75 of 75, elapsed 254s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7715 completion_tokens=982 ttft=2762ms total=20176ms
+IDS 16/52 fix-r3-052213#4: 20.2s wall, prompt 7715 (night 7733), cached 7461, gen 982, lcp-P 982 of 982, elapsed 274s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=8224 completion_tokens=296 ttft=4922ms total=10354ms
+IDS 17/52 fix-r3-052213#5: 10.4s wall, prompt 8224 (night 8242), cached 7736, gen 296, lcp-P 296 of 296, elapsed 285s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=8397 completion_tokens=495 ttft=1843ms total=10852ms
+IDS 18/52 fix-r3-052213#6: 10.9s wall, prompt 8397 (night 8415), cached 8242, gen 495, lcp-P 495 of 495, elapsed 296s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=8826 completion_tokens=423 ttft=4160ms total=12026ms
+IDS 19/52 fix-r3-052213#7: 12.0s wall, prompt 8826 (night 8844), cached 8421, gen 423, lcp-P 423 of 423, elapsed 308s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10158 completion_tokens=92 ttft=13859ms total=15846ms
+IDS 20/52 fix-r3-052213#8: 15.8s wall, prompt 10158 (night 10176), cached 8838, gen 92, lcp-P 92 of 92, elapsed 324s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10501 completion_tokens=2780 ttft=3621ms total=57525ms
+IDS 21/52 fix-r3-052213#9: 57.5s wall, prompt 10501 (night 10519), cached 10160, gen 2780, lcp-P 1439 of 2780, elapsed 381s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=11061 completion_tokens=99 ttft=6013ms total=8141ms
+IDS 22/52 fix-r3-052213#10: 8.1s wall, prompt 11061 (night 11079), cached 10507, gen 99, lcp-P 99 of 99, elapsed 389s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=11426 completion_tokens=112 ttft=3819ms total=6207ms
+IDS 23/52 fix-r3-052213#11: 6.2s wall, prompt 11426 (night 11444), cached 11064, gen 112, lcp-P 112 of 112, elapsed 396s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6090 completion_tokens=184 ttft=341ms total=3734ms
+IDS 24/52 write-r3-043705#0: 3.7s wall, prompt 6090 (night 6108), cached 6072, gen 184, lcp-P 184 of 184, elapsed 399s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6356 completion_tokens=84 ttft=2664ms total=4385ms
+IDS 25/52 write-r3-043705#1: 4.4s wall, prompt 6356 (night 6374), cached 6110, gen 84, lcp-P 84 of 84, elapsed 404s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7004 completion_tokens=212 ttft=6890ms total=10786ms
+IDS 26/52 write-r3-043705#2: 10.8s wall, prompt 7004 (night 7022), cached 6363, gen 212, lcp-P 212 of 212, elapsed 415s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7411 completion_tokens=124 ttft=4171ms total=6605ms
+IDS 27/52 write-r3-043705#3: 6.6s wall, prompt 7411 (night 7429), cached 7011, gen 124, lcp-P 124 of 124, elapsed 421s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7578 completion_tokens=104 ttft=1861ms total=3954ms
+IDS 28/52 write-r3-043705#4: 4.0s wall, prompt 7578 (night 7596), cached 7424, gen 104, lcp-P 104 of 104, elapsed 425s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7901 completion_tokens=150 ttft=3381ms total=6308ms
+IDS 29/52 write-r3-043705#5: 6.3s wall, prompt 7901 (night 7919), cached 7587, gen 150, lcp-P 150 of 150, elapsed 431s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=8409 completion_tokens=508 ttft=4896ms total=14343ms
+IDS 30/52 write-r3-043705#6: 14.3s wall, prompt 8409 (night 8427), cached 7928, gen 508, lcp-P 508 of 508, elapsed 446s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=9217 completion_tokens=58 ttft=8491ms total=9881ms
+IDS 31/52 write-r3-043705#7: 9.9s wall, prompt 9217 (night 9235), cached 8411, gen 58, lcp-P 58 of 58, elapsed 456s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=9417 completion_tokens=300 ttft=1750ms total=7651ms
+IDS 32/52 write-r3-043705#8: 7.7s wall, prompt 9417 (night 9435), cached 9275, gen 300, lcp-P 300 of 300, elapsed 463s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=9770 completion_tokens=128 ttft=3705ms total=6370ms
+IDS 33/52 write-r3-043705#9: 6.4s wall, prompt 9770 (night 9788), cached 9420, gen 128, lcp-P 128 of 128, elapsed 470s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10000 completion_tokens=359 ttft=2430ms total=9473ms
+IDS 34/52 write-r3-043705#10: 9.5s wall, prompt 10000 (night 10018), cached 9786, gen 359, lcp-P 359 of 359, elapsed 479s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10572 completion_tokens=52 ttft=6175ms total=7415ms
+IDS 35/52 write-r3-043705#11: 7.4s wall, prompt 10572 (night 10590), cached 10005, gen 52, lcp-P 52 of 52, elapsed 487s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=10765 completion_tokens=775 ttft=2195ms total=17145ms
+IDS 36/52 write-r3-043705#12: 17.1s wall, prompt 10765 (night 10783), cached 10577, gen 775, lcp-P 775 of 775, elapsed 504s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=11216 completion_tokens=57 ttft=4571ms total=6003ms
+IDS 37/52 write-r3-043705#13: 6.0s wall, prompt 11216 (night 11234), cached 10776, gen 57, lcp-P 57 of 57, elapsed 510s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=11426 completion_tokens=49 ttft=1864ms total=3146ms
+IDS 38/52 write-r3-043705#14: 3.1s wall, prompt 11426 (night 11444), cached 11273, gen 49, lcp-P 49 of 49, elapsed 513s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=11551 completion_tokens=393 ttft=1560ms total=9123ms
+IDS 39/52 write-r3-043705#15: 9.1s wall, prompt 11551 (night 11569), cached 11428, gen 393, lcp-P 393 of 393, elapsed 522s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6087 completion_tokens=310 ttft=280ms total=5786ms
+IDS 40/52 edit-r2-034630#0: 5.8s wall, prompt 6087 (night 6105), cached 6072, gen 310, lcp-P 310 of 310, elapsed 528s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=6738 completion_tokens=126 ttft=6592ms total=9049ms
+IDS 41/52 edit-r2-034630#1: 9.0s wall, prompt 6738 (night 6756), cached 6124, gen 126, lcp-P 126 of 126, elapsed 537s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7207 completion_tokens=117 ttft=4741ms total=7118ms
+IDS 42/52 edit-r2-034630#2: 7.1s wall, prompt 7207 (night 7225), cached 6743, gen 117, lcp-P 117 of 117, elapsed 544s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=7633 completion_tokens=129 ttft=4054ms total=6542ms
+IDS 43/52 edit-r2-034630#3: 6.5s wall, prompt 7633 (night 7651), cached 7244, gen 129, lcp-P 129 of 129, elapsed 551s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=8167 completion_tokens=233 ttft=5563ms total=9882ms
+IDS 44/52 edit-r2-034630#4: 9.9s wall, prompt 8167 (night 8185), cached 7639, gen 233, lcp-P 233 of 233, elapsed 561s
+request: POST /v1/responses model=mellum2.1-thinking status=200 prompt_tokens=11815 completion_tokens=791 ttft=38242ms total=53839ms
+IDS 45/52 edit-r2-034630#5: 53.8s wall, prompt 11815 (night 11833), cached 8170, gen 791, lcp-P 791 of 791, elapsed 615s
+IDS budget of 600 s reached after 45 of 52 jobs; stopping
+--- PASS: TestIDStep0 (640.03s)
+PASS

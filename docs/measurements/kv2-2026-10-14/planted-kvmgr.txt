@@ -1,0 +1,35 @@
+== planted: G4(b): the hit capped at n-1 only (CapHit returns the hit unchanged)
+   in internal/kvmgr/share.go: replaced
+   	cold := c.Pass(n, n)
+   with
+   	return hit; cold := c.Pass(n, n)
+--- FAIL: TestCapHit (0.00s)
+    share_test.go:33: CUDA: 15 rows left would be exact class; one block back leaves 79: CapHit(975, 960) = 960, want 896
+    share_test.go:33: CUDA: 8 rows left; one block back leaves 72: CapHit(520, 512) = 512, want 448
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/kvmgr	0.290s
+FAIL
+
+== planted: G4(e): PassAt ignores Windowed
+   in internal/kvmgr/key.go: replaced
+   	if cls == ClassFast && c.Windowed && start%BlockRows != 0 {
+   with
+   	if false && cls == ClassFast && c.Windowed && start%BlockRows != 0 {
+--- FAIL: TestHits_windowedUnalignedFastRows (0.00s)
+    share_test.go:320: Hits = [256 0], want 64: block 1 holds rows 100.. from a pass that started off a block boundary
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/kvmgr	0.291s
+FAIL
+
+== planted: G4(d), first try: an unclaimed image span no longer stops the request's chain
+   Run against TestHits_preambleAcrossSlots: it stayed GREEN. That test's stored sequence has no image, so the block
+   hashes differ whatever the rule; it could not see the defect. TestHits_unclaimedImageMatchesNothing was written for
+   it (both sides hold an unclaimed span at one place) and is the run below.
+
+== planted: G4(d): an unclaimed image span no longer stops the request's chain
+   in internal/kvmgr/share.go: `if unclaimed(images, i) || unknownClass(cold, i)` -> `if unknownClass(cold, i)`
+--- FAIL: TestHits_unclaimedImageMatchesNothing (0.00s)
+    share_test.go:334: Hits = [192 0], want 64: block 1 holds an image neither side names
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/kvmgr	0.302s
+FAIL

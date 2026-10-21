@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
+	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -65,7 +67,10 @@ type loadedModel struct {
 	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. It is attached once at load:
 	// the weight upload is a per-process cost, and paying it per request is a several-fold slowdown (docs/spec/08-dspark-dflash.md).
 	blockSpec *decoder.BlockSpec
-	sessions  *sessionLRU // prefix-keyed KV reuse across requests
+	// sampling is the checkpoint's recommended sampling (decoder.Config.Sampling), which prepare applies to the fields a
+	// request leaves out; nil when it carries none.
+	sampling *decoder.RecommendedSampling
+	sessions *sessionLRU // prefix-keyed KV reuse across requests
 	// head is the entry's trained decision head, nil for label scoring. The decider POST /v1/systemone answers with
 	// is built on first use, since its label tokens are resolved once per tokenizer.
 	head *decide.Head
@@ -87,6 +92,12 @@ type loadedModel struct {
 	// (vocab, tokenizer), so it is built once per model, not per constrained request.
 	tokenBytesOnce sync.Once
 	tokenBytes     [][]byte
+	// tokenBytesFrom, when set, is the base model whose table this adapter reads: an adapter has its base's tokenizer and
+	// vocabulary, so the table is the same bytes, held once.
+	tokenBytesFrom *loadedModel
+	// idsIdent is the model-and-tokenizer identity carried-id blobs name (idsIdentity), computed once.
+	idsIdentOnce sync.Once
+	idsIdent     string
 	// maxTokBytes is the byte length of the longest token in the vocab, computed once. It bounds tokenization cost: a
 	// servable prompt is at most ctx tokens, so its text is at most ctx*maxTokBytes bytes, and a longer input cannot
 	// fit and is rejected before the O(n) BPE runs.
@@ -164,11 +175,24 @@ type loadedModel struct {
 	// "" for the CPU; gemma4AudioAcc is that accelerator once built, nil if it declined (the CPU then, said once).
 	gemma4AudioDevice string
 	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
+
+	// scripted is a test seam: when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
+	// slice is the model's end of turn) instead of running model. Production never sets it.
+	scripted []int
+	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
+	onScripted func(promptIDs []int)
+	// scriptedRecurrent makes a scripted model one whose snapshots carry its recurrent state (recurrentKeep computes a Keep for it), and
+	// onScriptedScope receives the KV scope each scripted generation would hand the decoder. Test seams, as scripted.
+	scriptedRecurrent bool
+	onScriptedScope   func(decoder.KVScope)
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
 // constrained requests.
 func (lm *loadedModel) cachedTokenBytes() [][]byte {
+	if lm.tokenBytesFrom != nil {
+		return lm.tokenBytesFrom.cachedTokenBytes()
+	}
 	lm.tokenBytesOnce.Do(func() {
 		lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)
 	})
@@ -411,6 +435,13 @@ type server struct {
 	// Responses API (/v1/responses) state store for store/previous_response_id.
 	responses *responseStore
 
+	// idsKey signs the token ids a reply carries back (carried_ids.go): random per start, or --ids-key-file. nil turns the
+	// feature off (a server built without newServer). idsStats are the carried-id totals /admin/status reports.
+	idsKey   *idsKey
+	idsStats idsCounters
+	// tokenLog is --log-token-ids' file, nil when the flag is off.
+	tokenLog *tokenIDLog
+
 	// gens is the cancel-by-id registry (docs/tasks/task-halt-2026-09.md), shared by every generation surface. Never
 	// nil after newServer.
 	gens *generationRegistry
@@ -433,7 +464,7 @@ type server struct {
 	// swapguard.go. The zero values mean not armed yet: startSwapGuard sets swapWatch during newServer, and a nil
 	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
 	swapGuardTripped atomic.Bool
-	swapWatch        *decoder.SwapWatch
+	swapWatch        *swapguard.Watch
 }
 
 // lookupLocked resolves a request's model name to a loaded entry: an exact served-name match, else the sole model
@@ -538,9 +569,17 @@ func (s *server) pathFields(name string) map[string]any {
 		f["context_length"] = ctx
 		f["max_model_len"] = ctx
 	}
+	// max_positions is the model's own maximum context, which -ctx cannot exceed, so a client told the window is too
+	// small can tell a larger -ctx from a model that cannot hold the request at all.
+	if mp := lm.model.Config().MaxPositions; mp > 0 {
+		f["max_positions"] = mp
+	}
 	// vision reports whether image content parts are accepted, by the same visionCapable the vision path checks, so a
 	// client can hide image input on a model that would refuse it.
 	f["vision"] = lm.visionCapable()
+	if e := forcedCallEnforcement(lm.tmpl); e != "" {
+		f["forced_tool_call"] = e // how a tool_choice required / any is enforced on this model (forcedCallEnforcement)
+	}
 	return f
 }
 
@@ -576,13 +615,18 @@ type sampling struct {
 	Stop                json.RawMessage `json:"stop"` // string | []string
 	Logprobs            bool            `json:"logprobs"`
 	TopLogprobs         *int            `json:"top_logprobs"`
-	ResponseFormat      *respFormat     `json:"response_format"`
+	// LogitBias is OpenAI's logit_bias: token id (as a decimal string) to a value in [-100,100] added to that token's logit
+	// before sampling; -100 bans the token in practice. /v1/messages takes it as a goinfer extension.
+	LogitBias      map[string]float64 `json:"logit_bias"`
+	ResponseFormat *respFormat        `json:"response_format"`
 	// Confidence is the goinfer_confidence vendor extension (docs/tasks/task-constrained-confidence.md): with
 	// response_format json_schema, the response carries each enum, boolean and integer field's confidence. Only the
 	// routes that write it back set confidenceOK; prepare refuses the flag everywhere else, so no route can accept it
 	// and silently drop the result.
 	Confidence   bool `json:"goinfer_confidence"`
 	confidenceOK bool
+	// minP has no request field; withRecommended sets it from the model's recommended sampling.
+	minP *float64
 	// fixedTokens measures the request's fixed part (system prompt and tool definitions) in tokens, for a route that
 	// has one. prepare calls it only when the prompt overflows, to choose the refusal's wording (overflow.go).
 	fixedTokens func() int
@@ -651,6 +695,8 @@ type chatMessage struct {
 	// turns of the tool loop in progress and drops it for earlier turns (chat/history.go); any other model ignores it, as before.
 	ReasoningContent string `json:"reasoning_content,omitempty"`
 	Reasoning        string `json:"reasoning,omitempty"`
+	// carried is the carried-id blob a Responses reasoning item gave this assistant message (carried_ids.go); nil when none.
+	carried *idsCarrier
 }
 
 // text returns the message's text: the plain-string content, or the concatenated
@@ -783,6 +829,10 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 		// another language may reject them: GET /health carries the same fields on a payload with no compatibility
 		// contract, for operators who need a surface that cannot break a client.
 		maps.Copy(e, s.pathFields(name))
+		if alias := s.fastAliasOf(name); alias != "" {
+			// Vendor extension, same convention: the alias connect points an agent's small-model setting at (fast_alias.go).
+			e["fast_model"] = alias
+		}
 		if s.speechByName(name) != nil {
 			e["capabilities"] = []string{"audio.transcriptions"} // a speech model: no decoder paths, one route
 		}
@@ -824,6 +874,9 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req chatReq
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast()
 	}
 	dropUnrunnableTools(w, &req.Tools)
 	if err := validateN(req.N); err != nil {
@@ -896,6 +949,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writePrepareErr(w, err)
 		return
 	}
+	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
@@ -921,7 +976,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -930,7 +985,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			sseDone(ss)
 			return
 		}
-		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp), false))
 		if gr.conf != nil {
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
@@ -947,7 +1002,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -964,6 +1019,9 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		"index":         0,
 		"message":       msg,
 		"finish_reason": finish,
+	}
+	if e := emptyAnswerOf(gr, finish, stopHit, 0, nComp); e != nil {
+		choice["goinfer_empty_answer"] = e
 	}
 	if req.Logprobs {
 		choice["logprobs"] = lm.logprobs(lps)
@@ -984,6 +1042,7 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	s.fastRoute(r, &req.Model) // /v1/completions renders no template, so the alias has nothing to turn off there
 	if err := validateN(req.N); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -1103,6 +1162,24 @@ type genRequest struct {
 	// think, when set, routes the decoded text through a reasoning splitter (think.go): content goes to drive's onText,
 	// reasoning to think.onReasoning. nil = pass text through untouched.
 	think *thinkOut
+	// outcome receives what streamTokens saw of the answer (emptyAnswerOf reads it). Set by prepare.
+	outcome *turnOutcome
+	// boundary is how many leading ids of promptIDs are the stable system-and-tools section (loadedModel.prefixBoundary), 0 when unknown. It reaches the
+	// decoder as KVScope.Boundary, where a prefix snapshot may be taken at it during the cold prefill.
+	boundary int
+	// keep is how many leading ids of promptIDs the next turn's prompt repeats (loadedModel.recurrentKeep), 0 when unknown or not a recurrent model
+	// whose snapshots carry its state. It reaches the decoder as KVScope.Keep, where the state is kept for the next turn.
+	keep int
+	// fromModel names the sampling fields prepare took from the model's recommended sampling (withRecommended).
+	fromModel []string
+	// callPostCheck is a must-call tool_choice on a family with no JSON call form (forcedCallEnforcement "post-check"):
+	// runToolTurn streams no prose and returns errNoForcedCall when the reply holds no call.
+	callPostCheck bool
+}
+
+// kvScope is the KV sharing scope the request hands the decoder.
+func (gr *genRequest) kvScope() decoder.KVScope {
+	return decoder.KVScope{Boundary: gr.boundary, Keep: gr.keep}
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
@@ -1171,8 +1248,10 @@ func (lm *loadedModel) residentPath() bool {
 // lm.residentPath(), and vision requests pass false (GenerateVL is CPU-prefilled; the resident image-reuse path
 // checks its own cap in decoder/generate_vl.go).
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
+	sm, fromModel := withRecommended(sm, lm.sampling)
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
+		MinP:        deref(sm.minP, 0),
 		Seed:        seedOrRandom(sm.Seed), // omitted seed: fresh random, not seed 0
 		StopIDs:     lm.stopIDs,
 		Logprobs:    sm.Logprobs,
@@ -1210,6 +1289,13 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	if sm.PresencePenalty != nil {
 		sp.PresencePenalty = *sm.PresencePenalty
 	}
+	if len(sm.LogitBias) > 0 {
+		b, err := parseLogitBias(sm.LogitBias, lm.vocab)
+		if err != nil {
+			return genRequest{}, err
+		}
+		sp.LogitBias = b
+	}
 	maxTok := sm.MaxTokens
 	if sm.MaxCompletionTokens != nil { // OpenAI's newer field wins over the legacy max_tokens
 		maxTok = sm.MaxCompletionTokens
@@ -1234,6 +1320,8 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		sp:          sp,
 		maxTokens:   deref(maxTok, defaultMaxTokens),
 		stopStrings: stops,
+		outcome:     &turnOutcome{},
+		fromModel:   fromModel,
 	}
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
@@ -1367,7 +1455,15 @@ func grammarFor(rf *respFormat) (constrain.Grammar, error) {
 // not a new query (chat.Turn.ToolLoop), the rule /v1/messages follows (anthropicTurns): moved into the system prompt
 // it would replace or reorder what the model was told first and change the prompt's prefix.
 func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
+	system, turns, _ := messagesToTurnsCarried(msgs)
+	return system, turns
+}
+
+// messagesToTurnsCarried is messagesToTurns that also returns, by turn index, the carried-id blob of each assistant turn that
+// has one.
+func messagesToTurnsCarried(msgs []chatMessage) (string, []chat.Turn, map[int]*idsCarrier) {
 	var system string
+	var carriers map[int]*idsCarrier
 	var turns []chat.Turn
 	for _, m := range msgs {
 		switch m.Role {
@@ -1393,12 +1489,18 @@ func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 			if reasoning == "" {
 				reasoning = m.Reasoning
 			}
+			if m.carried != nil {
+				if carriers == nil {
+					carriers = map[int]*idsCarrier{}
+				}
+				carriers[len(turns)] = m.carried
+			}
 			turns = append(turns, chat.Turn{Role: "assistant", Content: m.text(), ToolCalls: tc, Reasoning: reasoning})
 		default:
 			turns = append(turns, chat.Turn{Role: "user", Content: m.text()})
 		}
 	}
-	return system, turns
+	return system, turns, carriers
 }
 
 // rawPrompt is the unrecognized-template fallback (plain conversation text).
@@ -1490,6 +1592,17 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	var stream <-chan int
 	var gen *decoder.Generation
 
+	if lm.scripted != nil {
+		if lm.onScripted != nil {
+			lm.onScripted(gr.promptIDs)
+		}
+		if lm.onScriptedScope != nil {
+			lm.onScriptedScope(gr.kvScope())
+		}
+		finish, n, stopHit := lm.streamTokens(parent, cancel, scriptedStream(lm.scripted, gr.maxTokens), gr, nil, onText)
+		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
+	}
+
 	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
 	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
 	// prefix-reuse cache is CPU-side, so the two cannot both be the source of truth, and going through a session
@@ -1509,6 +1622,8 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	// turn continuing off the reused warm prefix drops to CPU, since compute-time LoRA is not wired into the resident
 	// prefix-reuse path.
 	if lm.model.ResidentActive() && lm.adapter == "" {
+		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
+		gctx := decoder.WithKVScope(ctx, gr.kvScope())
 		if lm.blockSpec != nil && gr.masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
@@ -1516,22 +1631,23 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, gr.sp); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
 			}
 		} else if lm.spec && gr.masker == nil {
 			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
 			}
 		} else {
-			stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+			stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
 		finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 		cr := cancelledReason(g, parent, stopHit)
 		if cr != "" {
 			finish = "cancelled"
 		}
+		logKVCopy(gen)
 		return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 	}
 
@@ -1588,6 +1704,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	if cr != "" {
 		finish = "cancelled"
 	}
+	logKVCopy(gen)
 	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
@@ -1703,6 +1820,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if cr != "" {
 		finish = "cancelled"
 	}
+	logKVCopy(gen)
 	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
@@ -1716,6 +1834,15 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	// thinkOut): the reasoning goes to its own callback, and what the stop logic watches, holds back and emits is the
 	// answer text. With no splitter (th == nil) the stop logic watches everything the model wrote.
 	th := gr.think
+	if o := gr.outcome; o != nil {
+		emit := onText
+		onText = func(s string) {
+			if !o.answered && strings.TrimSpace(s) != "" {
+				o.answered = true
+			}
+			emit(s)
+		}
+	}
 	var ids []int
 	// sb accumulates the decoded text incrementally instead of re-decoding the whole ids sequence every token, which
 	// is O(n^2) in output length. Decode's per-token loop (tokenizer/sentencepiece.go) has no state that depends on
@@ -1768,6 +1895,9 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			tr.firstToken()
 		}
 		ids = append(ids, id)
+		if gr.outcome != nil {
+			gr.outcome.ids = ids // read by a reasoning item that closes mid-stream (carriedMint)
+		}
 		// DecodePiece, not Decode or DecodeContinuation: these ids continue the prompt (no sequence-level
 		// dummy-prefix strip), and appending each token's own piece is exactly what the whole-sequence decode does
 		// internally.
@@ -1816,8 +1946,11 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		// string, if one ended it early — the confidences then cover the part the client received).
 		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
 	}
+	if gr.outcome != nil {
+		gr.outcome.ids, gr.outcome.done, gr.outcome.stopHit = ids, true, stopHit != ""
+	}
 	if tr != nil {
-		tr.generated(lm.name, len(gr.promptIDs), len(ids))
+		tr.generated(lm, gr, gen, ids)
 	}
 	return finish, len(ids), stopHit
 }
@@ -1867,3 +2000,48 @@ func jsonLogprob(x float64) float64 {
 }
 
 func (lm *loadedModel) tokenText(id int) string { return string(lm.tk.TokenText(id)) }
+
+// logKVCopy reports a generation that took KV rows from another conversation's slot, or whose copy was declined: the
+// rows and the copy's wall time are the sharing gate's copy cost (docs/measurements/kv2-2026-10-14.md, G7).
+func logKVCopy(gen *decoder.Generation) {
+	if gen.PrefillShared > 0 {
+		fmt.Fprintf(os.Stderr, "kv share: copied %d rows from another conversation in %.2f ms\n", gen.PrefillShared, float64(gen.KVCopy.Microseconds())/1000)
+	}
+	if gen.KVCopyDeclined != "" {
+		fmt.Fprintf(os.Stderr, "kv share: a copy was declined (%s); the rows were prefilled\n", gen.KVCopyDeclined)
+	}
+}
+
+// scriptedStream is loadedModel.scripted as drive's token channel: at most maxTokens of ids, then closed.
+func scriptedStream(ids []int, maxTokens int) <-chan int {
+	if len(ids) > maxTokens {
+		ids = ids[:maxTokens]
+	}
+	ch := make(chan int, len(ids))
+	for _, id := range ids {
+		ch <- id
+	}
+	close(ch)
+	return ch
+}
+
+// parseLogitBias validates a request's logit_bias and converts it to the sampler's form. A key must be a token id inside
+// the vocabulary (vocab 0: unknown, so only the sign is checked) and a value must lie in [-100,100], OpenAI's range; anything
+// else is a 400, so a typo cannot be silently ignored.
+func parseLogitBias(in map[string]float64, vocab int) (map[int]float32, error) {
+	if len(in) > maxLogitBiasEntries {
+		return nil, fmt.Errorf("logit_bias accepts at most %d entries (got %d)", maxLogitBiasEntries, len(in))
+	}
+	out := make(map[int]float32, len(in))
+	for k, v := range in {
+		id, err := strconv.Atoi(k)
+		if err != nil || id < 0 || (vocab > 0 && id >= vocab) {
+			return nil, fmt.Errorf("logit_bias key %q is not a token id in [0,%d)", k, vocab)
+		}
+		if math.IsNaN(v) || v < -100 || v > 100 {
+			return nil, fmt.Errorf("logit_bias value for token %d must be in [-100,100] (got %v)", id, v)
+		}
+		out[id] = float32(v)
+	}
+	return out, nil
+}

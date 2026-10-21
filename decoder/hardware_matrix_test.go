@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -31,7 +32,41 @@ var residentBackends = []string{"webgpu", "cuda", "metal"}
 // Architecture.Name (aliases that share an adapter collapse to one row).
 type hwRow struct {
 	Display string
-	Res     map[string]bool // backend → ResidentEligible
+	Res     map[string]bool   // backend → ResidentEligible
+	Why     map[string]string // backend → every reason a CPU cell declines; "" for a resident cell
+}
+
+// hwDeclineReasons is every reason backend declines arch in the default configuration, as one table cell: the runner-shape gate
+// (Architecture.runnerShapeDecline), then every later gate that also refuses (residentGateReasons). "" when the cell is resident. It
+// reads both checks whatever the first says, because a reason the first refusal hides is still in the way once the first is lifted.
+func hwDeclineReasons(arch *Architecture, backend string) string {
+	var parts []string
+	if why := arch.runnerShapeDecline(); why != "" {
+		parts = append(parts, "runner shape: "+why)
+	}
+	for _, g := range residentGateReasons(arch, backend, false) {
+		switch g.Kind {
+		case residentGateFeatures:
+			names := make([]string, len(g.Missing))
+			for i, f := range g.Missing {
+				names[i] = "`" + string(f) + "`"
+			}
+			parts = append(parts, "missing: "+strings.Join(names, ", "))
+		case residentGateActHazard:
+			parts = append(parts, "activation hazard: int8 activations, per row (see the note)")
+		case residentGateMoECap:
+			c := residentBackendMoECap[backend]
+			if arch.MoE.NumExperts > c.experts {
+				parts = append(parts, fmt.Sprintf("router capacity: %d experts, the kernel routes %d", arch.MoE.NumExperts, c.experts))
+			}
+			if arch.MoE.NGroup > c.groups {
+				parts = append(parts, fmt.Sprintf("router capacity: %d expert groups, the kernel routes %d", arch.MoE.NGroup, c.groups))
+			}
+		default:
+			parts = append(parts, g.Reason)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func buildHardwareRows(t *testing.T) ([]hwRow, error) {
@@ -63,11 +98,16 @@ func buildHardwareRows(t *testing.T) ([]hwRow, error) {
 		if _, exists := rows[arch.Name]; exists {
 			continue
 		}
-		res := map[string]bool{}
+		res, why := map[string]bool{}, map[string]string{}
 		for _, be := range residentBackends {
 			res[be] = ResidentEligible(arch, be)
+			why[be] = hwDeclineReasons(arch, be)
+			if res[be] != (why[be] == "") {
+				return nil, fmt.Errorf("%s on %s: ResidentEligible=%v but the decline reasons are %q; the cell and its reason must come from the same gates",
+					arch.Name, be, res[be], why[be])
+			}
 		}
-		rows[arch.Name] = &hwRow{Display: doc.DisplayName, Res: res}
+		rows[arch.Name] = &hwRow{Display: doc.DisplayName, Res: res, Why: why}
 	}
 
 	out := make([]hwRow, 0, len(rows))
@@ -109,13 +149,15 @@ func renderHardwareMD(rows []hwRow, verified string) []byte {
 	b.WriteString("- **Memory fit:** Metal Mistral-7B needs > 16 GB unified memory (int8 + int4); MoE\n")
 	b.WriteString("  residency is unified-memory-bound.\n")
 	b.WriteString("- **Precision policy:** Nemotron-H resident is int4-only by default (int8 is opt-in via\n")
-	b.WriteString("  `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability.\n")
+	b.WriteString("  `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability. Metal runs it at\n")
+	b.WriteString("  int4 only: an int8 Nemotron-H declines to the CPU there rather than re-quantize its projections.\n")
 	b.WriteString("- **Granite-4.0-H's CPU row is the SAME env var, a DIFFERENT gate (N-94, docs/audit-2026-09-10.md).**\n")
 	b.WriteString("  `GOINFER_SSM_RESIDENT` is Nemotron-H's precision knob above, but for Granite-4.0-H it is an\n")
 	b.WriteString("  ELIGIBILITY gate inside `Architecture.decodeRunnerEligible()` itself, still parity-bring-up-guarded\n")
 	b.WriteString("  off by default — this table's generator pins it empty, so every column reads CPU regardless of\n")
-	b.WriteString("  backend capability. WebGPU already declares `FeatSSM`; the gap here is the gate not yet being\n")
-	b.WriteString("  lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits.\n")
+	b.WriteString("  backend capability. WebGPU and Metal already declare `FeatSSM`; the gap here is the gate not yet being\n")
+	b.WriteString("  lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits\n")
+	b.WriteString("  (Metal's builder still declines Granite-4.0-H, metal/mamba.go:buildMamba, until its own resident gate).\n")
 	b.WriteString("- **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable\n")
 	b.WriteString("  Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE\n")
 	b.WriteString("  FFN) this representative config never exercises — WebGPU implements it (G7 part 2,\n")
@@ -136,8 +178,62 @@ func renderHardwareMD(rows []hwRow, verified string) []byte {
 	b.WriteString("  per-position cosine -0.075 / -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu` and Metal its\n")
 	b.WriteString("  twins since 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it\n")
 	b.WriteString("  has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.\n")
+	b.WriteString(renderHardwareWhy(rows))
 	b.WriteString(verified)
 	return []byte(b.String())
+}
+
+// renderHardwareWhy is the decline section: for each family with a CPU cell, one line per distinct set of reasons with the
+// backends that have it, and the note for a family whose default load does not run the configuration the table reads.
+func renderHardwareWhy(rows []hwRow) string {
+	names := map[string]string{"webgpu": "WebGPU", "cuda": "CUDA", "metal": "Metal"}
+	var b strings.Builder
+	var hazard []string
+	b.WriteString("\n## Why a cell reads CPU\n\n")
+	b.WriteString("Every reason the default configuration declines, for each CPU cell above. The runner-shape check comes first, and\n")
+	b.WriteString("every later gate that also refuses is listed after it: the features the backend does not implement, an activation\n")
+	b.WriteString("hazard, the MoE router's capacity. A family is resident on a backend only when nothing is listed for it, so lifting\n")
+	b.WriteString("the first reason is not enough while another remains. Generated from\n")
+	b.WriteString("`decoder/residency.go:Architecture.runnerShapeDecline` and `decoder/features.go:residentGateReasons`, the checks\n")
+	b.WriteString("admission runs.\n\n")
+	b.WriteString("| Family | CPU on | Why |\n")
+	b.WriteString("|---|---|---|\n")
+	for _, r := range rows {
+		var order []string
+		on := map[string][]string{}
+		for _, be := range residentBackends {
+			why := r.Why[be]
+			if why == "" {
+				continue
+			}
+			if _, seen := on[why]; !seen {
+				order = append(order, why)
+			}
+			on[why] = append(on[why], names[be])
+		}
+		for _, why := range order {
+			b.WriteString(fmt.Sprintf("| %s | %s | %s |\n", r.Display, strings.Join(on[why], ", "), strings.ReplaceAll(why, "|", "/")))
+			if strings.Contains(why, "activation hazard") && !slices.Contains(hazard, r.Display) {
+				hazard = append(hazard, r.Display)
+			}
+		}
+	}
+	b.WriteString("\nThe runner-shape reasons: **own forward, not bridged** is a family whose layers run its own loop on the CPU, which no\n")
+	b.WriteString("GPU runner reproduces. **Local and global RoPE tables differ in length** is\n")
+	b.WriteString("`decoder/residency.go:Architecture.ropeResidentCompatible` refusing a family whose local and global layers rotate a\n")
+	b.WriteString("different number of dimensions. **Bring-up gate** is Granite-4.0-H's parity bring-up, described in the notes above.\n")
+	if len(hazard) > 0 {
+		b.WriteString("\n**" + strings.Join(hazard, ", ") + ": the table reads one configuration, and a default load picks another.** The activation\n")
+		b.WriteString("hazard is the per-row int8 activation scale (`decoder/actquant_hazard.go:ActivationQuantHazard`), and the table reads\n")
+		b.WriteString("the configuration that has it. The loader picks one that does not\n")
+		b.WriteString("(`internal/modelload/modelload.go:activationSafeQuant`):\n\n")
+		b.WriteString("- **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with\n")
+		b.WriteString("  per-32 activation scales, which CUDA's residency also implements.\n")
+		b.WriteString("- **Metal:** resident only with an explicit `--quant q4k`. The default load is int8int8 with per-32 activation\n")
+		b.WriteString("  scales, which Metal's resident projections do not implement, so it runs on the CPU.\n")
+		b.WriteString("- **WebGPU:** neither; the CPU.\n")
+	}
+	return b.String()
 }
 
 // TestHardwareMatrix_fresh regenerates the table in memory and fails if the committed
@@ -210,6 +306,55 @@ func mustRows(t *testing.T) []hwRow {
 		t.Fatalf("build hardware matrix: %v", err)
 	}
 	return rows
+}
+
+// TestHardwareMatrix_declineReasonsNotHidden pins the reasons a first refusal used to hide: a runner-shape decline printed alone,
+// and a missing feature printed without the router capacity behind it. Each cell must name every gate in want, and a cell that
+// has only the runner shape must name nothing else.
+func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	for _, tc := range []struct {
+		modelType, backend string
+		want               []string
+		exact              string
+	}{
+		{modelType: "lfm2", backend: "cuda", want: []string{"runner shape: own forward, not bridged", "`short-conv`"}},
+		{modelType: "laguna", backend: "metal", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-softplus`", "`per-layer-query-heads`"}},
+		{modelType: "spark2_5", backend: "webgpu", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-sigmoid`", "`gated-gelu-erf`"}},
+		{modelType: "granitemoehybrid", backend: "cuda", exact: "runner shape: " + runnerShapeBringUp}, // CUDA has ssm since OP2b; Granite stays on the bring-up gate
+		{modelType: "granitemoehybrid", backend: "webgpu", exact: "runner shape: " + runnerShapeBringUp},
+		{modelType: "llama4_text", backend: "cuda", exact: "runner shape: " + runnerShapeOwnForward},
+		{modelType: "kimi_k2", backend: "metal", exact: "router capacity: 384 experts, the kernel routes 256"}, // Metal has mla since OP2a
+		{modelType: "phi3", backend: "metal", want: []string{"activation hazard"}},
+	} {
+		arch, _, err := resolveArchitecture(representativeConfig(tc.modelType))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.modelType, err)
+		}
+		got := hwDeclineReasons(arch, tc.backend)
+		if tc.exact != "" && got != tc.exact {
+			t.Errorf("%s on %s: reasons %q, want exactly %q", tc.modelType, tc.backend, got, tc.exact)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s on %s: reasons %q do not name %q", tc.modelType, tc.backend, got, w)
+			}
+		}
+	}
+	// Every cell, not only the ones above: a cell reads CPU exactly when it has a reason, and the rendered section carries it.
+	rows := mustRows(t)
+	section := renderHardwareWhy(rows)
+	for _, r := range rows {
+		for _, be := range residentBackends {
+			if r.Res[be] != (r.Why[be] == "") {
+				t.Errorf("%s on %s: resident=%v with reasons %q", r.Display, be, r.Res[be], r.Why[be])
+			}
+			if r.Why[be] != "" && !strings.Contains(section, r.Why[be]) {
+				t.Errorf("%s on %s: the section omits %q", r.Display, be, r.Why[be])
+			}
+		}
+	}
 }
 
 // Verified on (hardware-coverage H6, docs/tasks/task-hardware-coverage-2026-10.md): the table above is CAPABILITY. This section is what has actually RUN, generated from the H0 census

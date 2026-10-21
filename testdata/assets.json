@@ -214,7 +214,19 @@
       "used_by": [
         "TestNemotronReal_oracle"
       ],
-      "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, still unregistered)."
+      "note": "The bf16 SAFETENSORS release, NOT the Q8_0 GGUF the coherence gate uses (GOINFER_NEMOTRON_GGUF, the next entry)."
+    },
+    {
+      "env": "GOINFER_NEMOTRON_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": [
+        "$MODELS/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf"
+      ],
+      "used_by": [
+        "TestNemotronReal_gate"
+      ],
+      "note": "NVIDIA-Nemotron-Nano-9B-v2 as a llama.cpp-convert Q8_0 GGUF (~9.5 GB). Also the source of OP2b's tier 1 int4 .giw (docs/tasks/task-forward-architecture-2026-10.md §4.7), which nobara builds from it with cmd/prequant."
     },
     {
       "env": "GOINFER_DFLASH_35B",
@@ -505,7 +517,7 @@
       "used_by": [
         "TestW4A8DecodeParity"
       ],
-      "note": "The MATCHED half of the W4A8 decode-parity pair. Both halves are built from the SAME source GGUF (~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model the test's own docstring names) so the pair is matched by construction: `go run ./cmd/prequant -quant int4 -o ~/models/qwen15-w4a8-int4.giw <src>` and the same with `-quant int8int8 -o ~/models/qwen15-w4a8-int8.giw`. Built 2026-08-18 to close the v1.0 gate's w4a8 coverage line; the gate passed 16/16 on first run. Rebuild both together or not at all -- an int4 half paired with an int8 half from a different source measures nothing."
+      "note": "The MATCHED half of the W4A8 decode-parity pair. Both halves are built from the SAME source GGUF (~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model the test's own docstring names) so the pair is matched by construction: `go run ./cmd/prequant -quant int4 -o ~/models/qwen15-w4a8-int4.giw <src>` and the same with `-quant int8int8 -o ~/models/qwen15-w4a8-int8.giw`. Built 2026-08-18 to close the v1.0 gate's w4a8 coverage line; the gate passed 16/16 on first run. Rebuilt at .giw v16 on nobara 2026-10-12 and again 2026-10-14 (byte-identical); 16/16 at afd83410. Rebuild both together or not at all -- an int4 half paired with an int8 half from a different source measures nothing."
     },
     {
       "env": "GOINFER_W4A8_INT8",
@@ -516,7 +528,7 @@
       "used_by": [
         "TestW4A8DecodeParity"
       ],
-      "note": "The MATCHED half of the W4A8 decode-parity pair. Both halves are built from the SAME source GGUF (~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model the test's own docstring names) so the pair is matched by construction: `go run ./cmd/prequant -quant int4 -o ~/models/qwen15-w4a8-int4.giw <src>` and the same with `-quant int8int8 -o ~/models/qwen15-w4a8-int8.giw`. Built 2026-08-18 to close the v1.0 gate's w4a8 coverage line; the gate passed 16/16 on first run. Rebuild both together or not at all -- an int4 half paired with an int8 half from a different source measures nothing."
+      "note": "The MATCHED half of the W4A8 decode-parity pair. Both halves are built from the SAME source GGUF (~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the model the test's own docstring names) so the pair is matched by construction: `go run ./cmd/prequant -quant int4 -o ~/models/qwen15-w4a8-int4.giw <src>` and the same with `-quant int8int8 -o ~/models/qwen15-w4a8-int8.giw`. Built 2026-08-18 to close the v1.0 gate's w4a8 coverage line; the gate passed 16/16 on first run. Rebuilt at .giw v16 on nobara 2026-10-12 and again 2026-10-14 (byte-identical); 16/16 at afd83410. Rebuild both together or not at all -- an int4 half paired with an int8 half from a different source measures nothing."
     },
     {
       "env": "GOINFER_QWEN38_GGUF",
@@ -683,7 +695,7 @@
       "kind": "dir",
       "members_any": ["model.safetensors.index.json", "model.safetensors"],
       "candidates": ["$MODELS/mellum2-unq"],
-      "used_by": ["TestMoEExpertMajor_bitIdentical", "TestMoEExpertMajor_endToEnd"],
+      "used_by": ["TestMoEExpertMajor_bitIdentical", "TestMoEExpertMajor_endToEnd", "TestMellum2_logitParity", "TestMellum2_windowParity"],
       "note": "P18's default-ON expert-major bit-identity gate. Was a hand-rolled os.Getenv(\"HOME\")+\"/models/mellum2-unq\" fallback, invisible to gate census and blind to GOINFER_MODELS pointing elsewhere (audit-2026-09-02.md N-41) -- registered here instead."
     },
     {

@@ -199,7 +199,7 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 		if layers[i].kvHalf {
 			elem = 2
 		}
-		if layers[i].isMLA {
+		if layers[i].isMLA() {
 			perPos += int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer holds window+slack positions however long the context (kvwindow.go), and decoder.cudaKVBytes prices the same
@@ -459,23 +459,31 @@ type cudaLayer struct {
 	perExpertScaleB                                        Buffer  // [nE] learned scale on the renormalized top-k weights
 	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
 
-	// Gated-DeltaNet mixer layer. When isDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
+	// mixer and ffn are this layer's operations (decoder.Model.ResidentLayerOps): the sequence mixer, then a feed-forward block when ffn. launchToken
+	// dispatches on mixer, and isDeltaNet and isMLA (methods below) read it, so nothing else decides a layer's kind.
+	mixer decoder.ResidentMixer
+	ffn   bool
+	// Gated-DeltaNet mixer layer. When mixer is MixerDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
 	// instead of attention: no KV cache, no q/k/v/o, and TWO persistent state buffers updated in place per token.
 	// dnState is [nv*hv*hk], stored TRANSPOSED relative to the CPU's [hk,hv] so each thread owns a contiguous row;
 	// dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND, so both are re-zeroed per generation (Reset),
 	// unlike a KV cache, which the next sequence simply overwrites.
-	isDeltaNet                   bool
 	dnQKV, dnZ, dnOut, dnB, dnA  cudaWQ // the five DeltaNet projections
 	dnConvW, dnDtBias, dnNegExpA Buffer // conv taps, dt bias, precomputed -exp(A_log)
 	dnNormW                      Buffer // [hv] gated-RMSNorm weight, shared across heads
 	dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state
+	// Mamba-2 mixer layer (Nemotron-H; mamba_resident.go): in_proj [projDim, hidden] and out_proj [hidden, dInner] as int8 with per-row scales, the conv
+	// taps and bias, headP = {-exp(aLog), dtBias, D} per head, the gated-norm weight, and TWO persistent buffers updated in place per token: mbWin is the
+	// conv window [(K-1)*convDim], mbSSM the SSM state [nHeads*headDim*dState]. Both compound, so resetState re-zeroes them per generation.
+	mbIn, mbOut               cudaWQ
+	mbConvW, mbConvB, mbHeadP Buffer
+	mbNormW, mbWin, mbSSM     Buffer
 	// qGate marks a SOFTMAX layer of the same family: q_proj is double width ([query ‖ gate] per
 	// head) and the context is scaled by sigmoid(gate) before o_proj. The weight stays fused
 	// because it is quantized; the split happens on the activation.
 	qGate bool
 
 	// MLA (DeepSeek / Kimi, FeatMLA)
-	isMLA                      bool
 	mlaQA, mlaQB, mlaQ, mlaKVA cudaWQ
 	mlaQANorm, mlaKVANorm      Buffer
 	mlaWUK, mlaWUV             Buffer
@@ -507,8 +515,12 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // round-trip per token. BuildResident decides which families it takes (dense, MoE, MLA, Gated-DeltaNet, ...), with
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
-	reqCh chan func() error
-	ackCh chan error
+	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
+	pk *packPool
+
+	loadAbort <-chan struct{} // decoder.Model.LoadAbort: closed by the swap tripwire to stop the build; nil never fires
+	reqCh     chan func() error
+	ackCh     chan error
 
 	// knob reads this model's operator knobs (decoder.Model.Knob): the snapshot taken at Load, with
 	// Options.Knobs applied, never the live environment (docs/tasks/task-env-config-2026-09.md).
@@ -528,6 +540,7 @@ type cudaResident struct {
 	nH             int
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
+	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
 	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, docs/tasks/task-gpu-paths-2026-09.md): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
@@ -696,6 +709,8 @@ type cudaResident struct {
 	// (small module).
 	bRN, bRms, bRopeKV, bAttn, bQuant, bSw, bRes Pipeline
 	bMoeFold                                     Pipeline // moe_fold_wacc (moe_fold.cu); zero when it did not load
+	bMoeRows, bGluRows                           Pipeline // gemv_w4a8_moe_rows, glu_quant_rows (moe_rows.cu); zero when they did not load
+	moeRowsOff                                   bool     // test seam: run the expert-major path's per-pair launches (the A/B and identity reference)
 	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); nil ⇒ int8 prefill declines
 	bQKN                                         Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
 	bNormF32                                     Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
@@ -703,6 +718,8 @@ type cudaResident struct {
 	zeroBias                                     Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
 	skScores, skSoftmax, skVsum                  Pipeline // split-KV decode attention (high-occupancy, bit-identical)
 	skScoreBuf, skInvBuf                         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	psScores, psSoftmax, psVsum                  Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
+	psLaunches                                   int      // launch groups of it, for tests
 	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
 	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
@@ -742,6 +759,10 @@ type cudaResident struct {
 	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
 	dnQSplit, dnAttnGate                                         Pipeline // the family's fused double-width q_proj + output gate
 	dnet                                                         *dnetParams
+	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
+	mamba                                     *mambaParams
+	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
+	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc Buffer
 
 	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the kernels stay bit-identical): the
 	// clamped interleaved-SwiGLU expert epilogue, plus the per-layer attention sinks and the per-expert gate‖up bias
@@ -823,11 +844,16 @@ type cudaResident struct {
 	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
 	launchErr   error // sticky first launch error within a launchToken call (reset per token) — M23
 	layers      []cudaLayer
-	ctxExplicit bool  // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
-	ctxCap      int   // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
-	extraBytes  int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
-	lmW         cudaWQ
-	finalNorm   Buffer
+	ctxExplicit bool // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
+	ctxCap      int  // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): its device bytes (0: none kept), the copies that save and restore it, and
+	// why a load kept none.
+	ckptBytes             int64
+	ckptSave, ckptRestore []gpu.DeviceCopy
+	ckptDeclined          string
+	extraBytes            int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
+	lmW                   cudaWQ
+	finalNorm             Buffer
 
 	// per-token scratch + KV caches (device).
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
@@ -854,6 +880,7 @@ type cudaResident struct {
 	// of slot s's windowed layers, kvBase the bound slot's, kvScratch the compaction's staging buffer.
 	kvWin     bool
 	kvWindow  int
+	kvSlack   int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
 	kvBase    int
 	kvBases   []int
 	kvScratch Buffer
@@ -929,21 +956,35 @@ type cudaResident struct {
 // BuildResident's own defer (a different goroutine, which cannot reach an executor-thread panic), turns it into
 // setupErr, so BuildResident declines gracefully (staged fallback) instead of proceeding with unusable buffers.
 func (r *cudaResident) af(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[float32](r.dev, n)
 }
 
 // akv allocates n elements of layer l's K or V cache: f16 for a kvHalf layer, f32 otherwise. Buffer.Len is in elements either way.
 func (r *cudaResident) akv(l, n int) Buffer {
 	if r.layers[l].kvHalf {
+		allocSeen(n * 2)
 		return gpu.NewBufferLenOf[uint16](r.dev, n)
 	}
 	return r.af(n)
 }
 func (r *cudaResident) ai(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[int32](r.dev, n)
 }
 func (r *cudaResident) au32(n int) Buffer {
+	allocSeen(n * 4)
 	return gpu.NewBufferLenOf[uint32](r.dev, n)
+}
+
+// allocSeenForTest, when set, is told the size in bytes of every buffer af, akv, ai and au32 allocate. A test seam, nil in
+// production; it is called on whichever goroutine allocates (the executor), so a test reads what it gathered after r.do returns.
+var allocSeenForTest func(bytes int)
+
+func allocSeen(bytes int) {
+	if allocSeenForTest != nil {
+		allocSeenForTest(bytes)
+	}
 }
 
 // recordUpload captures the FIRST alloc/upload error hit during BuildResident's setup job into r.setupErr. The
@@ -971,7 +1012,21 @@ func (r *cudaResident) upu16(v []uint16) Buffer {
 	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
+
+// loadAborted reports whether the swap tripwire has closed the load's abort channel. Cheap enough for every layer and every upload block.
+func (r *cudaResident) loadAborted() bool {
+	select {
+	case <-r.loadAbort:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *cudaResident) upW(h hostW) cudaWQ {
+	if h.src != nil {
+		return r.streamW(h)
+	}
 	w := cudaWQ{kind: h.kind, W: r.upu32(h.wpk), N: h.N, K: h.K}
 	switch h.kind {
 	case "int4":
@@ -992,6 +1047,10 @@ func (r *cudaResident) upExperts(h hostW) cudaWQ {
 	if r.cacheExperts && h.kind == "int4" {
 		return r.cacheWQ(h)
 	}
+	if h.srcs != nil {
+		r.recordUpload(fmt.Errorf("cuda: a planned expert stack reached an upload that is not the expert cache"))
+		return cudaWQ{kind: h.kind, N: h.N, K: h.K}
+	}
 	return r.upW(h)
 }
 
@@ -1007,6 +1066,10 @@ func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 	rowsPerExpert := h.N / r.nE
 	w.perExpertW = rowsPerExpert * (h.K / 8)  // uint32 words per expert weight (Kwords = K/8)
 	w.perExpertS = rowsPerExpert * (h.K / 32) // uint16 group scales per expert (Kgroups = K/32)
+	if h.srcs != nil {
+		r.packStackPinned(&w, h)
+		return w
+	}
 	w.srcW = r.mapBytes(u32bytes(h.wpk))
 	w.srcS = r.mapBytes(u16bytes(h.ws16))
 	// Device slot buffers (W/ws16) are NOT allocated here — allocSlots does it after the core +
@@ -1059,6 +1122,10 @@ func allocRoundSlack(n int64) int64 {
 // allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
 var allocSlackOffForTest bool
 
+// attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
+// OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
+var attnSoftcapDropForTest bool
+
 var hostWType = reflect.TypeFor[hostW]()
 
 // packedAllocSlack is the allocation rounding of every packed weight the build is about to upload: each hostW found
@@ -1089,9 +1156,12 @@ func packedAllocSlack(v any) int64 {
 			return n
 		case reflect.Struct:
 			if rv.Type() == hostWType {
-				n := allocRoundSlack(int64(rv.FieldByName("wpk").Len()) * 4)
-				n += allocRoundSlack(int64(rv.FieldByName("ws").Len()) * 4)
-				n += allocRoundSlack(int64(rv.FieldByName("ws16").Len()) * 2)
+				elems := func(packed, planned string) int64 { // a planned hostW carries its counts, a packed one its slices
+					return max(int64(rv.FieldByName(packed).Len()), rv.FieldByName(planned).Int())
+				}
+				n := allocRoundSlack(elems("wpk", "nWpk") * 4)
+				n += allocRoundSlack(elems("ws", "nWs") * 4)
+				n += allocRoundSlack(elems("ws16", "nWs16") * 2)
 				return n
 			}
 			var n int64
@@ -1164,6 +1234,21 @@ func capSlots(free, nLayers int64, strides []int64, topK, request int) (slots in
 		return lo, true
 	}
 	return lo, false
+}
+
+// expertCacheFloorBytes is the smallest expert cache allocSlots accepts, top-k slots on every routed layer (slotRequirement), or 0 for a
+// load with no routed layer or no per-expert stride.
+func (r *cudaResident) expertCacheFloorBytes() int64 {
+	var moeLayers []int
+	for i := range r.layers {
+		if r.layers[i].expGU.srcW != nil {
+			moeLayers = append(moeLayers, i)
+		}
+	}
+	if len(moeLayers) == 0 || r.slotBytesPerLayer(moeLayers[0]) <= 0 {
+		return 0
+	}
+	return slotRequirement(r.topK, int64(len(moeLayers)), r.slotStrides(moeLayers[0]))
 }
 
 // allocSlots caps r.cacheSlots to the MEASURED free device VRAM (with a safety margin) and then
@@ -2155,7 +2240,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// tiny. A recurrent (Gated-DeltaNet) family always takes the loop: the weight-stationary pass has no notion of
 	// recurrent state, which must advance one token at a time and in order, and the loop is the same r.step this
 	// family's decode uses, so prefill and decode see the same state evolution.
-	if r.prefillReady && r.dnet == nil {
+	if r.batchedVerifyOK() {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
 		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, nil, nil, nil); err == nil {
@@ -2187,7 +2272,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 // VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes
 // a batched weight-stationary pass or falls back to a sequential per-row loop.
 func (r *cudaResident) VerifyPath() (bool, string) {
-	if !r.prefillReady || r.dnet != nil {
+	if !r.batchedVerifyOK() {
 		return false, "sequential — arch/geometry not supported by batched verify"
 	}
 	return true, "batched weight-stationary CUDA pass"
@@ -2276,7 +2361,7 @@ func (r *cudaResident) UseKVSlot(i int) error {
 // *Model decodes from the previous one's state. The state buffers are allocated zeroed, so the FIRST generation is
 // correct either way, which is exactly what makes the omission invisible to a single-sequence test.
 func (r *cudaResident) Reset() {
-	if r.dnet == nil {
+	if r.dnet == nil && r.mamba == nil {
 		return
 	}
 	// Reset satisfies the cross-backend ResidentForward interface and returns nothing, so a failed re-zero cannot be
@@ -2291,6 +2376,9 @@ func (r *cudaResident) Reset() {
 // the goroutine that services reqCh and deadlocks — a hang, not an error, and one that only appears
 // once graphs are actually admitted for a recurrent model.
 func (r *cudaResident) resetState() error {
+	if e := r.resetMambaState(); e != nil {
+		return e
+	}
 	if r.dnet == nil {
 		return nil
 	}
@@ -2299,7 +2387,7 @@ func (r *cudaResident) resetState() error {
 	stZ := make([]float32, dp.stateElems)
 	for i := range r.layers {
 		L := &r.layers[i]
-		if !L.isDeltaNet {
+		if !L.isDeltaNet() {
 			continue
 		}
 		if e := gpu.Upload(L.dnWin, winZ); e != nil {
@@ -2570,8 +2658,8 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	// for the staged q: splitkv_scores stages the block-invariant q vector once instead of every thread re-loading it
 	// from global (docs/measurements/splitkv-stall-profile-2026-09-13.md).
 	if e := r.launch(r.skScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(Ly.hd * 4)},
-		Arg(r.qB), Arg(r.kvK(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin))); e != nil {
+		r.withCap(Arg(r.qB), Arg(r.kvK(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin)))...); e != nil {
 		return e
 	}
 	// 2. softmax in place (block 128 — MUST match attn_batched for byte-identical max/denominator).
@@ -3310,6 +3398,9 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			}
 		}
 	}
+	if !Ly.ffn {
+		return nil // a single-operation block (Nemotron-H attention): the o-projection above was the whole layer
+	}
 	return r.segBFFN(Ly, l, x)
 }
 
@@ -3329,7 +3420,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	// mixer replaces segA+attention, not the FFN half). A DeltaNet layer reaches NormPre2 via NormPlacementLinear
 	// regardless of the model-level placement and has a real Ly.postNorm (and no postMLPNorm; see BuildResident's
 	// DeltaNet-continue comment), so it must take the normal branches.
-	postOnlyHere := r.postOnly && !Ly.isDeltaNet
+	postOnlyHere := r.postOnly && !Ly.isDeltaNet()
 	// This layer's own FFN width: Gemma 4 E-models mix 6144 and 12288 (docs/tasks/task-multimodal-support-2026-10.md), and the
 	// scratch is sized to the widest layer, so every launch below takes the layer's width and never the model-level r.inter.
 	ffnI := Ly.ffnI
@@ -3518,7 +3609,7 @@ func (r *cudaResident) segC(Ly *cudaLayer, l int, x Buffer) error {
 func (r *cudaResident) captureGraphs() error {
 	for l := range r.layers {
 		Ly, ll := &r.layers[l], l
-		if Ly.isDeltaNet {
+		if Ly.isDeltaNet() {
 			// A Gated-DeltaNet layer is MORE graph-static than an attention one: no rope and no attention, so no per-token
 			// dynamic uniform. The recurrence's only per-token input is the residual, which is buffer CONTENTS, and replay
 			// reads current contents (TestCUDA_graphReplay). So the whole pre-routing half captures as ONE segment, mixer +
@@ -3542,7 +3633,7 @@ func (r *cudaResident) captureGraphs() error {
 			}
 			continue
 		}
-		if Ly.isMLA {
+		if Ly.isMLA() {
 			// For MLA, segA is dynamic (rope and attention depend on pos) and graphs are disabled.
 			continue
 		}
@@ -3602,7 +3693,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	gC := useGraphs && (r.graphMask == "" || strings.Contains(r.graphMask, "C"))
 	for l := 0; l < r.nLayers; l++ {
 		Ly := &r.layers[l]
-		if Ly.isDeltaNet {
+		if Ly.mixer == decoder.MixerDeltaNet {
 			// Gated-DeltaNet mixer: replaces segA + rope + attention + o-proj (no KV cache, nothing positional: the state IS
 			// the history). The FFN sub-block and the router-readback gap below are the ordinary ones, so this rejoins the
 			// shared path at segBFFN. Captured as ONE segment (gSegA) when graphs are on: with no rope/attention gap there is
@@ -3629,7 +3720,24 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 			}
 			continue
 		}
-		if Ly.isMLA {
+		if Ly.mixer == decoder.MixerMamba || Ly.mixer == decoder.MixerNone {
+			// A Nemotron-H block carries one operation. Mamba-2 replaces segA + attention + o-proj (no KV, no position); a feed-forward-only
+			// block is the up GEMV, relu2_quant and the down GEMV. Neither has a router readback gap, so both go straight to the layer tail.
+			var e error
+			if Ly.mixer == decoder.MixerMamba {
+				e = r.mambaMixer(Ly)
+			} else {
+				e = r.nonGatedMLP(Ly)
+			}
+			if e != nil {
+				return e
+			}
+			if e := r.layerTail(Ly, l, gC, r.x); e != nil {
+				return e
+			}
+			continue
+		}
+		if Ly.mixer == decoder.MixerMLA {
 			if e := r.segAMLA(Ly, l, pos, ropePos); e != nil {
 				return e
 			}
@@ -3752,12 +3860,12 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		// the glue launch, so decode stays byte-identical. The glue `attention` (audited) is UNTOUCHED and is the fallback
 		// below.
 		if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l)); err != nil {
+			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...); err != nil {
 			return err
 		}
 	} else {
 		if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx)); err != nil {
+			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...); err != nil {
 			return err
 		}
 	}
@@ -3824,6 +3932,14 @@ type hostW struct {
 	ws   []float32 // int8 row scales
 	ws16 []uint16  // int4 group scales (f16)
 	N, K int
+
+	// A planned weight (planWeight) has no packed data: src is the weight, packed at upload (streamW), and nWpk, nWs, nWs16 are the element counts of
+	// the three device buffers upW allocates for it.
+	src              *linalg.WeightMat
+	nWpk, nWs, nWs16 int
+
+	// A planned expert stack (planWeightStack) names its member weights here, in row order, with src nil: only cacheWQ consumes it.
+	srcs []*linalg.WeightMat
 }
 
 func packI8(q8 []int8, N, K int) []uint32 {
@@ -3837,26 +3953,13 @@ func packI8(q8 []int8, N, K int) []uint32 {
 // packWeight quantizes/repacks a projection into the resident device layout, or errors
 // (so BuildResident can decline gracefully → staged fallback) for shapes it can't handle.
 func packWeight(w *linalg.WeightMat) (hostW, error) {
-	N, K := w.Rows(), w.Cols()
-	if K%4 != 0 {
-		return hostW{}, fmt.Errorf("cuda: K=%d not a multiple of 4", K)
+	if _, err := planWeight(w); err != nil {
+		return hostW{}, err
 	}
+	N, K := w.Rows(), w.Cols()
 	switch w.Kind() {
 	case "int4":
-		if K%32 != 0 {
-			return hostW{}, fmt.Errorf("cuda: int4 K=%d not a multiple of 32", K)
-		}
-		// Kind() reports precision, not layout, and stays "int4" for a repacked-only tensor, so this switch alone cannot
-		// tell canonical from repacked-only; without the ok, a repacked-only tensor's nil q4 would index out of range
-		// below instead of declining cleanly (decoder/weightmat.go's wantsCanonicalInt4 doc has the policy). Repacked-only
-		// activates only for Options.Backend=="cpu", never "cuda", so this is defense in depth, not a path expected to
-		// fire (docs/code-notes/cuda.md#packWeight.int4).
-		q4, sc, _, ok := decoder.Int4F32(w)
-		if !ok {
-			return hostW{}, fmt.Errorf("cuda: int4 tensor has no canonical bytes (layout %s-only): "+
-				"model was loaded for a CPU-only backend; load with Options.Backend set to "+
-				"\"cuda\" to keep canonical bytes for residency", w.Int4Layout())
-		}
+		q4, sc, _, _ := decoder.Int4F32(w)
 		wpk := make([]uint32, N*(K/8))
 		for i := range wpk {
 			b := q4[i*4 : i*4+4]
@@ -3871,22 +3974,16 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 		q8, sc, _, _ := w.Int8()
 		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
 	case "q4k":
-		// GGUF Q4_K super-blocks verbatim (--quant q4k), as little-endian words: 36 per 256 weights.
 		raw, _ := w.Q4K()
-		if K%256 != 0 || len(raw) != N*K/256*144 {
-			return hostW{}, fmt.Errorf("cuda: q4k tensor %dx%d with %d bytes", N, K, len(raw))
-		}
 		wpk := make([]uint32, len(raw)/4)
 		for i := range wpk {
 			wpk[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
 		}
 		return hostW{kind: "q4k", wpk: wpk, N: N, K: K}, nil
-	case "f32":
+	default: // "f32": planWeight has refused every other kind
 		f32, _ := w.F32()
 		q8, sc := linalg.QuantizeRowsInt8(f32, N, K)
 		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
-	default:
-		return hostW{}, fmt.Errorf("cuda: unsupported projection kind %q", w.Kind())
 	}
 }
 

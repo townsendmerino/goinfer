@@ -1,6 +1,9 @@
 package decoder
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestKVFacts_readTheArchitecture: the facts a backend's KV policy sees are the architecture's own properties, one per disqualifier.
 func TestKVFacts_readTheArchitecture(t *testing.T) {
@@ -22,46 +25,80 @@ func TestKVFacts_readTheArchitecture(t *testing.T) {
 	}
 }
 
-// TestKVF16For_resolution: a registered policy resolves "f16" / "auto" / "" / "f32"; with none, only an explicit "f16" is f16.
-func TestKVF16For_resolution(t *testing.T) {
-	a := &Architecture{Name: "qwen2"}
-	for _, backend := range []string{"", "cpu", "webgpu", "nopolicy"} {
+// TestResolveKV_f16Resolution: CUDA's policy resolves "f16" / "auto" / "" / "f32" by family and by its auto switch; another resident backend
+// gives f16 for an explicit "f16" and nothing else.
+func TestResolveKV_f16Resolution(t *testing.T) {
+	a := &Architecture{Name: "qwen2", NumLayers: 1}
+	for _, backend := range []string{"webgpu", "nopolicy"} {
 		for _, kv := range []string{"", "auto", "f32"} {
-			if (Options{Backend: backend, KVPrecision: kv}).kvF16For(a) {
+			if got, _ := ResolveKV(backend, a, Options{KVPrecision: kv}); got == "f16" {
 				t.Errorf("backend %q -kv %q resolved to f16 with no policy", backend, kv)
 			}
 		}
-		if !(Options{Backend: backend, KVPrecision: "f16"}).kvF16For(a) {
-			t.Errorf("backend %q -kv f16 did not resolve to f16", backend)
+		if got, _ := ResolveKV(backend, a, Options{KVPrecision: "f16"}); got != "f16" {
+			t.Errorf("backend %q -kv f16 resolved to %q", backend, got)
 		}
 	}
+	saved := kvPolicies["cuda"]
+	defer func() { kvPolicies["cuda"] = saved }()
 	auto := true
-	RegisterKVF16Policy("kvtest", KVF16Policy{
-		Decline: func(f KVFacts, _ Options) string {
-			if f.Family != "qwen2" {
-				return "not covered"
-			}
-			return ""
-		},
-		Auto: func() bool { return auto },
-	})
-	defer delete(kvPolicies, "kvtest")
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }})
+	gemma := &Architecture{Name: "gemma3", NumLayers: 1}
 	for _, c := range []struct {
 		kv   string
 		a    *Architecture
 		auto bool
-		want bool
+		want string
 	}{
-		{"", a, true, true}, {"auto", a, true, true}, {"f16", a, true, true}, {"f32", a, true, false},
-		{"", a, false, false}, {"auto", a, false, false}, {"f16", a, false, true},
-		{"", &Architecture{Name: "gemma3"}, true, false}, {"f16", &Architecture{Name: "gemma3"}, true, false},
+		{"", a, true, "f16"}, {"auto", a, true, "f16"}, {"f16", a, true, "f16"}, {"f32", a, true, "f32"},
+		{"", a, false, "f32"}, {"auto", a, false, "f32"}, {"f16", a, false, "f16"},
+		{"", gemma, true, "f32"}, {"f16", gemma, true, "f32"}, {"i8", a, true, "f32"},
 	} {
 		auto = c.auto
-		if got := (Options{Backend: "kvtest", KVPrecision: c.kv}).kvF16For(c.a); got != c.want {
-			t.Errorf("policy auto=%v -kv %q on %s: f16 = %v, want %v", c.auto, c.kv, c.a.Name, got, c.want)
+		if got, _ := ResolveKV("cuda", c.a, Options{KVPrecision: c.kv}); got != c.want {
+			t.Errorf("auto=%v -kv %q on %s: %q, want %q", c.auto, c.kv, c.a.Name, got, c.want)
 		}
 	}
-	if r := kvF16Decline("kvtest", &Architecture{Name: "gemma3"}, Options{}); r != "not covered" {
-		t.Errorf("decline reason = %q", r)
+	if r := kvF16Decline("cuda", gemma, Options{}); r == "" {
+		t.Error("gemma3 on CUDA: no decline reason")
+	}
+}
+
+// TestCUDAKVF16Decline_table pins which architectures the CUDA f16 KV cache takes and the reason each other one is held at f32: the decision is
+// made before pricing, so a family that slipped through would be sized for f16 and then run kernels that read f32.
+func TestCUDAKVF16Decline_table(t *testing.T) {
+	dense := func(name string) KVFacts { return KVFacts{Family: name} }
+	cases := []struct {
+		name string
+		f    KVFacts
+		o    Options
+		want string // "" = f16 allowed; else a substring of the decline
+	}{
+		{"qwen2 dense", dense("qwen2"), Options{}, ""},
+		{"llama dense", dense("llama"), Options{}, ""},
+		{"mistral dense", dense("mistral"), Options{}, ""},
+		{"qwen3 dense", dense("qwen3"), Options{}, ""},
+		{"phi3 dense", dense("phi3"), Options{}, ""},
+		{"gemma3 not cleared", dense("gemma3"), Options{}, "keeps f32"},
+		{"qwen3_5 not cleared", dense("qwen3_5"), Options{}, "keeps f32"},
+		{"qwen2 MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, "MoE"},
+		{"qwen2 paged experts", dense("qwen2"), Options{MoECacheExperts: true}, "paged-experts"},
+		{"mistral sliding window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, "sliding-window"},
+		{"llama pairwise rope", KVFacts{Family: "llama", PairwiseRoPE: true}, Options{}, "pairwise RoPE"},
+		{"qwen2 m-rope", KVFacts{Family: "qwen2", MRoPE: true}, Options{}, "m-RoPE"},
+		{"llama mla", KVFacts{Family: "llama", MLA: true}, Options{}, "MLA"},
+		{"qwen2 hybrid", KVFacts{Family: "qwen2", Hybrid: true}, Options{}, "not covered"},
+	}
+	for _, c := range cases {
+		got := CUDAKVF16Decline(c.f, c.o)
+		switch {
+		case c.want == "" && got != "":
+			t.Errorf("%s: declined (%q), want f16", c.name, got)
+		case c.want != "" && !strings.Contains(got, c.want):
+			t.Errorf("%s: decline = %q, want it to contain %q", c.name, got, c.want)
+		}
+		if c.want == "" && !cudaKVF16Cleared(c.f) {
+			t.Errorf("%s: allowed by the decline check but not in the cleared set", c.name)
+		}
 	}
 }

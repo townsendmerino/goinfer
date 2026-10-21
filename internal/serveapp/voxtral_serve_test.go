@@ -79,7 +79,9 @@ func tinyVoxtralLM(t *testing.T) (*loadedModel, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &loadedModel{model: m, tk: tk, name: "voxtral-tiny", voxtralDir: dir}, dir
+	lm := &loadedModel{model: m, tk: tk, name: "voxtral-tiny", voxtralDir: dir}
+	t.Cleanup(lm.closeEntryNatives) // the lazily loaded tower keeps its checkpoint mapped until Close
+	return lm, dir
 }
 
 // TestVoxtralPrompt_wiring: voxtralPrompt builds the processor's no-language request (ids equal multimodal.VoxtralPrompt's, which G-S14e4a (ii) pins to the processor's own on the real file), counts
@@ -120,6 +122,7 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer va.Close()
 		ref, err := va.Embed(wins)
 		if err != nil {
 			t.Fatal(err)

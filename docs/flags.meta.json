@@ -221,6 +221,16 @@
    "summary": "Cap on request-body size in bytes; a larger body is rejected with 413 before it is read. 0 derives the cap from the model's context window."
   },
   {
+   "name": "kv-host-bytes",
+   "group": "Sessions and KV cache",
+   "summary": "Host memory for prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt its KV is copied to pinned host memory, and a later request that starts with the same ids restores it instead of prefilling it. `auto` (default) is a tenth of RAM, at most 8 GiB; `0` turns it off; or a byte count with an optional K, M or G. Pinned only while a snapshot is held."
+  },
+  {
+   "name": "kv-share",
+   "group": "Sessions and KV cache",
+   "summary": "on|off: whether a new conversation on a GPU-resident model copies KV rows another conversation computed (a shared system prompt) instead of prefilling them. Off whatever this says when the server answers the network without -api-key."
+  },
+  {
    "name": "kv-sessions",
    "group": "Sessions and KV cache",
    "summary": "Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard. Metal keeps 2 slots unless this flag is given (each slot's KV is resident from the first token on unified memory)."
@@ -303,7 +313,7 @@
   {
    "name": "admin-socket",
    "group": "Admin and halt",
-   "summary": "Serve `/admin/*` on a Unix socket (mode 0600, no key check: file permissions are the auth) instead of TCP. The same binary controls it with `status`, `ls`, `cancel`, `halt` and `resume`."
+   "summary": "Serve `/admin/*` on a Unix socket (mode 0600, no key check: file permissions are the auth) instead of TCP. Refused in a directory its group or everyone can write, unless it is sticky like `/tmp`. The same binary controls it with `status`, `ls`, `cancel`, `halt` and `resume`."
   },
   {
    "name": "halt-file",
@@ -369,7 +379,29 @@
   {
    "name": "log-requests",
    "group": "Other",
-   "summary": "Write one line to stderr per generation request when it finishes: route, model, status, prompt and completion tokens, time to first token, total time. Covers `/v1/chat/completions`, `/v1/completions`, `/v1/responses` and `/v1/messages`. Off by default; a request that failed before generating shows `-` for the model and token counts."
+   "summary": "Write one line to stderr per generation request when it finishes: route, model, status, prompt and completion tokens, time to first token, total time, KV reuse and carried token ids. Covers `/v1/chat/completions`, `/v1/completions`, `/v1/responses` and `/v1/messages`. Off by default; `-` marks a value that does not exist."
+  },
+  {
+   "name": "log-token-ids",
+   "group": "Other",
+   "summary": "For measurement runs: append one JSON line per generation to this file, with the prompt's length and SHA-256, the reused and slot positions, and the generated token ids. Off by default."
+  },
+  {
+   "name": "carry-ids",
+   "group": "Other",
+   "type": "bool",
+   "default": "true",
+   "summary": "Carry a `/v1/responses` reply's token ids back in its reasoning item, signed, so an echoed reply re-tokenizes to the ids the model generated. On by default; `false` re-tokenizes every echoed turn."
+  },
+  {
+   "name": "fast-alias",
+   "group": "Other",
+   "summary": "A served model `N` is also reachable as `N-fast`: the same weights, chat template and KV slot, thinking off, and nothing else different. For the side requests an agent sends for its own bookkeeping (a session title): `connect` points Claude Code's small-model setting and opencode's `small_model` at it. On by default; `false` turns the alias off."
+  },
+  {
+   "name": "ids-key-file",
+   "group": "Other",
+   "summary": "A file (32 bytes or more, mode 0600) holding the key that signs the token ids a `/v1/responses` reply carries back in its reasoning item. Default: a random key per start, so after a restart older replies re-tokenize their text instead."
   }
  ],
  "subcommands": [

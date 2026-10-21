@@ -1,0 +1,3 @@
+started: 2026-10-17 23:45:04 PDT; goinfer 63038121 (sha256 ce803b02cb36a9bb); bench_peer e90e82b9; mlx-lm 0.31.3; MLX checkpoints Qwen2.5-Coder-1.5B-Instruct-4bit b3252a2f, Qwen2.5-7B-Instruct-4bit c26a38f6; total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)
+7B fit check:   decode path: metal-resident (int4)
+finished: 2026-10-17 23:48:29 PDT, models 1.5B,7B, bench_peer exit 0

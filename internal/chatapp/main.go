@@ -459,7 +459,16 @@ All flags:
 	if plan != nil {
 		explicit := map[string]bool{}
 		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
-		os.Exit(s.runBatch(plan, newBatchDefaults(cf, explicit), modelNameOf(*cf.model)))
+		bd := newBatchDefaults(cf, explicit)
+		bd.rec = s.model.Config().Sampling
+		if bd.rec != nil && len(bd.rec.Applied()) > 0 {
+			fmt.Fprintf(os.Stderr, "batch: a line that leaves a sampling field out takes the model's recommended value (%s: %s) unless a flag sets it\n",
+				bd.rec.Source, strings.Join(bd.rec.Applied(), ", "))
+		}
+		if bd.rec != nil && bd.rec.RepetitionPenalty != nil {
+			fmt.Fprintf(os.Stderr, "batch: the model's repetition_penalty %g is not applied (it divides logits; the sampler's penalties are subtractive)\n", *bd.rec.RepetitionPenalty)
+		}
+		os.Exit(s.runBatch(plan, bd, modelNameOf(*cf.model)))
 	}
 	// R26: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
 	s.plain = *cf.prompt != "" || img != nil || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)

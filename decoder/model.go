@@ -19,6 +19,7 @@ import (
 
 	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -65,24 +66,35 @@ type Model struct {
 	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
 	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
 	resImgBlocks []residentImageBlock
+	// resCkptPrompt is the prompt whose end the resident's recurrent checkpoint holds, saved by the running generation and
+	// recorded on its sequence by the commit (residentCheckpointSave, residentCommitIDs); nil otherwise.
+	resCkptPrompt []int
+	// kvOpts is the Options the model was loaded with, which ResolveKV reads for the precision each cache delivers (KVPrecisionReport).
+	kvOpts Options
 	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with resIDs; nil means no drafter context is
 	// trustworthy for reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit resIDs without
 	// touching a block drafter's context, so the token prefix can match while the drafter's state does not reflect it. Cleared
 	// by residentForgetIDs (every resident write invalidates it) and set only by BlockSpec.generate's fully-completed exit, the
 	// one path that keeps resIDs and the drafter's context advancing together.
 	resDrafterSynced *BlockSpec
-	// resSlots / resCur / resTick: MC1's resident KV slots (resident_reuse.go residentAcquire). nil / 0 / 0 with one
-	// slot; the bound slot's bookkeeping lives in the resIDs fields above, the others' is parked in resSlots.
-	resSlots      []residentSlot
-	resCur        int
-	resTick       uint64
+	// kv is the KV manager over the resident's slots (internal/kvmgr, resident_reuse.go): one sequence per slot, the
+	// slot a prompt takes, what it may reuse, and the index of published blocks. nil until first used. The bound
+	// slot's record is mirrored in the resIDs fields above. kvLora is the adapter runtime each slot's sequence was
+	// built under, by slot (the manager keys on the adapter's identity, not the runtime); kvNS is the sharing namespace
+	// of the request that took each slot (KVScope).
+	kv            *kvmgr.Slots
+	kvLora        []*loraRuntime
+	kvNS          []string
 	kvF16         bool         // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
 	kvF16Decline  string       // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	kvH           bool         // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
+	prog          *program     // the forward as operations (buildProgram), built once by modelFromOptions
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
+	planResidency bool         // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
@@ -90,8 +102,14 @@ type Model struct {
 	windowedKV    bool         // Options.ResidentWindowedKV
 	resCtxPinned  bool         // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
+	kvShareOff    bool         // Options.KVShareOff
+	kvSnaps       *kvSnapStore // Options.KVHostBytes: the held prefix snapshots, nil when off
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+
+	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
+	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted; Load turns it into the load's error
+
 	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	actGroup      int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
 	extraBytes    int64        // Options.ExtraResidentBytes — see that field's own doc comment
@@ -332,9 +350,10 @@ type Options struct {
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,
 	// at VRAM cost. Only meaningful with MoECacheExperts.
 	MoECacheSlots int
-	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact) or "i8" (per-(position,KV-head)
-	// symmetric int8, 4x smaller, SDOT decode). Lossy, opt-in; declined where Architecture.kvInt8OK says no (MoE, and own-forward
-	// families not marked KVInt8). See task-cpu-kv-quant.md.
+	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact, the reference), "f16" (each stored row
+	// rounded to binary16, half the bytes; the generic loop without MoE, Architecture.kvF16OK, else f32) or "i8" (per-(position,
+	// KV-head) symmetric int8, 4x smaller; declined where Architecture.kvInt8OK says no). The lossy two are opt-in. See
+	// docs/tasks/task-cpu-kv-f16-2026-10.md and task-cpu-kv-quant.md.
 	KVQuant string
 	// StreamWeights enables on-demand weight residency (idea #2): for an mmap-backed
 	// .giw MoE model, expert weights are paged out of the mapping under a RAM budget
@@ -382,6 +401,9 @@ type Options struct {
 	// resident context THIS model ends up choosing, which is unknowable when ExtraResidentBytes is priced (in loadDecoder). See
 	// Model.ExtraResidentKVPerPosition and decoder.DrafterKVBytesPerPosition. 0 (the default) means no such term.
 	ExtraResidentKVPerPosition int64
+	// Drafter reports that a block drafter will be attached to this model after the load (serve's --drafter). The drafter keeps f32
+	// K/V and attends with the target's kernels, so on CUDA auto resolves the KV to f32, and an explicit f16 refuses (ResolveKV).
+	Drafter bool
 	// ExactPrefill forces bit-exact prompt ingestion on every backend that has a faster, non-exact default: CUDA's tensor-core
 	// batched prefill (GOINFER_CUDA_FAST_PREFILL), Metal's f16-MMA batched prefill (GOINFER_METAL_FAST_PREFILL) and CPU's
 	// f32-attention fast path (GOINFER_CPU_FAST_ATTENTION), all default ON above their own thresholds. false (the default)
@@ -411,6 +433,16 @@ type Options struct {
 	// prefill is chunk-invariant (Metal's is: TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value
 	// (docs/measurements/chunked-prefill-2026-09-27.md).
 	ResidentPrefillChunk int
+	// KVShareOff stops a request taking KV rows another conversation computed: a resident request reuses only a
+	// continuation of a slot's own sequence (KVScope.Off for every request; docs/tasks/task-kv-architecture-2026-10.md
+	// §5.15). serve sets it for -kv-share off and when it answers the network without an API key.
+	KVShareOff bool
+	// KVHostBytes is the host memory budget for prefix snapshots (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): after a cold
+	// first prefill of a long prompt a GPU-resident backend that implements ResidentKVSnapshotter copies the prompt's KV to pinned
+	// host memory, and a later request that starts with the same ids restores it instead of prefilling it. 0 turns it off, and
+	// nothing is held while no snapshot is. Pinned memory is allocated when a snapshot is taken and freed when it is dropped.
+	// serve sets it from -kv-host-bytes.
+	KVHostBytes int64
 	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
 	// forward (MC3c step 2, docs/tasks/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
 	// default) batches an eligible model with at least 2 GiB of dense weights; CPUBatchOn batches every
@@ -423,14 +455,13 @@ type Options struct {
 	// Honoured on the CPU and by CUDA residency; other resident backends decline to the CPU path when it is set.
 	ActQuantGroup int
 
-	// LoadAbort, if non-nil, is checked between layers during a direct (non-.giw) GGUF weight build: the load-time consumer of
-	// the swap tripwire. Closing it aborts the load with an error satisfying errors.Is(err, ErrLoadAborted). Load does not know
+	// LoadAbort, if non-nil, is checked between layers during a direct GGUF weight build, during a .giw's CRC pass and layer walk, and by a
+	// backend's resident build (Model.LoadAbort): the load-time consumer of the swap tripwire. Closing it aborts the load with an error satisfying errors.Is(err, ErrLoadAborted). Load does not know
 	// why it closed (it does not own decoder.SwapWatch), so a caller arming a watch is expected to wrap the returned error with
 	// its own reason/pricing detail. A nil channel (the zero value) blocks forever in a select, so it is a genuine no-op.
 	//
-	// Limitation: only the GGUF direct-build path (loadGGUFWeights/buildWeightsFromGGUF's resident, non-streaming branch) checks
-	// it. The safetensors direct-build path and StreamTranscodeGGUF's transcode do not
-	// (docs/code-notes/decoder.md#Options.LoadAbort).
+	// Limitation: the safetensors direct-build path and StreamTranscodeGGUF's transcode do not check it, and a backend's resident build
+	// does only if it polls Model.LoadAbort (docs/code-notes/decoder.md#Options.LoadAbort).
 	LoadAbort <-chan struct{}
 
 	// BackendAuto says Backend was chosen by "auto" rather than named. A backend auto chose declines a model it would
@@ -438,6 +469,10 @@ type Options struct {
 	// Load sets it when Backend is "auto"; a caller that resolved auto itself (the CLIs, for their own checks by name)
 	// sets it beside the name.
 	BackendAuto bool
+
+	// planResidency is set only by FitQuery's open of a .giw: withResidency builds nothing, so FitQuery can ask the backend what
+	// its build would decide (Model.plannedDecodePath).
+	planResidency bool
 }
 
 // ErrLoadAborted is returned (wrapped) from Load when opts.LoadAbort closed mid-build. Check
@@ -463,24 +498,26 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	}
 	kvF16, kvDecline := opts.KVPrecision == "f16", ""
 	if be != nil {
-		// A backend with a registered KV policy resolves the precision (kvpolicy.go); an explicit "f16" it holds at f32 says why (Model.KVF16DeclineReason).
-		o := opts
-		o.Backend = be.Name()
-		if _, ok := kvPolicies[o.Backend]; ok {
-			kvF16 = o.kvF16For(w.arch)
+		// A backend with a registered KV policy builds what ResolveKV says (kvresolve.go); an explicit "f16" it cannot hold says why
+		// (Model.KVF16DeclineReason), and Load refuses it (kvRefusal).
+		if _, ok := kvPolicies[be.Name()]; ok {
+			got, why := ResolveKV(be.Name(), w.arch, opts)
+			kvF16 = got == kvPrecF16
 			if !kvF16 && opts.KVPrecision == "f16" {
-				kvDecline = kvF16Decline(o.Backend, w.arch, o)
+				kvDecline = why
 			}
 		}
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline,
-		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
+		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
+		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
+		loadAbort:  opts.LoadAbort,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest}
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest,
+		planResidency: opts.planResidency}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a
@@ -491,6 +528,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 // into the binary falls back to cpu. A model that would not fit this machine's memory is refused with an
 // error wrapping ErrWontFitResident.
 func Load(dir string, opts Options) (*Model, error) {
+	loadCalls.Add(1)
 	ensureCPUSelfTest() // once per process, before any kernel runs concurrently (H2): a CPU kernel tier that disagrees with its reference is stepped down, not trusted
 	opts = opts.withAutoBackend()
 	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below before withResidency, because
@@ -543,9 +581,9 @@ func Load(dir string, opts Options) (*Model, error) {
 		gfi, statErr := os.Stat(dir)
 		crcDone := statErr == nil && giwVerified(dir, gfi)
 		afterWalk := func() {}
-		w, lerr := loadSerializedWeightsHook(weightsBlob, crcDone, func(a *Architecture) {
+		w, lerr := loadSerializedWeightsAbortable(weightsBlob, crcDone, func(a *Architecture) {
 			afterWalk = prepareColdLoad(dir, data, a, opts, be)
-		})
+		}, opts.LoadAbort)
 		afterWalk()
 		if lerr != nil {
 			_ = mmap.Unmap(data)
@@ -623,7 +661,7 @@ func Load(dir string, opts Options) (*Model, error) {
 				fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
 			}
 		}
-		return m.withResidency(), nil
+		return m.withResidencyOrAbort()
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -711,7 +749,9 @@ func Load(dir string, opts Options) (*Model, error) {
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.
 	tRes := time.Now()
-	m = m.withResidency()
+	if m, err = m.withResidencyOrAbort(); err != nil {
+		return nil, err
+	}
 	if w.prof != nil {
 		if d := time.Since(tRes); d > time.Millisecond {
 			w.prof.record("resident", d)
@@ -752,9 +792,9 @@ func (o Options) Validate() error {
 		return fmt.Errorf("decoder: invalid -kv %q (auto | f32 | f16 | i8)", o.KVPrecision)
 	}
 	switch o.KVQuant {
-	case "", "f32", "i8":
+	case "", "f32", "f16", "i8":
 	default:
-		return fmt.Errorf("decoder: invalid -kv-quant %q (f32 | i8)", o.KVQuant)
+		return fmt.Errorf("decoder: invalid -kv-quant %q (f32 | f16 | i8)", o.KVQuant)
 	}
 	return nil
 }
@@ -838,6 +878,7 @@ func (m *Model) Close() error {
 		_ = m.pager.close()
 		m.pager = nil
 	}
+	m.kvSnaps.releaseAll() // pinned host memory, freed before the device it was pinned for
 	if m.resident != nil {
 		_ = m.resident.Close()
 		m.resident = nil
@@ -888,10 +929,12 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// hasNoAttentionKVAt (arch.go) is the one place that knows all these cases, shared with kvDimAt's pricing.
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, a.hasNoAttentionKVAt)
 	c.scr = newDecodeScratch(a)
-	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see ownForwardFamily.KVInt8 for why a family's
+	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see Architecture.kvInt8OK for why a family's
 	// own loop must opt in. Must precede enableRings so local layers inherit the mode.
 	if m.kvI8 && a.kvInt8OK() {
 		c.setQuant(kvI8, capHint)
+	} else if m.kvH && a.kvF16OK() {
+		c.setQuant(kvqF16, capHint) // f16 storage (Options.KVQuant == "f16"); also before enableRings
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
 	// can read. Only for families whose forward uses attendQuery/attendBatchedHeads (kvRingsOK); the others keep append-forever.
@@ -991,9 +1034,6 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	if m.w.Embed.Rows() == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
-	if f, ok := arch.ownForward(); ok {
-		return f.run(m, id, cache)
-	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)
 	}
@@ -1008,8 +1048,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// RMSNorm) divides out a global scalar, so the difference only survives in
 	// the residual and stays well under the ≥1−1e-4 cosine bar. If that bar is
 	// ever tightened past ~1e-5, round the scale to bf16.
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		scale := float32(arch.EmbedScale)
+	emb := m.program().embed
+	if emb.Scale != 0 && emb.Scale != 1 {
+		scale := float32(emb.Scale)
 		for i := range h {
 			h[i] *= scale
 		}
@@ -1017,14 +1058,14 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// Learned absolute position embedding (GPT-2): add wpe[pos], where pos is
 	// this token's absolute position (the cache advances on Append inside
 	// attention, so cache.Pos() here is still this step's position).
-	if arch.LearnedPosEmbed {
+	if emb.LearnedPos {
 		pe := make([]float32, hidden)
 		m.w.PosEmbed.Row(cache.Pos(), pe)
 		for i := range h {
 			h[i] += pe[i]
 		}
 	}
-	return m.runLayersFromEmbed(h, cache)
+	return m.runLayersFromEmbedPLE(h, id, cache)
 }
 
 // runLayersFromEmbed runs the transformer layers over a precomputed
@@ -1037,10 +1078,29 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 // passing through embed_tokens. Generic path only (gemma4/qwen35 have their own
 // runLayers and grow the same seam when those families go multimodal).
 func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
-		cache.scr = newDecodeScratch(arch)
+	pad := -1
+	if g := m.w.arch.gemma4; g != nil {
+		pad = g.PadTokenID // a row with no token behind it takes the pad id's PLE, as HF's multimodal forward does
 	}
+	return m.runLayersFromEmbedPLE(h, pad, cache)
+}
+
+// runLayersFromEmbedPLE is runLayersFromEmbed with the token id behind h for Gemma 4's per-layer embedding: the id itself for a
+// text row, the checkpoint's pad id for a multimodal row (docs/multimodal.md, P7 entry).
+func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
+	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
+		cache.scr = newDecodeScratch(m.w.arch)
+	}
+	if programWalkOffForTest {
+		return m.runLayersFromEmbedLoop(h, cache)
+	}
+	return m.walkToken(m.program(), h, pleID, cache)
+}
+
+// runLayersFromEmbedLoop is the per-token loop the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step.
+func (m *Model) runLayersFromEmbedLoop(h []float32, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
 	scr := cache.scr
 	hidden := arch.HiddenDim
 	if m.layerPager != nil {
@@ -1208,10 +1268,9 @@ func addResidual2(h, sub, sub2 []float32) {
 // text/image embedding sequence (text positions via this, image positions via
 // the projected vision features) and drive runLayersFromEmbed per position.
 func (m *Model) embedToken(id int, dst []float32) {
-	arch := m.w.arch
 	m.w.Embed.Row(id, dst)
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		scale := float32(arch.EmbedScale)
+	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+		scale := float32(emb.Scale)
 		for i := range dst {
 			dst[i] *= scale
 		}
@@ -1261,11 +1320,8 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // forward(id); the captures are copies that never feed back. Layer indices are 0-based into [0, NumLayers); out[i]
 // corresponds to layers[i].
 //
-// Wired for the generic decode path plus the own-forward families whose ownForwards entry sets Captures (their loops call
-// cache.captureResidual, see capture.go). Every other own-forward family returns an error rather than silently producing nil
-// rows: granite and nemotron_h interleave recurrent mixers whose "residual after layer l" needs deciding, and mla and
-// llama4_text are not done. A family is wired only when both its loop captures and its entry says so, so a half-wired one
-// fails here loudly.
+// Every family's layers run through the program walker, which captures the residual after each layer (gate C of §4.8's
+// seams PR holds it to the forward cut after that layer, bit for bit).
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	_, done, err := m.enterCall(context.Background())
 	if err != nil {
@@ -1279,12 +1335,6 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // forwardCapture is ForwardCapture without the lifecycle guard (lifecycle.go).
 func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	// Derived from the dispatch table's Captures bit rather than re-listed: the families whose own loop calls captureResidual are
-	// wired, every other own-forward family is not. A hand-written list once missed LFM2, whose loop never captures and returned
-	// nil rows through a seam documented to fail loudly.
-	if f, own := a.ownForward(); own && !f.Captures {
-		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
-	}
 	for _, l := range layers {
 		if l < 0 || l >= a.NumLayers {
 			return nil, nil, fmt.Errorf("decoder.ForwardCapture: layer %d out of range [0,%d)", l, a.NumLayers)
@@ -1304,14 +1354,13 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // MLP contribution to the residual (scr.sub after each sublayer's sandwich-norm, before the add).
 // This is the finer seam ForwardCapture doesn't give: it separates the two sublayers, which is
 // what localizing a channel's sign flip to attention-vs-MLP at a specific layer requires.
-// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own-forward
-// families (they don't route through runLayersFromEmbed's uniform block).
+// Diagnostic — same byte-identical-output contract as ForwardCapture. A single-operation block (Nemotron-H) fills one of the
+// two; gate S of §4.8's seams PR rebuilds each layer's residual from them. Refused where a layer has an operation they do not
+// cover (program.subCaptureUncovered).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	// Every own-forward family, derived: this seam needs runLayersFromEmbed's uniform block, which no own-forward loop routes
-	// through.
-	if _, own := a.ownForward(); own {
-		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
+	if m.program().subCaptureUncovered() {
+		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q: a layer has an operation its contributions do not cover (Gemma 4's PLE branch or MoE block)", a.Name)
 	}
 	nL := a.NumLayers
 	cache.subCapture = true
@@ -1332,7 +1381,7 @@ func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPr
 // forwardFromEmbed is forward for a position whose residual-stream embedding is
 // supplied directly (the multimodal embed-by-vector seam): it runs the layers
 // from h and projects to logits, identical to forward(id) when h is that token's
-// embedding. The generic path only (gemma4/qwen35 keep their own forward).
+// embedding.
 func (m *Model) forwardFromEmbed(h []float32, cache *KVCache) ([]float32, error) {
 	h, err := m.runLayersFromEmbed(h, cache)
 	if err != nil {
@@ -1358,26 +1407,30 @@ func softcapParallel(logits []float32, softcap float32) {
 // the next-token logits ([VocabSize]). One home for the head math, shared by
 // forward and forwardFromEmbed.
 func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
-	arch := m.w.arch
-	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
+	hp := &m.program().head
+	b := m.w.FinalNormBias
+	if !hp.Norm.Bias {
+		b = nil
+	}
+	applyNorm(hp.Norm, h, h, m.w.FinalNorm, b, m.w.arch.HiddenDim)
 	return m.logitsFromNormed(h, cache)
 }
 
 // logitsFromNormed is logitsFromHidden for a hidden state that has ALREADY been through the final norm (the batched
 // Qwen3.5 forward returns its rows normed): the LM head, softcap and logit scale, exactly as logitsFromHidden runs them.
 func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
-	arch := m.w.arch
+	hp := &m.program().head
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
-	if arch.TiedLMHead {
+	if hp.Tied {
 		matmulInto(cache.scr.ws, m.be, &m.w.Embed, h, logits, 1) // tied: embedding doubles as the head
 	} else {
 		matmulInto(cache.scr.ws, m.be, &m.w.LMHead, h, logits, 1) // separate output projection
 	}
-	if arch.FinalLogitSoftcap > 0 {
-		softcapParallel(logits, float32(arch.FinalLogitSoftcap))
+	if hp.Softcap > 0 {
+		softcapParallel(logits, float32(hp.Softcap))
 	}
-	if arch.LogitScale != 0 && arch.LogitScale != 1 { // Granite logits_scaling: logits /= scale
-		inv := float32(1 / arch.LogitScale)
+	if hp.LogitScale != 0 && hp.LogitScale != 1 { // Granite logits_scaling: logits /= scale
+		inv := float32(1 / hp.LogitScale)
 		n := len(logits)
 		if n > 0 {
 			_ = logits[n-1]
@@ -1476,6 +1529,13 @@ func warnPrefillDeclined(n int, err error) {
 // decode: plausible, wrong, HTTP 200. This mirrors the CPU rule: the canBatchN caller in forwardn.go declines batched prefill
 // whenever cache.lora != nil, because compute-time LoRA is wired only into the sequential forward.
 func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int, hasAdapter bool) ([]float32, error) {
+	return m.residentPrefillSeedMarked(ctx, prompt, from, hasAdapter, nil)
+}
+
+// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (ResidentPrefillMarked) call it back between two
+// passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
+// A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
+func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token, whose logits start decode
 	}
@@ -1501,7 +1561,7 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 			// A resident whose pass allocates scratch per row takes a long suffix in blocks (prefillBlockRows), each
 			// continuing the last at its position, so the scratch and the host embeddings are a block's and not the
 			// prompt's. The last pass keeps at least prefillTailMinRows rows. A block the pass declines leaves `from` at
-			// its first row: everything before it is written, and the rest takes the sequential loop below.
+			// its first row, or where its PrefillPartial says: everything before it is written, and the rest takes the sequential loop below.
 			var perr error
 			for B := m.prefillBlockRows(len(prompt)); B > 0 && perr == nil && len(prompt)-from >= B+m.prefillTailMinRows(); {
 				if perr = ctx.Err(); perr != nil {
@@ -1515,7 +1575,12 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 			// places the run at an offset.
 			if perr == nil {
 				var lg []float32
-				if lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from); perr == nil {
+				if mp, ok := pf.(ResidentPrefillMarked); ok && mk != nil {
+					lg, perr = mp.PrefillLastMarked(ctx, embed(prompt[from:]), from, mk.q, mk.at)
+				} else {
+					lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from)
+				}
+				if perr == nil {
 					return lg, nil
 				}
 			}
@@ -1525,7 +1590,14 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 			if errors.Is(perr, context.Canceled) || errors.Is(perr, context.DeadlineExceeded) {
 				return nil, perr
 			}
+			from = prefillResume(from, perr) // the passes before the one that declined are written (PrefillPartial)
 			warnPrefillDeclined(len(prompt)-from, perr)
+			NotePrefillFallback(ctx, "sequential", perr.Error())
+			// The rest runs on decode's kernels, which is not the class the KV manager was told this pass writes (and
+			// some blocks may have run batched first): its rows name no producer, so no other request takes them.
+			if m.kv != nil {
+				m.kv.Unrecorded(m.kv.Bound())
+			}
 		}
 	}
 	// KV-only prefill: prompt[:-1] tokens need only their K/V in the cache — skip the LM head
@@ -1621,8 +1693,9 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil, err
 			}
-			// The batched prefill declined (or failed) on this chunk: everything before `from` is already written,
-			// so the remainder, this chunk included, goes through the ordinary path below.
+			// The batched prefill declined (or failed) on this chunk: everything before `from` is already written, and so is
+			// the part of the chunk a PrefillPartial names, so the remainder goes through the ordinary path below.
+			from = prefillResume(from, err)
 			break
 		}
 		from = end
@@ -1664,6 +1737,15 @@ func (m *Model) tryClaimResident() bool {
 // the caller owns the channel so it can run post-generation bookkeeping (a Session reconciling its token list) before the
 // consumer observes the close. commit, if non-nil, is called with each id once its forward has committed that position to
 // the cache, the seam Session uses to track exactly what the cache holds. Terminal status lands on g.err.
+// kvRowCeiling is the context size a CPU KV cache may grow to: the pinned or requested context when there is one, else the
+// model's maximum positions (0 when neither is known).
+func (m *Model) kvRowCeiling() int {
+	if m.resCtxReq > 0 {
+		return m.resCtxReq
+	}
+	return m.w.Cfg.MaxPositions
+}
+
 func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, newCache func() *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
 	if len(prompt) == 0 {
 		g.err = fmt.Errorf("decoder.Generate: empty prompt")
@@ -1698,6 +1780,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
 	var mc3 *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
 	mc3Slot := -1
+	mc3Committed := false // the generation committed its slot (commitResident); else its published prompt is forgotten
 	if useGPU {
 		// The resident path drives the model's one shared positional KV; two concurrent generations would interleave writes at
 		// overlapping positions and corrupt it. Claim it non-blockingly: a loser falls back to the staged CPU path, which uses this
@@ -1759,12 +1842,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
 		// generation completes the cache is mid-write, and any early return must leave the
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
-		var reuseFrom int
+		var acq kvAcquired
+		scope := kvScopeOf(ctx)
 		if mc3 != nil {
 			// MC3: choose a slot no other running generation holds, and prefill into it, with the resident to
 			// ourselves (between the other generations' steps).
 			mc3.exclusive(func() {
-				reuseFrom, mc3Slot = m.residentAcquireSlot(prompt, nil, lora, mc3.busySlots())
+				acq = m.residentAcquireIn(prompt, nil, lora, mc3.busySlots(), scope)
+				mc3Slot = acq.slot
 				if mc3Slot < 0 {
 					err = fmt.Errorf("decoder: no free resident KV slot for a concurrent generation")
 					return
@@ -1776,23 +1861,42 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				defer mc3.markSlot(mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
 			}
 			if err == nil {
-				logits, err = m.mc3Prefill(ctx, mc3, mc3Slot, prompt, reuseFrom)
+				logits, err = m.mc3Prefill(ctx, mc3, mc3Slot, prompt, acq.reuse)
 			}
 			if err != nil {
 				g.err = err
 				return
 			}
+			// The prompt's rows are final: publish them for a request that arrives while this one decodes. A generation
+			// that ends without its commit forgets them, as it would anything it wrote (before markSlot frees the slot).
+			mc3.exclusive(func() {
+				m.residentPublishPrompt(mc3Slot, prompt, lora)
+				m.residentSnapshotPrompt(mc3Slot, prompt, lora, scope, acq)
+			})
+			defer func() {
+				if !mc3Committed {
+					mc3.exclusive(func() { m.kvSlots().Forget(mc3Slot) })
+				}
+			}()
 		} else {
-			reuseFrom = m.residentAcquire(prompt, nil, lora) // MC1: binds the KV slot this prompt will use
+			scope.checkpoint = m.recurrentCheckpointer() != nil      // KV8a: this path restores, and saves after its prefill
+			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
-			if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, lora != nil); err != nil {
+			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
+			if logits, err = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk); err != nil {
 				g.err = err
 				return
 			}
+			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq)           // before the first decode step writes past the prompt
+			g.CheckpointSave, g.CheckpointSaved = m.residentCheckpointSave(prompt) // likewise: the state at the end of the prompt
 		}
-		g.PrefillReused = reuseFrom
+		g.PrefillReused, g.PrefillSlot, g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
+		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
+		g.KVSnapRestored, g.KVSnapRestore = acq.snapRows, acq.snapDur
+		g.CheckpointRestored, g.CheckpointRestore, g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
 		gpuPos = len(prompt)
 	} else {
+		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
 		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
 			g.err = err
 			return
@@ -1957,6 +2061,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		mc3.exclusive(func() {
 			if m.residentBind(mc3Slot) == nil {
 				m.residentCommitIDs(prompt, generated, nil, lora)
+				mc3Committed = true
 			}
 		})
 	}
@@ -2337,6 +2442,29 @@ type Generation struct {
 	// agent loop's per-turn prefill cost visible without timing it. GenerateVL/GenerateQwenVL set it only on the full-image-reuse
 	// fast path (docs/multimodal.md): 0 there means the turn's image (or everything before it) was not fully reused.
 	PrefillReused int
+	// PrefillSlot is how many positions the KV record this generation reused from held before it started (the bound resident
+	// slot's, or a Session's), and PrefillMatch how many leading prompt tokens equal that record's, before any rounding to what
+	// may be reused: when PrefillMatch < PrefillSlot the prompt left the record at PrefillMatch. Diagnostics for -log-requests;
+	// 0 on paths that do not report them.
+	PrefillSlot, PrefillMatch int
+	// PrefillShared is how many of the PrefillReused rows were copied from another conversation's KV slot
+	// (ResidentKVCopier); KVCopy is that copy's wall time, and KVCopyDeclined why a copy the index offered was not
+	// made ("" when none was declined). Diagnostics for the sharing gate (docs/measurements/kv2-2026-10-14.md).
+	PrefillShared  int
+	KVCopy         time.Duration
+	KVCopyDeclined string
+	// KVSnapRestored is how many of the PrefillReused rows a host snapshot restored (Options.KVHostBytes), and KVSnapRestore that
+	// restore's wall time. 0 when none did.
+	KVSnapRestored int
+	KVSnapRestore  time.Duration
+	// CheckpointRestored is the position a recurrent checkpoint was restored at for this prefill (0: none), CheckpointRestore its
+	// copy's time, CheckpointDeclined why a checkpoint hit prefilled cold instead; CheckpointSaved reports whether the state at the
+	// end of this prompt was saved for the next request, CheckpointSave that copy's time (KV8a, residentCheckpointSave).
+	CheckpointRestored int
+	CheckpointRestore  time.Duration
+	CheckpointDeclined string
+	CheckpointSaved    bool
+	CheckpointSave     time.Duration
 	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ResidentImagePrefill, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a

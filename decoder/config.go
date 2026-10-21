@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 )
@@ -132,7 +133,7 @@ type Config struct {
 	LayerGroupSize   int `json:"layer_group_size"`
 	NumSharedExperts int `json:"num_shared_experts"`
 	// GatedAttentionProjGranularity ("head_wise" | "element_wise" | absent): MLA's optional per-head or per-element sigmoid output
-	// gate (g_proj) on the attention context before the output projection: Laguna's structure (FeatAttnOutputGate) with sigmoid
+	// gate (g_proj) on the attention context before the output projection: Laguna's structure (FeatAttnOutputGateSoftplus) with sigmoid
 	// in place of softplus.
 	GatedAttentionProjGranularity string `json:"gated_attention_proj_granularity_type"`
 	// HeadwiseAttnOutputGate/GateAttnActMode (Spark-X2.5): its own spelling of the same gate-before-out_proj idea: a plain bool
@@ -201,6 +202,10 @@ type Config struct {
 	SSMStateSize          int      `json:"ssm_state_size"`
 	NGroups               int      `json:"n_groups"`
 	ConvKernel            int      `json:"conv_kernel"`
+
+	// AttentionHeadDim is NVIDIA's spelling of the attention head dimension in Nemotron-H's own config.json (the 4B carries this key and no
+	// head_dim). Only the nemotron_h adapter reads it.
+	AttentionHeadDim int `json:"attention_head_dim"`
 
 	// Gated DeltaNet (qwen3_5_moe linear-attention layers). The linear layers
 	// replace softmax attention with a gated delta-rule recurrence over a
@@ -342,6 +347,10 @@ type Config struct {
 	// either a scalar or a list, so it's kept raw and decoded by EOSIDs.
 	// omitempty: nil must not round-trip through .giw as the literal `null`.
 	EOSTokenID json.RawMessage `json:"eos_token_id,omitempty"`
+
+	// Sampling is the checkpoint's recommended sampling, read by loadConfig (generation_config.json) or ggufConfig. It is
+	// not a config.json key; the name only carries it through a .giw.
+	Sampling *RecommendedSampling `json:"goinfer_recommended_sampling,omitempty"`
 
 	// Gemma 2 fields that MUST be absent/zero in a Gemma 3 checkpoint.
 	// ValidateAssumptions rejects a checkpoint that still sets them so we
@@ -1292,12 +1301,13 @@ func eosFromGenerationConfig(fsys fs.FS, name string) []int {
 	return gc.EOSIDs()
 }
 
-// loadConfig reads and parses config.json from fsys.
+// loadConfig reads and parses config.json from fsys, and the recommended sampling from the generation_config.json beside it.
 func loadConfig(fsys fs.FS, name string) (*Config, error) {
 	b, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, fmt.Errorf("decoder: read %s: %w", name, err)
 	}
+	b = lenientConfigJSON(b) // Python's Infinity and NaN, as released configs carry them; request bodies stay strict
 	var c Config
 	if err := json.Unmarshal(b, &c); err != nil {
 		return nil, fmt.Errorf("decoder: parse %s: %w", name, err)
@@ -1323,6 +1333,7 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 			return nil, fmt.Errorf("decoder: parse %s: %w", name, err)
 		}
 	}
+	c.Sampling = samplingFromGenerationConfig(fsys, path.Join(path.Dir(name), "generation_config.json"))
 	return &c, nil
 }
 

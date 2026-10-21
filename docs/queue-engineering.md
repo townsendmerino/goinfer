@@ -454,6 +454,394 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B28 · the peer harness cannot yet run Gemma 2: G2-P (OP1) waits for it, on both backends** — filed 2026-10-16 (owner, from OP1 on
+CUDA). **Not started; not blocking** the CUDA or Metal softcap declarations, which rest on G2-K, G2-D and G2-L
+(docs/tasks/task-forward-architecture-2026-10.md §4.6a).
+
+G2-P is OP1's peer cell: Gemma 2 decoded by goinfer on the GPU, by goinfer on the CPU (the do-nothing arm) and by Ollama, depth 128
+and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot run it today, on either backend:
+- **No model key.** `MODELS` in `scripts/bench_peer.py` has no `gemma2-2b`, with the GGUF Ollama ships as `gemma2:2b` loaded by both
+  engines and `scripts/gguf_same_weights.py` reporting every tensor identical.
+- **No calibrated prompts.** `scripts/bench_prompts_calibrate.py` has not produced Gemma 2's prompts, so a depth cell's token count
+  is not what it says.
+- **No Ollama import** of that GGUF under a name the harness can ask for.
+- **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
+  registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
+  on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B41 · One available-memory reading that counts reclaimable memory as free, in the fit guard and every start check** — filed 2026-10-21
+(owner: "seems like reclaimable should count as free or we'll never be able to run anything that isn't tiny.  people use their machines in
+real live", 11:35 PT). **DONE, merged 2026-10-21** on Francis's yes after gate 1a under amendment A5. macOS: free + file-backed +
+purgeable pages, read through `host_statistics64` without cgo, each speculative page counted once (A5: `host_statistics64`'s free and
+external counts both hold them); Linux keeps `MemAvailable`. The fit guard, `scripts/night.py` and the job scripts (with
+`scripts/bench_peer.py`'s heavy-load void) read one number, through `cmd/hostmem`; the Metal guard also caps at
+`recommendedMaxWorkingSetSize`. The 2 GB margin and the swap guards are unchanged; the run rule records the change. Gates, amendments
+A1 to A5 and the readings: `docs/measurements/hostmem-available-2026-10/README.md`. **Candidate, not built:** serve could watch the kernel's pressure level
+(`kern.memorystatus_vm_pressure_level`) while serving, and decline new work or say so at warning and critical.
+
+**B40 · CANDIDATE: drop the model file's page cache once a GPU-resident load no longer needs it** — filed 2026-10-21 (owner, from the Metal
+KV8a night plan: after a 9B load exits, macOS keeps the model's `.giw` pages as active file cache, the fit guard's reading counts them as
+used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need until a `purge`, `docs/measurements/kv8a-metal-2026-10/README.md`,
+"The day checks"). **Not started; not for tonight** (the night's jobs purge first, on Francis's sudoers rule).
+- **How each backend reads the file today** (traced at `9a22d909`):
+  - **serve loads a `.giw` by default:** on darwin and linux a `.gguf` goes through the sidecar (`internal/modelload/modelload.go:routeFor`,
+    `internal/prequant/prequant.go:EnsureCachedGIW`), so the cases below are the `.giw` ones; the direct GGUF path (`-direct-load`,
+    `--quant q4k`) copies every tensor to the heap and unmaps the file when loading returns.
+  - **The `.giw` stays mapped until `decoder/model.go:Model.Close`** (`decoder/giwmap_darwin.go:mapGIW`: `MAP_SHARED` on darwin, aikit's
+    `MAP_PRIVATE` elsewhere), and the host weights alias it: int8 and int4 codes and their scales are views into the mapping, not copies.
+    The first load reads every page for the CRC pass unless `decoder/giwverify.go:giwVerified` finds the file's marker.
+  - **CUDA and WebGPU copy the weights to the device** (`cuda/pack_stream.go:cudaResident.streamW`, in row blocks through a staging
+    buffer; `gpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/model.go:Model.tryClaimResident`
+    falls back to the CPU path when the resident is busy, and CUDA gathers token embeddings on the host. Nothing drops or advises the pages
+    after the upload.
+  - **Metal aliases most of a `.giw` model:** `metal/alias.go:weightAlias.window` builds no-copy buffers over `Model.MmapAliasWindow`
+    (default on; `GOINFER_METAL_ALIAS=0` turns it off) for the int4 and int8 codes and contiguous scales; norms, routers, non-contiguous
+    scales and unpaged routed experts are copied. While a Metal resident serves, those file pages **are** its weights.
+  - **The sidecar write** goes through the page cache: buffered writes, a read-back of the cached copy, then a self-check load of the new
+    file. A first `.gguf` load on the Mac left the 5.9 GB `.giw` and the source both cached.
+  - **Existing hints:** `decoder/coldload.go:prepareColdLoad` (WILLNEED read-through of a cold `.giw`, CPU on darwin, small-matrix MoE on
+    linux) and the stream-weights pagers' DONTNEED (a no-op on darwin). `F_NOCACHE` appears once, opt-in, on Metal's Gemma 4 MoE pread fd.
+- **The change:** after a GPU-resident upload, release the file's cached pages that the resident has copied; never on the CPU path, and never
+  for a Metal-aliased tensor or any page a no-copy buffer covers, where those pages are the weights. Two places, either or both:
+  - **(a) after the upload,** for CUDA and WebGPU: drop the copied ranges. To lower the load's **peak** as well as the leftover, drop each
+    block as `streamW` uploads it; a drop after the whole upload lowers only the leftover. A host page the CPU fallback or the embedding
+    gather touches later re-faults from the file, so correctness is unchanged and those reads cost SSD time.
+  - **(b) at `Model.Close`,** for every backend including Metal: once the resident and the mapping are gone, drop the file's cache. This is
+    the one that covers the Mac case above, where Metal aliases nearly all of the 9B.
+  - **Mechanics, to settle first:** on linux, `posix_fadvise(DONTNEED)` evicts only clean pages no process maps, so a mapped range needs
+    `madvise(MADV_DONTNEED)` first or the drop after `munmap`, and fadvise writes dirty pages back before dropping them. On darwin,
+    `MADV_DONTNEED` is a no-op and `F_NOCACHE` governs future reads through an fd, not pages already cached through a mapping; what evicts
+    a mapped file's cached pages without root (for example `msync(MS_INVALIDATE)` on the `MAP_SHARED` mapping, or reading the file through
+    an `F_NOCACHE` fd) is the first thing to measure, with `mincore` as the instrument.
+- **Expected effect:** for CUDA and WebGPU, the leftover cache after a load drops by about the copied bytes (about the model file's size for
+  a `.giw`), and the load's peak by the same when (a) drops per block. For any backend, (b) frees the file's cache when the model closes. The
+  cost: a reload of the same model reads from the SSD instead of the cache (the 9B: 5.96 GB).
+- **The fit guard reads active file cache as used** (`decoder/hostram_darwin.go:HostRAMAvailableBytes`: free + inactive + speculative +
+  purgeable pages), so on macOS it can refuse a load right after another large model ran, and even a reload of the same model, whose pages
+  are already cached and would be reused. Dropping the cache after a GPU load, or at close, addresses the first case. Whether the guard
+  should count reclaimable file cache, the second case, was decided by Francis the same day: it should (B41).
+- **Gates to propose:**
+  - Tier 0: `mincore` residency of the file's pages before and after the drop, on a tiny `.giw`; the drop never touches a page a Metal no-copy
+    buffer covers (a plant that drops one must break a logits comparison); logits bit-identical with and without the drop, including a CPU
+    fallback step that re-faults dropped pages.
+  - Tier 1, the 9B, before and after, by night: the load's peak memory, the free-memory reading (the guard's own) right after the model
+    exits, and the reload time of the same model.
+- **Size:** S to M; the darwin mechanics decide it.
+
+**B39 · CANDIDATE: 8-bit KV cache on CUDA (`--kv i8`), for a longer context on the 8 GB card** — filed 2026-10-20 (owner, from tack's question: tack runs Qwen3-8B Q4_K_M at 16k because of KV memory). **Folded 2026-10-20 into `docs/tasks/task-kv-precision-everywhere-2026-10.md` as its phase 2 (the owner asked for f16 and int8 KV on every backend, family and path); the state line below is corrected there (§2).** **Candidate, not funded, not scoped past this estimate.** *Update 2026-10-20 (tack): its 4.8 screen removed about 10k tokens of instructions from a 16k window and passes on the hard tasks did not move (0/30 in both arms), so the window is no longer tack's binding limit; B39 stays a candidate with no pull from tack for now.* Tack decides after its next change (dropping or sectioning CLAUDE.md in the prompt) shows whether the window is still its main failure; no work until then.
+- **State today:** CUDA's resident KV is f32 or f16 only. `--kv auto` is f16 for the dense llama, mistral, qwen2, qwen3 and phi3 families (`decoder/residency.go:Model.ResidentKVPrecision`; Qwen3-8B's banner reads `KV f16`). `--kv i8` refuses the load on CUDA (phase 0 of `docs/tasks/task-kv-precision-everywhere-2026-10.md`; until then it was silently f32). On Metal it is delivered on the per-token path where the MMA prefill, batched decode and the Gemma 4, MoE and emodel layer-major paths decline it; on the CPU it covers the families without MoE on the batched attention kernel and refuses elsewhere; WebGPU's coverage is phase 5's survey (`docs/kv-precision-matrix.md`). 4-bit KV exists nowhere (int4 KV is deferred behind int8; a 3-bit variant was killed, `docs/quantization.md`).
+- **Sizing arithmetic (Qwen3-8B Q4_K_M, RTX 2070 SUPER; arithmetic, not a measurement; the server's own plan is the fit check):**
+  - KV per position at f16: 36 layers x 8 KV heads x 128 x 2 (K and V) x 2 B = 147,456 B = 144 KiB. At 16,384 positions: 2.36 GB (the banner's "needs 2.2 GB KV", in GiB). Weights 4.3 GB (the banner).
+  - Free VRAM on a quiet card 7,386 MiB (7.74 GB); less the weights 4.3 GB and the 384 MB driver and decode reserve: about 3.0 GB for KV. 3.0 GB / 147,456 B is about **20,000 positions at f16**.
+  - int8 KV: K and V at 1 B per element (73,728 B) plus one f32 scale per position, head and tensor (2 x 8 x 36 x 4 = 2,304 B): about 76 KB per position, 51.5% of f16. The same 3.0 GB holds about **39,000 positions**, essentially the model's 40,960 maximum. int4 would add nothing for this model: it is already capped by the rope range.
+- **Cost, what is known:** nothing measured on CUDA int8. f16 on CUDA, the nearest evidence (`docs/tasks/task-cuda-f16-kv-2026-10.md`): agreement -0.94 pt on the 7B at K=8000 (PARKED; the confirmation cell passed), mean KL ratio 1.013; speed read 0.84 to 1.02x before the V-sum fix and 1.02 to 1.10x on phi3 after it. Expectation, to be tested not assumed: decode attention is byte-bound at depth, so int8 is neutral to faster at long context; its quality loss is larger than f16's.
+- **The build, if funded:** (1) a store path that quantizes per position and head with a scale, and a `_kv8` twin of every kernel that reads KV (`attn_fused`, `decode_fa`, `decode_splitkv`, the batched and row-batched prefill attention, the rope and KV-store kernels, the image paths), on the `KV_T` and `kvtype.cuh` machinery the f16 build added; (2) the Go side: buffers and scales, `cudaKVBytes` and the fit plan and banner, windowed KV and its rollback, KV7 snapshots and prefix reuse, declines for speculative decode and a drafter; (3) tests: bit-exact kernel identity on int8-representable inputs, the attention-digest census entries, the f16 gate's two cells (7B at K=8000, 1.5B at K=3900) plus a long-context cell, at night; a paired served speed check at night.
+- **Size:** L: about a week of focused work plus two gate nights. The f16 build took two to three days to a flipped default; int8 is larger for the scales, the windowed layout and the snapshots. Scope v1 to the families f16 covers, as f16 did.
+- **Do first, no build:** at f16 the card admits about 20k, so `-ctx 20480` (or the plan's stated maximum) is an option, but **not yet**: tack keeps 16,384 until its C6 series and bundle night finish, because its baseline and every comparison are at 16k; a context change mid-series would break them. After that it is an option; the server's own plan, read on a quiet card, gives the exact ceiling.
+**B38 · An always-on queue runner on both boxes: `night.py serve`, a launchd agent on the Mac and a systemd user service on nobara** — filed
+2026-10-20 (owner's yes, as scoped). **Built** (Mac session; tooling, pushed on green): `night.py serve`, `pause`, `resume`, `update-runner`,
+`status --json`, `add --not-before / --retry-until / --fit-need-gb`, and `scripts/install-night-agent.sh`. **Installed on both boxes
+2026-10-20:** nobara's systemd user service and, on Francis's word, the Mac's launchd agent, each running from its `~/goinfer-runner`
+checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
+- **As built, where it differs from the scope below:** under serve, `stop` is a pause (the service manager would restart an exited runner);
+  `stop --now` also kills the running job, which is re-queued. The machine is held awake from when a night-only job is queued (up to 12 h
+  ahead, on AC), not from its `--not-before`: a Mac that idles to sleep before the hour never reaches it. The before_queue step runs before
+  every job, under the job's lock: a day server started between jobs holds the memory a job's fit check counts. A failed step is retried
+  after the backoff.
+- **Added 2026-10-20 (owner's yes):** a night-only job whose night ends without a start moves to the next night, its `--retry-until`
+  shifted with it and its retry count cleared, and the morning SUMMARY.md lists it with its last reason to wait. `status --json` gains
+  `phase` (idle, settling, running); while the runner holds the lock before a job it reads busy: `idle` false, `running` the job.
+- **Why:** both boxes run the queue only when someone types `night.py start`. On 2026-10-19 three queued jobs (B35's CUDA test twice, the M1
+  cell) sat unrun because nobody started a runner, and day jobs waited on a session to relay them.
+- **The mode:** `night.py serve` is a long-lived loop over the same queue. Each job runs as `_run` runs one today: same log, timing lock,
+  failure markers and summary. Between jobs it holds no lock, so the day tools run as usual.
+- **When a job starts,** all of these hold:
+  - the timing lock has been free for a settle period, and the runner takes the lock **before** settling (closing the 2026-10-19 gap where
+    tack started a run between a job and its settle);
+  - its `--not-before HH:MM` hour has passed (night-only jobs), and its estimate still ends before the morning deadline (06:30);
+  - the box is not under heavy load by the 2026-10-19 rule, for every job: load at most half the cores and free memory at least the job's
+    declared fit need plus 2 GB (`--fit-need-gb`; 0 skips the memory clause).
+- **Retry:** a job whose own fit check refuses exits 75 (EX_TEMPFAIL). The runner re-queues it after a backoff (about 15 minutes) and records
+  it VOID-refused only once `--retry-until HH:MM` passes. Any other non-zero exit is FAILED, as today.
+- **Status:** `night.py status` says idle or busy: "idle, N queued, next eligible at T" or "running <job>". tack's launcher waits for "no
+  job running and the lock free", not for "no runner going", which an always-on runner always is.
+- **Install:**
+  - `scripts/install-night-agent.sh` writes `~/Library/LaunchAgents/com.goinfer.night.plist` (RunAtLoad, KeepAlive) or
+    `~/.config/systemd/user/goinfer-night.service`, checked with `plutil -lint` / `systemd-analyze verify`;
+  - the runner runs from its own worktree pinned to `origin/main`, which `night.py update-runner` moves between jobs, never from a shared
+    checkout another session switches;
+  - `night.py pause` / `resume` stop and restart new starts; `stop` / `stop --now` keep their meanings.
+- **Sleep:** caffeinate (systemd-inhibit on nobara) is held while a job runs and, for night-only jobs, from the earliest `--not-before`
+  until they finish, on AC only; a lid-closed sleep is reported in the summary.
+- **Rule changes with it:** CLAUDE.md "Run budget" (the agent runs jobs as their gates allow; the owner pauses it), the night-start skill,
+  noise-registry §8's queue line, and the M1 cell's script (exit 75 on a fit refusal).
+- **Gate:** tier 0 in `scripts/test_night.py` with a fake clock and lock: each start condition, the exit-75 re-queue and its limit, an idle
+  runner holding no lock, settle under the lock, idle-versus-busy status; a plant per rule; the plist and unit linted.
+
+**B37 · The in-process real-model harnesses load with `decoder.Options` that are not serve's, so their expert cache and KV plan differ from the server's at the same flags** — filed 2026-10-19 (owner, from the Mellum2.1 16k reading). **Scoped, not built** (test code; on Francis's yes).
+- **Measured:** `TestMoERows_realMellumIdentityAndAB` at `-ctx 32768 --moe-cache-experts` planned 26 expert slots per layer (3.1 GB free after the build) on a quiet card (only `kwin_wayland`) in two sessions; the server planned 53 (5.8 GB free) with the same flags minutes apart (`docs/measurements/mellum21-served-16k-2026-10-19/README.md`).
+- **Cause:** `Options.ResidentWindowedKV`. Serve sets it from `--windowed-kv` (default true, `internal/loadflags/loadflags.go`); the library default is false and the harness does not set it, so Mellum2.1's 21 sliding-window layers kept the whole context instead of window + 512 positions: 21 x (32,768 - 1,536) x 4,096 B = 2.686 GB, against the observed 2.7 GB gap. Arithmetic match to three figures; the first gate below turns it into a run.
+- **Affected:** every `cuda/*_test.go` harness that loads a real checkpoint through `decoder.Load` with hand-written options (`moe_rows_real_test.go`, `prefill_decomp_test.go`, `prefill_longprompt_test.go`, the P20 and KV-policy readings, `gptoss_real20b_test.go`), for any model with sliding-window layers; other options that move memory (KV slots, the KV element type, act-quant group, embed-int4) are the same class and unchecked.
+- **The fix, scoped:** (1) a helper `serveOptions(base)` for the cuda tests that starts from `internal/loadflags`'s defaults (the code serve runs) and overlays the harness's own fields (`MoECacheExperts`, `ResidentContext`), so a flag added to serve reaches the harness; (2) the real-model harnesses use it; (3) a guard in each timed harness: print the build's plan line (`r.cacheSlots`, the C' line) and VOID when the model has sliding-window layers and `ResidentWindowedKV()` is false, instead of timing it.
+- **Gates (tier 0/1, pre-registered when built):** (a) on Mellum2.1 at `-ctx 32768`, the harness's load plans the same slot count as the server's banner on a quiet card (53 on 2026-10-19), a load of a few seconds; (b) a unit test that diffs the helper's options against `loadflags` defaults on the memory-moving fields, and goes red when the helper drops `ResidentWindowedKV` (the plant); (c) the guard VOIDs a harness that leaves windowed KV off on a windowed model.
+- **Size:** S.
+**B36 · A `--moe-cache-experts` load of a `.giw` packs each expert twice on the Go heap, so its anonymous memory runs a third to a half above the pinned copy the guard prices** — filed 2026-10-19 (owner, from the sampled 35B load). **Built 2026-10-19, branch `b36-expert-pack` (`ca0c37cf`), not merged (needs Francis's yes).** Tier-0 gates green (pinned bytes identical; 6 KB of heap against 4.7 MB pinned; the staged plant allocates 15 MB and goes red; a decline allocates nothing; the abort poll reaches the packer). The 35B load on the guard-on build completes in 29.5 s with peak `RssAnon` 0.40 GB, no swap and no slice reclaim (`docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`, run 3).
+- **Measured** (`docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`, run 2): `RssAnon` 19.9 GB at layer 23 of 40 with about 12 GB of live heap; the non-live part grew 2.2, 3.5, 5.3 GB over the first 34 s. #100 prices the 18.1 GB pinned copy; this staging garbage and the collector's headroom are not in any figure. Where it bites: the user slice's `MemoryHigh=52G` (`/etc/systemd/system/user-1000.slice.d/50-oom-protect.conf`) charges anonymous memory and page cache together, and the load's swap abort (B33) fired at 0.61 GB.
+- **Mechanism:** `packWeightStack` calls `packWeight` per expert (each allocating its own `wpk` and `ws16`, and on the int4 path an f32 copy of the scales that `decoder.Int4F32` makes before they are narrowed back to f16, larger than the f16 result) and copies those into the merged stack (the stack itself is reserved up front, `docs/code-notes/cuda.md#packWeightStack.reserve`, so the regrowth garbage of an earlier version is gone; these per-expert intermediates remain), in `BuildResident`'s planning loop, for every layer, all of it live in `hls` until the setup job; `cacheWQ` then registers the merged slice in place (`mapBytes`, `RegisterMappedHostBuffer`).
+- **The fix, scoped:** (1) `planWeightStack`, the validation of #95's `planWeight` over the stack (same error, no allocation), keeping the experts' `WeightMat`s and the stack's sizes; (2) in the setup job, `cacheWQ` allocates the pinned buffers once (`NewMappedHostBuffer`, outside the Go heap) at the planned size and packs each expert straight into its offset (`packWeight`'s per-row packers, as `streamBlocks` does, several experts in parallel), so nothing is staged on the heap and
+  the pinned bytes are the same bytes; (3) the per-layer abort poll (B33) moves with the packing, per layer in the setup job, and the pre-registered plan's planning-loop poll still covers validation. Expert stacks of other families that take the eager path (shared experts, Mamba, the drafter) stay as they are. Optionally (4): skip `coldReadThrough` (the whole-file pre-read) when the C′ build reads the file once anyway; it is a separate decision, since it changes load behaviour on a cold disk.
+- **Gates, pre-registered when built (tier 0):** on a tiny MoE fixture with `MoECacheExperts`, (a) the pinned bytes equal what `packWeightStack` produces today, byte for byte, for int4 stacks; (b) the Go heap allocated during the expert build (`runtime.MemStats.TotalAlloc`) is at most 10% of the pinned bytes; plant: restore the per-expert staging, which allocates at least the pinned bytes, and (b) goes red; (c) a decline allocates nothing, as for `planWeight`. Tier 1: the sampled 35B load again: peak `RssAnon` at most the pinned copy plus 1 GB, and no more than 1 GB of non-live heap.
+- **Interim, if wanted before the fix:** #100's pricing could take the staging into account (the collector's goal is twice the live heap, so up to 2 x 18.1 GB on this path). A pricing change, so it needs the owner's word; not proposed as a replacement for the fix.
+- **Size:** M (the stack planning and packer, the executor-side buffer allocation, the abort polls, the gates).
+
+**B35 · A recurrent model (Qwen3.5 and its kin) cannot reuse a chat conversation's prefix, because the template's history render drops the generation prompt's tail** — filed 2026-10-18 (owner, from tack's C3 run; measured in
+`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). **Built and gated on branch `b35-recurrent-checkpoint-2026-10`; merge on Francis's yes** (PR, 2026-10-20).
+- **State (2026-10-20):** the end-to-end gate PASSED on nobara (`docs/measurements/b35-e2e-2026-10-20/README.md`): Qwen3.5-9B chat turns 2 and 3
+  restored from the kept state match a cold prefill digit for digit, B35's cold output matches the base build's, and time to first token
+  falls to 0.15 of cold at 4k and 0.08 at 8k. As built (the owner's choice of a mid-pass save over a cut at `b`), the state is kept at Keep
+  rounded down to the 512-row pass grid, so a warm turn re-prefills up to about one pass; a cut at Keep is the follow-up that removes it.
+  Step 3's grid cell as built is the recurrent `share` cell, which names the B35 restore. CUDA only; Metal and the CPU keep no recurrent
+  snapshot (`KeepsRecurrentSnapshots` false), and their cold output is unchanged.
+- **What happens:** the engine reuses an appended request (`scoreRecurrent`: 0.04 s against 15.2 s cold on `/v1/completions`), but through `/v1/chat/completions` the next prompt shares only the first 22 of the previous 26 ids, because the history render drops the empty `<think>\n\n</think>\n\n`
+  the generation prompt ends with. A recurrent state can only continue from where it stopped, so every chat turn is a cold prefill: 15 s at 4k, 39 s at 8k, 7 minutes at 31k for the 9B.
+- **The fix, exact (the owner's choice over changing the history render):** save the DeltaNet state before the generation tail.
+  1. **The tail.** Derive it from the template, not per family: render the conversation with and without a following assistant turn; the generation prompt's text after the common prefix is the tail (`<think>\n\n</think>\n\n` here), and its token count is `k`. `chat.Template` grows `GenerationTail(system, turns)`. A template whose history render keeps the whole generation prompt has an empty tail and nothing changes.
+  2. **The checkpoint.** A prompt of `n` ids is prefilled with a pass cut at `b = n - k`; a resident that can (`ResidentPrefillMarked` today fires only at an existing pass boundary, so the chunker has to put a cut at `b`) copies its state at `b` to pinned host memory: for each DeltaNet layer the conv ring and the recurrent matrix state (`dnWin`, `dnState`), tens of MB for 24 layers, a few milliseconds each way. The 8 full-attention layers' rows `[0, b)` are positional and ride the existing KV snapshot.
+  3. **The hold.** `kvSnapStore` already holds a prompt's ids and a resident snapshot under a host byte budget (6.3 GiB on this box); the snapshot carries the state with its rows, and `Serves(end)` is true only at `b`. The cache-state grid's recurrent snapshot cell changes from refused to persisted-at-a-boundary, with its test.
+  4. **The use.** A request whose ids share `b` or more with a held snapshot restores it into the slot (rows and state), then prefills the rest: the previous reply and the new turn, a few hundred tokens. The match may extend past `b` into the reply; only `b` is restorable, the reply tokens are re-prefilled.
+  5. **Bit-identity.** A restore equals a cold prefill only when `b` is a pass boundary of the cold prefill (the KV7 rule), so a cold prefill of the same prompt must cut at `b` too, which the chunker does for any prompt with a tail. Whether DeltaNet's batched prefill is pass-boundary independent is the open numerics question the first gate answers.
+- **Gates (pre-registered when built):** tier 0 on `testdata/qwen35-tiny`: a restore at `b` then the rest equals the cold prefill's logits and every state and KV row, bit for bit; plants: a checkpoint one position off, and one taken after the tail, both must differ; the cache-state grid test. Tier 1: the 9B, three-turn chat at 4k and 8k, turn 2 and turn 3 first-token time against a cold request (today equal; target a small fraction), and a changed-tail request (tack's probe) still cold and correct.
+- **Size:** L (a resident save/restore of DeltaNet state on CUDA, the chunker cut, the snapshot payload, the template tail, the gates). It touches Metal's and the CPU's recurrent models only through the grid and the interface; CUDA first.
+- **Not the fix:** rendering the history turn with the empty think block (a fidelity change to the prompt the model sees; the owner chose against it).
+
+**B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Steps 1 and 2 DONE: merged to main in #101 (333407c3), 2026-10-19:** step 1 re-baselines the serving watch when a runtime load finishes, and step 2 is B33 below. Step 3 is PR #100; step 4 is not started. Reading and proposals:
+`docs/measurements/c3-logs-reading-2026-10-18.md` §1; background in `docs/completed/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: the C3 trip on the 35B-A3B".
+- **What happened:** with `--moe-cache-experts` the server's own `VmSwap` grew 0.83 and 0.90 GB over its 0.00 GB baseline during the load (512 MB threshold), the watch tripped, and every later request was `503 halted`. The baseline was taken at server start; the load runs after it; swapped pages
+  do not return to baseline, so the halt cannot recover. The whole C3 arm was void.
+- **Proposed, in order (steps 1 and 2 merged in #101):** re-baseline the serving watch when the load completes; B33 for the load itself; price the 18.1 GB pinned expert copy in `decideGIWFit`; do not hold the `.giw` in page cache beside the pinned copy.
+- **Gate once approved:** tier 0, a scripted reader that grows `VmSwap` during a fake load: today the watch trips and stays tripped, after the change it re-baselines at "loaded" and serves; plant: remove the re-baseline and the test must go red.
+
+**B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the
+cuda-stream-pack scoping). **DONE: merged to main in #101 (333407c3), 2026-10-19**, with B34 step 1, as one change (branch `swap-giw-load-watch`). Brief: `docs/completed/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
+- **What happens:** `internal/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
+  "swap guard (load): not armed for <path>" for a `.giw` (or streamed, or HF-directory) load. `Options.LoadAbort` has one consumer, `parallelLayers` in the direct GGUF weight
+  build, so arming it elsewhere would log a trip and keep loading.
+- **Scope, once approved:** (1) arm the watch on the `.giw` path (the sources, per-process `VmSwap` with the system backstop, are path-agnostic);
+  (2) poll `LoadAbort` in the `.giw` loader's per-layer loop and in the CUDA resident build's per-layer loop and per-block loop (`streamBlocks`), returning `decoder.ErrLoadAborted`
+  as a real error, not a decline (a decline falls back to the CPU and keeps loading); (3) give the CUDA build the channel: `cuda.BuildResident` receives only a `*decoder.Model`, and the
+  Model keeps no `LoadAbort`, so it needs a per-model accessor (the policy in `docs/env-vars.md`: an `Options` field with an accessor, not an env read); (4) tier 0 with a scripted swap
+  reader (`decoder.SwapReader`) driving `armLoad` against a fake load that polls the channel, and a planted trip: a load whose reader crosses the threshold at layer 3 must return
+  `ErrLoadAborted` having built no more than layer 3, and with the poll removed the same fake load runs to the end.
+- **Why not urgent:** the 7B sidecar load measured 0 swap and about 120 MiB of heap here (`docs/measurements/cuda-stream-pack-2026-10-18/README.md`), and a mapped `.giw` is reclaimable page cache; this protects
+  heavier models and smaller machines. Size: S to M.
+
+**B33 (number clash) · Qwen3.6-35B-A3B with `--moe-cache-experts` at 32k grew into swap and was halted by the swap guard** —
+filed 2026-10-18. **CLOSED 2026-10-19 as a duplicate of B34**, which records the same C3 incident with its cause (the serving
+watch's baseline was taken before the load). It was filed under B33 at the same time as the `.giw` load-time watch above.
+
+**B32 · After a fit refusal, the automatic weight-streaming retry starts a sidecar transcode even for a load that has no
+`.giw` form (`--quant q4k`), so it cannot help** — filed 2026-10-18 (owner, from the phi3 `q4k` fit check on Metal). **Not
+started; not fixed yet** (owner).
+- **What happens:** `internal/modelload/modelload.go:Load` retries a refused dense `.gguf` with weight streaming. It prints
+  "automatically retrying with weight streaming" and starts a sidecar `.giw` transcode
+  ("stream-weights: transcoding … → ….q4k.metal.v17.giw"). The transcode then fails, because `--quant q4k` has no `.giw` form
+  (`decoder/serialize.go`: "--quant q4k has no .giw form yet; load the .gguf directly").
+- **Cost:** a refusal reads as a retry, and the load spends the transcode's start before the real reason surfaces. Seen
+  2026-10-17 21:54 (peer-vetted M1's fit check) and 2026-10-18 07:11 (the by-day fit check). Neither left a file behind.
+- **The fix, once approved:** the retry checks first whether the load's quant has a `.giw` form, the same fact `routeFor` keys
+  on. Where it has none, it skips the transcode and says why ("q4k has no .giw form, so weight streaming cannot load
+  it"), and returns the refusal as it was. The gate is a tier 0 test that a refused `q4k` load starts no transcode, with a
+  plant.
+
+**B31 · Nemotron-H 4B Instruct has no chat template in the loader: replies run on past their sentence** — filed 2026-10-16 (owner, from OP2b's
+declaration smoke). **Not started; not CUDA-specific** (the loader and `chat.Detect` are backend-free; the CPU prints the same banner).
+The real `serve` on `nemotron-h-4b-instruct-128k` prints `[chat: raw (no template)]` and a greedy reply to "What is the capital of France?" opens
+correctly and then continues with `<|im_start|>assistant ... What is the currency of Japan?`: no turn markers, and no stop at the end of the answer.
+- **The checkpoint does ship a template.** Its `tokenizer_config.json` holds a `chat_template` (397 characters; eos `<SPECIAL_11>`, bos `<s>`), which the
+  tokenizer loader reads (`tokenizer/bytelevel.go`, `chatTemplate`). What is missing is a renderer for it: `chat.Detect` picks a native Go renderer by a
+  fingerprint in the template string and has none for this family, so it returns nil and the prompt is rendered raw.
+- **The template, as shipped:** `<SPECIAL_10>System`, then each system message's stripped content on its own line, a newline, then each user turn as
+  `\n<SPECIAL_11>User\n{content}\n<SPECIAL_11>Assistant\n` and each assistant turn as its stripped content. No tools, no reasoning block.
+- **What to build:** a renderer for that family (fingerprint `<SPECIAL_10>System`), the stop on `<SPECIAL_11>`, and a golden against HuggingFace's
+  `apply_chat_template` on the checkpoint's own tokenizer for a system+user prompt, a multi-turn one and no system message, as every other native
+  renderer has (`chat/templates.go`). Whether the Nemotron-Nano-9B-v2 checkpoint's template is the same family is **not read here**: check it with the same golden.
+- **Gate (tier 0, seconds):** the golden, and a test that a request through `serve`'s Chat Completions renders with the markers and stops at `<SPECIAL_11>`.
+  The 4B is the by-day tier 1 model for it (it loads in 5 s on the card).
+
+**B30 · an auto-picked resident context the fit guard then refuses: the picker must never choose it** — filed 2026-10-16 (owner, from OP2b's tier 1).
+**Not started.** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
+guard pinned a context of **12,353** positions and the CUDA build then refused it: 0.40 GB of KV against 0.80 GB free, with 384 MiB reserved
+(`checkKVFits`), short by about 8 MB, so the model ran on the CPU. With an explicit `ResidentContext: 4096` it ran resident (the same weights, 135 MiB of KV).
+- **Why it is not trimmed (INFERRED from `cuda/resident.go` and `decoder/model.go`; not stepped through):** the guard's pin sets
+  `ResidentContextRequest() > 0` while `ResidentContextPinned()` stays false, and the build's `ctxExplicit` is `ResidentContextRequest() > 0`, so
+  `checkKVFits`'s trim of an *unpinned* context (`trimUnpinnedCtx`, which would have given 12,124) is skipped for a guard pin and the build declines.
+  The plan (`resolveCtxCapFitSlack`) treats a guard pin as a ceiling, but nothing makes the ceiling fit this card's free memory net of the reserve.
+- **The rule:** a context the caller did not ask for is never one the build then refuses. Either the picker prices the build's own margin, or the build trims a
+  guard pin as it trims an unpinned context (a guard pin is a ceiling, not a choice, per `resolveCtxCapFit`'s own doc). An explicit `-ctx` stays untouched.
+- **Gate (tier 0, seconds, no model):** `checkKVFits` and the plan with free VRAM stubbed, as `kv_slots_test.go` stubs it: sweep the free memory across the
+  margin edge for a guard-pinned and an unpinned context, and assert the build either fits the context it is given or trims to one that fits, and refuses
+  only when even `cudaCtxCapDefault` does not fit; a planted defect (the trim skipped for a guard pin, as now) must go red. Then the 9B load itself as the by-day tier 1.
+
+**B29 · the CUDA context plan does not price a Gated-DeltaNet model's recurrent state: measure what pricing it would change before deciding** — filed 2026-10-16
+(owner, from OP2b step 2c). **Not started; not blocking.** Step 2c made the plan price the Mamba-2 state (`mambaStateBytes` in `cuda/mamba_resident.go`,
+added to the allocation slack `resolveCtxCapFitSlack` is given, `cuda/backend.go`). The DeltaNet families' state is allocated at upload exactly the same way
+(`dnWin` and `dnState` per linear layer) and is not priced, so the context the plan picks before the build is chosen against that much more free VRAM than the
+build will find. The build's own fit check (`checkKVFits`) reads free VRAM after the upload, so it sees the state; only the pre-build plan does not. Pricing it
+changes the plan of every shipped DeltaNet model that fits the card, so it is a measurement first.
+- **Size, INFERRED from the models' `config.json` (not measured on a resident):** the state is `(convK-1)*convDim*4 + nv*hv*hk*4` bytes per linear layer.
+  Qwen3.5-0.8B 19.3 MiB (18 linear layers of 24); Qwen3.5-9B 50.2 MiB (24 of 32); Olmo Hybrid 7B 53.8 MiB (24 of 32); Qwen3.6-35B-A3B 62.8 MiB (30 of 40).
+  Each buffer is under the driver's 2 MiB allocation quantum, so the rounding slack is zero.
+- **What it would change, to measure:** the context `resolveCtxCapFitSlack` returns for each of those models on this card, with and without the term, at the
+  same free VRAM. At 32 KiB of KV a position (the 9B's 8 softmax layers at f16, INFERRED) 50 MiB is about 1,600 positions. The 35B-A3B runs on the expert cache
+  (`MoECacheExperts`), which returns before the plan, so its context cannot move. Seconds, tier 0: the plan is a function, and no model needs loading beyond its
+  config.
+- **Decide after the reading:** price it for every recurrent family, only where the plan's context moves by more than the planner's own step, or leave it. If
+  priced, a test that the plan's state bytes equal the resident's state buffers (as `TestNemotronResidentCUDA_pricing` does for Mamba-2), and a planted
+  defect with the term dropped.
+
+**B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
+**Built 2026-10-16; the whole-model run PASS** (branch `b26-mamba-int8-giw-v17-2026-10`; filed as B26 and renumbered,
+main's B26 being another item; reading in docs/tasks/task-forward-architecture-2026-10.md §4.7); owner's decisions and the registration below, 2026-10-15,
+before any code.
+
+NVIDIA-Nemotron-Nano-9B-v2's int4 .giw is 19.2 GB: the Mamba in/out projections stay f32 there and in the decoder's host
+weights (about 0.59 GB a layer over 27 layers), and only attention and MLP take the requested quant. Metal already runs
+those projections at int8 (`metal/mamba.go`, quantized at build from the f32 host copy), so the f32 bytes serve only the
+CPU path and the build. At int8 the bundle would be about 7 GB, which a 16 GB Mac could load at night, and the whole-model
+half of OP2b's tier 1 could run (docs/tasks/task-forward-architecture-2026-10.md §4.7, "Tier 1 on a layer slice").
+
+**Owner's decisions:**
+1. **The .giw goes to v17,** as v16 did: every sidecar rebuilds once. In v17 each tensor's encoding is explicit, and a
+   reader refuses only an encoding it does not know, not the whole file by version, so B25's q4k form can be added
+   without a v18. The record says whether that holds.
+2. **Option A:** every quantized Nemotron-H load (from a .gguf or a .giw) holds the two Mamba projections as int8; an f32
+   load stays f32. Granite-4.0-H is unchanged.
+
+**Design:**
+- **The host:** at a quantized load, `mamba2Weights` holds `in_proj` and `out_proj` as int8 per-row weight matrices
+  (`linalg.QuantizeInt8`, the call Metal makes today), and the f32 copies are dropped. The CPU runs them as int8 weights
+  against f32 activations, through the backend's matmul.
+- **The GPU paths:** Metal and WebGPU upload those codes and scales as they are, where they quantized the f32 copy before.
+- **v17:** every array record starts with an encoding byte, the same namespace as a weight matrix's kind. The Mamba
+  projections are written as weight matrices (kind 1 f32, kind 2 int8). An unknown encoding is a `*SerializeError` naming
+  it, so a sidecar is rebuilt.
+- **The fit guard** prices a quantized Nemotron-H GGUF's `ssm_in`/`ssm_out` at int8.
+
+**Gates, registered before any code:**
+- **Tier 0, the bundle:** a quantized `nemotron-tiny` .giw holds its Mamba projections as int8 (kind 2), and the bundle's
+  size equals the size computed with int8 projections. Planted defect: the f32 copies kept (a test switch), which must
+  turn the size check red.
+- **Tier 0, the upload:** the int8 codes and scales Metal and WebGPU upload from the new host weights, from a .gguf and
+  from a .giw, equal byte for byte what they uploaded before (`linalg.QuantizeRowsInt8` of the f32 weights).
+- **Tier 0, the format:** a bundle with an unknown encoding is refused with a `*SerializeError` that names it; a
+  round-trip of every family's tiny fixture still loads (the existing serialize tests).
+- **CPU fidelity bar,** the int8-Mamba CPU against the f32-Mamba CPU at the same quant, greedy lockstep for 32 steps off
+  the f32 arm, graded from position 2:
+  - `nemotron-tiny` at int4: min logit cosine ≥ 0.999 and argmax agreement ≥ 30/32.
+  - The three-layer slice of the 9B (layers 0, 1, 14) at int4: min logit cosine ≥ 0.99 and argmax ≥ 28/32. The slice's
+    Metal W8A8 arm read 0.994410 against the f32 CPU; weight-only int8 has no activation quantization, so it should sit
+    closer.
+- **Then:** the parity refresh, and the whole-model run at night after a by-day fit check, against §4.7's bars (min
+  cosine ≥ 0.88, argmax ≥ 50%, the dense 1.5B control ≥ 0.95).
+- **After the v17 bundle is built:** nobara's 19.2 GB v16 .giw is deleted.
+
+**B26 · a real ACL check on Windows for `--ids-key-file` and the admin socket** — `windows`, filed 2026-10-15 (owner, from
+PR #31's Windows CI). **Not started.**
+
+Both checks read Unix mode bits, which Windows does not carry: every file reads as 0666. `readIDsKeyFile` therefore skips its
+owner-only check there and serve prints `permissions not checked on Windows` at startup, and `adminSocketDirSafe` returns early.
+On Windows the question is the file's or directory's DACL: an entry granting read (the key) or write (the socket's directory)
+to anyone but the owner, SYSTEM and Administrators.
+- **Tier 0 when it starts** (a Windows CI job): a key file with an inherited `Everyone:R` entry is refused and one restricted to
+  the owner loads; a socket directory writable by `Users` is refused; a planted defect (the check reading the wrong ACE type)
+  turns it red.
+
+**B25 · a .giw form for `--quant q4k`** — filed 2026-10-15 (owner, from OP6's tier 1). **Not started; for later.**
+
+A q4k load keeps each dense projection the GGUF stores as Q4_K in its own super-blocks, but `giwWriter.weightMatKind`
+refuses that kind ("--quant q4k has no .giw form yet; load the .gguf directly"). So a q4k model always loads from its GGUF,
+and the fit guard charges the whole file as mapped for the length of the load: 2.2 GB of Phi-3 mini's 4.9 GB on the Mac.
+A .giw kind for Q4_K super-blocks, aliased from the mapping as the int8 and int4 kinds are, would drop that charge and let
+`cmd/prequant -quant q4k` build a bundle.
+- **Tier 0 when it starts:** a q4k .giw of the 0.5B q4_k_m loads bit-identical weights to the GGUF load (every Q4_K row's
+  bytes equal), and its decode's logits match bit for bit; a planted defect (one super-block offset) turns it red.
+
+**B24 · the 26B test's bf16 checkpoint should load through memory-mapped safetensors, so its pages can be dropped rather than
+swapped** — `linux`, filed 2026-10-15 (owner, from B23). **Not started.**
+
+`TestGemma4_26B_1bBound` loads the 49 GB bf16 `gemma-4-26b-a4b-it` safetensors and peaks at 51,077 MB VmHWM alone, at
+`user-1000.slice`'s `memory.high`; with the desktop up its process swapped 24,064 MB (`docs/measurements/b23-cuda-heavy-split-2026-10-15.md`
+§1). Load its bf16 reference through memory-mapped safetensors instead of an in-memory copy, so the kernel can drop clean file pages
+under pressure instead of swapping anonymous ones. First find where the copy is made (the loader's bf16 read path, or the test).
+- **Gate, tier 1 (by day, under the timing lock):** the test's assertions unchanged and passing; its process's VmHWM and peak VmSwap
+  before and after, each read per process with `docs/measurements/kv2-cuda-2026-10-15/swap_sampler.py` on the prebuilt test binary.
+  The pass bar is a peak VmSwap that falls to under 64 MB with the desktop up (the GV-C(c) bar applied to the process), registered
+  with the before reading before the change is written.
+- **Tier 0:** a counter that the load path holds the file mapped rather than copied (bytes copied into the heap for the bf16
+  tensors), with a planted defect that restores the copy and turns it red.
+- **Then, only if the 26B result shows it is worth it:** the same for `TestGptOssResidentParityCUDA` (gpt-oss-20b),
+  `TestPagerDeterminism` (Qwen3.6-35B) and `TestGemma4EModel_realE4BAnchorDump` (E4B), each its own registration.
+
+**B23 · main's CUDA resident suite peaks near 38 GB and can swap whenever the desktop or page cache grows** — `linux`,
+filed 2026-10-15 (owner). **Option 1 built and merged; the four tests over 20 GB alone run under per-test budgets (option (a))**
+
+The test process of 33 of `./cuda/`'s resident tests (`Reuse|Slot|MC3|MC4|Lead|Resident…`, run with `GOINFER_HEAVY_TESTS=1`)
+has a peak resident set (`VmHWM`) of about 37–38 GB, on main and on KV2's tree alike. That is close to `user-1000.slice`'s
+`memory.high` of 53,248 MiB, against which the test, the page cache and a logged-in desktop all count. When the slice reaches
+it, reclaim swaps the test's own pages out. On 2026-10-15 it did so in 3 of 5 sampled runs, on both arms; in one run the
+process's own `VmSwap` peaked at 5,345 MB. Nothing is wrong with the results; the swapping only moves timing and system-wide
+swap readings. Read in `docs/measurements/kv2-cuda-2026-10-15.md` §7 (the bisection and the ABBA), with the instrument
+`docs/measurements/kv2-cuda-2026-10-15/swap_sampler.py`.
+- **For gates:** a night "never swap" gate judges on the test process's own `VmHWM` and peak `VmSwap`, and reports system
+  swap in use as context only (CLAUDE.md, "Testing tiers"). A system-wide reading on this box moves by hundreds of MB that no
+  test owns: KV2's CUDA heavy job read +511 MB that bisection put on main's suite near the slice's ceiling, not on KV2.
+- **Owner decision 2026-10-15: option 1**, split the suite so each process holds one large model family, log each process's
+  VmHWM, aim for no process above about 20 GB, and change no test's assertions.
+- **Built 2026-10-15 (branch `b23-cuda-heavy-split`).** `cudaHeavy` runs the main group as
+  one process per model family, derived from the source by `heavyPartition` (a test that fits no group turns the tier red), and logs
+  each process's test-binary VmHWM and peak VmSwap to the output and the record. Basis: `docs/code-notes/cmd-gate.md`, "cudaHeavy:
+  one model family per process".
+- **Result: grouping cannot reach 20 GB, because single tests exceed it alone.** Measured by day, each group in its own process
+  (`docs/measurements/b23-cuda-heavy-split-2026-10-15.md`): `TestGemma4_26B_1bBound` 51 GB as the first test in its process (it
+  loads the 49 GB bf16 26B safetensors), `TestGptOssResidentParityCUDA` 45 GB alone, `TestPagerDeterminism` (Qwen3.6-35B) 42 GB
+  nearly alone, and `TestGemma4EModel_realE4BAnchorDump` and `TestCohereRealResidentParityCUDA` at most 36 and 37 GB. The 26B process
+  swapped 24 GB. The smaller families read 6 to 19 GB; qwen3-4b, qwen3-vl-2b, gemma3-4b and the small group (about 76 min together)
+  were not run by day.
+- **Owner decision 2026-10-15, option (a): accepted under per-test memory budgets, and merged.** Each budget is the measured reading
+  plus about 5% (the suite's ABBA spread), in MB as the gate prints them; a reading over budget is a regression to explain:
+  - `TestGemma4_26B_1bBound` (Gemma 4 26B): 54,000 MB, on 51,077 MB as the first test in its process. That reading is a floor: the
+    process sits at `user-1000.slice`'s `memory.high` (53,248 MiB) and swapped 24,064 MB of its own pages with the desktop up. Expect
+    it to swap whenever the desktop is logged in.
+  - `TestGptOssResidentParityCUDA` (gpt-oss-20b): 47,000 MB, on 44,651 MB alone.
+  - `TestPagerDeterminism` (Qwen3.6-35B-A3B): 44,000 MB, on 41,805 MB after a 3,931 MB test.
+  - `TestGemma4EModel_realE4BAnchorDump` (Gemma 4 E4B): 38,000 MB, on an upper bound of 35,852 MB.
+- **The four groups not run by day** (qwen3-4b, qwen3-vl-2b, gemma3-4b, small) get their readings from the next `gate gpu` run; no
+  separate run.
+- **Follow-up:** B24, loading the 26B test's bf16 checkpoint so its pages can be dropped rather than swapped.
+
+**B21 · `gate gpu`'s heavy main tier no longer fits its 120 m timeout** — `linux`, filed 2026-10-14. **FIXED 2026-10-14 by
+option (a), the split** (owner: on v0.23.0's path): `cudaHeavy` runs the main group as two processes by test name, reconciled both
+ways; basis and expected duration in `docs/code-notes/cmd-gate.md`, "cudaHeavy: main-tier timeout".
+
+`gate gpu`'s `cuda-heavy` main group runs `./cuda/` in one process under `Timeout: "120m"`. The KV3 CUDA suite, run as one
+process on 2026-10-13, spent 6,507 s on the first 421 of the 469 main-tier tests, after removing the 684 s of fresh-process
+tests the gate defers. The remaining 48 tests had not started, so the group's wall is now at or past its timeout. A timeout that
+close to the wall reports a dead process and names whichever test was running (the comment above the cell says so). Two fixes are
+open, and the owner picks one. (a) Split the main group by test name, the shape `docs/measurements/kv3-cuda-2026-10-13/` uses
+for its `suite-a` and `suite-b` night jobs (`Test[A-L]` and `Test[M-Z]`, each with its own timeout). (b) Re-measure the
+tier's wall and re-register the timeout with headroom, per `docs/code-notes/cmd-gate.md`, "cudaHeavy: main-tier timeout".
+Evidence: `docs/measurements/kv3-cuda-2026-10-13.md` §5.
+
+**B22 · a hand mutation check on the KV3 chunker looped to ~50 GB of RAM** — `linux`, filed 2026-10-14 (owner: file, not
+fix today)
+
+While proving the chunker test red against the old 16-row tail rule on `kv3-cuda-2026-10` (2026-10-14, 08:18–08:21 PDT), a
+hand-run mutation check grew to about 50 GB of resident memory before it was stopped, and swap went from 8.5 to 27.7 GB. It
+overlapped another session's real-checkpoint run, which is why that run's wall time is not citable. The growth mechanism was not
+recorded. Find it first: whether the mutated chunker can emit an empty pass and a loop that never advances keeps appending, and
+whether production code can reach that loop. Then give the check, and any loop it can drive, an iteration or memory cap that
+fails loudly. If the loop is reachable from production, that part belongs in the correctness queue. Run hand mutation checks
+under a memory limit (`systemd-run --user --scope -p MemoryMax=…` or `ulimit -v`) until then.
+
 **H2 · Phi-3-mini's quantized output is junk past ~16 prompt tokens: per-row int8 ACTIVATION scales
 cannot hold its activation outliers** — `linux` (found and reproduced on nobara-pc), **filed 2026-09-25,
 diagnosed the same day. GUARD SHIPPED; per-group activation scales are the chosen fix (owner decision

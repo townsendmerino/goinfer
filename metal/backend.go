@@ -11,6 +11,7 @@ package metal
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
@@ -41,6 +42,7 @@ func init() {
 var (
 	_ decoder.Backend               = (*metalBackend)(nil)
 	_ decoder.ResidencyBackend      = (*metalBackend)(nil)
+	_ decoder.ResidencyPricer       = (*metalBackend)(nil)
 	_ decoder.ResidentForward       = (*metalResident)(nil)
 	_ decoder.ResidentContextNoted  = (*metalResident)(nil)
 	_ decoder.ResidentMRoPE         = (*metalResident)(nil)
@@ -77,33 +79,10 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 			rf, ok, err = nil, false, decoder.DeclineResident("metal build panicked: %v", p)
 		}
 	}()
-	// The Metal kernels implement a subset of what DecodeRunnerEligible admits (decoder.ResidentBackendFeatures("metal")). A model
-	// that needs anything outside it must DECLINE (CPU fallback), never run with the feature silently dropped.
-	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
-		return nil, false, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
-	}
-	// An explicit -ctx above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable budget): refuse it
-	// with a named error carrying the numbers, as cuda's errKVWontFit does, rather than folding it into the generic decline below.
-	//
-	// Memory guard: Metal's unified memory is host RAM and it wires the mmap pages a command buffer touches, so a model larger than
-	// RAM pages until swap is exhausted and the load neither completes nor declines. The guard is keyed on two quantities we compute
-	// (the model's own bytes and physical RAM, via metalMemoryCeiling), never on the OS's account of free memory: darwin's UBC reclaim
-	// makes "available" report what survived, so a guard keyed on it inverts when it is needed. Evidence:
-	// docs/code-notes/metal.md#metalBackend.BuildResident.guard.
-	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
-		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
-		return nil, false, cerr
-	}
-	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
-	// slot count, the KV sizing) must see one number.
-	fit := metalFitNow(m)
-	metalFitChoice.Store(m, fit)
+	fit, from, perr := residentPreBuild(m)
 	defer metalFitChoice.Delete(m)
-	from, _ := resolveMetalCtxCap(m)
-	if why := residentMemoryDecline(m); why != "" {
-		if !shrinkCtxToFit(m) {
-			return nil, false, decoder.DeclineResident("%s", why)
-		}
+	if perr != nil {
+		return nil, false, perr
 	}
 	res, e := buildResident(m)
 	if e != nil {
@@ -127,6 +106,61 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprint(os.Stderr, metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
 	}
 	return b.resident, true, nil
+}
+
+// residentPreBuild is BuildResident's decisions before buildResident allocates anything, which PriceResident asks too. It
+// leaves the unpinned context's choice in metalFitChoice, which the caller deletes, and a context the memory guard lowered in
+// metalCtxCeiling. err is BuildResident's own return for a refusal.
+func residentPreBuild(m *decoder.Model) (fit decoder.MetalFit, from int, err error) {
+	// The Metal kernels implement a subset of what DecodeRunnerEligible admits (decoder.ResidentBackendFeatures("metal")). A model
+	// that needs anything outside it must DECLINE (CPU fallback), never run with the feature silently dropped.
+	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
+		return fit, 0, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
+	}
+	// An explicit -ctx above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable budget): refuse it
+	// with a named error carrying the numbers, as cuda's errKVWontFit does, rather than folding it into the generic decline below.
+	//
+	// Memory guard: Metal's unified memory is host RAM and it wires the mmap pages a command buffer touches, so a model larger than
+	// RAM pages until swap is exhausted and the load neither completes nor declines. The guard is keyed on two quantities we compute
+	// (the model's own bytes and physical RAM, via metalMemoryCeiling), never on the OS's account of free memory: darwin's UBC reclaim
+	// makes "available" report what survived, so a guard keyed on it inverts when it is needed. Evidence:
+	// docs/code-notes/metal.md#metalBackend.BuildResident.guard.
+	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
+		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
+		return fit, 0, cerr
+	}
+	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
+	// slot count, the KV sizing) must see one number.
+	fit = metalFitNow(m)
+	metalFitChoice.Store(m, fit)
+	from, _ = resolveMetalCtxCap(m)
+	if why := residentMemoryDecline(m); why != "" {
+		if !shrinkCtxToFit(m) {
+			return fit, from, decoder.DeclineResident("%s", why)
+		}
+	}
+	return fit, from, nil
+}
+
+// PriceResident (decoder.ResidencyPricer) is BuildResident's answer before it allocates: residentPreBuild, with the
+// context the resident would hold. Whether an int8 load runs natively or re-quantized to int4 is decided inside the build
+// (w8Eligible reads the resident it is building), so for those quants the label is left to the load.
+func (b *metalBackend) PriceResident(m *decoder.Model) (decoder.ResidentPrice, error) {
+	_, _, err := residentPreBuild(m)
+	defer metalFitChoice.Delete(m)
+	defer metalCtxCeiling.Delete(m)
+	if err != nil {
+		return decoder.ResidentPrice{}, err
+	}
+	ctx, _ := resolveMetalCtxCap(m)
+	p := decoder.ResidentPrice{Ctx: ctx}
+	switch q := m.Quant(); q {
+	case "int4", "q4k":
+	default:
+		p.Unknown = fmt.Sprintf("metal goes resident at this load's memory and context; whether its %s weights run natively or "+
+			"re-quantized to int4 is decided by the build", q)
+	}
+	return p, nil
 }
 
 // metalFitChoice is the fit-by-default context of the BuildResident in progress, per model (metalFitFor reads it).
@@ -248,6 +282,9 @@ func fitsResidentBudget(need int64, ram uint64) bool {
 // allowed. live<=0 (no probe, or unknown) leaves the static ceiling; ram==0 (an unreadable hw.memsize) returns 0, which every
 // caller reads as "unknown".
 func metalMemoryCeiling(ram uint64) int64 {
+	if metalMemoryCeilingForTest > 0 {
+		return metalMemoryCeilingForTest
+	}
 	if ram == 0 {
 		return 0
 	}
@@ -256,6 +293,24 @@ func metalMemoryCeiling(ram uint64) int64 {
 		return live
 	}
 	return ceiling
+}
+
+// metalMemoryCeilingForTest, when positive, is the ceiling metalMemoryCeiling returns, so a test can size a load against it to
+// the byte. Zero in production.
+var metalMemoryCeilingForTest int64
+
+// metalOneSlotStepHeadroom is the bytes the memory guard leaves beside a one-slot build, read before any buffer exists for
+// metalKVSlots' reason. The batched step's scratch must fit in it, or buildBatch declines the step for this load and the load
+// goes ahead. The guard's override leaves it unlimited; an unreadable RAM size leaves -1, which declines the step.
+func metalOneSlotStepHeadroom(m *decoder.Model) int64 {
+	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		return math.MaxInt64
+	}
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
+		return -1
+	}
+	return metalMemoryCeiling(ram) - residentNeedBytes(m)
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the strconv.Atoi and validation that moe.go and
@@ -451,6 +506,15 @@ func residentMemoryDecline(m *decoder.Model) string {
 	if need <= 0 {
 		return "" // nothing to compare against; not a reason to refuse
 	}
+	// The GPU's own limit: the Metal allocation (the need less the host copy, which is ordinary RAM) against the device's
+	// recommendedMaxWorkingSetSize (B41 gate 4, docs/measurements/hostmem-available-2026-10/README.md).
+	if wsCap := metalWorkingSetCap(); wsCap > 0 {
+		if alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m)); alloc > wsCap {
+			return fmt.Sprintf(residentMemoryDeclinePrefix+"%.2f GB of Metal allocations (weights, KV and what a companion claims), over this GPU's "+
+				"recommendedMaxWorkingSetSize of %.2f GB. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.",
+				float64(alloc)/(1<<30), float64(wsCap)/(1<<30))
+		}
+	}
 	ram, err := unix.SysctlUint64("hw.memsize")
 	if err != nil || ram == 0 {
 		return ""
@@ -477,6 +541,47 @@ func residentMemoryDecline(m *decoder.Model) string {
 		"(budget %.2f GB%s). Metal wires the pages it touches, so loading this would page to swap "+
 		"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s",
 		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, tightened, moeHint)
+}
+
+// exactAttnNote is PrefillPath's account of the exact attention kernel's key bound, "" when every attention layer has a
+// fused kernel: past the bound the batched pass declines, and fallback names the path that then runs the prompt.
+func (a *metalResident) exactAttnNote(fallback string) string {
+	if !a.r.prefillExactAttn() {
+		return ""
+	}
+	if hd := a.r.exactAttnHeadDim(); hd > exactAttnTiledMaxHD {
+		return fmt.Sprintf("; past %d keys the exact attention kernel (head dim %d has no fused kernel, or fused attention is off, and is wider than its tiled form's %d) declines it to %s",
+			prefillExactAttnMaxKeys, hd, exactAttnTiledMaxHD, fallback)
+	}
+	return fmt.Sprintf("; past %d keys the exact attention kernel (head dim %d has no fused kernel, or fused attention is off) tiles its scores",
+		prefillExactAttnMaxKeys, a.r.exactAttnHeadDim())
+}
+
+// prefillDeclineForTest, when non-nil, is the error batchedPrefillImg declines every pass with, so a test reaches a fallback
+// without a model that trips a real one.
+var prefillDeclineForTest error
+
+// emodelFallbackOut is where an E-model prefill fallback is announced; a variable so a test reads it.
+var emodelFallbackOut io.Writer = os.Stderr
+
+// emodelFallbackSeen holds each E-model prefill decline reason already reported, with its digits masked.
+var emodelFallbackSeen sync.Map
+
+// warnEModelFallback reports, once per distinct reason, that the batched pass declined a Gemma 4 E-model's prompt and the
+// layer-major pass ran it instead. The decoder reports its own declines the same way (warnPrefillDeclined); this one
+// never reaches the decoder, because PrefillLast takes the fallback itself.
+func warnEModelFallback(err error) {
+	key := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return '#'
+		}
+		return r
+	}, err.Error())
+	if _, seen := emodelFallbackSeen.LoadOrStore(key, true); seen {
+		return
+	}
+	fmt.Fprintf(emodelFallbackOut, "metal: the batched prefill declined a Gemma 4 E-model prompt (%v); the layer-major pass runs it on decode's kernels, "+
+		"bit-identical to sequential (each distinct reason is reported once)\n", err)
 }
 
 func (b *metalBackend) Close() error {
@@ -554,7 +659,7 @@ func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f
 		return nil, e
 	}
 	if pos == 0 {
-		// A fresh sequence re-zeroes any Gated-DeltaNet state left by a prior Generate on this resident (no-op for other families).
+		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other families).
 		a.Reset()
 	}
 	logits := a.r.ForwardEmbMRoPEPipe(embedding, pos, ropePos)
@@ -715,7 +820,7 @@ func (a *metalResident) prefillKernelFloor() int {
 		return 0
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
+	if floor > 0 && a.stepPrefill() && !a.r.promptStepOff {
 		return max(floor, metalStepPrefillCeiling)
 	}
 	return floor
@@ -731,7 +836,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if a.emodelLayerMajor() {
 		if a.emodelBatched() && a.fastPrefill() {
 			floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-			return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)", floor)
+			return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)", floor) + a.exactAttnNote("the layer-major pass")
 		}
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)"
 	}
@@ -742,19 +847,22 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
 	}
 	if !a.r.prefillOK {
+		if a.fastPrefill() && a.stepPrefill() && !a.r.promptStepOff { // promptStepOK takes every prompt
+			return true, "decode rows on the batched step kernels at every length (bit-identical to sequential; the f16 MMA pass does not take this model)"
+		}
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
 	}
 	if !a.fastPrefill() {
 		return false, "sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)"
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
-		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor())
+	if floor > 0 && a.stepPrefill() && !a.r.promptStepOff {
+		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path")
 	}
 	if floor > 0 {
-		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", a.prefillKernelFloor())
+		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path")
 	}
-	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)"
+	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)" + a.exactAttnNote("the per-token path")
 }
 
 // g4LayerMajor reports whether this resident's prompts take prefillG4Paged: a paged Gemma 4 MoE with no learned
@@ -789,8 +897,17 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 			ok = ok && len(e) == a.embLen()
 		}
 		if ok {
-			if lg, err := a.batchedPrefill(embeddings, startPos, 0, nil, nil); err == nil {
+			lg, err := a.batchedPrefill(embeddings, startPos, 0, nil, nil)
+			if err == nil {
 				return lg, nil
+			}
+			// Once per request where the request carries a prefill report (serve attaches one to every generation), else once
+			// per distinct reason: the pass may be called several times in one generation (a block or a chunk at a time).
+			if first, tracked := decoder.NotePrefillFallback(ctx, "layer-major", err.Error()); first {
+				fmt.Fprintf(emodelFallbackOut, "metal: this request's Gemma 4 E-model prompt (%d tokens) left the batched prefill for the layer-major pass on decode's kernels, bit-identical to sequential: %v\n",
+					startPos+len(embeddings), err)
+			} else if !tracked {
+				warnEModelFallback(err)
 			}
 		}
 	}
@@ -897,7 +1014,7 @@ func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [
 	if len(blocks) == 0 {
 		return nil, fmt.Errorf("metal: no image block")
 	}
-	if !a.r.prefillOK || a.r.pleP > 0 || a.r.dnet != nil || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
+	if !a.r.prefillOK || a.r.pleP > 0 || a.r.recurrentModel() || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
 		return nil, fmt.Errorf("metal: the resident image prefill takes the plain uniform pass; this model's image turn prefills on the CPU")
 	}
 	if !a.fastPrefill() {
@@ -918,6 +1035,9 @@ var (
 
 // batchedPrefillImg is batchedPrefill with optional bidirectional image blocks (nil: none).
 func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) ([]float32, error) {
+	if prefillDeclineForTest != nil {
+		return nil, prefillDeclineForTest
+	}
 	promptLen := startPos + len(embeddings)
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
@@ -929,6 +1049,9 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	// shape). Any of these declines here, and the caller re-runs the prompt through the sequential Forward loop.
 	if a.r.kvI8 {
 		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is int8 (-kv i8); using sequential path")
+	}
+	if a.r.attnSoftcap != 0 && len(blocks) > 0 {
+		return nil, fmt.Errorf("metal: the image prefill's attention kernel is not gated with an attention softcap; using sequential path")
 	}
 	if !a.r.prefillOK && !a.emodelBatched() {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
@@ -944,11 +1067,11 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap() {
 		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, a.ctxCap())
 	}
-	// The exact attention kernel (no fused kernel for this head dim, or fused attention off) holds at most prefillExactAttnMaxKeys
-	// scores; the sequential path's decode kernels tile theirs.
-	if a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys {
-		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off); using sequential path",
-			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.prefillGeom().hd)
+	// The exact attention kernel (no fused kernel for this head dim, or fused attention off) holds prefillExactAttnMaxKeys
+	// scores; past that the pass takes its tiled twin (exactAttnTile), which keeps at most exactAttnTiledMaxHD output dims.
+	if hd := a.r.exactAttnHeadDim(); a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys && hd > exactAttnTiledMaxHD {
+		return nil, fmt.Errorf("metal: prompt reaches %d keys, past the exact prefill attention kernel's %d, and head dim %d is wider than its tiled form's %d",
+			startPos+len(embeddings), prefillExactAttnMaxKeys, hd, exactAttnTiledMaxHD)
 	}
 	// A fresh sequence starts a Gated-DeltaNet hybrid's recurrent state from zero, as Forward(pos 0) does; a continuation keeps the
 	// conv window and state the resident holds. No-op for every other family.
@@ -1299,7 +1422,7 @@ func (a *metalResident) TruncateTo(pos int) {}
 // Reset zeroes every Gated-DeltaNet layer's causal-conv ring and recurrent matrix state (no-op for every other family; a.r.dnet is
 // nil). Unlike KV positions this state compounds, so a fresh sequence on the same resident must reset it or it keeps decaying the
 // previous sequence's state (resetDeltaNet).
-func (a *metalResident) Reset() { a.r.resetDeltaNet() }
+func (a *metalResident) Reset() { a.r.resetRecurrent() }
 
 var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
 
@@ -1402,5 +1525,5 @@ func (a *metalResident) PrefillTailExact() bool { return true }
 // inStepRange: a prompt of promptLen tokens is in the range the batched step takes on this resident (promptStepOK's
 // length test, without its two-row minimum).
 func (a *metalResident) inStepRange(promptLen, floor int) bool {
-	return !a.r.promptStepOff && a.VerifyCost() != nil && floor > 0 && promptLen < max(floor, metalStepPrefillCeiling)
+	return !a.r.promptStepOff && a.stepPrefill() && floor > 0 && promptLen < max(floor, metalStepPrefillCeiling)
 }

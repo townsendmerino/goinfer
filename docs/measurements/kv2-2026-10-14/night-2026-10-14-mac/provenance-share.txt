@@ -1,0 +1,8 @@
+job: share
+started: 2026-10-14 16:07:34 PDT
+host: Darwin 25.6.0 arm64
+backend: metal
+new (REV): b821bbd9b399b7e4ab237e97e2772a9fb522846b
+old (BASE, main at the branch point): 1cc385ef2abb74785fac9527117df59b7ea4ecf7
+load: 16:07  up 20 days,  6:02, 1 user, load averages: 0.96 2.00 2.44
+finished: 2026-10-14 17:07:20 PDT rc=0

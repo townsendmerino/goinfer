@@ -35,3 +35,9 @@ func decodeXswUsed(b []byte) (usedBytes int64, ok bool) {
 	}
 	return int64(used), true
 }
+
+// SelfSwapReader reports that there is no per-process swap figure here (no public per-process swap counter on macOS), so the swap guard
+// keeps watching the system-wide figure.
+func SelfSwapReader() (r SwapReader, unavailable string) {
+	return nil, "macOS has no per-process swap figure"
+}

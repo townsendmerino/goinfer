@@ -63,7 +63,9 @@ func TestAttnFABlk_anyGMatchesG7(t *testing.T) {
 		if err := e.Err(); err != nil {
 			t.Fatalf("g%d: %v", G, err)
 		}
-		return append([]float32(nil), part.Floats()[:nSplit*G*(hd+2)]...)
+		out := append([]float32(nil), part.Floats()[:nSplit*G*(hd+2)]...)
+		recordAttnDigest(t, fmt.Sprintf("attention_fa_blk_g%d", G), out)
+		return out
 	}
 	ref := run(7)
 	for _, G := range []int{2, 3, 4, 5, 8} {

@@ -505,7 +505,7 @@ GATES = [
      "data": ["s6-alias-2026-09-24/gates-decode/results.json (1.5B)", "s6-alias-2026-09-24/gates-decode/results-7b.json (7B re-run)"],
      "N": "3 runs × 8, 1 pass",
      "bar": "docs/measurements/s6-alias-2026-09-24.md:115-116 — \"pre-registered: pass ≤ 3% slower, 3–5% ambiguous/parked, "
-            "> 5% fail\" (docs/tasks/task-never-swap-2026-09.md:1101-1105: \"within 3% of the copied path\")",
+            "> 5% fail\" (docs/completed/task-never-swap-2026-09.md:1101-1105: \"within 3% of the copied path\")",
      "verdict_q": "docs/measurements/s6-alias-2026-09-24.md:114 — \"**Gates 2 and 4 — decode within 3% at depth 128 and 2048: "
                   "PASS, worst −0.35%**\"",
      "recorded": "PASS", "names": {},

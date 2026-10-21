@@ -35,7 +35,6 @@ if [ -z "${NVRTC_LIB:-}" ]; then
 	lib=$(find_first \
 		"../.cuda_tools/nvidia/cuda_nvrtc/lib/libnvrtc.so.12" \
 		"$HOME"/.local/lib/python*/site-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so.12 \
-		/tmp/cuda_extract/cuda_nvrtc/targets/x86_64-linux/lib/libnvrtc.so.12 \
 		"$HOME"/cuda-toolkit/targets/x86_64-linux/lib/libnvrtc.so.12 \
 		"$HOME"/.venv*/lib/python*/site-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so.12 \
 		/usr/local/cuda/lib64/libnvrtc.so.12 \
@@ -46,7 +45,6 @@ if [ -z "${CUDA_INC:-}" ]; then
 	hdr=$(find_first \
 		"../.cuda_tools/nvidia/cuda_runtime/include/cuda_fp16.h" \
 		"$HOME"/.local/lib/python*/site-packages/nvidia/cuda_runtime/include/cuda_fp16.h \
-		/tmp/cuda_extract/cuda_cudart/targets/x86_64-linux/include/cuda_fp16.h \
 		"$HOME"/cuda-toolkit/targets/x86_64-linux/include/cuda_fp16.h \
 		"$HOME"/.venv*/lib/python*/site-packages/nvidia/cuda_runtime/include/cuda_fp16.h \
 		/usr/local/cuda/include/cuda_fp16.h \
@@ -82,4 +80,15 @@ for k in "${targets[@]}"; do
 			NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
 			python3 nvrtc_compile.py "$src" "testdata/${k%.cu}_kv16.ptx" "$ARCH" "$CUDA_INC" -DKV_F16
 	fi
+	# The three modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores) are also built with the attention
+	# softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The plain modules above do not change.
+	case "${k%.cu}" in
+	glue | prefill_batched | decode_splitkv)
+		for variant in "cap:-DATTN_SOFTCAP" "kv16_cap:-DKV_F16 -DATTN_SOFTCAP"; do
+			LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+				NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
+				python3 nvrtc_compile.py "$src" "testdata/${k%.cu}_${variant%%:*}.ptx" "$ARCH" "$CUDA_INC" ${variant#*:}
+		done
+		;;
+	esac
 done

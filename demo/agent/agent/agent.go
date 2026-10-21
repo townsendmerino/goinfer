@@ -610,7 +610,7 @@ func (s *Session) buildPromptSegmentsWith(tm *chat.Template, system string, turn
 		cs := tm.RenderSegments(system, ct)
 		out := make([]tokenizer.Segment, len(cs))
 		for i, seg := range cs {
-			out[i] = tokenizer.Segment{Text: seg.Text, Special: seg.Special}
+			out[i] = tokenizer.Segment(seg)
 		}
 		return out
 	}

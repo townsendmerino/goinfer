@@ -1,0 +1,9 @@
+rev e96737b8ed3769f8fc529559970740586ee88d9a
+host nobara-pc Linux 7.2.0-202.nobara.fc44.x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+load 0.18 0.35 0.58
+ollama Warning: client version is 0.32.5
+llama-server version: 0.4.0-dev (build 1, commit 427291b)
+2026-10-17T19:47:44Z build
+no required module provides package github.com/townsendmerino/goinfer/cuda/cmd/serve; to add it:
+	go get github.com/townsendmerino/goinfer/cuda/cmd/serve

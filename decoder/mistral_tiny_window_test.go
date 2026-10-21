@@ -101,6 +101,7 @@ func TestMistralTinyWindow_goldenSeesTheWindow(t *testing.T) {
 	}
 	defer m.Close()
 	m.w.arch.SlidingWindow = 0
+	m.rebuildProgramForTest()
 	last, _ := forwardMistralWindow(t, m, g.PromptIDs, 0)
 	var ne, nw float64
 	for i := range g.LastLogits {

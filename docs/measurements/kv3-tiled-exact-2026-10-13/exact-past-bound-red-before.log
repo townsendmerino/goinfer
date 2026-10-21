@@ -1,0 +1,8 @@
+=== RUN   TestKV3Tiled_pastBoundPromptRunsExact_tiny
+    kv3_tiled_test.go:142: KV precision f32
+[kv3-tiled] past the bound, GEMM lever on: 6 row-batched groups, 350 tensor-core launches; logits differing 256 of 256, KV differing 237831 of 12697600
+    kv3_tiled_test.go:166: past the bound: 6 row-batched groups (want some), 350 tensor-core launches (want 0)
+--- FAIL: TestKV3Tiled_pastBoundPromptRunsExact_tiny (3.37s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	3.419s
+FAIL

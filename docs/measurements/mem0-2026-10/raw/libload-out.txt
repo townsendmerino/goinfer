@@ -1,0 +1,16 @@
+# /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, Options{Quant:""}
+before load        map[RssAnon:4 RssFile:0 VmHWM:8 VmRSS:8 VmSwap:0]  heap_inuse=1 MiB heap_alloc=0 MiB sys=11 MiB
+after load         map[RssAnon:2431 RssFile:0 VmHWM:2905 VmRSS:2437 VmSwap:0]  heap_inuse=2422 MiB heap_alloc=2421 MiB sys=2449 MiB
+after GC+free      map[RssAnon:2412 RssFile:0 VmHWM:2905 VmRSS:2417 VmSwap:0]  heap_inuse=2405 MiB heap_alloc=2404 MiB sys=2449 MiB
+# /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, Options{Quant:"int4"}
+before load        map[RssAnon:2 RssFile:0 VmHWM:6 VmRSS:6 VmSwap:0]  heap_inuse=1 MiB heap_alloc=0 MiB sys=7 MiB
+after load         map[RssAnon:477 RssFile:0 VmHWM:951 VmRSS:482 VmSwap:0]  heap_inuse=474 MiB heap_alloc=472 MiB sys=487 MiB
+after GC+free      map[RssAnon:459 RssFile:0 VmHWM:951 VmRSS:464 VmSwap:0]  heap_inuse=455 MiB heap_alloc=454 MiB sys=487 MiB
+# /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, Options{Quant:"int4"}
+before load        map[RssAnon:4 RssFile:0 VmHWM:8 VmRSS:8 VmSwap:0]  heap_inuse=1 MiB heap_alloc=0 MiB sys=7 MiB
+after load         map[RssAnon:1176 RssFile:0 VmHWM:2246 VmRSS:1182 VmSwap:0]  heap_inuse=1170 MiB heap_alloc=1168 MiB sys=1184 MiB
+after GC+free      map[RssAnon:1158 RssFile:0 VmHWM:2246 VmRSS:1163 VmSwap:0]  heap_inuse=1151 MiB heap_alloc=1150 MiB sys=1184 MiB
+# /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, Options{Quant:""}
+before load        map[RssAnon:4 RssFile:0 VmHWM:8 VmRSS:8 VmSwap:0]  heap_inuse=0 MiB heap_alloc=0 MiB sys=7 MiB
+after load         map[RssAnon:6813 RssFile:0 VmHWM:7882 VmRSS:6818 VmSwap:0]  heap_inuse=6799 MiB heap_alloc=6798 MiB sys=6846 MiB
+after GC+free      map[RssAnon:6792 RssFile:0 VmHWM:7882 VmRSS:6797 VmSwap:0]  heap_inuse=6780 MiB heap_alloc=6779 MiB sys=6846 MiB

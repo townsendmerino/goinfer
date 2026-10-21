@@ -47,14 +47,17 @@ func TestPTX_matchesSourcesAndBindings(t *testing.T) {
 		for name := range entries {
 			entryMod[name] = mod
 		}
-		// A _kv16 twin is the same source built with -DKV_F16 (build_ptx.sh): it must declare exactly the kernels and parameters of its base module.
-		src := strings.TrimSuffix(mod, "_kv16")
+		// A _kv16 twin is the same source built with -DKV_F16 (build_ptx.sh): it must declare exactly the kernels and parameters of its base
+		// module. A _cap twin is built with -DATTN_SOFTCAP, which adds the trailing `float attnCap` parameter that ATTN_CAP_PARAM stands for
+		// (cuda/attnscore.cuh); the plain modules have it expand to nothing.
+		src, capped := ptxSourceName(mod)
 		cu, err := os.ReadFile(src + ".cu")
 		if err != nil {
 			t.Errorf("%s.ptx is embedded but %s.cu is missing — a shipped PTX must regenerate from its source", mod, src)
 			continue
 		}
-		globals := cuGlobals(string(cu))
+		cuText := strings.ReplaceAll(string(cu), "ATTN_CAP_PARAM", map[bool]string{true: ", float attnCap", false: ""}[capped])
+		globals := cuGlobals(cuText)
 		checked++
 		for name, want := range globals {
 			kernels++
@@ -222,4 +225,16 @@ func goBoundKernelNames(t *testing.T) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ptxSourceName is the .cu a shipped module is built from, and whether it is built with the attention softcap: <k>.ptx, <k>_kv16.ptx
+// (-DKV_F16), <k>_cap.ptx and <k>_kv16_cap.ptx (-DATTN_SOFTCAP) all come from <k>.cu.
+func ptxSourceName(mod string) (src string, capped bool) {
+	if s, ok := strings.CutSuffix(mod, "_kv16_cap"); ok {
+		return s, true
+	}
+	if s, ok := strings.CutSuffix(mod, "_cap"); ok {
+		return s, true
+	}
+	return strings.TrimSuffix(mod, "_kv16"), false
 }

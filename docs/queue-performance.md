@@ -17,6 +17,328 @@
 
 ## What is open
 
+- **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
+  (sm_75) — SUPERSEDED 2026-10-18: branch `kv3-tiled-2026-10` already covers it, and nobara is bringing that branch onto
+  main. Option A is dropped (owner).** `linux`.
+
+  - **The branch covers it:** its row-batched split-KV prefill kernels (`cuda/prefill_splitkv.cu` on that branch) take the
+    head dim per layer. `TestPrefillSplitKV_rowsEqualAttnBatched` holds them bit-equal to `attn_batched` for head dims 20 to
+    512. Its record (`docs/measurements/kv3-tiled-exact-2026-10-13.md` on that branch) has Gemma-4-E4B at 12,400 tokens, and
+    a served smoke of 12,215 tokens ran in 55.9 s with no decline.
+  - **Not covered there:** the image-block (bidirectional) pass past the bound.
+  - **Left:** bringing the branch onto main, a dense Gemma-4 gate there, and the image-block twin. Not a new kernel. The
+    scoping below is history.
+
+  - **Found by:** tack's C1 calibration (gemma-4 E4B, RTX 2070 SUPER, goinfer `0de92cd9`). Every request past the limit
+    logged `prefill_fallback=sequential`. Time to first token was 48–128 s on 11–26k-token prompts: batched ran about
+    227 tok/s, the fallback about 52.
+  - **Cause:** the exact batched attention keeps a whole row of scores in shared memory (`(nWin+128)*4` bytes,
+    `cuda/resident.go:attnShmemBytes`), so it cannot run past about 12,160 keys on 48 KB. The fused attention, whose
+    shared memory does not grow with the span, serves only head dims 64 and 128 (`cuda/prefill.go:cudaResident.checkPrefillShmem`).
+  - **Scoped options (none built):**
+    - A, a tiled exact kernel: one pass for the max, a second tile by tile for the exponent sum and the value sum, in the
+      original order. Bit-identical by construction, about 1 day.
+    - B, a batched split-KV kernel like decode's: about 1.5–2 days, because its score scratch needs sub-batching and pricing.
+    - C, the fused kernel for head dims 256 and 512: fast-class, needs a fidelity gate, several days.
+    - The owner approved A, then parked it, then dropped it once `kv3-tiled-2026-10` was found to cover the case.
+
+- **P34 · Two 32k candidates never reuse a prefix on CUDA — REOPENED 2026-10-19 at HIGH priority (owner), after the work in
+  progress. Two causes, one per model.** `linux`.
+
+  - **Seen (tack's E0, nobara):** first-token time with the prefix reused equals cold at every size.
+    - Qwen3.5-9B: C3 on `f20f0d93`, at 4k 15.3 vs 15.7 s, 8k 38.8 vs 38.8 s, 31.7k 421.3 vs 421.5 s.
+    - Mellum2.1-12B-A2.5B with `--moe-cache-experts`: amendment 10 on `b2b5e816`, about 93 tok/s prefill either way (tack
+      `docs/measurements/e0-nobara-mellum-2026-10-19.md`, tack 70a5193). The 31.7k probes took about 343 s each.
+  - **Cause 1, the Gated-DeltaNet hybrids (Qwen3.5-9B; Qwen3.6-35B-A3B has the same layers):** the chat template drops the empty
+    think block from history turns, so each chat request diverges from where the recurrent state stopped
+    (`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). The fix is B35, in progress on branch
+    `b35-recurrent-checkpoint-2026-10`.
+  - **Cause 2, Mellum2.1 (21 of 28 layers sliding-window, KV windowed): an expert-cache load gets no rollback grant.** Read from
+    the code and checked by arithmetic, not yet by a run.
+    - `cuda/kvwindow.go:cudaResident.kvGrantRollback` returns at once when `cacheExperts` is set ("its cache was sized to what
+      was free"). The rollback stays at the base slack less the step: 448 positions, up to 512 at the best point of the
+      compaction cycle.
+    - E0's reused cell resends the previous prompt with its last 512 tokens changed. With the template's end-of-turn and
+      assistant-header tokens and the one generated token after them, the resend diverges about 518 positions before the
+      newest. Replaying `kvWindowNextBase` for Mellum's 1,024 window at 4k, 8k, 15k and 31.7k: every resend that diverges 518
+      or more positions back is refused (a cold prefill) without the grant, and reused with it (rollback 1,024).
+    - **Expert streaming does not disable reuse:** `Model.residentReuseDisabled` reads only a test knob.
+    - **What it means for tack's own loop:** a request that appends to the previous one is unaffected. One that rewrites more
+      than about 448 tokens of the end (a client that drops the previous reply, as Codex does) is refused on any
+      expert-cache load of a windowed model.
+  - **Proposed fix for cause 2 (none built):** price the rollback grant before the expert cache is sized, so an expert-cache
+    load gets it too. The cost is the grant's few MB of KV per slot (576 positions across the windowed layers) taken from the
+    expert cache. Gate: a tier 0 replay of `kvWindowNextBase` and the plan over E0's shape, with and without the grant, plus
+    a plant; then one by-day probe on nobara, Mellum at 8k with an edit 400 and 600 tokens from the end, reused after the fix.
+  - **Data:** tack `docs/measurements/e0-nobara-c3-2026-10-18.md` and `e0-nobara-mellum-2026-10-19.md`; raw records under
+    `~/tack-runs/e0/` on nobara. The Mellum run kept no request log (`reused=`, `div=`), so the confirming probe should run with
+    `-log-requests`.
+
+- **P33 · Metal decode is 0.67–0.76 of mlx-lm's single-request path at matched settings — OPEN, filed 2026-10-18 (owner).
+  Measure first; no work yet.** `mac`.
+
+  - **The gap** (`docs/benchmarks.md` §B11, same-session, depth 128, 3 runs × 8 × 64 tokens, the same seed and sampling
+    fields on both arms; mlx-lm 0.31.3 on mlx-community 4-bit):
+    - greedy: 1.5B 0.666 (92.0 vs 138.2 tok/s), 7B 0.742 (29.7 vs 40.0);
+    - the shared preset: 0.71 / 0.76;
+    - untruncated: 0.69 / 0.75.
+  - **The quants differ in kind.** goinfer runs `int4` (its group-32 W4A8 weights), and mlx-lm runs its own 4-bit
+    group quantisation. Both are 4-bit, so the classes match, but the kernels and layouts are each engine's own.
+  - **First, where the decode time goes on each arm:**
+    - goinfer's per-token split: the GEMVs by projection, attention, norms and the head, and the CPU-side time between
+      command buffers;
+    - the same split for mlx-lm, from its own trace;
+    - each GEMV's achieved bandwidth against the M1 Pro's.
+    The July "dispatch-bound" reading was refuted 2026-09-26 (GEMVs are weight-work-bound), so this starts from a
+    measurement, not that assumption.
+  - **Not before the split:** any kernel work, or any claim about which side's quantisation is "faster".
+
+- **P32 · Gemma 4 E-models prefill at 144 tok/s on Metal where Qwen2.5-1.5B does 900: a fused attention kernel for head dims
+  256 and 512 — OPEN, filed 2026-10-17 (owner). Not built.** `mac`, Metal kernel work.
+
+  - **The gap** (`docs/measurements/p28-gemma4-metal-ttft-2026-10/README.md`, steps 1 and 2): under 4,096 prompt tokens
+    E2B's batched prefill runs at 143.5 tok/s, against Qwen2.5-Coder-1.5B's 900 on the same Mac.
+  - **Why the kernel is the suspect:** E2B's head dims are 256 and 512, above `attention_prefill_fused`'s 128
+    (`metal/prefill.go:resident.prefillAttnKernels`). So every attention layer runs the exact kernel, `attention_prefill`:
+    one threadgroup per row and head, a scalar dot per key, and a serial P·V scan.
+  - **The work:** raise the fused (flash) kernel's `ATTN_MAXHD` to 512. That means a threadgroup and register budget per
+    head dim, and tuning. Its online-softmax rescale is not bit-identical to the exact kernel (the P19 category, as the
+    fused kernel is today).
+  - **First measurement, before building:** E2B's prefill time split between attention and the rest (projections, FFN),
+    at 4,096 tokens. If attention is not most of it, a fused kernel cannot close the gap.
+
+- **P31 · CUDA decode is behind llama.cpp at matched 4-bit quants: about 9% on the small models, 12% on phi3-mini — OPEN,
+  filed 2026-10-17 (owner). Measure where each arm's decode time goes first; no work on it yet.** `linux`.
+
+  - **What was measured** (nobara-pc, RTX 2070 SUPER, driver 595.91.07, depth 128, 3 runs × 8 × 64 tokens, same session,
+    llama-server 0.4.0-dev `427291b` with `-ngl 99`, the same Q4_K_M files):
+    - goinfer `int4` on the 0.5B and gemma3-1b, and `q4k` on phi3-mini: 4-bit on every arm.
+    - Every arm was sent the same seed, the same context (4096) and the same sampling fields, plus `min_p 0` for llama.cpp.
+
+    | model | shared preset 0.8 / top_k 40 / top_p 0.9 | greedy | no truncation (T = 1.0) |
+    |---|---|---|---|
+    | qwen2.5-coder-0.5b (`int4`) | **0.917** (343.4 vs 375.5 tok/s) | 0.948 | 0.978 |
+    | gemma3-1b (`int4`) | **0.910** (195.7 vs 213.8) | 0.927 | 0.972 |
+    | phi3-mini (`q4k`) | **0.881** (112.6 vs 127.8) | 0.890 | 0.888 |
+
+    goinfer ÷ llama.cpp. The shared-preset column is the record
+    `docs/measurements/peer-sharedtrunc-cuda-2026-10-17/README.md` (harness `e8e8c95d`). The other two are
+    `docs/measurements/peer-notrunc-2026-10-17.md` (harness at `63038121`, before the context and `min_p` fix, so
+    goinfer ran at its own default context and llama.cpp at its default `min_p`).
+  - **The same cells against Ollama:** goinfer is AHEAD on the small models (shared preset 1.312 / 1.272) and BEHIND on
+    phi3-mini (0.895).
+  - **Not known:** where the gap is. It could be in the matvecs, attention, the sampler and host round trip, or launch
+    overhead, and it may differ between the int4 and q4k paths (phi3's q4k path also declines batched prefill, which this
+    decode-only rate does not include).
+  - **First measurement, before any change:** one decode step on each arm on the same model and prompt, split by kernel.
+    For llama.cpp, Nsight Systems or its own timings. For goinfer, its kernel timeline or an `ncu` pass. Compare the
+    totals per token, then the matvec share against the bytes each arm reads per token. A step the two arms do not share
+    is named, not estimated.
+
+- **P30 · An armed tool-call constraint costs about 1.2 ms per token after `<tool_call>`, beyond the masker — OPEN, filed
+  2026-10-17 (owner). Not timed by part yet; not being worked on.** `linux` (seen on CUDA; Metal and WebGPU unmeasured).
+
+  - **What was measured** (nobara, Qwen2.5-7B-Instruct q4_k_m GGUF on CUDA, the pinned build at e0b1a966, tack's E1 tool
+    list of 19 tools, `tool_choice: auto`, a greedy 121-token `write` call, n=8 per arm, interleaved off/on/off/on under
+    the timing lock, 2026-10-17): decode ms per call **1804 with the constraint off (`GOINFER_TOOL_UNION=0`), 2011 with
+    it on: +207 ms per call** (66.5 vs 59.7 tok/s). Both arms produced the same 121 tokens.
+  - **What the masker accounts for:** about 62 ms of it. That is the masker's own per-step time over the same call on
+    nobara's CPU with Qwen's 152k vocabulary (`constrain.Masker.Process`, the minimum of 5 runs: 62.1 ms with 19 tools,
+    55.9 ms with one).
+  - **The other ~145 ms is unattributed.** The working guess, not checked: once the lazy constraint arms, the
+    `LogitProcessorGate` opens and each step leaves the on-device greedy path. It then copies the full logits to the host
+    and picks the token there. That is about 1.2 ms per token over the ~115 tokens after the opener.
+  - **Why it matters:** an agent turn pays it on every call, scaled by the call's length. The pre-name cost this was found
+    beside (about 0.5 s per call) was fixed by the masker prefilter (31418112).
+  - **First measurement, before any change:** split one armed step on CUDA into the logits copy, the masker and the host
+    pick, at tier 0 or 1, on the same request. A part that is not near 1.2 ms per token means the guess is wrong.
+  - Records: the run directory `e1-prefilter-onoff-20261017-1007` under `~/goinfer-bench` on nobara (not committed).
+
+- **P29 · Phi-3 at q4k on Metal prefills one token at a time when the memory guard allows one KV slot, and the decline
+  message blames geometry — SHIPPED 2026-10-18: a one-slot load prefills on the batched step (measured on the 0.5B, 2.27×).
+  Filed 2026-10-17 (owner).**
+  `mac`.
+
+  - **The tier 1 A/B (`p29-one-slot-ab`) voided three times, 2026-10-17 and 2026-10-18.** No guard was bypassed.
+    - **Twice (19:23, 21:49), the fit guard refused** its phi3 `q4k` load from the `.gguf`. The load needs 5.6 GB: 2.6 GB
+      of weights, 0.8 GB of KV and 2.2 GB for the mapped checkpoint. The guard's budget is 70% of available memory, and
+      available was 6.4 GB, then 7.7 GB.
+    - **The third time (00:08, after a restart with nothing else open), the fit guard passed, and Metal's resident memory
+      guard refused.** The build needs 5.98 GB (weights, host copy and KV), against a budget of 4.34 GB once live-available
+      memory tightened the static 11.20 GB ceiling.
+    - `q4k` has no `.giw` form that would take the mapped file out of the fit guard's price.
+    - Not re-queued: it is back with the owner for options (owner, 2026-10-17).
+  - **The A/B on the 0.5B, forced to one slot: registered 2026-10-18, before it runs (owner: queue it on the 0.5B).**
+    - **Counter test first** (`metal/p29_route_test.go`, by day, the 0.5B q4_k_m):
+      - main reads the sequential loop at one resident KV slot (1 row per step) and the batched step at two (8);
+      - the lift branch `p29-one-slot-step-2026-10` (88a08574) reads the step at both.
+      The batched step does not apply on main, so P29 stays open.
+    - **Job:** `run-p29-ab-qwen05.sh` (`docs/measurements/`), a Mac night job, running `TestOneSlotStep_qwen05PrefillAB`
+      from a worktree pinned at 88a08574.
+      - The 0.5B q4_k_m at `--quant q4k`, `-ctx 2048`, one resident KV slot.
+      - A 512-token prompt, prefilled one token at a time (production's Forward) against the one-slot step (PrefillLast).
+      - One untimed warm-up of each arm, then 5 interleaved pairs in alternating order.
+      - r = sequential ÷ step per pair; the median is read.
+      - The one-slot step is bit-identical to the sequential loop at tier 0 (`TestOneSlotStep_q4kLaneBitIdentical`, with
+        its plant), so this measures speed only.
+    - **Bands:**
+      - **SHIP:** a median of at least 1.02 with every pair above 1.00. The lift fast-forwards to main.
+      - **PARK:** a median in [1.00, 1.02), or pairs straddling 1.00. Reported, not merged.
+      - **OFF:** a median under 1.00. Reported, not merged.
+      - **VOID:** a guard declines the load (the test skips).
+    - **No stop rule** beyond the five pairs, and no re-run until the job has run once.
+    - **Result, read 2026-10-18: SHIP.**
+      - Run 12:47–12:52 PDT as night job `p29-ab-qwen05-one-slot`, at 88a08574. The owner started the queue by day, with VS
+        Code and the Claude app open (load about 3.5).
+      - The median r is 2.270. The five pairs are 2.269, 2.275, 2.256, 2.283 and 2.270, all above 1.00: sequential about
+        192 tok/s, the step about 438 tok/s over the 512-token prompt.
+      - The desktop's load cannot move a paired ratio that far from 1.02.
+      - The lift fast-forwarded to main as registered, rebased on main with its tier 0 re-run. Its Phi-3 A/B moved to
+        `metal/one_slot_step_phi3_test.go` so the asset registry resolves the file.
+      - Log: `~/goinfer-logs/night/runs/2026-10-18/p29-ab-qwen05-one-slot.log` on the Mac.
+
+  - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
+    -ctx 2048`): the load went `metal-resident (q4k)`, and the banner said `prefill path: sequential — arch/geometry not
+    supported by f16 MMA prefill kernel`. `-require-backend` then refused it. The record is
+    `docs/measurements/peer-vetted-2026-10-07-macbook.md`, "Amendment, 2026-10-17", on branch
+    `m1-phi3-q4k-cell-2026-10` until that branch merges.
+  - **The cause, from the source at that commit, is not geometry:**
+    - The q4k lane never takes the f16 MMA pass: `metal/model.go`'s `prefillOK` excludes `q4kLane` outright.
+    - The fallback is OP6's batched step ("decode rows on the batched step kernels"). It needs at least two resident KV
+      slots: `metal/batch.go:resident.batchIneligible` returns "one resident KV slot". At `-ctx 2048` each slot cost
+      768 MB, and the memory guard allowed one ("1 resident KV slots of 2 requested").
+    - `metal/backend.go:metalResident.PrefillPath` reports both cases with the same "arch/geometry" text.
+  - **First, from the code (owner, 2026-10-17): why does OP6's batched step need two resident KV slots, and can a single-slot
+    load use it for its own prompt (one sequence, 8 rows per step)?** Answered from main at 3c845917:
+    - **The minimum belongs to MC3, not to the step's arithmetic.** The step was built for concurrent decode, one sequence
+      per slot. Its eligibility says so ("on at least two resident KV slots": `metal/batch.go:resident.batchIneligible`).
+      OP6 then reused it for one sequence's prompt and inherited the gate. `metal/batch.go:resident.forwardMultiOut`
+      already accepts several rows on one slot when they are one sequence's consecutive positions (the speculative verify's
+      shape). That is exactly a prompt's prefill.
+    - **One slot fails on construction, not semantics.** `metal/model.go:buildResident` fills `kvSlotBufs` and sets `kvContig`
+      only when `kvSlots > 1`. The step reaches every row's KV as `kvSlotBufs[0]`'s buffer plus a per-row offset (one
+      allocation per layer, because a dispatch binds at most 16 buffers). With one slot, `kvSlotBufs` is empty, so
+      `metal/batch.go:metalResident.VerifyCost` returns nil and the prompt routes in
+      `metal/backend.go:metalResident.PrefillPath` and `metal/backend.go:metalResident.PrefillKernelFloor` fall back to
+      sequential. Yet a one-slot resident's `kc`/`vc` already have the step's layout: slot 0 at offset 0 of a one-slot
+      allocation.
+    - **What lifting it would take:**
+      1. At one slot without int8 KV, build `kvSlotBufs` with that one entry and mark it contiguous. Already correct at
+         one slot: `resident.useKVSlot` (a no-op), `resident.kvHostOff` (offset 0) and `metal/kvcopy.go`'s CopyKV, which
+         keeps its "one KV slot" decline.
+      2. Let `batchIneligible` take one slot.
+      3. Price the step's scratch (8 rows' buffers) in the one-slot fit plan, since the one-slot load is the tight one.
+      4. Decide one side effect: a non-nil `VerifyCost` also gives the speculative paths a step verify cost
+         (`decoder/spec_adaptive.go`). Either accept that and gate it, or split "prefills on the step" from "verifies on
+         the step".
+      - **Nothing in the decoder needs changing for concurrency:** `decoder/mc3_batch.go:Model.EnableResidentConcurrency`
+        and the batcher already require two slots. `metal/batch.go:metalResident.BatchStepRange` should still report
+        (0, 0) under two slots.
+      - **The gates would be:** tier 0 bit-identity of a one-slot step prefill against sequential, on both sides of the floor;
+        the same-slot verify test at one slot; and a planted defect.
+    - **Why this likely matters more than the 1-vs-2 slot measurement:** the cliff is not Phi-3's. Every Metal resident
+      whose memory guard allows one slot loses the step for its prompt, and the step is what serves:
+      - the q4k lane, always;
+      - a family the f16 MMA pass does not take (`!prefillOK`);
+      - the short warm-turn suffix above the floor, for every model (`PrefillKernelFloor` requires `VerifyCost`).
+
+      On a 16 GB Mac that is the large models: the loads where prefill time is largest.
+  - **Built (owner, 2026-10-17, "build the one-slot lift, ahead of OP4 on the Mac"):** branch `p29-one-slot-step-2026-10`.
+    - **The step at one slot:** a one-slot resident fills `kvSlotBufs` with its slot, marked contiguous, and
+      `batchIneligible` takes it.
+    - **The capability is split.** `metalResident.stepPrefill` ("prefills on the step") drives the prompt routes.
+      `VerifyCost` ("verifies on the step"), `BatchStepRange` and `BatchGreedyDraw` still need two slots, so speculation's
+      verify cost on one slot stays nil.
+    - **The step's scratch is priced** against the headroom the memory guard leaves beside a one-slot build. A miss declines
+      the step for that load, logged, and never the load.
+    - **Tier 0 is in `metal/one_slot_step_test.go`:**
+      - bit-identity against sequential (last-row logits, every K/V byte, a continuation), on the MC3 fixture at 2-64
+        tokens and on the q4k 0.5B;
+      - a planted row offset, which goes red;
+      - verify and batched decode off at one slot;
+      - the guard's exact edge through `metalBackend.BuildResident`: the load is admitted with the step declined at need, and
+        the step is built at need plus its price. The price covers the driver's count (4.28 MB priced, 3.13 MB counted on
+        the fixture).
+  - **The measurement (tier 1, by day; registered 2026-10-17 before it runs):** `TestOneSlotStep_phi3PrefillAB`.
+    - **The run:** Phi-3 mini 4k at q4k on one KV slot (`-ctx 2048`), one 512-token prompt from position 0. The two arms are
+      production's sequential decode and the step route, interleaved in one process with the arm order alternating:
+      1 warm-up each, then 5 pairs.
+    - **The quantity:** each pair's sequential ÷ step wall time; the reading is their median. Expected about 2x (owner).
+      It is reported, not graded against a bar.
+    - **The setup:** the load passes Metal's memory guard first or the test skips, and the run holds the timing lock.
+  - **Then the decline message:** it names the condition that applied, which is a one-line fix and needs no measurement.
+
+- **P28 · Gemma 4 E2B and E4B: time to first token on Metal is 20-35x Qwen2.5-1.5B's at the same prompt — OPEN, filed
+  2026-10-16 (owner). Measure first, by day; report before any fix.** `mac`.
+
+  - **Step 1 read 2026-10-17 (`docs/measurements/p28-gemma4-metal-ttft-2026-10/README.md`): not per-token below 4,096
+    tokens.** E2B ran the batched pass: 144 tok/s at 4,096 tokens, against the 1.5B's 900. At 8,192 it fell to 34 tok/s,
+    8.4x the time for twice the prompt. The code says why the knee should sit at 4,097 keys: E2B's head dims have no fused
+    kernel, the exact kernel holds 4,096 scores, and past that the pass declines silently to the layer-major one. Step 2,
+    registered there, tests that against memory pressure.
+  - **Step 2 read 2026-10-17 (same record): it is the 4,096-key bound, not memory.**
+    - E2B ran 143.5 tok/s at 4,096 tokens, 37.5 at 6,144 and 34.3 at 8,192.
+    - At the two slow lengths there were no swap-outs and no compressions, and the peak footprint did not climb (1,626 /
+      1,358 / 1,564 MB).
+    - Nothing logged the switch to the slow path.
+    - Fixes scoped there, not built: log the decline (small); tile the exact kernel's scores past 4,096 keys (the smaller
+      kernel change, bit-identical); a fused kernel for head dims 256 and 512 (larger; the only one that also speeds up
+      prompts of 4,096 or fewer).
+  - **Fixes 1 and 2 built 2026-10-17 (owner's yes); fix 3 filed as P32.** The decline was already logged on main from
+    `292211eb`, after step 2's pinned build. Fix 1 makes the stderr note once per request, with the prompt's length, and puts
+    the reason in the `-log-requests` line. Fix 2 (`attention_prefill_tiled`) runs a pass past 4,096 keys on the batched pass:
+    - at ≤ 4,096 keys the pass still runs `attention_prefill` unchanged;
+    - the tiled kernel's output does not depend on its tile size;
+    - against `attention_prefill` it is bit-identical at head dims up to 256 and within 1 f16 ulp at 512 (fast-math codegen
+      of the per-thread output sums, not the tiling);
+    - past 4,096 keys it is within 4e-3 of a float64 reference;
+    - on the tiny E-model it is bit-identical to the untiled pass and within the batched pass's bar of the layer-major one.
+    The timed reading (4,096 / 6,144 / 8,192 on E2B) is a night job.
+
+  - **What was seen** (tack's E0 survey on the MacBook, 2026-10-16, goinfer 0e598d3f; tack's harness, exploratory, not
+    this repo's provenance gate). Both Gemma 4 E-models loaded `metal-resident (int4)` at `-ctx 16384` with fit headroom
+    (E2B: 3.5 GB of weights against a 6.1 GB budget). Cold time to first token, median of 3 (1 at 15,360), as prefill tok/s:
+
+    | model | 4,096 | 8,192 | 15,360 tokens |
+    |---|---|---|---|
+    | Gemma 4 E2B q4_0 | 41 (99.8 s) | 34 (238 s) | 26 (582 s) |
+    | Gemma 4 E4B q4_0 | 26 (160 s) | 22 (365 s) | 18 (855 s) |
+    | Qwen2.5-Coder-1.5B q4_k_m | 915 (4.5 s) | 795 (10.3 s) | 660 (23.3 s) |
+    | Qwen2.5-7B q4_k_m | 206 (19.8 s) | 191 (43.0 s) | 172 (89.3 s) |
+
+    The E-models' rate falls with length, and even the 7B prefills five times faster than E2B. That fits a one-token-at-a-time
+    prefill, but it is not established: no prefill path was recorded. Both E-model arms then ran past their tack timeouts.
+  - **The measurement (tier 1, by day):** prefill tok/s on Metal for Gemma 4 E2B (`gemma-4-E2B_q4_0-it.gguf`, at tack's
+    int4) against Qwen2.5-Coder-1.5B q4_k_m (tack's 1.5B file), cold, at 4,096 and 8,192 tokens. For each, the prefill path
+    the server takes (its banner's `prefill path:` line: batched, or one token at a time) and any decline reason logged.
+    No logged reason, where the path is per-token, is itself a finding.
+  - **Cost and stopping rule:** E2B cold at 4,096 and 8,192 is about 340 s, and the 1.5B about 15 s: about 6 minutes with
+    loads. 15,360 alone took 582 s on E2B, past tier 1's 10 minutes, so it runs only if 4,096 and 8,192 disagree on the path,
+    or the rate's fall with length is the question. Otherwise it goes to the night queue with a reason. Runs hold the timing
+    lock and not beside a timed job.
+  - **Report before any fix:** the two rates, each model's prefill path and decline reason, and where E2B's time goes if the
+    path is batched. A fix is a separate decision.
+
+- **P27 · CPU f16 KV, way B: widen the stored rows inside the attention kernels — PARKED 2026-10-16 (owner). Revisit if CPU KV
+  memory becomes the limit for a real user.** `mac`, aikit kernel work.
+
+  - **The finding that parked way A as the default:** CPU f16 KV way A (`--kv f16`, opt-in since #55) narrows rows to f16 on
+    append and widens the whole stored history into scratch on every decode step. F3's in-process A/B put it slower at depth:
+    0.925 on the 0.5B at 4,096 keys, 4 of 4 pairs under 1 (resolved), and 0.861 on the 1.5B (3 of 4). So `auto` stays f32
+    (`docs/completed/task-cpu-kv-f16-2026-10.md` §5b).
+  - **Way B** (that doc's §4) reads f16 in the register, inside the kernels. Because the float64 path reads K and V in place, this
+    is not one kernel: it is an f16 form of each of the four attention kernels (two of them arm64-only), plus the fast prefill's
+    gather. Those kernels are aikit's, and its pushes and tags are the owner's.
+  - **What reopens it:** a real user whose CPU context is bounded by KV memory (f16 halves it: 0.94 GB to 0.47 GB at 16,384
+    positions on Qwen2.5-1.5B). Not speed: way B's best case is f32's speed at half the bytes.
+  - **Gates when it reopens:** the task doc's F1–F5 as registered, with F3 against way B; F1's exactness rule (the f32 path with
+    each stored row rounded to f16 by hand) carries over unchanged.
+  - **Added 2026-10-21 (the close-out sweep, from `docs/completed/task-cpu-kv-f16-2026-10.md`):** way A's widening runs on one
+    goroutine, while int8's was split across cores by R-15 (`dequantKVRows`), so F3 timed a slower pass than int8 pays.
+    Splitting the f16 widening by rows the same way is bit-identical by construction and should narrow the 0.925 at depth
+    without closing it (R-15 made int8 1.234× faster at depth 2,000 and left it at about 0.89 of f32). It speeds up the
+    opt-in; it is not a reason to reopen the default. Either box, S, read by an in-process A/B by day.
+
 - **P25 · `breakEvenTokensPerRound` is one constant (2.5) for every (target, backend); it does not
   transfer to a CPU MoE target and would NOT have caught a real regression.** Filed 2026-09-13 from
   `docs/task-laguna.md`'s DFlash pairing measurement, moved here at archival so the finding has a

@@ -54,6 +54,22 @@ type SwapWatchOptions struct {
 type SwapWatch struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	rebase chan struct{} // a request to take the next reading as the new baseline (Rebaseline)
+}
+
+// Rebaseline asks the watch to take its next successful reading as the new baseline and forget a trip: swap-used at that moment is the new
+// zero, and if the watch was tripped it calls OnResume (when set) once. A serving watch armed before a model load calls it when the load
+// has finished, so swap the load itself put there (pages that stay in swap until touched, and so never "recover") is not charged to serving.
+// It returns at once; the change lands at the next tick. A load that grew swap past the threshold is not hidden by this: the load-time watch
+// (Options.LoadAbort) aborts it first, and a failed load never reaches here. Safe on a nil receiver and from any goroutine.
+func (w *SwapWatch) Rebaseline() {
+	if w == nil {
+		return
+	}
+	select {
+	case w.rebase <- struct{}{}:
+	default: // one request already pending covers this one
+	}
 }
 
 // Stop ends the watch and blocks until its goroutine has actually exited (so a caller that also
@@ -80,16 +96,16 @@ func StartSwapWatch(ctx context.Context, opts SwapWatchOptions) *SwapWatch {
 		opts.Threshold = 512 * 1024 * 1024
 	}
 	watchCtx, cancel := context.WithCancel(ctx)
-	w := &SwapWatch{cancel: cancel, done: make(chan struct{})}
+	w := &SwapWatch{cancel: cancel, done: make(chan struct{}), rebase: make(chan struct{}, 1)}
 	if opts.Read == nil {
 		close(w.done)
 		return w
 	}
-	go runSwapWatch(watchCtx, opts, w.done)
+	go runSwapWatch(watchCtx, opts, w.done, w.rebase)
 	return w
 }
 
-func runSwapWatch(ctx context.Context, opts SwapWatchOptions, done chan<- struct{}) {
+func runSwapWatch(ctx context.Context, opts SwapWatchOptions, done chan<- struct{}, rebase <-chan struct{}) {
 	defer close(done)
 	t := time.NewTicker(opts.PollInterval)
 	defer t.Stop()
@@ -108,6 +124,19 @@ func runSwapWatch(ctx context.Context, opts SwapWatchOptions, done chan<- struct
 		used, ok := opts.Read()
 		if !ok {
 			continue // unknown this tick — try again next tick, never substitute a guess
+		}
+		select {
+		case <-rebase:
+			baseline, haveBaseline = used, true
+			withinSince = time.Time{}
+			if tripped {
+				tripped = false
+				if opts.OnResume != nil {
+					opts.OnResume()
+				}
+			}
+			continue
+		default:
 		}
 		if !haveBaseline {
 			// The FIRST successful reading, whatever it is, becomes the baseline — including on

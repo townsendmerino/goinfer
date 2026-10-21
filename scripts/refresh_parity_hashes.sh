@@ -30,6 +30,19 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+# The goldens load the box for minutes, so they hold the timing lock shared for the whole run (TE9): a timed run waits for
+# them, and they do not start under one. `--ignore-timing-lock` as the first argument runs with no hold, for emergencies;
+# `--wait SECONDS` waits for a timed run to finish. Under a holder (a loader or a timed run) the hold is inherited.
+waitargs=() ignore=
+while [ $# -gt 0 ] && { [ "$1" = "--ignore-timing-lock" ] || [ "$1" = "--wait" ]; }; do
+	if [ "$1" = "--wait" ]; then waitargs=(--wait "$2"); shift 2; else ignore=1; shift; fi
+done
+if [ -n "$ignore" ]; then
+	python3 scripts/timing_lock.py check --tool refresh_parity_hashes.sh --ignore-timing-lock || exit $?
+elif [ -z "${GOINFER_TIMING_LOCK:-}" ]; then
+	exec python3 scripts/timing_lock.py run --shared --label refresh_parity_hashes.sh ${waitargs[@]+"${waitargs[@]}"} -- bash scripts/refresh_parity_hashes.sh "$@"
+fi
+
 # PRE-FLIGHT: the manifest must be CLEAN before the refresh runs.
 #
 # This exists because of a real mistake, not a hypothetical one. An aikit bump edited

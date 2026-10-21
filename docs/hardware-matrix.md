@@ -13,13 +13,13 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 |---|---|---|---|---|
 | Command-R | ✅ | CPU | ✅ resident | ✅ resident |
 | Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
-| DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | CPU |
-| DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | CPU |
+| DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Gemma 2 | ✅ | CPU | CPU | CPU |
+| Gemma 2 | ✅ | CPU | ✅ resident | ✅ resident |
 | Gemma 3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 4 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite 4.2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -35,7 +35,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Ministral 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Nemotron-H | ✅ | ✅ resident | CPU | CPU |
+| Nemotron-H | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Olmo 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Olmo Hybrid | ✅ | CPU | ✅ resident | ✅ resident |
 | Phi-3 / Phi-4 | ✅ | CPU | CPU | CPU |
@@ -61,13 +61,15 @@ features). Two load-time notes the taxonomy does not encode:
 - **Memory fit:** Metal Mistral-7B needs > 16 GB unified memory (int8 + int4); MoE
   residency is unified-memory-bound.
 - **Precision policy:** Nemotron-H resident is int4-only by default (int8 is opt-in via
-  `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability.
+  `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability. Metal runs it at
+  int4 only: an int8 Nemotron-H declines to the CPU there rather than re-quantize its projections.
 - **Granite-4.0-H's CPU row is the SAME env var, a DIFFERENT gate (N-94, docs/audit-2026-09-10.md).**
   `GOINFER_SSM_RESIDENT` is Nemotron-H's precision knob above, but for Granite-4.0-H it is an
   ELIGIBILITY gate inside `Architecture.decodeRunnerEligible()` itself, still parity-bring-up-guarded
   off by default — this table's generator pins it empty, so every column reads CPU regardless of
-  backend capability. WebGPU already declares `FeatSSM`; the gap here is the gate not yet being
-  lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits.
+  backend capability. WebGPU and Metal already declare `FeatSSM`; the gap here is the gate not yet being
+  lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits
+  (Metal's builder still declines Granite-4.0-H, metal/mamba.go:buildMamba, until its own resident gate).
 - **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable
   Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE
   FFN) this representative config never exercises — WebGPU implements it (G7 part 2,
@@ -88,6 +90,52 @@ features). Two load-time notes the taxonomy does not encode:
   per-position cosine -0.075 / -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu` and Metal its
   twins since 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it
   has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.
+
+## Why a cell reads CPU
+
+Every reason the default configuration declines, for each CPU cell above. The runner-shape check comes first, and
+every later gate that also refuses is listed after it: the features the backend does not implement, an activation
+hazard, the MoE router's capacity. A family is resident on a backend only when nothing is listed for it, so lifting
+the first reason is not enough while another remains. Generated from
+`decoder/residency.go:Architecture.runnerShapeDecline` and `decoder/features.go:residentGateReasons`, the checks
+admission runs.
+
+| Family | CPU on | Why |
+|---|---|---|
+| Command-R | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
+| Command-R7B | WebGPU | missing: `layer-norm`, `nope`, `pairwise-rope`, `parallel-block` |
+| GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
+| GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
+| GPT-2 | CUDA | missing: `learned-pos`, `non-gated-gelu-tanh` |
+| Gemma 2 | WebGPU | missing: `attn-logit-softcap` |
+| Granite-4.0-H | WebGPU, CUDA, Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
+| Kimi K2 | Metal | router capacity: 384 experts, the kernel routes 256 |
+| LFM2.5 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged; missing: `short-conv` |
+| Laguna | WebGPU, CUDA, Metal | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-softplus`, `per-layer-query-heads` |
+| Ling 3.0 | WebGPU, CUDA, Metal | missing: `kda` |
+| Llama 4 | WebGPU, CUDA, Metal | runner shape: own forward, not bridged |
+| Ministral 3 | WebGPU | missing: `attn-temp` |
+| Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
+| Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
+| Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |
+| SmolLM3 | WebGPU | missing: `nope` |
+| Spark-X2.5 | WebGPU, CUDA, Metal | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-sigmoid`, `gated-gelu-erf` |
+
+The runner-shape reasons: **own forward, not bridged** is a family whose layers run its own loop on the CPU, which no
+GPU runner reproduces. **Local and global RoPE tables differ in length** is
+`decoder/residency.go:Architecture.ropeResidentCompatible` refusing a family whose local and global layers rotate a
+different number of dimensions. **Bring-up gate** is Granite-4.0-H's parity bring-up, described in the notes above.
+
+**Phi-3 / Phi-4: the table reads one configuration, and a default load picks another.** The activation
+hazard is the per-row int8 activation scale (`decoder/actquant_hazard.go:ActivationQuantHazard`), and the table reads
+the configuration that has it. The loader picks one that does not
+(`internal/modelload/modelload.go:activationSafeQuant`):
+
+- **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with
+  per-32 activation scales, which CUDA's residency also implements.
+- **Metal:** resident only with an explicit `--quant q4k`. The default load is int8int8 with per-32 activation
+  scales, which Metal's resident projections do not implement, so it runs on the CPU.
+- **WebGPU:** neither; the CPU.
 
 ## Verified on: what has actually run
 

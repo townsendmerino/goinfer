@@ -1,0 +1,25 @@
+{
+ "schema": 1,
+ "backend": "metal",
+ "commit": "a69eb20d9fa3716256035ddb7aea9cd466e3219f",
+ "date": "2026-10-14T19:03:15Z",
+ "host": "Darwin arm64",
+ "gpu": "Apple M1 Pro",
+ "verdict": "PASS",
+ "dirty": false,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 9,
+  "reported": 9,
+  "pass": 8,
+  "skip": 3,
+  "fail": 0,
+  "ran": 6
+ },
+ "trees": {
+  "cuda": "0215eb0795445ae58000806f4db0433bb2797f1b",
+  "decoder": "07629086e52e6cc7380f587c21e09fd557502e52",
+  "gpu": "1433459016a94b5134eaf086f7bdc05e25db91c2",
+  "metal": "9f856d7f0726c7c3d07e69167d5a373928510612"
+ }
+}

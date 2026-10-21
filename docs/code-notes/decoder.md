@@ -832,7 +832,7 @@ picks which, the SAME hook qwen35's Gated-DeltaNet hybrid uses. Structurally a d
 recurrence like Gated DeltaNet, but with a PER-CHANNEL decay (one value per row of the state
 matrix) where Gated DeltaNet's is one scalar per head — verified against fla-org/
 flash-linear-attention's actual source, not the HF modeling file's opaque Triton-kernel
-call. Own forward (forward_bailing.go). nil for every other family.
+call. Its layers are opKDA (decoder/program.go:Architecture.layerOps). nil for every other family.
 ```
 
 ## llama4Params.chunkSize
@@ -1707,7 +1707,7 @@ Moved from `decoder/model.go` (the comment above `Options.LoadAbort`) on 2026-10
 
 ```text
 LoadAbort, if non-nil, is checked BETWEEN LAYERS during a direct (non-.giw) GGUF weight
-build — S3 (docs/tasks/task-never-swap-2026-09.md): the swap tripwire's LOAD-TIME
+build — S3 (docs/completed/task-never-swap-2026-09.md): the swap tripwire's LOAD-TIME
 consumer. Closing it aborts the load with an error satisfying errors.Is(err,
 ErrLoadAborted); Load has no view of WHY it closed (it does not own or import
 decoder.SwapWatch — the caller does), so a caller arming a watch for this is expected to
@@ -1724,6 +1724,17 @@ and StreamTranscodeGGUF's own transcode path (which already has its own M-21
 ctx-cancellation, checked at a different granularity) do NOT check this yet — see the task
 doc's own S3 status note for why this pass stopped here rather than threading it further.
 ```
+
+### Consumers added for the `.giw` path (B33)
+
+Besides the direct GGUF build, three places poll the channel now:
+
+- the `.giw` loader (`loadSerializedWeightsAbortable`): the CRC pass in 64 MiB chunks, and between layers of the walk;
+- a backend's resident build, through `Model.LoadAbort`. The model keeps `Options.LoadAbort` only for `BuildResident` to read; nothing reads it after `Load` returns. The CUDA build polls it while planning each layer, before uploading each layer,
+  and between the blocks of a streamed weight upload;
+- `withResidency` treats a build error wrapping `ErrLoadAborted` as the load's error (`withResidencyOrAbort` closes the model and returns it), where every other build error is a decline that goes on on the CPU.
+
+`internal/modelload.loadGuarded` arms the load-time watch for a `.giw` as well as a direct `.gguf`. A streamed load, an HF directory and a transcode are still unwatched.
 
 ## modelFromOptions
 
@@ -4064,6 +4075,16 @@ which never reaches fitCheckFor at all — by design, not a gap: measured 2026-0
 pressure, so there is no allocation peak for a guard to price). Zero when not applicable, so an existing fitCheck literal built by a test or another
 caller is unaffected.
 ```
+
+## fitCheck.deviceKV
+
+A load that will be CUDA-resident (`cudaWillBeResident`: CUDA compiled in, the resolved backend, weights not streamed, the architecture inside CUDA's feature gate) has its KV in VRAM, which the context plan sizes; the host guard
+prices none of it (`kvBytes` 0, and `decideGIWFit` asks no KV or prefill scratch of host memory). `packBytes` is what the build adds beside the canonical weights: one packed layer plus the staging blocks (`cudaPackStageBytes`) that `cuda/pack_stream.go` streams it through. On the direct `.gguf` path
+`weightBytes + srcFileBytes` is the larger term and stays, because the load (the source mapped while the canonical weights grow) peaks above the build: the 7B read 8.4 GiB of RSS at t = 3.3 s, before any packing
+(`docs/measurements/cuda-build-heap-2026-10-18/README.md`). A resident that declines falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
+
+The pricing reads under the measured peak on some loads: against main's measured peak VmRSS (2026-10-18, same-session A B B A) the direct 7B is 0.98 and phi3 q4k 0.93. That is inside the approved band (0.90 to 1.15) and covered by the 70% budget (`fitMemFraction`), and
+it is a fact of the record, not a target. If the pricing is revisited, aim for 1.00 or more.
 
 ## fitCheck.cudaBuildBytes
 
@@ -11021,7 +11042,7 @@ The differences that DO matter, all of which a port gets wrong silently:
 Moved from `decoder/swapwatch.go` (the comment above `swapwatch`) on 2026-10-09.
 
 ```text
-S3 (docs/tasks/task-never-swap-2026-09.md): the swap tripwire. goinfer notices swap growing
+S3 (docs/completed/task-never-swap-2026-09.md): the swap tripwire. goinfer notices swap growing
 during its own run and acts — instead of leaving "kill at swap-used baseline + 500 MB" to a
 human watching `free -m`/`sysctl vm.swapusage` in another terminal, which is exactly what the
 cold-user harness and the R11(c) runs have had to do by hand. The external shell script that
@@ -11106,7 +11127,7 @@ in-distribution lossless (spec_sample.go).
 Moved from `decoder/optiongrid.go` (the comment above `optiongrid`) on 2026-10-09.
 
 ```text
-The option grid (docs/tasks/task-option-path-admission-2026-10.md §4.0, stage 2): every
+The option grid (docs/completed/task-option-path-admission-2026-10.md §4.0, stage 2): every
 decoder.Options field against every execution path, with what that path does with it and the
 evidence. Step 1 (docs/measurements/audit-classes-2026-10-08.md) found 22 audit findings of one
 shape here — a load option no guard on a path knew about (-kv i8 into Metal's batched prefill,
@@ -11125,7 +11146,7 @@ classified on every path, and a cell that claims a test or a decline must name o
 Moved from `decoder/optiongrid.go` (the comment above `optiongrid.MoECacheExperts`) on 2026-10-09.
 
 ```text
-Metal's expert cache (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2, closed 2026-10-08): bit-identical
+Metal's expert cache (docs/completed/task-option-path-admission-2026-10.md §4.3, finding 2, closed 2026-10-08): bit-identical
 to fully resident when both prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical
 to sequential, so the reference is the resident load with ExactPrefill; the 0.004 first recorded here was the
 default resident's batched f16 prefill, which --exact-prefill alone reproduces. int8 experts decline by name
@@ -11209,7 +11230,7 @@ this bug) — the page size is read from vm_stat's own header, never assumed.
 Moved from `decoder/cachestate.go` (the comment above `cachestate`) on 2026-10-09.
 
 ```text
-The cache-state grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every kind of
+The cache-state grid (docs/completed/task-option-path-admission-2026-10.md §4.0): every kind of
 per-sequence state a KVCache can hold, against every lifecycle path that has to know about it,
 with what that path does with it. Step 1 of that task (docs/measurements/audit-classes-2026-10-08.md)
 counted ten audit findings of one shape here — a kind of state a lifecycle path never accounted
@@ -11986,6 +12007,14 @@ Moved from `decoder/stream_dir.go` (a comment block rewritten to the rule; it ca
 Load writes the EOS ids generation_config.json adds back into the config a bundle serializes (decoder/model.go);
 the stream writes the config in its head, before any layer, so it resolves them first (StreamTranscodeGGUF's M-04).
 ```
+
+## SelfSwapBytes
+
+`SwapWatch` is generic over a `SwapReader`; `internal/swapguard.Select` chooses the readers. On Linux the server's own swap is `SelfSwapBytes`: `VmSwap` from `/proc/<pid>/status`, summed over the process and every
+descendant (parents come from the `stat` line, counted from its last `)` because a command name may hold spaces and parentheses). It is unknown, not zero, when the process's own `VmSwap` line is missing, and the guard then
+falls back to `SwapUsedBytes` (system-wide) at the same threshold. A second Linux source watches `SwapUsedBytes` at a 4096 MB backstop (`swapguard.BackstopMB`). macOS and the other platforms have no per-process swap
+figure (`SelfSwapReader` reports why), so they keep the system-wide guard alone. A guard that watches the server's own swap does not see a server that pushes other processes into swap while holding none itself; the backstop is what covers that.
+Evidence for the change: `docs/measurements/kv7-step2-2026-10-17/README.md`, "Swap during the replay".
 
 ## dropped.swapwatch.35
 
@@ -13687,6 +13716,10 @@ alone already forces CPU-only, so this combination never reaches a GPU kernel �
 family with a gated exact-GELU MLP and NO attention gate would need that verified for real,
 not assumed safe by this precedent.
 ```
+
+Resolved 2026-10-13 (OP0, `docs/tasks/task-forward-architecture-2026-10.md` §3.2): the gated kernels take GELU-tanh and SiLU only, so
+exact GELU now derives its own feature, `gated-gelu-erf`, which no backend declares. `spark2_5`'s profile carries it in place of
+`gated-gelu`.
 
 ## archFeatureProfile.gemma
 
@@ -19408,7 +19441,7 @@ Moved from `decoder/swapwatch_test.go` (the comment above the test) on 2026-10-0
 
 ```text
 TestSwapWatch_keyingOnRSSWouldHaveMissedR11c is the inverting-guard mutation check
-docs/tasks/task-never-swap-2026-09.md S3 asks for, encoded as a test so the mistake it guards
+docs/completed/task-never-swap-2026-09.md S3 asks for, encoded as a test so the mistake it guards
 against cannot come back silently. CLAUDE.md: "A guard that INVERTS under the condition it
 exists for is worse than no guard — it actively reassures." The real R11(c) run
 (docs/measurements/metal-moe-autopager-m26-2026-09-20.md) measured, in the SAME build, both
@@ -19725,7 +19758,7 @@ Compatibility, both ways:
 
 #### File layout: fused groups for Metal (weights format v13, kind 6)
 
-S6 (`docs/tasks/task-never-swap-2026-09.md`) wants a Metal load's dense int4 weights to be **file-backed
+S6 (`docs/completed/task-never-swap-2026-09.md`) wants a Metal load's dense int4 weights to be **file-backed
 views of the mapping** instead of a second, anonymous MTLBuffer copy of every tensor. Metal's fused
 GEMVs read **one buffer** holding q‖k‖v (or gate‖up) rows back to back, and an mmap'd file can only be
 aliased into such a buffer if those rows are *adjacent in the file* — which per-tensor records (a
@@ -19778,3 +19811,11 @@ f32 scales stay in the file, so the CPU path is untouched; the cost is the f16 c
 in place when present and converts as before when not. Compatibility follows the earlier rule: only a
 metal-target file is v14, every other target still writes v12, a pre-v14 reader refuses a v14 file, and a v14
 reader loads every older layout (a v13 metal-target file simply has no f16 scales to alias).
+
+## giwPinnedExpertBytes
+
+A `.giw` load's weights alias the mapping, so its guard prices only what is anonymous: KV and prefill scratch, which are VRAM on a CUDA resident. One anonymous term was missing: with `--moe-cache-experts` on CUDA, every routed expert is
+packed into one page-locked host copy (`cacheWQ`; the memory campaign's MEM10), which cannot be reclaimed. `giwPinnedExpertBytes` prices it from the config (MoE layers x experts x 3 x expert width x hidden, at 9/16 byte a weight: int4 with f16 group-32
+scales), so `Load` and `FitQuery` agree. For Qwen3.6-35B-A3B it is 18.12 GB, the memory campaign's measured figure. The term does not depend on the context, so a refusal here is never cured by a smaller `-ctx`; the message names "the pinned MoE expert copy".
+On the box tack's C3 ran on (38 GiB available) the load is admitted; the term refuses below the copy plus the 1 GiB margin. It is not the cause of C3's halt (`docs/measurements/c3-logs-reading-2026-10-18.md` §1, B33 and B34 are).
+

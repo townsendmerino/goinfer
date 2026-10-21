@@ -4,6 +4,7 @@ package whisper
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -64,6 +65,27 @@ type Decoder struct {
 	defect     int
 	tsDefect   int // a planted timestamp or long-form defect (timestamps_test.go)
 	condDefect int // a planted conditioning defect (policy_test.go)
+	// st is the checkpoint: an F32 tensor is a view into its mapping, so the decoder holds the file until Close, the
+	// mapping's only release (aikit embed.SafetensorsFile.Close).
+	st     *embed.SafetensorsFile
+	closed bool
+}
+
+// errDecoderClosed is what the decoder returns after Close.
+var errDecoderClosed = errors.New("whisper: the decoder is closed")
+
+// Close releases the checkpoint mapping the weights alias. NewState, and so Detect and Generate, return an error
+// afterwards; a State started before Close must not be stepped after it. Calling Close again does nothing.
+func (d *Decoder) Close() error {
+	if d.closed {
+		return nil
+	}
+	st := d.st
+	*d = Decoder{Cfg: d.Cfg, closed: true} // drop every view into the mapping before unmapping it
+	if st == nil {
+		return nil
+	}
+	return st.Close()
 }
 
 // Load reads the decoder from a Whisper checkpoint directory: config.json and the tensors under "model.decoder." (or "decoder.", or none) of model.safetensors or a shard index.
@@ -121,8 +143,10 @@ func Load(dir string) (*Decoder, error) {
 	}
 	d.lnW, d.lnB = get("layer_norm.weight", D), get("layer_norm.bias", D)
 	if err != nil {
+		st.Close()
 		return nil, fmt.Errorf("whisper: loading %s: %w", dir, err)
 	}
+	d.st = st
 	return d, nil
 }
 
@@ -141,6 +165,9 @@ type State struct {
 
 // NewState starts a request over the encoder's last hidden state enc ([nSrc][D], aikit's WhisperEncoder.Forward output).
 func (d *Decoder) NewState(enc []float32) (*State, error) {
+	if d.closed {
+		return nil, errDecoderClosed
+	}
 	D := d.Cfg.D
 	if len(enc) == 0 || len(enc)%D != 0 {
 		return nil, fmt.Errorf("whisper: %d encoder values for d_model %d", len(enc), D)

@@ -1,0 +1,52 @@
+gc 1 @0.003s 4%: 0.12+0.99+0.017 ms clock, 1.9+0/2.1/0.059+0.27 ms cpu, 4->4->1 MB, 4 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 2 @0.007s 4%: 0.026+2.1+0.011 ms clock, 0.42+0.006/2.7/0.69+0.18 ms cpu, 4->5->3 MB, 4 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 3 @0.010s 5%: 0.021+2.1+0.020 ms clock, 0.34+0/3.8/0.083+0.32 ms cpu, 6->6->4 MB, 6 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 4 @0.016s 5%: 0.024+3.6+0.005 ms clock, 0.38+0.47/6.2/0.058+0.093 ms cpu, 9->9->6 MB, 9 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 5 @0.025s 5%: 0.025+3.7+0.004 ms clock, 0.40+0/7.1/1.1+0.071 ms cpu, 11->12->9 MB, 12 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 6 @0.031s 6%: 0.014+5.0+0.012 ms clock, 0.22+0.38/11/1.0+0.20 ms cpu, 20->21->11 MB, 20 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 7 @0.043s 6%: 0.016+5.0+0.006 ms clock, 0.26+0.91/12/3.0+0.10 ms cpu, 24->24->15 MB, 24 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 8 @0.057s 6%: 0.024+5.9+0.012 ms clock, 0.39+1.7/13/1.9+0.19 ms cpu, 29->31->25 MB, 31 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 9 @0.084s 5%: 0.037+6.1+0.005 ms clock, 0.60+0/12/3.3+0.091 ms cpu, 51->51->15 MB, 51 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 10 @0.102s 5%: 0.020+4.7+0.012 ms clock, 0.32+1.8/12/11+0.19 ms cpu, 29->32->23 MB, 31 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 11 @0.118s 5%: 0.030+5.5+0.025 ms clock, 0.49+0/19/17+0.41 ms cpu, 42->44->38 MB, 47 MB goal, 0 MB stacks, 0 MB globals, 16 P
+swap guard (load): not armed for /home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.int4.e4h.cuda.v17.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+gc 12 @0.143s 5%: 0.036+4.1+0.020 ms clock, 0.58+0/15/14+0.32 ms cpu, 71->71->34 MB, 77 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 13 @0.199s 4%: 0.037+3.9+0.013 ms clock, 0.60+0/14/17+0.20 ms cpu, 86->86->83 MB, 87 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 14 @0.371s 2%: 0.040+3.6+0.020 ms clock, 0.64+0/12/10+0.33 ms cpu, 172->172->156 MB, 172 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 15 @0.679s 1%: 0.038+3.9+0.018 ms clock, 0.61+0/13/15+0.28 ms cpu, 309->309->281 MB, 312 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 16 @1.275s 0%: 0.039+4.1+0.006 ms clock, 0.62+0/11/15+0.10 ms cpu, 554->554->499 MB, 563 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 17 @2.162s 0%: 0.038+4.0+0.020 ms clock, 0.61+0/13/13+0.33 ms cpu, 989->989->906 MB, 998 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 18 @3.898s 0%: 0.038+3.2+0.014 ms clock, 0.61+0/10/15+0.22 ms cpu, 1823->1823->1656 MB, 1823 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 19 @7.124s 0%: 0.034+4.8+0.008 ms clock, 0.54+0.14/11/18+0.13 ms cpu, 3304->3304->2999 MB, 3313 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 20 @9.975s 0%: 0.096+2.9+0.007 ms clock, 1.5+0/10/12+0.12 ms cpu, 4018->4018->27 MB, 5998 MB goal, 0 MB stacks, 0 MB globals, 16 P (forced)
+gc 21 @10.456s 0%: 0.031+3.1+0.025 ms clock, 0.50+0.11/11/25+0.40 ms cpu, 47->49->29 MB, 55 MB goal, 0 MB stacks, 0 MB globals, 16 P
+gc 22 @10.490s 0%: 0.091+3.1+0.008 ms clock, 1.4+0/11/25+0.13 ms cpu, 33->33->27 MB, 58 MB goal, 0 MB stacks, 0 MB globals, 16 P (forced)
+gc 23 @10.622s 0%: 0.068+3.1+0.006 ms clock, 1.1+0/11/18+0.10 ms cpu, 40->40->28 MB, 56 MB goal, 0 MB stacks, 0 MB globals, 16 P (forced)
+gc 24 @10.690s 0%: 0.090+2.9+0.007 ms clock, 1.4+0/10/19+0.12 ms cpu, 37->37->28 MB, 56 MB goal, 0 MB stacks, 0 MB globals, 16 P (forced)
+gc 25 @10.827s 0%: 0.033+3.0+0.007 ms clock, 0.53+0/8.9/18+0.11 ms cpu, 34->34->27 MB, 56 MB goal, 0 MB stacks, 0 MB globals, 16 P (forced)
+loaded "bench": 28-layer model (vocab 152064) in 10.693s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 4096 tokens (--ctx; model maximum 131072) · KV f16
+  harness: 4096 tokens is short for a coding agent — its first request is about 11k tokens (opencode: 11137) and will be refused (context_length_exceeded); --ctx 16384 holds it for 3.5 GB of KV (4 slots)
+  fit: 4096-token cap needs 0.2 GB KV (weights 4.0 GB, budget 38.3 GB, 38.1 GB left for a request's own prefill)
+  KV plan: 4 conversations x 4096 positions (--ctx 4096)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:18198 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 64.0 MiB (text) / 96.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 8.50 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+resident batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 0.000 s, exclusive 0.000 s (prefill 0 passes 0.000 s, bookkeeping 0.000 s)

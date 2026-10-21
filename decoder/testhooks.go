@@ -9,11 +9,13 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -23,8 +25,8 @@ import (
 // arch guard and byte-identical-output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	if _, own := a.ownForward(); own {
-		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q (own runLayers)", a.Name)
+	if m.program().subCaptureUncovered() {
+		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q: a layer has an operation its contributions do not cover", a.Name)
 	}
 	nL := a.NumLayers
 	cache.subCapture = true
@@ -47,7 +49,7 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 // and the LM head in a resident bisect. It does not project to logits; that is the head.
 func (m *Model) FinalNormForTest(h []float32) []float32 {
 	out := append([]float32(nil), h...)
-	normalize(m.w.arch, out, m.w.FinalNorm, m.w.FinalNormBias, m.w.arch.HiddenDim)
+	m.finalNorm(out)
 	return out
 }
 
@@ -189,7 +191,7 @@ func (m *Model) Gemma4MoERouterForTest(layer int) (proj, bias []float32, nE, top
 }
 
 // gemma4HiddenBuf accumulates a copy of the residual stream after each layer (index 0 = post-embedding, from g4traceHidden's
-// layer -1; index i+1 = after layer i) on every runLayersGemma4 call while capture is on; it backs the per-layer localization of
+// layer -1; index i+1 = after layer i) on every the Gemma 4 program walk call while capture is on; it backs the per-layer localization of
 // a resident-vs-CPU gate. It lives here, not beside g4traceHidden, because only SetGemma4HiddenCaptureForTest appends to it
 // (production sees only the nil-by-default g4traceHidden seam): off-tag it would be an unused package var (staticcheck U1000).
 var gemma4HiddenBuf [][]float32
@@ -258,6 +260,12 @@ func SetSSMForceF32(v bool) { ssmForceF32 = v }
 // SetMambaCapHook installs/clears the capture hook (the gpu package can't import decoder-internal
 // state directly, so it drives this via the export, like SetSSMQ8CPU).
 func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
+
+// GatedRMSNormGroupedForTest is the Mamba-2 mixer's grouped RMSNorm (gatedRMSNormGrouped): x, already y·silu(z), normalized in
+// place per group, times weight. A backend's gated-norm kernel is gated against it at group counts the tiny fixtures lack.
+func GatedRMSNormGroupedForTest(x, weight []float32, nGroups int, eps float64) {
+	gatedRMSNormGrouped(x, weight, nGroups, eps)
+}
 
 // DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's parity gate. The trunk's own
 // DraftBlock takes a Backend and cpuBackend is unexported, so a backend package (cuda/metal/gpu) cannot drive the reference
@@ -549,8 +557,94 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 	return out, nil
 }
 
+// SetAttnSoftcapOffForTest makes every model loaded while it is on load without its attention-score softcap, on the CPU
+// and on a resident alike (attnSoftcapOffForTest). It returns the previous setting.
+func SetAttnSoftcapOffForTest(on bool) (was bool) { return attnSoftcapOffForTest.Swap(on) }
+
+// StartAttnScoreStatsForTest counts every attention score the CPU caps from now until the returned stop is called, and
+// stop reports how many, how many had |score| > 15, and the largest |score|, all before the cap (attnScoreStatsForTest).
+func StartAttnScoreStatsForTest() (stop func() (n, over15 int64, maxAbs float64)) {
+	st := &attnScoreStats{}
+	attnScoreStatsForTest.Store(st)
+	return func() (int64, int64, float64) {
+		attnScoreStatsForTest.Store(nil)
+		return st.n.Load(), st.over15.Load(), math.Float64frombits(st.maxAbsBits.Load())
+	}
+}
+
+// KVBoundClassesForTest is the bound resident KV slot and the kernel class the KV manager recorded for each row of its
+// sequence: "fast", "exact" or "unknown" (nil when the slot holds nothing known).
+func (m *Model) KVBoundClassesForTest() (slot int, rows []string) {
+	a := m.kvSlots()
+	slot = a.Bound()
+	s := a.Seq(slot)
+	if s == nil {
+		return slot, nil
+	}
+	rows = make([]string, s.Len())
+	for i := range rows {
+		rows[i] = "unknown"
+	}
+	for _, r := range s.Classes() {
+		name := map[KVClass]string{kvmgr.ClassFast: "fast", kvmgr.ClassExact: "exact"}[r.Class]
+		for p := r.Start; p < r.Start+r.Len && p < len(rows); p++ {
+			if name != "" {
+				rows[p] = name
+			}
+		}
+	}
+	return slot, rows
+}
+
 // WholePromptScratchBytesForTest is the CPU batched sweep's whole-prompt scratch figure (prefillScratchBytes) that admission
 // priced a resident request at before a resident could report its own per-pass figure: the price a test sets beside the new one.
 func (m *Model) WholePromptScratchBytesForTest(promptTokens int) int64 {
 	return prefillScratchBytes(m.Config(), promptTokens)
 }
+
+// StartMoESelTraceForTest records every moeMLP call's routing (top-k indices and weights) in forward order until
+// TakeMoESelTraceForTest; StopMoESelTraceForTest turns it off.
+func StartMoESelTraceForTest() { moeSelTrace, moeWtsTrace = [][]int{}, [][]float32{} }
+
+// TakeMoESelTraceForTest returns the routing recorded since the last call, and keeps recording.
+func TakeMoESelTraceForTest() ([][]int, [][]float32) {
+	s, w := moeSelTrace, moeWtsTrace
+	moeSelTrace, moeWtsTrace = [][]int{}, [][]float32{}
+	return s, w
+}
+
+// StopMoESelTraceForTest stops the recording.
+func StopMoESelTraceForTest() { moeSelTrace, moeWtsTrace = nil, nil }
+
+// SetResidentFeaturesForTest adds the given features to backend's declared set and returns a function that restores it. A backend's build
+// seam that is gated but not yet declared (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b on CUDA) is reachable from its own
+// tests only through this: production admission reads the unexported map and never sees a feature a test added after restore. It is not
+// safe for parallel tests, and it panics on a backend that declares no set, so a typo cannot pass as a no-op.
+func SetResidentFeaturesForTest(backend string, add ...ResidentFeature) (restore func()) {
+	set, ok := residentBackendFeatures[backend]
+	if !ok {
+		panic("decoder.SetResidentFeaturesForTest: no feature set declared for backend " + backend)
+	}
+	prev := make(map[ResidentFeature]bool, len(add))
+	for _, f := range add {
+		prev[f] = set[f]
+		set[f] = true
+	}
+	return func() {
+		for f, was := range prev {
+			if was {
+				set[f] = true
+			} else {
+				delete(set, f)
+			}
+		}
+	}
+}
+
+// WeightAllocsForTest is how many times a load has entered loadWeights (weightAllocs), for a test outside the package that
+// asserts a call loaded no weights.
+func WeightAllocsForTest() int64 { return weightAllocs.Load() }
+
+// LoadCallsForTest is how many times Load has been entered (loadCalls), for a test outside the package that asserts a call
+// loaded nothing.
+func LoadCallsForTest() int64 { return loadCalls.Load() }

@@ -54,9 +54,12 @@ func kv0Passes(start, M, chunk int) []kv0Pass {
 	for i := 0; i < M; {
 		n := min(chunk, M-i)
 		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
-			n -= attnFusedMinRows - rem // the chunker's 16-row rule: a prefill's last pass is never shorter than 16 rows
+			n -= prefillTailCut(n, rem) // the chunker's 16-row rule: a prefill's last pass is never shorter than 16 rows
 		}
 		ps = append(ps, kv0Pass{start + i, n, start + M})
+		if n <= 0 { // prefillChunked fails such a pass ("empty prompt"); the plan ends there instead of looping
+			return ps
+		}
 		i += n
 	}
 	return ps
@@ -160,6 +163,20 @@ func kv0Load(t *testing.T, path, kv string, tokens func(vocab int) func(n, off i
 // kv0LoadCtx is kv0Load with the resident context named (KV3's prompts are longer than KV0's).
 func kv0LoadCtx(t *testing.T, path, kv string, ctxCap int, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
 	t.Helper()
+	g := kv0LoadCtxAny(t, path, kv, ctxCap, tokens)
+	for l := range g.r.layers {
+		if g.r.layers[l].kvHalf != (kv == "f16") || g.r.layers[l].isMLA() || g.r.layers[l].isDeltaNet() {
+			t.Fatalf("%s: layer %d: KV precision asked for %q, layer holds f16=%v (or it is latent or recurrent KV)", path, l, kv, g.r.layers[l].kvHalf)
+		}
+	}
+	t.Logf("KV precision %s", kv)
+	return g
+}
+
+// kv0LoadCtxAny is kv0LoadCtx without the dense-model checks on the layers: a hybrid's DeltaNet layers hold no K or V (poison and snapshot skip
+// them), and the caller names the families it means to read. Whole-context caches and a batched prefill are still required.
+func kv0LoadCtxAny(t *testing.T, path, kv string, ctxCap int, tokens func(vocab int) func(n, off int) []int) *kv0Rig {
+	t.Helper()
 	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: ctxCap, KVPrecision: kv})
 	if err != nil {
 		t.Fatalf("load %s: %v", path, err)
@@ -172,12 +189,6 @@ func kv0LoadCtx(t *testing.T, path, kv string, ctxCap int, tokens func(vocab int
 	if r.kvWin {
 		t.Fatalf("%s: windowed KV is on; this gate reads whole-context caches", path)
 	}
-	for l := range r.layers {
-		if r.layers[l].kvHalf != (kv == "f16") || r.layers[l].isMLA || r.layers[l].isDeltaNet {
-			t.Fatalf("%s: layer %d: KV precision asked for %q, layer holds f16=%v (or it is latent or recurrent KV)", path, l, kv, r.layers[l].kvHalf)
-		}
-	}
-	t.Logf("KV precision %s", kv)
 	_, _, _, _, _, _, vocab := m.Dims()
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	t.Cleanup(cancel)
@@ -197,7 +208,7 @@ func (g *kv0Rig) embs(ids []int) [][]float32 {
 func (g *kv0Rig) poison(n int) {
 	g.t.Helper()
 	for l := range g.r.layers {
-		if g.r.layers[l].kvShared {
+		if g.r.layers[l].kvShared || g.r.layers[l].isDeltaNet() || g.r.layers[l].isMLA() {
 			continue
 		}
 		nan := make([]float32, n*g.r.layers[l].kvDim)
@@ -218,7 +229,7 @@ func (g *kv0Rig) snapshot(n int) kv0KV {
 			return e
 		}
 		for l := range g.r.layers {
-			if g.r.layers[l].kvShared {
+			if g.r.layers[l].kvShared || g.r.layers[l].isDeltaNet() || g.r.layers[l].isMLA() {
 				continue
 			}
 			kd := g.r.layers[l].kvDim

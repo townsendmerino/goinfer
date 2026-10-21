@@ -32,8 +32,8 @@ const (
 type job struct {
 	ID        string     `json:"id"`
 	Model     string     `json:"model"`
-	PromptIDs []int      `json:"prompt_ids,omitempty"`
-	Class     string     `json:"class,omitempty"` // reserved for a future job class; "" today
+	PromptIDs []int32    `json:"prompt_ids,omitempty"` // int32: a vocabulary id fits, and a capped store of long prompts holds half the bytes
+	Class     string     `json:"class,omitempty"`      // reserved for a future job class; "" today
 	State     jobState   `json:"state"`
 	Created   time.Time  `json:"created"`
 	Started   *time.Time `json:"started,omitempty"`
@@ -110,7 +110,11 @@ func (s *jobStore) create(id, model string, promptIDs []int) *job {
 // admission, so the id is immediately visible to GET /v1/jobs/{id} while still queued. Also applies the store's FIFO eviction
 // (never evicting a pending/running job).
 func (s *jobStore) createPending(id, model string, promptIDs []int) *job {
-	j := &job{ID: id, Model: model, PromptIDs: promptIDs, State: jobPending, Created: time.Now()}
+	ids := make([]int32, len(promptIDs))
+	for i, t := range promptIDs {
+		ids[i] = int32(t)
+	}
+	j := &job{ID: id, Model: model, PromptIDs: ids, State: jobPending, Created: time.Now()}
 	s.mu.Lock()
 	s.jobs[id] = j
 	s.order = append(s.order, id)

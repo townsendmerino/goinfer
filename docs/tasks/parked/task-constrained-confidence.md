@@ -61,7 +61,7 @@
 > [`task-work-queue-2026-09.md`](../task-work-queue-2026-09.md) (J1/J3/J4 plumbing D5's batch route
 > rides) · [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) (MC1/MC3 slots, D7's
 > concurrency cell) · [`task-site-2026-09.md`](../task-site-2026-09.md) (D9) ·
-> [`task-never-swap-2026-09.md`](../task-never-swap-2026-09.md) (D3's merge-at-load memory) ·
+> [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (D3's merge-at-load memory) ·
 > [`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md) (mode 3, "point my tools at it").
 
 ---
@@ -134,8 +134,8 @@ is.
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
   (`decoder/model.go:Model.ForwardCapture`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
-  (`decoder/arch.go:ownForwards`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
-  contract (`decoder/capture.go:KVCache.captureResidual`) is the residual *after* layer l, before the final norm, so D2
+  (the own-loop table, `ownForwards`, since removed in OP3z; its predicate was `a.qwen35 != nil`, so it matched both). The capture
+  contract (`decoder/program_cpu.go:Model.walkToken`, which captures it) is the residual *after* layer l, before the final norm, so D2
   applies the final RMSNorm itself and must match HF's `hidden_states[-1]`, which is already normed
   on Qwen. Verify in D2; do not assume.
 - **LoRA cannot reach this family.** Both paths are closed:
@@ -937,8 +937,8 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 ## Sources
 
 `constrain/constrain.go:Masker.ForcedRun`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model.go:Model.ForwardCapture` (`ForwardCapture`) · `decoder/capture.go:KVCache.captureResidual` (the capture
-contract) · `decoder/arch.go:ownForwards` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
+`Process`) · `decoder/model.go:Model.ForwardCapture` (`ForwardCapture`) · `decoder/program_cpu.go:Model.walkToken` (the capture
+contract) · the own-loop table `ownForwards` (removed in OP3z; it had the `qwen3_5` / `qwen3_5_moe` row) ·
 `decoder/arch.go:qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.validateTargets` (`validateTargets`) ·
 `decoder/lora.go:Model.LoadAdapter` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:buildWeightsFromSafetensorsTo`, `:744`
 (merge-at-load) · `decoder/kvcache.go:KVCache.TruncateTo` (`TruncateTo`) · `decoder/kvsnapshot.go:Session.Snapshot` (snapshot

@@ -1,0 +1,15 @@
+# GV-C(a), 2026-10-15 13:23:37 PDT; base /home/francis/goinfer-bench/kv2-cuda-night/bin/serve-base, rev /home/francis/goinfer-bench/kv2-cuda-night/bin/serve-rev
+== 26B: SAME (13 plan lines)
+   cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+   [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only <free <n>)
+   loaded "bench": 30-layer model (vocab 262144) in <t> [chat: gemma4, thinking: unmanaged]
+     decode path: cuda-resident (int4)
+     prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+     head table: int8
+     context: 4096 tokens (backend default; model maximum 262144 — raise with --ctx) · KV f32
+     harness: 4096 tokens is short for a coding agent — its first request is about 11k tokens (opencode: 11137) and will be refused (context_length_exceeded); --ctx 16384 holds it for 1.2 GB of KV (1 slot)
+     fit: 4096-token cap needs 0.7 GB KV (weights 13.6 GB, budget <host> for a request's own prefill)
+     KV plan: 1 conversation x 4096 positions (2 asked for)
+     session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 2 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+     features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+   "bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)

@@ -102,6 +102,8 @@ type prefillState struct {
 	pAttnFused Pipeline
 	// R19: attention_prefill_steel, the head-dim-128 prefill attention (it replaces pAttnFused there).
 	pAttnSteel Pipeline
+	// attention_prefill_tiled: pAttn for a pass past prefillExactAttnMaxKeys keys (exactAttnTile).
+	pAttnTiled Pipeline
 
 	// Expert-major MoE prefill pipelines
 	pRouterGemm       Pipeline
@@ -156,7 +158,11 @@ func (r *resident) ensurePrefill() {
 	if (r.w8 || r.w8Attn) && r.preciseMath { // the owner's precise-math decision for native int8 (w8PreciseMath) covers its prefill too
 		compile = r.d.CompileLibraryPrecise
 	}
-	lib, err := compile(prefillKernels, MSL3_1)
+	src, err := withAttnSoftcap(prefillKernels, r.attnSoftcap)
+	if err != nil {
+		panic(fmt.Sprintf("metal prefill source: %v", err))
+	}
+	lib, err := compile(src, MSL3_1)
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill compile: %v", err))
 	}
@@ -176,7 +182,7 @@ func (r *resident) ensurePrefill() {
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pAttnImg: p("attention_prefill_img"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"), pResScaled: p("residual_f16_scaled"),
-		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"),
+		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"), pAttnTiled: p("attention_prefill_tiled"),
 
 		pRouterGemm:       p("router_gemm_f16"),
 		pMoeRouteBatch:    p("moe_route_batch"),
@@ -244,6 +250,26 @@ func parallelEmbedsF32ToF16Scaled(dst []uint16, embs [][]float32, H int, inv flo
 // sequential path. TestPrefillExactAttnBound ties this to the kernel source.
 const prefillExactAttnMaxKeys = 4096
 
+// exactAttnTiledMaxHD is attention_prefill_tiled's widest head dim: each of its tgReduceAttn threads keeps at most 4 output
+// dims in registers.
+const exactAttnTiledMaxHD = 4 * tgReduceAttn
+
+// exactAttnTileForTest, when positive, makes every exact-attention pass take attention_prefill_tiled with tiles of that many
+// keys, so a test compares it with attention_prefill on a short prompt.
+var exactAttnTileForTest = 0
+
+// exactAttnTile is the tile attention_prefill_tiled takes for a pass reaching keys keys, or 0 for attention_prefill: a
+// pass that fits the exact kernel's score buffer runs it unchanged.
+func exactAttnTile(keys int) int {
+	if exactAttnTileForTest > 0 {
+		return exactAttnTileForTest
+	}
+	if keys > prefillExactAttnMaxKeys {
+		return prefillExactAttnMaxKeys
+	}
+	return 0
+}
+
 // prefillWidths is the batched pass's scratch widths per row: the q|k|v projection, the attention output and the
 // feed-forward width, each the largest over the layers (a Gemma 4 E-model varies the attention geometry and the FFN
 // width by layer) and, for an MoE, over the expert and shared-expert widths. The pass sizes its buffers from these
@@ -302,22 +328,39 @@ var prefillScratchSeen atomic.Int64
 // threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by prefillExactAttnMaxKeys.
 func (r *resident) prefillAttnKernels() (fused, steel bool) {
 	g0 := r.prefillGeom()
-	fused = metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION")) && g0.hd%8 == 0 && g0.hd <= 128
+	fused = r.prefillFusedOn() && g0.hd%8 == 0 && g0.hd <= 128
 	steel = fused && g0.hd == 128 && !prefillSteelAttnOff
 	return fused, steel
+}
+
+// prefillFusedOn reports whether the pass may take the fused and steel attention kernels where a layer's head
+// dimension has one. A model with an attention softcap may not: the softcap is gated on the exact kernel.
+func (r *resident) prefillFusedOn() bool {
+	return r.attnSoftcap == 0 && metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
 }
 
 // prefillExactAttn reports whether any attention layer of the pass runs the exact attention kernel (no fused kernel for
 // its head dim, or fused attention off), whose score buffer holds prefillExactAttnMaxKeys keys. A Gemma 4 E-model's
 // layers differ (S9 step 2); every other family's are one geometry.
 func (r *resident) prefillExactAttn() bool {
-	fusedOn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
+	fusedOn := r.prefillFusedOn()
 	for l := range r.layers {
 		if g := r.layers[l].geom; g != nil && !(fusedOn && g.hd%8 == 0 && g.hd <= 128) {
 			return true
 		}
 	}
 	return false
+}
+
+// exactAttnHeadDim is the widest head dim among the attention layers the exact kernel serves (prefillExactAttn), or 0.
+func (r *resident) exactAttnHeadDim() int {
+	fusedOn, hd := r.prefillFusedOn(), 0
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil && !(fusedOn && g.hd%8 == 0 && g.hd <= 128) {
+			hd = max(hd, g.hd)
+		}
+	}
+	return hd
 }
 
 // prefillGeom is the attention geometry the pass uses for every attention layer: the first attention layer's. A
@@ -330,6 +373,14 @@ func (r *resident) prefillGeom() *attnGeom {
 		}
 	}
 	return nil
+}
+
+// kvCap is how many positions every K/V buffer holds: ctxCap, or metalCtxCapDefault before it is resolved (metalResident.ctxCap's rule).
+func (r *resident) kvCap() int {
+	if r.ctxCap == 0 {
+		return metalCtxCapDefault
+	}
+	return r.ctxCap
 }
 
 // PrefillLast ingests M prompt embeddings at positions startPos..startPos+M-1 in one command buffer via the f16 MMA path
@@ -388,6 +439,12 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 // attention_prefill_img, the exact kernel with the blocks, in place of the fused and steel kernels, which carry no block
 // mask. No blocks: prefillLast exactly.
 func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
+	// Every K/V buffer holds kvCap positions, and a pass past them writes beyond the buffer. metalResident.checkCap refuses that for
+	// the decoder; an internal caller that skipped it is a programming error, named here rather than left to corrupt memory.
+	if c := r.kvCap(); startPos < 0 || startPos+len(embs) > c {
+		panic(fmt.Sprintf("metal: internal prefill of %d rows at position %d is past the resident KV cap of %d positions "+
+			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", len(embs), startPos, c))
+	}
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -457,6 +514,8 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
 	uMReal := NewBufferU32(d, uint32(M))
+	attnTile := exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
+	uTile := NewBufferU32(d, uint32(max(attnTile, 1)))
 	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
 	// Allocated unconditionally (cheap — H floats) rather than gated on whether any layer is
 	// MoE, avoiding a nil-buffer special case in the loop below.
@@ -606,7 +665,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 		shared bool
 	}
 	luCache := map[luKey]*layerU{}
-	fusedOn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
+	fusedOn := r.prefillFusedOn()
 	layerUFor := func(L *residLayer) *layerU {
 		k := luKey{L.geom, L.kvShared}
 		if u, ok := luCache[k]; ok {
@@ -734,6 +793,8 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
 			} else if lu.fused {
 				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+			} else if attnTile > 0 {
+				e.Dispatch(pf.pAttnTiled, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uTile)
 			} else {
 				e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow)
 			}

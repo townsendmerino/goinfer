@@ -8,16 +8,8 @@ import (
 )
 
 func packW4A8Row(row []float32) (words []uint32, scales []float32) { return kernels.PackW4A8Row(row) }
-
-// dequantInt8ToF32 reconstructs a row-major int8 weight matrix (q8[N*K], per-row scales)
-// to f32 — used to re-pack int8-loaded weights into W4A8 for the int4 GEMV. K padded to a
-// multiple of 32 (W4A8 group) with zeros.
-func dequantInt8ToF32Row(q8 []int8, scale float32, K, Kpad int) []float32 {
-	f := make([]float32, Kpad)
-	for k := range K {
-		f[k] = float32(q8[k]) * scale
-	}
-	return f
+func packW4A8RowInto(row []float32, words []uint32, scales []float32) {
+	kernels.PackW4A8RowInto(row, words, scales)
 }
 
 // f32ToF16 converts to IEEE-754 half. W4A8 group scales are small positive finite values, so the

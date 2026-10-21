@@ -193,15 +193,16 @@ func (f *Flags) Knobs() *decoder.Knobs {
 	return &decoder.Knobs{"GOINFER_CPU_FAST_ATTENTION": fast}
 }
 
-// CPUKV is the CPU KV cache precision: serve's deprecated --kv-quant when given, else --kv mapped
-// onto the CPU cache, which has no f16 form — so f16 stays f32 there and i8 selects the per-head int8
-// cache. (Both Options fields remain; only the command line unified.)
+// CPUKV is the CPU KV cache precision: serve's deprecated --kv-quant when given, else --kv mapped onto the CPU cache: f16 and
+// i8 select those caches, and auto (the default) and f32 the f32 reference. auto moves to f16 only after the gates read
+// (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). (Both Options fields remain; only the command line unified.)
 func CPUKV(kvQuant, kv string) string {
 	if kvQuant != "" {
 		return kvQuant
 	}
-	if kv == "i8" {
-		return "i8"
+	switch kv {
+	case "i8", "f16":
+		return kv
 	}
 	return "f32"
 }
@@ -295,7 +296,7 @@ const quantHelp = "  int4      W4A8 (int4 weights, int8 activations): fastest on
 	"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n" +
 	"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant."
 
-const kvHelp = "KV cache precision, for whichever backend serves the model: auto (the default: f16 on CUDA for the dense llama, mistral, qwen2, qwen3 and phi3 families, f16 on Metal, f32 elsewhere) | f32 (bit-exact) | f16 (lossy; GPU residency only — on CUDA the families above, any other model stays f32 and the banner names why; the CPU cache has no f16 form and stays f32) | i8 (lossy: the GPU residency cache, ~64k ctx on 8 GB; the CPU cache as per-head int8, ~4× smaller, argmax ~90%+, excluding MoE/gemma4/qwen3.5 which keep f32)"
+const kvHelp = "KV cache precision: auto (the default: the backend picks; f16 on CUDA for the dense llama, mistral, qwen2, qwen3 and phi3 families, f16 on Metal, f32 elsewhere) | f32 (bit-exact) | f16 (lossy, half the KV bytes) | i8 (lossy, about a quarter). An explicit f32, f16 or i8 is delivered or the load refuses and says why (docs/kv-precision-matrix.md): today Metal has no f32 cache, CUDA has f16 for the families above and no i8, and the CPU cache has f16 and i8 for the families without MoE that use the batched attention kernel"
 
 const streamWeightsHelp = "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)"
 

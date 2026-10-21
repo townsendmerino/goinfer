@@ -22,3 +22,6 @@ const (
 	pagedFenceSrc      = kernels.PagedFenceSrc
 	prefillKernels     = kernels.PrefillKernels
 )
+
+// withAttnSoftcap builds a kernel source for a model with an attention-score softcap (kernels.WithAttnSoftcap).
+var withAttnSoftcap = kernels.WithAttnSoftcap

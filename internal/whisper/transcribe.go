@@ -1,6 +1,7 @@
 package whisper
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -15,6 +16,22 @@ type Transcriber struct {
 	Dec  *Decoder
 	Gen  GenConfig
 	Tok  *tokenizer.Tokenizer
+
+	closed bool
+}
+
+// errTranscriberClosed is what a transcription returns after Close.
+var errTranscriberClosed = errors.New("whisper: the transcriber is closed")
+
+// Close releases the encoder's and the decoder's checkpoint mappings (aikit's audio.WhisperEncoder.Close and Decoder.Close);
+// Encode and every transcription return an error afterwards. A device attached to Enc stays the caller's to close. Calling
+// Close again does nothing.
+func (t *Transcriber) Close() error {
+	if t.closed {
+		return nil
+	}
+	t.closed = true
+	return errors.Join(t.Enc.Close(), t.Dec.Close())
 }
 
 // LoadTranscriber reads a Whisper checkpoint directory (config.json, generation_config.json, tokenizer.json and the safetensors).
@@ -25,17 +42,19 @@ func LoadTranscriber(dir string) (*Transcriber, error) {
 	}
 	dec, err := Load(dir)
 	if err != nil {
+		enc.Close()
 		return nil, err
 	}
 	gen, err := LoadGenConfig(dir)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		var tk *tokenizer.Tokenizer
+		if tk, err = tokenizer.Load(filepath.Join(dir, "tokenizer.json")); err == nil {
+			return &Transcriber{Mels: enc.Cfg.MelBins, Enc: enc, Dec: dec, Gen: gen, Tok: tk}, nil
+		}
 	}
-	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
-	if err != nil {
-		return nil, err
-	}
-	return &Transcriber{Mels: enc.Cfg.MelBins, Enc: enc, Dec: dec, Gen: gen, Tok: tk}, nil
+	enc.Close()
+	dec.Close()
+	return nil, err
 }
 
 // MaxSamples is one window: 30 s of 16 kHz audio. A longer clip is long-form (S14.4d) and is refused here.
@@ -43,6 +62,9 @@ const MaxSamples = 30 * audio.WhisperSampleRate
 
 // Encode runs the front end and the encoder over one window and returns the encoder's last hidden state.
 func (t *Transcriber) Encode(samples []float32) ([]float32, error) {
+	if t.closed {
+		return nil, errTranscriberClosed
+	}
 	if len(samples) > MaxSamples {
 		return nil, fmt.Errorf("whisper: the clip is %.1f s, over the 30 s one window holds (long-form decoding is not built)", float64(len(samples))/audio.WhisperSampleRate)
 	}

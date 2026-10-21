@@ -3,8 +3,10 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/townsendmerino/goinfer/constrain"
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
 
 // Session couples a KVCache with the token sequence currently materialized in
@@ -40,6 +42,15 @@ type Session struct {
 	// now is a different one, instead of projecting a new turn through one fine-tune on top of a
 	// prefix another built. LoadSession sets it from the snapshot (format v3 records the adapter).
 	kvAdapter *loraRuntime
+
+	// classes is which prefill class wrote each row the cache holds, so SharedHit offers another session only rows its
+	// own cold prefill would compute. rewindForReuse clips it to the rows reused, so rows a generation writes carry no
+	// class unless it records one (recordClasses); nil (a restored snapshot, a reset) offers nothing.
+	classes []kvmgr.ClassRun
+	// shared and copyDur are the rows the last CopyPrefixFrom copied in and its wall time, reported by the next
+	// Generate (Generation.PrefillShared, KVCopy).
+	shared  int
+	copyDur time.Duration
 }
 
 // NewSession allocates an empty session. capHint pre-sizes the KV cache for an
@@ -74,6 +85,7 @@ func (s *Session) ClearAdapter() { s.cache.lora = nil }
 func (s *Session) Reset() {
 	s.cache.TruncateTo(0)
 	s.tokens = s.tokens[:0]
+	s.classes = nil
 	s.cleanCache = true
 }
 
@@ -81,7 +93,8 @@ func (s *Session) Reset() {
 // On an inexact rewind (a wrapped sliding-window ring cannot restore the positions it dropped) it resets and returns 0, so
 // prefix reuse never reads stale history. Callers must skip it, and reconcile, for an empty prompt so a rejected call
 // leaves a warm session untouched.
-func (s *Session) rewindForReuse(prompt []int) int {
+func (s *Session) rewindForReuse(prompt []int) (matched int) {
+	defer func() { s.classes = clipClassRuns(s.classes, matched) }()
 	// A just-created or Reset session has nothing for TruncateTo(0) to clear, and the reset would otherwise zero a recurrent
 	// state that is already zero. Every guard fails toward resetting: the flag is consumed here whatever happens.
 	clean := s.cleanCache && len(s.tokens) == 0 && s.cache.Pos() == 0
@@ -95,7 +108,7 @@ func (s *Session) rewindForReuse(prompt []int) int {
 		s.cache.TruncateTo(0)
 		return 0
 	}
-	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
+	matched = max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
 	if !s.cache.TruncateTo(matched) {
 		s.cache.TruncateTo(0) // drop everything; a full cold prefill re-populates the ring slots
 		return 0
@@ -148,12 +161,18 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	// prompt is a generateInto error: don't touch the cache (rewind/reconcile), so a warm session
 	// survives a rejected call.
 	matched := 0
+	g.PrefillSlot, g.PrefillMatch = len(s.tokens), commonPrefixLen(s.tokens, prompt)
 	if len(prompt) > 0 {
 		matched = s.rewindForReuse(prompt)
 	}
 	// generateInto sets g.PrefillReused only on the resident path. A plain session takes its CPU/staged path, which never
 	// touches it, so set it here or the API's usage.prefill_reused_tokens reports 0 for every session turn.
 	g.PrefillReused = matched
+	if s.shared > 0 && matched >= s.shared {
+		g.PrefillShared, g.KVCopy = s.shared, s.copyDur
+	}
+	s.shared, s.copyDur = 0, 0
+	batched := s.cache.lora == nil && len(prompt) > matched && s.m.canBatchN(len(prompt)-matched)
 
 	// After prefill the cache holds the whole prompt; commit appends each generated token as its
 	// forward lands it in the cache, so seq mirrors the cache exactly — including a clean rollback
@@ -169,6 +188,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 		// cache holds, no partial position.
 		if len(prompt) > 0 {
 			s.reconcile(seq)
+			s.recordClasses(prompt, matched, batched)
 		}
 	})
 	return out, g

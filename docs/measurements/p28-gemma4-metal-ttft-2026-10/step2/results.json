@@ -1,0 +1,79 @@
+{
+  "rev": "784e7c82",
+  "host": "macbookpro.lan",
+  "model": "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+  "rows": [
+    {
+      "target": 4096,
+      "prompt_tokens": 4096,
+      "reused": 0,
+      "wall_s": 28.543,
+      "tok_s": 143.5,
+      "prefill_path_banner": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)",
+      "footprint_before_mb": 747,
+      "footprint_after_mb": 1100,
+      "peak_footprint_mb": 1626,
+      "vm_delta_pages": {
+        "Pageouts": 4,
+        "Swapins": 0,
+        "Swapouts": 0,
+        "Compressions": 59462,
+        "Decompressions": 30091,
+        "Pages occupied by compressor": -40370,
+        "Pages stored in compressor": -59371,
+        "Pages free": 155779
+      },
+      "swap_before": "total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)",
+      "swap_after": "total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)",
+      "page_bytes": 16384
+    },
+    {
+      "target": 6144,
+      "prompt_tokens": 6144,
+      "reused": 0,
+      "wall_s": 164.056,
+      "tok_s": 37.5,
+      "prefill_path_banner": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)",
+      "footprint_before_mb": 762,
+      "footprint_after_mb": 1344,
+      "peak_footprint_mb": 1358,
+      "vm_delta_pages": {
+        "Pageouts": 0,
+        "Swapins": 0,
+        "Swapouts": 0,
+        "Compressions": 0,
+        "Decompressions": 9371,
+        "Pages occupied by compressor": -3476,
+        "Pages stored in compressor": -9394,
+        "Pages free": -44911
+      },
+      "swap_before": "total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)",
+      "swap_after": "total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)",
+      "page_bytes": 16384
+    },
+    {
+      "target": 8192,
+      "prompt_tokens": 8192,
+      "reused": 0,
+      "wall_s": 238.617,
+      "tok_s": 34.3,
+      "prefill_path_banner": "batched f16-MMA from 16 prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)",
+      "footprint_before_mb": 742,
+      "footprint_after_mb": 1549,
+      "peak_footprint_mb": 1564,
+      "vm_delta_pages": {
+        "Pageouts": 0,
+        "Swapins": 8,
+        "Swapouts": 0,
+        "Compressions": 0,
+        "Decompressions": 8122,
+        "Pages occupied by compressor": -2455,
+        "Pages stored in compressor": -7894,
+        "Pages free": -99604
+      },
+      "swap_before": "total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)",
+      "swap_after": "total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)",
+      "page_bytes": 16384
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+rev 3faaa5bb (metal test sha256 bdf6e0c23c43118a)
+nemotron fd734a2d43863688
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'Battery Power'
+total = 3072.00M  used = 1872.56M  free = 1199.44M  (encrypted)
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                    41870.
+Pages active:                                 391808.
+Pages inactive:                               373849.
+Pages speculative:                             17456.
+ 6:27  up 1 day,  9:29, 1 user, load averages: 4.33 4.67 3.05

@@ -1,6 +1,6 @@
 """The five tasks of I3 (docs/tasks/task-integration-harness-2026-10.md), verbatim, and their mechanical checks. A check
 that needs the tree runs inside the sandbox on the finished fixture copy (the model wrote the code it would run)."""
-import hashlib, os, re
+import hashlib, json, os, random, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(HERE, "fixture")
@@ -34,6 +34,39 @@ def make_bulk(lines):
     return setup
 
 
+CHAIN_LEN, CHAIN_DECOYS, CHAIN_LINES = 24, 40, 48
+
+
+def make_chain(work):
+    """I1-v2's `chain` (task doc, "I1 live gate, second design"): CHAIN_LEN files of about 1,000 tokens, each ending with the
+    name of the next under names drawn for this run, the last ending with END and a code word; CHAIN_DECOYS decoys of the same
+    shape chained only to one another. Every line starts with its file's own name, so a file's content names it. Writes the
+    key (the chain in order, the decoys, the code word) beside the work directory, out of the agent's reach."""
+    rng = random.Random(os.urandom(16))
+    names = []
+    while len(names) < CHAIN_LEN - 1 + CHAIN_DECOYS:
+        n = f"{rng.randrange(16 ** 6):06x}"
+        if n not in names:
+            names.append(n)
+    chain, decoys = ["start"] + names[:CHAIN_LEN - 1], names[CHAIN_LEN - 1:]
+    code = "-".join(rng.choice(["amber", "basalt", "cobalt", "delta", "ember", "fjord", "garnet", "harbor"]) for _ in range(3)) + f"-{rng.randrange(1000):03d}"
+    os.makedirs(os.path.join(work, "data"))
+
+    def write(stem, tail):
+        with open(os.path.join(work, "data", stem + ".txt"), "w") as f:
+            for i in range(1, CHAIN_LINES + 1):
+                f.write(f"{stem} record {i:03d}: node-{rng.randrange(997):03d} reported {rng.randrange(100003)} events in zone {chr(97 + rng.randrange(26))}\n")
+            f.write(tail + "\n")
+    for i, stem in enumerate(chain):
+        write(stem, f"next: data/{chain[i + 1]}.txt" if i + 1 < len(chain) else f"END. The code word is {code}.")
+    for i, stem in enumerate(decoys):
+        write(stem, f"next: data/{decoys[(i + 1) % len(decoys)]}.txt")
+    json.dump(dict(chain=chain, decoys=decoys, code=code), open(os.path.join(os.path.dirname(work), "chain-key.json"), "w"))
+
+
+CHAIN_PROMPT = ("Start by reading data/start.txt. Each file ends with a line `next: <path>`: read that file next, one file per tool call, "
+                "and keep following the chain until a file says END. Then answer with the code word that file gives.")
+
 TASKS = {
     "read": dict(prompt="What does `Add(2, 3)` in calc.go return? Answer with the number.",
                  answer=lambda a: re.search(r"(?<![\d.])5(?![\d.])", a) is not None),
@@ -48,4 +81,6 @@ TASKS = {
 _BULK = "Show me the full contents of each of the files data/part-1.txt through data/part-8.txt, one file at a time, using your tools. After the last one, answer with the word done."
 TASKS["bulk"] = dict(prompt=_BULK, setup=make_bulk(120), answer=lambda a: "done" in a.lower())
 TASKS["bulkbig"] = dict(prompt=_BULK, setup=make_bulk(430), answer=lambda a: "done" in a.lower())
+# The answer is checked against the run's own key (run_cell reads chain-key.json).
+TASKS["chain"] = dict(prompt=CHAIN_PROMPT, setup=make_chain, keyed=True)
 ORDER = ["read", "search", "edit", "write", "fix"]

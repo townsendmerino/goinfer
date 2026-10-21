@@ -1,0 +1,68 @@
+=== RUN   TestKV3_prefillScratchBytes_matchesThePass
+    kv3_longprefill_test.go:223: KV precision f16
+[kv3] tiny M=16: scratch 209152 B (0.2 MiB) = the pass's allocations
+[kv3] tiny M=300: scratch 3921600 B (3.7 MiB) = the pass's allocations
+[kv3] tiny M=512: scratch 6692864 B (6.4 MiB) = the pass's allocations
+--- PASS: TestKV3_prefillScratchBytes_matchesThePass (1.22s)
+=== RUN   TestKV3_chunkerKeepsPassStartsOnTheGrid
+--- PASS: TestKV3_chunkerKeepsPassStartsOnTheGrid (0.01s)
+=== RUN   TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny
+    kv3_tiled_test.go:45: KV precision f32
+[kv3-tiled] forced route kv=f32 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+    kv3_tiled_test.go:45: KV precision f16
+[kv3-tiled] forced route kv=f16 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+--- PASS: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny (1.61s)
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_tiny
+    kv3_tiled_test.go:90: KV precision f32
+[kv3-tiled] past the bound kv=f32 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 0.98 s (6 groups), per-token 7.25 s
+[kv3-tiled] past the bound kv=f32 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.83 s (36 groups), per-token 10.28 s
+    kv3_tiled_test.go:90: KV precision f16
+[kv3-tiled] past the bound kv=f16 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 0.95 s (6 groups), per-token 6.22 s
+[kv3-tiled] past the bound kv=f16 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.55 s (36 groups), per-token 11.38 s
+--- PASS: TestKV3Tiled_batchedEqualsPerToken_tiny (41.47s)
+=== RUN   TestKV3Tiled_pastBoundPromptRunsExact_tiny
+    kv3_tiled_test.go:142: KV precision f32
+[kv3-tiled] past the bound, GEMM lever on: 6 row-batched groups, 0 tensor-core launches; logits differing 0 of 256, KV differing 0 of 12697600
+--- PASS: TestKV3Tiled_pastBoundPromptRunsExact_tiny (2.46s)
+=== RUN   TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines
+    kv3_tiled_test.go:178: KV precision f16
+--- PASS: TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines (2.11s)
+=== RUN   TestKV3Tiled_spanScratchMatchesThePass
+    kv3_tiled_test.go:201: KV precision f16
+[kv3-tiled] scratch levers=true start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=16: 209152 B + span 4194560 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=300: 3921600 B + span 60822208 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=512: 6692864 B + span 67114096 B = the pass's allocations
+--- PASS: TestKV3Tiled_spanScratchMatchesThePass (0.51s)
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32
+    prefill_splitkv_test.go:207: 180 cases bit-identical to attn_batched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16
+    prefill_splitkv_test.go:207: 180 cases bit-identical to attn_batched
+--- PASS: TestPrefillSplitKV_rowsEqualAttnBatched (1.35s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32 (0.43s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16 (0.71s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	50.795s

@@ -112,7 +112,7 @@ func (s *server) withModelAnthropic(w http.ResponseWriter, name string, fn func(
 	fn(lm)
 }
 
-// closeEntryNatives releases this entry's PRIVATE native resources — the vision tower — which are not
+// closeEntryNatives releases this entry's PRIVATE native resources — the vision and audio towers — which are not
 // shared with any other registry entry (adapters do not copy them) and would otherwise leak on
 // unload just like the model's weights. Idempotent (nils each). The shared *decoder.Model is NOT
 // closed here; that is refs-gated in the unload path.
@@ -132,7 +132,25 @@ func (lm *loadedModel) closeEntryNatives() {
 	// releases a served Gemma 4 tower's weight memory at unload.
 	lm.gemma4Enc = nil
 	lm.gemma4Audio = nil // plain weights, no native Close
+	// The Voxtral and Qwen3-ASR encoders keep their checkpoint mapped until Close, the mapping's only release (aikit
+	// embed.SafetensorsFile.Close), and a device attached to Voxtral's tower is the caller's to close.
+	if lm.voxtralDevice != nil {
+		_ = lm.voxtralDevice.Close()
+		lm.voxtralDevice = nil
+	}
+	if lm.voxtral != nil {
+		_ = closeAudioEncoder("voxtral", lm.voxtral)
+		lm.voxtral = nil
+	}
+	if lm.qwenASR != nil {
+		_ = closeAudioEncoder("qwenASR", lm.qwenASR)
+		lm.qwenASR = nil
+	}
 }
+
+// closeAudioEncoder closes one of an entry's lazily loaded audio encoders at unload. A variable so a test can count the
+// calls.
+var closeAudioEncoder = func(field string, enc interface{ Close() error }) error { return enc.Close() }
 
 // startDrain runs the DETACHED phase of unload. The entry is already unpublished (Phase 1). On a bare
 // goroutine — NOT tied to the admin request's context or the shutdown path, so a client disconnect

@@ -73,7 +73,7 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// derived per-model at load (RequiredResidentFeatures), which is what admission uses. The
 	// table's job is to force a new arch to be classified, not to be the runtime check.
 	"phi3": {},
-	"gpt2": {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
+	"gpt2": {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatNonGatedGELUTanh, FeatOutBias},
 	// Cohere's rotation is GPT-J PAIRWISE (rope_gptj), not NeoX, so it needs FeatPairwiseRoPE: a resident backend that runs
 	// it on NeoX kernels is wrong on the real checkpoints (flat-fixture gates are blind to it). Backends without a pairwise
 	// rope variant decline these families.
@@ -100,13 +100,11 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// layers, and the family-specific output gate. The XS generations carry all of
 	// these; M.1 drops the sliding-window half, but this table states the family's
 	// BASE profile and RequiredResidentFeatures derives the per-model truth.
-	"laguna": {FeatAttnOutputGate, FeatMoE, FeatPartialRotary, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
-	// spark2_5: same attention-output-gate CPU-only forcing function as Laguna (FeatAttnOutputGate: sigmoid here, softplus
-	// there; no resident backend implements either). It also derives FeatGatedGELU (!NonGatedMLP && Act != ActSiLU): the
-	// first family combining a gated MLP with ActGelu (exact erf). Whether CUDA's glu_quant is correct for that activation
-	// on the gated path is UNVERIFIED, and masked only because FeatAttnOutputGate keeps the family CPU-only
-	// (docs/code-notes/decoder.md#archFeatureProfile.spark2_5).
-	"spark2_5":    {FeatAttnOutputGate, FeatGatedGELU, FeatPartialRotary, FeatPerLayerRoPE, FeatSlidingWindow},
+	"laguna": {FeatAttnOutputGateSoftplus, FeatMoE, FeatPartialRotary, FeatPerLayerQueryHeads, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	// spark2_5: an attention output gate as Laguna has, through sigmoid here (FeatAttnOutputGateSigmoid) where Laguna's is
+	// softplus; no resident backend implements either, and a gated MLP with exact-erf GELU (FeatGatedGELUErf), which no backend
+	// implements either: every gated kernel has GELU-tanh and SiLU only.
+	"spark2_5":    {FeatAttnOutputGateSigmoid, FeatGatedGELUErf, FeatPartialRotary, FeatPerLayerRoPE, FeatSlidingWindow},
 	"deepseek_v2": {FeatMLA, FeatMoE},
 	"deepseek_v3": {FeatMLA, FeatMoE},
 	"kimi_k2":     {FeatMLA, FeatMoE},
@@ -129,11 +127,11 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"qwen3_next":       {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	"llama4_text":      {FeatMoE},
 	"gpt_oss":          {FeatAttnSink, FeatMoE, FeatOutBias, FeatRopeMscale, FeatSlidingWindow},
-	"nemotron_h":       {FeatNonGatedMLP, FeatSSM},
+	"nemotron_h":       {FeatNonGatedMLP, FeatNonGatedReLU2, FeatSSM},
 	"granitemoehybrid": {FeatLogitScale, FeatMoE, FeatSSM},
 	// LFM2/LFM2.5: FeatShortConv is what keeps this CPU-only. Strip it and the profile is
 	// {FeatQKNorm} — which every resident backend implements, so all three would admit a
-	// family none of them can run. Same shape as laguna's FeatAttnOutputGate above.
+	// family none of them can run. Same shape as laguna's FeatAttnOutputGateSoftplus above.
 	"lfm2":             {FeatQKNorm, FeatShortConv},
 	"lfm2_vl":          {FeatQKNorm, FeatShortConv}, // S10: LFM2-VL's text_config is lfm2
 	"qwen3_5_moe_text": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
@@ -190,8 +188,8 @@ var admissionGolden = map[string][]string{
 	// checkpoints while flat 0.02-std fixtures read 0.9997 (docs/tasks/task-metal-pairwise-rope-2026-10.md).
 	"cohere":      {"cuda", "metal"},
 	"cohere2":     {"cuda", "metal"},
-	"deepseek_v2": {"cuda", "webgpu"},
-	"deepseek_v3": {"cuda", "webgpu"},
+	"deepseek_v2": {"cuda", "metal", "webgpu"},
+	"deepseek_v3": {"cuda", "metal", "webgpu"},
 	// gemma3 (uniform head_dim) reaches webgpu for real (testdata/gemma3-vl-tiny's text tower,
 	// gpu.TestGemma3ResidentParityWebGPU). gemma4/gemma4_text/gemma4_unified_text are FEATURE-compatible there, but dense
 	// Gemma 4's local/global head_dim split needs a per-layer geometry seam this feature-list model cannot express
@@ -200,7 +198,7 @@ var admissionGolden = map[string][]string{
 	// feature-admitted: it intentionally tracks the feature-only model, as with the MoE-cap precedent (deepseek_v2/kimi_k2
 	// below, admitted by feature but capped elsewhere).
 	"gemma":               {"cuda", "metal", "webgpu"},
-	"gemma2":              {},
+	"gemma2":              {"cuda", "metal"}, // the attention-score softcap: Metal and CUDA since OP1; webgpu does not declare it
 	"gemma3":              {"cuda", "metal", "webgpu"},
 	"gemma3_text":         {"cuda", "metal", "webgpu"},
 	"gemma4":              {"cuda", "metal", "webgpu"},
@@ -226,9 +224,9 @@ var admissionGolden = map[string][]string{
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels
 	// (gpu.TestGptOssResidentParityWebGPU).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
-	"granitemoehybrid": {"webgpu"},
-	"kimi_k2":          {"cuda", "webgpu"},
-	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
+	"granitemoehybrid": {"cuda", "metal", "webgpu"}, // feature-admitted; its runner-shape bring-up gate keeps it on the CPU (hardware matrix)
+	"kimi_k2":          {"cuda", "metal", "webgpu"}, // feature-admitted; the 384-expert router cap keeps it off Metal (hardware matrix)
+	"bailing_hybrid":   {},                          // FeatKDA undeclared everywhere -- new this pass
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
 	// rope kernels; WebGPU has only NeoX rope kernels and declines (FeatPairwiseRoPE + FeatPairwiseMRoPE). Admitted with the
 	// NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny.
@@ -265,7 +263,7 @@ var admissionGolden = map[string][]string{
 	"mistral3":   {"cuda", "metal"},
 	"ministral3": {"cuda", "metal"},
 	"mixtral":    {"cuda", "metal", "webgpu"},
-	"nemotron_h": {"webgpu"},
+	"nemotron_h": {"cuda", "metal", "webgpu"}, // Metal since OP2b step 2, CUDA since OP2b step 2d's declaration, int4 only (buildMamba declines int8 on both)
 	"phi3":       {"cuda", "metal", "webgpu"},
 	"qwen2":      {"cuda", "metal", "webgpu"},
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
@@ -343,14 +341,20 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// TestMellumResidentParityCUDA; FeatAttnSink + FeatOutBias were declared only after a real gpt-oss-20b forward ran
 		// resident (TestGptOssResidentParityCUDA), because a declaration on kernel-level evidence alone was reverted once and
 		// the end-to-end run found three silent wiring defects no kernel test could see. Still undeclared: per-layer rotary
-		// WIDTH, the ATTENTION softcap (FeatAttnLogitSoftcap, a per-layer kernel) and FeatSSM; the Qwen2-MoE decline is the
+		// WIDTH and FeatSSM; the Qwen2-MoE decline is the
 		// gated shared expert (FeatMoEGatedShared) being in the shared taxonomy, not a hand-coded check.
 		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
 			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
 			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatLayerNorm, FeatParallelBlock, FeatLogitScale,
+			// The attention-score softcap, a compile-time variant of the three kernels a capped layer takes
+			// (docs/tasks/task-forward-architecture-2026-10.md §4.6a): TestAttnSoftcap_kernelsAgainstFloat64 with the cap dropped as the
+			// control, and TestGemma2Softcap_lanesCUDA.
+			FeatAttnLogitSoftcap,
 			FeatMLA,
+			// Nemotron-H's Mamba-2 mixer and non-gated squared-ReLU MLP, int4 only (§4.7, OP2b on CUDA).
+			FeatSSM, FeatNonGatedMLP, FeatNonGatedReLU2,
 			// FeatPairwiseRoPE/FeatPairwiseMRoPE: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
 			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the real Aya/R7B gate.
 			// FeatGemma4EModel: the PLE branch from existing kernels, KV-shared layers aliasing their source's cache, per-layer FFN
@@ -360,7 +364,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// kernel plus gpu/moe.go's MoE kernels; the others reuse existing kernels or host-side wiring.
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
-			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,
+			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatNonGatedReLU2, FeatLogitScale,
 			FeatRMSAddOne,
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
 			FeatGemma4EModel, // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
@@ -372,13 +376,19 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		"metal": {
 			FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm,
 			FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap,
-			FeatLayerNorm, FeatNonGatedMLP, FeatLearnedPos, FeatOutBias, FeatRopeMscale, FeatAttnSink,
+			FeatLayerNorm, FeatNonGatedMLP, FeatNonGatedGELUTanh, FeatNonGatedSiLU, FeatLearnedPos, FeatOutBias, FeatRopeMscale, FeatAttnSink,
 			FeatDeltaNet,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatParallelBlock, FeatLogitScale,
 			FeatGemma4EModel,
 			// GPT-J pairwise rotation (rope_pw, rope2_pw, rope_f16_pw, rope_mrope_f16_pw; docs/tasks/task-metal-pairwise-rope-2026-10.md).
 			FeatPairwiseRoPE, FeatPairwiseMRoPE,
+			// The attention-score softcap, compiled into the three kernels a capped layer takes (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+			FeatAttnLogitSoftcap,
+			// Nemotron-H's Mamba-2 mixer and squared-ReLU MLP, int4 only (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b).
+			FeatSSM, FeatNonGatedReLU2,
+			// Multi-head latent attention (§4.7, OP2a).
+			FeatMLA,
 		},
 	}
 	for be, exp := range want {
@@ -405,6 +415,9 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// Every feature added to the taxonomy must be added here too, or this test goes red on the declaring backend (N-12).
 		FeatAttnTemp: true, FeatPostOnlyNorm: true, FeatQKNormWhole: true,
 		FeatPairwiseRoPE: true, FeatPairwiseMRoPE: true,
+		FeatGatedGELUErf: true, FeatNonGatedGELUErf: true, // FeatGatedActUnknown is left out on purpose: it names no kernel
+		FeatNonGatedGELUTanh: true, FeatNonGatedSiLU: true, FeatNonGatedReLU2: true, // FeatNonGatedActUnknown likewise
+		FeatAttnOutputGateSoftplus: true, FeatAttnOutputGateSigmoid: true, FeatPerLayerQueryHeads: true,
 	}
 	for be, set := range residentBackendFeatures {
 		for f := range set {
@@ -440,7 +453,17 @@ func TestResidentFeatures_derivation(t *testing.T) {
 		{"parallel-block", func(a *Architecture) { a.NormPlacement = NormParallel }, FeatParallelBlock},
 		{"nope", func(a *Architecture) { a.layerNoPE = func(int) bool { return true } }, FeatNoPE},
 		{"gated-gelu", func(a *Architecture) { a.Act = ActGeluTanh }, FeatGatedGELU},
+		{"gated-gelu-erf", func(a *Architecture) { a.Act = ActGelu }, FeatGatedGELUErf},
+		{"gated-act-unknown", func(a *Architecture) { a.Act = ActReLU2 }, FeatGatedActUnknown},
 		{"non-gated", func(a *Architecture) { a.NonGatedMLP = true }, FeatNonGatedMLP},
+		{"non-gated-gelu-erf", func(a *Architecture) { a.NonGatedMLP = true; a.Act = ActGelu }, FeatNonGatedGELUErf},
+		{"non-gated-gelu-tanh", func(a *Architecture) { a.NonGatedMLP = true; a.Act = ActGeluTanh }, FeatNonGatedGELUTanh},
+		{"non-gated-silu", func(a *Architecture) { a.NonGatedMLP = true }, FeatNonGatedSiLU},
+		{"non-gated-relu2", func(a *Architecture) { a.NonGatedMLP = true; a.Act = ActReLU2 }, FeatNonGatedReLU2},
+		{"non-gated-act-unknown", func(a *Architecture) { a.NonGatedMLP = true; a.Act = ActKind(99) }, FeatNonGatedActUnknown},
+		{"attn-output-gate-sigmoid", func(a *Architecture) { a.AttnGate = GateSigmoid }, FeatAttnOutputGateSigmoid},
+		{"attn-output-gate-softplus", func(a *Architecture) { a.laguna = &lagunaParams{} }, FeatAttnOutputGateSoftplus},
+		{"per-layer-query-heads", func(a *Architecture) { a.laguna = &lagunaParams{HeadsPerLayer: []int{48, 64}} }, FeatPerLayerQueryHeads},
 		{"learned-pos", func(a *Architecture) { a.LearnedPosEmbed = true }, FeatLearnedPos},
 		{"out-bias", func(a *Architecture) { a.OutBias = true }, FeatOutBias},
 		{"logit-scale", func(a *Architecture) { a.LogitScale = 8 }, FeatLogitScale},
@@ -638,5 +661,44 @@ func TestResidentMoECapacity_routerCap(t *testing.T) {
 	dense, _, _ := resolveArchitecture(representativeConfig("qwen3"))
 	if !residentMoECapacityOK(dense, "webgpu") {
 		t.Error("a dense (non-MoE) arch must never be declined by the router cap")
+	}
+}
+
+// TestFeatureSplits_wrongHalfDeclinesByName is OP2's gate for the two feature splits (docs/tasks/task-forward-architecture-2026-10.md
+// §4.7, OP2 (a) and (b)): a backend that declares the wrong half of a split, the other activation of the same structure, must
+// decline the family and name the half it lacks.
+func TestFeatureSplits_wrongHalfDeclinesByName(t *testing.T) {
+	for _, c := range []struct {
+		family       string
+		declare, not ResidentFeature // the wrong half the backend declares, and the half the family needs
+		with         []ResidentFeature
+	}{
+		{"gpt2", FeatNonGatedSiLU, FeatNonGatedGELUTanh, []ResidentFeature{FeatNonGatedMLP}},
+		{"nemotron_h", FeatNonGatedGELUTanh, FeatNonGatedReLU2, []ResidentFeature{FeatNonGatedMLP}},
+		{"laguna", FeatAttnOutputGateSigmoid, FeatAttnOutputGateSoftplus, []ResidentFeature{FeatPerLayerQueryHeads}},
+		{"spark2_5", FeatAttnOutputGateSoftplus, FeatAttnOutputGateSigmoid, nil},
+	} {
+		arch, _, err := resolveArchitecture(representativeConfig(c.family))
+		if err != nil {
+			t.Fatalf("%s: %v", c.family, err)
+		}
+		// Every feature the family needs, except the half under test, which is swapped for the wrong one.
+		set := map[ResidentFeature]bool{c.declare: true}
+		for _, f := range arch.residentFeatures() {
+			if f != c.not {
+				set[f] = true
+			}
+		}
+		for _, f := range c.with {
+			set[f] = true
+		}
+		missing := missingFeatures(arch.residentFeatures(), set)
+		if !slices.Equal(missing, []ResidentFeature{c.not}) {
+			t.Errorf("%s on a backend declaring %s and not %s: missing %v, want exactly [%s]", c.family, c.declare, c.not, missing, c.not)
+		}
+		set[c.not] = true
+		if missing := missingFeatures(arch.residentFeatures(), set); len(missing) != 0 {
+			t.Errorf("%s with the right half declared: still missing %v", c.family, missing)
+		}
 	}
 }

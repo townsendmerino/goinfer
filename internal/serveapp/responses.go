@@ -14,7 +14,7 @@ import (
 
 // OpenAI Responses API (/v1/responses). Stateless input (input, instructions, text.format, tools, streaming) plus
 // store/previous_response_id through an in-memory ring, so a continued response is a prompt-prefix extension that
-// rides the per-model sessionLRU for warm KV. Out of scope: hosted tools, reasoning items, file inputs.
+// rides the per-model sessionLRU for warm KV. Out of scope: hosted tools, file inputs.
 
 type respText struct {
 	Format *struct {
@@ -35,11 +35,14 @@ type responseReq struct {
 	Stream             bool            `json:"stream"`
 	Store              *bool           `json:"store"` // default true (capped ring)
 	PreviousResponseID string          `json:"previous_response_id"`
-	// Reasoning.effort is OpenAI's thinking control ("none" turns thinking off, anything else on); the reasoning text
-	// itself is not returned on this route (reasoning items are out of scope) — output_text is always the clean answer.
+	// Reasoning.effort is OpenAI's thinking control ("none" turns thinking off). The reasoning text is returned as a
+	// reasoning item (reasoning_items.go); output_text is always the clean answer.
 	Reasoning *struct {
 		Effort string `json:"effort"`
 	} `json:"reasoning"`
+	// Include lists the extra output a client asked for; "reasoning.encrypted_content" says it round-trips reasoning items,
+	// so a reply with no reasoning gets a carrier-only item for its ids (carried_ids_mint.go).
+	Include []string `json:"include"`
 	sampling
 }
 
@@ -94,6 +97,9 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	var req responseReq
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast()
 	}
 	dropUnrunnableTools(w, &req.Tools)
 	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })
@@ -184,20 +190,24 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	if sm.constrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
-	system, turns := messagesToTurns(messages)
-	ids, err := lm.promptForT(tm, system, turns)
+	system, turns, carriers := messagesToTurnsCarried(messages)
+	ids, idsOut, err := lm.encodePrompt(tm, system, turns, nil, s.idsCheckFor(lm, r, carriers))
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	s.noteIDs(r, idsOut)
 	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, nil) }
 	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
 		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
 	}
+	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
 	gr.id = id                                // registers this generation for cancel-by-id
-	s.routeThink(lm, &gr, tm, turns, ts, nil) // reasoning is dropped on this route
+	s.routeThink(lm, &gr, tm, turns, ts, nil) // the reasoning becomes a reasoning item (reasoning_items.go)
+	mint := s.mintFor(lm, r, gr)
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
@@ -210,12 +220,16 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 		rs := newRespStream(ss, id)
+		rs.mint = mint
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		if gr.think != nil {
+			gr.think.onReasoning = rs.reasoningDelta
+		}
 		var sb strings.Builder
 		// Nothing is sent between response.created and the first token, and on CPU that gap is the whole prefill: a
 		// heartbeat covers it, as it does on the tools-active branch.
 		stopBeat := sseHeartbeat(ss)
-		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
 		})
@@ -225,18 +239,18 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			sseDone(ss)
 			return
 		}
-		out := []any{rs.closeMessage(sb.String())}
-		rs.emit("response.completed", map[string]any{"response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)})
+		out := withCarrier(rs, mint, req.Include, id, withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(sb.String())}))
+		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused)})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
 		sseDone(ss)
-		s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
+		s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 		return
 	}
 
 	var sb strings.Builder
-	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -245,9 +259,9 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
-	out := []any{outputMessage(id+"-msg", sb.String())}
-	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp))
-	s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
+	out := withCarrier(nil, mint, req.Include, id, withReasoning(nil, gr.think, id, mint, []any{outputMessage(id+"-msg", sb.String())}))
+	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused))
+	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 }
 
 // serveVisionResponses is serveResponsesWith's plain-text branch for input that carries images: the prompt from
@@ -302,7 +316,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		var sb strings.Builder
 		stopBeat := sseHeartbeat(ss) // the image turn's tower and prefill are the silent window
-		finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopHit, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
 		})
@@ -313,16 +327,16 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 			return
 		}
 		out := []any{rs.closeMessage(sb.String())}
-		rs.emit("response.completed", map[string]any{"response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)})
+		rs.emit("response.completed", map[string]any{"response": markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp))})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
 		sseDone(ss)
-		s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
+		s.maybeStore(store, id, lm.name, messages, sb.String(), "", nil)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopHit, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -332,8 +346,8 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		return
 	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
-	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp))
-	s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
+	writeJSON(w, http.StatusOK, markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
+	s.maybeStore(store, id, lm.name, messages, sb.String(), "", nil)
 }
 
 // respondTools generates a (buffered) tool-calling response and emits
@@ -347,7 +361,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	for i, t := range req.Tools {
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
-	system, turns := messagesToTurns(messages)
+	system, turns, carriers := messagesToTurnsCarried(messages)
 	ts, terr := s.resolveThink(req.thinkRequest())
 	if terr != nil {
 		writeErr(w, http.StatusBadRequest, terr.Error())
@@ -357,17 +371,20 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 		tm = lm.constrainedTemplate(ts)
 	}
-	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
+	ids, idsOut, err := lm.encodePrompt(tm, system, turns, tools, s.idsCheckFor(lm, r, carriers))
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	s.noteIDs(r, idsOut)
 	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
 	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
 		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
 	}
+	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
 	gr.id = id // registers this generation for cancel-by-id
 	forced := forcedTool(req.ToolChoice, tools, endsWithToolResult(turns))
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
@@ -375,7 +392,8 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400
 		return
 	}
-	s.routeThink(lm, &gr, tm, turns, ts, nil) // reasoning is dropped on this route; AFTER the tool constraint, which the budget composes with
+	s.routeThink(lm, &gr, tm, turns, ts, nil) // AFTER the tool constraint, which the budget composes with; the reasoning becomes a reasoning item
+	mint := s.mintFor(lm, r, gr)
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
@@ -397,8 +415,12 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	var rs *respStream
 	if ss != nil {
 		rs = newRespStream(ss, id)
+		rs.mint = mint
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		onProse = rs.delta
+		if gr.think != nil {
+			gr.think.onReasoning = rs.reasoningDelta
+		}
 	}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, onProse)
 	if gerr != nil {
@@ -420,7 +442,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		// (partial) text message, as the "nothing parseable" fallback below does, so a client still gets a
 		// well-formed response object with real usage.
 		if ss != nil {
-			resp := responseObject(id, lm.name, created, respStatus(finish), []any{rs.closeMessage(t.raw)}, inTok, nComp)
+			resp := responseObject(id, lm.name, created, respStatus(finish), withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(t.raw)}), inTok, nComp)
 			rs.emit("response.completed", map[string]any{"response": resp})
 			rs.emit("response.cancelled", map[string]any{"reason": t.cancelReason})
 			sseDone(ss)
@@ -432,6 +454,12 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	calls, lead := t.calls, ""
 	if len(calls) > 0 {
 		lead = t.lead
+	}
+	if rs != nil && wantsCarrier(req.Include) {
+		// a reply with no reasoning and nothing streamed yet: its carrier-only item goes first, before the items below open
+		if enc := mint.blob(""); enc != "" {
+			rs.carrierOnly(enc)
+		}
 	}
 	if ss != nil && t.rest != "" {
 		// The prose still held back when the call opened (or all of it, on a family that cannot
@@ -475,9 +503,16 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 			out = append(out, outputMessage(id+"-msg", t.raw))
 		}
 	}
+	out = withReasoning(rs, gr.think, id, mint, out)
+	if rs == nil {
+		out = withCarrier(nil, mint, req.Include, id, out)
+	}
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
-	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
+	resp := withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused)
+	if t.fromReasoning && len(calls) > 0 {
+		resp[fromReasoningField] = true
+	}
 	if req.Stream {
 		rs.emit("response.completed", map[string]any{"response": resp})
 		sseDone(ss)
@@ -486,7 +521,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	// Tool-call continuations round-trip via the next request's input; store the
 	// assistant text (the lead, if any) AND the tool calls for previous_response_id continuity.
-	s.maybeStore(store, id, lm.name, messages, lead, toolCalls)
+	s.maybeStore(store, id, lm.name, messages, lead, gr.think.reasoningText(), toolCalls)
 }
 
 // maybeStore records this turn's assistant output for a later previous_response_id continuation. serveResponsesWith
@@ -498,12 +533,12 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 // have kept the matching function_call from its own prior turn. Without ToolCalls here, that turn reconstructs as
 // user, assistant(""), tool(result): a tool result answering a call that, as far as the stored conversation shows,
 // was never made. (A stateless caller that resends the whole conversation is handled by responseInputToMessages.)
-func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assistant string, toolCalls []apiToolCall) {
+func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assistant, reasoning string, toolCalls []apiToolCall) {
 	if !store || s.responses == nil {
 		return
 	}
 	full := append(append([]chatMessage(nil), messages...),
-		chatMessage{Role: "assistant", Content: rawStr(assistant), ToolCalls: toolCalls})
+		chatMessage{Role: "assistant", Content: rawStr(assistant), ToolCalls: toolCalls, ReasoningContent: reasoning})
 	s.responses.put(id, &responseEntry{model: model, messages: full})
 }
 
@@ -532,20 +567,39 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 		Name      string          `json:"name"`
 		Arguments string          `json:"arguments"`
 		Output    json.RawMessage `json:"output"`
+		// a reasoning item's text (reasoningItemText)
+		EncryptedContent string          `json:"encrypted_content"`
+		Summary          json.RawMessage `json:"summary"`
 	}
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return nil, fmt.Errorf("input must be a string or an array of message items")
 	}
 	msgs := make([]chatMessage, 0, len(items))
+	// pending is a reasoning item's text waiting for the assistant turn it belongs to: the next function_call or assistant
+	// message. A reasoning item with no assistant turn after it is dropped.
+	pending := ""
+	// carried is the carried-id blob of the latest reasoning item, for the same assistant turn as pending (carried_ids.go).
+	var carried *idsCarrier
 	for _, it := range items {
 		switch it.Type {
+		case "reasoning":
+			text, c, err := reasoningItemCarried(it.EncryptedContent, it.Content, it.Summary)
+			if err != nil {
+				return nil, err
+			}
+			pending += text
+			if c != nil {
+				carried = c
+			}
+			continue
 		case "function_call":
 			// The model's own call, replayed. Becomes the assistant turn that carries it, which is
 			// what the chat template renders as a tool call.
 			tc := apiToolCall{ID: it.CallID, Type: "function"}
 			tc.Function.Name = it.Name
 			tc.Function.Arguments = it.Arguments
-			msgs = append(msgs, chatMessage{Role: "assistant", ToolCalls: []apiToolCall{tc}})
+			msgs = append(msgs, chatMessage{Role: "assistant", ToolCalls: []apiToolCall{tc}, ReasoningContent: pending, carried: carried})
+			pending, carried = "", nil
 			continue
 		case "function_call_output":
 			// The caller's result. `output` is a string in every SDK that sends it, but is typed
@@ -567,7 +621,12 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 		if err != nil {
 			return nil, err
 		}
-		msgs = append(msgs, chatMessage{Role: role, Content: content})
+		m := chatMessage{Role: role, Content: content}
+		if role == "assistant" {
+			m.ReasoningContent, pending = pending, ""
+			m.carried, carried = carried, nil
+		}
+		msgs = append(msgs, m)
 	}
 	return msgs, nil
 }
@@ -688,6 +747,13 @@ func responseObject(id, model string, created int64, status string, output []any
 		o["incomplete_details"] = map[string]any{"reason": "max_output_tokens"}
 	}
 	return o
+}
+
+// withCachedTokens reports the prompt tokens whose prefill a prior turn's KV made unnecessary, in OpenAI's own field for
+// them (usage.input_tokens_details.cached_tokens; Codex reads it as cached_input_tokens).
+func withCachedTokens(resp map[string]any, reused int) map[string]any {
+	resp["usage"].(map[string]any)["input_tokens_details"] = map[string]any{"cached_tokens": reused}
+	return resp
 }
 
 // respStatus maps drive's finish reason to a Responses status: "length" (truncated by max_output_tokens) is

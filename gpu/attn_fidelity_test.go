@@ -232,7 +232,7 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 	}
 	defer mR.Close()
 	src := dir // the directory's WebGPU sidecar when it is beside it: the same int4 weights, mapped
-	if sc := dir + ".int4.e4h.webgpu.v16.giw"; func() bool { _, err := os.Stat(sc); return err == nil }() {
+	if sc := dir + fmt.Sprintf(".int4.e4h.webgpu.v%d.giw", decoder.GIWFormatVersion); func() bool { _, err := os.Stat(sc); return err == nil }() {
 		src = sc
 	}
 	// A resident's decode kernels are chosen when it is built, so each arm is its own resident, built under its switch.

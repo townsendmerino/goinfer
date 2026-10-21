@@ -1,0 +1,84 @@
+# P34 cause 2: Mellum2.1's rollback grant under an expert cache, before and after the fix (pre-registered 2026-10-19)
+
+Registered before any run. The owner approved the fix on branch `mellum-rollback-2026-10` (7b0c9a59): an expert-cache load of a
+windowed model takes the rollback grant just before its expert cache is sized, never below the cache's minimum
+(`cuda/kvwindow.go:cudaResident.kvGrantRollback`, and a new method on the branch, expertCacheFloorBytes, that prices the cache's minimum). Before it, such a load kept the
+floor rollback (448 positions, up to 512 by the compaction phase), which refuses tack's E0 resend (diverging about 518 back) at every
+size (`docs/queue-performance.md`, P34). Merge needs this probe to show the predicted pattern and the CUDA gate below to pass, then
+the owner's yes.
+
+- **Tier 0 (CUDA, tiny fixtures):** `TestWindowedKV_*` at the fix. `TestWindowedKV_expertCacheGetsTheGrant` (an expert-cache load is
+  granted like the control; with only the reserve and the cache's minimum free it is not, and still loads) and
+  `TestWindowedKV_e0ResendReplay` (kvWindowNextBase over E0's shape: 406, 518 and 600 back at the floor and the granted rollback) are new.
+  Plant: the pre-fix skip put back in `kvGrantRollback`; `TestWindowedKV_expertCacheGetsTheGrant` must then fail.
+- **The probe (by day on nobara, under the timing lock):** Mellum2.1 (`~/models/mellum2.1-thinking`), `-backend cuda -moe-cache-experts
+  -ctx 8192 -log-requests`, on the old build (main 6ce495c4) and the new one (7b0c9a59), one load each. Four `/v1/completions` requests,
+  `max_tokens` 1, temperature 0: A (about 8k tokens of `docs/benchmarks.md`, cold), A with its last ~400 tokens replaced, A again, A with
+  its last ~600 tokens replaced. Read from each request line: `reused=`, `div=`, `ttft=`.
+- **Prediction, per build:**
+  - old: the 400-token edit reused (reused > 0), the 600-token edit cold (reused = 0);
+  - new: both reused.
+  - "A again" (about 400 back from the held edit) reused on both.
+- **Bands:**
+  - **PASS:** the prediction on both builds, and the tier 0 tests pass with the plant failing.
+  - **AMBIGUOUS:** the old build's 400-token edit is also cold, with its logged divergence above 448 back (the compaction phase or
+    block rounding moved it past the floor). Re-probe at a 300-token edit before reading it.
+  - **FAIL:** the new build's 600-token edit is cold, or the old build's 600-token edit is reused (the mechanism is not the one
+    claimed), or any tier 0 test fails, or the plant passes.
+  - **VOID:** a load refused, a load not `cuda-resident`, or a request error.
+- **No stop rule** beyond the one run of each; no timing claim (ttft is reported, not graded).
+- **Cost:** about 15 minutes of nobara (two builds, about 2 minutes of tests, two loads, two or three cold 8k prefills at about
+  93 tok/s), after tack's comparison releases the lock (about 20:20 PDT).
+- **Job:** `~/goinfer-bench/p34/run-p34.sh` on nobara, from a bundle of the branch (not on GitHub); logs in `~/goinfer-bench/p34/results/`.
+
+## Amendment, 2026-10-19 ~22:00 PDT, before any valid run
+
+The first run (nobara, 21:34-21:35, night job `p34-mellum-rollback`) is **INVALID** and graded nothing. The runner reported ok because
+the script exited 0 after failures:
+- **Tier 0:** `TestWindowedKV_expertCacheGetsTheGrant/routed_experts` failed at load. Fixture `gemma4-moe-kv-tiny` has
+  moe_intermediate_size 16, and CUDA's int4 MoE needs a multiple of 32. That also made the plant's failure meaningless, since it
+  failed at the same load.
+- **The probe:** the prompt was sized at about 4 characters per token. `docs/benchmarks.md` is 12,731 Mellum tokens (2.51 characters
+  per token), over `-ctx 8192`, so every request on both builds was an HTTP 400.
+
+Changes, none to the prediction or the bands:
+- **Fixture:** the routed subtest loads a new sibling, `gemma4-moe-kv-tiny32`. It is `scripts/pin_gemma4_moe_kv_forward.py` with
+  `PIN_MOE_INTER=32`. The original fixture and its goldens are unchanged (owner).
+- **The probe's sizing is in the server's tokens:**
+  - The filler is the prose `filler()` of `docs/measurements/qwen35-reuse-probe-2026-10-18/probe.py`. Its characters per token
+    come from `/v1/messages/count_tokens`, as `ttft_mellum.py` does.
+  - A is about 7,000 tokens, refused if within 64 of `-ctx 8192`.
+  - Each edit's cut is bisected so the kept prefix counts A's tokens less 400 (or 600). That many tokens of different filler follow it.
+- **The grade is computed:** `grade.py` reads the four request lines of each build's serve log and applies the bands above. It also
+  requires "A-again" reused on both builds and the new build's 400-token edit reused.
+- **Every failure exits non-zero:** a red tier 0, a plant that is not red on the grant assertion, a probe request that fails, and
+  a VOID, FAIL or AMBIGUOUS grade.
+- **Pins:** fix 2a581b97, old build 504da5ab (main before the fix, the branch's base).
+
+## Result, 2026-10-19 22:13-22:15 PDT (nobara, night job `p34-mellum-rollback-3`): PASS
+
+Fix 6203c175 (branch `mellum-rollback-2026-10`), old build 504da5ab. The pins moved from the amendment's 2a581b97 because the sibling
+fixture also needed `intermediate_size` 64: CUDA's int4 packing needs every matrix's input width to be a multiple of 32, and the dense
+FFN's 48 made `-rollback-2` red at tier 0 (22:00), an invalid run with no grade.
+
+- **Tier 0:** every `TestWindowedKV_*` passed at the fix, `TestWindowedKV_expertCacheGetsTheGrant` included, with the routed
+  subtest on the now CUDA-resident fixture.
+- **Plant:** with the pre-fix skip put back, `TestWindowedKV_expertCacheGetsTheGrant` failed on its grant assertion.
+- **The load banners:**
+  - The old build keeps the floor: "a follow-up may diverge 448 before the newest".
+  - The new build is granted: "576 more positions from free VRAM (48 MB of 6186 MB free); a follow-up may now diverge 1024 before
+    the newest".
+- **The probe** (Mellum2.1, `-ctx 8192 -moe-cache-experts -log-requests`, the request log's fields):
+
+| request | prompt tokens | old: ttft, reused | new: ttft, reused |
+|---|---|---|---|
+| A (cold) | 7,012 | 17.3 s, 0 | 17.2 s, 0 |
+| A, last ~400 tokens replaced | 7,127 | 1.4 s, 6,612 | 1.4 s, 6,612 |
+| A again | 7,012 | 0.2 s, 6,976 | 0.2 s, 6,976 |
+| A, last ~600 tokens replaced (diverges at 6,412 of 7,013 held, 601 back) | 7,184 | 17.4 s, 0 | 1.9 s, 6,412 |
+
+- **Grade (`grade.py`, the registered bands): PASS.** The old build reuses the 400-token edit and not the 600-token one; the new build
+  reuses both, and "A again" is reused on both.
+- **Logs:** `~/goinfer-bench/p34/results/*-2026-10-19-2213.log` and `~/goinfer-logs/night/runs/2026-10-19/p34-mellum-rollback-3.log`
+  on nobara.
+- **Merge:** the probe and the CUDA gate both pass, so the fix waits on the owner's yes.

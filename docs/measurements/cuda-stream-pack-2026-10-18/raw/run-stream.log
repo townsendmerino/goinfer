@@ -1,0 +1,8 @@
+# 09:14:48 7b-sidecar
+{"cell": "7b-sidecar", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096"], "ready_s": 17.58, "samples": 409, "peak_anon_mib": 113, "peak_anon_at_s": 16.62, "peak_rss_mib": 4019, "peak_rss_at_s": 16.62, "hwm_mib": 4024, "peak_swap_mib": 0, "final_anon_mib": 88, "final_file_mib": 3873, "gc_cycles": 19, "gc_max_before_mb": 82, "gc_max_live_mb": 45}
+# 09:15:09 7b-direct
+{"cell": "7b-direct", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "4096", "-direct-load"], "ready_s": 20.14, "samples": 459, "peak_anon_mib": 4202, "peak_anon_at_s": 19.18, "peak_rss_mib": 8627, "peak_rss_at_s": 3.24, "hwm_mib": 8636, "peak_swap_mib": 0, "final_anon_mib": 4184, "final_file_mib": 78, "gc_cycles": 25, "gc_max_before_mb": 4181, "gc_max_live_mb": 4129}
+# 09:15:32 phi3-q4k
+{"cell": "phi3-q4k", "model": "/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "extra": ["-ctx", "4096", "-quant", "q4k"], "ready_s": 3.54, "samples": 131, "peak_anon_mib": 2737, "peak_anon_at_s": 3.49, "peak_rss_mib": 4970, "peak_rss_at_s": 0.81, "hwm_mib": 5003, "peak_swap_mib": 0, "final_anon_mib": 2724, "final_file_mib": 78, "gc_cycles": 17, "gc_max_before_mb": 2709, "gc_max_live_mb": 2687}
+# 09:15:39 7b-direct-32k
+{"cell": "7b-direct-32k", "model": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf", "extra": ["-ctx", "32768", "-direct-load"], "ready_s": 17.62, "samples": 410, "peak_anon_mib": 4209, "peak_anon_at_s": 17.21, "peak_rss_mib": 8524, "peak_rss_at_s": 1.27, "hwm_mib": 8630, "peak_swap_mib": 0, "final_anon_mib": 4186, "final_file_mib": 78, "gc_cycles": 25, "gc_max_before_mb": 4181, "gc_max_live_mb": 4129}

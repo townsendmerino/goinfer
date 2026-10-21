@@ -7,7 +7,7 @@ import (
 
 // NewCache's int8-KV and ring-buffer decisions came from two hand-written family lists that disagreed
 // (lfm2 and llama4 were on the int8 list but not the ring list; gpt-oss the other way round). They are now
-// one rule each — Architecture.kvInt8OK / kvRingsOK, read off the ownForwards table. This pins that the
+// one rule each — Architecture.kvInt8OK / kvRingsOK, read off the family's attention kernel (attnOrder). This pins that the
 // change is behaviour-preserving: on every loadable fixture, the cache NewCache builds with int8 requested
 // has exactly the int8 and ring state the OLD lists produced (reproduced below as the reference, verbatim).
 func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
@@ -39,10 +39,6 @@ func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
 		}
 		if gotRings != wantRings {
 			t.Errorf("%s: ring-buffered local layers = %v, the old list gave %v", name, gotRings, wantRings)
-		}
-		// And the rule itself: a family with its own layer loop gets neither unless its table entry says so.
-		if f, own := a.ownForward(); own && ((gotI8 && !f.KVInt8) || (gotRings && !f.KVRings)) {
-			t.Errorf("%s (%s, own forward): int8=%v rings=%v without the table bit", name, f.Name, gotI8, gotRings)
 		}
 		checked++
 		if gotI8 {

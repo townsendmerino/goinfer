@@ -1,0 +1,393 @@
+# KV2 CUDA plants, G2-C and GV-C(b) (docs/measurements/kv2-cuda-2026-10-15.md). nobara-pc, 2026-10-15, tree = branch kv2-cuda-2026-10 at 75a06bab plus the uncommitted kvcopy.go and tests of the next commit.
+# Produced by kv2-cuda-2026-10-15/plant.py; the 'short' plant was re-run after its edit was changed from end-start-64 (a zero-row launch error at [0, 64)) to max(1, end-start-64), so the data check, not a launch error, is what goes red.
+
+== short (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:281: held 0: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 0: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:281: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+== layer-stride (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:281: held 0: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 0: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 0: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:281: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+== f16-as-f32 (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:241: [0, 64): layer 0 K: the destination changed outside the range
+        kv2_copy_test.go:241: [0, 64): layer 0 V: the destination changed outside the range
+        kv2_copy_test.go:241: [0, 64): layer 1 K: the destination changed outside the range
+        kv2_copy_test.go:241: [0, 64): layer 1 V: the destination changed outside the range
+        kv2_copy_test.go:241: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:241: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:281: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:286: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+    --- FAIL: TestKV2_copyExact_tiny (1.49s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.560s
+    FAIL
+== window-base-not-set (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:380: [0, 256): destination base 275, want 241
+        kv2_copy_test.go:384: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 241 but this slot holds only from 275 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+        kv2_copy_test.go:380: [0, 256): destination base 275, want 241
+        kv2_copy_test.go:384: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 241 but this slot holds only from 275 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+        kv2_copy_test.go:380: [0, 256): destination base 275, want 249
+        kv2_copy_test.go:384: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 249 but this slot holds only from 275 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+    --- FAIL: TestKV2_copyWindowed (2.74s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	2.799s
+    FAIL
+== window-unshifted-read (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:380: [0, 256): layer 0 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 0 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:388: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 0)
+        kv2_copy_test.go:380: [0, 256): layer 0 K (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 0 V (windowed): the destination's rows [241, 256) are not the source's
+        kv2_copy_test.go:388: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 1)
+        kv2_copy_test.go:380: [0, 256): layer 0 K (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 0 V (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 K (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 1 V (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 K (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:380: [0, 256): layer 2 V (windowed): the destination's rows [249, 256) are not the source's
+        kv2_copy_test.go:388: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 1)
+    --- FAIL: TestKV2_copyWindowed (3.84s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	3.902s
+    FAIL
+== window-check-removed (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:409: CopyKV from a source based at 325: got <nil>, want a KVCopyDecline
+        kv2_copy_test.go:409: CopyKV from a source based at 325: got <nil>, want a KVCopyDecline
+        kv2_copy_test.go:409: CopyKV from a source based at 325: got <nil>, want a KVCopyDecline
+    --- FAIL: TestKV2_copyWindowed (7.24s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	7.293s
+    FAIL
+== staging-buffer-kept (cuda/kvcopy.go; ^TestKV2_copyAllocatesNothing_tiny$): RED
+        kv2_cost_test.go:51: 20 copies allocated 40 device buffers, 20971520 bytes; a copy must allocate nothing
+    --- FAIL: TestKV2_copyAllocatesNothing_tiny (1.10s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.156s
+    FAIL
+
+# G3-C plants, 2026-10-15 11:08, same script (plant.py copy-does-nothing hit-one-block-long); the 'hit-one-block-long' plant is the decoder copying and claiming one block past its hit (capped to leave 16 rows).
+== copy-does-nothing (cuda/kvcopy.go; ^TestKV2_scheduleIndependence_tiny$): RED
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 0 turn 0 (reused 1000, copied 0, own false): [], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 1 (reused 1086, copied 0, own true): [253 97 148 162 6 168 0 120 135 24 0 120 135 24 0 120], reference [157 60 156 123 156 123 156 123 156 123 156 123 156 123 156 123]
+        kv2_schedule_test.go:240: A [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [202 221 51 155] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 960
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 960, copied 960
+        kv2_schedule_test.go:240: A [] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 0
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot false, B in a slot true
+        kv2_schedule_test.go:254: B reused 0, copied 0
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 0 turn 0 (reused 1000, copied 0, own false): [], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 1 (reused 1086, copied 0, own true): [253 97 148 162 6 168 0 120 135 24 0 120 135 24 0 120], reference [157 60 156 123 156 123 156 123 156 123 156 123 156 123 156 123]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:240: A [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [202 221 51 155] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 960
+== hit-one-block-long (decoder/resident_reuse.go; ^TestKV2_scheduleIndependence_tiny$): RED
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [208 106 65 123 156 123 156 123 156 123 156 123 156 123 156 123], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [208 106 65 123 156 123 156 123 156 123 156 123 156 123 156 123], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 29 123 23 110 106 97 136 245 97 171 68 98 159 247 245], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:240: A [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251] (alone [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251]); B [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230] (alone [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]), B copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:240: A [247 161 7 228 118 26 244 93 245 173 123 93 244 14 208 156] (alone [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251]); B [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230] (alone [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]), B copied 0
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot false, B in a slot true
+        kv2_schedule_test.go:254: B reused 0, copied 0
+    --- FAIL: TestKV2_scheduleIndependence_tiny (11.28s)
+    FAIL
+
+# G4-C plants, 2026-10-15 11:13, plant.py cap-at-n-1 passat-ignores-windowed.
+== cap-at-n-1 (internal/kvmgr/share.go; ^TestKV2_hitCap_tiny$): RED
+        kv2_classes_test.go:154: B copied 960 rows (reused 960), want the hit capped to 896
+        kv2_classes_test.go:164: B's K/V rows after the capped copy differ from the cold run's
+        kv2_classes_test.go:154: B copied 960 rows (reused 960), want the hit capped to 896
+        kv2_classes_test.go:164: B's K/V rows after the capped copy differ from the cold run's
+    --- FAIL: TestKV2_hitCap_tiny (1.78s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.848s
+    FAIL
+== passat-ignores-windowed (internal/kvmgr/key.go; ^TestKV2_windowedUnalignedNotShared$): RED
+        kv2_classes_test.go:233: A's recorded classes: fast[0,1800) exact[1800,1804) 
+        kv2_classes_test.go:238: B reused 1216, copied 1216, declined ""
+        kv2_classes_test.go:241: B copied 1216 rows, want 640: the blocks of A's aligned first pass and none of the unaligned one
+        kv2_classes_test.go:246: B: [157 151 101 101 218 101 101 101], cold [157 151 101 101 101 101 101 101] (K/V equal false)
+    --- FAIL: TestKV2_windowedUnalignedNotShared (1.32s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.380s
+    FAIL
+
+# All plants re-run on the merged tree (kv2-2026-10 at a1141868 merged into this branch; the CopyKV keeps the windowed rollback), 2026-10-15 11:28. The chunker-short-tail plant is G4-C(a)'s: KV3's chunker rule removed, so a 1,030-token prompt ends in a 6-row exact pass.
+== short (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:246: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:286: held 0: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:291: held 0: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 0: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 0: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 0: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:291: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:246: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+== layer-stride (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:246: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:286: held 0: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:291: held 0: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 0: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 0: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 0: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:286: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:291: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:246: [0, 64): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [0, 64): layer 1 K: the destination's rows in the range are not the source's
+== f16-as-f32 (cuda/kvcopy.go; ^TestKV2_copyExact_tiny$): RED
+        kv2_copy_test.go:246: [0, 64): layer 0 K: the destination changed outside the range
+        kv2_copy_test.go:246: [0, 64): layer 0 V: the destination changed outside the range
+        kv2_copy_test.go:246: [0, 64): layer 1 K: the destination changed outside the range
+        kv2_copy_test.go:246: [0, 64): layer 1 V: the destination changed outside the range
+        kv2_copy_test.go:246: [256, 1024): layer 0 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 0 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 1 K: the destination's rows in the range are not the source's
+        kv2_copy_test.go:246: [256, 1024): layer 1 V: the destination's rows in the range are not the source's
+        kv2_copy_test.go:286: held 128: the last logits differ from the cold prefill's (first at 0)
+        kv2_copy_test.go:291: held 128: layer 0 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 0 V: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 1 K: the prompt's rows differ from the cold prefill's
+        kv2_copy_test.go:291: held 128: layer 1 V: the prompt's rows differ from the cold prefill's
+    --- FAIL: TestKV2_copyExact_tiny (1.58s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.638s
+    FAIL
+== window-base-not-set (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:385: [0, 256): destination base 260, want 225
+        kv2_copy_test.go:389: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 241 but this slot holds only from 260 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+        kv2_copy_test.go:385: [0, 256): destination base 260, want 225
+        kv2_copy_test.go:389: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 241 but this slot holds only from 260 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+        kv2_copy_test.go:385: [0, 256): destination base 270, want 233
+        kv2_copy_test.go:389: Forward at 256 in slot 1: cuda: windowed KV: position 256 needs history from position 249 but this slot holds only from 270 (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)
+    --- FAIL: TestKV2_copyWindowed (2.85s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	2.914s
+    FAIL
+== window-unshifted-read (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:385: [0, 256): layer 0 K (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 0 V (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 1 K (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 1 V (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 2 K (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 2 V (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:393: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 0)
+        kv2_copy_test.go:385: [0, 256): layer 0 K (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 0 V (windowed): the destination's rows [225, 256) are not the source's
+        kv2_copy_test.go:393: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 1)
+        kv2_copy_test.go:385: [0, 256): layer 0 K (windowed): the destination's rows [233, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 0 V (windowed): the destination's rows [233, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 1 K (windowed): the destination's rows [233, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 1 V (windowed): the destination's rows [233, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 2 K (windowed): the destination's rows [233, 256) are not the source's
+        kv2_copy_test.go:385: [0, 256): layer 2 V (windowed): the destination's rows [233, 256) are not the source's
+        kv2_copy_test.go:393: held 0: step 0 (position 256): logits differ from the slot that computed the prompt (first at 1)
+    --- FAIL: TestKV2_copyWindowed (3.99s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	4.046s
+    FAIL
+== window-check-removed (cuda/kvcopy.go; ^TestKV2_copyWindowed$): RED
+        kv2_copy_test.go:414: CopyKV from a source based at 320: got launch kvCopy: cuLaunchKernel: CUDA_ERROR_INVALID_VALUE, want a KVCopyDecline
+        kv2_copy_test.go:414: CopyKV from a source based at 320: got launch kvCopy: cuLaunchKernel: CUDA_ERROR_INVALID_VALUE, want a KVCopyDecline
+        kv2_copy_test.go:414: CopyKV from a source based at 330: got launch kvCopy: cuLaunchKernel: CUDA_ERROR_INVALID_VALUE, want a KVCopyDecline
+    --- FAIL: TestKV2_copyWindowed (7.40s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	7.458s
+    FAIL
+== chunker-short-tail (cuda/prefill.go; ^TestKV2_recordedClass_tiny$): RED
+        kv2_classes_test.go:87: 985 tokens: 2 fast passes launched; recorded classes fast[0,985) 
+        kv2_classes_test.go:81: 1030 tokens: 4 fused-attention launches, the predicted passes give 6: the prediction does not describe what ran
+        kv2_classes_test.go:87: 1030 tokens: 2 fast passes launched; recorded classes fast[0,1030) 
+        kv2_classes_test.go:87: 4000 tokens: 8 fast passes launched; recorded classes fast[0,4000) 
+        kv2_classes_test.go:108: hit then suffix: copied 960; recorded classes fast[0,1040) 
+    --- FAIL: TestKV2_recordedClass_tiny (1.22s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.278s
+    FAIL
+== copy-does-nothing (cuda/kvcopy.go; ^TestKV2_scheduleIndependence_tiny$): RED
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 0 turn 0 (reused 1000, copied 0, own false): [], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 1 (reused 1086, copied 0, own true): [253 97 148 162 6 168 0 120 135 24 0 120 135 24 0 120], reference [157 60 156 123 156 123 156 123 156 123 156 123 156 123 156 123]
+        kv2_schedule_test.go:240: A [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [202 221 51 155] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 960
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 960, copied 960
+        kv2_schedule_test.go:240: A [] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 0
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot false, B in a slot true
+        kv2_schedule_test.go:254: B reused 0, copied 0
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 1 (reused 1000, copied 0, own false): [164 28 221 51 155], reference [106 65 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 0 turn 0 (reused 1000, copied 0, own false): [], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 960, copied 960, own false): [202 221 51 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 0 (reused 1000, copied 0, own false): [16 110 179 118 87 223 212 243 26 155 159 247 212 243 26 155], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:137: conversation 2 turn 1 (reused 1086, copied 0, own true): [253 97 148 162 6 168 0 120 135 24 0 120 135 24 0 120], reference [157 60 156 123 156 123 156 123 156 123 156 123 156 123 156 123]
+        kv2_schedule_test.go:240: A [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]); B [202 221 51 155] (alone [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]), B copied 960
+== hit-one-block-long (decoder/resident_reuse.go; ^TestKV2_scheduleIndependence_tiny$): RED
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [208 106 65 123 156 123 156 123 156 123 156 123 156 123 156 123], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [208 106 65 123 156 123 156 123 156 123 156 123 156 123 156 123], reference [123 156 123 156 123 156 123 156 123 156 123 156 123 156 123 156]
+        kv2_schedule_test.go:139: conversation 1 turn 0 (reused 1024, copied 1024, own false): the slot's K/V rows differ from the reference's
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot false, B in a slot true
+        kv2_schedule_test.go:254: B reused 0, copied 0
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 29 123 23 110 106 97 136 245 97 171 68 98 159 247 245], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:137: conversation 1 turn 0 (reused 1024, copied 1024, own false): [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230], reference [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]
+        kv2_schedule_test.go:240: A [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251] (alone [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251]); B [214 93 35 166 199 157 171 247 156 171 156 93 244 34 60 230] (alone [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]), B copied 1024
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot true, B in a slot false
+        kv2_schedule_test.go:254: B reused 1024, copied 1024
+        kv2_schedule_test.go:240: A [247 161 7 228 118 26 244 93 245 173 123 93 244 14 208 156] (alone [29 123 3 117 108 245 226 245 106 166 68 247 93 197 7 251]); B [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230] (alone [162 244 244 155 100 128 245 128 128 197 93 60 161 124 60 230]), B copied 0
+        kv2_schedule_test.go:252: K/V rows equal to the reference's: A in a slot false, B in a slot true
+        kv2_schedule_test.go:254: B reused 0, copied 0
+    --- FAIL: TestKV2_scheduleIndependence_tiny (11.66s)
+    FAIL
+== cap-at-n-1 (internal/kvmgr/share.go; ^TestKV2_hitCap_tiny$): RED
+        kv2_classes_test.go:155: B copied 960 rows (reused 960), want the hit capped to 896
+        kv2_classes_test.go:165: B's K/V rows after the capped copy differ from the cold run's
+        kv2_classes_test.go:155: B copied 960 rows (reused 960), want the hit capped to 896
+        kv2_classes_test.go:165: B's K/V rows after the capped copy differ from the cold run's
+    --- FAIL: TestKV2_hitCap_tiny (1.86s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.932s
+    FAIL
+== passat-ignores-windowed (internal/kvmgr/key.go; ^TestKV2_windowedUnalignedNotShared$): RED
+        kv2_classes_test.go:234: A's recorded classes: fast[0,1800) exact[1800,1804) 
+        kv2_classes_test.go:239: B reused 1216, copied 1216, declined ""
+        kv2_classes_test.go:242: B copied 1216 rows, want 640: the blocks of A's aligned first pass and none of the unaligned one
+        kv2_classes_test.go:247: B: [157 151 101 101 218 101 101 101], cold [157 151 101 101 101 101 101 101] (K/V equal false)
+    --- FAIL: TestKV2_windowedUnalignedNotShared (1.40s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.458s
+    FAIL
+== staging-buffer-kept (cuda/kvcopy.go; ^TestKV2_copyAllocatesNothing_tiny$): RED
+        kv2_cost_test.go:51: 20 copies allocated 40 device buffers, 20971520 bytes; a copy must allocate nothing
+    --- FAIL: TestKV2_copyAllocatesNothing_tiny (1.14s)
+    FAIL
+    FAIL	github.com/townsendmerino/goinfer/cuda	1.194s
+    FAIL

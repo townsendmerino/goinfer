@@ -12,7 +12,7 @@ import (
 // gemma4MoEForwardParity is the whole-model gemma4 forward gate shared by the
 // plain-MoE and K=V-global variants: Load of a tiny enable_moe_block checkpoint
 // (the safetensors loader's gemma4 branch — per-layer attention widths, dense MLP
-// + layer_scalar + the parallel MoE sub-block) driving runLayersGemma4 with
+// + layer_scalar + the parallel MoE sub-block) driving the Gemma 4 program walk with
 // gemma4MoEFFN wired in, against the HF oracle in scripts/pin_gemma4_moe*.py. f32
 // weights, so this is TIGHT: the last-token argmax must match, the full-vocab
 // logits must match by cosine, and the greedy continuation must be byte-identical.

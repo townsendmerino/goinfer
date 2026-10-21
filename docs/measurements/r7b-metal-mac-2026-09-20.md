@@ -258,6 +258,8 @@ job — but this is a looser bar than the CUDA sweep's, and is flagged here rath
 | temp 1.0, no truncation | goinfer | 159.1 | **1.100×** | 0.974× |
 | temp 1.0, no truncation | Ollama | 144.7 | (ref) | 1.022× |
 
+The temp 1.0 rows: Sampled with no top_k/top_p sent; each peer used its own defaults, so this is not like for like. Re-measured on 2026-10-17, like for like: [`peer-notrunc-2026-10-17.md`](peer-notrunc-2026-10-17.md) (`docs/benchmarks.md` §B11).
+
 goinfer beats Ollama on **both** greedy (1.15×) and temperature-only sampling (1.10×) on this Mac's
 Metal backend — and goinfer's own sampled/greedy ratio (0.974×) independently confirms the internal
 harness's three runs (0.958-0.964×) via a completely different measurement path (through the real

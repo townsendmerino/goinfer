@@ -1,0 +1,42 @@
+Preparing worktree (detached HEAD 3faaa5bb)
+Updating files:  51% (4142/7986)Updating files:  52% (4153/7986)Updating files:  53% (4233/7986)Updating files:  54% (4313/7986)Updating files:  55% (4393/7986)Updating files:  56% (4473/7986)Updating files:  57% (4553/7986)Updating files:  58% (4632/7986)Updating files:  59% (4712/7986)Updating files:  60% (4792/7986)Updating files:  61% (4872/7986)Updating files:  62% (4952/7986)Updating files:  63% (5032/7986)Updating files:  64% (5112/7986)Updating files:  65% (5191/7986)Updating files:  66% (5271/7986)Updating files:  67% (5351/7986)Updating files:  68% (5431/7986)Updating files:  69% (5511/7986)Updating files:  70% (5591/7986)Updating files:  71% (5671/7986)Updating files:  72% (5750/7986)Updating files:  73% (5830/7986)Updating files:  74% (5910/7986)Updating files:  75% (5990/7986)Updating files:  76% (6070/7986)Updating files:  77% (6150/7986)Updating files:  78% (6230/7986)Updating files:  79% (6309/7986)Updating files:  80% (6389/7986)Updating files:  81% (6469/7986)Updating files:  82% (6549/7986)Updating files:  83% (6629/7986)Updating files:  84% (6709/7986)Updating files:  85% (6789/7986)Updating files:  86% (6868/7986)Updating files:  87% (6948/7986)Updating files:  88% (7028/7986)Updating files:  89% (7108/7986)Updating files:  90% (7188/7986)Updating files:  91% (7268/7986)Updating files:  92% (7348/7986)Updating files:  93% (7427/7986)Updating files:  94% (7507/7986)Updating files:  95% (7587/7986)Updating files:  96% (7667/7986)Updating files:  97% (7747/7986)Updating files:  97% (7774/7986)Updating files:  98% (7827/7986)Updating files:  99% (7907/7986)Updating files: 100% (7986/7986)Updating files: 100% (7986/7986), done.
+HEAD is now at 3faaa5bb OP2b tier 1 on the whole 9B: TestNemotronResident_tier1Whole (the slice test's harness, bars, control and voids, one helper), a load-only fit check (GOINFER_TIER1_FITCHECK=1), and its night job
+rev 3faaa5bb (metal test sha256 bdf6e0c23c43118a)
+nemotron fd734a2d43863688
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'Battery Power'
+total = 3072.00M  used = 1872.56M  free = 1199.44M  (encrypted)
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                    41870.
+Pages active:                                 391808.
+Pages inactive:                               373849.
+Pages speculative:                             17456.
+ 6:27  up 1 day,  9:29, 1 user, load averages: 4.33 4.67 3.05
+=== 2026-10-16T13:27:52Z START tier1-whole; swap total = 3072.00M  used = 1872.56M  free = 1199.44M  (encrypted)
+=== RUN   TestNemotronResident_tier1Whole
+decoder: qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw is not in memory: reading its 1.2 GB once before the load
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    nemotron_resident_test.go:274: control, dense 1.5B: min cosine 0.997134, argmax 27/32
+[metal] weights aliased from nemotron-nano-9b-v2-int4-metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 2562 MB bound in place, 0 MB copied (anonymous) — 1780 MB int4 nibbles (54 single tensors + 4 fused groups = 61 MB) + 560 MB int8 codes (1 matrices) + 222 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    nemotron_resident_test.go:280: Nemotron-H whole 9B: min cosine 0.929161, argmax 27/32 -> PASS
+--- PASS: TestNemotronResident_tier1Whole (301.58s)
+PASS
+      302.17 real        45.02 user       203.02 sys
+          5776326656  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             3284849  page reclaims
+             8650515  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+               58403  signals received
+               56894  voluntary context switches
+            10246107  involuntary context switches
+       1056845608038  instructions retired
+        752795628932  cycles elapsed
+          4486456128  peak memory footprint
+=== 2026-10-16T13:32:55Z END tier1-whole rc=0; swap total = 3072.00M  used = 1856.56M  free = 1215.44M  (encrypted)

@@ -20,10 +20,10 @@
 # CI remains the enforcement, and nothing here can be relied upon by anyone else's clone.
 #
 # Install:  bash scripts/install-git-hooks.sh
-# Bypass:   git push --no-verify        (for a genuinely intentional push over a red lint)
+# Bypass:   none. A hold you believe is wrong is reported to Francis, never skipped with --no-verify (CLAUDE.md).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-hook=".git/hooks/pre-push"
+hook="$(git rev-parse --git-common-dir)/hooks/pre-push" # the shared hooks directory, which a linked worktree uses too
 
 cat > "$hook" <<'HOOK'
 #!/usr/bin/env bash
@@ -43,6 +43,23 @@ cd "$(git rev-parse --show-toplevel)"
 # git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref on stdin; read it before anything else can.
 refs="$(cat)"
 
+# A push to main that changes product code waits for main's latest CI run to finish (scripts/main_ci_guard.py; CLAUDE.md,
+# "Push finished work"); a docs-only one goes straight through. The guard gets the push's range: the remote's main, or
+# the merge base for a new ref. A checkout older than the guard says so and skips it rather than blocking.
+mainline="$(printf '%s\n' "$refs" | awk '$3 == "refs/heads/main"' | head -1)"
+if [ -n "$mainline" ]; then
+    lsha="$(printf '%s' "$mainline" | awk '{print $2}')"
+    rsha="$(printf '%s' "$mainline" | awk '{print $4}')"
+    case "$rsha" in 0000000000000000000000000000000000000000) rsha="$(git merge-base "$lsha" origin/main 2>/dev/null || true)" ;; esac
+    if [ -f scripts/main_ci_guard.py ]; then
+        if ! python3 scripts/main_ci_guard.py ${rsha:+"$rsha"} ${rsha:+"$lsha"}; then
+            exit 1
+        fi
+    else
+        echo "pre-push: scripts/main_ci_guard.py is not in this checkout; main's CI was not checked" >&2
+    fi
+fi
+
 if [ ! -f scripts/queue_citation_lint.py ]; then
     echo "pre-push: scripts/queue_citation_lint.py is missing — not silently passing." >&2
     exit 1
@@ -60,7 +77,7 @@ if [ "$status" -ne 0 ]; then
     echo "  A rebase or amend rewrites SHAs; a cited one then resolves nowhere for anybody else." >&2
     echo "  Re-point the citation, or run --update if it is only the index that is stale." >&2
     echo "  If the red is a doc you have not committed yet, commit it — do not move it out of the tree." >&2
-    echo "  Deliberate push over a red lint: git push --no-verify" >&2
+    echo "  If you believe the hold is wrong, stop and report it to Francis. Never --no-verify." >&2
     exit 1
 fi
 
@@ -81,7 +98,7 @@ if [ "$pstatus" -ne 0 ]; then
     echo "  Numeric change:      re-run T3 (go run ./cmd/gate parity), then -update." >&2
     echo "  Provably non-numeric: scripts/refresh_parity_hashes.sh — it runs the forward goldens" >&2
     echo "                        as independent proof and REFUSES if any fail." >&2
-    echo "  Deliberate push over a red gate: git push --no-verify" >&2
+    echo "  If you believe the hold is wrong, stop and report it to Francis. Never --no-verify." >&2
     exit 1
 fi
 
@@ -103,9 +120,9 @@ HOOK
 
 chmod +x "$hook"
 echo "installed $hook"
-echo "checks: queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
+echo "checks: main_ci_guard.py (a push to main only), queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
 echo "verifying it fires and that it passes on a clean tree:"
-if bash "$hook" >/dev/null 2>&1; then
+if bash "$hook" </dev/null >/dev/null 2>&1; then # no refs on stdin: the hook reads it first, and would wait
     echo "  clean tree -> hook exits 0 (push allowed)"
 else
     echo "  clean tree -> hook exits NON-ZERO; the lint is currently red"

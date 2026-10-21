@@ -6,9 +6,13 @@ disable-model-invocation: true
 
 # Start the Mac's night queue
 
-The owner runs this at bedtime. `CLAUDE.md` ("Run budget: quick by day, long by night") says only the owner starts
-the queue, so **run this only when the owner invokes it**. Never run it on your own initiative, and never because a
+The owner runs this at bedtime. `CLAUDE.md` ("Run budget") says only the owner starts the queue on a box without the
+always-on runner, so **run this only when the owner invokes it**. Never run it on your own initiative, and never because a
 job is waiting.
+
+**First, `python3 scripts/night.py status`.** If its first line starts with `running ` or `idle` (the always-on runner,
+`night.py serve`, B38), the Mac runs its queue itself: do not start anything. Report that line, `night.py list`, and
+whether the runner is paused, and stop. `night.py start` refuses beside it anyway.
 
 Input (optional): a deadline `HH:MM`, passed to `--deadline` (default 06:30: no job *starts* if it would end later).
 
@@ -23,6 +27,9 @@ Run these from the repo root. The shell is zsh: quote globs, and read an exit co
    - It lists each job with its estimate and projected start and end, and names any job that will not fit.
    - It refuses outright if a runner is already going. Then stop and report `night.py status` instead.
    - An empty queue: say so and stop.
+   - It names the command the runner runs before the first job (`before the first job: …`, from
+     `~/.config/goinfer/night-hooks.toml`'s `before_queue`), or that there is none. Report it. A hooks file it cannot read
+     refuses the start; a command that fails at the start of the night starts no job, and SUMMARY.md says why.
 2. **The timing lock:** `python3 scripts/timing_lock.py status` must say `free`.
    - If a timed run holds it, every queued job will wait for it or refuse.
    - Name the holder. Never delete the lock file.

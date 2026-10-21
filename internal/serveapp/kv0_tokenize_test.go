@@ -18,6 +18,7 @@ import (
 // (docs/measurements/kv0-traffic-2026-10-13.md). It is a measurement tool, not a check: it skips unless KV0_BODIES is set.
 //
 //	KV0_BODIES=<dir of recorded bodies> KV0_GGUF=<the served model: a .gguf, a .giw or a model directory> KV0_OUT=<ids.jsonl> \
+//	  [KV0_IDS_KEY_FILE=<the server's --ids-key-file> KV0_MODEL_NAME=<its served name> KV0_QUANT=<its --quant>] \
 //	  go test -count=1 -run '^TestKV0_tokenizeBodies$' -v ./internal/serveapp/
 //
 // Each body is rendered by the same calls its route makes (serveChatToolsWith / serveChatText, serveResponsesWith and
@@ -39,6 +40,25 @@ func TestKV0_tokenizeBodies(t *testing.T) {
 	}
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: "kv0"}
+	// Carried ids (carried_ids.go): a body whose reply echoes the server's signed token ids renders to the ids the server prefilled only when this
+	// renderer holds the same key and the same model identity. The study server runs with --ids-key-file <KV0_IDS_KEY_FILE>; KV0_MODEL_NAME is the name
+	// it serves the model under and KV0_QUANT its --quant (default int4), which with the file's name and size make the identity a blob is minted for
+	// (loadedModel.idsIdentity). Unset, a carried blob fails its signature and its turn is tokenized as text, as before.
+	if kf := os.Getenv("KV0_IDS_KEY_FILE"); kf != "" {
+		key, kerr := loadIDsKey(kf)
+		if kerr != nil {
+			t.Fatalf("KV0_IDS_KEY_FILE: %v", kerr)
+		}
+		s.idsKey = key
+		quant := os.Getenv("KV0_QUANT")
+		if quant == "" {
+			quant = "int4"
+		}
+		lm.fp = modelFingerprint(gguf, quant)
+		if n := os.Getenv("KV0_MODEL_NAME"); n != "" {
+			lm.name = n
+		}
+	}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 
 	var files []string
@@ -91,16 +111,23 @@ func TestKV0_tokenizeBodies(t *testing.T) {
 }
 
 func kv0Render(s *server, lm *loadedModel, route string, body []byte) ([]int, error) {
+	ids, _, err := kv0RenderIDs(s, lm, route, body, true)
+	return ids, err
+}
+
+// kv0RenderIDs is kv0Render with the carried-id outcome of a /v1/responses body (carried_ids.go); useIDs false renders it as
+// a request whose blobs carry no ids (the reasoning text still read from them).
+func kv0RenderIDs(s *server, lm *loadedModel, route string, body []byte, useIDs bool) ([]int, idsOutcome, error) {
 	switch route {
 	case "/v1/chat/completions":
 		var req chatReq
 		if err := json.Unmarshal(body, &req); err != nil {
-			return nil, err
+			return nil, idsOutcome{}, err
 		}
 		req.Tools, _ = functionTools(req.Tools)
 		ts, err := s.resolveThink(req.think())
 		if err != nil {
-			return nil, err
+			return nil, idsOutcome{}, err
 		}
 		tm := lm.templateFor(ts)
 		system, turns := messagesToTurns(req.Messages)
@@ -112,19 +139,21 @@ func kv0Render(s *server, lm *loadedModel, route string, body []byte) ([]int, er
 			if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 				tm = lm.constrainedTemplate(ts)
 			}
-			return lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
+			ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
+			return ids, idsOutcome{}, err
 		}
 		if req.sampling.constrainsOutput() {
 			tm = lm.constrainedTemplate(ts)
 		}
-		return lm.promptForT(tm, system, turns)
+		ids, err := lm.promptForT(tm, system, turns)
+		return ids, idsOutcome{}, err
 	case "/v1/responses":
 		var req responseReq
 		if err := json.Unmarshal(body, &req); err != nil {
-			return nil, err
+			return nil, idsOutcome{}, err
 		}
 		if req.PreviousResponseID != "" {
-			return nil, fmt.Errorf("previous_response_id: the study's renderer has no response store")
+			return nil, idsOutcome{}, fmt.Errorf("previous_response_id: the study's renderer has no response store")
 		}
 		req.Tools, _ = functionTools(req.Tools)
 		var messages []chatMessage
@@ -133,15 +162,19 @@ func kv0Render(s *server, lm *loadedModel, route string, body []byte) ([]int, er
 		}
 		in, err := responseInputToMessages(req.Input)
 		if err != nil {
-			return nil, err
+			return nil, idsOutcome{}, err
 		}
 		messages = append(messages, in...)
 		ts, err := s.resolveThink(req.thinkRequest())
 		if err != nil {
-			return nil, err
+			return nil, idsOutcome{}, err
 		}
 		tm := lm.templateFor(ts)
-		system, turns := messagesToTurns(messages)
+		system, turns, carriers := messagesToTurnsCarried(messages)
+		ck := s.idsCheckFor(lm, nil, carriers)
+		if !useIDs {
+			ck = nil
+		}
 		if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" {
 			tools := make([]chat.Tool, len(req.Tools))
 			for i, t := range req.Tools {
@@ -150,32 +183,35 @@ func kv0Render(s *server, lm *loadedModel, route string, body []byte) ([]int, er
 			if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 				tm = lm.constrainedTemplate(ts)
 			}
-			return lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
+			return lm.encodePrompt(tm, system, turns, tools, ck)
 		}
-		return lm.promptForT(tm, system, turns)
+		return lm.encodePrompt(tm, system, turns, nil, ck)
 	case "/v1/messages":
 		var req anthropicReq
 		if err := json.Unmarshal(body, &req); err != nil {
-			return nil, err
+			return nil, idsOutcome{}, err
 		}
-		system, turns, aerr := anthropicTurns(&req)
+		system, turns, carriers, aerr := anthropicTurnsCarried(&req)
 		if aerr != nil {
-			return nil, fmt.Errorf("anthropicTurns: %v", aerr)
+			return nil, idsOutcome{}, fmt.Errorf("anthropicTurns: %v", aerr)
+		}
+		ck := s.idsCheckFor(lm, nil, carriers)
+		if !useIDs {
+			ck = nil
 		}
 		ts, err := s.resolveThink(req.thinkRequest())
 		if err != nil {
-			return nil, err
+			return nil, idsOutcome{}, err
 		}
 		tm := lm.templateFor(ts)
-		mode, name := anthropicToolMode(req.ToolChoice)
-		if len(req.Tools) > 0 && mode != "none" {
-			tools := anthropicTools(req.Tools)
+		var tools []chat.Tool
+		if mode, name := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" {
+			tools = anthropicTools(req.Tools)
 			if anthropicToolsConstrainedFromStart(mode, name, tools) {
 				tm = lm.constrainedTemplate(ts)
 			}
-			return lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
 		}
-		return lm.promptForT(tm, system, turns)
+		return lm.encodePrompt(tm, system, turns, tools, ck)
 	}
-	return nil, fmt.Errorf("route %s is not a generation route", route)
+	return nil, idsOutcome{}, fmt.Errorf("route %s is not a generation route", route)
 }

@@ -26,8 +26,8 @@ import (
 // than an example). Quant types: F32/F16, Q8_0/Q4_0/Q5_0, the K-quants Q2_K/Q3_K/Q4_K/Q5_K/Q6_K, and IQ4_NL/IQ4_XS.
 
 // ggufConfig synthesizes a Config from GGUF metadata, dispatching on
-// general.architecture. The resolved Config feeds resolveArchitecture, so a
-// GGUF reuses the same per-family adapter as the safetensors path.
+// general.architecture, with the file's recommended sampling (ggufSampling). The resolved Config feeds
+// resolveArchitecture, so a GGUF reuses the same per-family adapter as the safetensors path.
 func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	arch, _ := g.Str("general.architecture")
 	// Hostile metadata can drive a family builder into an integer divide-by-zero (a missing head_count makes hidden/0) or a
@@ -37,6 +37,9 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			cfg, err = nil, fmt.Errorf("decoder(gguf): malformed metadata for architecture %q: %v", arch, r)
+		}
+		if err == nil && cfg != nil {
+			cfg.Sampling = ggufSampling(g)
 		}
 	}()
 	switch arch {
@@ -2399,6 +2402,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				for h := range a {
 					mw.aLog[h] = float32(math.Log(-float64(a[h])))
 				}
+				if mambaProjInt8(quant) {
+					mw.quantizeProjections(projDim, hidden, dInner)
+				}
 				l.mamba = mw
 			case nemoAttn:
 				// NoPE → no q/k permute.
@@ -2638,7 +2644,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if err = parallelLayers(arch.NumLayers, abort, loadG4); err != nil {
 			return nil, err
 		}
-		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection (v_norm(k_proj); see loadG4/runLayersGemma4).
+		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection (v_norm(k_proj); see loadG4/the Gemma 4 program walk).
 		// Parity-gated against the HF bf16 oracle by TestGemma4_12B_logitParity.
 		return w, nil
 	}

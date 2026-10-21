@@ -13,8 +13,6 @@ package decoder
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,14 +21,7 @@ import (
 
 func TestNemotronReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_NEMOTRON_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "nemotron", "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no Nemotron GGUF at %s: %v", gguf, err)
-	}
+	gguf := assetPath(t, "GOINFER_NEMOTRON_GGUF")
 
 	m, err := Load(gguf, Options{Quant: "int8int8"})
 	if err != nil {

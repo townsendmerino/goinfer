@@ -28,6 +28,7 @@ type anthropicReq struct {
 	TopK          *int               `json:"top_k"`
 	StopSequences []string           `json:"stop_sequences"`
 	Stream        bool               `json:"stream"`
+	LogitBias     map[string]float64 `json:"logit_bias"` // goinfer extension, as on the OpenAI routes (sampling.LogitBias)
 	// Thinking: {type: enabled|adaptive|disabled, budget_tokens}. enabled/adaptive render the model's thinking mode on
 	// and return `thinking` content blocks (think.go); budget_tokens is enforced as a ceiling on the thinking block
 	// (budget.go): serve forces the block closed there, clamped so a quarter of max_tokens is left to answer. metadata is accepted and ignored.
@@ -68,10 +69,33 @@ func anthropicToolsConstrainedFromStart(mode, name string, tools []chat.Tool) bo
 	return toolsConstrainedFromStart(anthropicForcedTool(mode, name, tools), mode == "tool", union, tools)
 }
 
-// thinkingBlock is an Anthropic `thinking` content block. The signature is empty: the real API signs thinking so it can
-// verify a replay, and this server drops replayed thinking blocks on input (anthropicTurns), so there is nothing to verify.
-func thinkingBlock(text string) map[string]any {
-	return map[string]any{"type": "thinking", "thinking": text, "signature": ""}
+// thinkingBlock is an Anthropic `thinking` content block. Its signature is the reply's carried-id blob (carried_ids.go)
+// when the server signs ids, else empty; a client that replays the block sends it back, and anthropicTurnsCarried reads it.
+func thinkingBlock(text, signature string) map[string]any {
+	return map[string]any{"type": "thinking", "thinking": text, "signature": signature}
+}
+
+// redactedCarrierBlock is the carrier for a reply that asked for thinking and has none: a `redacted_thinking` block whose data
+// is the reply's carried-id blob (the Responses carrier-only item's counterpart), nil when there are no ids to carry.
+func redactedCarrierBlock(mint *carriedMint) map[string]any {
+	if enc := mint.blob(""); enc != "" {
+		return map[string]any{"type": "redacted_thinking", "data": enc}
+	}
+	return nil
+}
+
+// anthropicCarrier reads a carried-id blob from a thinking block's signature or a redacted_thinking block's data. visible is
+// the block's own thinking text; the result is the text that stands for it, which is the blob's when one parses. A value that
+// is not a blob this server minted carries nothing.
+func anthropicCarrier(enc, visible string) (string, *idsCarrier) {
+	if !strings.HasPrefix(enc, reasoningBlobV2Prefix) {
+		return visible, nil
+	}
+	b, err := parseIDsBlob(enc)
+	if err != nil {
+		return visible, &idsCarrier{reason: idsParse}
+	}
+	return b.text, &idsCarrier{blob: b}
 }
 
 type anthropicMessage struct {
@@ -95,9 +119,13 @@ type anthropicBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"` // type:text
 	// type:thinking (assistant replay): the model's reasoning, which a client such as Claude Code sends back with every turn of
-	// a tool loop. A model with a history rule gets it back the way its own template would put it (chat/history.go); the
-	// signature is not checked (serve's own thinking blocks carry an empty one).
-	Thinking string `json:"thinking"`
+	// a tool loop. A model with a history rule gets it back the way its own template would put it (chat/history.go). A
+	// signature this server minted carries the reply's token ids (carried_ids.go); any other signature is ignored.
+	Thinking  string `json:"thinking"`
+	Signature string `json:"signature"`
+	// type:redacted_thinking (assistant replay): opaque data a client replays untouched. This server writes one only as a
+	// carrier, for a reply with no thinking (redactedCarrierBlock); any other is ignored.
+	Data string `json:"data"`
 	// type:tool_use (assistant replay):
 	ID    string          `json:"id"`
 	Name  string          `json:"name"`
@@ -122,6 +150,7 @@ func (r *anthropicReq) toSampling() sampling {
 		TopP:        r.TopP,
 		TopK:        r.TopK,
 		MaxTokens:   r.MaxTokens,
+		LogitBias:   r.LogitBias,
 	}
 	if len(r.StopSequences) > 0 {
 		b, _ := json.Marshal(r.StopSequences)
@@ -260,9 +289,18 @@ func anthropicToolSchemaBytes(tools []anthropicTool) int {
 // Adjacent same-role user/assistant turns are merged (the spec says roles
 // alternate, but we don't enforce it).
 func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
+	system, turns, _, aerr := anthropicTurnsCarried(req)
+	return system, turns, aerr
+}
+
+// anthropicTurnsCarried is anthropicTurns with the carried-id blob of each assistant turn whose thinking block carries one,
+// by turn index (carried_ids.go). The blob's text stands for that block's visible thinking, as a Responses reasoning item's
+// does. Two assistant messages merged into one turn hold two generations, so the merged turn's carrier falls back as decode.
+func anthropicTurnsCarried(req *anthropicReq) (string, []chat.Turn, map[int]*idsCarrier, *apiErr) {
 	system := anthropicText(req.System)
 	toolNames := map[string]string{} // tool_use id → name, to label tool-result turns
 	var turns []chat.Turn
+	var carried []*idsCarrier // per turn, parallel to turns until the merge
 	for mi, m := range req.Messages {
 		// A system message inside the conversation (the Messages API's mid-conversation system messages, which Claude
 		// Code sends on every turn). No chat template has a system turn after the first, and hoisting the text into the
@@ -271,7 +309,7 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 		// top-level field's place, and a client putting it there has the wrong API.
 		if m.Role == "system" && mi > 0 {
 			if s := anthropicText(m.Content); s != "" {
-				turns = append(turns, chat.Turn{Role: "user", Content: s, ToolLoop: true})
+				turns, carried = append(turns, chat.Turn{Role: "user", Content: s, ToolLoop: true}), append(carried, nil)
 			}
 			continue
 		}
@@ -280,29 +318,38 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 		// ("developer", "Assistant") would silently restructure what the model saw. A client that sends legal roles
 		// loses nothing to the 400, and it is what upstream does.
 		if m.Role != "user" && m.Role != "assistant" {
-			return "", nil, badReq("message %d: role must be %q or %q, got %q "+
+			return "", nil, nil, badReq("message %d: role must be %q or %q, got %q "+
 				"(the system prompt is the top-level \"system\" field on this API; a \"system\" message is accepted only after the first message)",
 				mi, "user", "assistant", m.Role)
 		}
 		// Plain-string content: the common case.
 		var s string
 		if json.Unmarshal(m.Content, &s) == nil {
-			turns = append(turns, chat.Turn{Role: anthropicRole(m.Role), Content: s})
+			turns, carried = append(turns, chat.Turn{Role: anthropicRole(m.Role), Content: s}), append(carried, nil)
 			continue
 		}
 		var blocks []anthropicBlock
 		if err := json.Unmarshal(m.Content, &blocks); err != nil {
-			return "", nil, badReq("message %d: content must be a string or an array of blocks", mi)
+			return "", nil, nil, badReq("message %d: content must be a string or an array of blocks", mi)
 		}
 		var text, reasoning strings.Builder
 		var calls []chat.ToolCall
+		var carrier *idsCarrier
 		sawToolResult := false
 		for _, bl := range blocks {
 			switch bl.Type {
 			case "text":
 				text.WriteString(bl.Text)
-			case "thinking":
-				reasoning.WriteString(bl.Thinking)
+			case "thinking", "redacted_thinking":
+				enc := bl.Signature
+				if bl.Type == "redacted_thinking" {
+					enc = bl.Data
+				}
+				t, c := anthropicCarrier(enc, bl.Thinking)
+				if c != nil {
+					carrier = c
+				}
+				reasoning.WriteString(t)
 			case "tool_use":
 				calls = append(calls, chat.ToolCall{ID: bl.ID, Name: bl.Name, Arguments: defaultObj(bl.Input)})
 				if bl.ID != "" {
@@ -316,6 +363,7 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 					ToolName:   toolNames[bl.ToolUseID],
 					ToolCallID: bl.ToolUseID,
 				})
+				carried = append(carried, nil)
 			case "image":
 				// Collected separately by anthropicImages and routed to the vision
 				// path; skip here. The handler 400s an image when no vision tower is
@@ -327,14 +375,37 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 		if m.Role == "assistant" {
 			if text.Len() > 0 || len(calls) > 0 {
 				turns = append(turns, chat.Turn{Role: "assistant", Content: text.String(), ToolCalls: calls, Reasoning: reasoning.String()})
+				carried = append(carried, carrier)
 			}
 		} else if text.Len() > 0 {
 			// Text in the same user message as tool results (Claude Code adds reminders there) continues the tool loop; it is
 			// not a new query, and the history rule must not treat it as one (chat.Turn.ToolLoop).
 			turns = append(turns, chat.Turn{Role: "user", Content: text.String(), ToolLoop: sawToolResult})
+			carried = append(carried, nil)
 		}
 	}
-	return system, mergeAdjacent(turns), nil
+	merged, from := mergeAdjacentFrom(turns)
+	var carriers map[int]*idsCarrier
+	for i, ks := range from {
+		var c *idsCarrier
+		for _, k := range ks {
+			if carried[k] != nil {
+				c = carried[k]
+				break
+			}
+		}
+		if c == nil {
+			continue
+		}
+		if len(ks) > 1 && c.reason == "" {
+			c = &idsCarrier{reason: idsDecode}
+		}
+		if carriers == nil {
+			carriers = map[int]*idsCarrier{}
+		}
+		carriers[i] = c
+	}
+	return system, merged, carriers, nil
 }
 
 // anthropicImages collects inline images from the message content blocks
@@ -393,9 +464,17 @@ func defaultObj(raw json.RawMessage) json.RawMessage {
 // mergeAdjacent concatenates consecutive same-role user/assistant turns (tool
 // turns never merge), joining text with a newline and appending tool calls.
 func mergeAdjacent(turns []chat.Turn) []chat.Turn {
+	out, _ := mergeAdjacentFrom(turns)
+	return out
+}
+
+// mergeAdjacentFrom is mergeAdjacent, also returning for each merged turn the indices of the input turns it holds.
+func mergeAdjacentFrom(turns []chat.Turn) ([]chat.Turn, [][]int) {
 	var out []chat.Turn
-	for _, t := range turns {
+	var from [][]int
+	for i, t := range turns {
 		if n := len(out); n > 0 && out[n-1].Role == t.Role && (t.Role == "user" || t.Role == "assistant") {
+			from[n-1] = append(from[n-1], i)
 			prev := &out[n-1]
 			switch {
 			case prev.Content != "" && t.Content != "":
@@ -414,8 +493,9 @@ func mergeAdjacent(turns []chat.Turn) []chat.Turn {
 			continue
 		}
 		out = append(out, t)
+		from = append(from, []int{i})
 	}
-	return out
+	return out, from
 }
 
 // anthropicTools maps tool declarations to the internal chat.Tool shape
@@ -536,6 +616,9 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "messages must not be empty")
 		return
 	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast()
+	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req, lm) })
 }
 
@@ -567,7 +650,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		s.serveVisionMessages(w, r, &req, lm, imgs)
 		return
 	}
-	system, turns, aerr := anthropicTurns(&req)
+	system, turns, carriers, aerr := anthropicTurnsCarried(&req)
 	if aerr != nil {
 		aerr.write(w)
 		return
@@ -583,8 +666,6 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	}
 	var tools []chat.Tool
 	var gr genRequest
-	var ids []int
-	var err error
 	ts, terr := s.resolveThink(req.thinkRequest())
 	if terr != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
@@ -600,20 +681,21 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		if anthropicToolsConstrainedFromStart(mode, name, tools) {
 			tm = lm.constrainedTemplate(ts)
 		}
-		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
-	} else {
-		ids, err = lm.promptForT(tm, system, turns)
 	}
+	ids, idsOut, err := lm.encodePrompt(tm, system, turns, tools, s.idsCheckFor(lm, r, carriers))
 	if err != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())
 		return
 	}
+	s.noteIDs(r, idsOut)
 	sm := req.toSampling()
 	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
 	if gr, err = lm.prepare(sm, ids, lm.residentPath()); err != nil {
 		writeAnthropicPrepareErr(w, err)
 		return
 	}
+	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
 	if toolsActive {
 		if cerr := applyToolConstraint(lm, &gr, mode, name, tools); cerr != nil {
 			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", cerr.Error())
@@ -637,8 +719,9 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	}
 	defer lm.exit()
 
+	mint := s.mintFor(lm, r, gr)
 	if req.Stream {
-		s.streamMessages(w, r, lm, gr, toolsActive, tools, tm, turns, ts, req.wantsThinking())
+		s.streamMessages(w, r, lm, gr, toolsActive, tools, tm, turns, ts, req.wantsThinking(), mint)
 		return
 	}
 
@@ -651,17 +734,19 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		calls                         []chat.ToolCall
 		lead                          string
 		finish, stopSeq, cancelReason string
-		nComp                         int
+		nComp, reused                 int
 		gerr                          error
+		fromReasoning                 bool
 	)
 	if toolsActive {
 		// The shared tool turn (tool_turn.go) — buffered here: nothing to stream on this path.
 		var t toolTurn
 		t, gerr = s.runToolTurn(r.Context(), lm, gr, tools, nil, nil)
-		text, calls, lead, finish, stopSeq, cancelReason, nComp = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp
+		text, calls, lead, finish, stopSeq, cancelReason, nComp, reused = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp, t.reused
+		fromReasoning = t.fromReasoning && len(t.calls) > 0
 	} else {
 		var sb strings.Builder
-		finish, nComp, _, stopSeq, _, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+		finish, nComp, _, stopSeq, reused, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 		text = sb.String()
 	}
 	if gerr != nil {
@@ -678,7 +763,11 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	var seq any
 	thinking := req.wantsThinking() && rb.Len() > 0
 	if thinking {
-		content = append(content, thinkingBlock(rb.String()))
+		content = append(content, thinkingBlock(rb.String(), mint.blob(rb.String())))
+	} else if req.wantsThinking() {
+		if cb := redactedCarrierBlock(mint); cb != nil {
+			content = append(content, cb)
+		}
 	}
 	if len(calls) > 0 {
 		if strings.TrimSpace(lead) != "" {
@@ -698,7 +787,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		reason, seq = anthropicStopReason(finish, stopSeq)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	msg := map[string]any{
 		"id":            id,
 		"type":          "message",
 		"role":          "assistant",
@@ -706,8 +795,24 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		"content":       content,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
-		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
-	})
+		"usage":         anthropicUsage(len(gr.promptIDs), reused, nComp),
+	}
+	if e := emptyAnswerOf(gr, finish, stopSeq, len(calls), nComp); e != nil {
+		msg["goinfer_empty_answer"] = e
+	}
+	if fromReasoning {
+		msg[fromReasoningField] = true
+	}
+	writeJSON(w, http.StatusOK, msg)
+}
+
+// anthropicUsage is a finished Messages reply's usage, in the Messages API's split: cache_read_input_tokens is the leading
+// prompt tokens a prior turn's KV made unnecessary (drive's prefillReused, what /v1/responses reports as cached_tokens), and
+// input_tokens the rest, the tokens this request prefilled, so the prompt is their sum. Anthropic's clients add the two to size
+// the context. cache_creation_input_tokens is left out: every prefilled prefix is kept, so there is no separate cache write.
+func anthropicUsage(promptLen, reused, nComp int) map[string]any {
+	reused = min(max(reused, 0), promptLen)
+	return map[string]any{"input_tokens": promptLen - reused, "cache_read_input_tokens": reused, "output_tokens": nComp}
 }
 
 // handleCountTokens renders the prompt exactly as /v1/messages would (system +
@@ -717,6 +822,9 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req anthropicReq
 	if !decodeAnthropicJSON(w, r, &req) {
 		return
+	}
+	if s.fastRoute(r, &req.Model) {
+		req.applyFast()
 	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveCountTokensWith(w, req, lm) })
 }
@@ -730,15 +838,14 @@ func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, l
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	system, turns, aerr := anthropicTurns(&req)
+	system, turns, carriers, aerr := anthropicTurnsCarried(&req)
 	if aerr != nil {
 		aerr.write(w)
 		return
 	}
-	var ids []int
-	var err error
-	// Rendered exactly as /v1/messages would render it, thinking mode and the constrained-tool rule included — a count
-	// that differs from the generation's prompt is worse than no count.
+	var tools []chat.Tool
+	// Rendered exactly as /v1/messages would render it, thinking mode, the constrained-tool rule and carried ids included —
+	// a count that differs from the generation's prompt is worse than no count.
 	ts, terr := s.resolveThink(req.thinkRequest())
 	if terr != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
@@ -746,14 +853,12 @@ func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, l
 	}
 	tm := lm.templateFor(ts)
 	if mode, name := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
-		tools := anthropicTools(req.Tools)
+		tools = anthropicTools(req.Tools)
 		if anthropicToolsConstrainedFromStart(mode, name, tools) {
 			tm = lm.constrainedTemplate(ts)
 		}
-		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false)
-	} else {
-		ids, err = lm.promptForT(tm, system, turns)
 	}
+	ids, _, err := lm.encodePrompt(tm, system, turns, tools, s.idsCheckFor(lm, nil, carriers))
 	if err != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())
 		return

@@ -21,7 +21,7 @@ import (
 )
 
 // TestGptOssAttnSink_metal gates the sink term against decoder/forward_gptoss.go's
-// gptOssAttention: a per-head learned logit with no key and no value that joins the softmax MAX
+// attendSinksToken: a per-head learned logit with no key and no value that joins the softmax MAX
 // and the DENOMINATOR only —
 //
 //	m     = max(max_s score_s, sink_h)
@@ -128,6 +128,7 @@ func TestGptOssAttnSink_metal(t *testing.T) {
 			dSink = d.NewBufferLen(nH) // unused placeholder — hasSink=0 means the kernel never reads it
 		}
 		q_.Run1D(pipe, nH*tgs, tgs, dQ, dK, dV, dOut, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, dSink, NewBufferU32(d, hasSink))
+		recordAttnDigest(t, "attention", dOut.Floats())
 		return dOut.Floats()
 	}
 
@@ -170,7 +171,7 @@ func TestGptOssAttnSink_metal(t *testing.T) {
 }
 
 // TestGptOssSwigluQuant_metal gates gpt-oss's clamped interleaved-SwiGLU expert against
-// decoder/forward_gptoss.go's gptOssExpert:
+// decoder/forward_gptoss.go's gptOssExpertWith:
 //
 //	gate = clamp(Gate·h + gateBias, max = limit)      // UPPER only
 //	up   = clamp(Up·h   + upBias,   [-limit, limit])  // BOTH
@@ -247,7 +248,7 @@ func TestGptOssSwigluQuant_metal(t *testing.T) {
 	qs := dQ.Int8s()
 	sc := dS.Floats()[0]
 
-	// CPU reference — decoder/forward_gptoss.go's gptOssExpert, activation only.
+	// CPU reference — decoder/forward_gptoss.go's gptOssExpertWith, activation only.
 	want := make([]float32, I)
 	for i := range want {
 		gx := g[i] + gb[i]

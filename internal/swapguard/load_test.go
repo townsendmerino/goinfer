@@ -130,3 +130,58 @@ func (s *scriptedSwapReader) waitTicks(t *testing.T, n int) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// A load that swap grows past the threshold DURING is aborted by the load-time watch, and a load that grows it by less is not (B33/B34). The fake
+// load stands for the .giw loader and the resident build: it polls the abort channel between layers, as they do. The plant removes the polls: the
+// same growth then runs to the last layer, which is what a .giw load did before the watch was armed for it.
+func TestLoadSwapGuard_aTripDuringTheLoadAbortsItAndNothingLaterHidesIt(t *testing.T) {
+	t.Setenv("GOINFER_SWAP_GUARD", "500")
+	const base, layers = int64(1_000_000_000), 40
+	fakeLoad := func(abort <-chan struct{}, poll bool, layerDone func(int)) (built int, err error) {
+		for l := 0; l < layers; l++ {
+			if poll {
+				select {
+				case <-abort:
+					return l, decoder.ErrLoadAborted
+				default:
+				}
+			}
+			layerDone(l)
+			time.Sleep(3 * time.Millisecond) // a layer; the watch ticks every millisecond
+		}
+		return layers, nil
+	}
+	run := func(grow int64, poll bool) (built int, err error) {
+		var cur atomic.Int64
+		cur.Store(base)
+		r := func() (int64, bool) { return cur.Load(), true }
+		old := PollInterval
+		PollInterval = time.Millisecond
+		defer func() { PollInterval = old }()
+		abort, wrapErr, stop := ArmLoad("m.int4.cuda.v17.giw", decoder.Options{}, "free memory or use a smaller model", r)
+		defer stop()
+		time.Sleep(10 * time.Millisecond) // the baseline reading lands
+		built, err = fakeLoad(abort, poll, func(l int) {
+			if l == 10 {
+				cur.Add(grow) // the swap appears while layer 10 is built
+			}
+		})
+		return built, wrapErr(err)
+	}
+
+	built, err := run(900_000_000, true)
+	if !errors.Is(err, decoder.ErrLoadAborted) || built >= layers || built < 10 {
+		t.Errorf("900 MB of swap during the load: built %d of %d layers, err %v; want an abort a few layers after layer 10", built, layers, err)
+	}
+	if err != nil && !strings.Contains(err.Error(), "swap grew") {
+		t.Errorf("the abort does not name the swap growth: %v", err)
+	}
+
+	if built, err = run(100_000_000, true); err != nil || built != layers {
+		t.Errorf("100 MB of swap during the load (under the threshold): built %d of %d, err %v; want it to finish", built, layers, err)
+	}
+
+	if built, err = run(900_000_000, false); err != nil || built != layers {
+		t.Errorf("VOID: with the polls removed the load did not run to the end (built %d, err %v), so the abort above proves nothing", built, err)
+	}
+}

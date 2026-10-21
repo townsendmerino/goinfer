@@ -35,6 +35,7 @@ const (
 	kString
 	kNumber // integer is kNumber with intOnly
 	kEnum   // enum / const / boolean / null: match one of a fixed literal set
+	kAny    // any JSON value: the lenient tool-argument compile's node for a schema it cannot enforce
 )
 
 // node is a compiled schema node (immutable after compile; shared across frames).
@@ -56,6 +57,36 @@ type node struct {
 
 	// enum: the allowed values' compact JSON encodings (≤64 entries)
 	enum [][]byte
+
+	// free: an object whose keys are any strings and whose values are any JSON values (anyObjNode)
+	free bool
+}
+
+// The any-value shapes. A kAny frame becomes one of these on its first byte (schemaGrammar.dispatch).
+var (
+	anyNode    = &node{kind: kAny}
+	anyObjNode = &node{kind: kObject, free: true}
+	anyArrNode = &node{kind: kArray, items: anyNode, maxItems: -1}
+	anyStrNode = &node{kind: kString}
+	anyNumNode = &node{kind: kNumber}
+	anyLitNode = &node{kind: kEnum, enum: [][]byte{[]byte("true"), []byte("false"), []byte("null")}}
+)
+
+// compiler compiles a schema strictly (JSONSchema: an unsupported keyword or shape is an error) or leniently (a tool's
+// parameters: what the grammar cannot enforce is left to the tool). Lenient compiling never fails, and differs from strict
+// only where strict would fail:
+//   - an assertion the grammar does not check (maximum, pattern, minLength, ...) is not enforced;
+//   - a value with no type, an unknown or multi-valued type, or a composite keyword (anyOf, $ref, ...) is any JSON value;
+//   - an object with no declared properties, or one past the grammar's limits, is any object;
+//   - an object that allows undeclared keys is held to its declared ones.
+type compiler struct{ lenient bool }
+
+// compositeKeywords change a value's shape in ways the grammar does not model; lenient compiling makes such a value any
+// JSON value rather than ignoring the keyword.
+var compositeKeywords = map[string]bool{
+	"anyOf": true, "oneOf": true, "allOf": true, "not": true, "$ref": true, "$dynamicRef": true, "if": true, "then": true,
+	"else": true, "patternProperties": true, "prefixItems": true, "dependentSchemas": true, "propertyNames": true,
+	"contains": true, "unevaluatedProperties": true, "unevaluatedItems": true, "additionalItems": true,
 }
 
 type propNode struct {
@@ -127,11 +158,27 @@ func checkSchemaKeys(s map[string]any) error {
 // compile turns one JSON Schema object into a node. depth is the nesting level this call
 // compiles AT (0 for the top-level object), threaded through compileObject and compileArray so
 // every object property and array items schema counts, not just object-under-object nesting.
-func compile(s map[string]any, depth int) (*node, error) {
+func compile(s map[string]any, depth int) (*node, error) { return compiler{}.compile(s, depth) }
+
+func (c compiler) compile(s map[string]any, depth int) (*node, error) {
+	n, err := c.compileStrict(s, depth)
+	if err != nil && c.lenient {
+		return anyNode, nil
+	}
+	return n, err
+}
+
+func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 	if depth > maxSchemaDepth {
 		return nil, fmt.Errorf("constrain: schema nesting exceeds %d levels", maxSchemaDepth)
 	}
-	if err := checkSchemaKeys(s); err != nil {
+	if c.lenient {
+		for k := range s {
+			if compositeKeywords[k] {
+				return anyNode, nil
+			}
+		}
+	} else if err := checkSchemaKeys(s); err != nil {
 		return nil, err
 	}
 	// enum / const first — they pin a fixed set of literals regardless of type.
@@ -164,14 +211,14 @@ func compile(s map[string]any, depth int) (*node, error) {
 	typ, _ := s["type"].(string)
 	switch typ {
 	case "object":
-		return compileObject(s, depth)
+		return c.compileObject(s, depth)
 	case "array":
-		return compileArray(s, depth)
+		return c.compileArray(s, depth)
 	case "string":
 		return &node{kind: kString}, nil
 	case "number", "integer":
 		nn, err := nonNegativeKeyword(s)
-		if err != nil {
+		if err != nil && !c.lenient {
 			return nil, err
 		}
 		return &node{kind: kNumber, intOnly: typ == "integer", nonNeg: nn}, nil
@@ -182,7 +229,7 @@ func compile(s map[string]any, depth int) (*node, error) {
 	case "":
 		// "properties" with no explicit type is conventionally an object.
 		if _, ok := s["properties"]; ok {
-			return compileObject(s, depth)
+			return c.compileObject(s, depth)
 		}
 		return nil, fmt.Errorf("constrain: schema needs a \"type\", \"enum\", or \"const\"")
 	default:
@@ -203,18 +250,26 @@ func validPropertyName(name string) error {
 	return nil
 }
 
-func compileObject(s map[string]any, depth int) (*node, error) {
-	// Closed objects only: the grammar can't enforce an open additionalProperties
-	// (that would need a free-JSON sub-grammar). Reject an explicit `true`.
+func (c compiler) compileObject(s map[string]any, depth int) (*node, error) {
+	// Closed objects only: the grammar can't enforce an open additionalProperties strictly. Reject an explicit `true`;
+	// lenient compiling holds such an object to its declared keys, or makes it any object when it declares none.
 	apClosed := false
+	propsRaw, _ := s["properties"].(map[string]any)
 	if ap, ok := s["additionalProperties"]; ok {
 		if b, isBool := ap.(bool); !isBool || b {
-			return nil, fmt.Errorf("constrain: only additionalProperties:false is supported")
+			if !c.lenient {
+				return nil, fmt.Errorf("constrain: only additionalProperties:false is supported")
+			}
+			if len(propsRaw) == 0 {
+				return anyObjNode, nil
+			}
 		}
-		apClosed = true // ok && the value is literal false
+		apClosed = true
 	}
-	propsRaw, _ := s["properties"].(map[string]any)
 	if len(propsRaw) > 64 {
+		if c.lenient {
+			return anyObjNode, nil
+		}
 		return nil, fmt.Errorf("constrain: object with >64 properties unsupported")
 	}
 	// An object with no declared properties and no `additionalProperties:false` is the freeform
@@ -223,6 +278,9 @@ func compileObject(s map[string]any, depth int) (*node, error) {
 	// it loudly; an explicit closed empty object (additionalProperties:false, no properties)
 	// legitimately matches just "{}".
 	if len(propsRaw) == 0 && !apClosed {
+		if c.lenient {
+			return anyObjNode, nil
+		}
 		return nil, fmt.Errorf("constrain: object with no properties is unconstrainable (a freeform object needs a free-JSON sub-grammar); declare properties or set additionalProperties:false for an empty object")
 	}
 	names := make([]string, 0, len(propsRaw))
@@ -251,6 +309,9 @@ func compileObject(s map[string]any, depth int) (*node, error) {
 				return nil, fmt.Errorf("constrain: required entries must be strings, got %T", r)
 			}
 			if !declared[rs] {
+				if c.lenient {
+					continue // the call is held to its declared keys, so an undeclared one cannot be required
+				}
 				return nil, fmt.Errorf("constrain: required property %q is not declared in properties", rs)
 			}
 			req[rs] = true
@@ -259,10 +320,10 @@ func compileObject(s map[string]any, depth int) (*node, error) {
 	n := &node{kind: kObject}
 	for i, name := range names {
 		ps, ok := propsRaw[name].(map[string]any)
-		if !ok {
+		if !ok && !c.lenient {
 			return nil, fmt.Errorf("constrain: property %q is not a schema object", name)
 		}
-		child, err := compile(ps, depth+1)
+		child, err := c.compile(ps, depth+1)
 		if err != nil {
 			return nil, fmt.Errorf("constrain: property %q: %w", name, err)
 		}
@@ -274,12 +335,15 @@ func compileObject(s map[string]any, depth int) (*node, error) {
 	return n, nil
 }
 
-func compileArray(s map[string]any, depth int) (*node, error) {
+func (c compiler) compileArray(s map[string]any, depth int) (*node, error) {
 	itemsRaw, ok := s["items"].(map[string]any)
 	if !ok {
+		if c.lenient {
+			return anyArrNode, nil
+		}
 		return nil, fmt.Errorf("constrain: array needs an \"items\" schema")
 	}
-	items, err := compile(itemsRaw, depth+1)
+	items, err := c.compile(itemsRaw, depth+1)
 	if err != nil {
 		return nil, fmt.Errorf("constrain: array items: %w", err)
 	}

@@ -48,11 +48,12 @@ type gemma4MoEWeights struct {
 // and are summed order-independently at the join (TestGemma4MoEFFN_overlapBitIdentical), and the fill goroutine never touches
 // `be`, only the pager.
 func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeights, pager *expertPager) []float32 {
-	hidden := arch.HiddenDim
-	eps := arch.NormEps
-	// The weighted norms follow arch.RMSAddOne (the (1+w) offset) exactly like the dense forward's normalize(arch, …), so these five
-	// track the flag rather than diverging; the router's norm (rmsNormNoWeight below) is genuinely weightless.
-	addOne := arch.RMSAddOne
+	return gemma4MoEFFNWith(be, arch.HiddenDim, arch.NormEps, arch.RMSAddOne, h, w, pager)
+}
+
+// gemma4MoEFFNWith is gemma4MoEFFN with the norms' epsilon and (1+w) given: the program walker's form (opGemma4MoE). The weighted
+// norms follow addOne exactly like the dense layer's norms; the router's norm (rmsNormNoWeight below) is genuinely weightless.
+func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []float32, w *gemma4MoEWeights, pager *expertPager) []float32 {
 
 	// moe branch — router on the RAW residual h (its own weightless RMSNorm + learned
 	// scale + hidden^-0.5), softmax over all experts → top-k → UNCONDITIONAL renorm →

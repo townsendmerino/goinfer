@@ -262,6 +262,51 @@ no-margin state the note above describes. The fresh-process tests below moved ~1
 this process at the same time, so 120m is headroom, not a new expectation.
 ```
 
+**Split in two processes since 2026-10-14 (owner decision, `docs/queue-engineering.md` B21).** The one-process main group had outgrown
+120 m. The KV3 CUDA suite, run as one process on 2026-10-13, spent 6,507 s on the first 421 of 469 main-group tests, after removing the
+684 s of fresh-process tests, with 48 still to start (`docs/measurements/kv3-cuda-2026-10-13.md` §5). The same tests split by name
+measured about 59 min for `Test[A-L]` and about 53 min plus about 13 min unreached for `Test[M-Z]` (that record's re-queue paragraph).
+`cudaHeavy` now runs the main group as two processes. `splitMainTier` puts A to L in one and the rest in the other, each selected by an
+anchored list of its own names from `go test -list`, and `reconcileHalves` fails the tier if a listed test has a result in neither half
+or in both. Each half keeps the 120 m timeout, about 2x its expected hour, which is more headroom than the single process ever had.
+A single process re-registered with the same 50% margin would have needed about 3 h, the whole night-job limit. The expected gate
+wall is about 2 h 20 min: the two halves (about 2 h), the fresh-process tests (about 11 min), the drain group and the 5 min outside
+the heavy tier. The first measured run replaces these figures. If either half nears an hour and a half, split again (three
+letter ranges) rather than raise the timeout.
+
+**Superseded on 2026-10-15 by one process per model family** (next section). Each family's process keeps the 120 m timeout; the
+largest, the shared small group, measured about 30 min of test time in the 2026-10-14 release gate's logs, so the margin is wider
+than the halves had.
+
+## cudaHeavy: one model family per process
+
+Owner decision 2026-10-15, `docs/queue-engineering.md` B23 option 1. The main group's process held every real checkpoint the suite
+loads, one after another, and peaked at 37 to 38 GB `VmHWM`, close enough to `user-1000.slice`'s `memory.high` (53,248 MiB) that it
+swapped whenever the desktop or the page cache grew (`docs/measurements/kv2-cuda-2026-10-15.md` §7). `cudaHeavy` now runs the main
+group as one process per model family, so no process holds two large checkpoints, and logs each process's test-binary `VmHWM` and peak
+`VmSwap` (`procPeak`, sampled from `/proc` every 0.5 s) to the gate output and to the record's `heavy_processes`.
+
+- **The table.** `heavyFamilies` in `cmd/gate/heavy_groups.go` maps checkpoint-name patterns to groups. Large families (the 26B,
+  Qwen3.6-35B, gpt-oss-20b, the 7-8B group, Gemma 4 E4B) each get a process; the 2-4B families with many tests (Gemma 3 4B, Qwen3-4B
+  and its drafter, Qwen3-VL-2B, Qwen2.5-VL-3B, GLM-OCR, Gemma 4 E2B) also get one each, which keeps every process under about 20 min of
+  test time; everything else, about 1.5B and smaller and the tiny fixtures, shares `small`.
+- **Assignment is derived, not listed.** `testReachableLiterals` walks each test's body and every package-level declaration it names,
+  transitively, and collects the string literals; an asset-registry key contributes its candidate paths. The test goes to the group of
+  the highest-ranked family any literal matches. Matching by name over-approximates (a subtest label such as `"qwen3.6-35b-a3b"` in
+  `TestGridVisionCUDA_real`, which loads only that model's vision tower, puts the test in the 35B process), which can only move a test
+  to a larger family's process.
+- **What fails loudly.** A test `go test -list` names that the source walk does not find; a literal that names a checkpoint no row
+  classifies, by shape (`models/<x>`, `$MODELS/<x>`, `<x>.gguf`, `<x>.giw`) or by naming an entry of the models directory; and a test
+  that reaches two large families. `TestHeavyPartition_cudaTreeFitsTheTable` runs the first two checks on the tree in CI, so a new test
+  with an unknown checkpoint is red before any gate runs it. The fix is a row in `heavyFamilies`.
+- **Reconciliation** is unchanged in kind: `reconcileGroups` fails the tier when a listed test has a result in no process or in two.
+- **An all-skip family process is noted, not vacuous.** A family whose checkpoints are absent (archived to `/srv/models`) skips whole;
+  the tier's skip census names each test, as it did when those skips sat inside a half.
+- **Running one group:** `go run ./cmd/gate cuda-heavy -list` prints the partition; `-group <label>` runs chosen groups alone with
+  their memory sampled (under `timing_lock.py run` on the CUDA box).
+- **A single test can exceed the goal on its own.** Grouping cannot split one test. The 2026-10-15 readings are in
+  `docs/measurements/b23-cuda-heavy-split-2026-10-15.md`.
+
 ## ptxVersionRe (group 4 header)
 
 Moved from `cmd/gate/gpu.go` (the comment above `ptxVersionRe`) on 2026-10-09.

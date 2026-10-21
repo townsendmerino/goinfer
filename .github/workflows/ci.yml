@@ -22,13 +22,17 @@ permissions:
 # real multi-commit-burst days (85 commits in two days, 2026-09-08-10). Safe to cancel mid-way
 # (unlike book-pages.yml's Pages deploy, which explicitly does not): a cancelled CI run has no
 # external side effect, it just stops checking a commit that is no longer the tip of the ref.
+# A push to main gets its own group, keyed on the commit, and is never cancelled: every main push gets a complete run,
+# so a docs push landing on a running code push does not cancel it (owner, 2026-10-18). cancel-in-progress: false alone
+# is not enough, because a group still cancels its pending run when a newer one queues. Branches and pull requests keep
+# one group per ref and cancel the superseded run.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ !(github.ref == 'refs/heads/main' && github.event_name == 'push') }}
 
 jobs:
   # C3 (docs/completed/task-ci-speed-2026-09.md): change detection, at the JOB level. A push that
-  # changes only files under docs/ -- and none that Go code or tests READ (scripts/ci_docs_only.sh
+  # changes only docs/**, RELEASING.md or .claude/** -- and none that Go code or tests READ (scripts/ci_docs_only.sh
   # decides; 477da08a is the precedent: a docs-only env-vars.md fix flipped
   # TestEnvVars_docAndCodeAgree, so "docs-only" cannot mean "skip tests" without that read check)
   # -- runs `lint` alone. Every other job `needs:` this one and skips when docs_only == 'true'.
@@ -210,6 +214,55 @@ jobs:
       # like one that found nothing wrong.
       - name: book link lint
         run: python3 scripts/book_link_lint.py
+
+      # The night queue's runner (scripts/night.py): a job file dropped or re-added while the runner holds its pick must
+      # be skipped and logged, not crash the runner with the rest of the queue unrun. Stdlib unittest, under a second.
+      - name: night queue tests
+        run: python3 scripts/test_night.py
+
+      # The timing lock (scripts/timing_lock.py): one timed run per box, loaders shared. Its own tests, and that touched.py,
+      # gate quick and refresh_parity_hashes.sh hold it shared while they run (a timed run tried beside them is refused). About 20 s.
+      - name: timing lock tests
+        run: cd scripts && python3 test_timing_lock.py && python3 test_day_loaders.py
+
+      # bench_peer.py's sampled configs must send temperature, top_p and top_k to every arm: an omitted field takes that
+      # engine's default (for goinfer, the model's recommended value), which applies to one arm only. Stdlib, milliseconds.
+      - name: bench_peer sampling payloads
+        run: python3 -B scripts/test_bench_peer_sampling.py
+
+      # bench_peer.py voids a cell whose start finds the box under heavy load (load above half the cores, or free memory under
+      # the fit need plus 2 GB), lists it and re-runs it in place, never averaging it in. Stdlib, milliseconds.
+      - name: bench_peer heavy-load void
+        run: python3 -B scripts/test_bench_peer_heavy.py
+
+      # touched.py runs each source-scan test when a file it reads changes (scripts/touched_scans.py), and the table must name
+      # every test that reads Go source: a scanner missing from it is the day loop going green on a change CI then fails.
+      - name: touched.py scan selection
+        run: python3 -B scripts/test_touched.py
+
+      # The night job cuda-device-suite judges `go test -json` of the CUDA module run with a device: a failed test, a failed package and a
+      # skip that says "no device" are red, whatever go test's exit status. Fed fake streams, with a plant that treats skips as passes.
+      # Stdlib, under a second.
+      - name: cuda-device-suite verdict
+        run: python3 -B scripts/test_cuda_device_suite.py
+
+      # The same job turns its verdict into a GitHub issue (red opens one or comments on the open one, green closes it) and an 18:00 systemd timer queues it each
+      # evening unless it is already queued. Both are fed a fake gh and a fake night.py, with a plant that reads every verdict as green. Stdlib, under a second.
+      - name: cuda-device-suite issue and queue
+        run: |
+          python3 -B scripts/test_cuda_device_suite_issue.py
+          python3 -B scripts/test_cuda_device_suite_queue.py
+
+      # The pre-push guard (scripts/main_ci_guard.py) refuses a push to main while main's latest CI run is unfinished, names
+      # the run, and refuses on a failed read; fed fake `gh run list` output. Stdlib, under a second.
+      - name: main CI guard
+        run: python3 -B scripts/test_main_ci_guard.py
+
+      # ci_docs_only.sh's rule 2 matches a read by the file's full path, not its basename: a docs commit adding a
+      # docs/**/README.md or run.py is docs-only, while the root README.md and a docs file a test reads are code. Each case
+      # is a real commit in a scratch worktree. Stdlib, seconds.
+      - name: docs-only classifier
+        run: python3 -B scripts/test_ci_docs_only.py
 
       # C3's zero-match guard: the `changes` gate decides "docs-only" partly by detecting which
       # docs/ files Go tests READ (scripts/ci_docs_only.sh). If that detection ever stops seeing
@@ -645,6 +698,8 @@ jobs:
           version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck -tags gpu
         run: staticcheck -tags 'gpu goinfer_testhooks' ./gpu/...
+      - name: staticcheck demo/agent
+        run: staticcheck ./demo/agent/...
 
       # GPU tests skip cleanly with no adapter (headless runner); this confirms
       # they compile and the resident-matmul path is exercised where possible.
@@ -703,6 +758,18 @@ jobs:
       - name: vet -tags cuda
         run: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
 
+      # The module must also vet with no tag: gopls, go doc and an untagged `go vet ./...` read it that way, and a file
+      # missing its //go:build cuda line breaks them while every tagged step above stays green.
+      - name: vet, untagged
+        run: go vet ./cuda/...
+
+      # `gate gpu`'s kernel-level suite (check 2a) builds the cuda tests with -tags cuda and NOTHING else, to prove the kernel tests need no
+      # test hooks. A _test.go file that uses a helper defined under goinfer_testhooks without its own tag compiles in every step above and
+      # fails only there (cuda/kv2_optionoff_test.go did, 2026-10-16: the device gate's 2a was red on a build error CI never saw).
+      # `go vet` compiles the tests; this step type-checks that exact tag set.
+      - name: vet -tags cuda alone (the device gate's 2a build)
+        run: go vet -tags cuda ./cuda/...
+
       # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       # CGO_ENABLED=0 dropped here: it only affects Go compilation (go build/run/test), and this
       # is now a prebuilt binary invocation, not a `go run` -- the env var had no effect on the
@@ -716,6 +783,38 @@ jobs:
       # Compile + skip cleanly on the GPU-less runner (tests t.Skip without a device).
       - name: test -tags cuda
         run: CGO_ENABLED=0 go test -short -tags 'cuda goinfer_testhooks' ./cuda/...
+
+      # The shipped kernels are the committed cuda/testdata/*.ptx, embedded as they are. Each must rebuild byte for byte
+      # from its .cu at the NVRTC version the file records, or a .ptx that does not match its source would ship. NVRTC
+      # needs no GPU and no host compiler. The tree carries two versions; a kernel built at a third needs its pair added
+      # here, and until then `gate ptx` fails naming the version it lacks. Each pair is nvrtc + the runtime headers
+      # (cuda_fp16.h) that nobara's `gate gpu` rebuilds with.
+      - name: install the pinned NVRTCs (12.6.85, 12.9.86)
+        run: |
+          dirs=""
+          for pair in "12.6.85 12.6.77" "12.9.86 12.9.79"; do
+            set -- $pair
+            root="$RUNNER_TEMP/nvrtc-$1"
+            python3 -m pip install --quiet --target "$root" "nvidia-cuda-nvrtc-cu12==$1" "nvidia-cuda-runtime-cu12==$2"
+            test -e "$root/nvidia/cuda_nvrtc/lib/libnvrtc.so.12" || { echo "no libnvrtc.so.12 under $root"; ls -R "$root" | head -50; exit 1; }
+            test -e "$root/nvidia/cuda_runtime/include/cuda_fp16.h" || { echo "no cuda_fp16.h under $root"; ls -R "$root" | head -50; exit 1; }
+            dirs="$dirs${dirs:+:}$root/nvidia"
+          done
+          echo "GOINFER_NVRTC_DIRS=$dirs" >> "$GITHUB_ENV"
+      # NOT BLOCKING YET (2026-10-13). On its first run here 41 of 42 files matched and tower_base.ptx did not, though
+      # all 42 match on nobara with these same two pip installs. Until the cause is known the step reports and uploads
+      # the rebuilt file, and does not fail the job. Remove continue-on-error with the fix.
+      - name: PTX rebuilds byte for byte from source
+        continue-on-error: true
+        run: go run ./cmd/gate ptx -keep "$RUNNER_TEMP/ptx-differs"
+      - name: keep any rebuilt PTX that differs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ptx-differs
+          path: ${{ runner.temp }}/ptx-differs
+          if-no-files-found: ignore
+          retention-days: 14
 
   # Root module on darwin/arm64. The Linux jobs above can't catch
   # platform-specific build breaks — e.g. a syscall the darwin syscall package

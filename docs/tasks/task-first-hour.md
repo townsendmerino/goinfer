@@ -100,7 +100,7 @@ the source's comments — the 2026-09-06 run flagged this itself rather than let
    without it the machine does, and there is no report. **Watch the banner's swap line too**: serve
    prints `swap guard: baseline N GB swap-used` at start (and chat/serve arm a load-time guard for a
    direct `.gguf` load) — record the baseline it printed, and whether the guard or the tester noticed
-   swap growth first (S3, `docs/tasks/task-never-swap-2026-09.md`).
+   swap growth first (S3, `docs/completed/task-never-swap-2026-09.md`).
    **Amended 2026-10-06: the trigger is pageouts, or swap-used growth past the guard's threshold — not
    any rise in swap-used.** On nobara (zram swap) the 2026-10-05 run's watcher killed scenario D twice
    on swap-used rises of +18.9 MB and +14.5 MB with `pswpin`/`pswpout` +0 and `vmstat` si/so 0 throughout

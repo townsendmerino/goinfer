@@ -1,0 +1,31 @@
+=== RUN   TestKVF16_F1Exactness
+    kv_f16_test.go:162: llama-tiny decode: 0 differing bits
+    kv_f16_test.go:162: llama-tiny prefill: 0 differing bits
+    kv_f16_test.go:162: llama-tiny bridge: 0 differing bits
+    kv_f16_test.go:162: llama-tiny rewind: 0 differing bits
+    kv_f16_test.go:162: gemma2-tiny decode: 0 differing bits
+    kv_f16_test.go:162: gemma2-tiny prefill: 0 differing bits
+    kv_f16_test.go:162: gemma2-tiny bridge: 0 differing bits
+    kv_f16_test.go:162: gemma2-tiny rewind: 0 differing bits
+    kv_f16_test.go:162: qwen25vl-tiny decode: 0 differing bits
+    kv_f16_test.go:162: qwen25vl-tiny prefill: 0 differing bits
+    kv_f16_test.go:162: qwen25vl-tiny bridge: 0 differing bits
+    kv_f16_test.go:162: qwen25vl-tiny rewind: 0 differing bits
+--- PASS: TestKVF16_F1Exactness (0.04s)
+=== RUN   TestKVF16_F1PrefillEqualsDecode
+--- PASS: TestKVF16_F1PrefillEqualsDecode (0.01s)
+=== RUN   TestKVF16_F1SnapshotAndCopy
+--- PASS: TestKVF16_F1SnapshotAndCopy (0.01s)
+=== RUN   TestKVF16_F1Fast512
+    kv_f16_test.go:254: 600-row prefill: 0 differing values
+--- PASS: TestKVF16_F1Fast512 (3.31s)
+=== RUN   TestKVF16_F1Plants
+    kv_f16_test.go:272: plant "new prefill rows at f32": 33213 differing values (prefill 15330, decode 15328, rewind 2555)
+    kv_f16_test.go:272: plant "ring read one slot late": 17374 differing values (prefill 0, decode 14819, rewind 2555)
+--- PASS: TestKVF16_F1Plants (0.02s)
+=== RUN   TestKVF16_excludedFamilyKeepsF32
+--- PASS: TestKVF16_excludedFamilyKeepsF32 (0.00s)
+=== RUN   TestKVF16_F5LibraryDefaultIsF32
+--- PASS: TestKVF16_F5LibraryDefaultIsF32 (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	3.768s

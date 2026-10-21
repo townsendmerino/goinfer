@@ -5,6 +5,9 @@ package cuda
 import (
 	_ "embed"
 	"math"
+	"slices"
+
+	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
 // The production decode kernels (NVRTC to PTX, go:embed, driver-JIT via cuModuleLoadDataEx), embedded in a non-test file
@@ -48,6 +51,13 @@ var prefillBatchedPTX []byte
 //
 //go:embed testdata/decode_splitkv.ptx
 var decodeSplitKVPTX []byte
+
+// prefillSplitKVPTX: the exact batched-prefill attention for a row whose scores do not fit attn_batched's shared memory
+// (splitkv_scores_rows, splitkv_softmax_rows, splitkv_vsum_rows): decode's split-KV kernels with the query row on the grid,
+// bit-identical to attn_batched row by row.
+//
+//go:embed testdata/prefill_splitkv.ptx
+var prefillSplitKVPTX []byte
 
 // deltaNetPTX: the Gated-DeltaNet decode mixer (delta_conv / delta_gates / delta_norm / delta_rule / delta_gnorm /
 // delta_qsplit / delta_attn_gate), loaded only for that family; a load failure declines the resident build. Nothing else
@@ -95,6 +105,12 @@ var argmaxPTX []byte
 //
 //go:embed testdata/moe_fold.ptx
 var moeFoldPTX []byte
+
+// moeRowsPTX: gemv_w4a8_moe_rows and glu_quant_rows, the grouped, bit-exact expert kernels of the expert-major MoE prefill: one launch per expert and
+// stage instead of one per (row, rank) pair. See cuda/moe_rows.cu.
+//
+//go:embed testdata/moe_rows.ptx
+var moeRowsPTX []byte
 
 // audioEncoderPTX: audio_gelu_erf (the exact GELU, aikit's contract kernel on the device) and audio_im2col_k3 (the Whisper-style encoder's two Conv1d stems as
 // GEMMs). See cuda/audio_encoder.cu.
@@ -324,6 +340,9 @@ var prefillBatchedKV16PTX []byte
 //go:embed testdata/decode_splitkv_kv16.ptx
 var decodeSplitKVKV16PTX []byte
 
+//go:embed testdata/prefill_splitkv_kv16.ptx
+var prefillSplitKVKV16PTX []byte
+
 //go:embed testdata/decode_fa_kv16.ptx
 var decodeFAKV16PTX []byte
 
@@ -332,6 +351,53 @@ var attnFusedKV16PTX []byte
 
 //go:embed testdata/attn_fused_bm_kv16.ptx
 var attnFusedBMKV16PTX []byte
+
+//go:embed testdata/glue_cap.ptx
+var glueCapPTX []byte
+
+//go:embed testdata/glue_kv16_cap.ptx
+var glueKV16CapPTX []byte
+
+//go:embed testdata/prefill_batched_cap.ptx
+var prefillBatchedCapPTX []byte
+
+//go:embed testdata/prefill_batched_kv16_cap.ptx
+var prefillBatchedKV16CapPTX []byte
+
+//go:embed testdata/decode_splitkv_cap.ptx
+var decodeSplitKVCapPTX []byte
+
+//go:embed testdata/decode_splitkv_kv16_cap.ptx
+var decodeSplitKVKV16CapPTX []byte
+
+// attnPTX is kvPTX for the three modules that hold a kernel a capped layer takes (attention, attn_batched, splitkv_scores): a model with
+// an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module.
+func (r *cudaResident) attnPTX(f32, kv16, capF32, capKV16 []byte) []byte {
+	if r.attnCap != 0 {
+		return r.kvPTX(capF32, capKV16)
+	}
+	return r.kvPTX(f32, kv16)
+}
+
+// withCap appends the cap to the argument list of a covered kernel when the model has one: the capped variants take it as their last
+// parameter, the plain ones do not.
+func (r *cudaResident) withCap(args ...gpu.KernelArg) []gpu.KernelArg {
+	if r.attnCap == 0 {
+		return args
+	}
+	return append(slices.Clone(args), gpu.ArgValue(r.attnCap))
+}
+
+// mambaPTX: the Mamba-2 decode mixer (mamba_conv, mamba_ssm, mamba_gnorm) for Nemotron-H and Granite-4.0-H, ported from metal/kernels/mamba_kernels_msl.go.
+// A module of its own: no existing PTX holds a Mamba kernel. Not bound by any pipeline until OP2b's resident builder (cuda/mamba.cu).
+//
+//go:embed testdata/mamba.ptx
+var mambaPTX []byte
+
+// nongatedActPTX: relu2_quant, Nemotron-H's non-gated MLP activation (squared ReLU) fused with the symmetric int8 quantization the down projection reads.
+//
+//go:embed testdata/nongated_act.ptx
+var nongatedActPTX []byte
 
 // kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module.
 func (r *cudaResident) kvPTX(f32, kv16 []byte) []byte {

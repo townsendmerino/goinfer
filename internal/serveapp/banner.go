@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -26,6 +27,7 @@ type bannerFacts struct {
 	headTable    string // the embedding / LM-head table's precision (decoder.Model.HeadTable); "" when unknown
 	prefillPath  string
 	resident     bool // the model decodes through the resident runner (⇒ stateless, no prefix reuse)
+	snapshots    bool // the resident can hold prefix snapshots in host memory (decoder.Model.KVSnapshotsSupported)
 	hasTemplate  bool
 	toolCallForm bool // the template exposes a constrainable tool-call form
 	spec         bool
@@ -54,12 +56,9 @@ type bannerFacts struct {
 	// the price harnessLine quotes; 0 off the resident path.
 	harnessKVBytes int64
 
-	// kvPrec is the KV precision the resident runner actually allocates (decoder.Model.ResidentKVPrecision),
-	// "" off the resident path — where the requested -kv is what applies.
-	kvPrec string
-
-	// kvF16Decline: why a CUDA load that asked for -kv f16 was held at f32 (decoder.Model.KVF16DeclineReason), "" when it was not.
-	kvF16Decline string
+	// kv is each cache the load built, with the precision requested, the one delivered, and why they differ
+	// (decoder.Model.KVPrecisionReports): the resident cache, or the CPU cache off the resident path.
+	kv []decoder.KVPrecisionReport
 
 	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
 	residentReuseOff bool
@@ -80,6 +79,11 @@ type bannerFacts struct {
 	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps
 	// (decoder.Model.EnableCPUBatch).
 	cpuBatched bool
+	// cpuBatchBypass is why a batched model's decode tokens still run per sequence (decoder.Model.CPUBatchKVBypass), "" when they batch.
+	cpuBatchBypass string
+
+	// sampling: the checkpoint's recommended sampling (decoder.Config.Sampling), nil when it carries none.
+	sampling *decoder.RecommendedSampling
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -89,6 +93,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 		headTable:    lm.model.HeadTable(),
 		prefillPath:  prefillWhy,
 		resident:     lm.model.ResidentActive(),
+		snapshots:    lm.model.KVSnapshotsSupported(),
 		hasTemplate:  lm.tmpl != nil,
 		spec:         lm.spec,
 		blockDrafter: lm.blockSpec != nil,
@@ -99,8 +104,8 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
-	f.kvPrec = lm.model.ResidentKVPrecision()
-	f.kvF16Decline = lm.model.KVF16DeclineReason()
+	f.kv = lm.model.KVPrecisionReports()
+	f.cpuBatchBypass = lm.model.CPUBatchKVBypass()
 	f.ctxNote = lm.model.ResidentContextNote()
 	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.model.ResidentKVSlots()
@@ -110,6 +115,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 		f.residentDecline = lm.model.ResidentDecline()
 	}
 	f.concurrent = lm.concurrent
+	f.sampling = lm.sampling
 	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true
 	}
@@ -140,6 +146,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		}
 		out = append(out, line)
 	}
+	out = append(out, samplingLine(f.sampling))
 
 	// How much context, and at what KV precision: the two numbers that decide whether a harness's turn fits at all.
 	// The line prints the resolved limit, ctxWindow (what prepare enforces and /v1/models publishes), and says what
@@ -181,22 +188,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			cpuNote += "; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)"
 		}
 	}
-	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv
-	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32.
-	switch req := cfg.load.KV; {
-	case f.kvPrec != "":
-		ctxLine += " · KV " + f.kvPrec
-		if f.kvPrec != "f32" && f.kvPrec == req {
-			ctxLine += " (lossy)"
-		}
-	case req != "" && req != "f32":
-		ctxLine += " · KV " + req + " (lossy)"
-	default:
-		ctxLine += " · KV f32"
-	}
-	if f.kvF16Decline != "" {
-		ctxLine += " (-kv f16 held at f32: " + f.kvF16Decline + ")"
-	}
+	ctxLine += kvBannerPart(f.kv)
 	ctxLine += cpuNote
 	out = append(out, ctxLine)
 	if l := harnessLine(f); l != "" {
@@ -258,6 +250,22 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		out = append(out, fmt.Sprintf("session reuse: on (%d conversations kept prefilled)", cfg.kvSessions))
 	default:
 		out = append(out, "session reuse: OFF (--kv-sessions 0)")
+	}
+
+	if f.resident {
+		switch {
+		case cfg.kvHostBytes <= 0:
+			how := cfg.kvHostBytesHow
+			if how == "" {
+				how = "-kv-host-bytes 0"
+			}
+			out = append(out, "prefix snapshots: OFF ("+how+")")
+		case !f.snapshots:
+			out = append(out, "prefix snapshots: not on this backend or model family")
+		default:
+			out = append(out, fmt.Sprintf("prefix snapshots: budget %s (%s), 0 B held; host memory is pinned only while a snapshot is held "+
+				"(taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)", gib(cfg.kvHostBytes), cfg.kvHostBytesHow))
+		}
 	}
 
 	// What it can do, in the terms a harness asks about.
@@ -335,7 +343,9 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 		return line
 	case f.concurrent > 1:
 		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)
-		if f.cpuBatched {
+		if f.cpuBatched && f.cpuBatchBypass != "" {
+			line += "; decode runs per sequence: " + f.cpuBatchBypass
+		} else if f.cpuBatched {
 			line = fmt.Sprintf("concurrency: %d generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)", f.concurrent)
 		} else if cfg.cpuBatch == decoder.CPUBatchAuto {
 			line += "; decode runs as independent workers (-cpu-batch auto batches models with 2 GiB or more of weights)"
@@ -415,4 +425,49 @@ func kvPlanLine(f bannerFacts, cfg config) string {
 		line += " (" + strings.Join(why, "; ") + ")"
 	}
 	return line
+}
+
+// samplingLine says which sampling a request that leaves fields out gets: the checkpoint's recommended values and where
+// they came from, what is recorded but not applied, or that there are none and the server default applies.
+func samplingLine(rs *decoder.RecommendedSampling) string {
+	if rs == nil {
+		return "sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary"
+	}
+	set := rs.Applied()
+	line := "sampling: " + rs.Source + " recommends "
+	if len(set) == 0 {
+		line += "nothing the sampler applies"
+	} else {
+		line += strings.Join(set, ", ") + ", applied to the fields a request leaves out"
+	}
+	if rs.RepetitionPenalty != nil {
+		line += "; not applied: repetition_penalty " + strconv.FormatFloat(*rs.RepetitionPenalty, 'g', -1, 64) +
+			" (it divides logits; the sampler's penalties are subtractive)"
+	}
+	return line
+}
+
+// kvBannerPart is the context line's KV part: for each cache the load built, the precision it holds and the one requested, with the
+// reason when they differ (an explicit request that cannot be delivered refuses the load, so a difference here is auto's pick).
+// "lossy" marks f16 or i8 that the operator asked for by name.
+func kvBannerPart(reps []decoder.KVPrecisionReport) string {
+	if len(reps) == 0 {
+		return " · KV f32"
+	}
+	var s string
+	for i, r := range reps {
+		label := "KV"
+		if i > 0 {
+			label = "CPU KV"
+		}
+		note := "requested " + r.Requested
+		if r.Reason != "" && r.Requested != r.Delivered {
+			note += ": " + r.Reason
+		}
+		if (r.Delivered == "f16" || r.Delivered == "i8") && r.Delivered == r.Requested {
+			note += ", lossy"
+		}
+		s += " · " + label + " " + r.Delivered + " (" + note + ")"
+	}
+	return s
 }

@@ -53,7 +53,8 @@ func TestResidentReuseLen_neverClaimsTheSeed(t *testing.T) {
 // table entry has Recurrent: true), without loading any real weights — residentReuseLen's id
 // arithmetic never touches them.
 func recurrentTestModel(resIDs []int) *Model {
-	return &Model{w: &Weights{arch: &Architecture{qwen35: &qwen35Params{}}}, resIDs: resIDs}
+	// One linear layer: a family of attention layers only carries no in-place state.
+	return &Model{w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}, resIDs: resIDs}
 }
 
 // TestResidentReuseLen_recurrentExactExtensionOnly is audit R-01 Phase 0: a recurrent family's

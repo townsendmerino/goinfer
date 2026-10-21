@@ -232,7 +232,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, _, stopHitOut, _, cancelReason, gerr := lm.drive(
+	finish, nComp, _, stopHitOut, reused, cancelReason, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
@@ -246,7 +246,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	reason, seq := anthropicStopReason(finish, stopHitOut)
 	content := []map[string]any{textBlock(sb.String())}
 	if req.wantsThinking() && rb.Len() > 0 {
-		content = append([]map[string]any{thinkingBlock(rb.String())}, content...)
+		content = append([]map[string]any{thinkingBlock(rb.String(), "")}, content...)
 		if sb.Len() == 0 { // cut off while thinking: no answer, so no text block
 			content = content[:1]
 		}
@@ -256,7 +256,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		"content":       content,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
-		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
+		"usage":         anthropicUsage(len(gr.promptIDs), reused, nComp),
 	}
 	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: body})
 }

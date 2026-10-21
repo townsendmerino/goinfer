@@ -1,0 +1,8 @@
+started: 2026-10-14 00:19:10 PDT
+host: Darwin 25.6.0 arm64
+backend: metal
+new: c02205b8115192f92a49a89a267269689650a0f0
+old (main before OP1's Metal code): d03da21f90491f3b761b36cb82ebc5fccbd29087
+load:  0:19  up 19 days, 14:14, 1 user, load averages: 2.44 2.10 1.94
+disk free: 6.6Gi
+finished: 2026-10-14 00:37:56 PDT rc=0

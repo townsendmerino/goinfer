@@ -18,6 +18,23 @@ All three env vars are required. Non-loopback binds refuse to start without `-ap
 `~/.claude/settings.json` with the window the server really serves, and says whether Claude Code's first request fits it.
 `-write` patches the file, keeping your other settings; `connect claude-code -undo` restores it byte for byte.
 
+**The small/fast model is the served model's fast alias.** The server also answers to `<model>-fast`: the same weights, thinking
+off and nothing else different. `connect` points `ANTHROPIC_DEFAULT_HAIKU_MODEL` and
+`ANTHROPIC_SMALL_FAST_MODEL` at it, so the session title and Claude Code's other small requests stop spending seconds of GPU time
+thinking; the main model's settings and every other slot stay the served model. A server without the alias, or started with
+`-fast-alias=false`, gets the old settings, every slot the served model.
+
+**It names the served model in every other model slot Claude Code reads**, so a subagent, the `opus`/`sonnet`/`haiku`/`fable`
+aliases, `opusplan` and background work all reach a model the server serves. The slots are the ones Claude Code's
+[model configuration](https://code.claude.com/docs/en/model-config#environment-variables) and
+[environment variables](https://code.claude.com/docs/en/env-vars) pages list: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_MODEL`,
+`ANTHROPIC_DEFAULT_FABLE_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`,
+`ANTHROPIC_DEFAULT_HAIKU_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL`, and the deprecated `ANTHROPIC_SMALL_FAST_MODEL`. A slot left
+unset resolves to an Anthropic model id (`claude-sonnet-5-5` for a subagent that asks for `sonnet`), which the server answers
+with 404. It also sets `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, so a subagent whose definition names a model of its own
+(a full Anthropic id, or `inherit`) runs on the served model too. **That override needs Claude Code 2.1.257 or later**; an
+older version ignores it, and such a subagent still asks for its own model and gets 404.
+
 **It also sets `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, because Claude Code opens its system prompt with a per-conversation hash at
 token 22, which stops two conversations sharing their roughly 18,000-token preamble** (with it, two conversations share 22
 tokens; without it, 18,213 of about 20,154: [the measurement](../measurements/kv0-traffic-2026-10-13.md)). The server does not
@@ -33,8 +50,10 @@ Traced that day ([the record](../measurements/integration-harness-2026-10/claude
 - Set `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the window the server serves (its `/v1/models` `context_window`). An
   unrecognised model name is otherwise assumed to have 200,000 tokens (Claude Code's documentation; the variable's
   effect on compaction is not traced here).
-- Background work (the session title) goes to `ANTHROPIC_MODEL` unless `ANTHROPIC_DEFAULT_HAIKU_MODEL` names another
-  served model: with two models loaded (`-model main=... -model fast=...`), set it to the small one.
+- Background work (the session title) goes to `ANTHROPIC_DEFAULT_HAIKU_MODEL`, and a subagent to the alias it asks for or
+  to `CLAUDE_CODE_SUBAGENT_MODEL`: set every slot `connect` sets (above), or those requests name a model the server does not
+  serve. `connect` points the Haiku slot at the server's `<model>-fast` alias. With two models loaded
+  (`-model main=... -model fast=...`), you can point it at the small one instead.
 - `--bare` reads `ANTHROPIC_API_KEY`, not `ANTHROPIC_AUTH_TOKEN`.
 
 ```bash
@@ -46,6 +65,20 @@ CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768 CLAUDE_CODE_ATTRIBUTION_HEADER=0 claude
 
 Whether an 8 GB card holds a 7B at `-ctx 32768` is not measured here; the numbers below are the 2026-09-02 run at 16384,
 with a synthetic 25-tool turn of 2,293 tokens, not the real client's request.
+
+**Claude Code compacts on its own, and `connect` sizes its output cap for that.** Claude Code applies
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` only to a model id it cannot resolve to a Claude model and that carries no `[1m]`
+([Claude Code's model configuration](https://code.claude.com/docs/en/model-config#correct-the-window-for-a-gateway-or-custom-model-id)),
+so serve the model under a name without `claude-` in it; `connect` warns about one that has it. Claude Code then compacts
+once its context plus its output cap (`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) reaches that window, and nothing it documents
+moves that point later at a small window: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts 100,000 and up, and
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` can only lower it. At `-ctx 28672`, with a 7,168-token cap, it compacted after every
+file read and stopped on "Autocompact is thrashing"
+([the record](../measurements/integration-harness-2026-10/i3-night-2026-10-13.md)). So `connect claude-code` writes the
+cap as what the window leaves beside the first request (the 20,199 tokens it prints) and a 2,048-token margin, at most
+8,192: 6,425 at `-ctx 28672`, 8,192 at `-ctx 32768`. A longer reply is cut off at the cap. When the cap comes out under
+4,096 it warns and names `-ctx 26343`, or says the model cannot hold the first request when its own maximum context
+(`/v1/models` `max_positions`) is smaller.
 
 ## What passed, and the numbers
 

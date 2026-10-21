@@ -261,7 +261,7 @@ func prefillInt4RealPath(t *testing.T) string {
 	path := os.Getenv("GOINFER_RESIDENT_GGUF")
 	if path == "" {
 		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, "models", "qwen3-vl-2b-instruct.int4.e4h.webgpu.v16.giw")
+		path = filepath.Join(home, "models", fmt.Sprintf("qwen3-vl-2b-instruct.int4.e4h.webgpu.v%d.giw", decoder.GIWFormatVersion))
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s: %v", path, err)

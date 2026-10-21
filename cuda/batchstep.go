@@ -27,14 +27,18 @@ type stepRow struct {
 	draw      *decoder.ResidentBatchDraw
 }
 
+// batchStepStaticDeclineOffForTest skips BatchStepRange's batched-prefill decline, so a test can see the recurrent check above it on its own: the prefill
+// decline also refuses a Mamba-2 model, and would hide a guard left DeltaNet-only. Set by tests only.
+var batchStepStaticDeclineOffForTest bool
+
 // BatchStepRange reports the sequences a step serves: 2 up to the slot count, or none (hi = 0) for a model the step's
 // scope excludes — MoE (C′ expert streaming included), MLA, the recurrent families, a model with no batched prefill,
 // one slot. Those keep one generation at a time.
 func (r *cudaResident) BatchStepRange() (lo, hi int) {
-	if !r.prefillReady || r.moe || r.gemma4Moe || r.cacheExperts || r.isMLA || r.dnet != nil || r.KVSlots() < 2 {
+	if !r.prefillReady || r.moe || r.gemma4Moe || r.cacheExperts || r.isMLA || r.recurrent() || r.KVSlots() < 2 {
 		return 0, 0
 	}
-	if r.prefillStaticDecline() != nil {
+	if !batchStepStaticDeclineOffForTest && r.prefillStaticDecline() != nil {
 		return 0, 0
 	}
 	return 2, r.KVSlots()

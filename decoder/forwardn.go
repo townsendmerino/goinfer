@@ -77,14 +77,9 @@ var attnGroupedRuns int64
 // and no learned position embedding (GPT-2-style models take the sequential fallback). Sparse MoE batches its attention, but its
 // FFN stays per row because the router picks different experts per token.
 func (m *Model) canBatchN(K int) bool {
-	a := m.w.arch
-	// Every family with its own sequential forward is excluded, derived from the dispatch table (ownForward) rather than restated
-	// here: a restated list once fell a family behind, and a 2-token prompt ran the dense attention stack over conv layers that load
-	// no q/k/v/o.
-	if _, own := a.ownForward(); own {
-		return false
-	}
-	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed
+	// The program decides (program.batchEligible), not a family list: a restated list once fell a family behind, and a 2-token
+	// prompt ran the dense attention stack over conv layers that load no q/k/v/o.
+	return K > 1 && m.w.Embed.Rows() != 0 && m.program().batchEligible()
 }
 
 // hasRecurrentState reports whether this model carries state mutated in place per token (a conv window, an SSM state, a
@@ -99,8 +94,7 @@ func (m *Model) hasRecurrentState() bool {
 	if m == nil || m.w == nil || m.w.arch == nil {
 		return false
 	}
-	f, own := m.w.arch.ownForward()
-	return own && f.Recurrent
+	return m.w.arch.recurrent()
 }
 
 // specRollbackSafe reports whether speculative decode's rollback (KVCache.TruncateTo after a partial accept) correctly restores
@@ -140,14 +134,17 @@ func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache
 // embedN returns the [K*HiddenDim] embedding rows for ids (the per-row token embed
 // times any embedding scale) — the text input to the batched stack.
 func (m *Model) embedN(ids []int) []float32 {
-	arch := m.w.arch
-	hidden := arch.HiddenDim
-	h := make([]float32, len(ids)*hidden)
+	return m.embedNInto(make([]float32, len(ids)*m.w.arch.HiddenDim), ids)
+}
+
+// embedNInto is embedN into h, which holds exactly len(ids)*HiddenDim floats.
+func (m *Model) embedNInto(h []float32, ids []int) []float32 {
+	hidden := m.w.arch.HiddenDim
 	for i, id := range ids {
 		m.w.Embed.Row(id, h[i*hidden:i*hidden+hidden])
 	}
-	if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-		s := float32(arch.EmbedScale)
+	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+		s := float32(emb.Scale)
 		for i := range h {
 			h[i] *= s
 		}
@@ -163,6 +160,22 @@ func (m *Model) embedN(ids []int) []float32 {
 // masked_scatter overwrites the scaled placeholder embed). Returns the [K,
 // HiddenDim] post-final-norm hidden states (the LM head is the caller's).
 func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool) ([]float32, error) {
+	return m.runLayersFromEmbedNFloor(reqCtx, h, cache, fastAttn, len(h)/m.w.arch.HiddenDim, nil)
+}
+
+// runLayersFromEmbedNFloor is runLayersFromEmbedN with the fast-attention floor keyed on floorK, the length of the whole
+// suffix being prefilled, rather than on this pass's rows: a chunked prefill (Model.prefillLogits) passes every chunk the
+// suffix's length, so a short last chunk keeps the suffix's attention path and its rows equal a single pass's.
+func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
+	if programWalkOffForTest {
+		return m.runLayersFromEmbedNFloorLoop(reqCtx, h, cache, fastAttn, floorK, ps)
+	}
+	return m.walkBatch(reqCtx, m.program(), h, cache, fastAttn, floorK, ps)
+}
+
+// runLayersFromEmbedNFloorLoop is the batched loop the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step.
+func (m *Model) runLayersFromEmbedNFloorLoop(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -172,15 +185,18 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	K := len(h) / hidden
 	startPos := cache.Pos()
 
-	norm := make([]float32, K*hidden)
-	q := make([]float32, K*maxQDim)
-	k := make([]float32, K*kvDim)
-	v := make([]float32, K*kvDim)
-	ctx := make([]float32, K*maxQDim)
-	att := make([]float32, K*hidden)
-	gate := make([]float32, K*inter)
-	up := make([]float32, K*inter)
-	mlpOut := make([]float32, K*hidden)
+	if ps == nil {
+		ps = &prefillPassScratch{}
+	}
+	norm := ps.take(&ps.norm, K*hidden)
+	q := ps.take(&ps.q, K*maxQDim)
+	k := ps.take(&ps.k, K*kvDim)
+	v := ps.take(&ps.v, K*kvDim)
+	ctx := ps.take(&ps.ctx, K*maxQDim)
+	att := ps.take(&ps.att, K*hidden)
+	gate := ps.take(&ps.gate, K*inter)
+	up := ps.take(&ps.up, K*inter)
+	mlpOut := ps.take(&ps.mlpOut, K*hidden)
 	// Batched per-head attention scratch (reused across layers; nKeys = startPos+K
 	// is the same for every layer in this sweep). See attendBatchedHeads.
 	maxKeys := startPos + K
@@ -198,7 +214,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// MoE is not excluded: its measured divergence was close to the dense case and never reached the output
 	// (docs/code-notes/decoder.md#Model.runLayersFromEmbedN.fastAttn). That evidence is one family, Mellum2, whose sliding-attention
 	// layers cap nKeys; a full-attention MoE is unmeasured, so do not read it as "MoE in general".
-	if fastAttn && K < fastAttnMinPrompt {
+	if fastAttn && floorK < fastAttnMinPrompt {
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
@@ -211,28 +227,39 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// useAcc64 and cache.treeMask are fixed for this whole call, so fusedOK in attendBatchedHeads is the same for every layer: the
 	// promise newHeadWorkerPool's wantFused needs to safely skip vt/scores.
 	wantFusedPool := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0 // the fused tile never sees a score to cap
-	attnPool := newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd, wantFusedPool)
+	// The pool is sized for the whole prefill's keys when a chunked prefill set ps.poolKeys, and kept across its chunks: a
+	// slot's row tile is clamped to what the slot holds (attendTileForK).
+	poolK, poolKeys := K, maxKeys
+	if ps.poolKeys > maxKeys {
+		poolKeys = ps.poolKeys
+	}
+	if ps.pool == nil || ps.poolWant != wantFusedPool {
+		ps.pool = newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, poolK, poolKeys, hd, arch.maxHeads()), poolK, poolKeys, hd, wantFusedPool)
+		ps.poolWant = wantFusedPool
+	}
+	attnPool := ps.pool
 	// f32 scratch for the assembled local window (ring history + new rows) AND for
 	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
 	// Allocated when the model has ring layers or an int8 cache.
 	var alk, alv []float32
-	if cache.localAny || cache.quant == kvI8 {
-		alk = make([]float32, maxKeys*kvDim)
-		alv = make([]float32, maxKeys*kvDim)
+	if cache.localAny || cache.quant.widened() {
+		alk = ps.take(&ps.alk, maxKeys*kvDim)
+		alv = ps.take(&ps.alv, maxKeys*kvDim)
 	}
 	// Batch the qkv and gate/up projections (shared activation) so a GPU backend runs each group as one submit (BatchTiled). The
 	// Workspace threshold is set to DefaultDecodeParallelThreshold, not aikit's prefill-scale default: this ws also carries small-K
 	// forwardN calls (spec verify, K<=8), whose matmuls would otherwise run serial while decode's identical-shape M=1 matmul fans out.
 	// Large-K prefill matmuls clear both thresholds.
-	var ws linalg.Workspace
-	var hq w4a8Act // the K-row normed block, quantized once for q/k/v and once for gate/up (R-13); reused per layer
+	ws := &ps.ws
+	hq := &ps.hq // the K-row normed block, quantized once for q/k/v and once for gate/up (R-13); reused per layer
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
 	var qkvOps [3]linalg.W8A8Op
 	var guOps [2]linalg.W8A8Op
 	// Laguna attention-gate scratch, grown on first use. Its width depends on the
 	// gate's granularity (nH or nH*hd) AND on the layer's head count, so it is sized
 	// per layer rather than up front. nil for every other family.
-	var gbuf []float32
+	gbuf := ps.gbuf
+	defer func() { ps.gbuf = gbuf }()
 
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
@@ -278,12 +305,12 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
 			qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
 			qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
-			matmulW8A8Batch(be, &ws, norm, K, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
+			matmulW8A8Batch(be, ws, norm, K, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
 		} else {
-			hq.prepare(be, &lw.QProj, norm, K)
-			matmulPre(be, &lw.QProj, &hq, norm, q, K)
-			matmulPre(be, &lw.KProj, &hq, norm, k, K)
-			matmulPre(be, &lw.VProj, &hq, norm, v, K)
+			hq.prepareWS(be, ws, &lw.QProj, norm, K)
+			matmulPreWS(be, ws, &lw.QProj, hq, norm, q, K)
+			matmulPreWS(be, ws, &lw.KProj, hq, norm, k, K)
+			matmulPreWS(be, ws, &lw.VProj, hq, norm, v, K)
 		}
 		if arch.QKVBias {
 			for i := range K {
@@ -323,6 +350,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 					qi[j] *= scale
 				}
 			}
+			if kvRoundF16ForTest { // F1's reference (causalAttention's twin)
+				roundF16InPlace(ki)
+				roundF16InPlace(vi)
+			}
 			if !isLocal {
 				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
 			}
@@ -337,9 +368,9 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
 			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 			cache.commitBatch(l, startPos, K, k, v)
-		} else if cache.quant == kvI8 {
-			// int8 global: the Append loop above already quantized the new K/V into
-			// the layer; dequant the full history into f32 scratch for the matmul.
+		} else if cache.quant.widened() {
+			// int8 or f16 global: the Append loop above already narrowed the new K/V into the layer; widen the full history into
+			// f32 scratch for the matmul.
 			nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
 			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 		} else {
@@ -355,7 +386,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				gbuf = make([]float32, K*gRows)
 			}
 			gb := gbuf[:K*gRows]
-			matmul(be, &lw.GProj, norm, gb, K)
+			matmulWS(be, ws, &lw.GProj, norm, gb, K)
 			perHead := gRows == nH
 			for i := range K {
 				if arch.AttnGate == GateSigmoid {
@@ -365,7 +396,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				}
 			}
 		}
-		matmul(be, &lw.OProj, ctx, att, K)
+		matmulWS(be, ws, &lw.OProj, ctx, att, K)
 		if arch.OutBias {
 			for i := range K {
 				addBias(row(att, i, hidden), lw.OBias)
@@ -465,11 +496,11 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
 			guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
 			guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
-			matmulW8A8Batch(be, &ws, norm, K, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
+			matmulW8A8Batch(be, ws, norm, K, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
 		} else {
-			hq.prepare(be, &lw.GateProj, norm, K)
-			matmulPre(be, &lw.GateProj, &hq, norm, gate, K)
-			matmulPre(be, &lw.UpProj, &hq, norm, up, K)
+			hq.prepareWS(be, ws, &lw.GateProj, norm, K)
+			matmulPreWS(be, ws, &lw.GateProj, hq, norm, gate, K)
+			matmulPreWS(be, ws, &lw.UpProj, hq, norm, up, K)
 		}
 		switch arch.Act {
 		case ActGeluTanh:
@@ -505,7 +536,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		default:
 			return nil, errNotImplemented
 		}
-		matmul(be, &lw.DownProj, gate, mlpOut, K)
+		matmulWS(be, ws, &lw.DownProj, gate, mlpOut, K)
 		if postNorm {
 			for i := range K {
 				normalize(arch, row(mlpOut, i, hidden), lw.PostMLPNorm, nil, hidden)
@@ -648,11 +679,17 @@ func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 // invisible here and the math is byte-identical to append-forever. Per-query masking stays in absolute positions
 // (WindowStart/attendHi), mapped to physical columns by s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+	attendBatchedHeadsP(q, ctx, keys, vals, base, cache, layer, startPos, K, arch.attnParamsFor(cache, global), arch, useAcc64, pool)
+}
+
+// attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
+// form (attentionParams). arch supplies the shapes and the knobs.
+func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
-	scale := arch.AttnScale
+	scale := ap.Scale
 	nKeys := len(keys) / kvDim
 	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
 	// accumulate each dot in f64 (bit-identical to the sequential f64 reference); dense MLPs tolerate the f32 error. There is no
@@ -661,7 +698,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 
 	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask or logit softcap.
 	// Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
-	fusedOK := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0
+	fusedOK := !useAcc64 && cache.treeMask == nil && ap.Softcap == 0
 	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently
 	// across heads and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is
 	// unchanged and its ctx write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial
@@ -695,7 +732,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				for i := range kt {
 					gi := t0 + i
 					pos := startPos + gi
-					fs.lo[i] = cache.WindowStart(pos, global) - base
+					fs.lo[i] = ap.start(pos) - base
 					fs.hi[i] = cache.attendHi(pos) - base
 				}
 				if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
@@ -729,7 +766,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// TREE attention (05): row i attends to the whole committed prefix
 				// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
 				if cache.treeMask != nil {
-					loP := cache.WindowStart(pos, global) - base
+					loP := ap.start(pos) - base
 					batchCol0 := startPos - base
 					allowed := func(s int) bool {
 						if s < batchCol0 {
@@ -741,7 +778,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					maxS := math.Inf(-1)
 					for s := range nKeys {
 						if allowed(s) {
-							sc := softcapScore(float64(rowS[s])*scale, arch.AttnLogitSoftcap)
+							sc := softcapScore(float64(rowS[s])*scale, ap.Softcap)
 							rowS[s] = float32(sc)
 							if sc > maxS {
 								maxS = sc
@@ -771,7 +808,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// key bound: pos for a causal text query, or the image-block end for a
 				// bidirectional image position (so it also attends to the block's
 				// future tokens). Equals pos with no image blocks — inert for text.
-				loP := cache.WindowStart(pos, global) - base
+				loP := ap.start(pos) - base
 				hiP := cache.attendHi(pos) - base
 				if loP < 0 {
 					loP = 0
@@ -784,7 +821,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+						sc := softcapScore(float64(v)*scale, ap.Softcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc
@@ -846,7 +883,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		gScores := ws.groupScores[:group*nKeys]
 		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
 		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
-		loP := cache.WindowStart(pos, global) - base
+		loP := ap.start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -861,7 +898,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				_ = active[len(active)-1]
 				maxS := math.Inf(-1)
 				for s, v := range active {
-					sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+					sc := softcapScore(float64(v)*scale, ap.Softcap)
 					active[s] = float32(sc)
 					if sc > maxS {
 						maxS = sc
@@ -943,7 +980,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		})
 
 		pos := startPos
-		loP := cache.WindowStart(pos, global) - base
+		loP := ap.start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -963,7 +1000,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
+						sc := softcapScore(float64(v)*scale, ap.Softcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc
@@ -1126,23 +1163,23 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 // lmHeadN projects M post-final-norm hidden rows (h is [M, HiddenDim]) to logits
 // [M, VocabSize] (+ final-logit softcap), at M=K so the head weights stream once.
 func (m *Model) lmHeadN(h []float32, M int) []float32 {
-	arch := m.w.arch
-	logits := make([]float32, M*arch.VocabSize)
-	if arch.TiedLMHead {
+	hp := &m.program().head
+	logits := make([]float32, M*m.w.arch.VocabSize)
+	if hp.Tied {
 		matmul(m.be, &m.w.Embed, h, logits, M)
 	} else {
 		matmul(m.be, &m.w.LMHead, h, logits, M)
 	}
-	if arch.FinalLogitSoftcap > 0 {
-		sc := float32(arch.FinalLogitSoftcap)
+	if hp.Softcap > 0 {
+		sc := float32(hp.Softcap)
 		for j, val := range logits {
 			logits[j] = sc * float32(math.Tanh(float64(val/sc)))
 		}
 	}
 	// logit_scale (Cohere multiplier stored as goinfer's reciprocal; Granite logits_scaling divisor): mirrors logitsFromHidden's tail.
 	// The sequential path applies it, so batched prefill/verify must too or forwardN diverges for any LogitScale family.
-	if arch.LogitScale != 0 && arch.LogitScale != 1 {
-		inv := float32(1 / arch.LogitScale)
+	if hp.LogitScale != 0 && hp.LogitScale != 1 {
+		inv := float32(1 / hp.LogitScale)
 		for j := range logits {
 			logits[j] *= inv
 		}
@@ -1222,14 +1259,82 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 		}
 		return m.forward(prompt[len(prompt)-1], cache)
 	}
-	h, err := m.forwardLayersN(ctx, prompt, cache, m.cpuFastAttention())
-	if err != nil {
-		return nil, err
+	// A sliding-window layer's fast attention is not chunk-invariant (G40-1: its output depends on where the pass's key window
+	// starts), so a cache with one keeps the single pass whenever the suffix takes fast attention.
+	fast := m.cpuFastAttention() && len(prompt) >= fastAttnMinPrompt
+	C := len(prompt)
+	if cache.prefillChunkable() && !(cache.localAny && fast) {
+		C = prefillChunkRows
 	}
+	// One working set for every chunk, sized by the first (the largest) and the whole prefill's keys (G40's amendment).
+	ps := &prefillPassScratch{poolKeys: cache.Pos() + len(prompt)}
+	var h []float32
+	for c0 := 0; c0 < len(prompt); c0 += C {
+		c1 := min(c0+C, len(prompt))
+		if c0 == C {
+			cache.reserveRows(max(cache.Pos()+len(prompt)-c0, cache.planRows) - cache.Pos()) // the first chunk taught the cache each layer's width
+			if prefillChunkDone != nil {
+				prefillChunkDone(-1) // the KV reserve, which a gate on working buffers reads apart from them
+			}
+		}
+		var err error
+		atomic.AddInt64(&prefillPasses, 1)
+		if h, err = m.runLayersFromEmbedNFloor(ctx, m.embedNInto(ps.take(&ps.h, (c1-c0)*m.w.arch.HiddenDim), prompt[c0:c1]), cache, m.cpuFastAttention(), len(prompt), ps); err != nil {
+			return nil, err
+		}
+		if prefillChunkDone != nil {
+			prefillChunkDone(c0 / C)
+		}
+	}
+	cache.reserveRows(cache.planRows - cache.Pos()) // a one-pass prefill reserves the request's generation here
 	hidden := m.w.arch.HiddenDim
-	last := h[(len(prompt)-1)*hidden:] // [HiddenDim] — LM head on the last row only
-	return m.lmHeadN(last, 1), nil
+	logits := m.lmHeadN(h[len(h)-hidden:], 1) // the LM head on the last row only
+	if len(prompt) >= prefillReleaseRows {
+		releaseHostMemory()
+	}
+	return logits, nil
 }
+
+// prefillPassScratch is a batched pass's working set. A chunked prefill (Model.prefillLogits) makes one and passes it to
+// every chunk, so the chunks after the first allocate no working buffers; any other caller passes nil and gets fresh ones.
+// take clears what it returns, so a chunk starts from the state a fresh allocation gives.
+type prefillPassScratch struct {
+	h, norm, q, k, v, ctx, att, gate, up, mlpOut, alk, alv, gbuf []float32
+	ws                                                           linalg.Workspace
+	hq                                                           w4a8Act
+	pool                                                         []headWorkerScratch
+	poolWant                                                     bool
+	poolKeys                                                     int // the whole prefill's keys, which the attention pool is sized for
+}
+
+// take returns (*buf)[:n], cleared, growing *buf when it holds less.
+func (ps *prefillPassScratch) take(buf *[]float32, n int) []float32 {
+	if cap(*buf) < n {
+		*buf = make([]float32, n)
+		return *buf
+	}
+	b := (*buf)[:n]
+	clear(b)
+	return b
+}
+
+// prefillChunkRows is how many rows one pass of a long text prefill holds (docs/tasks/task-cpu-prefill-memory-2026-10.md,
+// G40): the pass's working set is sized by its rows, so a chunk bounds it. A variable so a test can cross chunk boundaries on a
+// tiny fixture; 2048 in production.
+var prefillChunkRows = 2048
+
+// prefillChunkDone, when set (tests only), is called after each chunk of a chunked prefill with its index, and with -1 right
+// after the KV reserve: the G40-T0 gates read the allocator there.
+var prefillChunkDone func(chunk int)
+
+// prefillPasses counts the batched passes prefillLogits runs, so a test can see that a chunked prefill really chunked: a
+// bit-identity gate cannot tell a prefill that never split from one that split correctly.
+var prefillPasses int64
+
+// prefillReleaseRows is the prompt length from which prefillLogits returns freed memory to the OS once the prefill is done: a
+// long prompt's scratch is garbage by then, and the runtime would otherwise keep it mapped. Shorter prompts skip the forced
+// collection.
+const prefillReleaseRows = 4096
 
 // prefillLogitsVL prefills a multimodal prompt and returns the last-position
 // logits: the text token embeddings with the projected vision embeddings
@@ -1277,7 +1382,7 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 }
 
 // prefillHiddenLFM2VL is prefillHiddenVLSpans for lfm2 (LFM2-VL, S10): the text embeddings with the image rows spliced
-// in, each run through runLayersLFM2FromEmbed in order (the conv windows see every row, image rows included), and each
+// in, each run through the per-token walker in order (the conv windows see every row, image rows included), and each
 // position's hidden state final-normed, as the batched entry returns them.
 func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
@@ -1292,11 +1397,11 @@ func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []Imag
 			return nil, err
 		}
 		row := h[i*hidden : (i+1)*hidden]
-		out, err := m.runLayersLFM2FromEmbed(row, cache)
+		out, err := m.runLayersFromEmbed(row, cache)
 		if err != nil {
 			return nil, err
 		}
-		normalize(arch, out, m.w.FinalNorm, m.w.FinalNormBias, hidden)
+		m.finalNorm(out)
 	}
 	return h, nil
 }

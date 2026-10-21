@@ -44,21 +44,28 @@ var declaredIdentityDispatch = map[string]string{
 	"decoder/cpu_batch.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                                     "decodeMultiStep's fused gate+up W8A8 kernel — the same capability guard as forwardn.go's",
 	"decoder/cpu_batch.go|if !isW4A8(w) || !canon || w.Cols() != ws[0].Cols() || w.ActQuantGroup() != ws[0].ActQuantGroup() {": "MC3c step 2 S1's fused-call qualification (w4a8FusedOps): a capability guard — the batched W4A8 kernel reads canonical int4 bytes only, so every op must carry them and share K and the activation-quant group; anything else keeps the per-projection calls",
 	"decoder/mlp.go|} else if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                                    "fused gate+up on the decode path — same capability guard (now an else-if: the CPU fused gate+up+SwiGLU branch, cpu_gateup_fused.go, is tried first)",
-	"decoder/cpu_gateup_fused.go|if arch.Act != ActSiLU || !isW4A8(&lw.GateProj) || !isW4A8(&lw.UpProj) {":                     "CPU fused gate+up+SwiGLU fork/join — a capability guard, same as the W4A8 batch site: it needs both projections W4A8 (the serial MatmulBTW4A8Into kernel it calls is W4A8-only) and SiLU (the activation it folds in); anything else declines and takes the unfused path",
+	"decoder/cpu_gateup_fused.go|if act != ActSiLU || !isW4A8(&lw.GateProj) || !isW4A8(&lw.UpProj) {":                          "CPU fused gate+up+SwiGLU fork/join — a capability guard, same as the W4A8 batch site: it needs both projections W4A8 (the serial MatmulBTW4A8Into kernel it calls is W4A8-only) and SiLU (the activation it folds in); anything else declines and takes the unfused path",
 	"decoder/attention.go|} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {":         "fused QKV batched W4A8 kernel (audit R-06) — same capability guard as the W8A8 site above, one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
 	"decoder/mlp.go|} else if w4a8BatchEnabled && isW4A8(&lw.GateProj) && isW4A8(&lw.UpProj) {":                                "fused gate+up batched W4A8 kernel (audit R-06) — same capability guard as the W8A8 site above, one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
+	"decoder/program_cpu.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                  "the per-token program walker's proj-qkv (projQKVToken): causalAttention's fused QKV W8A8 capability guard, moved with it",
+	"decoder/program_cpu.go|} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {":       "the per-token program walker's proj-qkv: causalAttention's fused QKV W4A8 capability guard, moved with it",
+	"decoder/program_cpu_n.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                                "the batched and multi-sequence program walkers' proj-qkv: forwardn.go's and cpu_batch.go's fused QKV W8A8 capability guard, moved with them",
+	"decoder/program_cpu_n.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                                 "the batched and multi-sequence program walkers' gated FFN: the fused gate+up W8A8 capability guard, moved with them",
 	"decoder/weightmat.go|if isW8A8(w) {": "matmulInto's W8A8 branch. Legitimate SINCE P7 (91f359f): it now selects the " +
 		"W8A8-specific QuantBackend kernel, and the int4 branch beside it reaches the same Workspace. " +
 		"Before P7 this was the defect — the else-path silently excluded every other quantization",
 }
 
 // declaredTypeSwitches are type switches over a value whose dynamic type carries an identity. All
-// three are GGUF metadata decoding, where the switch IS the parse and there is no property to
+// are GGUF metadata decoding, where the switch IS the parse and there is no property to
 // dispatch on instead.
 var declaredTypeSwitches = map[string]string{
 	"decoder/gguf.go|switch n := e.(type) {":        "GGUF tensor-shape element decode — switching on the wire type is the parse",
 	"decoder/gguf.go|switch v := kvArr[i].(type) {": "GGUF KV array element decode — same",
 	"decoder/gguf.go|switch v := arr[i].(type) {":   "GGUF KV array element decode (nested) — same",
+
+	"decoder/recommended_sampling.go|switch v := g.Metadata[\"general.sampling.top_k\"].(type) {": "GGUF sampling key decode (a signed or unsigned top_k) — same",
+	"decoder/recommended_sampling.go|switch v := g.Metadata[key].(type) {":                        "GGUF sampling key decode (float32 or float64) — same",
 }
 
 // The predicate set is DERIVED, not listed: a definition `func isX(... *linalg.WeightMat ...) bool`

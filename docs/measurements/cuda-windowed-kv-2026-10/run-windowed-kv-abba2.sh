@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# G-W3b pass 2 (docs/tasks/task-cuda-windowed-kv-2026-10.md, section 12, pre-registered before it ran): the order-reversed ABBA of G-W3, sessions W F F W at ctx 2048 on the SAME pinned binary
+# G-W3b pass 2 (docs/completed/task-cuda-windowed-kv-2026-10.md, section 12, pre-registered before it ran): the order-reversed ABBA of G-W3, sessions W F F W at ctx 2048 on the SAME pinned binary
 # as pass 1 (rev 4521a62a), no ctx-4096 sessions, then the pooled verdict over both passes (windowed_kv_pool.py). Timed (night.py holds the timing lock). Estimate ~6 min
 # (4 loads of ~25 s, 6 short + 6 long requests per session); queue at 15.
-#   python3 scripts/night.py add windowed-kv-abba2 --est 15 --by "nobara session, CUDA windowed KV default-on" --doc docs/tasks/task-cuda-windowed-kv-2026-10.md -- bash docs/measurements/cuda-windowed-kv-2026-10/run-windowed-kv-abba2.sh
+#   python3 scripts/night.py add windowed-kv-abba2 --est 15 --by "nobara session, CUDA windowed KV default-on" --doc docs/completed/task-cuda-windowed-kv-2026-10.md -- bash docs/measurements/cuda-windowed-kv-2026-10/run-windowed-kv-abba2.sh
 F=${F:-$HOME/goinfer-bench/windowed-kv}
 source "$(dirname "$0")/../mellum21-2026-10/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/windowed-kv-abba2-$(date +%F)}

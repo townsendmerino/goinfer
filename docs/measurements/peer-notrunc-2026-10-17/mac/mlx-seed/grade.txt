@@ -1,0 +1,13 @@
+# MLX's two server paths, graded by docs/measurements/peer-notrunc-2026-10-17.md's registered bands
+P1 1.5B: seeded greedy [138.9, 138.3, 138.9] (single-request) / untruncated [136.2, 136.3, 136.2] (single-request) = [1.02, 1.015, 1.02] -> HOLDS
+P1 7B: seeded greedy [40.2, 40.2, 40.1] (single-request) / untruncated [40.1, 39.9, 39.8] (single-request) = [1.004, 1.007, 1.008] -> HOLDS
+P2 1.5B: unseeded preset [99.8, 99.7, 99.7] (batch) / seeded preset [121.8, 121.8, 121.8] (single-request) = [0.819, 0.818, 0.818] -> HOLDS
+P2 7B: unseeded preset [35.4, 35.5, 35.4] (batch) / seeded preset [38.6, 38.6, 38.6] (single-request) = [0.917, 0.918, 0.917] -> HOLDS
+spread 1.5B greedy: 0.44% gate ok load1 1.31
+spread 7B greedy: 0.31% gate ok load1 1.58
+spread 1.5B temp0.8_topk40_topp0.9_unseeded: 0.13% gate ok load1 1.94
+spread 7B temp0.8_topk40_topp0.9_unseeded: 0.24% gate ok load1 1.83
+spread 1.5B temp0.8_topk40_topp0.9: 0.05% gate ok load1 2.20
+spread 7B temp0.8_topk40_topp0.9: 0.13% gate ok load1 1.78
+spread 1.5B temp1.0_notrunc: 0.05% gate ok load1 1.45
+spread 7B temp1.0_notrunc: 0.70% gate ok load1 2.22

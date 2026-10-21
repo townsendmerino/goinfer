@@ -1,0 +1,48 @@
+{
+ "cell": "cpu-1.5b",
+ "model_file": "/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+ "swap_before": 8342466560,
+ "mem_available_before": 58955952128,
+ "started": "2026-10-18T07:11:39",
+ "load_secs": 2.0,
+ "after_load": {
+  "VmHWM": 2205896704,
+  "VmRSS": 150814720,
+  "RssAnon": 110526464,
+  "RssFile": 40288256,
+  "RssShmem": 0,
+  "VmSwap": 0
+ },
+ "request_secs": 558.4,
+ "usage": {
+  "prompt_tokens": 20201,
+  "completion_tokens": 8,
+  "total_tokens": 20209,
+  "prefill_reused_tokens": 0
+ },
+ "at_end": {
+  "VmHWM": 2791165952,
+  "VmRSS": 2193575936,
+  "RssAnon": 1224777728,
+  "RssFile": 968798208,
+  "RssShmem": 0,
+  "VmSwap": 0
+ },
+ "peak_during_request": {
+  "VmHWM": 2791165952,
+  "VmRSS": 2660753408,
+  "RssAnon": 1823092736,
+  "RssFile": 968798208,
+  "RssShmem": 0,
+  "VmSwap": 0
+ },
+ "after_10s": {
+  "VmHWM": 2791165952,
+  "VmRSS": 2200743936,
+  "RssAnon": 1231945728,
+  "RssFile": 968798208,
+  "RssShmem": 0,
+  "VmSwap": 0
+ },
+ "swap_after": 8342466560
+}

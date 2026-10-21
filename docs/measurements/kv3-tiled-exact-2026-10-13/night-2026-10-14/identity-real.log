@@ -1,0 +1,27 @@
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_real
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_real/gemma-3-4b
+    kv3_tiled_test.go:279: KV precision f32
+[kv3-tiled] gemma-3-4b per-token reference: 2951 of 12400 rows, 30 s
+[kv3-tiled] gemma-3-4b per-token reference: 5726 of 12400 rows, 60 s
+[kv3-tiled] gemma-3-4b per-token reference: 8372 of 12400 rows, 90 s
+[kv3-tiled] gemma-3-4b per-token reference: 10902 of 12400 rows, 120 s
+[kv3-tiled] gemma-3-4b per-token reference: 12400 rows in 138.4 s
+[kv3-tiled] G4 gemma-3-4b levers off n=12400: batched 31.88 s (25 row groups, 0 tensor-core launches), per-token 138.4 s; logits differing 0 of 262144 (worst 0), KV differing 0 of 863436800; cosine 1.000000, argmax equal true
+[kv3-tiled] G4 gemma-3-4b default    n=12400: batched 23.21 s (25 row groups, 5950 tensor-core launches), per-token 138.4 s; logits differing 262144 of 262144 (worst 6.12), KV differing 822158842 of 863436800; cosine 0.986525, argmax equal true
+    kv3_tiled_test.go:342: gemma-3-4b default: fidelity against the per-token path: cosine 0.986525 (bar 0.99), argmax equal true
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_real/gemma-4-e4b
+    kv3_tiled_test.go:279: KV precision f32
+[kv3-tiled] gemma-4-e4b per-token reference: 2212 of 12400 rows, 30 s
+[kv3-tiled] gemma-4-e4b per-token reference: 4312 of 12400 rows, 60 s
+[kv3-tiled] gemma-4-e4b per-token reference: 6478 of 12400 rows, 90 s
+[kv3-tiled] gemma-4-e4b per-token reference: 8545 of 12400 rows, 120 s
+[kv3-tiled] gemma-4-e4b per-token reference: 10507 of 12400 rows, 150 s
+[kv3-tiled] gemma-4-e4b per-token reference: 12373 of 12400 rows, 180 s
+[kv3-tiled] gemma-4-e4b per-token reference: 12400 rows in 180.5 s
+[kv3-tiled] G4 gemma-4-e4b default    n=12400: batched 51.99 s (35 row groups, 0 tensor-core launches), per-token 180.5 s; logits differing 0 of 262144 (worst 0), KV differing 0 of 355532800; cosine 1.000000, argmax equal true
+--- FAIL: TestKV3Tiled_batchedEqualsPerToken_real (461.03s)
+    --- FAIL: TestKV3Tiled_batchedEqualsPerToken_real/gemma-3-4b (209.73s)
+    --- PASS: TestKV3Tiled_batchedEqualsPerToken_real/gemma-4-e4b (251.31s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	461.140s
+FAIL

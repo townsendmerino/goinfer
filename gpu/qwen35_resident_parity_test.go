@@ -14,8 +14,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Whole-model parity for the Gated-DeltaNet hybrid: the resident runner vs the CPU
-// runLayersQwen35, fed the SAME fixed token sequence, logits compared as the run gets long.
+// Whole-model parity for the Gated-DeltaNet hybrid: the resident runner vs the
+// CPU program walker, fed the SAME fixed token sequence, logits compared as the run gets long.
 //
 // Long is the point. Three of every four layers carry a recurrent state that COMPOUNDS, so the
 // wiring errors this family invites — a mixer misroute, a conv ring slip, the state left un-reset,
@@ -229,6 +229,9 @@ func TestParent(t *testing.T) {
 	}
 	cmd := exec.Command(bin, "test", "-json", "./...")
 	cmd.Dir = dir
+	// The stub is its own module: a GOWORK or GOFLAGS inherited from the caller (cmd/gate sets an explicit
+	// per-module workspace when the checkout has no go.work) would make the child refuse it.
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
 	out, runErr := cmd.CombinedOutput()
 	if runErr != nil {
 		if _, ok := runErr.(*exec.ExitError); !ok {
@@ -252,5 +255,5 @@ func TestParent(t *testing.T) {
 			return // correct
 		}
 	}
-	t.Fatal("never saw a terminal action for TestParent — this guard is watching nothing")
+	t.Fatalf("never saw a terminal action for TestParent — this guard is watching nothing; the child go test printed:\n%s", out)
 }

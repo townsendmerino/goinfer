@@ -63,6 +63,9 @@ type batchState struct {
 	// qkv / gate|up run as per-row production GEMVs at B <= rowsQKV / rowsGU, and as the fragment above that (0: always the
 	// fragment). Set by calibrateRows at build; tests set them to force either path.
 	rowsQKV, rowsGU int
+	// The q4k lane's f32 rows (the normed residual, SwiGLU's output) and its row strides as uniforms, by width.
+	axB, swB Buffer
+	uLd      map[int]Buffer
 	// steps / seqs / maxSeqs count completed batched steps, the sequences they served, and the largest batch — read by
 	// tests to confirm a concurrent run really batched. Written only inside forwardMulti, which the decoder serialises.
 	steps, seqs, maxSeqs int
@@ -76,12 +79,12 @@ type batchSeq struct {
 }
 
 // batchIneligible is why this resident cannot run a batched step ("" if it can): MC3 covers the plain dense W4A8 decode
-// path — the family flags every per-row kernel in forwardMulti assumes — on at least two resident KV slots.
+// path — the family flags every per-row kernel in forwardMulti assumes — with each layer's KV slots in one f16
+// allocation. One slot is enough to prefill a prompt on the step (one sequence's consecutive rows); batched decode and the
+// step verify need two, which BatchStepRange, BatchGreedyDraw and VerifyCost check.
 func (r *resident) batchIneligible() string {
 	switch {
-	case len(r.kvSlotBufs) < 2:
-		return "one resident KV slot"
-	case !r.kvContig || r.kvF32:
+	case len(r.kvSlotBufs) == 0 || !r.kvContig || r.kvF32:
 		return "KV slots that are not one f16 allocation per layer"
 	case r.moe != nil || r.g4moe != nil:
 		return "MoE"
@@ -89,8 +92,8 @@ func (r *resident) batchIneligible() string {
 		return "a Gemma 4 E-model (per-row PLE inputs, KV-shared layers, per-layer FFN widths)"
 	case r.pairwiseRoPE:
 		return "GPT-J pairwise rope (the step's mc3_rope2_rows is the NeoX half-split; docs/tasks/task-metal-pairwise-rope-2026-10.md)"
-	case r.q4kLane:
-		return "the q4k lane (its f32-activation kernels are decode-only; docs/tasks/task-metal-q4k-2026-10.md)"
+	case r.attnSoftcap != 0:
+		return "an attention softcap (gated on the single-token and exact prefill kernels, not the step's rows forms)"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
 		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
 		return "a family variant the batched step does not reproduce"
@@ -100,12 +103,15 @@ func (r *resident) batchIneligible() string {
 		return "no attention geometry"
 	}
 	for _, L := range r.layers {
-		if L.qGate || L.delta != nil || L.geom == nil || L.geom.kEqV || L.window != 0 ||
+		if L.qGate || L.recurrent() || L.geom == nil || L.geom.kEqV || L.window != 0 ||
 			L.geom.hd != g0.hd || L.geom.kvDim != g0.kvDim || L.geom.nKV != g0.nKV {
 			return "a layer the batched step does not reproduce"
 		}
 	}
 	qkvRows := r.nH*g0.hd + 2*g0.kvDim
+	if r.q4kLane { // its rows GEMVs take any width its decode GEMVs take, and its head runs decode's kernel per row
+		return ""
+	}
 	for _, c := range []struct{ n, by int }{{qkvRows, 16}, {r.H, 16}, {2 * r.I, 16}, {r.V, 128}, {r.H, 32},
 		{r.nH * g0.hd, 32}, {r.I, 32}} {
 		if c.n%c.by != 0 {
@@ -121,6 +127,18 @@ func (r *resident) batchIneligible() string {
 func (r *resident) buildBatch() {
 	if why := r.batchIneligible(); why != "" {
 		return
+	}
+	if len(r.kvSlotBufs) == 1 { // the one-slot build is the memory-tight one: its scratch is priced, and a miss declines the step, not the load
+		if need := r.stepScratchBytes(); need > r.stepHeadroom {
+			if r.stepHeadroom < 0 {
+				r.stepDecline = "this machine's RAM size is unreadable, so the batched step's scratch cannot be priced"
+			} else {
+				r.stepDecline = fmt.Sprintf("the batched step's %.1f MB of scratch does not fit beside one KV slot (the memory guard leaves %.1f MB)",
+					float64(need)/(1<<20), float64(r.stepHeadroom)/(1<<20))
+			}
+			fmt.Fprintf(os.Stderr, "metal: batched step off: %s; prompts prefill one token at a time\n", r.stepDecline)
+			return
+		}
 	}
 	compile := r.d.CompileLibrary
 	if r.preciseMath {
@@ -177,8 +195,63 @@ func (r *resident) buildBatch() {
 	for k := 0; k <= B; k++ {
 		b.uCount = append(b.uCount, NewBufferU32(d, uint32(k)))
 	}
+	if r.q4kLane {
+		b.axB, b.swB = d.NewBufferLen(B*r.H), d.NewBufferLen(B*r.I)
+		b.uLd = map[int]Buffer{}
+		for _, n := range []int{r.H, b.nHhd, r.I, 2 * r.I, b.qkvRows} {
+			b.uLd[n] = NewBufferU32(d, uint32(n))
+		}
+		r.batch = b // calibrateRows picks between int4 kernels the lane does not run
+		return
+	}
 	r.batch = b
 	r.calibrateRows()
+}
+
+// stepScratchBytes is what buildBatch allocates, each buffer rounded up to the page Metal allocates in, so the one-slot price
+// does not under-count (TestP29_oneSlotStepScratchPriced holds it against the driver's own count). A buffer added to
+// buildBatch is added here.
+func (r *resident) stepScratchBytes() int64 {
+	const B = batchMaxSeqs
+	page := os.Getpagesize()
+	g0 := r.layers[0].geom
+	nHhd := r.nH * g0.hd
+	qkvRows := nHhd + 2*g0.kvDim
+	var n int64
+	add := func(bytes, count int) { n += int64(count) * int64((bytes+page-1)/page*page) }
+	f := func(floats, count int) { add(4*floats, count) }
+	f(B*r.H, 1)                     // xB
+	f(B*qkvRows, 1)                 // qkvB
+	f(B*2*r.I, 1)                   // guB
+	f(B*r.V, 1)                     // logitsB
+	add(B*r.H, 2)                   // aqB, mqB
+	add(B*nHhd, 1)                  // cqB
+	add(B*r.I, 1)                   // dqB
+	f(B, 4)                         // aScB, cScB, mScB, dScB
+	add(2*max(r.H, nHhd, r.I)*8, 1) // aT
+	add(2*r.H*8, 1)                 // aTp
+	f(1, 7)                         // uM, uQKV, uGU, uV, uMode
+	f(max(r.H, 2*r.I), 1)           // noBias
+	f(1, 9*B)                       // the per-row uniforms
+	f(B, 1)                         // gOut
+	f(2*B*batchArgmaxParts, 1)      // amaxPart
+	f(B, 1)                         // amaxTok
+	f(1, 1)                         // uAmaxP
+	f(B, 2)                         // posB, qtB
+	f(B*nHhd, 1)                    // ctxB
+	f(B, 5)                         // nKeysB, rowmapB, slotOffB, nSplitB, rowmapFA
+	f(1, 1)                         // uMaxS
+	if r.attnFAPartialLen > 0 {
+		f(B*r.attnFAPartialLen, 1) // faPartB
+		f(1, 1)                    // uPartStride
+	}
+	f(1, B+1) // uCount
+	if r.q4kLane {
+		f(B*r.H, 1) // axB
+		f(B*r.I, 1) // swB
+		f(1, 5)     // uLd, at most one per distinct width
+	}
+	return n
 }
 
 // mc3W8RowsOn runs a native int8 resident's step projections as mc3_gemv_w8a8_rows (each weight row read once for all
@@ -316,7 +389,7 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 		return false
 	}
 	L := &r.layers[l]
-	if L.moe != nil || L.g4moe != nil || L.delta != nil || L.qGate || L.window != 0 {
+	if L.moe != nil || L.g4moe != nil || L.recurrent() || L.qGate || L.window != 0 {
 		return false
 	}
 	g := L.geom
@@ -351,6 +424,10 @@ type multiOut int
 // stepPrefillAllHeads restores prefillByStep's pre-R-19 modes (every piece runs the head; the last converts every row),
 // for the test that compares the two and the A/B that times them. Tests only.
 var stepPrefillAllHeads = false
+
+// stepSlotOffsetPlantForTest shifts every step row's KV slot offset by this many rows: the planted defect that the one-slot
+// step-prefill identity check must catch. Zero in production.
+var stepSlotOffsetPlantForTest = 0
 
 const (
 	multiFull    multiOut = iota // every row's logits, or a draw row's id
@@ -414,7 +491,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uQTemp[m].Floats()[0] = scale
 		b.posB.U32s()[m] = uint32(q.pos)
 		b.nKeysB.U32s()[m] = uint32(q.pos + 1)
-		b.slotOffB.U32s()[m] = uint32(q.slot * r.kvSlotBytes[0] / 2) // f16 elements; batchIneligible: uniform layers
+		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[0]/2 + stepSlotOffsetPlantForTest*r.layers[0].geom.kvDim) // f16 elements; batchIneligible: uniform layers
 		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
 			ns := r.attnFASplitFor(q.pos+1, r.attnFANKV)
@@ -463,18 +540,23 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		g := L.geom
 		// the per-row kernels run as one dispatch over all B rows (S3; batch_rows.go): norm+quant, RoPE, ctx quant,
 		// SwiGLU+quant. The KV store and attention address each sequence's own slot, so they stay per sequence.
-		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
-		if w8AttnRows {
-			e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
-		} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 {
-			e.DispatchTG(r.pSABiasRowsAdj, B*nq, 256, H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH, b.uQKV, b.uCount[B])
-		} else if rowsQKV {
-			for m := range B {
-				e.DispatchTG(pq, nq, 256, H*2, L.qkvW, L.qkvS, b.aqB.At(m*H), b.aScB.At(4*m), f32(b.qkvB, m, b.qkvRows), L.qkvBias, r.uH)
-			}
+		if r.q4kLane { // decode's lane (encodeAttentionResidualWith): f32 rows, no activation quantization
+			e.Dispatch(r.pRmsF32OutRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.axB, r.uH, r.uEps, r.uAddOne)
+			r.q4kStepGemv(e, B, L.qkvSegs, L.qkvBias, b.axB, H, b.qkvB, b.qkvRows, r.uH)
 		} else {
-			pack(e, b.aqB, H, r.uH)
-			e.DispatchTG(b.bt, b.qkvRows/16*128, 128, tgb, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+			e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
+			if w8AttnRows {
+				e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
+			} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 {
+				e.DispatchTG(r.pSABiasRowsAdj, B*nq, 256, H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH, b.uQKV, b.uCount[B])
+			} else if rowsQKV {
+				for m := range B {
+					e.DispatchTG(pq, nq, 256, H*2, L.qkvW, L.qkvS, b.aqB.At(m*H), b.aScB.At(4*m), f32(b.qkvB, m, b.qkvRows), L.qkvBias, r.uH)
+				}
+			} else {
+				pack(e, b.aqB, H, r.uH)
+				e.DispatchTG(b.bt, b.qkvRows/16*128, 128, tgb, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+			}
 		}
 		if r.qkNorm { // E-P07: Qwen3's per-head Q/K RMSNorm before RoPE, decode's qk_norm over every row, at its width
 			e.Dispatch(r.pQKNormRows, B*(r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, b.qkvB, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne, b.uQKV)
@@ -507,16 +589,27 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, b.ctxB, r.uNH, g.uNKV, g.uHd,
 				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, b.uCount[nPlain], b.rowmapB, b.slotOffB)
 		}
-		e.Dispatch(r.pQvRows, B*256, 256, b.ctxB, b.cqB, b.cScB, g.uNHhd)
-		if w8AttnRows {
-			e.Dispatch(r.pW8Rows[B], H*32, 32, L.oW, L.oS, b.cqB, b.cScB, b.xB, g.uNHhd, r.uH, b.uCount[B], b.noBias, b.uMode[2])
-		} else if w8Attn { // int8 slice 3: decode's o-proj + residual (gemv_w8a8_sa_resid) once per row
-			for m := range B {
-				e.DispatchTG(r.pSAResid, H*32, 256, nHhd*2, L.oW, L.oS, b.cqB.At(m*nHhd), b.cScB.At(4*m), f32(b.xB, m, H), g.uNHhd)
-			}
+		if r.q4kLane { // o-proj + residual reads the f32 ctx rows directly
+			r.q4kStepGemv(e, B, L.oSegs, Buffer{}, b.ctxB, nHhd, b.xB, H, g.uNHhd, true)
 		} else {
-			pack(e, b.cqB, nHhd, g.uNHhd)
-			e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
+			e.Dispatch(r.pQvRows, B*256, 256, b.ctxB, b.cqB, b.cScB, g.uNHhd)
+			if w8AttnRows {
+				e.Dispatch(r.pW8Rows[B], H*32, 32, L.oW, L.oS, b.cqB, b.cScB, b.xB, g.uNHhd, r.uH, b.uCount[B], b.noBias, b.uMode[2])
+			} else if w8Attn { // int8 slice 3: decode's o-proj + residual (gemv_w8a8_sa_resid) once per row
+				for m := range B {
+					e.DispatchTG(r.pSAResid, H*32, 256, nHhd*2, L.oW, L.oS, b.cqB.At(m*nHhd), b.cScB.At(4*m), f32(b.xB, m, H), g.uNHhd)
+				}
+			} else {
+				pack(e, b.cqB, nHhd, g.uNHhd)
+				e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
+			}
+		}
+		if r.q4kLane { // norm, fused gate|up, SwiGLU, down + residual, all f32
+			e.Dispatch(r.pRmsF32OutRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.axB, r.uH, r.uEps, r.uAddOne)
+			r.q4kStepGemv(e, B, L.guSegs, Buffer{}, b.axB, H, b.guB, 2*I, r.uH)
+			e.Dispatch(r.pSwF32Rows, B*I, 256, b.guB, b.guB, b.swB, r.uI, r.uAct, b.uM)
+			r.q4kStepGemv(e, B, L.dSegs, Buffer{}, b.swB, I, b.xB, H, r.uI, true)
+			continue
 		}
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
 		if w8Rows {
@@ -554,9 +647,19 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.noHeadSteps++
 		return nil, nil, nil
 	}
-	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, r.finalNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
-	e.Dispatch(b.packLM, H*8, 256, b.aqB, b.aTp, b.uM, r.uH)
-	e.DispatchTG(b.lm, r.V/128*128, 128, 0, r.lmW, r.lmS, b.aTp, b.aScB, b.logitsB, r.uH, b.uV, b.uM)
+	if r.q4kLane { // decode's head (gemv_w8f32_head) on each row's f32 final norm
+		e.Dispatch(r.pRmsF32OutRows, B*tgReduceNorm, tgReduceNorm, b.xB, r.finalNorm, b.axB, r.uH, r.uEps, r.uAddOne)
+		for m, q := range seqs {
+			if out == multiLastRow && m != B-1 && q.draw == nil {
+				continue // R-19: only the last row is read
+			}
+			e.Dispatch(r.pGemvW8, r.V*32, 32, f32(b.axB, m, H), r.aSc, r.lmW, r.lmS, f32(b.logitsB, m, r.V), r.uH)
+		}
+	} else {
+		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, r.finalNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(b.packLM, H*8, 256, b.aqB, b.aTp, b.uM, r.uH)
+		e.DispatchTG(b.lm, r.V/128*128, 128, 0, r.lmW, r.lmS, b.aTp, b.aScB, b.logitsB, r.uH, b.uV, b.uM)
+	}
 	// Device draws: ForwardSample's two gumbel dispatches, exactly, on each drawing row of logitsB (the same bits as
 	// r.logits would hold) with that row's uniforms. The partial buffers are reused row after row — dispatches in one
 	// encoder run in order.
@@ -648,6 +751,36 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	return logits, ids, nil
 }
 
+// q4kStepGemv is q4kGemv for the B rows of a batched step: activation row m at ax + m*lda floats, output row m at
+// out + m*ldo, each segment into its own rows of every output row, each weight row read once for all B rows. A non-empty
+// bias is added per row, as decode's bias variant does; resid accumulates. Every row is decode's arithmetic
+// (batch_rows.go, q4kRowsSrc).
+func (r *resident) q4kStepGemv(e *Encoder, B int, segs []q4kSeg, bias, ax Buffer, lda int, out Buffer, ldo int, uK Buffer, resid ...bool) {
+	b := r.batch
+	mode, bs := b.uMode[0], b.noBias
+	switch {
+	case len(resid) > 0 && resid[0]:
+		mode = b.uMode[2]
+	case bias != (Buffer{}):
+		mode = b.uMode[1]
+	}
+	uLda, uLdo := b.uLd[lda], b.uLd[ldo]
+	if uLda == (Buffer{}) || uLdo == (Buffer{}) {
+		panic(fmt.Sprintf("metal: q4k step: no stride uniform for %d or %d", lda, ldo))
+	}
+	for _, sg := range segs {
+		o := out.At(sg.off * 4)
+		if bias != (Buffer{}) {
+			bs = bias.At(sg.off * 4)
+		}
+		if sg.q4k {
+			e.Dispatch(r.pQ4KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+		} else {
+			e.Dispatch(r.pW8F32Rows[B], sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+		}
+	}
+}
+
 // logitTransform reports whether a step's logits row is transformed on the host before it is returned (a final softcap
 // or a logit scale), which the device argmax over the raw row would not see.
 func (r *resident) logitTransform() bool {
@@ -672,12 +805,12 @@ func (r *resident) transformedRow(raw []float32) []float32 {
 
 // BatchGreedyDraw is decoder.ResidentBatchGreedy's (E-P08): a step returns a Greedy draw row's argmax id, the argmax of
 // the row forwardMulti would have returned, first maximum on a tie.
-func (a *metalResident) BatchGreedyDraw() bool { return a.r.batch != nil }
+func (a *metalResident) BatchGreedyDraw() bool { return a.r.batch != nil && len(a.r.kvSlotBufs) >= 2 }
 
 // BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
 // of batchMaxSeqs and the slot count), or (0, 0) when this resident cannot batch.
 func (a *metalResident) BatchStepRange() (lo, hi int) {
-	if a.r.batch == nil {
+	if a.r.batch == nil || len(a.r.kvSlotBufs) < 2 {
 		return 0, 0
 	}
 	return batchMinSeqs, min(batchMaxSeqs, len(a.r.kvSlotBufs))
@@ -709,10 +842,17 @@ var (
 	_ decoder.VerifyCostReporter = (*metalResident)(nil)
 )
 
+// stepPrefill reports whether a prompt can prefill on the step kernels: the step exists and no logit transform separates
+// its rows from Forward's. One KV slot is enough, since a prompt is one sequence's consecutive rows.
+func (a *metalResident) stepPrefill() bool {
+	return a.r != nil && a.r.batch != nil && len(a.r.kvSlotBufs) > 0 && a.r.finalSoftcap == 0 && (a.r.logitScale == 0 || a.r.logitScale == 1)
+}
+
 // VerifyCost (decoder.VerifyCostReporter): the argmax-only verify's cost curve when this resident can run it on the
-// step kernels, nil otherwise.
+// step kernels, nil otherwise. It needs two KV slots: a one-slot resident prefills on the step but gives speculation no
+// verify cost, and enabling one there is its own decision with its own gate.
 func (a *metalResident) VerifyCost() []float64 {
-	if a.r == nil || a.r.batch == nil || len(a.r.kvSlotBufs) == 0 || a.r.finalSoftcap > 0 || (a.r.logitScale != 0 && a.r.logitScale != 1) {
+	if !a.stepPrefill() || len(a.r.kvSlotBufs) < 2 {
 		return nil
 	}
 	return stepVerifyCost
@@ -769,15 +909,18 @@ const promptStepMaxAboveFloor = 32
 // longer than promptStepMaxAboveFloor.
 var promptStepAboveFloor = false
 
-// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos: the resident runs the step-kernel
-// verify (VerifyCost: the batched step exists, and no logit transform separates its rows from Forward's), and the prompt ends
+// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos: the resident prefills on the step
+// (stepPrefill: the batched step exists, and no logit transform separates its rows from Forward's), and the prompt ends
 // below the fast-prefill floor, where the batched pass declines and the decoder would run the sequential loop. The step's
 // rows are that loop's bits, so this route changes no output. Above the floor the route is promptStepAboveFloor, off: it
 // would replace the pass's numerics with decode's, and a chunked prefill's short tail must equal the whole pass
 // (TestMC5_prefillChunkInvariance; docs/code-notes/metal.md#promptStepOK).
 func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
-	if a.r.promptStepOff || n < 2 || a.VerifyCost() == nil {
+	if a.r.promptStepOff || n < 2 || !a.stepPrefill() {
 		return false
+	}
+	if !a.r.prefillOK { // the pass never runs here (the q4k lane), so every prompt would otherwise take the sequential loop
+		return true
 	}
 	if floor > 0 && startPos+n < max(floor, metalStepPrefillCeiling) { // A-P02: the step keeps prompts where it beats the pass
 		return true

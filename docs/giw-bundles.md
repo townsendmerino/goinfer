@@ -39,7 +39,7 @@ sidecar `.giw` cache on first use, so the one-time cost is paid once rather than
 
 **Peak RAM during that one-time build** bounds to roughly one layer for every family — the
 weights are read, quantized, written and freed one layer at a time rather than all held resident
-at once (S2, `docs/tasks/task-never-swap-2026-09.md`; measured on a real `gpt-oss-20b` GGUF,
+at once (S2, `docs/completed/task-never-swap-2026-09.md`; measured on a real `gpt-oss-20b` GGUF,
 `docs/measurements/transcode-streaming-2026-09-23.md`: swap-used stayed flat through the whole
 transcode). gemma4 was the last family to get there (2026-09-24,
 `docs/measurements/transcode-streaming-gemma4-2026-09-24.md`): the 26B-A4B's transcode went from
@@ -74,12 +74,12 @@ Other systems load as before; none is measured. The measurements and gates are i
 ## One version
 
 A `.giw` is a cache of its source, so the format has **one version at a time**. This build writes weights format
-**v16** in bundle frame **v3**, and reads only those. There is no compatibility window in either direction.
+**v17** in bundle frame **v3**, and reads only those. There is no compatibility window in either direction.
 
 - **A sidecar rebuilds itself.** A sidecar from another version fails its freshness check on the first load (the
   reader refuses it on its header, before reading the rest of the file) and is transcoded again from the source
   beside it, once. A format bump therefore costs each cached model one transcode.
-- **The sidecar's name carries the version**: `<model>.<quant>[.e4h].<target>.v16.giw`. Two builds at different
+- **The sidecar's name carries the version**: `<model>.<quant>[.e4h].<target>.v17.giw`. Two builds at different
   formats on one box (a release binary and a dev build) each keep their own file, where one shared name made each
   switch rewrite the other's. A sidecar an earlier build left under the unversioned name is used when it already loads
   as this build's format: it is hard-linked to the versioned name (no copy, no transcode) and the old name stays. One in
@@ -87,11 +87,25 @@ A `.giw` is a cache of its source, so the format has **one version at a time**. 
   sidecar**, because another build may be using it; each is as large as the model, so remove the ones for versions you no
   longer run (`ls <model>.*.giw`).
 - **A hand-built or embedded bundle is refused.** A `.giw` named with `--model`, or built into a binary, has no
-  source for the loader to rebuild from. It fails with `format vN, this build reads v16 — delete the sidecar (it
+  source for the loader to rebuild from. It fails with `format vN, this build reads v17 — delete the sidecar (it
   rebuilds) or rebuild with go run ./cmd/prequant …`, and has to be rebuilt with `cmd/prequant`.
 - **Why not read old versions:** the reader had accepted thirteen layouts, each with its own gates, tests and
   test-only writer switches, and a file in an old layout loaded at a real cost (scales copied to the heap) with
   nothing to say so. The `.giw-kv` session snapshots already work this way.
+
+### From v17: a new encoding needs no new version
+
+- **Every tensor record starts with its encoding.** A weight matrix starts with its kind byte (1 f32, 2 int8, 3 and 5
+  int4, 6 a fused int4 group). A standalone array (a norm, a bias, an f32 Mamba projection) starts with encoding 1, f32.
+- **A reader refuses only the encoding it does not read.** That tensor's encoding is named in a `*SerializeError`, and a
+  sidecar is rebuilt as for a version mismatch. A bundle that never uses the new encoding still loads.
+- **So a new encoding is added at v17,** without a v18. B25's q4k form is that case (`docs/queue-engineering.md`): a new
+  weight-matrix kind for Q4_K super-blocks.
+  - An older build refuses a sidecar that uses it and writes its own in place, under the same name.
+  - The newer build reads that one, since it reads every older encoding.
+- **What it does not cover:** a change to the layout itself, such as a new per-layer field or a new header field. A reader
+  cannot skip a record it cannot parse, so that still needs a new version.
+- **The KV snapshot (`.giw-kv`) is unchanged:** it keeps its own version and untagged arrays.
 
 What the earlier versions were, and the measurements that motivated alignment, fused groups and stored f16 scales,
 are in [`code-notes/decoder.md`](code-notes/decoder.md) under "The .giw format before v16".

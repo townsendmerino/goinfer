@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -38,16 +39,24 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 	if err != nil {
 		return nil, fmt.Errorf("constrain: tool name: %w", err)
 	}
-	obj := fmt.Sprintf(
-		`{"type":"object","additionalProperties":false,"required":["name",%q],"properties":{"name":{"const":%s},%q:%s}}`,
-		argsKey, name, argsKey, paramSchema)
-	doc := obj
-	if array {
-		doc = fmt.Sprintf(`{"type":"array","minItems":1,"maxItems":1,"items":%s}`, obj)
-	}
-	n, err := compile(mustMap(doc), 0)
-	if err != nil {
+	if err := validPropertyName(argsKey); err != nil {
 		return nil, fmt.Errorf("constrain: tool grammar: %w", err)
+	}
+	// The parameters compile leniently (compiler): an assertion the grammar cannot check is the tool's to validate, and a
+	// shape it cannot express is any JSON value. The call's form, its name and its keys stay constrained either way.
+	depth := 1
+	if array {
+		depth = 2
+	}
+	args, _ := compiler{lenient: true}.compile(mustMap(string(paramSchema)), depth)
+	if args.kind == kAny {
+		args = anyObjNode // a call's arguments are an object, whatever the schema could not say
+	}
+	props := []propNode{{name: "name", schema: &node{kind: kEnum, enum: [][]byte{name}}}, {name: argsKey, schema: args}}
+	sort.Slice(props, func(i, j int) bool { return props[i].name < props[j].name })
+	n := &node{kind: kObject, props: props, requiredMask: 0b11}
+	if array {
+		n = &node{kind: kArray, items: n, minItems: 1, maxItems: 1}
 	}
 	g := &toolGrammar{prefix: prefix, suffix: suffix, inner: &schemaGrammar{root: n}}
 	g.Reset()

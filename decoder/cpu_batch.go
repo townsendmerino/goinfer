@@ -56,6 +56,18 @@ func (m *Model) EnableCPUBatch(n int) bool {
 	return true
 }
 
+// CPUBatchKVBypass is why this model's decode tokens bypass the CPU batcher although EnableCPUBatch engaged it: its CPU cache is f16 or
+// int8, which decodeMultiStep does not read (cpuBatchCacheEligible), so each generation decodes on its own at that precision. "" when the
+// cache is f32. Batched decode explicitly on with such a cache refuses the load instead (ResolveKV).
+func (m *Model) CPUBatchKVBypass() string { return cpuBatchKVBypass(m.CPUKVPrecision()) }
+
+func cpuBatchKVBypass(prec string) string {
+	if prec != kvPrecF16 && prec != kvPrecI8 {
+		return ""
+	}
+	return "the " + prec + " KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4"
+}
+
 // CPUBatchActive reports whether EnableCPUBatch turned batching on.
 func (m *Model) CPUBatchActive() bool { return m.cpuBatch != nil }
 
@@ -107,16 +119,14 @@ func runStep(f func() ([][]float32, error)) (out [][]float32, err error) {
 // committed family it admits to bit-identity with the production forward.
 func (m *Model) cpuBatchModelEligible() error {
 	a := m.w.arch
-	if _, own := a.ownForward(); own {
+	if a.ownLoopFamily() {
 		return fmt.Errorf("cpu batch: %s has its own forward", a.Name)
 	}
-	if a.MoE != nil || a.NonGatedMLP || a.LearnedPosEmbed || a.hasAttnOutputGate() || m.layerPager != nil || m.w.Embed.Rows() == 0 {
+	if m.layerPager != nil || m.w.Embed.Rows() == 0 {
 		return fmt.Errorf("cpu batch: %s is not a plain gated dense family", a.Name)
 	}
-	for l := 0; l < a.NumLayers; l++ {
-		if p := a.normPlacementAt(l); p == NormSandwich4 || p == NormPostOnly || p == NormParallel {
-			return fmt.Errorf("cpu batch: layer %d norm placement %v", l, p)
-		}
+	if err := m.program().multiStepEligible(); err != nil {
+		return fmt.Errorf("cpu batch: %s: %w", a.Name, err)
 	}
 	return nil
 }
@@ -124,7 +134,7 @@ func (m *Model) cpuBatchModelEligible() error {
 // cpuBatchCacheEligible is decodeMultiStep's per-cache scope: f32 append-forever KV (no sliding-window ring, no int8
 // KV) with no adapter, tree mask or manual position. A token on any other cache runs production's own forward.
 func cpuBatchCacheEligible(c *KVCache) error {
-	if c == nil || c.scr == nil || c.localAny || c.quant == kvI8 || c.lora != nil || c.treeMask != nil || c.manualPos {
+	if c == nil || c.scr == nil || c.localAny || c.quant.widened() || c.lora != nil || c.treeMask != nil || c.manualPos {
 		return fmt.Errorf("cpu batch: not a plain f32 append-forever cache")
 	}
 	return nil
@@ -175,6 +185,36 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 			return nil, fmt.Errorf("cache %d: %w", i, err)
 		}
 	}
+	if programWalkOffForTest {
+		return m.decodeMultiStepLoop(ids, caches)
+	}
+	prog := m.program()
+	hidden, vocab := m.w.arch.HiddenDim, m.w.arch.VocabSize
+	h := make([]float32, len(ids)*hidden)
+	for b, id := range ids {
+		hb := h[b*hidden : (b+1)*hidden]
+		m.w.Embed.Row(id, hb)
+		if s := prog.embed.Scale; s != 0 && s != 1 {
+			for j := range hb {
+				hb[j] *= float32(s)
+			}
+		}
+	}
+	h, err := m.walkMulti(prog, h, caches)
+	if err != nil {
+		return nil, err
+	}
+	flat := m.lmHeadN(h, len(ids))
+	out := make([][]float32, len(ids))
+	for b := range out {
+		out[b] = flat[b*vocab : (b+1)*vocab]
+	}
+	return out, nil
+}
+
+// decodeMultiStepLoop is the multi-sequence step the program walker replaced, kept for gate S's in-process A/B
+// (programWalkOffForTest) until OP3's last step. Its caller has checked eligibility.
+func (m *Model) decodeMultiStepLoop(ids []int, caches []*KVCache) ([][]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	B := len(ids)

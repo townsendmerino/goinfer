@@ -91,6 +91,8 @@ func TestAttentionPrefillFused(t *testing.T) {
 
 			exact := dOutExact.U16s()
 			fused := dOutFused.U16s()
+			recordAttnDigest(t, "attention_prefill", exact)
+			recordAttnDigest(t, "attention_prefill_fused", fused)
 
 			var dot, na, nb, maxAbs float64
 			for i := range exact {

@@ -27,7 +27,12 @@ type settings struct {
 	Key    string // the bearer token the agent sends; "goinfer" when the server has none
 	Model  string
 	Window int // context_window from /v1/models
+	MaxPos int // max_positions from /v1/models, the model's own maximum context; 0 when the server does not publish it
 	Output int // the output limit told to the agent
+	// Fast is the alias the server advertises for the model (fast_model in /v1/models): the same weights with thinking off and
+	// nothing else different. "" when the server does not advertise one (an older server, or -fast-alias=false), and then the
+	// agent's small-model settings are left as they were.
+	Fast string
 }
 
 // harness is one coding agent connect can configure.
@@ -43,11 +48,24 @@ type harness struct {
 	patch func(old []byte, s settings) ([]byte, error)
 	// after is what the person still has to do: the environment to set, the command to run.
 	after func(s settings) string
+	// smallModel names the agent's small-model setting that points at the server's fast alias, "" when the agent has none.
+	smallModel string
+}
+
+// claudeCodeModelSlots is every variable Claude Code reads a model name from, as its documentation lists them
+// (https://code.claude.com/docs/en/model-config, https://code.claude.com/docs/en/env-vars). connect sets each to the
+// served model: a slot left unset resolves to an Anthropic model id, which the server answers with 404, so an alias,
+// a subagent or a background request that reads it fails. ANTHROPIC_SMALL_FAST_MODEL is deprecated in favour of
+// ANTHROPIC_DEFAULT_HAIKU_MODEL and set as well, for a version that still reads it.
+var claudeCodeModelSlots = []string{
+	"ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_MODEL",
+	"ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	"CLAUDE_CODE_SUBAGENT_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
 }
 
 var harnesses = map[string]harness{
 	"claude-code": {
-		Name: "Claude Code", FirstRequest: 20199, Version: "2.1.296",
+		Name: "Claude Code", FirstRequest: 20199, Version: "2.1.296", smallModel: "small/fast model",
 		path: func(home, _ string, _ bool) string { return filepath.Join(home, ".claude", "settings.json") },
 		patch: func(old []byte, s settings) ([]byte, error) {
 			return patchJSON(old, func(o *object) error {
@@ -68,6 +86,18 @@ var harnesses = map[string]harness{
 					{"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"}} {
 					env.set(kv[0], kv[1])
 				}
+				for _, slot := range claudeCodeModelSlots {
+					env.set(slot, s.Model)
+				}
+				// A subagent whose definition names a model of its own would otherwise ask for it; the server serves one.
+				env.set("CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "1")
+				// The small/fast model's two settings name the server's fast alias, when it has one: session titles and the other
+				// bookkeeping requests Claude Code sends there then run with thinking off and a short output. The main model's
+				// settings, and every other slot, stay the served model.
+				if s.Fast != "" {
+					env.set("ANTHROPIC_DEFAULT_HAIKU_MODEL", s.Fast)
+					env.set("ANTHROPIC_SMALL_FAST_MODEL", s.Fast)
+				}
 				o.set("env", env)
 				return nil
 			})
@@ -75,7 +105,7 @@ var harnesses = map[string]harness{
 		after: func(settings) string { return "run: claude" },
 	},
 	"opencode": {
-		Name: "opencode", FirstRequest: 7165, Version: "1.19.0",
+		Name: "opencode", FirstRequest: 7165, Version: "1.19.0", smallModel: "small_model",
 		path: func(home, dir string, global bool) string {
 			if global {
 				return filepath.Join(home, ".config", "opencode", "opencode.json")
@@ -92,12 +122,22 @@ var harnesses = map[string]harness{
 					return err
 				}
 				// Without limit.context opencode never compacts, and runs the conversation into the window.
+				models := map[string]any{s.Model: map[string]any{"name": s.Model, "limit": map[string]any{"context": s.Window, "output": s.Output}}}
+				if s.Fast != "" {
+					models[s.Fast] = map[string]any{"name": s.Fast, "limit": map[string]any{"context": s.Window, "output": s.Output}}
+				}
 				prov.set("goinfer", map[string]any{
 					"npm": "@ai-sdk/openai-compatible", "name": "goinfer",
 					"options": map[string]any{"baseURL": s.URL + "/v1", "apiKey": s.Key},
-					"models":  map[string]any{s.Model: map[string]any{"name": s.Model, "limit": map[string]any{"context": s.Window, "output": s.Output}}},
+					"models":  models,
 				})
 				o.set("provider", prov)
+				// opencode names its titles with small_model. Pointing it at the server's fast alias keeps them off the main model's
+				// thinking; the main model is chosen on the command line, as before, and is not set here. This replaces an existing
+				// small_model; -undo restores the file.
+				if s.Fast != "" {
+					o.set("small_model", "goinfer/"+s.Fast)
+				}
 				return nil
 			})
 		},
@@ -181,6 +221,8 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 		Data []struct {
 			ID     string `json:"id"`
 			Window int    `json:"context_window"`
+			MaxPos int    `json:"max_positions"`
+			Fast   string `json:"fast_model"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &list); err != nil {
@@ -205,6 +247,8 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 			if s.Key == "" {
 				s.Key = "goinfer" // agents refuse an empty key; a server with none accepts any
 			}
+			s.MaxPos = m.MaxPos
+			s.Fast = m.Fast
 			return s, nil
 		}
 	}
@@ -386,15 +430,20 @@ func Run(args []string, self string, out io.Writer) int {
 // connect prints the configuration for s and, with doWrite, patches path. It refuses to write a configuration whose
 // agent cannot fit its first request in the window, unless force.
 func connect(out io.Writer, name string, h harness, path string, s settings, doWrite, force bool) int {
+	s = claudeCodeSettings(name, h, s)
 	verdict := h.fit(s.Window)
 	fmt.Fprintf(out, "%s -> %s, model %s, context window %d tokens (output limit %d)\n", h.Name, s.URL, s.Model, s.Window, s.Output)
 	fmt.Fprintf(out, "first request: %d tokens (%s %s, measured) — %s in this window\n", h.FirstRequest, h.Name, h.Version, verdict)
+	if s.Fast != "" && h.smallModel != "" {
+		fmt.Fprintf(out, "%s: %s (the same model, thinking off), for the agent's titles and other small requests\n", h.smallModel, s.Fast)
+	}
 	switch verdict {
 	case "marginal":
 		fmt.Fprintf(out, "  the first request fits, with less than a quarter of it to spare: the session will compact almost at once\n")
 	case "not viable":
 		fmt.Fprintf(out, "  the first request does not fit: restart goinfer-serve with -ctx %d or more\n", h.FirstRequest+h.FirstRequest/4)
 	}
+	fmt.Fprint(out, claudeCodeWarnings(name, h, s))
 	old, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		fmt.Fprintf(out, "connect: %v\n", err)

@@ -1,0 +1,10 @@
+=== 17:27:33 PDT / 00:27:33 UTC START 4096
+  17:28:06 PDT / 00:28:06 UTC 4096 tokens: 28.5 s, 143.5 tok/s, reused 0; peak footprint 1626 MB; vm deltas {'Pageouts': 4, 'Swapins': 0, 'Swapouts': 0, 'Compressions': 59462, 'Decompressions': 30091, 'Pages occupied by compressor': -40370, 'Pages stored in compressor': -59371, 'Pages free': 155779}; swap total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted) -> total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)
+=== 17:28:06 PDT / 00:28:06 UTC END 4096
+=== 17:28:06 PDT / 00:28:06 UTC START 6144
+  17:30:52 PDT / 00:30:52 UTC 6144 tokens: 164.1 s, 37.5 tok/s, reused 0; peak footprint 1358 MB; vm deltas {'Pageouts': 0, 'Swapins': 0, 'Swapouts': 0, 'Compressions': 0, 'Decompressions': 9371, 'Pages occupied by compressor': -3476, 'Pages stored in compressor': -9394, 'Pages free': -44911}; swap total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted) -> total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)
+=== 17:30:52 PDT / 00:30:52 UTC END 6144
+=== 17:30:52 PDT / 00:30:52 UTC START 8192
+  17:34:51 PDT / 00:34:51 UTC 8192 tokens: 238.6 s, 34.3 tok/s, reused 0; peak footprint 1564 MB; vm deltas {'Pageouts': 0, 'Swapins': 8, 'Swapouts': 0, 'Compressions': 0, 'Decompressions': 8122, 'Pages occupied by compressor': -2455, 'Pages stored in compressor': -7894, 'Pages free': -99604}; swap total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted) -> total = 1024.00M  used = 458.31M  free = 565.69M  (encrypted)
+=== 17:34:51 PDT / 00:34:51 UTC END 8192
+records: /Users/francistownsend-merino/goinfer-bench/p28/results-step2-2026-10-17-1727

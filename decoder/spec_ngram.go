@@ -387,7 +387,8 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				// residentAcquireSlot rebinds the resident to the slot it picks, so the pick and the forget below need the resident to
 				// themselves, as generateInto's MC3 prefill does (model.go); neither is safe bare.
 				target.batcher.exclusive(func() {
-					reuseFrom, mc3Slot = target.residentAcquireSlot(prompt, nil, nil, target.batcher.busySlots())
+					acq := target.residentAcquireIn(prompt, nil, nil, target.batcher.busySlots(), kvScopeOf(ctx))
+					reuseFrom, mc3Slot = acq.reuse, acq.slot
 					if mc3Slot >= 0 {
 						target.batcher.markSlot(mc3Slot, true)
 						target.residentForgetIDs()
@@ -415,7 +416,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				}
 				g.PrefillReused = reuseFrom
 			} else if resident {
-				reuseFrom = target.residentAcquire(prompt, nil, nil) // the n-gram target never binds an adapter; MC1: binds the KV slot
+				reuseFrom = target.residentAcquireIn(prompt, nil, nil, nil, kvScopeOf(ctx)).reuse // the n-gram target never binds an adapter; MC1: binds the KV slot
 				target.residentForgetIDs()
 				if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false); err != nil {
 					g.err = err

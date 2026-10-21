@@ -3,14 +3,12 @@
 package cuda
 
 import (
-	"errors"
 	"fmt"
 	"github.com/townsendmerino/goinfer/decoder"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 )
@@ -217,28 +215,6 @@ func TestKV3_batchedPrefillPastTheSpanBound_real1p5B(t *testing.T) {
 	}
 }
 
-// TestKV3_pastTheSpanBound_exactStillDeclines: with the fused kernel off (the fast-prefill floor above every prompt) the same pass is
-// the exact kernel's, past its bound, and still declines, by name. It is the gate's negative arm (the guard can go red) and the
-// statement of what keeps the bound: a pass the fused kernel does not serve.
-func TestKV3_pastTheSpanBound_exactStillDeclines(t *testing.T) {
-	const base = "../testdata/llama-attnfa-tiny"
-	requireDeviceAndFixture(t, base)
-	g := kv0LoadCtx(t, kv3LongContextCopy(t, base, 32768), "f16", 17000, kv0RandomTokens)
-	e := g.embs(g.tokens(12400, 1))
-	g.floorKnob("1000000")
-	_, err := g.r.PrefillLast(g.ctx, e, 0)
-	if err == nil {
-		t.Fatal("a 12,400-token prompt on the exact kernels prefilled in batched passes: the exact kernel's span bound is not being applied")
-	}
-	if !errors.Is(err, errPrefillDeclined) || !strings.Contains(err.Error(), "layer 0") {
-		t.Errorf("the decline must wrap errPrefillDeclined and name the layer: %v", err)
-	}
-	g.floorKnob("")
-	if _, err := g.r.PrefillLast(g.ctx, e, 0); err != nil {
-		t.Errorf("with the fused kernel on, the same prompt must prefill: %v", err)
-	}
-}
-
 // TestKV3_prefillScratchBytes_matchesThePass holds PrefillScratchBytes to the buffers prefillCore asks for: the figure admission
 // trusts is the sum of each scratch buffer after the allocator's rounding, not an estimate, and it is never under the pass.
 func TestKV3_prefillScratchBytes_matchesThePass(t *testing.T) {
@@ -271,6 +247,9 @@ func TestKV3_residentReportsItsChunks(t *testing.T) {
 	}
 	if _, ok := any(g.r).(decoder.ResidentPrefillTailMin); !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentPrefillTailMin")
+	}
+	if _, ok := any(g.r).(decoder.ResidentPrefillSpanScratch); !ok {
+		t.Fatal("cudaResident does not satisfy decoder.ResidentPrefillSpanScratch")
 	}
 	if c := pc.PrefillChunkRows(); c != 512 || c%64 != 0 {
 		t.Errorf("PrefillChunkRows %d, want the default 512 (a multiple of the block size 64)", c)
@@ -314,4 +293,56 @@ func TestKV3_admissionPricesTheChunk(t *testing.T) {
 		t.Error("a request whose chunk does not fit was admitted")
 	}
 	restore()
+}
+
+// TestKV3_chunkerKeepsPassStartsOnTheGrid: at the default chunk, from a start on the 64-row grid, every pass of a prefill starts on
+// the grid and the last has at least 16 rows, whatever the prompt's length; a chunk too narrow to give up 64 rows still ends in a
+// pass of 16. kv0Passes is the chunker's plan (TestKV0_prefillInvariance holds prefillChunked to it by launch counts). Struct-only.
+func TestKV3_chunkerKeepsPassStartsOnTheGrid(t *testing.T) {
+	for _, start := range []int{0, 64, 12288} {
+		for M := 513; M <= 2200; M++ {
+			ps := kv0Passes(start, M, 512)
+			rows := 0
+			for i, p := range ps {
+				if p.start%prefillAlignRows != 0 {
+					t.Fatalf("start=%d M=%d: pass %d starts at %d, off the %d-row grid", start, M, i, p.start, prefillAlignRows)
+				}
+				if p.m < attnFusedMinRows || p.m > 512 {
+					t.Fatalf("start=%d M=%d: pass %d has %d rows", start, M, i, p.m)
+				}
+				rows += p.m
+			}
+			if rows != M {
+				t.Fatalf("start=%d M=%d: the passes cover %d rows", start, M, rows)
+			}
+		}
+	}
+	if ps := kv0Passes(0, 1030, 512); len(ps) != 3 || ps[1].m != 448 || ps[2].start != 960 || ps[2].m != 70 {
+		t.Errorf("1,030 rows at chunk 512: %+v, want 512 + 448 + 70 with the last pass at 960", ps)
+	}
+	for M := 65; M <= 400; M++ { // a chunk of 64 cannot give up a whole block
+		ps := kv0Passes(0, M, 64)
+		if last := ps[len(ps)-1]; last.m < attnFusedMinRows {
+			t.Fatalf("chunk 64, M=%d: last pass of %d rows", M, last.m)
+		}
+	}
+	// A chunk under 32 cannot keep 16 rows on both sides of the cut: no pass may be empty, and from 32 up the last pass has 16.
+	for chunk := 1; chunk <= 79; chunk++ {
+		for M := chunk + 1; M <= 300; M++ {
+			ps := kv0Passes(0, M, chunk)
+			rows := 0
+			for i, p := range ps {
+				if p.m < 1 || p.m > chunk {
+					t.Fatalf("chunk %d, M=%d: pass %d has %d rows", chunk, M, i, p.m)
+				}
+				rows += p.m
+			}
+			if rows != M {
+				t.Fatalf("chunk %d, M=%d: the passes cover %d rows", chunk, M, rows)
+			}
+			if last := ps[len(ps)-1]; chunk >= 2*attnFusedMinRows && last.m < attnFusedMinRows {
+				t.Fatalf("chunk %d, M=%d: last pass of %d rows", chunk, M, last.m)
+			}
+		}
+	}
 }

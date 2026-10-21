@@ -54,8 +54,8 @@ func TestPromptHidden_matchesHF(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.Close()
-			if _, own := m.w.arch.ownForward(); !own {
-				t.Fatalf("%s is expected to have its own layer loop (the path HiddenLast refuses); the test would not cover it", fx.Checkpoint)
+			if m.w.arch.qwen35 == nil {
+				t.Fatalf("%s is expected to be a Qwen3.5-family model; the test would not cover that path", fx.Checkpoint)
 			}
 			for i, p := range fx.Prompts {
 				h, err := m.PromptHidden(context.Background(), p.IDs)

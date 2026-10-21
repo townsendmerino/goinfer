@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The A/A of docs/tasks/task-cuda-windowed-kv-2026-10.md, section 10: does the windowed-KV branch change the DEFAULT path (the option off)?
+"""The A/A of docs/completed/task-cuda-windowed-kv-2026-10.md, section 10: does the windowed-KV branch change the DEFAULT path (the option off)?
 
     python3 aa_default_path.py <serve-main> <serve-branch> <model-dir> <out-dir> [--smoke]
 

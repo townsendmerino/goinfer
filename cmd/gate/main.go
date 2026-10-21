@@ -63,6 +63,10 @@ usage:
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
+  gate cuda-heavy [-list] [-group a,b]             gpu's heavy main group, one process per model family: the partition, or
+                                                   chosen groups run alone with each test binary's VmHWM and peak VmSwap
+  gate ptx [-keep DIR]                             every cuda/testdata/*.ptx rebuilt from its .cu at the NVRTC it records, compared
+                                                   byte for byte; needs NVRTC, no GPU (GOINFER_NVRTC_DIRS names the installs)
   gate release [-offline] vX.Y.Z                   the pre-flight as rows: done / OWED / UNKNOWN each, with its record; exit 0 only when all are done
   gate changelog [-base TAG] [-section S]          new routes, flags, families and the aikit pin since TAG that the CHANGELOG section does not name
   gate gpu-records [-head REV] [-dir DIR]          which backends have a record that still qualifies at REV (exit 1 if one does not)
@@ -70,7 +74,7 @@ usage:
   gate quick [-base REF] [-files a,b] [-count1] [-j N] [-select] [-v]
                                                    the day loop: gofmt, vet, staticcheck and the tests that can
                                                    observe the diff, one go test per package in parallel (TE7)
-  gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu] [-families a,b] [-assets tiny|real]
+  gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu|cuda] [-families a,b] [-assets tiny|real]
                [-quant q,…] [-steps N] [-only asset,…] [-keep]
                                                    inherit validation by identity (TE6(b)): dump full logits of
                                                    each family's parity prompt at both revs, compare bytes
@@ -150,6 +154,10 @@ func run(argv []string, w io.Writer) int {
 	if name == "gpu-records" {
 		return runGPURecords(rest, w)
 	}
+	// `cuda-heavy` runs the heavy tier's main-group processes alone (heavy_groups.go).
+	if name == "cuda-heavy" {
+		return runCUDAHeavy(rest, w)
+	}
 	// `identity` takes two revs as positionals, interleaved with its flags (identity.go).
 	if name == "identity" {
 		return runIdentity(rest, w)
@@ -171,6 +179,7 @@ func run(argv []string, w io.Writer) int {
 	logDir := fs.String("logdir", os.TempDir(), "directory for raw go test -json logs")
 	recordDir := fs.String("record", gpuRecordDirDefault, "gpu and parity: directory the run's JSON record is written to (empty: none; parity's default is "+parityRecordDirDefault+"); the release command reads it")
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
+	keep := fs.String("keep", "", "ptx: directory each rebuilt .ptx that differs from its committed form is written to (empty: none)")
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
@@ -180,6 +189,9 @@ func run(argv []string, w io.Writer) int {
 	// rather than pretending to be a gateConfig with an unusual report.
 	if name == "gpu" {
 		return runGPU(w, *logDir, *recordDir)
+	}
+	if name == "ptx" {
+		return runPTX(w, *keep)
 	}
 	if name == "selector" {
 		return selectorCoverage(w)

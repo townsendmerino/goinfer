@@ -1,0 +1,13 @@
+2026-10-17T19:12:39Z provenance
+rev 63038121
+host nobara-pc Linux 7.2.0-202.nobara.fc44.x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+load 1.16 0.50 0.23
+ollama Warning: client version is 0.32.5
+llama-server version: 0.4.0-dev (build 1, commit 427291b)
+2026-10-17T19:12:39Z worktree at 63038121
+2026-10-17T19:12:39Z build
+temp1.0_notrunc sends {'goinfer': {'temperature': 1.0, 'top_p': 1.0, 'top_k': 0}, 'ollama': {'temperature': 1.0, 'top_p': 1.0, 'top_k': 0, 'seed': 1}, 'llamacpp': {'temperature': 1.0, 'top_p': 1.0, 'top_k': 0}}
+=== 2026-10-17T19:12:39Z START notrunc cells
+REFUSED: 1-min load average 1.16 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-10-17T19:12:40Z END rc=1 (1s)

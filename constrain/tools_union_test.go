@@ -133,9 +133,18 @@ func TestToolCallsGrammar_errors(t *testing.T) {
 	if _, err := ToolCallsGrammar("<tool_call>\n", "\n</tool_call>", "arguments", false, nil); err == nil {
 		t.Error("no tools: want an error")
 	}
-	bad := []ToolSpec{{Name: "ok"}, {Name: "bad", Parameters: []byte(`{"type":"object","additionalProperties":true}`)}}
-	if _, err := ToolCallsGrammar("<tool_call>\n", "\n</tool_call>", "arguments", false, bad); err == nil {
-		t.Error("an uncompilable tool schema must fail the whole union, not drop the tool")
+	// A schema the strict compiler refuses no longer fails the union: the tool's arguments compile leniently, and the tool
+	// stays callable rather than dropped.
+	loose := []ToolSpec{{Name: "ok"}, {Name: "free", Parameters: []byte(`{"type":"object","additionalProperties":true}`)}}
+	u, err := ToolCallsGrammar("<tool_call>\n", "\n</tool_call>", "arguments", false, loose)
+	if err != nil {
+		t.Fatalf("a freeform tool failed the union: %v", err)
+	}
+	if !accepts(u, "<tool_call>\n"+`{"name": "free", "arguments": {"any": [1, "two"]}}`+"\n</tool_call>") {
+		t.Error("the freeform tool is not callable")
+	}
+	if accepts(u, "<tool_call>\n"+`{"name": "absent", "arguments": {}}`+"\n</tool_call>") {
+		t.Error("an undeclared tool name was accepted")
 	}
 	dup := []ToolSpec{{Name: "x"}, {Name: "x", Parameters: []byte(`not json`)}}
 	if _, err := ToolCallsGrammar("<tool_call>\n", "\n</tool_call>", "arguments", false, dup); err != nil {

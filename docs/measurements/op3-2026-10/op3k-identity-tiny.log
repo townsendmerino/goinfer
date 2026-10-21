@@ -1,0 +1,309 @@
+[1m== identity provenance ==[0m
+  repo        2b5e1f1f
+  date (UTC)  2026-10-16T17:12:55Z
+  host        Darwin arm64
+  old         2c56d9c6 Merge pull request #55 from townsendmerino/cpu-kv-f16-2026-10
+  new         2b5e1f1f OP3k WIP: Gemma 4 walks the program (opGemma4Attn, Gemma 4's dense GeG
+  backend     cpu
+  mode        logits from each cell's own checkpoint
+  assets      tiny — the forward goldens' fixtures under /Users/francistownsend-merino/tmcode/goinfer, each golden's prompt ids (+ a longer cycled prompt where the context allows)
+  quants      f32,int8int8,int4
+  steps       8 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (none were set) — the code is the only difference
+  build       go build -trimpath; dumper in the root module, GOWORK=off -mod=readonly (CI's root build)
+  run dir     /private/var/folders/m1/sxl522hn2wgbq5rqcxf2dx8m0000gn/T/gate-identity-20261016-101254-1112694124
+  started     10:12:54 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+== identity: 141 cell(s) over 43 family(ies), started 10:12:54 — building 2c56d9c6 and 2b5e1f1f ==
+   built both in 6s (old 5s, new 6s)
+   [1/37] bailing_hybrid     3 cell(s): new1 600ms, old 500ms, new2 100ms — 1.1s total, elapsed 8s (started 10:12:54)
+   [2/37] cohere             3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 8s (started 10:12:54)
+   [3/37] cohere2            3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 8s (started 10:12:54)
+   [4/37] deepseek_v3        3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 8s (started 10:12:54)
+   [5/37] gemma3             3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 8s (started 10:12:54)
+   [6/37] gemma4             15 cell(s): new1 5.1s, old 5.1s, new2 5.4s — 15.6s total, elapsed 24s (started 10:12:54)
+   [7/37] glm4_moe           6 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 24s (started 10:12:54)
+   [8/37] glm_ocr            3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 24s (started 10:12:54)
+   [9/37] gpt-oss            3 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 24s (started 10:12:54)
+   ... identity: 37s elapsed (started 10:12:54), running gpt2 (10/37 families, 9 done)
+   [10/37] gpt2               3 cell(s): new1 5.7s, old 5.6s, new2 5.4s — 16.7s total, elapsed 41s (started 10:12:54)
+   [11/37] granite            3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 41s (started 10:12:54)
+   [12/37] granitemoehybrid   3 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 41s (started 10:12:54)
+   [13/37] internlm2          3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 41s (started 10:12:54)
+   [14/37] kimi_k2            3 cell(s): new1 200ms, old 200ms, new2 200ms — 500ms total, elapsed 42s (started 10:12:54)
+   [15/37] laguna             9 cell(s): new1 100ms, old 100ms, new2 100ms — 300ms total, elapsed 42s (started 10:12:54)
+   [16/37] lfm2               3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 42s (started 10:12:54)
+   [17/37] llama              3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 42s (started 10:12:54)
+   [18/37] llama4_text        3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 42s (started 10:12:54)
+   [19/37] mistral            3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 42s (started 10:12:54)
+   [20/37] mistral3           3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 42s (started 10:12:54)
+   [21/37] mixtral            3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 43s (started 10:12:54)
+   [22/37] nemotron_h         6 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 43s (started 10:12:54)
+   [23/37] olmo3              3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 43s (started 10:12:54)
+   [24/37] gemma              3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 43s (started 10:12:54)
+   [25/37] gemma2             3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 43s (started 10:12:54)
+   [26/37] olmo_hybrid        3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 43s (started 10:12:54)
+   [27/37] phi3               3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 43s (started 10:12:54)
+   [28/37] qwen2_5_vl         3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 43s (started 10:12:54)
+   [29/37] qwen2_moe          3 cell(s): new1 200ms, old 100ms, new2 100ms — 400ms total, elapsed 44s (started 10:12:54)
+   [30/37] qwen3_5            3 cell(s): new1 100ms, old 0s, new2 0s — 100ms total, elapsed 44s (started 10:12:54)
+   [31/37] qwen3_5_moe        6 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 44s (started 10:12:54)
+   [32/37] qwen3_moe          6 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 44s (started 10:12:54)
+   [33/37] qwen3_next         3 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 45s (started 10:12:54)
+   [34/37] qwen3_vl           3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 45s (started 10:12:54)
+   [35/37] qwen3_vl_moe       3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 45s (started 10:12:54)
+   [36/37] smollm3            3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 45s (started 10:12:54)
+   [37/37] spark2_5           3 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 45s (started 10:12:54)
+
+[1m== determinism: the new build (2b5e1f1f) run twice, separate processes, on cpu ==[0m
+  141 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+[1m== identity: old 2c56d9c6 vs new 2b5e1f1f, per family ==[0m
+  [32mIDENTICAL       [0m bailing_hybrid     3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  [32mIDENTICAL       [0m cohere             3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m cohere2            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [33mNOT RUN         [0m deepseek_v2        nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m deepseek_v3        3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  [32mIDENTICAL       [0m gemma              3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  gemma1-tiny @ f32                      cpu (native)
+      IDENTICAL  gemma1-tiny @ int8int8                 cpu (int8int8)
+      IDENTICAL  gemma1-tiny @ int4                     cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m gemma2             3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m gemma3             3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  vl-tiny-text @ f32                     cpu (native)
+      IDENTICAL  vl-tiny-text @ int8int8                cpu (int8int8)
+      IDENTICAL  vl-tiny-text @ int4                    cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m gemma4             15/15 cell(s) ran validation inheritable from 2c56d9c6
+      IDENTICAL  moe-tiny @ f32                         cpu (native)
+      IDENTICAL  moe-tiny @ int8int8                    cpu (int8int8)
+      IDENTICAL  moe-tiny @ int4                        cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+      IDENTICAL  moe-unified-tiny @ f32                 cpu (native)
+      IDENTICAL  moe-unified-tiny @ int8int8            cpu (int8int8)
+      IDENTICAL  moe-unified-tiny @ int4                cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+      IDENTICAL  dense-twogeom-tiny @ f32               cpu (native)
+      IDENTICAL  dense-twogeom-tiny @ int8int8          cpu (int8int8)
+      IDENTICAL  dense-twogeom-tiny @ int4              cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+      IDENTICAL  dense-scaled @ f32                     cpu (native)
+      IDENTICAL  dense-scaled @ int8int8                cpu (int8int8)
+      IDENTICAL  dense-scaled @ int4                    cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+      IDENTICAL  moe-kv-tiny @ f32                      cpu (native)
+      IDENTICAL  moe-kv-tiny @ int8int8                 cpu (int8int8)
+      IDENTICAL  moe-kv-tiny @ int4                     cpu (int4) [int4 layout: canonical (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m glm4_moe           6/6 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+      IDENTICAL  tiny-bias @ f32                        cpu (native)
+      IDENTICAL  tiny-bias @ int8int8                   cpu (int8int8)
+      IDENTICAL  tiny-bias @ int4                       cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m glm_ocr            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]
+  [32mIDENTICAL       [0m gpt-oss            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny-gguf @ f32                        cpu (native)
+      IDENTICAL  tiny-gguf @ int8int8                   cpu (int8int8)
+      IDENTICAL  tiny-gguf @ int4                       cpu (int4) [int4 layout: row4-only (qkv)]
+  [32mIDENTICAL       [0m gpt2               3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  124m @ f32                             cpu (native)
+      IDENTICAL  124m @ int8int8                        cpu (int8int8)
+      IDENTICAL  124m @ int4                            cpu (int4) [int4 layout: canonical+row4 (down, qkv)]
+  [32mIDENTICAL       [0m granite            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  dense-tiny @ f32                       cpu (native)
+      IDENTICAL  dense-tiny @ int8int8                  cpu (int8int8)
+      IDENTICAL  dense-tiny @ int4                      cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m granitemoehybrid   3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4)
+  [32mIDENTICAL       [0m internlm2          3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down, gate/up, qkv)]
+  [32mIDENTICAL       [0m kimi_k2            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  [32mIDENTICAL       [0m laguna             9/9 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  m1-tiny @ f32                          cpu (native)
+      IDENTICAL  m1-tiny @ int8int8                     cpu (int8int8)
+      IDENTICAL  m1-tiny @ int4                         cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+      IDENTICAL  xs2-tiny @ f32                         cpu (native)
+      IDENTICAL  xs2-tiny @ int8int8                    cpu (int8int8)
+      IDENTICAL  xs2-tiny @ int4                        cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+      IDENTICAL  xs21-tiny @ f32                        cpu (native)
+      IDENTICAL  xs21-tiny @ int8int8                   cpu (int8int8)
+      IDENTICAL  xs21-tiny @ int4                       cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m lfm2               3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  [32mIDENTICAL       [0m llama              3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m llama4_text        3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down, gate/up, qkv)]
+  [33mNOT RUN         [0m mellum             nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m mistral            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny-window @ f32                      cpu (native)
+      IDENTICAL  tiny-window @ int8int8                 cpu (int8int8)
+      IDENTICAL  tiny-window @ int4                     cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m mistral3           3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  ministral3-tiny @ f32                  cpu (native)
+      IDENTICAL  ministral3-tiny @ int8int8             cpu (int8int8)
+      IDENTICAL  ministral3-tiny @ int4                 cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m mixtral            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: row4-only (qkv)]
+  [32mIDENTICAL       [0m nemotron_h         6/6 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4)
+      IDENTICAL  3nano-tiny @ f32                       cpu (native)
+      IDENTICAL  3nano-tiny @ int8int8                  cpu (int8int8)
+      IDENTICAL  3nano-tiny @ int4                      cpu (int4)
+  [32mIDENTICAL       [0m olmo3              3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m olmo_hybrid        3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  [32mIDENTICAL       [0m phi3               3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down, gate/up, qkv)]
+  [33mNOT RUN         [0m qwen2              nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen2_5_vl         3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny-text @ f32                        cpu (native)
+      IDENTICAL  tiny-text @ int8int8                   cpu (int8int8)
+      IDENTICAL  tiny-text @ int4                       cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m qwen2_moe          3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: row4-only (qkv)]
+  [33mNOT RUN         [0m qwen3              nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen3_5            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up)]
+  [32mIDENTICAL       [0m qwen3_5_moe        6/6 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4)
+      IDENTICAL  qwen35-tiny @ f32                      cpu (native)
+      IDENTICAL  qwen35-tiny @ int8int8                 cpu (int8int8)
+      IDENTICAL  qwen35-tiny @ int4                     cpu (int4)
+  [33mNOT RUN         [0m qwen3_asr          nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen3_moe          6/6 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: row4-only (qkv)]
+      IDENTICAL  tiny-k3 @ f32                          cpu (native)
+      IDENTICAL  tiny-k3 @ int8int8                     cpu (int8int8)
+      IDENTICAL  tiny-k3 @ int4                         cpu (int4) [int4 layout: row4-only (qkv)]
+  [32mIDENTICAL       [0m qwen3_next         3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4)
+  [32mIDENTICAL       [0m qwen3_vl           3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny-text @ f32                        cpu (native)
+      IDENTICAL  tiny-text @ int8int8                   cpu (int8int8)
+      IDENTICAL  tiny-text @ int4                       cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m qwen3_vl_moe       3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: row4-only (qkv)]
+  [32mIDENTICAL       [0m smollm3            3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  [32mIDENTICAL       [0m spark2_5           3/3 cell(s) ran  validation inheritable from 2c56d9c6
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical+row4 (down, gate/up, qkv)]
+  [33mNOT RUN         [0m voxtral            nothing ran — see NOT RUN
+
+[1m== NOT RUN (12 cell(s)) — reported, never counted as a pass ==[0m
+  [33mNOT RUN [0m mellum             mellum2-slice          [f32,int8int8,int4] its fixture is a 4.2 GB slice of the real model, not a tiny checkpoint
+  [33mNOT RUN [0m qwen2              0.5b                   [f32,int8int8,int4] asset missing: /Users/francistownsend-merino/tmcode/goinfer/testdata/qwen2.5-0.5b
+  [33mNOT RUN [0m qwen3              1.7b                   [f32,int8int8,int4] asset missing: /Users/francistownsend-merino/tmcode/goinfer/testdata/qwen3-1.7b
+  [33mNOT RUN [0m deepseek_v2        -                      [-] no deepseek_v2 tiny fixture (deepseek-tiny is model_type deepseek_v3; v2's gate is the real V2-Lite)
+  [33mNOT RUN [0m qwen3_asr          -                      [-] its tiny checkpoint (testdata/qwen3asr-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this to
+  [33mNOT RUN [0m voxtral            -                      [-] its tiny checkpoint (testdata/voxtral-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this too
+
+[1m== would record (the parity manifest is NOT written by this item) ==[0m
+  bailing_hybrid     method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  cohere             method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  cohere2            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  deepseek_v3        method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  gemma              method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma2             method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma3             method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma4             method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 15 cell(s); today: full-forward-oracle @ 310a2e44 (linux-amd64)
+  glm4_moe           method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 6 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  glm_ocr            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  gpt-oss            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: real-model-oracle @ 25a4711 (linux-62gb)
+  gpt2               method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  granite            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  granitemoehybrid   method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  internlm2          method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  kimi_k2            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: shared-path (via deepseek_v3) @ b067007 (linux-62gb)
+  laguna             method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 9 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  lfm2               method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  llama              method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  llama4_text        method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: tiny-golden+coherent @ 3f23c96 (linux-62gb)
+  mistral            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral3           method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mixtral            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  nemotron_h         method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 6 cell(s); today: real-model-oracle @ 0b74e671 (linux-amd64)
+  olmo3              method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  olmo_hybrid        method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  phi3               method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_5_vl         method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_moe          method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_5            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_5_moe        method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 6 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_moe          method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 6 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_next         method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: real-model-oracle @ 426ca57d (linux-amd64)
+  qwen3_vl           method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7ee05f0a (linux-amd64)
+  qwen3_vl_moe       method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: tiny-golden @ 936d2f49 (darwin-arm64)
+  smollm3            method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  spark2_5           method "identity-inherited from 2c56d9c6" at 2b5e1f1f — cpu, Darwin/arm64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  [33mNOTE[0m old 2c56d9c6 is not the validated_at of 37 of these: identity inherits only what 2c56d9c6 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       bailing_hybrid@7b50947a cohere@7b50947a cohere2@7b50947a deepseek_v3@7b50947a gemma@7b50947a
+       gemma2@7b50947a gemma3@7b50947a gemma4@310a2e44 glm4_moe@7b50947a glm_ocr@7b50947a
+       gpt-oss@25a4711 gpt2@7b50947a granite@7b50947a granitemoehybrid@7b50947a internlm2@7b50947a
+       kimi_k2@b067007 laguna@7b50947a lfm2@7b50947a llama@7b50947a llama4_text@3f23c96
+       mistral@7b50947a mistral3@7b50947a mixtral@7b50947a nemotron_h@0b74e671 olmo3@7b50947a
+       olmo_hybrid@7b50947a phi3@7b50947a qwen2_5_vl@7b50947a qwen2_moe@7b50947a qwen3_5@7b50947a
+       qwen3_5_moe@7b50947a qwen3_moe@7b50947a qwen3_next@426ca57d qwen3_vl@7ee05f0a
+       qwen3_vl_moe@936d2f49 smollm3@7b50947a spark2_5@7b50947a
+  scope: this machine (Darwin/arm64) and backend (cpu) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+[1m== verdict ==[0m
+  families 43: 37 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 6 NOT RUN (a skip is not a pass)
+  wall     45s (10:12:54 → 10:13:40): builds 6s, runs 38s
+  logs     /private/var/folders/m1/sxl522hn2wgbq5rqcxf2dx8m0000gn/T/gate-identity-20261016-101254-1112694124/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m

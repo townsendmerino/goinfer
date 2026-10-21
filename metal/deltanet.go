@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 
@@ -54,6 +55,11 @@ func buildDeltaNet(d *Device, m *decoder.Model, pipe func(string) Pipeline) (*dn
 	if !ok {
 		return nil, nil
 	}
+	if recurrentInt8Load(m) && !dnetInt8DeclineOffForTest {
+		// Metal's native int8 path covers no recurrent family (w8Eligible), so int8 projections would be re-quantized to
+		// int4 without notice: decline, and the CPU runs the model at the int8 it was loaded with (G44, as buildMamba).
+		return nil, fmt.Errorf("metal: a Gated-DeltaNet model runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU")
+	}
 	keyDim, valueDim := numKeyHeads*keyHeadDim, numValueHeads*valueHeadDim
 	dnet := &dnetParams{
 		convK: convKernel, hk: keyHeadDim, hv: valueHeadDim, nk: numKeyHeads, nv: numValueHeads,
@@ -64,6 +70,19 @@ func buildDeltaNet(d *Device, m *decoder.Model, pipe func(string) Pipeline) (*dn
 	_ = pipe // pipelines are compiled by buildResident's shared `pipe` closure at the call site (see model.go)
 	return dnet, nil
 }
+
+// recurrentInt8Load reports whether m was loaded with int8 projections (int8, int8int8, or int4mix's attention), which a
+// recurrent family's build would re-quantize to int4: Metal's native int8 path covers no recurrent family (w8Eligible).
+func recurrentInt8Load(m *decoder.Model) bool {
+	switch m.Quant() {
+	case "int8", "int8int8", "int4mix":
+		return true
+	}
+	return false
+}
+
+// dnetInt8DeclineOffForTest removes buildDeltaNet's int8 decline: G44's planted defect.
+var dnetInt8DeclineOffForTest = false
 
 // buildDeltaNetLayer uploads one Gated-DeltaNet layer's weights and allocates its persistent
 // state, zeroed. inB/inA are kept f32 on the CPU (deltaNetWeights' own comment: they feed the

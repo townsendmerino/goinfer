@@ -1,0 +1,18 @@
+=== RUN   TestMLAKernels_rope
+    mla_kernels_test.go:141: interleave false: mla_store 7.78e-05, mla_qrope 2.93e-04 (bar 2e-03); planted 1.45e+00, 2.14e+00
+    mla_kernels_test.go:141: interleave true: mla_store 7.87e-05, mla_qrope 1.81e-04 (bar 2e-03); planted 1.32e+00, 2.05e+00
+--- PASS: TestMLAKernels_rope (0.58s)
+=== RUN   TestMLAResident_tinyAgainstControl
+    mla_resident_test.go:22: control qwen3moe-tiny: min cosine 0.999458, argmax 31/32 (diagnostic)
+    mla_resident_test.go:25: deepseek-tiny, routing unforced: min cosine 0.999880, argmax 32/32 (diagnostic)
+    mla_resident_test.go:25: kimi-tiny, routing unforced: min cosine 0.994251, argmax 31/32 (diagnostic)
+--- PASS: TestMLAResident_tinyAgainstControl (0.22s)
+=== RUN   TestMLAResident_guards
+--- PASS: TestMLAResident_guards (0.04s)
+=== RUN   TestMLAResident_routingForced
+    mla_routing_forced_test.go:89: control qwen3moe-tiny, routing forced: min cosine 0.999885, argmax 31/32
+    mla_routing_forced_test.go:93: deepseek-tiny, routing forced: min cosine 0.999884, argmax 32/32 -> pass
+    mla_routing_forced_test.go:93: kimi-tiny, routing forced: min cosine 0.999751, argmax 32/32 -> pass
+--- PASS: TestMLAResident_routingForced (0.21s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	1.684s

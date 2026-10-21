@@ -17,6 +17,97 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 
 ## Queued
 
+**G49 · `/v1/messages` accepts `output_config.format` and ignores it** — `any`, **filed 2026-10-21 (moved from
+`docs/tasks/task-integration-harness-2026-10.md` §0a, which found it and gave it no owner)**
+
+Anthropic's structured-output field is accepted and dropped: no Go code reads `output_config`, so a client that asks the
+Anthropic route for JSON gets free text, with no warning. The OpenAI routes constrain output through `response_format`.
+Next: honor it on that constrained path, or refuse it by name. Either box, S–M.
+
+**G48 · The option grid gets CUDA cells for every option** — `cuda`, **filed 2026-10-21 (owner)**
+
+`docs/option-state-grid.md` reads a GPU-resident cell as tested on whichever backend implements the option. Finding 1 of the
+option-path work (`ActQuantGroup` ignored on Metal, a87304e3) showed a cell can hold on one backend and fail on another, and
+KV precision's phase 0 already gave `KVPrecision` its own CUDA cells (`ogWithCUDA`, bcc6b536). **Owner, 2026-10-21: every
+option gets CUDA cells.** How the new cells enter the ratchet (`decoder/optiongrid.go:optionGridUntestedCeiling` is 0) is the
+builder's to register before the code. It includes the one CUDA case the Metal round left open: a CUDA twin of
+`metal/optiongrid_metal_test.go:TestOptionPathMetal_prefillChunk` at chunk sizes below CUDA's prefill floor
+(`docs/completed/task-option-path-admission-2026-10.md` §4.3, "not exercised here"). nobara, M.
+
+**G47 · A family × path grid for what no forward program reaches: loading and serializing, tokenizer dispatch, chat-template
+detection** — `any`, **filed 2026-10-21 (owner)**
+
+Twenty of the 71 registration and bound findings counted on 2026-10-08 (`docs/measurements/audit-classes-2026-10-08.md`
+§2–§3) were one model family that one path did not know about, and six of the twenty were Critical. **Owner, 2026-10-21,
+the hybrid:** the compute, fit-guard and speculative share goes to `docs/tasks/task-forward-architecture-2026-10.md`, whose
+per-layer programs can declare each layer's weights and state so those paths read the program instead of hand lists. This
+entry owns the rest: a grid of every registry family against three columns (load and serialize; tokenizer dispatch;
+chat-template detection), ratcheted as the option grid is, so a new family fills its row or a test fails. Its findings:
+2026-09-02 C-03 (the `.giw` writer and shortConv), C-10 (pre-tokenizer dispatch), M-09 (`StreamTranscodeGGUF`'s sink),
+M-11 (`validateShapes`); 2026-09-10 C-05 (the q/k permute list), M-27 (the GGUF MoE router branches), M-36
+(`chat.Detect`). Either box, M.
+
+**G46 · Gemma 3's tensor-core GEMM prefill between about 3,900 and 12,160 keys has never been read against the 0.99 bar** —
+`cuda`, **filed 2026-10-21 (owner: run it by day)**
+
+KV3 lifted CUDA's 12,160-key prefill guard, and `docs/tasks/task-kv-architecture-2026-10.md` (KV3) argues the fidelity gate
+is owed: main's Gemma 3 prefill at those depths has not been checked against the 0.99 bar. It left whether and when to the
+owner. **Owner, 2026-10-21: run it by day on nobara**, about 40 minutes under the timing lock, which the 2026-10-19 run
+budget in `CLAUDE.md` makes a day run. Register it before it starts; the rule and bar are the KV doc's.
+
+**G45 · Each kernel declares its bounds, and each dispatch site checks them** — `any`, **filed 2026-10-21 (owner)**
+
+The 2026-10-08 classification counted 19 bound findings (class B in `docs/measurements/audit-classes-2026-10-08.md`): a fixed
+limit (an array size, a context cap, a byte budget) that a reachable input exceeds. They are not registrations, so the option
+and state grids cannot catch them, and the record's §3 proposed them as a small task of their own. One was missed twice: the
+exact prefill attention kernel's 4,096-score array, audit 2026-08-05 C-12 and again 2026-09-30 F-C02. **Owner, 2026-10-21:
+file it.** The shape: a kernel with a fixed bound declares it beside the kernel, every site that dispatches it checks the
+request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
+kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
+
+**G44 · Metal re-quantizes a Gated-DeltaNet model's int8 weights to int4 instead of declining** — `metal`, **filed 2026-10-15
+(owner); built 2026-10-16 (branch `g44-deltanet-int8-decline-2026-10`)**
+
+Metal's native int8 path covers no recurrent family (`metal/model.go:w8Eligible`: its first slice excludes DeltaNet), so a Qwen3.5,
+Qwen3-Next or Olmo Hybrid model loaded at int8int8 runs resident with its attention, MLP and DeltaNet projections re-quantized to
+int4 (`upload` and `fuse` fall back to `int4BufA` / `int4ConcatA`). Checked 2026-10-15 on `qwen35-tiny`: resident at int8int8, decode
+path "metal-resident (int8int8→int4, no Metal int8 GEMV kernel)". The path label names it, but the model does not run at the int8 it
+was loaded with.
+
+**The fix, as Nemotron-H's (OP2b, `metal/mamba.go:buildMamba`):** at int8 Metal declines the model as resident and the CPU runs it
+at real int8. Native int8 for recurrent families is a later slice of `docs/tasks/task-metal-int8-2026-10.md`.
+
+**Gate (tier 0):** `qwen35-tiny` at int8int8 does not go resident on Metal; at int4 it does, unchanged. Planted defect: no decline,
+which must turn it red.
+
+**Built 2026-10-16:**
+- **The decline:** `metal/deltanet.go:buildDeltaNet` declines when `recurrentInt8Load` says the load is int8, int8int8 or int4mix.
+  - That predicate reads the load's quant label (`decoder.Model.Quant`), not `ResidentProjsInt4`. The latter reads `qwen35-tiny`
+    (a MoE: no MLP up-projection, attention outside `QProj`) as non-int4 even at int4, which would decline every load.
+  - `metal/mamba.go:buildMamba` takes the same predicate as well, so Nemotron-H at int4mix (int4 MLP, int8 attention) now
+    declines too, where its int8 attention used to be re-quantized.
+- **Gate:** `TestG44_deltaNetInt8Declines` PASS. int8int8 gives the int4-only decline, and through the backend it runs on
+  the CPU. int4 builds. The planted defect (`dnetInt8DeclineOffForTest`) turns it red.
+  - int4mix is GGUF-only, so the tiny safetensors fixtures cannot load it. Its decline is the same predicate, untested here.
+- **`TestQwen35ResidentParityMetal`'s dense fixture moves from int8int8 to int4,** the precision Metal now runs. It had been
+  measuring the re-quantized path. Worst cosine 0.999889 over 128 tokens, argmax 125/128; the MoE fixture reads 0.991138, unchanged.
+
+**G41 · An answer is lost inside the reasoning when a thinking model ends its turn mid-reasoning** — `any`, **filed 2026-10-15
+(owner), not started**
+
+A thinking model can end its turn while still inside its reasoning block, with the answer written there and nothing after it. Since
+PR #11 the reply is no longer silently empty: `/v1/responses` returns `incomplete` with `ended_in_reasoning`, and a tool call written
+in the reasoning is taken from it. But a prose answer written in the reasoning still never reaches the client. Seen in the I3 after
+run at `695ce16c`: Codex x Mellum2.1 `read` r3 failed on an empty final message
+(`docs/measurements/integration-harness-2026-10/i3-night-2026-10-13.md`, the after run).
+
+**Proposed mechanism (owner):** when the model ends its turn inside an open reasoning block, close the block server-side and let the
+model continue, as the thinking budget already forces a close.
+
+**Gate, registered before any code:** answers appear where there were none; turns that closed their reasoning on their own are
+unchanged, byte for byte. The rule, the prompt set and N are written before any run.
+
+
 > **ELEVEN closed entries are archived** in
 > [`docs/completed/queue-correctness.md`](completed/queue-correctness.md) — G4, G5, G6, G9, G10,
 > G11 and Q2 (2026-08-31, first pass), then **G7, G1, Q3 and Q1** (2026-08-31, second pass, when
@@ -130,3 +221,82 @@ and `tools, OpenAI` turn two and `stop sequences` are unchanged, so those two ar
 **DIAGNOSED AND FIXED 2026-10-06 (`docs/measurements/g39-lone-tool-livelock-2026-10-06/`): the `tools, OpenAI` failure was goinfer's, not the model's.** A lone tool under `tool_choice` auto was forced on every turn, including after the tool result; the Instruct model
 failed the same row on this tree. Fixed so the convenience ends at the tool result (c69a6f87 pre-registration, then the fix). The `stop sequences` failure is the Coder model's own (it answers "The count is now 10." to a count prompt) and is not a goinfer defect. G39 is closed apart from
 the parser's residual risk, which is the owner's call and is behind an off-by-default flag.
+
+**G40 · CPU cold prefill: a long prompt's scratch is not bounded and is not returned to the OS, and it breaks never-swap** — `cpu`, **filed 2026-10-14**
+
+Found by KV9 step 0 (`docs/measurements/kv9-2026-10/README.md`, Finding 3), by day on the M1 Pro 16 GB:
+
+- One cold 20,193-token prompt on Qwen2.5-Coder-0.5B (`serve -backend cpu`, int4 weights from the CPU sidecar, f32 KV)
+  took the server to a 3.1 GB footprint for 0.47 GB of KV, and grew swap by 1.27 GB.
+- At 5,778 tokens it reached 1.0 GB for 0.14 GB of KV.
+
+The rest is the batched prefill's scratch, which Go's heap keeps after the request:
+
+- the footprint did not fall in 60 s of idle;
+- later sessions' KV landed in it without moving it.
+
+That breaks the never-swap rule (`docs/completed/task-never-swap-2026-09.md`). Serve's fit line budgets "a request's own
+prefill", but nothing bounds the prefill by that budget.
+
+**Two parts:**
+
+1. **Bound the prefill scratch per chunk.** A long prompt's batched pass allocates in proportion to its length; cap
+   it by chunking the pass.
+2. **Return memory to the OS after a long prompt,** as the GPU residency build already does
+   (`decoder/residency.go:releaseHostMemory`).
+
+**Gate:**
+
+- bit-identity of logits and KV against today's unchunked pass at the chunk boundaries;
+- the 20K cell of `kv9_mem.py` re-read with no swap growth and a footprint bounded by weights + KV + one chunk's
+  scratch.
+
+**G42 · CPU serve: interleaved conversations that share a preamble take over each other's session and lose their tails** — `cpu`, **filed 2026-10-14; revisit with KV2's first-prompt anchor**
+
+Found by KV9 step 0 (`docs/measurements/kv9-2026-10/README.md`, Finding 1).
+
+**What happens.** `internal/serveapp/sessions.go:pickSession` gives a new conversation the only idle session that
+holds the preamble, rewound in place, whenever the prompt keeps more of that session than it discards. So:
+
+- a second conversation sharing a 5.7K preamble with a short tail took over the first's session;
+- the first, continuing, re-prefilled its own tail: 5,761 of 5,801 tokens reused, against 5,786 when it kept its
+  session.
+
+On a 32K-context model with a 20K agent preamble, every second conversation qualifies: its tail is always shorter than
+the preamble. Two agents taking turns on CPU serve therefore re-prefill each other's whole conversation past the
+preamble on every switch. That costs minutes on the CPU.
+
+**The other trade.** KV2's copy (on `kv2-2026-10`, not merged) makes it possible: a fresh session with the preamble
+copied in, keeping both tails, at one preamble's memory per conversation.
+
+Revisit when KV2 merges, together with its first-prompt anchor, which keeps a conversation's own rollback in place.
+The rule is the owner's to choose:
+
+- takeover (one preamble's memory, tails lost);
+- copy (tails kept, one preamble per conversation);
+- KV9's host blocks (both). This is the case the KV9 record names for reopening KV9.
+
+**G43 · CPU fast prefill attention on a sliding-window layer is not chunk-invariant, so G40 cannot chunk those caches** — `cpu`, **filed 2026-10-15**
+
+Found by G40-1 (`docs/tasks/task-cpu-prefill-memory-2026-10.md`, "Amendment, 2026-10-15, after G40-1's first read", on
+branch `g40-cpu-prefill-memory-2026-10`):
+
+- On `gemma2-tiny` (sliding window 4), a prefill run in chunks under fast attention differed from the single pass.
+  At a suffix of 529 with C = 256, 446 of the last row's logits differed. The first difference was layer 1's keys at
+  the second chunk's rows, so layer 0, the sliding-window layer, gave a different attention output.
+- The exact path chunked identically. Dense and MoE fixtures chunked identically under fast attention too.
+
+The fast local attention's result depends on where the pass's assembled key window starts
+(`decoder/forwardn.go:Model.runLayersFromEmbedN`, its local branch: `KVCache.batchReadLocal` then
+`attendBatchedHeads`), and a chunk boundary moves that start.
+
+**Consequence:** G40 keeps the single pass for a sliding-window cache under fast attention. So the memory bound G40
+adds does not reach Gemma 2, 3 and 4, or any other family with sliding-window layers, prefilled fast on the CPU. That
+is where G40's high-water stays.
+
+**To fix:** make the fast local attention's arithmetic independent of the window's start, for example by aligning its
+key blocks to absolute positions rather than to the assembled window. Then drop the exclusion in
+`decoder/forwardn.go:Model.prefillLogits`.
+
+**Gate:** G40-1 unchanged, with `gemma2-tiny`'s fast cases chunking, and its pass count asserting they do. The fast
+path's own fidelity record is re-read on the 1.5B if the arithmetic changes.

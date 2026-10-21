@@ -21,7 +21,7 @@
 > excluded after `docs/benchmarks.md`'s "M35/M26 on the Mac" measured that CPU path as
 > catastrophic — 2h10min/zero completions; the dense retry itself measured at streamed/resident =
 > 0.944, real hardware, 2026-09-09 — see `docs/tasks/task-gpu-paths-2026-09.md`'s entries).
-> **S1 (`docs/tasks/task-never-swap-2026-09.md`, 2026-09-22) narrows what this auto-retry now
+> **S1 (`docs/completed/task-never-swap-2026-09.md`, 2026-09-22) narrows what this auto-retry now
 > covers on darwin**: a plain `.gguf` already resolves to its sidecar `.giw` by default there
 > (`prequant.DefaultToSidecar`), so this refusal-driven retry now only fires when that default was
 > explicitly opted out of (`-direct-load`/`GOINFER_GGUF_DIRECT=1`) or on linux, where direct still
@@ -52,7 +52,7 @@
 > numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's
 > hand-tuned configuration.
 >
-> **Cross-reference, 2026-09-23**: `task-never-swap-2026-09.md` S4 item 1 called itself "this
+> **Cross-reference, 2026-09-23**: `../completed/task-never-swap-2026-09.md` S4 item 1 called itself "this
 > doc's Phase 3" — stale by the time it was built; Phases 3-5 above were already spoken for
 > (WebGPU/measure/host-computed-experts). The actual work — `guardGIWFit`
 > (`decoder/fitguard.go`), a load-time KV+scratch guard for `.giw` loads, refusing or auto-pinning
@@ -61,6 +61,13 @@
 > what did not. (Items 2-5 — live-probe pager budgets, Metal's second bound, `GOMEMLIMIT`, the
 > working-set tok/s predictor — shipped later the same day, 2026-09-23; this note said "still
 > unstarted" until then.)
+
+> **Decided 2026-10-21 (owner), moved here from `docs/completed/task-never-swap-2026-09.md` (S1 item 6), which flagged it and
+> left it open:** a MoE `.gguf` loads through its mapped sidecar by default. When that load's working set will not fit, the
+> load **refuses**, using S4's working-set arithmetic, says why, and names `--accept-slow` as the override. Today the default
+> path does none of this: it prices KV and scratch (plus the pinned copy under `--moe-cache-experts`), and the under-2 tok/s
+> refusal and `--accept-slow` exist only under `-stream-weights` (`decoder/model.go:Load`). It changes what the fit guard
+> does, and this note is the owner's word for it. Not built; either box, S–M.
 
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple
 Silicon laptop, a 32 GB desktop with no GPU — who has just pulled a 26B-A4B or 35B-A3B checkpoint

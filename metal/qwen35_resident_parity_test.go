@@ -13,13 +13,13 @@ import (
 // TestQwen35ResidentParityMetal is the Metal twin of cuda's TestQwen35ResidentParityCUDA — the
 // whole-model gate the "Done means" bar in the porting task requires before FeatDeltaNet is real,
 // not just declared. Read that file's header comment; this mirrors its structure exactly: the
-// resident runner vs the CPU runLayersQwen35, fed the same fixed token sequence, run LONG (three
+// resident runner vs the CPU program walker, fed the same fixed token sequence, run LONG (three
 // of every four layers carry compounding recurrent state, so a wiring bug shows as a decaying
 // cosine, not a bad first token), then a REPLAY after Reset to prove the state actually resets
 // rather than merely starting zeroed.
 func TestQwen35ResidentParityMetal(t *testing.T) {
 	for _, fx := range []struct{ name, quant string }{
-		{"qwen3_5-tiny", "int8int8"},
+		{"qwen3_5-tiny", "int4"}, // int4: at int8 Metal declines a recurrent family (G44)
 		{"qwen3_5_moe-tiny", "int4"},
 	} {
 		t.Run(fx.name, func(t *testing.T) {
@@ -27,7 +27,7 @@ func TestQwen35ResidentParityMetal(t *testing.T) {
 		})
 	}
 	if ck := os.Getenv("GOINFER_DNET_CKPT_METAL"); ck != "" { // a bigger/real checkpoint, opt-in
-		t.Run("env", func(t *testing.T) { qwen35ResidentParityMetal(t, ck, "int8int8") })
+		t.Run("env", func(t *testing.T) { qwen35ResidentParityMetal(t, ck, "int4") })
 	}
 }
 

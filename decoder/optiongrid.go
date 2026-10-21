@@ -1,6 +1,6 @@
 package decoder
 
-// The option grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every decoder.Options field against every
+// The option grid (docs/completed/task-option-path-admission-2026-10.md §4.0): every decoder.Options field against every
 // execution path, with what that path does with it and the evidence. It guards against a load option that no guard on
 // some path knew about (docs/measurements/audit-classes-2026-10-08.md).
 //
@@ -49,13 +49,27 @@ type ogCell struct {
 	test    string // a Test function in this repository (any module) that drives the cell
 	decline string // the function where the path refuses the option
 	why     string
+	// cuda is CUDA's own evidence for this path, per option value, where it differs from the cell's (which names the other residents').
+	cuda []ogValueCell
+}
+
+// ogValueCell is one option value's declaration on one backend.
+type ogValueCell struct {
+	value string
+	ogCell
 }
 
 func ogTestedBy(test string) ogCell { return ogCell{h: ogTested, test: test} }
 func ogDeclinedAt(decline, test string) ogCell {
 	return ogCell{h: ogDeclined, decline: decline, test: test}
 }
-func ogUntestedCell() ogCell           { return ogCell{h: ogUntested} }
+func ogUntestedCell() ogCell { return ogCell{h: ogUntested} }
+
+// ogWithCUDA is c with CUDA's own per-value evidence beside it.
+func ogWithCUDA(c ogCell, cuda ...ogValueCell) ogCell {
+	c.cuda = cuda
+	return c
+}
 func ogNACell(why string) ogCell       { return ogCell{h: ogNA, why: why} }
 func ogAll(c ogCell) map[ogPath]ogCell { return ogFill(nil, c) }
 func ogFill(m map[ogPath]ogCell, c ogCell) map[ogPath]ogCell {
@@ -91,12 +105,14 @@ func ogMerge(ms ...map[ogPath]ogCell) map[ogPath]ogCell {
 // read by no execution path afterwards. Every path is n/a for it, for the reason given.
 var ogLoadOnly = map[string]string{
 	"noSelfTest":                 "the resident self-test's own fixture loads; read by the self-test at load",
+	"planResidency":              "FitQuery's open of a .giw, which builds no resident and is closed before it runs anything",
 	"LoRA":                       "merged into the base weights at load (\"merged into the base at load\"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid",
 	"AcceptSlowMoE":              "an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards",
 	"DisableFit":                 "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
 	"ExtraResidentBytes":         "prices a companion allocation when the resident is planned",
 	"ExtraResidentKVPerPosition": "prices a companion allocation's K/V when the resident context is chosen",
-	"LoadAbort":                  "checked between layers during a GGUF weight build; nil afterwards in effect",
+	"Drafter":                    "tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses",
+	"LoadAbort":                  "checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect",
 	"BackendAuto":                "tells a backend at load that \"auto\" chose it, so it may decline a precision it would requantize",
 	"ResidentKVSlotsDefault":     "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
 }
@@ -152,17 +168,23 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 		ogResidentNA("the CPU KV cache's precision (\"selects the CPU KV cache storage precision\"); a resident uses KVPrecision"),
 	),
+	// The cells name Metal's tests; CUDA's own are beside them (f16 by the CUDA f16 build's tests, i8 refused at load until phase 2 of
+	// docs/tasks/task-kv-precision-everywhere-2026-10.md). Every value's delivery, per backend and family, is docs/kv-precision-matrix.md.
 	"KVPrecision": ogMerge(
 		ogCPUNA("\"Ignored off the residency path\""),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_kvPrecision"),
-			pathResidentPrefill:  ogDeclinedAt("PrefillPath", "TestPrefill_declinesInt8KV"),
-			pathSpecVerify:       ogTestedBy("TestOptionPathMetal_kvPrecision"),
-			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_kvPrecision"),
+			pathResidentDecode: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+			pathResidentPrefill: ogWithCUDA(ogDeclinedAt("PrefillPath", "TestPrefill_declinesInt8KV"),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+			pathSpecVerify: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
+				ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+			pathSessionLifecycle: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
+				ogValueCell{"f16", ogTestedBy("TestKV7_restoreFull")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
 		},
 	),
 
-	// Metal's expert cache (docs/tasks/task-option-path-admission-2026-10.md §4.3): bit-identical to fully resident when both
+	// Metal's expert cache (docs/completed/task-option-path-admission-2026-10.md §4.3): bit-identical to fully resident when both
 	// prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical to sequential, so the
 	// reference is the resident load with ExactPrefill (the default resident's batched f16 prefill differs, and only
 	// --exact-prefill reproduces the paged one). int8 experts decline by name (errPagedExpertsNotInt4) rather than via a
@@ -240,6 +262,24 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	// CUDA's windowed KV (docs/tasks/task-cuda-windowed-kv-2026-10.md): a sliding-window layer holds window+slack positions instead of the
 	// context. Metal and WebGPU ignore it. The identity tests live in cuda/kvwindow_test.go (a GPU job, tags cuda goinfer_testhooks) and
 	// compare logits bit for bit against the same load without the option.
+	"KVShareOff": ogMerge(
+		ogCPUNA("sharing chooses the rows a request starts from as it takes its session; the forward that follows is unchanged"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogNACell("a copy happens once, as a request takes its slot and before its prompt is prefilled; decode extends the slot's own rows"),
+			pathResidentPrefill:  ogTestedBy("TestKV2_optionKVShareOff_resident"),
+			pathSpecVerify:       ogNACell("sharing acts as a request takes its slot, before any speculative step"),
+			pathSessionLifecycle: ogTestedBy("TestSessionLRU_sharesAPreamble"),
+		},
+	),
+	"KVHostBytes": ogMerge(
+		ogCPUNA("snapshots hold a GPU resident's KV in host memory; the CPU path keeps its own session LRU"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogNACell("a snapshot is taken after the prefill, before the first decode step, and restored before the prefill; decode extends the slot's own rows"),
+			pathResidentPrefill:  ogTestedBy("TestKV7_optionKVHostBytes_resident"),
+			pathSpecVerify:       ogNACell("snapshots act as a request takes its slot and as its prefill ends, before any speculative step"),
+			pathSessionLifecycle: ogNACell("a session's own KV is the CPU path's; this is the resident slot's"),
+		},
+	),
 	"ResidentWindowedKV": ogMerge(
 		ogCPUNA("a CUDA resident's KV layout; the CPU cache keeps its own ring"),
 		map[ogPath]ogCell{

@@ -113,6 +113,10 @@ MODELS = {
     # identical, and its template closes turns with <|end|>, where p3m used </s>.
     "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m-local"),
     "gemma3-1b":  (os.path.expanduser("~/models/gemma3-1b-q4_k_m.gguf"), "g31b"),
+    # gemma3-4b added 2026-10-13 for OP1's Metal speed guard (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-S):
+    # head dimension 256 on the exact attention kernel, new against base (BENCH_ENGINES=goinfer,goinfer_old). The peer
+    # tag is a placeholder: no peer row is taken for it.
+    "gemma3-4b":  (os.path.expanduser("~/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf"), "g34b-none"),
     # M35/M26 added 2026-09-04 (docs/tasks/task-peer-benchmarks.md §2, tier 1). The GGUF path here is
     # what ollama and llama-server load -- Q4_K_M, same quant family as every other row. Neither
     # checkpoint had a Q4_K_M GGUF on this box: the archive only carried M35 as Q8_0 and M26 as a
@@ -260,7 +264,7 @@ STREAM_WEIGHTS_MODELS = {m.strip() for m in os.environ.get("BENCH_STREAM_WEIGHTS
 # CUDA allocates f32 KV whatever -kv says), so a CUDA cell without BENCH_CTX <= 2048 silently
 # times the CPU path. Read the "decode path" line in the serve log.
 GOINFER_QUANT_OVERRIDE = {}
-for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=int8int8").split(","):
+for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=q4k").split(","):
     if "=" in _kv:
         _k, _v = _kv.split("=", 1)
         GOINFER_QUANT_OVERRIDE[_k.strip()] = _v.strip()
@@ -734,9 +738,83 @@ def provenance():
         "ctx_pin": CTX_PIN,
     }
 
+def free_mem_mb():
+    """This box's available memory in MiB, the number goinfer's fit guard reads (scripts/hostmem.py, cmd/hostmem; B41). None when it
+    cannot be read."""
+    import hostmem
+    return hostmem.available_mb()
+
+
+# THE HEAVY-LOAD VOID (owner rule 2026-10-19; CLAUDE.md "Run budget", docs/measurements/noise-registry.md §8). A cell is VOID if,
+# at its start, this box (the one doing the timed work) has a 1-minute load average above half its cores, or free memory below the
+# fit guard's need for the cell's load plus 2 GB. A void start is listed in the cell's record and the cell re-runs in place; it is
+# never run and averaged. The need is weights + KV from goinfer's own `fit:` banner for the model (learned from its goinfer cells),
+# BENCH_FIT_NEED_GB when set ("5.6", or per model "phi3-mini=5.6,M7=9.3"), else the checkpoint's file size, recorded as such.
+VOID_HEADROOM_MB = 2048
+_FIT_NEED = {}   # model key -> MB, from a goinfer fit banner
+
+
+def fit_need(model_key):
+    """(MB, source) the fit guard needs for model_key's load, or (None, None) for a cell with no model load."""
+    env = os.environ.get("BENCH_FIT_NEED_GB", "").strip()
+    if env:
+        if "=" not in env:
+            return int(float(env) * 1024), "BENCH_FIT_NEED_GB"
+        for kv in env.split(","):
+            k, _, v = kv.partition("=")
+            if k.strip() == model_key and v.strip():
+                return int(float(v) * 1024), "BENCH_FIT_NEED_GB"
+    if model_key in _FIT_NEED:
+        return _FIT_NEED[model_key], "fit banner"
+    path = (MODELS.get(model_key) or (None,))[0]
+    if path and os.path.exists(path):
+        return os.path.getsize(path) >> 20, "file size"
+    return None, None
+
+
+def learn_fit_need(model_key, log_text):
+    """Records weights + KV from the last `fit: … needs X GB KV (weights Y GB …` line in a goinfer serve log."""
+    found = None
+    for m in re.finditer(r"needs ([\d.]+) GB KV \(weights ([\d.]+) GB", log_text or ""):
+        found = (float(m.group(1)) + float(m.group(2))) * 1024
+    if found:
+        _FIT_NEED[model_key] = int(found)
+
+
+def heavy_void(state, need_mb):
+    """The reason a cell starting in machine state `state` is void, or None. state carries loadavg, free_mem_mb and ncores."""
+    la, ncores, free = state.get("loadavg"), state.get("ncores"), state.get("free_mem_mb")
+    if la and ncores and la[0] > ncores / 2:
+        return f"load {la[0]:.2f} above half of {ncores} cores"
+    if need_mb is not None and free is not None and free < need_mb + VOID_HEADROOM_MB:
+        return f"free memory {free} MB below the fit need {need_mb} MB + {VOID_HEADROOM_MB} MB"
+    return None
+
+
+def start_clean(sample, need_mb, run, wait=time.sleep, limit_s=None):
+    """Runs a cell only from a start that is not void: each void start is listed (its reason and machine state) and the
+    start is retried after BENCH_VOID_WAIT seconds (default 20). Refuses past BENCH_IDLE_WAIT, as the idle gate does.
+    Returns (run's result, the clean start's state, the void starts)."""
+    limit = float(os.environ.get("BENCH_IDLE_WAIT", "600")) if limit_s is None else limit_s
+    step = float(os.environ.get("BENCH_VOID_WAIT", "20"))
+    voids, waited = [], 0.0
+    while True:
+        state = sample()
+        why = heavy_void(state, need_mb)
+        if not why:
+            return run(), state, voids
+        voids.append(dict(state, void=why))
+        print(f"# cell VOID at start: {why}; re-running in place ({waited:.0f}/{limit:.0f}s)", flush=True)
+        if waited >= limit:
+            sys.exit(f"REFUSED mid-sweep: every start for {waited:.0f}s was void ({why}). NOT measuring anyway.")
+        wait(step)
+        waited += step
+
+
 def machine_state():
-    """Recorded at the START of each cell. See the note above: a record, not a gate."""
-    m = {"loadavg": _loadavg(), "gpu": _gpu_state()}
+    """Recorded at the START of each cell: the load average, free memory and core count the void rule reads (heavy_void), and
+    the GPU and thermal state as a record."""
+    m = {"loadavg": _loadavg(), "free_mem_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state()}
     th = thermal_state()
     if th:
         m["therm"] = th
@@ -952,10 +1030,12 @@ def goinfer_payload(model_path, prompt, cfg):
 def ollama_payload(tag, prompt, cfg, backend="cuda"):
     p = {"model": tag, "stream": True,
          "messages": [{"role": "user", "content": prompt}],
-         "options": {"num_predict": gen_params()[0], "num_ctx": DEEP_CTX or CTX_PIN or 4096}}
+         "options": {"num_predict": gen_params()[0], "num_ctx": cell_ctx()}}
     if backend == "cpu":
         p["options"]["num_gpu"] = 0     # force CPU; ollama defaults to CUDA when present
     p["options"].update(cfg.get("ollama", {}))
+    if is_sampled(cfg):
+        p["options"]["min_p"] = 0.0  # Ollama applies a min_p of its own otherwise; goinfer has none, so 0 matches it
     return p
 
 def llamacpp_payload(prompt, cfg):
@@ -969,6 +1049,8 @@ def llamacpp_payload(prompt, cfg):
          "stream_options": {"include_usage": True},
          "messages": [{"role": "user", "content": prompt}]}
     p.update(cfg.get("llamacpp", {}))
+    if is_sampled(cfg):
+        p["min_p"] = 0.0  # llama-server's default min_p is not 0; goinfer has none, so 0 matches it
     return p
 
 def mlx_payload(model_id, prompt, cfg):
@@ -982,25 +1064,30 @@ def mlx_payload(model_id, prompt, cfg):
     p.update(cfg.get("mlx", {}))
     return p
 
-# Sampling configurations. Each records EXACTLY what is sent to each side.
+# Sampling configurations. Each records EXACTLY what is sent to each side. Every sampled config (temperature > 0) sends
+# temperature, top_p and top_k to every arm, "off" values included (top_p 1.0, top_k 0): an omitted field takes the engine's
+# own default, which since goinfer 352fea05 is the model's recommended value where the checkpoint carries one (and is
+# Ollama's top_k 40 / top_p 0.9 on that side), so it would apply to one arm only. test_bench_peer_sampling.py holds every
+# arm's payload to it. Readings of these configs between 352fea05 and this change are not comparable
+# (docs/benchmarks.md, "Sampling changes that move comparability").
 CONFIGS = {
     "greedy": {
-        "goinfer": {"temperature": 0},
+        "goinfer": {"temperature": 0, "seed": 1},
         "ollama": {"temperature": 0, "seed": 1},
         "note": "temperature=0 both sides (deterministic)",
     },
     "temp0.8_topp0.95": {
-        "goinfer": {"temperature": 0.8, "top_p": 0.95, "seed": 1},
-        "ollama": {"temperature": 0.8, "top_p": 0.95, "seed": 1},
-        "note": "temperature=0.8, top_p=0.95 both sides",
+        "goinfer": {"temperature": 0.8, "top_p": 0.95, "top_k": 0, "seed": 1},
+        "ollama": {"temperature": 0.8, "top_p": 0.95, "top_k": 0, "seed": 1},
+        "note": "temperature=0.8, top_p=0.95, no top_k, both sides",
     },
     # §B5's "temp-only" rows: temperature 1.0 with NO truncation, which is goinfer's own default.
     # Sent EXPLICITLY to both sides rather than relying on own_defaults, because the two engines'
     # defaults differ — own_defaults measures "each side's default", which is a different question
     # and would not reproduce the §B5 row.
     "temp1.0_notrunc": {
-        "goinfer": {"temperature": 1.0},
-        "ollama": {"temperature": 1.0, "seed": 1},
+        "goinfer": {"temperature": 1.0, "top_p": 1.0, "top_k": 0, "seed": 1},
+        "ollama": {"temperature": 1.0, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=1.0, no truncation, both sides",
     },
     # G26 follow-up: the temp-only ladder. optimistic forward (6a4e0ae) runs on sampled decode only
@@ -1008,34 +1095,55 @@ CONFIGS = {
     # its on/off value is a FUNCTION of temperature and two endpoints cannot locate the crossover.
     # Same shape as temp1.0_notrunc -- temperature only, no truncation, sent explicitly to both.
     "temp0.2_notrunc": {
-        "goinfer": {"temperature": 0.2},
-        "ollama": {"temperature": 0.2, "seed": 1},
+        "goinfer": {"temperature": 0.2, "top_p": 1.0, "top_k": 0, "seed": 1},
+        "ollama": {"temperature": 0.2, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.2, no truncation, both sides",
     },
     "temp0.4_notrunc": {
-        "goinfer": {"temperature": 0.4},
-        "ollama": {"temperature": 0.4, "seed": 1},
+        "goinfer": {"temperature": 0.4, "top_p": 1.0, "top_k": 0, "seed": 1},
+        "ollama": {"temperature": 0.4, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.4, no truncation, both sides",
     },
     "temp0.6_notrunc": {
-        "goinfer": {"temperature": 0.6},
-        "ollama": {"temperature": 0.6, "seed": 1},
+        "goinfer": {"temperature": 0.6, "top_p": 1.0, "top_k": 0, "seed": 1},
+        "ollama": {"temperature": 0.6, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.6, no truncation, both sides",
     },
     "temp0.8_notrunc": {
-        "goinfer": {"temperature": 0.8},
-        "ollama": {"temperature": 0.8, "seed": 1},
+        "goinfer": {"temperature": 0.8, "top_p": 1.0, "top_k": 0, "seed": 1},
+        "ollama": {"temperature": 0.8, "top_p": 1.0, "top_k": 0, "seed": 1},
         "note": "temperature=0.8, no truncation, both sides",
     },
     "temp0.8_topk40": {
-        "goinfer": {"temperature": 0.8, "top_k": 40, "seed": 1},
-        "ollama": {"temperature": 0.8, "top_k": 40, "seed": 1},
+        "goinfer": {"temperature": 0.8, "top_p": 1.0, "top_k": 40, "seed": 1},
+        "ollama": {"temperature": 0.8, "top_p": 1.0, "top_k": 40, "seed": 1},
         "note": "temperature=0.8, top_k=40 both sides",
     },
+    # The shared truncated preset (owner, 2026-10-17): one truncation every arm is sent, the same as Ollama's own defaults
+    # (temperature 0.8, top_k 40, top_p 0.9), so the main sampled row compares the engines rather than their defaults.
+    "temp0.8_topk40_topp0.9": {
+        "goinfer": {"temperature": 0.8, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "ollama": {"temperature": 0.8, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "note": "temperature=0.8, top_k=40, top_p=0.9 every arm (the shared truncated preset)",
+    },
+    # One truncated preset shared by every arm (2026-10-17): temperature 1.0, top_k 40, top_p 0.9, all three sent explicitly.
+    "temp1.0_topk40_topp0.9": {
+        "goinfer": {"temperature": 1.0, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "ollama": {"temperature": 1.0, "top_p": 0.9, "top_k": 40, "seed": 1},
+        "note": "temperature=1.0, top_k=40, top_p=0.9, all arms",
+    },
     "own_defaults": {
-        "goinfer": {},
-        "ollama": {},
-        "note": "UNMATCHED — no sampling params sent; each side uses its own defaults",
+        "goinfer": {"seed": 1},
+        "ollama": {"seed": 1},
+        "note": "UNMATCHED — no sampling params sent but the shared seed; each side uses its own defaults",
+    },
+    # A diagnostic, never a comparison row: the shared preset with no seed on any arm, which sends mlx_lm.server down its
+    # batch engine (mlx_server_path). Every other config sends every arm the same seed.
+    "temp0.8_topk40_topp0.9_unseeded": {
+        "goinfer": {"temperature": 0.8, "top_p": 0.9, "top_k": 40},
+        "ollama": {"temperature": 0.8, "top_p": 0.9, "top_k": 40},
+        "unseeded": True,
+        "note": "DIAGNOSTIC — the shared preset with no seed on any arm (mlx_lm.server's batch path)",
     },
 }
 # llama-server speaks goinfer's own OpenAI sampling dialect (same field names), so every config
@@ -1045,6 +1153,152 @@ CONFIGS = {
 for _cfg in CONFIGS.values():
     _cfg.setdefault("llamacpp", _cfg.get("goinfer", {}))
     _cfg.setdefault("mlx", _cfg.get("goinfer", {}))
+
+
+# ---- like for like (owner, 2026-10-17): the same seed, context, min_p and quant class on every arm -----------------------
+# test_bench_peer_sampling.py holds each one.
+
+def mlx_server_path(payload):
+    """The path mlx_lm.server (0.31.3, server.py _is_batchable) runs a request on: one with a seed takes the one-request
+    stream_generate loop, one without takes the batch engine, whose one-client decode is slower. Every config but an
+    "unseeded" diagnostic sends a seed, so MLX runs one path throughout."""
+    return "single-request" if payload.get("seed") is not None else "batch"
+
+
+def is_sampled(cfg):
+    """A config that samples (temperature > 0): it sends temperature, top_p, top_k and the same seed to every arm, and
+    min_p 0 to Ollama and llama-server (ollama_payload, llamacpp_payload)."""
+    return cfg.get("goinfer", {}).get("temperature", 0) > 0
+
+
+def cell_ctx():
+    """The context every arm is given: goinfer -ctx, Ollama num_ctx, llama-server --ctx-size. mlx_lm.server has no context
+    setting (its KV grows with the request); its cells record None."""
+    return DEEP_CTX or CTX_PIN or 4096
+
+
+def goinfer_cmd(serve_bin, gpath, backend, extra):
+    return [serve_bin, "-model", f"bench={gpath}", "-backend", backend, "-addr", f"127.0.0.1:{GPORT}",
+            "-ctx", str(cell_ctx())] + extra
+
+
+def llamacpp_cmd(path, ngl_args):
+    return ([LLAMACPP, "--model", path, "--port", str(LPORT), "--host", "127.0.0.1", "--ctx-size", str(cell_ctx())]
+            + ngl_args + (["-fa", "off"] if DEEP_CTX else []))
+
+
+# A quant's bit class: arms are like for like when their classes agree. goinfer cannot hold a Q4_K_M file's Q5_K and Q6_K
+# tensors natively, so a match is by class (4-bit against 4-bit), never tensor for tensor; each cell records both labels.
+GOINFER_QUANT_CLASS = {"int4": "4-bit", "int4mix": "4-bit", "q4k": "4-bit", "int8": "8-bit", "int8int8": "8-bit",
+                       "f16": "16-bit", "bf16": "16-bit", "f32": "32-bit"}
+GGUF_FILE_TYPES = {0: ("F32", "32-bit"), 1: ("F16", "16-bit"), 2: ("Q4_0", "4-bit"), 3: ("Q4_1", "4-bit"),
+                   7: ("Q8_0", "8-bit"), 8: ("Q5_0", "5-bit"), 9: ("Q5_1", "5-bit"), 10: ("Q2_K", "2-bit"),
+                   11: ("Q3_K_S", "3-bit"), 12: ("Q3_K_M", "3-bit"), 13: ("Q3_K_L", "3-bit"), 14: ("Q4_K_S", "4-bit"),
+                   15: ("Q4_K_M", "4-bit"), 16: ("Q5_K_S", "5-bit"), 17: ("Q5_K_M", "5-bit"), 18: ("Q6_K", "6-bit"),
+                   32: ("BF16", "16-bit"), 38: ("MXFP4", "4-bit")}
+ALLOW_UNMATCHED = os.environ.get("BENCH_UNMATCHED") == "1"  # run anyway; every cell then records quant_matched
+
+
+def gguf_file_type(path):
+    """general.file_type from a GGUF header, or None."""
+    import struct
+    sizes = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
+    try:
+        with open(path, "rb") as f:
+            if f.read(4) != b"GGUF":
+                return None
+            f.read(4)
+            _, nkv = struct.unpack("<QQ", f.read(16))
+            rs = lambda: f.read(struct.unpack("<Q", f.read(8))[0])
+            for _ in range(nkv):
+                k = rs()
+                t, = struct.unpack("<I", f.read(4))
+                if k == b"general.file_type" and t in (4, 5):
+                    return struct.unpack("<I", f.read(4))[0]
+                if t == 8:
+                    rs()
+                elif t == 9:
+                    et, = struct.unpack("<I", f.read(4))
+                    n, = struct.unpack("<Q", f.read(8))
+                    if et == 8:
+                        for _ in range(n):
+                            rs()
+                    else:
+                        f.seek(sizes[et] * n, 1)
+                else:
+                    f.read(sizes[t])
+    except (OSError, struct.error, KeyError):
+        return None
+    return None
+
+
+def ollama_blob(tag):
+    """The GGUF blob an Ollama tag's manifest names (its model layer), or None."""
+    name, _, ver = tag.partition(":")
+    if "/" not in name:
+        name = "library/" + name
+    man = os.path.join(OLLAMA_MODELS, "manifests", "registry.ollama.ai", name, ver or "latest")
+    try:
+        with open(man) as f:
+            layers = json.load(f)["layers"]
+    except (OSError, ValueError, KeyError):
+        return None
+    for layer in layers:
+        if layer.get("mediaType") == "application/vnd.ollama.image.model":
+            return os.path.join(OLLAMA_MODELS, "blobs", layer["digest"].replace(":", "-"))
+    return None
+
+
+def peer_quant(engine, model_key):
+    """(label, class) of the weights a peer arm loads, read from the file itself; (None, why) when it cannot be read."""
+    path, tag = MODELS[model_key]
+    if engine == "mlx":
+        try:
+            with open(os.path.join(MLX_MODELS[model_key], "config.json")) as f:
+                q = json.load(f).get("quantization", {})
+            return f"mlx {q['bits']}-bit", f"{q['bits']}-bit"
+        except (KeyError, OSError, ValueError, TypeError):
+            return None, "no MLX quantization config"
+    src = ollama_blob(tag) if engine == "ollama" else path
+    if not src:
+        return None, f"no manifest for Ollama tag {tag!r}"
+    ft = gguf_file_type(src)
+    if ft not in GGUF_FILE_TYPES:
+        return None, f"file type {ft} of {src} not in GGUF_FILE_TYPES"
+    return GGUF_FILE_TYPES[ft]
+
+
+def goinfer_quant(model_key):
+    """(label, class) goinfer is asked for, or (None, why) when the load decides it (no -quant: checked from the decode path)."""
+    if model_key in GOINFER_MOE_PATH:
+        return None, "goinfer's own bundle bakes its quant"
+    q = GOINFER_QUANT_OVERRIDE.get(model_key, "int4")
+    if q == "default":
+        return None, "chosen at load (activationSafeQuant)"
+    return q, GOINFER_QUANT_CLASS.get(q)
+
+
+def decode_path_quant(dp):
+    """The quant label in a reported decode path: "cuda-resident (q4k)" -> "q4k"."""
+    m = re.search(r"\(([a-z0-9]+)\)", dp or "")
+    return m.group(1) if m else None
+
+
+def quant_mismatch(model_key, engines, goinfer_label=None):
+    """Why the arms of a model's cells do not share a quant class, or "" when they do (or nothing can be compared)."""
+    g = (goinfer_label, GOINFER_QUANT_CLASS.get(goinfer_label)) if goinfer_label else goinfer_quant(model_key)
+    if g[0] is None:
+        return ""
+    bad = []
+    for e in engines:
+        if e in ("goinfer", "goinfer_old") or (e == "mlx" and model_key not in MLX_MODELS):
+            continue  # an MLX cell with no checkpoint is skipped, so it compares nothing
+        label, klass = peer_quant(e, model_key)
+        if label is None:
+            bad.append(f"{e}: {klass}")
+        elif klass != g[1]:
+            bad.append(f"{e} loads {label} ({klass})")
+    return f"{model_key}: goinfer {g[0]} ({g[1]}) but " + "; ".join(bad) if bad else ""
 
 def gate_cell_idle():
     """Re-check that the box is idle, BEFORE EVERY CELL. Returns nothing; exits on failure.
@@ -1195,9 +1449,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             be_args = ["-require-backend"] if (backend != "cpu" and os.environ.get("BENCH_REQUIRE_BACKEND") == "1") else []
             with open(serve_log_path, "ab") as serve_log:   # the child keeps its own copy of the descriptor
                 proc = subprocess.Popen(
-                    [serve_map[backend], "-model", f"bench={gpath}", "-backend", backend,
-                     "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
-                    + (["-ctx", str(DEEP_CTX or CTX_PIN)] if (DEEP_CTX or CTX_PIN) else [])
+                    goinfer_cmd(serve_map[backend], gpath, backend, quant_args + moe_args)
                     + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else [])
                     + be_args + EXTRA_GOINFER_ARGS + (EXTRA_GOINFER_OLD_ARGS if engine == "goinfer_old" else []),
                     stdout=subprocess.DEVNULL, stderr=serve_log,
@@ -1246,9 +1498,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             else:
                 ngl_args = ["-ngl", "99"]
             proc = subprocess.Popen(
-                [LLAMACPP, "--model", path, "--port", str(LPORT), "--host", "127.0.0.1",
-                 "--ctx-size", str(DEEP_CTX or CTX_PIN or 4096)] + ngl_args
-                + (["-fa", "off"] if DEEP_CTX else []),
+                llamacpp_cmd(path, ngl_args),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
@@ -1281,6 +1531,12 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             return None, swap.void_reason() or "server did not come up", {"swap": swap.stop()}
         if engine in ("goinfer", "goinfer_old"):
             decode_path = decode_path_since(serve_log_path, log_offset)
+            try:
+                with open(serve_log_path, "rb") as f:
+                    f.seek(log_offset)
+                    learn_fit_need(model_key, f.read().decode("utf-8", "replace"))
+            except OSError:
+                pass
             bad = decode_path_mismatch(decode_path, backend)
             # BENCH_ALLOW_CPU_FALLBACK=1 keeps such a cell and records its path: for a run whose POINT is the CPU fallback of a
             # GPU backend (phi3-metal-2026-09-29: a Metal user's Phi-3 runs on the CPU, and that is what is being timed).
@@ -1841,21 +2097,30 @@ def main():
     if quads:
         print(f"# BENCH_ABBA={quads}: each group runs {quads} mirrored quad(s) of restarted cells (A B, B A)", flush=True)
     print(f"# {len(plan)} cells planned, {len(done)} already done", flush=True)
+    for mk in sorted({c[3] for c in plan if c[0] in ("A", "B", "C")}):
+        why = quant_mismatch(mk, plan_engines())
+        if why and not ALLOW_UNMATCHED:
+            sys.exit(f"REFUSED: the arms do not share a quant class: {why}. Match goinfer's quant to the peer's "
+                     f"(BENCH_QUANT_OVERRIDE), or set BENCH_UNMATCHED=1 to run and mark every cell unmatched.")
+        print(f"# quant {mk}: " + (why or "the arms share a quant class (or goinfer's is chosen at load: checked per cell)"), flush=True)
     for phase, engine, backend, mk, depth, cfg, block in plan:
         key = (phase, engine, backend, mk, depth, cfg, block)
         if key in done:
             print(f"# skip (done): {key}", flush=True)
             continue
         gate = gate_cell_idle()
+        need, need_src = fit_need(mk) if phase in ("A", "B", "C") else (None, None)
+
+        def _run():
+            if phase == "D":
+                return run_embed_cell(engine, depth, n_embed_inputs)
+            if phase == "E":
+                return run_vision_cell(engine)
+            return run_cell(engine, mk, depth, cfg, backend)
         t0 = time.time()
-        machine = machine_state()
+        (rates, err, counts), machine, void_starts = start_clean(machine_state, need, _run)
         machine["gate"] = gate
-        if phase == "D":
-            rates, err, counts = run_embed_cell(engine, depth, n_embed_inputs)
-        elif phase == "E":
-            rates, err, counts = run_vision_cell(engine)
-        else:
-            rates, err, counts = run_cell(engine, mk, depth, cfg, backend)
+        machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
         # MODELS keys and D's "depth" is an approximate embeddings length, not a calibrated one, so
         # phases D/E record None here rather than raising a KeyError against prompts.json.
@@ -1864,11 +2129,24 @@ def main():
                "depth": depth, "prompt_tokens": ptoks,
                "prompt_format": prompt_format(depth, mk) if phase in ("A", "B", "C") else None,
                "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
+               "ctx": None if engine == "mlx" else cell_ctx(),
+               "mlx_path": mlx_server_path(mlx_payload("", "", CONFIGS[cfg])) if engine == "mlx" else None,
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
                "machine": machine,
                "secs": round(time.time() - t0, 1)}
         if block is not None:
             rec["block"] = block
+        if void_starts:
+            rec["void_starts"] = void_starts   # listed, never averaged: the cell re-ran in place from a clean start
+        unmatched = ""
+        if phase in ("A", "B", "C"):
+            if engine in ("goinfer", "goinfer_old"):
+                label = decode_path_quant((counts or {}).get("decode_path")) or goinfer_quant(mk)[0]
+                rec["quant"], rec["quant_class"] = label, GOINFER_QUANT_CLASS.get(label)
+                unmatched = quant_mismatch(mk, plan_engines(), label) if label else ""
+            elif not (engine == "mlx" and mk not in MLX_MODELS):
+                rec["quant"], rec["quant_class"] = peer_quant(engine, mk)
+            rec["quant_matched"] = not unmatched
         if counts:
             # tokens/chunks is the DIAGNOSTIC for the chunk-counting bug: 1.000 means chunking cost
             # this cell nothing and the old numbers were right here; >1 means the old harness
@@ -1892,6 +2170,9 @@ def main():
         print(json.dumps(rec), flush=True)
         with open(outpath, "w") as f:
             json.dump(out, f, indent=1)
+        if unmatched and not ALLOW_UNMATCHED:
+            sys.exit(f"REFUSED after this cell: goinfer loaded a quant the peers do not share: {unmatched}. The cell is "
+                     f"recorded with quant_matched false; match the quants, or set BENCH_UNMATCHED=1.")
 
 if __name__ == "__main__":
     # TE9 (docs/tasks/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and

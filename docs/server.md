@@ -63,13 +63,34 @@ other route**, so a liveness probe must send the API key when one is configured 
 entry also carries goinfer-only fields: the resolved `decode_path`/`prefill_path`, and `context_window`,
 the exact token limit a text request is held to (the resident KV cap on a GPU backend when that is lower than
 the model's own maximum), from the same function that enforces it, repeated as `context_length` and
-`max_model_len` (the names Hermes and Oh My Pi read); and `vision`, whether the model
+`max_model_len` (the names Hermes and Oh My Pi read); `max_positions`, the model's own maximum context, which no `-ctx`
+goes past; and `vision`, whether the model
 accepts image content parts (from the same check that refuses them otherwise);
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
-`frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
+`frequency_penalty`/`presence_penalty`/`stop`/`logprobs`/`logit_bias`); and **`response_format`**
 — `{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
+
+**Sampling defaults.** A sampling field a request leaves out takes the model's own recommended value, when the checkpoint
+carries one; a field the request sends always wins. The values come from a Hugging Face directory's
+`generation_config.json`, or from a GGUF's `general.sampling.*` metadata (`temp`, `top_p`, `top_k`, `min_p`). A bare `.gguf`
+reads only its own metadata, never a `generation_config.json` in its folder, which may hold other models. A `.giw` keeps what
+its source carried. The fields are `temperature`, `top_p`, `top_k`, `min_p` (which has no request field, so a recommended
+one always applies) and `presence_penalty`; `do_sample: false` means greedy.
+**`logit_bias`** is OpenAI's: a map from token id (a decimal string) to a value in [-100,100] added to that token's logit
+before sampling, so -100 bans a token in practice and +100 all but forces it. `/v1/chat/completions`, `/v1/completions` and
+`/v1/responses` take it, and `/v1/messages` takes it as a goinfer extension. A key that is not a token id in the model's
+vocabulary, a value outside the range, or more than 1,024 entries is a 400. A request that asks for greedy
+(`temperature` 0) is left as sent. `repetition_penalty` is never applied: transformers divides logits by it, and this
+sampler's penalties are OpenAI's subtractive ones. A model that carries no values keeps the server default: temperature
+1.0 over the whole vocabulary, no `top_k`, `top_p` or `min_p`.
+
+The load banner says which applies, for example `sampling: generation_config.json recommends temperature 0.7, top_p 0.8,
+top_k 20, applied to the fields a request leaves out; not applied: repetition_penalty 1.05 (…)`, or `sampling: the model
+recommends none; …`. With `-log-requests`, a request that took fields from the model ends its line with
+`sampling_from_model=temperature,top_p,top_k`, naming them. `goinfer-chat --batch` applies the same rule, except that an
+explicit flag (`--temp`, `--top-p`, …) wins over the model.
 
 **Per-field confidence (`goinfer_confidence`, opt-in).** Add `"goinfer_confidence": true` to a
 `/v1/chat/completions` or `/v1/completions` request that carries `response_format: {"type": "json_schema", …}`,
@@ -166,6 +187,33 @@ finish, returning `200` if that completes within `--unload-drain-wait` (default 
 and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a full queue
 returns 429 + Retry-After (no continuous batching).
 
+**Admin: would this load fit?** `POST /admin/models/fit` takes the load's body (`path`, and `quant` / `lora` when the load
+would name them) and answers what `POST /admin/models/load` would do with it, without loading anything. It resolves the
+path as the load does: the same choice of the `.gguf` itself or its sidecar `.giw`, and the same quant (a family that per-vector
+int8 activations break gets the load's substitute, named in `notes`). Then it runs the load's own memory check, priced
+against the memory available now: `guard` is `resident` (weights, KV and the mapped source against 70% of available
+memory) or `giw` (KV and scratch against available memory less 1 GB, because a `.giw`'s weights are file-backed). The answer carries
+`fits`, `ctx` (the context priced; `ctx_capped` when the load would lower an unpinned one to fit), `ctx_pinned`,
+`max_ctx`, `need_bytes`, `budget_bytes`, `weight_bytes`, `kv_bytes`, `available_bytes`, and `decline`, the load's
+refusal text, when it does not fit. `retry` says when the load, refused, retries with weight streaming instead.
+`decode_path` is the path the load reports. It is known before the weights are opened for the CPU backend, a GPU backend
+this binary does not carry, or an architecture Metal's feature gate refuses (`cpu (int8int8)`).
+- **A `.giw` on Metal:** the route opens the bundle without building a resident (mapped, its weights untouched; about
+  3 MB of footprint, given back on close) and asks the checks Metal's build makes before it allocates: the features, the
+  context, and the memory guard, which lowers an unpinned context before it declines. `decode_path` is then
+  `metal-resident (int4)` with `resident_ctx`, the context the resident would hold, or the CPU path with the decline
+  the load would report.
+- **Not foreseen:** a decline inside the build itself, or by the startup self-test after it.
+- **Otherwise it is `unknown`,** and `decode_path_unknown` says why: a `.gguf` or a directory on a GPU backend (opening
+  one quantizes it), a backend whose residency is decided only by building it (CUDA, WebGPU), or a Metal int8 load,
+  whose build decides between its native int8 kernels and a re-quantization to int4.
+
+`fits` is
+`null`, and `unknown` says why, when only a step the route does not take could tell: a `.gguf` whose sidecar `.giw` is
+not built yet (`build` names it; the load builds it first), or an `hf:`/`demo:` reference (ask with its local path). The
+route never loads a model: it takes a sidecar as current from its age and its header, where the load also checks that it
+loads, so a sidecar that is current by header and does not load is priced here and rebuilt by the load.
+
 **`--max-concurrent N` (default 4) lets one CPU model run N generations at once** (Experimental; MC3c of
 `docs/tasks/parked/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
 serialization). Each generation runs on its own session KV, so each
@@ -182,7 +230,7 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 - On the 0.5B, `on` reads 0.73× the workers.
 - On macOS too: on an M1 Pro's CPU the 7B's batched step reads 1.54× (depth 128) and 1.38× (depth 512) the workers
   (`measurements/concurrency-mc2-2026-09-26.md`, "Mac 7B cell"). A served W7 run on the Mac has not been made.
-- Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8`, adapters,
+- Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8` or `f16` (the banner says so; with `-cpu-batch on` either refuses the load), adapters,
   speculative decode and vision.
 - The banner's concurrency line says which mode runs, and serve logs the batcher's step counts at shutdown.
 
@@ -310,6 +358,17 @@ content blocks (`text`, `tool_use`/`tool_result` replay), `tools` (note:
 and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
 → `message_delta` → `message_stop`, no `[DONE]`).
 
+**`usage` on `/v1/messages` follows the Messages API's split.** `cache_read_input_tokens` is the prompt tokens a prior turn's
+KV already held, so their prefill was skipped: the count `/v1/responses` reports as `cached_tokens`, and the request log as
+`reused=`. `input_tokens` is the rest, the tokens this request prefilled, so the prompt is `input_tokens +
+cache_read_input_tokens` (what `count_tokens` returns). That is the sum Anthropic's clients take: Claude Code sizes its context
+from it. Reporting the whole prompt as `input_tokens`, with the reused count as a subset of it, would make every warm turn read
+as up to twice its size there, and compact early. `cache_creation_input_tokens` is not reported: every prefix serve prefills it
+keeps, with no separate cache write. A streamed reply's `message_start` goes out before the prefill decides the reuse, so it
+reports the whole prompt as `input_tokens` and no `cache_read_input_tokens`. Its `message_delta` carries the final split, as a
+whole-message total that replaces `message_start`'s, which is how the Anthropic SDKs accumulate it. The vision route and
+message batches report it the same way. Until 2026-10-16, `input_tokens` was the whole prompt and no reuse was reported.
+
 **What `tool_choice` actually constrains** (N-18, closed 2026-09-24): on the families with a JSON call form — chatml and mellum2
 (`<tool_call>`), mistral (`[TOOL_CALLS]`) and llama3 (bare JSON) — a tool call cannot be malformed and cannot name a tool you did not
 supply, with any number of tools:
@@ -321,6 +380,28 @@ supply, with any number of tools:
   under `auto` its call is constrained when the reply BEGINS as one (`{"name": "`, optionally after `<|python_tag|>`); a call that
   follows prose in the same reply is still only parsed. A server started with speculative decoding leaves `auto` unconstrained, to
   keep its drafter.
+
+**On a family with no JSON call form** (Gemma 4, gpt-oss, a ChatML model under `-tool-format template`), a call is parsed, not
+constrained. A named tool is a 400. `required` / `any` runs unconstrained and is checked once the reply is parsed: a reply with no
+call is an error (a 500, or an error event on a stream), never prose, and no prose streams before the check.
+
+**How each model enforces a forced call** is in its `/v1/models` entry (and `/health`) as `forced_tool_call`:
+- `grammar`: chatml, mellum2, mistral and llama3, as above;
+- `post-check`: a family with no JSON call form;
+- `off`: `GOINFER_TOOL_UNION=0`, where `required` / `any` over several tools is neither constrained nor checked.
+The field is absent for a model whose template takes no tools.
+
+**What the arguments are held to.** The call's form, the tool's name and the argument keys a tool declares are always
+constrained. Within the arguments, a value is held to the type the schema gives it, and what the grammar cannot check is the
+tool's to validate:
+- numeric bounds other than `minimum: 0`, string length and pattern, and similar assertions are not enforced;
+- a value with no type, several types, or a composite keyword (`anyOf`, `oneOf`, `$ref`, …) may be any JSON value;
+- an object that declares no properties may be any object, and one that also allows undeclared keys is held to its declared
+  ones.
+
+So an agent's real tool list (opencode's tools use `maximum` and `exclusiveMinimum`) is constrained rather than dropped. A
+tool list that still cannot be constrained is reported on stderr, once per reason, and those calls are parsed only.
+`response_format: json_schema` stays strict: an unsupported keyword there is a 400.
 
 Families without a JSON call form (Gemma 4's own call syntax, gpt-oss's channel message, and families with no tool template) are parsed only. This constrains the
 call's FORM, not the model's choice of tool. `GOINFER_TOOL_UNION=0` turns the multi-tool constraint off. Measured in
@@ -538,6 +619,19 @@ stopped interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 
 prefilled one token at a time there when it was measured: 2.81× at 4 clients on an M1 Pro
 (`measurements/concurrency-mc1-webgpu-2026-09-27.md`). Since 2026-10-12 a 4-bit dense model prefills in one batched pass
 under WebGPU, so a thrash costs less than it did; the 2.81× has not been re-read.
+
+**Sharing scope, and a known limit.** A conversation's prefix can be reused by another conversation in the same
+sharing scope:
+- one scope on loopback;
+- one per API key when keys are configured;
+- none when `serve` binds beyond loopback without API keys, or under `--kv-share off`.
+
+A shared prefix makes a reply start sooner, so its time to first token says something about what another client
+sent. Outside a shared scope only a continuation reuses rows: a request whose prompt extends everything a slot holds,
+giving up less than one 64-token block of it. **Known limit:** a client that already knows all but the last 63 tokens
+of another conversation can learn from its time to first token how far its guess matched. It learns nothing about a
+conversation it cannot already reproduce up to that tail. API keys do not remove this limit: a continuation is
+recognised by its tokens, not by who sent it. The design is `tasks/task-kv-architecture-2026-10.md` §5.15.
 - **On WebGPU**, each slot is the full f32 KV at the resident context (~0.94 GB for Qwen2.5-1.5B at the default 16k).
   WebGPU has no free-memory query. On a Mac, slots are clamped to 70% of RAM and to what was available before the
   build, and **slots come before context there as on CUDA** (owner decision 2026-09-27): when `--ctx` is not set, the
@@ -674,7 +768,7 @@ to ignore.**
 | Clients that parse `<think>` tags themselves | `reasoning_format: "none"` (or `-reasoning-format none`) | the raw text, tags and all, in `content` — exactly what serve sent before |
 | Both at once | `reasoning_format: "deepseek-legacy"` | `reasoning_content` filled and the tags kept in `content` |
 | Anthropic `/v1/messages` | `thinking: {"type": "enabled"\|"adaptive"\|"disabled"}` | a `thinking` block first, then `text` (and `tool_use`); with no `thinking` field, text only — reasoning is dropped |
-| `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`; reasoning items are not returned |
+| `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`, with the reasoning as a `reasoning` output item ahead of it (see "Reasoning items on /v1/responses" below) |
 
 - **Defaults.** `-thinking template` (the default) renders what each checkpoint's own chat template renders when thinking
   is unspecified, so serve behaves as the model's card says: Qwen3.5-0.8B and Gemma 4 do not think; Qwen3.5-9B and Qwen3 do.
@@ -696,6 +790,116 @@ to ignore.**
   thinking control, or to a model whose tokenizer has no single token for the block's delimiters. A reply that ends inside its
   block anyway (one of those cases) has empty `content`, `reasoning_content` holding what was written, and `finish_reason:
   length` (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`).
+- **Empty answers say why, and a call read from the reasoning is marked (Experimental vendor extension).** A turn that
+  ends (not cut off) with no answer text and no tool call is never returned as a clean one, and on a tool request a turn
+  with no answer text whose reasoning holds a tool call returns that call: a thinking model sometimes writes its call
+  inside the block and ends its turn there. Both are goinfer extensions, **Experimental**: the field names and the set of
+  reason values may still change, so a client should treat an unknown reason as "no answer" and not depend on the exact
+  set yet.
+
+  | route | an empty answer | a call read from the reasoning |
+  |---|---|---|
+  | `/v1/responses` | `status: "incomplete"`, `incomplete_details: {"reason", "detail"}` (streamed: in `response.completed`) | `goinfer_tool_calls_from_reasoning: true` on the response object |
+  | `/v1/chat/completions` | `goinfer_empty_answer: {"reason", "detail"}` on the choice (streamed: on the chunk carrying `finish_reason`) | `goinfer_tool_calls_from_reasoning: true` on the same choice or chunk |
+  | `/v1/messages` | `goinfer_empty_answer: {"reason", "detail"}` on the message (streamed: on the `message_delta` event) | `goinfer_tool_calls_from_reasoning: true` on the same message or event |
+
+  | `reason` | meaning |
+  |---|---|
+  | `ended_in_reasoning` | the model ended its turn inside its reasoning block without closing it: all it wrote is reasoning |
+  | `reasoning_only` | the model closed its reasoning block and ended its turn without writing an answer |
+  | `stop_sequence` | a stop string matched before any answer text |
+  | `no_output` | the model wrote no answer text and no reasoning (an end of turn at its first token, or whitespace only) |
+
+  `detail` is a sentence for a person, with the token count; do not parse it. A turn cut off by its token limit keeps its
+  usual reason (`finish_reason: length`, `incomplete_details.reason: max_output_tokens`, `stop_reason: max_tokens`), and a
+  cancelled one its `cancelled` reason. `/v1/completions`, batches and jobs do not carry either field. A call drafted in the
+  reasoning of a turn that went on to answer in prose is not taken.
+- **Reasoning items on /v1/responses.** A reply that reasons returns a `reasoning` output item ahead of its message and
+  calls: `summary` is empty (serve writes no summary), `content` holds the reasoning as one `reasoning_text` part, and
+  `encrypted_content` holds the same bytes, base64, after the prefix `goinfer-reasoning-v1:` (or, with the reply's token
+  ids, `goinfer-reasoning-v2:`: "Carried token ids" below). That value is not encrypted,
+  and it is opaque only by convention: it exists so the client sends it back unchanged. Streamed, the item opens on the
+  first reasoning fragment, the text arrives as `response.reasoning_text.delta` events, and the item closes before the
+  message or the first call opens.
+  A reasoning item sent back in `input` is **rendered, not dropped**. Its text becomes the replayed reasoning of the
+  assistant turn after it (the next `function_call` or assistant `message`), and the model's own chat template then decides
+  where it appears, as for `reasoning_content` on the chat route ("Replayed reasoning (history)" below). For Qwen3,
+  Qwen3.5 and Mellum2.1, the turns of the tool loop in progress keep their reasoning and earlier turns drop it, which is
+  what their Hugging Face templates render. A template with no history rule ignores it. The text is read from serve's own
+  `encrypted_content` first, then from `reasoning_text` content, then from the `summary_text`. An item may carry either
+  form or both, and **`encrypted_content` wins when they disagree**, since it is the bytes the model generated. An
+  `encrypted_content` from another server is ignored. One with serve's prefix that does not decode is a 400, not a
+  silent drop. A reasoning item with no assistant turn after it is dropped.
+  **Why render:** the reasoning is in the KV the reply left behind. A client that resends the turn without it (Codex
+  before this change) makes the next prompt leave the KV where the reasoning began. The turn then re-prefills from there,
+  in full on CUDA windowed-KV models, where a rollback past the window's slack forces a cold prefill. Sent back, the
+  next prompt extends the previous prompt plus the generated tokens. `usage.input_tokens_details.cached_tokens` reports
+  the prompt tokens a prior turn's KV covered.
+- **Carried token ids on /v1/responses and /v1/messages.** Echoed text re-tokenizes to the tokenizer's own split of it, which is not always
+  the split the model generated (about one reply in eleven on Codex traffic: a JSON escape, `"]}` in prose, a lone space),
+  and the next prompt then leaves the KV inside the reply. So the reasoning item's `encrypted_content` carries the reply's
+  generated token ids as well: `goinfer-reasoning-v2:` then base64 of the reasoning text, the ids (varint-packed), the
+  identity of the model and tokenizer, the namespace, a key id and an HMAC-SHA256 over everything but the text. The key is
+  32 random bytes made at start and never written (`--ids-key-file` names a file to use instead, 32 bytes or more, mode
+  0600; not checked on Windows, whose mode bits do not carry it, and serve warns at startup there), to keep the ids valid across restarts or between servers sharing it). A reply with no reasoning gets a
+  **carrier-only** reasoning item (empty `content`, the blob alone) when the request asked for
+  `include: ["reasoning.encrypted_content"]`, as Codex does; without that, or when the client drops reasoning items, a
+  reply's ids do not ride back. Streamed, the reasoning item closes when the answer starts, so a streamed answer's item
+  carries the ids up to the end of the reasoning block only; a call is emitted after the turn ends, so the item before it
+  carries the whole turn.
+  When the turn is echoed back, its ids are used **only** if the blob verifies (this server's key id and MAC, this model,
+  this namespace) and the ids decode exactly to the turn's text as the template renders it, special tokens on the
+  template's special tokens, or differ from it only in formatting the template writes itself: newlines next to the
+  reasoning delimiters, and JSON whitespace around the separators of a tool-call block outside its strings (the model
+  writing `Now</think>` where the template renders `Now\n</think>`, or `"arguments":{` for `"arguments": {`). Then the
+  model's own bytes stand in for the template's over that turn. Anything else tokenizes the turn exactly as a request with
+  no blob, and is counted: `v1` (no ids), `parse`, `mac`, `key` (another key: after a restart with the default key),
+  `model`, `ns`, `special`, `decode` (the content differs: a client edit), `history` (the template drops this turn's
+  reasoning, as Mellum2.1 and the Qwen families do for turns before the last user query), `template` (the difference is
+  formatting only, but the ids have no single place in the render). `-log-requests` writes
+  `ids=<used>/<carried> ids_fallback=<reasons>`, then `ids_fmt=<n>` when n of the used turns replaced template formatting,
+  per request, and `GET /admin/status` the totals since start (`carried_ids`). The prompt ids are then a function of the
+  request alone, never of what the KV holds. On `/v1/messages` the same blob rides in the reply's `thinking` block as its
+  `signature` (streamed, in the `signature_delta`), and a reply that asked for thinking and had none gets a carrier-only
+  `redacted_thinking` block whose `data` is the blob, first, when no other block has opened; a thinking block whose
+  signature this server did not mint carries nothing. A client sends `tool_use` input back as JSON it parsed, so arguments
+  the model spaced return compacted: the closed list above keeps their ids. Not covered: Chat Completions (no carrier), and
+  a reply whose calls the client echoes as separate turns.
+- **Prefix snapshots in host memory** (`-kv-host-bytes`). A GPU card with one KV slot loses the previous session's prompt the moment
+  the next session starts, and a coding agent's sessions share almost all of their first prompt (the system prompt, the tool
+  definitions, the environment). After a **cold first prefill of 2,048 ids or more**, a GPU-resident model copies the prompt's full
+  blocks of KV to **pinned host memory**, keyed by the token ids under the same root KV sharing uses (namespace, model, adapter, KV
+  precision); a later request whose prompt starts with those ids **restores** the rows into its slot by device copy and prefills only
+  the rest. The rows are prefill-class rows copied before any decode step, so the restored prefix is the prefix computed and the reply
+  is the cold one. The budget defaults to **a tenth of the machine's RAM, at most 8 GiB** (`-kv-host-bytes` sets it: `0` turns the
+  feature off, or a byte count with an optional K, M or G). Memory is pinned only while a snapshot is held, so an idle server holds
+  none; the least recently restored snapshot goes first, and a longer prompt of a held prefix replaces the shorter snapshot. A
+  snapshot is never written to disk, never crosses a namespace, and `-kv-share off` turns snapshots off too. A windowed model serves
+  a restore only within the window's rollback of the snapshot's end, so a prompt whose part after the shared prefix is longer than
+  that does not qualify; `/admin/status` counts those (`kv_snapshots.<model>.unqualified`) with the snapshots held, taken, restored,
+  evicted and declined by reason. The startup banner states the budget; a restored request's `-log-requests` line ends with
+  `snap=<rows>`. CUDA only today (`docs/tasks/task-kv7-prefix-snapshot-2026-10.md`).
+- **A declined batched prefill is visible.** When the batched prefill declines and another path runs the prompt:
+  - stderr says why: a Gemma 4 E-model on Metal once per request, with the prompt's length; otherwise once per distinct
+    reason;
+  - that request's `-log-requests` line ends with `prefill_fallback=<path> prefill_fallback_reason="<why>"`, where
+    `sequential` is the token-by-token loop and `layer-major` is a Gemma 4 E-model's pass on decode's kernels;
+  - `--log-token-ids` carries the path and the reason (`prefill_fallback`, `prefill_fallback_reason`).
+
+  On Metal, a model with a head dim the fused attention kernel does not take (over 128) runs the exact kernel, which holds
+  4,096 keys. Past that it tiles its scores (head dims up to 512) and the prompt stays on the batched pass. Its banner's
+  `prefill path:` line says so.
+- **A fast alias for side requests.** A served model `N` also answers to `N-fast`: the same weights, chat template and KV slot,
+  with thinking off (the request's own thinking controls are overridden) and nothing else different: its output limit is the
+  request's, or the main model's default, with no cap of its own (`-fast-alias=false` turns the alias off). It is for the requests
+  an agent sends for its own bookkeeping, a session title, which a reasoning model otherwise spends seconds of GPU time thinking
+  through. `GET /v1/models` advertises it in the model's own entry (`fast_model`); the alias is not an entry of its own, so a listing is still one model. A
+  model served under the alias's name takes the name. `-log-requests` ends a request that named the alias with ` fast=1`. `connect`
+  points Claude Code's small/fast model and opencode's `small_model` at it. A request under the model's own name is unchanged.
+- **The KV precision a request ran at.** `--kv f32`, `f16` or `i8` is delivered on the path the load resolves to, or the load refuses
+  at startup and says why (`docs/kv-precision-matrix.md` has every backend and family; `auto` is the backend's pick). The banner's
+  context line prints each cache's precision with the one requested, and `-log-requests` gives every generating request ` kv=<f32|f16|i8|n/a>`,
+  the precision of the cache it wrote.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.
@@ -749,8 +953,8 @@ to ignore.**
   `namespace functions { … }` — and a call and its result replay as the template renders them; both are pinned byte for byte against
   HuggingFace's rendering of the template from the GGUF, quirks included. Limits, stated plainly:
   - **A call's form is parsed, not constrained.** gpt-oss's call is a channel message, not a JSON wrapper a grammar can govern, so a
-    named `tool_choice` is a 400 (as for Gemma 4) and `required` / `auto` run unconstrained: the model may answer in prose where
-    `required` asked for a call. An argument object that is not valid JSON is left out rather than passed on.
+    named `tool_choice` is a 400 (as for Gemma 4) and `required` / `auto` run unconstrained. A `required` reply that holds no call
+    is an error (`forced_tool_call` `post-check`). An argument object that is not valid JSON is left out rather than passed on.
   - **Prose is buffered, not streamed** on a tool-capable request; the reasoning still streams as `reasoning_content`.
   - Only `functions.NAME` recipients are calls: gpt-oss's built-in `browser` and `python` are never declared and are ignored if the
     model reaches for them. The model stops at the first call, so parallel calls in one turn do not occur; a history that carries
@@ -780,9 +984,10 @@ the replies are identical, line for line.
   crash, a Ctrl-C or a power cut and lines whose `custom_id` is already in the output are skipped; a final line the process died
   in the middle of is cut off and run again. A line that failed is not done, so a rerun retries it (`out.errors.jsonl` is
   rewritten each run and holds only that run's failures). A run with nothing left to do exits without loading the model.
-- **A line that states no sampling settings gets the API's defaults** (temperature 1, no top-k/top-p, 512 tokens, a random
-  seed, no system prompt), not `goinfer-chat`'s interactive ones — unless you pass the flag (`--temp 0`, `--seed`, `--max`,
-  `--system`…), which is an instruction about this run. Put `temperature` and `seed` in the line for a reproducible file.
+- **A line that states no sampling settings gets the API's defaults** (the model's recommended sampling where it carries
+  one, else temperature 1 with no top-k/top-p; 512 tokens, a random seed, no system prompt; "Sampling defaults" above), not
+  `goinfer-chat`'s interactive ones — unless you pass the flag (`--temp 0`, `--seed`, `--max`, `--system`…), which is an
+  instruction about this run. Put `temperature` and `seed` in the line for a reproducible file.
 - **Scope is text chat,** as over HTTP. Supported per line: `messages` (string or text-part content, `system`/`developer`,
   replayed `reasoning_content`), `temperature`, `top_p`, `top_k`, `max_tokens` / `max_completion_tokens`, `seed`,
   `frequency_penalty`, `presence_penalty`, `stop`, `response_format` (`json_object`, `json_schema`), and the thinking controls

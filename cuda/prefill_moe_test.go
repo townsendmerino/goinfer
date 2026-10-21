@@ -59,12 +59,15 @@ func prefillMoEParity(t *testing.T, dir string, real26B bool) {
 		t.Skipf("no fixture (%s)", dir)
 	}
 	opts := decoder.Options{Backend: "cuda", Quant: "int4"}
+	var mc *decoder.Model
+	var err error
 	if real26B {
-		// The .giw bundle is already quantized (-quant does not apply) and the expert stack exceeds
-		// this card, so it needs the C′ cache — the shipped configuration, not a test-only one.
-		opts = decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: 8192}
+		// The .giw bundle is already quantized and the expert stack exceeds this card, so it needs the C′ cache: the shipped
+		// configuration, loaded as serve loads it.
+		mc, err = loadLikeServe(t, dir, "-backend", "cuda", "-ctx", "8192", "-moe-cache-experts")
+	} else {
+		mc, err = decoder.Load(dir, opts)
 	}
-	mc, err := decoder.Load(dir, opts)
 	if err != nil {
 		t.Fatalf("load (cuda): %v", err)
 	}

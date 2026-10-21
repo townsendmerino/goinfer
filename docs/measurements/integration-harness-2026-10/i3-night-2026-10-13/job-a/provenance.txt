@@ -1,0 +1,13 @@
+started: 2026-10-13 17:17:32 PDT
+host: Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+serve: 81791568
+driver: 595.91.07, NVIDIA GeForce RTX 2070 SUPER
+load:  17:17:32 up 9 days, 20:40,  5 users,  load average: 0.05, 0.13, 0.29
+               total        used        free      shared  buff/cache   available
+Mem:           64238        8970       15428         397       40841       55267
+Swap:          78863        7996       70867
+claude: 2.1.296 (Claude Code)
+codex: codex-cli 0.162.1
+opencode: 1.19.0
+bwrap: bubblewrap 0.11.0
+only: q3-4b-16k,q3-4b-28k-cc

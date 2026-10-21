@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -62,6 +63,8 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writePrepareErr(w, err)
 		return
 	}
+	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
 
 	// Tight when unambiguous: a forced function or a lone tool constrains the call to that tool's schema (when the family has
 	// a JSON call form). A NAMED tool_choice that cannot be constrained is a 400, not a silent unconstrained decode.
@@ -151,6 +154,13 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		msg["reasoning_content"] = rb.String()
 	}
 	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
+	empty := emptyAnswerOf(gr, finish, t.stopSeq, len(t.calls), nComp)
+	if empty != nil {
+		choice["goinfer_empty_answer"] = empty
+	}
+	if t.fromReasoning && len(t.calls) > 0 {
+		choice[fromReasoningField] = true
+	}
 	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
 
 	if req.Stream {
@@ -167,9 +177,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		}
 		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})
-		fin := finish
-		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
-			"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": &fin}}})
+		sseSend(ss, finishChunk(id, created, lm.name, finish, empty, t.fromReasoning && len(t.calls) > 0))
 		sendUsage(ss, req.StreamOptions, id, created, lm.name, usagev)
 		sseDone(ss)
 		return
@@ -196,8 +204,9 @@ func toolsConstrainedFromStart(forced *chat.Tool, namedForce bool, union string,
 // constrainForcedTool wires constrained decoding for a forced/lone tool call. When the caller explicitly NAMED the function
 // (namedForce), a family/schema that cannot be constrained returns an error the handler renders as a 400: OpenAI and Anthropic
 // both guarantee a named tool_choice produces that call, so silently decoding unconstrained (the model may emit prose, or a
-// different tool) defeats the guarantee. The lone-tool convenience (namedForce=false) never errors: it is only an
-// optimization, and the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses and the
+// different tool) defeats the guarantee. A must-call choice (union "required": OpenAI required, Anthropic any) on a family
+// with no JSON call form runs unconstrained and is checked after generation (genRequest.callPostCheck). The lone-tool
+// convenience under auto never errors: it is only an optimization, and the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses and the
 // Anthropic Messages surface so all three degrade identically.
 //
 // union ("", "auto" or "required") says what to do when no single tool is forced (usually two or more tools; also Anthropic
@@ -232,6 +241,7 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 		if namedForce {
 			return fmt.Errorf("tool_choice forces function %q but this model's chat template has no constrainable tool-call form", forced.Name)
 		}
+		gr.callPostCheck = union == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
 		return nil
 	}
 	g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters)
@@ -261,8 +271,9 @@ var (
 )
 
 // constrainToolUnion wires the multi-tool union for a request with 2+ tools and no single forced
-// tool. It never errors: a family with no JSON call form, or a tool schema the grammar cannot
-// compile, leaves the request unconstrained — today's behaviour — rather than refusing it.
+// tool. It never errors: a tool schema the grammar cannot compile leaves the request unconstrained
+// rather than refusing it, and a family with no JSON call form marks a required request for the
+// post-check (genRequest.callPostCheck) instead.
 func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []chat.Tool) {
 	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
 		return
@@ -276,6 +287,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
 	if !ok {
+		gr.callPostCheck = mode == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
 		return
 	}
 	specs := make([]constrain.ToolSpec, len(tools))
@@ -288,6 +300,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		// grammar-fused speculative decode applies.
 		g, err := constrain.ToolCallsGrammar(prefix, suffix, argsKey, array, specs)
 		if err != nil {
+			warnToolUnionOff(err)
 			return
 		}
 		m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
@@ -302,6 +315,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	if trigger == "" {
 		g, err := constrain.ToolCallsGrammar("", suffix, argsKey, array, specs)
 		if err != nil {
+			warnToolUnionOff(err)
 			return
 		}
 		lazy := constrain.NewCallKeyLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), "<|python_tag|>")
@@ -311,6 +325,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	}
 	g, err := constrain.ToolCallsGrammar(trigger, suffix, argsKey, array, specs)
 	if err != nil {
+		warnToolUnionOff(err)
 		return
 	}
 	// A LogitProcessor only: gr.masker stays nil, because the grammar-fused speculative path
@@ -319,6 +334,34 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	lazy := constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger)
 	gr.sp.LogitProcessor = lazy.Process
 	gr.sp.LogitProcessorGate = lazy.Gate
+}
+
+// forcedCallEnforcement is how a must-call tool_choice (OpenAI required, Anthropic any) is enforced on tm, as /v1/models
+// and /health publish it per model: "grammar" (a family with a JSON call form: the call is constrained from the first
+// token), "post-check" (a family with none: the reply runs unconstrained, and one with no parsed call is an error,
+// runToolTurn), "off" (GOINFER_TOOL_UNION=0: neither). "" for a template that takes no tools.
+func forcedCallEnforcement(tm *chat.Template) string {
+	switch {
+	case tm == nil || !tm.SupportsTools():
+		return ""
+	case !toolUnionEnabled:
+		return "off"
+	}
+	if _, _, _, _, ok := tm.ToolCallWrapper(); ok {
+		return "grammar"
+	}
+	return "post-check"
+}
+
+// toolUnionOffSeen holds each reason a request's tool calls went unconstrained, already reported.
+var toolUnionOffSeen sync.Map
+
+// warnToolUnionOff reports, once per distinct reason, that a request's tool calls are not constrained: the union could not
+// be built, so a malformed call can reach the parser.
+func warnToolUnionOff(err error) {
+	if _, seen := toolUnionOffSeen.LoadOrStore(err.Error(), true); !seen {
+		fmt.Fprintf(os.Stderr, "goinfer: tool calls are not constrained for these tools (each distinct reason is reported once): %v\n", err)
+	}
 }
 
 // toAPICalls renders parsed calls in the OpenAI response shape (arguments is a
