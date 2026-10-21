@@ -54,6 +54,8 @@ served token ids and the prompt hash from `--log-token-ids`. Any difference fail
 - **Arms:** one warm server per context: for each pair, turn 1 (the earlier body) then turn 2 (the next), 24 new tokens, not streamed.
   Turn 1 is sampled (temperature 1.0, seed 1000 + the pair's index), so its reply is not the reply the client recorded, and turn 2, which
   carries the recorded reply, diverges inside it, after turn 1's end; turn 2 is greedy and restores the checkpoint there.
+  `/v1/messages` has no seed field, so Claude Code's turn 1 is sampled from a fresh random seed and its reply is not reproducible; turn 2,
+  the one compared, is greedy on every route.
   Turn 1 must report a cold prefill (`reused=0`), or that server is restarted and turn 1 sent again. The cold arm is one server per context
   with resident reuse off (`GOINFER_NO_RESIDENT_REUSE=1`): every request on it prefills from position 0.
 - **Void per request:** a turn 2 that does not report a restore at turn 1's prompt length (a title request's pair, or a strict extension)
