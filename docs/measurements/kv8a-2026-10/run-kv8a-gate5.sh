@@ -14,6 +14,7 @@ echo "gate 2(b) when this ran: $( [ -n "$G2" ] && grep -h '^VERDICT' "$G2/run.lo
 [ "$(nvidia-smi --query-gpu=driver_version --format=csv,noheader)" = 595.91.07 ] || { echo "VOID: driver is not KV0-H's 595.91.07"; exit 2; }
 [ -d "$H" ] || git -C "$R" worktree add -q --detach "$H" 2272c3cf9 || { echo "VOID: harness worktree"; exit 2; }
 [ "$(git -C "$H" rev-parse --short=9 HEAD)" = 2272c3cf9 ] || { echo "VOID: the harness worktree is not at 2272c3cf9"; exit 2; }
+git -C "$R" cat-file -e "$SHA^{commit}" 2>/dev/null || git -C "$R" fetch -q "$B/kv8a.bundle" "+kv8a-2026-10:refs/mac/kv8a-2026-10" || { echo "VOID: bundle"; exit 2; }
 git -C "$W" checkout -q --force --detach "$SHA" || { echo "VOID: worktree"; exit 2; }
 BIN=$B/serve-cuda-${SHA:0:8}
 [ -x "$BIN" ] || (printf 'go 1.27.0\n\nuse (\n\t.\n\t./gpu\n\t./cuda\n)\n' > "$W/go.work" && cd "$W/cuda" && GOWORK="$W/go.work" CGO_ENABLED=0 go build -tags cuda -o "$BIN" ./cmd/serve) || { echo "VOID: serve build"; exit 2; }
