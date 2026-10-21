@@ -135,3 +135,15 @@ Graded against the registration above; records stay on nobara under `~/goinfer-b
   (`div` = `ckpt_restore` = turn 1's length; restore 0.77–1.31 ms), and all 24 matched cold on every comparison. The run's preflight
   passed `TestLogitBias_reachesTheSamplerOnEveryRoute` at the pin, and no turn 1 wrote its forbidden token. The first two runs read
   VOID (5 tested each; above).
+
+## B35's case on the KV8a build (a measurement, registered 2026-10-21 before it runs)
+
+Asked 2026-10-21: does KV8a's checkpoint at the end of the prompt cover B35's case, Qwen3.5's chat template dropping the empty think block
+when it renders turn 1's reply, so turn 2 diverges before turn 1's prompt ends? **From the code, no:** `internal/kvmgr/slots.go:scoreRecurrent`
+restores the checkpoint at `c` only for a request that matches the sequence through `c`, and "a divergence before c … stay[s] cold". So
+turns 2 and 3 are expected to prefill from 0. The measurement checks that on the real model: B35's own scenario (`docs/measurements/b35-e2e-2026-10-20`
+on its branch: `gate.py` and `grade.py` at `fbae3175`, 4k and 8k system prompts, `/v1/chat/completions`, greedy, 24 new tokens) with
+KV8a's serve (`466aa167`, the gate 2(b) build) in the place of B35's and B35's base build (`fa8efaa0`). It reports turns 2 and 3's time
+to first token beside B35's (2.36 s at 4k, 3.05 s at 8k) and the cold control, `grade.py`'s warm = cold rows (I1 to I3), and each warm
+turn's `div` and `ckpt_restore` from the serve log. It is a measurement only: no bar, no merge or close of B35's PR (#112). R1 and T1 are
+B35's warm-reuse rows and are expected red here. Runner: `run-kv8a-b35scenario.sh`; about 11 minutes, as B35's run.
