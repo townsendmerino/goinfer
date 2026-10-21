@@ -78,3 +78,23 @@ is a follow-up, not part of this gate.
 after the job had ended. Earlier that morning the B35 day checks ran on the Mac beside tack's screen, which timed nobara: load on
 tack's harness box only. The three tack cells that overlapped this session's nobara touches at 08:35–08:47 were kept, with the overlap
 listed in tack's own record (Francis, 2026-10-20).
+
+## Rerun on KV8a: PASS (2026-10-21, nobara, 08:17:27–08:28:28 PDT)
+
+B35 rebuilt on main with KV8a (`80938f4d`, the merge of main into B35) against base `fac209c2` (main, KV8a merged), the same `gate.py`
+and `grade.py`, driver 595.91.07. Every row green at both sizes (record `~/goinfer-bench/b35-e2e/results-2026-10-21-0817/` on nobara).
+Francis's yes for it: 2026-10-21 07:50 PT, "yes to all four as recommended".
+
+| size | turn | time to first token | reused | first e2e | cold control |
+|---|---|---|---|---|---|
+| 4096 | 2 | 2.41 s | 3,584 of 4,130 | 2.36 s | 15.86 s |
+| 4096 | 3 | 2.43 s | 3,584 of 4,150 | 2.48 s | |
+| 8192 | 2 | 3.06 s | 7,680 of 8,177 | 3.05 s | 39.66 s |
+| 8192 | 3 | 3.17 s | 7,680 of 8,197 | 3.19 s | |
+
+I1 (warm = cold), I2 (cold output equal to the KV8a base build), I3 and R1 held; T1 at 1.01–1.17 of the predicted cost (bar 1.5).
+On the same combined build KV8a's gate 2(a) tests passed (08:15:15–08:16:27). The job's one failure was
+`TestNemotronResidentCUDA_guards`, which pinned the pre-B35 snapshot rule (a Gated-DeltaNet prefix snapshot declined); its check was
+updated to B35's rule on Francis's word ("yes to the B35 test fix with the full CUDA package run", 10:11 PT), and the full CUDA package
+then passed at `d190005f` (cuda-device-suite, 10:14:28–10:26:06: 742 passed, 0 failed, 0 device skips). #112 merged as `5cb1925d`.
+
