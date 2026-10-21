@@ -207,7 +207,7 @@ slot is gone; and every KV feature is built three or four times.
 - **MC1 and MC3.** Binding a slot and stepping several rows become "pass a sequence's block table" and "pass a table per row".
 - **Chunked prefill.** It is chunk-invariant on Metal: 0 of 14,336,000 KV elements and 0 of 151,936 last-token logits
   differ at chunks of 64–384 (`metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`).
-- **CUDA's windowed KV.** Built 2026-10-10 and on in the CLIs (`docs/tasks/task-cuda-windowed-kv-2026-10.md`). Its
+- **CUDA's windowed KV.** Built 2026-10-10 and on in the CLIs (`docs/completed/task-cuda-windowed-kv-2026-10.md`). Its
   `TestWindowedKV_*` suite becomes the window group's identity oracle.
 - **One memory function**, `Model.ResidentKVBytes` / `Model.ResidentNeedBytes`.
 
@@ -505,7 +505,7 @@ is MC4's identity gate extended to shared preambles.
   buffer. On CUDA there is no rows kernel to extend: `stepAttnRows` loops over rows and rebinds a slot per call, so a table per
   row is new kernel API there.
 - **CUDA graphs.** No KV launch is captured today (graphs capture only the segments around attention), so a table pointer is a launch argument; a table the captured segments read would be a device buffer written before replay. Windowed
-  models get graphs back; today graphs are declined when windowed KV engages (`task-cuda-windowed-kv-2026-10.md` §7). A
+  models get graphs back; today graphs are declined when windowed KV engages (`../completed/task-cuda-windowed-kv-2026-10.md` §7). A
   measured bonus, not a promise.
 
 ### 5.12 Speculation and drafters
@@ -1508,7 +1508,7 @@ Docs and records:
 - **Task docs:**
   - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
     R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
-  - `docs/tasks/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
+  - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
     `docs/tasks/task-never-swap-2026-09.md`;
   - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/tasks/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;

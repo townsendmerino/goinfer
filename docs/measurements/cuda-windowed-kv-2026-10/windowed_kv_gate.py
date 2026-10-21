@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-W2 and G-W3 of docs/tasks/task-cuda-windowed-kv-2026-10.md: Mellum2.1 on the 8 GB card, serve with and without --windowed-kv.
+"""G-W2 and G-W3 of docs/completed/task-cuda-windowed-kv-2026-10.md: Mellum2.1 on the 8 GB card, serve with and without --windowed-kv.
 
     python3 windowed_kv_gate.py <serve-binary> <model-dir> <out-dir> [--smoke]
 

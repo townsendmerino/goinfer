@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-W3b of docs/tasks/task-cuda-windowed-kv-2026-10.md: pool the ABBA passes of G-W3 (F W W F) and its order-reversed twin (W F F W).
+"""G-W3b of docs/completed/task-cuda-windowed-kv-2026-10.md: pool the ABBA passes of G-W3 (F W W F) and its order-reversed twin (W F F W).
 
     python3 windowed_kv_pool.py <pass1 rows.json> <pass2 rows.json>
 
