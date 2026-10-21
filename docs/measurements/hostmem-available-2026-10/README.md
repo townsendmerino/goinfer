@@ -151,3 +151,9 @@ fixed 2% bar (0.32 GiB) between the two definitions fails whenever they exceed i
 of physical of the mean jetsam figure** (the counters agree; the formula's two extra terms are Francis's choice, not graded). The raw
 difference and both terms are logged. On a fail: report, change nothing, no merge. On a pass B41 merges (A2).
 
+**Gate 1a under A3: FAIL, 27 of 30 samples within the bar** (2026-10-21 14:39:24–14:49:07, `hostmem` at `274b5682`, Francis's usual
+apps open, record `~/goinfer-bench/hostmem-gate1a/run-2026-10-21-1439/`). The misses were the first three samples, +2.53, +2.28 and
++2.06 points (0.405, 0.364 and 0.330 GiB); the other 27 read +0.10 to +1.32 points, 22 of 30 within 1 point. Every sample was taken on its
+first attempt (the jetsam figure held within 0.02 GiB across the bracket). At every sample the difference was the speculative and
+purgeable pages plus 0.001 to 0.076 GiB, while those two terms ran 0.015 to 0.360 GiB: the gap A4 grades around. The run is not regraded.
+Pressure stayed 1; the Activity Monitor equivalent tracked the oracle within 0.15 GiB.
