@@ -115,3 +115,11 @@ B41 merges once gate 1a reads.
   file-backed pages) and `kern.memorystatus_vm_pressure_level` at every sample.
 - **On a fail:** report and change nothing; B41 does not merge.
 
+**Gate 1a under A2: FAIL, 29 of 30 samples within the bar** (2026-10-21 13:15:47–13:25:31, `hostmem` at `02ab81ef`, Francis's usual
+apps open, record `~/goinfer-bench/hostmem-gate1a/run-2026-10-21-1315/`). The first sample read +2.79 points (ours 5.005 GiB, oracle
+4.558 GiB); the other 29 read +1.15 to +1.64 points, none within 1 point. At those 29 the difference equals the speculative and
+purgeable pages to within 0.03 GiB, the gap Francis chose to keep; at the first it exceeded them by 0.14 GiB, while the reading fell 0.72
+GiB in the next 20 s. The runner reads `hostmem`, then four `sysctl` processes in turn, tens of milliseconds apart, so on a machine whose
+memory is moving the two readings describe different instants: the likely cause, not verified. The Activity Monitor equivalent tracked
+the oracle within 0.04 GiB throughout; pressure stayed 1. B41 does not merge on this reading.
+
