@@ -36,6 +36,42 @@ type anthropicReq struct {
 		Type         string `json:"type"`
 		BudgetTokens int    `json:"budget_tokens"`
 	} `json:"thinking"`
+	// OutputConfig's format is Anthropic's structured output; outputFormat maps it onto the response_format grammar.
+	// Its other fields (effort, task_budget) are accepted and ignored.
+	OutputConfig *struct {
+		Format *struct {
+			Type   string          `json:"type"`
+			Schema json.RawMessage `json:"schema"`
+		} `json:"format"`
+	} `json:"output_config"`
+}
+
+// outputFormat maps output_config.format onto the response_format that prepare constrains with, nil when the request
+// sets none. What does not map is a 400 naming the field, never an unconstrained reply: a type other than json_schema,
+// a missing schema, a schema the grammar compiler refuses, and tools beside it (the constrained path holds one grammar,
+// and a tool call and a schema-shaped answer are two).
+func (r *anthropicReq) outputFormat() (*respFormat, *apiErr) {
+	if r.OutputConfig == nil || r.OutputConfig.Format == nil {
+		return nil, nil
+	}
+	f := r.OutputConfig.Format
+	if f.Type != "json_schema" {
+		return nil, badReq("output_config.format.type must be %q (got %q)", "json_schema", f.Type)
+	}
+	if s := strings.TrimSpace(string(f.Schema)); s == "" || s == "null" {
+		return nil, badReq("output_config.format.schema is required when output_config.format.type is %q", "json_schema")
+	}
+	if mode, _ := anthropicToolMode(r.ToolChoice); len(r.Tools) > 0 && mode != "none" {
+		return nil, badReq("output_config.format is not supported together with tools on this server; send one or the other, or tool_choice {\"type\": \"none\"}")
+	}
+	rf := &respFormat{Type: "json_schema", JSONSchema: &struct {
+		Name   string          `json:"name"`
+		Schema json.RawMessage `json:"schema"`
+	}{Schema: f.Schema}}
+	if _, err := grammarFor(rf); err != nil {
+		return nil, badReq("output_config.format.schema cannot be constrained: %v", err)
+	}
+	return rf, nil
 }
 
 // thinkRequest is the request's thinking controls as think.go's input.
@@ -143,20 +179,27 @@ type anthropicBlock struct {
 
 // toSampling maps the Anthropic sampling fields onto the shared sampling struct
 // so lm.prepare translates them identically to the OpenAI path. stop_sequences
-// becomes the JSON "stop" array that parseStop already reads.
-func (r *anthropicReq) toSampling() sampling {
+// becomes the JSON "stop" array that parseStop already reads, and
+// output_config.format becomes response_format (outputFormat). A caller picks
+// lm.constrainedTemplate when the result's constrainsOutput is true.
+func (r *anthropicReq) toSampling() (sampling, *apiErr) {
+	rf, aerr := r.outputFormat()
+	if aerr != nil {
+		return sampling{}, aerr
+	}
 	sm := sampling{
-		Temperature: r.Temperature,
-		TopP:        r.TopP,
-		TopK:        r.TopK,
-		MaxTokens:   r.MaxTokens,
-		LogitBias:   r.LogitBias,
+		Temperature:    r.Temperature,
+		TopP:           r.TopP,
+		TopK:           r.TopK,
+		MaxTokens:      r.MaxTokens,
+		LogitBias:      r.LogitBias,
+		ResponseFormat: rf,
 	}
 	if len(r.StopSequences) > 0 {
 		b, _ := json.Marshal(r.StopSequences)
 		sm.Stop = b
 	}
-	return sm
+	return sm, nil
 }
 
 // --- errors ---
@@ -666,12 +709,20 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	}
 	var tools []chat.Tool
 	var gr genRequest
+	sm, serr := req.toSampling()
+	if serr != nil {
+		serr.write(w)
+		return
+	}
 	ts, terr := s.resolveThink(req.thinkRequest())
 	if terr != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
 		return
 	}
 	tm := lm.templateFor(ts)
+	if sm.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
 	if toolsActive {
 		if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
 			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "this model has no tool-calling template")
@@ -688,7 +739,6 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 	s.noteIDs(r, idsOut)
-	sm := req.toSampling()
 	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
 	if gr, err = lm.prepare(sm, ids, lm.residentPath()); err != nil {
 		writeAnthropicPrepareErr(w, err)
@@ -852,6 +902,14 @@ func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, l
 		return
 	}
 	tm := lm.templateFor(ts)
+	rf, ferr := req.outputFormat()
+	if ferr != nil {
+		ferr.write(w)
+		return
+	}
+	if rf != nil {
+		tm = lm.constrainedTemplate(ts)
+	}
 	if mode, name := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
 		tools = anthropicTools(req.Tools)
 		if anthropicToolsConstrainedFromStart(mode, name, tools) {

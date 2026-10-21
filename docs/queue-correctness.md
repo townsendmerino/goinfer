@@ -24,6 +24,14 @@ Anthropic's structured-output field is accepted and dropped: no Go code reads `o
 Anthropic route for JSON gets free text, with no warning. The OpenAI routes constrain output through `response_format`.
 Next: honor it on that constrained path, or refuse it by name. Either box, S–M.
 
+**Built 2026-10-21 on branch `pilot-g49-output-config-2026-10-21`, PR open, not merged.** `{"type": "json_schema",
+"schema": …}` maps onto `response_format` `json_schema` (`internal/serveapp/anthropic.go:anthropicReq.outputFormat`) at
+every site that reads `anthropicReq.toSampling`: `/v1/messages` text and image turns and its batches, with the
+thinking-off constrained template, and `count_tokens` renders the same way. A 400 naming the field for another `type`, a
+missing or uncompilable schema, and `tools` beside it (one grammar per request). Tier 0: `TestAnthropicOutputFormat*`
+in `internal/serveapp/anthropic_test.go`. Not run: a real model answering Claude Code's title request; its schema was
+never captured, so whether the compiler takes it is unread. Closes on merge, after that one read.
+
 **G48 · The option grid gets CUDA cells for every option** — `cuda`, **filed 2026-10-21 (owner)**
 
 `docs/option-state-grid.md` reads a GPU-resident cell as tested on whichever backend implements the option. Finding 1 of the
