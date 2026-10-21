@@ -15,7 +15,7 @@ doesnt:
   - title: "It doesn't hold the machine on its own."
     text: "In a gpt-oss-20b run meant to trip it, the tripwire fired at +0.72–0.80 GB of swap growth, inside the +1 GB bound set in writing before the run (pre-registered). But swap kept rising to +1.69 GB before a separate watchdog, outside the server, killed the process. The likely cause is workers still finishing layers they had already started. That was inferred from timing, not traced. The environment-variable reference still advises an outside backstop when the fit guard is bypassed."
   - title: "It doesn't watch every load, and it doesn't stop running work."
-    text: "The load-time abort applies only to a .gguf copied directly into memory, not to a sidecar, streamed or safetensors load. The serving half only refuses new requests with a 503. Requests already running are left to finish."
+    text: "The load-time abort covers a .gguf copied directly into memory and any .giw load, the sidecar included. A streamed load, and a safetensors model loaded without a sidecar, are not watched while they load. The serving half only refuses new requests with a 503. Requests already running are left to finish."
   - title: "Its estimate can be wrong either way."
     text: "The guard prices weights, KV cache and the mapped source file against 70% of the memory free now. The 70% came from one measured failure, not from trying a range of values. If the guard cannot read free memory, it lets the load through. A sidecar .giw load prices only the KV cache and scratch memory, because its weights are read from the file."
   - title: "It has only been measured on one machine."
@@ -83,7 +83,7 @@ Two things have changed since that run. First, a plain .gguf on macOS and Linux 
 
 **Estimate.** The guard prices the weights held in memory at the chosen quant, the KV cache at the chosen context length, and, for a plain .gguf, the source file, which stays mapped during the load. It compares the sum with 70% of the memory available now, read live rather than taken from the machine's total RAM. That last part came from a live re-run on the Mac before v0.17.2, where a budget based on total RAM let a load swap.
 
-**Tripwire.** The server samples swap used every two seconds and keeps its first reading as the baseline. If swap grows by more than 512 MB over that baseline, a direct .gguf load (one copied into memory, not a sidecar) aborts with a message naming the growth and the priced terms. While serving, new requests get a 503 until swap stays back within the threshold for 30 seconds. It watches swap, not the process's own memory figure, because macOS reports what survived its reclaiming, not what was asked for.
+**Tripwire.** The server samples swap used every two seconds and keeps its first reading as the baseline. If swap grows by more than 512 MB over that baseline during a load, the load aborts with a message naming the growth and the priced terms. That covers a .gguf copied into memory and any .giw load, the sidecar included, but not a streamed load. While serving, new requests get a 503 until swap stays back within the threshold for 30 seconds. It watches swap, not the process's own memory figure, because macOS reports what survived its reclaiming, not what was asked for.
 
 **Retry.** A dense model uses every weight for every token. A dense .gguf that is refused is converted once to a sidecar .giw, and its weights are then paged in from disk instead of held whole in memory. A mixture-of-experts (MoE) model uses only a few of its "expert" blocks of weights for each token; it does not get this retry (see the limits below).
 
@@ -113,4 +113,4 @@ goinfer-serve -model local=~/models/qwen2.5-7b-instruct-q4_k_m.gguf # loads, or 
 - `-stream-weights` pages weights from a sidecar, and `-weight-cache` sets their memory budget in GB. `-ctx` sets a smaller context, which shrinks the KV cache.
 - `--fit=off` keeps the refusal instead of retrying. `GOINFER_NO_FIT_GUARD=1` skips the guard, and then the tripwire is the last defence.
 - `GOINFER_SWAP_GUARD` takes a threshold in MB, or `off`. The startup line `swap guard: armed, threshold +512 MB over baseline` says it is on.
-- `-direct-load` loads a .gguf the old way, copied into memory, which is the load the load-time tripwire watches.
+- `-direct-load` loads a .gguf the old way, copied into memory. The load-time tripwire watches that load as it does a sidecar load.

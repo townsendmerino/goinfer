@@ -451,6 +451,18 @@ re-baked by the code it checks (G-04).
   the prior pass. The host canonical copy is retained by design (`.Row()` lookups, CPU fallback,
   LoRA merge, speculative decode all need it) and is out of scope for any future fix short of the
   declined half above.
+- **CLOSED (the `.giw` half), recorded 2026-10-21 — shipped 2026-09-24 as never-swap S6.** On a `.giw` load (the
+  default sidecar included) the Metal build no longer copies a projection into a heap slice and then a new Metal buffer:
+  it binds the int4 nibbles, the f16 group scales and the int8 LM head in place, as no-copy buffers over the mapping, by
+  default (`723fa854`; scales aligned in weights format v12, `cdae727d`; f16 scales on disk in v14, `f9c9fd4e`). Measured
+  phys footprint at token 32: 1.5B 1,013 → 90 MB, 7B 4,134 → 105 MB, the GPU side holding only KV and scratch
+  (`docs/measurements/s6-alias-2026-09-24.md`, "Build step 2"; `docs/completed/task-never-swap-2026-09.md`, S6).
+  <br>**What remains of M-07:** a direct `.gguf` or safetensors load on Metal still keeps two copies (host canonical +
+  Metal buffer; the host-release half stays declined, above), and its default int4 lane builds a full staging copy of
+  each projection before the upload, which is MEM13 in `docs/tasks/task-memory-campaign-2026-10.md` (owner, 2026-10-21:
+  remove it). On a `.giw` load, a build with aliasing off, a file written for another target (its fused groups and
+  scales), and the two fused pairs the writer does not lay out as groups (the shared-expert gate|up, qwen35's K‖V; MEM9)
+  still take the copy path.
 
 #### M-08 · `lora_delta` runs each projection's whole adapter delta in ONE threadgroup — the design CUDA's P-11 measured at +124%/token; Metal's P-11 fused two dispatches and kept the serial block
 - **Where:** `metal/kernels.go:2175-1454` (`// ONE THREADGROUP ONLY … looping over ranks serially …
@@ -1764,7 +1776,8 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    onto the batched path, the fixture that can see it, the cache rounding.
 5. **M-07** — **PARTIALLY CLOSED 2026-09-13** (`47355617`, see its own closure note): the row4-skip
    half shipped; releasing host projections after upload (the RSS-on-1.5B/D7-fit gate this item
-   named) is not done.
+   named) is not done. **The `.giw` half closed 2026-09-24** (S6, `723fa854`; see M-07's closure
+   notes); a direct `.gguf`/safetensors load still keeps two copies.
 6. **M-08** — **CLOSED 2026-09-13** (`a30f2cd3`), kept fused rather than split (Metal-specific
    tradeoff, see its own closure note). Still no Mac adapter-decode measurement recorded.
 7. **Paged:** **M-14 PARTIALLY CLOSED 2026-09-13** (aikit selector shipped, `5065f24`; goinfer

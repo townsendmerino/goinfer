@@ -136,8 +136,13 @@ threshold +512 MB over baseline` and the baseline swap-used it measured; if swap
 that threshold while serving, every generation route answers **503** with
 `{"error":"halted","reason":"swap guard tripped: …"}` (the same shape as an admin halt) until swap has
 stayed back within the threshold for 30 s — requests already running are left to finish, nothing is
-cancelled. A `.gguf` loaded directly (not through its sidecar) is guarded during the load too: the load
-aborts with a message naming the swap growth and the model's priced memory terms. `GOINFER_SWAP_GUARD`
+cancelled. The load is guarded too, for a `.gguf` built directly and for every `.giw` load, the
+default sidecar included: if swap grows past the threshold during it, the load aborts with a message
+naming the swap growth and the model's priced memory terms. A `-stream-weights` load and a safetensors
+directory loaded without a sidecar are not watched while they load, and the server prints
+`swap guard (load): not armed for <path>` for them. After a model loaded through the admin endpoint or
+the web UI finishes loading, the serving watch takes a new baseline, so swap that load left behind does
+not count against serving. `GOINFER_SWAP_GUARD`
 sets the threshold in MB or `off` (`docs/env-vars.md`); `goinfer-chat` has the load-time half only.
 
 On the OpenAI-compatible routes, **`role: "developer"` is accepted as an alias for

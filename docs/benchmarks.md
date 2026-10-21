@@ -577,6 +577,24 @@ for.
 | swap-used delta, either arm | 0 MB | 0 MB |
 | greedy output, direct vs sidecar (3 prompts × 64 tok) | byte-identical | byte-identical |
 
+**Metal binds the sidecar's weights in place (S6, `task-never-swap-2026-09.md`) — 2026-09-24, MacBook M1 Pro 16 GB,
+`footprint` at token 32, full run: [`measurements/s6-alias-2026-09-24.md`](measurements/s6-alias-2026-09-24.md), "Build
+step 2".** The same win on the Metal backend: the resident build wraps the `.giw` mapping in no-copy Metal buffers instead
+of copying the weights into new ones, so a 7B on Metal holds about 0.1 GB that is not file-backed. Aliasing is the default
+since `723fa854`; the off arm below is the copy path a load took before it.
+
+| metric (Metal resident, `-quant int4`, weights format v14 `-target metal` sidecar, `-ctx 512`, greedy, 32 tokens) | qwen2.5-coder-1.5b-instruct q4_k_m | qwen2.5-7b-instruct q4_k_m |
+|---|---|---|
+| phys footprint at token 32, weights copied (aliasing off) | 1,013 MB | 4,134 MB |
+| phys footprint at token 32, weights aliased (the default) | **90 MB** | **105 MB** |
+| of which GPU side (IOAccelerator: KV and scratch) | 17 MB | 32 MB |
+
+One run per arm, checkpoints read from local `~/models`. The build is the tree committed as `f9c9fd4e` (weights format
+v14). The rest of the aliased footprint, about 60 MB, is host runtime (Go heap, tokenizer), not weights. Not in the record:
+a thermal note, and the step-2 build's aikit version (the record's header names aikit gpu v0.33.1 for its first runs;
+`metal/go.mod` at `f9c9fd4e` pins v0.33.3), and a load average for the footprint runs (it gives about 2.1 for the same
+step's decode gates).
+
 #### CPU prefill — re-anchored 2026-09-01
 
 Four changes landed on 2026-09-01, and every CPU-prefill number before them is superseded (the
@@ -2218,6 +2236,8 @@ budget; the same model, same budget, in **pool** mode decodes at a measured rate
 | decode rate | **2.27 tok/s** (n=3: 2.13, 2.32, 2.37); mmap mode 2.22 (n=3: 2.01, 2.29, 2.36) | greedy, depth ≈ 128, 32 tokens, runs interleaved, 2026-09-23, MacBook 16 GB |
 | time to first token | ~29 s (≈110-token sequential prefill) | same runs |
 | swap-used growth | 0 MB in all six runs | S3 tripwire + external kill switch armed |
+| S4's predicted rate (the load banner's working-set warning) | **2.62–2.68 tok/s** at the 1.5 GB budget: a prior that leaves out compute time, so an upper bound. All six runs fell below it (pool 0.79–0.89× of it); it over-predicted by ~15–20% | `moe-pager-mode-darwin-2026-09-23.md`, "Result 3" |
+| build | goinfer `79dddbcc` plus the uncommitted changes later committed as `9f87c659`, `cmd/serve` CPU build, `-ctx 1024` | the same record's provenance line; it names no aikit version, thermal state or load average |
 
 Read it as bounded, not as a benchmark row: one machine, warm-ish page cache, n=3, and the page cache
 flatters mmap mode; the 2.27 vs 2.22 difference is inside run-to-run noise. **What it does not
