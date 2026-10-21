@@ -95,4 +95,4 @@ func TestReadWithOracle_live(t *testing.T) {
 
 // oracleStill is gate 1a's bracket (a sample is graded only when the kernel's figure moved at most this much across it), and
 // oracleTolerance its bar (docs/measurements/hostmem-available-2026-10/README.md, amendment A5).
-const oracleStill, oracleTolerance = 20 << 20, 50 << 20
+const oracleStill, oracleTolerance = (1 << 30) / 50, (1 << 30) / 20
