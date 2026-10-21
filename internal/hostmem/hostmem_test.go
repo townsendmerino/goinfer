@@ -61,3 +61,15 @@ func TestRead_live(t *testing.T) {
 	}
 	t.Logf("%+v", r)
 }
+
+func TestReadWithOracle_live(t *testing.T) {
+	o, ok := ReadWithOracle()
+	if !ok {
+		t.Skip("no oracle on this platform")
+	}
+	if o.JetsamBefore <= 0 || o.JetsamAfter <= 0 || o.JetsamBefore > o.Ours.Physical || o.Ours.Available <= 0 {
+		t.Fatalf("implausible sample %+v", o)
+	}
+	t.Logf("ours %d, jetsam %d then %d (speculative %d, purgeable %d)", o.Ours.Available, o.JetsamBefore, o.JetsamAfter,
+		o.Ours.Speculative, o.Ours.Purgeable)
+}

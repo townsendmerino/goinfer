@@ -35,3 +35,14 @@ func Available() int64 {
 	}
 	return r.Available
 }
+
+// OracleSample is a reading bracketed by the kernel's own count of available pages under CONFIG_JETSAM (pageable external + free
+// pages, read through sysctl), read immediately before and after it in one process: B41 gate 1a's instrument
+// (docs/measurements/hostmem-available-2026-10/README.md, amendment A3). JetsamBefore and JetsamAfter are bytes.
+type OracleSample struct {
+	Ours                      Reading
+	JetsamBefore, JetsamAfter int64
+}
+
+// ReadWithOracle takes one OracleSample; ok is false where the platform has no oracle.
+func ReadWithOracle() (OracleSample, bool) { return readWithOracle() }

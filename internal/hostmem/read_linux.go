@@ -32,3 +32,5 @@ func meminfoKB(meminfo, key string) int64 {
 }
 
 func readTask(int) (TaskVM, bool) { return TaskVM{}, false }
+
+func readWithOracle() (OracleSample, bool) { return OracleSample{}, false }

@@ -5,6 +5,7 @@
 //	hostmem -mb      available MiB, rounded down
 //	hostmem -v       the breakdown and the formula
 //	hostmem -pid N   process N's resident, internal, compressed and footprint bytes (task_info TASK_VM_INFO), one line
+//	hostmem -oracle  the reading bracketed by the kernel's jetsam figure read before and after it, one line (B41 gate 1a)
 //
 // It exits 1 when this platform has no reading.
 package main
@@ -21,7 +22,19 @@ func main() {
 	mb := flag.Bool("mb", false, "print MiB instead of bytes")
 	v := flag.Bool("v", false, "print the breakdown")
 	pid := flag.Int("pid", 0, "print this process's memory instead")
+	oracle := flag.Bool("oracle", false, "print the reading with the kernel's jetsam figure before and after it")
 	flag.Parse()
+	if *oracle {
+		o, ok := hostmem.ReadWithOracle()
+		if !ok {
+			fmt.Fprintln(os.Stderr, "hostmem: no oracle on this platform")
+			os.Exit(1)
+		}
+		r := o.Ours
+		fmt.Printf("ours %d jetsam_before %d jetsam_after %d free %d speculative %d file_backed %d purgeable %d physical %d\n", r.Available,
+			o.JetsamBefore, o.JetsamAfter, r.Free, r.Speculative, r.FileBacked, r.Purgeable, r.Physical)
+		return
+	}
 	if *pid > 0 {
 		t, ok := hostmem.ReadTask(*pid)
 		if !ok {

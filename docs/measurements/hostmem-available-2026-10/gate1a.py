@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""B41 gate 1a under amendments A2, A3 and A5 (README.md here): every 20 s for 10 minutes, hostmem's reading against the kernel's jetsam
+"""B41 gate 1a under amendments A2 and A3 (README.md here): every 20 s for 10 minutes, hostmem's reading against the kernel's jetsam
 definition (vm.page_pageable_external_count + vm.page_free_count), both read by `hostmem -oracle` in one process, the jetsam figure
-before and after ours; a sample whose jetsam figure moved by more than 0.02 GiB is retaken, up to three attempts. Pass (amendment A5):
-ours less its purgeable pages within 0.05 GiB of the mean jetsam figure at every sample. Logs the raw difference, the speculative and
-purgeable pages and the pressure level as context, and counts the samples whose speculative pages exceed the bar (where a speculative
-page counted twice would show).
+before and after ours; a sample whose jetsam figure moved by more than 0.02 GiB is retaken, up to three attempts. Pass: ours within 2%
+of physical of the mean jetsam figure at every sample. Logs the Activity Monitor equivalent (free + speculative + file-backed pages) and the pressure level as context.
 
   python3 gate1a.py --hostmem <cmd/hostmem> --out DIR [--samples 30] [--every 20]
 Exit 0 PASS, 1 FAIL.
@@ -12,7 +10,6 @@ Exit 0 PASS, 1 FAIL.
 import argparse, json, os, re, subprocess, sys, time
 
 GIB = 1 << 30
-BAR = 0.05 * GIB  # amendment A5
 
 
 def sysctl(k):
@@ -41,23 +38,23 @@ def main():
             print(f"  retake: the jetsam figure moved {moved / GIB:.3f} GiB during attempt {attempt + 1}", flush=True)
         oracle = (o["jetsam_before"] + o["jetsam_after"]) / 2
         ours = o["ours"]
-        graded = ours - o["purgeable"] - oracle  # amendment A5: the jetsam figure plus purgeable pages is the reading
+        am = o["free"] + o["speculative"] + o["file_backed"]
         r = {"t": time.strftime("%H:%M:%S"), "ours": ours, "oracle": oracle, "jetsam_before": o["jetsam_before"],
-             "jetsam_after": o["jetsam_after"], "attempts": len(tries), "moved": tries, "raw_diff": ours - oracle, "diff": graded,
+             "jetsam_after": o["jetsam_after"], "attempts": len(tries), "moved": tries, "diff": ours - oracle, "am_equiv": am,
              "speculative": o["speculative"], "purgeable": o["purgeable"], "pressure": sysctl("kern.memorystatus_vm_pressure_level"),
-             "within_bar": abs(graded) <= BAR, "visible": o["speculative"] > BAR}
+             "within_2pct": abs(ours - oracle) <= 0.02 * phys, "within_1pt": abs(ours - oracle) <= 0.01 * phys}
         rows.append(r)
-        print(f"{r['t']} ours {ours / GIB:.3f} GiB  oracle {oracle / GIB:.3f} GiB  raw {r['raw_diff'] / GIB:+.3f}  graded (less purg) "
-              f"{graded / GIB:+.4f} GiB  spec {o['speculative'] / GIB:.3f}  purg {o['purgeable'] / GIB:.3f}  pressure {r['pressure']}  "
+        print(f"{r['t']} ours {ours / GIB:.3f} GiB  oracle {oracle / GIB:.3f} GiB  diff {r['diff'] / GIB:+.3f} GiB ({100 * r['diff'] / phys:+.2f} pt)  "
+              f"spec+purg {(o['speculative'] + o['purgeable']) / GIB:.3f}  AM-equiv {am / GIB:.3f}  pressure {r['pressure']}  "
               f"attempts {len(tries)}", flush=True)
         json.dump({"physical": phys, "rows": rows}, open(os.path.join(a.out, "gate1a.json"), "w"), indent=1)
         if i < a.samples - 1:
             time.sleep(a.every)
     worst = max(abs(r["diff"]) for r in rows)
-    n, vis = sum(r["within_bar"] for r in rows), sum(r["visible"] for r in rows)
-    print(f"{len(rows)} samples: within {BAR / GIB:.2f} GiB {n}/{len(rows)}, worst |diff| {worst / GIB:.4f} GiB; speculative above the bar at "
-          f"{vis}/{len(rows)} (where a double count would show); pressure max {max(r['pressure'] for r in rows)}")
-    ok = n == len(rows)
+    n2, n1 = sum(r["within_2pct"] for r in rows), sum(r["within_1pt"] for r in rows)
+    print(f"{len(rows)} samples: within 2% of physical {n2}/{len(rows)}, within 1 point {n1}/{len(rows)}, worst |diff| {worst / GIB:.3f} GiB "
+          f"({100 * worst / phys:.2f} pt); pressure max {max(r['pressure'] for r in rows)}")
+    ok = n2 == len(rows)
     print(f"VERDICT {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1
 

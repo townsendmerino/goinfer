@@ -98,3 +98,32 @@ func readTask(pid int) (TaskVM, bool) {
 	}
 	return decodeTaskVM(buf[:taskVMInfoBytes]), true
 }
+
+// jetsamAvailable is vm.page_pageable_external_count + vm.page_free_count times the page size: what XNU counts as available pages
+// under CONFIG_JETSAM (osfmk/vm/vm_page.h VM_CHECK_MEMORYSTATUS, purgeable left out where a compressor runs).
+func jetsamAvailable(pageSize int64) (int64, bool) {
+	ext, err1 := unix.SysctlUint32("vm.page_pageable_external_count")
+	free, err2 := unix.SysctlUint32("vm.page_free_count")
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	return (int64(ext) + int64(free)) * pageSize, true
+}
+
+func readWithOracle() (OracleSample, bool) {
+	h, err := machOnce()
+	if err != nil {
+		return OracleSample{}, false
+	}
+	var ps uint64
+	if h.pageSize(h.port, &ps) != 0 || ps == 0 {
+		return OracleSample{}, false
+	}
+	before, ok1 := jetsamAvailable(int64(ps))
+	r, ok2 := read()
+	after, ok3 := jetsamAvailable(int64(ps))
+	if !ok1 || !ok2 || !ok3 {
+		return OracleSample{}, false
+	}
+	return OracleSample{Ours: r, JetsamBefore: before, JetsamAfter: after}, true
+}
