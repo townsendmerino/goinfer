@@ -62,8 +62,8 @@ served token ids and the prompt hash from `--log-token-ids`. Any difference fail
   did not test the restore. The gate is void below 15 tested pairs.
 - **Cost:** about 40 minutes on nobara (17 pairs at about 65 s, 7 Claude Code pairs at about 170 s, four loads).
 
-**Amended 2026-10-20, after the first run's data, on Francis's word (approval relayed to this session on 2026-10-20; his exact words to be
-quoted here):** turn 1 of each warm pair is sampled (the Arms bullet above). **The first run (2026-10-20 15:23–16:28, nobara) read VOID:**
+**Amended 2026-10-20, after the first run's data, on Francis's word (2026-10-20 17:22 PT: "yes to the 2(b) amendment and yes to merging #114
+if the scan is clean"):** turn 1 of each warm pair is sampled (the Arms bullet above). **The first run (2026-10-20 15:23–16:28, nobara) read VOID:**
 24 pairs, 5 tested, 0 of them differed, under the floor of 15. In 12 pairs (opencode #3–#8, Codex #2–#7) the server's greedy 24-token
 reply to turn 1 equaled the start of the recorded reply, so turn 2 extended the whole held sequence (the request log's `reused` = turn 1 +
 24, `div=-`) and continued the live state: the strict-extension path, not the restore. In 6 of the 7 Claude Code pairs turn 2 diverges
