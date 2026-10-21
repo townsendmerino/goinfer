@@ -67,7 +67,7 @@ the model's own maximum), from the same function that enforces it, repeated as `
 goes past; and `vision`, whether the model
 accepts image content parts (from the same check that refuses them otherwise);
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
-`frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
+`frequency_penalty`/`presence_penalty`/`stop`/`logprobs`/`logit_bias`); and **`response_format`**
 — `{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
@@ -77,7 +77,11 @@ carries one; a field the request sends always wins. The values come from a Huggi
 `generation_config.json`, or from a GGUF's `general.sampling.*` metadata (`temp`, `top_p`, `top_k`, `min_p`). A bare `.gguf`
 reads only its own metadata, never a `generation_config.json` in its folder, which may hold other models. A `.giw` keeps what
 its source carried. The fields are `temperature`, `top_p`, `top_k`, `min_p` (which has no request field, so a recommended
-one always applies) and `presence_penalty`; `do_sample: false` means greedy. A request that asks for greedy
+one always applies) and `presence_penalty`; `do_sample: false` means greedy.
+**`logit_bias`** is OpenAI's: a map from token id (a decimal string) to a value in [-100,100] added to that token's logit
+before sampling, so -100 bans a token in practice and +100 all but forces it. `/v1/chat/completions`, `/v1/completions` and
+`/v1/responses` take it, and `/v1/messages` takes it as a goinfer extension. A key that is not a token id in the model's
+vocabulary, a value outside the range, or more than 1,024 entries is a 400. A request that asks for greedy
 (`temperature` 0) is left as sent. `repetition_penalty` is never applied: transformers divides logits by it, and this
 sampler's penalties are OpenAI's subtractive ones. A model that carries no values keeps the server default: temperature
 1.0 over the whole vocabulary, no `top_k`, `top_p` or `min_p`.

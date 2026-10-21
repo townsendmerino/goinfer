@@ -28,6 +28,7 @@ type anthropicReq struct {
 	TopK          *int               `json:"top_k"`
 	StopSequences []string           `json:"stop_sequences"`
 	Stream        bool               `json:"stream"`
+	LogitBias     map[string]float64 `json:"logit_bias"` // goinfer extension, as on the OpenAI routes (sampling.LogitBias)
 	// Thinking: {type: enabled|adaptive|disabled, budget_tokens}. enabled/adaptive render the model's thinking mode on
 	// and return `thinking` content blocks (think.go); budget_tokens is enforced as a ceiling on the thinking block
 	// (budget.go): serve forces the block closed there, clamped so a quarter of max_tokens is left to answer. metadata is accepted and ignored.
@@ -149,6 +150,7 @@ func (r *anthropicReq) toSampling() sampling {
 		TopP:        r.TopP,
 		TopK:        r.TopK,
 		MaxTokens:   r.MaxTokens,
+		LogitBias:   r.LogitBias,
 	}
 	if len(r.StopSequences) > 0 {
 		b, _ := json.Marshal(r.StopSequences)

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -610,7 +611,10 @@ type sampling struct {
 	Stop                json.RawMessage `json:"stop"` // string | []string
 	Logprobs            bool            `json:"logprobs"`
 	TopLogprobs         *int            `json:"top_logprobs"`
-	ResponseFormat      *respFormat     `json:"response_format"`
+	// LogitBias is OpenAI's logit_bias: token id (as a decimal string) to a value in [-100,100] added to that token's logit
+	// before sampling; -100 bans the token in practice. /v1/messages takes it as a goinfer extension.
+	LogitBias      map[string]float64 `json:"logit_bias"`
+	ResponseFormat *respFormat        `json:"response_format"`
 	// Confidence is the goinfer_confidence vendor extension (docs/tasks/task-constrained-confidence.md): with
 	// response_format json_schema, the response carries each enum, boolean and integer field's confidence. Only the
 	// routes that write it back set confidenceOK; prepare refuses the flag everywhere else, so no route can accept it
@@ -1271,6 +1275,13 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	}
 	if sm.PresencePenalty != nil {
 		sp.PresencePenalty = *sm.PresencePenalty
+	}
+	if len(sm.LogitBias) > 0 {
+		b, err := parseLogitBias(sm.LogitBias, lm.vocab)
+		if err != nil {
+			return genRequest{}, err
+		}
+		sp.LogitBias = b
 	}
 	maxTok := sm.MaxTokens
 	if sm.MaxCompletionTokens != nil { // OpenAI's newer field wins over the legacy max_tokens
@@ -1996,4 +2007,25 @@ func scriptedStream(ids []int, maxTokens int) <-chan int {
 	}
 	close(ch)
 	return ch
+}
+
+// parseLogitBias validates a request's logit_bias and converts it to the sampler's form. A key must be a token id inside
+// the vocabulary (vocab 0: unknown, so only the sign is checked) and a value must lie in [-100,100], OpenAI's range; anything
+// else is a 400, so a typo cannot be silently ignored.
+func parseLogitBias(in map[string]float64, vocab int) (map[int]float32, error) {
+	if len(in) > maxLogitBiasEntries {
+		return nil, fmt.Errorf("logit_bias accepts at most %d entries (got %d)", maxLogitBiasEntries, len(in))
+	}
+	out := make(map[int]float32, len(in))
+	for k, v := range in {
+		id, err := strconv.Atoi(k)
+		if err != nil || id < 0 || (vocab > 0 && id >= vocab) {
+			return nil, fmt.Errorf("logit_bias key %q is not a token id in [0,%d)", k, vocab)
+		}
+		if math.IsNaN(v) || v < -100 || v > 100 {
+			return nil, fmt.Errorf("logit_bias value for token %d must be in [-100,100] (got %v)", id, v)
+		}
+		out[id] = float32(v)
+	}
+	return out, nil
 }
