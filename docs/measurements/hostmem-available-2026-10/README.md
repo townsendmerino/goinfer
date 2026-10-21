@@ -195,3 +195,6 @@ from the kernel's figure (at most 0.53 MB). Speculative pages ran 0.002 to 0.394
 A1 formula would have read 0.1 to 0.8 GiB high. Every sample was taken on its first attempt; pressure 2 (warn) at 17 samples, 1 at 13.
 Gates 1b, 1c, 2 and 3 stand: 1b and 1c grade changes in the reading, and the fix lowers it, so gate 2's refusal holds. The merge waits for
 Francis's yes on the fixed code (A5).
+
+**Merged** on Francis's yes, 2026-10-21 about 15:24 PT, verbatim: "yay for pass, push". The merged `internal/hostmem` and `cmd/hostmem`
+are byte-identical to the A5 run's build (`331b5887`).

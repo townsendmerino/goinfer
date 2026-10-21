@@ -332,7 +332,7 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
 - **A cell started under heavy load is VOID, not averaged.** Heavy load means either of these, on the box doing the timed
   work, at the cell's start:
   - the 1-minute load average is above **half its core count**: 4.0 on the Mac (8 cores), 8.0 on nobara (16 cores);
-  - its free memory is **below what the fit guard needs for the cell's load, plus 2 GB**. **Changed 2026-10-21 (Francis, B41, registered before any data):** the free-memory term becomes goinfer's available reading (`cmd/hostmem`; macOS physical − (app + wired + compressed), Activity Monitor's split; Linux `MemAvailable`) for jobs queued after B41 merges; before that, macOS read free + inactive + speculative + purgeable pages. The 2 GB margin is unchanged.
+  - its free memory is **below what the fit guard needs for the cell's load, plus 2 GB**. **Changed 2026-10-21 (Francis, B41, registered before any data):** the free-memory term is goinfer's available reading (`cmd/hostmem`; macOS free + file-backed + purgeable pages, speculative counted once; Linux `MemAvailable`) for jobs queued after B41 merged that day; before that, macOS read free + inactive + speculative + purgeable pages. The 2 GB margin is unchanged.
 
   A void cell is re-run in the same interleaved order. It is never averaged in, and it is never quietly dropped: the record
   lists it. A box that only drives a harness against the other box (tack's runs from the Mac against nobara, say)

@@ -470,13 +470,12 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
 **B41 · One available-memory reading that counts reclaimable memory as free, in the fit guard and every start check** — filed 2026-10-21
 (owner: "seems like reclaimable should count as free or we'll never be able to run anything that isn't tiny.  people use their machines in
-real live", 11:35 PT). **Registered; building.** macOS: physical − (app memory + wired + compressed), Activity Monitor's split, read through
-`host_statistics64` without cgo; Linux keeps `MemAvailable`. The fit guard, `scripts/night.py` and the job scripts (with
-`scripts/bench_peer.py`'s heavy-load void) read one number, through a small `cmd/hostmem`. The 2 GB margin and the swap guards are unchanged;
-the run rule records the change. Gates and the formula's source: `docs/measurements/hostmem-available-2026-10/README.md`. Product code: the
-merge needs Francis's yes after the gates read. Amended 2026-10-21 after data (A1 in that record): the formula adds up what is
-reclaimable (free + speculative + file-backed + purgeable), the Metal guard caps at `recommendedMaxWorkingSetSize`, and gate 2 reads
-the server's own memory through `task_info(TASK_VM_INFO)`. **Candidate, not built:** serve could watch the kernel's pressure level
+real live", 11:35 PT). **DONE, merged 2026-10-21** on Francis's yes after gate 1a under amendment A5. macOS: free + file-backed +
+purgeable pages, read through `host_statistics64` without cgo, each speculative page counted once (A5: `host_statistics64`'s free and
+external counts both hold them); Linux keeps `MemAvailable`. The fit guard, `scripts/night.py` and the job scripts (with
+`scripts/bench_peer.py`'s heavy-load void) read one number, through `cmd/hostmem`; the Metal guard also caps at
+`recommendedMaxWorkingSetSize`. The 2 GB margin and the swap guards are unchanged; the run rule records the change. Gates, amendments
+A1 to A5 and the readings: `docs/measurements/hostmem-available-2026-10/README.md`. **Candidate, not built:** serve could watch the kernel's pressure level
 (`kern.memorystatus_vm_pressure_level`) while serving, and decline new work or say so at warning and critical.
 
 **B40 · CANDIDATE: drop the model file's page cache once a GPU-resident load no longer needs it** — filed 2026-10-21 (owner, from the Metal
