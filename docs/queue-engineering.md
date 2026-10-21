@@ -474,7 +474,10 @@ real live", 11:35 PT). **Registered; building.** macOS: physical − (app memory
 `host_statistics64` without cgo; Linux keeps `MemAvailable`. The fit guard, `scripts/night.py` and the job scripts (with
 `scripts/bench_peer.py`'s heavy-load void) read one number, through a small `cmd/hostmem`. The 2 GB margin and the swap guards are unchanged;
 the run rule records the change. Gates and the formula's source: `docs/measurements/hostmem-available-2026-10/README.md`. Product code: the
-merge needs Francis's yes after the gates read.
+merge needs Francis's yes after the gates read. Amended 2026-10-21 after data (A1 in that record): the formula adds up what is
+reclaimable (free + speculative + file-backed + purgeable), the Metal guard caps at `recommendedMaxWorkingSetSize`, and gate 2 reads
+the server's own memory through `task_info(TASK_VM_INFO)`. **Candidate, not built:** serve could watch the kernel's pressure level
+(`kern.memorystatus_vm_pressure_level`) while serving, and decline new work or say so at warning and critical.
 
 **B40 · CANDIDATE: drop the model file's page cache once a GPU-resident load no longer needs it** — filed 2026-10-21 (owner, from the Metal
 KV8a night plan: after a 9B load exits, macOS keeps the model's `.giw` pages as active file cache, the fit guard's reading counts them as

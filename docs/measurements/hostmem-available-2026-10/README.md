@@ -39,3 +39,51 @@ data.
 | **3. The fit guard's tests** (tier 0) | The existing fit-guard, host-RAM and Metal memory-guard tests pass (`decoder` `TestFit*`, `TestHostRAM*`, `metal` `TestResidentMemGuard`, `TestMetalMemoryCeiling*`, `TestResidentFitsMemory*`), with the `vm_stat` parser's tests replaced by the new reading's (a committed `vm_statistics64` sample, decoded and checked against the formula). **Refusals are unchanged:** a load whose need exceeds the reading still refuses, checked by a test that injects a reading below and above a fixed need. | | Every test once. | Seconds. |
 
 PASS is every gate green. The merge then waits for Francis's yes.
+
+## Amendment A1 (2026-10-21, after gate 1a's first data and gate 2's data)
+
+**Francis, 2026-10-21 12:31 PT, verbatim:** "fix the formula and a re-run sounds good. however, isn't there an osx system call(s) to help
+nail this down further?" With his addendum the same day: the Metal guard caps at `recommendedMaxWorkingSetSize` (gate 4), and gate 2's
+own-process bar reads `task_info(TASK_VM_INFO)`.
+
+**The first formula's readings, kept:**
+- **Gate 1a, first formula** (physical − (app + wired + compressed)). Francis's first three screenshots (just before 12:15) had no times
+  and no log was running, so none was matched. His timed shots at 12:22, 12:23 and 12:25 matched the 20-second log
+  (`~/goinfer-bench/hostmem-gate1a/log-2026-10-21.jsonl`) at 12:22:26, 12:23:27 and 12:25:09: App, Wired and Compressed within 1.8%,
+  0.9% and 2.04% at worst (App at 12:25). Activity Monitor's "GB" are GiB. The formula read 0.7 to 0.8 GiB above Activity Monitor's own
+  available (physical − Memory Used): Memory Used holds about 0.6 GiB that no page counter covers (free + speculative + active +
+  inactive + wired + compressor pages summed to 15.39–15.41 of 16.00 GiB) and counts purgeable pages, which Cached Files also counts.
+  Not graded: the formula changed.
+- **Gate 2, first formula:** 12:06 REFUSED with Francis's usual apps open (budget 5.77 GB, need 6.14 GB); 12:16 REFUSED with Docker,
+  Teams and Safari closed (budget 6.14 GB at the guard's check, need 6.14 GB); 12:20 **FAIL** with Chrome closed too: admitted at 8.27
+  GiB, served the pair, and the server's own swapped-out memory read 269.8 MB at the first sample (bar 0), then 219 and 35 to 40 MB.
+  That figure came from `vmmap -summary`'s writable-regions `swapped_out`, which counts compressed pages as well as swapped ones; system
+  swap did not grow (0 MB) and pressure stayed 1. Records: `~/goinfer-bench/hostmem-gate2/run-2026-10-21-{1206,1216,1220}/`.
+
+**The fixed formula (macOS):** available = free + speculative + file-backed (external) + purgeable pages, all from `host_statistics64`
+(HOST_VM_INFO64): it adds up what the kernel can hand back, so the memory no counter covers is never counted as available. App, wired
+and compressed stay in the reading as context. Linux is unchanged (`MemAvailable`).
+
+**Gate 1a's oracle: pending Francis.** The brief proposed `kern.memorystatus_level`. In XNU (`osfmk/vm/vm_pageout.c:vm_pressure_response`,
+`osfmk/vm/vm_page.h:VM_CHECK_MEMORYSTATUS`) it is available pages × 100 / total, where available pages are pageable external + free (+
+purgeable without a compressor) only under `CONFIG_JETSAM`; on macOS without jetsam they are `AVAILABLE_NON_COMPRESSED_MEMORY`, active +
+inactive + free + speculative, which counts active app memory as available. Read on this Mac at about 12:35 PT: level 79–80% against 76.7–77.1%
+for active + inactive + free + speculative over physical (the kernel divides by `max_mem`, which leaves out the ~0.6 GiB), and 25.7% for
+the jetsam definition. So it cannot grade this reading. The proposal for Francis: the jetsam definition read from the kernel's own
+sysctls, `vm.page_pageable_external_count` + `vm.page_free_count`; it read 0.28 GiB (1.7 to 1.8 points) below the fixed formula, the
+difference being speculative and purgeable pages, which the formula counts and jetsam leaves out on a machine with a compressor.
+
+**Gate 2, amended instrument (registered before the rerun):** every 5 s, `hostmem -pid <server>` reads `task_info(TASK_VM_INFO)` through
+`task_name_for_pid` (no entitlement needed for the user's own process): resident, internal, `compressed` (pages in the compressor, in
+memory or swapped to disk; macOS keeps no separate per-process disk-swap figure) and the footprint; with the reading, system swap and
+`kern.memorystatus_vm_pressure_level`. **Pass: the server's `compressed` is 0 at every sample, system swap grows by under 4,096 MB, and
+pressure never reaches 4.** Run with Francis's usual apps open; a refusal is recorded as REFUSED, and no app is quit to force admission
+without his word.
+
+**Gate 4, the Metal working-set cap (registered before building):** the Metal guard refuses, by name, a load whose Metal allocation
+(the resident need less the host copy) exceeds the device's `recommendedMaxWorkingSetSize`; no cap existed (nothing in `metal/` or
+aikit's GPU module read it). Tier 0: with the cap injected, an allocation one byte over refuses and one at the cap admits. Tier 1: the
+9B load's allocation and the cap, read from the load.
+
+**Candidate, not built:** serve could watch `kern.memorystatus_vm_pressure_level` while serving (B40, B41 in `docs/queue-engineering.md`).
+
