@@ -23,6 +23,20 @@ start_clean() {
 	done
 }
 
+# purge_then_check WAIT_S: drops the file cache with `sudo -n /usr/sbin/purge` (Francis's /etc/sudoers.d/purge, 2026-10-21: that one
+# command, passwordless), recording the reading before and after, then start_clean. A model's own cached file pages are filed as active
+# after it exits, so the reading counts them as used until something purges them (README.md here, "The day checks"). The rule and the
+# 8.7 GB need are unchanged. Returns 1 when the purge fails (that start is void) or the start is not clean.
+purge_then_check() {
+	echo "before purge: free memory $(free_gb) GB, load $(load1)"
+	if ! sudo -n /usr/sbin/purge; then
+		echo "VOID start: sudo -n /usr/sbin/purge failed"
+		return 1
+	fi
+	echo "after purge: free memory $(free_gb) GB, load $(load1)"
+	start_clean "$1"
+}
+
 # fit_check CTX: one load of the KV8a build at CTX; prints its decode path, fit, KV plan and checkpoint lines. Returns 3 when the
 # load is not Metal-resident (the guard refused it).
 fit_check() {

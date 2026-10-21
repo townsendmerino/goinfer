@@ -8,7 +8,7 @@ PASS=${1:?the pass, 1 or 2}; OUT=$K/${2:?a record name shared by both passes}; m
 exec > >(tee -a "$OUT/run-pass$PASS.log") 2>&1
 echo "=== $(date '+%F %T %Z') start; $(pmset -g batt | head -1)"
 [ -x "$BEFORE" ] || { echo "VOID: $BEFORE is missing"; exit 2; }
-start_clean 600 || { echo "not clean at the start: re-queued"; exit 75; }
+purge_then_check 600 || { echo "not clean at the start: re-queued"; exit 75; }
 fit_check 20480 || { echo "the fit guard refused the 9B: re-queued"; exit 75; }
 python3 -u "$(dirname "$0")/m5.py" --before "$BEFORE" --kv8a "$KV8A" --model "$MODEL_ARG" --key "$H/ids.key" --bodies "$H/bodies-pilot" \
 	--ids "$H/pilot/ids.jsonl" --out "$OUT" --pass "$PASS"

@@ -73,3 +73,12 @@ recommended".
   2 h 50 min; M5 about 3 h 30 min, over the night queue's 3-hour cap per job, so M5 runs as two jobs, one per pass, back to back the same
   night under one record directory (`m5.py --pass`); pass 2's job grades both. The design and the bar are unchanged.
 
+**A purge before each 9B job's start check (2026-10-21, before any night run; the owner's change).** After a 9B load exits, macOS files the
+model's cached `.giw` pages as active, and the void rule's reading (free + inactive + speculative + purgeable, the fit guard's own) counts
+them as used: this morning 8.13 GB ten seconds after the last 9B server exited, against the 8.7 GB need, and 11.38 GB after a purge. With
+nothing to apply memory pressure at night the cache would stay, so every job after the first would wait until 06:00. Francis installed
+`/etc/sudoers.d/purge` (that one command, passwordless). Each runner now calls `common.sh:purge_then_check`: the reading before, `sudo -n
+/usr/sbin/purge` (a failed purge voids that start and the job re-queues), the reading after, then the unchanged start check. The void rule
+and the 8.7 GB need are unchanged. The jobs are queued without `night.py`'s own `--fit-need-gb` gate, which reads memory before the job
+starts and so before its purge; the job's start check applies the same rule after the purge.
+

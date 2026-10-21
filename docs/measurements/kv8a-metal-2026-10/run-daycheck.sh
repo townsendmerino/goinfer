@@ -8,7 +8,7 @@ OUT=$K/daycheck-$(date +%F-%H%M); mkdir -p "$OUT"
 exec > >(tee -a "$OUT/run.log") 2>&1
 echo "=== $(date '+%F %T %Z') start; $(pmset -g batt | head -1)"
 for f in "$KV8A" "$MODEL" "$H/ids.key" "$H/pilot/ids.jsonl"; do [ -e "$f" ] || { echo "VOID: $f is missing"; exit 2; }; done
-start_clean 300 || { echo "VOID: no clean start in 5 minutes"; exit 2; }
+purge_then_check 300 || { echo "VOID: no clean start in 5 minutes"; exit 2; }
 for ctx in 20480 32768; do
 	fit_check $ctx || { echo "REFUSED: the fit guard keeps the 9B off Metal at -ctx $ctx with the apps closed"; exit 3; }
 done
