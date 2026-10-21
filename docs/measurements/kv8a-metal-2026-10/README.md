@@ -60,3 +60,16 @@ recommended".
 - Pinned inputs: KV8a serve `serve-metal-9488f592`, the before-KV8a serve `serve-metal-a8b1c806` (main before #115), and the 9B's Metal
   `.giw`; the pilot's bodies, ids and key, copied from nobara, stay outside the repository.
 
+## The day checks (2026-10-21, this Mac, Francis's apps closed)
+
+- **Fit: the 9B is resident on Metal** (`metal-resident (int4)`) at `-ctx 20480` (KV 0.6 GB, weights 5.5 GB, budget 6.1 GB) and at
+  `-ctx 32768` (KV 1.0 GB). **M1's 9B checkpoint: 50.2 MiB in 48 buffers**, as on CUDA.
+- **The one-pair probe** (opencode pair #1; job `kv8a-metal-probe`, 11:03:57–11:09:39; start clean at load 2.10 and 11.38 GB free,
+  after a `sudo purge` that Francis ran, since the 9B's own cached file pages counted against free memory): turn 1 (7,314 tokens) cold
+  in 121.5 s; turn 2 (7,403) restored at turn 1's end in 2.57 s to first token; the cold turn 2 in 119.9 s; warm equal to cold; the save
+  1.8–2.2 ms. A first attempt (10:53) got a 404, the runner asking for the model by a name the server did not serve; fixed, and the
+  harnesses now stop their servers on any exit (that attempt left one running).
+- **Estimates from it** (about 61 tokens/s of cold prefill at 7–10k, taken as 45–50 at Claude Code's 17–19k): M2(b) about 2 h 40 min to
+  2 h 50 min; M5 about 3 h 30 min, over the night queue's 3-hour cap per job, so M5 runs as two jobs, one per pass, back to back the same
+  night under one record directory (`m5.py --pass`); pass 2's job grades both. The design and the bar are unchanged.
+

@@ -6,15 +6,29 @@ reverse. The reading is the median over pairs and passes of (KV8a turn 2 ttft) /
 FAIL above 0.7. A pair whose KV8a turn 2 did not restore at turn 1's end, or whose before turn 2 reused anything, is void. M4(b): the
 p95 of `ckpt_save_ms` over every KV8a generating request, bar 12 ms.
 
-  python3 m5.py --before <serve> --kv8a <serve> --model <giw> --key <ids key> --bodies <bodies-pilot> --ids <ids.jsonl> --out <dir>
-Exit 0 PASS, 1 FAIL, 3 PARKED, 2 VOID.
+  python3 m5.py --before <serve> --kv8a <serve> --model <giw> --key <ids key> --bodies <bodies-pilot> --ids <ids.jsonl> --out <dir> [--pass 1|2]
+
+--pass runs one pass and records it as <out>/m5-pass<N>.json (two night jobs, each under the 3-hour cap); the run that finds both passes'
+records in <out> grades them. Exit 0 PASS (or one pass recorded), 1 FAIL, 3 PARKED, 2 VOID.
 """
-import argparse, glob, json, os, signal, statistics, subprocess, sys, time, urllib.request
+import argparse, atexit, glob, json, os, signal, statistics, subprocess, sys, time, urllib.request
 
 PORT = 18209
 BASE = f"http://127.0.0.1:{PORT}"
 SESSIONS = ["pilot-qwen35-9b-20k-opencode-chain-r1", "pilot-qwen35-9b-20k-codex-chain-r1"]
 CTX, MAX_NEW, MIN_PAIRS = 20480, 24, 10
+
+
+_LIVE = []  # servers started and not yet closed: stopped at exit, so a crash cannot leave one holding the model and the port
+
+
+@atexit.register
+def _stop_live():
+    for p in _LIVE:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except Exception:
+            pass
 
 
 def say(msg):
@@ -32,6 +46,7 @@ class Server:
         argv = [binary, "--model", a.model, "--backend", "metal", "--ctx", str(CTX), "--addr", f"127.0.0.1:{PORT}", "--kv-sessions", "1",
                 "--ids-key-file", a.key, "--log-requests"]
         self.proc = subprocess.Popen(argv, stdout=self.log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+        _LIVE.append(self.proc)
         t0 = time.time()
         while time.time() - t0 < 600:
             try:
@@ -55,6 +70,8 @@ class Server:
             self.proc.wait(timeout=60)
         except Exception:
             os.killpg(self.proc.pid, signal.SIGKILL)
+        if self.proc in _LIVE:
+            _LIVE.remove(self.proc)
         self.log.close()
         time.sleep(3)
 
@@ -88,6 +105,7 @@ def main():
     ap = argparse.ArgumentParser()
     for k in ("before", "kv8a", "model", "key", "bodies", "ids", "out"):
         ap.add_argument("--" + k, required=True)
+    ap.add_argument("--pass", dest="only", type=int, default=0)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     ids = {os.path.realpath(r["file"]): r["ids"] for r in map(json.loads, open(a.ids)) if r.get("ids")}
@@ -99,6 +117,8 @@ def main():
     say(f"M5: {len(pairs)} pairs x 2 builds x 2 passes")
     rows, saves, t_all = [], [], time.time()
     for pas, order in ((1, ("before", "kv8a")), (2, ("kv8a", "before"))):
+        if a.only and pas != a.only:
+            continue
         for s, i, f1, f2 in pairs:
             t1rec, t2rec = json.load(open(f1)), json.load(open(f2))
             i1, i2 = ids.get(os.path.realpath(f1)), ids.get(os.path.realpath(f2))
@@ -121,7 +141,16 @@ def main():
             rows.append(r)
             say(f"  pass {pas} {s[-14:]}#{i}: before {o['t2_ttft_ms']} ms, kv8a {k['t2_ttft_ms']} ms (restore {k['t2_restore']}), ratio {r['ratio']}"
                 + (f", VOID: {r['void']}" if r["void"] else ""))
-            json.dump({"rows": rows, "saves_ms": saves}, open(os.path.join(a.out, "m5.json"), "w"), indent=1)
+            json.dump({"rows": [r for r in rows if r["pass"] == pas], "saves_ms": saves},
+                      open(os.path.join(a.out, f"m5-pass{pas}.json"), "w"), indent=1)
+    rows, saves = [], []
+    for pas in (1, 2):
+        f = os.path.join(a.out, f"m5-pass{pas}.json")
+        if not os.path.exists(f):
+            say(f"pass {pas} not recorded yet in {a.out}: grading waits for it")
+            return 0
+        d = json.load(open(f))
+        rows, saves = rows + d["rows"], saves + d["saves_ms"]
     ratios = [r["ratio"] for r in rows if r["ratio"] is not None]
     say(f"done in {time.time() - t_all:.0f} s: {len(ratios)} graded of {len(rows)}")
     if len(ratios) < 2 * MIN_PAIRS or not saves:

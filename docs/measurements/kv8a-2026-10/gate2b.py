@@ -11,7 +11,7 @@ prints a VERDICT line; exit 0 PASS, 1 FAIL, 2 VOID.
 load falls back to the CPU and would otherwise be measured). --configs and --limit (pairs per config) serve the Metal one-pair probe
 (docs/measurements/kv8a-metal-2026-10/README.md); a limited run is not a gate reading and prints no verdict.
 """
-import argparse, glob, json, os, signal, subprocess, sys, time, urllib.request
+import argparse, atexit, glob, json, os, signal, subprocess, sys, time, urllib.request
 
 PORT = 18208
 BASE = f"http://127.0.0.1:{PORT}"
@@ -21,6 +21,18 @@ CONFIGS = [  # (name, ctx, session dirs under --bodies)
 ]
 MAX_NEW = 24
 MIN_TESTED = 15
+
+
+_LIVE = []  # servers started and not yet closed: stopped at exit, so a crash cannot leave one holding the model and the port
+
+
+@atexit.register
+def _stop_live():
+    for p in _LIVE:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except Exception:
+            pass
 
 
 def say(msg):
@@ -37,6 +49,7 @@ class Server:
         argv = [a.serve, "--model", a.model, "--backend", a.backend, "--ctx", str(ctx), "--addr", f"127.0.0.1:{PORT}", "--kv-sessions", "1",
                 "--ids-key-file", a.key, "--log-requests", "--log-token-ids", self.tokfile]
         self.proc = subprocess.Popen(argv, stdout=self.log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True, env=env)
+        _LIVE.append(self.proc)
         t0 = time.time()
         while time.time() - t0 < 600:
             try:
@@ -60,6 +73,8 @@ class Server:
             self.proc.wait(timeout=60)
         except Exception:
             os.killpg(self.proc.pid, signal.SIGKILL)
+        if self.proc in _LIVE:
+            _LIVE.remove(self.proc)
         self.log.close()
         time.sleep(3)
 
