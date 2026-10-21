@@ -197,7 +197,7 @@ func renderOptionStateGrid() []byte {
 	w("Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and history (archived):\n")
 	w("[`completed/task-option-path-admission-2026-10.md`](completed/task-option-path-admission-2026-10.md) §4.\n\n")
 	w("## Policy: how a new option, path or kind of state joins a grid\n\n")
-	w("- A new `decoder.Options` field fails `TestOptionGrid_everyOptionClassified` until `decoder/optiongrid.go` classifies it on every execution path: tested, declined, untested or n/a, with a reason.\n")
+	w("- A new `decoder.Options` field fails `TestOptionGrid_everyOptionClassified` until `decoder/optiongrid.go` classifies it on every execution path: tested, declined or n/a, with a reason. It cannot be untested: `TestOptionGrid_ratchet`'s ceiling is 0.\n")
 	w("- A cell that names a test or a decline must name one that exists in some module (`TestOptionGrid_cellsCarryEvidence`).\n")
 	w("- The untested count can only fall: a rise fails `TestOptionGrid_ratchet`, and a fall is booked into its ceiling in the same change.\n")
 	w("- A new execution path is not detected on its own: add it to `ogPaths`, which then fails every option until each is classified.\n")

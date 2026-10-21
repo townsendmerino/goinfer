@@ -6,7 +6,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 
 ## Policy: how a new option, path or kind of state joins a grid
 
-- A new `decoder.Options` field fails `TestOptionGrid_everyOptionClassified` until `decoder/optiongrid.go` classifies it on every execution path: tested, declined, untested or n/a, with a reason.
+- A new `decoder.Options` field fails `TestOptionGrid_everyOptionClassified` until `decoder/optiongrid.go` classifies it on every execution path: tested, declined or n/a, with a reason. It cannot be untested: `TestOptionGrid_ratchet`'s ceiling is 0.
 - A cell that names a test or a decline must name one that exists in some module (`TestOptionGrid_cellsCarryEvidence`).
 - The untested count can only fall: a rise fails `TestOptionGrid_ratchet`, and a fall is booked into its ceiling in the same change.
 - A new execution path is not detected on its own: add it to `ogPaths`, which then fails every option until each is classified.

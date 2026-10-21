@@ -50,7 +50,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM13-tokenizer | open | either box: uint64 rank keys, a size hint, a typed reader; S | `mergeRank` |
 | MEM13-features | open | either box: price the 256 MiB feature cache; S | `featureCacheBudget` |
 | MEM13-heapquant | open | after MEM1 | — |
-| MEM13-copies | open | remove Metal's int4-lane copy (Mac) and CUDA's dense host pack (nobara) (owner, 2026-10-21, from never-swap); S–M each | — |
+| MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
+| MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
 | MEM17 | open | aikit, then ken: `chunk.Chunk` as a file and a byte range through a mapping; ken stores chunks that way (D4, owner 2026-10-21); an aikit minor bump | `chunk.Chunk.Text` |
 | ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |
