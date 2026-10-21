@@ -498,6 +498,15 @@ const residentMemoryDeclinePrefix = "the resident build needs "
 
 // residentMemoryDecline is residentFitsMemory with its reason — "" when the build fits — so BuildResident
 // can hand it to the load path as a typed decline (decoder.DeclineResident) instead of printing it.
+// residentBudget is the memory guard's budget for this machine (metalMemoryCeiling of physical RAM), and false when RAM is unreadable.
+func residentBudget() (int64, bool) {
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if err != nil || ram == 0 {
+		return 0, false
+	}
+	return metalMemoryCeiling(ram), true
+}
+
 func residentMemoryDecline(m *decoder.Model) string {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return ""
