@@ -911,6 +911,18 @@ KV2 merges when every arm on both boxes is read.
          its common prefix with that slot's sequence, capped at n − 1;
       4. coverage: at 4 slots every schedule has at least one rollback that continues in place giving up more than it
          keeps; at 2 slots the schedules together have at least one.
+    - **Amended after the first run, before any plant: rule 3 over-claimed.**
+      - *As registered,* it named every continuing turn. 34 turns failed it, in 16 schedules, all at 2 slots
+        (`docs/measurements/kv2-2026-10-14/fu1-g3-first-run-rule3.txt`). Rules 1, 2 and 4 held on every turn.
+      - *Every failing turn's conversation had lost its slot at an earlier turn,* which re-prefilled into another slot.
+        `kvmgr.Slots.Commit` then records that turn's prompt as the slot's first prompt. A later rollback to the first
+        turn's reply diverges inside it, so it is held to main's rule. That is the item as defined ("keeps the slot's
+        whole first prompt"); the anchor cannot know the conversation's first prompt once its slot is gone.
+      - *Rule 3 now reads:* every continuing turn that keeps its lineage's first prompt but its last token binds its
+        previous slot, copies nothing and reuses its common prefix. A lineage starts at the conversation's first turn
+        or at its last turn that could not continue. Rule 4 counts those turns.
+      - Reported as a finding: a conversation that loses its slot once loses the in-place rollback to any point before
+        the turn that lost it.
     - *CPU arm,* serve's session LRU over llama-attnfa-tiny's real CPU forward. Conversation A has a 600-token first
       prompt (a 300-token preamble and 300 of its own); B shares the preamble. Turns: the first prompt; its reply and
       700 tokens; a rollback to the first prompt and reply plus 2 tokens (it keeps 606 and gives up 706). Three runs:
