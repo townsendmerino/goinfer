@@ -125,8 +125,24 @@ func (lm *loadedModel) closeEntryNatives() {
 		lm.qwenEnc.Close()
 		lm.qwenEnc = nil
 	}
-	lm.glm = nil   // GLM-OCR tower: same shape as qwen3 below, plain f32 weights, drop the reference
-	lm.qwen3 = nil // Qwen3.5+ tower: plain f32 weights, no native Close; drop the reference (and any loaded encoder with it)
+	// The GLM-OCR and Qwen3.5+ towers' encoders are plain f32 weights with no Close; a device tower built on either at first
+	// use holds device memory until its Close.
+	if lm.glm != nil {
+		lm.glm.fb.closeAcc(&lm.glm.acc)
+		lm.glm = nil
+	}
+	if lm.qwen3 != nil {
+		lm.qwen3.fb.closeAcc(&lm.qwen3.acc)
+		lm.qwen3 = nil
+	}
+	if lm.gemma4Tower != nil {
+		_ = lm.gemma4Tower.Close()
+		lm.gemma4Tower = nil
+	}
+	if lm.gemma4AudioAcc != nil {
+		_ = lm.gemma4AudioAcc.Close()
+		lm.gemma4AudioAcc = nil
+	}
 	lm.vproj = nil // no native Close (weights); drop the reference
 	// gemma4Enc (*vision.Gemma4Encoder) has no Close method either; like vproj it is plain weights, and dropping it here
 	// releases a served Gemma 4 tower's weight memory at unload.

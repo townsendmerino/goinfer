@@ -127,7 +127,12 @@ type gvDefect struct {
 
 func (a *gridVAccel) Name() string { return "metal" }
 
-func (a *gridVAccel) Close() error { return nil }
+func (a *gridVAccel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.close()
+	return nil
+}
 
 func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64) (*gridVAccel, error) {
 	if heads <= 0 || hidden%heads != 0 || (hidden/heads)%2 != 0 {
@@ -256,6 +261,7 @@ func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
 func (a *gridVAccel) grow(np, maxSeg int) {
 	if np > a.cap {
 		H, I := a.hidden, a.inter
+		a.release(a.x, a.xn, a.pt, a.pos, a.q, a.k, a.v, a.ctx, a.o, a.f1, a.f2, a.ropeCos, a.ropeSin)
 		n := func(cols int) Buffer { return a.d.NewBufferLen(np * cols) }
 		a.x, a.xn, a.pt, a.pos = n(H), n(H), n(a.patchDim), n(H)
 		a.q, a.k, a.v, a.ctx, a.o = n(H), n(H), n(H), n(H), n(H)
@@ -265,6 +271,7 @@ func (a *gridVAccel) grow(np, maxSeg int) {
 	}
 	if maxSeg > a.segCap {
 		H, B := a.hidden, min(eg2Block, maxSeg)
+		a.release(a.qh, a.kh, a.vh, a.sc, a.vt, a.ob)
 		a.qh, a.kh, a.vh = a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H)
 		a.sc, a.vt, a.ob = a.d.NewBufferLen(B*maxSeg), a.d.NewBufferLen(a.hd*maxSeg), a.d.NewBufferLen(B*a.hd)
 		a.segCap = maxSeg
@@ -349,6 +356,9 @@ func (a *gridVAccel) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int
 }
 
 func (a *gridVAccel) hiddenLocked(pixels []float32, gridTHW [][3]int) ([]float32, error) {
+	if a.d == nil {
+		return nil, errAccelClosed
+	}
 	segs := vision.VisionSegments(gridTHW)
 	np := segs[len(segs)-1]
 	if np == 0 || len(pixels) != np*a.patchDim {

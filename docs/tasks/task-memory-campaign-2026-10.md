@@ -27,7 +27,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM0-Mac | open | Mac: the Metal and arm64 cells, E2B, the tower image turn; estimate each cell first; one over about 2 h goes on the night queue | the README's "Not done here" |
 | MEM0-tack | done | — | 5310f789 |
 | MEM1 | open | either box: the `decoder.Options` sidecar field, on by default (D1, owner 2026-10-21); M | — |
-| MEM2 | open | Mac: free the Metal tower scratch on grow, and a real `Close`; S | — |
+| MEM2 | done | — (the tier-1 4K-image unload was not run: tier 0 reads each link, see MEM2's note) | `metal/tower_scratch_test.go`; `internal/serveapp/liveness_test.go:TestCloseEntryNatives_closesDeviceTowers` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
 | MEM4(b) | open | either box: drop the towers' host copy after attach, with a lazy reload on a CPU fallback (D2, owner 2026-10-21) | — |
@@ -256,6 +256,21 @@ resident (or `Close` wired into unload); optionally a patch ceiling with per-seg
 
 **Gates.** Tier 0: device bytes live after N grows equal the last capacity; after `Close`, zero (mutation: drop the
 release, red). Tier 1: one 4K image turn then unload, Metal footprint returns to the pre-load figure.
+
+**Done 2026-10-21 (branch `mac-mem-2026-10-21`).** Each `grow` releases the buffers it replaces; `eg2Accel`'s rope-table
+cache releases what it drops (it used to `clear` the map and keep the tables), pruned before a forward encodes; each
+`Close` releases the accelerator's device ledger, pipelines and device, and later calls return `errAccelClosed`. Unload
+(`internal/serveapp/liveness.go:loadedModel.closeEntryNatives`) now closes the GLM-OCR and Qwen3.5 grid towers, the Gemma 4
+vision tower and its audio blocks, which it used to drop without a `Close` on every backend (WebGPU's and CUDA's towers had a
+real `Close` that nothing called at unload). Tier 0, all PASS on the M1 Pro: three grows to 64, 512 and 4096 rows hold the
+buffers and bytes of one grow to 4096 (by the ledger and `CurrentAllocatedSize`, e.g. 21 buffers and 14,319,616 bytes for the
+Gemma 4 tower); `Close` returns the device to its pre-build allocation exactly and empties the ledger; calls at three growing
+sizes are bit-identical to one call on a fresh accelerator; 33 EmbeddingGemma 2 lengths leave exactly two buffers per cached
+rope entry. Plants, each red: a grow that keeps the old buffers (63 buffers for 21), a no-op `Close` (+44.6 MB after it), the
+old rope `clear` (158 buffers for 126), and `closeEntryNatives` as it was (each tower closed 0 times). Tier 1 was not run:
+the tier-0 gates read every link (the production caller of `grow`, `Close`'s device total, and unload's call of `Close`).
+Not done here: the served EmbeddingGemma 2 encoder (`embeddinggemma2.Encoder`) has no `Close`, so an embedder's Metal
+accelerator is never released; that needs one in the embeddinggemma2 API.
 
 ### MEM3 · aikit audio loaders hold their checkpoint and can close it (S) — SHIPPED in aikit v1.71.0
 

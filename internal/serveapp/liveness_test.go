@@ -67,6 +67,36 @@ func TestRetainRelease(t *testing.T) {
 	}
 }
 
+// closeCounter is a device tower accelerator that counts its Close calls.
+type closeCounter struct{ closed int }
+
+func (c *closeCounter) Name() string                                  { return "fake" }
+func (c *closeCounter) Close() error                                  { c.closed++; return nil }
+func (c *closeCounter) Hidden([]float32, [][3]int) ([]float32, error) { return nil, nil }
+func (c *closeCounter) Blocks([]float32, int) ([]float32, error)      { return nil, nil }
+
+type closeCounterG4 struct{ closeCounter }
+
+func (c *closeCounterG4) Hidden([]float32, [][2]int) ([]float32, error) { return nil, nil }
+
+// TestCloseEntryNatives_closesDeviceTowers: unload closes each device tower an entry built (GLM-OCR's and Qwen3.5's
+// grid towers, Gemma 4's vision tower and its audio blocks) once, and drops it; their device memory is released only
+// by Close.
+func TestCloseEntryNatives_closesDeviceTowers(t *testing.T) {
+	glm, qwen, g4v, g4a := &closeCounter{}, &closeCounter{}, &closeCounterG4{}, &closeCounter{}
+	lm := &loadedModel{glm: &glmOcrTower{acc: glm}, qwen3: &qwen3Tower{acc: qwen}, gemma4Tower: g4v, gemma4AudioAcc: g4a}
+	lm.closeEntryNatives()
+	lm.closeEntryNatives()
+	for name, n := range map[string]int{"GLM-OCR": glm.closed, "Qwen3.5": qwen.closed, "Gemma 4 vision": g4v.closed, "Gemma 4 audio": g4a.closed} {
+		if n != 1 {
+			t.Errorf("the %s device tower was closed %d times, want 1", name, n)
+		}
+	}
+	if lm.glm != nil || lm.qwen3 != nil || lm.gemma4Tower != nil || lm.gemma4AudioAcc != nil {
+		t.Error("a device tower is still referenced after closeEntryNatives")
+	}
+}
+
 // TestCloseEntryNatives_dropsGemma4Enc is N-32 (docs/audit-2026-09-10.md): closeEntryNatives nils
 // venc/qwenEnc/vproj and must also drop gemma4Enc, or unloading a served Gemma 4 vision model leaves its
 // encoder (weights, no native Close of its own, same shape as vproj) referenced from the closed entry,

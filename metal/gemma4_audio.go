@@ -92,13 +92,19 @@ func newG4AAccel(enc *audio.Gemma4AudioEncoder) (*g4aAccel, error) {
 
 func (a *g4aAccel) Name() string { return "metal" }
 
-func (a *g4aAccel) Close() error { return nil }
+func (a *g4aAccel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.close()
+	return nil
+}
 
 func (a *g4aAccel) grow(n int) {
 	if n <= a.cap {
 		return
 	}
 	H := a.cfg.HiddenSize
+	a.release(a.x, a.xn, a.cp, a.u, a.f, a.q, a.k, a.v, a.ctx, a.o, a.g, a.gl, a.cv)
 	b := func(cols int) Buffer { return a.d.NewBufferLen(n * cols) }
 	a.x, a.xn, a.cp, a.u, a.f = b(H), b(H), b(4*H), b(4*H), b(H)
 	a.q, a.k, a.v, a.ctx, a.o = b(H), b(H), b(H), b(H), b(H)
@@ -139,6 +145,9 @@ func (a *g4aAccel) Blocks(h []float32, n int) ([]float32, error) {
 	c := a.cfg
 	H, nH := c.HiddenSize, c.NumAttentionHeads
 	hd := H / nH
+	if a.d == nil {
+		return nil, errAccelClosed
+	}
 	if n <= 0 || len(h) != n*H {
 		return nil, fmt.Errorf("metal: %d values for %d rows of %d", len(h), n, H)
 	}

@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -50,6 +51,28 @@ type eg2Ops struct {
 	arena Buffer // one scalar per 256-byte slot, so no two dispatches in a command buffer share one
 	slot  int
 	eps   float32
+}
+
+// errAccelClosed is what a tower accelerator's calls return after its Close.
+var errAccelClosed = errors.New("metal: the accelerator is closed")
+
+// release frees buffers a grow replaces. The caller holds the accelerator's lock, and every command buffer it encoded has
+// completed (Encoder.End waits), so no GPU work references them.
+func (o *eg2Ops) release(bs ...Buffer) {
+	for _, b := range bs {
+		o.d.ReleaseBuf(b)
+	}
+}
+
+// close releases every buffer, pipeline and queue this accelerator's device handed out, and the device; the accelerator
+// then refuses its calls (errAccelClosed). Idempotent. The caller holds the accelerator's lock.
+func (o *eg2Ops) close() {
+	if o.d == nil {
+		return
+	}
+	o.d.ReleaseAll()
+	o.d.ReleaseObjects()
+	o.d = nil
 }
 
 // eg2AttnBufs are attention's inputs, scratch and output: q, k, v [T, heads, hd]; their head-major copies; a block's
@@ -110,6 +133,10 @@ type eg2Accel struct {
 
 type eg2Scratch struct{ x, xn, q, k, v, ctx, o, g, u, f, gg, pr, ple, out, qh, kh, vh, sc, vt, ob Buffer }
 
+func (s *eg2Scratch) buffers() []Buffer {
+	return []Buffer{s.x, s.xn, s.q, s.k, s.v, s.ctx, s.o, s.g, s.u, s.f, s.gg, s.pr, s.ple, s.out, s.qh, s.kh, s.vh, s.sc, s.vt, s.ob}
+}
+
 type eg2RopeKey struct {
 	T, hd int
 	theta float64
@@ -155,7 +182,13 @@ func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 
 func (a *eg2Accel) Name() string { return "metal" }
 
-func (a *eg2Accel) Close() error { return nil }
+func (a *eg2Accel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.close()
+	clear(a.ropes)
+	return nil
+}
 
 // u32 and f32 write one scalar into its own arena slot and return the slot to bind.
 func (a *eg2Ops) u32(v uint32) Buffer {
@@ -180,6 +213,7 @@ func (a *eg2Accel) grow(T int) {
 		maxKVD = max(maxKVD, ly.w.KVHeads*ly.w.HeadDim)
 		maxHD = max(maxHD, ly.w.HeadDim)
 	}
+	a.release(a.scr.buffers()...)
 	n := func(cols int) Buffer { return a.d.NewBufferLen(T * cols) }
 	a.scr = eg2Scratch{x: n(c.Hidden), xn: n(c.Hidden), q: n(maxQD), k: n(maxKVD), v: n(maxKVD), ctx: n(maxQD),
 		o: n(c.Hidden), g: n(c.Intermediate), u: n(c.Intermediate), f: n(c.Hidden), gg: n(c.PLEDim), pr: n(c.Hidden),
@@ -224,10 +258,14 @@ func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float3
 	defer a.mu.Unlock()
 	c := a.cfg
 	H, I, P, L, E := c.Hidden, c.Intermediate, c.PLEDim, c.Layers, c.EmbeddingDim
+	if a.d == nil {
+		return nil, nil, errAccelClosed
+	}
 	if T == 0 || len(x0) != T*H {
 		return nil, nil, fmt.Errorf("metal: %d input values for %d rows of %d", len(x0), T, H)
 	}
 	a.grow(T)
+	a.pruneRopes()
 	s := &a.scr
 	x := s.x.Floats()[:T*H]
 	copy(x, x0)
@@ -331,13 +369,25 @@ func (a *eg2Ops) attention(e *Encoder, s eg2AttnBufs, T, nH, hd, nKV int, win ui
 // ropeTables returns the CPU's own cos/sin tables for T positions at this head dim and theta, uploaded once and never
 // written again, so every layer and every in-flight command buffer can read the same buffers. At most 16 lengths are
 // kept; the 17th clears the cache (a forward holds the lock, so no command buffer is using a dropped table).
+// pruneRopes empties the rope-table cache once it holds eg2RopeCap tables, releasing them. A forward calls it before it
+// encodes anything, so no command buffer references them.
+func (a *eg2Accel) pruneRopes() {
+	if len(a.ropes) < eg2RopeCap {
+		return
+	}
+	for _, b := range a.ropes {
+		a.release(b[0], b[1])
+	}
+	clear(a.ropes)
+}
+
+// eg2RopeCap bounds the rope-table cache, which holds a pair of tables per input length, head dim and theta.
+const eg2RopeCap = 16
+
 func (a *eg2Accel) ropeTables(T, hd int, theta float64) (Buffer, Buffer) {
 	k := eg2RopeKey{T, hd, theta}
 	if b, ok := a.ropes[k]; ok {
 		return b[0], b[1]
-	}
-	if len(a.ropes) >= 16 {
-		clear(a.ropes)
 	}
 	cs, sn := embeddinggemma2.RopeTables(T, hd, theta)
 	b := [2]Buffer{NewBufferFloats(a.d, cs), NewBufferFloats(a.d, sn)}

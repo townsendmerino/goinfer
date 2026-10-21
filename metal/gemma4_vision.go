@@ -95,7 +95,12 @@ func newG4VAccel(enc *vision.Gemma4Encoder) (*g4vAccel, error) {
 
 func (a *g4vAccel) Name() string { return "metal" }
 
-func (a *g4vAccel) Close() error { return nil }
+func (a *g4vAccel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.close()
+	return nil
+}
 
 func (a *g4vAccel) grow(np int) {
 	if np <= a.cap {
@@ -103,6 +108,8 @@ func (a *g4vAccel) grow(np int) {
 	}
 	c := a.cfg
 	H, I, hd := c.HiddenSize, c.IntermediateSize, c.HeadDim
+	a.release(a.x, a.xn, a.cp, a.pt, a.posBuf, a.q, a.k, a.v, a.ctx, a.o, a.f, a.g, a.u, a.qh, a.kh, a.vh, a.sc, a.vt, a.ob,
+		a.ropeCos, a.ropeSin)
 	n := func(cols int) Buffer { return a.d.NewBufferLen(np * cols) }
 	B := min(eg2Block, np)
 	a.x, a.xn, a.cp, a.pt = n(H), n(H), n(max(H, I)), n(3*c.PatchSize*c.PatchSize)
@@ -141,6 +148,9 @@ func (a *g4vAccel) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	c := a.cfg
 	H, I, nH, hd := c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.HeadDim
 	np, pd := len(pos), 3*c.PatchSize*c.PatchSize
+	if a.d == nil {
+		return nil, errAccelClosed
+	}
 	if np == 0 || len(patches) != np*pd {
 		return nil, fmt.Errorf("metal: %d patch values for %d patches of %d", len(patches), np, pd)
 	}

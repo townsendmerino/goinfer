@@ -29,6 +29,16 @@ type deviceFallback struct {
 	mu sync.Mutex
 }
 
+// closeAcc closes the accelerator *accp holds and clears it, under the lock its calls take.
+func (f *deviceFallback) closeAcc(accp *multimodal.GridTowerAccelerator) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if *accp != nil {
+		_ = (*accp).Close()
+		*accp = nil
+	}
+}
+
 // refuseCPUFallback is the error a device tower's memory failure becomes under -require-backend.
 func refuseCPUFallback(family string, err error) error {
 	return fmt.Errorf("the %s tower ran out of device memory and -require-backend refuses the CPU fallback (lower -ctx or -kv-sessions, resize the image, or drop -require-backend): %w", family, err)
