@@ -151,7 +151,7 @@ slot is gone; and every KV feature is built three or four times.
    paths). The new lifecycle paths (publish, share, demote, promote, restore) join it, and every kind gets a declared
    cell for each.
 5. **One memory formula** (`docs/tasks/task-memory-accounting-2026-09.md`). The pool size, admission and the allocator
-   compute from one function, and the never-swap rules hold on every gate (`docs/tasks/task-never-swap-2026-09.md`).
+   compute from one function, and the never-swap rules hold on every gate (`docs/completed/task-never-swap-2026-09.md`).
 6. **The Hard API tier** (`docs/api-tiers.md`):
    - `decoder.KVCache` stays an opaque handle;
    - `Session`'s methods, `Model.NewCache`, `Model.NewSession` and `Model.LoadSession` keep their signatures;
@@ -1509,7 +1509,7 @@ Docs and records:
   - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
     R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
   - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
-    `docs/tasks/task-never-swap-2026-09.md`;
+    `docs/completed/task-never-swap-2026-09.md`;
   - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;
   - `docs/completed/task-gpu-f16-kv.md`, `docs/completed/task-cpu-kv-quant.md`, `docs/spec/09-mtp-heads.md`.

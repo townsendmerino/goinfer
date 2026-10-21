@@ -12,7 +12,7 @@
 > Metal's KV at f32 when Metal allocates f16. Item 1 was also corrected in the doing: see its note.
 >
 > **Original status 2026-09-24: written up, not started.** Investigated and sized on Linux; owner chose a task doc over
-> starting now because the Metal half overlaps the in-flight never-swap work (`task-never-swap-2026-09.md`, S4/S6).
+> starting now because the Metal half overlaps the in-flight never-swap work (`../completed/task-never-swap-2026-09.md`, S4/S6).
 > Whoever picks up S4/S6 next should do this first: it is the accounting those steps change.
 
 ## The problem, verified 2026-09-24

@@ -96,7 +96,7 @@ to. No learned indexer is involved, which removes the component that made Qwen3.
 ## Hardware reality
 
 At int4, 80B-A3B is about 40 GB of weights. On the M1 Pro 16 GB it's paged-expert territory,
-which is exactly where `docs/tasks/task-never-swap-2026-09.md` (S0–S6) is still settling
+which is exactly where `docs/completed/task-never-swap-2026-09.md` (S0–S6) is still settling
 swap behaviour. It doesn't fit resident on the 8 GB card. The 3B-active decode cost is in the
 same class as Qwen3.6-35B-A3B, so throughput would be DMA-bound, like M26/M35 today (P20).
 The design's KV and prefill wins land fully only at long context, and long context is where

@@ -39,7 +39,7 @@ sidecar `.giw` cache on first use, so the one-time cost is paid once rather than
 
 **Peak RAM during that one-time build** bounds to roughly one layer for every family — the
 weights are read, quantized, written and freed one layer at a time rather than all held resident
-at once (S2, `docs/tasks/task-never-swap-2026-09.md`; measured on a real `gpt-oss-20b` GGUF,
+at once (S2, `docs/completed/task-never-swap-2026-09.md`; measured on a real `gpt-oss-20b` GGUF,
 `docs/measurements/transcode-streaming-2026-09-23.md`: swap-used stayed flat through the whole
 transcode). gemma4 was the last family to get there (2026-09-24,
 `docs/measurements/transcode-streaming-gemma4-2026-09-24.md`): the 26B-A4B's transcode went from

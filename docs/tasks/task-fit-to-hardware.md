@@ -21,7 +21,7 @@
 > excluded after `docs/benchmarks.md`'s "M35/M26 on the Mac" measured that CPU path as
 > catastrophic — 2h10min/zero completions; the dense retry itself measured at streamed/resident =
 > 0.944, real hardware, 2026-09-09 — see `docs/tasks/task-gpu-paths-2026-09.md`'s entries).
-> **S1 (`docs/tasks/task-never-swap-2026-09.md`, 2026-09-22) narrows what this auto-retry now
+> **S1 (`docs/completed/task-never-swap-2026-09.md`, 2026-09-22) narrows what this auto-retry now
 > covers on darwin**: a plain `.gguf` already resolves to its sidecar `.giw` by default there
 > (`prequant.DefaultToSidecar`), so this refusal-driven retry now only fires when that default was
 > explicitly opted out of (`-direct-load`/`GOINFER_GGUF_DIRECT=1`) or on linux, where direct still
@@ -52,7 +52,7 @@
 > numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's
 > hand-tuned configuration.
 >
-> **Cross-reference, 2026-09-23**: `task-never-swap-2026-09.md` S4 item 1 called itself "this
+> **Cross-reference, 2026-09-23**: `../completed/task-never-swap-2026-09.md` S4 item 1 called itself "this
 > doc's Phase 3" — stale by the time it was built; Phases 3-5 above were already spoken for
 > (WebGPU/measure/host-computed-experts). The actual work — `guardGIWFit`
 > (`decoder/fitguard.go`), a load-time KV+scratch guard for `.giw` loads, refusing or auto-pinning

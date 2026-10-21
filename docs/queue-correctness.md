@@ -187,7 +187,7 @@ The rest is the batched prefill's scratch, which Go's heap keeps after the reque
 - the footprint did not fall in 60 s of idle;
 - later sessions' KV landed in it without moving it.
 
-That breaks the never-swap rule (`docs/tasks/task-never-swap-2026-09.md`). Serve's fit line budgets "a request's own
+That breaks the never-swap rule (`docs/completed/task-never-swap-2026-09.md`). Serve's fit line budgets "a request's own
 prefill", but nothing bounds the prefill by that budget.
 
 **Two parts:**

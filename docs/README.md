@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (69: 60 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (68: 59 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -77,7 +77,7 @@ CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cel
 projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
 chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.
 
-[`task-never-swap-2026-09.md`](tasks/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22) is its
+[`task-never-swap-2026-09.md`](completed/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22) is its
 memory-side companion: what is anonymous and what is file-backed on each load path (why a plain
 `.gguf` load and a Metal resident build swap on the MacBook and a CPU `.giw` load does not), and the
 briefs for file-backed weights by default, a swap tripwire in the binary, the fit guard on the
@@ -210,7 +210,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (139)
+## Archive — `completed/` (140)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation

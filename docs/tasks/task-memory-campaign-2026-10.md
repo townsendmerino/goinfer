@@ -25,7 +25,7 @@
 > - One doc for both repos, on the owner's standing preference for one consolidated task doc. The aikit items
 >   (MEM14–MEM17) are worked in aikit and released through its own ritual; goinfer picks them up on the next bump.
 >
-> **Siblings.** [`task-never-swap-2026-09.md`](task-never-swap-2026-09.md) (S0–S6: why the default app path is already
+> **Siblings.** [`../completed/task-never-swap-2026-09.md`](../completed/task-never-swap-2026-09.md) (S0–S6: why the default app path is already
 > file-backed; this doc starts where it stopped) · [`task-memory-accounting-2026-09.md`](task-memory-accounting-2026-09.md)
 > (one bytes-needed function per backend; every new term here must land in it) ·
 > [`task-cpu-prefill-memory-2026-10.md`](task-cpu-prefill-memory-2026-10.md) (G40: the CPU prefill chunking MEM5
@@ -503,7 +503,7 @@ choice in aikit and a storage choice in ken (**D4**).
 |---|---|---|
 | native K-quant `WeightMat` kind, frequency row-blocked embed, 3-bit rotation, calibration scorer, cross-model dedup | shelved / rejected | `../ideas-weight-memory.md` |
 | `DropCanonical` | rejected for the up-front representation policy | `task-int4-layout-2026-09.md` |
-| `GOMEMLIMIT` after load | dropped: halved throughput where it bound | `task-never-swap-2026-09.md` S4 item 4 |
+| `GOMEMLIMIT` after load | dropped: halved throughput where it bound | `../completed/task-never-swap-2026-09.md` S4 item 4 |
 | `MADV_DONTNEED` eviction on darwin | a no-op on a read-only mapping; why pool mode is the darwin default | never-swap S5; aikit perf-dead-ends |
 | `F_NOCACHE` on the expert pread fd | measured, no effect | Metal code notes |
 | f32 routers, f32 matrices copied on `.giw` load | deliberate (discrete top-k; small) | the `.giw` writer's kind choice |

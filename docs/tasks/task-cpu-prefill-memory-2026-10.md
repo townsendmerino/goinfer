@@ -19,7 +19,7 @@ Measured by `serve -backend cpu` on the M1 Pro 16 GB, with int4 weights from the
 
 **The footprint did not fall in 60 s of idle.** Later sessions' KV copies landed inside it without moving it. The
 20K prefill on the 0.5B put a desktop-loaded 16 GB Mac 1.27 GB into swap. That breaks the never-swap rule
-(`docs/tasks/task-never-swap-2026-09.md`).
+(`docs/completed/task-never-swap-2026-09.md`).
 
 **A 1.5B at 20K was not run:** by §2's arithmetic it would hold about 3.6 GiB live before garbage.
 

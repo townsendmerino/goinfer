@@ -735,7 +735,7 @@ the same tokens), saved as raw float32 bits.
 **Why it is the same computation.** A `.giw` holds the weights already quantized by the same quantizer a direct `.gguf`
 load runs at load time.
 
-- On record: greedy output byte-identical between the two routes (`docs/tasks/task-never-swap-2026-09.md`, S1), and
+- On record: greedy output byte-identical between the two routes (`docs/completed/task-never-swap-2026-09.md`, S1), and
   CPU logits through the sidecar bit-identical to the direct load's (`docs/tasks/task-multimodal-support-2026-10.md`).
 - **Checked again each run, as a precondition.** Before any arm, the CPU process loads the dense 1.5B both ways (its
   `.gguf` fits the fit guard directly) at int8int8 and int4. It runs the gate's prompt and 24 steps, and requires the
