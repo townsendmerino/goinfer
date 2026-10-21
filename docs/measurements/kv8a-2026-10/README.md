@@ -52,10 +52,10 @@ completions) compared on the served tokens and the text of every logprob; Codex 
 served token ids and the prompt hash from `--log-token-ids`. Any difference fails. opencode and Codex at `-ctx 20480`, Claude Code at
 `-ctx 32768` (KV0-H amendment A3's rule context), each with `--kv-sessions 1`, f32 KV and the ids key.
 - **Arms:** one warm server per context: for each pair, turn 1 (the earlier body) then turn 2 (the next), 24 new tokens, not streamed.
-  Turn 1 is sampled (temperature 1.0, seed 1000 + the pair's index), so its reply is not the reply the client recorded, and turn 2, which
-  carries the recorded reply, diverges inside it, after turn 1's end; turn 2 is greedy and restores the checkpoint there.
-  `/v1/messages` has no seed field, so Claude Code's turn 1 is sampled from a fresh random seed and its reply is not reproducible; turn 2,
-  the one compared, is greedy on every route.
+  Both turns are greedy. Turn 1 may not write the recorded reply's first token: `logit_bias` -100 on turn 2's token id at turn 1's
+  length, read from KV0-H's pilot rendering (`pilot/ids.jsonl`), wherever turn 2's ids extend turn 1's. Turn 2, which carries the
+  recorded reply, then diverges at turn 1's end and restores the checkpoint there. A turn 1 that writes the forbidden token voids the
+  run: the ban did not reach the sampler. (This supersedes the first amendment's sampled turn 1; see the amendment notes below.)
   Turn 1 must report a cold prefill (`reused=0`), or that server is restarted and turn 1 sent again. The cold arm is one server per context
   with resident reuse off (`GOINFER_NO_RESIDENT_REUSE=1`): every request on it prefills from position 0.
 - **Void per request:** a turn 2 that does not report a restore at turn 1's prompt length (a title request's pair, or a strict extension)
@@ -80,6 +80,16 @@ Claude Code pairs. In the other 12 the sampled reply equals the greedy one token
 (opencode #2–#8, Codex #3–#7): the model is near-certain over a reply's first 24 tokens there, so sampling at temperature 1.0 does not
 move turn 2 off the live state. Claude Code #1–#6 diverge before turn 1's end as before. Stopped here, as registered; the pair set and the
 floor are not widened.
+
+**Amended again 2026-10-20, after the second run's data, on Francis's word ("1", choosing the first of four options put to him that
+evening: forbid turn 1's first token):** turn 1 is greedy with the recorded reply's first token forbidden (the Arms bullet above), on a
+serve build that accepts OpenAI's `logit_bias` on `/v1/chat/completions` and `/v1/responses` and the same field on `/v1/messages` (added
+for this; the sampler already applied a bias). It supersedes the first amendment's sampled turn 1, which the ban makes unnecessary, and
+makes turn 1 reproducible on `/v1/messages`, which takes no seed. Checked before the run on the first run's data: in the 16 opencode and
+Codex pairs whose turn 2 extends turn 1, the forbidden token equals that run's greedy first token, so it is the recorded reply's. KV0-H's
+rendering of the Claude Code bodies is 109 to 110 tokens shorter than the server's, so its forbidden position there is not the reply's
+start; that pair (#0) already diverges at turn 1's end under greedy, and #1 to #6 get no ban. At most 17 pairs can test the restore (16
+plus Claude Code #0). **The bar, the void rule and the floor of 15 are unchanged.**
 
 **Corrected 2026-10-20, before any gate 5 data:** gate 5 named KV0-H's driver commit as `2272c3cf9`. The study ran at `bf023d40` (its
 START line, 2026-10-20 12:23:27 PDT); `2272c3cf9` predates `plan-study-h20.json`, so the first attempt (2026-10-20 17:24, nobara, record
