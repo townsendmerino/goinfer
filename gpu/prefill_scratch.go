@@ -12,7 +12,7 @@ const prefillUniformBytes = 64
 
 // PrefillScratchBytes (decoder.ResidentPrefillChunks) is what one batched pass over rows rows allocates on the device beyond the
 // standing buffers, as an upper bound: the activation buffers of ONE layer with none of them recycled (the pass recycles a dead
-// layer's buffers into the next, so it holds about one layer's, R-25) plus the residual stream, and the fixed part: the head's
+// layer's buffers into the next, so it holds about one layer's) plus the residual stream, and the fixed part: the head's
 // vocab-sized staging buffers (two are created), the last row, and the uniform buffers. The per-row part carries a 5% margin: the
 // pass's recycling is not identical from one layer to the next, and the figure must not fall under it. TestKV3_prefillScratchBytes_boundsThePass holds it to the pass:
 // never under, and within 25% over, on the dense text path. A layer with its own geometry (Gemma 4) is priced at the widest.
