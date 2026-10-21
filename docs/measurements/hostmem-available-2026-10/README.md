@@ -87,3 +87,13 @@ aikit's GPU module read it). Tier 0: with the cap injected, an allocation one by
 
 **Candidate, not built:** serve could watch `kern.memorystatus_vm_pressure_level` while serving (B40, B41 in `docs/queue-engineering.md`).
 
+## Readings under amendment A1
+
+- **Gate 2, the fixed formula, Francis's usual apps open (Safari, Chrome and Teams among them): REFUSED** (2026-10-21 13:06:39–13:07:15,
+  serve and `hostmem` at `02ab81ef`, record `~/goinfer-bench/hostmem-gate2/run-2026-10-21-1306/`). The reading was 4.2 to 5.1 GiB before the
+  load and the guard's budget 3.74 GB at its check, against a need of 6.14 GB; the old reading read 6.06 to 6.17 GiB beside it. The load
+  fell back to the CPU path and the runner stopped it before any request; pressure stayed 1, swap 2.83 GiB. Recorded as the reading's
+  verdict; no app was quit. Gate 4's cap did not bind: the 9B's Metal allocation is at most the need (its `.giw` host copy is about 0),
+  against `recommendedMaxWorkingSetSize` 12,713,115,648 bytes (11.84 GiB); the load prints the allocation only when the cap refuses it.
+- **Gate 1a:** pending Francis's choice of oracle (above).
+
