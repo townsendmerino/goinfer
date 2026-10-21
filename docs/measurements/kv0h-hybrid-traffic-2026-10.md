@@ -29,7 +29,7 @@ with its `.giw` sidecar), then **Qwen3.6-35B-A3B** (`--moe-cache-experts`; slowe
 tool-driving model. The choice is made by a short pilot like KV0 §1b: opencode and Codex on the `chain` task, which must reach several
 requests (KV0's Qwen3-4B reached 9). The pilot's outputs are kept apart and only its request counts are quoted. **The choice is reported before
 the study sessions and recorded as an amendment to this file (§1.9).** The server's default thinking mode, int4 weights, the KV the server
-picks (a Gated-DeltaNet hybrid stays f32 KV: `cuda/kvpolicy.go:cudaKVF16Decline`), `-kv-sessions 1`. Context per harness is 1.4 x that
+picks (a Gated-DeltaNet hybrid stays f32 KV: `decoder/kvresolve.go:CUDAKVF16Decline`), `-kv-sessions 1`. Context per harness is 1.4 x that
 harness's first request, as KV0 chose it, read from the pilot's first requests.
 
 ### 1.2 Harnesses and tasks
@@ -162,9 +162,9 @@ bodies or text (KV0's policy; the bodies stay outside the repository).
    512 MiB of the card free after the first Claude Code request*, found in steps of 4,096 by the VRAM the server holds after that request (`nvidia-smi`, in the
    plan's own run); **the number it lands on is recorded here before the study** and the window Claude Code is told is the served one (`connect -write` reads it
    from the server; the session record's `connect` line, "context window N tokens", is checked against the served `--ctx`, and a mismatch voids the session).
-   **KV precision: the owner asked for f16 where the qwen3_5 resident path on CUDA supports it. It does not:** `cuda/kvpolicy.go:cudaKVF16Decline` keeps f32 for
+   **KV precision: the owner asked for f16 where the qwen3_5 resident path on CUDA supports it. It does not:** `decoder/kvresolve.go:CUDAKVF16Decline` keeps f32 for
    every family outside llama, mistral, qwen2, qwen3 and phi3 and for Gated-DeltaNet hybrids ("this family's attention is not covered"), and the pilot's banner reads
-   `KV f32`. **Stopped and told the owner, who accepted f32 (the shipped behaviour of qwen3_5 on CUDA, so the do-nothing arm's real configuration): f16 was declined by `cudaKVF16Decline`, f32 is used, and the registered rule chooses the context.** The Claude Code check runs at the context the rule lands on, not at 28,672, so one run checks three things: hash matches on the carried-ids requests, the fit with 512 MiB free, and whether autocompact still thrashes. **If it still thrashes at the chosen context, the result is reported before any study session, and the rule's ceiling (49,152) is not exceeded.** `connect`'s output limit is product behaviour and is not changed for the study. (A hybrid keeps K/V only for its full-attention
+   `KV f32`. **Stopped and told the owner, who accepted f32 (the shipped behaviour of qwen3_5 on CUDA, so the do-nothing arm's real configuration): f16 was declined by `CUDAKVF16Decline`, f32 is used, and the registered rule chooses the context.** The Claude Code check runs at the context the rule lands on, not at 28,672, so one run checks three things: hash matches on the carried-ids requests, the fit with 512 MiB free, and whether autocompact still thrashes. **If it still thrashes at the chosen context, the result is reported before any study session, and the rule's ceiling (49,152) is not exceeded.** `connect`'s output limit is product behaviour and is not changed for the study. (A hybrid keeps K/V only for its full-attention
    layers: 64 KiB per position at f32 on the 9B, against 144 KiB at f16 on Qwen3-4B, so the f32 context the rule lands on is still large.)
 
 **Amendment A3 (2026-10-20, after the check, before any study session).** The rule, applied at f32 KV (`docs/measurements/kv0h-2026-10/calibration.json`):
