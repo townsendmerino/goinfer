@@ -35,6 +35,11 @@ after data.
 | **M4. The cost on every turn** | (a) Tier 0: the save is encoded before the first chained decode step's command buffer, checked through the caller with a recording fake; plant: the save after the first step goes red. (b) In M5's run: the save's own time per request, **p95 ≤ 12 ms**, CUDA's bar. | The save time is missing from a request line. | Every request of M5. | Inside M5. |
 | **M5. The measured win on Metal** (the 9B, Mac night queue) | **The owner's decision, 2026-10-21 (below).** No KV0-H readings exist on the Mac, so the do-nothing arm is measured here: the 16 opencode and Codex pilot pairs (B-shaped by the forbidden token, as M2(b)), each turn 2 timed on two builds in one session, interleaved per pair and order-reversed on a second pass: main before KV8a (`a8b1c806`, cold by construction) and the KV8a Metal build. **Bar: the median of the paired turn-2 time-to-first-token ratios (KV8a ÷ before) ≤ 0.5**, an ambiguous band 0.5–0.7 parked for the owner, above 0.7 FAIL. Context, not graded: the same ratio on CUDA from 2(b)'s third run's serve logs. | The timing lock shared; the Mac on battery or swapping (the swap guard's void); a pair whose warm arm reports no restore. | The 16 pairs × 2 builds × 2 orders once. | About 1 h; estimated from M2(b)'s probe. |
 
+**Corrected 2026-10-21, at M2(a)'s first run (tier 0):** M2(a)'s wording, "a reply differing 15 tokens in", is CUDA's and cannot hold
+under Metal's 16-row floor, where both turns must be under 16 rows. The under-the-floor case uses turn 1 of 6 tokens, a 4-token reply
+and a 4-token message (turn 2: 14); the over-the-floor case keeps CUDA's 300 + 15 + 45. The bar (bit-identity) and the plants are
+unchanged. The case ran before this note was written; it is recorded here rather than changed silently.
+
 ## Open for the owner before M2(b) and M5 run: decided 2026-10-21, before any M-gate ran
 
 Francis, 2026-10-21 10:11 PT, verbatim: "yes to the B35 test fix with the full CUDA package run, and yes to M5's design and bar as
