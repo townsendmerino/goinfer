@@ -333,6 +333,11 @@
     positions on Qwen2.5-1.5B). Not speed: way B's best case is f32's speed at half the bytes.
   - **Gates when it reopens:** the task doc's F1–F5 as registered, with F3 against way B; F1's exactness rule (the f32 path with
     each stored row rounded to f16 by hand) carries over unchanged.
+  - **Added 2026-10-21 (the close-out sweep, from `docs/completed/task-cpu-kv-f16-2026-10.md`):** way A's widening runs on one
+    goroutine, while int8's was split across cores by R-15 (`dequantKVRows`), so F3 timed a slower pass than int8 pays.
+    Splitting the f16 widening by rows the same way is bit-identical by construction and should narrow the 0.925 at depth
+    without closing it (R-15 made int8 1.234× faster at depth 2,000 and left it at about 0.89 of f32). It speeds up the
+    opt-in; it is not a reason to reopen the default. Either box, S, read by an in-process A/B by day.
 
 - **P25 · `breakEvenTokensPerRound` is one constant (2.5) for every (target, backend); it does not
   transfer to a CPU MoE target and would NOT have caught a real regression.** Filed 2026-09-13 from

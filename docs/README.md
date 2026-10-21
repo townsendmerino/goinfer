@@ -77,7 +77,7 @@ CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cel
 projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
 chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.
 
-[`task-never-swap-2026-09.md`](completed/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22) is its
+[`task-never-swap-2026-09.md`](completed/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22; **complete and archived 2026-10-21**) is its
 memory-side companion: what is anonymous and what is file-backed on each load path (why a plain
 `.gguf` load and a Metal resident build swap on the MacBook and a CPU `.giw` load does not), and the
 briefs for file-backed weights by default, a swap tripwire in the binary, the fit guard on the
@@ -89,7 +89,7 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
-[`task-cpu-kv-f16-2026-10.md`](completed/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12, unscheduled) scopes a
+[`task-cpu-kv-f16-2026-10.md`](completed/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12; **complete and archived 2026-10-21**: way A shipped as the opt-in `--kv f16`, way B is P27, parked) scoped a
 half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
 decisions (2026-10-14), and its gates, registered that day before any code.

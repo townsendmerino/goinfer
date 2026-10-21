@@ -17,6 +17,54 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 
 ## Queued
 
+**G49 · `/v1/messages` accepts `output_config.format` and ignores it** — `any`, **filed 2026-10-21 (moved from
+`docs/tasks/task-integration-harness-2026-10.md` §0a, which found it and gave it no owner)**
+
+Anthropic's structured-output field is accepted and dropped: no Go code reads `output_config`, so a client that asks the
+Anthropic route for JSON gets free text, with no warning. The OpenAI routes constrain output through `response_format`.
+Next: honor it on that constrained path, or refuse it by name. Either box, S–M.
+
+**G48 · The option grid gets CUDA cells for every option** — `cuda`, **filed 2026-10-21 (owner)**
+
+`docs/option-state-grid.md` reads a GPU-resident cell as tested on whichever backend implements the option. Finding 1 of the
+option-path work (`ActQuantGroup` ignored on Metal, a87304e3) showed a cell can hold on one backend and fail on another, and
+KV precision's phase 0 already gave `KVPrecision` its own CUDA cells (`ogWithCUDA`, bcc6b536). **Owner, 2026-10-21: every
+option gets CUDA cells.** How the new cells enter the ratchet (`decoder/optiongrid.go:optionGridUntestedCeiling` is 0) is the
+builder's to register before the code. It includes the one CUDA case the Metal round left open: a CUDA twin of
+`metal/optiongrid_metal_test.go:TestOptionPathMetal_prefillChunk` at chunk sizes below CUDA's prefill floor
+(`docs/completed/task-option-path-admission-2026-10.md` §4.3, "not exercised here"). nobara, M.
+
+**G47 · A family × path grid for what no forward program reaches: loading and serializing, tokenizer dispatch, chat-template
+detection** — `any`, **filed 2026-10-21 (owner)**
+
+Twenty of the 71 registration and bound findings counted on 2026-10-08 (`docs/measurements/audit-classes-2026-10-08.md`
+§2–§3) were one model family that one path did not know about, and six of the twenty were Critical. **Owner, 2026-10-21,
+the hybrid:** the compute, fit-guard and speculative share goes to `docs/tasks/task-forward-architecture-2026-10.md`, whose
+per-layer programs can declare each layer's weights and state so those paths read the program instead of hand lists. This
+entry owns the rest: a grid of every registry family against three columns (load and serialize; tokenizer dispatch;
+chat-template detection), ratcheted as the option grid is, so a new family fills its row or a test fails. Its findings:
+2026-09-02 C-03 (the `.giw` writer and shortConv), C-10 (pre-tokenizer dispatch), M-09 (`StreamTranscodeGGUF`'s sink),
+M-11 (`validateShapes`); 2026-09-10 C-05 (the q/k permute list), M-27 (the GGUF MoE router branches), M-36
+(`chat.Detect`). Either box, M.
+
+**G46 · Gemma 3's tensor-core GEMM prefill between about 3,900 and 12,160 keys has never been read against the 0.99 bar** —
+`cuda`, **filed 2026-10-21 (owner: run it by day)**
+
+KV3 lifted CUDA's 12,160-key prefill guard, and `docs/tasks/task-kv-architecture-2026-10.md` (KV3) argues the fidelity gate
+is owed: main's Gemma 3 prefill at those depths has not been checked against the 0.99 bar. It left whether and when to the
+owner. **Owner, 2026-10-21: run it by day on nobara**, about 40 minutes under the timing lock, which the 2026-10-19 run
+budget in `CLAUDE.md` makes a day run. Register it before it starts; the rule and bar are the KV doc's.
+
+**G45 · Each kernel declares its bounds, and each dispatch site checks them** — `any`, **filed 2026-10-21 (owner)**
+
+The 2026-10-08 classification counted 19 bound findings (class B in `docs/measurements/audit-classes-2026-10-08.md`): a fixed
+limit (an array size, a context cap, a byte budget) that a reachable input exceeds. They are not registrations, so the option
+and state grids cannot catch them, and the record's §3 proposed them as a small task of their own. One was missed twice: the
+exact prefill attention kernel's 4,096-score array, audit 2026-08-05 C-12 and again 2026-09-30 F-C02. **Owner, 2026-10-21:
+file it.** The shape: a kernel with a fixed bound declares it beside the kernel, every site that dispatches it checks the
+request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
+kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
+
 **G44 · Metal re-quantizes a Gated-DeltaNet model's int8 weights to int4 instead of declining** — `metal`, **filed 2026-10-15
 (owner); built 2026-10-16 (branch `g44-deltanet-int8-decline-2026-10`)**
 

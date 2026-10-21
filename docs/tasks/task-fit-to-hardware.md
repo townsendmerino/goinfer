@@ -62,6 +62,13 @@
 > working-set tok/s predictor — shipped later the same day, 2026-09-23; this note said "still
 > unstarted" until then.)
 
+> **Decided 2026-10-21 (owner), moved here from `docs/completed/task-never-swap-2026-09.md` (S1 item 6), which flagged it and
+> left it open:** a MoE `.gguf` loads through its mapped sidecar by default. When that load's working set will not fit, the
+> load **refuses**, using S4's working-set arithmetic, says why, and names `--accept-slow` as the override. Today the default
+> path does none of this: it prices KV and scratch (plus the pinned copy under `--moe-cache-experts`), and the under-2 tok/s
+> refusal and `--accept-slow` exist only under `-stream-weights` (`decoder/model.go:Load`). It changes what the fit guard
+> does, and this note is the owner's word for it. Not built; either box, S–M.
+
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple
 Silicon laptop, a 32 GB desktop with no GPU — who has just pulled a 26B-A4B or 35B-A3B checkpoint
 and wants it to run. They do not know what an expert slot is, they should never learn what

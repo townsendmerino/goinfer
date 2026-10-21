@@ -16,6 +16,15 @@
 > are in `docs/measurements/forward-arch-baseline-2026-10-13.md`. Every gate below is a sketch: whoever starts a phase
 > registers its gates first (rule, void conditions, stopping rule, cost basis), as `CLAUDE.md` requires.
 
+> **Added 2026-10-21 (owner), from option-path admission's leftovers:** 20 of the 71 registration and bound findings counted on
+> 2026-10-08 (`docs/measurements/audit-classes-2026-10-08.md` §2–§3) were one model family that one path did not know about,
+> six of them Critical. The owner's call is a hybrid. The compute, fit-guard and speculative share is this doc's to close,
+> because Track OP's per-layer programs can declare each layer's weights and state, so those paths read the program instead of
+> hand lists: batched-prefill and `Plan` admission, the backends' tails, declines and dispatch, `BuildResident` branches, the
+> expert pager's hooks, the fit guard's byte and KV accounting, and the speculative entry points' rollback and capture checks
+> (the record's §6 table names each finding). The rest (loading and serializing, tokenizer dispatch, chat-template detection)
+> is G47 in `docs/queue-correctness.md`.
+
 ## 0. Summary
 
 **Where a query's time goes.** Almost all of an agent turn is prefill and decode.
