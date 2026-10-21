@@ -5,8 +5,8 @@
 package hostmem
 
 // Reading is one sample, in bytes. On macOS Available is what the kernel can hand back without compressing or swapping anything: free,
-// speculative, file-backed and purgeable pages; App, Wired and Compressed are Activity Monitor's terms, kept as context. On Linux the
-// macOS fields are 0 and Available is the kernel's MemAvailable.
+// file-backed and purgeable pages, so Free + FileBacked + Purgeable. Speculative pages are part of FileBacked, reported apart as context,
+// as are App, Wired and Compressed, Activity Monitor's terms. On Linux the macOS fields are 0 and Available is the kernel's MemAvailable.
 type Reading struct {
 	Physical, Available                      int64
 	Free, Speculative, FileBacked, Purgeable int64

@@ -30,10 +30,14 @@ func TestDecodeVMStats64_sample(t *testing.T) {
 func TestFromVMStats64_addsUpReclaimable(t *testing.T) {
 	b, _ := hex.DecodeString(sampleVMStats64)
 	s, _ := decodeVMStats64(b)
+	// The sample's anonymous and file-backed pages are its active, inactive and speculative pages: speculative is inside file-backed.
+	if s.internal+s.external != s.active+s.inactive+s.speculative {
+		t.Fatalf("sample: internal+external %d, active+inactive+speculative %d", s.internal+s.external, s.active+s.inactive+s.speculative)
+	}
 	r := fromVMStats64(s, 16384, 17179869184)
-	// free 10569 + speculative 6077 + file-backed 152820 + purgeable 66 = 169532 pages
-	if r.Available != 2777612288 || r.App != 5151178752 || r.Wired != 2004516864 || r.Compressed != 6797361152 {
-		t.Fatalf("got %+v; want available 2777612288, app 5151178752, wired 2004516864, compressed 6797361152", r)
+	// free 10569 less speculative 6077 + file-backed 152820 + purgeable 66 = 157378 pages
+	if r.Available != 2578481152 || r.Free != 73596928 || r.App != 5151178752 || r.Wired != 2004516864 || r.Compressed != 6797361152 {
+		t.Fatalf("got %+v; want available 2578481152, free 73596928, app 5151178752, wired 2004516864, compressed 6797361152", r)
 	}
 	// A GiB more of cached file pages is a GiB more available; a GiB more of app pages, wired or compressed pages changes nothing.
 	c := s
@@ -48,6 +52,14 @@ func TestFromVMStats64_addsUpReclaimable(t *testing.T) {
 		if fromVMStats64(a, 16384, 17179869184).Available != r.Available {
 			t.Errorf("1 GiB of %s pages changed the reading", name)
 		}
+	}
+	// A free page that becomes speculative read-ahead stays in the free count and joins the file-backed count: still one page. The
+	// sample has 4492 free pages that are not speculative; 4096 of them turn.
+	sp := s
+	sp.speculative += 4096
+	sp.external += 4096
+	if got := fromVMStats64(sp, 16384, 17179869184).Available; got != r.Available {
+		t.Errorf("64 MiB of free pages turned speculative moved the reading by %d", got-r.Available)
 	}
 }
 
@@ -72,4 +84,15 @@ func TestReadWithOracle_live(t *testing.T) {
 	}
 	t.Logf("ours %d, jetsam %d then %d (speculative %d, purgeable %d)", o.Ours.Available, o.JetsamBefore, o.JetsamAfter,
 		o.Ours.Speculative, o.Ours.Purgeable)
+	// Ours less purgeable is the kernel's figure (free + pageable external pages): a speculative page counted twice shows here.
+	if d := o.JetsamAfter - o.JetsamBefore; d < -oracleStill || d > oracleStill {
+		t.Skipf("memory moved %d bytes across the bracket", d)
+	}
+	if diff := o.Ours.Available - o.Ours.Purgeable - (o.JetsamBefore+o.JetsamAfter)/2; diff < -oracleTolerance || diff > oracleTolerance {
+		t.Errorf("ours less purgeable is %d bytes from the kernel's figure (speculative %d)", diff, o.Ours.Speculative)
+	}
 }
+
+// oracleStill is gate 1a's bracket (a sample is graded only when the kernel's figure moved at most this much across it), and
+// oracleTolerance its bar (docs/measurements/hostmem-available-2026-10/README.md, amendment A5).
+const oracleStill, oracleTolerance = 20 << 20, 50 << 20
