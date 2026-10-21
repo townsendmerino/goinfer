@@ -52,16 +52,17 @@ class Server:
         self.log.close()
         time.sleep(3)
 
-    def send(self, rec, seed=None):
-        """Sends one recorded body, MAX_NEW tokens, not streamed: greedy, or sampled at temperature 1.0 with seed when one is given. Returns
+    def send(self, rec, ban=None):
+        """Sends one recorded body, greedy, MAX_NEW tokens, not streamed; ban is a token id given logit_bias -100 (forbidden). Returns
         (the token-log line of its generation, logprobs or None)."""
         body = json.loads(rec["body"]) if isinstance(rec["body"], str) else dict(rec["body"])
         path = rec["path"]
         body["stream"] = False
         body.pop("stream_options", None)
         body["temperature"] = 0
-        if seed is not None:
-            body["temperature"], body["seed"] = 1.0, seed
+        body.pop("logit_bias", None)
+        if ban is not None:
+            body["logit_bias"] = {str(ban): -100}
         if path.endswith("/responses"):
             body["max_output_tokens"] = MAX_NEW
         else:
@@ -85,9 +86,10 @@ class Server:
 
 def main():
     ap = argparse.ArgumentParser()
-    for k in ("serve", "model", "key", "bodies", "out"):
+    for k in ("serve", "model", "key", "bodies", "ids", "out"):
         ap.add_argument("--" + k, required=True)
     a = ap.parse_args()
+    ids = {os.path.realpath(r["file"]): r["ids"] for r in map(json.loads, open(a.ids)) if r.get("ids")}  # KV0-H's rendering of each body
     os.makedirs(a.out, exist_ok=True)
     pairs = []
     t_all = time.time()
@@ -101,19 +103,25 @@ def main():
         mine = []
         for s, i, f1, f2 in recs:
             t1rec, t2rec = json.load(open(f1)), json.load(open(f2))
-            # Turn 1 is sampled so its reply is not the recorded one: turn 2 then diverges inside the reply and takes the restore.
-            t1, _ = srv.send(t1rec, seed=1000 + i)
+            # Turn 1 may not write the recorded reply's first token (turn 2's id at turn 1's length), so turn 2 diverges at the
+            # checkpoint and takes the restore. Only where turn 2 extends turn 1: a pair that diverges before it cannot test it.
+            i1, i2 = ids.get(os.path.realpath(f1)), ids.get(os.path.realpath(f2))
+            ban = i2[len(i1)] if i1 and i2 and len(i2) > len(i1) and i2[:len(i1)] == i1 else None
+            t1, _ = srv.send(t1rec, ban)
             if t1.get("reused", 0) != 0:  # turn 1 must be a cold prefill: restart the server and send it again
                 say(f"  {s}#{i}: turn 1 reused {t1.get('reused')}; restarting the warm server")
                 srv.close()
                 srv = Server(a, ctx, f"{name}-warm", cold=False)
-                t1, _ = srv.send(t1rec, seed=1000 + i)
+                t1, _ = srv.send(t1rec, ban)
+            if ban is not None and t1["gen"][:1] == [ban]:
+                sys.exit(f"VOID: {s}#{i}: turn 1 wrote the forbidden token {ban}; the ban did not reach the sampler")
             t2, lp2 = srv.send(t2rec)
             p = {"config": name, "session": s, "pair": i, "route": t2rec["path"], "t1_len": t1["prompt_len"], "t2_len": t2["prompt_len"],
-                 "t1_reused": t1.get("reused"), "warm_reused": t2.get("reused"), "warm_sha": t2["prompt_sha256"], "warm_gen": t2["gen"], "warm_lp": lp2}
+                 "t1_reused": t1.get("reused"), "warm_reused": t2.get("reused"), "warm_sha": t2["prompt_sha256"], "warm_gen": t2["gen"], "warm_lp": lp2,
+                 "ban": ban, "ids_len_agrees": i1 is not None and len(i1) == t1["prompt_len"]}
             p["tested"] = p["warm_reused"] == p["t1_len"] and p["t1_reused"] == 0
             mine.append((p, t2rec))
-            say(f"  {s}#{i} {t2rec['path']}: turn 1 {p['t1_len']} tokens, turn 2 {p['t2_len']}, reused {p['warm_reused']} -> tested {p['tested']}")
+            say(f"  {s}#{i} {t2rec['path']}: turn 1 {p['t1_len']} tokens, turn 2 {p['t2_len']}, reused {p['warm_reused']}, ban {ban} -> tested {p['tested']}")
         srv.close()
         say(f"config {name}: cold arm (resident reuse off)")
         srv = Server(a, ctx, f"{name}-cold", cold=True)

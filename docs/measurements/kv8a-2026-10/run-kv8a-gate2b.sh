@@ -15,8 +15,9 @@ git -C "$W" checkout -q --force --detach "$SHA" || { echo "VOID: worktree"; exit
 printf 'go 1.27.0\n\nuse (\n\t.\n\t./gpu\n\t./cuda\n)\n' > "$W/go.work"
 BIN=$B/serve-cuda-${SHA:0:8}
 [ -x "$BIN" ] || (cd "$W/cuda" && GOWORK="$W/go.work" CGO_ENABLED=0 go build -tags cuda -o "$BIN" ./cmd/serve) || { echo "VOID: serve build"; exit 2; }
+[ -s "$K/pilot/ids.jsonl" ] || { echo "VOID: no KV0-H pilot ids at $K/pilot/ids.jsonl"; exit 2; }
 python3 -u "$W/docs/measurements/kv8a-2026-10/gate2b.py" --serve "$BIN" --model "$HOME/models/Qwen3.5-9B-Q4_K_M.gguf" --key "$K/ids.key" \
-	--bodies "$K/bodies-pilot" --out "$OUT"
+	--bodies "$K/bodies-pilot" --ids "$K/pilot/ids.jsonl" --out "$OUT"
 rc=$?
 echo "=== $(date '+%F %T %Z') end, rc $rc; record $OUT"
 exit $rc
