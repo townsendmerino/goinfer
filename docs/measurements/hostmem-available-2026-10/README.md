@@ -137,3 +137,17 @@ nightly jobs?" The A2 run's FAIL stays in the record above.
   open, under the timing lock; the Activity Monitor equivalent and the pressure level logged as context.
 - **On a fail:** report and change nothing; B41 does not merge. On a pass B41 merges (Francis, A2).
 
+## Amendment A4 (2026-10-21, during gate 1a's run under A3)
+
+**Francis, 2026-10-21 about 14:42 PT, verbatim:** "1" (option 1 of three: compare like with like). The A3 run's data stays as read below
+once it ends; it is not regraded under this rule.
+
+**Why:** under A3 each sample's difference was the speculative and purgeable pages, which the formula counts and the jetsam oracle
+leaves out on a machine with a compressor, plus at most 0.045 GiB; and those two terms ranged 0.09 to 0.36 GiB minute to minute, so a
+fixed 2% bar (0.32 GiB) between the two definitions fails whenever they exceed it. The proposal's figure of 0.28 GiB was one reading.
+
+**Gate 1a, registered before its next run:** A3's instrument (one `hostmem -oracle` per attempt, bracketed, retaken while memory moved),
+30 samples every 20 s with Francis's usual apps open. **Pass: at every sample, ours less its speculative and purgeable pages within 2%
+of physical of the mean jetsam figure** (the counters agree; the formula's two extra terms are Francis's choice, not graded). The raw
+difference and both terms are logged. On a fail: report, change nothing, no merge. On a pass B41 merges (A2).
+
