@@ -213,9 +213,21 @@ func TestI8_exactKernelModelIsNotSplit(t *testing.T) {
 	}
 }
 
+// mem7Available injects the machine's available memory for one test (0: unknown).
+func mem7Available(t *testing.T, avail int64) {
+	t.Helper()
+	prev := metalLiveAvailable
+	metalLiveAvailable = func() int64 { return avail }
+	t.Cleanup(func() { metalLiveAvailable = prev })
+}
+
+// mem7Ample is an available-memory reading with far more than prefillBlockScratch beyond the margin.
+const mem7Ample = 64 << 30
+
 // TestI8_blockRows: the block is the rows that fit prefillBlockScratch, a multiple of 64 and at least
 // prefillBlockRowsMin, and 0 for a resident whose prompts do not all take the plain batched pass.
 func TestI8_blockRows(t *testing.T) {
+	mem7Available(t, mem7Ample)
 	_, r := mc3FixtureResident(t, 2, 2048)
 	a := &metalResident{r: r, hidden: r.H}
 	B := a.PrefillBlockRows()
@@ -341,4 +353,74 @@ func TestI8_real(t *testing.T) {
 	sort.Float64s(ownRatios)
 	fmt.Fprintf(os.Stderr, "i8 speed: %d tokens, median blocked / whole %.4f (pairs %v); own block, not graded, %.4f (%v)\n",
 		n, ratios[len(ratios)/2], ratios, ownRatios[len(ownRatios)/2], ownRatios)
+}
+
+// TestMEM7_blockFollowsAvailable (G7-1, docs/tasks/task-memory-campaign-2026-10.md MEM7): with memory to spare and with an
+// unknown reading the block is the rows that fit prefillBlockScratch; with the margin plus 128 MiB available it is the most
+// rows whose scratch fits 128 MiB; at the margin or under it, the floor.
+func TestMEM7_blockFollowsAvailable(t *testing.T) {
+	_, r := mc3FixtureResident(t, 2, 2048)
+	a := &metalResident{r: r, hidden: r.H}
+	rowsFor := func(budget int64) int {
+		per := r.prefillScratchBytes(64) / 64
+		return max(int(budget/per)/64*64, prefillBlockRowsMin)
+	}
+	full := rowsFor(prefillBlockScratch)
+	for _, c := range []struct {
+		name  string
+		avail int64
+		want  int
+	}{
+		{"ample", mem7Ample, full},
+		{"unknown", 0, full},
+		{"margin+128MiB", decoder.MetalFitMarginBytes + 128<<20, rowsFor(128 << 20)},
+		{"margin", decoder.MetalFitMarginBytes, prefillBlockRowsMin},
+		{"under the margin", 100 << 20, prefillBlockRowsMin},
+	} {
+		mem7Available(t, c.avail)
+		if got := a.PrefillBlockRows(); got != c.want {
+			t.Errorf("%s (%d bytes available): PrefillBlockRows = %d, want %d", c.name, c.avail, got, c.want)
+		}
+	}
+	if small := rowsFor(128 << 20); small >= full || a.PrefillScratchBytes(small) > 128<<20 || a.PrefillScratchBytes(small+64) <= 128<<20 {
+		t.Errorf("128 MiB gives %d rows (%d bytes; %d at 64 more), against %d at prefillBlockScratch: the case cannot tell the budgets apart",
+			small, a.PrefillScratchBytes(small), a.PrefillScratchBytes(small+64), full)
+	}
+}
+
+// TestMEM7_tightMemoryBlocksMatchOnePass (G7-2): a 1,000-token prompt generated with the available memory at the margin
+// (blocks of the floor, chosen by PrefillBlockRows from the reading) equals the ample-memory run, which takes it in one pass,
+// in its tokens, log-probabilities and resident KV, bit for bit.
+func TestMEM7_tightMemoryBlocksMatchOnePass(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	path := mc3FixtureWriter(t, 4096)
+	opts := decoder.Options{Backend: "metal", Quant: mc3TestQuant, ResidentContext: 2048}
+	prompt := i8IDs(1000, mfVocab)
+	run := func(avail int64) (res i8Result, B int, passes int64) {
+		var before int64
+		res = i8Generate(t, path, opts, prompt, func(a *metalResident) {
+			mem7Available(t, avail)
+			B, before = a.PrefillBlockRows(), prefillPassesSeen.Load()
+		})
+		return res, B, prefillPassesSeen.Load() - before
+	}
+	ref, bigB, onePass := run(mem7Ample)
+	got, smallB, blocked := run(decoder.MetalFitMarginBytes)
+	t.Logf("ample: block %d rows, %d pass(es); at the margin: block %d rows, %d passes", bigB, onePass, smallB, blocked)
+	if want := int64(len(i8Passes(len(prompt), smallB))); bigB < len(prompt) || onePass != 1 || smallB != prefillBlockRowsMin || blocked != want || want < 2 {
+		t.Fatalf("the runs do not compare one pass with several: blocks %d and %d, passes %d and %d (want 1 and %d)", bigB, smallB, onePass, blocked, want)
+	}
+	if !slices.Equal(got.toks, ref.toks) {
+		t.Fatalf("tokens %v, want %v", got.toks, ref.toks)
+	}
+	for i := range ref.lp {
+		if math.Float64bits(got.lp[i]) != math.Float64bits(ref.lp[i]) {
+			t.Fatalf("log-probability %d is %v, want %v", i, got.lp[i], ref.lp[i])
+		}
+	}
+	if !slices.EqualFunc(got.kv, ref.kv, slices.Equal[[]uint32]) {
+		t.Fatal("the resident KV after the prompt differs between the blocked and the one-pass prefill")
+	}
 }

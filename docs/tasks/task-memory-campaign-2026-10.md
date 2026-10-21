@@ -34,7 +34,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
-| MEM7 | open | Mac: size the Metal prefill block to the machine, now that B41's reading is on main; S | `prefillBlockScratch` |
+| MEM7 | done | — (not added to `ResidentNeedBytes`, a deviation for the owner; the TTFT A/B at a small block is a night job, not queued) | `metal/backend.go:prefillBlockBudget`; `metal/prefill_blocks_test.go:TestMEM7_blockFollowsAvailable`, `TestMEM7_tightMemoryBlocksMatchOnePass` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | open | either box: gather-only tables keyed off the head pin; S–M | — |
 | MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
@@ -418,6 +418,10 @@ Speed: TTFT at the smaller block, in-process A/B by day (TE5(b)); a served gate 
   margin is under 512 MiB. The in-process TTFT A/B at a forced small block (TE5(b)) is a night job, queued only if the
   owner wants that cost read.
 - Void: a run under another session's timing lock; the fixture building a resident that does not split its prefill.
+- **Read 2026-10-21: G7-1 and G7-2 PASS.** The dense tiny fixture's block is 47,616 rows with memory to spare and with an
+  unknown reading, 11,904 at the margin plus 128 MiB, and 256 at the margin or under it. The 1,000-token prompt took one pass
+  with memory to spare and four 256-row passes at the margin, with the same tokens, log-probabilities and resident KV bit for
+  bit. The plant (the budget ignoring the reading) is red on both. The existing block tests (`TestI8_*`) pass beside them.
 
 ### MEM8 · Metal int4 LM head; gather-only tables decoupled from the head pin (M)
 

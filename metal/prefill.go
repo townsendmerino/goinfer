@@ -323,6 +323,9 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 // themselves, so a test can hold prefillScratchBytes to what a pass really takes.
 var prefillScratchSeen atomic.Int64
 
+// prefillPassesSeen counts the dense batched passes run, so a test can tell a prompt taken in one pass from one taken in blocks.
+var prefillPassesSeen atomic.Int64
+
 // prefillAttnKernels is which attention kernel PrefillLast dispatches for this model: fused for hd%8==0 && hd<=128
 // (attention_prefill_fused's compile-time cap, ATTN_MAXHD), steel within that for hd 128 (R19: one threadgroup of 128
 // threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by prefillExactAttnMaxKeys.
@@ -482,6 +485,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	}
 	posB := NewBufferUint32s(d, posv)
 	prefillScratchSeen.Add(int64(4 * Mpad))
+	prefillPassesSeen.Add(1)
 	var pos3B Buffer // S16: the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
 	if mrope != nil {
 		p3 := make([]uint32, Mpad*3)

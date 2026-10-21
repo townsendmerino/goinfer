@@ -1475,12 +1475,23 @@ func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.
 func (a *metalResident) Close() error { return a.r.Close() }
 
-// prefillBlockScratch is the row-sized scratch one pass of a blocked prefill may allocate: PrefillBlockRows is the
-// number of rows that fit it. The speed reading that keeps it is docs/tasks/task-integration-harness-2026-10.md, "I8".
+// prefillBlockScratch is the most row-sized scratch one pass of a blocked prefill may allocate. The speed reading that keeps
+// it is docs/tasks/task-integration-harness-2026-10.md, "I8".
 const prefillBlockScratch = 512 << 20
 
+// prefillBlockBudget is the scratch one pass may allocate now: prefillBlockScratch, or what the machine's available memory
+// (metalLiveAvailable) holds beyond decoder.MetalFitMarginBytes when that is less. An unknown reading keeps
+// prefillBlockScratch. Read each time the decoder asks for the block, so a request is split by the memory it starts with.
+func prefillBlockBudget() int64 {
+	avail := metalLiveAvailable()
+	if avail <= 0 {
+		return prefillBlockScratch
+	}
+	return min(prefillBlockScratch, max(avail-decoder.MetalFitMarginBytes, 0))
+}
+
 // prefillBlockRowsMin is the shortest block PrefillBlockRows reports, for a model whose rows are so wide that fewer
-// would fit prefillBlockScratch.
+// would fit the budget.
 const prefillBlockRowsMin = 256
 
 // prefillBlockRowsForTest replaces PrefillBlockRows' figure when positive, for a test that needs several blocks in a
@@ -1488,7 +1499,7 @@ const prefillBlockRowsMin = 256
 var prefillBlockRowsForTest int
 
 // PrefillBlockRows (decoder.ResidentPrefillBlocks) is the most rows the decoder hands one batched pass: as many as fit
-// prefillBlockScratch, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
+// prefillBlockBudget, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
 // without a block a prompt's prefill takes memory in proportion to its length. 0, meaning the prefill is not split,
 // for a resident whose prompts do not take the plain batched pass at every length: a layer-major route or an E-model,
 // an int8 KV cache, fast prefill off, an arch or norm the pass does not implement, and a model on the exact attention
@@ -1506,7 +1517,7 @@ func (a *metalResident) PrefillBlockRows() int {
 	if per <= 0 {
 		return 0
 	}
-	return max(int(prefillBlockScratch/per)/64*64, prefillBlockRowsMin)
+	return max(int(prefillBlockBudget()/per)/64*64, prefillBlockRowsMin)
 }
 
 // PrefillScratchBytes (decoder.ResidentPrefillBlocks) is what one batched pass over rows rows allocates.
