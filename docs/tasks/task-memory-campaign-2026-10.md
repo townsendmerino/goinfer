@@ -398,6 +398,27 @@ on a 16 GB machine?
 **Gates.** Tier 0: logits byte-identical across block sizes (blocking is already invariant; pin it at two sizes).
 Speed: TTFT at the smaller block, in-process A/B by day (TE5(b)); a served gate only if unresolved.
 
+**Registered 2026-10-21, before code (Mac).**
+- **Change.** `PrefillBlockRows` sizes the block from `min(prefillBlockScratch, available - decoder.MetalFitMarginBytes)`,
+  where available is `decoder.HostRAMAvailableBytes` (B41's reading), read when the decoder asks for the block; an
+  unknown reading keeps 512 MiB, and the 256-row floor stays. **Deviation from the fix shape, for the owner:** the block
+  is not added to `ResidentNeedBytes`. Admission already prices a resident request's prefill at one pass of this block
+  (`AdmitPrefillMemoryShare`, through `Model.residentPrefillScratch`), at request time, which is when the block is now
+  chosen; a load-time 512 MiB term would shrink every Metal fit-by-default context M2 shipped, for a transient that now
+  shrinks itself. The arena question stays open.
+- **G7-1 (tier 0).** `PrefillBlockRows` on the dense tiny fixture with the reading injected: ample memory gives today's
+  figure exactly; the margin plus 128 MiB gives the most rows (a multiple of 64) whose scratch fits 128 MiB; the margin
+  or less gives the 256-row floor; an unknown reading gives today's figure. Plant: drop the reading (the constant
+  alone), red at 128 MiB.
+- **G7-2 (tier 0).** Through the production caller (`Generate` → `residentPrefillSeed`): a 1,000-token prompt on that
+  fixture with the reading injected after load at the margin (blocks of 256 rows, four passes) gives the tokens,
+  log-probabilities and resident KV of the ample-memory run (one pass), bit for bit.
+- **Speed: none by day** (no timed measurement on the Mac by day, `CLAUDE.md`). With memory to spare the block is the
+  same number of rows as today, so nothing about speed can change there; it shrinks only when available memory beyond the
+  margin is under 512 MiB. The in-process TTFT A/B at a forced small block (TE5(b)) is a night job, queued only if the
+  owner wants that cost read.
+- Void: a run under another session's timing lock; the fixture building a resident that does not split its prefill.
+
 ### MEM8 · Metal int4 LM head; gather-only tables decoupled from the head pin (M)
 
 **Problem (checked).** `internal/loadflags/loadflags.go:Flags.embedInt4` returns false on Metal unless the flag is set
