@@ -129,6 +129,18 @@ func (h *hasher) str(s string) { h.i64(len(s)); h.buf = append(h.buf, s...) }
 func (h *hasher) sum() Hash    { return sha256.Sum256(h.buf) }
 
 // rootHash is link −1 of a chain.
+// checkpointKey is the key of a recurrent checkpoint at position len(tokens): the chain under root through those tokens.
+func checkpointKey(root Hash, tokens []int) Hash {
+	h := hasher{buf: make([]byte, 0, 48+8*len(tokens))}
+	h.tag('K')
+	h.buf = append(h.buf, root[:]...)
+	h.i64(len(tokens))
+	for _, t := range tokens {
+		h.i64(t)
+	}
+	return h.sum()
+}
+
 func rootHash(r Root, parts keyPart) Hash {
 	h := hasher{buf: make([]byte, 0, 96+len(r.Model)+len(r.Namespace))}
 	h.tag('R')

@@ -61,10 +61,13 @@ const (
 	lcPublish lifecyclePath = "publish" // a completed generation's rows enter the index: residentCommitIDs -> kvmgr.Slots.Commit
 	lcShare   lifecyclePath = "share"   // a request takes rows a sequence already holds: residentAcquireSlot -> kvmgr.Slots.Score
 	lcEvict   lifecyclePath = "evict"   // a slot's rows stop being a known sequence's: residentForgetIDs, or the slot given to another prompt
+	// KV8a's two paths (recurrent_checkpoint.go): the save at the end of a prefill, and the restore at that position.
+	lcCkptSave    lifecyclePath = "checkpoint save"    // residentCheckpointSave, after the prefill and before the first decode step
+	lcCkptRestore lifecyclePath = "checkpoint restore" // residentCheckpointRestore, when kvmgr's scoreRecurrent returns the checkpoint's c
 )
 
 // lifecyclePaths is every path, in display order.
-var lifecyclePaths = []lifecyclePath{lcRewind, lcReset, lcSnapshot, lcReuse, lcSpecRollback, lcPublish, lcShare, lcEvict}
+var lifecyclePaths = []lifecyclePath{lcRewind, lcReset, lcSnapshot, lcReuse, lcSpecRollback, lcPublish, lcShare, lcEvict, lcCkptSave, lcCkptRestore}
 
 // stateHandling is what a lifecycle path does with a kind of state.
 type stateHandling string
@@ -100,6 +103,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hExact, "the full blocks of a completed generation become immutable and are indexed under their chain hash; the partial tail stays its sequence's own"},
 		lcShare:        {hExact, "rows match on token ids under an equal root, and the last token is always recomputed"},
 		lcEvict:        {hCleared, ""},
+		lcCkptSave:     {hKept, "not copied: the rows stay in the slot by position"},
+		lcCkptRestore:  {hExact, "truncated to c by position: the prefill from c overwrites what lies past it, and attention reads pos+1 keys"},
 	},
 	stateRing: {
 		lcRewind:       {hExactUnlessWrapped, "ring.truncate returns false for a wrapped ring rewound by more than one position (C1); TruncateTo passes it on"},
@@ -110,6 +115,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hExactUnlessWrapped, "a resident may keep only a window of these layers' rows; the block is published and the resident answers for what it still holds"},
 		lcShare:        {hExactUnlessWrapped, "residentReuseFloor asks the resident (ResidentReusableKV): a prefix whose window was dropped is served as 0, and the prompt is prefilled whole"},
 		lcEvict:        {hCleared, ""},
+		lcCkptSave:     {hKept, "not copied: the ring stays in the slot"},
+		lcCkptRestore:  {hExactUnlessWrapped, "exact while the window holds what c attends to; once dropped, ResidentReusableKV's floor sends the request cold before any restore"},
 	},
 	stateInt8KV: {
 		lcRewind:       {hExact, ""},
@@ -120,6 +127,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hExact, "the scales are stored with the rows they scale"},
 		lcShare:        {hColdOnMismatch, "the KV element type is in the root every block is keyed under: rows of another precision match nothing"},
 		lcEvict:        {hCleared, ""},
+		lcCkptSave:     {hKept, "not copied: the rows stay in the slot by position"},
+		lcCkptRestore:  {hExact, "truncated to c by position, as the f32 rows"},
 	},
 	stateMLALatent: {
 		lcRewind:       {hExact, "TruncateTo re-slices the per-layer latent by latentDim"},
@@ -130,6 +139,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hExact, "the latent is the row its group stores"},
 		lcShare:        {hExact, "as positional rows"},
 		lcEvict:        {hCleared, ""},
+		lcCkptSave:     {hKept, "not copied: the rows stay in the slot by position"},
+		lcCkptRestore:  {hExact, "truncated to c by position, as the f32 rows"},
 	},
 	stateDeltaNet:  recurrentCells,
 	stateShortConv: recurrentCells,
@@ -144,6 +155,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hExact, "each span's content hash, offset and length are in the key of every block it touches"},
 		lcShare:        {hColdOnMismatch, "a span is taken whole, and only when the request claims the same image at the same place; otherwise the match stops at its start"},
 		lcEvict:        {hCleared, "residentForgetIDs clears resImgBlocks with the ids, always"},
+		lcCkptSave:     {hTransient, "the saving path (generateInto) takes text prompts: no image block is in what it saves"},
+		lcCkptRestore:  {hRefused, "scoreRecurrent gives no checkpoint hit to a sequence or a request with an image span"},
 	},
 	stateMRoPE: {
 		lcRewind:       {hInexact, "positions and the decode delta are set by the image prefill and have no per-position rewind"},
@@ -154,6 +167,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hCallerBound, "the positions of published rows are in their K rows and follow from the image spans, which are in the key; the decode delta is not stored"},
 		lcShare:        {hCallerBound, "GenerateQwenVL recomputes the positions and the delta from the prompt's placeholder run and image grid on every call"},
 		lcEvict:        {hCleared, "nothing of it is kept outside the rows"},
+		lcCkptSave:     {hTransient, "the saving path (generateInto) takes text prompts"},
+		lcCkptRestore:  {hRefused, "the VL paths never restore one"},
 	},
 	stateDeepstack: {
 		lcRewind:       {hTransient, "GenerateQwenVL sets the rows for the image prefill and clears them right after (generate_vl.go)"},
@@ -164,6 +179,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hTransient, "cleared after the prefill that set them"},
 		lcShare:        {hTransient, "cleared after the prefill that set them"},
 		lcEvict:        {hTransient, "cleared after the prefill that set them"},
+		lcCkptSave:     {hTransient, "cleared after the prefill that set them"},
+		lcCkptRestore:  {hTransient, "cleared after the prefill that set them"},
 	},
 	stateCapture: {
 		lcRewind:       {hTransient, "captured rows are overwritten by every forward before anything reads them"},
@@ -174,6 +191,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hTransient, "overwritten by every forward; a hidden-state route never commits (it calls residentForgetIDs)"},
 		lcShare:        {hTransient, "overwritten by every forward"},
 		lcEvict:        {hTransient, "overwritten by every forward"},
+		lcCkptSave:     {hTransient, "overwritten by every forward"},
+		lcCkptRestore:  {hTransient, "overwritten by every forward"},
 	},
 	stateTree: {
 		lcRewind:       {hTransient, "nothing in production sets the tree fields since EAGLE tree drafting was removed (be9aeea8, 2026-09-24); only tests do, on caches they own"},
@@ -184,6 +203,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hTransient, "unset in production (be9aeea8)"},
 		lcShare:        {hTransient, "unset in production (be9aeea8)"},
 		lcEvict:        {hTransient, "unset in production (be9aeea8)"},
+		lcCkptSave:     {hTransient, "unset in production (be9aeea8)"},
+		lcCkptRestore:  {hTransient, "unset in production (be9aeea8)"},
 	},
 	stateAdapter: {
 		lcRewind:       {hKept, "the adapter is the stream's binding, not sequence state: positions are rewound under the same projections"},
@@ -194,6 +215,8 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcPublish:      {hKept, "the adapter's identity is in the root every block of the sequence is keyed under"},
 		lcShare:        {hColdOnMismatch, "another adapter, or none, is another root: nothing matches (rule 4 of resident_reuse.go)"},
 		lcEvict:        {hKept, "the binding is the generation's, not the slot's"},
+		lcCkptSave:     {hKept, "the adapter is in the root the sequence, and so its checkpoint, is keyed under"},
+		lcCkptRestore:  {hColdOnMismatch, "another adapter, or none, is another root: Score matches nothing"},
 	},
 }
 
@@ -206,8 +229,10 @@ var recurrentCells = map[lifecyclePath]stateCell{
 	lcReuse:        {hInexact, "follows the rewind; rewindForReuse goes cold"},
 	lcSpecRollback: {hRefused, "specRollbackSafe refuses every model with recurrent state"},
 	lcPublish:      {hKept, "the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)"},
-	lcShare:        {hInexact, "a strict extension of the whole sequence continues from exactly where the state stopped; on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold"},
-	lcEvict:        {hCleared, "the resident re-zeroes it at position 0 of the prefill that follows"},
+	lcShare:        {hInexact, "a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold"},
+	lcEvict:        {hCleared, "the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it"},
+	lcCkptSave:     {hExact, "the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none"},
+	lcCkptRestore:  {hExact, "copied back whole at c, conv window included; the prefill continues from c"},
 }
 
 // kvCacheFieldState names the kind of state each KVCache field belongs to. Fields that are geometry,

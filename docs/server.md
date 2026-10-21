@@ -67,7 +67,7 @@ the model's own maximum), from the same function that enforces it, repeated as `
 goes past; and `vision`, whether the model
 accepts image content parts (from the same check that refuses them otherwise);
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
-`frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
+`frequency_penalty`/`presence_penalty`/`stop`/`logprobs`/`logit_bias`); and **`response_format`**
 — `{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
@@ -77,7 +77,11 @@ carries one; a field the request sends always wins. The values come from a Huggi
 `generation_config.json`, or from a GGUF's `general.sampling.*` metadata (`temp`, `top_p`, `top_k`, `min_p`). A bare `.gguf`
 reads only its own metadata, never a `generation_config.json` in its folder, which may hold other models. A `.giw` keeps what
 its source carried. The fields are `temperature`, `top_p`, `top_k`, `min_p` (which has no request field, so a recommended
-one always applies) and `presence_penalty`; `do_sample: false` means greedy. A request that asks for greedy
+one always applies) and `presence_penalty`; `do_sample: false` means greedy.
+**`logit_bias`** is OpenAI's: a map from token id (a decimal string) to a value in [-100,100] added to that token's logit
+before sampling, so -100 bans a token in practice and +100 all but forces it. `/v1/chat/completions`, `/v1/completions` and
+`/v1/responses` take it, and `/v1/messages` takes it as a goinfer extension. A key that is not a token id in the model's
+vocabulary, a value outside the range, or more than 1,024 entries is a 400. A request that asks for greedy
 (`temperature` 0) is left as sent. `repetition_penalty` is never applied: transformers divides logits by it, and this
 sampler's penalties are OpenAI's subtractive ones. A model that carries no values keeps the server default: temperature
 1.0 over the whole vocabulary, no `top_k`, `top_p` or `min_p`.
@@ -226,7 +230,7 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 - On the 0.5B, `on` reads 0.73× the workers.
 - On macOS too: on an M1 Pro's CPU the 7B's batched step reads 1.54× (depth 128) and 1.38× (depth 512) the workers
   (`measurements/concurrency-mc2-2026-09-26.md`, "Mac 7B cell"). A served W7 run on the Mac has not been made.
-- Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8`, adapters,
+- Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8` or `f16` (the banner says so; with `-cpu-batch on` either refuses the load), adapters,
   speculative decode and vision.
 - The banner's concurrency line says which mode runs, and serve logs the batcher's step counts at shutdown.
 
@@ -892,6 +896,10 @@ to ignore.**
   through. `GET /v1/models` advertises it in the model's own entry (`fast_model`); the alias is not an entry of its own, so a listing is still one model. A
   model served under the alias's name takes the name. `-log-requests` ends a request that named the alias with ` fast=1`. `connect`
   points Claude Code's small/fast model and opencode's `small_model` at it. A request under the model's own name is unchanged.
+- **The KV precision a request ran at.** `--kv f32`, `f16` or `i8` is delivered on the path the load resolves to, or the load refuses
+  at startup and says why (`docs/kv-precision-matrix.md` has every backend and family; `auto` is the backend's pick). The banner's
+  context line prints each cache's precision with the one requested, and `-log-requests` gives every generating request ` kv=<f32|f16|i8|n/a>`,
+  the precision of the cache it wrote.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

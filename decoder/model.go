@@ -66,6 +66,11 @@ type Model struct {
 	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
 	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
 	resImgBlocks []residentImageBlock
+	// resCkptPrompt is the prompt whose end the resident's recurrent checkpoint holds, saved by the running generation and
+	// recorded on its sequence by the commit (residentCheckpointSave, residentCommitIDs); nil otherwise.
+	resCkptPrompt []int
+	// kvOpts is the Options the model was loaded with, which ResolveKV reads for the precision each cache delivers (KVPrecisionReport).
+	kvOpts Options
 	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with resIDs; nil means no drafter context is
 	// trustworthy for reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit resIDs without
 	// touching a block drafter's context, so the token prefix can match while the drafter's state does not reflect it. Cleared
@@ -396,6 +401,9 @@ type Options struct {
 	// resident context THIS model ends up choosing, which is unknowable when ExtraResidentBytes is priced (in loadDecoder). See
 	// Model.ExtraResidentKVPerPosition and decoder.DrafterKVBytesPerPosition. 0 (the default) means no such term.
 	ExtraResidentKVPerPosition int64
+	// Drafter reports that a block drafter will be attached to this model after the load (serve's --drafter). The drafter keeps f32
+	// K/V and attends with the target's kernels, so on CUDA auto resolves the KV to f32, and an explicit f16 refuses (ResolveKV).
+	Drafter bool
 	// ExactPrefill forces bit-exact prompt ingestion on every backend that has a faster, non-exact default: CUDA's tensor-core
 	// batched prefill (GOINFER_CUDA_FAST_PREFILL), Metal's f16-MMA batched prefill (GOINFER_METAL_FAST_PREFILL) and CPU's
 	// f32-attention fast path (GOINFER_CPU_FAST_ATTENTION), all default ON above their own thresholds. false (the default)
@@ -490,17 +498,17 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	}
 	kvF16, kvDecline := opts.KVPrecision == "f16", ""
 	if be != nil {
-		// A backend with a registered KV policy resolves the precision (kvpolicy.go); an explicit "f16" it holds at f32 says why (Model.KVF16DeclineReason).
-		o := opts
-		o.Backend = be.Name()
-		if _, ok := kvPolicies[o.Backend]; ok {
-			kvF16 = o.kvF16For(w.arch)
+		// A backend with a registered KV policy builds what ResolveKV says (kvresolve.go); an explicit "f16" it cannot hold says why
+		// (Model.KVF16DeclineReason), and Load refuses it (kvRefusal).
+		if _, ok := kvPolicies[be.Name()]; ok {
+			got, why := ResolveKV(be.Name(), w.arch, opts)
+			kvF16 = got == kvPrecF16
 			if !kvF16 && opts.KVPrecision == "f16" {
-				kvDecline = kvF16Decline(o.Backend, w.arch, o)
+				kvDecline = why
 			}
 		}
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts),
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
@@ -1871,6 +1879,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 			}()
 		} else {
+			scope.checkpoint = m.recurrentCheckpointer() != nil      // KV8a: this path restores, and saves after its prefill
 			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
 			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
@@ -1878,11 +1887,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				g.err = err
 				return
 			}
-			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq) // before the first decode step writes past the prompt
+			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq)           // before the first decode step writes past the prompt
+			g.CheckpointSave, g.CheckpointSaved = m.residentCheckpointSave(prompt) // likewise: the state at the end of the prompt
 		}
 		g.PrefillReused, g.PrefillSlot, g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
 		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
 		g.KVSnapRestored, g.KVSnapRestore = acq.snapRows, acq.snapDur
+		g.CheckpointRestored, g.CheckpointRestore, g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
 		gpuPos = len(prompt)
 	} else {
 		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
@@ -2446,6 +2457,14 @@ type Generation struct {
 	// restore's wall time. 0 when none did.
 	KVSnapRestored int
 	KVSnapRestore  time.Duration
+	// CheckpointRestored is the position a recurrent checkpoint was restored at for this prefill (0: none), CheckpointRestore its
+	// copy's time, CheckpointDeclined why a checkpoint hit prefilled cold instead; CheckpointSaved reports whether the state at the
+	// end of this prompt was saved for the next request, CheckpointSave that copy's time (KV8a, residentCheckpointSave).
+	CheckpointRestored int
+	CheckpointRestore  time.Duration
+	CheckpointDeclined string
+	CheckpointSaved    bool
+	CheckpointSave     time.Duration
 	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ResidentImagePrefill, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a

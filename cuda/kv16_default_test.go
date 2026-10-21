@@ -3,7 +3,9 @@
 package cuda
 
 import (
+	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -37,18 +39,26 @@ func TestKV16_theDefaultIsF16OnAClearedFamily(t *testing.T) {
 		}
 		m.Close()
 	}
-	// A family the f16 kernels do not cover stays f32 under the default, and an explicit f16 for it is held at f32 with the reason.
+	// A family the f16 kernels do not cover stays f32 under the default, and an explicit f16 for it refuses the load by name
+	// (decoder.KVRefusal, docs/tasks/task-kv-precision-everywhere-2026-10.md D1).
 	if g := modelPath("gemma3-1b-q4_k_m.gguf"); fileExists(g) {
 		for _, kv := range []string{"", "auto", "f16"} {
 			m, err := decoder.Load(g, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: kv, ResidentContext: 2048})
+			if kv == "f16" {
+				var r *decoder.KVRefusal
+				if !errors.As(err, &r) || !strings.Contains(r.Reason, "gemma3 keeps f32") {
+					t.Errorf("gemma3 -kv f16: load error %v, want a KV refusal naming the family", err)
+				}
+				if m != nil {
+					m.Close()
+				}
+				continue
+			}
 			if err != nil {
 				t.Fatalf("gemma3 -kv %q: %v", kv, err)
 			}
 			if r, ok := m.ResidentForwardForTest().(*cudaResident); !ok || r.kvF16 || m.ResidentKVPrecision() != "f32" {
 				t.Errorf("gemma3 -kv %q: not an f32 resident (ok=%v)", kv, ok)
-			}
-			if kv == "f16" && m.KVF16DeclineReason() == "" {
-				t.Error("gemma3 -kv f16 was held at f32 with no reason")
 			}
 			m.Close()
 		}

@@ -2,7 +2,7 @@ module goinfer.local/ci/staticcheck
 
 go 1.27.0
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require honnef.co/go/tools v0.8.1
 

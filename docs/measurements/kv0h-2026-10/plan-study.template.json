@@ -1,0 +1,98 @@
+{
+ "serve": "/home/francis/serve-cuda-94a6b973",
+ "port": 18090,
+ "proxy_port": 18095,
+ "ids_key_file": "/home/francis/goinfer-bench/kv0h-2026-10/ids.key",
+ "configs": [
+  {
+   "name": "h-qwen35-9b-20k",
+   "model": "/home/francis/models/Qwen3.5-9B-Q4_K_M.gguf",
+   "ctx": 20480,
+   "serve_args": [
+    "--kv-sessions",
+    "1"
+   ],
+   "run_timeout": 1800,
+   "sessions": [
+    {
+     "agent": "opencode",
+     "task": "chain",
+     "rep": 1
+    },
+    {
+     "agent": "opencode",
+     "task": "chain",
+     "rep": 2
+    },
+    {
+     "agent": "opencode",
+     "task": "fix",
+     "rep": 1
+    },
+    {
+     "agent": "opencode",
+     "task": "fix",
+     "rep": 2
+    },
+    {
+     "agent": "opencode",
+     "task": "edit",
+     "rep": 1
+    },
+    {
+     "agent": "codex",
+     "task": "chain",
+     "rep": 1
+    },
+    {
+     "agent": "codex",
+     "task": "chain",
+     "rep": 2
+    },
+    {
+     "agent": "codex",
+     "task": "fix",
+     "rep": 1
+    },
+    {
+     "agent": "codex",
+     "task": "fix",
+     "rep": 2
+    },
+    {
+     "agent": "codex",
+     "task": "edit",
+     "rep": 1
+    }
+   ]
+  },
+  {
+   "name": "h-qwen35-9b-cc",
+   "model": "/home/francis/models/Qwen3.5-9B-Q4_K_M.gguf",
+   "ctx": "SET-BY-A3",
+   "serve_args": [
+    "--kv-sessions",
+    "1"
+   ],
+   "run_timeout": 3000,
+   "sessions": [
+    {
+     "agent": "claude-code",
+     "task": "chain",
+     "rep": 1
+    },
+    {
+     "agent": "claude-code",
+     "task": "fix",
+     "rep": 1
+    },
+    {
+     "agent": "claude-code",
+     "task": "read",
+     "rep": 11,
+     "prompt": "Use the Task tool to start a subagent. Ask the subagent to read calc.go and report what `Add(2, 3)` returns. Meanwhile read store.go yourself and find which file defines `ErrNotFound`. Then answer with the number and the file name."
+    }
+   ]
+  }
+ ]
+}

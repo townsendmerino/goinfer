@@ -220,7 +220,9 @@ the bullets below on one point: cells do not "start declined" — they start hon
     (session reuse and snapshot × Quant, CPUBatchDecode): a session snapshotted after one turn, restored and continued
     must reuse its whole stored prefix and match an uninterrupted session, tokens and K/V. KVQuant × CPU batched decode
     is a decline, not a gap: `cpuBatchCacheEligible` keeps int8 caches out of the batcher, and
-    `TestCPUBatch_ineligibleCachesBypass` already held it. KVQuant and EmbedInt4 × CPU decode are booked to
+    `TestCPUBatch_ineligibleCachesBypass` already held it. *(Note, 2026-10-20, KV precision phase 0: that evidence still stands under
+    batched decode's default, auto, where an f16 or int8 cache bypasses the batcher and decodes per sequence at the precision asked for;
+    batched decode explicitly on with such a cache now refuses the load, `TestCPUBatch_explicitOnRefusesWidenedKV`.)* KVQuant and EmbedInt4 × CPU decode are booked to
     `TestOptionPath_cpuBatchedPrefill`, whose sequential reference is the decode path; each was booked only after a
     defect planted in the decode-only code (the int8 attention branch; the int4 embedding lookup) turned it red.
     Other planted defects, each red: every M>1 W8A8 matmul ignoring ActQuantGroup (batched decode); the batched

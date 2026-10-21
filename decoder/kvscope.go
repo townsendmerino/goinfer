@@ -16,6 +16,9 @@ type KVScope struct {
 	// chat template's history render rewrites (chat.NextTurns). A recurrent model's state is kept there, so the next turn continues from it
 	// (docs/queue-engineering.md, B35). 0 when the route does not know.
 	Keep int
+	// checkpoint: the caller restores a recurrent checkpoint when the acquire scores one (residentCheckpointRestore). Set only by
+	// a path that also saves one after its prefill (generateInto); every other path keeps today's strict-extension rule.
+	checkpoint bool
 }
 
 type kvScopeKey struct{}

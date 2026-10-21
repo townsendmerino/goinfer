@@ -62,8 +62,9 @@ func (s *server) recoverFinalize(b *batchRecord) {
 // strings are matched against the tail each step; a tool-name union is a branch per tool at every step of the name). Each cap is far
 // above what a real request carries and rejects with a 400 before any work.
 const (
-	maxStopSequences   = 16 // OpenAI documents 4
-	maxToolsPerRequest = 128
+	maxStopSequences    = 16 // OpenAI documents 4
+	maxToolsPerRequest  = 128
+	maxLogitBiasEntries = 1024 // each entry is applied to every step's logits
 )
 
 func checkToolCount(n int) error {

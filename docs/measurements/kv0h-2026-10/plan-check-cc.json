@@ -1,0 +1,25 @@
+{
+ "serve": "/home/francis/serve-cuda-94a6b973",
+ "port": 18090,
+ "proxy_port": 18095,
+ "configs": [
+  {
+   "name": "check-qwen35-9b-28k-cc",
+   "model": "/home/francis/models/Qwen3.5-9B-Q4_K_M.gguf",
+   "ctx": 28672,
+   "serve_args": [
+    "--kv-sessions",
+    "1"
+   ],
+   "run_timeout": 480,
+   "sessions": [
+    {
+     "agent": "claude-code",
+     "task": "chain",
+     "rep": 1
+    }
+   ]
+  }
+ ],
+ "ids_key_file": "/home/francis/goinfer-bench/kv0h-2026-10/ids.key"
+}

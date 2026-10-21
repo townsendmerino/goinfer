@@ -1,5 +1,7 @@
 package kvmgr
 
+import "slices"
+
 // The slot adapter: the manager over a backend that still stores KV as one fixed reservation per slot. Logical block
 // i of the sequence in slot s lives at rows [i*BlockRows, (i+1)*BlockRows) of slot s, so nothing in a kernel or an
 // allocation changes. What the adapter cannot do is let two sequences hold one block: a slot's rows are overwritten
@@ -104,6 +106,9 @@ type Request struct {
 	Root   Root
 	Tokens []int
 	Images []ImageSpan
+	// Checkpoint: the caller restores a recurrent sequence's checkpoint before it prefills (KV8a). A recurrent request
+	// that is not a strict extension may then score the checkpoint's position (scoreRecurrent).
+	Checkpoint bool
 }
 
 // Score is how many leading tokens of req the sequence in slot already holds and req may skip. The rules:
@@ -113,8 +118,9 @@ type Request struct {
 //   - at least one token is always left to compute, because its logits seed decode;
 //   - an image span is taken whole or not at all, and only when the request claims the same image at the same
 //     place: image placeholder ids are the same for every image, so ids alone prove nothing about one;
-//   - a recurrent model continues only a strict extension of the whole sequence. Its state has no history, so the
-//     one point it can continue from is exactly where it stopped.
+//   - a recurrent model continues a strict extension of the whole sequence from where its state stopped. A request that
+//     is not one may restart from the sequence's checkpoint instead, when the caller restores it (Request.Checkpoint):
+//     scoreRecurrent.
 //
 // The producer class is not compared here: a sequence continuing in its own slot keeps the rows it wrote, as
 // resident reuse always has (the task doc's §5.6, property 3). DeclineShortLead is the one class rule on this path.
@@ -152,15 +158,19 @@ func (a *Slots) Score(slot int, req Request, recurrent bool) int {
 	return i
 }
 
+// scoreRecurrent is Score for a recurrent model. It returns the sequence's length for a strict extension of the whole
+// sequence, which continues from the live state. Otherwise, under Request.Checkpoint, it returns the checkpoint's
+// position c when the request matches the sequence through c and carries a token past it, and neither side has an
+// image span; else 0. A divergence before c, a re-send of the prompt that ended at c, and any image stay cold.
 func scoreRecurrent(s *Seq, req Request) int {
 	n := len(s.tokens)
-	if len(req.Tokens) <= n {
-		return 0
-	}
-	for i := range n {
-		if s.tokens[i] != req.Tokens[i] {
+	if len(req.Tokens) <= n || !slices.Equal(s.tokens, req.Tokens[:n]) {
+		c := s.ckpt
+		if !req.Checkpoint || c <= 0 || len(req.Tokens) <= c || len(s.images) > 0 || len(req.Images) > 0 ||
+			!slices.Equal(s.tokens[:c], req.Tokens[:c]) {
 			return 0
 		}
+		return c
 	}
 	// The spans held and the request's claims must be the same set over the reused rows: the state cannot be
 	// rewound to an image boundary to repair a wrong guess.
@@ -302,6 +312,20 @@ func fingerprint(tokens []int) uint64 {
 // Forget empties slot: its rows are no longer known to be any sequence's. Its blocks leave the index at once, since
 // a block that may have been overwritten must never be found.
 func (a *Slots) Forget(slot int) { a.drop(slot) }
+
+// SetCheckpoint records that the resident holds a recurrent checkpoint for slot's sequence at position c, the end of the
+// prompt the sequence's last generation prefilled. c outside (0, Len] records none. A later Commit or Forget drops it.
+func (a *Slots) SetCheckpoint(slot, c int) {
+	s := a.seqs[slot]
+	if s == nil {
+		return
+	}
+	if c <= 0 || c > len(s.tokens) {
+		s.ckpt, s.ckptKey = 0, Hash{}
+		return
+	}
+	s.ckpt, s.ckptKey = c, checkpointKey(s.rootHash, s.tokens[:c])
+}
 
 func (a *Slots) drop(slot int) {
 	a.live[slot] = false

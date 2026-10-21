@@ -9,10 +9,18 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The test's own commits carry this identity, passed per command: a linked worktree shares .git/config with the main
+# checkout, so `git config` in it would set the identity of every commit made in the repository afterwards.
+IDENTITY = ("-c", "user.name=ci_docs_only test", "-c", "user.email=ci-docs-only@test")
 
 
 def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def git_or_none(cwd, *args):
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
 
 
 class FullPathReads(unittest.TestCase):
@@ -20,14 +28,17 @@ class FullPathReads(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
         cls.wt = os.path.join(cls.tmp, "wt")
+        cls.identity = (git_or_none(ROOT, "config", "user.name"), git_or_none(ROOT, "config", "user.email"))
         git(ROOT, "worktree", "add", "-q", "--detach", cls.wt, "HEAD")
-        git(cls.wt, "config", "user.email", "ci-docs-only@test")
-        git(cls.wt, "config", "user.name", "ci_docs_only test")
 
     @classmethod
     def tearDownClass(cls):
         subprocess.run(["git", "worktree", "remove", "--force", cls.wt], cwd=ROOT, capture_output=True)
         shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_z_the_repository_identity_is_untouched(self):
+        """Runs after the classifying tests (unittest orders by name): the repository's own identity is what it was."""
+        self.assertEqual((git_or_none(ROOT, "config", "user.name"), git_or_none(ROOT, "config", "user.email")), self.identity)
 
     def classify(self, edits):
         """Commit edits (path -> text appended) on top of the worktree's HEAD and classify that one commit."""
@@ -38,7 +49,7 @@ class FullPathReads(unittest.TestCase):
             with open(full, "a") as f:
                 f.write(text)
             git(self.wt, "add", path)
-        git(self.wt, "commit", "-q", "-m", "test")
+        git(self.wt, *IDENTITY, "commit", "-q", "-m", "test")
         head = git(self.wt, "rev-parse", "HEAD")
         out = subprocess.run(["bash", os.path.join(ROOT, "scripts", "ci_docs_only.sh"), base, head], cwd=self.wt,
                              capture_output=True, text=True).stdout.strip()

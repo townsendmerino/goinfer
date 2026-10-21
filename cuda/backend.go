@@ -1801,6 +1801,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				return fmt.Errorf("pre-sizing warm-up of moe_route failed to complete: %w", e)
 			}
 		}
+		// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
+		r.allocRecurrentCheckpoint()
 		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
 		// cache to what actually fits (cap-and-log, never OOM) and allocate it.
 		if r.cacheExperts {

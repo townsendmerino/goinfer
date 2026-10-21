@@ -12,6 +12,8 @@ func init() {
 	allowedHandling[lcPublish] = map[stateHandling]bool{hExact: true, hExactUnlessWrapped: true, hKept: true, hCallerBound: true, hTransient: true}
 	allowedHandling[lcShare] = map[stateHandling]bool{hExact: true, hExactUnlessWrapped: true, hInexact: true, hColdOnMismatch: true, hCallerBound: true, hTransient: true}
 	allowedHandling[lcEvict] = map[stateHandling]bool{hCleared: true, hKept: true, hTransient: true}
+	allowedHandling[lcCkptSave] = map[stateHandling]bool{hExact: true, hKept: true, hTransient: true}
+	allowedHandling[lcCkptRestore] = map[stateHandling]bool{hExact: true, hExactUnlessWrapped: true, hColdOnMismatch: true, hRefused: true, hTransient: true}
 }
 
 // kvSeq is n token ids no two of which repeat a pattern, so a prefix match is never an accident.

@@ -45,6 +45,14 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
   - **It does not fit 16,384.** By I4's own rule Claude Code is *not viable* at the window R19 and M2 chose as the
     harness floor; it needs 24,615 with the 25% margin, so `-ctx 32768`. Whether an 8 GB card holds a 7B there is
     unmeasured.
+  - **Note, 2026-10-20 (KV0-H pilot, `docs/measurements/kv0h-hybrid-traffic-2026-10.md`, amendment A2): 1.4x the first request is too small for Claude Code
+    with this model.** Qwen3.5-9B at `-ctx 28,672` (1.42 x its first request) ran 17.5k to 19.3k-token prompts, refilled the window to the limit three times
+    within three turns, and Claude Code stopped with "Autocompact is thrashing". `connect` told it 28,672 tokens with a 6,425-token output limit, a usable
+    prompt of about 22.2k. The 25% margin above is smaller still.
+  - **Note, 2026-10-20 (KV0-H check, same record, amendments A3 and A5): on the 8 GB card, Qwen3.5-9B with Claude Code is compaction-bound at the largest
+    context that fits.** That context is 32,768 at f32 KV (36,864 leaves 389 MiB free; f16 KV is not available for `qwen3_5` on CUDA), with an 8,192-token output
+    reserve. A Claude Code `chain` session ran 20 minutes, compacted 3 times in 12 turns and did not complete; 8 of its 9 follow-up requests were re-prefilled in
+    full. A larger card is the follow-up.
 - **I4, opencode and Codex: measured** (the owner said to install them; nobara-pc, pinned versions;
   `docs/measurements/integration-harness-2026-10/harness-census-2026-10-12.md`). opencode 1.19.0: **7,165 tokens**,
   10 tools. Codex 0.162.1: **5,850 tokens**, 9 tools. Claude Code 2.1.296: 20,199. Both of the first two are viable at

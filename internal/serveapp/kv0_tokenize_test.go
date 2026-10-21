@@ -18,6 +18,7 @@ import (
 // (docs/measurements/kv0-traffic-2026-10-13.md). It is a measurement tool, not a check: it skips unless KV0_BODIES is set.
 //
 //	KV0_BODIES=<dir of recorded bodies> KV0_GGUF=<the served model: a .gguf, a .giw or a model directory> KV0_OUT=<ids.jsonl> \
+//	  [KV0_IDS_KEY_FILE=<the server's --ids-key-file> KV0_MODEL_NAME=<its served name> KV0_QUANT=<its --quant>] \
 //	  go test -count=1 -run '^TestKV0_tokenizeBodies$' -v ./internal/serveapp/
 //
 // Each body is rendered by the same calls its route makes (serveChatToolsWith / serveChatText, serveResponsesWith and
@@ -39,6 +40,25 @@ func TestKV0_tokenizeBodies(t *testing.T) {
 	}
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: "kv0"}
+	// Carried ids (carried_ids.go): a body whose reply echoes the server's signed token ids renders to the ids the server prefilled only when this
+	// renderer holds the same key and the same model identity. The study server runs with --ids-key-file <KV0_IDS_KEY_FILE>; KV0_MODEL_NAME is the name
+	// it serves the model under and KV0_QUANT its --quant (default int4), which with the file's name and size make the identity a blob is minted for
+	// (loadedModel.idsIdentity). Unset, a carried blob fails its signature and its turn is tokenized as text, as before.
+	if kf := os.Getenv("KV0_IDS_KEY_FILE"); kf != "" {
+		key, kerr := loadIDsKey(kf)
+		if kerr != nil {
+			t.Fatalf("KV0_IDS_KEY_FILE: %v", kerr)
+		}
+		s.idsKey = key
+		quant := os.Getenv("KV0_QUANT")
+		if quant == "" {
+			quant = "int4"
+		}
+		lm.fp = modelFingerprint(gguf, quant)
+		if n := os.Getenv("KV0_MODEL_NAME"); n != "" {
+			lm.name = n
+		}
+	}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 
 	var files []string

@@ -2,9 +2,11 @@ package decoder
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -276,19 +278,17 @@ func TestKVF16_F1Plants(t *testing.T) {
 	}
 }
 
-// TestKVF16_excludedFamilyKeepsF32: an f16 request on a family outside kvF16OK (mixtral-tiny, MoE) builds an f32 cache and
-// says why.
+// TestKVF16_excludedFamilyKeepsF32: an f16 request on a family outside kvF16OK (mixtral-tiny, MoE) refuses the load and says why, where
+// before phase 0 of docs/tasks/task-kv-precision-everywhere-2026-10.md it built an f32 cache (D1: an explicit precision is delivered or
+// refused). The test keeps its name, which the gate run log of docs/measurements/cpu-kv-f16-2026-10-16 records.
 func TestKVF16_excludedFamilyKeepsF32(t *testing.T) {
 	m, err := Load(filepath.Join("..", "testdata", "mixtral-tiny"), Options{KVQuant: "f16"})
-	if err != nil {
-		t.Fatal(err)
+	var r *KVRefusal
+	if !errors.As(err, &r) || r.Path != "cpu" || !strings.Contains(r.Reason, "MoE") {
+		t.Errorf("mixtral-tiny -kv f16: load error %v, want a CPU KV refusal naming MoE", err)
 	}
-	defer m.Close()
-	if c := m.NewCache(8); c.quant != kvqF32 {
-		t.Errorf("mixtral-tiny's cache is %d, want f32", c.quant)
-	}
-	if p, why := m.CPUKVPrecision(), m.CPUKVF16DeclineReason(); p != "f32" || why == "" {
-		t.Errorf("CPUKVPrecision %q, reason %q: want f32 and a reason", p, why)
+	if m != nil {
+		m.Close()
 	}
 }
 
