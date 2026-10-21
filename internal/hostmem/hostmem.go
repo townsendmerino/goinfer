@@ -41,7 +41,8 @@ func Available() int64 {
 // pages, read through sysctl), read immediately before and after it in one process: B41 gate 1a's instrument
 // (docs/measurements/hostmem-available-2026-10/README.md, amendment A3). JetsamBefore and JetsamAfter are bytes. Fresh is true
 // when Ours was computed inside the bracket: the sysctls are not rate-limited and host_statistics64 is (see Read), so Ours is
-// read twice and Fresh is whether the two replies differ. A sample that is not Fresh may predate the bracket and cannot be graded.
+// read twice, with a page fault between that a fresh reply counts, and Fresh is whether the two replies differ. A sample that is not
+// Fresh may predate the bracket and cannot be graded.
 type OracleSample struct {
 	Ours                      Reading
 	JetsamBefore, JetsamAfter int64

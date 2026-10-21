@@ -129,8 +129,14 @@ func readWithOracle() (OracleSample, bool) {
 	if h.pageSize(h.port, &ps) != 0 || ps == 0 {
 		return OracleSample{}, false
 	}
+	page, err := unix.Mmap(-1, 0, int(ps), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANON|unix.MAP_PRIVATE)
+	if err != nil {
+		return OracleSample{}, false
+	}
+	defer unix.Munmap(page)
 	before, ok1 := jetsamAvailable(int64(ps))
 	first, ok2 := h.vmStats()
+	page[0] = 1 // a page fault, which a fresh second reply counts and the first did not
 	second, ok3 := h.vmStats()
 	after, ok4 := jetsamAvailable(int64(ps))
 	if !ok1 || !ok2 || !ok3 || !ok4 {
@@ -140,7 +146,7 @@ func readWithOracle() (OracleSample, bool) {
 	if !ok {
 		return OracleSample{}, false
 	}
-	// The rate limit's cache changes only when some caller takes a fresh reading, so a second reply unlike the first was computed
-	// after the first call began.
+	// The rate limit's cache changes only when some caller takes a fresh reading, and the fault between the two calls changes a
+	// fresh reply, so the second reply differs from the first exactly when it was computed after the first call began.
 	return OracleSample{Ours: r, JetsamBefore: before, JetsamAfter: after, Fresh: first != second}, true
 }
