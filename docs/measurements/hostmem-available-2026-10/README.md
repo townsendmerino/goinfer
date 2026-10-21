@@ -198,3 +198,19 @@ Francis's yes on the fixed code (A5).
 
 **Merged** on Francis's yes, 2026-10-21 about 15:24 PT, verbatim: "yay for pass, push". The merged `internal/hostmem` and `cmd/hostmem`
 are byte-identical to the A5 run's build (`331b5887`).
+
+## After the merge: host_statistics64 is rate-limited (2026-10-21)
+
+main's `root-darwin` job (macos-26-arm64) failed `TestReadWithOracle_live`: ours less purgeable read 58.5 MB below the kernel's
+figure, which held still across the bracket. The cause is in the instrument, not the formula. XNU rate-limits
+`host_statistics64` for binaries that are not Apple's (`osfmk/kern/host.c:rate_limit_host_statistics`): once callers system-wide
+pass 2 to 10 requests in a one-second window it serves the last fresh reply, and the jetsam sysctls are not rate-limited. So the
+bracket could hold a reading up to a second older than itself. Measured on the Mac: after four fresh replies, 36 of 39 further
+calls in the same second returned identical bytes and missed the kernel's figure by up to 15 MB. Every fresh reply matched it
+to the byte.
+
+`hostmem -oracle` now reads `host_statistics64` twice inside the bracket, with a page fault between, and prints `fresh 1` when
+the replies differ: the cache changes only on a fresh reading, and the fault changes a fresh one. The live test grades only a fresh,
+still sample, retaken after the window up to three times. Gate 1a's runs above took one `hostmem` process per sample, so each
+process made one request and was rate-limited only if other processes crowded the window. The A5 run's residuals of at most
+0.53 MB fit fresh readings. The fit guard's reading is unchanged; `Read` now documents that a sample can be up to a second old.
