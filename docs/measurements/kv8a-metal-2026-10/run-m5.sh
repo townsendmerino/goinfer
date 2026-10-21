@@ -9,7 +9,7 @@ echo "=== $(date '+%F %T %Z') start; $(pmset -g batt | head -1)"
 [ -x "$BEFORE" ] || { echo "VOID: $BEFORE is missing"; exit 2; }
 start_clean 600 || { echo "not clean at the start: re-queued"; exit 75; }
 fit_check 20480 || { echo "the fit guard refused the 9B: re-queued"; exit 75; }
-python3 -u "$(dirname "$0")/m5.py" --before "$BEFORE" --kv8a "$KV8A" --model "$MODEL" --key "$H/ids.key" --bodies "$H/bodies-pilot" \
+python3 -u "$(dirname "$0")/m5.py" --before "$BEFORE" --kv8a "$KV8A" --model "$MODEL_ARG" --key "$H/ids.key" --bodies "$H/bodies-pilot" \
 	--ids "$H/pilot/ids.jsonl" --out "$OUT"
 rc=$?
 echo "=== $(date '+%F %T %Z') end, rc $rc; record $OUT"

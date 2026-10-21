@@ -2,6 +2,7 @@
 K=$HOME/goinfer-bench/kv8a-metal; H=$HOME/goinfer-bench/kv0h-2026-10
 KV8A=$K/bin/serve-metal-9488f592; BEFORE=$K/bin/serve-metal-a8b1c806
 MODEL=$HOME/models/Qwen3.5-9B-Q4_K_M.int4.metal.v17.giw
+MODEL_ARG="Qwen3.5-9B-Q4_K_M=$MODEL" # served under the name the recorded bodies ask for (a bare .giw path is served as its file name)
 NEED_GB=6.7 # the void rule's fit need for the 9B: weights 5.5 GB + KV 1.2 GB at -ctx 20480, from its fit banner (2026-10-21)
 
 free_gb() { # the fit guard's reading (decoder.HostRAMAvailableBytes): free + inactive + speculative + purgeable pages

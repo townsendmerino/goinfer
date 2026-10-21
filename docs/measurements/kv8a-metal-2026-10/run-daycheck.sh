@@ -13,7 +13,7 @@ for ctx in 20480 32768; do
 	fit_check $ctx || { echo "REFUSED: the fit guard keeps the 9B off Metal at -ctx $ctx with the apps closed"; exit 3; }
 done
 echo "== probe: opencode pair #1, warm (turn 1 with its first token forbidden, then turn 2) and cold"
-python3 -u "$(dirname "$0")/gate2b.py" --serve "$KV8A" --model "$MODEL" --key "$H/ids.key" --bodies "$H/bodies-pilot" --ids "$H/pilot/ids.jsonl" \
+python3 -u "$(dirname "$0")/gate2b.py" --serve "$KV8A" --model "$MODEL_ARG" --key "$H/ids.key" --bodies "$H/bodies-pilot" --ids "$H/pilot/ids.jsonl" \
 	--out "$OUT/probe" --backend metal --configs h20 --start 1 --limit 1
 rc=$?
 grep '^request: POST' "$OUT"/probe/serve-*.log | grep -oE '(prompt_tokens|reused|div|ttft|total|ckpt_save_ms|ckpt_restore)=[^ ]+' | paste -sd' ' - | sed 's/ prompt_tokens/\nprompt_tokens/g'
