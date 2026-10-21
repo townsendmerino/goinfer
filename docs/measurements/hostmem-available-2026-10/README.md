@@ -188,3 +188,10 @@ residual was within 0.5 MB; a speculative page counted twice shows at any sample
 context: the raw difference, the speculative and purgeable pages, the pressure level, and the number of samples whose speculative pages
 exceed the bar (where a double count would show; the tier-0 test pins the count whatever that number is). On a fail: report, change
 nothing, no merge. **On a pass, B41's merge waits for Francis's yes on the fixed code**, which changed after his yes to merge (A2).
+
+**Gate 1a under A5: PASS** (2026-10-21 15:13:33–15:23:17, `hostmem` and the runner at `331b5887`, Francis's usual apps open, record
+`~/goinfer-bench/hostmem-gate1a/run-2026-10-21-1513/`). 30 of 30 samples within the bar; ours less purgeable read −0.00004 to +0.0005 GiB
+from the kernel's figure (at most 0.53 MB). Speculative pages ran 0.002 to 0.394 GiB and exceeded the bar at 12 of 30 samples, where the
+A1 formula would have read 0.1 to 0.8 GiB high. Every sample was taken on its first attempt; pressure 2 (warn) at 17 samples, 1 at 13.
+Gates 1b, 1c, 2 and 3 stand: 1b and 1c grade changes in the reading, and the fix lowers it, so gate 2's refusal holds. The merge waits for
+Francis's yes on the fixed code (A5).
