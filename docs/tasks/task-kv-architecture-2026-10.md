@@ -867,13 +867,80 @@ KV2 merges when every arm on both boxes is read.
   - G6: a lone request at 0.99 against `main`, on Metal and CUDA.
   - G7: copy and admission cost, reported.
 - **Size:** S–M. **Closes:** most of §1.2, without kernel work, on CUDA, Metal and WebGPU.
-- **Follow-up, after KV2 merges (owner, 2026-10-14; not started).** With the first-prompt anchor
-  (`kvmgr.Slots.FirstPrompt`), an own rollback that gives up more than it keeps could truncate in place instead of
-  re-prefilling.
+- **Follow-up 1, after KV2 merges (owner, 2026-10-14; gate registered 2026-10-21, before the code, branch
+  `kv2-fu1-2026-10`).** With the first-prompt anchor (`kvmgr.Slots.FirstPrompt`), an own rollback that gives up more
+  than it keeps could truncate in place instead of re-prefilling.
   - Main's keep-at-least-as-much-as-it-overwrites rule (`kvmgr.PickSlot`; on the CPU, `pickSession`) exists only
     because main could not tell a conversation's own request from another's.
   - The item: drop that rule for a request that keeps the slot's whole first prompt, on the GPU and the CPU.
   - Gate it like G3: same reply in every schedule, and replies unchanged against KV2's merge.
+  - **The change, as registered.**
+    - GPU: `kvmgr.PickSlotFor` takes the best-scoring slot in place, with no keep-versus-overwrite test and no
+      allowance, when the request keeps that slot's whole first prompt but its last token (its existing own test).
+      Every other request keeps main's rule and KV2's allowance.
+    - CPU: serve's session LRU records each session's first prompt length, kept by a request that keeps all of it but
+      its last token and restarted by any other, as `kvmgr.Slots.FirstPrompt` is. `pickSession`'s room rule (a fresh
+      session when reuse would discard more than it keeps) does not apply to such a request. A session loaded from
+      disk or faulted back from the cold tier has no length until its next request, so it keeps main's rule.
+    - Unchanged: busy slots and sessions, the donor choice and copies, the recurrent families' scoring, and
+      `Model.residentReuseFloor` (CUDA's windowed ring still floors an in-place rollback past its budget).
+  - **Gate FU1-G3. Tier: day. Testing tier 0 (counters and row identity on a fake and a tiny fixture).**
+    - *Instrument:* G3's decoder instrument (`TestKV2_scheduleIndependence`'s copying fake) with a second kernel
+      class. Its batched pass (`PrefillLast`) writes rows that differ from decode's for the same input, as Metal's and
+      CUDA's do. It reports a kernel floor of 1 and an exact tail, so the decoder records batched rows fast and decode
+      rows exact, and a copy takes only batched rows. KV2's fake has one class, where a re-prefilled reply equals an
+      in-place one, so a reply check on it cannot see this defect.
+    - *Conversations:* three, sharing KV2's 327-token preamble, each with a 397-token first prompt, greedy, 12 tokens a
+      turn. Five turns each:
+      1. the first prompt;
+      2. its reply and 500 tokens;
+      3. a rollback to the first prompt and its reply plus 2 new tokens: it keeps 409 rows and gives up more than 500;
+      4. that turn's reply and 500 tokens;
+      5. a second rollback to the same point with other tokens, which checks that the anchor survives an in-place
+         rollback.
+    - *Schedules,* at 1, 2 and 4 slots: (a) round robin by turn; (b) the same, conversations reversed; (c) an
+      interleaving in which each rollback follows its own long turn while the others take slots; (d) each
+      conversation run through before the next; and 20 seeded random interleavings.
+    - *Reference, G3's (§5.6):* a turn is its conversation continuing when the slot its previous turn used has served
+      no other turn since. Its reference is that conversation's lineage, replayed alone on a fresh one-slot model.
+      Any other turn's reference is its prompt prefilled cold, and the lineage restarts from it.
+    - *Rule, all four or red:*
+      1. every emitted token equals the reference's (the fake's logits are one-hot, so equal tokens are equal logits);
+      2. after every turn, the bound slot's rows equal the reference's, read back from the fake;
+      3. every continuing turn binds its previous slot, copies nothing (`PrefillShared` 0, no `CopyKV` call) and reuses
+         its common prefix with that slot's sequence, capped at n − 1;
+      4. coverage: at 4 slots every schedule has at least one rollback that continues in place giving up more than it
+         keeps; at 2 slots the schedules together have at least one.
+    - *CPU arm,* serve's session LRU over llama-attnfa-tiny's real CPU forward. Conversation A has a 600-token first
+      prompt (a 300-token preamble and 300 of its own); B shares the preamble. Turns: the first prompt; its reply and
+      700 tokens; a rollback to the first prompt and reply plus 2 tokens (it keeps 606 and gives up 706). Three runs:
+      an LRU of 2 holding A alone (room); an LRU of 3, A and B interleaved (room); and an LRU of 2 holding both (no
+      room, the control, where main also reuses in place).
+      - Rule: every turn after the first is handed the session its previous turn used, reuses its common prefix with
+        it, copies nothing, and replies exactly as that conversation does alone in an LRU of one.
+      - The rollback's cold prompt is 608 tokens, past the CPU's 512-row fast class, so a re-prefill writes the reply's
+        rows on another kernel than the decode that wrote them in place, and the reply check can see the defect.
+    - *Identity (replies unchanged against KV2's merge):* KV2's tests of the slot choice, the copy and the sessions
+      pass, with their test files byte-identical to the branch point (`48ca55f8`): `decoder`
+      `-run 'KV2|ResidentReuse|MC3|Session'`, `internal/kvmgr` whole, and `internal/serveapp`
+      `-run 'Session|KVShare|PickSession'`.
+      - **Named under G1's exception, before the change:** `TestPickSlotFor_ownRollback`'s last case ("own rollback
+        that keeps less than it overwrites", want 1, "main's rule stands") asserts the rule this item removes, and
+        becomes want 0.
+      - `TestResidentReuse_equalsTheBookkeepingItReplaced` stays byte-identical. With choice 3 off
+        (`kvAllowanceOverride`) the decoder passes no first-prompt lengths, so its walk still compares the slot choice
+        with KV1's bookkeeping.
+    - *Plants,* each shown red once and removed, its output kept beside KV2's record:
+      1. `kvmgr.pickSlot` keeps the keep-versus-overwrite test for the own conversation (the branch point's rule):
+         rules 1 to 3 red at 2 and 4 slots;
+      2. `kvmgr.Slots.Commit` restarts the anchor on every request: the rollbacks red;
+      3. the CPU LRU ignores the anchor: the CPU arm red.
+    - *Void:* a listed test skipped (read `-v` for `--- PASS`); a test file changed that is not named here; coverage zero.
+    - *Not in this gate: a device arm.* No backend code changes. An in-place rollback is the path every one-slot model
+      already takes, and the Metal, WebGPU and CUDA G3 arms' edits keep more than they give up, so their expected
+      results do not change. CUDA takes the change through the same decoder path; its windowed floor is nobara's.
+    - *Stopping rule:* fixed cases, run to completion, no sampling. *Cost:* seconds. KV2's decoder G3 runs in 0.11 s on
+      its fake; the CPU arm's prompts are under 1,400 tokens on the tiny fixture.
 - **Follow-up 2, the donor choice: built 2026-10-15** (found by nobara's CUDA arm,
   `docs/measurements/kv2-cuda-2026-10-15.md` §6).
   - **The defect:** with several slots holding a prefix and windowed KV, the copy took the first of the longest hits. When
