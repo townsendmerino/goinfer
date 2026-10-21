@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`logit_bias` on the serve API.** `/v1/chat/completions`, `/v1/completions` and `/v1/responses` take OpenAI's `logit_bias`
+  (token id to a value in [-100,100], added to the logit), and `/v1/messages` takes the same field as an extension. Before, the
+  field was ignored. The sampler already applied a bias, and its on-device fast paths already stand aside for one. A malformed
+  bias is a 400.
 - **Changes behavior. An explicit `--kv f32`, `f16` or `i8` is delivered or the load refuses and says why** (phase 0 of
   `docs/tasks/task-kv-precision-everywhere-2026-10.md`). Before, some combinations ran another precision silently. They now refuse:
   `--kv i8` on CUDA (it ran f32), `--kv f32` on Metal (it ran f16), `--kv f16` on a CUDA family the f16 kernels do not cover (it ran f32),
