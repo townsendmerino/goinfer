@@ -68,3 +68,37 @@ prints a heartbeat every 30 s in the per-token pass (rows done, elapsed) and a l
 Reproduce: `bash docs/measurements/g46-gemma3-gemm-fidelity-2026-10-21/run-g46.sh` from the repo root.
 
 ## Results (appended when read)
+
+Run 2026-10-21, 16:21:50 to 16:31 PDT (550 s, against about 10 minutes estimated), by day, under the exclusive timing lock. Commit `f61f25fd` (the test as
+registered in `e5bb7a79`, unchanged), Go 1.27.3, driver 595.91.07. At the start: load 2.55, `MemAvailable` 56.6 GB, 7,382 MiB of VRAM free (valid: under
+8.0 and well above the need). Test process: peak `VmHWM` 6.07 GB (6,071,272 kB), `VmSwap` 0 in all 110 samples. Records: `g46-gemma3-gemm-fidelity-2026-10-21/run/`
+(`g46.log`, `start.txt`, `proc-samples.txt`, `peak.txt`); the driver's log is `~/goinfer-logs/g46-2026-10-21.log`.
+
+| depth | seed 4242: cosine | argmax | cell | seed 9001: cosine | argmax | cell |
+|---|---|---|---|---|---|---|
+| 4,096 | 0.994150 | equal | PASS | 0.995975 | equal | PASS |
+| 6,144 | 0.996105 | equal | PASS | 0.996998 | equal | PASS |
+| 8,192 | 0.995950 | equal | PASS | 0.991072 | equal | AMBIGUOUS |
+| 10,240 | **0.987131** | equal | **FAIL** | 0.995030 | **differs** | **FAIL** |
+| 12,000 | 0.996317 | equal | PASS | 0.996074 | equal | PASS |
+| 12,160 | 0.995662 | equal | PASS | 0.990061 | equal | AMBIGUOUS |
+
+Every default cell launched the tensor-core GEMM (1,904 launches at 4,096 to 5,712 at 12,000 and 12,160) and no row-kernel group; every logit differs from the
+per-token path in every default cell (worst 2.0 to 3.37). **All four controls held:** levers off, 0 of 262,144 logits differing and 0 tensor-core launches at
+4,096 and 12,160 on both prompts, so the differences above are the levers', and with no fused attention for head dim 256 that is the tensor-core GEMM.
+Per-token reference: 135.9 s and 136.2 s for 12,160 rows.
+
+**Verdict, by the registered rule: FAIL.** The first depth under the bar is **10,240 tokens, on both prompts**: seed 4242 by cosine (0.987131), seed 9001 by
+argmax (cosine 0.995030, a different top token). Two further cells are in the parking band (0.991072 and 0.990061). As registered, no remedy is
+proposed here; the bar is not moved, and what changes (the lever's depth range, the bar, or the kernel) is the owner's decision.
+
+Reported, not graded:
+- **The cosine does not fall with depth.** On both prompts the worst cell is at 10,240, and 12,000 reads better than either neighbour; seed 9001 dips at 8,192
+  and 12,160 too. The GEMM's distance from the per-token path moves by up to 0.009 between neighbouring depths of one prompt, so it depends on the prompt
+  content at least as much as on its length. A depth cut-off fitted to these twelve cells would be fitted to two prompts' content.
+- **The 2026-10-14 cell did not reproduce, and was not the same prompt.** Seed 4242 at 12,000 read 0.996317 here, against 0.990073 on `kv3-tiled-2026-10`.
+  The registration expected agreement "if the corpus stream is prefix-stable"; it is not stable across trees: `kv0TextTokens` encodes the tree's own
+  `decoder/*.go` sources, so every commit that edits them changes every prompt. The two readings are of different text, and say nothing about the GEMM
+  having changed. The same holds for re-running this record: the prompts are those of commit `f61f25fd`'s sources.
+- The run script stopped at the test's non-zero exit before writing `run/peak.txt` (`set -e`); the peak was computed from `run/proc-samples.txt` after the run,
+  and the script now records the peaks and then exits with the test's status.

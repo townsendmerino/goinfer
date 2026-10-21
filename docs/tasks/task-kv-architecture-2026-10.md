@@ -29,7 +29,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
 | KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
 | KV3-E4B | done | — (read 2026-10-21: not resolved by the registered rule; 1.08x inside the 10% band at 12.2k, 1.56x at 16.2k, 1.81x at 24.3k on a flagged-load cell) | kv3-e4b-cold-ttft-2026-10-19 |
-| KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
+| KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: read 2026-10-21, FAIL at 10,240 tokens on both prompts; the owner decides the remedy | g46-gemma3-gemm-fidelity-2026-10-21.md |
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
 | KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
 | KV4 | open | nobara: first among the CUDA KV tracks (owner, 2026-10-21); register its gates before code; L | §6 |

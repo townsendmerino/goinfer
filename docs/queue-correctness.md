@@ -48,7 +48,7 @@ M-11 (`validateShapes`); 2026-09-10 C-05 (the q/k permute list), M-27 (the GGUF 
 (`chat.Detect`). Either box, M.
 
 **G46 · Gemma 3's tensor-core GEMM prefill between about 3,900 and 12,160 keys has never been read against the 0.99 bar** —
-`cuda`, **filed 2026-10-21 (owner: run it by day)**
+`cuda`, **filed 2026-10-21 (owner: run it by day); read 2026-10-21: FAIL, first under the bar at 10,240 tokens on both prompts; the owner decides what changes** (`docs/measurements/g46-gemma3-gemm-fidelity-2026-10-21.md`)
 
 KV3 lifted CUDA's 12,160-key prefill guard, and `docs/tasks/task-kv-architecture-2026-10.md` (KV3) argues the fidelity gate
 is owed: main's Gemma 3 prefill at those depths has not been checked against the 0.99 bar. It left whether and when to the

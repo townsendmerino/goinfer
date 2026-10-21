@@ -15,6 +15,7 @@ rev=$(git rev-parse --short=8 HEAD)
 go test -c -tags 'cuda goinfer_testhooks' -o "$BIN" ./cuda/
 export BIN D
 cd cuda
+rc=0
 GOINFER_HEAVY_TESTS=1 G46_REAL=1 python3 ../scripts/timing_lock.py run --label g46 -- bash -c '
   "$BIN" -test.v -test.count=1 -test.timeout 30m -test.run "^TestG46_gemma3GEMMFidelityLadder$" > "../$D/run/g46.log" 2>&1 &
   pid=$!
@@ -26,7 +27,8 @@ GOINFER_HEAVY_TESTS=1 G46_REAL=1 python3 ../scripts/timing_lock.py run --label g
     sleep 5
   done
   wait $pid
-'
+' || rc=$?
 echo "peak VmHWM / VmSwap (kB) of the test process:"
-awk '{for(i=1;i<=NF;i++){if($i=="VmHWM:"&&$(i+1)>h)h=$(i+1); if($i=="VmSwap:"&&$(i+1)>s)s=$(i+1)}} END{print h, s}' "../$D/run/proc-samples.txt" | tee "../$D/run/peak.txt"
-grep -E '^\[g46\]|G46 (PASS|FAIL|AMBIGUOUS)|^(--- |FAIL|ok|PASS)' "../$D/run/g46.log" | tail -60
+awk 'BEGIN{h=0;s=0} {for(i=1;i<=NF;i++){if($i=="VmHWM:"&&$(i+1)>h)h=$(i+1); if($i=="VmSwap:"&&$(i+1)>s)s=$(i+1)}} END{print "VmHWM_peak_kB", h, " VmSwap_peak_kB", s}' "../$D/run/proc-samples.txt" | tee "../$D/run/peak.txt"
+grep -E '^\[g46\]|G46 (PASS|FAIL|AMBIGUOUS)|^(--- |FAIL|ok|PASS)' "../$D/run/g46.log" | tail -60 || true
+exit $rc
