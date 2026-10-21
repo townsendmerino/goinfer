@@ -51,13 +51,25 @@ No host fallback is built.
 completions) compared on the served tokens and the text of every logprob; Codex (`/v1/responses`) and Claude Code (`/v1/messages`) on the
 served token ids and the prompt hash from `--log-token-ids`. Any difference fails. opencode and Codex at `-ctx 20480`, Claude Code at
 `-ctx 32768` (KV0-H amendment A3's rule context), each with `--kv-sessions 1`, f32 KV and the ids key.
-- **Arms:** one warm server per context: for each pair, turn 1 (the earlier body) then turn 2 (the next), greedy, 24 new tokens, not
-  streamed. Turn 2 restores the checkpoint at turn 1's end, since the server's own 24-token reply is not the reply the client recorded.
+- **Arms:** one warm server per context: for each pair, turn 1 (the earlier body) then turn 2 (the next), 24 new tokens, not streamed.
+  Turn 1 is sampled (temperature 1.0, seed 1000 + the pair's index), so its reply is not the reply the client recorded, and turn 2, which
+  carries the recorded reply, diverges inside it, after turn 1's end; turn 2 is greedy and restores the checkpoint there.
   Turn 1 must report a cold prefill (`reused=0`), or that server is restarted and turn 1 sent again. The cold arm is one server per context
   with resident reuse off (`GOINFER_NO_RESIDENT_REUSE=1`): every request on it prefills from position 0.
 - **Void per request:** a turn 2 that does not report a restore at turn 1's prompt length (a title request's pair, or a strict extension)
   did not test the restore. The gate is void below 15 tested pairs.
 - **Cost:** about 40 minutes on nobara (17 pairs at about 65 s, 7 Claude Code pairs at about 170 s, four loads).
+
+**Amended 2026-10-20, after the first run's data, on Francis's word (approval relayed to this session on 2026-10-20; his exact words to be
+quoted here):** turn 1 of each warm pair is sampled (the Arms bullet above). **The first run (2026-10-20 15:23–16:28, nobara) read VOID:**
+24 pairs, 5 tested, 0 of them differed, under the floor of 15. In 12 pairs (opencode #3–#8, Codex #2–#7) the server's greedy 24-token
+reply to turn 1 equaled the start of the recorded reply, so turn 2 extended the whole held sequence (the request log's `reused` = turn 1 +
+24, `div=-`) and continued the live state: the strict-extension path, not the restore. In 6 of the 7 Claude Code pairs turn 2 diverges
+before turn 1's end (`div` 25 to 3,606 tokens before it: a rewritten history), which is correctly cold, and opencode #0 is the title
+request's pair. The 5 tested pairs restored at turn 1's end (`ckpt_restore` = turn 1's length, `div` 0 to 13 tokens into the reply) and
+matched cold token for token; so did all 24 pairs on every comparison. The record is `~/goinfer-bench/kv8a/gate2b-2026-10-20-1523/` on
+nobara. The amendment cannot reach the 6 Claude Code pairs or the title pair, so at most 17 pairs can test the restore. **The bar, the
+void rule and the floor of 15 are unchanged.**
 
 **Corrected 2026-10-20, before any run:** gate 2(a) first said "another prompt takes the slot's live state" between the turns. On the one
 slot KV8a serves that would overwrite the attention rows before `c` that the restore relies on, so it is not the case KV8a meets; decode
