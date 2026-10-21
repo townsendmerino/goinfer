@@ -290,9 +290,9 @@ const giwMemMargin = 1 << 30 // 1 GB
 // Scratch is priced at prefillAttnScratchBudget alone, the fixed attention-scratch cap every prefill enforces; prefillScratchBytes' other
 // term (gate/up MLP activations) scales with a prompt's length, which load time does not know.
 //
-// Limitation: Metal's per-projection host buffer copies (metal/model.go's int4Buf/int4Concat) are not priced, so on Metal this under-counts.
-// decoder cannot import metal, so pricing it needs its own hook, which is not built; CPU is this function's only backend. Recorded in
-// docs/tasks/task-never-swap-2026-09.md ("Not priced").
+// The one weight term priced is the CUDA expert cache's pinned host copy (giwPinnedExpertBytes); every other build reads its weights from
+// the mapping. A Metal build binds them in place, and what it still copies where it cannot (aliasing off, or a file written for another
+// target) is not priced.
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	d := decideGIWFit(cfg, opts)
 	if d.note != "" {
