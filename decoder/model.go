@@ -217,8 +217,8 @@ func (m *Model) MmapAliasWindow(b []byte, pageSize int) (base unsafe.Pointer, n,
 // context on the same VRAM, lossy. The residency builder reads it; off the residency path it has no effect.
 func (m *Model) KVCacheF16() bool { return m.kvF16 }
 
-// KVCacheI8 reports whether the GPU residency path should use an int8 KV cache (Options.KVPrecision == "i8"): lossy, 4x
-// smaller than f32 and 2x smaller than f16. Distinct from KVQuant (the CPU cache).
+// KVCacheI8 reports whether the load asked for an int8 resident KV cache (Options.KVPrecision == "i8"): lossy, 4x smaller than
+// f32 and 2x smaller than f16. Distinct from KVQuant (the CPU cache). A resident build reads ResidentKVFor, not the request.
 func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
 
 // ResidentContextRequest returns the requested GPU-resident KV capacity in positions

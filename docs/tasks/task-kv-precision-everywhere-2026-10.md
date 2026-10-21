@@ -18,7 +18,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | id | state | next | evidence |
 |---|---|---|---|
 | P0 | done | — | ca49bcf1 to c51e13cf (#114) |
-| P0a′ | open | Mac: Metal's and WebGPU's builds read `ResolveKV`, not the raw request; S | `metal/model.go`, `gpu/residency.go` |
+| P0a′ | done | — | `decoder/kvresolve.go:Model.ResidentKVFor`, read by both builds and by Metal's pricing in `decoder/residentneed.go:Model.ResidentKVBytes`; `decoder/kvpolicy_test.go:TestResidentBuilds_readTheResolver` |
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |

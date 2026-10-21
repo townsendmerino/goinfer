@@ -270,6 +270,17 @@ func (m *Model) KVPrecisionReports() []KVPrecisionReport {
 	return append(out, KVPrecisionReport{Cache: "cpu", Requested: cpuKVRequested(m.kvOpts), Delivered: got, Reason: why})
 }
 
+// ResidentKVFor is the KV precision a resident build on backend holds for this model: ResolveKV's answer, which a build reads
+// instead of the raw request so that the build, the fit guard, the banner and the request log give one answer. backend is the
+// building backend's Name; "" when the model has no weights.
+func (m *Model) ResidentKVFor(backend string) string {
+	if m.w == nil {
+		return ""
+	}
+	got, _ := ResolveKV(backend, m.w.arch, m.kvOpts)
+	return got
+}
+
 // KVDelivered is the precision of the cache a generation of this model writes (the request log's kv field).
 func (m *Model) KVDelivered() string {
 	if m.w == nil {

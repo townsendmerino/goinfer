@@ -498,7 +498,7 @@ type resident struct {
 	pQKNormRows                                                Pipeline           // E-P07: qk_norm over the step's rows (batch_rows.go)
 	pMoeBatch                                                  [5]Pipeline        // D-P01: moe_batch_gemv at R = 2, 4 (prefill_g4batch.go)
 	pMoeCombine                                                Pipeline           // D-P01: moe_batch_combine
-	kvI8                                                       bool               // m.KVCacheI8() (CLI flag --kv i8)
+	kvI8                                                       bool               // the resolver's i8 (decoder.Model.ResidentKVFor)
 	pKvI8, pAttnI8                                             Pipeline           // int8 KV store and attention pipelines
 	moe                                                        *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
 	g4moe                                                      *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
@@ -1253,7 +1253,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.kvF32 {
 		r.pKv, r.pAttn = pipe("kv_store_f32"), pipe("attention_f32")
 	}
-	r.kvI8 = m.KVCacheI8()
+	r.kvI8 = m.ResidentKVFor("metal") == "i8"
 	if r.kvI8 {
 		r.pKvI8, r.pAttnI8 = pipe("kv_store_i8"), pipe("attention_i8")
 	}

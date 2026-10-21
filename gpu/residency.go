@@ -166,8 +166,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
 	half := m.RotaryDimResident() / 2
 	eps := m.NormEps()
-	kvF16 := m.KVCacheF16()
-	kvI8 := m.KVCacheI8()
+	kv := m.ResidentKVFor(b.Name())
+	kvF16, kvI8 := kv == "f16", kv == "i8"
 
 	// Only the generic GQA branch honours the KV precision flag: the Nemotron, Qwen3.5 and MLA branches always allocate f32
 	// caches, while ctxCap below is raised by the flag and the kernel selection is model-wide. With --kv i8 the missing scale

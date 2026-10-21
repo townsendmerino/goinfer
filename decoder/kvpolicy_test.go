@@ -1,6 +1,9 @@
 package decoder
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -99,6 +102,40 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		}
 		if c.want == "" && !cudaKVF16Cleared(c.f) {
 			t.Errorf("%s: allowed by the decline check but not in the cleared set", c.name)
+		}
+	}
+}
+
+// TestResidentBuilds_readTheResolver: Metal's and WebGPU's resident builds take their KV precision from
+// Model.ResidentKVFor (ResolveKV), never from the raw request (KVCacheF16, KVCacheI8), so a precision the resolver
+// changes reaches the build with the banner, the fit guard and the request log.
+func TestResidentBuilds_readTheResolver(t *testing.T) {
+	raw := regexp.MustCompile(`\.KVCache(F16|I8)\(\)`)
+	builds := map[string]bool{}
+	for _, dir := range []string{"../metal", "../gpu"} {
+		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+		if err != nil || len(files) == 0 {
+			t.Fatalf("no Go files in %s (%v)", dir, err)
+		}
+		for _, f := range files {
+			if strings.HasSuffix(f, "_test.go") {
+				continue
+			}
+			b, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loc := raw.FindIndex(b); loc != nil {
+				t.Errorf("%s reads the raw KV request (%s); a resident build reads ResidentKVFor", f, b[loc[0]:loc[1]])
+			}
+			if strings.Contains(string(b), ".ResidentKVFor(") {
+				builds[dir] = true
+			}
+		}
+	}
+	for _, dir := range []string{"../metal", "../gpu"} {
+		if !builds[dir] {
+			t.Errorf("no file in %s reads ResidentKVFor: its build takes its KV precision from somewhere else", dir)
 		}
 	}
 }

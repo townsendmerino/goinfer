@@ -43,7 +43,7 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
 	}
 	padded := int64((ctx + metalKVPad - 1) / metalKVPad * metalKVPad)
-	i8 := m.KVCacheI8()
+	i8 := m.ResidentKVFor("metal") == kvPrecI8 // what Metal's build holds
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var total int64
 	for l := range nLayers {
