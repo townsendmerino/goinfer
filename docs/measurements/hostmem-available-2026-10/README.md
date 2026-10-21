@@ -157,3 +157,16 @@ apps open, record `~/goinfer-bench/hostmem-gate1a/run-2026-10-21-1439/`). The mi
 first attempt (the jetsam figure held within 0.02 GiB across the bracket). At every sample the difference was the speculative and
 purgeable pages plus 0.001 to 0.076 GiB, while those two terms ran 0.015 to 0.360 GiB: the gap A4 grades around. The run is not regraded.
 Pressure stayed 1; the Activity Monitor equivalent tracked the oracle within 0.15 GiB.
+
+**Gate 1a under A4: PASS by its rule, and it found a defect in the formula** (2026-10-21 14:51:04–15:00:49, `hostmem` at `274b5682`,
+Francis's usual apps open, another session's aikit builds from about 14:57, record `~/goinfer-bench/hostmem-gate1a/run-2026-10-21-1451/`).
+30 of 30 samples within the bar, 25 within 1 point, the worst +0.305 GiB (+1.91 points); every sample taken on its first attempt;
+pressure 2 (warn) at five samples during the builds, 1 otherwise. **At every sample the graded residual was the speculative pages, to
+within 0.5 MB** (they ran 0.003 to 0.305 GiB), so the gate passed only because they stayed under the bar. The cause:
+`host_statistics64`'s free count already includes the speculative pages (`vm_stat` prints "Pages free" as the free count less
+speculative; the free count read here matched `vm.page_free_count + vm.page_speculative_count`), and so does its external
+(file-backed) count (anonymous + file-backed pages equal active + inactive + speculative + throttled pages, to the page, read live and in
+the committed sample). The formula added them a third time, so it read twice the speculative pages too high. Recomputed from this
+run's logged counters with each speculative page counted once, ours less purgeable was within 0.5 MB of the kernel's figure at every
+sample. (A1's estimate of the memory no page counter covers read `vm_stat`'s fields, which do not overlap, so it stands.) B41 does not
+merge on this reading.
