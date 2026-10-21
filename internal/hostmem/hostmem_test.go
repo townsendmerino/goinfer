@@ -1,6 +1,7 @@
 package hostmem
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"testing"
 )
@@ -60,6 +61,31 @@ func TestFromVMStats64_addsUpReclaimable(t *testing.T) {
 	sp.external += 4096
 	if got := fromVMStats64(sp, 16384, 17179869184).Available; got != r.Available {
 		t.Errorf("64 MiB of free pages turned speculative moved the reading by %d", got-r.Available)
+	}
+}
+
+// TestDecodeTaskVM_fields lays out struct task_vm_info (mach/task_info.h) field by field with a distinct value in each, so a decoder
+// that read a field's neighbour (resident_size_peak for resident_size, compressed_lifetime for compressed_peak) fails.
+func TestDecodeTaskVM_fields(t *testing.T) {
+	fields := []string{"virtual_size", "region_count+page_size", "resident_size", "resident_size_peak", "device", "device_peak",
+		"internal", "internal_peak", "external", "external_peak", "reusable", "reusable_peak", "purgeable_volatile_pmap",
+		"purgeable_volatile_resident", "purgeable_volatile_virtual", "compressed", "compressed_peak", "compressed_lifetime",
+		"phys_footprint"}
+	b := make([]byte, 8*len(fields))
+	val := map[string]int64{}
+	for i, f := range fields {
+		v := int64(i+1) << 20
+		binary.LittleEndian.PutUint64(b[8*i:], uint64(v))
+		val[f] = v
+	}
+	if len(b) != 152 {
+		t.Fatalf("layout is %d bytes, want 152 (through phys_footprint)", len(b))
+	}
+	got := decodeTaskVM(b)
+	want := TaskVM{Resident: val["resident_size"], Internal: val["internal"], Compressed: val["compressed"],
+		CompressedPeak: val["compressed_peak"], PhysFootprint: val["phys_footprint"]}
+	if got != want {
+		t.Fatalf("decoded %+v, want %+v", got, want)
 	}
 }
 
