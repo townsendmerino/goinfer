@@ -468,6 +468,55 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B40 · CANDIDATE: drop the model file's page cache once a GPU-resident load no longer needs it** — filed 2026-10-21 (owner, from the Metal
+KV8a night plan: after a 9B load exits, macOS keeps the model's `.giw` pages as active file cache, the fit guard's reading counts them as
+used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need until a `purge`, `docs/measurements/kv8a-metal-2026-10/README.md`,
+"The day checks"). **Not started; not for tonight** (the night's jobs purge first, on Francis's sudoers rule).
+- **How each backend reads the file today** (traced at `9a22d909`):
+  - **serve loads a `.giw` by default:** on darwin and linux a `.gguf` goes through the sidecar (`internal/modelload/modelload.go:routeFor`,
+    `internal/prequant/prequant.go:EnsureCachedGIW`), so the cases below are the `.giw` ones; the direct GGUF path (`-direct-load`,
+    `--quant q4k`) copies every tensor to the heap and unmaps the file when loading returns.
+  - **The `.giw` stays mapped until `decoder/model.go:Model.Close`** (`decoder/giwmap_darwin.go:mapGIW`: `MAP_SHARED` on darwin, aikit's
+    `MAP_PRIVATE` elsewhere), and the host weights alias it: int8 and int4 codes and their scales are views into the mapping, not copies.
+    The first load reads every page for the CRC pass unless `decoder/giwverify.go:giwVerified` finds the file's marker.
+  - **CUDA and WebGPU copy the weights to the device** (`cuda/pack_stream.go:cudaResident.streamW`, in row blocks through a staging
+    buffer; `gpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/model.go:Model.tryClaimResident`
+    falls back to the CPU path when the resident is busy, and CUDA gathers token embeddings on the host. Nothing drops or advises the pages
+    after the upload.
+  - **Metal aliases most of a `.giw` model:** `metal/alias.go:weightAlias.window` builds no-copy buffers over `Model.MmapAliasWindow`
+    (default on; `GOINFER_METAL_ALIAS=0` turns it off) for the int4 and int8 codes and contiguous scales; norms, routers, non-contiguous
+    scales and unpaged routed experts are copied. While a Metal resident serves, those file pages **are** its weights.
+  - **The sidecar write** goes through the page cache: buffered writes, a read-back of the cached copy, then a self-check load of the new
+    file. A first `.gguf` load on the Mac left the 5.9 GB `.giw` and the source both cached.
+  - **Existing hints:** `decoder/coldload.go:prepareColdLoad` (WILLNEED read-through of a cold `.giw`, CPU on darwin, small-matrix MoE on
+    linux) and the stream-weights pagers' DONTNEED (a no-op on darwin). `F_NOCACHE` appears once, opt-in, on Metal's Gemma 4 MoE pread fd.
+- **The change:** after a GPU-resident upload, release the file's cached pages that the resident has copied; never on the CPU path, and never
+  for a Metal-aliased tensor or any page a no-copy buffer covers, where those pages are the weights. Two places, either or both:
+  - **(a) after the upload,** for CUDA and WebGPU: drop the copied ranges. To lower the load's **peak** as well as the leftover, drop each
+    block as `streamW` uploads it; a drop after the whole upload lowers only the leftover. A host page the CPU fallback or the embedding
+    gather touches later re-faults from the file, so correctness is unchanged and those reads cost SSD time.
+  - **(b) at `Model.Close`,** for every backend including Metal: once the resident and the mapping are gone, drop the file's cache. This is
+    the one that covers the Mac case above, where Metal aliases nearly all of the 9B.
+  - **Mechanics, to settle first:** on linux, `posix_fadvise(DONTNEED)` evicts only clean pages no process maps, so a mapped range needs
+    `madvise(MADV_DONTNEED)` first or the drop after `munmap`, and fadvise writes dirty pages back before dropping them. On darwin,
+    `MADV_DONTNEED` is a no-op and `F_NOCACHE` governs future reads through an fd, not pages already cached through a mapping; what evicts
+    a mapped file's cached pages without root (for example `msync(MS_INVALIDATE)` on the `MAP_SHARED` mapping, or reading the file through
+    an `F_NOCACHE` fd) is the first thing to measure, with `mincore` as the instrument.
+- **Expected effect:** for CUDA and WebGPU, the leftover cache after a load drops by about the copied bytes (about the model file's size for
+  a `.giw`), and the load's peak by the same when (a) drops per block. For any backend, (b) frees the file's cache when the model closes. The
+  cost: a reload of the same model reads from the SSD instead of the cache (the 9B: 5.96 GB).
+- **The fit guard reads active file cache as used** (`decoder/hostram_darwin.go:HostRAMAvailableBytes`: free + inactive + speculative +
+  purgeable pages), so on macOS it can refuse a load right after another large model ran, and even a reload of the same model, whose pages
+  are already cached and would be reused. Dropping the cache after a GPU load, or at close, addresses the first case. Whether the guard
+  should count reclaimable file cache, the second case, is **a separate question for Francis**, not part of this item.
+- **Gates to propose:**
+  - Tier 0: `mincore` residency of the file's pages before and after the drop, on a tiny `.giw`; the drop never touches a page a Metal no-copy
+    buffer covers (a plant that drops one must break a logits comparison); logits bit-identical with and without the drop, including a CPU
+    fallback step that re-faults dropped pages.
+  - Tier 1, the 9B, before and after, by night: the load's peak memory, the free-memory reading (the guard's own) right after the model
+    exits, and the reload time of the same model.
+- **Size:** S to M; the darwin mechanics decide it.
+
 **B39 · CANDIDATE: 8-bit KV cache on CUDA (`--kv i8`), for a longer context on the 8 GB card** — filed 2026-10-20 (owner, from tack's question: tack runs Qwen3-8B Q4_K_M at 16k because of KV memory). **Folded 2026-10-20 into `docs/tasks/task-kv-precision-everywhere-2026-10.md` as its phase 2 (the owner asked for f16 and int8 KV on every backend, family and path); the state line below is corrected there (§2).** **Candidate, not funded, not scoped past this estimate.** *Update 2026-10-20 (tack): its 4.8 screen removed about 10k tokens of instructions from a 16k window and passes on the hard tasks did not move (0/30 in both arms), so the window is no longer tack's binding limit; B39 stays a candidate with no pull from tack for now.* Tack decides after its next change (dropping or sectioning CLAUDE.md in the prompt) shows whether the window is still its main failure; no work until then.
 - **State today:** CUDA's resident KV is f32 or f16 only. `--kv auto` is f16 for the dense llama, mistral, qwen2, qwen3 and phi3 families (`decoder/residency.go:Model.ResidentKVPrecision`; Qwen3-8B's banner reads `KV f16`). `--kv i8` refuses the load on CUDA (phase 0 of `docs/tasks/task-kv-precision-everywhere-2026-10.md`; until then it was silently f32). On Metal it is delivered on the per-token path where the MMA prefill, batched decode and the Gemma 4, MoE and emodel layer-major paths decline it; on the CPU it covers the families without MoE on the batched attention kernel and refuses elsewhere; WebGPU's coverage is phase 5's survey (`docs/kv-precision-matrix.md`). 4-bit KV exists nowhere (int4 KV is deferred behind int8; a 3-bit variant was killed, `docs/quantization.md`).
 - **Sizing arithmetic (Qwen3-8B Q4_K_M, RTX 2070 SUPER; arithmetic, not a measurement; the server's own plan is the fit check):**
