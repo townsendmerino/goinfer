@@ -73,6 +73,14 @@ matched cold token for token; so did all 24 pairs on every comparison. The recor
 nobara. The amendment cannot reach the 6 Claude Code pairs or the title pair, so at most 17 pairs can test the restore. **The bar, the
 void rule and the floor of 15 are unchanged.**
 
+**The second run, under the amendment (2026-10-20 17:54–18:58, nobara, record `~/goinfer-bench/kv8a/gate2b-2026-10-20-1754/`) read VOID:**
+24 pairs, 5 tested (opencode #1, Codex #0–#2, Claude Code #0), 0 of them differed, under the floor of 15; all 24 matched cold on every
+comparison. Turn 1 was sampled: its 24 tokens differ from the first (greedy) run's in 5 of the 17 opencode and Codex pairs and in all 7
+Claude Code pairs. In the other 12 the sampled reply equals the greedy one token for token, and those 12 again extended the held sequence
+(opencode #2–#8, Codex #3–#7): the model is near-certain over a reply's first 24 tokens there, so sampling at temperature 1.0 does not
+move turn 2 off the live state. Claude Code #1–#6 diverge before turn 1's end as before. Stopped here, as registered; the pair set and the
+floor are not widened.
+
 **Corrected 2026-10-20, before any gate 5 data:** gate 5 named KV0-H's driver commit as `2272c3cf9`. The study ran at `bf023d40` (its
 START line, 2026-10-20 12:23:27 PDT); `2272c3cf9` predates `plan-study-h20.json`, so the first attempt (2026-10-20 17:24, nobara, record
 `~/goinfer-bench/kv8a/gate5-2026-10-20-1724/`) started no session, wrote no statistics and is not a reading; the runner reported rc 1, and now
