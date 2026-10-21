@@ -23,7 +23,7 @@ func decodeVMStats64(b []byte) (vmStats64, bool) {
 
 // fromVMStats64 adds up what the kernel can reclaim without compressing or swapping: free, speculative (read-ahead), file-backed
 // (external) and purgeable pages (B41 amendment A1, docs/measurements/hostmem-available-2026-10/README.md). Adding these, rather than
-// subtracting what is used from physical, leaves out the memory no page counter covers (about 0.6 GiB on a 16 GiB Mac). App memory
+// subtracting what is used from physical, leaves out the memory no page counter covers (measured in that record, amendment A1). App memory
 // (internal less purgeable), wired and compressed pages are Activity Monitor's Memory Used terms, reported as context.
 func fromVMStats64(s vmStats64, pageSize, physical int64) Reading {
 	pg := func(n uint32) int64 { return int64(n) * pageSize }
