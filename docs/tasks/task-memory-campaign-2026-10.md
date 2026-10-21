@@ -48,7 +48,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | open | either box: uint64 rank keys, a size hint, a typed reader; S | `mergeRank` |
-| MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); branch pilot-mem13-features-2026-10-21 |
+| MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
 | MEM13-heapquant | open | after MEM1 | — |
 | MEM13-copies | open | remove Metal's int4-lane copy (Mac) and CUDA's dense host pack (nobara) (owner, 2026-10-21, from never-swap); S–M each | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
