@@ -97,3 +97,21 @@ aikit's GPU module read it). Tier 0: with the cap injected, an allocation one by
   against `recommendedMaxWorkingSetSize` 12,713,115,648 bytes (11.84 GiB); the load prints the allocation only when the cap refuses it.
 - **Gate 1a:** pending Francis's choice of oracle (above).
 
+## Amendment A2 (2026-10-21, before gate 1a runs again)
+
+**Francis, 2026-10-21 about 13:10 PT, verbatim:** "1 yes to your proposal, 2 working as intended, 3 yes merge". (1) gate 1a's oracle is
+the kernel's jetsam definition read from its sysctls; (2) gate 2's REFUSED at his usual load is the reading working as intended; (3)
+B41 merges once gate 1a reads.
+
+**Gate 1a, registered before it runs:**
+- **Oracle:** `vm.page_pageable_external_count + vm.page_free_count` (sysctl), times `hw.pagesize`: the kernel's own count of available
+  pages under `CONFIG_JETSAM` (`osfmk/vm/vm_page.h:VM_CHECK_MEMORYSTATUS`), which leaves purgeable out where a compressor runs, read
+  through a different interface from `host_statistics64`.
+- **Ours:** `hostmem` (free + speculative + file-backed + purgeable), which keeps speculative and purgeable pages; Francis chose to keep
+  them, so the expected gap is their size (0.28 GiB, 1.7 to 1.8 points, when proposed).
+- **Sampling:** every 20 s for 10 minutes (30 samples), by day with Francis's usual apps open, under the timing lock.
+- **Pass: at every sample, ours within 2% of physical (0.32 GiB on 16 GiB) of the oracle.** Also recorded: how many samples are within 1
+  point, and, as context, the Activity Monitor equivalent (physical − Memory Used rebuilt from the counters: free + speculative +
+  file-backed pages) and `kern.memorystatus_vm_pressure_level` at every sample.
+- **On a fail:** report and change nothing; B41 does not merge.
+
