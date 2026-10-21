@@ -118,6 +118,11 @@ multimodal towers (f32 heap copies, host copies beside GPU copies, Metal tower s
 for the families G40 did not chunk, the Metal int8 head pin, MoE expert copies on Metal and CUDA, f32 islands, the CPU
 heap, and aikit's BM25, HNSW, encoder and chunk-text items.
 
+[`task-clairic-2026-10.md`](tasks/task-clairic-2026-10.md) (E0–E5, filed 2026-10-19, waiting on weights) scopes
+Cloudflare's Clairic, a System One extraction model (typed values from unstructured input in one forward pass, no
+output tokens), on goinfer. It sits beside the parked decisions work and does not reopen it; its own trigger is the
+weights published under a licence that permits redistribution, and only E0, desk work on the API, can run before that.
+
 [`task-forward-architecture-2026-10.md`](tasks/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
 2026-10-13; OP0 done the same day, the rest not started) is the compute half of the same redesign.
 - **Track OP** describes a model to the GPU backends as a per-layer list of operations, so a backend implements operations
