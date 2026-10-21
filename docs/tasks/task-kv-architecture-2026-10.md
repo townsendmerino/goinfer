@@ -24,7 +24,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV0, KV0-H | done | — | the kv0 tile-census, invariance and traffic records; kv0h-hybrid-traffic-2026-10.md |
 | KV1 | done | — | f08b47ca; kv1-2026-10-13.md |
 | KV2 | done | — | 772b1fb2 (#26); G5-C PASS, kv2-cuda-2026-10-15.md §7 |
-| KV2-FU1 | open | Mac: a session's own rollback continues in place (`kvmgr.pickSlot`), with a G3-style gate; S | §6, KV2 follow-up 1 |
+| KV2-FU1 | done | — | branch `kv2-fu1-2026-10`; `TestKV2FU1_ownRollbackScheduleIndependence`, `TestKV2FU1_cpuOwnRollback`; §6, KV2 follow-up 1, readings |
 | KV2-FU2 | done | — | 11b29ba5 (#37) |
 | KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
 | KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
@@ -923,6 +923,31 @@ KV2 merges when every arm on both boxes is read.
         or at its last turn that could not continue. Rule 4 counts those turns.
       - Reported as a finding: a conversation that loses its slot once loses the in-place rollback to any point before
         the turn that lost it.
+  - **Readings, 2026-10-21 (Mac, by day, branch `kv2-fu1-2026-10`): every arm PASS, every plant red.**
+    - *Decoder* (`TestKV2FU1_ownRollbackScheduleIndependence`): 72 of 72 subtests pass, 24 schedules at each of 1, 2
+      and 4 slots. Every turn's tokens and rows equal its reference's. Rollbacks that continued in place giving up more
+      than they kept: 144 at 4 slots (6 in every schedule), 28 at 2 and 11 at 1.
+    - *CPU arm* (`TestKV2FU1_cpuOwnRollback`): all three runs pass. Each reply equals the conversation's alone in its
+      token ids and in every step's chosen and top-4 log-probabilities, as float bits. B's first turn, which copies 64
+      rows of A's preamble, also equals B alone.
+    - *Units:* `TestPickSlotFor_deepOwnRollback`, `TestPickSlotFor_ownRollback` (as amended) and
+      `TestPickSessionFor_ownRollback` pass.
+    - *Identity:* `decoder` `-run 'KV2|ResidentReuse|MC3|Session'` gives 49 PASS, 4 SKIP and 0 FAIL. The four skips need the
+      gemma-3-270m fixture, which this box does not have, and skip on `main` too. `internal/kvmgr` gives 29 PASS and
+      `internal/serveapp` `-run 'Session|KVShare|PickSession'` 12 PASS. The only existing test file changed is
+      `internal/kvmgr/share_test.go`, in the named case.
+    - *Plants* (`docs/measurements/kv2-2026-10-14/planted-fu1.txt`):
+      1. the branch point's rule in `kvmgr.pickSlot`: red in all 24 schedules at 4 slots and in 7 at 2 (rules 1 and 2
+         on 136 turns, rule 3 on 137), and in both `kvmgr` unit tests. A one-slot model never calls `PickSlot`, so 1
+         slot stays green;
+      2. `kvmgr.Slots.Commit` restarting the anchor: red in the same 31 schedules;
+      3. the CPU LRU ignoring the anchor: red in both runs with room, green in the control. The token ids were equal
+         and only the log-probability bits differed, so a check of ids alone would not have seen it.
+    - *Other checks:* `scripts/touched.py` green; `go vet` untagged, with `realckpt`, with `goinfer_testhooks` and for
+      linux/amd64; staticcheck v0.8.1 native and for linux/amd64, after its canary went red on both; `gofmt -l` clean.
+      `TestParityManifest_fresh` passes (43 of 43 families). The parity refresh refreshed no `deps_hash`
+      (forward goldens 33 passed, 31 skipped, 0 failed): `decoder/resident_reuse.go` is in no family's dependencies.
+    - *Not run:* a device arm (registered out above).
     - *CPU arm,* serve's session LRU over llama-attnfa-tiny's real CPU forward. Conversation A has a 600-token first
       prompt (a 300-token preamble and 300 of its own); B shares the preamble. Turns: the first prompt; its reply and
       700 tokens; a rollback to the first prompt and reply plus 2 tokens (it keeps 606 and gives up 706). Three runs:
