@@ -372,7 +372,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 	return out
 }
 
-// expertPoolDefect plants G-1's defects (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2); 0 in
+// expertPoolDefect plants G-1's defects (docs/completed/task-option-path-admission-2026-10.md §4.3, finding 2); 0 in
 // production. 1: a slot whose expert is evicted keeps the evicted expert's bytes (the new one is not staged). 2: the
 // GPU is told the next slot along. 3: each staged expert takes the next expert's scales.
 var expertPoolDefect int

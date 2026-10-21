@@ -320,7 +320,7 @@ func isDir(p string) bool {
 //     default context resident where int8int8 does not);
 //   - int8int8 with per-32 activation scales anywhere else (Metal, WebGPU: no Q4_K kernel yet). Only CUDA
 //     residency implements per-group activation scales, so on Metal and WebGPU such a load declines to the
-//     CPU (decoder's actGroupResidentDecline; docs/tasks/task-option-path-admission-2026-10.md §4.3), which
+//     CPU (decoder's actGroupResidentDecline; docs/completed/task-option-path-admission-2026-10.md §4.3), which
 //     honours the group (docs/tasks/task-actquant-pergroup-2026-09.md).
 //
 // An explicit int8int8 gets per-32 too. An explicit int4/int4mix is honoured with a warning, because

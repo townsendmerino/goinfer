@@ -4547,7 +4547,7 @@ measurement script (docs/measurements/), not a correctness gate:
 Moved from `metal/moecache_bitexact_test.go` (the comment above `TestMoECacheExperts_bitExactMetal`) on 2026-10-09.
 
 ```text
-TestMoECacheExperts_bitExactMetal is G-1 (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2, registered
+TestMoECacheExperts_bitExactMetal is G-1 (docs/completed/task-option-path-admission-2026-10.md §4.3, finding 2, registered
 before the code and amended with step 0's mechanism): Metal's expert cache (MoECacheExperts with fewer slots than
 experts) is bit-identical to the fully resident load, through the real caller (decoder.Load, then Generate): the
 generated tokens, their top-5 log-probabilities, and every layer's K/V.

@@ -1,8 +1,19 @@
 # Option × path and state × lifecycle grids
 
 **Generated** from `decoder/optiongrid.go` and `decoder/cachestate.go` by `TestOptionStateGrid_fresh`; do not edit.
-Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history:
-[`tasks/task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) §4.
+Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and history (archived):
+[`completed/task-option-path-admission-2026-10.md`](completed/task-option-path-admission-2026-10.md) §4.
+
+## Policy: how a new option, path or kind of state joins a grid
+
+- A new `decoder.Options` field fails `TestOptionGrid_everyOptionClassified` until `decoder/optiongrid.go` classifies it on every execution path: tested, declined, untested or n/a, with a reason.
+- A cell that names a test or a decline must name one that exists in some module (`TestOptionGrid_cellsCarryEvidence`).
+- The untested count can only fall: a rise fails `TestOptionGrid_ratchet`, and a fall is booked into its ceiling in the same change.
+- A new execution path is not detected on its own: add it to `ogPaths`, which then fails every option until each is classified.
+- A new field on `KVCache` fails `TestKVCache_everyFieldHasAState` until it maps to a kind of state (or is geometry, a counter or scratch, with a reason).
+  A new kind of state needs a cell on every lifecycle path (`TestCacheStateGrid_everyCellDeclared`) and `holdsState` must know it (`TestCacheStateGrid_holdsStateKnowsEveryKind`).
+- This page is generated: a hand edit fails `TestOptionStateGrid_fresh`.
+- A cell moves from untested to tested with the test that drives it, one cell at a time; a path-admission refactor is not required and changes no behaviour by itself.
 
 ## Load options × execution paths
 

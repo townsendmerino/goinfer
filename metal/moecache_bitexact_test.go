@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMoECacheExperts_bitExactMetal is G-1 (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2): Metal's expert
+// TestMoECacheExperts_bitExactMetal is G-1 (docs/completed/task-option-path-admission-2026-10.md §4.3, finding 2): Metal's expert
 // cache (MoECacheExperts with fewer slots than experts) is bit-identical to the fully resident load, through the real caller
 // (decoder.Load, then Generate): the generated tokens, their top-5 log-probabilities, and every layer's K/V.
 //

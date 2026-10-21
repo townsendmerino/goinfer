@@ -1,5 +1,21 @@
 # Task: one class of audit finding as a mechanical gate — options × paths, fail closed (2026-10)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-10-21): COMPLETE.** Step 1 cleared its bar on 2026-10-08, and step 2 was built the same day as two registries:
+> the kinds-of-state × lifecycle grid (`decoder/cachestate.go`) and the load-options × paths grid (`decoder/optiongrid.go`), generated into
+> `docs/option-state-grid.md`. Every cell admitted untested at build was tested, declined or found n/a by 2026-10-08 (§4.2, §4.3), and its
+> own status line read "Open: none". The grids are live code and still grow with the options (the KV precision phase 0 work of 2026-10-20 added
+> CUDA's KV cells); **the policy for how a new option, path or kind of state joins a grid moved to the generated page itself** (its "Policy"
+> section, from `renderOptionStateGrid` in `decoder/optiongrid_test.go`), which is where a reader looking for that rule should go. Remainders this doc
+> did not own: the "one chokepoint per path" refactor (§4.2, "Not yet done"), which is done cell by cell with the test that moves each one, and the
+> KV precision work (`docs/tasks/task-kv-precision-everywhere-2026-10.md`). Every instruction below is a record of what was asked, not a task.
+
 > **Status 2026-10-08: step 1 DONE — BUILD, with a thin margin.** 71 of 261 counted Critical and Major findings are
 > R or B (27.2%), more than three distinct options or families among them; every registered sensitivity clears 25%
 > (narrowest 26.7%). Record: [`audit-classes-2026-10-08.md`](../measurements/audit-classes-2026-10-08.md). Its §3

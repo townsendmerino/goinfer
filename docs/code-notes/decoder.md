@@ -11127,7 +11127,7 @@ in-distribution lossless (spec_sample.go).
 Moved from `decoder/optiongrid.go` (the comment above `optiongrid`) on 2026-10-09.
 
 ```text
-The option grid (docs/tasks/task-option-path-admission-2026-10.md §4.0, stage 2): every
+The option grid (docs/completed/task-option-path-admission-2026-10.md §4.0, stage 2): every
 decoder.Options field against every execution path, with what that path does with it and the
 evidence. Step 1 (docs/measurements/audit-classes-2026-10-08.md) found 22 audit findings of one
 shape here — a load option no guard on a path knew about (-kv i8 into Metal's batched prefill,
@@ -11146,7 +11146,7 @@ classified on every path, and a cell that claims a test or a decline must name o
 Moved from `decoder/optiongrid.go` (the comment above `optiongrid.MoECacheExperts`) on 2026-10-09.
 
 ```text
-Metal's expert cache (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2, closed 2026-10-08): bit-identical
+Metal's expert cache (docs/completed/task-option-path-admission-2026-10.md §4.3, finding 2, closed 2026-10-08): bit-identical
 to fully resident when both prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical
 to sequential, so the reference is the resident load with ExactPrefill; the 0.004 first recorded here was the
 default resident's batched f16 prefill, which --exact-prefill alone reproduces. int8 experts decline by name
@@ -11230,7 +11230,7 @@ this bug) — the page size is read from vm_stat's own header, never assumed.
 Moved from `decoder/cachestate.go` (the comment above `cachestate`) on 2026-10-09.
 
 ```text
-The cache-state grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every kind of
+The cache-state grid (docs/completed/task-option-path-admission-2026-10.md §4.0): every kind of
 per-sequence state a KVCache can hold, against every lifecycle path that has to know about it,
 with what that path does with it. Step 1 of that task (docs/measurements/audit-classes-2026-10-08.md)
 counted ten audit findings of one shape here — a kind of state a lifecycle path never accounted

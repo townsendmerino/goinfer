@@ -1,6 +1,6 @@
 package decoder
 
-// The cache-state grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every kind of per-sequence state a
+// The cache-state grid (docs/completed/task-option-path-admission-2026-10.md §4.0): every kind of per-sequence state a
 // KVCache can hold, against every lifecycle path that has to know about it, with what that path does with it. It
 // guards against a kind of state a lifecycle path never accounted for (Mamba-2 and DeltaNet state across a reset,
 // LFM2's conv window, Bailing Hybrid's KDA state, the adapter that built a reused prefix), which an audit would
