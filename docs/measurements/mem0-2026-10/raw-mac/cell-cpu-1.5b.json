@@ -1,0 +1,52 @@
+{
+ "cell": "cpu:1.5b",
+ "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+ "available_before_MiB": 8750,
+ "swap_used_before_MiB": 2293,
+ "backend": "cpu",
+ "load_s": 1.0,
+ "prompt_tokens": 20189,
+ "request_s": 310.8,
+ "footprint_MiB": {
+  "load": 70,
+  "peak": 1708,
+  "end": 1174,
+  "plus10s": 1174
+ },
+ "peak_rss_MiB": 2648,
+ "categories_MiB": {
+  "load": {
+   "untagged (VM_ALLOCATE)": 67.0,
+   "__DATA_CONST": 1.2,
+   "page table": 0.9,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.3,
+   "stack": 0.2,
+   "MALLOC metadata": 0.2,
+   "MALLOC_SMALL": 0.1
+  },
+  "end": {
+   "untagged (VM_ALLOCATE)": 1169.0,
+   "page table": 1.8,
+   "__DATA_CONST": 1.2,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.3,
+   "stack": 0.3,
+   "MALLOC metadata": 0.2,
+   "MALLOC_SMALL": 0.1
+  },
+  "plus10s": {
+   "untagged (VM_ALLOCATE)": 1169.0,
+   "page table": 1.8,
+   "__DATA_CONST": 1.2,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.3,
+   "stack": 0.3,
+   "MALLOC metadata": 0.2,
+   "MALLOC_SMALL": 0.1
+  }
+ },
+ "available_after_MiB": 6628,
+ "swap_used_after_MiB": 2261,
+ "cell_wall_s": 325.0
+}

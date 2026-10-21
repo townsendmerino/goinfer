@@ -49,4 +49,63 @@ The app path with the sidecar holds 84 to 140 MiB of anonymous memory after load
 
 ## Not done here
 
-The Metal and arm64 cells, an image turn on a tower (MEM4), a 7B on the CPU, a sampled CUDA load for the transient above, and Go heap readings from a running server (serve does not expose them).
+A 7B on the CPU or Metal, a sampled CUDA load for the transient above, and Go heap readings from a running server (serve does not expose them). The Mac half is below.
+
+## 4. The Mac half (2026-10-21)
+
+**Nothing is graded.** By day, each cell under the timing lock (`mem0_darwin.py`, the macOS port of `mem0_linux.py` on
+`g40_mem.py`'s readings).
+
+| | |
+|---|---|
+| build | main `fc34efd8`, `go build ./metal/cmd/serve` (Go 1.27.2, darwin/arm64); **sha256 `4e9b37f7f1a780e71062a7183885781d9679275f9554a9d73754c87d0fbd3cc4`** |
+| machine | MacBook Pro, M1 Pro, 16 GB, macOS 26.6; the owner's desktop and editor open (system swap 2.0 to 3.1 GB in use, available memory 5.7 to 8.8 GB at the cells' starts) |
+| prompt | the same 20K preamble: 20,189 tokens on the Qwen tokenizer, 20,975 on Gemma 4; `max_tokens` 8, temperature 0; one cold request per fresh server. The tower cell sends one 1920×1080 PNG (gradients and a grid, made by the script) and a one-line question |
+| flags | serve's defaults except `-backend` and `-ctx 32768` (the tower cell: `-vision`, default context 16,384) |
+| instrument | `footprint -p` (phys_footprint and its categories, dirty bytes) and RSS every 250 ms: after load, the peak during the request, at its end, 10 s after. Available memory and system swap before and after are context only |
+| checkpoints | local `~/models`: `qwen2.5-coder-1.5b-instruct-q4_k_m` (Metal v17 `.giw`; the CPU cell through its CPU sidecar), `gemma-4-E2B_q4_0-it` (Metal v17 `.giw`), `qwen3-vl-2b-instruct` (its Metal v17 sidecar, written by a warm start before the cell) |
+| raw | `raw-mac/cell-*.json`, `raw-mac/serve-*.log`, `raw-mac/libload-out.txt`; `mem0_darwin.py` |
+
+### 4.1 The server, one cold request (MiB)
+
+| cell | load | request | footprint after load → peak → end → +10 s | at +10 s: `IOAccelerator (graphics)` / anonymous (`VM_ALLOCATE`) | peak RSS | system swap before → after |
+|---|---|---|---|---|---|---|
+| Metal 1.5B int4, 20K | 1 s | 35.8 s | 62 → 2,447 → 1,936 → 1,936 | 1,798 / 124 | 227 | 2,998 → 2,982 |
+| Metal Gemma 4 E2B int4, 20K | 1 s | 585.5 s | 120 → 5,911 → 2,365 → 2,365 | 1,157 / 1,191 | 2,993 | 2,982 → 1,962 |
+| Metal Qwen3-VL-2B, one 1920×1080 image (1,028 prompt tokens) | 2 s | 7.7 s (the tower 5.3 s) | 54 → 7,261 → 7,208 → 7,207 | 4,414 / 2,776 | 3,529 | 1,962 → 2,301 |
+| CPU 1.5B int4 (f32 KV), 20K | 1 s | 310.8 s | 70 → 1,708 → 1,174 → 1,174 | — / 1,169 | 2,648 | 2,293 → 2,261 |
+
+### 4.2 The library path on arm64: `decoder.Load` on a `.gguf`, no sidecar (Go heap in use after `runtime.GC` and `FreeOSMemory`, MiB)
+
+| model, `Options` | arm64 (this Mac) | amd64 (§2) |
+|---|---|---|
+| 0.5B, `Options{}` | 2,405 | 2,405 |
+| 0.5B, `Quant: "int4"` | 647 | 454 |
+| 1.5B, `Quant: "int4"` | 1,854 | 1,150 |
+| 1.5B, `Options{}` | not run: nobara's peak was 7.9 GB and this Mac had about 8.8 GB available | 6,779 |
+
+(`libload.go` reads `/proc/self/status`, which macOS has not got, so only its Go heap figures are recorded here.)
+
+### 4.3 What the Mac readings say (observations, not causes)
+
+- **Metal's KV is the held memory on a text model.** The 1.5B holds 1,798 MiB of `IOAccelerator` after a 20K prompt, the
+  size of its two 32,768-position f16 KV slots (the banner: 0.9 GB per slot), touched by the request though at load it
+  read 4 MiB. Everything else it holds is 124 MiB.
+- **MEM7's block is the 1.5B's transient.** Peak less end is 511 MiB: the 512 MiB prefill block, returned after the pass.
+- **The tower holds 7.2 GB after one image (MEM2, MEM4).** Footprint 54 MiB after load (the tower loads on the first
+  image), 7,261 at the peak and 7,207 10 s later: 4.4 GB of device buffers and 2.8 GB of anonymous host memory, with
+  system swap up 339 MB. Read on main before MEM2's change (branch `mac-mem-2026-10-21`), which releases the scratch a
+  grow replaces and at unload, but not between requests. What part is the tower's f32 weights on the device, its host
+  copy and its scratch was not separated.
+- **E2B's 20K prefill takes 585 s on Metal** (36 tokens per second; CUDA 320.6 s, §1) and peaks 3.5 GB over what it
+  holds after: the E-model layer-major route is not blocked by MEM7's block (`PrefillBlockRows` is 0 there). It holds
+  1.2 GB anonymous after the request, against 140 MiB after load.
+- **arm64's int4 library load holds 42–61% more heap than amd64's** (647 against 454 MiB on the 0.5B, 1,854 against
+  1,150 on the 1.5B); `Options{}` is the same. MEM13's heap-quant row names the arm64 dual copy, which fits; not
+  confirmed by reading the heap.
+- **The arm64 CPU cell matches nobara's on what it holds.** 1,174 MiB after the request (nobara: 1,168), the f32 KV by
+  geometry plus the baseline; the peak, 1,708, is 534 MiB over that (nobara: 571), G40's chunked-prefill scratch, returned.
+  This is the tree after G40's allocate-once fix, so G40-2's Mac readings (at `db2bca58`, before it) do not stand for it.
+  The prefill ran at 65 tokens per second (nobara: 36).
+- **No cell grew system swap by more than 339 MB**, and the E2B cell's start shrank it; with the owner's desktop open the
+  system figure is context, not the test's.

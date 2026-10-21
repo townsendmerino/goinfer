@@ -1,0 +1,29 @@
+swap guard (load): armed for /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: system swap +512 MB over baseline (the per-process reader is not armed: macOS has no per-process swap figure)
+metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.110, 0.251); 0 = always the fragment
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.005 ms, fragment 0.007 ms), gate|up at B <= 0 (0.006, 0.007); 0 = always the fragment
+loaded "m": 28-layer model (vocab 151936) in 682ms [chat: chatml, thinking: unmanaged]
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA from 32 prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)
+  head table: int8
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on Metal)
+  fit: 32768-token cap needs 0.9 GB KV (weights 1.1 GB, budget 5.1 GB, 4.3 GB left for a request's own prefill)
+  KV plan: 2 conversations x 32768 positions (4 asked for; --ctx 32768)
+  session reuse: on the GPU cache, 2 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills (--kv-sessions not given: Metal keeps 2 by default, and a memory guard may keep fewer; --kv-sessions 4 asks for 4)
+  prefix snapshots: not on this backend or model family
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 2 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); 4 asked, capped by the 2 resident KV slots (--kv-sessions); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — system swap +512 MB over baseline (the per-process reader is not armed: macOS has no per-process swap figure)
+goinfer serving on http://127.0.0.1:18297 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 3.14 GB (system swap)
+
+shutting down…
+resident batch "m": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0]
+resident batch "m" held: 2 tokens in 1 holds
+resident batch "m" time: runs 0.235 s, exclusive 35.515 s (prefill 1 passes 35.514 s, bookkeeping 0.001 s)

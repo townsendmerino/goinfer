@@ -24,7 +24,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | id | state | next | evidence |
 |---|---|---|---|
 | MEM0-nobara | done | — | 33ef5a21; `docs/measurements/mem0-2026-10/README.md` |
-| MEM0-Mac | open | Mac: the Metal and arm64 cells, E2B, the tower image turn; estimate each cell first; one over about 2 h goes on the night queue | the README's "Not done here" |
+| MEM0-Mac | done | — (no 7B cell: the coder 7B is not on the Mac, and pulling it and writing its sidecar would take 9 of the disk's 12 GB free) | `docs/measurements/mem0-2026-10/README.md` §4 |
 | MEM0-tack | done | — | 5310f789 |
 | MEM1 | open | either box: the `decoder.Options` sidecar field, on by default (D1, owner 2026-10-21); M | — |
 | MEM2 | open | Mac: free the Metal tower scratch on grow, and a real `Close`; S | — |
