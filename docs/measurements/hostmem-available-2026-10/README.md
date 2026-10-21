@@ -123,3 +123,17 @@ GiB in the next 20 s. The runner reads `hostmem`, then four `sysctl` processes i
 memory is moving the two readings describe different instants: the likely cause, not verified. The Activity Monitor equivalent tracked
 the oracle within 0.04 GiB throughout; pressure stayed 1. B41 does not merge on this reading.
 
+## Amendment A3 (2026-10-21, after gate 1a's run under A2)
+
+**Francis, 2026-10-21 about 13:30 PT, verbatim:** "lets do the fix and re-attempt to get b41 finished.  and should we reschedule the
+nightly jobs?" The A2 run's FAIL stays in the record above.
+
+**Gate 1a's instrument, registered before the rerun.** The oracle and the bar are A2's; only the timing of the readings changes:
+- `hostmem -oracle` reads, in one process, the kernel's jetsam figure (`vm.page_pageable_external_count + vm.page_free_count`, through
+  `sysctlbyname`, times the page size), then our reading (`host_statistics64`), then the jetsam figure again, microseconds apart.
+- **A sample is taken when the jetsam figure moved by at most 0.02 GiB between its two reads.** Otherwise it is retaken, up to three
+  attempts, each logged; a sample still moving on the third attempt is graded on that attempt.
+- **Pass: at every sample, ours within 2% of physical of the mean of the two jetsam reads.** 30 samples, every 20 s, Francis's usual apps
+  open, under the timing lock; the Activity Monitor equivalent and the pressure level logged as context.
+- **On a fail:** report and change nothing; B41 does not merge. On a pass B41 merges (Francis, A2).
+
