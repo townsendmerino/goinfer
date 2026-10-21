@@ -115,3 +115,23 @@ S–M on CUDA, about a day of session time:
 
 Tier 0 runs on nobara (CUDA) in minutes. Gates 2(b) and 5 then take about 40 minutes of nobara time between them, each detached and
 under the timing lock.
+
+## Readings (CUDA, nobara, RTX 2070 SUPER, driver 595.91.07, 2026-10-20)
+
+Graded against the registration above; records stay on nobara under `~/goinfer-bench/kv8a/`.
+
+- **Gates 1 and 2(a): PASS** (night job `kv8a-cuda-gates-2`, 15:07, pin `31dd3f44`): `TestKV8a_checkpointBitExact`,
+  `TestKV8a_restoreEqualsColdPrefill` and `TestKV8a_noRoomKeepsNone` pass, with the KV7 and DeltaNet snapshot tests beside them.
+- **Gate 5: PASS** (`gate5-2026-10-20-1741/`, 17:41–17:52, KV0-H's driver at `bf023d40`, serve at `8efbd62f`): the B turns' median
+  time to first token is **1.32 s over 28 turns, all 28 restored**, against KV0-H's 36.23 s over 29: down 34.91 s, bar 17.1 s. By
+  harness: opencode 1.44 s (KV0-H 37.63 s), Codex 1.13 s (KV0-H 27.26 s). 105 of 105 requests accepted, 0 slot-invariant failures.
+- **Gate 4(b): PASS** (the same run): the save's own time p95 **1.34 ms** over 105 requests (median 1.02, max 2.19), bar 12 ms.
+- **Gate 4(c), context only:** A turns' median 1.42 s over 62 (opencode 2.20 s, Codex 1.20 s) against KV0-H's 1.29 s over 40
+  (opencode 2.20 s, Codex 0.62 s). The Codex difference is the sessions' work, not the checkpoint: no A turn re-read its prompt in
+  either run, this run's Codex A turns prefilled a median 184 new tokens against 93 (42 turns against 19, in longer conversations,
+  7,618 against 6,628 tokens), and the time per new token is 6.72 ms against 6.27 ms. Two runs of different sessions; not a ratio.
+- **Gate 2(b): PASS on the third run** (`gate2b-2026-10-20-2248/`, 22:48–23:53, pin `466aa167`, under the second amendment): 24
+  pairs, **17 tested, 0 differ**, every pair that can test the restore. Each of the 17 restored at turn 1's end and diverged there
+  (`div` = `ckpt_restore` = turn 1's length; restore 0.77–1.31 ms), and all 24 matched cold on every comparison. The run's preflight
+  passed `TestLogitBias_reachesTheSamplerOnEveryRoute` at the pin, and no turn 1 wrote its forbidden token. The first two runs read
+  VOID (5 tested each; above).
