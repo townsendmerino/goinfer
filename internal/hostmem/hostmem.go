@@ -24,7 +24,8 @@ type TaskVM struct {
 func ReadTask(pid int) (TaskVM, bool) { return readTask(pid) }
 
 // Read samples the reading now. ok is false where this platform has none or the query failed; callers treat that as "cannot
-// judge", never as no memory.
+// judge", never as no memory. On macOS the sample can be up to a second old: XNU rate-limits host_statistics64 for binaries
+// that are not Apple's, and once callers system-wide pass 2 to 10 requests in a second it serves the last fresh reply.
 func Read() (r Reading, ok bool) { return read() }
 
 // Available is Read's Available, or 0 when there is no reading.
@@ -38,10 +39,13 @@ func Available() int64 {
 
 // OracleSample is a reading bracketed by the kernel's own count of available pages under CONFIG_JETSAM (pageable external + free
 // pages, read through sysctl), read immediately before and after it in one process: B41 gate 1a's instrument
-// (docs/measurements/hostmem-available-2026-10/README.md, amendment A3). JetsamBefore and JetsamAfter are bytes.
+// (docs/measurements/hostmem-available-2026-10/README.md, amendment A3). JetsamBefore and JetsamAfter are bytes. Fresh is true
+// when Ours was computed inside the bracket: the sysctls are not rate-limited and host_statistics64 is (see Read), so Ours is
+// read twice and Fresh is whether the two replies differ. A sample that is not Fresh may predate the bracket and cannot be graded.
 type OracleSample struct {
 	Ours                      Reading
 	JetsamBefore, JetsamAfter int64
+	Fresh                     bool
 }
 
 // ReadWithOracle takes one OracleSample; ok is false where the platform has no oracle.

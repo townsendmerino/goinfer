@@ -53,11 +53,21 @@ func read() (Reading, bool) {
 	if err != nil {
 		return Reading{}, false
 	}
-	var buf [vmStats64Size]byte
-	n := uint32(vmStats64Size / 4)
-	if h.statistics(h.port, hostVMInfo64, unsafe.Pointer(&buf[0]), &n) != 0 || n != vmStats64Size/4 {
+	buf, ok := h.vmStats()
+	if !ok {
 		return Reading{}, false
 	}
+	return h.reading(buf)
+}
+
+// vmStats is one host_statistics64(HOST_VM_INFO64) reply, undecoded.
+func (h *machHost) vmStats() (buf [vmStats64Size]byte, ok bool) {
+	n := uint32(vmStats64Size / 4)
+	ok = h.statistics(h.port, hostVMInfo64, unsafe.Pointer(&buf[0]), &n) == 0 && n == vmStats64Size/4
+	return buf, ok
+}
+
+func (h *machHost) reading(buf [vmStats64Size]byte) (Reading, bool) {
 	var ps uint64
 	if h.pageSize(h.port, &ps) != 0 || ps == 0 {
 		return Reading{}, false
@@ -120,10 +130,17 @@ func readWithOracle() (OracleSample, bool) {
 		return OracleSample{}, false
 	}
 	before, ok1 := jetsamAvailable(int64(ps))
-	r, ok2 := read()
-	after, ok3 := jetsamAvailable(int64(ps))
-	if !ok1 || !ok2 || !ok3 {
+	first, ok2 := h.vmStats()
+	second, ok3 := h.vmStats()
+	after, ok4 := jetsamAvailable(int64(ps))
+	if !ok1 || !ok2 || !ok3 || !ok4 {
 		return OracleSample{}, false
 	}
-	return OracleSample{Ours: r, JetsamBefore: before, JetsamAfter: after}, true
+	r, ok := h.reading(second)
+	if !ok {
+		return OracleSample{}, false
+	}
+	// The rate limit's cache changes only when some caller takes a fresh reading, so a second reply unlike the first was computed
+	// after the first call began.
+	return OracleSample{Ours: r, JetsamBefore: before, JetsamAfter: after, Fresh: first != second}, true
 }

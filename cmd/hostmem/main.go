@@ -31,8 +31,12 @@ func main() {
 			os.Exit(1)
 		}
 		r := o.Ours
-		fmt.Printf("ours %d jetsam_before %d jetsam_after %d free %d speculative %d file_backed %d purgeable %d physical %d\n", r.Available,
-			o.JetsamBefore, o.JetsamAfter, r.Free, r.Speculative, r.FileBacked, r.Purgeable, r.Physical)
+		fresh := 0
+		if o.Fresh {
+			fresh = 1
+		}
+		fmt.Printf("ours %d jetsam_before %d jetsam_after %d free %d speculative %d file_backed %d purgeable %d physical %d fresh %d\n",
+			r.Available, o.JetsamBefore, o.JetsamAfter, r.Free, r.Speculative, r.FileBacked, r.Purgeable, r.Physical, fresh)
 		return
 	}
 	if *pid > 0 {
