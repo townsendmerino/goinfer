@@ -55,7 +55,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | D8b-build | done | — | branch `d8b-q4k-giw-2026-10` at v17 (D9); D8B-G1..G4 PASS, `docs/measurements/d8b-2026-10/README.md` |
 | D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges | — |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
-| MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
+| MEM13-copies-CUDA | open | nobara: the dense projections already stream to the device (`cuda/pack_stream.go:planWeight`, `cuda/pack_stream.go:cudaResident.streamW`), so what is left of the decision is the whole-tensor host packing (`cuda/resident.go:packWeight`) of shared experts, Mamba-2 projections and drafter weights, held until upload: about 4 GB of int8 host copies on Nemotron-H 9B by the survey's arithmetic (re-scoped 2026-10-22, kernel survey §3); S–M | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
 | MEM17 | open | aikit, then ken: `chunk.Chunk` as a file and a byte range through a mapping; ken stores chunks that way (D4, owner 2026-10-21); an aikit minor bump | `chunk.Chunk.Text` |
 | ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |

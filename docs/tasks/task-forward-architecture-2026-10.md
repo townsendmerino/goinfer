@@ -2472,8 +2472,8 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   - If the masked pick differs from the device's, the host discards the forward already queued for t + 1, truncates the one
     position it wrote, and redoes it.
   - That costs at most one wasted forward per opening, and openings come about once per tool call.
-- **The change on CUDA:** add a chain. `ForwardArgmax` already picks on the device, and decode already replays CUDA graph
-  segments.
+- **The change on CUDA:** add a chain. `ForwardArgmax` already picks on the device. Decode replays CUDA graph segments only
+  where graphs are on, and they are opt-in and off by default (corrected 2026-10-22, kernel survey KS-A2).
 - **Gates:**
   - tokens identical to today's;
   - speed on the prose part of tool turns (Metal 1.5B and 7B; CUDA 1.5B and 7B), registered against the 1.010–1.160× the
