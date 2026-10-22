@@ -11,6 +11,11 @@ import (
 // TestP0a_webgpuBuildFollowsResolveKV is P0A-G1's WebGPU half (docs/tasks/task-kv-precision-everywhere-2026-10.md, P0a′ gates):
 // with the resolver made to deliver f16, then int8, for an auto request, the resident runner takes that precision.
 func TestP0a_webgpuBuildFollowsResolveKV(t *testing.T) {
+	probe, err := New()
+	if err != nil {
+		t.Skipf("no GPU adapter: %v", err)
+	}
+	probe.Close()
 	build := func() (f16, i8 bool) {
 		m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "webgpu", Quant: "int8int8"})
 		if err != nil {
