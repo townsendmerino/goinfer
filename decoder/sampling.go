@@ -91,6 +91,10 @@ func NewSampler(p SamplingParams) *Sampler {
 	return &Sampler{impl: sampling.NewSampler(sampling.SamplingParams(p))}
 }
 
+// release returns the sampler's vocabulary-sized scratch for the next request's sampler; the generation that owns it calls it
+// when it ends, and nothing the sampler returned is read after.
+func (s *Sampler) release() { s.impl.Release() }
+
 func sampleInfoFrom(si sampling.SampleInfo) SampleInfo {
 	out := SampleInfo{ID: si.ID, Logprob: si.Logprob}
 	if si.Top != nil {

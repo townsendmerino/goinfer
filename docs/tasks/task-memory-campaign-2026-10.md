@@ -30,20 +30,20 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
-| MEM4(b) | open | either box: drop the towers' host copy after attach, with a lazy reload on a CPU fallback (D2, owner 2026-10-21) | — |
+| MEM4(b) | open | D11 (a), owner, 2026-10-21: aikit first (head-only loads for the Qwen3.5/Qwen3-VL, GLM-OCR, Qwen2.5-VL and Gemma 4 towers, on an aikit branch; the owner tags), then goinfer's bump and serve's switch | §7 D11 |
 | MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
 | MEM7 | open | Mac: size the Metal prefill block to the machine, now that B41's reading is on main; S | `prefillBlockScratch` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
-| MEM8(b) | open | either box: gather-only tables keyed off the head pin; S–M | — |
+| MEM8(b) | open | D10 (a), owner, 2026-10-21: Gemma 4's per-layer table int4 on Metal by default, a Metal quality cell on E2B, the sidecar variant tag moved, the Metal goldens re-pinned; the untied input embedding stays at the pin | §7 D10 |
 | MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
 | MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
 | MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
-| MEM12-scratch | open | either box: MoE output, logits and sampler scratch, with tier-0 counters; M | — |
+| MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
@@ -391,6 +391,23 @@ stored). goinfer's default `-vision-quant` is f32.
 **Gates.** Tier 0: logits/features bit-identical aliased vs widened on each tower's tiny fixture; heap after attach
 under a stated bound. Tier 1: one image turn on the Mac, footprint before/after. Speed: in-process A/B for (a) on arm64.
 
+**MEM4(b) gates, registered 2026-10-22 before the code (TWR-G), on D11 (a).** The aikit half: the Qwen3.5/Qwen3-VL
+(`LoadQwen3VisionEncoder`, `LoadQwen3VisionEncoderMMProj`), GLM-OCR, Qwen2.5-VL and Gemma 4 towers gain `ReleaseBlocks`,
+which drops their encoder blocks (the bulk of a tower) from the host, and `BlocksReleased`; the next host forward or weight
+export (`Weights`, `GPUWeights`) reloads them by running the same loader again, so the values are the same. A tower built from a
+caller's `TensorSource` (`LoadQwen3VisionEncoderFrom`) cannot reopen it and refuses, keeping its blocks. The goinfer half,
+after the owner tags aikit: serve calls `ReleaseBlocks` once a device tower is built, and the CPU fallback reloads.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| TWR-G1 release (aikit) | 0 | each tower on its tiny fixture (aikit's `testdata/qwen35vl-vision-tiny`, `qwen25vl-vision-tiny`, `glm-ocr-vision-tiny`; Gemma 4's `gemma4-vision-tiny` where present), float32: a CPU forward and the weight export, then `ReleaseBlocks`, then both again; the Go heap after `runtime.GC` before and after the release | `BlocksReleased` reads true after the release and false after the next use; the heap falls by ≥ 80% of the blocks' bytes (summed from the export); the forward after the release is byte-equal to the one before; the export after it equals the one before; a `LoadQwen3VisionEncoderFrom` tower's `ReleaseBlocks` returns an error and its forward is unchanged |
+| TWR-G2 serve (goinfer, after the tag) | 0 | serve's device-tower attach for the four towers, and `deviceFallback`'s CPU fallback after a device memory error, with a fake accelerator | each attach releases the blocks once; the fallback's features are byte-equal to the CPU tower's on a never-released encoder |
+| TWR-G3 tier 1 (goinfer, after the tag) | 1, Mac | the Qwen3-VL-2B tower (`~/models/qwen3-vl-2b-instruct`) attached on Metal, Go heap in use after `runtime.GC`, branch against main | the heap falls by ≥ 80% of the blocks' float32 bytes |
+
+Planted defect, run once in aikit and reverted: `ensureBlocks` not reloading (TWR-G1 red: the forward after the release
+fails or differs). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about a
+minute for G3. aikit's `preflight` runs before its PR.
+
 ### MEM5 · Chunk the prefill of the families G40 left whole (M–L)
 
 **Problem (checked).** `decoder/kvcache.go:KVCache.prefillChunkable` is false for a cache with image blocks, m-RoPE
@@ -551,6 +568,46 @@ min for the parity refresh.
 > reservation to the byte; on the tree before, an f16 cache's hint cost three times its own storage. G2's three heavy
 > int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
 > and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
+
+**MEM12-scratch gates, registered 2026-10-21 before the code (SCR-G).** The build, three parts. (1) The MoE expert-major
+branch of the batched pass takes its K × hidden output, its done flags and `moeMLPBatch`'s buffers (router logits, the
+per-rank outputs, the gather, gate, up and down buffers) from `prefillPassScratch`, so a chunked prefill allocates them once;
+callers without a pass scratch allocate as before. (2) The LM head writes into a buffer the cache owns: a verify round's
+K × vocab into one the cache grows on demand, prefill's last row into the cache's decode logits buffer, which is what the
+sequential fallback already returns (valid until the next forward on that cache; every consumer reads it before then:
+`generateInto`, the three speculative loops, the VL prefill paths). Callers that keep rows (`PromptLogitsMany`, the
+batched CPU decode, audio) keep their own. (3) The sampler's six vocabulary-sized buffers come from a pool and go back when
+the generation ends (`generateInto`, the n-gram and grammar speculative loops); a sampler never released allocates as before.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| SCR-G1 MoE | 0 | `mixtral-tiny` (4 layers, hidden 64, 8 experts, top 2), expert-major on, `prefillChunkRows` 16, a 64-token prompt: bytes allocated (`TotalAlloc`, GC off) between the first chunk's end and the last's, branch against `origin/main` | the branch allocates at least 90% of the arithmetic MoE buffers less than main: 3 chunks × 4 layers × 4 B × (16·64 output + 16·8 router logits + 16·2·64 per-rank) = 153,600 bytes, so a fall of ≥ 138,240 |
+| SCR-G2 logits | 0 | `llama-tiny` (vocab 256): a warm verify round (`forwardN`, K = 4) and a 16-token `prefillLogits`, bytes allocated, branch against main | the round falls by ≥ 0.99 × 4 × 256 × 4 B and the prefill by ≥ 0.99 × 256 × 4 B |
+| SCR-G3 sampler | 0 | `internal/sampling`, vocabulary 151,936, ten requests each `NewSampler`, `Observe` of 64 ids, 8 draws with top-k, top-p, min-p and a repetition penalty, then the release; GC off | requests 2–10 each allocate ≤ 5% of request 1's bytes (main: each the same as request 1) |
+| SCR-G4 identity | 0 | on `mixtral-tiny` with expert-major on and on `llama-tiny`: the chunked batched prefill's last logits against the sequential decode's, byte-equal; the speculative tests (`TestSpec*`, `TestGenerateNgram*`), the sampler package's tests, then `scripts/refresh_parity_hashes.sh` | all byte-equal and PASS (not skip); the goldens green |
+
+Planted defects, each run once on the committed tree and reverted: the MoE branch allocating its output again (G1 red), the
+LM head allocating again (G2 red), the release not returning the buffers (G3 red). Stopping rule: one pass each; a FAIL is
+diagnosed, not re-run. Cost: seconds for G1–G3, a few minutes for G4's test sets and about 4 for the parity refresh.
+
+> **SCR-G1 amended 2026-10-22, before its re-read (owner, 2026-10-21: a per-buffer bar, so a regression in one term
+> cannot hide inside the sum).** The bar is now per buffer: each of the expert-major path's eight buffers (the output, the
+> done flags, the router logits, the per-rank outputs, and the gather, gate, up and down buffers) counts its own fresh
+> allocations (`moeScratchGrows`), and in the same `mixtral-tiny` prefill (64 tokens, chunks of 16, expert-major on) **each
+> is allocated exactly once**: at least once (it is in use) and never again in a later chunk or layer. For that to be a
+> property of the code rather than of the routing, the gather, gate, up and down buffers are sized by the chunk's rows (the
+> bound on any one expert's rows) instead of the largest expert's rows in that chunk, which can grow from chunk to chunk.
+> The `TotalAlloc` reading against main stays as context, not a bar. Plants, each run once and reverted: each buffer in
+> turn allocating fresh on every call (its own row red, the others green), including the output-only plant that left the
+> summed bar green.
+
+> **Read 2026-10-21: G1, G3 and G4 PASS; G2 FAILED as registered and PASSES as amended**
+> (`docs/measurements/mem12-scratch-2026-10/README.md`). G2's first reading found a defect of the build (the MoE scratch
+> embedded by value cost every pass about 200 bytes; now started by the first MoE layer) and an instrument that could not
+> resolve 1 KB (main moved by 1.4 KB between runs; per-P pool caches). **Amendment, after the reading:** G2 reads the mean of
+> 50 warm iterations at `GOMAXPROCS=1` on both arms, bars unchanged: the round falls 4,096 bytes and the prefill 1,024,
+> exactly the logits. G1: 410,384 → 94,592 bytes. G3: later requests ≤ 1.9% of the first's 5.6 MB. The output-only MoE
+> plant left G1 green (its bar sums the buffers); the whole-path plant turned it red.
 
 ### MEM13 · Small heap items (S each)
 
@@ -771,6 +828,29 @@ choice in aikit and a storage choice in ken (**D4**).
   (recommended). (b) **Bump to v18**, as D8's wording said: every cached sidecar on both boxes re-transcodes once on its
   next load (each about the model's size on disk; the Mac is at 97% disk), with nothing gained that (a) lacks. The
   branch is built at v17; (b) is a one-line change.
+
+- **D10** (MEM8(b)): **DECIDED by the owner, 2026-10-21: (a)**, the per-layer table only; `metal/model.go` stays untouched (if (a) needs it, stop and say so). The question as asked: Keying the gather-only tables on their own precision is a no-op on CPU and
+  CUDA, where `--embed-int4` already defaults on and both tables are int4. It changes only Metal, where the head pin keeps
+  them int8, so it is a default precision change on Metal (§2 rule 1) and not plumbing. Two further facts bound it. Metal's
+  greedy chain uploads an untied input embedding to the device as int8 (`metal/greedy_chain.go`, through `int8BufA` and
+  `metal/model.go:int8Buf`), so that table cannot leave int8 without Metal changes, in a file the unmerged
+  `kv8a-metal-2026-10` branch also edits. And the Metal `.giw` sidecar's name does not carry the per-layer table's
+  precision, so existing sidecars and fresh loads would disagree unless a variant tag moves. Options: (a) Gemma 4's
+  per-layer table only, int4 on Metal by default (E2B's on disk and at transcode 2.35 → 1.32 GB; CPU and CUDA already run
+  it at int4), with a Metal quality cell on E2B, the sidecar variant tag moved (each Metal Gemma 4 E sidecar re-transcodes
+  once) and the Metal goldens re-pinned; the untied input embedding stays at the pin. (b) Plumbing only: a
+  `decoder.Options` field for the gather-only tables' precision whose default follows the head pin, so nothing changes until
+  it is set. (c) Fold it into D5 with MEM8(a) (parked, defer). **Recommended: (a)**; it is the only option that saves
+  anything by default, and the evidence for int4 on that table is CPU and CUDA's default already.
+- **D11** (MEM4(b)): **DECIDED by the owner, 2026-10-21: (a)**, aikit first, on an aikit branch under aikit's own `CLAUDE.md`; the aikit PR is opened, its release push and tag are the owner's, and goinfer's bump and serve's switch wait for the tag. The question as asked: D2 decided the policy (drop the towers' host copy after attach; reload lazily
+  on a CPU fallback), but goinfer cannot carry it out alone. aikit v1.71.0 has the head-only shape for SigLIP only
+  (`vision.LoadEncoderHead`, blocks loaded by `ensureBlocks` on the CPU path's first call). The Qwen3.5/Qwen3-VL, GLM-OCR,
+  Qwen2.5-VL and Gemma 4 encoders keep their blocks in unexported fields, with no release and no lazy reload, and their
+  exports (`Weights`, `GPUWeights`) alias those fields. Options: (a) aikit first: head-only loaders (or a block release
+  plus `ensureBlocks`) for those four towers on SigLIP's model, an aikit minor release (its push and tag are the owner's),
+  then goinfer's bump and the switch of serve's device-tower loads to head-only, gated on the bytes after attach and
+  bit-identity of the CPU fallback after a reload; (b) leave MEM4(b) in aikit's queue until MEM4(a)'s aliasing work opens
+  the same files. **Recommended: (a)**, with the aikit half done on an aikit branch for the owner to tag.
 
 ## 8. Sequencing
 
