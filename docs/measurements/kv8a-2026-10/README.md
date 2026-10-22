@@ -182,3 +182,21 @@ design), all 7 equal to cold. The arm has changed since: KV2-FU1 (`e59788c2`, `8
 | **void when** | No pair tests the restore (then the cell did not test it). Turn 1 writes its forbidden token (the ban did not reach the sampler). The fit check (the server's own plan, started once at `-ctx 32768`) does not load the 9B resident on CUDA. At the run's start, nobara's 1-minute load average is above 8.0, or `MemAvailable` is below the load's need, taken as 7 GB, plus 2 GB (both recorded). The timing lock shared with another run. A driver other than 595.91.07. |
 | **stopping rule** | The 7 pairs once. No re-run on a PASS or a FAIL; a VOID is re-run once its cause is gone, and the record lists it. |
 | **cost basis** | The 2026-10-20 run's cc config: 42 min (23:11–23:53), plus a serve build (about 2 min) and the fit check (under a minute). About 45 minutes, by day, under the timing lock. |
+
+**Read 2026-10-22 (nobara, 07:05:11–07:45:46 PDT, record `~/goinfer-bench/kv8a-cc28k/run-2026-10-22-0705/`): PASS, 1 tested, 0 of 7
+differ.** Serve at `799b98df`, harness at `279bc973`, driver 595.91.07. Start check: load 5.22, 57,858 MiB available. Fit check: resident
+on CUDA (int4), 32,768-token cap needs 2.0 GB of KV (weights 4.7 GB). Pair #0 restored the checkpoint at turn 1's 17,960 tokens and
+matched cold. Pairs #2, #4 and #6 diverge before turn 1's end and prefilled cold, as on 2026-10-20. **New since that run:** pairs #1,
+#3 and #5 reuse rows where it reused none: 17,920, 16,384 and 16,384, block-aligned prefix-snapshot restores rather than the
+checkpoint, so they are not counted as tested. All three equal their cold replies too. The warm server restarted before turns 1 of
+#1, #3, #5 and #6, because each reused a prefix (17,920 or 16,384); the harness requires a cold turn 1.
+
+| pair | turn 1 | turn 2 | warm reused | tested | warm == cold |
+|---|---|---|---|---|---|
+| 0 | 17,960 | 18,052 | 17,960 | yes | yes |
+| 1 | 18,052 | 19,415 | 17,920 | no | yes |
+| 2 | 19,415 | 17,596 | 0 | no | yes |
+| 3 | 17,596 | 18,959 | 16,384 | no | yes |
+| 4 | 18,959 | 17,625 | 0 | no | yes |
+| 5 | 17,625 | 18,988 | 16,384 | no | yes |
+| 6 | 18,988 | 17,584 | 0 | no | yes |
