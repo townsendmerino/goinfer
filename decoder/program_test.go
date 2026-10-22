@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -348,12 +347,6 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 				t.Fatalf("%s (%s): the unchanged program fails: %v", f.name, mode, err)
 			}
 			for _, key := range programParamKeys(f.m.prog) {
-				if quarantinedPerturbation(f.name, key) {
-					t.Run(string(mode)+"/"+f.name+"/"+key, func(t *testing.T) {
-						t.Skip("quarantined on Windows: GC heap corruption on some Xeon 8573C runners, docs/queue-correctness.md G50")
-					})
-					continue
-				}
 				c := cloneProgram(f.m.prog)
 				programPerturb(c, key)
 				got, err := runProgram(f.m, c, ids, mode)
@@ -432,12 +425,6 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 		}
 		t.Logf("L %s: %d parameters checked against the per-token walker, %d not run", mode, checked, notRun)
 	}
-}
-
-// quarantinedPerturbation reports a (fixture, parameter) run gate L skips on this OS, under docs/queue-correctness.md G50;
-// closing that row removes the case.
-func quarantinedPerturbation(fixture, key string) bool {
-	return runtime.GOOS == "windows" && fixture == "nemotron3nano-tiny" && key == "ffn.Act"
 }
 
 func hasFixture(fx []programFixture, name string) bool {
@@ -583,5 +570,36 @@ func perturbValue(f reflect.Value) {
 		}
 	default:
 		panic(errors.New("perturbValue: unhandled kind " + f.Kind().String()))
+	}
+}
+
+// TestProgram_gemma4DenseFormWithoutStateIsAnError holds the per-token walker to an error, not a nil dereference, when a model
+// without Gemma 4's per-token state carries Gemma 4's dense FFN form (gate L's ffn.Form perturbation does this). Called
+// without runProgram's recover, so a panic fails the test (docs/queue-correctness.md G50).
+func TestProgram_gemma4DenseFormWithoutStateIsAnError(t *testing.T) {
+	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/nemotron3nano-tiny"} {
+		m, err := Load(dir, Options{Backend: "cpu", Quant: "f32"})
+		if err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+		c := cloneProgram(m.prog)
+		n := 0
+		for _, ops := range c.layers {
+			for i := range ops {
+				if ops[i].kind == opFFN {
+					ops[i].ffn.Form, n = ffnGemma4Dense, n+1
+				}
+			}
+		}
+		if n == 0 {
+			t.Fatalf("%s: no FFN operation to change", dir)
+		}
+		mm := *m
+		mm.prog = c
+		_, err = mm.forward(programPrompt(m)[0], mm.NewCache(4))
+		if err == nil || !strings.Contains(err.Error(), "without Gemma 4 state") {
+			t.Errorf("%s: forward with Gemma 4's dense FFN form returned %v, want the without-Gemma-4-state error", dir, err)
+		}
+		m.Close()
 	}
 }
