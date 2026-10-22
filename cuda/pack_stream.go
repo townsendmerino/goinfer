@@ -65,7 +65,7 @@ func planWeight(w *linalg.WeightMat) (hostW, error) {
 			return hostW{}, fmt.Errorf("cuda: q4k tensor %dx%d with %d bytes", N, K, len(raw))
 		}
 		return hostW{kind: "q4k", N: N, K: K, src: w, nWpk: len(raw) / 4}, nil
-	case "f32":
+	case "f32", "bf16": // quantized to int8 row by row; a bf16 weight's rows are widened first, so its bytes are the f32 weight's
 		return hostW{kind: "int8", N: N, K: K, src: w, nWpk: N * (K / 4), nWs: N}, nil
 	default:
 		return hostW{}, fmt.Errorf("cuda: unsupported projection kind %q", w.Kind())
@@ -224,11 +224,20 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 			w.ws = r.up32(sc)
 			return w
 		}
-		// An f32 weight, quantized to int8 row by row here as packWeight does.
-		f32, _ := h.src.F32()
+		// An f32 or bf16 weight, quantized to int8 row by row here as packWeight does; bf16 rows are widened into the stage.
+		f32, isF32 := h.src.F32()
 		w.ws = r.af(h.nWs)
 		r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
-			q8, sc := linalg.QuantizeRowsInt8(f32[r0*K:(r0+rows)*K], rows, K)
+			var src []float32
+			if isF32 {
+				src = f32[r0*K : (r0+rows)*K]
+			} else {
+				src = st.floats(rows * K)
+				for i := range rows {
+					h.src.Row(r0+i, src[i*K:(i+1)*K])
+				}
+			}
+			q8, sc := linalg.QuantizeRowsInt8(src, rows, K)
 			words := st.words(rows * wpr)
 			packI8Into(words, q8)
 			st.outW, st.outS = words, sc

@@ -41,7 +41,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
-| MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
+| MEM11-bf16 | done (MLA asked) | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA asked as D9 (its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
 | MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -571,6 +571,24 @@ where a family's parity bar allows, as an owner decision per family (**D3**); re
 **Gates.** Tier 0 per family: bf16 kind vs widened f32 bit-identical; int8 only behind the family's existing parity
 gate.
 
+**MEM11-bf16 gates, registered 2026-10-22 before the code (B16-G), on D3 (bf16 first).** The build: an f32 island tensor whose
+every value is exactly representable in bf16 is held as the bf16 `WeightMat` kind, and any other stays f32. That rule covers a
+bf16 checkpoint whatever the loader widened it through. The bf16 kind's matmul widens a tile and runs `MatmulBT`
+(`linalg/weightmat_half16.go`), so the forward is the f32 one's, bit for bit. The `.giw` format is unchanged: islands are still
+written as f32 and converted on load. Order: LFM2's short-conv `inProj` and `outProj`, then MLA's projections, then the DFlash
+drafter's. Each family lands only on its own G1 and G2.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B16-G0 measure | 1, Mac | `LFM2.5-2.6B` (`~/models/lfm2.5-2.6b`, bf16 safetensors) at int4 on the CPU, direct load: `ResidentWeightBytes` and the short-conv projections' share, before and after | read, not gated; the arithmetic expects about 1.48 GB of f32 projections, roughly half the model, falling to about 0.74 GB |
+| B16-G1 identity | 0 | per family, a fixture whose island weights are bf16-exact (the tiny fixtures' islands rounded to bf16 in the test) loaded with the rule on and off: logits over 16 tokens, and the `.giw` round trip | bit-identical on and off; the round-tripped bundle's logits equal the direct load's |
+| B16-G2 bytes and kinds | 0 | `ResidentWeightBytes` on those fixtures, and the island tensors' kinds; the fit-estimate agreement tests | each island is bf16 exactly when bf16-exact, its bytes halve, and the fit estimate still agrees with `ResidentWeightBytes` |
+| B16-G3 unchanged | 0 | every family without a bf16-exact island (the tiny fixtures as committed, whose f32 islands are not bf16-exact): the parity manifest and goldens | unchanged; `scripts/refresh_parity_hashes.sh` green |
+
+Planted defect, run once on the committed tree and reverted: the exactness check skipped, so an f32 island that is not
+bf16-exact is rounded (G1's "off" fixture red under G3's goldens). Stopping rule: one pass each. Cost: seconds, plus G0's two
+loads of the 2.6B (about a minute each; not timed, so the timing lock is held shared).
+
 ### MEM12 · The CPU heap: GC headroom and per-request churn (M)
 
 **Problem.** The CPU KV lives on the Go heap (f32 by default), and no `GOGC` or `GOMEMLIMIT` is set, so the heap may
@@ -843,6 +861,12 @@ choice in aikit and a storage choice in ken (**D4**).
 | LM head on every prompt token; fused-attention scratch per decode token; KV regrowth garbage | fixed | audit-metal-2026-09-12; G40 |
 
 ## 7. Owner decisions
+
+- **D9** (MEM11-bf16, asked 2026-10-22, open): **MLA's islands.** DeepSeek-V2-Lite's MLA projections are Q4_K in the bench GGUF,
+  so a bf16 island saves nothing there; its 1.49 GB is widened Q4_K. Options: (a) leave MLA to MEM11-int8, keeping the
+  quantized bytes behind the family's parity bar; (b) also add a bf16 island for BF16 safetensors MLA sources, which touches the
+  CPU forward's row reads and the Metal, CUDA and WebGPU builders (an M) for checkpoints the bench set does not have; (c) both.
+  **Recommended: (a).**
 
 - **D1** (MEM1): the public API shape, and whether a library `.gguf` load takes the sidecar by default.
 - **D2** (MEM4b): a lazy host reload of tower weights on CPU fallback — acceptable?
