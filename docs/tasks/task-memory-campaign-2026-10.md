@@ -48,7 +48,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | open | either box: uint64 rank keys, a size hint, a typed reader; S | `mergeRank` |
-| MEM13-features | open | either box: price the 256 MiB feature cache; S | `featureCacheBudget` |
+| MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
 | MEM13-heapquant | open | after MEM1 | — |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
 | MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
