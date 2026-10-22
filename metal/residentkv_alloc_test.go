@@ -3,10 +3,8 @@
 package metal
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -78,16 +76,6 @@ func TestResidentKVPrecision_metalReportsWhatRuns(t *testing.T) {
 	}
 	for req, want := range map[string]string{"": "f16", "f32": "f32", "i8": "i8"} {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: req})
-		if want == "refused" {
-			var r *decoder.KVRefusal
-			if !errors.As(err, &r) || !strings.Contains(r.Reason, "phase 3") {
-				t.Errorf("kv request %q: load error %v, want a KV refusal naming phase 3", req, err)
-			}
-			if m != nil {
-				m.Close()
-			}
-			continue
-		}
 		if err != nil {
 			t.Fatalf("load (kv=%q): %v", req, err)
 		}

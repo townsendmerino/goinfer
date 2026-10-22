@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -60,11 +59,9 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 			t.Errorf("%s: got %+v ok=%v, want ctx %d f16 %v metal %v pinned %v", c.name, p, ok, c.ctx, c.f16, c.metal, c.pinned)
 		}
 	}
-	// An explicit -kv f32 on Metal is not priced at f16 any more: it refuses the load by name, until phase 3 restores the f32 kernels.
-	if arch, _, err := resolveArchitecture(q); err != nil {
-		t.Fatal(err)
-	} else if r := kvRefusal("metal", arch, Options{Backend: "metal", KVPrecision: "f32"}); r == nil || !strings.Contains(r.Reason, "phase 3") {
-		t.Errorf("metal -kv f32: refusal %v, want one naming phase 3", r)
+	// An explicit -kv f32 on Metal delivers f32, so it is priced at 4 B per element, not at f16.
+	if p, ok := kvPricingFor(q, Options{Backend: "metal", KVPrecision: "f32", KVQuant: "f32"}); !ok || !p.metalSizing || p.kvF16 || p.kvI8 {
+		t.Errorf("metal -kv f32: priced %+v ok=%v, want Metal sizing at f32", p, ok)
 	}
 	// A window smaller than Metal's default caps it.
 	small := a3Config("qwen2")

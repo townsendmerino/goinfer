@@ -842,8 +842,9 @@ type kvPrice struct {
 // kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what the load will
 // actually allocate.
 //
-//   - A load that will be Metal-resident (Metal compiled in, the resolved backend, and the architecture inside Metal's feature gate) holds
-//     f16 KV, the only KV Metal ships, for MetalCtxDefault positions unless the caller pinned a context, clamped to the model's window.
+//   - A load that will be Metal-resident (Metal compiled in, the resolved backend, and the architecture inside Metal's feature gate) is
+//     priced at f16, or at f32 where ResolveKV delivers f32 there (an int8 cache stays priced at f16, above what it allocates), for
+//     MetalCtxDefault positions unless the caller pinned a context, clamped to the model's window.
 //     Pricing it at Options.KVPrecision over the whole window would refuse or pin down a load that fits.
 //   - Every other load: the CPU allocates KV per request, at Options.KVPrecision, up to the window, and that ceiling is what a long
 //     request reaches.
@@ -872,6 +873,11 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	}
 	if metalWillBeResident(cfg, opts) {
 		p.metalSizing, p.kvF16 = true, true
+		if arch, _, err := resolveArchitecture(cfg); err == nil {
+			if got, _ := ResolveKV("metal", arch, opts); got == kvPrecF32 {
+				p.kvF16, p.kvI8 = false, false // an explicit --kv f32: 4 B per element
+			}
+		}
 		p.ctx = MetalCtxDefault
 		if p.pinned {
 			p.ctx = opts.ResidentContext
