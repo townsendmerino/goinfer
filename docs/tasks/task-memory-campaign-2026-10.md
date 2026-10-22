@@ -391,6 +391,23 @@ stored). goinfer's default `-vision-quant` is f32.
 **Gates.** Tier 0: logits/features bit-identical aliased vs widened on each tower's tiny fixture; heap after attach
 under a stated bound. Tier 1: one image turn on the Mac, footprint before/after. Speed: in-process A/B for (a) on arm64.
 
+**MEM4(b) gates, registered 2026-10-22 before the code (TWR-G), on D11 (a).** The aikit half: the Qwen3.5/Qwen3-VL
+(`LoadQwen3VisionEncoder`, `LoadQwen3VisionEncoderMMProj`), GLM-OCR, Qwen2.5-VL and Gemma 4 towers gain `ReleaseBlocks`,
+which drops their encoder blocks (the bulk of a tower) from the host, and `BlocksReleased`; the next host forward or weight
+export (`Weights`, `GPUWeights`) reloads them by running the same loader again, so the values are the same. A tower built from a
+caller's `TensorSource` (`LoadQwen3VisionEncoderFrom`) cannot reopen it and refuses, keeping its blocks. The goinfer half,
+after the owner tags aikit: serve calls `ReleaseBlocks` once a device tower is built, and the CPU fallback reloads.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| TWR-G1 release (aikit) | 0 | each tower on its tiny fixture (aikit's `testdata/qwen35vl-vision-tiny`, `qwen25vl-vision-tiny`, `glm-ocr-vision-tiny`; Gemma 4's `gemma4-vision-tiny` where present), float32: a CPU forward and the weight export, then `ReleaseBlocks`, then both again; the Go heap after `runtime.GC` before and after the release | `BlocksReleased` reads true after the release and false after the next use; the heap falls by ≥ 80% of the blocks' bytes (summed from the export); the forward after the release is byte-equal to the one before; the export after it equals the one before; a `LoadQwen3VisionEncoderFrom` tower's `ReleaseBlocks` returns an error and its forward is unchanged |
+| TWR-G2 serve (goinfer, after the tag) | 0 | serve's device-tower attach for the four towers, and `deviceFallback`'s CPU fallback after a device memory error, with a fake accelerator | each attach releases the blocks once; the fallback's features are byte-equal to the CPU tower's on a never-released encoder |
+| TWR-G3 tier 1 (goinfer, after the tag) | 1, Mac | the Qwen3-VL-2B tower (`~/models/qwen3-vl-2b-instruct`) attached on Metal, Go heap in use after `runtime.GC`, branch against main | the heap falls by ≥ 80% of the blocks' float32 bytes |
+
+Planted defect, run once in aikit and reverted: `ensureBlocks` not reloading (TWR-G1 red: the forward after the release
+fails or differs). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about a
+minute for G3. aikit's `preflight` runs before its PR.
+
 ### MEM5 · Chunk the prefill of the families G40 left whole (M–L)
 
 **Problem (checked).** `decoder/kvcache.go:KVCache.prefillChunkable` is false for a cache with image blocks, m-RoPE
