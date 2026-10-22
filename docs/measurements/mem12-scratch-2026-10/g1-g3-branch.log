@@ -1,0 +1,6 @@
+[SCR-G1] mixtral-tiny, chunks 2-4 of a 64-token prefill: 94592 bytes
+--- PASS: TestMEM12Scratch_moeChunks (0.02s)
+[SCR-G2] llama-tiny, mean of 50: verify round (K=4) 76192.0 bytes (prefill + round 297568.0, less the prefill); prefill (16 tokens) 221376.0 bytes
+--- PASS: TestMEM12Scratch_headLogits (0.05s)
+[SCR-G3] bytes per request: [5626864 98728 102280 92968 95368 95848 92488 100648 105352 100168]
+--- PASS: TestSamplerScratch_pooled (0.11s)
