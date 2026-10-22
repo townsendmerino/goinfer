@@ -10,6 +10,7 @@
 // quantized matrix: the KV cache layout and the rotary embedding.
 #include <cuda_fp16.h>
 #include "kvtype.cuh"
+#include "kvpage.cuh"
 extern "C" __global__ void kv_store(const float* __restrict__ src, float* __restrict__ cache, int pos, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) cache[(long)pos * n + i] = src[i];
@@ -50,7 +51,7 @@ extern "C" __global__ void kv_store(const float* __restrict__ src, float* __rest
 extern "C" __global__ void rope_kv(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
-    int nH, int nKV, int hd, int pos, int ropePos, int rhalf, float mscale, float qTempScale)
+    const int* __restrict__ kvt, int nH, int nKV, int hd, int pos, int ropePos, int rhalf, float mscale, float qTempScale)
 {
     // mscale is YaRN's attention_factor, folded into cos/sin exactly as decoder/rope.go's
     // applyRoPE does it (c = cos(theta)*scale; s = sin(theta)*scale) — NOT applied to the
@@ -85,7 +86,7 @@ extern "C" __global__ void rope_kv(
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[d] = r0;
         base[d + rhalf] = r1;
-        long o = (long)pos * kvDim + (long)h * hd;
+        long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
         KV_ST(kc + o + d, r0);
         KV_ST(kc + o + d + rhalf, r1);
         KV_ST(vc + o + d, v[h * hd + d]);
@@ -93,7 +94,7 @@ extern "C" __global__ void rope_kv(
     } else if (idx < qn + kn + tn) {
         int j = idx - qn - kn;
         int h = j / tail, t = 2 * rhalf + (j % tail);
-        long o = (long)pos * kvDim + (long)h * hd;
+        long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
         KV_ST(kc + o + t, k[h * hd + t]); // un-rotated: pass through, but it MUST still be cached
         KV_ST(vc + o + t, v[h * hd + t]);
     }

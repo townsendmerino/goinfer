@@ -137,7 +137,7 @@ func (r *cudaResident) prefillSplitKVAttn(l, startPos, M int, qBb, cctxB, scB, i
 			widest = stride // a row inside an image block sees past its own position: launch the plan's widest span, the surplus tiles return at once
 		}
 		if e := r.launch(r.psScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((widest + 127) / 128), GridZ: uint32(n), BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(Ly.hd * 4)},
-			Arg(qBb), Arg(r.kvK(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			Arg(qBb), Arg(r.kvK(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 			gpu.ArgValue(int32(startPos)), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(row0)), gpu.ArgValue(r.attnScale),
 			Arg(scB), gpu.ArgValue(int32(stride)), blocksArg, gpu.ArgValue(int32(nBlocks))); e != nil {
 			return e
@@ -149,7 +149,7 @@ func (r *cudaResident) prefillSplitKVAttn(l, startPos, M int, qBb, cctxB, scB, i
 			return e
 		}
 		if e := r.launch(r.psVsum, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((Ly.hd + dTile - 1) / dTile), GridZ: uint32(n), BlockX: dTile, BlockY: 1, BlockZ: 1},
-			Arg(scB), Arg(r.kvV(l)), Arg(invB), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			Arg(scB), Arg(r.kvV(l)), Arg(r.kvT(l)), Arg(invB), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 			gpu.ArgValue(int32(startPos)), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(row0)), gpu.ArgValue(int32(stride)), Arg(cctxB), blocksArg, gpu.ArgValue(int32(nBlocks))); e != nil {
 			return e
 		}

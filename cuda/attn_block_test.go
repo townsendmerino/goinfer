@@ -87,13 +87,20 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 		}
 		cfg := LaunchConfig{GridX: nH, GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((nKeys + 128) * 4)}
-		args := func(dst Buffer) []gpu.KernelArg {
-			return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb),
+		// attn_batched reads its cache through a block table and attn_block_full reads it contiguously; the identity table makes
+		// the two read the same rows.
+		kvt := r.kvIdentityTab(t, nKeys)
+		args := func(dst Buffer, tab bool) []gpu.KernelArg {
+			a := []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb)}
+			if tab {
+				a = append(a, Arg(kvt))
+			}
+			return append(a,
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(startPos)), gpu.ArgValue(float32(scale)),
-				gpu.ArgValue(int32(window)), gpu.ArgValue(int32(M)), Arg(dst), ArgNull()}
+				gpu.ArgValue(int32(window)), gpu.ArgValue(int32(M)), Arg(dst), ArgNull())
 		}
-		if e := r.launch(r.bAttn, cfg, args(outA)...); e != nil {
+		if e := r.launch(r.bAttn, cfg, args(outA, true)...); e != nil {
 			return e
 		}
 		if e := r.stream.Sync(); e != nil {
@@ -109,7 +116,7 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		if e := r.launch(pipe, cfg, args(outB)...); e != nil {
+		if e := r.launch(pipe, cfg, args(outB, false)...); e != nil {
 			return e
 		}
 		if e := r.stream.Sync(); e != nil {
@@ -216,11 +223,14 @@ func TestAttnBlockFull_cost(t *testing.T) {
 			}
 			cfg := LaunchConfig{GridX: uint32(nH), GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 				SharedMemBytes: uint32((nKeys + 128) * 4)}
-			args := []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb),
-				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+			// attn_batched takes the identity block table after its cache; attn_block_full reads the cache contiguously.
+			kvt := r.kvIdentityTab(t, nKeys)
+			tail := []gpu.KernelArg{gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(ctxLen)), gpu.ArgValue(r.attnScale),
 				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(out)}
-			best := func(p Pipeline) float64 {
+			causalArgs := append([]gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), Arg(kvt)}, tail...)
+			fullArgs := append([]gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb)}, tail...)
+			best := func(p Pipeline, args []gpu.KernelArg) float64 {
 				b := math.MaxFloat64
 				for range 20 {
 					t0 := time.Now()
@@ -236,7 +246,7 @@ func TestAttnBlockFull_cost(t *testing.T) {
 				}
 				return b
 			}
-			causalMs, fullMs = best(r.bAttn), best(pipe)
+			causalMs, fullMs = best(r.bAttn, causalArgs), best(pipe, fullArgs)
 			return nil
 		})
 		if err != nil {

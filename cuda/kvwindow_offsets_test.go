@@ -45,11 +45,11 @@ func windowedOffsetsStorage(t *testing.T, fx string) {
 				t.Fatalf("split at %d, windowed prefill of rows [%d, %d): %v", s, call.lo, call.hi, err)
 			}
 			if j, ok := sameBits(a, b); !ok {
-				t.Fatalf("split at %d: after rows [%d, %d) the windowed logits differ from the full-KV ones at index %d (base %d)", s, call.lo, call.hi, j, win.kvBase)
+				t.Fatalf("split at %d: after rows [%d, %d) the windowed logits differ from the full-KV ones at index %d (base %d)", s, call.lo, call.hi, j, win.kvBases[win.kvSlot])
 			}
 		}
 		decodeSteps(t, full, win, mw, windowOffsetN, 20)
-		if win.kvBase == 0 {
+		if win.kvBases[win.kvSlot] == 0 {
 			t.Fatalf("split at %d: the windowed resident never compacted in %d positions; the test did not cross its window", s, windowOffsetN+20)
 		}
 	}

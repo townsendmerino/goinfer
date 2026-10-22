@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -75,10 +76,15 @@ func TestA13_LoadModuleOnResidentExecutor(t *testing.T) {
 			dk, e2 := gc.Alloc[float32](cx, len(k))
 			dv, e3 := gc.Alloc[float32](cx, len(v))
 			dc, e4 := gc.Alloc[float32](cx, nH*hd)
-			if e1 != nil || e2 != nil || e3 != nil || e4 != nil {
-				return 0, e1
+			ids := kvIdentityIDs(nKeys)
+			dt, e5 := gc.Alloc[int32](cx, len(ids))
+			if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil {
+				return 0, errors.Join(e1, e2, e3, e4, e5)
 			}
-			defer func() { dq.Close(); dk.Close(); dv.Close(); dc.Close() }()
+			defer func() { dq.Close(); dk.Close(); dv.Close(); dc.Close(); dt.Close() }()
+			if e := gc.CopyHtoD(bg, dt, ids); e != nil {
+				return 0, e
+			}
 			if e := gc.CopyHtoD(bg, dq, q); e != nil {
 				return 0, e
 			}
@@ -90,7 +96,7 @@ func TestA13_LoadModuleOnResidentExecutor(t *testing.T) {
 			}
 			if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1,
 				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-				gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)),
+				gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)),
 				gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale),
 				gc.ArgValue(int32(0)), gc.Arg(dc)); e != nil {
 				return 0, e

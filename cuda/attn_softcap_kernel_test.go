@@ -169,16 +169,16 @@ func TestAttnSoftcap_kernelsAgainstFloat64(t *testing.T) {
 								}
 								if !sink { // attention carries no sink
 									ctx := r.zeros(nH * hd)
-									r.launch(adGlueCap[kvi], "attention", adCfg(nH, 1, 1, 128, (nWin+128)*4), gc.Arg(q), kc, vc, adI(nH), adI(nKV), adI(hd), adI(nKeys),
+									r.launch(adGlueCap[kvi], "attention", adCfg(nH, 1, 1, 128, (nWin+128)*4), gc.Arg(q), kc, vc, r.kvt(nKeys), adI(nH), adI(nKV), adI(hd), adI(nKeys),
 										gc.ArgValue(adScale(hd)), adI(window), gc.Arg(ctx), gc.ArgValue(cap))
 									capCompare(t, id("attention", nKeys), r.read(ctx, nH*hd), want)
 									cases++
 								}
 								sc, inv, ctx := r.zeros(nH*nWin), r.zeros(nH), r.zeros(nH*hd)
-								r.launch(adSplitCap[kvi], "splitkv_scores", adCfg(nH, (nWin+127)/128, 1, 128, hd*4), gc.Arg(q), kc, adI(nH), adI(nKV), adI(hd),
+								r.launch(adSplitCap[kvi], "splitkv_scores", adCfg(nH, (nWin+127)/128, 1, 128, hd*4), gc.Arg(q), kc, r.kvt(nKeys), adI(nH), adI(nKV), adI(hd),
 									adI(winStart), adI(nKeys), gc.ArgValue(adScale(hd)), gc.Arg(sc), adI(nWin), gc.ArgValue(cap))
 								r.launch(adSplitCap[kvi], "splitkv_softmax", adCfg(nH, 1, 1, 128, 128*4), gc.Arg(sc), adI(nH), adI(nWin), gc.Arg(inv), sinkArg())
-								r.launch(adSplitCap[kvi], "splitkv_vsum", adCfg(nH, (hd+31)/32, 1, 32, 0), gc.Arg(sc), vc, gc.Arg(inv), adI(nH), adI(nKV), adI(hd),
+								r.launch(adSplitCap[kvi], "splitkv_vsum", adCfg(nH, (hd+31)/32, 1, 32, 0), gc.Arg(sc), vc, r.kvt(nKeys), gc.Arg(inv), adI(nH), adI(nKV), adI(hd),
 									adI(winStart), adI(nKeys), adI(nWin), gc.Arg(ctx))
 								capCompare(t, id("splitkv", nKeys), r.read(ctx, nH*hd), want)
 								cases++
@@ -209,7 +209,7 @@ func TestAttnSoftcap_kernelsAgainstFloat64(t *testing.T) {
 								if window > 0 && window < maxWin {
 									maxWin = window
 								}
-								r.launch(adPrefillCap[kvi], "attn_batched", adCfg(nH, M, 1, 128, (maxWin+128)*4), gc.Arg(q), kc, vc,
+								r.launch(adPrefillCap[kvi], "attn_batched", adCfg(nH, M, 1, 128, (maxWin+128)*4), gc.Arg(q), kc, vc, r.kvt(nTot),
 									adI(nH), adI(nKV), adI(hd), adI(startPos), gc.ArgValue(adScale(hd)), adI(window), adI(M), gc.Arg(ctx), sinkArg(), gc.ArgValue(cap))
 								got := r.read(ctx, M*nH*hd)
 								for m := range M {
