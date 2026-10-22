@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | Mac: Metal int8 everywhere and f32 back; start after `kv8a-metal-2026-10` merges, which edits `metal/backend.go` and `metal/model.go`; M–L | 12 matrix cells "until phase 3" |
+| P3 | open | P3a (Metal `--kv f32` back) built on branch `p3-metal-kv-2026-10`, merge waits on D6 (P3-G2 FAILED as registered on qwen3moe); P3b (int8 and f32 inside the MMA prefill, batched decode and the layer-major prefills) not started; MLA's cells wait on D5 | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -235,6 +235,15 @@ phase 0's table gives the first real count of cells to move.
 
 ## 6. For the owner
 
+- **D6 (asked 2026-10-22, open): P3-G2 after its data.** Metal at f32 is 4 to 6 orders of magnitude closer to the CPU than at
+  f16 on every dense fixture and no further on the hybrids, but on `qwen3moe-tiny` its max |logit diff| over 32 positions is 0.0123
+  against f16's 0.0076, with equal top-1 (32/32): both arms sit at the MoE path's own floor (about 0.0057 mean at either precision)
+  and one position at f32 sets the max (`docs/measurements/kv-precision-2026-10/p3a.md`). This doc's §4 puts a gate change after the
+  data to the owner. Options: (a) amend P3-G2 to the mean of the per-position max |diff| (no larger at f32 than at f16, within 5%)
+  with top-1 no lower, which every fixture passes, and merge P3a; (b) keep the bar and exclude MoE fixtures from it, recording
+  why; (c) hold P3a until the MoE path's own difference from the CPU is understood. **Recommended: (a)**: the bar was meant to show
+  the f32 cache brings Metal no further from the f32 reference, and a maximum over positions on a fixture whose error is not the
+  cache's measures something else.
 - **D5 (asked 2026-10-22, open): MLA's KV precision on Metal.** DeepSeek's latent cache on Metal is f32 whatever is asked. The
   matrix reads "f16" for auto and `--kv f16`, and `--kv i8` declines the Metal resident and runs on the CPU, so a caller asking for
   f16 or i8 gets f32 without being told. Options: (a) the resolver says f32 for MLA on Metal (auto delivers f32, with the reason),

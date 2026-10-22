@@ -44,18 +44,18 @@ Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (ho
 
 | family (fixture) | `--kv auto` | `--kv f32` | `--kv f16` | `--kv i8` |
 |---|---|---|---|---|
-| dense (llama) (`llama-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| dense (phi3) (`phi3-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| MoE (`qwen3moe-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| sliding window (`gemma2-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| pairwise RoPE (`cohere-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| m-RoPE (VL) (`qwen25vl-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| MLA (`deepseek-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| Gated DeltaNet hybrid (`qwen3next-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| Mamba-2 hybrid (`nemotron-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| short-conv hybrid (`lfm2-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
-| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f16 (auto is f16 on Metal) | refused: Metal's f32 KV kernels are compiled out until phase 3; the cache is f16 | f16 | i8 |
+| dense (llama) (`llama-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| dense (phi3) (`phi3-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| MoE (`qwen3moe-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| sliding window (`gemma2-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| pairwise RoPE (`cohere-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| m-RoPE (VL) (`qwen25vl-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| MLA (`deepseek-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| Gated DeltaNet hybrid (`qwen3next-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| Mamba-2 hybrid (`nemotron-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| short-conv hybrid (`lfm2-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
 
 ## WebGPU resident (coverage unsurveyed until phase 5)
 

@@ -70,7 +70,7 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 	case "metal":
 		switch req {
 		case kvPrecF32:
-			return kvPrecF16, "Metal's f32 KV kernels are compiled out until phase 3; the cache is f16"
+			return kvPrecF32, ""
 		case kvPrecI8:
 			return kvPrecI8, ""
 		case kvPrecAuto:

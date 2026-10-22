@@ -214,7 +214,7 @@ func (r *resident) recurrentPrefillOK() bool {
 // q4kLaneShapeOK reports whether the q4k lane covers this resident's shape: the plain dense pre-norm one (Phi-3, Llama).
 func (r *resident) q4kLaneShapeOK() bool {
 	return !(r.sandwich || r.postOnly || r.parallelBlock || r.outBias || r.layerNorm || r.moe != nil || r.g4moe != nil ||
-		r.recurrentModel() || r.pleP > 0 || r.attnSink || r.learnedPos || r.kvI8 || r.qkNorm)
+		r.recurrentModel() || r.pleP > 0 || r.attnSink || r.learnedPos || r.kvI8 || r.kvF32 || r.qkNorm)
 }
 
 // modelKnob is one of m's operator knobs (decoder.Model.Knob): the Load-time snapshot with Options.Knobs applied,
@@ -1385,7 +1385,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 		r.mla == nil // MLA's latent attention is in no prefill kernel
 
@@ -1752,7 +1752,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				r.ks[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV)
 				r.vs[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV)
 			} else if r.kvF32 {
-				kvBytes = paddedCtxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
+				kvBytes = paddedCtxCap * L.geom.kvDim * 4 // f32 KV (--kv f32): 4 bytes/elem
 			}
 			// MC3 S3: with several resident KV slots (and not int8 KV), a layer's slots are ONE allocation, slot s at
 			// byte s*kvBytes (views: Buffer.At), so a batched step's single dispatch can reach every row's slot through
@@ -3388,7 +3388,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 	if !r.decodeAttnFA || r.attnFAPartial == (Buffer{}) {
 		return false
 	}
-	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 || r.attnSoftcap != 0 {
+	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 || r.kvF32 || r.attnSoftcap != 0 {
 		return false
 	}
 	if r.loraLayers != nil {
