@@ -1,0 +1,14 @@
+# D8B-G4, 2026-10-21, Mac M1 Pro; branch d8b-q4k-giw-2026-10
+# direct arm (read once; unchanged by the version choice):
+direct: quant=q4k heap_inuse=583.6 MiB heap_alloc=582.4 MiB
+tokens [8420 594 264 4285 13027 729 429 12341 421 264 2661 1372 374 1496 476 10322]
+# sidecar arm at v18 (first build, since put back to v17), two loads (the second reused the sidecar):
+sidecar: quant=q4k heap_inuse=1.7 MiB heap_alloc=1.0 MiB
+tokens [8420 594 264 4285 13027 729 429 12341 421 264 2661 1372 374 1496 476 10322]
+sidecar: quant=q4k heap_inuse=1.5 MiB heap_alloc=0.9 MiB
+tokens [8420 594 264 4285 13027 729 429 12341 421 264 2661 1372 374 1496 476 10322]
+# sidecar arm at v17 (this branch):
+stream-weights: transcoding qwen2.5-coder-0.5b-instruct-q4_k_m.gguf → qwen2.5-coder-0.5b-instruct-q4_k_m.q4k.cpu-arm64.v17.giw (q4k, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (587 MB) in 1s: stream 0.9s, self-check 0.0s
+sidecar: quant=q4k heap_inuse=1.7 MiB heap_alloc=1.0 MiB
+tokens [8420 594 264 4285 13027 729 429 12341 421 264 2661 1372 374 1496 476 10322]
