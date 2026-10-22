@@ -1163,8 +1163,16 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 // lmHeadN projects M post-final-norm hidden rows (h is [M, HiddenDim]) to logits
 // [M, VocabSize] (+ final-logit softcap), at M=K so the head weights stream once.
 func (m *Model) lmHeadN(h []float32, M int) []float32 {
+	return m.lmHeadNInto(h, M, nil)
+}
+
+// lmHeadNInto is lmHeadN writing into dst (M*VocabSize long; nil allocates).
+func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
 	hp := &m.program().head
-	logits := make([]float32, M*m.w.arch.VocabSize)
+	logits := dst
+	if logits == nil {
+		logits = make([]float32, M*m.w.arch.VocabSize)
+	}
 	if hp.Tied {
 		matmul(m.be, &m.w.Embed, h, logits, M)
 	} else {
@@ -1189,7 +1197,8 @@ func (m *Model) lmHeadN(h []float32, M int) []float32 {
 
 // forwardN runs a batched forward over ids and returns the logits at every
 // position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to
-// K sequential forwards. Falls back to sequential for the non-batched archs.
+// K sequential forwards. Falls back to sequential for the non-batched archs. The
+// rows may be the cache's own buffer, valid until the next batched prefill or verify on cache.
 func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
 	// Speculative VERIFY: never fast, whatever the operator asked for. See forwardNAttn.
 	return m.forwardNAttn(reqCtx, ids, cache, false)
@@ -1229,7 +1238,7 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 		return nil, err
 	}
 	vocab := m.w.arch.VocabSize
-	logits := m.lmHeadN(h, K)
+	logits := m.lmHeadNInto(h, K, cache.headLogits(K*vocab))
 	out := make([][]float32, K)
 	for i := range K {
 		out[i] = logits[i*vocab : i*vocab+vocab]
@@ -1237,7 +1246,8 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 	return out, nil
 }
 
-// prefillLogits processes the whole prompt and returns the logits at its last position (the seed for the first generated token).
+// prefillLogits processes the whole prompt and returns the logits at its last position (the seed for the first generated token),
+// in the cache's own buffer (KVCache.headLogits), valid until the next batched prefill or verify on cache.
 // On the batched archs it runs the layers at M=len(prompt) in one pass (each weight streamed once, reused across all positions)
 // and the LM head on the last position only. Otherwise it falls back to sequential runLayers + forward. Bit-identical to the
 // sequential prefill when the exact kernel is in use; the cache is filled with the whole prompt either way.
@@ -1288,7 +1298,7 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 	}
 	cache.reserveRows(cache.planRows - cache.Pos()) // a one-pass prefill reserves the request's generation here
 	hidden := m.w.arch.HiddenDim
-	logits := m.lmHeadN(h[len(h)-hidden:], 1) // the LM head on the last row only
+	logits := m.lmHeadNInto(h[len(h)-hidden:], 1, cache.headLogits(m.w.arch.VocabSize)) // the LM head on the last row only
 	if len(prompt) >= prefillReleaseRows {
 		releaseHostMemory()
 	}
@@ -1304,7 +1314,16 @@ type prefillPassScratch struct {
 	hq                                                           w4a8Act
 	pool                                                         []headWorkerScratch
 	poolWant                                                     bool
-	poolKeys                                                     int // the whole prefill's keys, which the attention pool is sized for
+	poolKeys                                                     int              // the whole prefill's keys, which the attention pool is sized for
+	moe                                                          *moeBatchScratch // the MoE expert-major buffers; nil until a MoE layer runs
+}
+
+// moeScratch returns the pass's MoE expert-major buffers, starting them on first use so a dense pass carries none.
+func (ps *prefillPassScratch) moeScratch() *moeBatchScratch {
+	if ps.moe == nil {
+		ps.moe = &moeBatchScratch{}
+	}
+	return ps.moe
 }
 
 // take returns (*buf)[:n], cleared, growing *buf when it holds less.
@@ -1357,7 +1376,7 @@ func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []Ima
 		return nil, err
 	}
 	hidden := m.w.arch.HiddenDim
-	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
+	return m.lmHeadNInto(hN[(len(ids)-1)*hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
 }
 
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
@@ -1444,7 +1463,7 @@ func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans [
 	if err != nil {
 		return nil, err
 	}
-	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
+	return m.lmHeadNInto(hN[(len(ids)-1)*hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
 }
 
 // addDeepstack adds DeepStack set l to the rows of h ([K*hidden], positions startPos..startPos+K) that fall in the image

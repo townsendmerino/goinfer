@@ -1,0 +1,109 @@
+=== RUN   TestKVF16_F1Exactness
+--- PASS: TestKVF16_F1Exactness (0.03s)
+=== RUN   TestKVF16_F1PrefillEqualsDecode
+--- PASS: TestKVF16_F1PrefillEqualsDecode (0.00s)
+=== RUN   TestKVF16_F1SnapshotAndCopy
+--- PASS: TestKVF16_F1SnapshotAndCopy (0.00s)
+=== RUN   TestKVF16_F1Fast512
+--- PASS: TestKVF16_F1Fast512 (3.42s)
+=== RUN   TestKVF16_F1Plants
+--- PASS: TestKVF16_F1Plants (0.01s)
+=== RUN   TestMEM12Scratch_identity
+--- PASS: TestMEM12Scratch_identity (0.02s)
+=== RUN   TestGenerateNgramSpeculative_residentCommitsAcceptedSequence
+--- PASS: TestGenerateNgramSpeculative_residentCommitsAcceptedSequence (0.02s)
+=== RUN   TestMoEExpertMajor_bitIdentical
+--- SKIP: TestMoEExpertMajor_bitIdentical (0.00s)
+=== RUN   TestMoEExpertMajor_endToEnd
+--- SKIP: TestMoEExpertMajor_endToEnd (0.00s)
+=== RUN   TestPromptHiddenMany_matchesSeparate
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/int4
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/int4
+--- PASS: TestPromptHiddenMany_matchesSeparate (0.06s)
+=== RUN   TestPromptHiddenMany_int8KV
+--- PASS: TestPromptHiddenMany_int8KV (0.00s)
+=== RUN   TestPromptHiddenMany_fallsBackWhereItCannotShare
+--- PASS: TestPromptHiddenMany_fallsBackWhereItCannotShare (0.00s)
+=== RUN   TestPromptHiddenMany_cancelled
+--- PASS: TestPromptHiddenMany_cancelled (0.00s)
+=== RUN   TestPromptLogitsMany_isTheLMHeadOfTheHidden
+--- PASS: TestPromptLogitsMany_isTheLMHeadOfTheHidden (0.00s)
+=== RUN   TestSpecRollbackSafe_stagedSlidingWindow
+--- PASS: TestSpecRollbackSafe_stagedSlidingWindow (0.00s)
+=== RUN   TestGenerateNgramSpeculativeAdaptive_costOnlyWhenGreedy
+--- PASS: TestGenerateNgramSpeculativeAdaptive_costOnlyWhenGreedy (0.00s)
+=== RUN   TestSpecAdaptiveSwitch_matchesPlainDecode
+--- PASS: TestSpecAdaptiveSwitch_matchesPlainDecode (0.58s)
+=== RUN   TestSpecAdaptiveSwitch_offByDefaultUnaffected
+--- PASS: TestSpecAdaptiveSwitch_offByDefaultUnaffected (0.15s)
+=== RUN   TestSpecRollbackSafetyGuard
+--- PASS: TestSpecRollbackSafetyGuard (0.00s)
+=== RUN   TestSpecRoundDraftWidth_respectsResidentContextCap
+--- PASS: TestSpecRoundDraftWidth_respectsResidentContextCap (0.00s)
+=== RUN   TestSpecRollbackSafe_refusesWindowedAndRecurrent
+--- PASS: TestSpecRollbackSafe_refusesWindowedAndRecurrent (0.00s)
+=== RUN   TestSpecDecodeConflict_refusesStagedWebGPUInt4
+--- PASS: TestSpecDecodeConflict_refusesStagedWebGPUInt4 (0.00s)
+=== RUN   TestSpecDecodeConflict_refusesEveryResidentVerifyEntry
+--- PASS: TestSpecDecodeConflict_refusesEveryResidentVerifyEntry (0.00s)
+=== RUN   TestSpecDecodeConflict_sessionNgramIsNotRefused
+--- PASS: TestSpecDecodeConflict_sessionNgramIsNotRefused (0.00s)
+=== RUN   TestSpeculativeGreedyParity
+--- PASS: TestSpeculativeGreedyParity (5.55s)
+=== RUN   TestSpeculativeGreedyParity_draftTarget
+    speculative_test.go:117: set GOINFER_SPEC_TARGET to the 1.5B gguf to run the draft≠target gate
+--- SKIP: TestSpeculativeGreedyParity_draftTarget (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	10.335s
+=== RUN   TestGrammarSpecHarness
+--- PASS: TestGrammarSpecHarness (1.23s)
+=== RUN   TestGrammarSpecParity
+--- PASS: TestGrammarSpecParity (0.45s)
+=== RUN   TestGrammarSpec_sessionTwoTurnsMatchPlain
+--- PASS: TestGrammarSpec_sessionTwoTurnsMatchPlain (0.68s)
+=== RUN   TestGrammarForcedFraction
+--- PASS: TestGrammarForcedFraction (0.06s)
+=== RUN   TestNgramSpecHarness
+--- PASS: TestNgramSpecHarness (9.58s)
+=== RUN   TestNgramSpecMLA_parity
+--- SKIP: TestNgramSpecMLA_parity (0.00s)
+=== RUN   TestNgramDrafter
+=== RUN   TestNgramDrafter/longest_suffix_wins
+=== RUN   TestNgramDrafter/no_match
+=== RUN   TestNgramDrafter/repeat_run
+=== RUN   TestNgramDrafter/cap_at_k
+=== RUN   TestNgramDrafter/most_recent_occurrence
+=== RUN   TestNgramDrafter/too_short_for_minmatch
+=== RUN   TestNgramDrafter/k=0_yields_nothing
+--- PASS: TestNgramDrafter (0.00s)
+=== RUN   TestNgramSpeculativeGreedyParity
+--- PASS: TestNgramSpeculativeGreedyParity (3.62s)
+=== RUN   TestSpecRollbackSafetyGuard
+--- PASS: TestSpecRollbackSafetyGuard (0.00s)
+=== RUN   TestNgramAdaptiveGreedyParity
+--- PASS: TestNgramAdaptiveGreedyParity (2.69s)
+=== RUN   TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate
+--- PASS: TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate (0.31s)
+=== RUN   TestSpecRoundDraftWidth_respectsResidentContextCap
+--- PASS: TestSpecRoundDraftWidth_respectsResidentContextCap (0.00s)
+=== RUN   TestNgramSampledFirstTokenMatchesPlain
+--- PASS: TestNgramSampledFirstTokenMatchesPlain (0.49s)
+=== RUN   TestNgramSampledRejectsUnsupported
+--- PASS: TestNgramSampledRejectsUnsupported (0.17s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	19.679s
+=== RUN   TestSpeculativeGreedyParity_draftTarget
+    speculative_test.go:147: prompt 0 K=1: acceptance 0.560, 1.60 tokens/round
+    speculative_test.go:147: prompt 0 K=4: acceptance 0.359, 2.50 tokens/round
+    speculative_test.go:147: prompt 0 K=8: acceptance 0.223, 2.86 tokens/round
+    speculative_test.go:147: prompt 1 K=1: acceptance 0.950, 2.00 tokens/round
+    speculative_test.go:147: prompt 1 K=4: acceptance 0.775, 4.00 tokens/round
+    speculative_test.go:147: prompt 1 K=8: acceptance 0.607, 5.71 tokens/round
+    speculative_test.go:147: prompt 2 K=1: acceptance 0.950, 2.00 tokens/round
+    speculative_test.go:147: prompt 2 K=4: acceptance 0.889, 4.44 tokens/round
+    speculative_test.go:147: prompt 2 K=8: acceptance 0.643, 5.71 tokens/round
+--- PASS: TestSpeculativeGreedyParity_draftTarget (14.21s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	14.693s
