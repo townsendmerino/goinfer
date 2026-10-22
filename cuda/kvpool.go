@@ -624,3 +624,8 @@ func (r *cudaResident) kvAfterRaise() error {
 		r.kvSlotsN*r.kvShareBlocks*kvBlock, r.kvSlotsN*r.kvShareBlocks, kvBlock, r.kvSlotsN, r.ctxCap, r.kvShareCtx)
 	return nil
 }
+
+// KVPool implements decoder.ResidentKVPoolInfo: the full group's positions across every slot, and each slot's guaranteed share.
+func (r *cudaResident) KVPool() (positions, guaranteed int) {
+	return r.KVSlots() * r.kvShareBlocks * kvBlock, r.kvShareCtx
+}

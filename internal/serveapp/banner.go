@@ -69,6 +69,9 @@ type bannerFacts struct {
 	// kvSlots: how many resident KV slots the model's generations choose among (decoder.Model.ResidentKVSlots); 1 for
 	// a backend or family without them, 0 off the resident path.
 	kvSlots int
+	// kvPool and kvShare: the positions a resident's shared KV pool holds and each conversation's guaranteed share
+	// (decoder.Model.ResidentKVPool); zeros without a pool.
+	kvPool, kvShare int
 
 	// towerReserve: the VRAM held back for this model's CUDA vision tower when the resident plan was made (towerReserve; 0 when there is none or it is not CUDA).
 	towerReserve int64
@@ -109,6 +112,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxNote = lm.model.ResidentContextNote()
 	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.model.ResidentKVSlots()
+	f.kvPool, f.kvShare = lm.model.ResidentKVPool()
 	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
 	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
 	if lm.model.EffectiveBackend() != "cpu" {
@@ -411,6 +415,11 @@ func kvPlanLine(f bannerFacts, cfg config) string {
 		noun = "conversation"
 	}
 	line := fmt.Sprintf("KV plan: %d %s x %d positions", f.kvSlots, noun, f.ctxWindow)
+	if f.kvPool > 0 && f.kvShare > 0 && f.kvShare < f.ctxWindow {
+		// one conversation may use more than its share of a shared pool (cuda/kvpool.go), so the product above would overstate it
+		line = fmt.Sprintf("KV plan: a %d-position pool for %d %s; each is guaranteed %d, and one can use up to %d", f.kvPool, f.kvSlots, noun,
+			f.kvShare, f.ctxWindow)
+	}
 	var why []string
 	if cfg.kvSessions > f.kvSlots {
 		why = append(why, fmt.Sprintf("%d asked for", cfg.kvSessions))

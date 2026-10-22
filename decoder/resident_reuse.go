@@ -259,6 +259,20 @@ type ResidentKVSlotActivity interface {
 	SetKVSlotBusy(slot int, busy bool)
 }
 
+// ResidentKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds: the pool's
+// positions across every slot, and the positions each slot is guaranteed. One conversation's cap (ResidentCapped) may exceed the share.
+type ResidentKVPoolInfo interface {
+	KVPool() (positions, guaranteed int)
+}
+
+// ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), zeros when it has none.
+func (m *Model) ResidentKVPool() (positions, guaranteed int) {
+	if p, ok := m.resident.(ResidentKVPoolInfo); ok {
+		return p.KVPool()
+	}
+	return 0, 0
+}
+
 // KVCopyDecline is CopyKV's refusal of a range, with the reason; dst is untouched.
 type KVCopyDecline struct{ Reason string }
 
