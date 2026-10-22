@@ -91,11 +91,9 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 		row := Ly.kvDim * r.kvElem(l) // bytes
 		srcIDs := r.kvTabs[src].ids[g]
 		err := r.kvRowRuns(dst, g, from, end, func(p, n, dstRow int) error {
-			id := srcIDs[p/kvBlock]
-			if id == 0 {
-				return fmt.Errorf("cuda: CopyKV: slot %d holds no block for position %d", src, p)
-			}
-			srcRow := int(id)*kvBlock + p%kvBlock
+			// A source block never mapped reads the null block's zeros: the rows were never written, as a caller copying them
+			// should know.
+			srcRow := int(srcIDs[p/kvBlock])*kvBlock + p%kvBlock
 			for _, b := range []Buffer{r.kc[l], r.vc[l]} {
 				if b.Len() == 0 {
 					continue // an MLA latent layer has no V

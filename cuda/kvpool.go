@@ -148,6 +148,19 @@ func (r *cudaResident) kvAllocPools(slots int) error {
 		}
 	}
 	r.kvTabDev = r.ai(slots * kvGroups * r.kvMaxBlocks())
+	if r.kvTabStage == nil {
+		stage, e := gpu.NewHostBuffer[uint8](r.dev, kvTabRing*r.kvMaxBlocks()*4)
+		if e != nil {
+			return e
+		}
+		r.kvTabStage = stage
+		r.kvTabEv = make([]gpu.Event, kvTabRing)
+		for k := range r.kvTabEv {
+			if r.kvTabEv[k], e = r.dev.NewEvent(); e != nil {
+				return e
+			}
+		}
+	}
 	if e := r.stream.ZeroAsync(r.kvTabDev, slots*kvGroups*r.kvMaxBlocks()*4); e != nil {
 		return e
 	}
@@ -233,15 +246,32 @@ func (r *cudaResident) kvReleaseAll(s, g int) {
 	}
 }
 
-// kvFlushTabs writes slot s's changed tables to the device. gpu.Upload synchronises the device before and after the copy, so no launch
-// already queued reads a table while it changes and every later launch reads the new one.
+// kvTabRing is how many staged table copies can be in flight on the stream before kvFlushTabs waits for the oldest.
+const kvTabRing = 8
+
+// kvFlushTabs writes slot s's changed tables to the device: each through the next pinned staging entry, as a copy on the KV kernels' own
+// stream, so every launch queued before it reads the old table and every launch after it the new one, and the host never waits for the
+// device. The staging entry is reused only once its previous copy has executed (its event).
 func (r *cudaResident) kvFlushTabs(s int) error {
 	t := &r.kvTabs[s]
+	n := r.kvMaxBlocks() * 4 // bytes of one table
 	for g := range kvGroups {
 		if !t.dirty[g] {
 			continue
 		}
-		if e := gpu.Upload(r.kvTabBuf(s, g), t.ids[g]); e != nil {
+		k := r.kvTabNext
+		r.kvTabNext = (k + 1) % kvTabRing
+		if e := r.kvTabEv[k].Sync(); e != nil {
+			return e
+		}
+		stage := r.kvTabStage.Slice()[k*n : (k+1)*n]
+		for i, id := range t.ids[g] {
+			stage[4*i], stage[4*i+1], stage[4*i+2], stage[4*i+3] = byte(id), byte(id>>8), byte(id>>16), byte(id>>24)
+		}
+		if e := r.stream.UploadAsyncAt(r.kvTabBuf(s, g), r.kvTabStage, k*n, n); e != nil {
+			return e
+		}
+		if e := r.stream.Record(r.kvTabEv[k]); e != nil {
 			return e
 		}
 		t.dirty[g] = false

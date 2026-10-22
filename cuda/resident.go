@@ -839,6 +839,9 @@ type cudaResident struct {
 	kvPools         [kvGroups]kvPool
 	kvTabs          []kvSlotTabs
 	kvTabDev        Buffer
+	kvTabStage      *gpu.HostBuffer[uint8] // pinned staging for kvFlushTabs' copies, kvTabRing tables
+	kvTabEv         []gpu.Event            // each staging entry's last copy
+	kvTabNext       int
 
 	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the first position slot s's
 	// windowed layers hold.
