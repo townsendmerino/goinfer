@@ -7,8 +7,8 @@ package decoder
 // the way that backend allocates it. The layout differs per backend, so "one formula" has to be one function with a
 // per-backend layout, not one flat formula:
 //
-//   - Metal allocates f16 only (the f32 KV kernels are compiled out, metal/model.go's r.kvF32) and the full context for
-//     every attention layer, sliding-window ones included, padded to 8 positions; kvBytesForCtx's sliding-window cap
+//   - Metal allocates the precision ResolveKV delivers there (f16, f32 or int8 with per-head scales; an MLA layer's latent
+//     f32) and the full context for every attention layer, sliding-window ones included, padded to 8 positions; kvBytesForCtx's sliding-window cap
 //     models the CPU ring buffer and would under-count Metal. Metal also holds a second copy of the dense weights in
 //     unified memory (the host WeightMat and the re-packed device buffer, ResidentHostCopyBytes), which Plan must count.
 //   - CUDA allocates f32 K/V, or f16 where kv16_cuda.go clears the model (the default for a cleared family, or -kv f16 for one the kernels
