@@ -113,6 +113,8 @@ func TestMLALatentStore_cuda(t *testing.T) {
 			defer dNW.Close()
 			defer dIF.Close()
 			defer dCache.Close()
+			dKVT := gcKVIdentityTab(t, cx, pos+1)
+			defer dKVT.Close()
 
 			_ = gc.CopyHtoD(bg, dKV, kvDown)
 			_ = gc.CopyHtoD(bg, dNW, normW)
@@ -125,9 +127,9 @@ func TestMLALatentStore_cuda(t *testing.T) {
 				intl = 1
 			}
 			if e := fn.LaunchOn(bg, stream, cfg,
-				gc.Arg(dKV), gc.Arg(dNW), gc.Arg(dIF), gc.Arg(dCache),
+				gc.Arg(dKV), gc.Arg(dNW), gc.Arg(dIF), gc.Arg(dCache), gc.Arg(dKVT),
 				gc.ArgValue(int32(rank)), gc.ArgValue(int32(qkRope)), gc.ArgValue(int32(pos)),
-				gc.ArgValue(eps), gc.ArgValue(int32(base)), gc.ArgValue(float32(1.0)), gc.ArgValue(intl)); e != nil {
+				gc.ArgValue(eps), gc.ArgValue(int32(pos)), gc.ArgValue(float32(1.0)), gc.ArgValue(intl)); e != nil {
 				t.Fatalf("launch: %v", e)
 			}
 			if e := stream.Synchronize(bg); e != nil {
@@ -294,6 +296,8 @@ func TestMLAAttn_cuda(t *testing.T) {
 	defer dQ.Close()
 	defer dLat.Close()
 	defer dWsum.Close()
+	dKVT := gcKVIdentityTab(t, cx, nKeys)
+	defer dKVT.Close()
 
 	_ = gc.CopyHtoD(bg, dQ, qAbs)
 	_ = gc.CopyHtoD(bg, dLat, lat)
@@ -301,7 +305,7 @@ func TestMLAAttn_cuda(t *testing.T) {
 	shmem := uint32((nKeys + 128) * 4)
 	cfg := gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
 	if e := fn.LaunchOn(bg, stream, cfg,
-		gc.Arg(dQ), gc.Arg(dLat), gc.Arg(dWsum),
+		gc.Arg(dQ), gc.Arg(dLat), gc.Arg(dKVT), gc.Arg(dWsum),
 		gc.ArgValue(int32(nH)), gc.ArgValue(int32(latDim)), gc.ArgValue(int32(rank)),
 		gc.ArgValue(int32(nKeys-1)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.ArgValue(int32(1))); e != nil {
 		t.Fatalf("launch: %v", e)

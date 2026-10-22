@@ -74,6 +74,8 @@ func TestSlidingWindowAttention(t *testing.T) {
 		defer dk.Close()
 		defer dv.Close()
 		defer dc.Close()
+		dt := gcKVIdentityTab(t, cx, nk)
+		defer dt.Close()
 		_ = gc.CopyHtoD(bg, dq, q)
 		_ = gc.CopyHtoD(bg, dk, k)
 		_ = gc.CopyHtoD(bg, dv, v)
@@ -84,7 +86,7 @@ func TestSlidingWindowAttention(t *testing.T) {
 		if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{
 			GridX: nH, GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((nWin + 128) * 4)},
-			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)),
+			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)),
 			gc.ArgValue(int32(hd)), gc.ArgValue(int32(nk)), gc.ArgValue(scale),
 			gc.ArgValue(int32(win)), gc.Arg(dc)); e != nil {
 			t.Fatalf("launch: %v", e)

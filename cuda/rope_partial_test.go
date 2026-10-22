@@ -127,6 +127,8 @@ func TestRopePartial(t *testing.T) {
 			defer dinv.Close()
 			defer dkc.Close()
 			defer dvc.Close()
+			dkvt := gcKVIdentityTab(t, cx, cap)
+			defer dkvt.Close()
 			// Poison the caches: a tail the kernel forgets to store must be DETECTABLE. Zero-fill
 			// would hide it, since the reference tail could coincidentally be near zero.
 			poison := make([]float32, cap*kvDim)
@@ -145,7 +147,7 @@ func TestRopePartial(t *testing.T) {
 			tail := c.hd - 2*rhalf
 			n := c.nH*rhalf + c.nKV*rhalf + c.nKV*tail
 			if e := fn.LaunchOn(bg, stream, gc.LaunchConfig1D(n, 256),
-				gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dinv), gc.Arg(dkc), gc.Arg(dvc),
+				gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dinv), gc.Arg(dkc), gc.Arg(dvc), gc.Arg(dkvt),
 				gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
 				gc.ArgValue(int32(c.pos)), gc.ArgValue(int32(c.pos)), // pos == ropePos: this test isn't about m-RoPE (Qwen2.5-VL)
 				gc.ArgValue(int32(rhalf)), gc.ArgValue(float32(1)), // mscale 1.0 = unscaled

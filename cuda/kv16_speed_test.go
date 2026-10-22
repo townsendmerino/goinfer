@@ -186,12 +186,12 @@ func TestKV16_readerKernelTime(t *testing.T) {
 	}{
 		{"glue attention", func() error {
 			return r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kvK(0)), Arg(r.kvV(0)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+				Arg(r.qB), Arg(r.kvK(0)), Arg(r.kvV(0)), Arg(r.kvT(0)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 				gpu.ArgValue(int32(nWin)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))
 		}},
 		{"attn_batched M=1", func() error {
 			return r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kvK(0)), Arg(r.kvV(0)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+				Arg(r.qB), Arg(r.kvK(0)), Arg(r.kvV(0)), Arg(r.kvT(0)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 				gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(0))
 		}},
 		{"split-KV", func() error { return r.splitKVAttnDecode(0, pos) }},

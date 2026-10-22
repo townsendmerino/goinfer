@@ -93,6 +93,7 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 		dKc := mustAlloc[float32](t, cx, len(kc))
 		dVc := mustAlloc[float32](t, cx, len(vc))
 		dQ := mustAlloc[float32](t, cx, len(q))
+		dKvt := gcKVIdentityTab(t, cx, nTot)
 		if e := gc.CopyHtoD(bg, dKc, kc); e != nil {
 			t.Fatalf("H2D kc: %v", e)
 		}
@@ -120,7 +121,7 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 			cfg := gc.LaunchConfig{GridX: nH, GridY: 1, GridZ: 1, BlockX: blockDim, BlockY: 1, BlockZ: 1,
 				SharedMemBytes: uint32((nWin + blockDim) * 4)}
 			if e := fnRef.LaunchOn(bg, stream, cfg,
-				gc.Arg(dQrow), gc.Arg(dKc), gc.Arg(dVc),
+				gc.Arg(dQrow), gc.Arg(dKc), gc.Arg(dVc), gc.Arg(dKvt),
 				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)),
 				gc.ArgValue(scale), gc.ArgValue(int32(window)), gc.Arg(dCtxRow)); e != nil {
 				t.Fatalf("ref launch sp=%d m=%d: %v", startPos, m, e)
@@ -146,7 +147,7 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 		cfg := gc.LaunchConfig{GridX: nH, GridY: uint32(M), GridZ: 1, BlockX: blockDim, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((maxNWin + blockDim) * 4)}
 		if e := fnBat.LaunchOn(bg, stream, cfg,
-			gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc),
+			gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc), gc.Arg(dKvt),
 			gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
 			gc.ArgValue(scale), gc.ArgValue(int32(window)), gc.ArgValue(int32(M)), gc.Arg(dCtx), gc.ArgDevicePtr(0)); e != nil {
 			t.Fatalf("batched launch sp=%d: %v", startPos, e)
@@ -179,5 +180,6 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 		dVc.Close()
 		dQ.Close()
 		dCtx.Close()
+		dKvt.Close()
 	}
 }

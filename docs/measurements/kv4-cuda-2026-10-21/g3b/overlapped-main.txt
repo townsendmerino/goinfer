@@ -1,0 +1,9 @@
+kv share: copied 16000 rows from another conversation in 2.52 ms
+kv share: copied 16000 rows from another conversation in 2.53 ms
+kv share: copied 16000 rows from another conversation in 2.69 ms
+no pool count logged (a build without shared blocks): the block bound is not read
+conversation 0: reused 0 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+conversation 1: reused 16000 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+conversation 2: reused 16000 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+conversation 3: reused 16000 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+G3b served: PASS

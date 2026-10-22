@@ -1,0 +1,160 @@
+=== speed-kv4a1-1820 (decode, ABBA=1)
+Traceback (most recent call last):
+  File "/home/francis/goinfer-bench/kv4-2026-10-21/docs/measurements/kv4-cuda-2026-10-21/score_speed.py", line 20, in <module>
+    cells += [dict(c, file=tag) for c in json.load(open(path)) if isinstance(c, dict) and c.get("engine") in ("goinfer", "goinfer_old")]
+                                                   ~~~~^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/francis/goinfer-bench/kv4-runs/speed-kv4a1-1820/decode-deep.json /home/francis/goinfer-bench/kv4-runs/speed-kv4a1-1820/decode-gemma3.json /home/francis/goinfer-bench/kv4-runs/speed-kv4a1-1820/decode-qwen.json '
+=== speed-kv4a1-cab8f9a8 (decode, ABBA=1)
+Traceback (most recent call last):
+  File "/home/francis/goinfer-bench/kv4-2026-10-21/docs/measurements/kv4-cuda-2026-10-21/score_speed.py", line 20, in <module>
+    cells += [dict(c, file=tag) for c in json.load(open(path)) if isinstance(c, dict) and c.get("engine") in ("goinfer", "goinfer_old")]
+                                                   ~~~~^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/francis/goinfer-bench/kv4-runs/speed-kv4a1-cab8f9a8/decode-deep.json /home/francis/goinfer-bench/kv4-runs/speed-kv4a1-cab8f9a8/decode-gemma3.json /home/francis/goinfer-bench/kv4-runs/speed-kv4a1-cab8f9a8/decode-qwen.json '
+=== final-716c2539 (run-final.sh: decode, TTFT, MC3)
+     model  depth           file  blocks new/old                median  verdict
+      1.5B    128    decode-deep  0.991 0.993                    0.992  PASS
+      1.5B    128    decode-qwen  0.996 0.984                    0.990  PASS
+      1.5B   2048    decode-qwen  0.996 0.992                    0.994  PASS
+      1.5B   3900    decode-qwen  0.995 0.994                    0.994  PASS
+      1.5B   8000    decode-deep  0.991 0.992                    0.992  PASS
+        7B    128    decode-deep  0.999 0.999                    0.999  PASS
+        7B    128    decode-qwen  0.999 1.000                    1.000  PASS
+        7B   2048    decode-qwen  0.995 0.997                    0.996  PASS
+        7B   3900    decode-qwen  0.996 0.995                    0.995  PASS
+        7B   8000    decode-deep  0.993 0.993                    0.993  PASS
+ gemma3-1b    128  decode-gemma3  0.961 1.005                    0.983  PASS
+ gemma3-1b   2048  decode-gemma3  0.985 0.974                    0.979  AMBIGUOUS
+ gemma3-1b   3900  decode-gemma3  0.958 0.980                    0.969  FAIL
+
+G2 verdict: FAIL
+
+serve-cuda-old: 26 servers; VmHWM median 1211 MB, max 4701 MB; peak VmSwap max 0.0 MB; system swap 6925-7085 MB (context)
+serve-cuda-new: 26 servers; VmHWM median 1212 MB, max 4696 MB; peak VmSwap max 0.0 MB; system swap 6925-7085 MB (context)
+G4: 26 pairs; new - old VmHWM -19.8 to +28.0 MB, peak VmSwap +0.0 to +0.0 MB -> PASS
+-- TTFT (1.5B, then 7B)
+SUMMARY {"512": {"ratios": [0.998, 0.998, 1.003], "median": 0.998, "verdict": "PASS"}, "3900": {"ratios": [0.996, 0.997, 1.0], "median": 0.997, "verdict": "PASS"}}
+SUMMARY {"512": {"ratios": [1.002, 1.004, 1.01], "median": 1.004, "verdict": "PASS"}, "3900": {"ratios": [0.998, 0.995, 0.988], "median": 0.995, "verdict": "PASS"}}
+-- MC3
+old4_1 357.3 -> new4_1 350.0 tok/s: 0.980; 24 turns, replies equal: True
+old4_2 359.3 -> new4_2 351.0 tok/s: 0.977; 24 turns, replies equal: True
+old4_3 359.2 -> new4_3 349.7 tok/s: 0.973; 24 turns, replies equal: True
+median 0.977: FAIL; content_sha equal in every turn: True
+=== final-45b4b7c0 (run-final.sh: decode, TTFT, MC3)
+     model  depth           file  blocks new/old                median  verdict
+      1.5B    128    decode-deep  0.961 0.960                    0.960  FAIL
+      1.5B    128    decode-qwen  0.954 0.958                    0.956  FAIL
+      1.5B   2048    decode-qwen  0.994 0.992                    0.993  PASS
+      1.5B   3900    decode-qwen  0.992 0.993                    0.993  PASS
+      1.5B   8000    decode-deep  0.991 0.989                    0.990  PASS
+        7B    128    decode-deep  0.986 0.985                    0.986  PASS
+        7B    128    decode-qwen  0.987 0.986                    0.986  PASS
+        7B   2048    decode-qwen  0.995 0.996                    0.996  PASS
+        7B   3900    decode-qwen  0.996 0.995                    0.996  PASS
+        7B   8000    decode-deep  0.993 0.993                    0.993  PASS
+ gemma3-1b    128  decode-gemma3  0.982 0.990                    0.986  PASS
+ gemma3-1b   2048  decode-gemma3  0.958 0.954                    0.956  FAIL
+ gemma3-1b   3900  decode-gemma3  0.964 0.946                    0.955  FAIL
+
+G2 verdict: FAIL
+
+serve-cuda-old: 26 servers; VmHWM median 1208 MB, max 4686 MB; peak VmSwap max 0.0 MB; system swap 6925-6925 MB (context)
+serve-cuda-new: 26 servers; VmHWM median 1207 MB, max 4690 MB; peak VmSwap max 0.0 MB; system swap 6925-6925 MB (context)
+G4: 26 pairs; new - old VmHWM -25.7 to +21.1 MB, peak VmSwap +0.0 to +0.0 MB -> PASS
+-- TTFT (1.5B, then 7B)
+SUMMARY {"512": {"ratios": [1.007, 0.994, 1.014], "median": 1.007, "verdict": "PASS"}, "3900": {"ratios": [0.994, 1.001, 0.991], "median": 0.994, "verdict": "PASS"}}
+SUMMARY {"512": {"ratios": [0.995, 1.003, 1.002], "median": 1.002, "verdict": "PASS"}, "3900": {"ratios": [0.997, 0.999, 0.996], "median": 0.997, "verdict": "PASS"}}
+-- MC3
+old4_1 359.5 -> new4_1 341.4 tok/s: 0.950; 24 turns, replies equal: True
+old4_2 360.3 -> new4_2 341.0 tok/s: 0.947; 24 turns, replies equal: True
+old4_3 359.5 -> new4_3 343.5 tok/s: 0.955; 24 turns, replies equal: True
+median 0.950: FAIL; content_sha equal in every turn: True
+=== final-d75b02d4 (run-final.sh: decode, TTFT, MC3)
+     model  depth           file  blocks new/old                median  verdict
+      1.5B    128    decode-deep  0.993 1.000                    0.997  PASS
+      1.5B    128    decode-qwen  0.997 0.994                    0.995  PASS
+      1.5B   2048    decode-qwen  0.996 0.995                    0.995  PASS
+      1.5B   3900    decode-qwen  0.992 0.994                    0.993  PASS
+      1.5B   8000    decode-deep  0.990 0.989                    0.990  PASS
+        7B    128    decode-deep  1.000 1.000                    1.000  PASS
+        7B    128    decode-qwen  1.001 1.000                    1.000  PASS
+        7B   2048    decode-qwen  0.995 0.996                    0.995  PASS
+        7B   3900    decode-qwen  0.995 0.996                    0.995  PASS
+        7B   8000    decode-deep  0.993 0.992                    0.993  PASS
+ gemma3-1b    128  decode-gemma3  0.980 1.004                    0.992  PASS
+ gemma3-1b   2048  decode-gemma3  0.979 0.973                    0.976  AMBIGUOUS
+ gemma3-1b   3900  decode-gemma3  0.990 0.983                    0.986  PASS
+
+G2 verdict: AMBIGUOUS
+
+serve-cuda-old: 26 servers; VmHWM median 1204 MB, max 4702 MB; peak VmSwap max 0.0 MB; system swap 6925-6925 MB (context)
+serve-cuda-new: 26 servers; VmHWM median 1211 MB, max 4675 MB; peak VmSwap max 0.0 MB; system swap 6925-6925 MB (context)
+G4: 26 pairs; new - old VmHWM -39.9 to +23.3 MB, peak VmSwap +0.0 to +0.0 MB -> PASS
+-- TTFT (1.5B, then 7B)
+SUMMARY {"512": {"ratios": [1.014, 0.989, 1.009], "median": 1.009, "verdict": "PASS"}, "3900": {"ratios": [0.993, 0.996, 1.006], "median": 0.996, "verdict": "PASS"}}
+SUMMARY {"512": {"ratios": [0.999, 1.0, 0.997], "median": 0.999, "verdict": "PASS"}, "3900": {"ratios": [0.995, 0.997, 0.999], "median": 0.997, "verdict": "PASS"}}
+-- MC3
+old4_1 361.4 -> new4_1 353.3 tok/s: 0.978; 24 turns, replies equal: True
+old4_2 357.8 -> new4_2 352.5 tok/s: 0.985; 24 turns, replies equal: True
+old4_3 360.3 -> new4_3 351.1 tok/s: 0.974; 24 turns, replies equal: True
+median 0.978: FAIL; content_sha equal in every turn: True
+=== final-9968ede0 (run-final.sh: decode, TTFT, MC3)
+     model  depth           file  blocks new/old                median  verdict
+      1.5B    128    decode-deep  0.991 0.988                    0.990  PASS
+      1.5B    128    decode-qwen  0.997 0.984                    0.990  PASS
+      1.5B   2048    decode-qwen  0.989 0.993                    0.991  PASS
+      1.5B   3900    decode-qwen  0.991 0.988                    0.990  PASS
+      1.5B   8000    decode-deep  0.990 0.990                    0.990  PASS
+        7B    128    decode-deep  0.999 0.999                    0.999  PASS
+        7B    128    decode-qwen  1.000 0.999                    0.999  PASS
+        7B   2048    decode-qwen  0.996 0.997                    0.997  PASS
+        7B   3900    decode-qwen  0.995 0.996                    0.995  PASS
+        7B   8000    decode-deep  0.993 0.992                    0.993  PASS
+ gemma3-1b    128  decode-gemma3  0.963 0.995                    0.979  AMBIGUOUS
+ gemma3-1b   2048  decode-gemma3  0.975 0.978                    0.977  AMBIGUOUS
+ gemma3-1b   3900  decode-gemma3  0.979 0.991                    0.985  PASS
+
+G2 verdict: AMBIGUOUS
+
+serve-cuda-old: 26 servers; VmHWM median 1198 MB, max 4701 MB; peak VmSwap max 0.0 MB; system swap 6925-6925 MB (context)
+serve-cuda-new: 26 servers; VmHWM median 1203 MB, max 4690 MB; peak VmSwap max 0.0 MB; system swap 6925-6925 MB (context)
+G4: 26 pairs; new - old VmHWM -26.7 to +20.8 MB, peak VmSwap +0.0 to +0.0 MB -> PASS
+-- TTFT (1.5B, then 7B)
+SUMMARY {"512": {"ratios": [0.993, 1.001, 0.992], "median": 0.993, "verdict": "PASS"}, "3900": {"ratios": [0.996, 0.992, 0.989], "median": 0.992, "verdict": "PASS"}}
+SUMMARY {"512": {"ratios": [1.0, 1.001, 0.997], "median": 1.0, "verdict": "PASS"}, "3900": {"ratios": [0.995, 1.0, 0.996], "median": 0.996, "verdict": "PASS"}}
+-- MC3
+old4_1 358.0 -> new4_1 351.3 tok/s: 0.981; 24 turns, replies equal: True
+old4_2 360.9 -> new4_2 351.1 tok/s: 0.973; 24 turns, replies equal: True
+old4_3 361.2 -> new4_3 351.4 tok/s: 0.973; 24 turns, replies equal: True
+median 0.973: FAIL; content_sha equal in every turn: True
+=== ttft-kv4a1-cab8f9a8 (TTFT, 1.5B then 7B)
+SUMMARY {"512": {"ratios": [1.007, 1.001, 0.992], "median": 1.001, "verdict": "PASS"}, "3900": {"ratios": [0.939, 0.939, 0.936], "median": 0.939, "verdict": "FAIL"}}
+SUMMARY {"512": {"ratios": [0.994, 1.001, 0.999], "median": 0.999, "verdict": "PASS"}, "3900": {"ratios": [0.979, 0.98, 0.978], "median": 0.979, "verdict": "PASS"}}
+=== ttft-kv4a1-fea3b0a0 (TTFT, 1.5B then 7B)
+SUMMARY {"512": {"ratios": [1.015, 0.991, 0.979], "median": 0.991, "verdict": "PASS"}, "3900": {"ratios": [0.956, 0.964, 0.954], "median": 0.956, "verdict": "FAIL"}}
+SUMMARY {"512": {"ratios": [0.996, 1.003, 1.0], "median": 1.0, "verdict": "PASS"}, "3900": {"ratios": [0.986, 0.986, 0.988], "median": 0.986, "verdict": "PASS"}}
+=== ttft-kv4a1-855e198f (TTFT, 1.5B then 7B)
+SUMMARY {"512": {"ratios": [1.009, 1.001, 0.983], "median": 1.001, "verdict": "PASS"}, "3900": {"ratios": [0.955, 0.947, 0.958], "median": 0.955, "verdict": "FAIL"}}
+SUMMARY {"512": {"ratios": [0.998, 0.999, 1.0], "median": 0.999, "verdict": "PASS"}, "3900": {"ratios": [0.984, 0.987, 0.99], "median": 0.987, "verdict": "PASS"}}
+=== ttft-kv4a1-cf1bc070 (TTFT, 1.5B then 7B)
+SUMMARY {"512": {"ratios": [0.999, 1.006, 0.982], "median": 0.999, "verdict": "PASS"}, "3900": {"ratios": [0.997, 0.992, 0.993], "median": 0.993, "verdict": "PASS"}}
+SUMMARY {"512": {"ratios": [0.994, 1.0, 1.002], "median": 1.0, "verdict": "PASS"}, "3900": {"ratios": [0.994, 0.998, 0.998], "median": 0.998, "verdict": "PASS"}}
+=== MC3 probe /home/francis/goinfer-bench/kv4-runs/mc3-probe/ctx16k.json
+old4_1 359.5 -> new4_1 349.1 tok/s: 0.971; 24 turns, replies equal: True
+old4_2 359.7 -> new4_2 354.4 tok/s: 0.985; 24 turns, replies equal: True
+old4_3 358.8 -> new4_3 352.0 tok/s: 0.981; 24 turns, replies equal: True
+median 0.981: PASS; content_sha equal in every turn: True
+=== MC3 probe /home/francis/goinfer-bench/kv4-runs/mc3-probe/a1.json
+old4_1 361.2 -> new4_1 354.1 tok/s: 0.980; 24 turns, replies equal: True
+old4_2 357.4 -> new4_2 355.0 tok/s: 0.993; 24 turns, replies equal: True
+old4_3 358.2 -> new4_3 352.1 tok/s: 0.983; 24 turns, replies equal: True
+median 0.983: PASS; content_sha equal in every turn: True
+=== MC3 probe /home/francis/goinfer-bench/kv4-runs/probe-d75b02d4/mc3.json
+old4_1 359.6 -> new4_1 353.7 tok/s: 0.984; 24 turns, replies equal: True
+old4_2 360.6 -> new4_2 354.2 tok/s: 0.982; 24 turns, replies equal: True
+old4_3 359.1 -> new4_3 352.8 tok/s: 0.982; 24 turns, replies equal: True
+median 0.982: PASS; content_sha equal in every turn: True
+=== MC3 probe /home/francis/goinfer-bench/kv4-runs/probe-9968ede0/mc3.json
+old4_1 357.3 -> new4_1 351.2 tok/s: 0.983; 24 turns, replies equal: True
+old4_2 359.6 -> new4_2 352.3 tok/s: 0.980; 24 turns, replies equal: True
+old4_3 357.7 -> new4_3 349.6 tok/s: 0.978; 24 turns, replies equal: True
+median 0.980: FAIL; content_sha equal in every turn: True

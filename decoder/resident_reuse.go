@@ -247,6 +247,32 @@ type ResidentKVCopier interface {
 	CopyKV(src, dst, start, end int) error
 }
 
+// ErrKVPoolFull is what a resident whose KV slots share one block pool returns, wrapped, when a conversation past its guaranteed share of
+// the pool needs a block and none is free (docs/measurements/kv4-cuda-2026-10-21.md, KV4a-3). A conversation within its share never
+// sees it. The generation it stops ends as at the context cap: finish_reason "length", with what it emitted.
+var ErrKVPoolFull = errors.New("decoder: resident KV pool is full")
+
+// ResidentKVSlotActivity is the optional capability of a resident whose slots share one block pool to be told which slots a running
+// generation holds (MC3's busy slots), so that it releases the blocks of an idle slot to make room, never a running one's. The bound
+// slot counts as running whether or not it is marked.
+type ResidentKVSlotActivity interface {
+	SetKVSlotBusy(slot int, busy bool)
+}
+
+// ResidentKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds: the pool's
+// positions across every slot, and the positions each slot is guaranteed. One conversation's cap (ResidentCapped) may exceed the share.
+type ResidentKVPoolInfo interface {
+	KVPool() (positions, guaranteed int)
+}
+
+// ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), zeros when it has none.
+func (m *Model) ResidentKVPool() (positions, guaranteed int) {
+	if p, ok := m.resident.(ResidentKVPoolInfo); ok {
+		return p.KVPool()
+	}
+	return 0, 0
+}
+
 // KVCopyDecline is CopyKV's refusal of a range, with the reason; dst is untouched.
 type KVCopyDecline struct{ Reason string }
 

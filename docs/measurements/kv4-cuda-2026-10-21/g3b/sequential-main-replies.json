@@ -1,0 +1,78 @@
+{
+ "together": [
+  [
+   "the helfer,1\n```\n```\n```\n```\n```\n",
+   {
+    "prompt_tokens": 16045,
+    "completion_tokens": 16,
+    "total_tokens": 16061,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```java\n```python\n```python\n```python\n```",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 16,
+    "total_tokens": 16059,
+    "prefill_reused_tokens": 16031
+   }
+  ],
+  [
+   "```python\n```java\n```python\n```python\n```python\n```",
+   {
+    "prompt_tokens": 16042,
+    "completion_tokens": 16,
+    "total_tokens": 16058,
+    "prefill_reused_tokens": 16031
+   }
+  ],
+  [
+   "```\nThe function `get_current_time()`, `get_time()`, `",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 16,
+    "total_tokens": 16059,
+    "prefill_reused_tokens": 16031
+   }
+  ]
+ ],
+ "alone": [
+  [
+   "the helfer,1\n```\n```\n```\n```\n```\n",
+   {
+    "prompt_tokens": 16045,
+    "completion_tokens": 16,
+    "total_tokens": 16061,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 16,
+    "total_tokens": 16059,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```\n```python\n```python\n```python\n```python",
+   {
+    "prompt_tokens": 16042,
+    "completion_tokens": 16,
+    "total_tokens": 16058,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 16,
+    "total_tokens": 16059,
+    "prefill_reused_tokens": 0
+   }
+  ]
+ ]
+}

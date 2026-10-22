@@ -32,15 +32,16 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
 | KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
-| KV4 | open | nobara: first among the CUDA KV tracks (owner, 2026-10-21); register its gates before code; L | §6 |
-| KV4a | open | with KV4; its identity gate also reads flash-decode and split-KV through a windowed view, which no test has (from the archived windowed-KV doc) | §6 |
-| KV4b | open | with KV4; takes KV precision's phase 1, f16 for the ten CUDA families that refuse it (owner, 2026-10-21) | §6; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
+| KV4 | active | nobara: gates registered 2026-10-21; KV4a then KV4b. Pool = the VRAM main gives KV at the same flags (D-KV4-1 (a)); only a borrower past its share is stopped, as at the context cap (D-KV4-2) (owner, 2026-10-21); L | §6; `docs/measurements/kv4-cuda-2026-10-21.md` |
+| KV4a | active | nobara: built (KV4a-1 to -3), draft PR #138; G1a (with its registered plants red), G1b (tiny and real assets), G1c, G3a to G3d (G3b served included), G4 and TTFT pass; MC3 0.973 to 0.983 and Gemma-3-1B decode ambiguous: shipped on the capacity arm with the ~2% cost at four clients recorded, MC3 on decode's bands (D-KV4-3 (b), owner, 2026-10-22); G1d's heavy partitions read (three failures were KV4a's and are fixed, one fails on `main` too) | `kv4-cuda-2026-10-21.md` §3, §5 |
+| KV4b | active | nobara, branch `kv4b-2026-10-22`: f16 delivered on request per family group, `auto` per group on G4 PASS (D7). G4 keeps both cells: K=3,900 by day with ten prompts, K=8,000 on the night queue at four prompts (D-KV4-4 (b), owner, 2026-10-22); tier 0 re-run alone under the exclusive timing lock (owner, 2026-10-22) | `kv4-cuda-2026-10-21.md` §2 G5; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
 | KV5 | blocked | KV4; takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |
 | KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
-| KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool | §6 |
+| KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
 | KV8 | blocked | KV4 (KV5 for Metal) | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
+| KV8a-CUDA-cc28k | done | — | the 28K Claude Code chain on CUDA at main `799b98df`: PASS, 1 tested, 0 of 7 differ (`docs/measurements/kv8a-2026-10/README.md`, "The 28K Claude Code chain on CUDA") |
 | KV8a-Metal | active | Mac: M2(b) (about 2 h 45 min) and M5 (about 3 h 30 min, as two jobs) on the night queue, then grade and merge | branch `kv8a-metal-2026-10` |
 | KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
 | KV10 | blocked | KV4, KV5 | §6 |

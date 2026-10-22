@@ -4,24 +4,27 @@ package cuda
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// readKVForTest downloads the first `rows` positions of layer l's K and V caches on the executor
-// thread (the context is current there). Test-only; reads the same device buffers the forward writes.
+// readKVForTest reads positions [0, rows) of layer l's K and V in the bound slot, through its table, on the executor thread (an f16
+// layer's rows come back as kvRowsForTest's raw words). Test-only; reads the same pool rows the forward writes. A read error, such as
+// an unmapped position, panics, so a caller never compares empty slices.
 func (r *cudaResident) readKVForTest(l, rows int) (k, v []float32) {
-	kvDim := r.layers[l].kvDim
-	k = make([]float32, rows*kvDim)
-	v = make([]float32, rows*kvDim)
-	_ = r.do(func() error {
-		_ = r.stream.Sync()
-		_ = gpu.Download(r.kc[l], k)
-		_ = gpu.Download(r.vc[l], v)
-		return nil
+	err := r.do(func() error {
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		var e error
+		k, v, e = r.kvRowsForTest(r.kvSlot, l, 0, rows)
+		return e
 	})
+	if err != nil {
+		panic(fmt.Sprintf("readKVForTest(layer %d, %d rows): %v", l, rows, err))
+	}
 	return k, v
 }
 

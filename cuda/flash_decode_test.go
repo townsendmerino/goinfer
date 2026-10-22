@@ -150,7 +150,7 @@ func runFlash(t *testing.T, r *cudaResident, q, k, v []float32, hd, nKV, winStar
 		}
 		saved := r.attnScale
 		r.attnScale = scale
-		e := r.flashDecodeLaunch(qb, kb, vb, cb, hd, nKV, winStart, nKeys)
+		e := r.flashDecodeLaunch(qb, kb, vb, r.kvIdentityTab(t, nKeys), cb, hd, nKV, winStart, nKeys)
 		r.attnScale = saved
 		if e != nil {
 			return e

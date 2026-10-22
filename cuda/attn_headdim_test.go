@@ -77,12 +77,13 @@ func TestAttention_TailPoison(t *testing.T) {
 			dcHost[i] = sentinel
 		}
 		dc := mustAlloc[float32](t, ctx, nH*bufHd)
+		dt := gcKVIdentityTab(t, ctx, nKeys)
 		_ = gc.CopyHtoD(bg, dq, dqHost)
 		_ = gc.CopyHtoD(bg, dk, kh)
 		_ = gc.CopyHtoD(bg, dv, vh)
 		_ = gc.CopyHtoD(bg, dc, dcHost)
 		_ = fAttn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc))
+			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc))
 		_ = stream.Synchronize(bg)
 		out := make([]float32, nH*bufHd)
 		_ = gc.CopyDtoH(bg, out, dc)
@@ -90,6 +91,7 @@ func TestAttention_TailPoison(t *testing.T) {
 		dk.Close()
 		dv.Close()
 		dc.Close()
+		dt.Close()
 		return out[:nH*hd]
 	}
 

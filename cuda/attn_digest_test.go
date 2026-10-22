@@ -78,7 +78,7 @@ func adCasesAttention() []adCase {
 							if window > 0 && nKeys > window {
 								nWin = window
 							}
-							r.launch(m, "attention", adCfg(nH, 1, 1, 128, (nWin+128)*4), gc.Arg(q), kc, vc,
+							r.launch(m, "attention", adCfg(nH, 1, 1, 128, (nWin+128)*4), gc.Arg(q), kc, vc, r.kvt(nKeys),
 								adI(nH), adI(nKV), adI(hd), adI(nKeys), gc.ArgValue(adScale(hd)), adI(window), gc.Arg(ctx))
 							return [][]float32{r.read(ctx, nH*hd)}
 						}})
@@ -111,7 +111,7 @@ func adCasesBatched() []adCase {
 								if window > 0 && window < maxWin {
 									maxWin = window
 								}
-								r.launch(m, "attn_batched", adCfg(nH, M, 1, 128, (maxWin+128)*4), gc.Arg(q), kc, vc,
+								r.launch(m, "attn_batched", adCfg(nH, M, 1, 128, (maxWin+128)*4), gc.Arg(q), kc, vc, r.kvt(nTot),
 									adI(nH), adI(nKV), adI(hd), adI(startPos), gc.ArgValue(adScale(hd)), adI(window), adI(M), gc.Arg(ctx), adSink(r, nH, sink))
 								return [][]float32{r.read(ctx, M*nH*hd)}
 							}})
@@ -144,15 +144,15 @@ func adCasesSplitKV() []adCase {
 							q := r.f32(adRand(nH*hd, 31, 1))
 							kc, vc := r.kv(adRand(nKeys*kvDim, 32, 1), f16), r.kv(adRand(nKeys*kvDim, 33, 1), f16)
 							sc, inv, ctx := r.zeros(nH*nWin), r.zeros(nH), r.zeros(nH*hd)
-							r.launch(m, "splitkv_scores", adCfg(nH, (nWin+127)/128, 1, 128, hd*4), gc.Arg(q), kc, adI(nH), adI(nKV), adI(hd),
+							r.launch(m, "splitkv_scores", adCfg(nH, (nWin+127)/128, 1, 128, hd*4), gc.Arg(q), kc, r.kvt(nKeys), adI(nH), adI(nKV), adI(hd),
 								adI(winStart), adI(nKeys), gc.ArgValue(adScale(hd)), gc.Arg(sc), adI(nWin))
 							raw := r.read(sc, nH*nWin)
 							r.launch(m, "splitkv_softmax", adCfg(nH, 1, 1, 128, 128*4), gc.Arg(sc), adI(nH), adI(nWin), gc.Arg(inv), adSink(r, nH, sink))
-							r.launch(m, "splitkv_vsum", adCfg(nH, (hd+31)/32, 1, 32, 0), gc.Arg(sc), vc, gc.Arg(inv), adI(nH), adI(nKV), adI(hd),
+							r.launch(m, "splitkv_vsum", adCfg(nH, (hd+31)/32, 1, 32, 0), gc.Arg(sc), vc, r.kvt(nKeys), gc.Arg(inv), adI(nH), adI(nKV), adI(hd),
 								adI(winStart), adI(nKeys), adI(nWin), gc.Arg(ctx))
 							const nSplit = 4
 							part, ctx2 := r.zeros(nH*hd*nSplit), r.zeros(nH*hd)
-							r.launch(m, "splitkv_vsum_partial", adCfg(nH, (hd+31)/32, nSplit, 32, 0), gc.Arg(sc), vc, adI(nH), adI(nKV), adI(hd),
+							r.launch(m, "splitkv_vsum_partial", adCfg(nH, (hd+31)/32, nSplit, 32, 0), gc.Arg(sc), vc, r.kvt(nKeys), adI(nH), adI(nKV), adI(hd),
 								adI(winStart), adI(nKeys), adI(nWin), adI(nSplit), gc.Arg(part))
 							r.launch(m, "splitkv_vsum_combine", adCfg(nH, (hd+31)/32, 1, 32, 0), gc.Arg(part), gc.Arg(inv), adI(nH), adI(hd), adI(nSplit), gc.Arg(ctx2))
 							return [][]float32{raw, r.read(sc, nH*nWin), r.read(inv, nH), r.read(ctx, nH*hd), r.read(ctx2, nH*hd)}
@@ -195,12 +195,12 @@ func adCasesSplitKVRows() []adCase {
 								q := r.f32(adRand(M*nH*hd, 71, 1))
 								kc, vc := r.kv(adRand(nTot*kvDim, 72, 1), f16), r.kv(adRand(nTot*kvDim, 73, 1), f16)
 								sc, inv, ctx := r.zeros(M*nH*stride), r.zeros(M*nH), r.zeros(M*nH*hd)
-								r.launch(m, "splitkv_scores_rows", adCfg(nH, (stride+127)/128, M, 128, hd*4), gc.Arg(q), kc, adI(nH), adI(nKV), adI(hd),
+								r.launch(m, "splitkv_scores_rows", adCfg(nH, (stride+127)/128, M, 128, hd*4), gc.Arg(q), kc, r.kvt(nTot), adI(nH), adI(nKV), adI(hd),
 									adI(startPos), adI(window), adI(0), gc.ArgValue(adScale(hd)), gc.Arg(sc), adI(stride), blkArg, adI(nb))
 								raw := r.read(sc, M*nH*stride)
 								r.launch(m, "splitkv_softmax_rows", adCfg(nH, M, 1, 128, 128*4), gc.Arg(sc), adI(nH), adI(startPos), adI(window), adI(0),
 									adI(stride), gc.Arg(inv), adSink(r, nH, sink), blkArg, adI(nb))
-								r.launch(m, "splitkv_vsum_rows", adCfg(nH, (hd+31)/32, M, 32, 0), gc.Arg(sc), vc, gc.Arg(inv), adI(nH), adI(nKV), adI(hd),
+								r.launch(m, "splitkv_vsum_rows", adCfg(nH, (hd+31)/32, M, 32, 0), gc.Arg(sc), vc, r.kvt(nTot), gc.Arg(inv), adI(nH), adI(nKV), adI(hd),
 									adI(startPos), adI(window), adI(0), adI(stride), gc.Arg(ctx), blkArg, adI(nb))
 								return [][]float32{raw, r.read(sc, M*nH*stride), r.read(inv, M*nH), r.read(ctx, M*nH*hd)}
 							}})
@@ -245,7 +245,7 @@ func adCasesBlockAndImage() []adCase {
 							ctx := r.zeros(M * nH * hd)
 							// block b covers [startPos+3+6b, startPos+3+6b+5): rows inside it see the whole block
 							flat := []int32{int32(startPos + 3), int32(startPos + 8), int32(startPos + 9), int32(startPos + 14)}
-							r.launch(adImg, "attn_img_batched", adCfg(nH, M, 1, 128, (nTot+128)*4), gc.Arg(q), gc.Arg(kc), gc.Arg(vc),
+							r.launch(adImg, "attn_img_batched", adCfg(nH, M, 1, 128, (nTot+128)*4), gc.Arg(q), gc.Arg(kc), gc.Arg(vc), r.kvt(nTot),
 								adI(nH), adI(nKV), adI(hd), adI(startPos), gc.ArgValue(adScale(hd)), adI(window), adI(M), gc.Arg(ctx),
 								gc.ArgDevicePtr(0), gc.Arg(r.i32(flat)), adI(nBlocks))
 							return [][]float32{r.read(ctx, M*nH*hd)}
@@ -274,7 +274,7 @@ func adCasesFlash() []adCase {
 								kc, vc := r.kv(adRand(nKeys*kvDim, 62, 1), f16), r.kv(adRand(nKeys*kvDim, 63, 1), f16)
 								U := nSplit * faWarps
 								part, ctx := r.zeros(nH*U*(hd+4)), r.zeros(nH*hd)
-								r.launch(m, "fa_partial_"+itoa(hd), adCfg(nKV, nSplit, 1, faWarps*32, (G*hd+faWarps*64)*4), gc.Arg(q), kc, vc,
+								r.launch(m, "fa_partial_"+itoa(hd), adCfg(nKV, nSplit, 1, faWarps*32, (G*hd+faWarps*64)*4), gc.Arg(q), kc, vc, r.kvt(nKeys),
 									adI(nH), adI(nKV), adI(winStart), adI(nKeys), gc.ArgValue(adScale(hd)), adI(nSplit), gc.Arg(part))
 								p := r.read(part, nH*U*(hd+4))
 								r.launch(m, "fa_combine", adCfg(nH, 1, 1, hd, 3*U*4), gc.Arg(part), adI(hd), adI(U), gc.Arg(ctx))
@@ -301,7 +301,7 @@ func adCasesFlash() []adCase {
 									R := faRowsPerCTA(hd, G)
 									for _, run := range faRowRuns(n0, nRows, window, nSplit) {
 										r.launch(m, fmt.Sprintf("fa_partial_rows_%d_g%d", hd, G), adCfg(nKV, nSplit, (run.n+R-1)/R, faWarps*32, (R*G*hd+faWarps*R*64)*4),
-											gc.Arg(q), kc, vc, adI(nH), adI(nKV), adI(run.winStart), adI(run.nKeys0), adI(run.per), gc.ArgValue(adScale(hd)),
+											gc.Arg(q), kc, vc, r.kvt(nTot), adI(nH), adI(nKV), adI(run.winStart), adI(run.nKeys0), adI(run.per), gc.ArgValue(adScale(hd)),
 											adI(nSplit), adI(run.n), adI(run.row0), gc.Arg(part))
 										r.launch(m, "fa_combine_rows", adCfg(nH, run.n, 1, hd, 3*U*4), gc.Arg(part), adI(nH), adI(hd), adI(U), adI(run.row0), gc.Arg(ctx))
 									}
@@ -350,7 +350,7 @@ func adCasesFused() []adCase {
 								kc, vc := r.kv(adRand(nTot*kvDim, 82, 1), f16), r.kv(adRand(nTot*kvDim, 83, 1), f16)
 								ctx := r.zeros(M * nH * hd)
 								shared := 2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD))
-								r.launch(m, name, adCfg(nH, (M+bm-1)/bm, 1, bm/16*32, shared), gc.Arg(q), kc, vc,
+								r.launch(m, name, adCfg(nH, (M+bm-1)/bm, 1, bm/16*32, shared), gc.Arg(q), kc, vc, r.kvt(nTot),
 									adI(nH), adI(nKV), adI(hd), adI(startPos), gc.ArgValue(adScale(hd)), adI(window), adI(M), gc.Arg(ctx), adSink(r, nH, sink))
 								return [][]float32{r.read(ctx, M*nH*hd)}
 							}})
@@ -380,7 +380,7 @@ func adCasesMLA() []adCase {
 						if window > 0 && window < maxWin {
 							maxWin = window
 						}
-						r.launch(adMLA, "mla_attn", adCfg(nH, M, 1, 128, (maxWin+128)*4), gc.Arg(qAbs), gc.Arg(lat), gc.Arg(wsum),
+						r.launch(adMLA, "mla_attn", adCfg(nH, M, 1, 128, (maxWin+128)*4), gc.Arg(qAbs), gc.Arg(lat), r.kvt(nTot), gc.Arg(wsum),
 							adI(nH), adI(latDim), adI(rank), adI(startPos), gc.ArgValue(adScale(latDim)), adI(window), adI(M))
 						return [][]float32{r.read(wsum, M*nH*rank)}
 					}})

@@ -180,6 +180,9 @@ func (r *adRig) kv(vals []float32, f16 bool) gc.KernelArg {
 	return gc.Arg(b)
 }
 
+// kvt is the identity block table for a cache of positions rows, the table argument every KV kernel takes beside its cache.
+func (r *adRig) kvt(positions int) gc.KernelArg { return gc.Arg(r.i32(kvIdentityIDs(positions))) }
+
 func (r *adRig) read(b *gc.Buffer[float32], n int) []float32 {
 	r.t.Helper()
 	out := make([]float32, n)

@@ -144,16 +144,16 @@ func (r *cudaResident) flashDecodeAttn(l, pos int) error {
 	if Ly.window > 0 && nKeys > int(Ly.window) {
 		winStart = nKeys - int(Ly.window)
 	}
-	return r.flashDecodeLaunch(r.qB, r.kvK(l), r.kvV(l), r.cctx, Ly.hd, Ly.nKV, winStart, nKeys)
+	return r.flashDecodeLaunch(r.qB, r.kvK(l), r.kvV(l), r.kvT(l), r.cctx, Ly.hd, Ly.nKV, winStart, nKeys)
 }
 
 // flashDecodeLaunch is flashDecodeAttn's body over explicit buffers, so a test can drive it on synthetic K/V.
-func (r *cudaResident) flashDecodeLaunch(q, kc, vc, ctx Buffer, hd, nKV, winStart, nKeys int) error {
+func (r *cudaResident) flashDecodeLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV, winStart, nKeys int) error {
 	G := r.nH / nKV
 	which := map[int]int{64: 0, 128: 1, 256: 2}[hd]
 	shm := uint32((G*hd + faWarps*64) * 4)
 	if e := r.launch(r.faPartial[which], LaunchConfig{GridX: uint32(nKV), GridY: uint32(r.faSplit), GridZ: 1, BlockX: faWarps * 32, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
-		Arg(q), Arg(kc), Arg(vc), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(winStart)),
+		Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(winStart)),
 		gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(r.faSplit)), Arg(r.faBuf)); e != nil {
 		return e
 	}
@@ -195,14 +195,14 @@ func faRowRuns(n0, m, window, s int) []faRun {
 
 // flashDecodeRowsLaunch runs the multi-row lane over ONE run of rows: fa_partial_rows then fa_combine_rows. q, kc, vc, ctx are the
 // batch's buffers; q and ctx rows are [row][nH*hd]. Output row (run.row0+i) equals the M=1 lane's output at nKeys = run.nKeys0+i.
-func (r *cudaResident) flashDecodeRowsLaunch(q, kc, vc, ctx Buffer, hd, nKV int, run faRun) error {
+func (r *cudaResident) flashDecodeRowsLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV int, run faRun) error {
 	G := r.nH / nKV
 	which := map[int]int{64: 0, 128: 1, 256: 2}[hd]
 	R := faRowsPerCTA(hd, G)
 	shm := uint32((R*G*hd + faWarps*R*64) * 4)
 	grid := uint32((run.n + R - 1) / R)
 	if e := r.launch(r.faRows[which][G], LaunchConfig{GridX: uint32(nKV), GridY: uint32(r.faSplit), GridZ: grid, BlockX: faWarps * 32, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
-		Arg(q), Arg(kc), Arg(vc), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(run.winStart)),
+		Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(run.winStart)),
 		gpu.ArgValue(int32(run.nKeys0)), gpu.ArgValue(int32(run.per)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(r.faSplit)),
 		gpu.ArgValue(int32(run.n)), gpu.ArgValue(int32(run.row0)), Arg(r.faBuf)); e != nil {
 		return e
@@ -246,7 +246,7 @@ func (r *cudaResident) flashVerifyAttn(l, startPos, from, m int, q, ctx Buffer) 
 			sub.row0 = from + run.row0 + a
 			sub.n = min(faMaxRows, run.n-a)
 			sub.nKeys0 = run.nKeys0 + a
-			if e := r.flashDecodeRowsLaunch(q, r.kvK(l), r.kvV(l), ctx, Ly.hd, Ly.nKV, sub); e != nil {
+			if e := r.flashDecodeRowsLaunch(q, r.kvK(l), r.kvV(l), r.kvT(l), ctx, Ly.hd, Ly.nKV, sub); e != nil {
 				return e
 			}
 		}
