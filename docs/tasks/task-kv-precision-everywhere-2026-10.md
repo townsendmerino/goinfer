@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measures the gap first | `docs/measurements/kv-precision-2026-10/p3a.md` |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measured it: the i8 step is 6.80× the f16 pass at 8K; building an int8 MMA prefill asked as D8 | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -271,10 +271,17 @@ phase 0's table gives the first real count of cells to move.
 
 ## 6. For the owner
 
+- **D8 (asked 2026-10-22, open): build an int8 MMA prefill on Metal?** D7's reading is 6.80× at 8K, over the 2.0 that
+  recommends building. Options: (a) build it (an L), with the pass's attention reading int8 K/V and scales directly, so the
+  cache stays int8 and no f16 copy is made; (b) build it by dequantizing each layer's int8 cache into an f16 scratch before the
+  pass's attention (less kernel work, but a transient f16 copy of one layer's cache, which int8 exists to avoid); (c) park it
+  and document the long-prompt cost of `--kv i8` on a Mac. **Recommended: (a).**
 - **D7, decided (b), owner, 2026-10-22: the MMA prefill at int8, measured first; f32 is not pursued.** After P3b-1 every Metal
   path delivers `--kv i8` and `--kv f32` (the step, bit-identical to sequential, and the layer-major paths on decode's kernels).
   The f16 MMA pass declines both, so a long prompt at i8 prefills on the step where f16 takes the pass. Measure that gap by day
-  first (below, "D7 measurement"); whether to build an int8 MMA prefill (an L) is then the owner's call. Options were (a) park
+  first (below, "D7 measurement"); whether to build an int8 MMA prefill (an L) is then the owner's call. **Measured 2026-10-22:
+  the i8 step takes 3.52× the f16 pass's time at 2K and 6.80× at 8K on the 1.5B (`docs/measurements/kv-precision-2026-10/p3a.md`,
+  "D7"), over the registered 2.0, which recommends building it; asked of the owner (D8, below).** Options were (a) park
   P3b-2, (b) measure then decide, (c) build now.
 
 ### D7 measurement, registered 2026-10-22 before the run
