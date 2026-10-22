@@ -13,7 +13,9 @@ BIN=$OUT/serve-cuda-kv4b
 git -C "$W" rev-parse HEAD > "$OUT/serve-cuda-kv4b.rev"
 cd "$W"
 export GOINFER_SERVE_CUDA=$BIN GOINFER_SERVE_CUDA_OLD=$BIN
-export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cuda BENCH_ABBA=1 BENCH_REQUIRE_BACKEND=1 BENCH_SERVE_LOG_DIR="$OUT/serve-logs"
+# BENCH_REQUIRE_BACKEND=0 for a checkpoint whose batched prefill declines on CUDA (DeepSeek-V2-Lite): the scorer still voids a cell that
+# does not decode on CUDA.
+export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cuda BENCH_ABBA=1 BENCH_REQUIRE_BACKEND=${BENCH_REQUIRE_BACKEND:-1} BENCH_SERVE_LOG_DIR="$OUT/serve-logs"
 export BENCH_GOINFER_ARGS="-kv f16" BENCH_GOINFER_OLD_ARGS="-kv f32"
 # Directory checkpoints have no file size for the heavy-load gate to read: the resident host memory each needs, in GB.
 export BENCH_FIT_NEED_GB="qmoe=16,cr7b=8,qvl3=6,dsv2lite=16,gemma3-4b=4,E2B=4"
