@@ -23,3 +23,7 @@ Planted defects: the old `attention_f32` (G1 red), one f32 decline removed (G4 r
 
 A first G3 readback double-counted deepseek's buffers (an MLA layer's V aliases its latent, `metal/mla.go`); the test counts it once,
 and Metal's MLA pricing is right.
+
+After `main` brought in G3 (`TestKVDeliveredBytes_Metal`, `docs/measurements/kv-precision-2026-10/g3.md`), its readback runs on this
+branch's f32 cells too: 35 Metal cells read back, every resident f32 cell 4 B per element, and the three no-resident `/f32` cells
+leave its matrix-differs list (the matrix's Metal answer is now f32, which is what their CPU cache holds).

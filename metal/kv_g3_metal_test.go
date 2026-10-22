@@ -27,7 +27,7 @@ var g3MetalNotBuilt = []string{
 // g3MetalMatrixDiffers are the no-resident cells whose CPU cache is not what the matrix's Metal cell says: the matrix reads the
 // family's Metal answer, the load runs the CPU's (G3's record).
 var g3MetalMatrixDiffers = []string{
-	"phi3-tiny/auto", "phi3-tiny/f32", "lfm2-tiny/auto", "lfm2-tiny/f32", "gemma4-moe-kv-tiny/auto", "gemma4-moe-kv-tiny/f32",
+	"phi3-tiny/auto", "lfm2-tiny/auto", "gemma4-moe-kv-tiny/auto",
 }
 
 var g3MetalPendingD5 = []string{"deepseek-tiny/auto", "deepseek-tiny/f16"}
