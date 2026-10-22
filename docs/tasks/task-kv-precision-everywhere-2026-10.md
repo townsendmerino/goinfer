@@ -196,6 +196,20 @@ Planted defects, each once and reverted: the old hand-written `attention_f32` (G
 decline removed (G4 red); f32 priced at 2 B (G3 red). Stopping rule: one pass each. Cost: seconds to a minute. No timed run:
 an explicit `--kv f32` is the reference precision, not a default, and its fast paths are declined by name.
 
+### D5 gates, registered 2026-10-22 before the code (D5-G), for MLA's KV precision on Metal (D5, owner, 2026-10-22)
+
+The resolver answers f32 for an MLA family on Metal whatever is asked, with the reason; an explicit `--kv f16` or `--kv i8` then
+refuses by name, and `auto` delivers f32. The Metal resident's GQA cache flags (`kvF32`, `kvI8`) do not apply to an MLA layer,
+whose latent is f32 already; the build is otherwise unchanged.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5-G1 matrix | 0 | the generated matrix and `TestKVPrecisionMatrix_fresh` | exactly three Metal cells of `deepseek-tiny` move: auto f16 → f32 (with the reason), `--kv f16` and `--kv i8` delivered → refused, on the owner's word; nothing else moves |
+| D5-G2 refusal | 0, Mac | `decoder.Load` of `deepseek-tiny` on Metal at `--kv f16` and `--kv i8`, with serve's options | each returns a `KVRefusal` on the `metal` path whose reason names the f32 latent |
+| D5-G3 unchanged | 0, Mac | `deepseek-tiny` on Metal at auto and `--kv f32`, 32 positions teacher-forced; every other fixture's auto, f16 and i8 cells | deepseek's logits byte-equal to P3a's at both values; G3's readback (`TestKVDeliveredBytes_Metal`) PASS with its pending-D5 list empty |
+
+Stopping rule: one pass each. Cost: seconds. No timed run.
+
 ## 4. Gates (registered here, before any code; changing one after the data needs the owner's word and is recorded as such)
 
 - **G1, exact-input identity (every new kernel, CI):** on inputs exactly representable at the precision (f16 values;
