@@ -27,6 +27,7 @@ var kv4bGroups = []struct {
 	{"sliding-window/windowed", []string{"mistral-tiny-window", "gemma2-tiny", "gemma3-vl-tiny"}, decoder.Options{}, true},
 	{"pairwise-rope", []string{"cohere-tiny", "cohere2-tiny"}, decoder.Options{}, false},
 	{"pairwise-rope/windowed", []string{"cohere2-tiny"}, decoder.Options{}, true},
+	{"m-rope", []string{"qwen25vl-tiny", "qwen3vl-tiny"}, decoder.Options{}, false},
 }
 
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.

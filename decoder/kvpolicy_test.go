@@ -98,7 +98,9 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, ""},
 		{"cohere2", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, ""},
 		{"glm_ocr pairwise m-rope", KVFacts{Family: "glm_ocr", PairwiseRoPE: true, MRoPE: true}, Options{}, "keeps f32"},
-		{"qwen2 m-rope", KVFacts{Family: "qwen2", MRoPE: true}, Options{}, "m-RoPE"},
+		{"qwen2 m-rope", KVFacts{Family: "qwen2", MRoPE: true}, Options{}, ""},
+		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, ""},
+		{"qwen3_vl_moe", KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, ""},
 		{"llama mla", KVFacts{Family: "llama", MLA: true}, Options{}, "MLA"},
 		{"qwen2 hybrid", KVFacts{Family: "qwen2", Hybrid: true}, Options{}, "not covered"},
 	}
@@ -134,6 +136,7 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, false},
 		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, false},
 		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, false},
+		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, false},
 	} {
 		if got := CUDAKVF16AutoDecline(c.f, c.o); (got == "") != c.auto {
 			t.Errorf("%s: auto decline %q, want auto f16 %v", c.name, got, c.auto)

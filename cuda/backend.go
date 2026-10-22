@@ -1031,10 +1031,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		// Gemma 3 image-block prefill attention (decoder.ResidentImagePrefill): own module, prefill_batched.ptx untouched. A
 		// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
-		// It depends on r.prefillReady, as L2 does. The kernel reads the cache as f32 only, so an f16 cache leaves it unbound and an image
-		// turn takes the bridge, which rounds as the store kernels do.
-		if r.prefillReady && !r.kvF16 {
-			if imod, e8 := r.dev.CompileLibrary(attnImgPrefillPTX); e8 == nil {
+		// It depends on r.prefillReady, as L2 does.
+		if r.prefillReady {
+			if imod, e8 := r.dev.CompileLibrary(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
 				// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
 				// static scan recognizes `&r.<field>` or a direct NewComputePipeline RHS as a bind
 				// site, matching the loadF/loadG idiom L2/L3 already use below.
@@ -1055,7 +1054,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if sec := m.MRopeSectionResident(); len(sec) == 3 {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
-				mropePTX, mropeName := ropeMRopePrefillPTX, "rope_kv_mrope_batched"
+				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
 				if r.pairwiseRoPE {
 					mropePTX, mropeName = r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX), "rope_kv_mrope_batched_pw"
 				}

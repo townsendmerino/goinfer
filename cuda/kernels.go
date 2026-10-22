@@ -165,6 +165,12 @@ var attnBlockPTX []byte
 //go:embed testdata/attn_img_prefill.ptx
 var attnImgPrefillPTX []byte
 
+// attnImgPrefillKV16PTX: attn_img_prefill.cu built with the KV cache as f16, bound by kvPTX for an f16 cache. The vision tower binds the
+// f32 module: its K and V are its own f32 activations, not the cache.
+//
+//go:embed testdata/attn_img_prefill_kv16.ptx
+var attnImgPrefillKV16PTX []byte
+
 // ropeMRopePrefillPTX: rope_kv_mrope_batched, Qwen2.5-VL's m-RoPE batched-prefill rotation (decoder.ResidentMRoPEPrefill
 // / cuda.PrefillMRoPELast). A copy of rope_kv_batched whose rotation angle is a per-row, per-frequency-section lookup:
 // frequency index d rotates by pos[comp(d)]*invFreq[d], where comp(d) picks temporal/height/width from the model's
@@ -177,6 +183,11 @@ var attnImgPrefillPTX []byte
 //
 //go:embed testdata/rope_mrope_prefill.ptx
 var ropeMRopePrefillPTX []byte
+
+// ropeMRopePrefillKV16PTX: rope_mrope_prefill.cu built with the KV cache as f16, bound by kvPTX for an f16 cache.
+//
+//go:embed testdata/rope_mrope_prefill_kv16.ptx
+var ropeMRopePrefillKV16PTX []byte
 
 // ropePairwisePTX: rope_kv_pw / rope_kv_batched_pw / rope_kv_mrope_batched_pw, the GPT-J pairwise (dims 2d, 2d+1) twins
 // of rope_kv / rope_kv_batched / rope_kv_mrope_batched, with the same argument lists and launch geometry, bound in their

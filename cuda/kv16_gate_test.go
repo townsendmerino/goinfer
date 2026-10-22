@@ -57,6 +57,8 @@ func TestKV16GateVsReference(t *testing.T) {
 		"G34B": {"GOINFER_CUDA_GATE_MODEL_G34B", "$HOME/models/gemma-3-4b-it", true, decoder.Options{}},
 		// Group 3, pairwise RoPE: Command-R7B (Cohere2: pairwise RoPE, 4,096-key sliding layers, NoPE global layers).
 		"CR7B": {"GOINFER_CUDA_GATE_MODEL_CR7B", "$HOME/models/command-r7b", true, decoder.Options{}},
+		// Group 4, m-RoPE and the image prefill: Qwen2.5-VL-3B, text cells (an image turn is reported, not graded).
+		"QVL3": {"GOINFER_CUDA_GATE_MODEL_QVL3", "$HOME/models/qwen2.5-vl-3b", true, decoder.Options{}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
