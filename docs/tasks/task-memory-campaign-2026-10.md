@@ -37,7 +37,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | done | — (D12 (a), owner, 2026-10-22: shipped as built; PLE-G3 read AMBIGUOUS, 94.25% top-1, KL 0.033) | branch `mem8b-ple-2026-10`; PLE-G1, G2, G4 PASS, G3 AMBIGUOUS and shipped on the owner's word, `docs/measurements/mem8b-2026-10/README.md` |
-| MEM8(b′) | building | either box (Mac, 2026-10-22; gates in §MEM8): stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
+| MEM8(b′) | done | done 2026-10-22: the streaming GGUF transcode writes the embedding, LM head and per-layer token table from their source rows; E2B transcode peak heap 2.84 → 0.59 GB, bytes identical; SQE-G1 to G3 PASS | `docs/measurements/mem8bp-2026-10/README.md` |
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |

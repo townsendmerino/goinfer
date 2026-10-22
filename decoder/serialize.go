@@ -217,8 +217,8 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	wr.str(label)
 	wr.alignHead() // the variable-length header (the label, present or not) must not shift what follows
 
-	wr.weightMat(&w.Embed)
-	wr.weightMat(&w.LMHead)
+	wr.headTable(&w.Embed)
+	wr.headTable(&w.LMHead)
 	wr.weightMatKind3Only(&w.PosEmbed)
 	wr.f32(w.FinalNorm)
 	wr.f32(w.FinalNormBias)
@@ -227,7 +227,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	// E-model/26B variants, but present as empty WeightMats so the layout is stable).
 	// Written for gemma4 only; no other family's bundle carries them.
 	if wr.arch != nil && wr.arch.gemma4 != nil {
-		wr.weightMat(&w.PerLayerTokenEmbed)
+		wr.headTable(&w.PerLayerTokenEmbed)
 		wr.weightMat(&w.PerLayerModelProj)
 		wr.f32(w.PerLayerProjNorm)
 		// FFNPerLayer (the E-models' variable per-layer FFN widths) is json:"-" on
@@ -898,6 +898,10 @@ type giwWriter struct {
 	// wantsCanonicalInt4's in-RAM decision (docs/tasks/task-int4-layout-2026-09.md). GIWTargetNone (the zero value) keeps
 	// kind 3 for every int4 tensor.
 	target GIWTarget
+
+	// tables are the embedding-shaped tables a streaming GGUF build registered instead of building (streamedTable), keyed by
+	// the Weights field each stands for; writeHeadGlobals writes them from their sources.
+	tables map[*linalg.WeightMat]*streamedTable
 
 	// layerBudget is the memory streamLayers may hold in built, unwritten layers (stream mode). Zero builds one layer at
 	// a time.
