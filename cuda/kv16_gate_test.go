@@ -55,6 +55,8 @@ func TestKV16GateVsReference(t *testing.T) {
 		"QMOE": {"GOINFER_CUDA_GATE_MODEL_QMOE", "$HOME/models/qwen15-moe-a27b", true, decoder.Options{MoECacheExperts: true}},
 		// Group 2, sliding window: Gemma-3-4B (five 1,024-key local layers to each global one).
 		"G34B": {"GOINFER_CUDA_GATE_MODEL_G34B", "$HOME/models/gemma-3-4b-it", true, decoder.Options{}},
+		// Group 3, pairwise RoPE: Command-R7B (Cohere2: pairwise RoPE, 4,096-key sliding layers, NoPE global layers).
+		"CR7B": {"GOINFER_CUDA_GATE_MODEL_CR7B", "$HOME/models/command-r7b", true, decoder.Options{}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")

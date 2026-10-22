@@ -187,6 +187,11 @@ var ropeMRopePrefillPTX []byte
 //go:embed testdata/rope_pairwise.ptx
 var ropePairwisePTX []byte
 
+// ropePairwiseKV16PTX: rope_pairwise.cu built with the KV cache as f16 (kvtype.cuh), bound in ropePairwisePTX's place by kvPTX.
+//
+//go:embed testdata/rope_pairwise_kv16.ptx
+var ropePairwiseKV16PTX []byte
+
 // layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched, LayerNorm (mean and variance, weight and bias) for
 // the resident SigLIP vision tower (docs/multimodal.md) and for LayerNorm text families; the primitive next to the
 // RMSNorm every other family uses. See cuda/layernorm_quant.cu, cuda/vision_encoder.go.

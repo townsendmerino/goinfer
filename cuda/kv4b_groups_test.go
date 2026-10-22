@@ -25,6 +25,8 @@ var kv4bGroups = []struct {
 	{"paged-experts", []string{"qwen3moe-tiny"}, decoder.Options{MoECacheExperts: true}, false},
 	{"sliding-window", []string{"mistral-tiny-window", "gemma2-tiny", "gemma3-vl-tiny", "decoder/testdata/gptoss_tiny.gguf"}, decoder.Options{}, false},
 	{"sliding-window/windowed", []string{"mistral-tiny-window", "gemma2-tiny", "gemma3-vl-tiny"}, decoder.Options{}, true},
+	{"pairwise-rope", []string{"cohere-tiny", "cohere2-tiny"}, decoder.Options{}, false},
+	{"pairwise-rope/windowed", []string{"cohere2-tiny"}, decoder.Options{}, true},
 }
 
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.

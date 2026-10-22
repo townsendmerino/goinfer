@@ -844,7 +844,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// no fallback.
 		r.pairwiseRoPE = m.PairwiseRoPEResident()
 		if r.pairwiseRoPE {
-			pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX)
+			pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
 			if pe != nil {
 				return fmt.Errorf("pairwise rope: compile rope_pairwise.ptx: %w", pe)
 			}
@@ -995,7 +995,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
 				if r.pairwiseRoPE {
 					// GPT-J pairwise twin of rope_kv_batched (same signature); see the decode bind above.
-					if pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX); pe == nil {
+					if pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
 						load(&r.bRopeKV, pwmod, "rope_kv_batched_pw")
 					} else {
 						ok = false
@@ -1057,7 +1057,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
 				mropePTX, mropeName := ropeMRopePrefillPTX, "rope_kv_mrope_batched"
 				if r.pairwiseRoPE {
-					mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
+					mropePTX, mropeName = r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX), "rope_kv_mrope_batched_pw"
 				}
 				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
 					loadMRope := func(dst *Pipeline, name string) {

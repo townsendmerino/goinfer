@@ -94,7 +94,10 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		{"qwen3_moe paged experts", KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, ""},
 		{"granitemoe not delivered", KVFacts{Family: "granitemoe", MoE: true}, Options{}, "keeps f32"},
 		{"mistral sliding window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, ""},
-		{"llama pairwise rope", KVFacts{Family: "llama", PairwiseRoPE: true}, Options{}, "pairwise RoPE"},
+		{"llama pairwise rope", KVFacts{Family: "llama", PairwiseRoPE: true}, Options{}, ""},
+		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, ""},
+		{"cohere2", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, ""},
+		{"glm_ocr pairwise m-rope", KVFacts{Family: "glm_ocr", PairwiseRoPE: true, MRoPE: true}, Options{}, "keeps f32"},
 		{"qwen2 m-rope", KVFacts{Family: "qwen2", MRoPE: true}, Options{}, "m-RoPE"},
 		{"llama mla", KVFacts{Family: "llama", MLA: true}, Options{}, "MLA"},
 		{"qwen2 hybrid", KVFacts{Family: "qwen2", Hybrid: true}, Options{}, "not covered"},
@@ -130,6 +133,7 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 		{"qwen2 paged experts", KVFacts{Family: "qwen2"}, Options{MoECacheExperts: true}, false},
 		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, false},
 		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, false},
+		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, false},
 	} {
 		if got := CUDAKVF16AutoDecline(c.f, c.o); (got == "") != c.auto {
 			t.Errorf("%s: auto decline %q, want auto f16 %v", c.name, got, c.auto)
