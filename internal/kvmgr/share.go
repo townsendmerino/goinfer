@@ -25,6 +25,23 @@ func (c ClassMap) CapHit(n, hit int) int {
 	return max(hit, 0)
 }
 
+// CapInPlace is CapHit for a request that takes a slot's own rows in place: reuse of the n-token prompt's leading tokens
+// match the sequence whose rows were written with the classes held and whose image spans are images. When every reused row
+// is the class the prompt's cold prefill writes and the pass that prefills the rest would write another, it backs reuse off
+// to a block boundary, caps it as a hit and backs it off any image span it then cuts, so the reply equals the cold one. A
+// reuse that already holds rows of another class (a conversation's own decoded history) cannot equal the cold prefill
+// whatever its tail does, and is returned unchanged.
+func (c ClassMap) CapInPlace(held []ClassRun, images []ImageSpan, n, reuse int) int {
+	cold := c.Pass(n, n)
+	if reuse <= 0 || reuse >= n || c.PassAt(reuse, n-reuse, n) == cold {
+		return reuse
+	}
+	if runs := clipClasses(held, reuse); len(runs) != 1 || runs[0].Start != 0 || runs[0].Len != reuse || runs[0].Class != cold {
+		return reuse
+	}
+	return offImages(images, c.CapHit(n, reuse/BlockRows*BlockRows)/BlockRows) * BlockRows
+}
+
 // requestChain is the chain hash of each leading block of a request, up to the last block that leaves a token to
 // compute. It stops at a block an unclaimed image span touches or a row whose producer is not named, as hitBlocks does.
 func (m *Manager) requestChain(root Root, tokens []int, images []ImageSpan, cold []ClassRun) []Hash {
