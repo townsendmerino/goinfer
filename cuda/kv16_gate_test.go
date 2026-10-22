@@ -25,9 +25,8 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CUDA_FLASH_DECODE=16 \
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestKV16GateVsReference -v -timeout 3h
 //
-// Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV16_GATE_CELLS="D7:8000,S:3900" overrides. KV4b's family groups add
-// one checkpoint each (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), read at K=3900 and K=8000, both decision cells. A cell may name
-// how many of the set's prompts it reads, "NAME:K:n" (the first n); KV4b's K=8000 cells read four.
+// Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV16_GATE_CELLS="D7:8000,S:3900" overrides. A cell may name how
+// many of the set's prompts it reads, "NAME:K:n" (the first n). KV4b's per-group cells are TestKV4bGate_* (kv4b_gate_test.go).
 func TestKV16GateVsReference(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)")
@@ -52,18 +51,6 @@ func TestKV16GateVsReference(t *testing.T) {
 	}{
 		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true, decoder.Options{}},
 		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false, decoder.Options{}},
-		// KV4b group 1, MoE and the paged-experts build: Qwen1.5-MoE-A2.7B fits the 8 GB card only with its experts paged.
-		"QMOE": {"GOINFER_CUDA_GATE_MODEL_QMOE", "$HOME/models/qwen15-moe-a27b", true, decoder.Options{MoECacheExperts: true}},
-		// Group 2, sliding window: Gemma-3-4B (five 1,024-key local layers to each global one).
-		"G34B": {"GOINFER_CUDA_GATE_MODEL_G34B", "$HOME/models/gemma-3-4b-it", true, decoder.Options{}},
-		// Group 3, pairwise RoPE: Command-R7B (Cohere2: pairwise RoPE, 4,096-key sliding layers, NoPE global layers).
-		"CR7B": {"GOINFER_CUDA_GATE_MODEL_CR7B", "$HOME/models/command-r7b", true, decoder.Options{}},
-		// Group 4, m-RoPE and the image prefill: Qwen2.5-VL-3B, text cells (an image turn is reported, not graded).
-		"QVL3": {"GOINFER_CUDA_GATE_MODEL_QVL3", "$HOME/models/qwen2.5-vl-3b", true, decoder.Options{}},
-		// Group 5, the hybrids: Qwen3.5-9B (Gated DeltaNet with a full-attention layer in four).
-		"Q359": {"GOINFER_CUDA_GATE_MODEL_Q359", "$HOME/models/qwen3.5-9b", true, decoder.Options{}},
-		// Group 6, MLA's latent cache: DeepSeek-V2-Lite, which fits the 8 GB card with its experts paged.
-		"DSV2L": {"GOINFER_CUDA_GATE_MODEL_DSV2L", "$HOME/models/deepseek-v2-lite", true, decoder.Options{MoECacheExperts: true}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
