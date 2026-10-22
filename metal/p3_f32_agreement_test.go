@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -141,14 +142,12 @@ func TestP3_metalF32BytesAndPaths(t *testing.T) {
 			if r.mla != nil {
 				return // MLA's own paths read the f32 latent; the f16 fast paths below never see it
 			}
-			if ok, why := a.PrefillPath(); ok && r.prefillOK {
-				t.Errorf("PrefillPath batched (%s) under an f32 cache", why)
+			// The MMA pass declines f32; the batched step takes it since P3b-1 (p3b_rows_test.go), bit-identical to sequential.
+			if ok, why := a.PrefillPath(); ok && !strings.Contains(why, "step") {
+				t.Errorf("PrefillPath batched on the MMA pass (%s) under an f32 cache", why)
 			}
 			if B := a.PrefillBlockRows(); B != 0 {
 				t.Errorf("PrefillBlockRows = %d under an f32 cache", B)
-			}
-			if why := r.batchIneligible(); why == "" {
-				t.Error("batched decode eligible under an f32 cache")
 			}
 			if r.canUseAttnFAAt(0, 4096) {
 				t.Error("flash-attention decode eligible under an f32 cache")
