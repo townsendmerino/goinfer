@@ -557,9 +557,9 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 					got  int
 					want int
 				}{
-					{"shortConv.inProj", len(c.inProj), 3 * cd * arch.HiddenDim},
+					{"shortConv.inProj", c.inProj.Rows() * c.inProj.Cols(), 3 * cd * arch.HiddenDim},
 					{"shortConv.convW", len(c.convW), cd * k},
-					{"shortConv.outProj", len(c.outProj), arch.HiddenDim * cd},
+					{"shortConv.outProj", c.outProj.Rows() * c.outProj.Cols(), arch.HiddenDim * cd},
 				} {
 					if e := eq(fmt.Sprintf("layer %d %s", i, ck.name), ck.got, ck.want); e != nil {
 						return e
@@ -1273,9 +1273,9 @@ func (w *giwWriter) v8Layer(l *LayerWeights) {
 	}
 	w.raw([]byte{1})
 	c := l.shortConv
-	w.f32(c.inProj)
+	w.f32(islandF32(&c.inProj))
 	w.f32(c.convW)
-	w.f32(c.outProj)
+	w.f32(islandF32(&c.outProj))
 }
 
 // v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attention-output gate (l.mla.gProj, added to
@@ -1823,9 +1823,20 @@ func (r *giwReader) v8Layer(l *LayerWeights) {
 		return
 	}
 	c := &shortConvWeights{}
-	c.inProj = r.f32()
-	c.convW = r.f32()
-	c.outProj = r.f32()
+	in, convW, out := r.f32(), r.f32(), r.f32()
+	// The projections become WeightMats of the config's shape (islandMat: bf16 when bf16-exact); a length that does not fit it
+	// is kept as one row, for validateShapes to report.
+	shape := func(f []float32, rows, cols int) linalg.WeightMat {
+		if rows <= 0 || cols <= 0 || rows*cols != len(f) {
+			return linalg.WrapF32(f, 1, len(f))
+		}
+		return islandMat(f, rows, cols)
+	}
+	hidden, cd := 0, 0
+	if r.arch != nil && r.arch.lfm2 != nil {
+		hidden, cd = r.arch.HiddenDim, r.arch.lfm2.ConvDim
+	}
+	c.inProj, c.convW, c.outProj = shape(in, 3*cd, hidden), convW, shape(out, hidden, cd)
 	l.shortConv = c
 }
 
