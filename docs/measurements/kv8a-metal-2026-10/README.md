@@ -82,3 +82,29 @@ nothing to apply memory pressure at night the cache would stay, so every job aft
 and the 8.7 GB need are unchanged. The jobs are queued without `night.py`'s own `--fit-need-gb` gate, which reads memory before the job
 starts and so before its purge; the job's start check applies the same rule after the purge.
 
+## The grade (2026-10-22)
+
+Graded on the Mac's records, kept outside the repository as the CUDA ones were: M2(b) in `~/goinfer-bench/kv8a-metal/gate2b-2026-10-21-2201`
+(22:01–23:48, start check load 3.05, 10.04 GB free); M5 and M4(b) in `~/goinfer-bench/kv8a-metal/m5-2026-10-21` (pass 1 from 23:49, pass 2
+01:41–03:31; start checks load 0.73 and 1.26, 11.51 and 11.07 GB free). No start was void. Builds: KV8a serve `9488f592`, before-KV8a
+serve `a8b1c806`.
+
+| gate | reading | result |
+|---|---|---|
+| M1 | byte-exact save and restore on `qwen3next-tiny` and `nemotron-tiny`, the plant red; the 9B's checkpoint 50.2 MiB in 48 buffers | **PASS** |
+| M2(a) | restore then suffix bit-identical to a cold prefill (logits, recurrent state, attention K/V), under and over the 16-row floor; both plants red | **PASS** |
+| M2(b) | **The 20K cells (owner, 2026-10-22: graded on them):** 17 pairs, 16 tested, **0 differ**. Each tested pair restored at turn 1's end (`warm_reused` = turn 1's length) and matched its cold arm on the served tokens and the prompt hash, and every cold arm reused 0; opencode's pair 0 (turn 1 of 613 tokens) cannot test the restore and voids itself, as on CUDA. **The 28K Claude Code chain:** its first pair's turn 1 (18,052 tokens) answered 503, the swap guard having tripped at +0.64 GB of system swap over its 512 MB bar (1.82 GB in use), and the run ended there. **Owner, 2026-10-22:** that is the 28K limit of a 16 GB Mac with the 9B, recorded here; the 28K chain moves to nobara as a CUDA KV8a cell (another session runs it); the swap guard's threshold is unchanged | **PASS** on the 20K cells |
+| M3 | the cache-state grid passes as is | **PASS** |
+| M4(a) | the save is encoded before the first chained decode step; the plant red | **PASS** |
+| M4(b) | the save's own time, p95 **11.929 ms** over 64 saves (median 4.477, max 14.908); bar ≤ 12 ms | **PASS** |
+| M5 | the median paired turn-2 time-to-first-token ratio (KV8a ÷ before) **0.069 over 32** (pass 1 0.070, pass 2 0.069; per pair 0.021–0.090, e.g. opencode #8 at 194.8 s before against 12.2 s restored); bar ≤ 0.5 | **PASS** |
+
+**A finding for the owner, not a FAIL:** gate 2(b)'s logprob comparison never had anything to compare, on CUDA's PASS
+(`~/goinfer-bench/kv8a/gate2b-2026-10-20-2248` on nobara) or here. `gate2b.py` sends `"logprobs": true` on `/v1/chat/completions`,
+and every reply's logprob list came back empty on both arms, so that equality held trivially. Both verdicts rest on the served tokens
+and the prompt hash, which were compared on every tested pair. Whether serve should return logprobs for a bare `"logprobs": true`, or
+the harness should also send `top_logprobs`, is open.
+
+Merged with `origin/main` merged into the branch (not rebased: the branch was already pushed); `scripts/touched.py` green on the merged
+tree (the whole `metal` package, 93.8 s) and the four KV8a tests (`-tags goinfer_testhooks`) PASS.
+

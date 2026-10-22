@@ -41,7 +41,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool | §6 |
 | KV8 | blocked | KV4 (KV5 for Metal) | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
-| KV8a-Metal | active | Mac: M2(b) (about 2 h 45 min) and M5 (about 3 h 30 min, as two jobs) on the night queue, then grade and merge | branch `kv8a-metal-2026-10` |
+| KV8a-Metal | done | — (owner, 2026-10-22: M2(b) graded on its 20K cells; the 28K chain is past a 16 GB Mac's swap guard and moves to nobara as a CUDA cell) | branch `kv8a-metal-2026-10`; M1–M5 PASS, `docs/measurements/kv8a-metal-2026-10/README.md` § "The grade" |
 | KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
 | KV10 | blocked | KV4, KV5 | §6 |
 | KV11 | blocked | KV4 and KV7; its KV-share trade curve needs no pool and can run now (either box, M) | §6; lead4-perlayer-hitrate-2026-09-22.md |
