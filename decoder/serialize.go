@@ -63,6 +63,8 @@ import (
 //	   storage choice, not a numerics one: dispatch is bit-identical either way.
 //	6  int4, fused-group member (Metal target): a header with no arrays; the group's nibbles and then its binary16
 //	   scales follow the group's last header as two unprefixed 16-aligned blocks (giwWriter.fusedGroup).
+//	8  Q4_K (a --quant q4k load's native tensors): raw, the GGUF super-blocks as they are (144 bytes per 256 values),
+//	   aliased on load through linalg.WrapQ4K. group is 0.
 //
 // Kinds 4 and 7 existed before v16 and are not read.
 
@@ -814,7 +816,7 @@ func (w *Weights) hasPopulatedLayers() bool {
 // label would contradict the path the prefill gate takes. The .giw header's quant field derives from the first weight
 // (the int8 embed), so it is not a substitute.
 func (w *Weights) quantLabel() string {
-	var hasInt4, hasInt8I8, hasInt8 bool
+	var hasInt4, hasInt8I8, hasInt8, hasQ4K bool
 	// bodyMatmulWeights excludes the int8-pinned logit tables — the single definition of that
 	// exclusion (weights.go), so the label and the .giw resolved-quant field can never disagree.
 	for _, m := range w.bodyMatmulWeights() {
@@ -822,6 +824,8 @@ func (w *Weights) quantLabel() string {
 			continue
 		}
 		switch m.Kind() {
+		case "q4k":
+			hasQ4K = true
 		case "int4":
 			hasInt4 = true
 		case "int8":
@@ -833,6 +837,8 @@ func (w *Weights) quantLabel() string {
 		}
 	}
 	switch {
+	case hasQ4K:
+		return "q4k" // its other tensors are int8 W8A8 by construction (matmulQuant)
 	case hasInt4 && (hasInt8I8 || hasInt8):
 		return "int4mix"
 	case hasInt4:
@@ -1026,12 +1032,14 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) { w.weightMatKind(m, true) }
 func (w *giwWriter) weightMatKind3Only(m *linalg.WeightMat) { w.weightMatKind(m, false) }
 
 func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
-	if m.Kind() == "q4k" {
-		// quantQ4K has no .giw kind yet (docs/tasks/task-int4-weight-quality-2026-09.md): refuse
-		// rather than write a tensor with no payload. Every serialize/stream entry returns w.err.
-		if w.err == nil {
-			w.err = fmt.Errorf("decoder: --quant q4k has no .giw form yet; load the .gguf directly")
-		}
+	if raw, ok := m.Q4K(); ok {
+		w.raw([]byte{8})
+		w.u32(uint32(m.Rows()))
+		w.u32(uint32(m.Cols()))
+		w.u32(0)
+		w.raw([]byte{0})
+		w.alignArray()
+		w.bytesField(raw)
 		return
 	}
 	if m.Rows() == 0 {
@@ -1560,7 +1568,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	if kind == 0 {
 		return linalg.WeightMat{}
 	}
-	if kind != 1 && kind != 2 && kind != 3 && kind != 5 { // kind 6 is read as a fused group, never here
+	if kind != 1 && kind != 2 && kind != 3 && kind != 5 && kind != 8 { // kind 6 is read as a fused group, never here
 		r.unknownEncoding(kind)
 		return linalg.WeightMat{}
 	}
@@ -1633,6 +1641,19 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			// this core: wrong arch (the file was written for arm64), or a shape this core's build cannot run the row4
 			// kernel for.
 			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d is stored row4-only (kind 5, a cpu-arm64 prequant target) but this core cannot use that layout — rebuild with `go run ./cmd/prequant -target <this core>` (or delete the stream-weights cache so it rebuilds automatically)", rows, cols, group))
+			return linalg.WeightMat{}
+		}
+		return wm
+	case 8:
+		r.alignArray()
+		raw := r.rawAlias() // zero-copy: the super-blocks are aliased from the mapping
+		if cols%256 != 0 || len(raw) != rows*linalg.Q4KRowBytes(cols) {
+			r.fail(fmt.Sprintf("q4k weightMat %d×%d: %d bytes, want %d whole 256-value super-blocks per row", rows, cols, len(raw), cols/256))
+			return linalg.WeightMat{}
+		}
+		wm, err := linalg.WrapQ4K(raw, rows, cols)
+		if err != nil {
+			r.fail(fmt.Sprintf("q4k weightMat %d×%d: %v", rows, cols, err))
 			return linalg.WeightMat{}
 		}
 		return wm

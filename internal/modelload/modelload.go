@@ -215,18 +215,15 @@ const (
 	routeDirSidecar                // a safetensors directory's sidecar (S18): a failed build falls back to the direct load
 )
 
-// routeFor is the one place Load and Plan choose how a source is opened. q4k has no .giw form yet
-// (docs/tasks/task-int4-weight-quality-2026-09.md), so a q4k .gguf always loads directly. A directory's sidecar keeps its
+// routeFor is the one place Load and Plan choose how a source is opened. A q4k .gguf takes its sidecar like any other
+// (its Q4_K tensors are the .giw's kind 8), except under -stream-weights, which it refuses. A directory's sidecar keeps its
 // weights as mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the weights
 // counted once and counted twice (docs/tasks/task-multimodal-support-2026-10.md, S18).
 func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, error) {
 	gguf := strings.HasSuffix(src, ".gguf")
 	switch {
-	case opts.Quant == "q4k" && gguf:
-		if opts.StreamWeights {
-			return routeDirect, fmt.Errorf("--quant q4k cannot stream weights yet (it has no .giw form); drop -stream-weights")
-		}
-		return routeDirect, nil
+	case opts.Quant == "q4k" && gguf && opts.StreamWeights:
+		return routeDirect, fmt.Errorf("--quant q4k cannot stream weights yet (weight paging does not read its .giw kind); drop -stream-weights")
 	case opts.StreamWeights:
 		if gguf {
 			return routeStreamSidecar, nil

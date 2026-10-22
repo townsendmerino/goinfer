@@ -34,7 +34,7 @@ const (
 	// (linalg.WrapQ4K, exact, 4.5 bpw) and puts every other layer matmul at int8 W8A8, with per-32
 	// activations throughout (docs/tasks/task-int4-weight-quality-2026-09.md: the re-quantization
 	// of Q4_K into symmetric int4 is the int4 quality loss). Like quantInt4Mix it is a LOAD-TIME
-	// policy resolved per tensor at the GGUF load sites. GGUF only; no .giw form yet.
+	// policy resolved per tensor at the GGUF load sites. GGUF only; its .giw form is kind 8 (serialize.go).
 	quantQ4K
 	// quantBF16 and quantF16 keep a matmul tensor as 16-bit bit patterns (linalg.WeightMat kinds "bf16" and "f16"), half of f32. The
 	// matmul widens a tile of rows and runs the f32 kernel, so over a bf16 (or f16) checkpoint the result is bit-identical to f32 and

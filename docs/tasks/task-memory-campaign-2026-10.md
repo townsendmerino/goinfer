@@ -51,7 +51,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
 | MEM13-heapquant | moved | D8a-build and D8b-build below (D8 decided: build both) | §4 MEM13, "Heap-only quant, after MEM1" |
 | D8a-build | done | — | branch `d8a-single-copy-2026-10`; D8A-G1..G4 PASS, `docs/measurements/d8a-2026-10/README.md` |
-| D8b-build | open | Mac for the CPU side: a `.giw` form for q4k (a new tensor kind and a format version), so phi3 maps on the CPU (D8b, owner 2026-10-21); M–L | — |
+| D8b-build | done | — | branch `d8b-q4k-giw-2026-10` at v17 (D9); D8B-G1..G4 PASS, `docs/measurements/d8b-2026-10/README.md` |
 | D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges | — |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
 | MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
@@ -60,6 +60,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |
 | D1–D4 | done | decided 2026-10-21 | the status block above |
 | D8 | done | — | owner, 2026-10-21: build both halves (§7) |
+| D9 | done | — | owner, 2026-10-21: stay at v17 (§7) |
 | D5 | moved | O3 (parked, defer) | — |
 | D6, D7 | done | — | aikit 5e4d3c5, a15bfa9 |
 
@@ -509,6 +510,34 @@ bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
 | token bytes per adapter | `internal/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
 | heap-only quant | q4k (phi3's default on CPU/CUDA) has no `.giw` form; on the arm64 heap path o_proj, down_proj and experts keep the dual copy even with `Backend: "cpu"` | model-sized | after MEM1, decide whether the heap path still matters |
 
+**D8b-build gates, registered 2026-10-21 before the code (D8B-G).** The build: a `.giw` tensor kind 7 for a native Q4_K
+matrix (the header, then the raw super-blocks, aligned and aliased from the mapping through `linalg.WrapQ4K`), the
+weights format version 17 → 18 (every sidecar of an older version is rebuilt on its next load, as the version rule
+already does), the writer no longer refusing q4k, a q4k `.gguf` routed to its sidecar by `decoder.Load`'s default and
+by `internal/modelload` (q4k leaves the direct-only list for a `.gguf`; a safetensors directory at q4k stays direct), and
+a q4k bundle's per-32 activation group stamped from its baked quant label when `Options` does not set it.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D8B-G1 round trip | 0 | a one-layer llama `.gguf` written by the test with Q4_K attention and MLP tensors (`q4kTestMat`'s blocks; the table f32), loaded at q4k directly and through `TranscodeGIW(q4k)` then `Load` of the bundle, `Backend: "cpu"` | the bundle's Q4_K tensors are kind 7, aliased from the mapping (no heap copy of their bytes); the logits of an 8-token prompt token by token and 8 greedy tokens are byte-equal between the two loads |
+| D8B-G2 routing | 0 | `decoder.Load` (default on, the test hook) and `modelload.Plan`/`Load` on the same q4k `.gguf` | both open the q4k sidecar; a safetensors directory at q4k still loads directly |
+| D8B-G3 version | 0 | the existing version tests (`TestEnsureCachedGIW_olderFormatIsRebuiltOnce` and its siblings) at version 18, and a kind-7 record read by a reader of the previous version's rules | green, and a v17 file is rebuilt once |
+| D8B-G4 tier 1 | 1, Mac | `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` at `Quant: "q4k"`, `Backend: "cpu"`: the direct load against the sidecar load, one run each: Go heap in use after `runtime.GC` + `FreeOSMemory`, and 16 greedy tokens | tokens equal; the sidecar load's heap ≤ 0.25 × the direct load's |
+| D8B-cuda | — | nobara's cell, ledger row D8b-cuda | not run here |
+
+> **Amended during the build, before any verdict.** The kind is **8**: kind 7 was a pre-v16 kind (`decoder/serialize.go`'s
+> kind list). The **version stays 17**: `docs/giw-bundles.md` § "From v17: a new encoding needs no new version" names
+> q4k's form as the case that needs none (an older build refuses only the tensor it cannot read and rebuilds that
+> sidecar), and a bump re-transcodes every cached sidecar on both boxes. "A format version" was this doc's own D8 wording,
+> written before that rule was read, so the version was put back to the owner as **D9** (§7); he chose v17 the same day. D8B-G3 then reads: the version tests green at 17, and a kind-8 tensor refused by name by a reader
+> that does not know kind 8.
+
+> **Read 2026-10-21: all four PASS at v17** (`docs/measurements/d8b-2026-10/README.md`): the round trip byte-equal; the
+> 0.5B's heap 583.6 MiB direct → 1.7 MiB through the q4k sidecar, same tokens; main's reader refuses kind 8 by name.
+
+Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1–G3; about 2 min for G4 (one
+0.5B q4k transcode, ~0.5 GB on disk). Plants: kind 7 written as an empty record (G1 red); the routing left direct (G2 red).
+
 **D8a-build gates, registered 2026-10-21 before the code (D8A-G).** The build: under `Backend: "cpu"` (the stated promise
 `decoder/weightmat.go:wantsCanonicalInt4` reads), the int4 layer tensors outside the batched Q/K/V/gate/up dispatch and the
 embedding tables (`o_proj`, `down_proj`, routed and shared experts, and the router and family-specific layer tensors in the
@@ -684,6 +713,12 @@ choice in aikit and a storage choice in ken (**D4**).
   that reads them must take row4-only, gated on bytes and bit-identity)? (b) q4k: give it a `.giw` form, a new tensor kind
   and a format version (M–L; phi3 on the CPU and CUDA then maps too), or leave phi3's CPU/CUDA load on the heap until a
   user meets it (recommended: one family, and its Metal load already maps)?
+
+- **D9** (D8b-build): **DECIDED by the owner, 2026-10-21: (a), stay at v17.** The question as asked: the `.giw` format version for q4k's new kind 8. (a) **Stay at v17**, as
+  `docs/giw-bundles.md` § "From v17" prescribes for a new encoding: only q4k sidecars are new, and nothing else rebuilds
+  (recommended). (b) **Bump to v18**, as D8's wording said: every cached sidecar on both boxes re-transcodes once on its
+  next load (each about the model's size on disk; the Mac is at 97% disk), with nothing gained that (a) lacks. The
+  branch is built at v17; (b) is a one-line change.
 
 ## 8. Sequencing
 

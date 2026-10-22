@@ -363,8 +363,8 @@ var sidecarInTests = false
 
 // sidecarRoute is what Load opens for src: src itself, or the sidecar .giw the apps open for it (internal/modelload
 // routes by the same rules). A .gguf whose sidecar cannot be built is the load's error, naming Options.DirectLoad as the
-// apps' refusal names -direct-load; a safetensors directory falls back to the direct load with a note. q4k has no .giw
-// form, so a q4k .gguf loads directly.
+// apps' refusal names -direct-load; a safetensors directory falls back to the direct load with a note. A q4k .gguf under
+// StreamWeights loads directly: its paging is not built for kind 8.
 func sidecarRoute(src string, opts Options) (string, error) {
 	if opts.DirectLoad || opts.noSelfTest || opts.planResidency || testing.Testing() && !sidecarInTests {
 		return src, nil
@@ -378,7 +378,7 @@ func sidecarRoute(src string, opts Options) (string, error) {
 	}
 	gguf := strings.HasSuffix(src, ".gguf")
 	switch {
-	case gguf && opts.Quant == "q4k":
+	case gguf && opts.Quant == "q4k" && opts.StreamWeights:
 		return src, nil
 	case gguf && (opts.StreamWeights || DefaultToSidecar(false)):
 		p, err := ensure()
