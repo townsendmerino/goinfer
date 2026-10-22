@@ -16,15 +16,17 @@ import json, statistics, sys
 procs = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 cells = []
 for path in sys.argv[2:]:
-    cells += [c for c in json.load(open(path)) if isinstance(c, dict) and c.get("engine") in ("goinfer", "goinfer_old")]
+    tag = path.rsplit("/", 1)[-1].removesuffix(".json")
+    cells += [dict(c, file=tag) for c in json.load(open(path)) if isinstance(c, dict) and c.get("engine") in ("goinfer", "goinfer_old")]
 
+# One group per results file, model and depth: each invocation also runs its models' depth-128 cell, at that invocation's context.
 groups = {}
 for c in cells:
-    groups.setdefault((c["model"], c["depth"]), []).append(c)
+    groups.setdefault((c["model"], c["depth"], c["file"]), []).append(c)
 
 verdicts = []
-print(f"{'model':>10} {'depth':>6}  {'blocks new/old':<28} {'median':>7}  verdict")
-for (model, depth), cs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+print(f"{'model':>10} {'depth':>6} {'file':>14}  {'blocks new/old':<28} {'median':>7}  verdict")
+for (model, depth, tag), cs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2])):
     by_block = {}
     void = []
     for c in cs:
@@ -45,7 +47,7 @@ for (model, depth), cs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0]
     med = statistics.median(ratios) if ratios else float("nan")
     v = "VOID" if void or not ratios else ("PASS" if med >= 0.98 else "AMBIGUOUS" if med >= 0.97 else "FAIL")
     verdicts.append(v)
-    print(f"{model:>10} {depth:>6}  {' '.join(f'{x:.3f}' for x in ratios):<28} {med:7.3f}  {v}" + (f"  ({'; '.join(void)})" if void else ""))
+    print(f"{model:>10} {depth:>6} {tag:>14}  {' '.join(f'{x:.3f}' for x in ratios):<28} {med:7.3f}  {v}" + (f"  ({'; '.join(void)})" if void else ""))
 
 
 print()

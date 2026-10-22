@@ -109,6 +109,7 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
                                                 int startPos, float scale, int window, int M,
                                                 float* __restrict__ ctx,
                                                 const float* __restrict__ sinks) {
+    static_assert(BN <= 64, "the staging below assumes a key tile lies in at most two 64-row blocks");
     constexpr int OT = HD / 8;   // 8-wide n-slices of the output, constexpr so acc[] stays in regs
     constexpr int NG = BN / 8;   // 8-wide key groups per tile
 
@@ -186,14 +187,18 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
         const int nk = (blockMaxKeys - s0 < BN) ? blockMaxKeys - s0 : BN;
         __syncthreads();
         // ---- stage K [nk][HD] and V^T [HD][nk], f32 -> f16 ----
+        // A tile of BN <= 64 keys lies in at most two blocks: keys [s0, s0 + split) in s0's, the rest in the next one's. Their first rows
+        // are looked up once per tile; the second only when the tile reaches it (the table may end at s0's block).
+        const int split = 64 - (s0 & 63);
+        const long row0 = KV_ROW(kvt, s0), row1 = (split < nk) ? (long)kvt[(s0 >> 6) + 1] * 64 - split : 0;
         for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
             const int kk = idx / HD, dd = idx - kk * HD;
-            const KV_T* src = kc + KV_ROW(kvt, s0 + kk) * kvDim + kvh * HD;
+            const KV_T* src = kc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
             Ksh[kk * kStride + dd] = KV_LDH(src + dd);
         }
         for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
             const int kk = idx / HD, dd = idx - kk * HD;
-            const KV_T* src = vc + KV_ROW(kvt, s0 + kk) * kvDim + kvh * HD;
+            const KV_T* src = vc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
             Vtsh[dd * vStride + kk] = KV_LDH(src + dd);
         }
         __syncthreads();
