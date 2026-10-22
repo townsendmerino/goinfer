@@ -1251,14 +1251,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.attnSink = true
 		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)
 	}
-	// The f32 KV path (kv_store_f32, attention_f32) exists but is off: a matched-input confirmer showed f16 versus
-	// f32 KV storage is not what degrades Gemma's contexts. What was found, and the open claim about position-0 K/V,
-	// is in docs/code-notes/metal.md#buildResident.kvF32.
-	r.kvF32 = false
+	// The f32 KV path (kv_store_f32, attention_f32) runs only when the resolver delivers f32, which on Metal it does not
+	// until phase 3 of docs/tasks/task-kv-precision-everywhere-2026-10.md: a matched-input confirmer showed f16 versus f32 KV
+	// storage is not what degrades Gemma's contexts (docs/code-notes/metal.md#buildResident.kvF32).
+	kvDelivered := m.KVDeliveredFor("metal") // the resolver's answer, not the raw request (decoder.ResolveKV)
+	r.kvF32 = kvDelivered == "f32"
 	if r.kvF32 {
 		r.pKv, r.pAttn = pipe("kv_store_f32"), pipe("attention_f32")
 	}
-	r.kvI8 = m.KVCacheI8()
+	r.kvI8 = kvDelivered == "i8"
 	if r.kvI8 {
 		r.pKvI8, r.pAttnI8 = pipe("kv_store_i8"), pipe("attention_i8")
 	}

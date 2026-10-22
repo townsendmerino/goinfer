@@ -50,6 +50,11 @@ func (a *Architecture) keepsNoKV() bool {
 // under auto, or why an explicit request cannot be met (which Load refuses, KVRefusal). backend "cpu" is the CPU (host) cache, which a
 // load uses when no resident runner is active, whatever Options.Backend names.
 func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, reason string) {
+	if resolveKVHook != nil {
+		if got, why, ok := resolveKVHook(backend, opts); ok {
+			return got, why
+		}
+	}
 	if arch != nil && arch.keepsNoKV() {
 		return kvPrecNone, "this model keeps no attention KV"
 	}
@@ -268,6 +273,19 @@ func (m *Model) KVPrecisionReports() []KVPrecisionReport {
 	}
 	got, why := ResolveKV("cpu", m.w.arch, m.kvOpts)
 	return append(out, KVPrecisionReport{Cache: "cpu", Requested: cpuKVRequested(m.kvOpts), Delivered: got, Reason: why})
+}
+
+// resolveKVHook, set only by a test (goinfer_testhooks), answers ResolveKV for the cases it claims (ok), so a test can make the
+// resolver and the raw request disagree and see which one a backend's build follows.
+var resolveKVHook func(backend string, opts Options) (delivered, reason string, ok bool)
+
+// KVDeliveredFor is the precision ResolveKV gives this model's KV cache on backend: what a backend's resident build allocates.
+func (m *Model) KVDeliveredFor(backend string) string {
+	if m.w == nil {
+		return ""
+	}
+	got, _ := ResolveKV(backend, m.w.arch, m.kvOpts)
+	return got
 }
 
 // KVDelivered is the precision of the cache a generation of this model writes (the request log's kv field).

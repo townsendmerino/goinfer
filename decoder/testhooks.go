@@ -648,3 +648,11 @@ func WeightAllocsForTest() int64 { return weightAllocs.Load() }
 // LoadCallsForTest is how many times Load has been entered (loadCalls), for a test outside the package that asserts a call
 // loaded nothing.
 func LoadCallsForTest() int64 { return loadCalls.Load() }
+
+// SetResolveKVHookForTest makes ResolveKV deliver f's answer wherever f reports ok, and returns the restore. Tests only: it is how
+// P0A-G1 shows a backend's build follows the resolver rather than the raw request.
+func SetResolveKVHookForTest(f func(backend string, opts Options) (delivered, reason string, ok bool)) (restore func()) {
+	prev := resolveKVHook
+	resolveKVHook = f
+	return func() { resolveKVHook = prev }
+}
