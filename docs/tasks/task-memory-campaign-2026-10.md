@@ -463,6 +463,27 @@ disk and once at transcode (MEM8b).
 (it is already the CPU/CUDA default), plus `ideas-weight-memory.md` §3's rare-token caution. (b) tier 0: gathered rows
 identical to a dequantized reference at each precision. (b′) tier 1: transcode peak heap on E2B.
 
+**MEM8(b) gates, registered 2026-10-21 before the code (PLE-G), on D10 (a).** The build: at quant int4, Gemma 4's
+per-layer token table is int4 whatever `EmbedInt4` says (both loaders: `decoder/gguf.go`'s `per_layer_token_embd` and the
+safetensors one in `decoder/weights.go`); the token embedding and the LM head keep the pin. At any other quant nothing
+changes. Every load that had the pin on at int4 moves: Metal's default, and also a library `decoder.Options{}` load and an
+explicit `--embed-int4=false` on CPU or CUDA. The sidecar of a source with a per-layer table, at int4 with the pin on, is
+named with a `.ple4` segment (`<base>.int4.ple4.<target>.v17.giw`), so a sidecar written before this change (int8 table)
+is never opened for it, and no legacy name is adopted for it; every other sidecar name is unchanged. `metal/` is not
+touched (the table is gathered on the host).
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| PLE-G1 table | 0 | the synthetic E2B-shaped GGUF (`tinyGemma4GGUF`, `ple`) and `testdata/gemma4-emodel-tiny` (safetensors; generated, so CI skips it), int4, `EmbedInt4` false and true | the per-layer table is int4 under both and byte-equal between them, and every gathered row equals the int4 dequantization of the source row; the token embedding is int8 under false and int4 under true, as before |
+| PLE-G2 sidecar | 0 | the sidecar path for those sources and for `llama-tiny`, at int4 and int8, pin on and off; a transcode of the synthetic GGUF at the `.ple4` name and its load | `.ple4` appears exactly for a per-layer source at int4 with the pin on; every other name equals main's; the transcoded bundle's table is int4 and its logits over 8 tokens are byte-equal to the direct load's |
+| PLE-G3 quality | 1, Mac, Metal | E2B (`~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf`): main's sidecar (int8 table, `.int4.metal.v17.giw`) against this branch's (`.int4.ple4.metal.v17.giw`), resident, one process, one arm at a time; the five G3 prompts, each free-run 32 tokens greedy on the int8 arm, then that sequence teacher-forced through the int4 arm | top-1 agreement over every position ≥ 95.0% and the mean KL(int8 ‖ int4) ≤ 0.05 nats: PASS. Agreement 90.0–95.0% or KL 0.05–0.10: AMBIGUOUS, parked for the owner. Worse: FAIL. Also read, not gated: the two sidecars' sizes (the arithmetic: the table falls from about 2.35 to 1.32 GB) |
+| PLE-G4 goldens | 0–1 | the tests that pin Gemma 4 E-model outputs at int4 (`decoder` and `metal`, tiny and real E2B), then `scripts/refresh_parity_hashes.sh` | each either passes unchanged or moves only through the table's precision and is re-pinned in the same commit, with the moved figure in the record; the parity refresh is green |
+
+Planted defect, run once on the committed tree and reverted: the per-layer table following the pin again (G1 red, and G2's
+name check red on the sidecar's contents). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds
+for G1, G2 and G4's tiny tests; G3 about 10 min plus a one-time transcode of E2B (about 2.8 GB written; 6.8 GB free at
+registration), not a timed run, so it holds the timing lock shared.
+
 ### MEM9 · MoE on Metal: aliasable experts, the two writer gaps, the pool to KV11 (M)
 
 **Problem.**
