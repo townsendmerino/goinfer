@@ -242,8 +242,8 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 
 // TestKVBytesForCap pins the sizing formula against the two geometries the deep-context measurements
 // were taken on (docs/benchmarks.md): 24.0 KB/position for qwen2.5-coder-0.5b and 56.0 KB/position
-// for the 1.5B. The VRAM fail-fast message quotes these, so a formula drift would misreport what a
-// configured cap actually costs.
+// for the 1.5B, read over one 64-row block, plus the tables (4 B a block per group). The VRAM
+// fail-fast message quotes these, so a formula drift would misreport what a configured cap actually costs.
 func TestKVBytesForCap(t *testing.T) {
 	mk := func(n, kvDim int) []cudaLayer {
 		ls := make([]cudaLayer, n)
@@ -260,12 +260,17 @@ func TestKVBytesForCap(t *testing.T) {
 		{"qwen2.5-coder-0.5b (24 layers, nKV 2 × hd 64)", mk(24, 2*64), 24.0},
 		{"qwen2.5-coder-1.5b (28 layers, nKV 2 × hd 128)", mk(28, 2*128), 56.0},
 	} {
-		got := float64(kvBytesForCap(1, c.layers)) / 1024
+		tabs := func(n int) int64 { return int64(kvGroups * 4 * kvBlocksFor(n)) }
+		got := float64(kvBytesForCap(kvBlock, c.layers)-tabs(kvBlock)) / kvBlock / 1024
 		if got != c.kbPerPos {
 			t.Errorf("%s: %.1f KB/position, want %.1f", c.name, got, c.kbPerPos)
 		}
-		// And it must scale linearly — the 32k prediction the deep-context leg was sized against.
-		if want := int64(c.kbPerPos * 1024 * 32768); kvBytesForCap(32768, c.layers) != want {
+		// One position costs its whole block.
+		if kvBytesForCap(1, c.layers) != kvBytesForCap(kvBlock, c.layers) {
+			t.Errorf("%s: one position costs %d bytes, its block %d", c.name, kvBytesForCap(1, c.layers), kvBytesForCap(kvBlock, c.layers))
+		}
+		// And it must scale linearly in blocks — the 32k prediction the deep-context leg was sized against.
+		if want := int64(c.kbPerPos*1024*32768) + tabs(32768); kvBytesForCap(32768, c.layers) != want {
 			t.Errorf("%s: 32k cap = %d bytes, want %d", c.name, kvBytesForCap(32768, c.layers), want)
 		}
 	}
