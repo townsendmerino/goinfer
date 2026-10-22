@@ -46,6 +46,7 @@ func FuzzServeChatRequest(f *testing.F) {
 }
 
 var messagesSeeds = []string{
+	`{"max_tokens":8,"messages":[{"role":"user","content":"hi"}],"output_config":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"a":{"type":"string"}}}}}}`,
 	`{"model":"m","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`,
 	`{"max_tokens":1,"system":[{"type":"text","text":"s"}],"messages":[{"role":"user","content":[{"type":"text","text":"x","cache_control":{"type":"ephemeral"}},{"type":"image","source":{}}]}]}`,
 	`{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"f","input":{"a":1}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"r"}]}]}]}`,
@@ -71,8 +72,12 @@ func FuzzServeMessagesRequest(f *testing.F) {
 		_ = anthropicText(req.System)
 		mode, name := anthropicToolMode(req.ToolChoice)
 		_ = anthropicForcedTool(mode, name, anthropicTools(req.Tools))
-		lm := &loadedModel{}
-		_, _ = lm.prepare(req.toSampling(), []int{1, 2, 3}, true)
+		// output_config.format → its validation and grammar compile; prepare runs without the masker, as above.
+		if sm, aerr := req.toSampling(); aerr == nil {
+			sm.ResponseFormat = nil
+			lm := &loadedModel{}
+			_, _ = lm.prepare(sm, []int{1, 2, 3}, true)
+		}
 	})
 }
 

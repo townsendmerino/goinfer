@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
+	"github.com/townsendmerino/goinfer/tokenizer"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -120,12 +122,128 @@ func TestAnthropicToSampling(t *testing.T) {
 	f := func(v float64) *float64 { return &v }
 	i := func(v int) *int { return &v }
 	req := &anthropicReq{Temperature: f(0.5), TopP: f(0.9), TopK: i(40), MaxTokens: i(50), StopSequences: []string{"END", "STOP"}}
-	sm := req.toSampling()
+	sm, aerr := req.toSampling()
+	if aerr != nil {
+		t.Fatalf("toSampling: %v", aerr)
+	}
 	if deref(sm.Temperature, -1) != 0.5 || deref(sm.TopP, -1) != 0.9 || deref(sm.TopK, -1) != 40 || deref(sm.MaxTokens, -1) != 50 {
 		t.Errorf("sampling fields not mapped: %+v", sm)
 	}
 	if got := parseStop(sm.Stop); strings.Join(got, ",") != "END,STOP" {
 		t.Errorf("stop_sequences → stop = %v", got)
+	}
+}
+
+// outputConfigSchema is a small schema the grammar compiler accepts.
+const outputConfigSchema = `{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}`
+
+// TestAnthropicOutputFormat pins the output_config.format mapping: json_schema becomes response_format json_schema with
+// the same schema bytes, and everything that does not map is a 400 whose message names the field.
+func TestAnthropicOutputFormat(t *testing.T) {
+	tool := `"tools":[{"name":"f","input_schema":{"type":"object"}}]`
+	for name, c := range map[string]struct {
+		body    string
+		want    bool   // a response_format comes back
+		errName string // substring the 400 must carry; "" = no error
+	}{
+		"absent":                  {body: `{}`},
+		"effort only":             {body: `{"output_config":{"effort":"low"}}`},
+		"format null":             {body: `{"output_config":{"format":null}}`},
+		"json_schema":             {body: `{"output_config":{"format":{"type":"json_schema","schema":` + outputConfigSchema + `}}}`, want: true},
+		"tools, tool_choice none": {body: `{` + tool + `,"tool_choice":{"type":"none"},"output_config":{"format":{"type":"json_schema","schema":` + outputConfigSchema + `}}}`, want: true},
+		"type json_object":        {body: `{"output_config":{"format":{"type":"json_object"}}}`, errName: "output_config.format.type"},
+		"type empty":              {body: `{"output_config":{"format":{"schema":` + outputConfigSchema + `}}}`, errName: "output_config.format.type"},
+		"schema missing":          {body: `{"output_config":{"format":{"type":"json_schema"}}}`, errName: "output_config.format.schema"},
+		"schema null":             {body: `{"output_config":{"format":{"type":"json_schema","schema":null}}}`, errName: "output_config.format.schema"},
+		"schema not an object":    {body: `{"output_config":{"format":{"type":"json_schema","schema":"x"}}}`, errName: "output_config.format.schema"},
+		"with tools":              {body: `{` + tool + `,"output_config":{"format":{"type":"json_schema","schema":` + outputConfigSchema + `}}}`, errName: "output_config.format"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var req anthropicReq
+			if err := json.Unmarshal([]byte(c.body), &req); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			sm, aerr := req.toSampling()
+			if c.errName != "" {
+				if aerr == nil || aerr.code != http.StatusBadRequest || aerr.kind != "invalid_request_error" || !strings.Contains(aerr.msg, c.errName) {
+					t.Fatalf("got %+v, want a 400 invalid_request_error naming %q", aerr, c.errName)
+				}
+				return
+			}
+			if aerr != nil {
+				t.Fatalf("unexpected refusal: %v", aerr)
+			}
+			if got := sm.constrainsOutput(); got != c.want {
+				t.Fatalf("constrainsOutput = %v, want %v (response_format %+v)", got, c.want, sm.ResponseFormat)
+			}
+			if c.want && (sm.ResponseFormat.Type != "json_schema" || string(sm.ResponseFormat.JSONSchema.Schema) != outputConfigSchema) {
+				t.Errorf("response_format = %+v, want json_schema with the request's schema bytes", sm.ResponseFormat)
+			}
+		})
+	}
+}
+
+// TestAnthropicOutputFormat_prepareConstrains runs the mapped request through prepare, the path every /v1/messages
+// site takes, and checks the grammar is wired: without output_config.format no masker is set, with it one is.
+func TestAnthropicOutputFormat_prepareConstrains(t *testing.T) {
+	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	for _, c := range []struct {
+		body       string
+		wantMasker bool
+	}{
+		{`{"max_tokens":8}`, false},
+		{`{"max_tokens":8,"output_config":{"format":{"type":"json_schema","schema":` + outputConfigSchema + `}}}`, true},
+	} {
+		var req anthropicReq
+		if err := json.Unmarshal([]byte(c.body), &req); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		sm, aerr := req.toSampling()
+		if aerr != nil {
+			t.Fatalf("toSampling: %v", aerr)
+		}
+		gr, err := lm.prepare(sm, []int{1, 2, 3}, false)
+		if err != nil {
+			t.Fatalf("prepare: %v", err)
+		}
+		if got := gr.masker != nil && gr.sp.LogitProcessor != nil; got != c.wantMasker {
+			t.Errorf("%s: masker wired = %v, want %v", c.body, got, c.wantMasker)
+		}
+	}
+}
+
+// TestAnthropicOutputFormat_handlersRefuse sends an unmappable output_config.format through /v1/messages and
+// /v1/messages/count_tokens and checks each answers a 400 invalid_request_error naming the field, before any prompt is
+// encoded.
+func TestAnthropicOutputFormat_handlersRefuse(t *testing.T) {
+	s := &server{}
+	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	body := `{"model":"m","max_tokens":8,"messages":[{"role":"user","content":"hi"}],"output_config":{"format":{"type":"json_object"}}}`
+	var req anthropicReq
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for name, serve := range map[string]func(w http.ResponseWriter){
+		"messages": func(w http.ResponseWriter) {
+			s.serveMessagesWith(w, httptest.NewRequest("POST", "/v1/messages", nil), req, lm)
+		},
+		"count_tokens": func(w http.ResponseWriter) { s.serveCountTokensWith(w, req, lm) },
+	} {
+		rec := httptest.NewRecorder()
+		serve(rec)
+		var e struct {
+			Type  string `json:"type"`
+			Error struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil {
+			t.Fatalf("%s: body %q: %v", name, rec.Body.String(), err)
+		}
+		if rec.Code != http.StatusBadRequest || e.Type != "error" || e.Error.Type != "invalid_request_error" || !strings.Contains(e.Error.Message, "output_config.format.type") {
+			t.Errorf("%s: (%d, %+v), want 400 invalid_request_error naming output_config.format.type", name, rec.Code, e)
+		}
 	}
 }
 

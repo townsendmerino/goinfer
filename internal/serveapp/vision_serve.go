@@ -557,14 +557,22 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
 		return
 	}
+	sm, serr := req.toSampling()
+	if serr != nil {
+		serr.write(w)
+		return
+	}
 	tm := lm.templateFor(ts)
+	if sm.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
 	msgText, ordered := anthropicMediaText(req)
 	vi, err := lm.visionPromptN(tm, system, turns, imgs, ordered, msgText)
 	if err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.toSampling(), vi.ids, false)
+	gr, err := lm.prepare(sm, vi.ids, false)
 	if err != nil {
 		writeAnthropicPrepareErr(w, err)
 		return
