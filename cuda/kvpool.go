@@ -279,21 +279,25 @@ func (r *cudaResident) kvFlushTabs(s int) error {
 	return nil
 }
 
-// kvRowRuns calls fn for each run of consecutive positions [p, p+n) of [lo, hi) that one block of slot s's group g holds, with the
-// physical row of p. Every block in the range must be mapped.
+// kvRowRuns calls fn for each run of consecutive positions [p, p+n) of [lo, hi) whose rows are consecutive in the pool, with the
+// physical row of p: blocks of slot s's group g that follow each other in the pool too are one run, so a slot whose blocks were handed out
+// in order is copied in one piece. Every block in the range must be mapped.
 func (r *cudaResident) kvRowRuns(s, g, lo, hi int, fn func(p, n, row int) error) error {
 	ids := r.kvTabs[s].ids[g]
 	for p := lo; p < hi; {
 		b := p / kvBlock
-		id := ids[b]
-		if id == 0 {
+		if ids[b] == 0 {
 			return fmt.Errorf("cuda: slot %d holds no block for KV position %d", s, p)
 		}
-		n := min(hi, (b+1)*kvBlock) - p
-		if e := fn(p, n, int(id)*kvBlock+p%kvBlock); e != nil {
+		row := int(ids[b])*kvBlock + p%kvBlock
+		end := min(hi, (b+1)*kvBlock)
+		for end < hi && ids[end/kvBlock] == ids[end/kvBlock-1]+1 {
+			end = min(hi, end+kvBlock)
+		}
+		if e := fn(p, end-p, row); e != nil {
 			return e
 		}
-		p += n
+		p = end
 	}
 	return nil
 }

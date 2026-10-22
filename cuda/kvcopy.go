@@ -91,16 +91,20 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 		row := Ly.kvDim * r.kvElem(l) // bytes
 		srcIDs := r.kvTabs[src].ids[g]
 		err := r.kvRowRuns(dst, g, from, end, func(p, n, dstRow int) error {
-			// A source block never mapped reads the null block's zeros: the rows were never written, as a caller copying them
-			// should know.
-			srcRow := int(srcIDs[p/kvBlock])*kvBlock + p%kvBlock
-			for _, b := range []Buffer{r.kc[l], r.vc[l]} {
-				if b.Len() == 0 {
-					continue // an MLA latent layer has no V
+			// dst's run may span several blocks; src's rows are contiguous only within one of its blocks. A source block never
+			// mapped reads the null block's zeros: the rows were never written, as a caller copying them should know.
+			for q := p; q < p+n; {
+				m := min(p+n, (q/kvBlock+1)*kvBlock) - q
+				srcRow := int(srcIDs[q/kvBlock])*kvBlock + q%kvBlock
+				for _, b := range []Buffer{r.kc[l], r.vc[l]} {
+					if b.Len() == 0 {
+						continue // an MLA latent layer has no V
+					}
+					if e := r.copyF32(b.At(srcRow*row), b.At((dstRow+q-p)*row), m*row/4); e != nil {
+						return e
+					}
 				}
-				if e := r.copyF32(b.At(srcRow*row), b.At(dstRow*row), n*row/4); e != nil {
-					return e
-				}
+				q += m
 			}
 			return nil
 		})
