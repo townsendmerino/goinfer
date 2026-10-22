@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -151,20 +152,29 @@ func kv4SameTrace(t *testing.T, want, got kv4Trace) {
 
 // TestKV4_scrambledTables is G1a: on every tiny fixture the CUDA resident loads, the workload's every logit is bit-identical between a
 // pool that hands blocks out in ascending order and one that hands them out scrambled (kvScrambledOrder), at f32 and at f16 where the
-// family takes it. The windowed fixtures run with a small slack, so their window group releases and re-takes blocks many times.
+// family takes it. The windowed fixtures run with a small slack, so their window group releases and re-takes blocks many times. A "+flash"
+// or "+splitkv" entry runs its fixture with that decode lane forced on from the first key, and its launch counter must move.
 func TestKV4_scrambledTables(t *testing.T) {
 	requireCUDADevice(t)
 	windowed := map[string]bool{"mistral-tiny-window": true, "gemma3-vl-tiny": true, "cohere2-tiny": true, "gemma2-tiny": true}
 	for _, fx := range []string{
 		"llama-tiny", "llama-attnfa-tiny", "mistral-tiny-window", "gemma3-vl-tiny", "cohere2-tiny", "gemma2-tiny", "cohere-tiny",
 		"qwen25vl-tiny", "qwen3moe-tiny", "deepseek-tiny", "qwen35-tiny", "gemma4-moe-kv-tiny32",
+		"llama-attnfa-tiny+flash", "llama-attnfa-tiny+splitkv",
 	} {
 		for _, kv := range []string{"f32", "f16"} {
 			t.Run(fx+"/kv="+kv, func(t *testing.T) {
+				fx, lane, _ := strings.Cut(fx, "+")
 				if _, err := os.Stat(filepath.Join("..", "testdata", fx)); err != nil {
 					t.Skipf("no fixture: %v", err)
 				}
 				opts := decoder.Options{ResidentKVSlots: 2, KVPrecision: kv}
+				switch lane {
+				case "flash":
+					opts.Knobs = &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "16", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "0"}
+				case "splitkv":
+					opts.Knobs = &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_SPLITKV_MIN_KEYS": "0"}
+				}
 				if windowed[fx] {
 					withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, windowedKVTestSlack-windowedKVTestStep)
 					opts.ResidentWindowedKV = true
@@ -186,7 +196,11 @@ func TestKV4_scrambledTables(t *testing.T) {
 				if windowed[fx] && !r.kvWin {
 					t.Fatalf("%s: windowed KV did not engage (context %d)", fx, r.ctxCap)
 				}
-				t.Logf("%d steps, %d slots, windowed %v, f16 %v", len(want.logits), r.KVSlots(), r.kvWin, r.kvF16)
+				t.Logf("%d steps, %d slots, windowed %v, f16 %v; flash-decode launches %d, split-KV %d", len(want.logits), r.KVSlots(), r.kvWin,
+					r.kvF16, r.faLaunches, r.skLaunches)
+				if lane == "flash" && r.faLaunches == 0 || lane == "splitkv" && r.skLaunches == 0 {
+					t.Fatalf("VOID: the %s lane never launched", lane)
+				}
 				kv4SameTrace(t, want, got)
 			})
 		}
