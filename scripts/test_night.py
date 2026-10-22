@@ -483,6 +483,12 @@ class Serve(unittest.TestCase):
     and re-queues a job whose own check refused (exit RETRY_RC)."""
 
     def setUp(self):
+        # The clock runs as if it were 20:00 today, so a test's hours of not-before, settle and estimate never meet the 06:30
+        # deadline because of the hour CI happens to run at (UTC on the runner); it still advances, for night.py's timeouts.
+        real = night.now
+        off = real().replace(hour=20, minute=0, second=0, microsecond=0) - real()
+        night.now = lambda: real() + off
+        self.addCleanup(setattr, night, "now", real)
         for d in (night.QUEUE, night.RUNNING):
             if d.exists():
                 for f in d.glob("*"):
