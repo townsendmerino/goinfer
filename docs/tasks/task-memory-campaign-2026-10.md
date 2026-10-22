@@ -27,7 +27,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM0-Mac | done | — (no 7B cell: the coder 7B is not on the Mac, and pulling it and writing its sidecar would take 9 of the disk's 12 GB free) | `docs/measurements/mem0-2026-10/README.md` §4 |
 | MEM0-tack | done | — | 5310f789 |
 | MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
-| MEM2 | open | Mac: free the Metal tower scratch on grow, and a real `Close`; S | — |
+| MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
 | MEM4(b) | open | either box: drop the towers' host copy after attach, with a lazy reload on a CPU fallback (D2, owner 2026-10-21) | — |
@@ -305,6 +305,14 @@ red), `Close` left a no-op (G2 red), and one of serve's new closes dropped (G3 r
 every tower (`TestG4VMetal_matchesCPU`, `TestGridVisionMetal_matchesCPU`, `TestS3Towers_tiny`, `TestG4AMetal_matchesCPU`,
 `TestEG2Metal_matchesCPU`) stay green. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for
 G1–G3; about 2 min for G4 (a 32,400-patch tower forward; not a timed run, so it holds the timing lock shared).
+
+> **Read 2026-10-21: G2–G4 PASS; G1 FAILED as registered on its byte cross-check and PASSES as amended**
+> (`docs/measurements/mem2-2026-10/README.md`). The ledger counts matched on all seven towers; Metal's own reading was
+> 256 KiB over on the process's first Gemma 4 vision build (present before any forward, absent on a second build) and
+> 128 KiB over on EmbeddingGemma 2 with the same buffers (suballocation). **Amendment, after the reading:** each tower is
+> built and closed once first, and G1's byte bar is 256 KiB; G2's stays 64 KiB. G4: Qwen3-VL-2B holds one 4K scratch
+> (2622.5 MiB) after 1080p then 4K and returns to +0.3 MiB after `Close`; main strands 665.5 MiB and keeps 3875.4 MiB
+> after `Close`. All three plants red.
 
 ### MEM3 · aikit audio loaders hold their checkpoint and can close it (S) — SHIPPED in aikit v1.71.0
 

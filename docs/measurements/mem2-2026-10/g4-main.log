@@ -1,0 +1,13 @@
+=== RUN   TestMEM2_tier1Qwen3VL
+[MEM2-G4    1.6s] tower loaded
+[MEM2-G4    2.7s] A: built, weights +587.4 MiB
+[MEM2-G4    7.8s] A: 1080p (8160 patches) done, scratch +665.5 MiB
+[MEM2-G4   59.1s] A: 4K (32160 patches) done, scratch +3288.0 MiB
+[MEM2-G4   59.1s] A: closed, +3875.4 MiB over the reading before the build
+[MEM2-G4   59.1s] A scratch 3288.0 MiB, B scratch 2622.0 MiB (+25.40%); after Close A +3875.4 MiB, B +0.0 MiB
+    mem2_tier1_test.go:80: G4: after 1080p then 4K the tower holds 3288.0 MiB of scratch, after 4K alone 2622.0 MiB
+    mem2_tier1_test.go:83: G4: after Close Metal holds +3875.4 MiB (A) and +0.0 MiB (B) over the reading before the build
+--- FAIL: TestMEM2_tier1Qwen3VL (59.05s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	59.694s
+FAIL
