@@ -34,7 +34,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
-| MEM7 | open | Mac: size the Metal prefill block to the machine, now that B41's reading is on main; S | `prefillBlockScratch` |
+| MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | open | D10 (a), owner, 2026-10-21: Gemma 4's per-layer table int4 on Metal by default, a Metal quality cell on E2B, the sidecar variant tag moved, the Metal goldens re-pinned; the untied input embedding stays at the pin | §7 D10 |
 | MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
