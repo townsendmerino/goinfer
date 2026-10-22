@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -347,6 +348,12 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 				t.Fatalf("%s (%s): the unchanged program fails: %v", f.name, mode, err)
 			}
 			for _, key := range programParamKeys(f.m.prog) {
+				if quarantinedPerturbation(f.name, key) {
+					t.Run(string(mode)+"/"+f.name+"/"+key, func(t *testing.T) {
+						t.Skip("quarantined on Windows: GC heap corruption on some Xeon 8573C runners, docs/queue-correctness.md G50")
+					})
+					continue
+				}
 				c := cloneProgram(f.m.prog)
 				programPerturb(c, key)
 				got, err := runProgram(f.m, c, ids, mode)
@@ -425,6 +432,12 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 		}
 		t.Logf("L %s: %d parameters checked against the per-token walker, %d not run", mode, checked, notRun)
 	}
+}
+
+// quarantinedPerturbation reports a (fixture, parameter) run gate L skips on this OS, under docs/queue-correctness.md G50;
+// closing that row removes the case.
+func quarantinedPerturbation(fixture, key string) bool {
+	return runtime.GOOS == "windows" && fixture == "nemotron3nano-tiny" && key == "ffn.Act"
 }
 
 func hasFixture(fx []programFixture, name string) bool {
