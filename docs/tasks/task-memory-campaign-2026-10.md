@@ -51,7 +51,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
 | MEM13-heapquant | moved | D8a-build and D8b-build below (D8 decided: build both) | §4 MEM13, "Heap-only quant, after MEM1" |
 | D8a-build | done | — | branch `d8a-single-copy-2026-10`; D8A-G1..G4 PASS, `docs/measurements/d8a-2026-10/README.md` |
-| D8b-build | decision | built and gated on branch `d8b-q4k-giw-2026-10` (D8B-G1..G4 PASS, `docs/measurements/d8b-2026-10/README.md`); merges after D9 | D9 (§7) |
+| D8b-build | done | — | branch `d8b-q4k-giw-2026-10` at v17 (D9); D8B-G1..G4 PASS, `docs/measurements/d8b-2026-10/README.md` |
 | D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges | — |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
 | MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
@@ -60,7 +60,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |
 | D1–D4 | done | decided 2026-10-21 | the status block above |
 | D8 | done | — | owner, 2026-10-21: build both halves (§7) |
-| D9 | decision | the owner: the `.giw` version for q4k's kind 8, v17 (recommended) or v18 (§7) | — |
+| D9 | done | — | owner, 2026-10-21: stay at v17 (§7) |
 | D5 | moved | O3 (parked, defer) | — |
 | D6, D7 | done | — | aikit 5e4d3c5, a15bfa9 |
 
@@ -529,8 +529,7 @@ a q4k bundle's per-32 activation group stamped from its baked quant label when `
 > kind list). The **version stays 17**: `docs/giw-bundles.md` § "From v17: a new encoding needs no new version" names
 > q4k's form as the case that needs none (an older build refuses only the tensor it cannot read and rebuilds that
 > sidecar), and a bump re-transcodes every cached sidecar on both boxes. "A format version" was this doc's own D8 wording,
-> written before that rule was read, so the version is put back to the owner as **D9** (§7) and the branch is not merged
-> until he answers. D8B-G3 then reads: the version tests green at 17, and a kind-8 tensor refused by name by a reader
+> written before that rule was read, so the version was put back to the owner as **D9** (§7); he chose v17 the same day. D8B-G3 then reads: the version tests green at 17, and a kind-8 tensor refused by name by a reader
 > that does not know kind 8.
 
 > **Read 2026-10-21: all four PASS at v17** (`docs/measurements/d8b-2026-10/README.md`): the round trip byte-equal; the
@@ -715,7 +714,7 @@ choice in aikit and a storage choice in ken (**D4**).
   and a format version (M–L; phi3 on the CPU and CUDA then maps too), or leave phi3's CPU/CUDA load on the heap until a
   user meets it (recommended: one family, and its Metal load already maps)?
 
-- **D9** (D8b-build, 2026-10-21): the `.giw` format version for q4k's new kind 8. (a) **Stay at v17**, as
+- **D9** (D8b-build): **DECIDED by the owner, 2026-10-21: (a), stay at v17.** The question as asked: the `.giw` format version for q4k's new kind 8. (a) **Stay at v17**, as
   `docs/giw-bundles.md` § "From v17" prescribes for a new encoding: only q4k sidecars are new, and nothing else rebuilds
   (recommended). (b) **Bump to v18**, as D8's wording said: every cached sidecar on both boxes re-transcodes once on its
   next load (each about the model's size on disk; the Mac is at 97% disk), with nothing gained that (a) lacks. The
