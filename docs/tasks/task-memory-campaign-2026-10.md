@@ -44,7 +44,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
 | MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
 | MEM12-scratch | open | either box: MoE output, logits and sampler scratch, with tier-0 counters; M | — |
-| MEM12-f32res | open | either box: drop the f32 capacity in `setQuant` when the storage form changes (from cpu-kv-f16's F4 c); S, then refresh the parity hashes | — |
+| MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
+| MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
@@ -516,6 +517,11 @@ the Go heap's accounting, which paces the collector, is.
 Planted defect, run once on the committed tree and reverted: `setQuant` keeping the f32 capacity with `NewCache` still
 passing the hint (G1 red). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1, about 4
 min for the parity refresh.
+
+> **Read 2026-10-21: both PASS** (`docs/measurements/mem12-f32res-2026-10/README.md`). The hint costs the quantized
+> reservation to the byte; on the tree before, an f16 cache's hint cost three times its own storage. G2's three heavy
+> int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
+> and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
 
 ### MEM13 · Small heap items (S each)
 
