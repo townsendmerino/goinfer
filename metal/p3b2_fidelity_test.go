@@ -16,8 +16,9 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestP3b2_int8PassFidelity is P3B2-G2 (docs/tasks/task-kv-precision-everywhere-2026-10.md, "P3b-2 gates", criteria clarified
-// before the run): on Qwen2.5-Coder-1.5B from ~/models, the int8 MMA pass scored against the int8 step, and the f16 pass against
+// TestP3b2_int8PassFidelity is P3B2-G2 as first registered (docs/tasks/task-kv-precision-everywhere-2026-10.md, "P3b-2 gates";
+// the gate is now TestP3b2_int8PassAgainstCommonReference, D10): on Qwen2.5-Coder-1.5B from ~/models, the int8 MMA pass scored
+// against the int8 step, and the f16 pass against
 // the f16 step (each step forced, prefillByStep, bit-identical to sequential), over the prefill gate's prose prompts at K = 256,
 // 512, 1024 and 3900: the seed position and 64 positions teacher-forced on the step's greedy tokens. fidelity.NonInferior with
 // AgreeMarginPts 1, KLMargin 0.10, alpha 0.05. Not timed (shared lock); the positions log goes to $P3B2_POSITIONS_LOG.
@@ -132,7 +133,7 @@ func TestP3b2_int8PassFidelity(t *testing.T) {
 	}
 }
 
-// TestP3b2_int8PassAgainstCommonReference is P3B2-G2's diagnosis, not a gate: the same model, prompts and cells, every arm teacher-
+// TestP3b2_int8PassAgainstCommonReference is P3B2-G2 as amended (D10): the same model, prompts and cells, every arm teacher-
 // forced on the f16 step's greedy tokens and scored against the f16 step (the shipped sequential decode's numerics), so the int8
 // pass (candidate) and the int8 step (exact) are graded against one reference. Same criteria, reported. Not timed.
 //
