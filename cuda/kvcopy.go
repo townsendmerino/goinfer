@@ -123,6 +123,8 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 		fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d -> %d, rows [%d, %d); windowed layers: slot %d's base %d, slot %d's base %d after the copy; %s\n",
 			src, dst, start, end, src, r.kvBases[src], dst, lo, r.kvBudgetText())
 	}
+	fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d -> %d shares rows [%d, %d), %d blocks; %d of %d full-pool blocks in use\n",
+		src, dst, start, end, (end-start)/kvBlock, r.kvPools[kvGroupFull].inUse(), r.kvPools[kvGroupFull].blocks-1)
 	return nil
 }
 
