@@ -33,3 +33,13 @@ a bar on their sum cannot see that term alone. The whole MoE path allocating aga
 not returning the scratch: every request 5.58 MB, G3 red.
 
 The grammar speculative loop has no sampler (greedy only), so the release sits in `generateInto` and the n-gram loop.
+
+**Found by PR #135's CI, then fixed (2026-10-21, before merge).** (1) `TestQwen3ASR_tinyTextParity` and
+`TestVoxtral_tinyTextParity` failed: each keeps `prefillLogits`'s row and runs decode forwards before reading it, and the
+build had put that row in the decode logits buffer, which the forwards overwrite. The SCR-G4 consumer audit had checked the
+production callers only. The prefill row now goes in the cache's batched-pass buffer (`KVCache.headLogits`, the one a verify
+round uses), never the decode buffer, so it outlives decode forwards and is reused only by the next batched prefill or
+verify; both tests pass, SCR-G2 reads the same bytes (76,192 and 221,376 at `GOMAXPROCS=1`), and the whole `decoder`
+package passes locally (944 PASS, 164 skips, 0 FAIL, 17.6 min). (2) `TestSamplerScratch_pooled` missed the pool on two of
+nine requests on Linux: `sync.Pool` caches per P and the race detector drops a share of puts on purpose. The test now pins
+one P and skips under `-race`; the gate's reading above, taken without the pin, is unchanged.

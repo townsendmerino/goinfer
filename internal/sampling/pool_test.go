@@ -22,6 +22,11 @@ func TestSamplerScratch_pooled(t *testing.T) {
 	for i := range ids {
 		ids[i] = i * 97 % vocab
 	}
+	if raceEnabled {
+		t.Skip("the race detector drops a share of sync.Pool puts on purpose")
+	}
+	// One P: a sync.Pool caches per P, so a request on another P than the last release's would miss it.
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	var bytes [10]uint64
 	for r := range bytes {

@@ -1198,7 +1198,7 @@ func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
 // forwardN runs a batched forward over ids and returns the logits at every
 // position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to
 // K sequential forwards. Falls back to sequential for the non-batched archs. The
-// rows may be the cache's own buffer, valid until the next forward on cache.
+// rows may be the cache's own buffer, valid until the next batched prefill or verify on cache.
 func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
 	// Speculative VERIFY: never fast, whatever the operator asked for. See forwardNAttn.
 	return m.forwardNAttn(reqCtx, ids, cache, false)
@@ -1247,7 +1247,7 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 }
 
 // prefillLogits processes the whole prompt and returns the logits at its last position (the seed for the first generated token),
-// in the cache's own buffer, valid until the next forward on cache, as the sequential forward's are.
+// in the cache's own buffer (KVCache.headLogits), valid until the next batched prefill or verify on cache.
 // On the batched archs it runs the layers at M=len(prompt) in one pass (each weight streamed once, reused across all positions)
 // and the LM head on the last position only. Otherwise it falls back to sequential runLayers + forward. Bit-identical to the
 // sequential prefill when the exact kernel is in use; the cache is filled with the whole prompt either way.
