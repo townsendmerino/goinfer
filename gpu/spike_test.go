@@ -21,7 +21,7 @@ func TestSpike_capabilities(t *testing.T) {
 	}
 	defer ctx.Close()
 
-	info := ctx.adapter.GetInfo()
+	info := ctx.info
 	t.Logf("adapter: %q (%s) | backend=%s type=%s | driver=%q",
 		info.Device, info.Vendor, info.BackendType, info.AdapterType, info.Description)
 
