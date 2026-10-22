@@ -2417,6 +2417,10 @@ func (r *cudaResident) Close() error {
 			_ = r.logitsPinned.Close()
 			r.logitsPinned, r.logitsHost = nil, nil
 		}
+		if r.kvTabStage != nil {
+			_ = r.kvTabStage.Close()
+			r.kvTabStage = nil
+		}
 		// Host-mapped expert stacks are page-locked host memory too (not in the device ledger), so free them here alongside logitsPinned, before ReleaseObjects.
 		for i := range r.layers {
 			for _, m := range []*gpu.MappedHostBuffer{

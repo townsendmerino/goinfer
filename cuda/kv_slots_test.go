@@ -381,7 +381,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 	for i := range layers {
 		layers[i].kvDim = nKV * hd
 	}
-	perPos := kvBytesForCap(1, layers)
+	perPos := kvBytesForCap(kvBlock, layers) / kvBlock // one position, read over the block it is priced in
 	dense := probe.ResidentDenseWeightBytesFor("cuda") // what Plan prices for CUDA
 	probe.Close()
 	free, ok := decoder.FreeBytesFor("cuda")
