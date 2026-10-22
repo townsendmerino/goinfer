@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | Mac: Metal int8 everywhere and f32 back; start after `kv8a-metal-2026-10` merges, which edits `metal/backend.go` and `metal/model.go`; M–L | 12 matrix cells "until phase 3" |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22): MLA on Metal reports f32 and refuses f16/i8, its own PR next; P3b (int8 and f32 inside the MMA prefill, batched decode and the layer-major prefills) not started | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -164,6 +164,37 @@ test-only hook (`goinfer_testhooks`) lets a test make the resolver disagree with
 | P0A-G2 unchanged | 0 | unhooked: `TestKVPrecisionDelivered` and the generated `docs/kv-precision-matrix.md` (`TestKVPrecisionMatrix_fresh`), the Metal and WebGPU KV tests the touched packages carry | all PASS, and the matrix is byte-unchanged |
 
 Stopping rule: one pass each. Cost: seconds.
+### P3 gates, registered 2026-10-22 before the code (P3-G), for P3a: Metal f32 back
+
+**What the tree delivers on Metal today (a survey at main `591cdbe2`, `llama-tiny`-class fixtures, `ResidentContext` 64), which the
+matrix's Metal column does not say.** Of the matrix's 12 families, eight build a Metal resident with the cache they report (f16:
+2 B per K element; i8: 1 B plus a scale per position and head): llama, qwen3moe, gemma2, cohere, qwen25vl, qwen35, qwen3next,
+nemotron. Three never build one, for reasons outside KV: phi3 (the int8-activation decline), lfm2 (own forward), and
+`gemma4-moe-kv-tiny` (its shapes are under the MoE kernels' multiple of 32); their Metal cells are the resolver's word only.
+**MLA (deepseek) keeps its latent cache in f32 whatever is asked**: auto and f16 read "f16" in the matrix, and `-kv i8`
+declines the resident ("an MLA model keeps its latent cache in f32; int8 KV does not apply") and runs on the CPU. That is a
+silent precision on two cells, and correcting them turns delivered cells into refusals, which the ratchet forbids without the
+owner's word: decision **D5** in §6, not in P3a.
+
+**P3a, the build.** `--kv f32` on Metal delivers f32 (the resolver's Metal branch; `auto` stays f16). The decode kernels:
+`attention_f32` is generated from `attention`'s source by a type substitution (it had fallen behind: no attention sink, no
+8-wide V read), so the two share one reduction order; `kv_store_f32` as it is. Every path that writes or reads the f16 cache
+outside the decode kernels declines under f32 by name, as it already does under i8: the MMA prefill (`prefillOK`,
+`prefillKernelFloor`, `PrefillPath`, `PrefillLast`, `PrefillBlockRows`), the q4k lane, flash-attention decode, the batched
+E-model prefill, and batched decode. `ResidentKVBytes("metal")` prices f32 at 4 B. P3b (int8 and f32 inside the MMA prefill,
+batched decode and the layer-major prefills) is registered when it starts.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| P3-G1 identity | 0, Mac | `attention_f32` against `attention` on f16-representable K/V (and the store kernels), with a sink, a window, and more than 4,096 keys (the tiled path) | outputs bit-identical; and the f32 kernel's source equals the f16 one's under the substitution |
+| P3-G2 agreement | 0, Mac | the eight resident fixtures and deepseek at `--kv f32` on Metal against the CPU at f32: last-row logits and 32 greedy steps teacher-forced; the same against Metal at f16 (the arm that already ships) | **amended after the data (D6, owner, 2026-10-22):** at f32 the mean over positions of the per-position max |logit diff| to the CPU is no larger than at f16, within 5%, and top-1 agreement is no lower, on every fixture. As registered the bar was the max over all positions, which `qwen3moe-tiny` failed (0.0123 at f32 against 0.0076 at f16, one position setting the max, both arms at the MoE path's floor of about 0.0057 mean) |
+| P3-G3 bytes | 0, Mac | the resident's K/V buffers read back at `--kv f32` on the nine fixtures, against `ResidentKVBytes("metal", …)` | 4 B per element, and equal to the priced bytes, on every fixture |
+| P3-G4 paths | 0, Mac | under `--kv f32`: `PrefillPath`, `PrefillBlockRows`, batched decode's eligibility, flash decode and the batched E-model prefill | each declines with a reason naming the f32 cache; a prompt prefills through the sequential path |
+| P3-G5 unchanged | 0 | `auto` and `--kv i8` on the same fixtures; `TestKVPrecisionDelivered`; the generated matrix | f16 and i8 logits byte-equal to main's; the 12 f32 cells move from refused to f32 and nothing else moves |
+
+Planted defects, each once and reverted: the old hand-written `attention_f32` (G1 red on the sink case); one path's f32
+decline removed (G4 red); f32 priced at 2 B (G3 red). Stopping rule: one pass each. Cost: seconds to a minute. No timed run:
+an explicit `--kv f32` is the reference precision, not a default, and its fast paths are declined by name.
 
 ## 4. Gates (registered here, before any code; changing one after the data needs the owner's word and is recorded as such)
 
@@ -203,6 +234,19 @@ Roughly three to four weeks of agent work on each box, run in parallel, plus gat
 phase 0's table gives the first real count of cells to move.
 
 ## 6. For the owner
+
+- **D6, decided (a), owner, 2026-10-22: P3-G2 after its data.** Metal at f32 is 4 to 6 orders of magnitude closer to the CPU than at
+  f16 on every dense fixture and no further on the hybrids, but on `qwen3moe-tiny` its max |logit diff| over 32 positions was 0.0123
+  against f16's 0.0076, with equal top-1 (32/32): both arms sit at the MoE path's own floor (about 0.0057 mean at either precision)
+  and one position at f32 set the max (`docs/measurements/kv-precision-2026-10/p3a.md`). P3-G2 is amended, after the data, to the
+  mean of the per-position max |diff| (no larger at f32 than at f16, within 5%) with top-1 no lower; P3a merges on it. Options
+  were (a) that amendment, (b) keep the bar and exclude MoE fixtures, (c) hold P3a until the MoE path's own difference is understood.
+- **D5, decided (a), owner, 2026-10-22: MLA's KV precision on Metal.** DeepSeek's latent cache on Metal is f32 whatever is asked;
+  the matrix read "f16" for auto and `--kv f16`, and `--kv i8` declines the Metal resident to the CPU. Decided: the resolver reports
+  f32 for MLA on Metal (auto delivers f32, with the reason), and an explicit `--kv f16` or `--kv i8` for MLA on Metal refuses by
+  name; the two `deepseek-tiny` Metal cells that move from delivered to refused do so on this word (the ratchet's case). Built as
+  its own PR after P3a. Options were (a) that, (b) an f16 and an int8 latent cache on Metal (kernel work, an M of its own; only if
+  a user asks for MLA at f16 or i8 on a Mac), (c) leave it.
 
 **Owner, 2026-10-20, before any code: D1 refuse the load; D2 honor explicit requests whatever G4 reads; D3 WebGPU stays in
 scope; D4 the recommended order (phase 0 now, CUDA int8 before the CUDA family widening).**

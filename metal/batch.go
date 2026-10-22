@@ -382,7 +382,7 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 	if !r.decodeAttnFA || r.attnFAPartial == (Buffer{}) {
 		return false
 	}
-	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 {
+	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 || r.kvF32 {
 		return false
 	}
 	if r.loraLayers != nil {

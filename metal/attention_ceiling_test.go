@@ -25,7 +25,7 @@ func TestAttentionKernelsPastTileBound(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	defer d.ReleaseObjects()
-	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	lib, err := d.CompileLibrary(allKernels+kvF32Kernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -50,9 +50,6 @@ func TestAttentionKernelsPastTileBound(t *testing.T) {
 		}
 		for _, hd := range []int{64, 128} {
 			for _, c := range cases {
-				if c.sink && kernel == "attention_f32" {
-					continue // attention_f32 takes no sink arguments
-				}
 				name := fmt.Sprintf("%s hd=%d nKeys=%d window=%d sink=%v", kernel, hd, c.nKeys, c.window, c.sink)
 				kvDim := nKV * hd
 				qv := randUnit(rng, nH*hd)
@@ -111,7 +108,7 @@ func TestAttentionKernelsPastTileBound(t *testing.T) {
 						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink)}
 				case "attention_f32":
 					bufs = []Buffer{NewBufferFloats(d, qv), kBuf, vBuf, out, u(nH), u(nKV), u(hd), u(c.nKeys),
-						NewBufferFloats(d, []float32{scale}), u(c.window)}
+						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink)}
 				case "attention_i8":
 					bufs = []Buffer{NewBufferFloats(d, qv), kBuf, vBuf, ksBuf, vsBuf, out, u(nH), u(nKV), u(hd), u(c.nKeys),
 						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink)}

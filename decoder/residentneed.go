@@ -7,8 +7,8 @@ package decoder
 // the way that backend allocates it. The layout differs per backend, so "one formula" has to be one function with a
 // per-backend layout, not one flat formula:
 //
-//   - Metal allocates f16 only (the f32 KV kernels are compiled out, metal/model.go's r.kvF32) and the full context for
-//     every attention layer, sliding-window ones included, padded to 8 positions; kvBytesForCtx's sliding-window cap
+//   - Metal allocates the precision ResolveKV delivers there (f16, f32 or int8 with per-head scales; an MLA layer's latent
+//     f32) and the full context for every attention layer, sliding-window ones included, padded to 8 positions; kvBytesForCtx's sliding-window cap
 //     models the CPU ring buffer and would under-count Metal. Metal also holds a second copy of the dense weights in
 //     unified memory (the host WeightMat and the re-packed device buffer, ResidentHostCopyBytes), which Plan must count.
 //   - CUDA allocates f32 K/V, or f16 where kv16_cuda.go clears the model (the default for a cleared family, or -kv f16 for one the kernels
@@ -25,8 +25,8 @@ const WeightsMemFraction = 0.70
 const metalKVPad = 8
 
 // ResidentKVBytes is the KV cache a resident build on backend allocates for ctx positions. On "metal"
-// it is exact to the allocation: f16 (int8 with per-head f32 scales when the model was loaded with an
-// int8 KV cache), the full padded context on every attention layer, nothing for a layer whose mixer is not
+// it is exact to the allocation at the precision ResolveKV delivers there (f16; f32; int8 with per-head f32 scales), the full
+// padded context on every attention layer, nothing for a layer whose mixer is not
 // attention (ResidentLayerOps: DeltaNet, Mamba, or none). On "cuda" it is exact to the resident's K/V buffers (cuda/resident.go's kvBytesForCap:
 // f32 always, the full context on every attention layer, one latent buffer on an MLA layer, none on a
 // layer with no attention KV) — before the driver's per-buffer 2 MiB rounding, which the CUDA resident's
@@ -43,7 +43,12 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
 	}
 	padded := int64((ctx + metalKVPad - 1) / metalKVPad * metalKVPad)
-	i8 := m.KVCacheI8()
+	delivered := m.KVDeliveredFor("metal")
+	i8 := delivered == kvPrecI8
+	elem := int64(2) // f16
+	if delivered == kvPrecF32 {
+		elem = 4
+	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var total int64
 	for l := range nLayers {
@@ -66,7 +71,7 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 			total += 2 * padded * nKV * 4 // K and V per-head f32 scales
 			continue
 		}
-		total += 2 * padded * kvDim * 2 // K and V, f16
+		total += 2 * padded * kvDim * elem // K and V, f16 or f32
 	}
 	return total
 }

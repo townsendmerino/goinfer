@@ -828,7 +828,7 @@ func (a *metalResident) ResidentQuant() string { return a.quant }
 func (a *metalResident) PrefillKernelFloor() int { return a.prefillKernelFloor() }
 
 func (a *metalResident) prefillKernelFloor() int {
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvI8 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvI8 || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
 		return 0
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
@@ -854,6 +854,9 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	}
 	if a.r.kvI8 {
 		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
+	}
+	if a.r.kvF32 {
+		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is f32 (-kv f32)"
 	}
 	if a.r.attnSink {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
@@ -1061,6 +1064,9 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	// shape). Any of these declines here, and the caller re-runs the prompt through the sequential Forward loop.
 	if a.r.kvI8 {
 		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is int8 (-kv i8); using sequential path")
+	}
+	if a.r.kvF32 {
+		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is f32 (-kv f32); using sequential path")
 	}
 	if a.r.attnSoftcap != 0 && len(blocks) > 0 {
 		return nil, fmt.Errorf("metal: the image prefill's attention kernel is not gated with an attention softcap; using sequential path")
@@ -1507,7 +1513,7 @@ var prefillBlockRowsForTest int
 // kernel, whose pass declines past prefillExactAttnMaxKeys and must go on declining the whole prompt.
 func (a *metalResident) PrefillBlockRows() int {
 	r := a.r
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvI8 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvI8 || r.kvF32 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
 		(r.layerNorm && (r.layerNormBias || r.qkNorm)) || r.prefillUnaligned() != "" || r.prefillExactAttn() {
 		return 0
 	}

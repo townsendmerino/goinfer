@@ -1171,7 +1171,7 @@ kernel void rope2_kv(device float* x[[buffer(0)]], device const float* invf[[buf
         vc[pos*kvDim+kvi+dd]=half(x[base+dd]); vc[pos*kvDim+kvi+rhalf+dd]=half(x[base+rhalf+dd]);
     }
 }
-// kv_store_f32 / attention_f32 — the FULL-PRECISION KV twins, used on Gemma's sandwich path only
+// kv_store_f32 — the f32 KV cache's store (--kv f32); its attention, attention_f32, is derived from attention (metal/kv_f32.go)
 // (resident.kvF32). Gemma's low-magnitude attention contexts amplify f16-KV rounding into a
 // catastrophic per-layer context error (0.64 vs f32's 0.92 cosine; matched-input confirmer
 // isolated it to the KV cache). Qwen is insensitive and keeps the f16 path (half the cache BW).
@@ -1758,118 +1758,6 @@ kernel void attention_fa_blk64(
 
 typedef decltype(attention_fa_blk64<7>) attention_fa_blk64_t;
 template [[host_name("attention_fa_blk64_g7")]] kernel attention_fa_blk64_t attention_fa_blk64<7>;
-// attention_f32 — identical to attention but reads an f32 KV cache (Gemma sandwich path). Same
-// math (the f16 version already accumulated in f32); only the cache element type changes.
-kernel void attention_f32(device const float* q[[buffer(0)]], device const float* kc[[buffer(1)]],
-    device const float* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
-    constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
-    constant float& scale[[buffer(8)]], constant uint& window[[buffer(9)]],
-    uint qh[[threadgroup_position_in_grid]],
-    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
-    uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
-    uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
-    uint nWin = nKeys - winStart;
-    device const float* qr = q + qh*hd;
-    device const float* kb = kc + kvh*hd;
-    device const float* vb = vc + kvh*hd;
-    threadgroup float sc[4096];
-    threadgroup float red[128];
-
-    // Single-tile fast path (nWin <= 4096)
-    if (nWin <= 4096u) {
-        for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-            float a=0; device const float* k=kb+s*kvDim; uint d=0;
-            // float4 vectorized K-read (same coalescing fix as attention, f32 KV). Bit-identical.
-            if ((hd&3u)==0u) for (; d<hd; d+=4u){ float4 k4=*((device const float4*)(k+d)); a+=qr[d]*k4.x; a+=qr[d+1u]*k4.y; a+=qr[d+2u]*k4.z; a+=qr[d+3u]*k4.w; }
-            for (; d<hd; d++) a += qr[d]*k[d];
-            sc[s - winStart]=attn_score(a*scale);
-        }
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
-        red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
-        float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-        float ls=0; for (uint s=tid;s<nWin;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
-        red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
-        float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s - winStart]*vb[s*kvDim+d]; out[qh*hd+d]=a/sum; }
-        return;
-    }
-
-    // Deep-context tiled online softmax path (nWin > 4096)
-    float m_prev = -INFINITY;
-    float l_prev = 0.0f;
-    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-
-    for (uint tileBase = winStart; tileBase < nKeys; tileBase += 4096u) {
-        uint tileEnd = min(tileBase + 4096u, nKeys);
-        uint tileLen = tileEnd - tileBase;
-
-        for (uint s = tileBase + tid; s < tileEnd; s += tgs) {
-            float a = 0; device const float* k = kb + s*kvDim; uint d = 0;
-            if ((hd&3u) == 0u) for (; d < hd; d += 4u) {
-                float4 k4 = *((device const float4*)(k+d));
-                a += qr[d]*k4.x;
-                a += qr[d+1u]*k4.y;
-                a += qr[d+2u]*k4.z;
-                a += qr[d+3u]*k4.w;
-            }
-            for (; d < hd; d++) a += qr[d]*k[d];
-            sc[s - tileBase] = attn_score(a * scale);
-        }
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        float m_t = -INFINITY;
-        for (uint s = tid; s < tileLen; s += tgs) m_t = max(m_t, sc[s]);
-        red[tid] = m_t;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint st = tgs/2; st > 0; st >>= 1) {
-            if (tid < st) red[tid] = max(red[tid], red[tid+st]);
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }
-        float m_tile = red[0];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        float m_new = max(m_prev, m_tile);
-        float alpha = (m_prev == -INFINITY) ? 0.0f : exp(m_prev - m_new);
-
-        float ls = 0;
-        for (uint s = tid; s < tileLen; s += tgs) {
-            float p = exp(sc[s] - m_new);
-            sc[s] = p;
-            ls += p;
-        }
-        red[tid] = ls;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint st = tgs/2; st > 0; st >>= 1) {
-            if (tid < st) red[tid] += red[tid+st];
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }
-        float sum_tile = red[0];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        l_prev = l_prev * alpha + sum_tile;
-        m_prev = m_new;
-
-        for (uint slot = 0; slot < 4u; slot++) {
-            uint d = tid + slot * tgs;
-            if (d >= hd) break;
-            float a = acc[slot] * alpha;
-            for (uint s = tileBase; s < tileEnd; s++) {
-                a += sc[s - tileBase]*vb[s*kvDim+d];
-            }
-            acc[slot] = a;
-        }
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-
-    for (uint slot = 0; slot < 4u; slot++) {
-        uint d = tid + slot * tgs;
-        if (d >= hd) break;
-        out[qh*hd + d] = acc[slot] / l_prev;
-    }
-}
 // attention_i8: reads int8 KV cache with per-(position,KV-head) f32 scales (ks, vs).
 // Halves KV memory bandwidth and cache memory footprint vs f16 KV.
 kernel void attention_i8(device const float* q[[buffer(0)]], device const char* kc[[buffer(1)]],
