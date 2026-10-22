@@ -167,7 +167,7 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 	for i := range layers {
 		layers[i].kvDim = nKV * hd
 	}
-	perPos := kvBytesForCap(1, layers)
+	perPos := kvBytesForCap(kvBlock, layers) / kvBlock // one position, read over the block it is priced in
 	dense := probe.ResidentDenseWeightBytes()
 	probe.Close()
 

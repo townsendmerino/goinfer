@@ -196,6 +196,15 @@ func TestKV16_uploadKVRoundsLikeTheKernels(t *testing.T) {
 		keys[i] = float32(math.Sin(float64(i)*0.37)) * 7
 		vals[i] = float32(math.Cos(float64(i)*0.11)) * 0.013
 	}
+	// Positions 0 and 1 first hold a sentinel (device memory is not cleared at allocation, so "untouched" has to be a known value).
+	const sentinel = 1.5
+	below := make([]float32, 2*kvDim)
+	for i := range below {
+		below[i] = sentinel
+	}
+	if e := r16.UploadKV(3, 0, below, below); e != nil {
+		t.Fatal(e)
+	}
 	if e := r16.UploadKV(3, 2, keys, vals); e != nil {
 		t.Fatal(e)
 	}
@@ -213,9 +222,9 @@ func TestKV16_uploadKVRoundsLikeTheKernels(t *testing.T) {
 			t.Fatalf("K[%d]: cache %#04x, want %#04x", i, got[2*kvDim+i], want)
 		}
 	}
-	for _, i := range []int{0, 1, kvDim - 1} { // positions 0 and 1 were not written
-		if got[i] != 0 {
-			t.Errorf("element %d below the upload base was disturbed: %#04x", i, got[i])
+	for _, i := range []int{0, 1, kvDim - 1, 2*kvDim - 1} { // positions 0 and 1 hold the sentinel the upload at base 2 must not touch
+		if want := f32ToF16RNE(sentinel); got[i] != want {
+			t.Errorf("element %d below the upload base was disturbed: %#04x, want %#04x", i, got[i], want)
 		}
 	}
 }
