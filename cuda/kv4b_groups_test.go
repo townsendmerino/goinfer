@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -16,23 +17,46 @@ import (
 // delivers its f16 cache.
 var kv4bGroups = []struct {
 	group    string
-	fixtures []string
+	fixtures []string // a name under testdata/, or a path from the repo root
 	opts     decoder.Options
+	windowed bool // windowed KV on, with the small test slack so the window group releases blocks
 }{
-	{"moe", []string{"qwen3moe-tiny", "qwen3moe-tiny-k3", "mixtral-tiny"}, decoder.Options{}},
-	{"paged-experts", []string{"qwen3moe-tiny"}, decoder.Options{MoECacheExperts: true}},
+	{"moe", []string{"qwen3moe-tiny", "qwen3moe-tiny-k3", "mixtral-tiny"}, decoder.Options{}, false},
+	{"paged-experts", []string{"qwen3moe-tiny"}, decoder.Options{MoECacheExperts: true}, false},
+	{"sliding-window", []string{"mistral-tiny-window", "gemma2-tiny", "gemma3-vl-tiny", "decoder/testdata/gptoss_tiny.gguf"}, decoder.Options{}, false},
+	{"sliding-window/windowed", []string{"mistral-tiny-window", "gemma2-tiny", "gemma3-vl-tiny"}, decoder.Options{}, true},
 }
 
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.
-func kv4bPair(t *testing.T, fx string, opts decoder.Options) (m32, m16 *decoder.Model, r32, r16 *cudaResident) {
+func kv4bPair(t *testing.T, fx string, opts decoder.Options, windowed bool) (m32, m16 *decoder.Model, r32, r16 *cudaResident) {
 	t.Helper()
-	if _, err := os.Stat(filepath.Join("..", "testdata", fx)); err != nil {
+	path := filepath.Join("..", "testdata", fx)
+	if strings.Contains(fx, "/") {
+		path = filepath.Join("..", fx)
+	}
+	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture: %v", err)
+	}
+	if windowed {
+		withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, windowedKVTestSlack-windowedKVTestStep)
+		opts.ResidentWindowedKV = true
 	}
 	load := func(kv string) (*decoder.Model, *cudaResident) {
 		o := opts
-		o.KVPrecision, o.ResidentKVSlots = kv, 1
-		return loadResident(t, fx, o)
+		o.Backend, o.Quant, o.KVPrecision, o.ResidentKVSlots = "cuda", "int4", kv, 1
+		m, err := decoder.Load(path, o)
+		if err != nil {
+			t.Fatalf("load %s (-kv %s): %v", fx, kv, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			t.Fatalf("%s not CUDA-resident: %s", fx, m.ResidentDecline())
+		}
+		if windowed && !r.kvWin {
+			t.Fatalf("%s: windowed KV did not engage", fx)
+		}
+		return m, r
 	}
 	m32, r32 = load("f32")
 	m16, r16 = load("f16")
@@ -48,8 +72,8 @@ func TestKV4b_deliveredBytes(t *testing.T) {
 	requireCUDADevice(t)
 	for _, g := range kv4bGroups {
 		for _, fx := range g.fixtures {
-			t.Run(g.group+"/"+fx, func(t *testing.T) {
-				m32, m16, r32, r16 := kv4bPair(t, fx, g.opts)
+			t.Run(g.group+"/"+filepath.Base(fx), func(t *testing.T) {
+				m32, m16, r32, r16 := kv4bPair(t, fx, g.opts, g.windowed)
 				if got := m16.ResidentKVPrecision(); got != "f16" {
 					t.Fatalf("-kv f16 reports %q", got)
 				}
@@ -92,8 +116,8 @@ func TestKV4b_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 	requireCUDADevice(t)
 	for _, g := range kv4bGroups {
 		for _, fx := range g.fixtures {
-			t.Run(g.group+"/"+fx, func(t *testing.T) {
-				_, m16, r32, r16 := kv4bPair(t, fx, g.opts)
+			t.Run(g.group+"/"+filepath.Base(fx), func(t *testing.T) {
+				_, m16, r32, r16 := kv4bPair(t, fx, g.opts, g.windowed)
 				if r16.layers[0].noKV() || r16.layers[0].isMLA() {
 					t.Skip("layer 0 keeps no f16 K/V")
 				}

@@ -186,7 +186,7 @@ func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
 // (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), never by compiling.
 func cudaKVF16Delivered(f KVFacts) bool {
 	switch f.Family {
-	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral":
+	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss":
 		return true
 	}
 	return false
@@ -194,9 +194,9 @@ func cudaKVF16Delivered(f KVFacts) bool {
 
 // cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (the
 // owner's D7: f16 becomes the default for each family as it clears its gate). MoE and the paged-experts build are delivered on request
-// and stay f32 under auto until their group's G4 passes.
+// and sliding-window attention are delivered on request and stay f32 under auto until their group's G4 passes.
 func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
-	if f.MoE || o.MoECacheExperts {
+	if f.MoE || o.MoECacheExperts || f.SlidingWindow {
 		return false
 	}
 	switch f.Family {
@@ -212,11 +212,10 @@ func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
 func CUDAKVF16Decline(f KVFacts, o Options) string {
 	switch {
 	case !cudaKVF16Delivered(f):
-		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe and mixtral so far; " + f.Family + " keeps f32"
+		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3 and gpt-oss so far; " +
+			f.Family + " keeps f32"
 	case f.MLA:
 		return "an MLA latent cache has no f16 form"
-	case f.SlidingWindow:
-		return "sliding-window attention (the windowed KV ring) has no f16 form"
 	case f.PairwiseRoPE:
 		return "pairwise RoPE has no f16 store kernel"
 	case f.MRoPE:

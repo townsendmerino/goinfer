@@ -53,6 +53,8 @@ func TestKV16GateVsReference(t *testing.T) {
 		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false, decoder.Options{}},
 		// KV4b group 1, MoE and the paged-experts build: Qwen1.5-MoE-A2.7B fits the 8 GB card only with its experts paged.
 		"QMOE": {"GOINFER_CUDA_GATE_MODEL_QMOE", "$HOME/models/qwen15-moe-a27b", true, decoder.Options{MoECacheExperts: true}},
+		// Group 2, sliding window: Gemma-3-4B (five 1,024-key local layers to each global one).
+		"G34B": {"GOINFER_CUDA_GATE_MODEL_G34B", "$HOME/models/gemma-3-4b-it", true, decoder.Options{}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
@@ -97,6 +99,7 @@ type kv16ArmResult struct {
 	aa         [][]float32 // a second run of prompt 0 (the f16 arm only), for the A/A precondition
 	maxK, maxV []float32   // per layer, over every prompt (the f32 arm only)
 	layers     int
+	faLayers   int // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
 }
 
 func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
@@ -115,6 +118,11 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 		t.Fatalf("-kv %s: the flash-decode lane is not loaded (faSplit=%d)", kv, rf.faSplit)
 	}
 	res := kv16ArmResult{f16: rf.kvF16, kvBytes: rf.kc[0].Len() * map[bool]int{true: 2, false: 4}[rf.layers[0].kvHalf], layers: len(rf.layers)}
+	for l := range rf.layers {
+		if w := int(rf.layers[l].window); rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
+			res.faLayers++
+		}
+	}
 	res.maxK, res.maxV = make([]float32, len(rf.layers)), make([]float32, len(rf.layers))
 	ctx := context.Background()
 	t0 := time.Now()
@@ -213,7 +221,7 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	if f.kvBytes*2 != e.kvBytes {
 		t.Fatalf("PRECONDITION 1: the f16 arm's K buffer is %d B against the f32 arm's %d B, not half", f.kvBytes, e.kvBytes)
 	}
-	if want := e.layers * (contN - 1) * len(prompts); f.faLaunches < want {
+	if want := f.faLayers * (contN - 1) * len(prompts); f.faLayers == 0 || f.faLaunches < want {
 		t.Fatalf("PRECONDITION 1 (vacuity): the f16 arm launched fa_partial %d times, expected >= %d", f.faLaunches, want)
 	}
 	// PRECONDITION 2: A/A.

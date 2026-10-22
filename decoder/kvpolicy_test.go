@@ -43,7 +43,8 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	defer func() { kvPolicies["cuda"] = saved }()
 	auto := true
 	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }, AutoDecline: CUDAKVF16AutoDecline})
-	gemma := &Architecture{Name: "gemma3", NumLayers: 1}
+	gemma := &Architecture{Name: "gemma3", NumLayers: 1, SlidingWindow: 1024}
+	gemma4 := &Architecture{Name: "gemma4", NumLayers: 1}
 	moe := &Architecture{Name: "qwen3_moe", NumLayers: 1, MoE: &MoEConfig{}}
 	for _, c := range []struct {
 		kv   string
@@ -53,7 +54,7 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	}{
 		{"", a, true, "f16"}, {"auto", a, true, "f16"}, {"f16", a, true, "f16"}, {"f32", a, true, "f32"},
 		{"", a, false, "f32"}, {"auto", a, false, "f32"}, {"f16", a, false, "f16"},
-		{"", gemma, true, "f32"}, {"f16", gemma, true, "f32"}, {"i8", a, true, "f32"},
+		{"", gemma, true, "f32"}, {"f16", gemma, true, "f16"}, {"f16", gemma4, true, "f32"}, {"i8", a, true, "f32"},
 		{"", moe, true, "f32"}, {"auto", moe, true, "f32"}, {"f16", moe, true, "f16"}, {"f16", moe, false, "f16"},
 	} {
 		auto = c.auto
@@ -61,8 +62,8 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 			t.Errorf("auto=%v -kv %q on %s: %q, want %q", c.auto, c.kv, c.a.Name, got, c.want)
 		}
 	}
-	if r := kvF16Decline("cuda", gemma, Options{}); r == "" {
-		t.Error("gemma3 on CUDA: no decline reason")
+	if r := kvF16Decline("cuda", gemma4, Options{}); r == "" {
+		t.Error("gemma4 on CUDA: no decline reason")
 	}
 }
 
@@ -81,15 +82,18 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		{"mistral dense", dense("mistral"), Options{}, ""},
 		{"qwen3 dense", dense("qwen3"), Options{}, ""},
 		{"phi3 dense", dense("phi3"), Options{}, ""},
-		{"gemma3 not cleared", dense("gemma3"), Options{}, "keeps f32"},
+		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, ""},
+		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, ""},
+		{"gpt-oss", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, ""},
+		{"gemma4 not delivered", dense("gemma4"), Options{}, "keeps f32"},
 		{"qwen3_5 not cleared", dense("qwen3_5"), Options{}, "keeps f32"},
 		{"qwen2 MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, ""},
 		{"qwen2_moe", KVFacts{Family: "qwen2_moe", MoE: true}, Options{}, ""},
 		{"qwen3_moe", KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, ""},
 		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, ""},
 		{"qwen3_moe paged experts", KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, ""},
-		{"gpt-oss not delivered", KVFacts{Family: "gpt-oss", MoE: true}, Options{}, "keeps f32"},
-		{"mistral sliding window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, "sliding-window"},
+		{"granitemoe not delivered", KVFacts{Family: "granitemoe", MoE: true}, Options{}, "keeps f32"},
+		{"mistral sliding window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, ""},
 		{"llama pairwise rope", KVFacts{Family: "llama", PairwiseRoPE: true}, Options{}, "pairwise RoPE"},
 		{"qwen2 m-rope", KVFacts{Family: "qwen2", MRoPE: true}, Options{}, "m-RoPE"},
 		{"llama mla", KVFacts{Family: "llama", MLA: true}, Options{}, "MLA"},
@@ -124,6 +128,8 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, false},
 		{"qwen2 with MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, false},
 		{"qwen2 paged experts", KVFacts{Family: "qwen2"}, Options{MoECacheExperts: true}, false},
+		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, false},
+		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, false},
 	} {
 		if got := CUDAKVF16AutoDecline(c.f, c.o); (got == "") != c.auto {
 			t.Errorf("%s: auto decline %q, want auto f16 %v", c.name, got, c.auto)
