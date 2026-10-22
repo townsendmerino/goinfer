@@ -17,7 +17,7 @@ import (
 
 // G4-C, KV1's carry-overs on the device (docs/measurements/kv2-cuda-2026-10-15.md).
 //
-//	go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKV2_(recordedClass|hitCap)' -v ./cuda/
+//	go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKV2_(recordedClass|hitCap|inPlaceCap)' -v ./cuda/
 //
 // GOINFER_HEAVY_TESTS=1 adds the 1.5B.
 
@@ -183,6 +183,44 @@ func TestKV2_hitCap_real1p5B(t *testing.T) {
 	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	requireDeviceAndFile(t, path)
 	kv2HitCap(t, path, decoder.Options{ResidentKVSlots: 2, ResidentContext: 2048, KVPrecision: "f16"})
+}
+
+// kv2InPlaceCap is the in-place twin of kv2HitCap: A holds the 970-token preamble and only 4 tokens of its own, so B takes
+// A's idle slot in place rather than copying. The shared 970 rows would leave B's 5-token tail to the exact kernels; the cap
+// backs the reuse off to 896, leaving 79 rows for the fast ones. The reply and every row equal the prompt run cold.
+func kv2InPlaceCap(t *testing.T, path string, opts decoder.Options) {
+	g := kv2Load(t, path, opts)
+	pre := g.toks(970, 41)
+	a := append(slices.Clone(pre), g.toks(4, 42)...)
+	b := append(slices.Clone(pre), g.toks(5, 43)...)
+	kv2Generate(t, g.m, a, 4)
+	ids, gb := kv2Generate(t, g.m, b, 8)
+	slot, _ := g.m.KVBoundClassesForTest()
+	got := g.rows(slot, len(b)+len(ids)-1)
+	_ = g.m.Close()
+	if gb.PrefillShared != 0 || gb.PrefillReused != 896 {
+		t.Errorf("B reused %d rows (copied %d), want 896 taken in place", gb.PrefillReused, gb.PrefillShared)
+	}
+	o := opts
+	o.ResidentKVSlots = 1
+	c := kv2Load(t, path, o)
+	want, _ := kv2Generate(t, c.m, b, 8)
+	if !slices.Equal(ids, want) {
+		t.Errorf("B after the in-place reuse: %v, cold %v", ids, want)
+	}
+	if !kv2SameRaw(got, c.rows(0, len(want)+len(b)-1)) {
+		t.Errorf("B's K/V rows after the in-place reuse differ from the cold run's")
+	}
+}
+
+func TestKV2_inPlaceCap_tiny(t *testing.T) {
+	const dir = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFixture(t, dir)
+	for _, kv := range []string{"f32", "f16"} {
+		t.Run(kv, func(t *testing.T) {
+			kv2InPlaceCap(t, dir, decoder.Options{ResidentKVSlots: 2, ResidentContext: 2048, KVPrecision: kv})
+		})
+	}
 }
 
 // kv2FastWindowFixture is llama-attnfa-tiny (head dimension 128, so the fused prefill kernels run) declared as a Mistral
