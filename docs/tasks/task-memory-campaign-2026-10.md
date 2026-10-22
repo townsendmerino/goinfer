@@ -47,15 +47,19 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM12-f32res | open | either box: drop the f32 capacity in `setQuant` when the storage form changes (from cpu-kv-f16's F4 c); S, then refresh the parity hashes | — |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
-| MEM13-tokenizer | open | either box: uint64 rank keys, a size hint, a typed reader; S | `mergeRank` |
+| MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
 | MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
-| MEM13-heapquant | decision | D8 (§7): the owner's call on its two halves; read 2026-10-21 after MEM1 | §4 MEM13, "Heap-only quant, after MEM1" |
+| MEM13-heapquant | moved | D8a-build and D8b-build below (D8 decided: build both) | §4 MEM13, "Heap-only quant, after MEM1" |
+| D8a-build | open | Mac: single-copy `o_proj`, `down_proj` and experts under `Backend: "cpu"` on arm64; every CPU kernel that reads them takes the single copy; gates on bytes and bit-identity, registered before the code (D8a, owner 2026-10-21); S–M | — |
+| D8b-build | open | Mac for the CPU side: a `.giw` form for q4k (a new tensor kind and a format version), so phi3 maps on the CPU (D8b, owner 2026-10-21); M–L | — |
+| D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges | — |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
 | MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
 | MEM17 | open | aikit, then ken: `chunk.Chunk` as a file and a byte range through a mapping; ken stores chunks that way (D4, owner 2026-10-21); an aikit minor bump | `chunk.Chunk.Text` |
 | ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |
 | D1–D4 | done | decided 2026-10-21 | the status block above |
+| D8 | done | — | owner, 2026-10-21: build both halves (§7) |
 | D5 | moved | O3 (parked, defer) | — |
 | D6, D7 | done | — | aikit 5e4d3c5, a15bfa9 |
 
@@ -505,6 +509,26 @@ bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
 | token bytes per adapter | `internal/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
 | heap-only quant | q4k (phi3's default on CPU/CUDA) has no `.giw` form; on the arm64 heap path o_proj, down_proj and experts keep the dual copy even with `Backend: "cpu"` | model-sized | after MEM1, decide whether the heap path still matters |
 
+**MEM13-tokenizer gates, registered 2026-10-21 before the code (TK-G).** The build: merge ranks keyed by the two pieces'
+ids packed in a uint64 (a merge whose piece is not in the vocabulary keeps a string key, so no merge is lost), the merge
+loop carrying each node's id, a size hint on the GGUF path's rank map, and a typed metadata reader in `tokenizer` that
+walks the GGUF key-value section once and decodes only the keys the tokenizer reads, each to its own type, instead of
+aikit's `map[string]any` of boxed values. Fixture: the committed `tokenizer/testdata/qwen2-0.5b-coder-meta.gguf` (Qwen's
+151,646-token vocabulary and its merges), and the other two committed tokenizer GGUFs for identity.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| TK-G1 identity | 0 | the `tokenizer` package's tests; a differential test that the typed reader returns what aikit's reader returns for every key the tokenizer reads, on each committed tokenizer GGUF; token ids of a fixed corpus (English, code, CJK, emoji, digits, whitespace runs) on each committed tokenizer GGUF, pinned from `main` before the change | every test passes with no new skip; every key equal; every id equal |
+| TK-G2 memory | 0 | `LoadGGUF` of the Qwen fixture in a test: bytes allocated by the load (`TotalAlloc` delta) and heap kept with the tokenizer alive (`HeapAlloc` after `runtime.GC`, less the same before), each the median of 5 loads, read on `main` and on the branch | allocated ≤ 0.70 × main's, and kept ≤ main's − 3 MiB |
+| TK-G3 encode speed | 0, by day | a new `BenchmarkEncode` (the TK-G1 corpus, Qwen fixture), built as a test binary from `main` plus the benchmark file and from the branch, run A B B A × 3 (`-benchtime 2s`), one at a time under the timing lock | the median of the six new/old ns/op ratios ≤ 1.02 (encode no more than 2% slower) |
+
+> **Read 2026-10-21: all three PASS** (`docs/measurements/mem13-tokenizer-2026-10/README.md`): a load allocates 24.36 MiB
+> against 88.58 and keeps 15.32 against 24.61 (two GCs; the instrument was fixed before the verdict, as the record says);
+> encode 0.9935 of main's time.
+
+Void: a TK-G3 cell whose 1-minute load average is above 4.0 at its start (CLAUDE.md's heavy-load rule) is re-run in its
+place. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about 2 min for G3.
+
 **Heap-only quant, after MEM1 (read 2026-10-21, code at `58cd3021`).** With MEM1 merged, a load builds weights in the heap
 only when it is asked to or has no `.giw` form: `Options.DirectLoad` (the apps' `-direct-load`), a q4k `.gguf`, a
 safetensors directory with a LoRA or at bf16/f16, a platform other than darwin and linux, and test binaries. The item has
@@ -628,7 +652,10 @@ choice in aikit and a storage choice in ken (**D4**).
 - **D7** (MEM16): **DECIDED 2026-10-17** — word-embedding tables load native-precision and mapped; f16/int8 heap tables
   are opt-ins.
 
-- **D8** (MEM13-heapquant, 2026-10-21): (a) the arm64 dual copy on the heap path: close it now that the heap path is
+- **D8** (MEM13-heapquant): **DECIDED by the owner, 2026-10-21: build both**, against the recommendations below. (a) single-copy
+  weights for `o_proj`, `down_proj` and experts under `Backend: "cpu"` on arm64, every CPU kernel that reads them taking
+  the single copy, gated on bytes and bit-identity; (b) a `.giw` form for q4k, a new tensor kind and a format version, so
+  phi3 on the CPU and CUDA maps too. Order: (a), then (b); (b)'s CUDA cell is nobara's. The question as asked: (a) the arm64 dual copy on the heap path: close it now that the heap path is
   opt-in (recommended), or build row4-only `o_proj`/`down_proj`/experts under `Backend: "cpu"` (S–M: every CPU kernel
   that reads them must take row4-only, gated on bytes and bit-identity)? (b) q4k: give it a `.giw` form, a new tensor kind
   and a format version (M–L; phi3 on the CPU and CUDA then maps too), or leave phi3's CPU/CUDA load on the heap until a
