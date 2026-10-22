@@ -60,6 +60,12 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 
 // copyKVSlots is CopyKV's job. Executor thread only.
 func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
+	if r.kvReleased(src) {
+		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
+	}
+	if r.kvReleased(dst) {
+		start, r.kvEvicted[dst] = 0, false // dst holds nothing below start any more: take the whole range
+	}
 	lo := 0 // the first row a windowed layer of dst holds afterwards
 	if r.kvWin {
 		if !kvWindowReusable(r.kvBases[src], end, r.kvWindow) {
@@ -129,16 +135,20 @@ func (r *cudaResident) kvBudgetText() string {
 
 // ReusableKVSlot implements decoder.ResidentReusableKVSlot: ReusableKV's answer for any slot, bound or not.
 func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
-	if !r.kvWin || prefix <= 0 {
+	if prefix <= 0 {
 		return prefix
 	}
 	if slot < 0 || slot >= r.KVSlots() {
 		return 0
 	}
 	out := prefix
-	// the bases are executor state: read them where they are written
+	// the bases and the released marks are executor state: read them where they are written
 	if err := r.do(func() error {
-		if !kvWindowReusable(r.kvBases[slot], prefix, r.kvWindow) {
+		if r.kvReleased(slot) {
+			out = 0
+			return nil
+		}
+		if r.kvWin && !kvWindowReusable(r.kvBases[slot], prefix, r.kvWindow) {
 			out = 0
 			fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s\n",
 				slot, r.kvBases[slot], prefix, prefix-(r.kvWindow-1), r.kvBudgetText())

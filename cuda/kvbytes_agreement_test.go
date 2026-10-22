@@ -66,7 +66,9 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 				t.Fatalf("built %d KV slots with 2 requested, want %d", r.KVSlots(), wantSlots)
 			}
 			// The pools hold every slot's blocks and the null blocks, and the tables 4 B per block per group per slot (kvpool.go).
-			forCap := kvBytesForCap(r.ctxCap, r.layers)
+			// A slot's guaranteed share is the plan's per-slot context (kvShareCtx); the tables are as long as one conversation's cap.
+			forCap := kvBytesForCap(r.kvShareCtx, r.layers)
+			tabs := func(ctx int) int64 { return int64(kvGroups * 4 * kvBlocksFor(ctx)) }
 			null := kvPoolNullBytes(r.layers)
 			bytes := int64(r.kvTabDev.Len()) * 4
 			for l := range r.layers {
@@ -88,7 +90,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 					}
 				}
 			}
-			if want := int64(wantSlots)*forCap + null; bytes != want {
+			if want := int64(wantSlots)*(forCap-tabs(r.kvShareCtx)+tabs(r.ctxCap)) + null; bytes != want {
 				t.Fatalf("the pools and tables hold %d B, %d slots of kvBytesForCap (%d B at ctx %d) and the null blocks (%d B) say %d B — the resident's own fit figure no longer matches its allocation",
 					bytes, wantSlots, forCap, r.ctxCap, null, want)
 			}
@@ -104,14 +106,14 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 				asF16[i].kvHalf = !asF16[i].isMLA() && !asF16[i].noKV() && !asF16[i].kvShared
 			}
 			one := forCap + null
-			f32Bytes := kvBytesForCap(r.ctxCap, asF32) + kvPoolNullBytes(asF32)
-			f16Bytes := kvBytesForCap(r.ctxCap, asF16) + kvPoolNullBytes(asF16)
+			f32Bytes := kvBytesForCap(r.kvShareCtx, asF32) + kvPoolNullBytes(asF32)
+			f16Bytes := kvBytesForCap(r.kvShareCtx, asF16) + kvPoolNullBytes(asF16)
 			for _, c := range []struct {
 				name     string
 				f16, i8b bool
 				want     []int64
 			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{one, f16Bytes, f32Bytes}}, {"i8 requested", false, true, []int64{f32Bytes}}} {
-				got := m.ResidentKVBytes("cuda", r.ctxCap, c.f16, c.i8b)
+				got := m.ResidentKVBytes("cuda", r.kvShareCtx, c.f16, c.i8b)
 				if !slices.Contains(c.want, got) {
 					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want one of %v B (resident kvF16=%v, allocates %d B a slot)", c.name, r.ctxCap, got, c.want, r.kvF16, forCap)
 				}

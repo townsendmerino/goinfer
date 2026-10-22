@@ -1587,7 +1587,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 			// A CANCELLED PREFILL IS NOT A DECLINE. Falling through to the sequential loop would
 			// re-ingest the whole prompt the caller just abandoned — and that loop's own ctx check
 			// would abort it one token later anyway, after another forward. Return it.
-			if errors.Is(perr, context.Canceled) || errors.Is(perr, context.DeadlineExceeded) {
+			if errors.Is(perr, context.Canceled) || errors.Is(perr, context.DeadlineExceeded) || errors.Is(perr, ErrKVPoolFull) {
 				return nil, perr
 			}
 			from = prefillResume(from, perr) // the passes before the one that declined are written (PrefillPartial)
@@ -1863,6 +1863,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			if err == nil {
 				logits, err = m.mc3Prefill(ctx, mc3, mc3Slot, prompt, acq.reuse)
 			}
+			if kvPoolFullEnds(g, err, 0) {
+				return
+			}
 			if err != nil {
 				g.err = err
 				return
@@ -1884,7 +1887,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			m.residentForgetIDs()
 			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
 			if logits, err = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk); err != nil {
-				g.err = err
+				if !kvPoolFullEnds(g, err, 0) {
+					g.err = err
+				}
 				return
 			}
 			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq)           // before the first decode step writes past the prompt
@@ -2392,6 +2397,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			tFwd += time.Since(t0)
 			nFwd++
 		}
+		if kvPoolFullEnds(g, err, len(generated)) {
+			return // this token's K/V row was not written, so nothing is committed: the next turn prefills its prompt
+		}
 		if err != nil {
 			g.err = err
 			return
@@ -2421,6 +2429,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
 		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o
 	}
+}
+
+// kvPoolFullEnds reports whether err is the resident pool's refusal of a conversation past its guaranteed share (ErrKVPoolFull), and if so
+// ends g as the context cap would: the tokens it emitted are its budget, so the turn reports finish_reason "length".
+func kvPoolFullEnds(g *Generation, err error, emitted int) bool {
+	if !errors.Is(err, ErrKVPoolFull) {
+		return false
+	}
+	g.Budget, g.BudgetClamped = emitted, true
+	return true
 }
 
 // isStop reports whether id ends generation: a checkpoint EOS id (from

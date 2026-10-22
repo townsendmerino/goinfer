@@ -78,9 +78,9 @@ func TestPlan_metalDeclinesWhereTheGuardWould(t *testing.T) {
 	if ok := m.Plan("metal", guard, PlanRequest{Ctx: ctx, CtxPinned: true}); ok.Placement != PlacementResident {
 		t.Errorf("with exactly the guard's %d B, Plan(\"metal\") says %v (%s)", guard, ok.Placement, ok.Reason)
 	}
-	// Off Metal nothing changed: no host copy, and KV at the requested precision.
+	// Off Metal nothing changed: no host copy, and KV as the CUDA pricing gives it at the requested precision.
 	pc := m.Plan("cuda", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true})
-	if pc.HostCopyBytes != 0 || pc.KVBytes != m.kvBytesPerPositionAllLayers(false, false)*ctx {
+	if pc.HostCopyBytes != 0 || pc.KVBytes != m.ResidentKVBytes("cuda", ctx, false, false) {
 		t.Errorf("Plan(\"cuda\") changed: host copy %d, KV %d", pc.HostCopyBytes, pc.KVBytes)
 	}
 }
@@ -88,7 +88,8 @@ func TestPlan_metalDeclinesWhereTheGuardWould(t *testing.T) {
 // The "cuda" layout, pinned where CI can run it (the allocation-level check, cuda's
 // TestResidentKVBytes_matchesCUDAAllocation, needs a GPU): f32 unless f16 is asked for AND the f16 kernels cover the family (then half,
 // kv16_cuda.go), K and V on every attention layer, and ONE latent buffer on an MLA layer (which has no f16 form, so f16 prices as f32). int8 is not a CUDA
-// cache, and Plan's old per-position formula cut it to ~0.28x and doubled MLA (docs/measurements/memory-accounting-cuda-2026-09-25.md).
+// cache, and Plan's old per-position formula cut it to ~0.28x and doubled MLA (docs/measurements/memory-accounting-cuda-2026-09-25.md). The storage is
+// paged (cuda/kvpool.go): a one-slot load holds the context's whole 64-row blocks, one null block, and two tables of 4 B a block.
 func TestResidentKVBytes_cudaLayout(t *testing.T) {
 	// The CUDA backend's policy lives in the cuda package, which this binary does not link: stand in for it with the one fact the pricing reads (dense, no MLA).
 	RegisterKVF16Policy("cuda", KVF16Policy{Decline: func(f KVFacts, _ Options) string {
@@ -109,21 +110,23 @@ func TestResidentKVBytes_cudaLayout(t *testing.T) {
 		}
 		a := m.w.arch
 		_, nLayers, _, _, _, _, _ := m.Dims()
-		var want int64
+		var perRow int64 // bytes of one position across the layers
 		for l := range nLayers {
 			per := int64(a.kvDimAt(l)) * 4
 			if !c.mla {
 				per *= 2
 			}
-			want += per * ctx
+			perRow += per
 		}
+		blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
+		rows, tables := (blocks+1)*KVBlockRows, 2*4*blocks
 		if (a.mla != nil) != c.mla {
 			t.Fatalf("%s: fixture MLA=%v, expected %v", c.dir, a.mla != nil, c.mla)
 		}
 		for _, p := range []struct{ f16, i8 bool }{{false, false}, {true, false}, {false, true}} {
-			w := want
+			w := perRow*rows + tables
 			if p.f16 && kvF16Decline("cuda", a, Options{Backend: "cuda"}) == "" {
-				w = want / 2
+				w = perRow/2*rows + tables
 			}
 			if got := m.ResidentKVBytes("cuda", ctx, p.f16, p.i8); got != w {
 				t.Errorf("%s (f16=%v i8=%v): ResidentKVBytes(\"cuda\") = %d, want %d (%s)", c.dir, p.f16, p.i8, got, w,

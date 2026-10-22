@@ -730,7 +730,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		ctxPlanned:      residentCtxCap,
 		allocSlackBytes: allocSlack,
 		ctxExplicit:     m.ResidentContextRequest() > 0,
-		kvSlotsReq:      kvSlotsReq,
+		// One conversation may use the whole KV pool (KV4a-3) unless a context was asked for or pinned by the fit guard, or a companion's
+		// device K/V scales with the context (a --drafter's, priced at the planned one).
+		kvRaise:    m.ResidentContextRequest() <= 0 && m.ExtraResidentKVPerPosition() == 0,
+		modelCtx:   m.Config().MaxPositions,
+		kvSlotsReq: kvSlotsReq,
 		// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate,
 		// the widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller
 		// price than the one planned against; checkKVFits enforces it.

@@ -947,10 +947,15 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			}
 		}
 		if rows != nil {
+			r.kvStepAbort = false
 			for _, rw := range rows {
 				if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
 					return e
 				}
+			}
+			if r.kvStepAbort {
+				// a row took back blocks from a borrower that may be another row of this step: run nothing, so each row can go alone
+				return fmt.Errorf("cuda step: a borrower was stopped while the rows were mapped: %w", decoder.ErrKVPoolFull)
 			}
 		} else if e := r.kvEnsure(startPos, M); e != nil {
 			return e

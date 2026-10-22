@@ -842,6 +842,18 @@ type cudaResident struct {
 	kvTabStage      *gpu.HostBuffer[uint8] // pinned staging for kvFlushTabs' copies, kvTabRing tables
 	kvTabEv         []gpu.Event            // each staging entry's last copy
 	kvTabNext       int
+	// The pool's capacity rule (kvpool.go, KV4a-3): every slot is guaranteed kvShareBlocks blocks of the full group, the context the
+	// plan chose for one slot (kvShareCtx); kvRaise lets one conversation's cap (ctxCap) grow to the pool, up to modelCtx. kvSlotBusy marks
+	// the slots a running generation holds (decoder.ResidentKVSlotActivity), kvSlotUse each slot's last write, kvEvicted the slots whose
+	// blocks were released to make room.
+	kvShareCtx, kvShareBlocks int
+	kvRaise                   bool
+	modelCtx                  int
+	kvSlotBusy, kvEvicted     []bool
+	kvStopped                 []bool // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
+	kvStepAbort               bool   // a reclaim happened while a batched step mapped its rows: the step must not launch
+	kvSlotUse                 []uint64
+	kvUseTick                 uint64
 
 	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the first position slot s's
 	// windowed layers hold.
@@ -2257,6 +2269,9 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	}
 	return r.do(func() error {
 		lo, k, v := base, keys, vals
+		if base == 0 && r.kvReleased(r.kvSlot) {
+			r.kvEvicted[r.kvSlot] = false // a sequence written from position 0
+		}
 		if r.layers[layer].kvWin {
 			// a windowed layer keeps only the last window-1 positions (kvwindow.go)
 			k, v = r.uploadKVWindowed(layer, base, keys, vals)

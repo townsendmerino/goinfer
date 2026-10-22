@@ -200,6 +200,22 @@ func (r *cudaResident) kvEnsure(p0, n int) error { return r.kvEnsureSlot(r.kvSlo
 
 // kvEnsureSlot is kvEnsure for slot s, whether or not it is the bound one (an MC3 step prepares every row's slot before its layer loops).
 func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
+	if r.kvReleased(s) {
+		if p0 > 0 {
+			return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; a write at %d must start from position 0 (ReusableKV answers 0)", s, p0)
+		}
+		r.kvEvicted[s] = false
+	}
+	if s < len(r.kvStopped) && r.kvStopped[s] {
+		if p0 > 0 {
+			return fmt.Errorf("cuda: KV slot %d was stopped: its blocks past its share were taken back for a conversation within its share: %w", s, decoder.ErrKVPoolFull)
+		}
+		r.kvStopped[s] = false
+	}
+	if s < len(r.kvSlotUse) {
+		r.kvUseTick++
+		r.kvSlotUse[s] = r.kvUseTick
+	}
 	base := 0
 	if r.kvWin {
 		var err error
@@ -250,17 +266,17 @@ func (r *cudaResident) kvRoomFor(p0, n int) bool {
 }
 
 // ReusableKV implements decoder.ResidentReusableKV: of the first prefix positions of a sequence this resident's bound slot holds, how many
-// it can serve to a forward that continues at position prefix. A windowed layer has dropped everything before its base, so a prefix shorter
-// than base+window-1 has lost the history the next row attends to: 0 (prefill cold). Everything else is valid: the full layers hold
-// every position, and a windowed layer holds [base, end).
+// it can serve to a forward that continues at position prefix. A slot whose blocks were released to make room holds nothing: 0. A
+// windowed layer has dropped everything before its base, so a prefix shorter than base+window-1 has lost the history the next row attends
+// to: 0 (prefill cold). Everything else is valid: the full layers hold every position, and a windowed layer holds [base, end).
 func (r *cudaResident) ReusableKV(prefix int) int {
-	if !r.kvWin || prefix <= 0 {
+	if prefix <= 0 {
 		return prefix
 	}
 	out := prefix
-	// the base is executor state: read it where it is written
+	// the base and the released marks are executor state: read them where they are written
 	if err := r.do(func() error {
-		if !kvWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow) {
+		if r.kvReleased(r.kvSlot) || (r.kvWin && !kvWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow)) {
 			out = 0
 		}
 		return nil

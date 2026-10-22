@@ -103,8 +103,8 @@ func (r *cudaResident) kvGroupOf(l int) int {
 	return kvGroupFull
 }
 
-// kvSlotBlocks is the most blocks one slot ever maps in group g: its whole context in the full group, and in the window group
-// kvWindowBlocks.
+// kvSlotBlocks is what group g's pool holds for each slot: in the full group the slot's guaranteed share, the blocks of the context the
+// plan chose for one slot (one conversation may borrow past it, kvTake); in the window group kvWindowBlocks, the most a slot ever maps.
 func (r *cudaResident) kvSlotBlocks(g int) int {
 	if g == kvGroupWin {
 		if !r.kvWin {
@@ -112,7 +112,137 @@ func (r *cudaResident) kvSlotBlocks(g int) int {
 		}
 		return kvWindowBlocks(r.ctxCap, r.kvWindow+r.kvSlack)
 	}
-	return r.kvMaxBlocks()
+	return r.kvShareBlocks
+}
+
+// kvCapFor is one conversation's position cap with slots slots: the planned per-slot context, or, where kvRaise allows it, everything
+// the full pool holds, up to the model's own window.
+func (r *cudaResident) kvCapFor(slots int) int {
+	if !r.kvRaise || slots < 2 {
+		return r.kvShareCtx
+	}
+	c := slots * r.kvShareBlocks * kvBlock
+	if r.modelCtx > 0 {
+		c = min(c, r.modelCtx)
+	}
+	return max(c, r.kvShareCtx)
+}
+
+// kvHeld is how many full-group blocks slot s's table names, shared ones included.
+func (r *cudaResident) kvHeld(s int) int {
+	n := 0
+	for _, id := range r.kvTabs[s].ids[kvGroupFull] {
+		if id != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// kvWithinShare reports whether slot s is within its guaranteed share of the full group for one more block: below it, or at it for a copy
+// on write (which holds no more blocks after it).
+func (r *cudaResident) kvWithinShare(s int, cow bool) bool {
+	held := r.kvHeld(s)
+	return held < r.kvShareBlocks || (cow && held <= r.kvShareBlocks)
+}
+
+// kvTake hands slot s a block of group g. When none is free it releases idle slots' blocks, least recently used first (D5's step 1); a
+// slot within its share then takes back what a running borrower holds past its share, which stops that borrower (kvReclaim). A slot past
+// its share that still finds no block gets decoder.ErrKVPoolFull: only a borrower is ever stopped (D-KV4-2), and it ends as at the context
+// cap. The window group's pool holds every slot's most, so it never runs short.
+func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
+	for {
+		if id, ok := r.kvPools[g].take(); ok {
+			return id, nil
+		}
+		if r.kvEvictIdle(s) {
+			continue
+		}
+		if g == kvGroupFull && r.kvWithinShare(s, cow) && r.kvReclaim(s) {
+			continue
+		}
+		return 0, fmt.Errorf("cuda: KV pool: slot %d holds %d blocks, its share is %d, and no block is free for it (%d slots, %d blocks): %w",
+			s, r.kvHeld(s), r.kvShareBlocks, len(r.kvTabs), r.kvPools[g].blocks-1, decoder.ErrKVPoolFull)
+	}
+}
+
+// kvReclaim stops the running slot other than s that holds the most blocks past its share: its blocks past the share go back to the pool,
+// it is marked stopped, so its next write returns decoder.ErrKVPoolFull, and a batched step in progress is told to abort before it
+// launches anything (kvStepAbort), since a row of it may be that borrower. False when no other slot holds more than its share.
+func (r *cudaResident) kvReclaim(s int) bool {
+	best, most := -1, 0
+	for t := range r.kvTabs {
+		if t == s || r.kvStopped[t] {
+			continue
+		}
+		if ex := r.kvHeld(t) - r.kvShareBlocks; ex > most {
+			best, most = t, ex
+		}
+	}
+	if best < 0 {
+		return false
+	}
+	ids := r.kvTabs[best].ids[kvGroupFull]
+	for b := r.kvShareBlocks; b < len(ids); b++ {
+		if ids[b] != 0 {
+			r.kvPools[kvGroupFull].unref(ids[b])
+			ids[b] = 0
+		}
+	}
+	r.kvTabs[best].dirty[kvGroupFull] = true
+	r.kvStopped[best], r.kvStepAbort = true, true
+	fmt.Fprintf(os.Stderr, "cuda: KV pool: stopped slot %d, %d blocks past its share of %d, for slot %d within its share\n", best, most, r.kvShareBlocks, s)
+	return true
+}
+
+// kvEvictIdle releases every block of the least recently written slot that is not s, not bound, not held by a running generation
+// (kvSlotBusy) and holds any, and marks it released, so it answers 0 to every reuse question until it starts a new sequence. False
+// when there is none.
+func (r *cudaResident) kvEvictIdle(s int) bool {
+	best := -1
+	for t := range r.kvTabs {
+		if t == s || t == r.kvSlot || r.kvSlotBusy[t] || (r.kvHeld(t) == 0 && !r.kvHoldsWindow(t)) {
+			continue
+		}
+		if best < 0 || r.kvSlotUse[t] < r.kvSlotUse[best] {
+			best = t
+		}
+	}
+	if best < 0 {
+		return false
+	}
+	n := r.kvHeld(best)
+	r.kvReleaseAll(best, kvGroupFull)
+	r.kvReleaseAll(best, kvGroupWin)
+	r.kvEvicted[best] = true
+	fmt.Fprintf(os.Stderr, "cuda: KV pool: released slot %d's %d blocks (idle, the least recently used) for slot %d, which is past its share of %d\n",
+		best, n, s, r.kvShareBlocks)
+	return true
+}
+
+// kvHoldsWindow reports whether slot s maps any window-group block.
+func (r *cudaResident) kvHoldsWindow(s int) bool {
+	for _, id := range r.kvTabs[s].ids[kvGroupWin] {
+		if id != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// SetKVSlotBusy implements decoder.ResidentKVSlotActivity.
+func (r *cudaResident) SetKVSlotBusy(slot int, busy bool) {
+	_ = r.do(func() error {
+		if slot >= 0 && slot < len(r.kvSlotBusy) {
+			r.kvSlotBusy[slot] = busy
+		}
+		return nil
+	})
+}
+
+// kvReleased reports whether slot s's blocks were released to make room (kvEvictIdle) since it last started a sequence.
+func (r *cudaResident) kvReleased(s int) bool {
+	return s >= 0 && s < len(r.kvEvicted) && r.kvEvicted[s]
 }
 
 // kvWindowBlocks is the most blocks a slot's window group maps at context ctxCap when a windowed layer holds held positions: the held
@@ -242,9 +372,9 @@ func (r *cudaResident) kvMap(s, g, lo, hi int) error {
 		if old != 0 && r.kvPools[g].refs[old] <= 1 {
 			continue
 		}
-		id, ok := r.kvPools[g].take()
-		if !ok {
-			return fmt.Errorf("cuda: KV pool (group %d, %d blocks) exhausted mapping slot %d's positions [%d, %d)", g, r.kvPools[g].blocks, s, lo, hi)
+		id, e := r.kvTake(s, g, old != 0)
+		if e != nil {
+			return e
 		}
 		if old != 0 {
 			if keep := lo - b*kvBlock; keep > 0 {
@@ -418,6 +548,7 @@ func kvPoolNullBytes(layers []cudaLayer) int64 {
 // kvAllocPoolsFit is kvAllocPools for r.kvSlotsN slots, and on a device allocation failure for one fewer, down to one, which is
 // returned as the failure. A panic other than an allocation failure is re-raised.
 func (r *cudaResident) kvAllocPoolsFit() error {
+	r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
 	want := max(1, r.kvSlotsN)
 	for n := want; n >= 1; n-- {
 		ok, err := r.kvTryAllocPools(n)
@@ -429,7 +560,7 @@ func (r *cudaResident) kvAllocPoolsFit() error {
 				fmt.Fprintf(os.Stderr, "cuda: %d of %d resident KV slots granted: the device ran out of memory allocating the KV pools beside the build's own scratch\n", n, want)
 			}
 			r.kvSlotsN = n
-			return nil
+			return r.kvAfterRaise()
 		}
 	}
 	return fmt.Errorf("cuda: the device ran out of memory allocating one KV slot's pools")
@@ -452,6 +583,8 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 	if r.kvWin {
 		r.kvBases = make([]int, slots)
 	}
+	r.kvSlotBusy, r.kvEvicted, r.kvStopped, r.kvSlotUse = make([]bool, slots), make([]bool, slots), make([]bool, slots), make([]uint64, slots)
+	r.ctxCap = r.kvCapFor(slots)
 	return true, r.kvAllocPools(slots)
 }
 
@@ -475,4 +608,19 @@ func (r *cudaResident) kvReleasePools() {
 		r.kvTabDev = Buffer{}
 	}
 	r.kvTabs = nil
+}
+
+// kvAfterRaise follows a per-conversation cap past the planned per-slot context: the split-KV score scratch, sized by the cap, grows with
+// it, and the load says what the pool holds (the task doc's §5.16 banner).
+func (r *cudaResident) kvAfterRaise() error {
+	if r.ctxCap == r.kvShareCtx {
+		return nil
+	}
+	if r.skScoreBuf.Len() > 0 {
+		r.dev.ReleaseBuf(r.skScoreBuf)
+		r.skScoreBuf = r.af(r.nH * r.ctxCap)
+	}
+	fmt.Fprintf(os.Stderr, "cuda: KV pool: %d positions (%d blocks of %d) for %d conversations; one conversation can use up to %d positions, and each is guaranteed %d\n",
+		r.kvSlotsN*r.kvShareBlocks*kvBlock, r.kvSlotsN*r.kvShareBlocks, kvBlock, r.kvSlotsN, r.ctxCap, r.kvShareCtx)
+	return nil
 }

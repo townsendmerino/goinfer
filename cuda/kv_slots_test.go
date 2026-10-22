@@ -591,9 +591,18 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 			if !ok {
 				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
 			}
-			t.Logf("ctx %d, %d slots", r.ctxCap, r.KVSlots())
-			if r.ctxCap != c.wantCtx || r.KVSlots() != c.wantSlots {
-				t.Errorf("built ctx %d with %d slots, want ctx %d with %d", r.ctxCap, r.KVSlots(), c.wantCtx, c.wantSlots)
+			// The plan's per-slot context is each slot's guaranteed share (kvShareCtx); an unpinned load lets one conversation's cap
+			// (ctxCap) grow to the pool, up to the model's window (kvCapFor), and an explicit -ctx keeps it.
+			t.Logf("share %d, cap %d, %d slots", r.kvShareCtx, r.ctxCap, r.KVSlots())
+			if r.kvShareCtx != c.wantCtx || r.KVSlots() != c.wantSlots {
+				t.Errorf("built a share of %d with %d slots, want %d with %d", r.kvShareCtx, r.KVSlots(), c.wantCtx, c.wantSlots)
+			}
+			wantCap := c.wantCtx
+			if c.ctxReq == 0 {
+				wantCap = min(c.wantSlots*kvBlocksFor(c.wantCtx)*kvBlock, r.modelCtx)
+			}
+			if r.ctxCap != wantCap {
+				t.Errorf("one conversation's cap is %d, want %d", r.ctxCap, wantCap)
 			}
 			if b, want := r.kc[0].Len(), r.kvPoolBlocks(r.kvGroupOf(0), r.KVSlots())*kvBlock*r.layers[0].kvDim; b != want {
 				t.Errorf("layer 0 K pool holds %d floats, want %d: the pools were sized before the trim", b, want)
