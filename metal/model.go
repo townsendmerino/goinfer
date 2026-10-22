@@ -1254,7 +1254,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// The f32 KV path (kv_store_f32, attention_f32) runs when the resolver delivers f32: on an explicit --kv f32, never for auto
 	// (a matched-input confirmer showed f16 versus f32 KV storage is not what degrades Gemma's contexts,
 	// docs/code-notes/metal.md#buildResident.kvF32). Every fast path declines it by name.
-	kvDelivered := m.KVDeliveredFor("metal") // the resolver's answer, not the raw request (decoder.ResolveKV)
+	// The resolver's answer, not the raw request (decoder.ResolveKV). It names the GQA K/V cache; an MLA model's latent is f32
+	// whatever it says (metal/mla.go), so neither flag applies there.
+	kvDelivered := m.KVDeliveredFor("metal")
+	if _, _, _, _, _, _, _, _, isMLA := m.MLAResidentParams(); isMLA {
+		kvDelivered = ""
+	}
 	r.kvF32 = kvDelivered == "f32"
 	if r.kvF32 {
 		r.pKv, r.pAttn = pipe("kv_store_f32"), pipe("attention_f32")
@@ -1294,9 +1299,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, err
 	}
 	if r.mla != nil {
-		if r.kvI8 {
-			return nil, fmt.Errorf("metal: an MLA model keeps its latent cache in f32; int8 KV (-kv i8) does not apply, so it runs on the CPU")
-		}
 		r.pMlaStore, r.pMlaHeadMV, r.pMlaQRope, r.pMlaAttn = pipe("mla_store"), pipe("mla_head_mv"), pipe("mla_qrope"), pipe("mla_attn")
 		r.mlaS = buildMLAScratch(d, m, r.mla)
 	}
