@@ -394,6 +394,9 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 		}
 		lens[i], firsts[i], uses[i] = a.Len(i), a.FirstPrompt(i), a.Use(i)
 	}
+	if kvAllowanceOverride > 0 {
+		firsts = nil
+	}
 	pick := kvmgr.PickSlotFor(scores, lens, firsts, uses, busy, m.kvRollbackAllowance())
 	if pick < 0 {
 		return kvAcquired{slot: -1, src: -1}
@@ -524,8 +527,10 @@ func (m *Model) residentBind(slot int) error {
 	return nil
 }
 
-// kvAllowanceOverride, when positive, replaces kvRollbackAllowance. Set only by in-package tests: a large value
-// switches the in-place limit off, so a test can compare the rest of the slot choice with the bookkeeping KV1 replaced.
+// kvAllowanceOverride, when positive, replaces kvRollbackAllowance and leaves the slot choice no first-prompt lengths,
+// so an own rollback is held to the keep-at-least-as-much-as-it-overwrites rule like any request. Set only by in-package
+// tests: a large value switches both off, so a test can compare the rest of the slot choice with the bookkeeping KV1
+// replaced.
 var kvAllowanceOverride int
 
 // kvRollbackAllowance is how many rows a request may give up of a slot it takes in place (kvmgr.PickSlotWithin): one
