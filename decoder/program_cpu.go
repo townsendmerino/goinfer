@@ -145,6 +145,9 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 				}
 				out := m.reg(o.out, h, scr)
 				if o.ffn.Form == ffnGemma4Dense {
+					if g4 == nil && zpSoftPanic {
+						panic("zombie probe: g4 is nil")
+					}
 					if err := m.gemma4DenseFFN(o.ffn.Act, m.reg(o.in, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
 						return nil, err
 					}
@@ -495,3 +498,7 @@ func (t *attnTimer) attn() {
 		atomic.AddInt64(&dtAttn, d)
 	}
 }
+
+// zpSoftPanic (temporary, zombie-probe branch only; set by program_test.go) raises the nil-g4 case as a Go panic instead of a
+// nil dereference.
+var zpSoftPanic bool

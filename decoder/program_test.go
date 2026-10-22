@@ -596,6 +596,9 @@ func zpWant(fixture, key string, mode walkerMode) bool {
 	if os.Getenv("ZP_QUARANTINE") != "" && fixture == "nemotron3nano-tiny" && key == "ffn.Act" {
 		return false
 	}
+	if os.Getenv("ZP_SKIP_FIXTURE") == fixture {
+		return false
+	}
 	if os.Getenv("ZP_FIXTURE") != "" && os.Getenv("ZP_FIXTURE") != fixture {
 		return false
 	}
@@ -607,3 +610,5 @@ func zpWant(fixture, key string, mode walkerMode) bool {
 	}
 	return !in("ZP_SKIP", key)
 }
+
+func init() { zpSoftPanic = os.Getenv("ZP_SOFTPANIC") != "" }

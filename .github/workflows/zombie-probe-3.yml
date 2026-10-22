@@ -1,7 +1,7 @@
 name: zombie-probe-3
 
-# Temporary (docs/queue-correctness.md G50): on Windows hosts whose CPU is a Xeon Platinum 8573C, TestProgram_L under six arms,
-# six runs each. Other hosts print their CPU and stop. Lives only on the zombie-probe-3 branch.
+# Temporary (docs/queue-correctness.md G50): on Windows hosts whose CPU is a Xeon Platinum 8573C, TestProgram_L under four arms,
+# four runs each, and a standalone recovered-fault probe. Other hosts print their CPU and stop. Lives only on the zombie-probe-3 branch.
 on:
   push:
     branches: [zombie-probe-3-2026-10-22]
@@ -41,21 +41,24 @@ jobs:
           go run ./internal/zombieprobe
           go test -count=3 -short bytes strings sort 2>&1 | Select-Object -Last 6 | ForEach-Object { Write-Host "STDLIB $_" }
           go test -c -tags goinfer_testhooks -o dec.test.exe ./decoder/
-          go test -c -tags 'goinfer_testhooks aikit_noavx2' -o dec-noavx2.test.exe ./decoder/
           New-Item -ItemType Directory -Force -Path zp | Out-Null
-          $novec = 'cpu.avx=off,cpu.avx2=off,cpu.avx512f=off'
+          go build -o segv.exe ./internal/zombieprobe
+          foreach ($i in 1..3) {
+            .\segv.exe segv *> "zp\segv-$i.log"
+            $rc = $LASTEXITCODE
+            $l = (Select-String -Path "zp\segv-$i.log" -Pattern 'fatal error|marked free|done|panic' | Select-Object -First 1).Line
+            Write-Host "SEGV run=$i rc=$rc $l"
+          }
           $arms = [ordered]@{
             'ctrl'     = @{ BIN = 'dec.test.exe' }
-            'apo'      = @{ BIN = 'dec.test.exe'; GODEBUG = 'asyncpreemptoff=1' }
-            'quar'     = @{ BIN = 'dec.test.exe'; ZP_QUARANTINE = '1' }
-            'procs1'   = @{ BIN = 'dec.test.exe'; GOMAXPROCS = '1' }
-            'rtnovec'  = @{ BIN = 'dec.test.exe'; GODEBUG = $novec }
-            'novec'    = @{ BIN = 'dec-noavx2.test.exe'; GODEBUG = $novec }
+            'soft'     = @{ BIN = 'dec.test.exe'; ZP_SOFTPANIC = '1' }
+            'noform'   = @{ BIN = 'dec.test.exe'; ZP_SKIP = 'ffn.Form' }
+            'nonemo'   = @{ BIN = 'dec.test.exe'; ZP_SKIP_FIXTURE = 'nemotron3nano-tiny' }
           }
           Set-Location decoder
-          foreach ($run in 1..6) {
+          foreach ($run in 1..4) {
             foreach ($name in $arms.Keys) {
-              foreach ($k in @('GODEBUG','ZP_FIXTURE','ZP_KEYS','ZP_SKIP','ZP_MODES','ZP_QUARANTINE','GOMAXPROCS')) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+              foreach ($k in @('GODEBUG','ZP_FIXTURE','ZP_KEYS','ZP_SKIP','ZP_MODES','ZP_QUARANTINE','GOMAXPROCS','ZP_SOFTPANIC','ZP_SKIP_FIXTURE')) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
               foreach ($kv in $arms[$name].GetEnumerator()) { if ($kv.Key -ne 'BIN') { Set-Item "Env:$($kv.Key)" $kv.Value } }
               $env:GOTRACEBACK = 'all'
               $log = "..\zp\$name-$run.log"
