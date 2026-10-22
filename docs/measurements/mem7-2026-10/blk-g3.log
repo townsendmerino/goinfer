@@ -1,0 +1,19 @@
+start 08:39 load1 3.26 available 4903895040
+=== RUN   TestMEM7_speedSmallBlock
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.110, 0.250); 0 = always the fragment
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.008 ms, fragment 0.010 ms), gate|up at B <= 0 (0.009, 0.010); 0 = always the fragment
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+[BLK-G3] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, 12288 tokens: today's block 8000 rows ([8000 4288] passes), the 128 MiB block 1984 rows ([1984 1984 1984 1984 1984 1984 384] passes)
+[BLK-G3] warm-up: today 17.77s, 128 MiB 17.39s (ratio 0.9781); elapsed 35s
+[BLK-G3] pair 1 of 5: today 17.33s, 128 MiB 17.68s (ratio 1.0204); elapsed 70s
+[BLK-G3] pair 2 of 5: today 17.23s, 128 MiB 17.47s (ratio 1.0143); elapsed 105s
+[BLK-G3] pair 3 of 5: today 17.30s, 128 MiB 17.50s (ratio 1.0116); elapsed 140s
+[BLK-G3] pair 4 of 5: today 17.29s, 128 MiB 17.52s (ratio 1.0137); elapsed 174s
+[BLK-G3] pair 5 of 5: today 17.28s, 128 MiB 17.52s (ratio 1.0136); elapsed 209s
+[BLK-G3] median 128 MiB / today 1.0137 (pairs [1.0115993703705382 1.01360950748654 1.013702220624429 1.014283846279959 1.0203811384820798])
+    mem7_block_test.go:149: BLK-G3 PASS: median ratio 1.0137
+--- PASS: TestMEM7_speedSmallBlock (210.10s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	210.645s

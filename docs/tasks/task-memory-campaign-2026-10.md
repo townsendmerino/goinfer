@@ -34,7 +34,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
-| MEM7 | open | Mac: size the Metal prefill block to the machine, now that B41's reading is on main; S | `prefillBlockScratch` |
+| MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | open | D10 (a), owner, 2026-10-21: Gemma 4's per-layer table int4 on Metal by default, a Metal quality cell on E2B, the sidecar variant tag moved, the Metal goldens re-pinned; the untied input embedding stays at the pin | §7 D10 |
 | MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
@@ -457,6 +457,26 @@ on a 16 GB machine?
 
 **Gates.** Tier 0: logits byte-identical across block sizes (blocking is already invariant; pin it at two sizes).
 Speed: TTFT at the smaller block, in-process A/B by day (TE5(b)); a served gate only if unresolved.
+
+**MEM7 gates, registered 2026-10-22 before the code (BLK-G).** The build: `metal/backend.go:metalResident.PrefillBlockRows`
+sizes a pass's scratch to what the memory guard's own budget leaves, `min(prefillBlockScratch, metalMemoryCeiling(ram) −
+residentNeedBytes(m))` (the budget is the "metal" probe the fit plan reads: the static ceiling min'd with B41's live
+reading), in rows a multiple of 64 and never under `prefillBlockRowsMin`; 512 MiB stays the ceiling. **Deviation from the fix
+shape above, stated:** the block is not added to `ResidentNeedBytes`. Its size depends on the resident's per-row scratch,
+which a fit plan made before the build cannot know, and adding up to 512 MiB to the need would refuse loads the guard admits
+today. Sizing the block from what the need leaves gives need + block ≤ the budget by construction, which is what counting it
+was for, without moving any guard verdict (the guard's thresholds are not touched). The open question (a persistent arena)
+stays open.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| BLK-G1 identity | 0, Mac | `TestI8_blocksMatchOnePass_dense` (blocks of 64, 100 and 256 rows) and `_MoE`: tokens, log-probabilities and every resident state buffer against one pass | unchanged: all byte-equal, PASS (not skip) |
+| BLK-G2 sizing | 0, Mac | `PrefillBlockRows` on the dense fixture under `metalMemoryCeilingForTest` set to the need plus 1 GiB, plus 200 MiB, plus 1 MiB | 1 GiB of headroom gives today's rows exactly (the 512 MiB ceiling binds); 200 MiB gives the most 64-row multiple whose `PrefillScratchBytes` is ≤ 200 MiB; 1 MiB gives `prefillBlockRowsMin`; the exact-kernel and int8-KV cases still give 0 |
+| BLK-G3 speed | 1, Mac, by day, timing lock | `TestI8_real`'s speed mode on Qwen2.5-Coder-1.5B (`~/models`), 12,288 tokens, five alternating pairs after a warm-up: blocks of today's rows against the rows a 128 MiB budget gives | a reading of the cost the smaller block adds when the headroom forces it: median TTFT ratio (128 MiB ÷ today) ≤ 1.15 PASS; 1.15–1.30 parked for the owner; above 1.30 FAIL (then the floor rises before this ships) |
+
+Planted defect, run once and reverted: `PrefillBlockRows` ignoring the headroom (BLK-G2 red at 200 MiB and 1 MiB). Stopping
+rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; G3 about 6 min (twelve 12K prefills on
+the 1.5B, about 15 s each, plus loads), from G-I8-5's record.
 
 ### MEM8 · Metal int4 LM head; gather-only tables decoupled from the head pin (M)
 
