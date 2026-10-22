@@ -36,7 +36,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
 | MEM7 | open | Mac: size the Metal prefill block to the machine, now that B41's reading is on main; S | `prefillBlockScratch` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
-| MEM8(b) | open | D10 (a), owner, 2026-10-21: Gemma 4's per-layer table int4 on Metal by default, a Metal quality cell on E2B, the sidecar variant tag moved, the Metal goldens re-pinned; the untied input embedding stays at the pin | §7 D10 |
+| MEM8(b) | blocked | D12 (owner): PLE-G3 read AMBIGUOUS (94.25% top-1, KL 0.033); built on branch `mem8b-ple-2026-10`, not merged | `docs/measurements/mem8b-2026-10/README.md` |
 | MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
@@ -872,6 +872,17 @@ choice in aikit and a storage choice in ken (**D4**).
   then goinfer's bump and the switch of serve's device-tower loads to head-only, gated on the bytes after attach and
   bit-identity of the CPU fallback after a reload; (b) leave MEM4(b) in aikit's queue until MEM4(a)'s aliasing work opens
   the same files. **Recommended: (a)**, with the aikit half done on an aikit branch for the owner to tag.
+
+- **D12** (MEM8(b), asked 2026-10-22, open). PLE-G3 read AMBIGUOUS, its pre-registered parked band: with Gemma 4's
+  per-layer table at int4 instead of int8, E2B on Metal agrees on 94.25% of top-1 tokens (410/435, bar 95.0%) and the mean
+  KL is 0.03257 nats (bar 0.05, inside PASS). The int4 table is what CPU and CUDA already run by default. Separately, the
+  tiny fixture's batched E-model pass reads 0.97980 against its 0.98 bar (`TestS9EModelBatched_tiny`, not in CI), while at
+  real size that pass sits 0.39 points under the layer-major one with either table. Options: (a) ship D10 (a) as built:
+  Metal's default moves to the int4 table, E2B's sidecar shrinks 0.98 GB, and the tiny S9 bar moves to 0.975 with this
+  record as its mechanism (the nearest planted defect reads 0.911); (b) keep the table at the pin on Metal and close MEM8(b)
+  (the code's `.ple4` naming and gather precision revert; CPU and CUDA are unchanged either way); (c) ship it as an opt-in
+  (`decoder.Options`), default off. **Recommended: (a)**: the KL is inside the PASS band, the agreement misses by 0.75
+  points, the precision is CPU's and CUDA's default already, and the real-size batched pass is unchanged by it.
 
 ## 8. Sequencing
 
