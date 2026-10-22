@@ -70,8 +70,12 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
     const float* qh = q + (long)m * qDim + h * hd;
     int t = threadIdx.x, nt = blockDim.x;
     float lm = -1e30f;
+    // Each key's row is looked up one iteration ahead (rowNext), so the table load overlaps the dot product before it (glue.cu's attention).
+    long rowNext = (winStart + t < nKeys) ? KV_ROW(kvt, winStart + t) : 0;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const float* ks = kc + KV_ROW(kvt, s) * kvDim + kvh * hd;
+        const long row = rowNext;
+        if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
+        const float* ks = kc + row * kvDim + kvh * hd;
         float dot = 0.f;
         // float4 the K read — see attn_batched's identical comment for the rationale.
         int d4 = hd >> 2;

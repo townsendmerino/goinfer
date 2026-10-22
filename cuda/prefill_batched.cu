@@ -189,8 +189,12 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
     const float* qh = q + (long)m * qDim + h * hd;
     int t = threadIdx.x, nt = blockDim.x;
     float lm = -1e30f;
+    // Each key's row is looked up one iteration ahead (rowNext), so the table load overlaps the dot product before it (glue.cu's attention).
+    long rowNext = (winStart + t < nKeys) ? KV_ROW(kvt, winStart + t) : 0;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const KV_T* ks = kc + KV_ROW(kvt, s) * kvDim + kvh * hd;
+        const long row = rowNext;
+        if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
+        const KV_T* ks = kc + row * kvDim + kvh * hd;
         float dot = 0.f;
         // float4 the K read: threads split over KEYS, so a scalar ks[d] read is stride-kvDim across the
         // warp → only ~22% of each 32-byte L1TEX sector used (ncu), and this kernel is L1TEX-throughput-

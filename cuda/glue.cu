@@ -217,8 +217,13 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
     int t = threadIdx.x, nt = blockDim.x;
     // scores + local max
     float lm = -1e30f;
+    // Each key's row is looked up one iteration ahead (rowNext), so the table load overlaps the dot product before it instead of
+    // stalling the row's loads: with as few warps as a decode launch has, that stall showed.
+    long rowNext = (winStart + t < nKeys) ? KV_ROW(kvt, winStart + t) : 0;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const KV_T* ks = kc + KV_ROW(kvt, s) * kvDim + kvh * hd;
+        const long row = rowNext;
+        if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
+        const KV_T* ks = kc + row * kvDim + kvh * hd;
         float dot = 0.f;
         for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
         dot = attn_score(dot, scale ATTN_CAP_ARG); sc[s - winStart] = dot; lm = fmaxf(lm, dot);

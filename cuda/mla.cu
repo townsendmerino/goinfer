@@ -138,8 +138,12 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
     float lm = -1e30f;
     int d4 = latDim >> 2;
     const float4* q4 = (const float4*)qh;
+    // Each key's row is looked up one iteration ahead (rowNext), so the table load overlaps the dot product before it (glue.cu's attention).
+    long rowNext = (winStart + t < nKeys) ? KV_ROW(kvt, winStart + t) : 0;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const float* ks = latCache + KV_ROW(kvt, s) * latDim;
+        const long row = rowNext;
+        if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
+        const float* ks = latCache + row * latDim;
         float dot = 0.0f;
         const float4* k4 = (const float4*)ks;
         for (int i = 0; i < d4; i++) {
