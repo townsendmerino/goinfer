@@ -573,6 +573,17 @@ Planted defects, each run once on the committed tree and reverted: the MoE branc
 LM head allocating again (G2 red), the release not returning the buffers (G3 red). Stopping rule: one pass each; a FAIL is
 diagnosed, not re-run. Cost: seconds for G1–G3, a few minutes for G4's test sets and about 4 for the parity refresh.
 
+> **SCR-G1 amended 2026-10-22, before its re-read (owner, 2026-10-21: a per-buffer bar, so a regression in one term
+> cannot hide inside the sum).** The bar is now per buffer: each of the expert-major path's eight buffers (the output, the
+> done flags, the router logits, the per-rank outputs, and the gather, gate, up and down buffers) counts its own fresh
+> allocations (`moeScratchGrows`), and in the same `mixtral-tiny` prefill (64 tokens, chunks of 16, expert-major on) **each
+> is allocated exactly once**: at least once (it is in use) and never again in a later chunk or layer. For that to be a
+> property of the code rather than of the routing, the gather, gate, up and down buffers are sized by the chunk's rows (the
+> bound on any one expert's rows) instead of the largest expert's rows in that chunk, which can grow from chunk to chunk.
+> The `TotalAlloc` reading against main stays as context, not a bar. Plants, each run once and reverted: each buffer in
+> turn allocating fresh on every call (its own row red, the others green), including the output-only plant that left the
+> summed bar green.
+
 > **Read 2026-10-21: G1, G3 and G4 PASS; G2 FAILED as registered and PASSES as amended**
 > (`docs/measurements/mem12-scratch-2026-10/README.md`). G2's first reading found a defect of the build (the MoE scratch
 > embedded by value cost every pass about 200 bytes; now started by the first MoE layer) and an instrument that could not
