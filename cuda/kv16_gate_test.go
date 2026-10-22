@@ -208,7 +208,14 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 
 func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []string, refDir string, decision bool, opts decoder.Options) {
 	t.Helper()
-	tk, err := tokenizer.LoadGGUF(path)
+	// A checkpoint directory carries tokenizer.json, as the CPU reference read it (decoder's loadRefTokenizer); a GGUF carries its own.
+	var tk *tokenizer.Tokenizer
+	var err error
+	if st, e := os.Stat(path); e == nil && st.IsDir() {
+		tk, err = tokenizer.Load(filepath.Join(path, "tokenizer.json"))
+	} else {
+		tk, err = tokenizer.LoadGGUF(path)
+	}
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}
