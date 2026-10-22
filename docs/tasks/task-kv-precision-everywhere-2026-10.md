@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) registered 2026-10-22, building; P3b-2 (the MMA prefill and the layer-major paths) not started | `docs/measurements/kv-precision-2026-10/p3a.md` |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2 (the MMA prefill and the layer-major paths) not started | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
