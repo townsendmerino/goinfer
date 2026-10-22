@@ -200,13 +200,21 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error", terr.Error()))
 		return
 	}
+	sm, serr := req.toSampling()
+	if serr != nil {
+		setResult(batch, i, lineError(customID, serr.code, serr.kind, serr.msg))
+		return
+	}
 	tm := lm.templateFor(ts)
+	if sm.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
 	ids, err := lm.promptForT(tm, system, turns)
 	if err != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
 	}
-	gr, err := lm.prepare(req.toSampling(), ids, lm.residentPath())
+	gr, err := lm.prepare(sm, ids, lm.residentPath())
 	if err != nil {
 		setResult(batch, i, lineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
 		return

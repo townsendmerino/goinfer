@@ -42,7 +42,8 @@ func withTwoSlots(r *cudaResident) {
 }
 
 // TestNemotronResidentCUDA_guards is OP2b's gate G on CUDA: a Nemotron-H resident is declined by each site that refuses recurrent state (the batched
-// step, the prefix snapshot, the KV copy, the verify pass, and the batched prefill by name), and a Gated-DeltaNet one is declined by the same sites as before.
+// step, the prefix snapshot, the KV copy, the verify pass, and the batched prefill by name), and a Gated-DeltaNet one is declined by the same sites as before
+// except the prefix snapshot, which carries its state (B35, ResidentRecurrentSnapshots) and admits it.
 // llama-tiny is the control, admitted where the recurrent check decides, so a guard that declines everything cannot pass. The batched-prefill decline is
 // switched off for the batched-step check (batchStepStaticDeclineOffForTest), because it also refuses a Mamba-2 model and would hide a guard left DeltaNet-only.
 // Not covered: the fast-lever switch in prefillCore (prefill.go), which a recurrent model never reaches because the prefill declines it first.
@@ -87,8 +88,15 @@ func TestNemotronResidentCUDA_guards(t *testing.T) {
 			if !strings.Contains(res.copyDecl, "recurrent") {
 				t.Errorf("CopyKV on %s: decline %q (err %v), want the recurrent-state decline", c.fixture, res.copyDecl, res.copyErr)
 			}
-			if !strings.Contains(res.snapDecl, "recurrent") {
-				t.Errorf("the prefix snapshot of %s: decline %q, want the recurrent-state decline", c.fixture, res.snapDecl)
+			switch c.fixture {
+			case "qwen35-tiny": // B35: a Gated-DeltaNet snapshot carries the recurrent state, so it is admitted
+				if res.snapDecl != "" {
+					t.Errorf("the prefix snapshot of %s: decline %q, want it admitted (B35)", c.fixture, res.snapDecl)
+				}
+			default:
+				if !strings.Contains(res.snapDecl, "Mamba-2") {
+					t.Errorf("the prefix snapshot of %s: decline %q, want the Mamba-2 state decline", c.fixture, res.snapDecl)
+				}
 			}
 			if res.verifyBatched {
 				t.Errorf("ForwardN's verify pass on %s reports a batched path", c.fixture)

@@ -60,6 +60,27 @@ type ResidentKVSnapshotter interface {
 	KVSnapshotRollback() int
 }
 
+// ResidentRecurrentSnapshots is the optional capability of a ResidentKVSnapshotter to carry a recurrent model's state with its rows: a snapshot
+// to end holds the state as it stood after position end-1, so it serves a restore to exactly end and to no shorter prefix.
+type ResidentRecurrentSnapshots interface {
+	KVSnapshotRecurrent() bool
+}
+
+// KeepsRecurrentSnapshots reports whether this model's prefix snapshots carry its recurrent state: it has recurrent state, and its resident's
+// snapshots hold it (ResidentRecurrentSnapshots). A route computes KVScope.Keep only for such a model.
+func (m *Model) KeepsRecurrentSnapshots() bool {
+	return m.hasRecurrentState() && m.recurrentSnapshots()
+}
+
+// recurrentSnapshots reports whether the snapshotter carries recurrent state.
+func (m *Model) recurrentSnapshots() bool {
+	rs, ok := m.snapshotter().(ResidentRecurrentSnapshots)
+	return ok && rs.KVSnapshotRecurrent()
+}
+
+// snapshotsBlocked reports whether this model's state is outside what a snapshot holds: recurrent state its snapshotter does not carry.
+func (m *Model) snapshotsBlocked() bool { return m.hasRecurrentState() && !m.recurrentSnapshots() }
+
 // ResidentPrefillMarked is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
 // between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
 // can be taken in the middle of a cold prefill (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md).
@@ -343,17 +364,19 @@ func (m *Model) snapshotter() ResidentKVSnapshotter {
 
 // residentRestoreSnapshot restores a held snapshot's rows into the bound slot when that serves more of prompt than the slot's own
 // rows do (acq.reuse, after any copy from another slot). Nothing happens under an Off scope or Options.KVShareOff, with an
-// adapter, for a recurrent family, or without a snapshotter. The rows come back as prefill-class rows of the same ids, so the
+// adapter, for a recurrent family whose snapshots do not carry its state, or without a snapshotter. A recurrent snapshot restores only
+// to its exact end, and declines when the rest of the prompt would be a pass under the resident's minimum. The rows come back as prefill-class rows of the same ids, so the
 // requester's cold class must be the snapshot's and a pass of at least the fast minimum must remain (kvmgr.ClassMap.CapHit). A
 // refusal before anything is written leaves acq as it was; a failure after leaves the slot unknown.
 func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
 	sn := m.snapshotter()
-	if sn == nil || sc.Off || m.kvShareOff || lora != nil || m.residentReuseDisabled() || m.hasRecurrentState() || acq.slot < 0 {
+	if sn == nil || sc.Off || m.kvShareOff || lora != nil || m.residentReuseDisabled() || m.snapshotsBlocked() || acq.slot < 0 {
 		return
 	}
 	st := m.kvSnaps
 	root := m.kvRootIn(nil, sc.Namespace)
 	n, cm := len(prompt), m.kvClassMap()
+	recurrent := m.hasRecurrentState()
 	// The first candidate whose window can serve its share wins. With one snapshot per family this is the old rule; with a boundary snapshot
 	// and an end snapshot of the same family held, a longer match that the window cannot serve does not hide the one that can.
 	var x *kvSnap
@@ -369,6 +392,13 @@ func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVSc
 		cq = cm.CapHit(n, cq)
 		if cq <= acq.reuse {
 			continue // the slot's own rows, or a copy from another slot, serve as much
+		}
+		if recurrent && cq != c.x.h.Rows() {
+			continue // the state is the one after the snapshot's last row: no shorter prefix
+		}
+		if recurrent && n-cq < m.prefillTailMinRows() {
+			st.decline("short suffix") // a pass this short would run other kernels than the cold prefill's
+			continue
 		}
 		if !c.x.h.Serves(cq) {
 			if c.lcp >= kvSnapMinShared {
@@ -435,6 +465,9 @@ func (m *Model) residentSnapshotPrompt(slot int, prompt []int, lora *loraRuntime
 	// One snapshot per prompt. When the prompt's tail after the stable section is longer than the rollback the boundary snapshot is the one that can
 	// serve a later session, and the end-of-prompt snapshot (whose ring no longer holds the shared prefix) would replace or sit beside it for nothing:
 	// skip it when the boundary one was taken, declined or restored, and fall back to it only when the mark never fired.
+	if m.hasRecurrentState() {
+		return // a recurrent model's state at the end of the prompt is the slot's own; its snapshot is the mark's (kvBoundaryPlan)
+	}
 	if q, ok := m.kvBoundaryPlan(prompt, sc, lora); ok {
 		if acq.markFired || acq.snapRows > 0 {
 			return
@@ -459,15 +492,31 @@ func (m *Model) kvSnapSlack() int {
 
 // kvBoundaryPlan is the position at which this request's prefill should take its snapshot instead of at the end of the prompt: the prefix boundary the
 // route computed (KVScope.Boundary) rounded down to a pass of the resident's batched prefill, when the part of the prompt after the boundary is longer
-// than a windowed layer's rollback, so an end-of-prompt snapshot could not serve a later prompt that diverges there. ok is false when the resident
+// than a windowed layer's rollback, so an end-of-prompt snapshot could not serve a later prompt that diverges there. For a recurrent model it is
+// KVScope.Keep rounded down to a pass instead, whatever the rollback (residentSnapshotPrompt takes no end snapshot for one). ok is false when the resident
 // cannot mark its passes, there is no boundary, the prompt is short, or the part after the boundary fits the rollback (the end snapshot serves).
 func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q int, ok bool) {
 	sn := m.snapshotter()
 	mp, hasMark := m.resident.(ResidentPrefillMarked)
-	if sn == nil || !hasMark || sc.Boundary <= 0 || lora != nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
+	if sn == nil || !hasMark || lora != nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
 		return 0, false
 	}
 	n, align := len(prompt), mp.PrefillMarkAlign()
+	if m.hasRecurrentState() {
+		// A recurrent model's snapshot is taken where the next turn's prompt parts from this one (KVScope.Keep), on a pass boundary: the
+		// state exists only between passes, and the next turn re-prefills from there on the same pass grid as a cold prefill.
+		if align <= 0 || n < kvSnapMinPrompt || sc.Keep <= 0 || sc.Keep >= n {
+			return 0, false
+		}
+		q = sc.Keep / align * align
+		if q < kvSnapMinShared || q%kvmgr.BlockRows != 0 {
+			return 0, false
+		}
+		return q, true
+	}
+	if sc.Boundary <= 0 {
+		return 0, false
+	}
 	if align <= 0 || n < kvSnapMinPrompt || sc.Boundary >= n || n-sc.Boundary <= m.kvSnapSlack() {
 		return 0, false
 	}
@@ -510,7 +559,7 @@ type prefillMark struct {
 // prompt, residentSnapshotPrompt) or between two passes of it (b the boundary, kvPrefillMark). It is the same admission either way.
 func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRuntime, sc KVScope, acq kvAcquired) {
 	sn := m.snapshotter()
-	if sn == nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
+	if sn == nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
 		return
 	}
 	st := m.kvSnaps

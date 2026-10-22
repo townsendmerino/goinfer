@@ -45,6 +45,16 @@ class Runner(night.Runner):
             h()
 
 
+class FreeMemoryReading(unittest.TestCase):
+    def test_reads_goinfers_number(self):
+        # B41: the runner's fit-need gate reads the number cmd/hostmem prints (scripts/hostmem.py), the fit guard's own.
+        import hostmem
+        saved = hostmem.available_mb
+        self.addCleanup(setattr, hostmem, "available_mb", saved)
+        hostmem.available_mb = lambda *a, **k: 6789
+        self.assertEqual(night.free_mem_mb(), 6789)
+
+
 class RunJobFileVanishes(unittest.TestCase):
     def setUp(self):
         for d in (night.QUEUE, night.RUNNING):
@@ -473,6 +483,12 @@ class Serve(unittest.TestCase):
     and re-queues a job whose own check refused (exit RETRY_RC)."""
 
     def setUp(self):
+        # The clock runs as if it were 20:00 today, so a test's hours of not-before, settle and estimate never meet the 06:30
+        # deadline because of the hour CI happens to run at (UTC on the runner); it still advances, for night.py's timeouts.
+        real = night.now
+        off = real().replace(hour=20, minute=0, second=0, microsecond=0) - real()
+        night.now = lambda: real() + off
+        self.addCleanup(setattr, night, "now", real)
         for d in (night.QUEUE, night.RUNNING):
             if d.exists():
                 for f in d.glob("*"):
@@ -512,7 +528,7 @@ class Serve(unittest.TestCase):
         self.assertIn("night-only", sv.waits[0])
         self.assertEqual(self.runs(), 0)
         sv.t += dt.timedelta(hours=2, minutes=1)
-        self.assertEqual(self.tick(sv), "ran")
+        self.assertEqual(self.tick(sv), "ran", f"at {sv.t.isoformat()}: {sv.waits}")
         self.assertEqual(self.runs(), 1)
 
     def test_a_night_job_that_would_end_after_the_deadline_waits(self):

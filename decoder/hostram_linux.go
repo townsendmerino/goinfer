@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/townsendmerino/goinfer/internal/hostmem"
 )
 
 // HostRAMBytes is this machine's physical RAM, or 0 when it cannot be determined; 0 is a real answer that every caller
@@ -24,16 +26,15 @@ var hostRAMOnce = sync.OnceValue(func() int64 {
 	return meminfoField(readMeminfo(), "MemTotal:")
 })
 
-// HostRAMAvailableBytes is this machine's currently available memory, what the kernel estimates can be allocated by a new
-// process without swapping (free pages plus reclaimable cache), or 0 when it cannot be determined. Unlike HostRAMBytes it
+// HostRAMAvailableBytes is this machine's currently available memory, /proc/meminfo's MemAvailable through internal/hostmem (the
+// kernel's estimate of what a new process can allocate without swapping: free pages plus reclaimable cache), or 0 when it cannot be
+// determined. Unlike HostRAMBytes it
 // is not cached: it changes continuously as other processes run, which is why it exists. HostRAMBytes reports total
 // physical RAM, which never changes and is safe to read once; MemAvailable is the opposite by nature.
 //
 // KNOWN LIMIT: same container caveat as HostRAMBytes. /proc/meminfo reports the HOST's memory inside a container with a
 // cgroup limit, over-reporting availability there. The safe direction.
-func HostRAMAvailableBytes() int64 {
-	return meminfoField(readMeminfo(), "MemAvailable:")
-}
+func HostRAMAvailableBytes() int64 { return hostmem.Available() }
 
 func readMeminfo() string {
 	b, err := os.ReadFile("/proc/meminfo")

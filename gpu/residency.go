@@ -77,12 +77,13 @@ var (
 // residentDecoder is the gpu side of decoder.ResidentForward: a persistent
 // DecodeRunner + the runModel (for KV upload), built once per model.
 type residentDecoder struct {
-	c       *Context
-	runner  *DecodeRunner
-	rm      runModel
-	nKV, hd int      // KV grouping — UploadKV needs it to per-head quantize int8
-	ctxCap  int      // resident KV capacity in positions; writes past it corrupt
-	keep    []func() // release the resident buffers (norms, biases, KV, projections)
+	c                        *Context
+	runner                   *DecodeRunner
+	rm                       runModel
+	nKV, hd                  int      // KV grouping — UploadKV needs it to per-head quantize int8
+	hidden, inter, nH, vocab int      // the shape PrefillScratchBytes prices a pass by
+	ctxCap                   int      // resident KV capacity in positions; writes past it corrupt
+	keep                     []func() // release the resident buffers (norms, biases, KV, projections)
 
 	// finalSoftcap is Gemma 2/3/4's final-logit softcap (FeatFinalLogitSoftcap), applied host-side after readback. 0 ⇒ none.
 	// Forward and ForwardN are this backend's only readback sites (it has no argmax fast path), so both apply it.
@@ -214,7 +215,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	ctxCap = slotsBeforeContext(m, ctxCap, kvF16, kvI8, avail0)
 	kvDim := nKV * hd
 
-	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident()}
+	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident(), hidden: hidden, inter: inter, nH: nH, vocab: vocab}
 	keepF := func(f func()) { rd.keep = append(rd.keep, f) }
 	up32 := func(v []float32) (*wgpu.Buffer, error) {
 		d, err := c.UploadF32(v)

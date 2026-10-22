@@ -644,11 +644,37 @@ var moeExpertMajorRuns int64
 //   - a live pager: touch order is the demand signal that drives eviction, so reordering it changes which experts are resident.
 //     Expert-major is likely better for paging, but different is not better until measured.
 func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager, dst []float32) (bool, error) {
-	return moeMLPBatchWith(rows, n, lw, arch.MoE, arch.Act, arch.HiddenDim, be, pager, dst)
+	return moeMLPBatchWith(rows, n, lw, arch.MoE, arch.Act, arch.HiddenDim, be, pager, dst, nil)
 }
 
-// moeMLPBatchWith is moeMLPBatch with the routing, activation and width given: the program walker's form.
-func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, pager *expertPager, dst []float32) (bool, error) {
+// moeBatchScratch holds the expert-major path's buffers across the chunks and layers of one batched pass
+// (prefillPassScratch.moe). Every buffer is written before it is read, so none is cleared between uses.
+type moeBatchScratch struct {
+	out                                         []float32 // the pass's [K, hidden] expert-major output (ffnBatch)
+	done                                        []bool    // which of the pass's rows it holds (ffnBatch; cleared per use)
+	logits, perRank, gathered, gate, up, outBuf []float32
+	byExpert                                    [][]moeSlot
+}
+
+// moeSlot is one (row, rank) pair that selected an expert.
+type moeSlot struct{ row, rank int }
+
+// moeScratchGrows counts each moeBatchScratch buffer's fresh allocations, so a gate can bar every term on its own (SCR-G1,
+// docs/tasks/task-memory-campaign-2026-10.md).
+var moeScratchGrows struct{ out, done, logits, perRank, gathered, gate, up, outBuf atomic.Int64 }
+
+// moeGrow returns (*buf)[:n], growing *buf when it holds less and counting the growth in grows; the contents are not cleared.
+func moeGrow(buf *[]float32, n int, grows *atomic.Int64) []float32 {
+	if cap(*buf) < n {
+		*buf = make([]float32, n)
+		grows.Add(1)
+	}
+	return (*buf)[:n]
+}
+
+// moeMLPBatchWith is moeMLPBatch with the routing, activation and width given: the program walker's form. s holds its buffers
+// across calls; nil allocates them.
+func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, pager *expertPager, dst []float32, s *moeBatchScratch) (bool, error) {
 	if moe == nil || len(lw.Experts) == 0 || moeSelOverride != nil || moeSelTrace != nil || pager != nil {
 		return false, nil
 	}
@@ -663,26 +689,34 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 	nE, k := moe.NumExperts, moe.TopK
 	inter := moe.IntermediateDim
 
+	if s == nil {
+		s = &moeBatchScratch{}
+	}
 	// Router for the whole chunk in one matmul (M=n), instead of a matmul and an nE-sized allocation per row.
-	logits := make([]float32, n*nE)
+	logits := moeGrow(&s.logits, n*nE, &moeScratchGrows.logits)
 	matmul(be, &lw.Router, rows, logits, n)
 
 	idxs := make([][]int, n)
 	wtss := make([][]float32, n)
 	// expert -> the (row, rank) pairs that selected it
-	type slot struct{ row, rank int }
-	byExpert := make([][]slot, nE)
+	if len(s.byExpert) < nE {
+		s.byExpert = make([][]moeSlot, nE)
+	}
+	byExpert := s.byExpert[:nE]
+	for e := range byExpert {
+		byExpert[e] = byExpert[e][:0]
+	}
 	for r := range n {
 		idx, wts := routeExperts(logits[r*nE:(r+1)*nE], lw.RouterBias, k,
 			moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
 		idxs[r], wtss[r] = idx, wts
 		for j, e := range idx {
-			byExpert[e] = append(byExpert[e], slot{r, j})
+			byExpert[e] = append(byExpert[e], moeSlot{r, j})
 		}
 	}
 
 	// Every (row, rank) expert output, so the fold below can run in rank order.
-	perRank := make([]float32, n*k*hidden)
+	perRank := moeGrow(&s.perRank, n*k*hidden, &moeScratchGrows.perRank)
 	maxRows := 0
 	for _, s := range byExpert {
 		if len(s) > maxRows {
@@ -692,10 +726,12 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 	if maxRows == 0 {
 		return false, nil
 	}
-	gathered := make([]float32, maxRows*hidden)
-	gate := make([]float32, maxRows*inter)
-	up := make([]float32, maxRows*inter)
-	outBuf := make([]float32, maxRows*hidden)
+	// Sized by n, the bound on any one expert's rows, so a chunk whose busiest expert takes more rows than an earlier
+	// chunk's does not grow them again.
+	gathered := moeGrow(&s.gathered, n*hidden, &moeScratchGrows.gathered)
+	gate := moeGrow(&s.gate, n*inter, &moeScratchGrows.gate)
+	up := moeGrow(&s.up, n*inter, &moeScratchGrows.up)
+	outBuf := moeGrow(&s.outBuf, n*hidden, &moeScratchGrows.outBuf)
 
 	for e, slots := range byExpert {
 		if len(slots) == 0 {

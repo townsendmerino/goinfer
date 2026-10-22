@@ -10,7 +10,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-var _ decoder.ResidentKVSnapshotter = (*cudaResident)(nil)
+var (
+	_ decoder.ResidentKVSnapshotter      = (*cudaResident)(nil)
+	_ decoder.ResidentRecurrentSnapshots = (*cudaResident)(nil)
+)
 
 // Prefix snapshots (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in pinned host memory, and back. It is CopyKV with
 // a host buffer for the other slot, over the same slot storage:
@@ -20,6 +23,10 @@ var _ decoder.ResidentKVSnapshotter = (*cudaResident)(nil)
 //   - A windowed layer holds the rows its window and the rollback need behind end: [lo, end) with
 //     lo = max(base, end-(window-1)-rollback), through the slot's shifted view, as CopyKV copies them. A restore to position q <= end
 //     writes [max(lo, q-(window-1)-rollback), q) to physical slot 0 and sets the slot's ring base to that first row.
+//
+//   - A Gated-DeltaNet model's snapshot also holds every DeltaNet layer's conv ring and recurrent state as they stand after row end-1, so it
+//     restores to exactly end (docs/queue-engineering.md, B35). It is taken between two passes of a prefill (ResidentPrefillMarked), when
+//     the state belongs to that position. A Mamba-2 model's state is not held.
 //
 // The host buffer is one pinned allocation per snapshot, made when the snapshot is taken and freed when it is dropped: nothing is
 // held while no snapshot is. Every device copy is an executor job that synchronises the stream, so a snapshot read after the prefill that
@@ -32,6 +39,7 @@ type cudaKVSnapshot struct {
 	lo     int // the first row a windowed layer holds, 0 with none
 	host   *gpu.HostBuffer[float32]
 	layers []snapLayer
+	dn     []snapDelta // a DeltaNet model's per-layer state, empty otherwise
 	bytes  int64
 	// the geometry the rows were laid out for: a restore into another one is refused
 	ctxCap, window, slack int
@@ -48,6 +56,12 @@ type snapLayer struct {
 	rowWords   int // words a position takes
 }
 
+// snapDelta is where one DeltaNet layer's conv ring and recurrent state sit in the host buffer, in float32 words.
+type snapDelta struct {
+	layer                        int
+	winOff, winWords, stOff, stW int
+}
+
 func (s *cudaKVSnapshot) Rows() int    { return s.rows }
 func (s *cudaKVSnapshot) Bytes() int64 { return s.bytes }
 
@@ -56,6 +70,9 @@ func (s *cudaKVSnapshot) Serves(end int) bool {
 	r := s.r
 	if end <= 0 || end > s.rows || end%decoder.KVBlockRows != 0 || s.host == nil {
 		return false
+	}
+	if len(s.dn) > 0 && end != s.rows {
+		return false // the state is the one after the last row
 	}
 	if s.ctxCap != r.ctxCap || s.win != r.kvWin || s.window != r.kvWindow || s.slack != r.kvSlack {
 		return false
@@ -85,8 +102,8 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 	switch {
 	case end > r.ctxCap:
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, r.ctxCap)}
-	case r.recurrent():
-		return &decoder.KVCopyDecline{Reason: "recurrent state is not part of a KV slot"}
+	case r.mamba != nil:
+		return &decoder.KVCopyDecline{Reason: "Mamba-2 state is not part of a snapshot"}
 	}
 	if r.kvWin {
 		for l := range r.layers {
@@ -98,6 +115,30 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 	return nil
 }
 
+// KVSnapshotRecurrent implements decoder.ResidentRecurrentSnapshots: a Gated-DeltaNet model's snapshots carry its state; a Mamba-2 model's
+// are declined (snapshotDecline).
+func (r *cudaResident) KVSnapshotRecurrent() bool { return r.dnet != nil && r.mamba == nil }
+
+// snapshotDeltaLayout places every DeltaNet layer's conv ring and state after words, and returns them and the words in all.
+func (r *cudaResident) snapshotDeltaLayout(words int) ([]snapDelta, int) {
+	if r.dnet == nil {
+		return nil, words
+	}
+	var out []snapDelta
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		if !Ly.isDeltaNet() {
+			continue
+		}
+		d := snapDelta{layer: l, winOff: words, winWords: Ly.dnWin.Len()}
+		words += d.winWords
+		d.stOff, d.stW = words, Ly.dnState.Len()
+		words += d.stW
+		out = append(out, d)
+	}
+	return out, words
+}
+
 // snapshotLayout lays the held rows out in the host buffer for a snapshot to end whose windowed layers start at lo, and returns the
 // layers and the words in all.
 func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
@@ -106,8 +147,8 @@ func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
 	words := 0
 	for l := range r.layers {
 		Ly := &r.layers[l]
-		if Ly.kvShared {
-			continue
+		if Ly.kvShared || Ly.noKV() {
+			continue // an alias holds its source's rows; a recurrent or feed-forward-only layer has no K/V (snapshotDeltaLayout holds a DeltaNet layer's state)
 		}
 		elem := 4
 		if Ly.kvHalf {
@@ -139,6 +180,7 @@ func (r *cudaResident) KVSnapshotBytes(end int) int64 {
 		lo = max(0, end-(r.kvWindow-1)-r.kvRollback())
 	}
 	_, words := r.snapshotLayout(end, lo)
+	_, words = r.snapshotDeltaLayout(words)
 	return int64(words) * 4
 }
 
@@ -184,6 +226,7 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 		lo = max(0, r.kvBases[slot], end-(r.kvWindow-1)-r.kvRollback())
 	}
 	layers, words := r.snapshotLayout(end, lo)
+	dn, words := r.snapshotDeltaLayout(words)
 	if err := r.stream.Sync(); err != nil { // the prefill that wrote the rows has finished
 		return nil, err
 	}
@@ -191,7 +234,7 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	if err != nil {
 		return nil, &decoder.KVCopyDecline{Reason: fmt.Sprintf("no pinned host memory for %d MiB: %v", int64(words)*4>>20, err)}
 	}
-	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, host: host, layers: layers, bytes: int64(words) * 4,
+	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, host: host, layers: layers, dn: dn, bytes: int64(words) * 4,
 		ctxCap: r.ctxCap, window: r.kvWindow, slack: r.kvSlack, win: r.kvWin, half: r.kvF16}
 	kc, vc := r.slotKV(slot)
 	buf := host.Slice()
@@ -215,6 +258,17 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 				s.Release()
 				return nil, err
 			}
+		}
+	}
+	for _, d := range dn {
+		Ly := &r.layers[d.layer]
+		if err := gpu.Download(Ly.dnWin, buf[d.winOff:d.winOff+d.winWords]); err != nil {
+			s.Release()
+			return nil, err
+		}
+		if err := gpu.Download(Ly.dnState, buf[d.stOff:d.stOff+d.stW]); err != nil {
+			s.Release()
+			return nil, err
 		}
 	}
 	return s, nil
@@ -265,6 +319,18 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
 			if err := gpu.Upload(vc[l].At(0), buf[sl.vOff+hostOff:sl.vOff+hostOff+n]); err != nil {
 				return err
 			}
+		}
+	}
+	for _, d := range s.dn {
+		Ly := &r.layers[d.layer]
+		if Ly.dnWin.Len() != d.winWords || Ly.dnState.Len() != d.stW {
+			return fmt.Errorf("cuda: RestoreKV: layer %d's DeltaNet state is %d+%d words, the snapshot's %d+%d", d.layer, Ly.dnWin.Len(), Ly.dnState.Len(), d.winWords, d.stW)
+		}
+		if err := gpu.Upload(Ly.dnWin, buf[d.winOff:d.winOff+d.winWords]); err != nil {
+			return err
+		}
+		if err := gpu.Upload(Ly.dnState, buf[d.stOff:d.stOff+d.stW]); err != nil {
+			return err
 		}
 	}
 	if r.kvWin {

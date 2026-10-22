@@ -1,0 +1,51 @@
+{
+ "cell": "metal:e2b",
+ "model": "/Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.v17.giw",
+ "available_before_MiB": 6361,
+ "swap_used_before_MiB": 2982,
+ "load_s": 1.0,
+ "prompt_tokens": 20975,
+ "request_s": 585.5,
+ "footprint_MiB": {
+  "load": 120,
+  "peak": 5911,
+  "end": 2365,
+  "plus10s": 2365
+ },
+ "peak_rss_MiB": 2993,
+ "categories_MiB": {
+  "load": {
+   "untagged (VM_ALLOCATE)": 102.0,
+   "MALLOC_SMALL": 9.1,
+   "IOAccelerator (graphics)": 4.0,
+   "__DATA_CONST": 1.3,
+   "page table": 1.3,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "MALLOC metadata": 0.4
+  },
+  "end": {
+   "untagged (VM_ALLOCATE)": 1191.0,
+   "IOAccelerator (graphics)": 1157.0,
+   "MALLOC_SMALL": 9.5,
+   "page table": 3.1,
+   "__DATA_CONST": 1.3,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "MALLOC metadata": 0.4
+  },
+  "plus10s": {
+   "untagged (VM_ALLOCATE)": 1191.0,
+   "IOAccelerator (graphics)": 1157.0,
+   "MALLOC_SMALL": 9.5,
+   "page table": 3.1,
+   "__DATA_CONST": 1.3,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "MALLOC metadata": 0.4
+  }
+ },
+ "available_after_MiB": 7184,
+ "swap_used_after_MiB": 1962,
+ "cell_wall_s": 599.8
+}

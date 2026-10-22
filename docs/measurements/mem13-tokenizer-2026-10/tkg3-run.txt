@@ -1,0 +1,12 @@
+18:34:14 round=1 arm=old load1=3.44 ns_op=189558
+18:34:17 round=1 arm=new load1=3.44 ns_op=187891
+18:34:19 round=1 arm=new load1=3.41 ns_op=187563
+18:34:22 round=1 arm=old load1=3.41 ns_op=188853
+18:34:24 round=2 arm=old load1=3.45 ns_op=189205
+18:34:26 round=2 arm=new load1=3.45 ns_op=188927
+18:34:29 round=2 arm=new load1=3.50 ns_op=188468
+18:34:31 round=2 arm=old load1=3.50 ns_op=189657
+18:34:34 round=3 arm=old load1=3.70 ns_op=189832
+18:34:36 round=3 arm=new load1=3.70 ns_op=187738
+18:34:39 round=3 arm=new load1=3.64 ns_op=189322
+18:34:41 round=3 arm=old load1=3.64 ns_op=189497

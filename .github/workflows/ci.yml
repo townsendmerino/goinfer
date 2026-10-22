@@ -22,12 +22,15 @@ permissions:
 # real multi-commit-burst days (85 commits in two days, 2026-09-08-10). Safe to cancel mid-way
 # (unlike book-pages.yml's Pages deploy, which explicitly does not): a cancelled CI run has no
 # external side effect, it just stops checking a commit that is no longer the tip of the ref.
-# A push to main gets its own group, keyed on the commit, and is never cancelled: every main push gets a complete run,
-# so a docs push landing on a running code push does not cancel it (owner, 2026-10-18). cancel-in-progress: false alone
-# is not enough, because a group still cancels its pending run when a newer one queues. Branches and pull requests keep
-# one group per ref and cancel the superseded run.
+# Pushes to main share one group and are never cancelled in progress: a run that has started always finishes, so a docs
+# push landing on a running code push does not cancel it (owner, 2026-10-18). Pushes that land while it runs collapse:
+# GitHub keeps only the newest pending run in a group and cancels the older pending ones, so a burst of merges costs two
+# runs (the one running, then one on the tip) instead of one per merge (owner, 2026-10-21; four back-to-back merges had
+# queued four full runs). Coverage holds: the tip's run covers every collapsed commit, and the docs-only gate below
+# skips the matrix only when the commit it builds on has a successful run of its own, which a cancelled pending run is
+# not. Branches and pull requests keep one group per ref and cancel the superseded run.
 concurrency:
-  group: ci-${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && github.sha || github.ref }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && 'main-push' || github.ref }}
   cancel-in-progress: ${{ !(github.ref == 'refs/heads/main' && github.event_name == 'push') }}
 
 jobs:

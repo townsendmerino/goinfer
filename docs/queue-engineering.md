@@ -468,6 +468,65 @@ and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot 
 - **Needs, when it starts:** the three above on nobara and on the Mac, then one timed run per box under the timing lock, to the
   registration in §4.6 (G2-P: ship at 1.02x or more against our CPU at both depths, a read against Ollama). The depth-2048 cell
   on CUDA runs the exact split-KV lane, because flash-decode is kept off a capped layer.
+**B41 · One available-memory reading that counts reclaimable memory as free, in the fit guard and every start check** — filed 2026-10-21
+(owner: "seems like reclaimable should count as free or we'll never be able to run anything that isn't tiny.  people use their machines in
+real live", 11:35 PT). **DONE, merged 2026-10-21** on Francis's yes after gate 1a under amendment A5. macOS: free + file-backed +
+purgeable pages, read through `host_statistics64` without cgo, each speculative page counted once (A5: `host_statistics64`'s free and
+external counts both hold them); Linux keeps `MemAvailable`. The fit guard, `scripts/night.py` and the job scripts (with
+`scripts/bench_peer.py`'s heavy-load void) read one number, through `cmd/hostmem`; the Metal guard also caps at
+`recommendedMaxWorkingSetSize`. The 2 GB margin and the swap guards are unchanged; the run rule records the change. Gates, amendments
+A1 to A5 and the readings: `docs/measurements/hostmem-available-2026-10/README.md`. **Candidate, not built:** serve could watch the kernel's pressure level
+(`kern.memorystatus_vm_pressure_level`) while serving, and decline new work or say so at warning and critical.
+
+**B40 · CANDIDATE: drop the model file's page cache once a GPU-resident load no longer needs it** — filed 2026-10-21 (owner, from the Metal
+KV8a night plan: after a 9B load exits, macOS keeps the model's `.giw` pages as active file cache, the fit guard's reading counts them as
+used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need until a `purge`, `docs/measurements/kv8a-metal-2026-10/README.md`,
+"The day checks"). **Not started; not for tonight** (the night's jobs purge first, on Francis's sudoers rule).
+- **How each backend reads the file today** (traced at `9a22d909`):
+  - **serve loads a `.giw` by default:** on darwin and linux a `.gguf` goes through the sidecar (`internal/modelload/modelload.go:routeFor`,
+    `internal/prequant/prequant.go:EnsureCachedGIW`), so the cases below are the `.giw` ones; the direct GGUF path (`-direct-load`,
+    `--quant q4k`) copies every tensor to the heap and unmaps the file when loading returns.
+  - **The `.giw` stays mapped until `decoder/model.go:Model.Close`** (`decoder/giwmap_darwin.go:mapGIW`: `MAP_SHARED` on darwin, aikit's
+    `MAP_PRIVATE` elsewhere), and the host weights alias it: int8 and int4 codes and their scales are views into the mapping, not copies.
+    The first load reads every page for the CRC pass unless `decoder/giwverify.go:giwVerified` finds the file's marker.
+  - **CUDA and WebGPU copy the weights to the device** (`cuda/pack_stream.go:cudaResident.streamW`, in row blocks through a staging
+    buffer; `gpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/model.go:Model.tryClaimResident`
+    falls back to the CPU path when the resident is busy, and CUDA gathers token embeddings on the host. Nothing drops or advises the pages
+    after the upload.
+  - **Metal aliases most of a `.giw` model:** `metal/alias.go:weightAlias.window` builds no-copy buffers over `Model.MmapAliasWindow`
+    (default on; `GOINFER_METAL_ALIAS=0` turns it off) for the int4 and int8 codes and contiguous scales; norms, routers, non-contiguous
+    scales and unpaged routed experts are copied. While a Metal resident serves, those file pages **are** its weights.
+  - **The sidecar write** goes through the page cache: buffered writes, a read-back of the cached copy, then a self-check load of the new
+    file. A first `.gguf` load on the Mac left the 5.9 GB `.giw` and the source both cached.
+  - **Existing hints:** `decoder/coldload.go:prepareColdLoad` (WILLNEED read-through of a cold `.giw`, CPU on darwin, small-matrix MoE on
+    linux) and the stream-weights pagers' DONTNEED (a no-op on darwin). `F_NOCACHE` appears once, opt-in, on Metal's Gemma 4 MoE pread fd.
+- **The change:** after a GPU-resident upload, release the file's cached pages that the resident has copied; never on the CPU path, and never
+  for a Metal-aliased tensor or any page a no-copy buffer covers, where those pages are the weights. Two places, either or both:
+  - **(a) after the upload,** for CUDA and WebGPU: drop the copied ranges. To lower the load's **peak** as well as the leftover, drop each
+    block as `streamW` uploads it; a drop after the whole upload lowers only the leftover. A host page the CPU fallback or the embedding
+    gather touches later re-faults from the file, so correctness is unchanged and those reads cost SSD time.
+  - **(b) at `Model.Close`,** for every backend including Metal: once the resident and the mapping are gone, drop the file's cache. This is
+    the one that covers the Mac case above, where Metal aliases nearly all of the 9B.
+  - **Mechanics, to settle first:** on linux, `posix_fadvise(DONTNEED)` evicts only clean pages no process maps, so a mapped range needs
+    `madvise(MADV_DONTNEED)` first or the drop after `munmap`, and fadvise writes dirty pages back before dropping them. On darwin,
+    `MADV_DONTNEED` is a no-op and `F_NOCACHE` governs future reads through an fd, not pages already cached through a mapping; what evicts
+    a mapped file's cached pages without root (for example `msync(MS_INVALIDATE)` on the `MAP_SHARED` mapping, or reading the file through
+    an `F_NOCACHE` fd) is the first thing to measure, with `mincore` as the instrument.
+- **Expected effect:** for CUDA and WebGPU, the leftover cache after a load drops by about the copied bytes (about the model file's size for
+  a `.giw`), and the load's peak by the same when (a) drops per block. For any backend, (b) frees the file's cache when the model closes. The
+  cost: a reload of the same model reads from the SSD instead of the cache (the 9B: 5.96 GB).
+- **The fit guard reads active file cache as used** (`decoder/hostram_darwin.go:HostRAMAvailableBytes`: free + inactive + speculative +
+  purgeable pages), so on macOS it can refuse a load right after another large model ran, and even a reload of the same model, whose pages
+  are already cached and would be reused. Dropping the cache after a GPU load, or at close, addresses the first case. Whether the guard
+  should count reclaimable file cache, the second case, was decided by Francis the same day: it should (B41).
+- **Gates to propose:**
+  - Tier 0: `mincore` residency of the file's pages before and after the drop, on a tiny `.giw`; the drop never touches a page a Metal no-copy
+    buffer covers (a plant that drops one must break a logits comparison); logits bit-identical with and without the drop, including a CPU
+    fallback step that re-faults dropped pages.
+  - Tier 1, the 9B, before and after, by night: the load's peak memory, the free-memory reading (the guard's own) right after the model
+    exits, and the reload time of the same model.
+- **Size:** S to M; the darwin mechanics decide it.
+
 **B39 · CANDIDATE: 8-bit KV cache on CUDA (`--kv i8`), for a longer context on the 8 GB card** — filed 2026-10-20 (owner, from tack's question: tack runs Qwen3-8B Q4_K_M at 16k because of KV memory). **Folded 2026-10-20 into `docs/tasks/task-kv-precision-everywhere-2026-10.md` as its phase 2 (the owner asked for f16 and int8 KV on every backend, family and path); the state line below is corrected there (§2).** **Candidate, not funded, not scoped past this estimate.** *Update 2026-10-20 (tack): its 4.8 screen removed about 10k tokens of instructions from a 16k window and passes on the hard tasks did not move (0/30 in both arms), so the window is no longer tack's binding limit; B39 stays a candidate with no pull from tack for now.* Tack decides after its next change (dropping or sectioning CLAUDE.md in the prompt) shows whether the window is still its main failure; no work until then.
 - **State today:** CUDA's resident KV is f32 or f16 only. `--kv auto` is f16 for the dense llama, mistral, qwen2, qwen3 and phi3 families (`decoder/residency.go:Model.ResidentKVPrecision`; Qwen3-8B's banner reads `KV f16`). `--kv i8` refuses the load on CUDA (phase 0 of `docs/tasks/task-kv-precision-everywhere-2026-10.md`; until then it was silently f32). On Metal it is delivered on the per-token path where the MMA prefill, batched decode and the Gemma 4, MoE and emodel layer-major paths decline it; on the CPU it covers the families without MoE on the batched attention kernel and refuses elsewhere; WebGPU's coverage is phase 5's survey (`docs/kv-precision-matrix.md`). 4-bit KV exists nowhere (int4 KV is deferred behind int8; a 3-bit variant was killed, `docs/quantization.md`).
 - **Sizing arithmetic (Qwen3-8B Q4_K_M, RTX 2070 SUPER; arithmetic, not a measurement; the server's own plan is the fit check):**
@@ -518,14 +577,14 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
 - **Gate:** tier 0 in `scripts/test_night.py` with a fake clock and lock: each start condition, the exit-75 re-queue and its limit, an idle
   runner holding no lock, settle under the lock, idle-versus-busy status; a plant per rule; the plist and unit linted.
 
-**B37 · The in-process real-model harnesses load with `decoder.Options` that are not serve's, so their expert cache and KV plan differ from the server's at the same flags** — filed 2026-10-19 (owner, from the Mellum2.1 16k reading). **Scoped, not built** (test code; on Francis's yes).
+**B37 · The in-process real-model harnesses load with `decoder.Options` that are not serve's, so their expert cache and KV plan differ from the server's at the same flags** — filed 2026-10-19 (owner, from the Mellum2.1 16k reading). **DONE: merged 2026-10-19 as #109 (`504da5ab`; the build is `4e8610ee`).** `serveOptions` and `loadLikeServe` (`cuda/serve_options_test.go`) build serve's options for the same flags and VOID a load whose memory-moving fields differ; the Mellum2.1 moe-rows harness, `prefill_decomp`, `prefill_longprompt`, `p20_expert_locality` and the 26B in `prefill_moe` load through them. Gate (a) passed: the harness planned 53 expert slots, the server's figure (26 before); (b) and (c) are `TestServeOptions_carryServesDefaults` and `TestServeOptions_guardVoidsTheB37HarnessOptions` (the plant). Not moved: `gptoss_real20b_test.go` (a parity gate, not timed) and the KV-policy readings still write their own options. The scoping below is the record.
 - **Measured:** `TestMoERows_realMellumIdentityAndAB` at `-ctx 32768 --moe-cache-experts` planned 26 expert slots per layer (3.1 GB free after the build) on a quiet card (only `kwin_wayland`) in two sessions; the server planned 53 (5.8 GB free) with the same flags minutes apart (`docs/measurements/mellum21-served-16k-2026-10-19/README.md`).
 - **Cause:** `Options.ResidentWindowedKV`. Serve sets it from `--windowed-kv` (default true, `internal/loadflags/loadflags.go`); the library default is false and the harness does not set it, so Mellum2.1's 21 sliding-window layers kept the whole context instead of window + 512 positions: 21 x (32,768 - 1,536) x 4,096 B = 2.686 GB, against the observed 2.7 GB gap. Arithmetic match to three figures; the first gate below turns it into a run.
 - **Affected:** every `cuda/*_test.go` harness that loads a real checkpoint through `decoder.Load` with hand-written options (`moe_rows_real_test.go`, `prefill_decomp_test.go`, `prefill_longprompt_test.go`, the P20 and KV-policy readings, `gptoss_real20b_test.go`), for any model with sliding-window layers; other options that move memory (KV slots, the KV element type, act-quant group, embed-int4) are the same class and unchecked.
 - **The fix, scoped:** (1) a helper `serveOptions(base)` for the cuda tests that starts from `internal/loadflags`'s defaults (the code serve runs) and overlays the harness's own fields (`MoECacheExperts`, `ResidentContext`), so a flag added to serve reaches the harness; (2) the real-model harnesses use it; (3) a guard in each timed harness: print the build's plan line (`r.cacheSlots`, the C' line) and VOID when the model has sliding-window layers and `ResidentWindowedKV()` is false, instead of timing it.
 - **Gates (tier 0/1, pre-registered when built):** (a) on Mellum2.1 at `-ctx 32768`, the harness's load plans the same slot count as the server's banner on a quiet card (53 on 2026-10-19), a load of a few seconds; (b) a unit test that diffs the helper's options against `loadflags` defaults on the memory-moving fields, and goes red when the helper drops `ResidentWindowedKV` (the plant); (c) the guard VOIDs a harness that leaves windowed KV off on a windowed model.
 - **Size:** S.
-**B36 · A `--moe-cache-experts` load of a `.giw` packs each expert twice on the Go heap, so its anonymous memory runs a third to a half above the pinned copy the guard prices** — filed 2026-10-19 (owner, from the sampled 35B load). **Built 2026-10-19, branch `b36-expert-pack` (`ca0c37cf`), not merged (needs Francis's yes).** Tier-0 gates green (pinned bytes identical; 6 KB of heap against 4.7 MB pinned; the staged plant allocates 15 MB and goes red; a decline allocates nothing; the abort poll reaches the packer). The 35B load on the guard-on build completes in 29.5 s with peak `RssAnon` 0.40 GB, no swap and no slice reclaim (`docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`, run 3).
+**B36 · A `--moe-cache-experts` load of a `.giw` packs each expert twice on the Go heap, so its anonymous memory runs a third to a half above the pinned copy the guard prices** — filed 2026-10-19 (owner, from the sampled 35B load). **DONE: merged 2026-10-19 as #103 (`2f375a10`; the build is `ca0c37cf`).** Not built: option (4) below, skipping the whole-file pre-read (`coldReadThrough` still runs). Tier-0 gates green (pinned bytes identical; 6 KB of heap against 4.7 MB pinned; the staged plant allocates 15 MB and goes red; a decline allocates nothing; the abort poll reaches the packer). The 35B load on the guard-on build completes in 29.5 s with peak `RssAnon` 0.40 GB, no swap and no slice reclaim (`docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`, run 3).
 - **Measured** (`docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`, run 2): `RssAnon` 19.9 GB at layer 23 of 40 with about 12 GB of live heap; the non-live part grew 2.2, 3.5, 5.3 GB over the first 34 s. #100 prices the 18.1 GB pinned copy; this staging garbage and the collector's headroom are not in any figure. Where it bites: the user slice's `MemoryHigh=52G` (`/etc/systemd/system/user-1000.slice.d/50-oom-protect.conf`) charges anonymous memory and page cache together, and the load's swap abort (B33) fired at 0.61 GB.
 - **Mechanism:** `packWeightStack` calls `packWeight` per expert (each allocating its own `wpk` and `ws16`, and on the int4 path an f32 copy of the scales that `decoder.Int4F32` makes before they are narrowed back to f16, larger than the f16 result) and copies those into the merged stack (the stack itself is reserved up front, `docs/code-notes/cuda.md#packWeightStack.reserve`, so the regrowth garbage of an earlier version is gone; these per-expert intermediates remain), in `BuildResident`'s planning loop, for every layer, all of it live in `hls` until the setup job; `cacheWQ` then registers the merged slice in place (`mapBytes`, `RegisterMappedHostBuffer`).
 - **The fix, scoped:** (1) `planWeightStack`, the validation of #95's `planWeight` over the stack (same error, no allocation), keeping the experts' `WeightMat`s and the stack's sizes; (2) in the setup job, `cacheWQ` allocates the pinned buffers once (`NewMappedHostBuffer`, outside the Go heap) at the planned size and packs each expert straight into its offset (`packWeight`'s per-row packers, as `streamBlocks` does, several experts in parallel), so nothing is staged on the heap and
@@ -535,7 +594,13 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
 - **Size:** M (the stack planning and packer, the executor-side buffer allocation, the abort polls, the gates).
 
 **B35 · A recurrent model (Qwen3.5 and its kin) cannot reuse a chat conversation's prefix, because the template's history render drops the generation prompt's tail** — filed 2026-10-18 (owner, from tack's C3 run; measured in
-`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). **Scoped only; build it only if the 9B passes tack's E0** (the owner). Tack's C3 log reads the 9B `eligible` (smoke 19/19, check ok); the E0 table is the word.
+`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). **Built and gated on branch `b35-recurrent-checkpoint-2026-10`; merge on Francis's yes** (PR, 2026-10-20).
+- **State (2026-10-20):** the end-to-end gate PASSED on nobara (`docs/measurements/b35-e2e-2026-10-20/README.md`): Qwen3.5-9B chat turns 2 and 3
+  restored from the kept state match a cold prefill digit for digit, B35's cold output matches the base build's, and time to first token
+  falls to 0.15 of cold at 4k and 0.08 at 8k. As built (the owner's choice of a mid-pass save over a cut at `b`), the state is kept at Keep
+  rounded down to the 512-row pass grid, so a warm turn re-prefills up to about one pass; a cut at Keep is the follow-up that removes it.
+  Step 3's grid cell as built is the recurrent `share` cell, which names the B35 restore. CUDA only; Metal and the CPU keep no recurrent
+  snapshot (`KeepsRecurrentSnapshots` false), and their cold output is unchanged.
 - **What happens:** the engine reuses an appended request (`scoreRecurrent`: 0.04 s against 15.2 s cold on `/v1/completions`), but through `/v1/chat/completions` the next prompt shares only the first 22 of the previous 26 ids, because the history render drops the empty `<think>\n\n</think>\n\n`
   the generation prompt ends with. A recurrent state can only continue from where it stopped, so every chat turn is a cold prefill: 15 s at 4k, 39 s at 8k, 7 minutes at 31k for the 9B.
 - **The fix, exact (the owner's choice over changing the history render):** save the DeltaNet state before the generation tail.
@@ -549,14 +614,14 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
 - **Not the fix:** rendering the history turn with the empty think block (a fidelity change to the prompt the model sees; the owner chose against it).
 
 **B34 · The serving swap watch takes its baseline before a `.giw` load finishes, so a swap-growing load halts serving for good** — filed 2026-10-18 (owner, from tack's C3 run on Qwen3.6-35B-A3B). **Steps 1 and 2 DONE: merged to main in #101 (333407c3), 2026-10-19:** step 1 re-baselines the serving watch when a runtime load finishes, and step 2 is B33 below. Step 3 is PR #100; step 4 is not started. Reading and proposals:
-`docs/measurements/c3-logs-reading-2026-10-18.md` §1; background in `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: the C3 trip on the 35B-A3B".
+`docs/measurements/c3-logs-reading-2026-10-18.md` §1; background in `docs/completed/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: the C3 trip on the 35B-A3B".
 - **What happened:** with `--moe-cache-experts` the server's own `VmSwap` grew 0.83 and 0.90 GB over its 0.00 GB baseline during the load (512 MB threshold), the watch tripped, and every later request was `503 halted`. The baseline was taken at server start; the load runs after it; swapped pages
   do not return to baseline, so the halt cannot recover. The whole C3 arm was void.
 - **Proposed, in order (steps 1 and 2 merged in #101):** re-baseline the serving watch when the load completes; B33 for the load itself; price the 18.1 GB pinned expert copy in `decideGIWFit`; do not hold the `.giw` in page cache beside the pinned copy.
 - **Gate once approved:** tier 0, a scripted reader that grows `VmSwap` during a fake load: today the watch trips and stays tripped, after the change it re-baselines at "loaded" and serves; plant: remove the re-baseline and the test must go red.
 
 **B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the
-cuda-stream-pack scoping). **DONE: merged to main in #101 (333407c3), 2026-10-19**, with B34 step 1, as one change (branch `swap-giw-load-watch`). Brief: `docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
+cuda-stream-pack scoping). **DONE: merged to main in #101 (333407c3), 2026-10-19**, with B34 step 1, as one change (branch `swap-giw-load-watch`). Brief: `docs/completed/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
 - **What happens:** `internal/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
   "swap guard (load): not armed for <path>" for a `.giw` (or streamed, or HF-directory) load. `Options.LoadAbort` has one consumer, `parallelLayers` in the direct GGUF weight
   build, so arming it elsewhere would log a trip and keep loading.

@@ -1,6 +1,6 @@
 package decoder
 
-// The cache-state grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every kind of per-sequence state a
+// The cache-state grid (docs/completed/task-option-path-admission-2026-10.md §4.0): every kind of per-sequence state a
 // KVCache can hold, against every lifecycle path that has to know about it, with what that path does with it. It
 // guards against a kind of state a lifecycle path never accounted for (Mamba-2 and DeltaNet state across a reset,
 // LFM2's conv window, Bailing Hybrid's KDA state, the adapter that built a reused prefix), which an audit would
@@ -229,7 +229,7 @@ var recurrentCells = map[lifecyclePath]stateCell{
 	lcReuse:        {hInexact, "follows the rewind; rewindForReuse goes cold"},
 	lcSpecRollback: {hRefused, "specRollbackSafe refuses every model with recurrent state"},
 	lcPublish:      {hKept, "the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)"},
-	lcShare:        {hInexact, "a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold"},
+	lcShare:        {hInexact, "a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold"},
 	lcEvict:        {hCleared, "the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it"},
 	lcCkptSave:     {hExact, "the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none"},
 	lcCkptRestore:  {hExact, "copied back whole at c, conv window included; the prefill continues from c"},

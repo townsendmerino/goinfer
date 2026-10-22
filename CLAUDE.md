@@ -332,7 +332,7 @@ fit-refused night jobs, a queue nobody started, and results graded a day late.
 - **A cell started under heavy load is VOID, not averaged.** Heavy load means either of these, on the box doing the timed
   work, at the cell's start:
   - the 1-minute load average is above **half its core count**: 4.0 on the Mac (8 cores), 8.0 on nobara (16 cores);
-  - its free memory is **below what the fit guard needs for the cell's load, plus 2 GB**.
+  - its free memory is **below what the fit guard needs for the cell's load, plus 2 GB**. **Changed 2026-10-21 (Francis, B41, registered before any data):** the free-memory term is goinfer's available reading (`cmd/hostmem`; macOS free + file-backed + purgeable pages, speculative counted once; Linux `MemAvailable`) for jobs queued after B41 merged that day; before that, macOS read free + inactive + speculative + purgeable pages. The 2 GB margin is unchanged.
 
   A void cell is re-run in the same interleaved order. It is never averaged in, and it is never quietly dropped: the record
   lists it. A box that only drives a harness against the other box (tack's runs from the Mac against nobara, say)
@@ -492,6 +492,30 @@ Francis, not skipped.
 
 <!-- citation-lint: allow-path file.go the placeholder in this repo's own descriptions of the citation forms (file.go:NNN, file.go:NN), not a citation -->
 <!-- citation-lint: allow-path path.go the placeholder in the symbol-citation examples (path.go:Name, path.go:Type.Method), not a citation -->
+
+## Task docs: the ledger, and closing as you go
+
+**Owner rule, 2026-10-21.** The close-out sweep of the eight most recently worked task docs found every status line days or
+weeks behind the tree, each item's state scattered through prose, and items moved to a queue entry or another doc with no
+link back. So:
+
+- **A live task doc carries one ledger,** under its status block: the line `<!-- ledger -->`, then a table
+  `| id | state | next | evidence |`, one row per item. States: open, active, blocked, decision (waiting on the owner's
+  word), done, killed, moved (the row names where). It is the current state; prose notes below it are history.
+- **Change the row in the same commit as the work.** A commit that ships, kills, blocks or moves an item updates its row. A
+  move also leaves a link back in the destination, naming the doc it came from.
+- **The commit that closes the last row archives the doc, in the same push:** `python3 scripts/task_docs.py archive <doc>
+  --status <file>` prints the plan; read it, then add `--apply --stage`. It copies the ARCHIVED header verbatim, moves the
+  doc to `docs/completed/`, re-points the references in docs, keeps a pointer stub when code, help text or a generated page
+  cites the old path (so the push stays docs-only and no `_fresh` test goes red), recounts `docs/README.md` and runs the
+  citation lint. The status block is yours to write: what closed it, with commits; what the tree says now; what the doc did
+  not own and where it went.
+- **A new task doc starts with a ledger,** and commit subjects name its items with an ID the doc owns (`KV4`, `MEM12`, or
+  the doc's slug with a short ID). A bare `S4` or `G1` matches several campaigns.
+- `python3 scripts/task_docs.py rank --top 8` lists the most recently worked docs on any ref; `check` lists closable docs,
+  uncommitted docs in any worktree on the box, archives without the header, and drifted README counts. Several docs at
+  once is a close-out sweep (the owner's `close-out` skill), which runs `.claude/skills/doc-review/SKILL.md` on each doc in
+  parallel.
 
 ## Measurement discipline
 

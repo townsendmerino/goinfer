@@ -15,6 +15,19 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Changes behavior for library callers on macOS and Linux. `decoder.Load` of a `.gguf` or a safetensors directory opens its
+  sidecar `.giw`**, transcoding it once beside the source, as `serve` and `chat` already did (MEM1,
+  `docs/tasks/task-memory-campaign-2026-10.md`). The weights are a mapping of that file, not a heap copy: the 0.5B at int4 holds
+  1 MiB of Go heap after a load, against 647 MiB before. A `.gguf` whose sidecar cannot be written is refused, naming the new
+  `Options.DirectLoad`, which restores the direct load. Test binaries keep the direct load. The transcode and the sidecar cache
+  moved from `internal/prequant` into `decoder` (`EnsureCachedGIW`, `TranscodeGIW`, `SidecarPath`, ...; Experimental tier).
+- **Changes behavior on macOS. The fit guard's available memory counts cached files as available** (B41). It is now the free,
+  file-backed and purgeable pages (speculative read-ahead counted once, as file-backed), read through `host_statistics64` without an exec, where it was free + inactive +
+  speculative + purgeable pages from `vm_stat`, which counted the active file cache as used: right after a large model ran, a load
+  could be refused for memory the kernel would hand back at once. Inactive app memory no longer counts as available, so with many
+  apps open it can read lower than before. Linux keeps `MemAvailable`. The night runner and the benchmark harness read the same
+  number through a new `cmd/hostmem`, which also reads a process's own memory (`-pid`, `task_info` `TASK_VM_INFO`).
+- **The Metal memory guard also refuses a load whose Metal allocation exceeds the GPU's `recommendedMaxWorkingSetSize`**, by name.
 - **`logit_bias` on the serve API.** `/v1/chat/completions`, `/v1/completions` and `/v1/responses` take OpenAI's `logit_bias`
   (token id to a value in [-100,100], added to the logit), and `/v1/messages` takes the same field as an extension. Before, the
   field was ignored. The sampler already applied a bias, and its on-device fast paths already stand aside for one. A malformed
@@ -171,7 +184,8 @@ A request on a CUDA resident was priced at the CPU batched sweep's whole-prompt 
 host's available memory, though the resident prefills in passes of 512 rows. The resident now reports its chunk and its per-pass
 scratch (the sum of the pass's device buffers after the allocator's rounding, held to the pass by a test), and admission prices the
 request at one chunk plus the host embeddings of the prompt: 0.19 GB against 1.65 GB for the same request on the 1.5B. This is the
-CUDA half of the Metal change under "on Metal, a long prompt prefills in blocks".
+CUDA half of the Metal change under "on Metal, a long prompt prefills in blocks". **WebGPU does the same** (0.18 GB against 1.65 GB; its figure is an upper bound
+within 6% of what the pass creates).
 
 ### Added — a new conversation copies the prompt it shares with an earlier one instead of prefilling it (`--kv-share`)
 

@@ -1,0 +1,51 @@
+{
+ "cell": "tower:qwen3vl-2b",
+ "model": "/Users/francistownsend-merino/models/qwen3-vl-2b-instruct",
+ "available_before_MiB": 8842,
+ "swap_used_before_MiB": 1962,
+ "load_s": 2.0,
+ "prompt_tokens": 1028,
+ "request_s": 7.7,
+ "footprint_MiB": {
+  "load": 54,
+  "peak": 7261,
+  "end": 7208,
+  "plus10s": 7207
+ },
+ "peak_rss_MiB": 3529,
+ "categories_MiB": {
+  "load": {
+   "untagged (VM_ALLOCATE)": 36.0,
+   "MALLOC_SMALL": 8.8,
+   "IOAccelerator (graphics)": 3.9,
+   "__DATA_CONST": 1.3,
+   "page table": 1.1,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "MALLOC metadata": 0.3
+  },
+  "end": {
+   "IOAccelerator (graphics)": 4415.0,
+   "untagged (VM_ALLOCATE)": 2776.0,
+   "MALLOC_SMALL": 9.5,
+   "page table": 2.8,
+   "__DATA_CONST": 1.3,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "stack": 0.4
+  },
+  "plus10s": {
+   "IOAccelerator (graphics)": 4414.0,
+   "untagged (VM_ALLOCATE)": 2776.0,
+   "MALLOC_SMALL": 9.5,
+   "page table": 2.8,
+   "__DATA_CONST": 1.3,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "stack": 0.4
+  }
+ },
+ "available_after_MiB": 3485,
+ "swap_used_after_MiB": 2301,
+ "cell_wall_s": 23.6
+}

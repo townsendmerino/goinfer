@@ -1,0 +1,10 @@
+=== RUN   TestKVQuant_reservesNoF32
+    kv_f32res_test.go:65: llama-tiny f32: NewCache(512) allocates 524288 bytes over NewCache(0); quantized reservation 0
+    kv_f32res_test.go:65: llama-tiny f16: NewCache(512) allocates 262144 bytes over NewCache(0); quantized reservation 262144
+    kv_f32res_test.go:65: llama-tiny int8: NewCache(512) allocates 163840 bytes over NewCache(0); quantized reservation 163840
+    kv_f32res_test.go:65: gemma2-tiny f32: NewCache(512) allocates 1048576 bytes over NewCache(0); quantized reservation 0
+    kv_f32res_test.go:65: gemma2-tiny f16: NewCache(512) allocates 524288 bytes over NewCache(0); quantized reservation 524288
+    kv_f32res_test.go:65: gemma2-tiny int8: NewCache(512) allocates 294912 bytes over NewCache(0); quantized reservation 294912
+--- PASS: TestKVQuant_reservesNoF32 (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.370s

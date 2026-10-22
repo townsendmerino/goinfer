@@ -42,8 +42,9 @@
     - C, the fused kernel for head dims 256 and 512: fast-class, needs a fidelity gate, several days.
     - The owner approved A, then parked it, then dropped it once `kv3-tiled-2026-10` was found to cover the case.
 
-- **P34 · Two 32k candidates never reuse a prefix on CUDA — REOPENED 2026-10-19 at HIGH priority (owner), after the work in
-  progress. Two causes, one per model.** `linux`.
+- **P34 · Two 32k candidates never reuse a prefix on CUDA — reopened 2026-10-19 at high priority (owner). Two causes, one per
+  model, both fixed on `main`: cause 1 by B35 (#112, 2026-10-21), cause 2 by `1ea85681` (2026-10-19). Not re-run: tack's E0
+  cells on a fixed build.** `linux`.
 
   - **Seen (tack's E0, nobara):** first-token time with the prefix reused equals cold at every size.
     - Qwen3.5-9B: C3 on `f20f0d93`, at 4k 15.3 vs 15.7 s, 8k 38.8 vs 38.8 s, 31.7k 421.3 vs 421.5 s.
@@ -51,10 +52,12 @@
       `docs/measurements/e0-nobara-mellum-2026-10-19.md`, tack 70a5193). The 31.7k probes took about 343 s each.
   - **Cause 1, the Gated-DeltaNet hybrids (Qwen3.5-9B; Qwen3.6-35B-A3B has the same layers):** the chat template drops the empty
     think block from history turns, so each chat request diverges from where the recurrent state stopped
-    (`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). The fix is B35, in progress on branch
-    `b35-recurrent-checkpoint-2026-10`.
-  - **Cause 2, Mellum2.1 (21 of 28 layers sliding-window, KV windowed): an expert-cache load gets no rollback grant.** Read from
-    the code and checked by arithmetic, not yet by a run.
+    (`docs/measurements/qwen35-reuse-probe-2026-10-18/README.md`). **Fixed by B35, merged 2026-10-21 as #112.**
+  - **Cause 2, Mellum2.1 (21 of 28 layers sliding-window, KV windowed): an expert-cache load got no rollback grant. FIXED
+    2026-10-19, `1ea85681` on `main`, by the proposed fix below; the probe PASSED**
+    (`docs/measurements/p34-mellum-rollback-2026-10-19/README.md`: at `-ctx 8192` a 600-token edit re-prefilled on the old build,
+    17.4 s, and reused 6,412 tokens on the new one, 1.9 s; the load is granted 576 positions and a follow-up may diverge 1,024
+    back). The reading below is as filed, before the fix.
     - `cuda/kvwindow.go:cudaResident.kvGrantRollback` returns at once when `cacheExperts` is set ("its cache was sized to what
       was free"). The rollback stays at the base slack less the step: 448 positions, up to 512 at the best point of the
       compaction cycle.
@@ -66,9 +69,9 @@
     - **What it means for tack's own loop:** a request that appends to the previous one is unaffected. One that rewrites more
       than about 448 tokens of the end (a client that drops the previous reply, as Codex does) is refused on any
       expert-cache load of a windowed model.
-  - **Proposed fix for cause 2 (none built):** price the rollback grant before the expert cache is sized, so an expert-cache
-    load gets it too. The cost is the grant's few MB of KV per slot (576 positions across the windowed layers) taken from the
-    expert cache. Gate: a tier 0 replay of `kvWindowNextBase` and the plan over E0's shape, with and without the grant, plus
+  - **The fix for cause 2 (built as proposed, `1ea85681`):** price the rollback grant before the expert cache is sized, so an
+    expert-cache load gets it too. The cost is the grant's few MB of KV per slot (576 positions across the windowed layers)
+    taken from the expert cache. Gate: a tier 0 replay of `kvWindowNextBase` and the plan over E0's shape, with and without the grant, plus
     a plant; then one by-day probe on nobara, Mellum at 8k with an edit 400 and 600 tokens from the end, reused after the fix.
   - **Data:** tack `docs/measurements/e0-nobara-c3-2026-10-18.md` and `e0-nobara-mellum-2026-10-19.md`; raw records under
     `~/tack-runs/e0/` on nobara. The Mellum run kept no request log (`reused=`, `div=`), so the confirming probe should run with
@@ -325,7 +328,7 @@
   - **The finding that parked way A as the default:** CPU f16 KV way A (`--kv f16`, opt-in since #55) narrows rows to f16 on
     append and widens the whole stored history into scratch on every decode step. F3's in-process A/B put it slower at depth:
     0.925 on the 0.5B at 4,096 keys, 4 of 4 pairs under 1 (resolved), and 0.861 on the 1.5B (3 of 4). So `auto` stays f32
-    (`docs/tasks/task-cpu-kv-f16-2026-10.md` §5b).
+    (`docs/completed/task-cpu-kv-f16-2026-10.md` §5b).
   - **Way B** (that doc's §4) reads f16 in the register, inside the kernels. Because the float64 path reads K and V in place, this
     is not one kernel: it is an f16 form of each of the four attention kernels (two of them arm64-only), plus the fast prefill's
     gather. Those kernels are aikit's, and its pushes and tags are the owner's.
@@ -333,6 +336,11 @@
     positions on Qwen2.5-1.5B). Not speed: way B's best case is f32's speed at half the bytes.
   - **Gates when it reopens:** the task doc's F1–F5 as registered, with F3 against way B; F1's exactness rule (the f32 path with
     each stored row rounded to f16 by hand) carries over unchanged.
+  - **Added 2026-10-21 (the close-out sweep, from `docs/completed/task-cpu-kv-f16-2026-10.md`):** way A's widening runs on one
+    goroutine, while int8's was split across cores by R-15 (`dequantKVRows`), so F3 timed a slower pass than int8 pays.
+    Splitting the f16 widening by rows the same way is bit-identical by construction and should narrow the 0.925 at depth
+    without closing it (R-15 made int8 1.234× faster at depth 2,000 and left it at about 0.89 of f32). It speeds up the
+    opt-in; it is not a reason to reopen the default. Either box, S, read by an in-process A/B by day.
 
 - **P25 · `breakEvenTokensPerRound` is one constant (2.5) for every (target, backend); it does not
   transfer to a CPU MoE target and would NOT have caught a real regression.** Filed 2026-09-13 from

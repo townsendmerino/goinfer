@@ -1,0 +1,53 @@
+{
+ "label": "gemma-4-e4b",
+ "model": "/home/francis/models/gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf",
+ "flags": [
+  "--ctx",
+  "24576"
+ ],
+ "runs": [
+  {
+   "arm": "default",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 3.62,
+    "prompt_tokens": 1491
+   },
+   "long": {
+    "status": null,
+    "seconds": 150.1,
+    "error": "TimeoutError"
+   },
+   "declined_lines": [
+    [
+     "12215",
+     "layer 5 attention at 12215 attended keys needs 49372 B of shared memory, past this device's 49152 B limit \u2014 the exact batched attention has no split-KV path and the fused attention does not serve this pass (it needs head dim 64 or 128, an ordinary last-row prefill, 16 rows or more, no image block), so this prompt length needs the sequential path"
+    ]
+   ],
+   "serve_log_tail": ""
+  },
+  {
+   "arm": "per-token",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 20.55,
+    "prompt_tokens": 1491
+   },
+   "serve_log_tail": ""
+  }
+ ]
+}

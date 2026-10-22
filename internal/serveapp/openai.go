@@ -181,6 +181,10 @@ type loadedModel struct {
 	scripted []int
 	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
 	onScripted func(promptIDs []int)
+	// scriptedRecurrent makes a scripted model one whose snapshots carry its recurrent state (recurrentKeep computes a Keep for it), and
+	// onScriptedScope receives the KV scope each scripted generation would hand the decoder. Test seams, as scripted.
+	scriptedRecurrent bool
+	onScriptedScope   func(decoder.KVScope)
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -946,6 +950,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		return
 	}
 	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
@@ -1162,11 +1167,19 @@ type genRequest struct {
 	// boundary is how many leading ids of promptIDs are the stable system-and-tools section (loadedModel.prefixBoundary), 0 when unknown. It reaches the
 	// decoder as KVScope.Boundary, where a prefix snapshot may be taken at it during the cold prefill.
 	boundary int
+	// keep is how many leading ids of promptIDs the next turn's prompt repeats (loadedModel.recurrentKeep), 0 when unknown or not a recurrent model
+	// whose snapshots carry its state. It reaches the decoder as KVScope.Keep, where the state is kept for the next turn.
+	keep int
 	// fromModel names the sampling fields prepare took from the model's recommended sampling (withRecommended).
 	fromModel []string
 	// callPostCheck is a must-call tool_choice on a family with no JSON call form (forcedCallEnforcement "post-check"):
 	// runToolTurn streams no prose and returns errNoForcedCall when the reply holds no call.
 	callPostCheck bool
+}
+
+// kvScope is the KV sharing scope the request hands the decoder.
+func (gr *genRequest) kvScope() decoder.KVScope {
+	return decoder.KVScope{Boundary: gr.boundary, Keep: gr.keep}
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
@@ -1583,6 +1596,9 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		if lm.onScripted != nil {
 			lm.onScripted(gr.promptIDs)
 		}
+		if lm.onScriptedScope != nil {
+			lm.onScriptedScope(gr.kvScope())
+		}
 		finish, n, stopHit := lm.streamTokens(parent, cancel, scriptedStream(lm.scripted, gr.maxTokens), gr, nil, onText)
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}
@@ -1607,7 +1623,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	// prefix-reuse path.
 	if lm.model.ResidentActive() && lm.adapter == "" {
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
-		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: gr.boundary})
+		gctx := decoder.WithKVScope(ctx, gr.kvScope())
 		if lm.blockSpec != nil && gr.masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with

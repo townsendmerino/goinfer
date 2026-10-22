@@ -19,7 +19,7 @@ import (
 // and RAM win); the norm and bias vectors and f32 matrices are copied.
 //
 // There is one layout. This build writes giwVersion and reads only giwVersion; a file at any other version is refused
-// with a *SerializeError, and a sidecar that fails its freshness check is rebuilt from its source (internal/prequant).
+// with a *SerializeError, and a sidecar that fails its freshness check is rebuilt from its source (decoder/sidecar.go).
 // Every tensor record starts with its encoding (a weight matrix's kind, or giwEncF32 for a standalone array), and a reader
 // refuses only an encoding it does not read, so a new encoding needs no new version (docs/giw-bundles.md, "From v17").
 // There is no fallback to the GGUF: an embedded or explicitly named bundle that does not load is an error. The
@@ -63,11 +63,13 @@ import (
 //	   storage choice, not a numerics one: dispatch is bit-identical either way.
 //	6  int4, fused-group member (Metal target): a header with no arrays; the group's nibbles and then its binary16
 //	   scales follow the group's last header as two unprefixed 16-aligned blocks (giwWriter.fusedGroup).
+//	8  Q4_K (a --quant q4k load's native tensors): raw, the GGUF super-blocks as they are (144 bytes per 256 values),
+//	   aliased on load through linalg.WrapQ4K. group is 0.
 //
 // Kinds 4 and 7 existed before v16 and are not read.
 
 // GIWFormatVersion is the weights format version this build writes and reads: the "vN" a sidecar's file name carries
-// (internal/prequant), so builds at different versions keep separate sidecars of one model.
+// (decoder/sidecar.go:streamCachePath), so builds at different versions keep separate sidecars of one model.
 const GIWFormatVersion = giwVersion
 
 const (
@@ -144,7 +146,7 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 // SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE consumer (docs/tasks/task-int4-layout-2026-09.md):
 // on a cpu-arm64 target, every eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5 (row4-only)
 // instead of kind 3; every other target, including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
-// SerializeWeights. internal/prequant.Transcode/EnsureCachedGIW and cmd/prequant drive this.
+// SerializeWeights. TranscodeGIW/EnsureCachedGIW (sidecar.go) and cmd/prequant drive this.
 func SerializeWeightsForTarget(w *Weights, id string, target GIWTarget) ([]byte, error) {
 	wr := &giwWriter{target: target}
 	if err := wr.writeBundle(w, id); err != nil {
@@ -206,7 +208,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	// populated, not on which writer is in use. The incremental GGUF transcode calls writeHeadGlobals on a freshly make()'d,
 	// all-zero Layers slice before any layer streams, where quantLabel() cannot see real data and its default case returns
 	// "native", a real quant mode, so calling it unconditionally would bake a false "native" label into every streamed
-	// bundle. A caller that already holds a fully loaded *Weights (internal/prequant) and merely chooses the streaming API
+	// bundle. A caller that already holds a fully loaded *Weights (residentDirBody) and merely chooses the streaming API
 	// for its I/O shape does get the label, so a buffered and a streamed call on the same model produce identical bytes.
 	label := ""
 	if w.hasPopulatedLayers() {
@@ -814,7 +816,7 @@ func (w *Weights) hasPopulatedLayers() bool {
 // label would contradict the path the prefill gate takes. The .giw header's quant field derives from the first weight
 // (the int8 embed), so it is not a substitute.
 func (w *Weights) quantLabel() string {
-	var hasInt4, hasInt8I8, hasInt8 bool
+	var hasInt4, hasInt8I8, hasInt8, hasQ4K bool
 	// bodyMatmulWeights excludes the int8-pinned logit tables — the single definition of that
 	// exclusion (weights.go), so the label and the .giw resolved-quant field can never disagree.
 	for _, m := range w.bodyMatmulWeights() {
@@ -822,6 +824,8 @@ func (w *Weights) quantLabel() string {
 			continue
 		}
 		switch m.Kind() {
+		case "q4k":
+			hasQ4K = true
 		case "int4":
 			hasInt4 = true
 		case "int8":
@@ -833,6 +837,8 @@ func (w *Weights) quantLabel() string {
 		}
 	}
 	switch {
+	case hasQ4K:
+		return "q4k" // its other tensors are int8 W8A8 by construction (matmulQuant)
 	case hasInt4 && (hasInt8I8 || hasInt8):
 		return "int4mix"
 	case hasInt4:
@@ -929,8 +935,8 @@ func giwArrayPad(off int64) int { return int((-(off + 4)) & 15) }
 // alignHead ends the variable-length header on a 16-byte boundary. The header carries a length-prefixed quant label
 // that the resident writer emits and the streaming writer deliberately does not, so the two paths' offsets differ by the
 // label's length. Every later array's padding is a function of its absolute offset, so without this the two would lay out
-// the same weights with different padding and stop being byte-identical (internal/prequant
-// TestStreamTranscodeMatchesResident). With it, everything after the header is at the same offsets in both.
+// the same weights with different padding and stop being byte-identical
+// (TestStreamTranscodeMatchesResident). With it, everything after the header is at the same offsets in both.
 func (w *giwWriter) alignHead() { w.align16() }
 
 // align16 pads to a 16-byte boundary: before a block that carries no count (a fused group's nibbles and scales).
@@ -1026,12 +1032,14 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) { w.weightMatKind(m, true) }
 func (w *giwWriter) weightMatKind3Only(m *linalg.WeightMat) { w.weightMatKind(m, false) }
 
 func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
-	if m.Kind() == "q4k" {
-		// quantQ4K has no .giw kind yet (docs/tasks/task-int4-weight-quality-2026-09.md): refuse
-		// rather than write a tensor with no payload. Every serialize/stream entry returns w.err.
-		if w.err == nil {
-			w.err = fmt.Errorf("decoder: --quant q4k has no .giw form yet; load the .gguf directly")
-		}
+	if raw, ok := m.Q4K(); ok {
+		w.raw([]byte{8})
+		w.u32(uint32(m.Rows()))
+		w.u32(uint32(m.Cols()))
+		w.u32(0)
+		w.raw([]byte{0})
+		w.alignArray()
+		w.bytesField(raw)
 		return
 	}
 	if m.Rows() == 0 {
@@ -1039,6 +1047,13 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		return
 	}
 	q4, q4s, group, isQ4 := m.Int4F16()
+	if m.IsInt4() && !isQ4 {
+		// Repacked-only (one row4 copy, quantizeLayerWM under Backend "cpu"): every kind is written from canonical bytes.
+		if w.err == nil {
+			w.err = fmt.Errorf("decoder: a %dx%d int4 tensor holds only its row4 layout (a Backend \"cpu\" load keeps no canonical copy); load with another Backend to serialize it", m.Rows(), m.Cols())
+		}
+		return
+	}
 	q8, scales, w8a8, isQ8 := m.Int8()
 	f32, _ := m.F32()
 	var kind byte
@@ -1553,7 +1568,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	if kind == 0 {
 		return linalg.WeightMat{}
 	}
-	if kind != 1 && kind != 2 && kind != 3 && kind != 5 { // kind 6 is read as a fused group, never here
+	if kind != 1 && kind != 2 && kind != 3 && kind != 5 && kind != 8 { // kind 6 is read as a fused group, never here
 		r.unknownEncoding(kind)
 		return linalg.WeightMat{}
 	}
@@ -1626,6 +1641,19 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			// this core: wrong arch (the file was written for arm64), or a shape this core's build cannot run the row4
 			// kernel for.
 			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d is stored row4-only (kind 5, a cpu-arm64 prequant target) but this core cannot use that layout — rebuild with `go run ./cmd/prequant -target <this core>` (or delete the stream-weights cache so it rebuilds automatically)", rows, cols, group))
+			return linalg.WeightMat{}
+		}
+		return wm
+	case 8:
+		r.alignArray()
+		raw := r.rawAlias() // zero-copy: the super-blocks are aliased from the mapping
+		if cols%256 != 0 || len(raw) != rows*linalg.Q4KRowBytes(cols) {
+			r.fail(fmt.Sprintf("q4k weightMat %d×%d: %d bytes, want %d whole 256-value super-blocks per row", rows, cols, len(raw), cols/256))
+			return linalg.WeightMat{}
+		}
+		wm, err := linalg.WrapQ4K(raw, rows, cols)
+		if err != nil {
+			r.fail(fmt.Sprintf("q4k weightMat %d×%d: %v", rows, cols, err))
 			return linalg.WeightMat{}
 		}
 		return wm

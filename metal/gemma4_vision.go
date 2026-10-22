@@ -95,12 +95,25 @@ func newG4VAccel(enc *vision.Gemma4Encoder) (*g4vAccel, error) {
 
 func (a *g4vAccel) Name() string { return "metal" }
 
-func (a *g4vAccel) Close() error { return nil }
+// Close frees the tower's device memory; a forward after it is an error.
+func (a *g4vAccel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.closeDevice()
+	a.layers, a.cap = nil, 0
+	return nil
+}
 
-func (a *g4vAccel) grow(np int) {
-	if np <= a.cap {
-		return
+// grow sizes the scratch for np patches, releasing what it replaces.
+func (a *g4vAccel) grow(np int) error {
+	if err := a.open(); err != nil {
+		return err
 	}
+	if np <= a.cap {
+		return nil
+	}
+	a.release(&a.x, &a.xn, &a.cp, &a.pt, &a.posBuf, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.f, &a.g, &a.u, &a.qh, &a.kh, &a.vh,
+		&a.sc, &a.vt, &a.ob, &a.ropeCos, &a.ropeSin)
 	c := a.cfg
 	H, I, hd := c.HiddenSize, c.IntermediateSize, c.HeadDim
 	n := func(cols int) Buffer { return a.d.NewBufferLen(np * cols) }
@@ -113,6 +126,7 @@ func (a *g4vAccel) grow(np int) {
 	a.sc, a.vt, a.ob = a.d.NewBufferLen(B*np), a.d.NewBufferLen(hd*np), a.d.NewBufferLen(B*hd)
 	a.ropeCos, a.ropeSin = n(hd), n(hd)
 	a.cap = np
+	return nil
 }
 
 func finite(v float32) bool { return !math.IsInf(float64(v), 0) }
@@ -144,7 +158,9 @@ func (a *g4vAccel) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	if np == 0 || len(patches) != np*pd {
 		return nil, fmt.Errorf("metal: %d patch values for %d patches of %d", len(patches), np, pd)
 	}
-	a.grow(np)
+	if err := a.grow(np); err != nil {
+		return nil, err
+	}
 	pt := a.pt.Floats()[:np*pd]
 	for i, v := range patches {
 		pt[i] = 2 * (v - 0.5) // the patch embedder's own remap, as Forward does it

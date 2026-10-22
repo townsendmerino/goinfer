@@ -176,7 +176,7 @@ func probeFixture(backend, quant, name string, positions int, worst *probeWorst)
 			return nil, "", err
 		}
 	}
-	gm, err := Load(gdir, Options{Backend: backend, Quant: quant, ResidentContext: positions + 16, ResidentKVSlots: 1, noSelfTest: true})
+	gm, err := Load(gdir, Options{Backend: backend, Quant: quant, ResidentContext: positions + 16, ResidentKVSlots: 1, noSelfTest: true, DirectLoad: true})
 	if err != nil {
 		return nil, "cannot load on " + backend + ": " + err.Error(), nil
 	}
@@ -192,7 +192,7 @@ func probeFixture(backend, quant, name string, positions int, worst *probeWorst)
 	if got := residentPrecision(backend, quant, rf); got != quant {
 		return nil, fmt.Sprintf("re-quantized to %s on %s (loaded at %s); not probed", got, backend, quant), nil
 	}
-	cm, err := Load(dir, Options{Backend: "cpu", Quant: quant, noSelfTest: true})
+	cm, err := Load(dir, Options{Backend: "cpu", Quant: quant, noSelfTest: true, DirectLoad: true})
 	if err != nil {
 		return nil, "", fmt.Errorf("load on cpu: %w", err)
 	}

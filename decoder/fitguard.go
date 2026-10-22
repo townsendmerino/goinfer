@@ -290,9 +290,9 @@ const giwMemMargin = 1 << 30 // 1 GB
 // Scratch is priced at prefillAttnScratchBudget alone, the fixed attention-scratch cap every prefill enforces; prefillScratchBytes' other
 // term (gate/up MLP activations) scales with a prompt's length, which load time does not know.
 //
-// Limitation: Metal's per-projection host buffer copies (metal/model.go's int4Buf/int4Concat) are not priced, so on Metal this under-counts.
-// decoder cannot import metal, so pricing it needs its own hook, which is not built; CPU is this function's only backend. Recorded in
-// docs/tasks/task-never-swap-2026-09.md ("Not priced").
+// The one weight term priced is the CUDA expert cache's pinned host copy (giwPinnedExpertBytes); every other build reads its weights from
+// the mapping. A Metal build binds them in place, and what it still copies where it cannot (aliasing off, or a file written for another
+// target) is not priced.
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	d := decideGIWFit(cfg, opts)
 	if d.note != "" {
@@ -398,8 +398,8 @@ func giwPinnedExpertBytes(cfg *Config, opts Options) int64 {
 	return int64(layers) * int64(arch.MoE.NumExperts) * 3 * int64(arch.MoE.IntermediateDim) * int64(c.HiddenDim) * 9 / 16
 }
 
-// resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: vm_stat on
-// darwin, /proc/meminfo on linux): half of available memory, the same math aikit's mmap.AutoBudget() uses, but AutoBudget is Linux-only and
+// resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: internal/hostmem on
+// darwin and linux): half of available memory, the same math aikit's mmap.AutoBudget() uses, but AutoBudget is Linux-only and
 // falls back to a fixed 8 GB elsewhere, a number with no relation to what the machine has free. An explicit request (> 0) passes through
 // unchanged. When this platform's probe is unavailable too it returns 0 (aikit's own AutoBudget) and logs that, so the fallback is visible.
 func resolveWeightCacheBudget(requested int64) int64 {

@@ -6,7 +6,7 @@
 // The demo's -tags prequant build embeds the bundle and loads it with NO
 // dequant/requant — the int8 weights are aliased straight from the binary image,
 // so a 4B model no longer needs a multi-GB heap copy on every launch. serve also
-// builds these on the fly for --stream-weights (see internal/prequant.EnsureCachedGIW).
+// builds these on the fly for --stream-weights (see decoder.EnsureCachedGIW).
 //
 // Usage:
 //

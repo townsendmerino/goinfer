@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# G-W2 (correctness on the real model, and the ctx-4096 load) and G-W3 (no speed cost) of docs/tasks/task-cuda-windowed-kv-2026-10.md, Mellum2.1 int4mix on
+# G-W2 (correctness on the real model, and the ctx-4096 load) and G-W3 (no speed cost) of docs/completed/task-cuda-windowed-kv-2026-10.md, Mellum2.1 int4mix on
 # nobara. Pre-registered in windowed_kv_gate.py's docstring and the task doc. Timed (night.py holds the timing lock).
 # Pinned binary: ~/goinfer-bench/windowed-kv/serve-cuda (rev beside it). Estimate ~12 min (5 loads of ~25 s, 6 short + 6 long requests per arm session).
-#   python3 scripts/night.py add windowed-kv-gates --est 25 --by "nobara session, CUDA windowed KV" --doc docs/tasks/task-cuda-windowed-kv-2026-10.md -- bash docs/measurements/cuda-windowed-kv-2026-10/run-windowed-kv-gates.sh
+#   python3 scripts/night.py add windowed-kv-gates --est 25 --by "nobara session, CUDA windowed KV" --doc docs/completed/task-cuda-windowed-kv-2026-10.md -- bash docs/measurements/cuda-windowed-kv-2026-10/run-windowed-kv-gates.sh
 F=${F:-$HOME/goinfer-bench/windowed-kv}
 source "$(dirname "$0")/../mellum21-2026-10/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/windowed-kv-gates-$(date +%F)}

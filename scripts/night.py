@@ -980,23 +980,10 @@ def fcntl_flock(fd):
 
 
 def free_mem_mb():
-    """This box's available memory in MB, as goinfer's fit guard reads it: MemAvailable on Linux; free + inactive + speculative +
-    purgeable pages from vm_stat on darwin. None when unreadable."""
-    try:
-        if sys.platform == "darwin":
-            out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=10).stdout
-            m = re.search(r"page size of (\d+) bytes", out)
-            pages = [re.search(re.escape(k) + r"\s+(\d+)\.", out) for k in
-                     ("Pages free:", "Pages inactive:", "Pages speculative:", "Pages purgeable:")]
-            if not m or not all(pages):
-                return None
-            return sum(int(x.group(1)) for x in pages) * int(m.group(1)) >> 20
-        for line in open("/proc/meminfo"):
-            if line.startswith("MemAvailable:"):
-                return int(line.split()[1]) >> 10
-    except Exception:
-        pass
-    return None
+    """This box's available memory in MiB, the number goinfer's fit guard reads (scripts/hostmem.py, cmd/hostmem). None when
+    unreadable."""
+    import hostmem
+    return hostmem.available_mb()
 
 
 def night_start(hhmm, added, deadline=DEFAULT_DEADLINE):

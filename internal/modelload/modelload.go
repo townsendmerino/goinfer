@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -194,7 +193,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 			return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 		}
 		t0 = time.Now()
-		if model, err = decoder.Load(loadPath, opts); err != nil {
+		if model, err = decoder.Load(loadPath, opts); err != nil { // loadPath is a .giw: no route to choose
 			return nil, fmt.Errorf("load model (%s): %w (auto weight-streaming retry also failed after transcode: %v)", src, declineErr, err)
 		}
 	}
@@ -216,18 +215,15 @@ const (
 	routeDirSidecar                // a safetensors directory's sidecar (S18): a failed build falls back to the direct load
 )
 
-// routeFor is the one place Load and Plan choose how a source is opened. q4k has no .giw form yet
-// (docs/tasks/task-int4-weight-quality-2026-09.md), so a q4k .gguf always loads directly. A directory's sidecar keeps its
+// routeFor is the one place Load and Plan choose how a source is opened. A q4k .gguf takes its sidecar like any other
+// (its Q4_K tensors are the .giw's kind 8), except under -stream-weights, which it refuses. A directory's sidecar keeps its
 // weights as mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the weights
 // counted once and counted twice (docs/tasks/task-multimodal-support-2026-10.md, S18).
 func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, error) {
 	gguf := strings.HasSuffix(src, ".gguf")
 	switch {
-	case opts.Quant == "q4k" && gguf:
-		if opts.StreamWeights {
-			return routeDirect, fmt.Errorf("--quant q4k cannot stream weights yet (it has no .giw form); drop -stream-weights")
-		}
-		return routeDirect, nil
+	case opts.Quant == "q4k" && gguf && opts.StreamWeights:
+		return routeDirect, fmt.Errorf("--quant q4k cannot stream weights yet (weight paging does not read its .giw kind); drop -stream-weights")
 	case opts.StreamWeights:
 		if gguf {
 			return routeStreamSidecar, nil
@@ -235,7 +231,7 @@ func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, e
 		return routeDirect, nil
 	case gguf && prequant.DefaultToSidecar(directLoad):
 		return routeSidecar, nil
-	case dirSidecarApplies(src, opts) && prequant.DefaultToSidecar(directLoad):
+	case decoder.DirSidecarApplies(src, opts) && prequant.DefaultToSidecar(directLoad):
 		return routeDirSidecar, nil
 	}
 	return routeDirect, nil
@@ -296,17 +292,6 @@ func Plan(req Request) (Planned, error) {
 	return p, nil
 }
 
-// dirSidecarApplies reports whether a safetensors directory source takes the sidecar default (S18): not with a LoRA to
-// merge (the merge needs the safetensors base, and a plain sidecar would drop the adapter), not at q4k, bf16 or f16 (no .giw form),
-// and not under -stream-weights, which serve already explains is .gguf-only for a directory.
-func dirSidecarApplies(src string, opts decoder.Options) bool {
-	if opts.LoRA != "" || opts.Quant == "q4k" || opts.Quant == "bf16" || opts.Quant == "f16" || opts.StreamWeights || !isDir(src) {
-		return false
-	}
-	m, _ := filepath.Glob(filepath.Join(src, "*.safetensors"))
-	return len(m) > 0
-}
-
 func isDir(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
@@ -320,7 +305,7 @@ func isDir(p string) bool {
 //     default context resident where int8int8 does not);
 //   - int8int8 with per-32 activation scales anywhere else (Metal, WebGPU: no Q4_K kernel yet). Only CUDA
 //     residency implements per-group activation scales, so on Metal and WebGPU such a load declines to the
-//     CPU (decoder's actGroupResidentDecline; docs/tasks/task-option-path-admission-2026-10.md §4.3), which
+//     CPU (decoder's actGroupResidentDecline; docs/completed/task-option-path-admission-2026-10.md §4.3), which
 //     honours the group (docs/tasks/task-actquant-pergroup-2026-09.md).
 //
 // An explicit int8int8 gets per-32 too. An explicit int4/int4mix is honoured with a warning, because
@@ -347,6 +332,7 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 // Model.LoadAbort), so both arm the watch; an HF-dir or streamed load arms nothing.
 func loadGuarded(path string, opts decoder.Options, advice string) (*decoder.Model, error) {
 	loadOpts := opts
+	loadOpts.DirectLoad = true // the route is chosen (routeFor): path is what it opens
 	wrapLoadErr := func(err error) error { return err }
 	stopLoadGuard := func() {}
 	if !opts.StreamWeights && (strings.HasSuffix(path, ".gguf") || strings.HasSuffix(path, ".giw")) {

@@ -1,8 +1,19 @@
 # Option × path and state × lifecycle grids
 
 **Generated** from `decoder/optiongrid.go` and `decoder/cachestate.go` by `TestOptionStateGrid_fresh`; do not edit.
-Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history:
-[`tasks/task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) §4.
+Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and history (archived):
+[`completed/task-option-path-admission-2026-10.md`](completed/task-option-path-admission-2026-10.md) §4.
+
+## Policy: how a new option, path or kind of state joins a grid
+
+- A new `decoder.Options` field fails `TestOptionGrid_everyOptionClassified` until `decoder/optiongrid.go` classifies it on every execution path: tested, declined or n/a, with a reason. It cannot be untested: `TestOptionGrid_ratchet`'s ceiling is 0.
+- A cell that names a test or a decline must name one that exists in some module (`TestOptionGrid_cellsCarryEvidence`).
+- The untested count can only fall: a rise fails `TestOptionGrid_ratchet`, and a fall is booked into its ceiling in the same change.
+- A new execution path is not detected on its own: add it to `ogPaths`, which then fails every option until each is classified.
+- A new field on `KVCache` fails `TestKVCache_everyFieldHasAState` until it maps to a kind of state (or is geometry, a counter or scratch, with a reason).
+  A new kind of state needs a cell on every lifecycle path (`TestCacheStateGrid_everyCellDeclared`) and `holdsState` must know it (`TestCacheStateGrid_holdsStateKnowsEveryKind`).
+- This page is generated: a hand edit fails `TestOptionStateGrid_fresh`.
+- A cell moves from untested to tested with the test that drives it, one cell at a time; a path-admission refactor is not required and changes no behaviour by itself.
 
 ## Load options × execution paths
 
@@ -73,6 +84,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 
 - `AcceptSlowMoE`: an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards
 - `BackendAuto`: tells a backend at load that "auto" chose it, so it may decline a precision it would requantize
+- `DirectLoad`: chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened
 - `DisableFit`: selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)
 - `Drafter`: tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses
 - `ExtraResidentBytes`: prices a companion allocation when the resident is planned
@@ -135,7 +147,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - DeltaNet state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - DeltaNet state × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - DeltaNet state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- DeltaNet state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- DeltaNet state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - DeltaNet state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - DeltaNet state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - DeltaNet state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -145,7 +157,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - short-conv window × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - short-conv window × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - short-conv window × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- short-conv window × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- short-conv window × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - short-conv window × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - short-conv window × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - short-conv window × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -155,7 +167,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - Mamba-2 state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - Mamba-2 state × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - Mamba-2 state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- Mamba-2 state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- Mamba-2 state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - Mamba-2 state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - Mamba-2 state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - Mamba-2 state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -165,7 +177,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - KDA state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - KDA state × speculative rollback: specRollbackSafe refuses every model with recurrent state
 - KDA state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- KDA state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); anything else is cold
+- KDA state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - KDA state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - KDA state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - KDA state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c

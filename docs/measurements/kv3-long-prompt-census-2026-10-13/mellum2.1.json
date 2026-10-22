@@ -1,0 +1,49 @@
+{
+ "label": "mellum2.1",
+ "model": "/home/francis/models/mellum2.1-thinking",
+ "flags": [
+  "--moe-cache-experts",
+  "--ctx",
+  "24576"
+ ],
+ "runs": [
+  {
+   "arm": "default",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 14.55,
+    "prompt_tokens": 1486
+   },
+   "long": {
+    "status": 200,
+    "seconds": 118.33,
+    "prompt_tokens": 12250
+   },
+   "declined_lines": [],
+   "serve_log_tail": ""
+  },
+  {
+   "arm": "per-token",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576"
+   ],
+   "short": {
+    "status": 200,
+    "seconds": 20.43,
+    "prompt_tokens": 1486
+   },
+   "serve_log_tail": ""
+  }
+ ]
+}

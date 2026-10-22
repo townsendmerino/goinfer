@@ -1,0 +1,20 @@
+{
+ "label": "gemma-3-4b",
+ "model": "/home/francis/models/gemma-3-4b-it-Q4_K_M.gguf",
+ "flags": [],
+ "runs": [
+  {
+   "arm": "banner",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "16384 tokens (backend default; model maximum 131072 \u2014 raise with --ctx) \u00b7 KV f32"
+   ],
+   "fit": [
+    "16384-token cap needs 1.0 GB KV (weights 2.0 GB, budget 38.2 GB, 37.3 GB left for a request's own prefill)"
+   ]
+  }
+ ]
+}

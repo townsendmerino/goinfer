@@ -1719,7 +1719,7 @@ per request: prompt tokens of its first generation, completion tokens summed, fi
 Moved from `internal/serveapp/swapguard.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-S3 (docs/tasks/task-never-swap-2026-09.md): both halves of the swap tripwire.
+S3 (docs/completed/task-never-swap-2026-09.md): both halves of the swap tripwire.
 
 The SERVING half (armSwapGuard, armed once for the process's life): "the callback flips the
 admission gate to refuse new requests..., lets in-flight generations finish, logs once, and

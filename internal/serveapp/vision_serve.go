@@ -102,10 +102,30 @@ func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte, family strin
 	return vi
 }
 
-// visionFeatureCache is this model's per-image tower-output cache, made on first use.
+// visionFeatureCache is this model's per-image tower-output cache, made on first use and sized then by
+// featureCacheSize.
 func (lm *loadedModel) visionFeatureCache() *featureCache {
-	lm.featCacheOnce.Do(func() { lm.featCache = newFeatureCache(featureCacheBudget) })
+	lm.featCacheOnce.Do(func() { lm.featCache = newFeatureCache(lm.featureCacheSize()) })
 	return lm.featCache
+}
+
+// featureCacheSize is featureCacheBudgetFor over this model's fit plan, read against the memory available when it is
+// called, so a model loaded since this one is counted. With the fit guard off (GOINFER_NO_FIT_GUARD) or --fit=off it is
+// featureCacheBudget.
+func (lm *loadedModel) featureCacheSize() int {
+	if lm.model == nil || lm.model.FitDisabled() {
+		return featureCacheBudget
+	}
+	if v, _ := lm.model.Knob("GOINFER_NO_FIT_GUARD"); v != "" {
+		return featureCacheBudget
+	}
+	_, kvBytes, _, budgetBytes, known := lm.model.FitBudgetSummary()
+	n := featureCacheBudgetFor(known, budgetBytes, kvBytes)
+	if n < featureCacheBudget {
+		fmt.Fprintf(os.Stderr, "vision: the image feature cache holds %d MiB, not %d: that is what the fit budget leaves after this model's KV\n",
+			n>>20, featureCacheBudget>>20)
+	}
+	return n
 }
 
 func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
@@ -537,14 +557,22 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
 		return
 	}
+	sm, serr := req.toSampling()
+	if serr != nil {
+		serr.write(w)
+		return
+	}
 	tm := lm.templateFor(ts)
+	if sm.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
 	msgText, ordered := anthropicMediaText(req)
 	vi, err := lm.visionPromptN(tm, system, turns, imgs, ordered, msgText)
 	if err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.toSampling(), vi.ids, false)
+	gr, err := lm.prepare(sm, vi.ids, false)
 	if err != nil {
 		writeAnthropicPrepareErr(w, err)
 		return

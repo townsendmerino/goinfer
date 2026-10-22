@@ -1,6 +1,6 @@
 package decoder
 
-// The option grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every decoder.Options field against every
+// The option grid (docs/completed/task-option-path-admission-2026-10.md §4.0): every decoder.Options field against every
 // execution path, with what that path does with it and the evidence. It guards against a load option that no guard on
 // some path knew about (docs/measurements/audit-classes-2026-10-08.md).
 //
@@ -106,6 +106,7 @@ func ogMerge(ms ...map[ogPath]ogCell) map[ogPath]ogCell {
 var ogLoadOnly = map[string]string{
 	"noSelfTest":                 "the resident self-test's own fixture loads; read by the self-test at load",
 	"planResidency":              "FitQuery's open of a .giw, which builds no resident and is closed before it runs anything",
+	"DirectLoad":                 "chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened",
 	"LoRA":                       "merged into the base weights at load (\"merged into the base at load\"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid",
 	"AcceptSlowMoE":              "an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards",
 	"DisableFit":                 "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
@@ -184,7 +185,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 	),
 
-	// Metal's expert cache (docs/tasks/task-option-path-admission-2026-10.md §4.3): bit-identical to fully resident when both
+	// Metal's expert cache (docs/completed/task-option-path-admission-2026-10.md §4.3): bit-identical to fully resident when both
 	// prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical to sequential, so the
 	// reference is the resident load with ExactPrefill (the default resident's batched f16 prefill differs, and only
 	// --exact-prefill reproduces the paged one). int8 experts decline by name (errPagedExpertsNotInt4) rather than via a

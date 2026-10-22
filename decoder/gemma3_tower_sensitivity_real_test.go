@@ -75,7 +75,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	// EmbedInt4 off: what serve's --backend metal loads (loadflags.embedInt4), so the arms use serve's own decoder.
 	// Through the directory's sidecar when it exists (`<dir>.int4.metal.giw`, the file serve's Metal load reads, int4 with
 	// the plain head), mapped rather than quantized into the heap, which the load guard refuses on the 16 GB Mac. The
-	// sidecar generates exactly what the direct load does (prequant.TestDirSidecar_matchesDirectLoad).
+	// sidecar generates exactly what the direct load does (TestDirSidecar_matchesDirectLoad).
 	src := dir
 	if g := dir + ".int4.metal.giw"; fileExistsG3(g) {
 		src = g

@@ -148,3 +148,19 @@ KV8a's serve (`466aa167`, the gate 2(b) build) in the place of B35's and B35's b
 to first token beside B35's (2.36 s at 4k, 3.05 s at 8k) and the cold control, `grade.py`'s warm = cold rows (I1 to I3), and each warm
 turn's `div` and `ckpt_restore` from the serve log. It is a measurement only: no bar, no merge or close of B35's PR (#112). R1 and T1 are
 B35's warm-reuse rows and are expected red here. Runner: `run-kv8a-b35scenario.sh`; about 11 minutes, as B35's run.
+
+**Read 2026-10-21 (nobara, 07:40:22–07:54:26 PDT, record `~/goinfer-bench/kv8a/b35scenario-2026-10-21-0740/`): as the code says, cold.**
+
+| size | turn | KV8a build: time to first token (reused) | B35's e2e (2026-10-20) | cold control (this run) |
+|---|---|---|---|---|
+| 4k | 2 | 15.44 s (0 of 4,130) | 2.36 s (3,584) | 15.70 s |
+| 4k | 3 | 15.59 s (0 of 4,150) | 2.48 s (3,584) | |
+| 8k | 2 | 39.09 s (0 of 8,177) | 3.05 s (7,680) | 39.40 s |
+| 8k | 3 | 39.32 s (0 of 8,197) | 3.19 s (7,680) | |
+
+Warm = cold (I1), cold output equal to B35's base build (I2) and streamed = logprob replies (I3) all held; R1, B35's warm-reuse row,
+is red as expected (nothing reused), and T1 is green only because a cold turn costs its whole prefill. The runner's `div` read from
+the serve logs is empty: B35's `gate.py` starts the server without `--log-requests`, so `reused` comes from the API's usage field.
+KV8a and B35 cover different cases; B35 was then rebuilt on KV8a and merged (#112), with its own e2e rerun
+(`docs/measurements/b35-e2e-2026-10-20/README.md`, "Rerun on KV8a").
+

@@ -602,7 +602,7 @@ func (m *Model) residentAdmission() string {
 }
 
 // actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
-// docs/tasks/task-option-path-admission-2026-10.md §4.3): per-group activation scales are implemented by
+// docs/completed/task-option-path-admission-2026-10.md §4.3): per-group activation scales are implemented by
 // CUDA residency only (actgroup.cu). Metal's and WebGPU's projections read per-vector scales and nothing
 // in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
 // whenever the family had no activation hazard for the gate below to catch. The Options doc has always

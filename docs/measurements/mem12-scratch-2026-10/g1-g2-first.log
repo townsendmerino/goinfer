@@ -1,0 +1,10 @@
+== branch (first build: moeBatchScratch embedded by value)
+[SCR-G1] mixtral-tiny, chunks 2-4 of a 64-token prefill: 102304 bytes
+--- PASS: TestMEM12Scratch_moeChunks (0.01s)
+[SCR-G2] llama-tiny: verify round (K=4) 76384 bytes; prefill (16 tokens) 221568 bytes
+--- PASS: TestMEM12Scratch_headLogits (0.00s)
+== origin/main 35006c8d
+[SCR-G1] mixtral-tiny, chunks 2-4 of a 64-token prefill: 420976 bytes
+--- PASS: TestMEM12Scratch_moeChunks (0.02s)
+[SCR-G2] llama-tiny: verify round (K=4) 80288 bytes; prefill (16 tokens) 223840 bytes
+--- PASS: TestMEM12Scratch_headLogits (0.00s)

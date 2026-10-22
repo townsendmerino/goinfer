@@ -34,7 +34,7 @@ const (
 	// (linalg.WrapQ4K, exact, 4.5 bpw) and puts every other layer matmul at int8 W8A8, with per-32
 	// activations throughout (docs/tasks/task-int4-weight-quality-2026-09.md: the re-quantization
 	// of Q4_K into symmetric int4 is the int4 quality loss). Like quantInt4Mix it is a LOAD-TIME
-	// policy resolved per tensor at the GGUF load sites. GGUF only; no .giw form yet.
+	// policy resolved per tensor at the GGUF load sites. GGUF only; its .giw form is kind 8 (serialize.go).
 	quantQ4K
 	// quantBF16 and quantF16 keep a matmul tensor as 16-bit bit patterns (linalg.WeightMat kinds "bf16" and "f16"), half of f32. The
 	// matmul widens a tile of rows and runs the f32 kernel, so over a bf16 (or f16) checkpoint the result is bit-identical to f32 and
@@ -609,10 +609,9 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 // linalg.Int4Row4Usable's rows%4 check, applied per tensor by repackedOnlyOrCanonical, so a violating shape is never
 // built repacked-only.
 //
-// Down-proj, the router and MoE expert weights are deliberately not covered: down-proj has not been audited against the
-// batch-path constraint, and expert weights read through a read-only mmap span (paged .giw loading) have no load-time
-// repack, so they stay canonical-only. skipRow4 is scoped to this class too; those other projections take the row4 skip
-// through quantizeWMSkipRow4.
+// Down-proj, the router and MoE expert weights are not this class: they never reach the batched dispatch, and take the
+// same policy through quantizeLayerWM under their own safety argument. Expert weights read through a read-only mmap span
+// (paged .giw loading) have no load-time repack, so a .giw keeps them canonical.
 func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, skipRow4 bool) linalg.WeightMat {
 	if mode != quantInt4 || fakeQuantScheme != "" {
 		return quantizeWM(w, mode)
@@ -623,6 +622,42 @@ func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, sk
 	}
 	canon := linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4)
+}
+
+// quantizeLayerWM is quantizeWM for an int4 layer tensor outside the embedding tables and the batched Q/K/V/gate/up
+// class (o_proj, down_proj, routed and shared experts, the router and the family-specific layer tensors in
+// quantizeWMSkipRow4's class), under repackedOnlyOrCanonical's policy: a load that needs no canonical bytes
+// (wantsCanonicalInt4 false: Backend "cpu") keeps one row4 copy where the shape allows it, instead of canonical plus row4.
+//
+// Safe for every CPU reader: on arm64, linalg.WeightMat.MatmulBTW4A8Into and MatmulBTW4A8PreInto dispatch to a present
+// row4 layout at every M, grouped activations included, so a canonical copy beside it is never read on the CPU; a
+// batched W4A8 call takes a repacked-only op only at M=1 (quantizeBatchedProjWM), and the multi-row fused call requires
+// canonical bytes (w4a8FusedOps). The .giw writer needs canonical bytes and refuses a repacked-only tensor
+// (giwWriter.weightMatKind). Separate from quantizeBatchedProjWM although the bodies match: the safety arguments differ.
+func quantizeLayerWM(w linalg.WeightMat, mode quantMode, needCanonical, skipRow4 bool) linalg.WeightMat {
+	if mode != quantInt4 || fakeQuantScheme != "" {
+		if skipRow4 {
+			return quantizeWMSkipRow4(w, mode)
+		}
+		return quantizeWM(w, mode)
+	}
+	f32, ok := w.F32()
+	if !ok {
+		return quantizeWM(w, mode)
+	}
+	canon := linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
+	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4)
+}
+
+// streamQuantizedLayer is quantizeLayerWM's streaming twin (the GGUF row dequantizer, safetensors expert stacks).
+func streamQuantizedLayer(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+	if mode != quantInt4 || fakeQuantScheme != "" {
+		if skipRow4 {
+			return streamQuantizedSkipRow4(rows, cols, mode, rowInto)
+		}
+		return streamQuantized(rows, cols, mode, rowInto)
+	}
+	return streamQuantizedRepackable(rows, cols, mode, needCanonical, skipRow4, rowInto)
 }
 
 // isBatchedProjTensor reports whether name (llama.cpp's GGUF tensor-name convention) is attention Q/K/V or MLP gate/up,

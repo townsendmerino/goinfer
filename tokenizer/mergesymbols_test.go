@@ -58,11 +58,27 @@ func TestMergeSymbols_matchesNaive(t *testing.T) {
 				}
 			}
 		}
-		tok := &Tokenizer{pairRank: pr}
-		got := tok.mergeSymbols(append([]string(nil), syms...))
 		want := naiveMergeSymbols(pr, syms)
-		if !slices.Equal(got, want) {
-			t.Fatalf("trial %d: syms=%v\n got=%v\nwant=%v", trial, syms, got, want)
+		// Twice: with no vocabulary every pair is keyed by text; with every substring in it, by ids
+		// (mergeTable), except the odd ones left out, which stay keyed by text.
+		for _, withVocab := range []bool{false, true} {
+			tok := &Tokenizer{}
+			if withVocab {
+				tok.vocab = map[string]int32{}
+				for _, sub := range subs {
+					if _, ok := tok.vocab[sub]; !ok && rng.Intn(8) != 0 {
+						tok.vocab[sub] = int32(len(tok.idToPiece))
+						tok.idToPiece = append(tok.idToPiece, sub)
+					}
+				}
+			}
+			for k, r := range pr {
+				tok.merges.add(tok, k.left, k.right, r)
+			}
+			got := tok.mergeSymbols(append([]string(nil), syms...))
+			if !slices.Equal(got, want) {
+				t.Fatalf("trial %d (vocab %v): syms=%v\n got=%v\nwant=%v", trial, withVocab, syms, got, want)
+			}
 		}
 	}
 }

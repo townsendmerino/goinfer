@@ -1,0 +1,27 @@
+ok   4096 I1 turn 2 warm = cold: 4 tokens, first difference at none
+ok   4096 I1 turn 3 warm = cold: 2 tokens, first difference at none
+ok   4096 I2 turn 1 cold B35 = cold base: first difference at none
+ok   4096 I2 turn 2 cold B35 = cold base: first difference at none
+ok   4096 I2 turn 3 cold B35 = cold base: first difference at none
+ok   4096 I3 turn 1 streamed reply = logprob reply: 'The notes are a repetitive sequence of t'
+ok   4096 I3 turn 2 streamed reply = logprob reply: 'Redundant.'
+ok   4096 I3 turn 3 streamed reply = logprob reply: 'Circular.'
+ok   4096 R1 turn 2 reused: streamed 3584 of 4130, logprob 3584
+ok   4096 R1 turn 3 reused: streamed 3584 of 4150, logprob 3584
+ok   4096 R1 cold requests reused nothing: control 0, B turn 1 0, cold turn 2 0, cold turn 3 0, base turn 1 0, base turn 2 0, base turn 3 0
+ok   4096 T1 turn 2: ttft 2.35s for 546 rows prefilled; the cold control 15.82s for 4172 (predicted 2.07s, ratio 1.02; 0.149 of cold)
+ok   4096 T1 turn 3: ttft 2.48s for 566 rows prefilled; the cold control 15.82s for 4172 (predicted 2.15s, ratio 1.04; 0.157 of cold)
+ok   8192 I1 turn 2 warm = cold: 4 tokens, first difference at none
+ok   8192 I1 turn 3 warm = cold: 3 tokens, first difference at none
+ok   8192 I2 turn 1 cold B35 = cold base: first difference at none
+ok   8192 I2 turn 2 cold B35 = cold base: first difference at none
+ok   8192 I2 turn 3 cold B35 = cold base: first difference at none
+ok   8192 I3 turn 1 streamed reply = logprob reply: 'The notes are a repetitive sequence of f'
+ok   8192 I3 turn 2 streamed reply = logprob reply: 'Redundant.'
+ok   8192 I3 turn 3 streamed reply = logprob reply: 'Confusing.'
+ok   8192 R1 turn 2 reused: streamed 7680 of 8177, logprob 7680
+ok   8192 R1 turn 3 reused: streamed 7680 of 8197, logprob 7680
+ok   8192 R1 cold requests reused nothing: control 0, B turn 1 0, cold turn 2 0, cold turn 3 0, base turn 1 0, base turn 2 0, base turn 3 0
+ok   8192 T1 turn 2: ttft 3.05s for 497 rows prefilled; the cold control 39.76s for 8219 (predicted 2.40s, ratio 1.17; 0.077 of cold)
+ok   8192 T1 turn 3: ttft 3.19s for 517 rows prefilled; the cold control 39.76s for 8219 (predicted 2.50s, ratio 1.17; 0.080 of cold)
+VERDICT PASS

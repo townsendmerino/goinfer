@@ -136,8 +136,13 @@ threshold +512 MB over baseline` and the baseline swap-used it measured; if swap
 that threshold while serving, every generation route answers **503** with
 `{"error":"halted","reason":"swap guard tripped: …"}` (the same shape as an admin halt) until swap has
 stayed back within the threshold for 30 s — requests already running are left to finish, nothing is
-cancelled. A `.gguf` loaded directly (not through its sidecar) is guarded during the load too: the load
-aborts with a message naming the swap growth and the model's priced memory terms. `GOINFER_SWAP_GUARD`
+cancelled. The load is guarded too, for a `.gguf` built directly and for every `.giw` load, the
+default sidecar included: if swap grows past the threshold during it, the load aborts with a message
+naming the swap growth and the model's priced memory terms. A `-stream-weights` load and a safetensors
+directory loaded without a sidecar are not watched while they load, and the server prints
+`swap guard (load): not armed for <path>` for them. After a model loaded through the admin endpoint or
+the web UI finishes loading, the serving watch takes a new baseline, so swap that load left behind does
+not count against serving. `GOINFER_SWAP_GUARD`
 sets the threshold in MB or `off` (`docs/env-vars.md`); `goinfer-chat` has the load-time half only.
 
 On the OpenAI-compatible routes, **`role: "developer"` is accepted as an alias for
@@ -355,8 +360,16 @@ serve), so Anthropic-speaking tools — **Claude Code** included — can point a
 pure-Go single-binary runtime. It honors `system` (string or block array),
 content blocks (`text`, `tool_use`/`tool_result` replay), `tools` (note:
 `input_schema`), `tool_choice` (`auto`/`any`/`tool`), `stop_sequences`,
-and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
+`output_config.format` (below), and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
 → `message_delta` → `message_stop`, no `[DONE]`).
+
+**`output_config.format` is Anthropic's structured output, constrained as `response_format` is.** A
+`{"type": "json_schema", "schema": …}` becomes the OpenAI routes' `response_format` `json_schema` grammar, on
+`/v1/messages` (text and image turns), its batches, and in `count_tokens`' rendering. The reply is the JSON in a `text`
+block. What does not map is a 400 `invalid_request_error` naming the field, never a silently unconstrained reply: another
+`type`, a missing schema, a schema the grammar compiler refuses, and `tools` in the same request (unless `tool_choice` is
+`none`), because the constrained path holds one grammar. `output_config`'s other fields (`effort`, `task_budget`) are
+accepted and ignored.
 
 **`usage` on `/v1/messages` follows the Messages API's split.** `cache_read_input_tokens` is the prompt tokens a prior turn's
 KV already held, so their prefill was skipped: the count `/v1/responses` reports as `cached_tokens`, and the request log as
@@ -900,7 +913,8 @@ to ignore.**
   at startup and says why (`docs/kv-precision-matrix.md` has every backend and family; `auto` is the backend's pick). The banner's
   context line prints each cache's precision with the one requested, and `-log-requests` gives every generating request ` kv=<f32|f16|i8|n/a>`,
   the precision of the cache it wrote.
-- **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
+- **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema` (or Anthropic's
+  `output_config.format`), and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.
 - **Stop strings are matched against the answer only.** A `stop` (OpenAI) or `stop_sequences` (Anthropic) string is a request

@@ -32,7 +32,7 @@ func q4kTestMat(t *testing.T, r *rand.Rand, rows, cols int) linalg.WeightMat {
 
 // TestQ4K_modePlumbing: --quant q4k parses, is a load-time policy (routers and embeddings resolve to
 // int8 W8A8, anything with no raw Q4_K bytes degrades to int8 W8A8), and is refused for a safetensors
-// source and by the .giw writer.
+// source; the .giw writer takes it (kind 8).
 func TestQ4K_modePlumbing(t *testing.T) {
 	q, err := parseQuant("q4k")
 	if err != nil || q != quantQ4K {
@@ -66,8 +66,8 @@ func TestQ4K_modePlumbing(t *testing.T) {
 	q4 := q4kTestMat(t, r, 3, 256)
 	gw := &giwWriter{}
 	gw.weightMatKind(&q4, false)
-	if gw.err == nil || !strings.Contains(gw.err.Error(), "q4k") {
-		t.Errorf(".giw writer on a q4k tensor: err %v, want a refusal naming q4k", gw.err)
+	if gw.err != nil {
+		t.Errorf(".giw writer on a q4k tensor: %v, want kind 8 written", gw.err)
 	}
 	if got, want := wmBytes(&q4), int64(3*144); got != want {
 		t.Errorf("wmBytes(q4k 3x256) = %d, want %d", got, want)

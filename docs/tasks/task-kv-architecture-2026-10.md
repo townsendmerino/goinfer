@@ -1,5 +1,56 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **Status 2026-10-21 (the close-out sweep).** KV0, KV1, KV2 and KV3 are done; KV3's tiled exact prefill kernel merged on
+> 2026-10-18 (#102), after v0.23.0. KV7's first two steps (#57, #86) and KV8a on CUDA (#115) are merged; KV8a on Metal is on
+> branch `kv8a-metal-2026-10`. KV4 has not started, and KV5, the rest of KV7, KV8, KV10 and KV11 wait on it. **Decided by
+> the owner on 2026-10-21:** KV4 goes first among the CUDA KV tracks. KV precision's phase 1 (f16 for the CUDA families that
+> refuse it) folds into KV4b, and its phase 2 (int8, B39) waits for KV4's pools, so no KV kernel is written twice. KV9
+> closes per its step 0: host blocks would save 405 MiB of a 2,159 MiB four-session footprint at 6K on the 0.5B; reopen it
+> on a measured CPU case well beyond that. KV3's WebGPU half (`origin/kv3-webgpu-2026-10`) is rebased and merged. The
+> Gemma 3 GEMM fidelity gate runs by day on nobara (G46 in `docs/queue-correctness.md`). I7, the default context toward
+> 32,768, moves here from the integration doc, into KV5. **Stale below:** KV-pre is merged (64e13303), not in flight; KV8a
+> is built on CUDA, not a sketch; KV7 has two steps merged, not one; KV9's step 0 exists (`docs/measurements/kv9-2026-10/`);
+> KV11's first measurement was made and parked on 2026-09-22; KV3 is CUDA and Metal until its WebGPU half merges. A split
+> of this doc is proposed for the next sweep: the finished KV0–KV3 record to `docs/completed/`, a slim live doc for KV4–KV11,
+> keeping §5's numbering, which code comments cite.
+
+**Ledger, 2026-10-21.** One row per item, the current state; it supersedes the status notes below where they
+disagree, and is updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| KV-pre | done | — | 64e13303 (as I8) |
+| KV0, KV0-H | done | — | the kv0 tile-census, invariance and traffic records; kv0h-hybrid-traffic-2026-10.md |
+| KV1 | done | — | f08b47ca; kv1-2026-10-13.md |
+| KV2 | done | — | 772b1fb2 (#26); G5-C PASS, kv2-cuda-2026-10-15.md §7 |
+| KV2-FU1 | done | — | built on branch `kv2-fu1-2026-10`, merged through `kv2-fu1-merge-2026-10` (gates re-run green on that merge with main, 2026-10-21); `TestKV2FU1_ownRollbackScheduleIndependence`, `TestKV2FU1_cpuOwnRollback`; §6, KV2 follow-up 1, readings |
+| KV2-FU2 | done | — | 11b29ba5 (#37) |
+| KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
+| KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
+| KV3-E4B | open | nobara: read the registered E4B cold-TTFT run | kv3-e4b-cold-ttft-2026-10-19 |
+| KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
+| KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
+| KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
+| KV4 | open | nobara: first among the CUDA KV tracks (owner, 2026-10-21); register its gates before code; L | §6 |
+| KV4a | open | with KV4; its identity gate also reads flash-decode and split-KV through a windowed view, which no test has (from the archived windowed-KV doc) | §6 |
+| KV4b | open | with KV4; takes KV precision's phase 1, f16 for the ten CUDA families that refuse it (owner, 2026-10-21) | §6; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
+| KV5 | blocked | KV4; takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
+| KV6 | done | — (WebGPU keeps slots, D3) | §8 |
+| KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
+| KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool | §6 |
+| KV8 | blocked | KV4 (KV5 for Metal) | §6 |
+| KV8a-CUDA | done | — | fac209c2 (#115) |
+| KV8a-Metal | active | Mac: M2(b) (about 2 h 45 min) and M5 (about 3 h 30 min, as two jobs) on the night queue, then grade and merge | branch `kv8a-metal-2026-10` |
+| KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
+| KV10 | blocked | KV4, KV5 | §6 |
+| KV11 | blocked | KV4 and KV7; its KV-share trade curve needs no pool and can run now (either box, M) | §6; lead4-perlayer-hitrate-2026-09-22.md |
+| §5.16 | blocked | KV4's build list: the reuse-source field, the pool banner, the check row | §5.16 |
+| §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a | §12 |
+| CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3 | from the archived windowed-KV doc |
+| D1–D8, Q1–Q7 | done | — | §8 |
+
+
 > **2026-10-20: KV8a added, ahead of KV4.** KV0-H (`docs/measurements/kv0h-hybrid-traffic-2026-10.md`) drove opencode
 > and Codex on Qwen3.5-9B (CUDA, nobara). 29 of its 69 follow-up requests diverged inside the previous reply, where today's
 > exact-extension rule re-prefills the whole prompt. Its registered rule pulls an end-of-prompt checkpoint ahead of KV4
@@ -151,7 +202,7 @@ slot is gone; and every KV feature is built three or four times.
    paths). The new lifecycle paths (publish, share, demote, promote, restore) join it, and every kind gets a declared
    cell for each.
 5. **One memory formula** (`docs/tasks/task-memory-accounting-2026-09.md`). The pool size, admission and the allocator
-   compute from one function, and the never-swap rules hold on every gate (`docs/tasks/task-never-swap-2026-09.md`).
+   compute from one function, and the never-swap rules hold on every gate (`docs/completed/task-never-swap-2026-09.md`).
 6. **The Hard API tier** (`docs/api-tiers.md`):
    - `decoder.KVCache` stays an opaque handle;
    - `Session`'s methods, `Model.NewCache`, `Model.NewSession` and `Model.LoadSession` keep their signatures;
@@ -207,7 +258,7 @@ slot is gone; and every KV feature is built three or four times.
 - **MC1 and MC3.** Binding a slot and stepping several rows become "pass a sequence's block table" and "pass a table per row".
 - **Chunked prefill.** It is chunk-invariant on Metal: 0 of 14,336,000 KV elements and 0 of 151,936 last-token logits
   differ at chunks of 64–384 (`metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`).
-- **CUDA's windowed KV.** Built 2026-10-10 and on in the CLIs (`docs/tasks/task-cuda-windowed-kv-2026-10.md`). Its
+- **CUDA's windowed KV.** Built 2026-10-10 and on in the CLIs (`docs/completed/task-cuda-windowed-kv-2026-10.md`). Its
   `TestWindowedKV_*` suite becomes the window group's identity oracle.
 - **One memory function**, `Model.ResidentKVBytes` / `Model.ResidentNeedBytes`.
 
@@ -505,7 +556,7 @@ is MC4's identity gate extended to shared preambles.
   buffer. On CUDA there is no rows kernel to extend: `stepAttnRows` loops over rows and rebinds a slot per call, so a table per
   row is new kernel API there.
 - **CUDA graphs.** No KV launch is captured today (graphs capture only the segments around attention), so a table pointer is a launch argument; a table the captured segments read would be a device buffer written before replay. Windowed
-  models get graphs back; today graphs are declined when windowed KV engages (`task-cuda-windowed-kv-2026-10.md` §7). A
+  models get graphs back; today graphs are declined when windowed KV engages (`../completed/task-cuda-windowed-kv-2026-10.md` §7). A
   measured bonus, not a promise.
 
 ### 5.12 Speculation and drafters
@@ -601,7 +652,7 @@ the type.
   - (b) the CPU moves to host blocks, so a preamble is stored once, with a contiguous reference kept behind a test switch
     for parity.
 - **Recommendation:** (a) when KV2 lands; (b) at KV9 if the memory case is measured on a real multi-session workload.
-- `docs/tasks/task-cpu-kv-f16-2026-10.md` (CPU f16 by default) is independent of both.
+- `docs/completed/task-cpu-kv-f16-2026-10.md` (CPU f16 by default) is independent of both.
 
 ### 5.15 Sharing scope and the timing side channel
 
@@ -816,13 +867,127 @@ KV2 merges when every arm on both boxes is read.
   - G6: a lone request at 0.99 against `main`, on Metal and CUDA.
   - G7: copy and admission cost, reported.
 - **Size:** S–M. **Closes:** most of §1.2, without kernel work, on CUDA, Metal and WebGPU.
-- **Follow-up, after KV2 merges (owner, 2026-10-14; not started).** With the first-prompt anchor
-  (`kvmgr.Slots.FirstPrompt`), an own rollback that gives up more than it keeps could truncate in place instead of
-  re-prefilling.
+- **Follow-up 1, after KV2 merges (owner, 2026-10-14; gate registered 2026-10-21, before the code, branch
+  `kv2-fu1-2026-10`).** With the first-prompt anchor (`kvmgr.Slots.FirstPrompt`), an own rollback that gives up more
+  than it keeps could truncate in place instead of re-prefilling.
   - Main's keep-at-least-as-much-as-it-overwrites rule (`kvmgr.PickSlot`; on the CPU, `pickSession`) exists only
     because main could not tell a conversation's own request from another's.
   - The item: drop that rule for a request that keeps the slot's whole first prompt, on the GPU and the CPU.
   - Gate it like G3: same reply in every schedule, and replies unchanged against KV2's merge.
+  - **The change, as registered.**
+    - GPU: `kvmgr.PickSlotFor` takes the best-scoring slot in place, with no keep-versus-overwrite test and no
+      allowance, when the request keeps that slot's whole first prompt but its last token (its existing own test).
+      Every other request keeps main's rule and KV2's allowance.
+    - CPU: serve's session LRU records each session's first prompt length, kept by a request that keeps all of it but
+      its last token and restarted by any other, as `kvmgr.Slots.FirstPrompt` is. `pickSession`'s room rule (a fresh
+      session when reuse would discard more than it keeps) does not apply to such a request. A session loaded from
+      disk or faulted back from the cold tier has no length until its next request, so it keeps main's rule.
+    - Unchanged: busy slots and sessions, the donor choice and copies, the recurrent families' scoring, and
+      `Model.residentReuseFloor` (CUDA's windowed ring still floors an in-place rollback past its budget).
+  - **Gate FU1-G3. Tier: day. Testing tier 0 (counters and row identity on a fake and a tiny fixture).**
+    - *Instrument:* G3's decoder instrument (`TestKV2_scheduleIndependence`'s copying fake) with a second kernel
+      class. Its batched pass (`PrefillLast`) writes rows that differ from decode's for the same input, as Metal's and
+      CUDA's do. It reports a kernel floor of 1 and an exact tail, so the decoder records batched rows fast and decode
+      rows exact, and a copy takes only batched rows. KV2's fake has one class, where a re-prefilled reply equals an
+      in-place one, so a reply check on it cannot see this defect.
+    - *Conversations:* three, sharing KV2's 327-token preamble, each with a 397-token first prompt, greedy, 12 tokens a
+      turn. Five turns each:
+      1. the first prompt;
+      2. its reply and 500 tokens;
+      3. a rollback to the first prompt and its reply plus 2 new tokens: it keeps 409 rows and gives up more than 500;
+      4. that turn's reply and 500 tokens;
+      5. a second rollback to the same point with other tokens, which checks that the anchor survives an in-place
+         rollback.
+    - *Schedules,* at 1, 2 and 4 slots: (a) round robin by turn; (b) the same, conversations reversed; (c) an
+      interleaving in which each rollback follows its own long turn while the others take slots; (d) each
+      conversation run through before the next; and 20 seeded random interleavings.
+    - *Reference, G3's (§5.6):* a turn is its conversation continuing when the slot its previous turn used has served
+      no other turn since. Its reference is that conversation's lineage, replayed alone on a fresh one-slot model.
+      Any other turn's reference is its prompt prefilled cold, and the lineage restarts from it.
+    - *Rule, all four or red:*
+      1. every emitted token equals the reference's (the fake's logits are one-hot, so equal tokens are equal logits);
+      2. after every turn, the bound slot's rows equal the reference's, read back from the fake;
+      3. every continuing turn binds its previous slot, copies nothing (`PrefillShared` 0, no `CopyKV` call) and reuses
+         its common prefix with that slot's sequence, capped at n − 1;
+      4. coverage: at 4 slots every schedule has at least one rollback that continues in place giving up more than it
+         keeps; at 2 slots the schedules together have at least one.
+    - **Amended after the first run, before any plant: rule 3 over-claimed.**
+      - *As registered,* it named every continuing turn. 34 turns failed it, in 16 schedules, all at 2 slots
+        (`docs/measurements/kv2-2026-10-14/fu1-g3-first-run-rule3.txt`). Rules 1, 2 and 4 held on every turn.
+      - *Every failing turn's conversation had lost its slot at an earlier turn,* which re-prefilled into another slot.
+        `kvmgr.Slots.Commit` then records that turn's prompt as the slot's first prompt. A later rollback to the first
+        turn's reply diverges inside it, so it is held to main's rule. That is the item as defined ("keeps the slot's
+        whole first prompt"); the anchor cannot know the conversation's first prompt once its slot is gone.
+      - *Rule 3 now reads:* every continuing turn that keeps its lineage's first prompt but its last token binds its
+        previous slot, copies nothing and reuses its common prefix. A lineage starts at the conversation's first turn
+        or at its last turn that could not continue. Rule 4 counts those turns.
+      - Reported as a finding: a conversation that loses its slot once loses the in-place rollback to any point before
+        the turn that lost it.
+  - **Readings, 2026-10-21 (Mac, by day, branch `kv2-fu1-2026-10`): every arm PASS, every plant red.**
+    - *Decoder* (`TestKV2FU1_ownRollbackScheduleIndependence`): 72 of 72 subtests pass, 24 schedules at each of 1, 2
+      and 4 slots. Every turn's tokens and rows equal its reference's. Rollbacks that continued in place giving up more
+      than they kept: 144 at 4 slots (6 in every schedule), 28 at 2 and 11 at 1.
+    - *CPU arm* (`TestKV2FU1_cpuOwnRollback`): all three runs pass. Each reply equals the conversation's alone in its
+      token ids and in every step's chosen and top-4 log-probabilities, as float bits. B's first turn, which copies 64
+      rows of A's preamble, also equals B alone.
+    - *Units:* `TestPickSlotFor_deepOwnRollback`, `TestPickSlotFor_ownRollback` (as amended) and
+      `TestPickSessionFor_ownRollback` pass.
+    - *Identity:* `decoder` `-run 'KV2|ResidentReuse|MC3|Session'` gives 49 PASS, 4 SKIP and 0 FAIL. The four skips need the
+      gemma-3-270m fixture, which this box does not have, and skip on `main` too. `internal/kvmgr` gives 29 PASS and
+      `internal/serveapp` `-run 'Session|KVShare|PickSession'` 12 PASS. The only existing test file changed is
+      `internal/kvmgr/share_test.go`, in the named case.
+    - *Plants* (`docs/measurements/kv2-2026-10-14/planted-fu1.txt`):
+      1. the branch point's rule in `kvmgr.pickSlot`: red in all 24 schedules at 4 slots and in 7 at 2 (rules 1 and 2
+         on 136 turns, rule 3 on 137), and in both `kvmgr` unit tests. A one-slot model never calls `PickSlot`, so 1
+         slot stays green;
+      2. `kvmgr.Slots.Commit` restarting the anchor: red in the same 31 schedules;
+      3. the CPU LRU ignoring the anchor: red in both runs with room, green in the control. The token ids were equal
+         and only the log-probability bits differed, so a check of ids alone would not have seen it.
+    - *Other checks:* `scripts/touched.py` green; `go vet` untagged, with `realckpt`, with `goinfer_testhooks` and for
+      linux/amd64; staticcheck v0.8.1 native and for linux/amd64, after its canary went red on both; `gofmt -l` clean.
+      `TestParityManifest_fresh` passes (43 of 43 families). The parity refresh refreshed no `deps_hash`
+      (forward goldens 33 passed, 31 skipped, 0 failed): `decoder/resident_reuse.go` is in no family's dependencies.
+    - *Not run:* a device arm (registered out above).
+    - **Defect found on main, 2026-10-21, and fixed the same day (branch `fix-kv2fu1-own-test-2026-10`).** The merge
+      (#127) turned main's CI red in `TestResidentAcquire_interleavedConversationsKeepTheirSlots` and
+      `TestResidentAcquire_bindFailureGoesCold`; the merge's re-run had named its tests by pattern and missed them. The
+      own test, "keeps the first prompt but its last token", also accepts another conversation whose prompt differs from
+      the first prompt only in that last token: a reuse score leaves the last token to compute, so the two score alike.
+      Before FU1 that only lifted the allowance; with FU1 it skips the keep-versus-overwrite rule too, so the other
+      conversation overwrote the slot. Fix: `kvmgr.Slots.KeepsFirst` checks the prompt begins with the whole first prompt,
+      and the decoder passes a slot's first-prompt length only when it does; the CPU LRU tests its uncapped common prefix
+      against the whole first prompt. `TestPickSessionFor_ownRollback` gains the case; both decoder tests and it are red
+      without the fix and green with it; the whole `decoder` package and FU1-G3 pass on the fix.
+    - *CPU arm,* serve's session LRU over llama-attnfa-tiny's real CPU forward. Conversation A has a 600-token first
+      prompt (a 300-token preamble and 300 of its own); B shares the preamble. Turns: the first prompt; its reply and
+      700 tokens; a rollback to the first prompt and reply plus 2 tokens (it keeps 606 and gives up 706). Three runs:
+      an LRU of 2 holding A alone (room); an LRU of 3, A and B interleaved (room); and an LRU of 2 holding both (no
+      room, the control, where main also reuses in place).
+      - Rule: every turn after the first is handed the session its previous turn used, reuses its common prefix with
+        it, copies nothing, and replies exactly as that conversation does alone in an LRU of one.
+      - The rollback's cold prompt is 608 tokens, past the CPU's 512-row fast class, so a re-prefill writes the reply's
+        rows on another kernel than the decode that wrote them in place, and the reply check can see the defect.
+    - *Identity (replies unchanged against KV2's merge):* KV2's tests of the slot choice, the copy and the sessions
+      pass, with their test files byte-identical to the branch point (`48ca55f8`): `decoder`
+      `-run 'KV2|ResidentReuse|MC3|Session'`, `internal/kvmgr` whole, and `internal/serveapp`
+      `-run 'Session|KVShare|PickSession'`.
+      - **Named under G1's exception, before the change:** `TestPickSlotFor_ownRollback`'s last case ("own rollback
+        that keeps less than it overwrites", want 1, "main's rule stands") asserts the rule this item removes, and
+        becomes want 0.
+      - `TestResidentReuse_equalsTheBookkeepingItReplaced` stays byte-identical. With choice 3 off
+        (`kvAllowanceOverride`) the decoder passes no first-prompt lengths, so its walk still compares the slot choice
+        with KV1's bookkeeping.
+    - *Plants,* each shown red once and removed, its output kept beside KV2's record:
+      1. `kvmgr.pickSlot` keeps the keep-versus-overwrite test for the own conversation (the branch point's rule):
+         rules 1 to 3 red at 2 and 4 slots;
+      2. `kvmgr.Slots.Commit` restarts the anchor on every request: the rollbacks red;
+      3. the CPU LRU ignores the anchor: the CPU arm red.
+    - *Void:* a listed test skipped (read `-v` for `--- PASS`); a test file changed that is not named here; coverage zero.
+    - *Not in this gate: a device arm.* No backend code changes. An in-place rollback is the path every one-slot model
+      already takes, and the Metal, WebGPU and CUDA G3 arms' edits keep more than they give up, so their expected
+      results do not change. CUDA takes the change through the same decoder path; its windowed floor is nobara's.
+    - *Stopping rule:* fixed cases, run to completion, no sampling. *Cost:* seconds. KV2's decoder G3 runs in 0.11 s on
+      its fake; the CPU arm's prompts are under 1,400 tokens on the tiny fixture.
 - **Follow-up 2, the donor choice: built 2026-10-15** (found by nobara's CUDA arm,
   `docs/measurements/kv2-cuda-2026-10-15.md` §6).
   - **The defect:** with several slots holding a prefix and windowed KV, the copy took the first of the longest hits. When
@@ -862,6 +1027,8 @@ KV2 merges when every arm on both boxes is read.
     0.99986 or better against the per-token path; the real 1.5B at 12,500 tokens, cosine 0.996, argmax equal); the passes now run fused;
   - admission by the resident's own per-chunk figure (`decoder.ResidentPrefillChunks`; CUDA's `PrefillScratchBytes`, held to the pass by a test):
     0.19 GB against 1.65 GB for a 20,954-token request on the 1.5B;
+  - **WebGPU's half** (branch `kv3-webgpu-2026-10`, `docs/measurements/kv3-webgpu-2026-10-13.md`): the same interface, the pass's own figure as an upper bound (1.04 to 1.06 times
+    the bytes the pass creates), 0.18 GB against 1.65 GB for a 20,954-token request; pricing only, no execution change;
   - **night jobs queued** (under the timing lock): the real fidelity set (six prompts to 20,000 tokens), the Claude Code first-request A/B
     (registered band: PASS at 45 s or less, against 268.7 s before; the one exploratory reading is 25.1 s), TTFT at K = 512 and 3,900 against
     `main` (0.97 or better), and the whole CUDA suite with the ignored fixtures linked. **The branch merges when they read green.**
@@ -1077,6 +1244,10 @@ KV2 merges when every arm on both boxes is read.
 - **Gates (if reopened):**
   - the parity manifest bit-identical (the CPU is the reference);
   - the memory saved with four sessions sharing a preamble, measured.
+- **Step 0, measured 2026-10-14 (exploratory):** `docs/measurements/kv9-2026-10/README.md`.
+  - **Recommendation:** close KV9 with KV2's copies as enough. Owner's call.
+  - At 6K on the 0.5B, host blocks would save 405 MiB of a measured 2,159 MiB four-session footprint.
+  - The CPU cold prefill's retained high-water is the larger term.
 - **Size:** M–L if reopened.
 
 ### KV10 — Long context and lower precision
@@ -1227,9 +1398,9 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - **KV-pre:** its block size;
   - **I7** (`docs/tasks/task-integration-harness-2026-10.md`): its slots-against-context question dissolves at KV4/KV5,
     so its code should stay small;
-  - `docs/tasks/task-cpu-kv-f16-2026-10.md`: independent;
+  - `docs/completed/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
-  - `docs/tasks/task-option-path-admission-2026-10.md`: new options join its grid;
+  - `docs/option-state-grid.md` (its Policy section; design record `docs/completed/task-option-path-admission-2026-10.md`): new options join its grid;
   - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
     memory planner prices through §5.10's one function.
 - **Doc amendments when phases land:**
@@ -1504,9 +1675,9 @@ Docs and records:
 - **Task docs:**
   - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
     R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
-  - `docs/tasks/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
-    `docs/tasks/task-never-swap-2026-09.md`;
-  - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/tasks/task-cpu-kv-f16-2026-10.md`,
+  - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
+    `docs/completed/task-never-swap-2026-09.md`;
+  - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;
   - `docs/completed/task-gpu-f16-kv.md`, `docs/completed/task-cpu-kv-quant.md`, `docs/spec/09-mtp-heads.md`.
 - **Measurements:**
@@ -1525,4 +1696,4 @@ External:
 - [Marconi](https://arxiv.org/abs/2411.19379)
 - [Selective KV-cache sharing (SafeKV)](https://arxiv.org/abs/2508.08438)
 
-<!-- doc-reviewed: 2026-10-13 -->
+<!-- doc-reviewed: 2026-10-21 -->

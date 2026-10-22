@@ -1,0 +1,12 @@
+# /Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, Options{Quant:""}
+before load        map[]  heap_inuse=0 MiB heap_alloc=0 MiB sys=11 MiB
+after load         map[]  heap_inuse=2422 MiB heap_alloc=2421 MiB sys=2452 MiB
+after GC+free      map[]  heap_inuse=2405 MiB heap_alloc=2404 MiB sys=2452 MiB
+# /Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, Options{Quant:"int4"}
+before load        map[]  heap_inuse=0 MiB heap_alloc=0 MiB sys=7 MiB
+after load         map[]  heap_inuse=665 MiB heap_alloc=664 MiB sys=674 MiB
+after GC+free      map[]  heap_inuse=647 MiB heap_alloc=647 MiB sys=674 MiB
+# /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, Options{Quant:"int4"}
+before load        map[]  heap_inuse=0 MiB heap_alloc=0 MiB sys=12 MiB
+after load         map[]  heap_inuse=1872 MiB heap_alloc=1871 MiB sys=1888 MiB
+after GC+free      map[]  heap_inuse=1854 MiB heap_alloc=1853 MiB sys=1888 MiB

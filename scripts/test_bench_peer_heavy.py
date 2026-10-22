@@ -45,11 +45,13 @@ class Rule(unittest.TestCase):
         os.environ["BENCH_FIT_NEED_GB"] = "3"
         self.assertEqual(bench_peer.fit_need("anything"), (3072, "BENCH_FIT_NEED_GB"))
 
-    def test_vmstat_matches_goinfers_reading(self):
-        out = ("Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:     1000.\nPages active:  9.\n"
-               "Pages inactive:  2000.\nPages speculative:  24.\nPages purgeable:  40.\n")
-        self.assertEqual(bench_peer._vmstat_available_mb(out), (1000 + 2000 + 24 + 40) * 16384 >> 20)
-        self.assertIsNone(bench_peer._vmstat_available_mb(out.replace("Pages purgeable:  40.\n", "")))
+    def test_free_memory_is_goinfers_reading(self):
+        # B41: the void rule reads the number cmd/hostmem prints (scripts/hostmem.py), the fit guard's own; no formula here.
+        import hostmem
+        saved = hostmem.available_mb
+        self.addCleanup(setattr, hostmem, "available_mb", saved)
+        hostmem.available_mb = lambda *a, **k: 12345
+        self.assertEqual(bench_peer.free_mem_mb(), 12345)
 
     def test_refuses_when_every_start_is_void(self):
         with self.assertRaises(SystemExit):

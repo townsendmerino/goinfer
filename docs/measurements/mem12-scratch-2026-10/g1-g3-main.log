@@ -1,0 +1,7 @@
+35006c8d Merge pull request #133 from townsendmerino/mem2-2026-10
+[SCR-G1] mixtral-tiny, chunks 2-4 of a 64-token prefill: 410384 bytes
+--- PASS: TestMEM12Scratch_moeChunks (0.04s)
+[SCR-G2] llama-tiny, mean of 50: verify round (K=4) 80288.0 bytes (prefill + round 302688.0, less the prefill); prefill (16 tokens) 222400.0 bytes
+--- PASS: TestMEM12Scratch_headLogits (0.04s)
+[SCR-G3] bytes per request: [5629520 5588184 5583192 5587512 5585592 5581752 5583192 5579832 5581752 5585112]
+--- FAIL: TestSamplerScratch_pooled (0.11s)

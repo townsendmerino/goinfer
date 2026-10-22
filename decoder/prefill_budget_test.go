@@ -196,8 +196,8 @@ func TestPrefillScratchBytes_scalesWithPromptLength(t *testing.T) {
 	}
 }
 
-// TestCachedHostRAMAvailable_rateLimits: AdmitPrefillMemory runs on every request that reaches prefill, and the raw probe
-// forks+execs (vm_stat on darwin). This asserts the rate-limiting directly (calls within the TTL window must not reach the
+// TestCachedHostRAMAvailable_rateLimits: AdmitPrefillMemory runs on every request that reaches prefill, and the raw probe is a
+// system call per read. This asserts the rate-limiting directly (calls within the TTL window must not reach the
 // underlying probe) rather than only that AdmitPrefillMemory still returns the right answer, which would pass whether or
 // not caching ever happened.
 func TestCachedHostRAMAvailable_rateLimits(t *testing.T) {

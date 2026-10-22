@@ -1,0 +1,30 @@
+{
+ "label": "gpt-oss-20b",
+ "model": "/home/francis/models/gpt-oss-20b-MXFP4.gguf",
+ "flags": [
+  "--moe-cache-experts",
+  "--ctx",
+  "24576"
+ ],
+ "runs": [
+  {
+   "arm": "long",
+   "up": true,
+   "decode_path": [
+    "cuda-resident (int4)"
+   ],
+   "context": [
+    "24576 tokens (--ctx; model maximum 131072) \u00b7 KV f32"
+   ],
+   "fit": [
+    "24576-token cap needs 1.2 GB KV (weights 11.0 GB, budget 31.4 GB, 30.2 GB left for a request's own prefill)"
+   ],
+   "long": {
+    "status": 200,
+    "seconds": 122.12,
+    "prompt_tokens": 12759
+   },
+   "declined_lines": []
+  }
+ ]
+}

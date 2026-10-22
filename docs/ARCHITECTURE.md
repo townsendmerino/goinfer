@@ -377,9 +377,11 @@ references. `modelload.Load` runs these steps:
    `-direct-load` says otherwise — `--embed-int4` bakes into its own sidecar cache key rather than
    forcing a direct load. `--stream-weights` always needs the `.giw`.
 3. It loads the tokenizer, from the `.giw`'s metadata half, the GGUF itself, or `tokenizer.json`.
-4. It calls `decoder.Load`. A direct `.gguf` build runs under the swap guard
-   (`internal/swapguard`). If swap grows past `GOINFER_SWAP_GUARD` (512 MB by default), the build
-   aborts between layers with an error that names the priced memory terms.
+4. It calls `decoder.Load`. A direct `.gguf` build and a `.giw` load run under the swap guard
+   (`internal/swapguard`); a streamed load and a safetensors directory loaded directly do not. If swap
+   grows past `GOINFER_SWAP_GUARD` (512 MB by default), the load aborts (between layers, during a
+   `.giw`'s CRC pass, or inside the CUDA resident build) with an error that names the priced memory
+   terms.
 5. If the fit guard declines a dense model's direct load (`FitDeclineError.DenseStreamable`), it
    retries once with weight streaming. `--fit=off` disables the retry.
 6. It refuses an explicit `--quant` that a prequantized `.giw` cannot honour (`CheckGiwQuantMatch`).

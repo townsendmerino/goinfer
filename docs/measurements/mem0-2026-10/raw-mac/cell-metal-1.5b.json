@@ -1,0 +1,51 @@
+{
+ "cell": "metal:1.5b",
+ "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw",
+ "available_before_MiB": 5696,
+ "swap_used_before_MiB": 2998,
+ "load_s": 1.0,
+ "prompt_tokens": 20189,
+ "request_s": 35.8,
+ "footprint_MiB": {
+  "load": 62,
+  "peak": 2447,
+  "end": 1936,
+  "plus10s": 1936
+ },
+ "peak_rss_MiB": 227,
+ "categories_MiB": {
+  "load": {
+   "untagged (VM_ALLOCATE)": 44.0,
+   "MALLOC_SMALL": 8.5,
+   "IOAccelerator (graphics)": 3.6,
+   "__DATA_CONST": 1.3,
+   "page table": 1.0,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "stack": 0.4
+  },
+  "end": {
+   "IOAccelerator (graphics)": 1799.0,
+   "untagged (VM_ALLOCATE)": 124.0,
+   "MALLOC_SMALL": 8.5,
+   "__DATA_CONST": 1.3,
+   "page table": 1.1,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "stack": 0.4
+  },
+  "plus10s": {
+   "IOAccelerator (graphics)": 1798.0,
+   "untagged (VM_ALLOCATE)": 124.0,
+   "MALLOC_SMALL": 8.5,
+   "__DATA_CONST": 1.3,
+   "page table": 1.1,
+   "__DATA": 0.6,
+   "__DATA_DIRTY": 0.4,
+   "stack": 0.4
+  }
+ },
+ "available_after_MiB": 5900,
+ "swap_used_after_MiB": 2982,
+ "cell_wall_s": 50.0
+}

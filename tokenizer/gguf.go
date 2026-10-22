@@ -1,11 +1,11 @@
 package tokenizer
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/townsendmerino/aikit/embed"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -58,11 +58,10 @@ const (
 func LoadGGUF(path string) (*Tokenizer, error) {
 	// mmap, not heap-read: the tokenizer only needs the metadata at the head of
 	// the file, so mapping avoids paging in the (multi-GB) weights entirely.
-	g, err := embed.OpenGGUFMmap(path)
+	g, err := readGGUFMetaFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("tokenizer.LoadGGUF: %w", err)
 	}
-	defer g.Close()
 	t, err := fromGGUF(g)
 	if err != nil {
 		return nil, fmt.Errorf("tokenizer.LoadGGUF %s: %w", path, err)
@@ -74,11 +73,10 @@ func LoadGGUF(path string) (*Tokenizer, error) {
 // inflated //go:embed asset) — the bytes counterpart of LoadGGUF, touching no
 // filesystem. raw only needs to live until this returns.
 func LoadGGUFBytes(raw []byte) (*Tokenizer, error) {
-	g, err := embed.OpenGGUFBytes(raw)
+	g, err := readGGUFMeta(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
 		return nil, fmt.Errorf("tokenizer.LoadGGUFBytes: %w", err)
 	}
-	defer g.Close()
 	t, err := fromGGUF(g)
 	if err != nil {
 		return nil, fmt.Errorf("tokenizer.LoadGGUFBytes: %w", err)
@@ -86,7 +84,7 @@ func LoadGGUFBytes(raw []byte) (*Tokenizer, error) {
 	return t, nil
 }
 
-func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
+func fromGGUF(g *ggufMeta) (*Tokenizer, error) {
 	model, ok := g.Str(ggufTokModel)
 	if !ok {
 		return nil, fmt.Errorf("missing %s (not a GGUF with an embedded tokenizer)", ggufTokModel)
@@ -98,7 +96,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 		return nil, fmt.Errorf("unsupported tokenizer model %q (have: llama [SPM byte-fallback], gpt2 [byte-level])", model)
 	}
 
-	tokens, err := ggufStringArray(g, ggufTokTokens)
+	tokens, err := g.stringArray(ggufTokTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +107,6 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	t := &Tokenizer{
 		vocab:     make(map[string]int32, len(tokens)),
 		idToPiece: tokens, // id == array index, contiguous and complete
-		pairRank:  make(map[bigram]int32),
 		byteToVal: make(map[int32]byte, 256),
 	}
 	for i, tok := range tokens {
@@ -126,19 +123,20 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	// optional and Encode refuses loudly rather than silently mis-tokenizing without them. An ABSENT
 	// array is fine; a PRESENT but MALFORMED one (a corrupt merges array) is an error here, not later a
 	// misleading "decode-only vocab" error.
-	merges, err := ggufStringArray(g, ggufTokMerges)
+	merges, err := g.stringArray(ggufTokMerges)
 	if err != nil {
-		if _, present := g.Metadata[ggufTokMerges]; present {
+		if g.present[ggufTokMerges] {
 			return nil, fmt.Errorf("%s present but malformed: %w", ggufTokMerges, err)
 		}
 		merges = nil // key absent — no BPE merge list; scores may follow (below)
 	}
+	t.merges = newMergeTable(len(merges))
 	for i, m := range merges {
 		l, r, ok := strings.Cut(m, " ")
 		if !ok {
 			return nil, fmt.Errorf("%s[%d] %q has no space separator", ggufTokMerges, i, m)
 		}
-		t.pairRank[bigram{l, r}] = int32(i)
+		t.merges.add(t, l, r, int32(i))
 	}
 
 	// SentencePiece unigram fallback (gemma-3 GGUFs): scores but no merge list. Encode via the
@@ -146,7 +144,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	// Requires one score per token; a length mismatch means we can't trust the alignment, so stay
 	// decode-only rather than mis-rank.
 	if len(merges) == 0 {
-		if scores := ggufFloatArray(g, ggufTokScores); len(scores) == len(tokens) {
+		if scores := g.floatArray(ggufTokScores); len(scores) == len(tokens) {
 			t.scoreRank = buildScoreRank(scores)
 		}
 	}
@@ -185,7 +183,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 	// HF's AddedVocabulary behavior. Falls back to the resolved specials when
 	// the type array is absent.
 	t.added = newAddedTrie()
-	types := ggufIntArray(g, ggufTokTypes)
+	types := g.intArray(ggufTokTypes)
 	if len(types) == len(tokens) {
 		for i, ty := range types {
 			switch ty {
@@ -210,7 +208,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 // setupGGUFSPM configures the SentencePiece byte-fallback pipeline (modeGemma)
 // for tokenizer.ggml.model == "llama": the <0xNN> byte map, the unknown token,
 // and the ▁ dummy prefix (prepend on encode, strip one leading space on decode).
-func setupGGUFSPM(t *Tokenizer, g *embed.GGUFFile, tokens []string) {
+func setupGGUFSPM(t *Tokenizer, g *ggufMeta, tokens []string) {
 	t.mode = modeGemma
 
 	// Byte-fallback "<0xNN>" pieces (token type BYTE) → the byte map.
@@ -237,7 +235,7 @@ func setupGGUFSPM(t *Tokenizer, g *embed.GGUFFile, tokens []string) {
 	// SentencePiece dummy prefix: "llama" SPM prepends a ▁ (and strips one
 	// leading space on decode) unless add_space_prefix says otherwise.
 	t.prependSpace = true
-	if v, ok := g.Metadata[ggufTokPrefix].(bool); ok {
+	if v, ok := g.Bool(ggufTokPrefix); ok {
 		t.prependSpace = v
 	}
 	t.stripLeadingSpace = t.prependSpace
@@ -248,7 +246,7 @@ func setupGGUFSPM(t *Tokenizer, g *embed.GGUFFile, tokens []string) {
 // the pretokenizer knobs (digit-run cap, NFC, ignore_merges) selected from
 // tokenizer.ggml.pre — the GGUF analogue of reading them from tokenizer.json's
 // normalizer/pre_tokenizer.
-func setupGGUFByteLevel(t *Tokenizer, g *embed.GGUFFile) {
+func setupGGUFByteLevel(t *Tokenizer, g *ggufMeta) {
 	t.mode = modeByteLevel
 	t.byteEncoder, t.byteDecoder = buildByteLevelTables()
 	pre, _ := g.Str(ggufTokPre)
@@ -310,80 +308,11 @@ func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMe
 	}
 }
 
-// ggufStringArray reads a GGUF metadata array of strings.
-func ggufStringArray(g *embed.GGUFFile, key string) ([]string, error) {
-	arr, ok := g.Metadata[key].([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s missing or not an array", key)
-	}
-	out := make([]string, len(arr))
-	for i, v := range arr {
-		s, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("%s[%d] is %T, want string", key, i, v)
-		}
-		out[i] = s
-	}
-	return out, nil
-}
-
-// ggufIntArray reads a GGUF metadata array of integers (any width), returning
-// nil if the key is absent or not an array — callers treat that as "no data".
-func ggufIntArray(g *embed.GGUFFile, key string) []int {
-	arr, ok := g.Metadata[key].([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]int, len(arr))
-	for i, v := range arr {
-		switch n := v.(type) {
-		case int8:
-			out[i] = int(n)
-		case int16:
-			out[i] = int(n)
-		case int32:
-			out[i] = int(n)
-		case int64:
-			out[i] = int(n)
-		case uint8:
-			out[i] = int(n)
-		case uint16:
-			out[i] = int(n)
-		case uint32:
-			out[i] = int(n)
-		case uint64:
-			out[i] = int(n)
-		}
-	}
-	return out
-}
-
-// ggufFloatArray reads a GGUF metadata array of float32 (the SentencePiece token scores), returning
-// nil if the key is absent or not an array. Non-float entries yield 0 for that slot — harmless, since
-// a well-formed scores array is uniformly f32; a wholesale type mismatch shows up as a length check
-// failing upstream, not silent corruption.
-func ggufFloatArray(g *embed.GGUFFile, key string) []float32 {
-	arr, ok := g.Metadata[key].([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]float32, len(arr))
-	for i, v := range arr {
-		switch n := v.(type) {
-		case float32:
-			out[i] = n
-		case float64:
-			out[i] = float32(n)
-		}
-	}
-	return out
-}
-
 // ggufTokenID reads an integer special-token-id metadata value, clamped to a real id in [0, nTokens)
 // or -1 ("none"). The common 0xFFFFFFFF "none" sentinel, and any hostile value, would otherwise flow
 // into Encode as a garbage id that then indexes the embedding out of range. int(v) also wraps negative
 // on a huge uint; the >= 0 bound catches that too.
-func ggufTokenID(g *embed.GGUFFile, key string, nTokens int) int {
+func ggufTokenID(g *ggufMeta, key string, nTokens int) int {
 	if v, ok := g.Uint(key); ok {
 		if id := int(v); id >= 0 && id < nTokens {
 			return id
@@ -400,7 +329,7 @@ func ggufTokenID(g *embed.GGUFFile, key string, nTokens int) int {
 // rule so both engines tokenize a Phi-3 GGUF alike. Keyed on the name, not the architecture,
 // because Phi-4 GGUFs also declare general.architecture "phi3" and their ChatML-style markers
 // do not strip.
-func setGGUFRstrip(t *Tokenizer, g *embed.GGUFFile, tokens []string, types []int) {
+func setGGUFRstrip(t *Tokenizer, g *ggufMeta, tokens []string, types []int) {
 	name, _ := g.Str("general.name")
 	name = strings.ToLower(name)
 	if !strings.Contains(name, "phi-3") && !strings.Contains(name, "phi3") {

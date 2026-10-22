@@ -36,9 +36,55 @@ type SpecialTokens struct {
 	EndOfTurn   int // <end_of_turn>
 }
 
-// bigram is a comparable map key for the ordered BPE merge table: the pair
-// (left, right) → its merge rank (lower = higher priority, merged first).
+// bigram is a merge pair by text: mergeTable's key for a pair with a piece outside the vocabulary.
 type bigram struct{ left, right string }
+
+// mergeTable is the BPE merge ranks (lower merges first). A pair of vocabulary pieces is keyed by their two ids packed
+// in a uint64, which keeps no strings; a pair with a piece that is not its id's own piece (outside the vocabulary, or a
+// piece sharing another's id) is keyed by its text, so a lookup by ids answers exactly what a lookup by text would.
+type mergeTable struct {
+	byID  map[uint64]int32
+	byStr map[bigram]int32 // usually empty
+}
+
+// newMergeTable sizes the id map for n merges.
+func newMergeTable(n int) mergeTable { return mergeTable{byID: make(map[uint64]int32, n)} }
+
+func (m *mergeTable) len() int { return len(m.byID) + len(m.byStr) }
+
+// add records (left, right) at rank; a later add of the same pair replaces it, as list order does.
+func (m *mergeTable) add(t *Tokenizer, left, right string, rank int32) {
+	li, ri := t.pieceID(left), t.pieceID(right)
+	if li < 0 || ri < 0 {
+		if m.byStr == nil {
+			m.byStr = map[bigram]int32{}
+		}
+		m.byStr[bigram{left, right}] = rank
+		return
+	}
+	if m.byID == nil {
+		m.byID = map[uint64]int32{}
+	}
+	m.byID[uint64(li)<<32|uint64(ri)] = rank
+}
+
+// rank is the pair's rank: by ids when both pieces have one (pieceID), else by text.
+func (m *mergeTable) rank(li, ri int32, left, right string) (int32, bool) {
+	if li >= 0 && ri >= 0 {
+		r, ok := m.byID[uint64(li)<<32|uint64(ri)]
+		return r, ok
+	}
+	r, ok := m.byStr[bigram{left, right}]
+	return r, ok
+}
+
+// pieceID is s's id when s is that id's own piece (idToPiece[id] == s), else -1.
+func (t *Tokenizer) pieceID(s string) int32 {
+	if id, ok := t.vocab[s]; ok && int(id) < len(t.idToPiece) && t.idToPiece[id] == s {
+		return id
+	}
+	return -1
+}
 
 // tokMode selects the pre/post-processing pipeline wrapped around the shared
 // ordered-merge BPE core. The merge table is reused verbatim across families;
@@ -72,10 +118,10 @@ type Tokenizer struct {
 
 	vocab     map[string]int32 // piece → id
 	idToPiece []string         // id → piece (len == vocab size)
-	pairRank  map[bigram]int32 // BPE merge rank
+	merges    mergeTable       // BPE merge ranks
 	special   SpecialTokens
 
-	// scoreRank is the SentencePiece unigram fallback (non-nil ⇒ used instead of pairRank in the
+	// scoreRank is the SentencePiece unigram fallback (non-nil ⇒ used instead of merges in the
 	// merge loop): id → merge priority, densely ranked by descending token score. Some SPM exports
 	// ship tokenizer.ggml.scores but NOT tokenizer.ggml.merges (gemma-3 GGUFs), so there is no BPE
 	// merge list. llama.cpp then encodes by greedily merging the adjacent pair whose CONCATENATION
@@ -300,7 +346,7 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 
 	t := &Tokenizer{
 		vocab:        tj.Model.Vocab,
-		pairRank:     make(map[bigram]int32, len(merges)),
+		merges:       newMergeTable(len(merges)),
 		byteFallback: tj.Model.ByteFallback,
 		ignoreMerges: tj.Model.IgnoreMerges,
 		byteToVal:    make(map[int32]byte, 256),
@@ -348,7 +394,7 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 
 	// Merge ranks: position in the list is the priority.
 	for i, m := range merges {
-		t.pairRank[bigram{m[0], m[1]}] = int32(i)
+		t.merges.add(t, m[0], m[1], int32(i))
 	}
 
 	// Per-family setup: byte tables + special-token resolution differ.
@@ -493,7 +539,7 @@ func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error
 	// A vocab loaded without merges AND without scores can DECODE but not encode — refuse rather than
 	// return a silently unmerged (wrong) tokenization. A SentencePiece vocab with scores but no merge
 	// list (gemma-3 GGUFs) encodes via the score-rank path (mergeRank), so it is allowed. See gguf.go.
-	if len(t.pairRank) == 0 && t.scoreRank == nil {
+	if t.merges.len() == 0 && t.scoreRank == nil {
 		return nil, fmt.Errorf("tokenizer: this vocab was loaded without merge ranks or scores (decode-only); cannot Encode")
 	}
 	if t.vocab == nil {
@@ -701,11 +747,13 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 		return syms
 	}
 	text := make([]string, n) // node text (grows as pairs merge into the left node)
+	ids := make([]int32, n)   // node text's pieceID, -1 when it has none
 	prev := make([]int32, n)
 	next := make([]int32, n)
 	alive := make([]bool, n)
 	copy(text, syms)
 	for i := range text {
+		ids[i] = t.pieceID(text[i])
 		prev[i] = int32(i - 1)
 		next[i] = int32(i + 1)
 		alive[i] = true
@@ -725,7 +773,7 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 		if r < 0 {
 			return
 		}
-		if rank, ok := t.mergeRank(text[left], text[r]); ok {
+		if rank, ok := t.mergeRank(ids[left], ids[r], text[left], text[r]); ok {
 			heap.Push(h, mergeCand{key: int64(rank)<<32 | int64(left), left: left, right: r})
 		}
 	}
@@ -740,10 +788,11 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 		// The left node's text may have grown since this candidate was queued (a fresh
 		// candidate with the correct rank was pushed then); re-derive the rank and drop
 		// this one if it no longer matches.
-		if rank, ok := t.mergeRank(text[c.left], text[c.right]); !ok || int64(rank)<<32|int64(c.left) != c.key {
+		if rank, ok := t.mergeRank(ids[c.left], ids[c.right], text[c.left], text[c.right]); !ok || int64(rank)<<32|int64(c.left) != c.key {
 			continue
 		}
 		text[c.left] += text[c.right]
+		ids[c.left] = t.pieceID(text[c.left])
 		alive[c.right] = false
 		next[c.left] = next[c.right]
 		if nr := next[c.right]; nr >= 0 {
@@ -760,18 +809,17 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 }
 
 // mergeRank returns the merge priority of the adjacent pair (left, right): lower rank merges first,
-// leftmost on a tie (the heap packs rank<<32|leftIndex). In BPE mode it is the pairRank of the two
-// source pieces; in SPM-scores mode (scoreRank != nil, no merge list) it is the score-rank of the
+// leftmost on a tie (the heap packs rank<<32|leftIndex). li and ri are the pieces' pieceIDs. In BPE mode it is the
+// merges rank of the two source pieces; in SPM-scores mode (scoreRank != nil, no merge list) it is the score-rank of the
 // CONCATENATED token left+right, so the highest-scoring merge fires first — the SentencePiece order.
-func (t *Tokenizer) mergeRank(left, right string) (int32, bool) {
+func (t *Tokenizer) mergeRank(li, ri int32, left, right string) (int32, bool) {
 	if t.scoreRank != nil {
 		if id, ok := t.vocab[left+right]; ok {
 			return t.scoreRank[id], true
 		}
 		return 0, false
 	}
-	r, ok := t.pairRank[bigram{left, right}]
-	return r, ok
+	return t.merges.rank(li, ri, left, right)
 }
 
 // buildScoreRank turns per-id SentencePiece scores into a merge-priority rank: rank 0 is the

@@ -1,0 +1,6 @@
+# before: main 97adc2b1 (detached worktree), 2026-10-21
+heap_inuse=522.0 MiB heap_alloc=521.2 MiB
+tokens [8420 594 264 13027 729 429 47417 279 52962 315 264 2661 1372 1447 73594 12669]
+# after: branch d8a-single-copy-2026-10 e14c28c4
+heap_inuse=455.3 MiB heap_alloc=454.5 MiB
+tokens [8420 594 264 13027 729 429 47417 279 52962 315 264 2661 1372 1447 73594 12669]
