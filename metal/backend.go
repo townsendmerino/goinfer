@@ -828,7 +828,7 @@ func (a *metalResident) ResidentQuant() string { return a.quant }
 func (a *metalResident) PrefillKernelFloor() int { return a.prefillKernelFloor() }
 
 func (a *metalResident) prefillKernelFloor() int {
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvI8 || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
 		return 0
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
@@ -852,12 +852,11 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		}
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)"
 	}
-	if a.r.kvI8 || a.r.kvF32 {
-		cache := map[bool]string{true: "int8 (-kv i8)", false: "f32 (-kv f32)"}[a.r.kvI8]
+	if a.r.kvF32 {
 		if a.stepPrefill() && !a.r.promptStepOff { // promptStepOK takes every prompt
-			return true, "decode rows on the batched step kernels at every length (bit-identical to sequential; the f16 MMA pass does not take this model's " + cache + " KV cache)"
+			return true, "decode rows on the batched step kernels at every length (bit-identical to sequential; the f16 MMA pass does not take this model's f32 (-kv f32) KV cache)"
 		}
-		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is " + cache
+		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is f32 (-kv f32)"
 	}
 	if a.r.attnSink {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
@@ -873,12 +872,20 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 && a.stepPrefill() && !a.r.promptStepOff {
-		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path")
+		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path") + a.int8PassNote()
 	}
 	if floor > 0 {
-		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path")
+		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", a.prefillKernelFloor()) + a.exactAttnNote("the per-token path") + a.int8PassNote()
 	}
-	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)" + a.exactAttnNote("the per-token path")
+	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)" + a.exactAttnNote("the per-token path") + a.int8PassNote()
+}
+
+// int8PassNote is PrefillPath's account of an int8 cache on the MMA pass, "" for any other cache.
+func (a *metalResident) int8PassNote() string {
+	if !a.r.kvI8 {
+		return ""
+	}
+	return "; the int8 KV cache is stored by the pass and dequantized per layer into f16 scratch for its attention"
 }
 
 // g4LayerMajor reports whether this resident's prompts take prefillG4Paged: a paged Gemma 4 MoE with no learned
@@ -1063,9 +1070,6 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	// rope/window, per-head QK-norm and Gemma's sandwich norms. They do NOT implement per-layer-varying attention geometry (dense
 	// Gemma 4's local/global head_dim split; prefillOK) or Gemma 4's enable_moe_block variant (HasGemma4MoEResident, a third FFN
 	// shape). Any of these declines here, and the caller re-runs the prompt through the sequential Forward loop.
-	if a.r.kvI8 {
-		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is int8 (-kv i8); using sequential path")
-	}
 	if a.r.kvF32 {
 		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is f32 (-kv f32); using sequential path")
 	}
@@ -1515,7 +1519,7 @@ var prefillBlockRowsForTest int
 // kernel, whose pass declines past prefillExactAttnMaxKeys and must go on declining the whole prompt.
 func (a *metalResident) PrefillBlockRows() int {
 	r := a.r
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvI8 || r.kvF32 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvF32 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
 		(r.layerNorm && (r.layerNormBias || r.qkNorm)) || r.prefillUnaligned() != "" || r.prefillExactAttn() {
 		return 0
 	}

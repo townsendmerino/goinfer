@@ -63,13 +63,21 @@ func TestMLAResident_guards(t *testing.T) {
 	if errors.As(err, &dec) && strings.Contains(err.Error(), "MLA") {
 		t.Error("with the decline removed CopyKV still gives the MLA decline: the test cannot see its defect")
 	}
+	// An MLA model asked for int8 KV on Metal: the resolver refuses the load by name (D5), and a build it reaches anyway keeps
+	// the f32 latent and no int8 cache.
+	var refusal *decoder.KVRefusal
+	if _, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: "i8", KVQuant: "i8"}); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "latent") {
+		t.Errorf("an MLA model with int8 KV on Metal: Load = %v, want a KV refusal naming the f32 latent", err)
+	}
 	mi, err := decoder.Load(dir, decoder.Options{Quant: "int4", KVPrecision: "i8"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer mi.Close()
-	if _, err := buildResident(mi); err == nil || !strings.Contains(err.Error(), "int8 KV") {
-		t.Errorf("an MLA model with int8 KV: buildResident = %v, want the int8-KV decline", err)
+	if r, err := buildResident(mi); err != nil || r.kvI8 || r.mla == nil {
+		t.Errorf("an MLA model's build with int8 KV asked: err %v; want it built with its f32 latent and no int8 cache", err)
+	} else {
+		r.Close()
 	}
 }
 

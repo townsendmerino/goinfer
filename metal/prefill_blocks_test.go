@@ -229,9 +229,15 @@ func TestI8_blockRows(t *testing.T) {
 	if got := exact.PrefillBlockRows(); got != 0 {
 		t.Errorf("PrefillBlockRows = %d with --exact-prefill, want 0", got)
 	}
+	// An int8 cache takes the pass (P3b-2): it gets a block, and a row costs what it does at f16 plus the fixed dequantize
+	// scratch (kvI8ScratchRows positions of K and V at f16).
+	f16Price := a.PrefillScratchBytes(256)
 	r.kvI8 = true
-	if got := a.PrefillBlockRows(); got != 0 {
-		t.Errorf("PrefillBlockRows = %d with an int8 KV cache, want 0", got)
+	if got := a.PrefillBlockRows(); got <= 0 {
+		t.Errorf("PrefillBlockRows = %d with an int8 KV cache, want a block", got)
+	}
+	if got, want := a.PrefillScratchBytes(256)-f16Price, 4*int64(r.kvI8ScratchRows())*int64(r.prefillGeom().kvDim); got != want {
+		t.Errorf("an int8 cache adds %d bytes of prefill scratch, want %d (the dequantize scratch)", got, want)
 	}
 	r.kvI8 = false
 }
