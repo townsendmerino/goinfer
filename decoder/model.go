@@ -640,6 +640,9 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
+		if opts.ActQuantGroup == 0 && w.quantLabel() == "q4k" {
+			opts.ActQuantGroup = 32 // a q4k bundle runs per-32 activations, as a direct q4k load does (modelFromOptions)
+		}
 		m := modelFromOptions(w, be, opts)
 		m.resCtxPinned = ctxFromCaller
 		m.mmap, m.srcPath = data, dir
