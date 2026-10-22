@@ -1606,10 +1606,33 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		read := func(r int, dst []float32) error { return into(r*in, dst) }
 		return streamQuantizedEmbed(out, in, q, needCanonical, !repackForDecode(sink), 1, func() rowReader { return read })
 	}
+	// embInto loads an embedding-shaped table into *dst through embMatAt. A streaming build (sink, streamTablesOn) builds nothing:
+	// it registers the table's source with the writer, which writes it from the source rows (streamedTable).
+	embInto := func(dst *linalg.WeightMat, name string, out, in int, q quantMode) error {
+		if sink == nil || !streamTablesOn {
+			m, err := embMatAt(name, out, in, q)
+			*dst = m
+			return err
+		}
+		dims, into, err := g.RowDequantizer(name)
+		if err != nil {
+			return err
+		}
+		if len(dims) != 2 || dims[0] != in || dims[1] != out {
+			return fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
+		}
+		read := func(r int, dst []float32) error { return into(r*in, dst) }
+		if sink.tables == nil {
+			sink.tables = map[*linalg.WeightMat]*streamedTable{}
+		}
+		sink.tables[dst] = &streamedTable{rows: out, cols: in, mode: q, newReader: func() rowReader { return read }}
+		*dst = linalg.WeightMat{}
+		return nil
+	}
 	// embMat loads the embedding / LM head, which is logit-critical: quantize it with the embedding policy (int8 even in int4
 	// mode unless EmbedInt4), not the projection mode.
-	embMat := func(name string, out, in int) (linalg.WeightMat, error) {
-		return embMatAt(name, out, in, quant.embeddingWith(embedInt4))
+	embMat := func(dst *linalg.WeightMat, name string, out, in int) error {
+		return embInto(dst, name, out, in, quant.embeddingWith(embedInt4))
 	}
 	// vec loads a 1-D tensor (norm or bias).
 	vec := func(name string, n int) ([]float32, error) {
@@ -1726,7 +1749,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	}
 
 	var err error
-	if w.Embed, err = embMat("token_embd.weight", cfg.VocabSize, hidden); err != nil {
+	if err = embMat(&w.Embed, "token_embd.weight", cfg.VocabSize, hidden); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = vnorm("output_norm.weight", hidden); err != nil {
@@ -1735,7 +1758,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// Separate output head when present; else tied to the embedding.
 	arch.TiedLMHead = true
 	if g.Has("output.weight") {
-		if w.LMHead, err = embMat("output.weight", cfg.VocabSize, hidden); err != nil {
+		if err = embMat(&w.LMHead, "output.weight", cfg.VocabSize, hidden); err != nil {
 			return nil, err
 		}
 		arch.TiedLMHead = false
@@ -2477,7 +2500,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	if g4 := arch.gemma4; g4 != nil {
 		if g4.HiddenSizePerLayerInput > 0 {
 			pleTotal := arch.NumLayers * g4.HiddenSizePerLayerInput
-			if w.PerLayerTokenEmbed, err = embMatAt("per_layer_token_embd.weight", cfg.VocabSize, pleTotal, quant.gatherTable()); err != nil {
+			if err = embInto(&w.PerLayerTokenEmbed, "per_layer_token_embd.weight", cfg.VocabSize, pleTotal, quant.gatherTable()); err != nil {
 				return nil, err
 			}
 			if w.PerLayerModelProj, err = mat("per_layer_model_proj.weight", pleTotal, hidden); err != nil {

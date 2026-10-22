@@ -37,7 +37,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | done | — (D12 (a), owner, 2026-10-22: shipped as built; PLE-G3 read AMBIGUOUS, 94.25% top-1, KL 0.033) | branch `mem8b-ple-2026-10`; PLE-G1, G2, G4 PASS, G3 AMBIGUOUS and shipped on the owner's word, `docs/measurements/mem8b-2026-10/README.md` |
-| MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
+| MEM8(b′) | done | done 2026-10-22: the streaming GGUF transcode writes the embedding, LM head and per-layer token table from their source rows; E2B transcode peak heap 2.84 → 0.59 GB, bytes identical; SQE-G1 to G3 PASS | `docs/measurements/mem8bp-2026-10/README.md` |
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
@@ -520,6 +520,23 @@ Planted defect, run once on the committed tree and reverted: the per-layer table
 name check red on the sidecar's contents). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds
 for G1, G2 and G4's tiny tests; G3 about 10 min plus a one-time transcode of E2B (about 2.8 GB written; 6.8 GB free at
 registration), not a timed run, so it holds the timing lock shared.
+
+**MEM8(b′) gates, registered 2026-10-22 before the code (SQE-G).** The build: in a streaming GGUF transcode (`sink != nil`),
+the embedding-shaped tables (`token_embd`, `output`, and Gemma 4's `per_layer_token_embd`) are not built in heap. The build
+registers each table's source with the writer, and `writeHeadGlobals` writes it from its source rows in two passes. Pass one
+computes every row's scales and writes them; pass two quantizes the rows again and writes their codes in row blocks, row4-repacked
+per 4-aligned block on a cpu-arm64 target. Quantization is per row and deterministic, so the bytes are those of today's
+whole-table write. The resident (non-streaming) load is unchanged. The safetensors transcode is out of scope.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| SQE-G1 bytes | 0 | `StreamTranscodeGGUF` of the synthetic GGUFs (`tinyGemma4GGUF` with `ple`, and a tied and an untied dense one), at int8 and int4, `EmbedInt4` on and off, targets metal, cpu-arm64 and cuda, against the same transcode with streaming off (a test hook) | the `.giw` bytes are identical in every cell |
+| SQE-G2 peak heap | 1, Mac | `StreamTranscodeGGUF` of E2B (`~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf`), int4, metal target, main against the branch, one at a time: the Go heap in use sampled every 20 ms through the transcode, and the output's sha256 | the branch's peak falls by at least 1.0 GB (the int4 per-layer table is about 1.32 GB; the token embedding adds its own), and the two outputs are byte-identical |
+| SQE-G3 unchanged | 0 | the transcode and `.giw` tests in `decoder` (`StreamTranscode`, `giw`, `Sidecar`), and a sidecar load's logits on the synthetic GGUF | all pass; logits byte-equal to the direct load's |
+
+Planted defect, run once on the committed tree and reverted: pass two writing one row's codes from the previous block's scratch
+(G1 red). Stopping rule: one pass each. Cost: seconds for G1 and G3. G2 is two transcodes of about a minute each, writing about
+2.8 GB each to scratch that is deleted afterwards. It is not a timed run, so it holds the timing lock shared.
 
 ### MEM9 · MoE on Metal: aliasable experts, the two writer gaps, the pool to KV11 (M)
 
