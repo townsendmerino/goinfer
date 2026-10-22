@@ -1,0 +1,6 @@
+VOID: 0 shared copies logged, want 3
+conversation 0: reused 0 tokens; reply equals its reply alone
+conversation 1: reused 16031 tokens; reply DIFFERS FROM its reply alone
+conversation 2: reused 16031 tokens; reply DIFFERS FROM its reply alone
+conversation 3: reused 16031 tokens; reply DIFFERS FROM its reply alone
+G3b served: FAIL
