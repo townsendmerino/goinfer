@@ -156,7 +156,7 @@ func TestPrefillGateReference(t *testing.T) {
 			preflightConcurrencySafety(t, m, prompts[0], workers)
 
 			for _, K := range mc.ks {
-				runPrefillReferenceKConcurrent(t, m, mc.name, path, mc.quant, K, prompts, outDir, continuationN, workers)
+				runPrefillReferenceKConcurrent(t, m, mc.name, path, mc.quant, K, prompts[:refPromptsAt(K, len(prompts))], outDir, continuationN, workers)
 			}
 		})
 	}
@@ -180,6 +180,20 @@ func refKs(def []int) []int {
 		return def
 	}
 	return out
+}
+
+// refPromptsAt is how many of the set's prompts (the first n) a run builds at depth K, via GOINFER_CPU_REF_PROMPTS_AT ("8000:4,...");
+// every prompt by default. KV4b's K=8000 references read four (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), so each fits a night job.
+func refPromptsAt(K, all int) int {
+	for f := range strings.SplitSeq(os.Getenv("GOINFER_CPU_REF_PROMPTS_AT"), ",") {
+		k, n, ok := strings.Cut(strings.TrimSpace(f), ":")
+		if kk, err := strconv.Atoi(k); ok && err == nil && kk == K {
+			if nn, err := strconv.Atoi(n); err == nil && nn >= 1 && nn < all {
+				return nn
+			}
+		}
+	}
+	return all
 }
 
 // refWorkers lets a run cap how many prompts are prefilled CONCURRENTLY, via GOINFER_CPU_REF_WORKERS. The default (8) is

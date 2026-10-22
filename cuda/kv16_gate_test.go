@@ -26,7 +26,8 @@ import (
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestKV16GateVsReference -v -timeout 3h
 //
 // Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV16_GATE_CELLS="D7:8000,S:3900" overrides. KV4b's family groups add
-// one checkpoint each (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), read at K=3900 and K=8000, both decision cells.
+// one checkpoint each (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), read at K=3900 and K=8000, both decision cells. A cell may name
+// how many of the set's prompts it reads, "NAME:K:n" (the first n); KV4b's K=8000 cells read four.
 func TestKV16GateVsReference(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)")
@@ -66,11 +67,19 @@ func TestKV16GateVsReference(t *testing.T) {
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
-		if len(parts) != 2 {
+		if len(parts) != 2 && len(parts) != 3 {
 			t.Fatalf("bad cell %q", cell)
 		}
 		name := parts[0]
 		K, _ := strconv.Atoi(parts[1])
+		files := promptFiles
+		if len(parts) == 3 {
+			n, _ := strconv.Atoi(parts[2])
+			if n < 2 || n > len(promptFiles) {
+				t.Fatalf("bad cell %q: n must be 2 to %d", cell, len(promptFiles))
+			}
+			files = promptFiles[:n]
+		}
 		mc, ok := models[name]
 		if !ok || K < 1 {
 			t.Fatalf("bad cell %q", cell)
@@ -88,12 +97,12 @@ func TestKV16GateVsReference(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Skipf("no fixture at %s", path)
 			}
-			for pi := range promptFiles {
+			for pi := range files {
 				if _, err := os.Stat(filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", name, K, pi))); err != nil {
 					t.Skipf("%s K=%d: reference missing for prompt %d — run Phase A first", name, K, pi)
 				}
 			}
-			runKV16GateCell(t, path, name, K, promptFiles, refDir, mc.decision, mc.opts)
+			runKV16GateCell(t, path, name, K, files, refDir, mc.decision, mc.opts)
 		})
 	}
 }
