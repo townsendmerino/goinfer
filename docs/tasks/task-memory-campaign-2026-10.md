@@ -285,6 +285,27 @@ resident (or `Close` wired into unload); optionally a patch ceiling with per-seg
 **Gates.** Tier 0: device bytes live after N grows equal the last capacity; after `Close`, zero (mutation: drop the
 release, red). Tier 1: one 4K image turn then unload, Metal footprint returns to the pre-load figure.
 
+**MEM2 gates, registered 2026-10-21 before the code (MEM2-G).** The build: each Metal tower accelerator (the Gemma 4
+vision and audio towers, EmbeddingGemma 2's text encoder, and the grid base under the Qwen3.5+, GLM-OCR, SigLIP and
+Qwen2.5-VL towers) releases the scratch a `grow` replaces, and the rope tables EmbeddingGemma 2's cache drops; `Close`
+waits out the forward in flight (the accelerator's lock), releases every buffer and object on the accelerator's own
+device ledger, and is idempotent; a forward after `Close` is an error. The SigLIP and Qwen2.5-VL resident wrappers'
+`Close` closes their accelerator (aikit's `Encoder.Close` already calls it). serve's unload (`closeEntryNatives`)
+closes the Gemma 4 vision tower, the Qwen3.5+ and GLM-OCR towers' accelerators and the Gemma 4 audio accelerator.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| MEM2-G1 grow | 0, Mac | each of the seven towers on its committed tiny fixture: accelerator A runs three inputs of increasing size, accelerator B the same three largest first, so B grows once; the device ledger's buffer count (`LedgerLen`) and Metal's own allocated size (`CurrentAllocatedSize`, net of the reading before each build) | A's ledger count equals B's exactly, A's allocated size is within 64 KiB of B's, and A's output at every size is byte-equal to B's |
+| MEM2-G2 close | 0, Mac | the same seven, after `Close` | the ledger reads (0, 0); Metal's allocated size is back within 64 KiB of its reading before the build; a second `Close` returns nil; a forward after `Close` returns an error |
+| MEM2-G3 unload | 0, any | serve's admin unload through the real drain, an entry holding a counting fake Gemma 4 tower, Qwen3.5+ and GLM-OCR accelerators and a Gemma 4 audio accelerator | each fake is closed exactly once and the entry holds none afterwards; an entry that never built one closes nothing |
+| MEM2-G4 tier 1 | 1, Mac | the Qwen3-VL-2B tower (`~/models/qwen3-vl-2b-instruct`) on Metal, float32, in-process: a 1080p grid, then a 3840×2160 grid, then `Close`; Metal's allocated size at each step | after the 4K forward the allocated size is the weights plus one 4K scratch (within 1%: the 1080p scratch is gone, against main, where it stays); after `Close` it is back within 16 MiB of the reading before the build |
+
+Planted defects, each run once on the committed tree and reverted: the release dropped from the grid tower's `grow` (G1
+red), `Close` left a no-op (G2 red), and one of serve's new closes dropped (G3 red). The existing matches-CPU gates of
+every tower (`TestG4VMetal_matchesCPU`, `TestGridVisionMetal_matchesCPU`, `TestS3Towers_tiny`, `TestG4AMetal_matchesCPU`,
+`TestEG2Metal_matchesCPU`) stay green. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for
+G1–G3; about 2 min for G4 (a 32,400-patch tower forward; not a timed run, so it holds the timing lock shared).
+
 ### MEM3 · aikit audio loaders hold their checkpoint and can close it (S) — SHIPPED in aikit v1.71.0
 
 > **Released 2026-10-17 in aikit v1.71.0. D6 decided the same day: no KeepAlive discipline.** The finalizer, the
