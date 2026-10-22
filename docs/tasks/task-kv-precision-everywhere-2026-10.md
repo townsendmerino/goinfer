@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22): MLA on Metal reports f32 and refuses f16/i8, its own PR next; P3b (int8 and f32 inside the MMA prefill, batched decode and the layer-major prefills) not started | `docs/measurements/kv-precision-2026-10/p3a.md` |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b (int8 and f32 inside the MMA prefill, batched decode and the layer-major prefills) not started | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -258,8 +258,8 @@ phase 0's table gives the first real count of cells to move.
 - **D5, decided (a), owner, 2026-10-22: MLA's KV precision on Metal.** DeepSeek's latent cache on Metal is f32 whatever is asked;
   the matrix read "f16" for auto and `--kv f16`, and `--kv i8` declines the Metal resident to the CPU. Decided: the resolver reports
   f32 for MLA on Metal (auto delivers f32, with the reason), and an explicit `--kv f16` or `--kv i8` for MLA on Metal refuses by
-  name; the two `deepseek-tiny` Metal cells that move from delivered to refused do so on this word (the ratchet's case). Built as
-  its own PR after P3a. Options were (a) that, (b) an f16 and an int8 latent cache on Metal (kernel work, an M of its own; only if
+  name; the two `deepseek-tiny` Metal cells that move from delivered to refused do so on this word (the ratchet's case). Built
+  2026-10-22, D5-G1 to G3 PASS (`docs/measurements/kv-precision-2026-10/d5.md`). Options were (a) that, (b) an f16 and an int8 latent cache on Metal (kernel work, an M of its own; only if
   a user asks for MLA at f16 or i8 on a Mac), (c) leave it.
 
 **Owner, 2026-10-20, before any code: D1 refuse the load; D2 honor explicit requests whatever G4 reads; D3 WebGPU stays in

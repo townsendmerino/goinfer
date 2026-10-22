@@ -22,15 +22,11 @@ var g3MetalNotBuilt = []string{
 	"gemma4-moe-kv-tiny/auto", "gemma4-moe-kv-tiny/f32",
 }
 
-// g3MetalPendingD5 are the Metal cells whose cache is not the precision the matrix says: MLA's latent is f32 whatever is asked (D5,
-// docs/tasks/task-kv-precision-everywhere-2026-10.md §6). The test requires them to still differ, so a fix shows up here.
 // g3MetalMatrixDiffers are the no-resident cells whose CPU cache is not what the matrix's Metal cell says: the matrix reads the
 // family's Metal answer, the load runs the CPU's (G3's record).
 var g3MetalMatrixDiffers = []string{
 	"phi3-tiny/auto", "lfm2-tiny/auto", "gemma4-moe-kv-tiny/auto",
 }
-
-var g3MetalPendingD5 = []string{"deepseek-tiny/auto", "deepseek-tiny/f16"}
 
 // TestKVDeliveredBytes_Metal is G3's Metal half (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): every Metal cell the
 // matrix delivers, loaded with serve's options for --kv and a 100-position resident context, its K/V buffers read back against the
@@ -42,7 +38,7 @@ func TestKVDeliveredBytes_Metal(t *testing.T) {
 	}
 	fixtures := []string{"llama-tiny", "phi3-tiny", "qwen3moe-tiny", "gemma2-tiny", "cohere-tiny", "qwen25vl-tiny", "deepseek-tiny",
 		"qwen35-tiny", "qwen3next-tiny", "nemotron-tiny", "lfm2-tiny", "gemma4-moe-kv-tiny"}
-	var notBuilt, mismatched, matrixDiffers []string
+	var notBuilt, matrixDiffers []string
 	checked := 0
 	for _, f := range fixtures {
 		for _, v := range []string{"auto", "f32", "f16", "i8"} {
@@ -111,18 +107,10 @@ func TestKVDeliveredBytes_Metal(t *testing.T) {
 			}
 			fmt.Fprintf(os.Stderr, "[G3 metal] %-24s delivered %-3s %s\n", cell, want, map[bool]string{true: "ok", false: "MISMATCH: " + why}[why == ""])
 			if why != "" {
-				mismatched = append(mismatched, cell)
-				if !slices.Contains(g3MetalPendingD5, cell) {
-					t.Errorf("%s: %s", cell, why)
-				}
+				t.Errorf("%s: %s", cell, why)
 			}
 			checked++
 			m.Close()
-		}
-	}
-	for _, c := range g3MetalPendingD5 {
-		if !slices.Contains(mismatched, c) {
-			t.Errorf("%s now holds what the matrix says: D5 is resolved here, so drop it from g3MetalPendingD5", c)
 		}
 	}
 	if !slices.Equal(matrixDiffers, g3MetalMatrixDiffers) {
@@ -134,5 +122,5 @@ func TestKVDeliveredBytes_Metal(t *testing.T) {
 	if checked < 20 {
 		t.Fatalf("only %d Metal cells were read back", checked)
 	}
-	fmt.Fprintf(os.Stderr, "[G3 metal] %d cells read back, %d build no resident, %d pending D5\n", checked, len(notBuilt), len(g3MetalPendingD5))
+	fmt.Fprintf(os.Stderr, "[G3 metal] %d cells read back, %d build no resident\n", checked, len(notBuilt))
 }
