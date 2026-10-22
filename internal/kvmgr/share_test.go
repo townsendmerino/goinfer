@@ -428,3 +428,29 @@ func TestSlotsRestored(t *testing.T) {
 		t.Errorf("a restore of under one block left a record (%d rows)", a.Len(1))
 	}
 }
+
+func TestCapInPlace(t *testing.T) {
+	cm := ClassMap{Floor: 512, MinRows: 16}
+	fast := []ClassRun{{Start: 0, Len: 1005, Class: ClassFast}, {Start: 1005, Len: 4, Class: ClassExact}}
+	for _, tc := range []struct {
+		name          string
+		cm            ClassMap
+		held          []ClassRun
+		images        []ImageSpan
+		n, reuse, out int
+	}{
+		{"14-row tail after fast rows: backed off to the block edge", cm, fast, nil, 1014, 1000, 960},
+		{"15-row tail at a block edge: one block more", cm, fast, nil, 975, 960, 896},
+		{"tail of 16 rows already runs the fast class", cm, fast, nil, 1016, 1000, 1000},
+		{"reused rows include decoded rows: unchanged", cm, fast, nil, 1012, 1009, 1009},
+		{"prompt under the floor: unchanged", cm, fast, nil, 500, 490, 490},
+		{"rows of unknown class: unchanged", cm, nil, nil, 1014, 1000, 1000},
+		{"no fast class: unchanged", ClassMap{}, fast, nil, 1014, 1000, 1000},
+		{"backed off an image span the cap would cut", cm, fast, []ImageSpan{{Start: 900, Len: 80, Hash: 1}}, 1014, 1000, 896},
+		{"windowed: the capped start is a block edge", ClassMap{Floor: 512, MinRows: 16, Windowed: true}, fast, nil, 1014, 1000, 960},
+	} {
+		if got := tc.cm.CapInPlace(tc.held, tc.images, tc.n, tc.reuse); got != tc.out {
+			t.Errorf("%s: CapInPlace(n=%d, reuse=%d) = %d, want %d", tc.name, tc.n, tc.reuse, got, tc.out)
+		}
+	}
+}

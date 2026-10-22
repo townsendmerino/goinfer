@@ -271,9 +271,12 @@ func (r *equivResident) ReusableKV(prefix int) int {
 
 func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 	// KV2's choice 3 (docs/measurements/kv2-2026-10-14.md, G1's exception) is off here: this walk compares the rest of
-	// the slot choice with KV1's bookkeeping; choice 3 has tests of its own.
+	// the slot choice with KV1's bookkeeping; choice 3 has tests of its own. So is the in-place class cap (KV2-FU3), which
+	// KV1's bookkeeping had no classes for; TestResidentAcquire_capsInPlaceReuseToTheColdClass and TestCapInPlace hold it.
 	defer func(old int) { kvAllowanceOverride = old }(kvAllowanceOverride)
 	kvAllowanceOverride = 1 << 30
+	defer func(old bool) { kvInPlaceCapOff = old }(kvInPlaceCapOff)
+	kvInPlaceCapOff = true
 	loras := []*loraRuntime{nil, {name: "a"}, {name: "b"}}
 	steps, binds, reused := 0, 0, 0
 	for seed := int64(1); seed <= 24; seed++ {
