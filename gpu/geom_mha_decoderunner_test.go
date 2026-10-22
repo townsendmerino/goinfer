@@ -20,7 +20,7 @@ import (
 func TestDecodeRunnerW4A8_geometries(t *testing.T) {
 	ctx := newOrSkip(t)
 	defer ctx.Close()
-	info := ctx.adapter.GetInfo()
+	info := ctx.info
 	t.Logf("adapter: %s %q (%v)", info.Device, info.Description, info.AdapterType)
 
 	type geom struct {

@@ -52,6 +52,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 type Context struct {
 	instance *wgpu.Instance
 	adapter  *wgpu.Adapter
+	// info is the adapter's GetInfo, read once in New; nothing calls GetInfo again. The binding fills a C struct on the Go stack,
+	// wgpu-native can leave Rust's dangling 0x1 in a string view's pointer, and a GC that shrinks the stack during the call aborts
+	// on it ("invalid pointer found on stack").
+	info     wgpu.AdapterInfo
 	device   *wgpu.Device
 	queue    *wgpu.Queue
 	shader   *wgpu.ShaderModule
@@ -486,6 +490,7 @@ func New() (*Context, error) {
 		allocSeq: allocSeqNow(),
 		instance: inst,
 		adapter:  adapter,
+		info:     adapter.GetInfo(),
 		device:   device,
 		queue:    device.GetQueue(),
 		shader:   shader,
@@ -523,7 +528,7 @@ func probeDP4A(device *wgpu.Device) bool {
 // "D3D12", …) — useful for test logging to confirm which GPU API is in
 // play.
 func (c *Context) Backend() string {
-	return c.adapter.GetInfo().BackendType.String()
+	return c.info.BackendType.String()
 }
 
 // track registers release closures to be run by Close, LIFO. Call it at the ALLOCATION site —

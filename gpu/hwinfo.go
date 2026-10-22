@@ -19,7 +19,7 @@ func webgpuHardwareInfo() []string {
 		return []string{"no usable adapter: " + err.Error()}
 	}
 	defer c.Close()
-	info := c.adapter.GetInfo()
+	info := c.info
 	name := info.Device
 	if name == "" {
 		name = info.Description
@@ -57,7 +57,7 @@ func yesNo(b bool) string {
 // SelfTestEligible is decoder's selfTestEligibility: the resident self-test's bars were measured on a real adapter, so a software renderer (lavapipe on a CI runner, a headless box falling back to
 // llvmpipe) is not probed. It is reported as skipped, with this reason, in the report and /health, never as passed.
 func (b *webgpuBackend) SelfTestEligible() (bool, string) {
-	if softwareAdapterInfo(b.ctx.adapter.GetInfo()) {
+	if softwareAdapterInfo(b.ctx.info) {
 		return false, "software adapter (lavapipe, llvmpipe, SwiftShader): its limits and math are not a GPU's, and the probe's bars were measured on a real one"
 	}
 	return true, ""
