@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measured it: the i8 step is 6.80× the f16 pass at 8K; building an int8 MMA prefill decided by the owner (D8, owner, 2026-10-22); its design and identity gate asked as D9 | `docs/measurements/kv-precision-2026-10/p3a.md` |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measured it: the i8 step is 6.80× the f16 pass at 8K; building an int8 MMA prefill decided by the owner (D8, owner, 2026-10-22); D9 (owner, 2026-10-22): design (b), dequantize to an f16 scratch; P3b-2 gates registered, building | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -232,6 +232,29 @@ Planted defects, each once and reverted: the int8 rows attention reading slot 0'
 store writing half (G1 red). Stopping rule: one pass each. Cost: seconds to a minute. No timed run: each path it opens is
 bit-identical to the sequential one it replaces, and the step is the path f16 already takes for the same work.
 
+### P3b-2 gates, registered 2026-10-22 before the code (P3B2-G), for the int8 MMA prefill (D8, D9 (c), owner, 2026-10-22)
+
+**The build (D9 (b)).**
+- **Store:** at `--kv i8` the f16 MMA pass stores each layer's block of K/V into the int8 cache with
+  `kv_store_i8_prefill`, derived from `kv_store_i8`'s source with every K/V read widened from the pass's half values.
+- **Dequantize:** before that layer's attention, `kv_dequant_i8_f16` writes rows `[0, startPos+M)` of the layer's int8 cache, as
+  `half(code × scale)`, into a per-call f16 scratch sized to the padded context. The pass's existing attention kernels read the
+  scratch.
+- **f16 untouched:** no f16 kernel is edited; the two kernels are appended to the prefill library. The int8 declines in
+  `prefillOK`, the kernel floor, `PrefillPath`, the pass, `PrefillBlockRows` and the step routing are lifted; f32 keeps every one.
+- **Pricing:** the scratch, `4 × padded context × kv_dim` bytes at int8, is priced in `prefillScratchBytes`, so MEM7's block
+  sizer counts it.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| P3B2-G1 identity | 0, Mac | (i) `kv_store_i8_prefill` against `kv_store_i8` on the same K/V (the half values widened), many rows and heads; (ii) f16 at auto on the nine resident fixtures: 32 positions of `Forward` logits, and a 40-token `PrefillLast`, against main's | (i) codes and scales bit-identical; (ii) byte-equal to main's |
+| P3B2-G2 fidelity | 1, Mac | the prefill fidelity instrument (`internal/fidelity`, the gate `TestPrefillGateReference` uses) on D7's checkpoint: the i8 pass against the i8 step, and the f16 pass against the f16 step (the arm that ships), over that gate's prompt set | the i8 pass's agreement and KL against its step are no worse than the f16 pass's against its step, by that instrument's own margins |
+| P3B2-G3 speed | 2, Mac, by day, under the timing lock | D7's harness (`TestD7_int8StepVsF16Pass`, with the i8 arm now on the pass): Qwen2.5-Coder-1.5B, 2,048 and 8,192 tokens, a warm-up pair and five order-alternating pairs | median i8 / f16 at most 1.25 at both lengths. Over 1.25: stop and notify the owner before any (a) work |
+
+Planted defects, each once and reverted: the store reading K from V's offset (G1 (i) red); the dequant reading slot 0's scales
+for every head (the int8 fidelity cells red, or a dedicated scratch check red). Stopping rule: one pass each. Cost: G1 seconds;
+G2 minutes (two arms × the prompt set on the 1.5B; state the wall time before starting); G3 about 10 minutes, as D7's run.
+
 ## 4. Gates (registered here, before any code; changing one after the data needs the owner's word and is recorded as such)
 
 - **G1, exact-input identity (every new kernel, CI):** on inputs exactly representable at the precision (f16 values;
@@ -276,7 +299,8 @@ phase 0's table gives the first real count of cells to move.
   attention reading int8 K/V directly, (b) build it by dequantizing each layer's cache into an f16 scratch, (c) park it. The
   owner's brief asked for bit-identity against the i8 step path and a speed bar against D7's f16 numbers, and for a decision if
   the design needs one; D9 below is that decision.
-- **D9 (asked 2026-10-22, open): the int8 MMA prefill's design, and its identity gate.**
+- **D9, decided (c), owner, 2026-10-22: the int8 MMA prefill's design, and its identity gate.** Build (b) with the gates below
+  (P3b-2 gates); build (a) only if (b) misses G3, and stop for the owner before starting it. The question as asked:
   - **Bit-identity against the i8 step cannot hold for any MMA prefill.** The pass computes Q/K/V with its own f16 GEMMs and
     attention with its own tiled kernels, not decode's, which is why f16's MMA pass is graded by the prefill fidelity gate, not by
     identity (`prefillKernelFloor`: "classes that are not bit-identical"). What can be bit-identical: the int8 codes and scales
