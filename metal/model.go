@@ -247,10 +247,15 @@ type resident struct {
 	pleP                     int
 	pleIn, pleG, pleQ, pleSc Buffer
 	ctxCeilKey               *decoder.Model // S18: the metalCtxCeiling entry this resident's context came from; nil when none
-	emodelLayerMajorRuns     int            // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
-	uPleP                    Buffer
-	g4VNorm                  bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
-	pSA, pSABias, pSAResid   Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
+	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): the save copies (live into checkpoint) and the restore copies, the
+	// checkpoint's bytes (0: none kept), and why a load kept none.
+	ckptSave, ckptRestore  []gpu.DeviceCopy
+	ckptBytes              int64
+	ckptDeclined           string
+	emodelLayerMajorRuns   int // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
+	uPleP                  Buffer
+	g4VNorm                bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
+	pSA, pSABias, pSAResid Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
 	// The W4F16 decode lane: f16 activations, no int8 quantization, selected by GOINFER_METAL_DECODE_LANE=w4f16
 	// (decodeLaneW4F16). The pipelines are always built; only dispatch is conditional (canUseF16Lane). It covers
 	// plain dense QKV, o-proj and gate-up only: down-proj and every special case (MoE, paged, sandwich, postOnly,
@@ -2159,8 +2164,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.mropeAxis = NewBufferUint32s(d, u)
 		}
 	}
-	r.buildBatch() // MC3: the batched decode step, when this resident can run one (batch.go)
-	ok = true      // construction complete — the resident owns everything; Close (not the defer) frees it
+	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
+	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
+	ok = true                     // construction complete — the resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
 
