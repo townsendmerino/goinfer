@@ -216,7 +216,7 @@ func PickSlot(scores, lens []int, uses []uint64, busy []bool) int {
 }
 
 // FirstPrompt is the length of the first prompt of the conversation slot holds (0: none known). A request that keeps
-// all of it but its last token is that conversation rolling back its own history (PickSlotFor).
+// all of it (KeepsFirst) is that conversation rolling back its own history (PickSlotFor).
 func (a *Slots) FirstPrompt(slot int) int {
 	if s := a.seqs[slot]; s != nil {
 		return s.first
@@ -224,9 +224,20 @@ func (a *Slots) FirstPrompt(slot int) int {
 	return 0
 }
 
+// KeepsFirst reports whether prompt begins with the whole first prompt of the conversation slot holds. A score cannot
+// say so: it leaves the prompt's last token to compute, so a request that differs from the first prompt only in its
+// last token scores what an exact rollback to it does.
+func (a *Slots) KeepsFirst(slot int, prompt []int) bool {
+	s := a.seqs[slot]
+	if s == nil || s.first == 0 || s.first > len(s.tokens) || len(prompt) < s.first {
+		return false
+	}
+	return slices.Equal(prompt[:s.first], s.tokens[:s.first])
+}
+
 // PickSlotFor is PickSlotWithin that tells a conversation's own rollback from another conversation's request:
-// firsts[i] is slot i's FirstPrompt. A request whose score reaches firsts[i] - 1 keeps that conversation's whole first
-// prompt, so it is the same conversation rolling back, and when slot i is the best-scoring one it takes it in place
+// firsts[i] is slot i's FirstPrompt when the request keeps all of it (Slots.KeepsFirst), else 0. Such a request whose
+// score reaches firsts[i] - 1 (a score leaves the last token to compute) is the same conversation rolling back, and when slot i is the best-scoring one it takes it in place
 // however much it gives up: the rows it discards are its own abandoned history. Only a request that diverges inside the
 // first prompt, such as a new conversation sharing a preamble, is held to PickSlotWithin's rule and allowance.
 func PickSlotFor(scores, lens, firsts []int, uses []uint64, busy []bool, allowance int) int {

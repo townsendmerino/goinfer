@@ -948,6 +948,16 @@ KV2 merges when every arm on both boxes is read.
       `TestParityManifest_fresh` passes (43 of 43 families). The parity refresh refreshed no `deps_hash`
       (forward goldens 33 passed, 31 skipped, 0 failed): `decoder/resident_reuse.go` is in no family's dependencies.
     - *Not run:* a device arm (registered out above).
+    - **Defect found on main, 2026-10-21, and fixed the same day (branch `fix-kv2fu1-own-test-2026-10`).** The merge
+      (#127) turned main's CI red in `TestResidentAcquire_interleavedConversationsKeepTheirSlots` and
+      `TestResidentAcquire_bindFailureGoesCold`; the merge's re-run had named its tests by pattern and missed them. The
+      own test, "keeps the first prompt but its last token", also accepts another conversation whose prompt differs from
+      the first prompt only in that last token: a reuse score leaves the last token to compute, so the two score alike.
+      Before FU1 that only lifted the allowance; with FU1 it skips the keep-versus-overwrite rule too, so the other
+      conversation overwrote the slot. Fix: `kvmgr.Slots.KeepsFirst` checks the prompt begins with the whole first prompt,
+      and the decoder passes a slot's first-prompt length only when it does; the CPU LRU tests its uncapped common prefix
+      against the whole first prompt. `TestPickSessionFor_ownRollback` gains the case; both decoder tests and it are red
+      without the fix and green with it; the whole `decoder` package and FU1-G3 pass on the fix.
     - *CPU arm,* serve's session LRU over llama-attnfa-tiny's real CPU forward. Conversation A has a 600-token first
       prompt (a 300-token preamble and 300 of its own); B shares the preamble. Turns: the first prompt; its reply and
       700 tokens; a rollback to the first prompt and reply plus 2 tokens (it keeps 606 and gives up 706). Three runs:
