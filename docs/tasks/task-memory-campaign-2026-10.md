@@ -47,7 +47,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM12-f32res | open | either box: drop the f32 capacity in `setQuant` when the storage form changes (from cpu-kv-f16's F4 c); S, then refresh the parity hashes | — |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
-| MEM13-tokenizer | active | Mac, branch `mem13-tokenizer-2026-10`: gates TK-G1..G3 registered (§4 MEM13) | `mergeRank` |
+| MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
 | MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
 | MEM13-heapquant | moved | D8a-build and D8b-build below (D8 decided: build both) | §4 MEM13, "Heap-only quant, after MEM1" |
 | D8a-build | open | Mac: single-copy `o_proj`, `down_proj` and experts under `Backend: "cpu"` on arm64; every CPU kernel that reads them takes the single copy; gates on bytes and bit-identity, registered before the code (D8a, owner 2026-10-21); S–M | — |
@@ -521,6 +521,10 @@ aikit's `map[string]any` of boxed values. Fixture: the committed `tokenizer/test
 | TK-G1 identity | 0 | the `tokenizer` package's tests; a differential test that the typed reader returns what aikit's reader returns for every key the tokenizer reads, on each committed tokenizer GGUF; token ids of a fixed corpus (English, code, CJK, emoji, digits, whitespace runs) on each committed tokenizer GGUF, pinned from `main` before the change | every test passes with no new skip; every key equal; every id equal |
 | TK-G2 memory | 0 | `LoadGGUF` of the Qwen fixture in a test: bytes allocated by the load (`TotalAlloc` delta) and heap kept with the tokenizer alive (`HeapAlloc` after `runtime.GC`, less the same before), each the median of 5 loads, read on `main` and on the branch | allocated ≤ 0.70 × main's, and kept ≤ main's − 3 MiB |
 | TK-G3 encode speed | 0, by day | a new `BenchmarkEncode` (the TK-G1 corpus, Qwen fixture), built as a test binary from `main` plus the benchmark file and from the branch, run A B B A × 3 (`-benchtime 2s`), one at a time under the timing lock | the median of the six new/old ns/op ratios ≤ 1.02 (encode no more than 2% slower) |
+
+> **Read 2026-10-21: all three PASS** (`docs/measurements/mem13-tokenizer-2026-10/README.md`): a load allocates 24.36 MiB
+> against 88.58 and keeps 15.32 against 24.61 (two GCs; the instrument was fixed before the verdict, as the record says);
+> encode 0.9935 of main's time.
 
 Void: a TK-G3 cell whose 1-minute load average is above 4.0 at its start (CLAUDE.md's heavy-load rule) is re-run in its
 place. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about 2 min for G3.
