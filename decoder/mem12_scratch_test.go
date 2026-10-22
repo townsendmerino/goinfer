@@ -59,8 +59,8 @@ func TestMEM12Scratch_moeChunks(t *testing.T) {
 }
 
 // TestMEM12Scratch_headLogits is SCR-G2's reading: on llama-tiny, the mean bytes over 50 warm iterations of a K = 4 verify
-// round and of a 16-token prefill (a single reading moves by up to 1.4 KB from run to run, more than the prefill's effect). The
-// gate compares them with origin/main's.
+// round and of a 16-token prefill; run it at GOMAXPROCS=1, where a single reading is stable (the record,
+// docs/measurements/mem12-scratch-2026-10/README.md, says why). The gate compares them with origin/main's.
 func TestMEM12Scratch_headLogits(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
 	ctx := context.Background()
