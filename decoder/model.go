@@ -938,17 +938,26 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	if a.mla != nil {
 		kvCapHint = 0
 	}
+	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it, f16 (Options.KVQuant == "f16") where kvF16OK does;
+	// see Architecture.kvInt8OK for why a family's own loop must opt in. Either stores its K/V in the arrays setQuant reserves, so
+	// the f32 ones would be dead weight too.
+	quant := kvqF32
+	if m.kvI8 && a.kvInt8OK() {
+		quant = kvI8
+	} else if m.kvH && a.kvF16OK() {
+		quant = kvqF16
+	}
+	if quant != kvqF32 {
+		kvCapHint = 0
+	}
 	// A linear/mamba/conv mixer layer (or one of Nemotron's mlp/moe block kinds) never writes c.keys[l]/c.vals[l] either: its
 	// recurrent state (c.delta/c.mamba/c.conv/c.kda, set up below) is the whole store, so it reserves no K/V capacity.
 	// hasNoAttentionKVAt (arch.go) is the one place that knows all these cases, shared with kvDimAt's pricing.
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, a.hasNoAttentionKVAt)
 	c.scr = newDecodeScratch(a)
-	// int8 KV storage (opt-in, Options.KVQuant == "i8") where kvInt8OK allows it; see Architecture.kvInt8OK for why a family's
-	// own loop must opt in. Must precede enableRings so local layers inherit the mode.
-	if m.kvI8 && a.kvInt8OK() {
-		c.setQuant(kvI8, capHint)
-	} else if m.kvH && a.kvF16OK() {
-		c.setQuant(kvqF16, capHint) // f16 storage (Options.KVQuant == "f16"); also before enableRings
+	// Must precede enableRings so local layers inherit the mode.
+	if quant != kvqF32 {
+		c.setQuant(quant, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
 	// can read. Only for families whose forward uses attendQuery/attendBatchedHeads (kvRingsOK); the others keep append-forever.

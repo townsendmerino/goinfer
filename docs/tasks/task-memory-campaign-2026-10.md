@@ -44,7 +44,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
 | MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
 | MEM12-scratch | open | either box: MoE output, logits and sampler scratch, with tier-0 counters; M | — |
-| MEM12-f32res | open | either box: drop the f32 capacity in `setQuant` when the storage form changes (from cpu-kv-f16's F4 c); S, then refresh the parity hashes | — |
+| MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
+| MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
@@ -528,6 +529,28 @@ consider off-heap (anonymous-mmap) arenas for KV and session scratch, or a pacin
 
 **Gates.** Tier 0: `testing.AllocsPerRun` / bytes allocated per decode token and per verify round fall to the stated
 bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
+
+**MEM12-f32res gates, registered 2026-10-21 before the code (F32R-G).** The build: a CPU cache that stores K/V as f16 or
+int8 reserves no f32 capacity. `NewCache` passes no f32 hint to `NewKVCache` when it will call `setQuant`, and `setQuant`
+replaces any f32 capacity the cache holds with an empty, non-nil slice (the snapshot restore keeps an empty slice non-nil),
+so its own callers cannot leave one either. CPU KV pricing (`decoder/residentneed.go:Model.ResidentKVBytes`) already
+counts only the quantized bytes, so nothing there moves. Tier 0 answers it: the term is a reservation, so its size is a
+counter, and its residency (an untouched `make` on fresh pages may never be resident) is not the question; its weight in
+the Go heap's accounting, which paces the collector, is.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| F32R-G1 bytes | 0 | `llama-tiny` and `gemma2-tiny` (its global layers append, its local ones ring), each with f16 and with int8 KV where the family allows it, and f32: `NewCache(512)`; every layer's `cap` of the f32 and quantized K/V slices; the bytes `NewCache(512)` allocates over `NewCache(0)` (`runtime.MemStats.TotalAlloc`, GC off) | under f16 and int8 every f32 K/V capacity is 0 and the quantized ones are 512 × the layer's KV width, as before; under f32 the f32 capacities are unchanged; and the bytes over `NewCache(0)` are within 1% of the quantized reservation alone (on main they also carry the f32 reservation) |
+| F32R-G2 identity | 0 | the f16 and int8 KV tests (`TestKVF16_*`, `TestKVI8_*`), the prefix- and session-share tests, then `scripts/refresh_parity_hashes.sh` | all PASS (not skip); the parity refresh is green |
+
+Planted defect, run once on the committed tree and reverted: `setQuant` keeping the f32 capacity with `NewCache` still
+passing the hint (G1 red). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1, about 4
+min for the parity refresh.
+
+> **Read 2026-10-21: both PASS** (`docs/measurements/mem12-f32res-2026-10/README.md`). The hint costs the quantized
+> reservation to the byte; on the tree before, an f16 cache's hint cost three times its own storage. G2's three heavy
+> int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
+> and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
 
 ### MEM13 · Small heap items (S each)
 

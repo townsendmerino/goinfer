@@ -1,0 +1,188 @@
+=== RUN   TestKVF16_F1Exactness
+    kv_f16_test.go:164: llama-tiny decode: 0 differing bits
+    kv_f16_test.go:164: llama-tiny prefill: 0 differing bits
+    kv_f16_test.go:164: llama-tiny bridge: 0 differing bits
+    kv_f16_test.go:164: llama-tiny rewind: 0 differing bits
+    kv_f16_test.go:164: gemma2-tiny decode: 0 differing bits
+    kv_f16_test.go:164: gemma2-tiny prefill: 0 differing bits
+    kv_f16_test.go:164: gemma2-tiny bridge: 0 differing bits
+    kv_f16_test.go:164: gemma2-tiny rewind: 0 differing bits
+    kv_f16_test.go:164: qwen25vl-tiny decode: 0 differing bits
+    kv_f16_test.go:164: qwen25vl-tiny prefill: 0 differing bits
+    kv_f16_test.go:164: qwen25vl-tiny bridge: 0 differing bits
+    kv_f16_test.go:164: qwen25vl-tiny rewind: 0 differing bits
+--- PASS: TestKVF16_F1Exactness (0.04s)
+=== RUN   TestKVF16_F1PrefillEqualsDecode
+--- PASS: TestKVF16_F1PrefillEqualsDecode (0.00s)
+=== RUN   TestKVF16_F1SnapshotAndCopy
+--- PASS: TestKVF16_F1SnapshotAndCopy (0.00s)
+=== RUN   TestKVF16_F1Fast512
+    kv_f16_test.go:256: 600-row prefill: 0 differing values
+--- PASS: TestKVF16_F1Fast512 (3.49s)
+=== RUN   TestKVF16_F1Plants
+    kv_f16_test.go:274: plant "new prefill rows at f32": 33213 differing values (prefill 15330, decode 15328, rewind 2555)
+    kv_f16_test.go:274: plant "ring read one slot late": 17374 differing values (prefill 0, decode 14819, rewind 2555)
+--- PASS: TestKVF16_F1Plants (0.01s)
+=== RUN   TestKVF16_excludedFamilyKeepsF32
+--- PASS: TestKVF16_excludedFamilyKeepsF32 (0.00s)
+=== RUN   TestKVF16_F5LibraryDefaultIsF32
+--- PASS: TestKVF16_F5LibraryDefaultIsF32 (0.00s)
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/cohere2-tiny
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/gemma2-tiny
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/llama-tiny
+--- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes (0.02s)
+    --- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/cohere2-tiny (0.00s)
+    --- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/gemma2-tiny (0.01s)
+    --- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/llama-tiny (0.00s)
+=== RUN   TestKVI8_decodeQuality
+    kvi8_test.go:68: int8 vs f32 ctx cosine: ring layer 0 = 0.999981, global layer 1 = 0.999986 (N=40, W=4 wraps)
+--- PASS: TestKVI8_decodeQuality (0.00s)
+=== RUN   TestKVI8_truncateReappend
+--- PASS: TestKVI8_truncateReappend (0.00s)
+=== RUN   TestKVI8_snapshotRoundtrip
+    kvi8_test.go:151: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVI8_snapshotRoundtrip (0.00s)
+=== RUN   TestKVI8_genParity
+    kvi8_test.go:216: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVI8_genParity (0.00s)
+=== RUN   TestKVI8_batchedPrefill
+    kvi8_test.go:283: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVI8_batchedPrefill (0.00s)
+=== RUN   TestShareGroups
+--- PASS: TestShareGroups (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	3.973s
+=== RUN   TestKV2_cpuSessionShare
+--- PASS: TestKV2_cpuSessionShare (1.89s)
+=== RUN   TestKV2_scheduleIndependence
+=== RUN   TestKV2_scheduleIndependence/slots1/(a)_A1_B1_C1,_then_their_second_turns
+    kv2_share_test.go:234: rows copied across the schedule: 0
+=== RUN   TestKV2_scheduleIndependence/slots1/(b)_C1_B1_A1,_then_C_B_A
+    kv2_share_test.go:234: rows copied across the schedule: 0
+=== RUN   TestKV2_scheduleIndependence/slots1/(c)_interleaved:_A1_B1_A2_C1_B2_C2
+    kv2_share_test.go:234: rows copied across the schedule: 0
+=== RUN   TestKV2_scheduleIndependence/slots1/(f)_B_is_an_edit_of_A
+    kv2_share_test.go:234: rows copied across the schedule: 0
+=== RUN   TestKV2_scheduleIndependence/slots2/(a)_A1_B1_C1,_then_their_second_turns
+    kv2_share_test.go:234: rows copied across the schedule: 320
+=== RUN   TestKV2_scheduleIndependence/slots2/(b)_C1_B1_A1,_then_C_B_A
+    kv2_share_test.go:234: rows copied across the schedule: 320
+=== RUN   TestKV2_scheduleIndependence/slots2/(c)_interleaved:_A1_B1_A2_C1_B2_C2
+    kv2_share_test.go:234: rows copied across the schedule: 320
+=== RUN   TestKV2_scheduleIndependence/slots2/(f)_B_is_an_edit_of_A
+    kv2_share_test.go:234: rows copied across the schedule: 320
+=== RUN   TestKV2_scheduleIndependence/slots4/(a)_A1_B1_C1,_then_their_second_turns
+    kv2_share_test.go:234: rows copied across the schedule: 640
+=== RUN   TestKV2_scheduleIndependence/slots4/(b)_C1_B1_A1,_then_C_B_A
+    kv2_share_test.go:234: rows copied across the schedule: 640
+=== RUN   TestKV2_scheduleIndependence/slots4/(c)_interleaved:_A1_B1_A2_C1_B2_C2
+    kv2_share_test.go:234: rows copied across the schedule: 640
+=== RUN   TestKV2_scheduleIndependence/slots4/(f)_B_is_an_edit_of_A
+    kv2_share_test.go:234: rows copied across the schedule: 320
+=== RUN   TestKV2_scheduleIndependence/planted/short
+    kv2_share_test.go:243: red, as it must be (4 turns differ; first: conversation 1 turn 0: [245 100 118 145 6 85 202 136 58 107 12 233], alone [180 53 73 109 244 107 12 233 116 44 229 39])
+=== RUN   TestKV2_scheduleIndependence/planted/wrong
+    kv2_share_test.go:243: red, as it must be (2 turns differ; first: conversation 1 turn 0: [212 176 130 59 112 156 149 109 244 107 12 233], alone [180 53 73 109 244 107 12 233 116 44 229 39])
+=== RUN   TestKV2_scheduleIndependence/planted/noop
+    kv2_share_test.go:243: red, as it must be (4 turns differ; first: conversation 1 turn 0: [212 176 130 59 112 156 149 109 244 107 12 233], alone [180 53 73 109 244 107 12 233 116 44 229 39])
+--- PASS: TestKV2_scheduleIndependence (0.11s)
+    --- PASS: TestKV2_scheduleIndependence/slots1/(a)_A1_B1_C1,_then_their_second_turns (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots1/(b)_C1_B1_A1,_then_C_B_A (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots1/(c)_interleaved:_A1_B1_A2_C1_B2_C2 (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots1/(f)_B_is_an_edit_of_A (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots2/(a)_A1_B1_C1,_then_their_second_turns (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots2/(b)_C1_B1_A1,_then_C_B_A (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots2/(c)_interleaved:_A1_B1_A2_C1_B2_C2 (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots2/(f)_B_is_an_edit_of_A (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots4/(a)_A1_B1_C1,_then_their_second_turns (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots4/(b)_C1_B1_A1,_then_C_B_A (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots4/(c)_interleaved:_A1_B1_A2_C1_B2_C2 (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/slots4/(f)_B_is_an_edit_of_A (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/planted/short (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/planted/wrong (0.01s)
+    --- PASS: TestKV2_scheduleIndependence/planted/noop (0.01s)
+=== RUN   TestKV2_busySourceUnderMC3
+--- PASS: TestKV2_busySourceUnderMC3 (0.10s)
+=== RUN   TestKV2_scopes
+=== RUN   TestKV2_scopes/one_namespace_shares
+=== RUN   TestKV2_scopes/two_namespaces_share_nothing
+=== RUN   TestKV2_scopes/off_shares_nothing
+=== RUN   TestKV2_scopes/B_off,_A_not:_B_still_takes_nothing
+--- PASS: TestKV2_scopes (0.01s)
+    --- PASS: TestKV2_scopes/one_namespace_shares (0.00s)
+    --- PASS: TestKV2_scopes/two_namespaces_share_nothing (0.00s)
+    --- PASS: TestKV2_scopes/off_shares_nothing (0.00s)
+    --- PASS: TestKV2_scopes/B_off,_A_not:_B_still_takes_nothing (0.00s)
+=== RUN   TestKV2_optionOff
+--- PASS: TestKV2_optionOff (0.00s)
+=== RUN   TestKV2_declinedPrefillSharesNothing
+goinfer: batched prefill declined for a 397-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): copyFake: batched prefill declined
+--- PASS: TestKV2_declinedPrefillSharesNothing (0.00s)
+=== RUN   TestKV2_windowGroupRollback
+--- PASS: TestKV2_windowGroupRollback (0.01s)
+=== RUN   TestKV2_ownRollbackStaysInPlace
+--- PASS: TestKV2_ownRollbackStaysInPlace (0.00s)
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/cohere2-tiny
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/gemma2-tiny
+=== RUN   TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/llama-tiny
+--- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes (0.02s)
+    --- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/cohere2-tiny (0.01s)
+    --- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/gemma2-tiny (0.01s)
+    --- PASS: TestKVI8_parallelWidenBitIdenticalOnWholeDecodes/llama-tiny (0.01s)
+=== RUN   TestKVI8_decodeQuality
+    kvi8_test.go:68: int8 vs f32 ctx cosine: ring layer 0 = 0.999981, global layer 1 = 0.999986 (N=40, W=4 wraps)
+--- PASS: TestKVI8_decodeQuality (0.00s)
+=== RUN   TestKVI8_truncateReappend
+--- PASS: TestKVI8_truncateReappend (0.00s)
+=== RUN   TestKVI8_snapshotRoundtrip
+    kvi8_test.go:166: load: decoder: gemma-3-4b-it needs ~5.2 GB resident at quant int8int8; this machine currently has 6.5 GB of memory available (budget 4.6 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          This is a safetensors checkpoint — -stream-weights only helps a .gguf source. Build a .giw from it once with cmd/prequant (-quant <q> -o <name>.giw <dir>), which streams one layer at a time and does not need this load's memory, then load the .giw (goinfer-serve and goinfer-chat do this for you unless --direct-load). If you believe this machine can hold it as it is (this guard's 70% margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestKVI8_snapshotRoundtrip (0.49s)
+=== RUN   TestKVI8_genParity
+    kvi8_test.go:231: load /Users/francistownsend-merino/models/gemma-3-4b-it: decoder: gemma-3-4b-it needs ~5.2 GB resident at quant int8int8; this machine currently has 6.5 GB of memory available (budget 4.6 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          This is a safetensors checkpoint — -stream-weights only helps a .gguf source. Build a .giw from it once with cmd/prequant (-quant <q> -o <name>.giw <dir>), which streams one layer at a time and does not need this load's memory, then load the .giw (goinfer-serve and goinfer-chat do this for you unless --direct-load). If you believe this machine can hold it as it is (this guard's 70% margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestKVI8_genParity (0.50s)
+=== RUN   TestKVI8_batchedPrefill
+    kvi8_test.go:298: load /Users/francistownsend-merino/models/gemma-3-4b-it: decoder: gemma-3-4b-it needs ~5.2 GB resident at quant int8int8; this machine currently has 6.5 GB of memory available (budget 4.6 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          This is a safetensors checkpoint — -stream-weights only helps a .gguf source. Build a .giw from it once with cmd/prequant (-quant <q> -o <name>.giw <dir>), which streams one layer at a time and does not need this load's memory, then load the .giw (goinfer-serve and goinfer-chat do this for you unless --direct-load). If you believe this machine can hold it as it is (this guard's 70% margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestKVI8_batchedPrefill (0.48s)
+=== RUN   TestPromptHiddenMany_matchesSeparate
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 7.5e-08
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 5.81e-08
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/int4
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 1.66e-08
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/int4
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 6.99e-08
+--- PASS: TestPromptHiddenMany_matchesSeparate (0.05s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/ (0.01s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/ (0.02s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/int4 (0.01s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/int4 (0.01s)
+=== RUN   TestPromptHiddenMany_int8KV
+--- PASS: TestPromptHiddenMany_int8KV (0.00s)
+=== RUN   TestPrefixCheckpoint_isNotMutatedByResuming
+--- PASS: TestPrefixCheckpoint_isNotMutatedByResuming (0.00s)
+=== RUN   TestPromptHiddenMany_fallsBackWhereItCannotShare
+--- PASS: TestPromptHiddenMany_fallsBackWhereItCannotShare (0.00s)
+=== RUN   TestShareGroups
+--- PASS: TestShareGroups (0.00s)
+=== RUN   TestPromptHiddenMany_cancelled
+--- PASS: TestPromptHiddenMany_cancelled (0.00s)
+=== RUN   TestPromptLogitsMany_isTheLMHeadOfTheHidden
+--- PASS: TestPromptLogitsMany_isTheLMHeadOfTheHidden (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	4.159s
+FAIL
