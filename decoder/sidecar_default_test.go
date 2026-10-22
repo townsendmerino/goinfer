@@ -1,4 +1,4 @@
-package prequant
+package decoder
 
 import (
 	"context"
@@ -8,13 +8,11 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // task-never-swap-2026-09.md S1: sidecar .giw by default on darwin. These gates cover
 // SidecarPathIfFresh (fit's reuse-only-if-fresh path), DefaultToSidecar (the platform policy), and the
-// disk-space guard in EnsureCachedGIW, separate from stream_test.go's existing Transcode/cacheFresh
+// disk-space guard in EnsureCachedGIW, separate from stream_test.go's existing TranscodeGIW/cacheFresh
 // coverage, which these build on rather than duplicate.
 
 func copyFixture(t *testing.T, src, dst string) {
@@ -28,8 +26,8 @@ func copyFixture(t *testing.T, src, dst string) {
 	}
 }
 
-// realTokenizerGGUF finds a small, tokenizer-bearing GGUF for tests that need a Transcode to
-// actually SUCCEED — glm-tiny.gguf (giwFixture) has no embedded tokenizer (Transcode refuses
+// realTokenizerGGUF finds a small, tokenizer-bearing GGUF for tests that need a TranscodeGIW to
+// actually SUCCEED — glm-tiny.gguf (giwFixture) has no embedded tokenizer (TranscodeGIW refuses
 // before it ever reaches weight-streaming), so a real successful transcode needs a different
 // fixture. Same candidate list and heavy-gate as TestTranscode_realGGUFSucceedsAndPublishedBundleLoads,
 // this file's own established pattern for the same constraint.
@@ -39,7 +37,7 @@ func realTokenizerGGUF(t *testing.T) string {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (needs a real, tokenizer-bearing GGUF)")
 	}
 	for _, cand := range []string{
-		filepath.Join("..", "..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		filepath.Join("..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 		filepath.Join(os.Getenv("HOME"), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 	} {
 		if fi, err := os.Stat(cand); err == nil && fi.Size() > 1<<20 {
@@ -71,7 +69,7 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		if _, ok := SidecarPathIfFresh(src, "int8int8", "", false); ok {
 			t.Fatal("no cache exists, want ok=false")
 		}
-		cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
+		cache := streamCachePath(src, "int8int8", false, GIWTargetNone)
 		if _, err := os.Stat(cache); err == nil {
 			t.Fatal("SidecarPathIfFresh built a cache — it must only ever REUSE one, never build it (fit's whole point is staying cheap)")
 		}
@@ -81,9 +79,9 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		dir := t.TempDir()
 		src := filepath.Join(dir, "model.gguf")
 		copyFixture(t, realTokenizerGGUF(t), src)
-		cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
-		if err := Transcode(context.Background(), src, cache, "int8int8", false, decoder.GIWTargetNone); err != nil {
-			t.Fatalf("Transcode: %v", err)
+		cache := streamCachePath(src, "int8int8", false, GIWTargetNone)
+		if err := TranscodeGIW(context.Background(), src, cache, "int8int8", false, GIWTargetNone); err != nil {
+			t.Fatalf("TranscodeGIW: %v", err)
 		}
 		builtAt, err := os.Stat(cache)
 		if err != nil {
@@ -106,9 +104,9 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		dir := t.TempDir()
 		src := filepath.Join(dir, "model.gguf")
 		copyFixture(t, realTokenizerGGUF(t), src)
-		cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
-		if err := Transcode(context.Background(), src, cache, "int8int8", false, decoder.GIWTargetNone); err != nil {
-			t.Fatalf("Transcode: %v", err)
+		cache := streamCachePath(src, "int8int8", false, GIWTargetNone)
+		if err := TranscodeGIW(context.Background(), src, cache, "int8int8", false, GIWTargetNone); err != nil {
+			t.Fatalf("TranscodeGIW: %v", err)
 		}
 		future := time.Now().Add(time.Hour)
 		if err := os.Chtimes(src, future, future); err != nil {
@@ -137,13 +135,13 @@ func TestEnsureCachedGIW_refusesOnInsufficientDisk(t *testing.T) {
 	if !strings.Contains(err.Error(), "free on this disk") {
 		t.Errorf("refusal %q does not name the disk-space reason", err.Error())
 	}
-	cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
+	cache := streamCachePath(src, "int8int8", false, GIWTargetNone)
 	if _, statErr := os.Stat(cache); statErr == nil {
 		t.Error("a disk-space refusal must not leave a half-written sidecar (or any sidecar) behind")
 	}
 	tmp := strings.TrimSuffix(cache, ".giw") + ".tmp.giw"
 	if _, statErr := os.Stat(tmp); statErr == nil {
-		t.Error("a disk-space refusal must not leave a .tmp.giw behind either — it must refuse BEFORE Transcode starts")
+		t.Error("a disk-space refusal must not leave a .tmp.giw behind either — it must refuse BEFORE TranscodeGIW starts")
 	}
 }
 

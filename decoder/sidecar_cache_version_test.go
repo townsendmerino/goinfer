@@ -1,35 +1,16 @@
-package prequant
+package decoder
 
 import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
-
-// captureStderr runs fn and returns what it wrote to os.Stderr.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	saved := os.Stderr
-	os.Stderr = w
-	done := make(chan []byte)
-	go func() { b, _ := io.ReadAll(r); done <- b }()
-	fn()
-	os.Stderr = saved
-	w.Close()
-	return string(<-done)
-}
 
 // stampWeightsVersion overwrites the format version of the weights blob inside the bundle at path, in place and
 // without touching its mtime order against the source: a sidecar exactly as an earlier build left it, as far as the
@@ -67,7 +48,7 @@ func stampWeightsVersion(t *testing.T, path string, v uint32) {
 func TestEnsureCachedGIW_olderFormatIsRebuiltOnce(t *testing.T) {
 	// A tracked tiny checkpoint directory that transcodes without a tokenizer-bearing GGUF, copied so the sidecar is
 	// written beside the copy and not into testdata.
-	fixture := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
+	fixture := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	src := filepath.Join(t.TempDir(), "qwen3moe-tiny")
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
@@ -86,7 +67,7 @@ func TestEnsureCachedGIW_olderFormatIsRebuiltOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	stampWeightsVersion(t, cache, cur-1)
-	if _, err := decoder.Load(cache, decoder.Options{}); err == nil || !strings.Contains(err.Error(), "delete the sidecar") {
+	if _, err := Load(cache, Options{}); err == nil || !strings.Contains(err.Error(), "delete the sidecar") {
 		t.Fatalf("a v%d sidecar loaded, or was refused without naming the fix: %v", cur-1, err)
 	}
 
@@ -104,7 +85,7 @@ func TestEnsureCachedGIW_olderFormatIsRebuiltOnce(t *testing.T) {
 	if v, err := giw.WeightsVersionFile(cache); err != nil || v != cur {
 		t.Errorf("after the rebuild the sidecar is v%d (%v), want v%d", v, err, cur)
 	}
-	m, err := decoder.Load(cache, decoder.Options{})
+	m, err := Load(cache, Options{})
 	if err != nil {
 		t.Fatalf("the rebuilt sidecar does not load: %v", err)
 	}
@@ -123,7 +104,7 @@ func TestEnsureCachedGIW_olderFormatIsRebuiltOnce(t *testing.T) {
 // tinySource copies the tiny MoE checkpoint into a fresh directory, so the sidecars written beside it do not land in testdata.
 func tinySource(t *testing.T) string {
 	t.Helper()
-	fixture := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
+	fixture := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	src := filepath.Join(t.TempDir(), "qwen3moe-tiny")
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
@@ -141,11 +122,11 @@ func TestSidecarName_carriesTheFormatVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := fmt.Sprintf(".v%d.giw", decoder.GIWFormatVersion); !strings.HasSuffix(cache, want) {
+	if want := fmt.Sprintf(".v%d.giw", GIWFormatVersion); !strings.HasSuffix(cache, want) {
 		t.Fatalf("sidecar %s does not end in %s", cache, want)
 	}
-	if v, err := giw.WeightsVersionFile(cache); err != nil || v != decoder.GIWFormatVersion {
-		t.Fatalf("the file named for v%d holds v%d (%v)", decoder.GIWFormatVersion, v, err)
+	if v, err := giw.WeightsVersionFile(cache); err != nil || v != GIWFormatVersion {
+		t.Fatalf("the file named for v%d holds v%d (%v)", GIWFormatVersion, v, err)
 	}
 }
 
@@ -158,7 +139,7 @@ func TestEnsureCachedGIW_adoptsAnUnversionedSidecarInThisFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := legacyCachePath(src, "int4", false, decoder.GIWTargetForBackend(""))
+	legacy := legacyCachePath(src, "int4", false, GIWTargetForBackend(""))
 	if err := os.Rename(cache, legacy); err != nil { // as if a build before the change had written it
 		t.Fatal(err)
 	}
@@ -193,10 +174,10 @@ func TestEnsureCachedGIW_buildsAtDifferentFormatsKeepSeparateSidecars(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := legacyCachePath(src, "int4", false, decoder.GIWTargetForBackend(""))
+	legacy := legacyCachePath(src, "int4", false, GIWTargetForBackend(""))
 	// the other build's file: a different format, newer than the source
 	copyFixture(t, cache, legacy)
-	stampWeightsVersion(t, legacy, decoder.GIWFormatVersion+1)
+	stampWeightsVersion(t, legacy, GIWFormatVersion+1)
 	before, err := os.ReadFile(legacy)
 	if err != nil {
 		t.Fatal(err)
@@ -224,11 +205,11 @@ func TestEnsureCachedGIW_leavesAnUnversionedSidecarOfAnotherFormat(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := legacyCachePath(src, "int4", false, decoder.GIWTargetForBackend(""))
+	legacy := legacyCachePath(src, "int4", false, GIWTargetForBackend(""))
 	if err := os.Rename(cache, legacy); err != nil {
 		t.Fatal(err)
 	}
-	stampWeightsVersion(t, legacy, decoder.GIWFormatVersion-1)
+	stampWeightsVersion(t, legacy, GIWFormatVersion-1)
 	var got string
 	msg := captureStderr(t, func() { got, err = EnsureCachedGIW(ctx, src, "int4", "", false) })
 	if err != nil || got != cache {
@@ -237,10 +218,10 @@ func TestEnsureCachedGIW_leavesAnUnversionedSidecarOfAnotherFormat(t *testing.T)
 	if !strings.Contains(msg, "transcoding") || !strings.Contains(msg, "unversioned") {
 		t.Errorf("expected one transcode and a note about the old name (stderr %q)", msg)
 	}
-	if v, err := giw.WeightsVersionFile(legacy); err != nil || v != decoder.GIWFormatVersion-1 {
+	if v, err := giw.WeightsVersionFile(legacy); err != nil || v != GIWFormatVersion-1 {
 		t.Errorf("the old file was changed: v%d (%v)", v, err)
 	}
-	if v, err := giw.WeightsVersionFile(cache); err != nil || v != decoder.GIWFormatVersion {
+	if v, err := giw.WeightsVersionFile(cache); err != nil || v != GIWFormatVersion {
 		t.Errorf("the new sidecar is v%d (%v)", v, err)
 	}
 }

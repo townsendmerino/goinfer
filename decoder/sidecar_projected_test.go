@@ -1,11 +1,9 @@
-package prequant
+package decoder
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestProjectedSidecarBytes_neverUnderCounts: the pre-transcode disk check must not pass a sidecar that
@@ -13,16 +11,16 @@ import (
 // source's size is not enough: a real int4 or int8int8 sidecar exceeds it). Measured against the writer
 // on the tiny fixture here.
 func TestProjectedSidecarBytes_neverUnderCounts(t *testing.T) {
-	src := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
+	src := filepath.Join("..", "testdata", "glm-tiny.gguf")
 	if _, err := os.Stat(src); err != nil {
 		t.Skipf("tiny fixture: %v", err)
 	}
 	for _, q := range []string{"int4", "int8int8", "int8", ""} {
-		m, err := decoder.Load(src, decoder.Options{Quant: q}) // canonical bytes, as the writer needs
+		m, err := Load(src, Options{Quant: q}) // canonical bytes, as the writer needs
 		if err != nil {
 			t.Fatalf("load at %q: %v", q, err)
 		}
-		blob, err := decoder.SerializeWeightsForTarget(m.Weights(), "tiny", decoder.GIWTargetForBackend("cpu"))
+		blob, err := SerializeWeightsForTarget(m.Weights(), "tiny", GIWTargetForBackend("cpu"))
 		m.Close()
 		if err != nil {
 			t.Fatal(err)

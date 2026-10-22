@@ -342,7 +342,7 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 			}
 			// Through the directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, what serve's Metal load reads): its int4 weights
 			// are mapped, not held twice, which a direct load's live budget lacks for Qwen2.5-VL. It generates exactly what the direct load
-			// does (prequant.TestDirSidecar_matchesDirectLoad).
+			// does (decoder.TestDirSidecar_matchesDirectLoad).
 			src := dir
 			if g := dir + ".int4.metal.giw"; func() bool { _, err := os.Stat(g); return err == nil }() {
 				src = g

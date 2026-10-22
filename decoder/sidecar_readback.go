@@ -1,4 +1,4 @@
-package prequant
+package decoder
 
 import (
 	"encoding/binary"
@@ -10,12 +10,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
-// hostRAM is the installed-memory probe markWritten compares a bundle and its source with.
-var hostRAM = decoder.HostRAMBytes
+// sidecarHostRAM is the installed-memory probe markWritten compares a bundle and its source with.
+var sidecarHostRAM = HostRAMBytes
 
 // wrapSinkForTest, when set, wraps the writer the weights are streamed into, beneath the read-back.
 var wrapSinkForTest func(io.Writer) io.Writer
@@ -107,9 +106,9 @@ func (rb *readBack) finish() error {
 	return <-rb.res
 }
 
-// writeBundle streams a bundle into f (giw.WriteStream) with the weights read back behind the write. An error from
+// writeSidecarBundle streams a bundle into f (giw.WriteStream) with the weights read back behind the write. An error from
 // body wins over the read-back's.
-func writeBundle(f *os.File, tok []byte, body func(io.Writer) (int64, error)) error {
+func writeSidecarBundle(f *os.File, tok []byte, body func(io.Writer) (int64, error)) error {
 	return giw.WriteStream(f, tok, func(w io.Writer) (int64, error) {
 		base, err := f.Seek(0, io.SeekCurrent)
 		if err != nil {
@@ -130,7 +129,7 @@ func writeBundle(f *os.File, tok []byte, body func(io.Writer) (int64, error)) er
 
 // markWritten records the verified-marker for a bundle the transcode has written and read back, when the bundle and the
 // source it was built from are together no larger than the host's memory. Then the self-check's load and the first real
-// load skip the whole-file CRC (decoder.MarkGIWWritten).
+// load skip the whole-file CRC (MarkGIWWritten).
 //
 // The source counts because the transcode maps it: a bundle that fits by itself is still pushed out of the page cache
 // by a source that fills memory, and what the read-back saw is then no longer what a load reads. Such a bundle gets no
@@ -138,13 +137,13 @@ func writeBundle(f *os.File, tok []byte, body func(io.Writer) (int64, error)) er
 // size (zero) or an unreadable source is treated the same way. Available memory is not the measure: a system counts
 // the cache the source occupies as available.
 func markWritten(tmp, source string) {
-	total := hostRAM()
+	total := sidecarHostRAM()
 	fi, err := os.Stat(tmp)
 	if err != nil || total <= 0 {
 		return
 	}
 	if src := sourceBytes(source); src >= 0 && fi.Size()+src <= total {
-		decoder.MarkGIWWritten(tmp)
+		MarkGIWWritten(tmp)
 	}
 }
 

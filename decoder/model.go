@@ -722,7 +722,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
 	// Write the resolved EOS set (config.json plus any extra ids generation_config.json adds) back into w.Cfg.EOSTokenID, not
-	// just onto this Model's eosIDs. w.Cfg is what a .giw bundle serializes (internal/prequant, via
+	// just onto this Model's eosIDs. w.Cfg is what a .giw bundle serializes (TranscodeGIW, via
 	// SerializeWeightsToForTarget), and a .giw's own Load branch reads eosIDs straight from w.Cfg.EOSIDs() with no directory to
 	// re-resolve generation_config.json from. Without this, a checkpoint whose stop ids live only in generation_config.json
 	// (Qwen3: <|endoftext|> beside config.json's <|im_end|>) loses the extra id when it round-trips through cmd/prequant, and a

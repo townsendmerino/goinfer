@@ -1,4 +1,4 @@
-package prequant
+package decoder
 
 import (
 	"context"
@@ -10,11 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// A .giw built with a PEFT adapter merged in (TranscodeLoRA, `transcode --lora`, docs/tasks/task-constrained-confidence.md)
+// A .giw built with a PEFT adapter merged in (TranscodeGIWLoRA, `transcode --lora`, docs/tasks/task-constrained-confidence.md)
 // carries a sidecar, <bundle>.lora.json, naming the adapter and the sha256
 // of its weights. The whole-model f32 merge is then paid once, at transcode, instead of on every load, which on a 16 GB
 // Mac is the anonymous-memory spike a 27B merge-at-load would be.
@@ -48,26 +46,26 @@ func loraSidecarBytes(adapterDir string) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// TranscodeLoRA builds a .giw from a safetensors model directory with a PEFT adapter merged into it at load, and
+// TranscodeGIWLoRA builds a .giw from a safetensors model directory with a PEFT adapter merged into it at load, and
 // records the adapter beside the bundle. A GGUF base is refused: an adapter names HF tensors, which a GGUF does not use.
-func TranscodeLoRA(ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
-	_, err := TranscodeLoRATimed(ctx, dir, adapter, out, quant, embedInt4, target)
+func TranscodeGIWLoRA(ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target GIWTarget) error {
+	_, err := TranscodeGIWLoRATimed(ctx, dir, adapter, out, quant, embedInt4, target)
 	return err
 }
 
-// TranscodeLoRATimed is TranscodeLoRA, and reports where the time went (Phases).
-func TranscodeLoRATimed(ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target decoder.GIWTarget) (Phases, error) {
+// TranscodeGIWLoRATimed is TranscodeGIWLoRA, and reports where the time went (TranscodePhases).
+func TranscodeGIWLoRATimed(ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target GIWTarget) (TranscodePhases, error) {
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return Phases{}, fmt.Errorf("-lora needs a safetensors model directory as the input, not %s: a PEFT adapter names HF tensors", dir)
+		return TranscodePhases{}, fmt.Errorf("-lora needs a safetensors model directory as the input, not %s: a PEFT adapter names HF tensors", dir)
 	}
 	return transcodeDir(ctx, dir, adapter, out, quant, embedInt4, target)
 }
 
-// AdapterLoRA is the LoRA a load of modelPath must merge for an adapter a decision head brings: adapterDir itself for
+// GIWAdapterLoRA is the LoRA a load of modelPath must merge for an adapter a decision head brings: adapterDir itself for
 // a safetensors or GGUF model (Load merges it, or refuses a GGUF), and "" for a .giw whose sidecar records this exact
 // adapter (it is merged in already). A .giw without the sidecar, or with another adapter's, is refused: loading it
 // would answer with a backbone the head was not trained on, and nothing downstream could tell.
-func AdapterLoRA(adapterDir, modelPath string) (string, error) {
+func GIWAdapterLoRA(adapterDir, modelPath string) (string, error) {
 	if adapterDir == "" || !strings.HasSuffix(modelPath, ".giw") {
 		return adapterDir, nil
 	}

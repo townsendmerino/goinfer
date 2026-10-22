@@ -19,7 +19,7 @@ import (
 // and RAM win); the norm and bias vectors and f32 matrices are copied.
 //
 // There is one layout. This build writes giwVersion and reads only giwVersion; a file at any other version is refused
-// with a *SerializeError, and a sidecar that fails its freshness check is rebuilt from its source (internal/prequant).
+// with a *SerializeError, and a sidecar that fails its freshness check is rebuilt from its source (decoder/sidecar.go).
 // Every tensor record starts with its encoding (a weight matrix's kind, or giwEncF32 for a standalone array), and a reader
 // refuses only an encoding it does not read, so a new encoding needs no new version (docs/giw-bundles.md, "From v17").
 // There is no fallback to the GGUF: an embedded or explicitly named bundle that does not load is an error. The
@@ -67,7 +67,7 @@ import (
 // Kinds 4 and 7 existed before v16 and are not read.
 
 // GIWFormatVersion is the weights format version this build writes and reads: the "vN" a sidecar's file name carries
-// (internal/prequant), so builds at different versions keep separate sidecars of one model.
+// (decoder/sidecar.go:streamCachePath), so builds at different versions keep separate sidecars of one model.
 const GIWFormatVersion = giwVersion
 
 const (
@@ -144,7 +144,7 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 // SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE consumer (docs/tasks/task-int4-layout-2026-09.md):
 // on a cpu-arm64 target, every eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5 (row4-only)
 // instead of kind 3; every other target, including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
-// SerializeWeights. internal/prequant.Transcode/EnsureCachedGIW and cmd/prequant drive this.
+// SerializeWeights. TranscodeGIW/EnsureCachedGIW (sidecar.go) and cmd/prequant drive this.
 func SerializeWeightsForTarget(w *Weights, id string, target GIWTarget) ([]byte, error) {
 	wr := &giwWriter{target: target}
 	if err := wr.writeBundle(w, id); err != nil {
@@ -206,7 +206,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	// populated, not on which writer is in use. The incremental GGUF transcode calls writeHeadGlobals on a freshly make()'d,
 	// all-zero Layers slice before any layer streams, where quantLabel() cannot see real data and its default case returns
 	// "native", a real quant mode, so calling it unconditionally would bake a false "native" label into every streamed
-	// bundle. A caller that already holds a fully loaded *Weights (internal/prequant) and merely chooses the streaming API
+	// bundle. A caller that already holds a fully loaded *Weights (residentDirBody) and merely chooses the streaming API
 	// for its I/O shape does get the label, so a buffered and a streamed call on the same model produce identical bytes.
 	label := ""
 	if w.hasPopulatedLayers() {
@@ -929,8 +929,8 @@ func giwArrayPad(off int64) int { return int((-(off + 4)) & 15) }
 // alignHead ends the variable-length header on a 16-byte boundary. The header carries a length-prefixed quant label
 // that the resident writer emits and the streaming writer deliberately does not, so the two paths' offsets differ by the
 // label's length. Every later array's padding is a function of its absolute offset, so without this the two would lay out
-// the same weights with different padding and stop being byte-identical (internal/prequant
-// TestStreamTranscodeMatchesResident). With it, everything after the header is at the same offsets in both.
+// the same weights with different padding and stop being byte-identical
+// (TestStreamTranscodeMatchesResident). With it, everything after the header is at the same offsets in both.
 func (w *giwWriter) alignHead() { w.align16() }
 
 // align16 pads to a 16-byte boundary: before a block that carries no count (a fused group's nibbles and scales).

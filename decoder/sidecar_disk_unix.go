@@ -1,6 +1,6 @@
 //go:build darwin || linux
 
-package prequant
+package decoder
 
 import "syscall"
 

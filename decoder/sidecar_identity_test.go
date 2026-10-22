@@ -1,12 +1,10 @@
-package prequant
+package decoder
 
 import (
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestSidecarLoad_matchesDirectLoad is task-never-swap-2026-09.md S1's own registered rule, the
@@ -19,7 +17,7 @@ import (
 //
 // No small tokenizer-bearing GGUF ships in testdata/ (the same constraint
 // TestTranscode_realGGUFSucceedsAndPublishedBundleLoads already works around — glm-tiny.gguf has
-// no embedded tokenizer, so Transcode refuses it before ever reaching weight-streaming), so this
+// no embedded tokenizer, so TranscodeGIW refuses it before ever reaching weight-streaming), so this
 // is heavy-gated like that test rather than inventing a CI-native fixture.
 func TestSidecarLoad_matchesDirectLoad(t *testing.T) {
 	gguf := realTokenizerGGUF(t)
@@ -28,7 +26,7 @@ func TestSidecarLoad_matchesDirectLoad(t *testing.T) {
 	copyFixture(t, gguf, src)
 
 	const quant = "int8int8" // higher precision than int4 — a looser quant is more likely to mask a real divergence, not less
-	direct, err := decoder.Load(src, decoder.Options{Quant: quant})
+	direct, err := Load(src, Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("direct Load: %v", err)
 	}
@@ -38,7 +36,7 @@ func TestSidecarLoad_matchesDirectLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureCachedGIW: %v", err)
 	}
-	sidecar, err := decoder.Load(giwPath, decoder.Options{})
+	sidecar, err := Load(giwPath, Options{})
 	if err != nil {
 		t.Fatalf("sidecar Load: %v", err)
 	}
@@ -68,9 +66,9 @@ func TestSidecarLoad_matchesDirectLoad(t *testing.T) {
 	}
 }
 
-func greedyTokens(t *testing.T, m *decoder.Model, prompt []int, maxTokens int) []int {
+func greedyTokens(t *testing.T, m *Model, prompt []int, maxTokens int) []int {
 	t.Helper()
-	out, gen := m.Generate(context.Background(), prompt, maxTokens, decoder.SamplingParams{})
+	out, gen := m.Generate(context.Background(), prompt, maxTokens, SamplingParams{})
 	var ids []int
 	for id := range out {
 		ids = append(ids, id)

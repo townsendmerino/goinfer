@@ -1,11 +1,9 @@
-package prequant
+package decoder
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // The temp bundle is self-checked (full CRC, marker written) and then renamed into place. The
@@ -17,17 +15,17 @@ func TestCarryVerifiedMarker_followsTheRename(t *testing.T) {
 	if err := os.WriteFile(tmp, []byte("bundle"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(decoder.GIWVerifiedMarkerPath(tmp), []byte("marker"), 0o644); err != nil {
+	if err := os.WriteFile(GIWVerifiedMarkerPath(tmp), []byte("marker"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(tmp, out); err != nil {
 		t.Fatal(err)
 	}
 	carryVerifiedMarker(tmp, out)
-	if b, err := os.ReadFile(decoder.GIWVerifiedMarkerPath(out)); err != nil || string(b) != "marker" {
+	if b, err := os.ReadFile(GIWVerifiedMarkerPath(out)); err != nil || string(b) != "marker" {
 		t.Fatalf("marker did not follow the rename to %s: %v %q", out, err, b)
 	}
-	if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(tmp)); err == nil {
+	if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); err == nil {
 		t.Error("marker left behind under the temp name")
 	}
 }
@@ -44,7 +42,7 @@ func TestCarryVerifiedMarker_noMarkerIsFine(t *testing.T) {
 		t.Fatal(err)
 	}
 	carryVerifiedMarker(tmp, out) // must not panic or leave anything behind
-	if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(out)); err == nil {
+	if _, err := os.Stat(GIWVerifiedMarkerPath(out)); err == nil {
 		t.Error("a marker appeared from nowhere")
 	}
 }
@@ -52,13 +50,13 @@ func TestCarryVerifiedMarker_noMarkerIsFine(t *testing.T) {
 func TestRemoveTempGIW_removesMarkerToo(t *testing.T) {
 	dir := t.TempDir()
 	tmp := filepath.Join(dir, "m.tmp.giw")
-	for _, p := range []string{tmp, decoder.GIWVerifiedMarkerPath(tmp)} {
+	for _, p := range []string{tmp, GIWVerifiedMarkerPath(tmp)} {
 		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	removeTempGIW(tmp)
-	for _, p := range []string{tmp, decoder.GIWVerifiedMarkerPath(tmp)} {
+	for _, p := range []string{tmp, GIWVerifiedMarkerPath(tmp)} {
 		if _, err := os.Stat(p); err == nil {
 			t.Errorf("%s survived removeTempGIW", p)
 		}
