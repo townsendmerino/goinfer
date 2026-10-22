@@ -252,12 +252,13 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 		ms := ps.moeScratch()
 		if cap(ms.done) < K {
 			ms.done = make([]bool, K)
+			moeScratchGrows.done.Add(1)
 		}
 		emDone := ms.done[:K]
 		clear(emDone)
 		var emOut []float32
 		if m.knobs.moeExpertMajor() {
-			emOut = moeGrow(&ms.out, K*hidden)
+			emOut = moeGrow(&ms.out, K*hidden, &moeScratchGrows.out)
 			for c0 := 0; c0 < K; c0 += moeExpertMajorChunk {
 				c1 := min(c0+moeExpertMajorChunk, K)
 				ok, err := moeMLPBatchWith(x[c0*hidden:c1*hidden], c1-c0, lw, &p.MoE, p.Act, hidden, be, m.pager, emOut[c0*hidden:c1*hidden], ms)

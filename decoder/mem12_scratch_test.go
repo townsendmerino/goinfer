@@ -22,9 +22,10 @@ func mem12Alloc(fn func()) uint64 {
 	return b.TotalAlloc - a.TotalAlloc
 }
 
-// TestMEM12Scratch_moeChunks is SCR-G1's reading (docs/tasks/task-memory-campaign-2026-10.md, MEM12-scratch gates): on
-// mixtral-tiny with the expert-major path on, the bytes a 64-token prefill allocates after its first 16-row chunk. The gate
-// compares the reading with origin/main's; the test asserts the expert-major path ran.
+// TestMEM12Scratch_moeChunks is SCR-G1 (docs/tasks/task-memory-campaign-2026-10.md, MEM12-scratch gates, as amended): on
+// mixtral-tiny with the expert-major path on, a 64-token prefill in 16-row chunks allocates each of the path's eight scratch
+// buffers exactly once (moeScratchGrows). It also logs the bytes allocated after the first chunk, which the gate compares
+// with origin/main's as context.
 func TestMEM12Scratch_moeChunks(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "mixtral-tiny"))
 	setKnob(t, m, knobMoEExpertMajor, "1")
@@ -43,6 +44,16 @@ func TestMEM12Scratch_moeChunks(t *testing.T) {
 			last = ms.TotalAlloc
 		}
 	}
+	g := &moeScratchGrows
+	counters := []struct {
+		name string
+		c    *atomic.Int64
+	}{{"output", &g.out}, {"done flags", &g.done}, {"router logits", &g.logits}, {"per-rank outputs", &g.perRank},
+		{"gather", &g.gathered}, {"gate", &g.gate}, {"up", &g.up}, {"down output", &g.outBuf}}
+	before := make([]int64, len(counters))
+	for i, c := range counters {
+		before[i] = c.c.Load()
+	}
 	runs := atomic.LoadInt64(&moeExpertMajorRuns)
 	mem12Alloc(func() {
 		if _, err := m.prefillLogits(context.Background(), ids, m.NewCache(len(ids)+8)); err != nil {
@@ -56,6 +67,13 @@ func TestMEM12Scratch_moeChunks(t *testing.T) {
 		t.Fatal("the prefill did not run four chunks")
 	}
 	fmt.Fprintf(os.Stderr, "[SCR-G1] mixtral-tiny, chunks 2-4 of a 64-token prefill: %d bytes\n", last-first)
+	for i, c := range counters {
+		n := c.c.Load() - before[i]
+		fmt.Fprintf(os.Stderr, "[SCR-G1] %-16s allocated %d time(s)\n", c.name, n)
+		if n != 1 {
+			t.Errorf("SCR-G1: the %s buffer was allocated %d times in one chunked prefill, want exactly 1", c.name, n)
+		}
+	}
 }
 
 // TestMEM12Scratch_headLogits is SCR-G2's reading: on llama-tiny, the mean bytes over 50 warm iterations of a K = 4 verify

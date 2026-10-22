@@ -659,10 +659,15 @@ type moeBatchScratch struct {
 // moeSlot is one (row, rank) pair that selected an expert.
 type moeSlot struct{ row, rank int }
 
-// moeGrow returns (*buf)[:n], growing *buf when it holds less; the contents are not cleared.
-func moeGrow(buf *[]float32, n int) []float32 {
+// moeScratchGrows counts each moeBatchScratch buffer's fresh allocations, so a gate can bar every term on its own (SCR-G1,
+// docs/tasks/task-memory-campaign-2026-10.md).
+var moeScratchGrows struct{ out, done, logits, perRank, gathered, gate, up, outBuf atomic.Int64 }
+
+// moeGrow returns (*buf)[:n], growing *buf when it holds less and counting the growth in grows; the contents are not cleared.
+func moeGrow(buf *[]float32, n int, grows *atomic.Int64) []float32 {
 	if cap(*buf) < n {
 		*buf = make([]float32, n)
+		grows.Add(1)
 	}
 	return (*buf)[:n]
 }
@@ -688,7 +693,7 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 		s = &moeBatchScratch{}
 	}
 	// Router for the whole chunk in one matmul (M=n), instead of a matmul and an nE-sized allocation per row.
-	logits := moeGrow(&s.logits, n*nE)
+	logits := moeGrow(&s.logits, n*nE, &moeScratchGrows.logits)
 	matmul(be, &lw.Router, rows, logits, n)
 
 	idxs := make([][]int, n)
@@ -711,7 +716,7 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 	}
 
 	// Every (row, rank) expert output, so the fold below can run in rank order.
-	perRank := moeGrow(&s.perRank, n*k*hidden)
+	perRank := moeGrow(&s.perRank, n*k*hidden, &moeScratchGrows.perRank)
 	maxRows := 0
 	for _, s := range byExpert {
 		if len(s) > maxRows {
@@ -721,10 +726,12 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 	if maxRows == 0 {
 		return false, nil
 	}
-	gathered := moeGrow(&s.gathered, maxRows*hidden)
-	gate := moeGrow(&s.gate, maxRows*inter)
-	up := moeGrow(&s.up, maxRows*inter)
-	outBuf := moeGrow(&s.outBuf, maxRows*hidden)
+	// Sized by n, the bound on any one expert's rows, so a chunk whose busiest expert takes more rows than an earlier
+	// chunk's does not grow them again.
+	gathered := moeGrow(&s.gathered, n*hidden, &moeScratchGrows.gathered)
+	gate := moeGrow(&s.gate, n*inter, &moeScratchGrows.gate)
+	up := moeGrow(&s.up, n*inter, &moeScratchGrows.up)
+	outBuf := moeGrow(&s.outBuf, n*hidden, &moeScratchGrows.outBuf)
 
 	for e, slots := range byExpert {
 		if len(slots) == 0 {

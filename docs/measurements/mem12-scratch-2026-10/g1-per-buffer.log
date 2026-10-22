@@ -1,0 +1,10 @@
+[SCR-G1] mixtral-tiny, chunks 2-4 of a 64-token prefill: 70016 bytes
+[SCR-G1] output           allocated 1 time(s)
+[SCR-G1] done flags       allocated 1 time(s)
+[SCR-G1] router logits    allocated 1 time(s)
+[SCR-G1] per-rank outputs allocated 1 time(s)
+[SCR-G1] gather           allocated 1 time(s)
+[SCR-G1] gate             allocated 1 time(s)
+[SCR-G1] up               allocated 1 time(s)
+[SCR-G1] down output      allocated 1 time(s)
+--- PASS: TestMEM12Scratch_moeChunks (0.01s)
