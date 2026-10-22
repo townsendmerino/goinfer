@@ -229,6 +229,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	needHist := false
 	if sampled {
 		sampler = NewSampler(sp)
+		defer sampler.release()
 		needHist = sampler.needsHistory() // penalties / logit bias ⇒ thread per-position history
 	}
 	// dist is the target's next-token sampling distribution at one position. With a

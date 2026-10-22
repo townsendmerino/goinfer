@@ -196,7 +196,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 					}
 				}
 			case opFFN:
-				if err := m.ffnBatch(&o.ffn, reg(o.in), reg(o.out), o.out, lw, K, ws, hq, gate, up, &guOps); err != nil {
+				if err := m.ffnBatch(&o.ffn, reg(o.in), reg(o.out), o.out, lw, K, ws, hq, gate, up, &guOps, ps); err != nil {
 					return nil, err
 				}
 			case opResidual:
@@ -238,9 +238,9 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 }
 
 // ffnBatch writes the feed-forward output of K rows of x into out. A MoE layer runs its experts per row (the router picks per
-// token) or expert-major in chunks; a dense layer runs gate/up at M=K.
+// token) or expert-major in chunks, its buffers in the pass scratch; a dense layer runs gate/up at M=K.
 func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *LayerWeights, K int, ws *linalg.Workspace, hq *w4a8Act,
-	gate, up []float32, guOps *[2]linalg.W8A8Op) error {
+	gate, up []float32, guOps *[2]linalg.W8A8Op, ps *prefillPassScratch) error {
 	arch, be := m.w.arch, m.be
 	hidden := arch.HiddenDim
 	switch p.Form {
@@ -249,13 +249,18 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 			// No parallel-block MoE family exists; its joint residual add is not written.
 			return errNotImplemented
 		}
-		emDone := make([]bool, K)
+		ms := ps.moeScratch()
+		if cap(ms.done) < K {
+			ms.done = make([]bool, K)
+		}
+		emDone := ms.done[:K]
+		clear(emDone)
 		var emOut []float32
 		if m.knobs.moeExpertMajor() {
-			emOut = make([]float32, K*hidden)
+			emOut = moeGrow(&ms.out, K*hidden)
 			for c0 := 0; c0 < K; c0 += moeExpertMajorChunk {
 				c1 := min(c0+moeExpertMajorChunk, K)
-				ok, err := moeMLPBatchWith(x[c0*hidden:c1*hidden], c1-c0, lw, &p.MoE, p.Act, hidden, be, m.pager, emOut[c0*hidden:c1*hidden])
+				ok, err := moeMLPBatchWith(x[c0*hidden:c1*hidden], c1-c0, lw, &p.MoE, p.Act, hidden, be, m.pager, emOut[c0*hidden:c1*hidden], ms)
 				if err != nil {
 					return err
 				}

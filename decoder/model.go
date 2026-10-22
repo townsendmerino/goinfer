@@ -1775,6 +1775,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		return
 	}
 	sampler := NewSampler(sp)
+	defer sampler.release()
 	sampler.Observe(prompt...) // repetition penalties see the whole prompt, reused prefix included
 	// Prefill the (divergent suffix of the) prompt and seed the first token's logits. On the batched archs this runs the layers at
 	// M=len in one pass (each weight streamed once), LM head on the last position only; len here is the suffix, not the whole

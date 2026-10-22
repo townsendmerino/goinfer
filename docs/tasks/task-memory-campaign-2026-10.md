@@ -43,7 +43,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
 | MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
 | MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
-| MEM12-scratch | open | either box: MoE output, logits and sampler scratch, with tier-0 counters; M | — |
+| MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1, G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
@@ -572,6 +572,14 @@ the generation ends (`generateInto`, the n-gram and grammar speculative loops); 
 Planted defects, each run once on the committed tree and reverted: the MoE branch allocating its output again (G1 red), the
 LM head allocating again (G2 red), the release not returning the buffers (G3 red). Stopping rule: one pass each; a FAIL is
 diagnosed, not re-run. Cost: seconds for G1–G3, a few minutes for G4's test sets and about 4 for the parity refresh.
+
+> **Read 2026-10-21: G1, G3 and G4 PASS; G2 FAILED as registered and PASSES as amended**
+> (`docs/measurements/mem12-scratch-2026-10/README.md`). G2's first reading found a defect of the build (the MoE scratch
+> embedded by value cost every pass about 200 bytes; now started by the first MoE layer) and an instrument that could not
+> resolve 1 KB (main moved by 1.4 KB between runs; per-P pool caches). **Amendment, after the reading:** G2 reads the mean of
+> 50 warm iterations at `GOMAXPROCS=1` on both arms, bars unchanged: the round falls 4,096 bytes and the prefill 1,024,
+> exactly the logits. G1: 410,384 → 94,592 bytes. G3: later requests ≤ 1.9% of the first's 5.6 MB. The output-only MoE
+> plant left G1 green (its bar sums the buffers); the whole-path plant turned it red.
 
 ### MEM13 · Small heap items (S each)
 

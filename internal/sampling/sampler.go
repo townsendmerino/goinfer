@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"slices"
 	"sort"
+	"sync"
 )
 
 // SamplingParams controls next-token selection. Zero value (Temperature 0)
@@ -83,19 +84,45 @@ type Sampler struct {
 	gdraw   uint64 // index of the next such draw: the counter, so the stream is (seed, step, logits) only
 	history []int  // tokens seen so far: prompt (via Observe) + each drawn token
 
-	// Scratch, each [vocab]-sized and grown on demand by the *BufN helpers. Every buffer is consumed synchronously by the
-	// call that requested it and never retained, which is what makes reuse safe.
+	// scr is the [vocab]-sized scratch, from scratchPool and back to it at Release; nil after Release, when the *BufN helpers
+	// start a fresh one.
+	scr *samplerScratch
+
+	// histCounts is the per-id occurrence count over the whole of history, maintained incrementally by recordHistory so
+	// applyPenalties' unbounded-window case never rescans history. Every history mutation MUST go through recordHistory,
+	// or this desyncs from history.
+	histCounts map[int]int
+}
+
+// samplerScratch is a sampler's scratch, each buffer [vocab]-sized and grown on demand by the *BufN helpers. Every buffer is
+// consumed synchronously by the call that requested it and never retained, which is what makes reuse safe.
+type samplerScratch struct {
 	vocabBuf      []float64     // shared by sampleChunked's e and chunkedZ's tmp, which are never live together (Sample's branches are exclusive per call)
 	distBuf       []float64     // distVectorFrom's returned distribution; each speculative verify position consumes it before the next, so one covers a round
 	specLogitsBuf []float32     // distVectorHist's history-dependent copy; same lifetime as distBuf
 	workBuf       []float32     // SampleWithInfo's bias/penalty-mutated copy of the logits
 	candBuf       []int         // topFilterLogits' candidate-id list in its no-filter case
 	ipsBuf        []indexedProb // topFilterLogits' indexed-probability pairs
+}
 
-	// histCounts is the per-id occurrence count over the whole of history, maintained incrementally by recordHistory so
-	// applyPenalties' unbounded-window case never rescans history. Every history mutation MUST go through recordHistory,
-	// or this desyncs from history.
-	histCounts map[int]int
+// scratchPool holds released samplers' scratch, so a request's sampler reuses the last one's buffers.
+var scratchPool sync.Pool
+
+// scratch returns the sampler's scratch, starting one after Release.
+func (s *Sampler) scratch() *samplerScratch {
+	if s.scr == nil {
+		s.scr = &samplerScratch{}
+	}
+	return s.scr
+}
+
+// Release returns the sampler's scratch to the pool. Nothing it returned may be read afterwards; a sampler used after it
+// allocates fresh scratch.
+func (s *Sampler) Release() {
+	if s.scr != nil {
+		scratchPool.Put(s.scr)
+		s.scr = nil
+	}
 }
 
 // NewSampler builds a sampler from params.
@@ -107,56 +134,63 @@ func NewSampler(p SamplingParams) *Sampler {
 	if p.MinP > 1 {
 		p.MinP = 1
 	}
-	return &Sampler{p: p, rng: rand.New(rand.NewSource(p.Seed)), gseed: uint64(p.Seed)}
+	scr, _ := scratchPool.Get().(*samplerScratch)
+	return &Sampler{p: p, rng: rand.New(rand.NewSource(p.Seed)), gseed: uint64(p.Seed), scr: scr}
 }
 
 // vocabBufN returns a length-n float64 scratch buffer, reusing the backing array when it is large enough and growing
 // it once otherwise.
 func (s *Sampler) vocabBufN(n int) []float64 {
-	if cap(s.vocabBuf) < n {
-		s.vocabBuf = make([]float64, n)
+	sc := s.scratch()
+	if cap(sc.vocabBuf) < n {
+		sc.vocabBuf = make([]float64, n)
 	}
-	return s.vocabBuf[:n]
+	return sc.vocabBuf[:n]
 }
 
 // distBufN is vocabBufN's counterpart for distBuf.
 func (s *Sampler) distBufN(n int) []float64 {
-	if cap(s.distBuf) < n {
-		s.distBuf = make([]float64, n)
+	sc := s.scratch()
+	if cap(sc.distBuf) < n {
+		sc.distBuf = make([]float64, n)
 	}
-	return s.distBuf[:n]
+	return sc.distBuf[:n]
 }
 
 // specLogitsBufN is vocabBufN's counterpart for specLogitsBuf, a []float32.
 func (s *Sampler) specLogitsBufN(n int) []float32 {
-	if cap(s.specLogitsBuf) < n {
-		s.specLogitsBuf = make([]float32, n)
+	sc := s.scratch()
+	if cap(sc.specLogitsBuf) < n {
+		sc.specLogitsBuf = make([]float32, n)
 	}
-	return s.specLogitsBuf[:n]
+	return sc.specLogitsBuf[:n]
 }
 
 // workBufN is vocabBufN's counterpart for workBuf, a []float32.
 func (s *Sampler) workBufN(n int) []float32 {
-	if cap(s.workBuf) < n {
-		s.workBuf = make([]float32, n)
+	sc := s.scratch()
+	if cap(sc.workBuf) < n {
+		sc.workBuf = make([]float32, n)
 	}
-	return s.workBuf[:n]
+	return sc.workBuf[:n]
 }
 
 // candBufN is vocabBufN's counterpart for candBuf.
 func (s *Sampler) candBufN(n int) []int {
-	if cap(s.candBuf) < n {
-		s.candBuf = make([]int, n)
+	sc := s.scratch()
+	if cap(sc.candBuf) < n {
+		sc.candBuf = make([]int, n)
 	}
-	return s.candBuf[:n]
+	return sc.candBuf[:n]
 }
 
 // ipsBufN is vocabBufN's counterpart for ipsBuf.
 func (s *Sampler) ipsBufN(n int) []indexedProb {
-	if cap(s.ipsBuf) < n {
-		s.ipsBuf = make([]indexedProb, n)
+	sc := s.scratch()
+	if cap(sc.ipsBuf) < n {
+		sc.ipsBuf = make([]indexedProb, n)
 	}
-	return s.ipsBuf[:n]
+	return sc.ipsBuf[:n]
 }
 
 // Observe seeds the penalty history with already-seen tokens (the generation
