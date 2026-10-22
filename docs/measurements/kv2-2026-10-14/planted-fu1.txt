@@ -1,0 +1,64 @@
+# KV2-FU1 (FU1-G3) plants, 2026-10-21, branch kv2-fu1-2026-10 at d9d56599 plus the plant. Each was removed after its run.
+
+## Plant 1: kvmgr.pickSlot keeps the keep-versus-overwrite test for the own conversation
+-		if (own != nil && own(best)) || (keep >= cut && cut < allowance) {
++		if (own != nil && own(best) && keep >= cut) || (keep >= cut && cut < allowance) {
+
+### decoder: go test -run TestKV2FU1_ -v ./decoder/ (failing subtests by slot count; failures by rule)
+   7 slots2
+  24 slots4
+rule 1 (tokens): 136; rule 2 (rows): 136; rule 3 (slot, copy, reuse): 137
+    kv2_fu1_test.go:186: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): emitted [105 40 243 161 196 43 242 127 34 66 153 135], reference [13 197 36 170 235 173 160 104 244 107 12 233]
+    kv2_fu1_test.go:189: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): the slot's 423 rows differ from the reference's 423
+    kv2_fu1_test.go:201: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): want its previous slot 0 in place, nothing copied, 409 reused (the reference reused 409)
+    kv2_fu1_test.go:186: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): emitted [105 40 243 161 196 43 242 127 34 66 153 135], reference [13 197 36 170 235 173 160 104 244 107 12 233]
+    kv2_fu1_test.go:189: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): the slot's 423 rows differ from the reference's 423
+    kv2_fu1_test.go:201: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): want its previous slot 0 in place, nothing copied, 409 reused (the reference reused 409)
+--- FAIL: TestKV2FU1_ownRollbackScheduleIndependence (1.67s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	2.095s
+FAIL
+
+### kvmgr: go test -run TestPickSlotFor_ -v ./internal/kvmgr/
+    own_rollback_test.go:28: an empty slot is free: PickSlotFor = 1, want 0
+    own_rollback_test.go:28: no empty slot, the least recently used is another: PickSlotFor = 1, want 0
+    own_rollback_test.go:28: a regenerate of the first prompt after a long history: PickSlotFor = 1, want 0
+--- FAIL: TestPickSlotFor_deepOwnRollback (0.00s)
+    share_test.go:374: own rollback that keeps less than it overwrites: PickSlotFor = 1, want 0 (in place: what it gives up is its own history)
+--- FAIL: TestPickSlotFor_ownRollback (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/kvmgr	0.300s
+FAIL
+
+## Plant 2: kvmgr.Slots.Commit restarts the anchor on every request
+-	if p.ok && p.first > 0 && p.reuse >= p.first-1 {
++	if false && p.ok && p.first > 0 && p.reuse >= p.first-1 {
+
+### decoder: go test -run TestKV2FU1_ -v ./decoder/
+   7 slots2
+  24 slots4
+rule 1 (tokens): 136; rule 2 (rows): 136; rule 3 (slot, copy, reuse): 137
+    kv2_fu1_test.go:186: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): emitted [105 40 243 161 196 43 242 127 34 66 153 135], reference [13 197 36 170 235 173 160 104 244 107 12 233]
+    kv2_fu1_test.go:189: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): the slot's 423 rows differ from the reference's 423
+    kv2_fu1_test.go:201: conversation 0 turn 2 (slot 1, reused 384, copied 384, continuing true): want its previous slot 0 in place, nothing copied, 409 reused (the reference reused 409)
+--- FAIL: TestKV2FU1_ownRollbackScheduleIndependence (1.75s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	2.164s
+FAIL
+
+## Plant 3: the CPU LRU ignores the anchor (sessionLRU.acquire passes no first-prompt lengths)
+-	if i := pickSessionFor(lists, firsts, prompt, len(l.order) < l.size); i >= 0 {
++	if i := pickSessionFor(lists, nil, prompt, len(l.order) < l.size); i >= 0 {
+
+### serveapp: go test -run TestKV2FU1_ -v ./internal/serveapp/ (the replies' token ids are equal; their log-probability bits are not)
+    kv2_fu1_test.go:141: conversation 0 turn 2 (reused 64, copied 64): [98 208 199 35 123 156], alone [98 208 199 35 123 156]; log-probabilities equal: false
+    kv2_fu1_test.go:151: conversation 0 turn 2: same session false, reused 64, copied 64; want its own session, 606 reused, nothing copied
+    kv2_fu1_test.go:141: conversation 0 turn 2 (reused 64, copied 64): [98 208 199 35 123 156], alone [98 208 199 35 123 156]; log-probabilities equal: false
+    kv2_fu1_test.go:151: conversation 0 turn 2: same session false, reused 64, copied 64; want its own session, 606 reused, nothing copied
+--- FAIL: TestKV2FU1_cpuOwnRollback (0.71s)
+    --- FAIL: TestKV2FU1_cpuOwnRollback/room,_A_alone (0.11s)
+    --- FAIL: TestKV2FU1_cpuOwnRollback/room,_A_and_B_interleaved (0.20s)
+    --- PASS: TestKV2FU1_cpuOwnRollback/no_room,_A_and_B_interleaved_(control) (0.18s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	1.169s
+FAIL
