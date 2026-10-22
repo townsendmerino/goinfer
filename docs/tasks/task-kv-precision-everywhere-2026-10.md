@@ -150,6 +150,21 @@ owner decision D3 can move it out.
   refuses by name (the share root already separates precisions).
 - The option-state grid: every `KVPrecision` and `KVQuant` cell reads tested; none reads declined.
 
+### P0a′ gates, registered 2026-10-22 before the code (P0A-G)
+
+The build: Metal's resident build (`metal/model.go`, `r.kvI8` and `r.kvF32`) and WebGPU's (`gpu/residency.go`, `kvF16` and
+`kvI8`) take the cache precision from `decoder.ResolveKV` for their backend (a new `Model.KVDeliveredFor`), not from the raw
+request (`KVCacheF16`, `KVCacheI8`). For every request either backend honours today the two agree, so nothing a user sees
+changes; the point is that phase 3 (Metal f32 back) and any later resolver change reach the build through one function. A
+test-only hook (`goinfer_testhooks`) lets a test make the resolver disagree with the request.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| P0A-G1 plumbing | 0, Mac | the resolver hooked to deliver a precision the request does not ask for (`auto` → i8 on Metal; `auto` → f16 and `auto` → i8 on WebGPU), on `llama-tiny` resident on each backend | each build's cache precision is the hooked one (Metal `r.kvI8`; WebGPU's runner `kvF16`/`kvI8`). Plant, once and reverted: either build reading the raw request again turns it red |
+| P0A-G2 unchanged | 0 | unhooked: `TestKVPrecisionDelivered` and the generated `docs/kv-precision-matrix.md` (`TestKVPrecisionMatrix_fresh`), the Metal and WebGPU KV tests the touched packages carry | all PASS, and the matrix is byte-unchanged |
+
+Stopping rule: one pass each. Cost: seconds.
+
 ## 4. Gates (registered here, before any code; changing one after the data needs the owner's word and is recorded as such)
 
 - **G1, exact-input identity (every new kernel, CI):** on inputs exactly representable at the precision (f16 values;
