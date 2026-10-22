@@ -1560,10 +1560,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		rowInto := func(r int, dst []float32) error { return ggufRowFiltered(name, into, rowSrc(r), dst) }
 		// streamMat covers everything mat/permMat do not route to streamMatBatched (o_proj, down_proj, router, any other
 		// non-batched, non-embedding layer tensor), so skipRow4 applies here as in quantizeWMSkipRow4.
-		if skipRow4 {
-			return streamQuantizedSkipRow4(out, in, mode, rowInto)
-		}
-		return streamQuantized(out, in, mode, rowInto)
+		return streamQuantizedLayer(out, in, mode, needCanonical, skipRow4, rowInto)
 	}
 	// streamMatBatched is streamMat's twin for attention Q/K/V and MLP gate/up (isBatchedProjTensor):
 	// streamQuantizedBatchedProj instead of streamQuantized, so it may build repacked-only int4 when this load's backend
@@ -1682,11 +1679,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			var m linalg.WeightMat
 			var err error
 			// MoE experts: the same skip-row4-only scope as streamMat.
-			if skipRow4 {
-				m, err = streamQuantizedSkipRow4(out, in, matmulQuant(quant, name), rowInto)
-			} else {
-				m, err = streamQuantized(out, in, matmulQuant(quant, name), rowInto)
-			}
+			m, err = streamQuantizedLayer(out, in, matmulQuant(quant, name), needCanonical, skipRow4, rowInto)
 			if err != nil {
 				return err
 			}
@@ -1794,16 +1787,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if e != nil {
 				return linalg.WeightMat{}, e
 			}
-			if skipRow4 {
-				return quantizeWMSkipRow4(linalg.WrapF32(f, out, in), quant), nil
-			}
-			return quantizeWM(linalg.WrapF32(f, out, in), quant), nil
+			return quantizeLayerWM(linalg.WrapF32(f, out, in), quant, needCanonical, skipRow4), nil
 		}
 		wrapQ := func(f []float32, out, in int) linalg.WeightMat {
-			if skipRow4 {
-				return quantizeWMSkipRow4(linalg.WrapF32(f, out, in), quant)
-			}
-			return quantizeWM(linalg.WrapF32(f, out, in), quant)
+			return quantizeLayerWM(linalg.WrapF32(f, out, in), quant, needCanonical, skipRow4)
 		}
 		loadQ35 := func(i int) error {
 			l := &w.Layers[i]

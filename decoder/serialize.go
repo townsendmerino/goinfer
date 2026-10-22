@@ -1039,6 +1039,13 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		return
 	}
 	q4, q4s, group, isQ4 := m.Int4F16()
+	if m.IsInt4() && !isQ4 {
+		// Repacked-only (one row4 copy, quantizeLayerWM under Backend "cpu"): every kind is written from canonical bytes.
+		if w.err == nil {
+			w.err = fmt.Errorf("decoder: a %dx%d int4 tensor holds only its row4 layout (a Backend \"cpu\" load keeps no canonical copy); load with another Backend to serialize it", m.Rows(), m.Cols())
+		}
+		return
+	}
 	q8, scales, w8a8, isQ8 := m.Int8()
 	f32, _ := m.F32()
 	var kind byte
