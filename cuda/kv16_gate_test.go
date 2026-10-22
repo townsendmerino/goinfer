@@ -59,6 +59,8 @@ func TestKV16GateVsReference(t *testing.T) {
 		"CR7B": {"GOINFER_CUDA_GATE_MODEL_CR7B", "$HOME/models/command-r7b", true, decoder.Options{}},
 		// Group 4, m-RoPE and the image prefill: Qwen2.5-VL-3B, text cells (an image turn is reported, not graded).
 		"QVL3": {"GOINFER_CUDA_GATE_MODEL_QVL3", "$HOME/models/qwen2.5-vl-3b", true, decoder.Options{}},
+		// Group 5, the hybrids: Qwen3.5-9B (Gated DeltaNet with a full-attention layer in four).
+		"Q359": {"GOINFER_CUDA_GATE_MODEL_Q359", "$HOME/models/qwen3.5-9b", true, decoder.Options{}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
@@ -121,9 +123,13 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	if rf.faSplit < 1 || rf.faCombine == (Pipeline{}) {
 		t.Fatalf("-kv %s: the flash-decode lane is not loaded (faSplit=%d)", kv, rf.faSplit)
 	}
-	res := kv16ArmResult{f16: rf.kvF16, kvBytes: rf.kc[0].Len() * map[bool]int{true: 2, false: 4}[rf.layers[0].kvHalf], layers: len(rf.layers)}
+	kl := 0 // the first layer that keeps K/V (a hybrid's layer 0 may be recurrent)
+	for kl < len(rf.layers)-1 && (rf.layers[kl].noKV() || rf.layers[kl].kvShared) {
+		kl++
+	}
+	res := kv16ArmResult{f16: rf.kvF16, kvBytes: rf.kc[kl].Len() * map[bool]int{true: 2, false: 4}[rf.layers[kl].kvHalf], layers: len(rf.layers)}
 	for l := range rf.layers {
-		if w := int(rf.layers[l].window); rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
+		if w := int(rf.layers[l].window); !rf.layers[l].noKV() && rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
 			res.faLayers++
 		}
 	}
@@ -142,6 +148,9 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 		}
 		if doSurvey {
 			for l := range rf.layers {
+				if rf.layers[l].noKV() || rf.layers[l].kvShared { // a recurrent layer keeps no rows; a shared one reads another layer's
+					continue
+				}
 				var kb, vb []float32
 				if e := rf.do(func() error {
 					if e := rf.stream.Sync(); e != nil {

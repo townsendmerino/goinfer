@@ -28,6 +28,8 @@ var kv4bGroups = []struct {
 	{"pairwise-rope", []string{"cohere-tiny", "cohere2-tiny"}, decoder.Options{}, false},
 	{"pairwise-rope/windowed", []string{"cohere2-tiny"}, decoder.Options{}, true},
 	{"m-rope", []string{"qwen25vl-tiny", "qwen3vl-tiny"}, decoder.Options{}, false},
+	{"hybrid", []string{"decoder/testdata/qwen3_5-tiny", "qwen35-tiny", "qwen3next-tiny", "gemma4-dense-twogeom-tiny", "gemma4-moe-kv-tiny32",
+		"gemma4-moe-tiny"}, decoder.Options{}, false},
 }
 
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.
