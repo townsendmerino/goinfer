@@ -392,7 +392,10 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 		if i != bound {
 			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace, false)
 		}
-		lens[i], firsts[i], uses[i] = a.Len(i), a.FirstPrompt(i), a.Use(i)
+		lens[i], uses[i] = a.Len(i), a.Use(i)
+		if a.KeepsFirst(i, prompt) {
+			firsts[i] = a.FirstPrompt(i)
+		}
 	}
 	if kvAllowanceOverride > 0 {
 		firsts = nil

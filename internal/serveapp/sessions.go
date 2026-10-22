@@ -578,7 +578,7 @@ func pickSessionFor(sessions [][]int, firsts []int, prompt []int, spare bool) in
 	return i
 }
 
-// keepsFirst reports whether a request that keeps keep leading tokens of a session keeps all but the last token of
-// its conversation's first prompt, first tokens long (0: unknown, never): kvmgr.PickSlotFor's test for the same
-// conversation.
-func keepsFirst(first, keep int) bool { return first > 0 && keep >= first-1 }
+// keepsFirst reports whether a request whose common prefix with a session is keep tokens keeps the whole first prompt
+// of the session's conversation, first tokens long (0: unknown, never): kvmgr.Slots.KeepsFirst's test for the same
+// conversation. keep is the whole common prefix, so an exact rollback to the first prompt keeps all of it.
+func keepsFirst(first, keep int) bool { return first > 0 && keep >= first }

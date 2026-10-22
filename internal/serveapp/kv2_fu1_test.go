@@ -25,6 +25,7 @@ func TestPickSessionFor_ownRollback(t *testing.T) {
 	}
 	rollback := append(slices.Clone(first), 7000, 7001, 9000, 9001) // keeps 602, gives up 700
 	other := append(slices.Clone(first[:500]), 9500, 9501)          // diverges inside the first prompt
+	lastDiffers := append(slices.Clone(first[:599]), 9999)          // another conversation: only the first prompt's last token differs
 	for _, tc := range []struct {
 		name   string
 		firsts []int
@@ -38,6 +39,7 @@ func TestPickSessionFor_ownRollback(t *testing.T) {
 		{"own rollback, no lengths at all", nil, rollback, true, -1},
 		{"diverges inside the first prompt, room", []int{600}, other, true, -1},
 		{"diverges inside the first prompt, no room", []int{600}, other, false, 0},
+		{"differs only in the first prompt's last token, room", []int{600}, lastDiffers, true, -1},
 	} {
 		if got := pickSessionFor([][]int{stored}, tc.firsts, tc.prompt, tc.spare); got != tc.want {
 			t.Errorf("%s: pickSessionFor = %d, want %d", tc.name, got, tc.want)
