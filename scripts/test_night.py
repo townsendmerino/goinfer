@@ -528,7 +528,7 @@ class Serve(unittest.TestCase):
         self.assertIn("night-only", sv.waits[0])
         self.assertEqual(self.runs(), 0)
         sv.t += dt.timedelta(hours=2, minutes=1)
-        self.assertEqual(self.tick(sv), "ran")
+        self.assertEqual(self.tick(sv), "ran", f"at {sv.t.isoformat()}: {sv.waits}")
         self.assertEqual(self.runs(), 1)
 
     def test_a_night_job_that_would_end_after_the_deadline_waits(self):
