@@ -7,6 +7,7 @@
 // ---- the original attn_fused.cu header follows ----
 #include <cuda_fp16.h>
 #include "kvtype.cuh"
+#include "kvpage.cuh"
 #include "attnscore.cuh"
 
 // attn_fused: FlashAttention-style fused prefill attention for sm_75 (docs/task-prefill-gap.md
@@ -103,7 +104,8 @@ __device__ __forceinline__ void mma_m16n8k8_f32(float &d0, float &d1, float &d2,
 template <int HD, int BM, int BN>
 __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
                                                 const KV_T* __restrict__ kc,
-                                                const KV_T* __restrict__ vc, int nH, int nKV,
+                                                const KV_T* __restrict__ vc,
+                                                const int* __restrict__ kvt, int nH, int nKV,
                                                 int startPos, float scale, int window, int M,
                                                 float* __restrict__ ctx,
                                                 const float* __restrict__ sinks) {
@@ -186,12 +188,12 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
         // ---- stage K [nk][HD] and V^T [HD][nk], f32 -> f16 ----
         for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
             const int kk = idx / HD, dd = idx - kk * HD;
-            const KV_T* src = kc + (long)(s0 + kk) * kvDim + kvh * HD;
+            const KV_T* src = kc + KV_ROW(kvt, s0 + kk) * kvDim + kvh * HD;
             Ksh[kk * kStride + dd] = KV_LDH(src + dd);
         }
         for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
             const int kk = idx / HD, dd = idx - kk * HD;
-            const KV_T* src = vc + (long)(s0 + kk) * kvDim + kvh * HD;
+            const KV_T* src = vc + KV_ROW(kvt, s0 + kk) * kvDim + kvh * HD;
             Vtsh[dd * vStride + kk] = KV_LDH(src + dd);
         }
         __syncthreads();
@@ -324,44 +326,44 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
 }
 
 extern "C" __global__ void attn_fused_bm32_hd64(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                                           const KV_T* __restrict__ vc, int nH, int nKV, int hd,
+                                           const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
                                            float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<64, 32, 64>(q, kc, vc, nH, nKV, startPos, scale, window, M, ctx, sinks);
+    attn_fused_impl<64, 32, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
 }
 
 extern "C" __global__ void attn_fused_bm32_hd128(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                                           const KV_T* __restrict__ vc, int nH, int nKV, int hd,
+                                           const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
                                            float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<128, 32, 64>(q, kc, vc, nH, nKV, startPos, scale, window, M, ctx, sinks);
+    attn_fused_impl<128, 32, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
 }
 
 extern "C" __global__ void attn_fused_bm32n32_hd64(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                                           const KV_T* __restrict__ vc, int nH, int nKV, int hd,
+                                           const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
                                            float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<64, 32, 32>(q, kc, vc, nH, nKV, startPos, scale, window, M, ctx, sinks);
+    attn_fused_impl<64, 32, 32>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
 }
 
 extern "C" __global__ void attn_fused_bm32n32_hd128(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                                           const KV_T* __restrict__ vc, int nH, int nKV, int hd,
+                                           const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
                                            float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<128, 32, 32>(q, kc, vc, nH, nKV, startPos, scale, window, M, ctx, sinks);
+    attn_fused_impl<128, 32, 32>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
 }
 
 
 extern "C" __global__ void attn_fused_bm128_hd64(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                                           const KV_T* __restrict__ vc, int nH, int nKV, int hd,
+                                           const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
                                            float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<64, 128, 64>(q, kc, vc, nH, nKV, startPos, scale, window, M, ctx, sinks);
+    attn_fused_impl<64, 128, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
 }
 
 extern "C" __global__ void attn_fused_bm128_hd128(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                                           const KV_T* __restrict__ vc, int nH, int nKV, int hd,
+                                           const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
                                            float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<128, 128, 64>(q, kc, vc, nH, nKV, startPos, scale, window, M, ctx, sinks);
+    attn_fused_impl<128, 128, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
 }

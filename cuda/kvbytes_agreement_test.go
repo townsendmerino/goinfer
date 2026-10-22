@@ -28,9 +28,10 @@ import (
 // the buffers' bytes == kvBytesForCap (the resident's own fit figure) == ResidentKVBytes("cuda"), and each
 // buffer's driver allocation stays within one allocQuantumBytes (2 MiB) of its bytes.
 //
-// Every fixture is built with 2 resident KV slots (MC1, docs/tasks/task-concurrency-2026-09.md), and every slot is
-// checked: each holds exactly kvBytesForCap, so the device holds slots × ResidentKVBytes("cuda"). The DeltaNet hybrid
-// must build one slot (recurrent state is not part of a slot); every other layout, 2.
+// Every fixture is built with 2 resident KV slots (MC1, docs/tasks/task-concurrency-2026-09.md) over the paged pools
+// (kvpool.go): the pools and tables hold exactly 2 × kvBytesForCap plus the null blocks, and ResidentKVBytes("cuda") is
+// a one-slot load's figure, kvBytesForCap plus the null blocks. The DeltaNet hybrid must build one slot (recurrent state
+// is not part of a slot); every other layout, 2.
 func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	fixtures := []string{
@@ -61,58 +62,61 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			if r.dnet != nil {
 				wantSlots = 1
 			}
-			slots := r.kvSlotBufs
-			if slots == nil {
-				slots = []cudaKVSlot{{r.kc, r.vc}}
+			if r.KVSlots() != wantSlots {
+				t.Fatalf("built %d KV slots with 2 requested, want %d", r.KVSlots(), wantSlots)
 			}
-			if len(slots) != wantSlots || r.KVSlots() != wantSlots {
-				t.Fatalf("built %d KV slots (KVSlots %d) with 2 requested, want %d", len(slots), r.KVSlots(), wantSlots)
-			}
+			// The pools hold every slot's blocks and the null blocks, and the tables 4 B per block per group per slot (kvpool.go).
 			forCap := kvBytesForCap(r.ctxCap, r.layers)
-			for s, sl := range slots {
-				var bytes int64
-				for l := range sl.kc {
-					if r.layers[l].kvShared {
-						// An E-model's KV-shared layer holds its source's buffers, not bytes of its own: counted once, at the owner. Assert the alias instead.
-						if sl.kc[l] != sl.kc[r.layers[l].kvSrc] || sl.vc[l] != sl.vc[r.layers[l].kvSrc] {
-							t.Errorf("slot %d layer %d: shared layer does not alias layer %d's buffers", s, l, r.layers[l].kvSrc)
-						}
-						continue
+			null := kvPoolNullBytes(r.layers)
+			bytes := int64(r.kvTabDev.Len()) * 4
+			for l := range r.layers {
+				if r.layers[l].kvShared {
+					// An E-model's KV-shared layer holds its source's pools, not bytes of its own: counted once, at the owner. Assert the alias instead.
+					if r.kc[l] != r.kc[r.layers[l].kvSrc] || r.vc[l] != r.vc[r.layers[l].kvSrc] {
+						t.Errorf("layer %d: shared layer does not alias layer %d's pools", l, r.layers[l].kvSrc)
 					}
-					for _, b := range []Buffer{sl.kc[l], sl.vc[l]} {
-						n := int64(b.Len()) * 4 // Len is in elements: f32 (r.af), or f16 (r.akv) on a layer whose cache is half
-						if r.layers[l].kvHalf {
-							n = int64(b.Len()) * 2
-						}
-						bytes += n
-						if alloc := (n + allocQuantumBytes - 1) / allocQuantumBytes * allocQuantumBytes; alloc-n >= allocQuantumBytes {
-							t.Errorf("slot %d layer %d: a buffer of %d B rounds to %d B — more than one allocation quantum", s, l, n, alloc)
-						}
+					continue
+				}
+				for _, b := range []Buffer{r.kc[l], r.vc[l]} {
+					n := int64(b.Len()) * 4 // Len is in elements: f32 (r.af), or f16 (r.akv) on a layer whose cache is half
+					if r.layers[l].kvHalf {
+						n = int64(b.Len()) * 2
+					}
+					bytes += n
+					if alloc := (n + allocQuantumBytes - 1) / allocQuantumBytes * allocQuantumBytes; alloc-n >= allocQuantumBytes {
+						t.Errorf("layer %d: a buffer of %d B rounds to %d B — more than one allocation quantum", l, n, alloc)
 					}
 				}
-				if bytes != forCap {
-					t.Fatalf("slot %d: allocated K/V buffers hold %d B, kvBytesForCap says %d B at ctx %d — the resident's own fit figure no longer matches its allocation", s, bytes, forCap, r.ctxCap)
-				}
 			}
-			// What the pricing says against what was allocated. The resident's own precision prices exactly its allocation. Asking for the other one prices
-			// the other: f32 is twice an f16 resident's bytes, and f16 on a model the f16 kernels do not cover is still f32 on the device. int8 is not a CUDA cache.
-			f32Bytes := forCap
-			if r.kvF16 {
-				f32Bytes = 2 * forCap
+			if want := int64(wantSlots)*forCap + null; bytes != want {
+				t.Fatalf("the pools and tables hold %d B, %d slots of kvBytesForCap (%d B at ctx %d) and the null blocks (%d B) say %d B — the resident's own fit figure no longer matches its allocation",
+					bytes, wantSlots, forCap, r.ctxCap, null, want)
 			}
-			// f16 asked of an f32 resident prices half only where the f16 kernels cover the family (decoder.cudaKVF16Decline): both answers are right for
-			// some model, and which one this model gets is the one that matches a resident that WAS f16 (r.kvF16) or the 2x-smaller dense figure.
+			// What the pricing says against what was allocated: ResidentKVBytes is a one-slot load, kvBytesForCap and the null blocks. The resident's own
+			// precision prices exactly its allocation. Asking for the other one prices the other; f16 on a model the f16 kernels do not cover is still f32 on
+			// the device. int8 is not a CUDA cache.
+			asF32 := slices.Clone(r.layers)
+			for i := range asF32 {
+				asF32[i].kvHalf = false
+			}
+			asF16 := slices.Clone(r.layers)
+			for i := range asF16 {
+				asF16[i].kvHalf = !asF16[i].isMLA() && !asF16[i].noKV() && !asF16[i].kvShared
+			}
+			one := forCap + null
+			f32Bytes := kvBytesForCap(r.ctxCap, asF32) + kvPoolNullBytes(asF32)
+			f16Bytes := kvBytesForCap(r.ctxCap, asF16) + kvPoolNullBytes(asF16)
 			for _, c := range []struct {
 				name     string
 				f16, i8b bool
 				want     []int64
-			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{forCap, f32Bytes / 2}}, {"i8 requested", false, true, []int64{f32Bytes}}} {
+			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{one, f16Bytes, f32Bytes}}, {"i8 requested", false, true, []int64{f32Bytes}}} {
 				got := m.ResidentKVBytes("cuda", r.ctxCap, c.f16, c.i8b)
 				if !slices.Contains(c.want, got) {
-					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want one of %v B (resident kvF16=%v, allocates %d B)", c.name, r.ctxCap, got, c.want, r.kvF16, forCap)
+					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want one of %v B (resident kvF16=%v, allocates %d B a slot)", c.name, r.ctxCap, got, c.want, r.kvF16, forCap)
 				}
-				if r.kvF16 && c.f16 && got != forCap {
-					t.Errorf("an f16 resident allocates %d B and ResidentKVBytes(f16) says %d B", forCap, got)
+				if r.kvF16 && c.f16 && got != one {
+					t.Errorf("an f16 resident prices %d B a one-slot load and ResidentKVBytes(f16) says %d B", one, got)
 				}
 			}
 		})

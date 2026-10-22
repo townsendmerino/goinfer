@@ -11,6 +11,7 @@
 //
 // Its own module, so no shipped PTX changes. Regenerate with:  ./build_ptx.sh prefill_splitkv
 #include "kvtype.cuh"
+#include "kvpage.cuh"
 
 // The row's key range, as attn_batched computes it, or as attn_img_batched computes it when blocks (nBlocks int pairs [start,end)) are
 // given: a row whose own position lies inside a block sees that whole block, every other row stays causal, and the window start comes from the
@@ -29,7 +30,7 @@
 // splitkv_scores_rows: grid nH x ceil(maxNWin/128) x R, block 128, shared hd floats. One thread per key of one row.
 // scStore is [R][nH][stride]; a row uses the first nWin entries of its slices.
 extern "C" __global__ void splitkv_scores_rows(
-    const float* __restrict__ q, const KV_T* __restrict__ kc,
+    const float* __restrict__ q, const KV_T* __restrict__ kc, const int* __restrict__ kvt,
     int nH, int nKV, int hd, int startPos, int window, int row0, float scale,
     float* __restrict__ scStore, int stride, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
@@ -45,7 +46,7 @@ extern "C" __global__ void splitkv_scores_rows(
     int s = winStart + i;
     if (i >= nWin) return;
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
-    const KV_T* ks = kc + (long)s * kvDim + (long)kvh * hd;
+    const KV_T* ks = kc + KV_ROW(kvt, s) * kvDim + (long)kvh * hd;
     float dot = 0.f;
     int d4 = hd >> 2;
     const float4* q4 = (const float4*)qs;
@@ -101,7 +102,7 @@ extern "C" __global__ void splitkv_softmax_rows(
 // splitkv_vsum_rows: grid nH x ceil(hd/32) x R, block 32. Each thread owns one output dim of one row and folds
 // sum_s sc[s]*v[s][d] in ascending s, the whole per-dim reduction, then scales by the row's inverse.
 extern "C" __global__ void splitkv_vsum_rows(
-    const float* __restrict__ scStore, const KV_T* __restrict__ vc,
+    const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ kvt,
     const float* __restrict__ invStore, int nH, int nKV, int hd, int startPos, int window, int row0,
     int stride, float* __restrict__ ctx, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -119,14 +120,14 @@ extern "C" __global__ void splitkv_vsum_rows(
     for (; s + 16 <= nKeys; s += 16) {
         float v[16];
 #pragma unroll
-        for (int j = 0; j < 16; j++) v[j] = KV_LD(vp + (long)(s + j) * kvDim);
+        for (int j = 0; j < 16; j++) v[j] = KV_LD(vp + KV_ROW(kvt, s + j) * kvDim);
 #pragma unroll
         for (int j = 0; j < 16; j++) acc = __fmaf_rn(sc[s + j - winStart], v[j], acc);
     }
-    for (; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp + (long)s * kvDim), acc);
+    for (; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp + KV_ROW(kvt, s) * kvDim), acc);
 #else
     for (int s = winStart; s < nKeys; s++)
-        acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + ((long)s * kvDim + (long)kvh * hd + d)), acc);
+        acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (KV_ROW(kvt, s) * kvDim + (long)kvh * hd + d)), acc);
 #endif
     ctx[(long)m * nH * hd + (long)h * hd + d] = acc * invStore[(long)z * nH + h];
 }

@@ -1639,9 +1639,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return e
 		}
 		for l := range r.kc {
-			// Each layer's KV cache is sized by its own kvDim (Gemma 4's local 2048 vs global 1024), matching the pos*Ly.kvDim
-			// stride launchToken indexes it with. The kvDim the cache is sized with must equal the one the accessors derive: a stale
-			// model-level kvDim would index off the end into garbage output rather than panic, so fail loudly at plan time.
+			// Each layer's KV pool is sized by its own kvDim (Gemma 4's local 2048 vs global 1024), matching the row*Ly.kvDim stride
+			// the kernels index it with. The kvDim the pool is sized with must equal the one the accessors derive: a stale model-level
+			// kvDim would index off the end into garbage output rather than panic, so fail loudly at plan time.
 			if r.layers[l].noKV() {
 				// No KV cache for a recurrent mixer. Allocating one would be pure waste on the
 				// family least able to afford it: 3 of every 4 layers are this kind.
@@ -1651,44 +1651,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				if r.layers[l].kvDim != r.mlaLatDim {
 					return fmt.Errorf("cuda: layer %d MLA latent cache kvDim=%d != latDim=%d", l, r.layers[l].kvDim, r.mlaLatDim)
 				}
-				r.kc[l] = r.af(r.ctxCap * r.layers[l].kvDim)
 				continue
 			}
 			if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
 				return fmt.Errorf("cuda: layer %d KV cache kvDim=%d != nKV*hd=%d (accessor-derived) — geometry/cache-size mismatch", l, r.layers[l].kvDim, want)
 			}
-			if r.layers[l].kvShared {
-				continue // aliased below, once every owning layer has its buffers
-			}
-			r.kc[l], r.vc[l] = r.akv(l, r.kvPositions(l)*r.layers[l].kvDim), r.akv(l, r.kvPositions(l)*r.layers[l].kvDim)
 		}
-		if r.kvWin {
-			r.kvAllocScratch()
-		}
-		// A KV-shared layer's cache IS its source's: every launch indexes r.kc[l]/r.vc[l], so aliasing the buffers needs no launch-site
-		// change (the device teardown is ledger-based, so a buffer held twice is released once). UploadKV refuses these layers by name.
-		for l := range r.layers {
-			if r.layers[l].kvShared {
-				r.kc[l], r.vc[l] = r.kc[r.layers[l].kvSrc], r.vc[r.layers[l].kvSrc]
-			}
-		}
-		// Further resident KV slots, each a copy of the per-layer buffers just allocated (checkKVFits granted r.kvSlotsN of the
-		// request). Slot 0 is the set above; UseKVSlot rebinds r.kc/r.vc.
-		if n := r.kvSlotsN; n > 1 {
-			r.kvSlotBufs = make([]cudaKVSlot, n)
-			r.kvSlotBufs[0] = cudaKVSlot{r.kc, r.vc}
-			for s := 1; s < n; s++ {
-				b, ok := r.allocKVSlot(s, nLayers)
-				if !ok {
-					// checkKVFits sized the slot count against the free VRAM read before the build's own scratch, with the margin as the
-					// only slack, so the last slot can miss by the scratch. Keep the slots that fit instead of dropping the whole resident
-					// to the CPU; the first slot is the build's own and still declines.
-					fmt.Fprintf(os.Stderr, "cuda: %d of %d resident KV slots granted: the device ran out of memory allocating slot %d beside the build's own scratch\n", s, n, s+1)
-					r.kvSlotsN, r.kvSlotBufs = s, r.kvSlotBufs[:s]
-					break
-				}
-				r.kvSlotBufs[s] = b
-			}
+		// The pools and every slot's tables (kvpool.go). checkKVFits granted r.kvSlotsN of the request against the free VRAM read before
+		// the build's own scratch, with the margin as the only slack, so the pools can miss by the scratch: keep the slots that fit
+		// instead of dropping the whole resident to the CPU; one slot that does not fit still declines.
+		if e := r.kvAllocPoolsFit(); e != nil {
+			return e
 		}
 		if r.actG32 && maxQDim%32 != 0 {
 			return fmt.Errorf("per-32 activations need the attention width (%d) to be a multiple of 32", maxQDim)

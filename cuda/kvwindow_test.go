@@ -176,20 +176,20 @@ func TestWindowedKV_allocation(t *testing.T) {
 		if !win.layers[l].kvWin {
 			t.Fatalf("layer %d of an all-sliding-window model is not windowed", l)
 		}
-		wantPos := win.kvWindow + kvWindowSlack
-		if got := win.kc[l].Len() / win.layers[l].kvDim; got != wantPos {
-			t.Fatalf("layer %d K holds %d positions, want window+slack = %d", l, got, wantPos)
+		wantPos := kvWindowBlocks(win.ctxCap, win.kvWindow+kvWindowSlack) * kvBlock
+		if got := heldPositions(win, l); got != wantPos {
+			t.Fatalf("layer %d K holds %d positions a slot, want window+slack and a block = %d", l, got, wantPos)
 		}
 		if full.kc[l].Len() <= win.kc[l].Len() {
 			t.Fatalf("layer %d: the windowed cache (%d floats) is not smaller than the full one (%d)", l, win.kc[l].Len(), full.kc[l].Len())
 		}
 	}
-	var held int64
+	held := int64(win.kvTabDev.Len()) * 4
 	for l := range win.layers {
 		held += int64(win.kc[l].Len()+win.vc[l].Len()) * 4
 	}
-	if got := kvBytesForCap(win.ctxCap, win.layers); got != held {
-		t.Fatalf("kvBytesForCap = %d, but the allocation is %d bytes", got, held)
+	if got := kvBytesForCap(win.ctxCap, win.layers) + kvPoolNullBytes(win.layers); got != held {
+		t.Fatalf("kvBytesForCap and the null blocks = %d, but the allocation is %d bytes", got, held)
 	}
 	if win.graphs {
 		t.Fatal("CUDA graphs are admitted under windowed KV: a captured graph would replay a stale shifted pointer")
@@ -213,7 +213,7 @@ func decodeSteps(t *testing.T, full, win *cudaResident, m *decoder.Model, start,
 			t.Fatalf("windowed forward at %d: %v", pos, err)
 		}
 		if j, ok := sameBits(a, b); !ok {
-			t.Fatalf("position %d: windowed logits differ from full-KV logits at index %d (%v vs %v), base %d", pos, j, b[max(j, 0)], a[max(j, 0)], win.kvBase)
+			t.Fatalf("position %d: windowed logits differ from full-KV logits at index %d (%v vs %v), base %d", pos, j, b[max(j, 0)], a[max(j, 0)], win.kvBases[win.kvSlot])
 		}
 	}
 }
@@ -225,10 +225,10 @@ func TestWindowedKV_decodeIdentity(t *testing.T) { eachWindowFixture(t, windowed
 func windowedDecodeIdentity(t *testing.T, fx string) {
 	full, win, _, mw := loadWindowedPair(t, fx, 1)
 	decodeSteps(t, full, win, mw, 0, 400)
-	if win.kvBase == 0 {
+	if win.kvBases[win.kvSlot] == 0 {
 		t.Fatal("no compaction ran in 400 steps: the test did not exercise the path it names")
 	}
-	t.Logf("final base %d after 400 steps (window %d, slack %d)", win.kvBase, win.kvWindow, kvWindowSlack)
+	t.Logf("final base %d after 400 steps (window %d, slack %d)", win.kvBases[win.kvSlot], win.kvWindow, kvWindowSlack)
 }
 
 // TestWindowedKV_prefillIdentity is G-W1 for the batched prefill: a prompt crossing the window in chunks (the chunk is capped to the slack+1, so
@@ -252,10 +252,10 @@ func windowedPrefillIdentity(t *testing.T, fx string) {
 			t.Fatalf("plen %d windowed prefill: %v", plen, err)
 		}
 		if j, ok := sameBits(a, b); !ok {
-			t.Fatalf("plen %d: prefill logits differ at %d (base %d)", plen, j, win.kvBase)
+			t.Fatalf("plen %d: prefill logits differ at %d (base %d)", plen, j, win.kvBases[win.kvSlot])
 		}
 		decodeSteps(t, full, win, mw, plen, 60)
-		t.Logf("plen %d: identical through 60 decode steps, final base %d", plen, win.kvBase)
+		t.Logf("plen %d: identical through 60 decode steps, final base %d", plen, win.kvBases[win.kvSlot])
 	}
 }
 
@@ -283,7 +283,7 @@ func windowedVerifyIdentity(t *testing.T, fx string) {
 		}
 		for i := range a {
 			if j, ok := sameBits(a[i], b[i]); !ok {
-				t.Fatalf("ForwardN at %d row %d: logits differ at %d (base %d)", pos, i, j, win.kvBase)
+				t.Fatalf("ForwardN at %d row %d: logits differ at %d (base %d)", pos, i, j, win.kvBases[win.kvSlot])
 			}
 		}
 		pos += max(1, k-step%3) // accept all but 0-2 rows: the rejected rows' KV is overwritten by the next pass
@@ -332,7 +332,7 @@ func windowedReuseFloor(t *testing.T, fx string) {
 			t.Fatal(err)
 		}
 	}
-	base := win.kvBase
+	base := win.kvBases[win.kvSlot]
 	if base == 0 {
 		t.Fatal("no compaction ran: nothing to test")
 	}
@@ -354,8 +354,8 @@ func windowedReuseFloor(t *testing.T, fx string) {
 	if _, err := win.Forward(emb(0), 0); err != nil {
 		t.Fatalf("restart at 0 failed: %v", err)
 	}
-	if win.kvBase != 0 {
-		t.Fatalf("base %d after restarting at position 0", win.kvBase)
+	if win.kvBases[win.kvSlot] != 0 {
+		t.Fatalf("base %d after restarting at position 0", win.kvBases[win.kvSlot])
 	}
 }
 
@@ -380,8 +380,8 @@ func windowedSlotsIdentity(t *testing.T, fx string) {
 				t.Fatal(err)
 			}
 			// binding alone (no forward yet) must expose the slot's own base: ReusableKV answers from it
-			if win.kvBase != win.kvBases[s] {
-				t.Fatalf("round %d: bound slot %d but kvBase %d != its base %d", round, s, win.kvBase, win.kvBases[s])
+			if win.kvBases[win.kvSlot] != win.kvBases[s] {
+				t.Fatalf("round %d: bound slot %d but kvBase %d != its base %d", round, s, win.kvBases[win.kvSlot], win.kvBases[s])
 			}
 			for range pace[s] {
 				emb := mw.EmbedResidentForTest((pos[s]*29 + s*13 + 5) % vocab)
@@ -476,15 +476,13 @@ func windowedUploadKV(t *testing.T, fx string) {
 		if Ly.kvShared || Ly.isDeltaNet() || Ly.isMLA() {
 			continue
 		}
-		keys, vals := make([]float32, n*Ly.kvDim), make([]float32, n*Ly.kvDim)
-		if err := full.do(func() error {
-			if e := full.stream.Sync(); e != nil {
+		var keys, vals []float32
+		if err := full.do(func() (e error) {
+			if e = full.stream.Sync(); e != nil {
 				return e
 			}
-			if e := gpu.Download(full.kc[l], keys); e != nil {
-				return e
-			}
-			return gpu.Download(full.vc[l], vals)
+			keys, vals, e = full.kvRowsForTest(full.kvSlot, l, 0, n)
+			return e
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -492,8 +490,8 @@ func windowedUploadKV(t *testing.T, fx string) {
 			t.Fatalf("UploadKV layer %d: %v", l, err)
 		}
 	}
-	if win.kvBase != n-(win.kvWindow-1) {
-		t.Fatalf("base after the upload = %d, want %d (the last window-1 of %d positions)", win.kvBase, n-(win.kvWindow-1), n)
+	if win.kvBases[win.kvSlot] != n-(win.kvWindow-1) {
+		t.Fatalf("base after the upload = %d, want %d (the last window-1 of %d positions)", win.kvBases[win.kvSlot], n-(win.kvWindow-1), n)
 	}
 	decodeSteps(t, full, win, mw, n, 150)
 }
@@ -600,11 +598,11 @@ func windowedRollbackReuse(t *testing.T, fx string) {
 	for turn := range 10 {
 		end := pos + 9 + (turn*5)%11
 		if turn > 0 {
-			if win.kvBase > 0 {
+			if win.kvBases[win.kvSlot] > 0 {
 				compacted++
 			}
 			if got := win.ReusableKV(pos); got != pos {
-				t.Fatalf("turn %d: ReusableKV(%d) = %d after a rollback of %d positions (base %d): within the %d kept, the prefix must be reused", turn, pos, got, win.kvRollback(), win.kvBase, win.kvRollback())
+				t.Fatalf("turn %d: ReusableKV(%d) = %d after a rollback of %d positions (base %d): within the %d kept, the prefix must be reused", turn, pos, got, win.kvRollback(), win.kvBases[win.kvSlot], win.kvRollback())
 			}
 		}
 		a, err := full.PrefillLast(ctx, emb(pos, end), pos)
@@ -618,7 +616,7 @@ func windowedRollbackReuse(t *testing.T, fx string) {
 		}
 		b = append([]float32(nil), b...)
 		if j, ok := sameBits(a, b); !ok {
-			t.Fatalf("turn %d: reused prefill logits differ from the full-KV resident's at %d (base %d)", turn, j, win.kvBase)
+			t.Fatalf("turn %d: reused prefill logits differ from the full-KV resident's at %d (base %d)", turn, j, win.kvBases[win.kvSlot])
 		}
 		c, err := cold.PrefillLast(ctx, emb(0, end), 0)
 		if err != nil {

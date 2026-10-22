@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -27,8 +26,13 @@ func loadResident(t *testing.T, fx string, opts decoder.Options) (*decoder.Model
 	return m, r
 }
 
-// heldPositions is how many positions layer l's K buffer of the bound slot holds.
-func heldPositions(r *cudaResident, l int) int { return r.kc[l].Len() / r.layers[l].kvDim }
+// heldPositions is how many positions one slot's share of layer l's K pool holds: the pool less its null block, per slot (kvpool.go).
+func heldPositions(r *cudaResident, l int) int {
+	return (r.kc[l].Len()/r.layers[l].kvDim - kvBlock) / r.KVSlots()
+}
+
+// windowHeld is the positions a slot's window group may map: window+slack, plus a block for a range that starts mid-block.
+func windowHeld(r *cudaResident) int { return kvWindowBlocks(r.ctxCap, r.kvWindow+r.kvSlack) * kvBlock }
 
 // TestWindowedKV_grantArithmetic pins kvWindowGrant: nothing left over gives 0, a grant is a whole number of steps, and the cap holds.
 func TestWindowedKV_grantArithmetic(t *testing.T) {
@@ -73,8 +77,8 @@ func TestWindowedKV_expertCacheGetsTheGrant(t *testing.T) {
 	}
 	for l := range r.layers {
 		if r.layers[l].kvWin && !r.layers[l].kvShared {
-			if got := heldPositions(r, l); got != r.kvWindow+r.kvSlack {
-				t.Fatalf("expert-cache load: layer %d holds %d positions, want the granted %d", l, got, r.kvWindow+r.kvSlack)
+			if got := heldPositions(r, l); got != windowHeld(r) {
+				t.Fatalf("expert-cache load: layer %d holds %d positions, want the granted %d", l, got, windowHeld(r))
 			}
 		}
 	}
@@ -158,11 +162,9 @@ func TestWindowedKV_grant(t *testing.T) {
 	if rich.kvRollback() != rollbackMax || rich.kvSlack != rollbackMax+kvWindowStep {
 		t.Fatalf("with spare VRAM: slack %d, rollback %d, want %d and %d", rich.kvSlack, rich.kvRollback(), rollbackMax+kvWindowStep, rollbackMax)
 	}
-	for s, b := range rich.kvSlotBufs {
-		for l := range rich.layers {
-			if got := b.kc[l].Len() / rich.layers[l].kvDim; rich.layers[l].kvWin && got != rich.kvWindow+rich.kvSlack {
-				t.Fatalf("slot %d layer %d holds %d positions after the grant, want %d", s, l, got, rich.kvWindow+rich.kvSlack)
-			}
+	for l := range rich.layers {
+		if got := heldPositions(rich, l); rich.layers[l].kvWin && got != windowHeld(rich) {
+			t.Fatalf("layer %d holds %d positions a slot after the grant, want %d", l, got, windowHeld(rich))
 		}
 	}
 
@@ -183,12 +185,12 @@ func TestWindowedKV_grant(t *testing.T) {
 	_, full := loadResident(t, "mistral-tiny-window", decoder.Options{ResidentKVSlots: 2})
 	mw, win := loadResident(t, "mistral-tiny-window", opts)
 	decodeSteps(t, full, win, mw, 0, 300)
-	if win.kvBase == 0 {
+	if win.kvBases[win.kvSlot] == 0 {
 		t.Fatal("no compaction in 300 steps under the grant")
 	}
 	back := 300 - rollbackMax
 	if got := win.ReusableKV(back); got != back {
-		t.Fatalf("ReusableKV(%d) = %d after a rollback of %d, the granted rollback (base %d)", back, got, rollbackMax, win.kvBase)
+		t.Fatalf("ReusableKV(%d) = %d after a rollback of %d, the granted rollback (base %d)", back, got, rollbackMax, win.kvBases[win.kvSlot])
 	}
 }
 
@@ -211,9 +213,9 @@ func windowedStepIdentity64(t *testing.T, fx string) {
 		n := min(50, steps-done)
 		for i := 0; i < n; i++ {
 			decodeSteps(t, full, win, mw, done+i, 1)
-			if win.kvBase != lastBase {
+			if win.kvBases[win.kvSlot] != lastBase {
 				compactions++
-				lastBase = win.kvBase
+				lastBase = win.kvBases[win.kvSlot]
 			}
 		}
 		compareHeldKV(t, full, win, done+n)
@@ -221,10 +223,11 @@ func windowedStepIdentity64(t *testing.T, fx string) {
 	if compactions < 5 {
 		t.Fatalf("%d compactions in %d steps: the test did not exercise the step", compactions, steps)
 	}
-	t.Logf("%s: %d steps, %d compactions, final base %d", fx, steps, compactions, win.kvBase)
+	t.Logf("%s: %d steps, %d compactions, final base %d", fx, steps, compactions, win.kvBases[win.kvSlot])
 }
 
-// compareHeldKV checks every windowed layer's held positions [base, end) against the full-KV resident's same positions, bit for bit.
+// compareHeldKV checks every windowed layer's held positions [base, end) against the full-KV resident's same positions, bit for bit,
+// each read through its slot's tables.
 func compareHeldKV(t *testing.T, full, win *cudaResident, end int) {
 	t.Helper()
 	for l := range win.layers {
@@ -232,27 +235,29 @@ func compareHeldKV(t *testing.T, full, win *cudaResident, end int) {
 		if !Ly.kvWin || Ly.kvShared {
 			continue
 		}
-		n := (end - win.kvBase) * Ly.kvDim
-		for i, pair := range [][2]Buffer{{full.kc[l], win.kc[l]}, {full.vc[l], win.vc[l]}} {
-			a, b := make([]float32, full.kc[l].Len()), make([]float32, pair[1].Len())
-			if err := full.do(func() error {
-				if e := full.stream.Sync(); e != nil {
-					return e
-				}
-				return gpu.Download(pair[0], a)
-			}); err != nil {
-				t.Fatal(err)
+		base := win.kvBases[win.kvSlot]
+		var fk, fv, wk, wv []float32
+		if err := full.do(func() (e error) {
+			if e = full.stream.Sync(); e != nil {
+				return e
 			}
-			if err := win.do(func() error {
-				if e := win.stream.Sync(); e != nil {
-					return e
-				}
-				return gpu.Download(pair[1], b)
-			}); err != nil {
-				t.Fatal(err)
+			fk, fv, e = full.kvRowsForTest(full.kvSlot, l, base, end)
+			return e
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := win.do(func() (e error) {
+			if e = win.stream.Sync(); e != nil {
+				return e
 			}
-			if j, ok := sameBits(a[win.kvBase*Ly.kvDim:win.kvBase*Ly.kvDim+n], b[:n]); !ok {
-				t.Fatalf("layer %d %s at end %d: held position %d differs from the full cache (base %d)", l, []string{"K", "V"}[i], end, win.kvBase+j/Ly.kvDim, win.kvBase)
+			wk, wv, e = win.kvRowsForTest(win.kvSlot, l, base, end)
+			return e
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for i, pair := range [][2][]float32{{fk, wk}, {fv, wv}} {
+			if j, ok := sameBits(pair[0], pair[1]); !ok {
+				t.Fatalf("layer %d %s at end %d: held position %d differs from the full cache (base %d)", l, []string{"K", "V"}[i], end, base+j/Ly.kvDim, base)
 			}
 		}
 	}

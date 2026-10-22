@@ -1,5 +1,6 @@
 #include <cuda_fp16.h>
 #include "kvtype.cuh"
+#include "kvpage.cuh"
 #include "attnscore.cuh"
 
 // prefill_batched.cu — the batched (M=len) counterparts of the per-token glue kernels, for the
@@ -127,7 +128,7 @@ extern "C" __global__ void qk_norm_batched(
 __global__ void rope_kv_batched(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
-    int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
+    const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
     const float* __restrict__ qTempRows)
 {
     int m = blockIdx.y; if (m >= M) return;
@@ -154,12 +155,12 @@ __global__ void rope_kv_batched(
         float a = base[d], b = base[d + rhalf];
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[d] = r0; base[d + rhalf] = r1;
-        long o = (long)pos * kvDim + (long)h * hd;
+        long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
         KV_ST(kc + (o + d), r0); KV_ST(kc + (o + d + rhalf), r1);
         KV_ST(vc + (o + d), vm[h * hd + d]); KV_ST(vc + (o + d + rhalf), vm[h * hd + d + rhalf]);
     } else if (idx < qn + kn + tn) {
         int j = idx - qn - kn; int h = j / tail, t = 2 * rhalf + (j % tail);
-        long o = (long)pos * kvDim + (long)h * hd;
+        long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
         KV_ST(kc + (o + t), km[h * hd + t]); KV_ST(vc + (o + t), vm[h * hd + t]);
     }
 }
@@ -172,7 +173,7 @@ __global__ void rope_kv_batched(
 // It must match splitkv_softmax exactly — a sink applied at decode but not at prefill would
 // present as drift partway through a sequence rather than as a missing term.
 __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                             const KV_T* __restrict__ vc, int nH, int nKV, int hd, int startPos,
+                             const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
                              const float* __restrict__ sinks ATTN_CAP_PARAM) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -189,7 +190,7 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
     int t = threadIdx.x, nt = blockDim.x;
     float lm = -1e30f;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const KV_T* ks = kc + (long)s * kvDim + kvh * hd;
+        const KV_T* ks = kc + KV_ROW(kvt, s) * kvDim + kvh * hd;
         float dot = 0.f;
         // float4 the K read: threads split over KEYS, so a scalar ks[d] read is stride-kvDim across the
         // warp → only ~22% of each 32-byte L1TEX sector used (ncu), and this kernel is L1TEX-throughput-
@@ -230,13 +231,13 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
         for (; s + 16 <= nKeys; s += 16) {
             float v[16];
 #pragma unroll
-            for (int j = 0; j < 16; j++) v[j] = KV_LD(vp + (long)(s + j) * kvDim);
+            for (int j = 0; j < 16; j++) v[j] = KV_LD(vp + KV_ROW(kvt, s + j) * kvDim);
 #pragma unroll
             for (int j = 0; j < 16; j++) acc = __fmaf_rn(sc[s + j - winStart], v[j], acc);
         }
-        for (; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp + (long)s * kvDim), acc);
+        for (; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp + KV_ROW(kvt, s) * kvDim), acc);
 #else
-        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + ((long)s * kvDim + kvh * hd + d)), acc);
+        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (KV_ROW(kvt, s) * kvDim + kvh * hd + d)), acc);
 #endif
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }

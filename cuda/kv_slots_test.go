@@ -178,9 +178,9 @@ func TestCUDAKVSlots_recurrentKeepsOne(t *testing.T) {
 	if r.dnet == nil {
 		t.Fatal("qwen35-tiny built without DeltaNet layers — this test no longer covers a recurrent family")
 	}
-	if len(r.kvSlotBufs) != 0 || r.KVSlots() != 1 || m.ResidentKVSlots() != 1 {
-		t.Errorf("recurrent resident: %d slot buffers, KVSlots %d, model reports %d — want one slot",
-			len(r.kvSlotBufs), r.KVSlots(), m.ResidentKVSlots())
+	if len(r.kvTabs) != 1 || r.KVSlots() != 1 || m.ResidentKVSlots() != 1 {
+		t.Errorf("recurrent resident: %d slot tables, KVSlots %d, model reports %d — want one slot",
+			len(r.kvTabs), r.KVSlots(), m.ResidentKVSlots())
 	}
 }
 
@@ -250,14 +250,12 @@ func TestCUDAKVSlots_clampedBuild(t *testing.T) {
 	if !ok {
 		t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
 	}
-	if len(r.kvSlotBufs) != 2 || m.ResidentKVSlots() != 2 {
-		t.Fatalf("clamped build: %d slot buffers, model reports %d slots — want 2 of 4", len(r.kvSlotBufs), m.ResidentKVSlots())
+	if len(r.kvTabs) != 2 || m.ResidentKVSlots() != 2 {
+		t.Fatalf("clamped build: %d slot tables, model reports %d slots — want 2 of 4", len(r.kvTabs), m.ResidentKVSlots())
 	}
-	for s := range 2 {
-		for l := range r.layers {
-			if b := r.kvSlotBufs[s].kc[l]; b.Len() != r.ctxCap*r.layers[l].kvDim {
-				t.Errorf("slot %d layer %d: K buffer holds %d floats, want ctxCap*kvDim = %d", s, l, b.Len(), r.ctxCap*r.layers[l].kvDim)
-			}
+	for l := range r.layers {
+		if want := r.kvPoolBlocks(r.kvGroupOf(l), 2) * kvBlock * r.layers[l].kvDim; r.kc[l].Len() != want {
+			t.Errorf("layer %d: K pool holds %d floats, want two slots' blocks and the null block = %d", l, r.kc[l].Len(), want)
 		}
 	}
 	if err := r.UseKVSlot(2); err == nil {
@@ -267,8 +265,8 @@ func TestCUDAKVSlots_clampedBuild(t *testing.T) {
 		if err := r.UseKVSlot(s); err != nil {
 			t.Fatalf("UseKVSlot(%d): %v", s, err)
 		}
-		if &r.kc[0] != &r.kvSlotBufs[s].kc[0] {
-			t.Errorf("after UseKVSlot(%d) the bound K buffers are not slot %d's", s, s)
+		if r.kvSlot != s || r.kvTabSlot != s {
+			t.Errorf("after UseKVSlot(%d) the bound tables are slot %d's (read: %d)", s, r.kvSlot, r.kvTabSlot)
 		}
 		if _, err := r.Forward(m.EmbedResidentForTest(5), 0); err != nil {
 			t.Fatalf("forward on slot %d: %v", s, err)
@@ -573,15 +571,14 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 	t.Cleanup(func() { cudaFreeVRAM = orig })
 	const slots, target = 4, 5000
 	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
-		perPos := kvBytesForCap(1, r.layers)
-		return uint64(int64(slots)*perPos*target + r.extraBytes + ctxCapMarginBytes), nil
+		return uint64(int64(slots)*kvBytesForCap(target, r.layers) + kvPoolNullBytes(r.layers) + r.extraBytes + ctxCapMarginBytes), nil
 	}
 	for _, c := range []struct {
 		name               string
 		ctxReq             int
 		wantCtx, wantSlots int
 	}{
-		{"unpinned: trimmed to fit all 4", 0, target, slots},
+		{"unpinned: trimmed to fit all 4", 0, kvBlocksFor(target) * kvBlock, slots}, // a slot's cost steps every block, so the trim lands on a block edge
 		{"explicit -ctx 8192: kept, slots clamped", 8192, 8192, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -598,8 +595,8 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 			if r.ctxCap != c.wantCtx || r.KVSlots() != c.wantSlots {
 				t.Errorf("built ctx %d with %d slots, want ctx %d with %d", r.ctxCap, r.KVSlots(), c.wantCtx, c.wantSlots)
 			}
-			if b := r.kc[0].Len(); b != r.ctxCap*r.layers[0].kvDim {
-				t.Errorf("layer 0 K holds %d floats, want ctxCap*kvDim = %d: the caches were sized before the trim", b, r.ctxCap*r.layers[0].kvDim)
+			if b, want := r.kc[0].Len(), r.kvPoolBlocks(r.kvGroupOf(0), r.KVSlots())*kvBlock*r.layers[0].kvDim; b != want {
+				t.Errorf("layer 0 K pool holds %d floats, want %d: the pools were sized before the trim", b, want)
 			}
 			if err := r.checkCap(r.ctxCap-1, 1); err != nil {
 				t.Errorf("checkCap at the last position: %v", err)
@@ -660,8 +657,8 @@ func TestCUDAKVSlots_oomKeepsTheSlotsThatFit(t *testing.T) {
 	if got := md.ResidentKVSlots(); got != 2 {
 		t.Fatalf("degraded: ResidentKVSlots() = %d, want 2 (the slots that fit)", got)
 	}
-	if n := len(rd.kvSlotBufs); n != 2 {
-		t.Fatalf("degraded: %d slot buffer sets, want 2", n)
+	if n := len(rd.kvTabs); n != 2 {
+		t.Fatalf("degraded: %d slot table sets, want 2", n)
 	}
 	if ad, _ := rd.dev.LedgerLen(); ad != a2 {
 		t.Errorf("degraded build holds %d device allocations, a plain two-slot build %d: the partial slot leaked", ad, a2)

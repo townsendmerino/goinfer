@@ -33,11 +33,15 @@ func loadGuardResident(t *testing.T, c guardCase) (*decoder.Model, *cudaResident
 	return m, r
 }
 
-// withTwoSlots gives r a second slot entry that aliases the first's buffers, so the checks that run only on a multi-slot resident (the batched step, the
-// copy) get past the slot count to the guard under test. Nothing is copied or run through it.
+// withTwoSlots gives r a second slot entry with empty tables, so the checks that run only on a multi-slot resident (the batched step, the copy) get
+// past the slot count to the guard under test. Nothing is copied or run through it.
 func withTwoSlots(r *cudaResident) {
 	if r.KVSlots() < 2 {
-		r.kvSlotBufs = []cudaKVSlot{{kc: r.kc, vc: r.vc}, {kc: r.kc, vc: r.vc}}
+		var t kvSlotTabs
+		for g := range kvGroups {
+			t.ids[g] = make([]int32, r.kvMaxBlocks())
+		}
+		r.kvTabs = append(r.kvTabs, t)
 	}
 }
 

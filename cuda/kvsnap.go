@@ -21,8 +21,10 @@ var (
 //   - A full-attention or MLA latent layer holds rows [0, end) of each buffer it has.
 //   - A layer that reads another layer's KV holds nothing: it aliases its source.
 //   - A windowed layer holds the rows its window and the rollback need behind end: [lo, end) with
-//     lo = max(base, end-(window-1)-rollback), through the slot's shifted view, as CopyKV copies them. A restore to position q <= end
-//     writes [max(lo, q-(window-1)-rollback), q) to physical slot 0 and sets the slot's ring base to that first row.
+//     lo = max(base, end-(window-1)-rollback), as CopyKV copies them. A restore to position q <= end writes
+//     [max(lo, q-(window-1)-rollback), q) and sets the slot's window base to that first row.
+//
+// Rows are read and written through the slot's tables (kvpool.go).
 //
 //   - A Gated-DeltaNet model's snapshot also holds every DeltaNet layer's conv ring and recurrent state as they stand after row end-1, so it
 //     restores to exactly end (docs/queue-engineering.md, B35). It is taken between two passes of a prefill (ResidentPrefillMarked), when
@@ -89,14 +91,6 @@ func (s *cudaKVSnapshot) Release() {
 	})
 }
 
-// slotKV is slot's K and V buffers: the build's own with one slot.
-func (r *cudaResident) slotKV(slot int) (kc, vc []Buffer) {
-	if len(r.kvSlotBufs) == 0 {
-		return r.kc, r.vc
-	}
-	return r.kvSlotBufs[slot].kc, r.kvSlotBufs[slot].vc
-}
-
 // snapshotDecline is the refusal that needs no slot: the same ones CopyKV makes.
 func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 	switch {
@@ -104,13 +98,6 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, r.ctxCap)}
 	case r.mamba != nil:
 		return &decoder.KVCopyDecline{Reason: "Mamba-2 state is not part of a snapshot"}
-	}
-	if r.kvWin {
-		for l := range r.layers {
-			if Ly := &r.layers[l]; Ly.kvWin && Ly.kvHalf {
-				return &decoder.KVCopyDecline{Reason: fmt.Sprintf("layer %d is windowed and f16, which the shifted view does not address", l)}
-			}
-		}
 	}
 	return nil
 }
@@ -142,7 +129,6 @@ func (r *cudaResident) snapshotDeltaLayout(words int) ([]snapDelta, int) {
 // snapshotLayout lays the held rows out in the host buffer for a snapshot to end whose windowed layers start at lo, and returns the
 // layers and the words in all.
 func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
-	_, vc := r.slotKV(r.kvSlot)
 	out := make([]snapLayer, len(r.layers))
 	words := 0
 	for l := range r.layers {
@@ -154,7 +140,7 @@ func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
 		if Ly.kvHalf {
 			elem = 2
 		}
-		sl := snapLayer{held: true, win: Ly.kvWin, rowWords: Ly.kvDim * elem / 4, hasV: vc[l].Len() != 0}
+		sl := snapLayer{held: true, win: Ly.kvWin, rowWords: Ly.kvDim * elem / 4, hasV: r.vc[l].Len() != 0}
 		rows := end
 		if Ly.kvWin {
 			rows = end - lo
@@ -236,28 +222,29 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	}
 	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, host: host, layers: layers, dn: dn, bytes: int64(words) * 4,
 		ctxCap: r.ctxCap, window: r.kvWindow, slack: r.kvSlack, win: r.kvWin, half: r.kvF16}
-	kc, vc := r.slotKV(slot)
 	buf := host.Slice()
 	for l := range r.layers {
 		sl := layers[l]
 		if !sl.held {
 			continue
 		}
-		rows, srcRow := end, 0
+		from := 0
 		if sl.win {
-			rows, srcRow = end-lo, lo-r.kvBases[slot]
+			from = lo
 		}
-		n := rows * sl.rowWords
-		off := srcRow * sl.rowWords * 4 // bytes into the device buffer
-		if err := gpu.Download(kc[l].At(off), buf[sl.kOff:sl.kOff+n]); err != nil {
+		err := r.kvRowRuns(slot, r.kvGroupOf(l), from, end, func(p, n, row int) error {
+			h, words := (p-from)*sl.rowWords, n*sl.rowWords
+			if err := gpu.Download(r.kc[l].At(row*sl.rowWords*4), buf[sl.kOff+h:sl.kOff+h+words]); err != nil {
+				return err
+			}
+			if !sl.hasV {
+				return nil
+			}
+			return gpu.Download(r.vc[l].At(row*sl.rowWords*4), buf[sl.vOff+h:sl.vOff+h+words])
+		})
+		if err != nil {
 			s.Release()
 			return nil, err
-		}
-		if sl.hasV {
-			if err := gpu.Download(vc[l].At(off), buf[sl.vOff:sl.vOff+n]); err != nil {
-				s.Release()
-				return nil, err
-			}
 		}
 	}
 	for _, d := range dn {
@@ -299,26 +286,39 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
 	if err := r.stream.Sync(); err != nil {
 		return err
 	}
-	kc, vc := r.slotKV(slot)
+	if err := r.kvMap(slot, kvGroupFull, 0, end); err != nil {
+		return err
+	}
+	if r.kvWin {
+		if err := r.kvMap(slot, kvGroupWin, lo, end); err != nil {
+			return err
+		}
+	}
+	if err := r.kvFlushTabs(slot); err != nil {
+		return err
+	}
 	buf := s.host.Slice()
 	for l := range r.layers {
 		sl := s.layers[l]
 		if !sl.held {
 			continue
 		}
-		rows, from := end, 0
+		from, first := 0, 0 // the first position written, and the first the snapshot holds
 		if sl.win {
-			rows, from = end-lo, lo-s.lo
+			from, first = lo, s.lo
 		}
-		n := rows * sl.rowWords
-		hostOff := from * sl.rowWords
-		if err := gpu.Upload(kc[l].At(0), buf[sl.kOff+hostOff:sl.kOff+hostOff+n]); err != nil {
-			return err
-		}
-		if sl.hasV {
-			if err := gpu.Upload(vc[l].At(0), buf[sl.vOff+hostOff:sl.vOff+hostOff+n]); err != nil {
+		err := r.kvRowRuns(slot, r.kvGroupOf(l), from, end, func(p, n, row int) error {
+			h, words := (p-first)*sl.rowWords, n*sl.rowWords
+			if err := gpu.Upload(r.kc[l].At(row*sl.rowWords*4), buf[sl.kOff+h:sl.kOff+h+words]); err != nil {
 				return err
 			}
+			if !sl.hasV {
+				return nil
+			}
+			return gpu.Upload(r.vc[l].At(row*sl.rowWords*4), buf[sl.vOff+h:sl.vOff+h+words])
+		})
+		if err != nil {
+			return err
 		}
 	}
 	for _, d := range s.dn {
@@ -335,9 +335,6 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
 	}
 	if r.kvWin {
 		r.kvBases[slot] = lo
-		if slot == r.kvSlot {
-			r.kvBase = lo
-		}
 	}
 	return r.stream.Sync()
 }

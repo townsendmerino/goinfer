@@ -28,10 +28,11 @@ var kvCopyF16 = true
 //   - A full-attention or MLA latent layer copies rows [start, end) of each buffer it has.
 //   - A layer that reads another layer's KV copies nothing: it aliases its source.
 //   - A windowed layer copies the rows dst attends to from end and, behind them, as much of the rollback (kvRollback) as
-//     src still holds: src's rows [max(src's base, end-(window-1)-rollback), end), through src's shifted view, to dst's
-//     physical slot 0, and dst's base becomes that first row. dst then holds what a slot that wrote the rows itself holds
-//     after a compaction. Rows below start that dst already held are rewritten with src's bytes of the same published
-//     blocks.
+//     src still holds: src's rows [max(src's base, end-(window-1)-rollback), end), and dst's base becomes that first row.
+//     dst then holds what a slot that wrote the rows itself holds after its base moved. Rows below start that dst already
+//     held are rewritten with src's bytes of the same published blocks.
+//
+// Rows are read and written through each slot's tables (kvpool.go).
 //
 // A *decoder.KVCopyDecline, before anything is written, refuses a range the copy cannot serve; its check of src's base runs
 // inside the job, so a compaction of a running source cannot fall between the check and the read. Each copy and each
@@ -65,40 +66,48 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 				src, r.kvBases[src], end, end-(r.kvWindow-1), r.kvBudgetText())}
 		}
 		lo = max(0, r.kvBases[src], end-(r.kvWindow-1)-r.kvRollback())
-		for l := range r.layers {
-			if Ly := &r.layers[l]; Ly.kvWin && Ly.kvHalf {
-				return &decoder.KVCopyDecline{Reason: fmt.Sprintf("layer %d is windowed and f16, which the shifted view does not address", l)}
-			}
-		}
 	}
-	from, to := r.kvSlotBufs[src], r.kvSlotBufs[dst]
-	for l := range r.layers {
-		Ly := &r.layers[l]
-		if Ly.kvShared {
-			continue
-		}
-		elem := 4
-		if Ly.kvHalf {
-			elem = 2
-		}
-		row := Ly.kvDim * elem // bytes
-		srcOff, dstOff, rows := start*row, start*row, end-start
-		if Ly.kvWin {
-			srcOff, dstOff, rows = (lo-r.kvBases[src])*row, 0, end-lo
-		}
-		for _, p := range [2][2]Buffer{{from.kc[l], to.kc[l]}, {from.vc[l], to.vc[l]}} {
-			if p[0].Len() == 0 {
-				continue // an MLA latent layer has no V
-			}
-			if err := r.copyF32(p[0].At(srcOff), p[1].At(dstOff), rows*row/4); err != nil {
-				return err
-			}
-		}
+	if e := r.kvMap(dst, kvGroupFull, start, end); e != nil {
+		return e
 	}
 	if r.kvWin {
 		r.kvBases[dst] = lo
-		if dst == r.kvSlot {
-			r.kvBase = lo
+		if e := r.kvMap(dst, kvGroupWin, lo, end); e != nil {
+			return e
+		}
+	}
+	if e := r.kvFlushTabs(dst); e != nil {
+		return e
+	}
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		if Ly.kvShared || Ly.noKV() {
+			continue
+		}
+		g, from := r.kvGroupOf(l), start
+		if Ly.kvWin {
+			from = lo
+		}
+		row := Ly.kvDim * r.kvElem(l) // bytes
+		srcIDs := r.kvTabs[src].ids[g]
+		err := r.kvRowRuns(dst, g, from, end, func(p, n, dstRow int) error {
+			id := srcIDs[p/kvBlock]
+			if id == 0 {
+				return fmt.Errorf("cuda: CopyKV: slot %d holds no block for position %d", src, p)
+			}
+			srcRow := int(id)*kvBlock + p%kvBlock
+			for _, b := range []Buffer{r.kc[l], r.vc[l]} {
+				if b.Len() == 0 {
+					continue // an MLA latent layer has no V
+				}
+				if e := r.copyF32(b.At(srcRow*row), b.At(dstRow*row), n*row/4); e != nil {
+					return e
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 	if err := r.stream.Sync(); err != nil {

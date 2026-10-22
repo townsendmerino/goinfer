@@ -39,11 +39,12 @@
 // Regenerate with:  ./build_ptx.sh attn_img_prefill
 
 #include "attnscore.cuh"
+#include "kvpage.cuh"
 
 extern "C" {
 
 __global__ void attn_img_batched(const float* __restrict__ q, const float* __restrict__ kc,
-                             const float* __restrict__ vc, int nH, int nKV, int hd, int startPos,
+                             const float* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
                              const float* __restrict__ sinks, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -70,7 +71,7 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
     int t = threadIdx.x, nt = blockDim.x;
     float lm = -1e30f;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const float* ks = kc + (long)s * kvDim + kvh * hd;
+        const float* ks = kc + KV_ROW(kvt, s) * kvDim + kvh * hd;
         float dot = 0.f;
         // float4 the K read — see attn_batched's identical comment for the rationale.
         int d4 = hd >> 2;
@@ -99,7 +100,7 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
     float inv = 1.f / denom; __syncthreads();
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + kvh * hd + d], acc);
+        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], vc[KV_ROW(kvt, s) * kvDim + kvh * hd + d], acc);
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }
 }

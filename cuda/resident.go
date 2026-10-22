@@ -161,7 +161,7 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 // would allow (docs/code-notes/cuda.md#ctxForSlots).
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
 	fits := func(ctx int) bool {
-		more := int64(slots-1) * m.ResidentKVBytes("cuda", ctx, m.KVCacheF16(), false) // the load's own KV precision (decoder/kv16_cuda.go)
+		more := int64(slots-1) * m.CUDAKVSlotBytes(ctx, m.KVCacheF16()) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go)
 		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
 		return p.Placement != decoder.PlacementDecline
 	}
@@ -187,10 +187,12 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 	return lo
 }
 
-// kvBytesForCap is the device bytes the resident K+V caches occupy at a given capacity: every layer holds K and V
-// as f32[cap*kvDim] (f16 for a kvHalf layer). docs/benchmarks.md derives its deep-context sizing from this formula.
+// kvBytesForCap is the device bytes one resident KV slot takes at a given capacity (kvpool.go): the blocks its tables can map, every
+// layer holding K and V as f32 (f16 for a kvHalf layer) and an MLA layer one latent row, plus the slot's tables. The pools' null blocks are
+// once per build, not per slot (kvPoolNullBytes). docs/benchmarks.md derives its deep-context sizing from this formula.
 func kvBytesForCap(cap int, layers []cudaLayer) int64 {
-	var perPos, windowed int64
+	blocks := int64(kvBlocksFor(cap))
+	var perBlock, windowed int64
 	for i := range layers {
 		if layers[i].kvShared {
 			continue // aliases its source's cache: no bytes of its own
@@ -200,19 +202,20 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 			elem = 2
 		}
 		if layers[i].isMLA() {
-			perPos += int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
+			perBlock += kvBlock * int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
-			// a windowed layer holds window+slack positions however long the context (kvwindow.go), and decoder.cudaKVBytes prices the same
-			windowed += int64(layers[i].kvDim) * 2 * elem * int64(min(cap, int(layers[i].window)+kvWindowSlack))
+			// a windowed layer maps window+slack positions however long the context (kvWindowBlocks)
+			held := int64(kvWindowBlocks(cap, int(layers[i].window)+kvWindowSlack))
+			windowed += 2 * int64(layers[i].kvDim) * elem * kvBlock * held
 		} else {
-			perPos += int64(layers[i].kvDim) * 2 * elem // K+V
+			perBlock += 2 * kvBlock * int64(layers[i].kvDim) * elem // K+V
 		}
 	}
-	return perPos*int64(cap) + windowed
+	return perBlock*blocks + windowed + kvGroups*4*blocks
 }
 
-// kvCapForBytes is the largest capacity in [lo, hi] whose K+V caches occupy at most budget bytes (ok=false when even lo does not fit). kvBytesForCap is
-// linear in the capacity unless a layer is windowed, where it is piecewise linear and non-decreasing, so a search finds the edge either way.
+// kvCapForBytes is the largest capacity in [lo, hi] whose slot occupies at most budget bytes (ok=false when even lo does not fit). kvBytesForCap is
+// non-decreasing in the capacity (a step every kvBlock positions), so a search finds the edge.
 func kvCapForBytes(budget int64, lo, hi int, layers []cudaLayer) (c int, ok bool) {
 	if hi < lo || kvBytesForCap(lo, layers) > budget {
 		return lo, false
@@ -242,51 +245,9 @@ func kvSlotsFit(want int, free, perSlot, reserve int64) int {
 	return n
 }
 
-// cudaKVSlot is one resident KV slot's per-layer buffers (MC1). A DeltaNet layer has none; an MLA layer has only kc.
-type cudaKVSlot struct{ kc, vc []Buffer }
-
-// kvSlotAllocFailAtForTest, when > 0, makes allocKVSlot fail as a device OOM at that slot index (test seam; zero in production).
+// kvSlotAllocFailAtForTest, when > 0, makes the KV pools fail as a device OOM when sized for more than that many slots (test seam;
+// zero in production), so a build keeps the slots that fit (kvAllocPoolsFit).
 var kvSlotAllocFailAtForTest int
-
-// allocKVSlot allocates slot s's per-layer K/V buffers as copies of slot 0's shapes. A device allocation failure (aikit's MustBuf panics on OOM, "device allocation failed") is
-// recovered into ok=false with the partial slot released, so the caller can keep the slots that fit; any other panic is re-raised.
-func (r *cudaResident) allocKVSlot(s, nLayers int) (b cudaKVSlot, ok bool) {
-	var own []Buffer
-	defer func() {
-		if v := recover(); v != nil {
-			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
-				panic(v)
-			}
-			for _, o := range own {
-				r.dev.ReleaseBuf(o)
-			}
-			b, ok = cudaKVSlot{}, false
-		}
-	}()
-	if kvSlotAllocFailAtForTest == s {
-		panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
-	}
-	b = cudaKVSlot{kc: make([]Buffer, nLayers), vc: make([]Buffer, nLayers)}
-	for l := range nLayers {
-		if r.layers[l].kvShared {
-			continue // aliased to its source's slot buffers below
-		}
-		if r.kc[l].Len() > 0 {
-			b.kc[l] = r.akv(l, r.kc[l].Len())
-			own = append(own, b.kc[l])
-		}
-		if r.vc[l].Len() > 0 {
-			b.vc[l] = r.akv(l, r.vc[l].Len())
-			own = append(own, b.vc[l])
-		}
-	}
-	for l := range nLayers {
-		if r.layers[l].kvShared {
-			b.kc[l], b.vc[l] = b.kc[r.layers[l].kvSrc], b.vc[r.layers[l].kvSrc]
-		}
-	}
-	return b, true
-}
 
 // cudaFreeVRAM is the free-VRAM probe checkKVFits prices the resident KV (every slot) against. A variable so
 // TestCUDAKVSlots_pricedAgainstWhatIsLeft can stub it.
@@ -859,14 +820,14 @@ type cudaResident struct {
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
 	aq, cq, mq, dq, argIdx                                                Buffer
 	argVal                                                                Buffer
-	topkOut                                                               Buffer // topk_select output: ids, logit bits, Z hi/lo bits
-	gbKey, gbIdx, gbOut                                                   Buffer // gumbel_stage1 per-block winners, and the drawn id
-	kc, vc                                                                []Buffer
+	topkOut                                                               Buffer   // topk_select output: ids, logit bits, Z hi/lo bits
+	gbKey, gbIdx, gbOut                                                   Buffer   // gumbel_stage1 per-block winners, and the drawn id
+	kc, vc                                                                []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
 
-	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md). kvSlotsReq is the model's request
-	// (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvSlotBufs each
-	// slot's per-layer K/V (nil with one slot), kvSlot the bound index. kc/vc above are the BOUND slot's buffers —
-	// every kernel launch and UploadKV reads them at call time — and UseKVSlot rebinds them.
+	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
+	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
+	// tables (kvTabDev their device copy), kvSlot the bound index, and kvTabSlot the slot whose tables the KV kernels read: the bound
+	// one, or an MC3 row's while its attention runs.
 	kvSlotsReq      int
 	kvF16           bool          // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
 	ctxPlanned      int           // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
@@ -874,16 +835,17 @@ type cudaResident struct {
 	allocSlackBytes int64         // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
 	kvSlotsN        int           // what checkKVFits granted (>= 1)
 	kvSlot          int
-	kvSlotBufs      []cudaKVSlot
+	kvTabSlot       int
+	kvPools         [kvGroups]kvPool
+	kvTabs          []kvSlotTabs
+	kvTabDev        Buffer
 
-	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the absolute position at physical slot 0
-	// of slot s's windowed layers, kvBase the bound slot's, kvScratch the compaction's staging buffer.
-	kvWin     bool
-	kvWindow  int
-	kvSlack   int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
-	kvBase    int
-	kvBases   []int
-	kvScratch Buffer
+	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the first position slot s's
+	// windowed layers hold.
+	kvWin    bool
+	kvWindow int
+	kvSlack  int // positions a windowed layer holds beyond its window: kvWindowSlack, raised by kvGrantRollback
+	kvBases  []int
 
 	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
 	// NOT the dense one — Mellum's moe_intermediate_size differs from intermediate_size, so
@@ -2046,6 +2008,7 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 // budget, and logged when clamped. The first slot is the one this check refuses; further ones only shrink.
 func (r *cudaResident) checkKVFits() error {
 	need := kvBytesForCap(r.ctxCap, r.layers)
+	null := kvPoolNullBytes(r.layers) // once per build, beside the slots
 	r.kvSlotsN = 1
 	free, err := cudaFreeVRAM(r)
 	if err != nil {
@@ -2063,15 +2026,9 @@ func (r *cudaResident) checkKVFits() error {
 		// with a log line. Only the multi-slot arm below used to shrink to what the card holds, so a plain decoder.Load of
 		// a 7B or Gemma-3 on an 8 GB card fell to the CPU (docs/code-notes/cuda.md#checkKVFits.trim). serve plans its own
 		// context and never hit it.
-		c, ok := trimUnpinnedCtx(r.ctxCap, need, int64(free), r.extraBytes, ctxCapMarginBytes)
-		if r.kvWin {
-			// trimUnpinnedCtx divides by a per-position cost; a windowed layer's cost is not per position, so search the capacity instead
-			ok = false
-			if need+r.extraBytes+ctxCapMarginBytes > int64(free) {
-				if cc, fits := kvCapForBytes(int64(free)-r.extraBytes-ctxCapMarginBytes, cudaCtxCapDefault, r.ctxCap-1, r.layers); fits {
-					c, ok = cc, true
-				}
-			}
+		c, ok := 0, false
+		if need+null+r.extraBytes+ctxCapMarginBytes > int64(free) {
+			c, ok = kvCapForBytes(int64(free)-null-r.extraBytes-ctxCapMarginBytes, cudaCtxCapDefault, r.ctxCap-1, r.layers)
 		}
 		if ok {
 			fmt.Fprintf(os.Stderr, "cuda: resident context %d, trimmed from %d at the build, so one KV slot fits beside the weights (%.0f MB free, less %.0f MB reserved)\n",
@@ -2079,9 +2036,9 @@ func (r *cudaResident) checkKVFits() error {
 			r.ctxCap, need = c, kvBytesForCap(c, r.layers)
 		}
 	}
-	if need+r.extraBytes+ctxCapMarginBytes <= int64(free) {
+	if need+null+r.extraBytes+ctxCapMarginBytes <= int64(free) {
 		// MC1: as many of the requested KV slots as fit the same budget, each another `need`.
-		reserve := r.extraBytes + ctxCapMarginBytes
+		reserve := null + r.extraBytes + ctxCapMarginBytes
 		r.kvSlotsN = kvSlotsFit(r.kvSlotsReq, int64(free), need, reserve)
 		if r.kvSlotsN < r.kvSlotsReq && !r.ctxExplicit && r.ctxCap > cudaCtxCapDefault {
 			// Slots before context (owner decision): an unpinned context gives up positions, never below cudaCtxCapDefault,
@@ -2089,8 +2046,10 @@ func (r *cudaResident) checkKVFits() error {
 			// kernel modules (TestResidentDenseBytes_matchesCUDADevice), so its choice can be a few dozen positions long; this
 			// trims it against the real free VRAM, before any KV exists. Nothing allocated so far depends on ctxCap exactly:
 			// the split-KV score scratch is indexed by the attended span, so a smaller cap uses less of it.
-			perPos := need / int64(r.ctxCap) // kvBytesForCap is exactly linear
-			c := max(cudaCtxCapDefault, int((int64(free)-reserve)/(int64(r.kvSlotsReq)*perPos)))
+			c := cudaCtxCapDefault
+			if cc, fits := kvCapForBytes((int64(free)-reserve)/int64(r.kvSlotsReq), cudaCtxCapDefault, r.ctxCap, r.layers); fits {
+				c = cc
+			}
 			if c < r.ctxCap {
 				fmt.Fprintf(os.Stderr, "cuda: resident context %d, trimmed from %d at the build, so the %d requested KV slots "+
 					"fit beside the weights (%.0f MB free, less %.0f MB reserved)\n",
@@ -2278,48 +2237,63 @@ func (r *cudaResident) VerifyPath() (bool, string) {
 	return true, "batched weight-stationary CUDA pass"
 }
 
-// UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute positions
-// base..base+n-1 (prefill bridge, same packed layout the kernels read: [pos*kvDim + head*hd + d]). base is
-// normally 0; a wrapped CPU-side sliding-window ring's live K/V can start later (KVCache.LayerKV's base return),
-// and Buffer.At gives a zero-copy view at the matching byte offset.
+// UploadKV writes a layer's post-RoPE K and raw V into the bound slot's caches at absolute positions base..base+n-1 (prefill
+// bridge, rows in the layout the kernels read: [pos*kvDim + head*hd + d], each position's row placed through the slot's table). base
+// is normally 0; a wrapped CPU-side sliding-window ring's live K/V can start later (KVCache.LayerKV's base return).
 func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if r.layers[layer].kvShared {
 		// Its r.kc/r.vc ARE its source's buffers: an upload here would overwrite the source layer's cache with another layer's rows.
 		return fmt.Errorf("cuda: UploadKV to layer %d, which shares layer %d's KV cache (Gemma 4 E-model): upload the owning layer", layer, r.layers[layer].kvSrc)
 	}
 	kvDim := r.layers[layer].kvDim
-	if kvDim > 0 {
-		if e := r.checkCap(base, len(keys)/kvDim); e != nil {
-			return e
-		}
+	if kvDim == 0 {
+		return nil
 	}
-	elem := 4 // bytes per cached element: f32, or 2 for an f16 layer
-	if r.layers[layer].kvHalf {
-		elem = 2
-	}
-	byteOff := base * kvDim * elem // matches gpu.Upload's element width
-	if r.layers[layer].kvWin {
-		// a windowed layer keeps only the last window-1 positions, at physical slot 0 (kvwindow.go)
-		keys, vals = r.uploadKVWindowed(layer, base, keys, vals)
-		byteOff = 0
-	}
-	if r.layers[layer].kvHalf {
-		// The cache holds the nearest f16 of each value, ties to even: the rounding the _kv16 store kernels apply to what they write.
-		kh, vh := make([]uint16, len(keys)), make([]uint16, len(vals))
-		f32SliceToF16RNE(kh, keys)
-		f32SliceToF16RNE(vh, vals)
-		return r.do(func() error {
-			if e := gpu.Upload(r.kc[layer].At(byteOff), kh); e != nil {
-				return e
-			}
-			return gpu.Upload(r.vc[layer].At(byteOff), vh)
-		})
+	if e := r.checkCap(base, len(keys)/kvDim); e != nil {
+		return e
 	}
 	return r.do(func() error {
-		if e := gpu.Upload(r.kc[layer].At(byteOff), keys); e != nil {
+		lo, k, v := base, keys, vals
+		if r.layers[layer].kvWin {
+			// a windowed layer keeps only the last window-1 positions (kvwindow.go)
+			k, v = r.uploadKVWindowed(layer, base, keys, vals)
+			lo = r.kvBases[r.kvSlot]
+		}
+		hi := base + len(keys)/kvDim
+		s, g := r.kvSlot, r.kvGroupOf(layer)
+		if e := r.kvMap(s, g, lo, hi); e != nil {
 			return e
 		}
-		return gpu.Upload(r.vc[layer].At(byteOff), vals)
+		if e := r.kvFlushTabs(s); e != nil {
+			return e
+		}
+		elem := r.kvElem(layer)
+		var kh, vh []uint16
+		if r.layers[layer].kvHalf {
+			// The cache holds the nearest f16 of each value, ties to even: the rounding the _kv16 store kernels apply to what they write.
+			kh, vh = make([]uint16, len(k)), make([]uint16, len(v))
+			f32SliceToF16RNE(kh, k)
+			f32SliceToF16RNE(vh, v)
+		}
+		return r.kvRowRuns(s, g, lo, hi, func(p, n, row int) error {
+			src, dst := (p-lo)*kvDim, row*kvDim*elem
+			if kh != nil {
+				if e := gpu.Upload(r.kc[layer].At(dst), kh[src:src+n*kvDim]); e != nil {
+					return e
+				}
+				if r.vc[layer].Len() == 0 {
+					return nil
+				}
+				return gpu.Upload(r.vc[layer].At(dst), vh[src:src+n*kvDim])
+			}
+			if e := gpu.Upload(r.kc[layer].At(dst), k[src:src+n*kvDim]); e != nil {
+				return e
+			}
+			if r.vc[layer].Len() == 0 {
+				return nil // an MLA latent layer has no V
+			}
+			return gpu.Upload(r.vc[layer].At(dst), v[src:src+n*kvDim])
+		})
 	})
 }
 
@@ -2330,27 +2304,22 @@ func (r *cudaResident) TruncateTo(pos int) {}
 // KVSlots / UseKVSlot implement decoder.ResidentKVSlotter (MC1, docs/tasks/task-concurrency-2026-09.md): how many
 // resident KV slots the build allocated, and binding one.
 //
-// Binding is a pointer swap of kc/vc, done on the executor so it is ordered after every job already posted. That
-// is the whole switch because nothing holds a slot's buffers across calls: every launch that reads or writes KV
-// (rope_kv, the attention kernels, the batched prefill, the MLA latent store, UploadKV) binds r.kc[l] / r.vc[l]
-// when it is issued, and the CUDA graphs (GOINFER_CUDA_GRAPHS) capture only segA/B/C, which touch no KV: rope_kv
-// and attention run live in the gap between them. A recurrent family's state is not part of a slot, which is why
-// it is allocated one (kvSlotsReq).
-func (r *cudaResident) KVSlots() int { return max(1, len(r.kvSlotBufs)) }
+// Binding selects the slot's tables, done on the executor so it is ordered after every job already posted. That is
+// the whole switch because nothing holds a slot's tables across calls: every launch that reads or writes KV (rope_kv,
+// the attention kernels, the batched prefill, the MLA latent store) takes kvT(l) when it is issued, and the CUDA
+// graphs (GOINFER_CUDA_GRAPHS) capture only segA/B/C, which touch no KV: rope_kv and attention run live in the gap
+// between them. A recurrent family's state is not part of a slot, which is why it is allocated one (kvSlotsReq).
+func (r *cudaResident) KVSlots() int { return max(1, len(r.kvTabs)) }
 
 func (r *cudaResident) UseKVSlot(i int) error {
 	if i < 0 || i >= r.KVSlots() {
 		return fmt.Errorf("cuda: KV slot %d out of range (%d allocated)", i, r.KVSlots())
 	}
-	if len(r.kvSlotBufs) == 0 || i == r.kvSlot {
+	if i == r.kvSlot {
 		return nil
 	}
 	return r.do(func() error {
-		b := r.kvSlotBufs[i]
-		r.kc, r.vc, r.kvSlot = b.kc, b.vc, i
-		if r.kvWin {
-			r.kvBase = r.kvBases[i]
-		}
+		r.kvSlot, r.kvTabSlot = i, i
 		return nil
 	})
 }
@@ -2658,7 +2627,7 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	// for the staged q: splitkv_scores stages the block-invariant q vector once instead of every thread re-loading it
 	// from global (docs/measurements/splitkv-stall-profile-2026-09-13.md).
 	if e := r.launch(r.skScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(Ly.hd * 4)},
-		r.withCap(Arg(r.qB), Arg(r.kvK(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+		r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin)))...); e != nil {
 		return e
 	}
@@ -2676,7 +2645,7 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 		nSplit := r.skVsumSplit
 		dy := uint32((Ly.hd + dTile - 1) / dTile)
 		if e := r.launch(r.skVsumPartial, LaunchConfig{GridX: uint32(r.nH), GridY: dy, GridZ: uint32(nSplit), BlockX: dTile, BlockY: 1, BlockZ: 1},
-			Arg(r.skScoreBuf), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			Arg(r.skScoreBuf), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)),
 			gpu.ArgValue(int32(nSplit)), Arg(r.skPartialBuf)); e != nil {
 			return e
@@ -2686,7 +2655,7 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 			gpu.ArgValue(int32(nSplit)), Arg(r.cctx))
 	}
 	return r.launch(r.skVsum, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((Ly.hd + dTile - 1) / dTile), GridZ: 1, BlockX: dTile, BlockY: 1, BlockZ: 1},
-		Arg(r.skScoreBuf), Arg(r.kvV(l)), Arg(r.skInvBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+		Arg(r.skScoreBuf), Arg(r.kvV(l)), Arg(r.kvT(l)), Arg(r.skInvBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)), Arg(r.cctx))
 }
 
@@ -3294,16 +3263,15 @@ func (r *cudaResident) segAMLA(Ly *cudaLayer, l, pos, ropePos int) error {
 	if e := r.doG(Ly.mlaKVA, r.aq, r.aSc, nullBias, r.mlaKVDown, 0); e != nil {
 		return e
 	}
-	// 4. Latent Store: RMSNorm(kvDown[:rank]) + decoupled RoPE(kvDown[rank:]) -> r.kc[l][pos*latDim]
+	// 4. Latent Store: RMSNorm(kvDown[:rank]) + decoupled RoPE(kvDown[rank:]) -> the latent row of position pos
 	var intl int32
 	if r.mlaInterleave {
 		intl = 1
 	}
-	base := pos * r.mlaLatDim
 	if err := r.launch(r.fMlaStore, onecfg(64, 0),
-		Arg(r.mlaKVDown), Arg(Ly.mlaKVANorm), Arg(Ly.invF), Arg(r.kc[l]),
+		Arg(r.mlaKVDown), Arg(Ly.mlaKVANorm), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.kvT(l)),
 		gpu.ArgValue(int32(r.mlaRank)), gpu.ArgValue(int32(r.mlaQKRope)), gpu.ArgValue(int32(ropePos)),
-		gpu.ArgValue(r.eps), gpu.ArgValue(int32(base)), gpu.ArgValue(r.mlaRopeScale), gpu.ArgValue(intl)); err != nil {
+		gpu.ArgValue(r.eps), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.mlaRopeScale), gpu.ArgValue(intl)); err != nil {
 		return err
 	}
 	// 5. W_UK Absorb: per-head block-diagonal matvec of W_UKᵀ with Q's qkNope slice -> r.qAbs
@@ -3337,7 +3305,7 @@ func (r *cudaResident) segAMLA(Ly *cudaLayer, l, pos, ropePos int) error {
 		SharedMemBytes: uint32((nWin + 128) * 4),
 	}
 	if err := r.launch(r.fMlaAttn, cfgAttn,
-		Arg(r.qAbs), Arg(r.kc[l]), Arg(r.wsum),
+		Arg(r.qAbs), Arg(r.kc[l]), Arg(r.kvT(l)), Arg(r.wsum),
 		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.mlaLatDim)), gpu.ArgValue(int32(r.mlaRank)),
 		gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1))); err != nil {
 		return err
@@ -3812,7 +3780,7 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		ropeNKV = 0
 	}
 	if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+ropeNKV*Ly.rhalf+ropeNKV*(Ly.hd-2*Ly.rhalf), 256),
-		Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)),
+		Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)),
 		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(Ly.hd)),
 		gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)),
 		gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
@@ -3860,12 +3828,12 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		// the glue launch, so decode stays byte-identical. The glue `attention` (audited) is UNTOUCHED and is the fallback
 		// below.
 		if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...); err != nil {
+			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...); err != nil {
 			return err
 		}
 	} else {
 		if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...); err != nil {
+			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...); err != nil {
 			return err
 		}
 	}
@@ -4297,21 +4265,3 @@ var (
 	g4DropLayerScalarForTest   bool // (6) the dense layer scalar dropped
 	g4KeepSharedKVStoreForTest bool // (5) a shared layer's K/V store NOT skipped (rope_kv keeps the real nKV)
 )
-
-// trimUnpinnedCtx is the positions an UNPINNED resident context gives up so that one KV slot (need bytes at ctxCap positions, linear in positions) fits
-// beside the weights: free VRAM less extra (a companion attach) and margin. ok is false when it already fits, or when the fit would fall below
-// cudaCtxCapDefault (then the caller declines as before).
-func trimUnpinnedCtx(ctxCap int, need, free, extra, margin int64) (c int, ok bool) {
-	if ctxCap <= 0 || need+extra+margin <= free {
-		return ctxCap, false
-	}
-	perPos := need / int64(ctxCap)
-	if perPos <= 0 {
-		return ctxCap, false
-	}
-	c = int((free - extra - margin) / perPos)
-	if c >= cudaCtxCapDefault && c < ctxCap {
-		return c, true
-	}
-	return ctxCap, false
-}
