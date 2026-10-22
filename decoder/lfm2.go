@@ -48,21 +48,17 @@ func loadLFM2Conv(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Archi
 	nm := func(suf string) string { return tn(i, suf) }
 	c := &shortConvWeights{}
 	var err error
-	in, err := st.TensorF32(nm("conv.in_proj.weight"), 3*g.ConvDim, hidden)
-	if err != nil {
+	if c.inProj, err = stIsland(st, nm("conv.in_proj.weight"), 3*g.ConvDim, hidden); err != nil {
 		return err
 	}
-	c.inProj = islandMat(in, 3*g.ConvDim, hidden)
 	// [convDim, 1, K] on disk — the middle dim is the depthwise groups=channels marker and is
 	// always 1, so it flattens to [convDim, K].
 	if c.convW, err = st.TensorF32(nm("conv.conv.weight"), g.ConvDim, 1, g.ConvLCache); err != nil {
 		return err
 	}
-	out, err := st.TensorF32(nm("conv.out_proj.weight"), hidden, g.ConvDim)
-	if err != nil {
+	if c.outProj, err = stIsland(st, nm("conv.out_proj.weight"), hidden, g.ConvDim); err != nil {
 		return err
 	}
-	c.outProj = islandMat(out, hidden, g.ConvDim)
 	l.shortConv = c
 	return nil
 }

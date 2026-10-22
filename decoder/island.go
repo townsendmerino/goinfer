@@ -2,7 +2,9 @@ package decoder
 
 import (
 	"math"
+	"slices"
 
+	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -31,4 +33,27 @@ func islandF32(w *linalg.WeightMat) []float32 {
 		f[i] = linalg.BF16ToF32(b)
 	}
 	return f
+}
+
+// stIsland reads an island tensor [rows, cols] from a safetensors file the weights keep open: an F32 tensor as its zero-copy
+// f32 view, as before; a BF16 tensor as its zero-copy bf16 bits (no heap copy at all); anything else, or a BF16 payload the file
+// leaves unaligned, widened through islandMat.
+func stIsland(st *embed.SafetensorsFile, name string, rows, cols int) (linalg.WeightMat, error) {
+	t, err := st.Tensor(name)
+	if err != nil {
+		return linalg.WeightMat{}, err
+	}
+	if t.DType == "BF16" && slices.Equal(t.Shape, []int{rows, cols}) {
+		if u, err := t.Uint16s(); err == nil {
+			return linalg.WrapBF16(u, rows, cols), nil
+		}
+	}
+	f, err := st.TensorF32(name, rows, cols)
+	if err != nil {
+		return linalg.WeightMat{}, err
+	}
+	if t.DType == "F32" {
+		return linalg.WrapF32(f, rows, cols), nil
+	}
+	return islandMat(f, rows, cols), nil
 }
