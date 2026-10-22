@@ -9,4 +9,7 @@
 #define GOINFER_KVPAGE_CUH
 // KV_ROW(t, k): the physical row of logical position k (k >= 0) under table t, in 64-bit arithmetic so a large pool cannot overflow.
 #define KV_ROW(t, k) ((long)(t)[(k) >> 6] * 64 + (long)((k) & 63))
+// KV_RUN_END(k, hi): the end of the run of keys [k, hi) that k's block holds. A loop that walks keys in ascending order looks a block up
+// once per run and steps a pointer inside it, so the table costs nothing in its inner loop and the arithmetic keeps its order.
+#define KV_RUN_END(k, hi) (((k) | 63) + 1 < (hi) ? ((k) | 63) + 1 : (hi))
 #endif

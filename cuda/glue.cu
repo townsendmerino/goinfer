@@ -235,7 +235,11 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
     // ctx[d] = sum_s (sc[s]*inv) * V[s,d]  over the window only
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (KV_ROW(kvt, s) * kvDim + kvh * hd + d)), acc);
+        for (int s = winStart; s < nKeys;) {
+            const int e = KV_RUN_END(s, nKeys);
+            const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+        }
         ctx[h * hd + d] = acc * inv;
     }
 }

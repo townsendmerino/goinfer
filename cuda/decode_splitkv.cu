@@ -132,8 +132,11 @@ extern "C" __global__ void splitkv_vsum(
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
     const float* sc = scStore + (long)h * nWin;
     float acc = 0.f;
-    for (int s = winStart; s < nKeys; s++)
-        acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (KV_ROW(kvt, s) * kvDim + (long)kvh * hd + d)), acc);
+    for (int s = winStart; s < nKeys;) {
+        const int e = KV_RUN_END(s, nKeys);
+        const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + (long)kvh * hd + d;
+        for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+    }
     ctx[(long)h * hd + d] = acc * invStore[h];
 }
 
@@ -171,8 +174,11 @@ extern "C" __global__ void splitkv_vsum_partial(
     int lo = winStart + sp * per;
     int hi = lo + per; if (hi > nKeys) hi = nKeys;
     float acc = 0.f;
-    for (int s = lo; s < hi; s++)
-        acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (KV_ROW(kvt, s) * kvDim + (long)kvh * hd + d)), acc);
+    for (int s = lo; s < hi;) {
+        const int e = KV_RUN_END(s, hi);
+        const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + (long)kvh * hd + d;
+        for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+    }
     partials[((long)h * hd + d) * nSplit + sp] = acc;
 }
 

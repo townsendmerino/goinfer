@@ -180,8 +180,12 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
     __syncthreads();
     for (int d = t; d < rank; d += nt) {
         float acc = 0.0f;
-        for (int s = winStart; s < nKeys; s++) {
-            acc = __fmaf_rn(sc[s - winStart], latCache[KV_ROW(kvt, s) * latDim + d], acc);
+        for (int s = winStart; s < nKeys;) {
+            const int e = KV_RUN_END(s, nKeys);
+            const float* vp = latCache + KV_ROW(kvt, s) * latDim + d;
+            for (; s < e; s++, vp += latDim) {
+                acc = __fmaf_rn(sc[s - winStart], *vp, acc);
+            }
         }
         wsum[(long)m * (nH * rank) + h * rank + d] = __fmul_rn(acc, inv);
     }

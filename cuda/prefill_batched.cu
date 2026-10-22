@@ -226,18 +226,24 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
 #ifdef KV_F16
         // f16 cache: sixteen loads in flight before the sixteen FMAs, which stay in ascending-s order (bit-identical to the loop below). Half-width
         // loads put half the bytes in flight per request, so the same latency-bound walk down the keys needs twice the requests outstanding.
-        const KV_T* vp = vc + (long)kvh * hd + d;
-        int s = winStart;
-        for (; s + 16 <= nKeys; s += 16) {
-            float v[16];
+        for (int s = winStart; s < nKeys;) {
+            const int e = KV_RUN_END(s, nKeys);
+            const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + (long)kvh * hd + d;
+            for (; s + 16 <= e; s += 16, vp += 16 * (long)kvDim) {
+                float v[16];
 #pragma unroll
-            for (int j = 0; j < 16; j++) v[j] = KV_LD(vp + KV_ROW(kvt, s + j) * kvDim);
+                for (int j = 0; j < 16; j++) v[j] = KV_LD(vp + (long)j * kvDim);
 #pragma unroll
-            for (int j = 0; j < 16; j++) acc = __fmaf_rn(sc[s + j - winStart], v[j], acc);
+                for (int j = 0; j < 16; j++) acc = __fmaf_rn(sc[s + j - winStart], v[j], acc);
+            }
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
         }
-        for (; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp + KV_ROW(kvt, s) * kvDim), acc);
 #else
-        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (KV_ROW(kvt, s) * kvDim + kvh * hd + d)), acc);
+        for (int s = winStart; s < nKeys;) {
+            const int e = KV_RUN_END(s, nKeys);
+            const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+        }
 #endif
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }
