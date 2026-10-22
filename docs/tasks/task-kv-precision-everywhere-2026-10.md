@@ -28,7 +28,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
 | G1 | blocked | P1 and P2, with KV4 | — |
 | G2 | blocked | P1–P5 | — |
-| G3 | open | a tier-0 readback of delivered bytes for every cell: CPU and Metal cells on the Mac, CUDA cells on nobara; S–M | `TestResidentKVBytes_matches*Allocation` covers a few fixtures |
+| G3 | open | CPU and Metal cells done 2026-10-22 (PASS; `deepseek-tiny` auto/f16 on Metal hold an f32 latent, the P3a D5 question); left: the CUDA cells, on nobara; S | `TestKVDeliveredBytes_CPU`, `TestKVDeliveredBytes_Metal`, `docs/measurements/kv-precision-2026-10/g3.md` |
 | G4, G5, speed | blocked | each phase | the instrument is in `docs/tasks/task-cuda-f16-kv-2026-10.md` |
 | D1–D3 | done | — | §6 |
 | D4 | done | revised 2026-10-21: KV4 first, phase 2 after the pools | §6; the status block above |

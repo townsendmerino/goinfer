@@ -94,7 +94,8 @@
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
-| KS-DOC | open | either box: correct the eleven notes in §3, docs only | — |
+| KS-DOC | done | — | notes 1–3, 5 and 7–10 corrected in their docs, 2026-10-22, in the commit that closed this row |
+| KS-DOC-code | open | the next change to `cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 is KS-H1's code change | — |
 
 ## 0. Where to start
 
@@ -193,6 +194,10 @@ By expected value for the effort, per box. Sizes: S up to a day, M a few days, L
 ## 3. Corrections to existing docs and comments (KS-DOC)
 
 The survey found eleven places where a doc or comment no longer matches the code.
+
+**Corrected 2026-10-22:** notes 1–3, 5 and 7–10, each as a dated note or an in-place correction in its own doc. Notes 4 and
+11 are code comments, left for the next change to those files (row KS-DOC-code). Note 6 is KS-H1's code change. Also
+noticed: `docs/queue-performance.md` has two entries numbered P24 (`attn_fused`, and decode falling off with KV depth).
 
 1. **`docs/tasks/task-kv-architecture-2026-10.md` §1's table** lists gpt-oss as "CPU ring". But
    `decoder/arch.go:Architecture.kvRingsOK` admits only `attnBatchedAcc64`, and gpt-oss runs `attnSinksF64`, so its sliding
