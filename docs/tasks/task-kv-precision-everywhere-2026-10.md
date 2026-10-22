@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts, asked as D7 | `docs/measurements/kv-precision-2026-10/p3a.md` |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measures the gap first | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -271,14 +271,28 @@ phase 0's table gives the first real count of cells to move.
 
 ## 6. For the owner
 
-- **D7 (asked 2026-10-22, open): the MMA prefill at int8 and f32.** After P3b-1 every Metal path delivers `--kv i8` and
-  `--kv f32` (the step, bit-identical to sequential, and the layer-major paths on decode's kernels). The f16 MMA pass still
-  declines both, so a long prompt at i8 or f32 prefills on the step where f16 takes the pass, which is faster above the step's
-  ceiling. The gap is not measured. Options: (a) park P3b-2 and close P3 with every path delivering; (b) first measure the gap by
-  day (one checkpoint, prompts of 2K and 8K, f16 on the pass against i8 on the step, interleaved, about 15 minutes), then decide on
-  an int8 MMA prefill (an L: the pass's attention reads int8 K/V with scales, or dequantizes each layer's cache into an f16
-  scratch, which costs memory int8 exists to save); (c) build it now. **Recommended: (b), int8 only.** f32 is the reference
-  precision, and its fast paths declining by name was registered as acceptable in P3a.
+- **D7, decided (b), owner, 2026-10-22: the MMA prefill at int8, measured first; f32 is not pursued.** After P3b-1 every Metal
+  path delivers `--kv i8` and `--kv f32` (the step, bit-identical to sequential, and the layer-major paths on decode's kernels).
+  The f16 MMA pass declines both, so a long prompt at i8 prefills on the step where f16 takes the pass. Measure that gap by day
+  first (below, "D7 measurement"); whether to build an int8 MMA prefill (an L) is then the owner's call. Options were (a) park
+  P3b-2, (b) measure then decide, (c) build now.
+
+### D7 measurement, registered 2026-10-22 before the run
+
+- **Instrument:** one process, `Qwen2.5-Coder-1.5B-Instruct` q4_k_m from `~/models` (its Metal `.giw` sidecar, int4), two
+  resident loads side by side: `auto` (f16 cache, the MMA pass) and `--kv i8` (the step kernels). Each load checks its own path
+  (`PrefillPath`). Prompts: prose from the prefill gate's prompt set (`PrefillGateProseIDsForTest`), 2,048 and 8,192 tokens. A
+  cell is one `ResidentPrefillSeedForTest` of the whole prompt from position 0, timed wall to logits. Each arm's logits must
+  equal its own first run's, bit for bit.
+- **Design:** per prompt length, a warm-up pair, then five pairs alternating the order (f16 first, then i8 first). Reading: the
+  median over pairs of i8 time / f16 time, at each length.
+- **Void rule:** CLAUDE.md "Run budget": a pair whose start reads a 1-minute load above 4.0, or available memory below the two
+  loads plus 2 GB, is void and re-run in order; both readings are recorded per pair. Held under the timing lock.
+- **What the reading means for the recommendation (not a gate; the build is the owner's call):** at 8K, a median ratio of 1.25
+  or less recommends parking an int8 MMA prefill; over 2.0 recommends building it; between, parking unless a user asks for long
+  prompts at i8 on a Mac. The 2K reading is context.
+- **Cost:** two loads plus about 12 pairs, an estimated 10 to 15 minutes.
+
 - **D6, decided (a), owner, 2026-10-22: P3-G2 after its data.** Metal at f32 is 4 to 6 orders of magnitude closer to the CPU than at
   f16 on every dense fixture and no further on the hybrids, but on `qwen3moe-tiny` its max |logit diff| over 32 positions was 0.0123
   against f16's 0.0076, with equal top-1 (32/32): both arms sit at the MoE path's own floor (about 0.0057 mean at either precision)
