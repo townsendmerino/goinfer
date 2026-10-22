@@ -30,7 +30,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
-| MEM4(b) | open | D11 (a), owner, 2026-10-21: aikit first (head-only loads for the Qwen3.5/Qwen3-VL, GLM-OCR, Qwen2.5-VL and Gemma 4 towers, on an aikit branch; the owner tags), then goinfer's bump and serve's switch | §7 D11 |
+| MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
