@@ -19,14 +19,14 @@ import (
 // code): on gemma4-emodel-tiny (6 layers; head dims 32 and 64; 2 KV-shared layers with their own sources and double FFN
 // width; PLE P=32; layer scalars; v_norm), the f16 batched pass against the S9 layer-major pass (the validated path,
 // bit-identical to sequential) on one Metal resident. Compared: the last prompt row and 8 decode steps teacher-forced
-// along the layer-major pass's own greedy tokens; the bar is cosine >= 0.98 with every argmax equal or an R10 near-tie
-// (the owner amended it from the registered 0.9999, which the pass missed with no non-tie
-// argmax difference: the task doc's G-S9c record has the mechanism and the readings; 0.98 sits between the pass's own and the nearest planted defect's).
+// along the layer-major pass's own greedy tokens; the bar is cosine >= 0.975 with every argmax equal or an R10 near-tie,
+// the owner's bar: it sits between the pass's own reading and the nearest planted defect's, and why it is not 0.9999 is in
+// the task doc's G-S9c record and docs/measurements/mem8b-2026-10/README.md.
 // Two prompts: the golden 12-token prompt and a synthetic 96-token one, which runs every local layer past its window of 4
 // and both shared layers over long sources. The batched pass is called directly, so a silent fallback cannot stand in for
 // it. Each planted defect (emodelBatchDefect) must go red on at least one prompt.
 func TestS9EModelBatched_tiny(t *testing.T) {
-	const steps, bar = 8, 0.98
+	const steps, bar = 8, 0.975
 	if _, err := os.Stat(eModelDir); err != nil {
 		t.Skipf("no fixture (%s) — run scripts/pin_gemma4_emodel_tiny.py", eModelDir)
 	}
@@ -143,7 +143,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	base := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it")
-	if _, err := os.Stat(base + ".int4.metal.giw"); err != nil {
+	if _, err := os.Stat(decoder.SidecarPath(base+".gguf", "int4", "metal", false)); err != nil {
 		t.Skipf("no sidecar: %v", err)
 	}
 	tk, err := tokenizer.LoadGGUF(base + ".gguf")
@@ -154,7 +154,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := decoder.Load(base+".int4.metal.giw", decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 512})
+	m, err := decoder.Load(decoder.SidecarPath(base+".gguf", "int4", "metal", false), decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 512})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

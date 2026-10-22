@@ -1,0 +1,25 @@
+=== RUN   TestPLE_qualityE2BMetal
+stream-weights: transcoding gemma-4-E2B_q4_0-it.gguf → gemma-4-E2B_q4_0-it.int4.ple4.metal.v17.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (2668 MB) in 7s: stream 6.6s, self-check 0.0s
+[PLE-G3    7.1s] sidecar gemma-4-E2B_q4_0-it.int4.metal.v17.giw: 3649.0 MB
+[PLE-G3    7.1s] sidecar gemma-4-E2B_q4_0-it.int4.ple4.metal.v17.giw: 2668.0 MB
+decoder: gemma-4-E2B_q4_0-it.int4.metal.v17.giw is not in memory: reading its 3.8 GB once before the load
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[PLE-G3    9.0s] int8 table: resident
+decoder: gemma-4-E2B_q4_0-it.int4.ple4.metal.v17.giw is not in memory: reading its 2.8 GB once before the load
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.ple4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[PLE-G3   21.5s] int4 table: resident
+[PLE-G3   23.1s] prompt 1: 51/54 positions agree
+[PLE-G3   24.5s] prompt 2: 50/52 positions agree
+[PLE-G3   26.2s] prompt 3: 57/59 positions agree
+[PLE-G3   27.8s] prompt 4: 54/57 positions agree
+[PLE-G3   29.2s] prompt 5: 50/52 positions agree
+[PLE-G3   30.8s] prompt 6: 54/56 positions agree
+[PLE-G3   32.4s] prompt 7: 47/53 positions agree
+[PLE-G3   33.9s] prompt 8: 47/52 positions agree
+[PLE-G3   33.9s] PLE-G3: top-1 agreement 410/435 = 94.25%, mean KL(int8 || int4) 0.03257 nats (max 0.35015)
+    mem8b_ple_quality_test.go:150: PLE-G3 AMBIGUOUS (parked for the owner): agreement 94.25%, mean KL 0.03257
+--- FAIL: TestPLE_qualityE2BMetal (33.92s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	34.481s
+FAIL

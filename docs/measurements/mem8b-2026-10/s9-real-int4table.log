@@ -1,0 +1,23 @@
+=== RUN   TestS9EModelBatched_realE2B
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.ple4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.006 ms, fragment 0.008 ms), gate|up at B <= 0 (0.007, 0.007); 0 = always the fragment
+[S9 G-S9d] prompt 1 (23 tokens) layer-major: first divergence -1 (CPU gap 0.00%)
+[S9 G-S9d] prompt 1 (23 tokens) batched: first divergence -1 (CPU gap 0.00%)
+[S9 G-S9d] prompt 2 (21 tokens) layer-major: first divergence -1 (CPU gap 0.00%)
+[S9 G-S9d] prompt 2 (21 tokens) batched: first divergence -1 (CPU gap 0.00%)
+[S9 G-S9d] prompt 3 (28 tokens) layer-major: first divergence 23 (CPU gap 0.54%)
+[S9 G-S9d] prompt 3 (28 tokens) batched: first divergence 23 (CPU gap 0.54%)
+[S9 G-S9d] prompt 4 (26 tokens) layer-major: first divergence -1 (CPU gap 0.00%)
+[S9 G-S9d] prompt 4 (26 tokens) batched: first divergence -1 (CPU gap 0.00%)
+[S9 G-S9d] prompt 5 (21 tokens) layer-major: first divergence 31 (CPU gap 0.11%)
+[S9 G-S9d] prompt 5 (21 tokens) batched: first divergence 31 (CPU gap 0.11%)
+[S9 G-S9d] prompt 6 (25 tokens) layer-major: first divergence 28 (CPU gap 1.84%)
+[S9 G-S9d] prompt 6 (25 tokens) batched: first divergence -1 (CPU gap 0.00%)
+[S9 G-S9d] prompt 7 (22 tokens) layer-major: first divergence 0 (CPU gap 4.17%)
+[S9 G-S9d] prompt 7 (22 tokens) batched: first divergence 0 (CPU gap 1.68%)
+[S9 G-S9d] prompt 8 (21 tokens) layer-major: first divergence 28 (CPU gap 0.73%)
+[S9 G-S9d] prompt 8 (21 tokens) batched: first divergence 0 (CPU gap 0.10%)
+[S9 G-S9d] batched 96.09% (246/256, 8/8 free-run passes) against layer-major 96.48% (247/256, 7/8): delta -0.39 points: PASS
+--- PASS: TestS9EModelBatched_realE2B (51.44s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	52.021s

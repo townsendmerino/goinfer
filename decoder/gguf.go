@@ -1592,10 +1592,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		return streamMat(name, out, in, matmulQuant(quant, name), func(r int) int { return r * in })
 	}
-	// embMat loads the embedding / LM head, which is logit-critical: quantize it with the embedding policy (int8 even in int4
-	// mode), not the projection mode. It uses streamQuantizedEmbed, which may build repacked-only when needCanonical is false
-	// and int4 mode applies; see that function.
-	embMat := func(name string, out, in int) (linalg.WeightMat, error) {
+	// embMatAt streams an embedding-shaped table at q through streamQuantizedEmbed, which may build repacked-only when
+	// needCanonical is false and int4 mode applies; see that function.
+	embMatAt := func(name string, out, in int, q quantMode) (linalg.WeightMat, error) {
 		dims, into, err := g.RowDequantizer(name)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -1605,7 +1604,12 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		// into reads the mapping and writes dst alone, so every row range shares it.
 		read := func(r int, dst []float32) error { return into(r*in, dst) }
-		return streamQuantizedEmbed(out, in, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), 1, func() rowReader { return read })
+		return streamQuantizedEmbed(out, in, q, needCanonical, !repackForDecode(sink), 1, func() rowReader { return read })
+	}
+	// embMat loads the embedding / LM head, which is logit-critical: quantize it with the embedding policy (int8 even in int4
+	// mode unless EmbedInt4), not the projection mode.
+	embMat := func(name string, out, in int) (linalg.WeightMat, error) {
+		return embMatAt(name, out, in, quant.embeddingWith(embedInt4))
 	}
 	// vec loads a 1-D tensor (norm or bias).
 	vec := func(name string, n int) ([]float32, error) {
@@ -2473,7 +2477,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	if g4 := arch.gemma4; g4 != nil {
 		if g4.HiddenSizePerLayerInput > 0 {
 			pleTotal := arch.NumLayers * g4.HiddenSizePerLayerInput
-			if w.PerLayerTokenEmbed, err = embMat("per_layer_token_embd.weight", cfg.VocabSize, pleTotal); err != nil {
+			if w.PerLayerTokenEmbed, err = embMatAt("per_layer_token_embd.weight", cfg.VocabSize, pleTotal, quant.gatherTable()); err != nil {
 				return nil, err
 			}
 			if w.PerLayerModelProj, err = mat("per_layer_model_proj.weight", pleTotal, hidden); err != nil {

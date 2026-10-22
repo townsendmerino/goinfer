@@ -65,7 +65,7 @@ func TestGemma4EModel_realE2BText(t *testing.T) {
 	// Each side loads its own pre-built sidecar of that GGUF (file-backed weights, so the load-time fit guard prices
 	// only KV + scratch), at a pinned 512-token context: G3's longest sequence is well under it.
 	dir, base := filepath.Dir(path), strings.TrimSuffix(filepath.Base(path), ".gguf")
-	metalGiw := filepath.Join(dir, base+".int4.metal.giw")
+	metalGiw := decoder.SidecarPath(filepath.Join(dir, base+".gguf"), "int4", "metal", false)
 	for _, p := range []string{metalGiw} {
 		if _, err := os.Stat(p); err != nil {
 			t.Skipf("no sidecar %s (load the GGUF once on each backend to build it): %v", p, err)
@@ -131,7 +131,7 @@ func TestGemma4EModel_realE2BTableControl(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "models", "gemma-4-e2b-gguf")
 	base := "gemma-4-E2B_q4_0-it"
-	a8, a4 := filepath.Join(dir, base+".int4.metal.giw"), filepath.Join(dir, base+".int4.e4h.cpu-arm64.giw")
+	a8, a4 := decoder.SidecarPath(filepath.Join(dir, base+".gguf"), "int4", "metal", false), filepath.Join(dir, base+".int4.e4h.cpu-arm64.giw")
 	for _, p := range []string{a8, a4} {
 		if _, err := os.Stat(p); err != nil {
 			t.Skipf("no sidecar %s: %v", p, err)
@@ -204,7 +204,7 @@ func TestGemma4EModel_realE2BLocalize(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "models", "gemma-4-e2b-gguf")
 	base := "gemma-4-E2B_q4_0-it"
-	giw := filepath.Join(dir, base+".int4.metal.giw")
+	giw := decoder.SidecarPath(filepath.Join(dir, base+".gguf"), "int4", "metal", false)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no sidecar: %v", err)
 	}
@@ -362,7 +362,7 @@ func TestG3Calibration_qwen15b(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	base := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m")
-	giw := base + ".int4.metal.giw"
+	giw := decoder.SidecarPath(base+".gguf", "int4", "metal", false)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no sidecar: %v", err)
 	}
@@ -464,9 +464,9 @@ func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[G3ni %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
 	}
 	qb := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m")
-	rp, ra, rn := g3Model(t, qb+".int4.metal.giw", qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
+	rp, ra, rn := g3Model(t, decoder.SidecarPath(qb+".gguf", "int4", "metal", false), qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
 	eb := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it")
-	ep, ea, en := g3Model(t, eb+".int4.metal.giw", eb+".gguf", "E2B", logf)
+	ep, ea, en := g3Model(t, decoder.SidecarPath(eb+".gguf", "int4", "metal", false), eb+".gguf", "E2B", logf)
 	refPct, e2bPct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
 	delta := e2bPct - refPct
 	logf("G3 non-inferiority: E2B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e2bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
@@ -491,7 +491,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
 	}
 	home, _ := os.UserHomeDir()
-	giw := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it.int4.metal.giw")
+	giw := decoder.SidecarPath(filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it.gguf"), "int4", "metal", false)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no sidecar: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 // TestGemma4EModel_realE4BNonInferiority is S6's G-E4B-1b (docs/tasks/task-multimodal-support-2026-10.md, registered
 // before it ran): S1's G3 rule, unchanged, on Gemma 4 E4B, with Qwen2.5-Coder-1.5B as the reference in the same
 // process. The sidecar is GOINFER_GEMMA4_E4B_GIW, default the quantization-aware GGUF's
-// (~/models/gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.int4.metal.giw, built by prequant -quant int4 -target metal). The
+// (decoder.SidecarPath of ~/models/gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf at int4 for metal, built by prequant -quant int4 -target metal). The
 // tokenizer is GOINFER_GEMMA4_E4B_TOK, a .gguf or a Hugging Face directory, default the GGUF beside that sidecar. A
 // sidecar of the plain checkpoint needs both set, and its reading is a record, not this gate.
 //
@@ -548,14 +548,14 @@ func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
 	eb := filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it")
 	giw, tok := os.Getenv("GOINFER_GEMMA4_E4B_GIW"), os.Getenv("GOINFER_GEMMA4_E4B_TOK")
 	if giw == "" {
-		giw = eb + ".int4.metal.giw"
+		giw = decoder.SidecarPath(eb+".gguf", "int4", "metal", false)
 	}
 	if tok == "" {
 		tok = eb + ".gguf"
 	}
 	logf("E4B sidecar %s, tokenizer %s", giw, tok)
 	qb := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m")
-	rp, ra, rn := g3Model(t, qb+".int4.metal.giw", qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
+	rp, ra, rn := g3Model(t, decoder.SidecarPath(qb+".gguf", "int4", "metal", false), qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
 	ep, ea, en := g3Model(t, giw, tok, "E4B", logf)
 	refPct, pct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
 	delta := pct - refPct

@@ -1,0 +1,48 @@
+=== RUN   TestEModelFallback_visible
+--- PASS: TestEModelFallback_visible (1.09s)
+=== RUN   TestEModelTiledAttention_matchesTheExactKernel
+--- PASS: TestEModelTiledAttention_matchesTheExactKernel (0.15s)
+=== RUN   TestGemma4EModel_realE2BText
+--- SKIP: TestGemma4EModel_realE2BText (0.00s)
+=== RUN   TestGemma4EModel_realE2BTableControl
+--- SKIP: TestGemma4EModel_realE2BTableControl (0.00s)
+=== RUN   TestGemma4EModel_realE2BLocalize
+--- SKIP: TestGemma4EModel_realE2BLocalize (0.00s)
+=== RUN   TestGemma4EModel_realE2BNonInferiority
+--- SKIP: TestGemma4EModel_realE2BNonInferiority (0.00s)
+=== RUN   TestGemma4EModel_realE2BPLEHostCost
+--- SKIP: TestGemma4EModel_realE2BPLEHostCost (0.00s)
+=== RUN   TestGemma4EModel_realE4BNonInferiority
+--- SKIP: TestGemma4EModel_realE4BNonInferiority (0.00s)
+=== RUN   TestGemma4EModel_layerMajorPrefill
+--- PASS: TestGemma4EModel_layerMajorPrefill (2.60s)
+=== RUN   TestGemma4EModel_metalResidentParity
+--- PASS: TestGemma4EModel_metalResidentParity (0.05s)
+=== RUN   TestGemma4EModel_plantedDefects
+=== RUN   TestGemma4EModel_plantedDefects/(1)_PLE_branch_skipped
+=== RUN   TestGemma4EModel_plantedDefects/(2)_PLE_token-identity_term_zeroed
+=== RUN   TestGemma4EModel_plantedDefects/(3)_shared-KV_source_one_owning_layer_off
+=== RUN   TestGemma4EModel_plantedDefects/(4)_one_FFN_width_for_the_model
+=== RUN   TestGemma4EModel_plantedDefects/(6)_layer_scalar_dropped
+=== RUN   TestGemma4EModel_plantedDefects/(7)_v_norm_dropped_on_non-K=V_layers
+--- PASS: TestGemma4EModel_plantedDefects (0.29s)
+=== RUN   TestGemma4EModel_sharedStoreIsNoOp
+--- PASS: TestGemma4EModel_sharedStoreIsNoOp (0.10s)
+=== RUN   TestS9EModelBatched_tiny
+[S9 G-S9c] golden 12-token none: worst cosine 0.9905057 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (1) a shared layer over an empty cache: worst cosine 0.8906106 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (2) the PLE block skipped: worst cosine 0.1903635 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (3) PLE inputs from the next row: worst cosine 0.4641458 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (4) the layer scalar dropped: worst cosine 0.9285935 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (5) v_norm dropped: worst cosine 0.6621424 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (6) every FFN at the first layer's width: worst cosine 0.8255070 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token none: worst cosine 0.9798006 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (1) a shared layer over an empty cache: worst cosine 0.9110611 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (2) the PLE block skipped: worst cosine 0.4413125 over the last row and 8 steps, 1 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (3) PLE inputs from the next row: worst cosine 0.4929663 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (4) the layer scalar dropped: worst cosine 0.9204550 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (5) v_norm dropped: worst cosine 0.8141952 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (6) every FFN at the first layer's width: worst cosine 0.8536205 over the last row and 8 steps, 0 non-tie argmax differences
+--- FAIL: TestS9EModelBatched_tiny (0.28s)
+=== RUN   TestS9EModelBatched_realE2B
+--- SKIP: TestS9EModelBatched_realE2B (0.00s)
