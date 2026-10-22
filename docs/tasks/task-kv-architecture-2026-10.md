@@ -32,13 +32,13 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
 | KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
-| KV4 | active | nobara: gates registered 2026-10-21; KV4a then KV4b; two owner questions open (D-KV4-1 pool size, D-KV4-2 D5's step 3), §5 of the record; L | §6; `docs/measurements/kv4-cuda-2026-10-21.md` |
+| KV4 | active | nobara: gates registered 2026-10-21; KV4a then KV4b. Pool = the VRAM main gives KV at the same flags (D-KV4-1 (a)); only a borrower past its share is stopped, as at the context cap (D-KV4-2) (owner, 2026-10-21); L | §6; `docs/measurements/kv4-cuda-2026-10-21.md` |
 | KV4a | active | nobara: KV4a-1 storage (bit-identical), then -2 sharing by reference, -3 capacity; the flash-decode and split-KV windowed read is its G1c | `kv4-cuda-2026-10-21.md` §1, §2 |
 | KV4b | open | after KV4a: f16 pools, phase 1's family groups in order, each its own commit with G5 (`auto` moves per group on G4 PASS, D7) | `kv4-cuda-2026-10-21.md` §2 G5; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
 | KV5 | blocked | KV4; takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |
 | KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
-| KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool | §6 |
+| KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
 | KV8 | blocked | KV4 (KV5 for Metal) | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
 | KV8a-Metal | active | Mac: M2(b) (about 2 h 45 min) and M5 (about 3 h 30 min, as two jobs) on the night queue, then grade and merge | branch `kv8a-metal-2026-10` |

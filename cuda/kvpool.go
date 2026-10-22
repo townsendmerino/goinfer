@@ -18,9 +18,11 @@ import (
 // out: an entry a sequence has not mapped, or has released, points at it.
 //
 // A resident KV slot (MC1) is a sequence's tables, one per group: the block id of each kvBlock positions of the sequence. They live on
-// the host and are mirrored to one device buffer, which every KV kernel reads through kvpage.cuh's KV_ROW. A slot owns the blocks its
-// tables name; nothing is shared between slots yet, and each slot can always map its whole context, because each pool is sized for
-// every slot's largest need (kvPoolBlocks). All of it runs on the executor thread.
+// the host and are mirrored to one device buffer, which every KV kernel reads through kvpage.cuh's KV_ROW. A block counts the tables
+// that name it: a full-group block another slot's prefix shares (CopyKV, kvShare) has more than one, and a slot that is about to write
+// into such a block first takes a block of its own and copies the rows it keeps (kvMap), so a slot only ever writes blocks no other
+// slot reads. Each slot can always map its whole context, because each pool is sized for every slot's largest need (kvPoolBlocks) and
+// sharing only ever frees blocks. All of it runs on the executor thread.
 
 // kvBlock is the rows of one block: decoder.KVBlockRows, which the kernels' KV_ROW hard-codes as 64.
 const kvBlock = decoder.KVBlockRows
@@ -36,6 +38,7 @@ const (
 type kvPool struct {
 	blocks int     // blocks in the pool, the null block included
 	free   []int32 // free block ids; take pops the last
+	refs   []int32 // the tables that name each block
 }
 
 // kvPoolOrderForTest, when set, gives the order a pool of n blocks hands its blocks out in (ids 1..n-1, each once). G1a's scrambled
@@ -43,7 +46,7 @@ type kvPool struct {
 var kvPoolOrderForTest func(n int) []int32
 
 func newKVPool(blocks int) kvPool {
-	p := kvPool{blocks: blocks, free: make([]int32, 0, max(0, blocks-1))}
+	p := kvPool{blocks: blocks, free: make([]int32, 0, max(0, blocks-1)), refs: make([]int32, max(0, blocks))}
 	if kvPoolOrderForTest != nil && blocks > 1 {
 		order := kvPoolOrderForTest(blocks)
 		for i := len(order) - 1; i >= 0; i-- {
@@ -57,16 +60,29 @@ func newKVPool(blocks int) kvPool {
 	return p
 }
 
+// take hands out a free block with one reference.
 func (p *kvPool) take() (int32, bool) {
 	if len(p.free) == 0 {
 		return 0, false
 	}
 	b := p.free[len(p.free)-1]
 	p.free = p.free[:len(p.free)-1]
+	p.refs[b] = 1
 	return b, true
 }
 
-func (p *kvPool) give(b int32) { p.free = append(p.free, b) }
+func (p *kvPool) ref(b int32) { p.refs[b]++ }
+
+// unref drops one reference to b; the last one frees it.
+func (p *kvPool) unref(b int32) {
+	if p.refs[b]--; p.refs[b] <= 0 {
+		p.refs[b] = 0
+		p.free = append(p.free, b)
+	}
+}
+
+// inUse is how many blocks some table names, the null block not counted.
+func (p *kvPool) inUse() int { return p.blocks - 1 - len(p.free) }
 
 // kvSlotTabs is one slot's tables: ids[g][i] is the block holding positions [i*kvBlock, (i+1)*kvBlock) in group g, 0 for none.
 type kvSlotTabs struct {
@@ -198,9 +214,10 @@ func (r *cudaResident) kvElem(l int) int {
 	return 4
 }
 
-// kvMap gives slot s's group-g table a block for every kvBlock positions overlapping [lo, hi). In the window group it first releases
-// every block wholly outside [lo, hi), which holds the slot to kvSlotBlocks. An error means the pool is exhausted, which the sizing
-// rules out; nothing is left half mapped that a kernel would read.
+// kvMap gives slot s's group-g table a block of its own for every kvBlock positions overlapping [lo, hi), which the caller is about to
+// write. In the window group it first releases every block wholly outside [lo, hi), which holds the slot to kvSlotBlocks. A block in the
+// range that another table also names is replaced by a new one holding a copy of its rows below lo (copy on write); rows at or past lo are
+// the write's. An error means the pool is exhausted, which the sizing rules out; nothing is left half mapped that a kernel would read.
 func (r *cudaResident) kvMap(s, g, lo, hi int) error {
 	if hi <= lo {
 		return nil
@@ -214,22 +231,83 @@ func (r *cudaResident) kvMap(s, g, lo, hi int) error {
 	if g == kvGroupWin {
 		for b, id := range ids {
 			if id != 0 && (b < b0 || b >= b1) {
-				r.kvPools[g].give(id)
+				r.kvPools[g].unref(id)
 				ids[b] = 0
 				t.dirty[g] = true
 			}
 		}
 	}
 	for b := b0; b < b1; b++ {
-		if ids[b] != 0 {
+		old := ids[b]
+		if old != 0 && r.kvPools[g].refs[old] <= 1 {
 			continue
 		}
 		id, ok := r.kvPools[g].take()
 		if !ok {
 			return fmt.Errorf("cuda: KV pool (group %d, %d blocks) exhausted mapping slot %d's positions [%d, %d)", g, r.kvPools[g].blocks, s, lo, hi)
 		}
+		if old != 0 {
+			if keep := lo - b*kvBlock; keep > 0 {
+				if e := r.kvCopyBlockRows(g, old, id, keep); e != nil {
+					r.kvPools[g].unref(id)
+					return e
+				}
+			}
+			r.kvPools[g].unref(old)
+		}
 		ids[b] = id
 		t.dirty[g] = true
+	}
+	return nil
+}
+
+// kvCopyBlockRows copies the first rows rows of block from into block to, in every layer of group g that owns its K/V. Stream-ordered
+// kv_store launches: exact, no arithmetic.
+func (r *cudaResident) kvCopyBlockRows(g int, from, to int32, rows int) error {
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		if Ly.noKV() || Ly.kvShared || r.kvGroupOf(l) != g {
+			continue
+		}
+		row := Ly.kvDim * r.kvElem(l) // bytes
+		for _, b := range []Buffer{r.kc[l], r.vc[l]} {
+			if b.Len() == 0 {
+				continue // an MLA latent layer has no V
+			}
+			if e := r.copyF32(b.At(int(from)*kvBlock*row), b.At(int(to)*kvBlock*row), rows*row/4); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
+// kvShare makes slot dst's full-group table name slot src's blocks for positions [start, end), whole blocks, each taking a reference,
+// in place of whatever dst named there. Nothing is copied: the rows are stored once. A block src never mapped gives dst a block of its
+// own holding the null block's zeros, never a reference to the null block, which dst would then write.
+func (r *cudaResident) kvShare(src, dst, start, end int) error {
+	sIDs, dIDs := r.kvTabs[src].ids[kvGroupFull], r.kvTabs[dst].ids[kvGroupFull]
+	p := &r.kvPools[kvGroupFull]
+	for b := start / kvBlock; b < end/kvBlock; b++ {
+		id := sIDs[b]
+		if id == 0 {
+			if e := r.kvMap(dst, kvGroupFull, b*kvBlock, (b+1)*kvBlock); e != nil {
+				return e
+			}
+			if e := r.kvCopyBlockRows(kvGroupFull, 0, dIDs[b], kvBlock); e != nil {
+				return e
+			}
+			continue
+		}
+		if dIDs[b] == id {
+			continue
+		}
+		if dIDs[b] != 0 {
+			p.unref(dIDs[b])
+		}
+		p.ref(id)
+		dIDs[b] = id
+		r.kvTabs[dst].dirty[kvGroupFull] = true
 	}
 	return nil
 }
@@ -239,7 +317,7 @@ func (r *cudaResident) kvReleaseAll(s, g int) {
 	t := &r.kvTabs[s]
 	for b, id := range t.ids[g] {
 		if id != 0 {
-			r.kvPools[g].give(id)
+			r.kvPools[g].unref(id)
 			t.ids[g][b] = 0
 			t.dirty[g] = true
 		}

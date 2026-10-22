@@ -25,7 +25,8 @@ var kvCopyF16 = true
 // rows past its prompt, which the decoder never asks for. The job synchronises the stream before it returns, so the
 // caller's timing covers the copy.
 //
-//   - A full-attention or MLA latent layer copies rows [start, end) of each buffer it has.
+//   - A full-attention or MLA latent layer's blocks for rows [start, end) are shared: dst's table names src's blocks, and
+//     whichever slot writes into one later takes a copy first (kvShare, kvMap).
 //   - A layer that reads another layer's KV copies nothing: it aliases its source.
 //   - A windowed layer copies the rows dst attends to from end and, behind them, as much of the rollback (kvRollback) as
 //     src still holds: src's rows [max(src's base, end-(window-1)-rollback), end), and dst's base becomes that first row.
@@ -67,7 +68,7 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 		}
 		lo = max(0, r.kvBases[src], end-(r.kvWindow-1)-r.kvRollback())
 	}
-	if e := r.kvMap(dst, kvGroupFull, start, end); e != nil {
+	if e := r.kvShare(src, dst, start, end); e != nil {
 		return e
 	}
 	if r.kvWin {
@@ -81,13 +82,10 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 	}
 	for l := range r.layers {
 		Ly := &r.layers[l]
-		if Ly.kvShared || Ly.noKV() {
-			continue
+		if Ly.kvShared || Ly.noKV() || !Ly.kvWin {
+			continue // a full-group layer's rows are shared by kvShare above
 		}
-		g, from := r.kvGroupOf(l), start
-		if Ly.kvWin {
-			from = lo
-		}
+		g, from := kvGroupWin, lo
 		row := Ly.kvDim * r.kvElem(l) // bytes
 		srcIDs := r.kvTabs[src].ids[g]
 		err := r.kvRowRuns(dst, g, from, end, func(p, n, dstRow int) error {
