@@ -84,8 +84,8 @@ type batchSeq struct {
 // step verify need two, which BatchStepRange, BatchGreedyDraw and VerifyCost check.
 func (r *resident) batchIneligible() string {
 	switch {
-	case len(r.kvSlotBufs) == 0 || !r.kvContig || r.kvF32:
-		return "KV slots that are not one f16 allocation per layer"
+	case len(r.kvSlotBufs) == 0 || !r.kvContig:
+		return "KV slots that are not one allocation per layer"
 	case r.moe != nil || r.g4moe != nil:
 		return "MoE"
 	case r.pleP > 0:
@@ -94,7 +94,7 @@ func (r *resident) batchIneligible() string {
 		return "GPT-J pairwise rope (the step's mc3_rope2_rows is the NeoX half-split; docs/tasks/task-metal-pairwise-rope-2026-10.md)"
 	case r.attnSoftcap != 0:
 		return "an attention softcap (gated on the single-token and exact prefill kernels, not the step's rows forms)"
-	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
+	case r.sandwich || r.postOnly || r.parallelBlock || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
 		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
 		return "a family variant the batched step does not reproduce"
 	}
@@ -491,7 +491,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uQTemp[m].Floats()[0] = scale
 		b.posB.U32s()[m] = uint32(q.pos)
 		b.nKeysB.U32s()[m] = uint32(q.pos + 1)
-		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[0]/2 + stepSlotOffsetPlantForTest*r.layers[0].geom.kvDim) // f16 elements; batchIneligible: uniform layers
+		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[0]/r.kvElemBytes() + stepSlotOffsetPlantForTest*r.layers[0].geom.kvDim) // cache elements; batchIneligible: uniform layers
 		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
 			ns := r.attnFASplitFor(q.pos+1, r.attnFANKV)
@@ -566,7 +566,12 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		// as the slot-0 base (kvSlotBufs[0], offset 0) plus the row's element offset (slotOffB). One dispatch stores
 		// every row's K/V; one runs every per-head-kernel row's attention.
 		kcAll, vcAll := r.kvSlotBufs[0].kc[l], r.kvSlotBufs[0].vc[l]
-		e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcAll, vcAll, g.uKvDim, b.posB, b.uQKV, b.uM, b.slotOffB)
+		if r.kvI8 { // one thread per (row, KV head), as kv_store_i8 is one per head; the scales from slot 0's allocation too
+			ksAll, vsAll := r.kvSlotBufs[0].ks[l], r.kvSlotBufs[0].vs[l]
+			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcAll, vcAll, ksAll, vsAll, g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, b.slotOffB)
+		} else {
+			e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcAll, vcAll, g.uKvDim, b.posB, b.uQKV, b.uM, b.slotOffB)
+		}
 		if faRows {
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 			e.DispatchTG(r.pAttnFARows, nFA*g.nKV*maxS*128, 128, shmBytes, b.qkvB, kcAll, vcAll, b.faPartB, g.uNKV, r.uAttnFAG,
@@ -585,7 +590,10 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m])
 			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, f32(b.ctxB, m, nHhd), r.uAttnFAG, g.uHd, b.uFANSplit[m])
 		}
-		if nPlain > 0 {
+		if nPlain > 0 && r.kvI8 {
+			e.Dispatch(r.pAttnI8Rows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, r.kvSlotBufs[0].ks[l], r.kvSlotBufs[0].vs[l],
+				b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[nPlain], b.rowmapB, b.slotOffB)
+		} else if nPlain > 0 {
 			e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, b.ctxB, r.uNH, g.uNKV, g.uHd,
 				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, b.uCount[nPlain], b.rowmapB, b.slotOffB)
 		}
@@ -919,7 +927,7 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 	if a.r.promptStepOff || n < 2 || !a.stepPrefill() {
 		return false
 	}
-	if !a.r.prefillOK { // the pass never runs here (the q4k lane), so every prompt would otherwise take the sequential loop
+	if !a.r.prefillOK || a.r.kvI8 || a.r.kvF32 { // the pass never runs here (the q4k lane; an int8 or f32 cache), so every prompt would otherwise take the sequential loop
 		return true
 	}
 	if floor > 0 && startPos+n < max(floor, metalStepPrefillCeiling) { // A-P02: the step keeps prompts where it beats the pass

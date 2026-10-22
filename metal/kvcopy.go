@@ -52,10 +52,12 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 			gpu.DeviceCopy{Dst: r.kvRows(dst, l, false, start*row), Src: r.kvRows(src, l, false, start*row), Bytes: (end - start) * row},
 			gpu.DeviceCopy{Dst: r.kvRows(dst, l, true, start*row), Src: r.kvRows(src, l, true, start*row), Bytes: (end - start) * row})
 		if r.kvI8 {
-			sb := L.geom.nKV * 4 // one float32 scale per KV head per position
+			sb := L.geom.nKV * 4                                                                // one float32 scale per KV head per position
+			at := func(b Buffer, s int) Buffer { return b.At(4*r.kvScaleOff(s, l) + start*sb) } // from the allocation: At is absolute
+			ks, vs := r.kvSlotBufs[0].ks[l], r.kvSlotBufs[0].vs[l]
 			copies = append(copies,
-				gpu.DeviceCopy{Dst: r.kvSlotBufs[dst].ks[l].At(start * sb), Src: r.kvSlotBufs[src].ks[l].At(start * sb), Bytes: (end - start) * sb},
-				gpu.DeviceCopy{Dst: r.kvSlotBufs[dst].vs[l].At(start * sb), Src: r.kvSlotBufs[src].vs[l].At(start * sb), Bytes: (end - start) * sb})
+				gpu.DeviceCopy{Dst: at(ks, dst), Src: at(ks, src), Bytes: (end - start) * sb},
+				gpu.DeviceCopy{Dst: at(vs, dst), Src: at(vs, src), Bytes: (end - start) * sb})
 		}
 	}
 	r.stopExec()

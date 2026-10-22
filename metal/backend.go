@@ -852,11 +852,12 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		}
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)"
 	}
-	if a.r.kvI8 {
-		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
-	}
-	if a.r.kvF32 {
-		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is f32 (-kv f32)"
+	if a.r.kvI8 || a.r.kvF32 {
+		cache := map[bool]string{true: "int8 (-kv i8)", false: "f32 (-kv f32)"}[a.r.kvI8]
+		if a.stepPrefill() && !a.r.promptStepOff { // promptStepOK takes every prompt
+			return true, "decode rows on the batched step kernels at every length (bit-identical to sequential; the f16 MMA pass does not take this model's " + cache + " KV cache)"
+		}
+		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is " + cache
 	}
 	if a.r.attnSink {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
@@ -1376,10 +1377,11 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if a.r.kvI8 {
 		nKV := g.nKV
 		hd := g.hd
-		kc := a.r.kc[layer].Int8s()
-		vc := a.r.vc[layer].Int8s()
-		ks := a.r.ks[layer].Floats()
-		vs := a.r.vs[layer].Floats()
+		// the bound slot's codes and scales, when the slots are one allocation (MC3 S3; kvScaleOff)
+		kc := a.r.kc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
+		vc := a.r.vc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
+		ks := a.r.ks[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
+		vs := a.r.vs[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
 		for p := range n {
 			pos := base + p
 			for h := range nKV {

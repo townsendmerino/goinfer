@@ -24,6 +24,9 @@ import (
 // (int8 slice 3, TestMC3Step_w8BitIdentical).
 var mc3TestQuant = "int4"
 
+// mc3TestKV is the --kv the MC3 fixture loads at: "" (f16), or "i8" / "f32" for P3b-1's identity checks (p3b_rows_test.go).
+var mc3TestKV = ""
+
 func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	t.Helper()
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {
