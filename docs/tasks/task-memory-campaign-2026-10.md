@@ -50,7 +50,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
 | MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
 | MEM13-heapquant | moved | D8a-build and D8b-build below (D8 decided: build both) | §4 MEM13, "Heap-only quant, after MEM1" |
-| D8a-build | open | Mac: single-copy `o_proj`, `down_proj` and experts under `Backend: "cpu"` on arm64; every CPU kernel that reads them takes the single copy; gates on bytes and bit-identity, registered before the code (D8a, owner 2026-10-21); S–M | — |
+| D8a-build | done | — | branch `d8a-single-copy-2026-10`; D8A-G1..G4 PASS, `docs/measurements/d8a-2026-10/README.md` |
 | D8b-build | open | Mac for the CPU side: a `.giw` form for q4k (a new tensor kind and a format version), so phi3 maps on the CPU (D8b, owner 2026-10-21); M–L | — |
 | D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges | — |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
@@ -508,6 +508,30 @@ bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
 | feature cache not priced | `internal/serveapp/feature_cache.go:featureCacheBudget` | 256 MiB per vision model | count it in the fit plan, or size it from free memory |
 | token bytes per adapter | `internal/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
 | heap-only quant | q4k (phi3's default on CPU/CUDA) has no `.giw` form; on the arm64 heap path o_proj, down_proj and experts keep the dual copy even with `Backend: "cpu"` | model-sized | after MEM1, decide whether the heap path still matters |
+
+**D8a-build gates, registered 2026-10-21 before the code (D8A-G).** The build: under `Backend: "cpu"` (the stated promise
+`decoder/weightmat.go:wantsCanonicalInt4` reads), the int4 layer tensors outside the batched Q/K/V/gate/up dispatch and the
+embedding tables (`o_proj`, `down_proj`, routed and shared experts, and the router and family-specific layer tensors in the
+same class, the one `quantizeWMSkipRow4` already names) are built as one row4 copy where `linalg.Int4Row4Usable` accepts the
+shape, through `repackedOnlyOrCanonical`, as Q/K/V/gate/up already are. The reading behind it (aikit v1.71.0,
+`linalg/weightmat_row4_arm64.go`): when a row4 layout is present, `WeightMat.matmulBTW4A8Q` dispatches to it at every M,
+grouped activations included, so the canonical copy of these tensors is never read by a CPU kernel; they never reach
+`matmulW4A8Batch`. amd64 is unchanged (no row4 there). Phi-3's fused-split tensors are batched-dispatch tensors and stay out.
+The `.giw` writer refuses a repacked-only int4 tensor by name instead of writing it as an empty f32 record (it needs the
+canonical bytes; a `Backend: "cpu"` heap model already reaches that with Q/K/V/gate/up today).
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D8A-G1 bytes | 0, arm64 | every tracked tiny fixture under `testdata/` and `decoder/testdata/` that `Load` reads as a text model, at int4, `Backend: "cpu"` against `Backend: ""` | every in-class int4 tensor whose shape row4 accepts is row4-only (`Int4Layout() == "row4"`), and its bytes are the row4 bytes alone; ≥ 20 families load and ≥ 4 of them are MoE, else the gate is void |
+| D8A-G2 bit-identity | 0, arm64 | the same loads: the logits of an 8-token prompt token by token, and 8 greedy tokens through `Generate` (batched CPU prefill) | byte-equal between `Backend: "cpu"` and `Backend: ""` on every family |
+| D8A-G3 writer | 0 | `SerializeWeights` of a `Backend: "cpu"` int4 tiny model | an error naming the repacked-only tensor; no bytes claimed written |
+| D8A-G4 tier 1 | 1, Mac | `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`, `DirectLoad`, `Backend: "cpu"`, int4: Go heap in use after `runtime.GC` + `FreeOSMemory`, and 16 greedy tokens, main against the branch, one run each | the heap falls by ≥ 50 MiB (the arithmetic canonical bytes of `o_proj` and `down_proj`: 24 × (896·896 + 896·4864)/2 × 17/16 ≈ 63 MiB), and the tokens are equal |
+
+> **Read 2026-10-21: all four PASS** (`docs/measurements/d8a-2026-10/README.md`): 40 families, 15 of them MoE, one copy
+> and byte-equal logits; the 0.5B's heap 522.0 → 455.3 MiB under `Backend: "cpu"`, same tokens. Both plants red.
+
+Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1–G3; about 1 min for G4. The planted
+defects (a canonical copy kept; a row4 tile path forced off) are run once each and must turn G1 or G2 red.
 
 **MEM13-tokenizer gates, registered 2026-10-21 before the code (TK-G).** The build: merge ranks keyed by the two pieces'
 ids packed in a uint64 (a merge whose piece is not in the vocabulary keeps a string key, so no merge is lost), the merge

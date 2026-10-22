@@ -38,16 +38,10 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 	// quantizeWM. streamQ is streamQuantized's own skip-aware twin, for the MoE experts (streamed row by row; see this
 	// file's MEMORY note on why they never materialize as f32).
 	qw := func(m linalg.WeightMat, mode quantMode) linalg.WeightMat {
-		if skipRow4 {
-			return quantizeWMSkipRow4(m, mode)
-		}
-		return quantizeWM(m, mode)
+		return quantizeLayerWM(m, mode, needCanonical, skipRow4)
 	}
 	streamQ := func(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
-		if skipRow4 {
-			return streamQuantizedSkipRow4(rows, cols, mode, rowInto)
-		}
-		return streamQuantized(rows, cols, mode, rowInto)
+		return streamQuantizedLayer(rows, cols, mode, needCanonical, skipRow4, rowInto)
 	}
 	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
 		return nil, err
