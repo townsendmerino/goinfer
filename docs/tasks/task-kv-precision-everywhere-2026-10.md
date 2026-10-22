@@ -150,6 +150,38 @@ owner decision D3 can move it out.
   refuses by name (the share root already separates precisions).
 - The option-state grid: every `KVPrecision` and `KVQuant` cell reads tested; none reads declined.
 
+### P3 gates, registered 2026-10-22 before the code (P3-G), for P3a: Metal f32 back
+
+**What the tree delivers on Metal today (a survey at main `591cdbe2`, `llama-tiny`-class fixtures, `ResidentContext` 64), which the
+matrix's Metal column does not say.** Of the matrix's 12 families, eight build a Metal resident with the cache they report (f16:
+2 B per K element; i8: 1 B plus a scale per position and head): llama, qwen3moe, gemma2, cohere, qwen25vl, qwen35, qwen3next,
+nemotron. Three never build one, for reasons outside KV: phi3 (the int8-activation decline), lfm2 (own forward), and
+`gemma4-moe-kv-tiny` (its shapes are under the MoE kernels' multiple of 32); their Metal cells are the resolver's word only.
+**MLA (deepseek) keeps its latent cache in f32 whatever is asked**: auto and f16 read "f16" in the matrix, and `-kv i8`
+declines the resident ("an MLA model keeps its latent cache in f32; int8 KV does not apply") and runs on the CPU. That is a
+silent precision on two cells, and correcting them turns delivered cells into refusals, which the ratchet forbids without the
+owner's word: decision **D5** in §6, not in P3a.
+
+**P3a, the build.** `--kv f32` on Metal delivers f32 (the resolver's Metal branch; `auto` stays f16). The decode kernels:
+`attention_f32` is generated from `attention`'s source by a type substitution (it had fallen behind: no attention sink, no
+8-wide V read), so the two share one reduction order; `kv_store_f32` as it is. Every path that writes or reads the f16 cache
+outside the decode kernels declines under f32 by name, as it already does under i8: the MMA prefill (`prefillOK`,
+`prefillKernelFloor`, `PrefillPath`, `PrefillLast`, `PrefillBlockRows`), the q4k lane, flash-attention decode, the batched
+E-model prefill, and batched decode. `ResidentKVBytes("metal")` prices f32 at 4 B. P3b (int8 and f32 inside the MMA prefill,
+batched decode and the layer-major prefills) is registered when it starts.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| P3-G1 identity | 0, Mac | `attention_f32` against `attention` on f16-representable K/V (and the store kernels), with a sink, a window, and more than 4,096 keys (the tiled path) | outputs bit-identical; and the f32 kernel's source equals the f16 one's under the substitution |
+| P3-G2 agreement | 0, Mac | the eight resident fixtures and deepseek at `--kv f32` on Metal against the CPU at f32: last-row logits and 32 greedy steps teacher-forced; the same against Metal at f16 (the arm that already ships) | at f32 the max |logit diff| to the CPU is no larger than at f16, and top-1 agreement is no lower, on every fixture |
+| P3-G3 bytes | 0, Mac | the resident's K/V buffers read back at `--kv f32` on the nine fixtures, against `ResidentKVBytes("metal", …)` | 4 B per element, and equal to the priced bytes, on every fixture |
+| P3-G4 paths | 0, Mac | under `--kv f32`: `PrefillPath`, `PrefillBlockRows`, batched decode's eligibility, flash decode and the batched E-model prefill | each declines with a reason naming the f32 cache; a prompt prefills through the sequential path |
+| P3-G5 unchanged | 0 | `auto` and `--kv i8` on the same fixtures; `TestKVPrecisionDelivered`; the generated matrix | f16 and i8 logits byte-equal to main's; the 12 f32 cells move from refused to f32 and nothing else moves |
+
+Planted defects, each once and reverted: the old hand-written `attention_f32` (G1 red on the sink case); one path's f32
+decline removed (G4 red); f32 priced at 2 B (G3 red). Stopping rule: one pass each. Cost: seconds to a minute. No timed run:
+an explicit `--kv f32` is the reference precision, not a default, and its fast paths are declined by name.
+
 ## 4. Gates (registered here, before any code; changing one after the data needs the owner's word and is recorded as such)
 
 - **G1, exact-input identity (every new kernel, CI):** on inputs exactly representable at the precision (f16 values;
@@ -188,6 +220,13 @@ Roughly three to four weeks of agent work on each box, run in parallel, plus gat
 phase 0's table gives the first real count of cells to move.
 
 ## 6. For the owner
+
+- **D5 (asked 2026-10-22, open): MLA's KV precision on Metal.** DeepSeek's latent cache on Metal is f32 whatever is asked. The
+  matrix reads "f16" for auto and `--kv f16`, and `--kv i8` declines the Metal resident and runs on the CPU, so a caller asking for
+  f16 or i8 gets f32 without being told. Options: (a) the resolver says f32 for MLA on Metal (auto delivers f32, with the reason),
+  and an explicit f16 or i8 refuses by name; two cells turn from delivered to refused, the ratchet's case for the owner's word; (b)
+  build an f16 and an int8 latent cache on Metal (kernel work, an M of its own, a phase-3 extension); (c) leave it. **Recommended:
+  (a) now**, which makes the matrix true, and (b) only if a user asks for MLA at f16 or i8 on a Mac.
 
 **Owner, 2026-10-20, before any code: D1 refuse the load; D2 honor explicit requests whatever G4 reads; D3 WebGPU stays in
 scope; D4 the recommended order (phase 0 now, CUDA int8 before the CUDA family widening).**
