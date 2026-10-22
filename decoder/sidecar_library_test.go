@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // MEM1-G, Load's sidecar default for a library caller (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM1, registered
@@ -73,6 +74,12 @@ func tokenizerTinyGGUF(t *testing.T, dir string) string {
 	}
 	p := filepath.Join(dir, "tok-tiny.gguf")
 	if err := os.WriteFile(p, buildGGUFData(kvs, ts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Backdated, as a real source is: a sidecar written in the same filesystem tick gets an equal mtime, which the
+	// freshness rule (cacheNewer: strictly newer) reads as stale, and Linux's file clock ticks in milliseconds.
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(p, old, old); err != nil {
 		t.Fatal(err)
 	}
 	return p
