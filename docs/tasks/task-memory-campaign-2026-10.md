@@ -41,8 +41,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
-| MEM11-bf16 | done (MLA asked) | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA asked as D9 (its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
-| MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
+| MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
+| MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -879,7 +879,8 @@ choice in aikit and a storage choice in ken (**D4**).
 
 ## 7. Owner decisions
 
-- **D9** (MEM11-bf16, asked 2026-10-22, open): **MLA's islands.** DeepSeek-V2-Lite's MLA projections are Q4_K in the bench GGUF,
+- **D9** (MEM11-bf16, decided (a), owner, 2026-10-22): **MLA's islands.** MLA is left to MEM11-int8, its quantized bytes
+  behind the family's parity bar; no bf16 island for MLA. The question as asked: DeepSeek-V2-Lite's MLA projections are Q4_K in the bench GGUF,
   so a bf16 island saves nothing there; its 1.49 GB is widened Q4_K. Options: (a) leave MLA to MEM11-int8, keeping the
   quantized bytes behind the family's parity bar; (b) also add a bf16 island for BF16 safetensors MLA sources, which touches the
   CPU forward's row reads and the Metal, CUDA and WebGPU builders (an M) for checkpoints the bench set does not have; (c) both.
