@@ -24,8 +24,9 @@ func p3FixtureDir(name string) string {
 	return dir
 }
 
-// TestP3_metalF32AgreesWithCPU is P3-G2: on every resident fixture, Metal at --kv f32 against the CPU at f32, teacher-forced over
-// 32 positions, has a max |logit diff| no larger and a top-1 agreement no lower than Metal at f16 (the arm that ships) has.
+// TestP3_metalF32AgreesWithCPU is P3-G2 as amended (D6, docs/tasks/task-kv-precision-everywhere-2026-10.md §6): on every resident
+// fixture, Metal at --kv f32 against the CPU at f32, teacher-forced over 32 positions, has a mean of the per-position max |logit
+// diff| no larger than Metal at f16 (the arm that ships) has, within 5%, and a top-1 agreement no lower.
 func TestP3_metalF32AgreesWithCPU(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -53,7 +54,7 @@ func TestP3_metalF32AgreesWithCPU(t *testing.T) {
 				}
 				ref = append(ref, append([]float32(nil), l...))
 			}
-			arm := func(kv string) (maxDiff float64, agree int) {
+			arm := func(kv string) (maxDiff, meanDiff float64, agree int) {
 				m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: kv, ResidentContext: 64})
 				if err != nil {
 					t.Fatal(err)
@@ -72,21 +73,24 @@ func TestP3_metalF32AgreesWithCPU(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
+					pos := 0.0
 					for j := range l {
-						maxDiff = math.Max(maxDiff, math.Abs(float64(l[j]-ref[i][j])))
+						pos = math.Max(pos, math.Abs(float64(l[j]-ref[i][j])))
 					}
+					maxDiff = math.Max(maxDiff, pos)
+					meanDiff += pos / n
 					if argmaxF(l) == argmaxF(ref[i]) {
 						agree++
 					}
 				}
-				return maxDiff, agree
+				return maxDiff, meanDiff, agree
 			}
-			d32, a32 := arm("f32")
-			d16, a16 := arm("")
-			fmt.Fprintf(os.Stderr, "[P3-G2] %-15s against the CPU at f32: Metal f32 max|diff| %.6g, top-1 %d/%d; Metal f16 %.6g, %d/%d\n",
-				name, d32, a32, n, d16, a16, n)
-			if d32 > d16 || a32 < a16 {
-				t.Errorf("Metal at f32 is further from the CPU than at f16: max|diff| %.6g against %.6g, top-1 %d against %d", d32, d16, a32, a16)
+			d32, m32, a32 := arm("f32")
+			d16, m16, a16 := arm("")
+			fmt.Fprintf(os.Stderr, "[P3-G2] %-15s against the CPU at f32: Metal f32 mean %.6g (max %.6g), top-1 %d/%d; Metal f16 mean %.6g (max %.6g), %d/%d\n",
+				name, m32, d32, a32, n, m16, d16, a16, n)
+			if m32 > 1.05*m16 || a32 < a16 {
+				t.Errorf("Metal at f32 is further from the CPU than at f16: mean per-position max|diff| %.6g against %.6g, top-1 %d against %d", m32, m16, a32, a16)
 			}
 		})
 	}
