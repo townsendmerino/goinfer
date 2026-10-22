@@ -76,7 +76,8 @@ func TestB35Snapshot_restoreEqualsCold(t *testing.T) {
 				o.win = append(o.win, dl(Ly.dnWin, Ly.dnWin.Len()))
 				o.state = append(o.state, dl(Ly.dnState, Ly.dnState.Len()))
 			} else if !Ly.kvShared && !Ly.kvHalf && Ly.kvDim > 0 {
-				o.k = append(o.k, dl(r.kc[l], n*Ly.kvDim))
+				k, _ := r.readKVForTest(l, n)
+				o.k = append(o.k, k)
 			}
 		}
 		return o

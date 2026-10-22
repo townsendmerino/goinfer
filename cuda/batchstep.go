@@ -79,23 +79,17 @@ func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Res
 }
 
 // stepAttnRows is prefillCore's per-sequence gap in a step (executor thread): for each row, decode's single-row q/k/v
-// and context buffers point at that row's views of the batched ones, the row's KV slot is bound, and decodeAttnGap runs
+// and context buffers point at that row's views of the batched ones, the row's KV slot's tables are the ones read, and decodeAttnGap runs
 // at the row's position — rope_kv into that slot, then decode's attention choice. The previous buffers and binding are
 // restored afterwards. Row strides are this layer's own (qDim for q and the context, kvDim for k and v), as bGemvB wrote
 // them and bQuant reads the context.
 func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, qBb, kBb, vBb, cctxB Buffer) error {
-	qB, kB, vB, cctx := r.qB, r.kB, r.vB, r.cctx
-	kc, vc, kvBase := r.kc, r.vc, r.kvBase
-	defer func() { r.qB, r.kB, r.vB, r.cctx, r.kc, r.vc, r.kvBase = qB, kB, vB, cctx, kc, vc, kvBase }()
+	qB, kB, vB, cctx, tabSlot := r.qB, r.kB, r.vB, r.cctx, r.kvTabSlot
+	defer func() { r.qB, r.kB, r.vB, r.cctx, r.kvTabSlot = qB, kB, vB, cctx, tabSlot }()
 	for m, rw := range rows {
 		r.qB, r.cctx = qBb.At(m*Ly.qDim*4), cctxB.At(m*Ly.qDim*4)
 		r.kB, r.vB = kBb.At(m*Ly.kvDim*4), vBb.At(m*Ly.kvDim*4)
-		if len(r.kvSlotBufs) > 0 {
-			r.kc, r.vc = r.kvSlotBufs[rw.slot].kc, r.kvSlotBufs[rw.slot].vc
-			if r.kvWin {
-				r.kvBase = r.kvBases[rw.slot] // each row reads its own slot's shifted view
-			}
-		}
+		r.kvTabSlot = rw.slot // each row reads and writes through its own slot's tables
 		if e := r.decodeAttnGap(Ly, l, rw.pos, rw.pos, r.qTempScaleAt(rw.pos)); e != nil {
 			return e
 		}

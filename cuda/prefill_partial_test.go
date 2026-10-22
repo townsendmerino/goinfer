@@ -61,7 +61,7 @@ func windowedPrefillPartial(t *testing.T, fx string) {
 			t.Fatalf("windowed=%v: Next = %d, want %d (two passes of %d committed)", r.kvWin, p.Next, start+2*chunk, chunk)
 		}
 		if r.kvWin && r.ReusableKV(start) != 0 {
-			t.Fatalf("the window still holds position %d's history (base %d): the test does not exercise a moved window", start, r.kvBase)
+			t.Fatalf("the window still holds position %d's history (base %d): the test does not exercise a moved window", start, r.kvBases[r.kvSlot])
 		}
 		lg, err := r.PrefillLast(ctx, emb(p.Next, end), p.Next)
 		if err != nil {
@@ -77,7 +77,7 @@ func windowedPrefillPartial(t *testing.T, fx string) {
 		t.Fatalf("the resumed windowed prefill's logits differ from the full-KV resident's at %d", j)
 	}
 	if _, err := win.PrefillLast(ctx, emb(start, end), start); err == nil {
-		t.Fatalf("a restart at %d, below the window's base %d, succeeded: a stale read would have been silent", start, win.kvBase)
+		t.Fatalf("a restart at %d, below the window's base %d, succeeded: a stale read would have been silent", start, win.kvBases[win.kvSlot])
 	}
 }
 

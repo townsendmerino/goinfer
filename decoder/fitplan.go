@@ -241,8 +241,9 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	// chooseCtx applies the priority order's first step: the requested ctx if it fits (with dense
 	// weights and extras, ignoring experts for now — the CHEAPEST possible fixed-term check, since
 	// if even this fails no expert cap will save it), else the largest multiple-free ctx down to
-	// ctxPlanFloor. Pinned requests never shrink. KV bytes are exactly linear in ctx (same
-	// reasoning fitguard.go's smallerFittingContext relies on), so this is arithmetic, not a search.
+	// ctxPlanFloor. Pinned requests never shrink. Off CUDA, KV bytes are linear in ctx (on Metal's
+	// 8-position grid), so this is arithmetic; CUDA's are a step function plus a constant (whole
+	// 64-row blocks, the null blocks, the tables), so it searches.
 	chooseCtx := func() (ctx int, kv int64, ok bool) {
 		if kv, fits := tryCtx(req.Ctx); fits {
 			return req.Ctx, kv, true
@@ -251,10 +252,10 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 			kv, _ := tryCtx(req.Ctx)
 			return req.Ctx, kv, false
 		}
-		if backend == "cuda" && m.windowedKV {
-			// KV bytes are affine in ctx here, not linear: a windowed layer flattens at window+slack. The linear rate below prices every
-			// layer at its full-context rate and would shrink the context needlessly, so search for the largest context that fits
-			// (tryCtx is monotone in ctx). Same floor and same "never grow past what was asked" as the arithmetic path.
+		if backend == "cuda" {
+			// KV bytes are not linear in ctx here: the pools hold whole 64-row blocks beside a constant (the null blocks), and a windowed
+			// layer flattens at window+slack. A rate read off one position prices a whole block for it, so search for the largest context
+			// that fits (tryCtx is monotone in ctx). Same floor and same "never grow past what was asked" as the arithmetic path.
 			if _, fits := tryCtx(ctxPlanFloor); !fits {
 				return req.Ctx, kvAt(req.Ctx), false
 			}

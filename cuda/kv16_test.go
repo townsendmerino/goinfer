@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -73,7 +72,7 @@ func kv16Prompt(m *decoder.Model, n int) [][]float32 {
 	return embs
 }
 
-// TestKV16_cacheIsHalfAndTheKnobIsHonoured: -kv f16 on CUDA now does what it says. The f16 arm's per-layer buffers are half the f32 arm's,
+// TestKV16_cacheIsHalfAndTheKnobIsHonoured: -kv f16 on CUDA now does what it says. The f16 arm's per-layer pools are half the f32 arm's,
 // the precision it reports is f16, decoder.Plan and the build price the same bytes, and -kv f32 stays f32.
 func TestKV16_cacheIsHalfAndTheKnobIsHonoured(t *testing.T) {
 	m32, m16, r32, r16 := kv16Pair(t, 4096)
@@ -90,19 +89,33 @@ func TestKV16_cacheIsHalfAndTheKnobIsHonoured(t *testing.T) {
 		if r16.kc[l].Len() != r32.kc[l].Len() || r16.vc[l].Len() != r32.vc[l].Len() {
 			t.Fatalf("layer %d: element counts differ (%d/%d vs %d/%d)", l, r16.kc[l].Len(), r16.vc[l].Len(), r32.kc[l].Len(), r32.vc[l].Len())
 		}
+		// Each layer's K and V pool holds its group's blocks for every slot plus the null block, in elements of the layer's own type.
+		if Ly := &r16.layers[l]; !Ly.noKV() && !Ly.isMLA() {
+			if want := r16.kvPoolBlocks(r16.kvGroupOf(l), r16.KVSlots()) * kvBlock * Ly.kvDim; r16.kc[l].Len() != want || r16.vc[l].Len() != want {
+				t.Fatalf("layer %d: f16 pool holds %d/%d elements, want %d", l, r16.kc[l].Len(), r16.vc[l].Len(), want)
+			}
+		}
 		if !r16.layers[l].kvHalf || r32.layers[l].kvHalf {
 			t.Fatalf("layer %d: kvHalf f16 arm %v, f32 arm %v", l, r16.layers[l].kvHalf, r32.layers[l].kvHalf)
 		}
 	}
+	// A slot's bytes are its K/V blocks plus its block tables; the tables are int32 at either precision, so only the blocks halve. The null
+	// blocks are per build and halve with the rows they stand in for.
 	b32, b16 := kvBytesForCap(r32.ctxCap, r32.layers), kvBytesForCap(r16.ctxCap, r16.layers)
-	if r32.ctxCap != r16.ctxCap || b16*2 != b32 {
-		t.Errorf("KV bytes at the same capacity %d: f32 %d, f16 %d (want exactly half)", r32.ctxCap, b32, b16)
+	tabs := int64(kvGroups * 4 * kvBlocksFor(r16.ctxCap))
+	if r32.ctxCap != r16.ctxCap || (b16-tabs)*2 != b32-tabs {
+		t.Errorf("KV block bytes at the same capacity %d: f32 %d, f16 %d (want exactly half)", r32.ctxCap, b32-tabs, b16-tabs)
 	}
-	if want := m16.ResidentKVBytes("cuda", r16.ctxCap, true, false); want != b16 {
-		t.Errorf("decoder prices the f16 cache at %d bytes, the build allocates %d", want, b16)
+	n32, n16 := kvPoolNullBytes(r32.layers), kvPoolNullBytes(r16.layers)
+	if n16*2 != n32 {
+		t.Errorf("null blocks: f32 %d bytes, f16 %d (want exactly half)", n32, n16)
 	}
-	if want := m32.ResidentKVBytes("cuda", r32.ctxCap, false, false); want != b32 {
-		t.Errorf("decoder prices the f32 cache at %d bytes, the build allocates %d", want, b32)
+	// ResidentKVBytes prices a one-slot load: one slot's blocks and tables, and the null blocks.
+	if want := m16.ResidentKVBytes("cuda", r16.ctxCap, true, false); want != b16+n16 {
+		t.Errorf("decoder prices the f16 cache at %d bytes, a one-slot build allocates %d", want, b16+n16)
+	}
+	if want := m32.ResidentKVBytes("cuda", r32.ctxCap, false, false); want != b32+n32 {
+		t.Errorf("decoder prices the f32 cache at %d bytes, a one-slot build allocates %d", want, b32+n32)
 	}
 }
 
@@ -129,21 +142,29 @@ func TestKV16_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 			t.Fatalf("f16 decode %d: %v", i, err)
 		}
 	}
-	n := (nPrompt + nDecode) * r32.layers[0].kvDim
+	nPos := nPrompt + nDecode
+	n := nPos * r32.layers[0].kvDim
+	rows := func(r *cudaResident) (k, v []float32) {
+		if err := r.do(func() error {
+			if e := r.stream.Sync(); e != nil {
+				return e
+			}
+			var e error
+			k, v, e = r.kvRowsForTest(r.kvSlot, 0, 0, nPos)
+			return e
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return k, v
+	}
+	k32, v32 := rows(r32)
+	k16, v16 := rows(r16)
 	for _, c := range []struct {
-		name   string
-		b32    Buffer
-		b16    Buffer
-		layer0 int
-	}{{"K", r32.kc[0], r16.kc[0], 0}, {"V", r32.vc[0], r16.vc[0], 0}} {
-		f := make([]float32, c.b32.Len())
-		h := make([]uint16, c.b16.Len())
-		if e := gpu.Download(c.b32, f); e != nil {
-			t.Fatal(e)
-		}
-		if e := gpu.Download(c.b16, h); e != nil {
-			t.Fatal(e)
-		}
+		name string
+		f    []float32
+		h    []uint16
+	}{{"K", k32, kvWordsToHalves(k16)}, {"V", v32, kvWordsToHalves(v16)}} {
+		f, h := c.f, c.h
 		bad, nonzero := 0, 0
 		for i := 0; i < n; i++ {
 			if want := f32ToF16RNE(f[i]); h[i] != want {
@@ -175,21 +196,35 @@ func TestKV16_uploadKVRoundsLikeTheKernels(t *testing.T) {
 		keys[i] = float32(math.Sin(float64(i)*0.37)) * 7
 		vals[i] = float32(math.Cos(float64(i)*0.11)) * 0.013
 	}
+	// Positions 0 and 1 first hold a sentinel (device memory is not cleared at allocation, so "untouched" has to be a known value).
+	const sentinel = 1.5
+	below := make([]float32, 2*kvDim)
+	for i := range below {
+		below[i] = sentinel
+	}
+	if e := r16.UploadKV(3, 0, below, below); e != nil {
+		t.Fatal(e)
+	}
 	if e := r16.UploadKV(3, 2, keys, vals); e != nil {
 		t.Fatal(e)
 	}
-	got := make([]uint16, r16.kc[3].Len())
-	if e := gpu.Download(r16.kc[3], got); e != nil {
+	var words []float32
+	if e := r16.do(func() error {
+		var err error
+		words, _, err = r16.kvRowsForTest(r16.kvSlot, 3, 0, 2+n)
+		return err
+	}); e != nil {
 		t.Fatal(e)
 	}
+	got := kvWordsToHalves(words)
 	for i := range keys {
 		if want := f32ToF16RNE(keys[i]); got[2*kvDim+i] != want {
 			t.Fatalf("K[%d]: cache %#04x, want %#04x", i, got[2*kvDim+i], want)
 		}
 	}
-	for _, i := range []int{0, 1, kvDim - 1} { // positions 0 and 1 were not written
-		if got[i] != 0 {
-			t.Errorf("element %d below the upload base was disturbed: %#04x", i, got[i])
+	for _, i := range []int{0, 1, kvDim - 1, 2*kvDim - 1} { // positions 0 and 1 hold the sentinel the upload at base 2 must not touch
+		if want := f32ToF16RNE(sentinel); got[i] != want {
+			t.Errorf("element %d below the upload base was disturbed: %#04x, want %#04x", i, got[i], want)
 		}
 	}
 }

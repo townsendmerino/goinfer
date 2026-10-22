@@ -87,7 +87,7 @@ func kv7MarkRun(t *testing.T, fx string) {
 	gotLogits, err := g.r.PrefillLastMarked(g.ctx, g.embeds(p), 0, mark, func(pos int) {
 		fired = append(fired, pos)
 		if _, base := g.raw(0); base == 0 {
-			t.Errorf("VOID: slot 0's ring base is 0 at the mark, so a windowed layer's rows are not read through a shifted view")
+			t.Errorf("VOID: slot 0's ring base is 0 at the mark, so no windowed layer has released a block below it and the moved ring is not exercised")
 		}
 		s, e := g.r.SnapshotKV(0, pos)
 		if e != nil {

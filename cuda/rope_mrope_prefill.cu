@@ -53,11 +53,14 @@ __device__ __forceinline__ int mrope_pos(int d, int sec0, int sec1, int mode, in
     return pT;
 }
 
+#include "kvpage.cuh"
+
 extern "C" {
 
 __global__ void rope_kv_mrope_batched(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
+    const int* __restrict__ kvt,
     int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
     const int* __restrict__ posT, const int* __restrict__ posH, const int* __restrict__ posW,
     int sec0, int sec1, int mode)
@@ -87,12 +90,12 @@ __global__ void rope_kv_mrope_batched(
         float a = base[d], b = base[d + rhalf];
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[d] = r0; base[d + rhalf] = r1;
-        long o = (long)pos * kvDim + (long)h * hd;
+        long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
         kc[o + d] = r0; kc[o + d + rhalf] = r1;
         vc[o + d] = vm[h * hd + d]; vc[o + d + rhalf] = vm[h * hd + d + rhalf];
     } else if (idx < qn + kn + tn) {
         int j = idx - qn - kn; int h = j / tail, t = 2 * rhalf + (j % tail);
-        long o = (long)pos * kvDim + (long)h * hd;
+        long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
         kc[o + t] = km[h * hd + t]; vc[o + t] = vm[h * hd + t];
     }
 }

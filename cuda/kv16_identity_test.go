@@ -82,13 +82,13 @@ func TestKV16_exactInputIdentity_decodeReaders(t *testing.T) {
 				{"attn_batched M=1", func(r *cudaResident, l, pos int) error {
 					nWin := pos + 1
 					return r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-						Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.layers[l].nKV)), gpu.ArgValue(int32(r.layers[l].hd)),
+						Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.layers[l].nKV)), gpu.ArgValue(int32(r.layers[l].hd)),
 						gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(r.layers[l].window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))
 				}},
 				{"glue attention", func(r *cudaResident, l, pos int) error {
 					nWin := pos + 1
 					return r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-						Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.layers[l].nKV)), gpu.ArgValue(int32(r.layers[l].hd)),
+						Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.layers[l].nKV)), gpu.ArgValue(int32(r.layers[l].hd)),
 						gpu.ArgValue(int32(nWin)), gpu.ArgValue(r.attnScale), gpu.ArgValue(r.layers[l].window), Arg(r.cctx))
 				}},
 			}
@@ -201,7 +201,7 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 							if e := gpu.Upload(qB, q); e != nil {
 								return e
 							}
-							args := []gpu.KernelArg{Arg(qB), Arg(r.kvK(0)), Arg(r.kvV(0)), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)),
+							args := []gpu.KernelArg{Arg(qB), Arg(r.kvK(0)), Arg(r.kvV(0)), Arg(r.kvT(0)), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)),
 								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(tc.startPos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window),
 								gpu.ArgValue(int32(tc.M)), Arg(cB), r.sinkArg(0)}
 							cfg := LaunchConfig{GridX: uint32(nH), GridY: uint32(tc.M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nTot + 128) * 4)}

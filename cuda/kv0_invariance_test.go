@@ -15,7 +15,6 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -233,24 +232,12 @@ func (g *kv0Rig) snapshot(n int) kv0KV {
 				continue
 			}
 			kd := g.r.layers[l].kvDim
-			var k, v []float32
+			k, v, e := g.r.kvRowsForTest(g.r.kvSlot, l, 0, n)
+			if e != nil {
+				return e
+			}
 			if g.r.layers[l].kvHalf {
-				kh, vh := make([]uint16, n*kd), make([]uint16, n*kd)
-				if e := gpu.Download(g.r.kc[l], kh); e != nil {
-					return e
-				}
-				if e := gpu.Download(g.r.vc[l], vh); e != nil {
-					return e
-				}
-				k, v = kv0HalfToF32(kh), kv0HalfToF32(vh)
-			} else {
-				k, v = make([]float32, n*kd), make([]float32, n*kd)
-				if e := gpu.Download(g.r.kc[l], k); e != nil {
-					return e
-				}
-				if e := gpu.Download(g.r.vc[l], v); e != nil {
-					return e
-				}
+				k, v = kv0HalfToF32(kvWordsToHalves(k)), kv0HalfToF32(kvWordsToHalves(v))
 			}
 			s.t = append(s.t, k, v)
 			s.kvDim = append(s.kvDim, kd, kd)
