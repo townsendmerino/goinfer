@@ -1,4 +1,4 @@
-package prequant
+package decoder
 
 import (
 	"context"
@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // flipLastPayloadByte flips the byte before a bundle's trailing CRC word and restores the file's mtime, so the file
@@ -54,37 +52,37 @@ func TestTranscode_selfCheckRunsNoCRCPass(t *testing.T) {
 		os.Unsetenv("GOINFER_GIW_VERIFY")
 		t.Cleanup(func() { os.Setenv("GOINFER_GIW_VERIFY", v) })
 	}
-	hostRAM = func() int64 { return 1 << 40 }
-	t.Cleanup(func() { hostRAM = decoder.HostRAMBytes })
+	sidecarHostRAM = func() int64 { return 1 << 40 }
+	t.Cleanup(func() { sidecarHostRAM = HostRAMBytes })
 	hooked := 0
 	afterWriteForTest = func(tmp string) {
 		hooked++
-		if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(tmp)); err != nil {
+		if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); err != nil {
 			t.Errorf("the written bundle has no marker before its self-check: %v", err)
 		}
 		flipLastPayloadByte(t, tmp)
 	}
 	t.Cleanup(func() { afterWriteForTest = nil })
 
-	src := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
+	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	out := filepath.Join(t.TempDir(), "p.giw")
-	if err := Transcode(context.Background(), src, out, "int4", false, decoder.GIWTargetNone); err != nil {
+	if err := TranscodeGIW(context.Background(), src, out, "int4", false, GIWTargetNone); err != nil {
 		t.Fatalf("the self-check ran a CRC pass over a bundle the transcode had marked: %v", err)
 	}
 	if hooked != 1 {
 		t.Fatalf("the hook ran %d times, want 1", hooked)
 	}
-	if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(out)); err != nil {
+	if _, err := os.Stat(GIWVerifiedMarkerPath(out)); err != nil {
 		t.Fatalf("the marker did not follow the bundle to its final name: %v", err)
 	}
-	m, err := decoder.Load(out, decoder.Options{Backend: "cpu"})
+	m, err := Load(out, Options{Backend: "cpu"})
 	if err != nil {
 		t.Fatalf("the first load of the sidecar ran a CRC pass: %v", err)
 	}
 	m.Close()
 
 	t.Setenv("GOINFER_GIW_VERIFY", "always")
-	if _, err := decoder.Load(out, decoder.Options{Backend: "cpu"}); err == nil || !strings.Contains(err.Error(), "CRC") {
+	if _, err := Load(out, Options{Backend: "cpu"}); err == nil || !strings.Contains(err.Error(), "CRC") {
 		t.Fatalf("GOINFER_GIW_VERIFY=always must run the CRC and refuse the flipped bundle, got: %v", err)
 	}
 }
@@ -118,10 +116,10 @@ func TestTranscode_selfCheckStillRefusesAnUnloadableBundle(t *testing.T) {
 	}
 	t.Cleanup(func() { afterWriteForTest = nil })
 
-	src := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
+	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	dir := t.TempDir()
 	out := filepath.Join(dir, "p.giw")
-	err := Transcode(context.Background(), src, out, "int4", false, decoder.GIWTargetNone)
+	err := TranscodeGIW(context.Background(), src, out, "int4", false, GIWTargetNone)
 	if err == nil {
 		t.Fatal("a bundle with an overwritten header passed the self-check")
 	}
@@ -144,13 +142,13 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 		os.Unsetenv("GOINFER_GIW_VERIFY")
 		t.Cleanup(func() { os.Setenv("GOINFER_GIW_VERIFY", v) })
 	}
-	t.Cleanup(func() { hostRAM = decoder.HostRAMBytes; afterWriteForTest = nil })
-	src := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
+	t.Cleanup(func() { sidecarHostRAM = HostRAMBytes; afterWriteForTest = nil })
+	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 
 	// The bundle's size, from a transcode with memory to spare.
-	hostRAM = func() int64 { return 1 << 40 }
+	sidecarHostRAM = func() int64 { return 1 << 40 }
 	probe := filepath.Join(t.TempDir(), "p.giw")
-	if err := Transcode(context.Background(), src, probe, "int4", false, decoder.GIWTargetNone); err != nil {
+	if err := TranscodeGIW(context.Background(), src, probe, "int4", false, GIWTargetNone); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(probe)
@@ -172,10 +170,10 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 		{"one byte under bundle plus source", sum - 1, false},
 		{"exactly bundle plus source", sum, true},
 	} {
-		hostRAM = func() int64 { return c.total }
+		sidecarHostRAM = func() int64 { return c.total }
 		for _, flip := range []bool{true, false} {
 			afterWriteForTest = func(tmp string) {
-				if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(tmp)); (err == nil) != c.marked {
+				if _, err := os.Stat(GIWVerifiedMarkerPath(tmp)); (err == nil) != c.marked {
 					t.Errorf("%s: the transcode's own marker is present=%v, want %v", c.name, err == nil, c.marked)
 				}
 				if flip {
@@ -184,7 +182,7 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 			}
 			dir := t.TempDir()
 			out := filepath.Join(dir, "p.giw")
-			err := Transcode(context.Background(), src, out, "int4", false, decoder.GIWTargetNone)
+			err := TranscodeGIW(context.Background(), src, out, "int4", false, GIWTargetNone)
 			switch {
 			case flip && !c.marked:
 				if err == nil || !strings.Contains(err.Error(), "CRC") {
@@ -196,7 +194,7 @@ func TestTranscode_largerThanRAMGetsTheCRCPass(t *testing.T) {
 			case err != nil:
 				t.Fatalf("%s (flip %v): %v", c.name, flip, err)
 			default:
-				if _, err := os.Stat(decoder.GIWVerifiedMarkerPath(out)); err != nil {
+				if _, err := os.Stat(GIWVerifiedMarkerPath(out)); err != nil {
 					t.Errorf("%s: no marker at the final name: %v", c.name, err)
 				}
 			}
@@ -247,13 +245,13 @@ func (f *flipAt) Write(p []byte) (int, error) {
 // before the self-check, and nothing is left behind. An untouched stream passes the same read-back.
 func TestTranscode_readBackCatchesAByteThatDiffersInTheFile(t *testing.T) {
 	t.Cleanup(func() { wrapSinkForTest = nil; afterWriteForTest = nil })
-	src := filepath.Join("..", "..", "testdata", "qwen3moe-tiny")
+	src := filepath.Join("..", "testdata", "qwen3moe-tiny")
 	reachedSelfCheck := false
 	afterWriteForTest = func(string) { reachedSelfCheck = true }
 	for _, at := range []int64{0, 4097, 100000} {
 		wrapSinkForTest = func(w io.Writer) io.Writer { return &flipAt{w: w, at: at} }
 		dir := t.TempDir()
-		err := Transcode(context.Background(), src, filepath.Join(dir, "p.giw"), "int4", false, decoder.GIWTargetNone)
+		err := TranscodeGIW(context.Background(), src, filepath.Join(dir, "p.giw"), "int4", false, GIWTargetNone)
 		if !errors.Is(err, errReadBack) {
 			t.Fatalf("a byte flipped at %d of the weights: want the read-back's error, got: %v", at, err)
 		}
@@ -265,7 +263,7 @@ func TestTranscode_readBackCatchesAByteThatDiffersInTheFile(t *testing.T) {
 		}
 	}
 	wrapSinkForTest = func(w io.Writer) io.Writer { return &flipAt{w: w, at: -1} }
-	if err := Transcode(context.Background(), src, filepath.Join(t.TempDir(), "p.giw"), "int4", false, decoder.GIWTargetNone); err != nil {
+	if err := TranscodeGIW(context.Background(), src, filepath.Join(t.TempDir(), "p.giw"), "int4", false, GIWTargetNone); err != nil {
 		t.Fatalf("an untouched stream: %v", err)
 	}
 }

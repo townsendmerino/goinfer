@@ -1,4 +1,4 @@
-package prequant
+package decoder
 
 import (
 	"bytes"
@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // dirStreamCases are G-DS1's configurations (docs/tasks/task-prequant-dir-streaming-2026-10.md): int4 for the Metal
@@ -18,24 +16,24 @@ import (
 var dirStreamCases = []struct {
 	quant     string
 	embedInt4 bool
-	target    decoder.GIWTarget
+	target    GIWTarget
 }{
-	{"int4", true, decoder.GIWTargetForBackend("metal")},
-	{"int4", false, decoder.GIWTargetForBackend("cpu")},
-	{"int8int8", false, decoder.GIWTargetForBackend("cpu")},
+	{"int4", true, GIWTargetForBackend("metal")},
+	{"int4", false, GIWTargetForBackend("cpu")},
+	{"int8int8", false, GIWTargetForBackend("cpu")},
 }
 
 // dirStreamCompare transcodes dir both ways and returns the resident and streamed bodies; skip is non-empty when the
 // directory is not a model the resident path builds, noStream when its family's loader does not stream.
-func dirStreamCompare(t *testing.T, dir, quant string, embedInt4 bool, target decoder.GIWTarget) (res, str []byte, skip string, noStream bool) {
+func dirStreamCompare(t *testing.T, dir, quant string, embedInt4 bool, target GIWTarget) (res, str []byte, skip string, noStream bool) {
 	t.Helper()
 	var rb, sb bytes.Buffer
 	id := filepath.Base(dir)
 	if _, err := residentDirBody(&rb, dir, "", quant, embedInt4, target, id); err != nil {
 		return nil, nil, err.Error(), false
 	}
-	if _, err := decoder.StreamTranscodeDir(context.Background(), dir, &sb, quant, embedInt4, target, id); err != nil {
-		if decoder.IsDirNoStream(err) {
+	if _, err := StreamTranscodeDir(context.Background(), dir, &sb, quant, embedInt4, target, id); err != nil {
+		if IsDirNoStream(err) {
 			return rb.Bytes(), nil, "", true
 		}
 		t.Fatalf("streamed transcode failed where the resident one did not: %v", err)
@@ -73,13 +71,13 @@ func dirStreamDiff(t *testing.T, res, str []byte) string {
 // is byte-identical to it, in each configuration. Families whose loader does not stream are listed, not compared (their
 // bundle comes from the resident path).
 func TestDirStream_byteIdentical(t *testing.T) {
-	ents, err := os.ReadDir("../../testdata")
+	ents, err := os.ReadDir("../testdata")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var same, noStream []string
 	for _, e := range ents {
-		dir := filepath.Join("../../testdata", e.Name())
+		dir := filepath.Join("../testdata", e.Name())
 		if !e.IsDir() || !hasSafetensors(dir) {
 			continue
 		}

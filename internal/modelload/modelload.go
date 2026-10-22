@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -194,7 +193,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 			return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 		}
 		t0 = time.Now()
-		if model, err = decoder.Load(loadPath, opts); err != nil {
+		if model, err = decoder.Load(loadPath, opts); err != nil { // loadPath is a .giw: no route to choose
 			return nil, fmt.Errorf("load model (%s): %w (auto weight-streaming retry also failed after transcode: %v)", src, declineErr, err)
 		}
 	}
@@ -235,7 +234,7 @@ func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, e
 		return routeDirect, nil
 	case gguf && prequant.DefaultToSidecar(directLoad):
 		return routeSidecar, nil
-	case dirSidecarApplies(src, opts) && prequant.DefaultToSidecar(directLoad):
+	case decoder.DirSidecarApplies(src, opts) && prequant.DefaultToSidecar(directLoad):
 		return routeDirSidecar, nil
 	}
 	return routeDirect, nil
@@ -296,17 +295,6 @@ func Plan(req Request) (Planned, error) {
 	return p, nil
 }
 
-// dirSidecarApplies reports whether a safetensors directory source takes the sidecar default (S18): not with a LoRA to
-// merge (the merge needs the safetensors base, and a plain sidecar would drop the adapter), not at q4k, bf16 or f16 (no .giw form),
-// and not under -stream-weights, which serve already explains is .gguf-only for a directory.
-func dirSidecarApplies(src string, opts decoder.Options) bool {
-	if opts.LoRA != "" || opts.Quant == "q4k" || opts.Quant == "bf16" || opts.Quant == "f16" || opts.StreamWeights || !isDir(src) {
-		return false
-	}
-	m, _ := filepath.Glob(filepath.Join(src, "*.safetensors"))
-	return len(m) > 0
-}
-
 func isDir(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
@@ -347,6 +335,7 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 // Model.LoadAbort), so both arm the watch; an HF-dir or streamed load arms nothing.
 func loadGuarded(path string, opts decoder.Options, advice string) (*decoder.Model, error) {
 	loadOpts := opts
+	loadOpts.DirectLoad = true // the route is chosen (routeFor): path is what it opens
 	wrapLoadErr := func(err error) error { return err }
 	stopLoadGuard := func() {}
 	if !opts.StreamWeights && (strings.HasSuffix(path, ".gguf") || strings.HasSuffix(path, ".giw")) {

@@ -108,6 +108,9 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Diagnostics and capture.** `Model.ForwardCapture`, `ForwardSubCapture`, `HiddenLast`,
   `DecodePath`, `PrefillPath`, `PrefillPathReporter`, `ResidentDecline`, `MmapByteOffset`.
 - **Serialization plumbing.** `SerializeWeights`, `SerializeWeightsTo`, `StreamTranscodeGGUF`,
+  `TranscodeGIW`, `TranscodeGIWTimed`, `TranscodeGIWLoRA`, `TranscodeGIWLoRATimed`, `TranscodePhases`, `GIWAdapterLoRA`,
+  `EnsureCachedGIW`, `SidecarPath`, `SidecarPathIfFresh`, `SidecarPathIfCurrent`, `SidecarState`, `DefaultToSidecar`,
+  `DirSidecarApplies` (the sidecar cache `Load` uses by default; `Options.DirectLoad` itself is in the Hard field set),
   `SerializeError`, `SnapshotError`, `NewModel`, `CheckGiwQuantMatch`, `GiwPath`. (The `.giw`
   FORMAT promise is a separate line — see Open questions.)
 - **Tuning knobs.** `SetDecodeParallelThreshold`, `DefaultDecodeParallelThreshold`,

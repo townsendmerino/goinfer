@@ -1,10 +1,8 @@
-package prequant
+package decoder
 
 import (
 	"os"
 	"strings"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // projectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
@@ -23,7 +21,7 @@ import (
 // rest (on a tiny model those fixed costs are most of the file; on a real one, noise). ok is false when the header does not
 // parse; the caller then falls back to the source's size.
 func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
-	g, err := decoder.OpenGGUFMmap(ggufPath)
+	g, err := OpenGGUFMmap(ggufPath)
 	if err != nil {
 		return 0, false
 	}

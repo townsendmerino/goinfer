@@ -332,6 +332,12 @@ type Options struct {
 	Backend    string // "cpu" (default), "webgpu", "cuda", "metal", or "auto" (AutoBackend); a name not compiled in falls back to cpu
 	Quant      string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), "int4" (group-wise), or "bf16" / "f16" (16-bit weights widened per tile: bit-identical to f32 over a bf16 / f16 checkpoint, half the memory, CPU only)
 	LoRA       string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
+	// DirectLoad builds a .gguf or a safetensors directory's weights in the heap. Off (the default) on darwin and linux, Load
+	// opens the source's sidecar .giw instead, transcoding it once beside the source when it is missing or stale, so the
+	// weights are a mapping of that file rather than an anonymous copy; serve and chat do the same. A .gguf whose sidecar
+	// cannot be written (a read-only directory, a full disk) is refused, naming this field. A q4k .gguf always loads
+	// directly. A test binary loads directly too, unless the test turns the default on.
+	DirectLoad bool
 	// KVPrecision selects the GPU residency KV cache precision: "" / "auto" (the default: f16 on CUDA for a family the f16 kernels cover and
 	// the gates cleared, otherwise what the backend always did: f32, or f16 on Metal), "f32" (bit-exact, on every backend), "f16" (lossy, twice
 	// the context) or "i8" (lossy, four times). Ignored off the residency path. See task-gpu-f16-kv.md / task-gpu-kv-i8.md and
@@ -531,6 +537,11 @@ func Load(dir string, opts Options) (*Model, error) {
 	loadCalls.Add(1)
 	ensureCPUSelfTest() // once per process, before any kernel runs concurrently (H2): a CPU kernel tier that disagrees with its reference is stepped down, not trusted
 	opts = opts.withAutoBackend()
+	if p, err := sidecarRoute(dir, opts); err != nil {
+		return nil, err
+	} else {
+		dir = p
+	}
 	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below before withResidency, because
 	// CUDA reads it while building its resident) and consulted by each backend's fast-prefill switch alongside its env var. It is
 	// deliberately not applied with os.Setenv, which is process-global and never undone: every model loaded later in the process
@@ -722,7 +733,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
 	// Write the resolved EOS set (config.json plus any extra ids generation_config.json adds) back into w.Cfg.EOSTokenID, not
-	// just onto this Model's eosIDs. w.Cfg is what a .giw bundle serializes (internal/prequant, via
+	// just onto this Model's eosIDs. w.Cfg is what a .giw bundle serializes (TranscodeGIW, via
 	// SerializeWeightsToForTarget), and a .giw's own Load branch reads eosIDs straight from w.Cfg.EOSIDs() with no directory to
 	// re-resolve generation_config.json from. Without this, a checkpoint whose stop ids live only in generation_config.json
 	// (Qwen3: <|endoftext|> beside config.json's <|im_end|>) loses the extra id when it round-trips through cmd/prequant, and a

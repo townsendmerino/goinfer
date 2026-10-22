@@ -1,4 +1,4 @@
-package prequant
+package decoder
 
 import (
 	"context"
@@ -10,35 +10,33 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestDirSidecar_matchesDirectLoad is G-S18d's identity half (docs/tasks/task-multimodal-support-2026-10.md, S18 on the
-// Mac): for every tiny safetensors fixture in testdata that decoder.Load reads as a generating model, the directory
+// Mac): for every tiny safetensors fixture in testdata that Load reads as a generating model, the directory
 // transcoded to a sidecar (as modelload now does by default on darwin and linux) must generate the same greedy stream as
 // the directory loaded directly, at serve's defaults (int4, embed-int4, the Metal target). A config field the bundle
 // drops is the silent kind of defect (LFM2's NormEps and AttnScale were both zero and legal-looking), and greedy
 // decoding over a tiny random model is sensitive to any change in the logits. A fixture whose transcode fails is
 // reported, not failed: modelload falls back to the direct load for it.
 func TestDirSidecar_matchesDirectLoad(t *testing.T) {
-	ents, err := os.ReadDir("../../testdata")
+	ents, err := os.ReadDir("../testdata")
 	if err != nil {
 		t.Fatal(err)
 	}
 	const quant = "int4"
-	target := decoder.GIWTargetForBackend("metal")
+	target := GIWTargetForBackend("metal")
 	prompts := [][]int{{1, 2, 3, 4, 5}, {3, 1, 4, 2}} // ids under every fixture's vocab (lfm2-tiny and smollm3-tiny have small ones)
 	var compared, fellBack []string
 	for _, e := range ents {
-		dir := filepath.Join("../../testdata", e.Name())
+		dir := filepath.Join("../testdata", e.Name())
 		if !e.IsDir() || !hasSafetensors(dir) {
 			continue
 		}
 		t.Run(e.Name(), func(t *testing.T) {
-			direct, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: true})
+			direct, err := Load(dir, Options{Quant: quant, EmbedInt4: true})
 			if err != nil {
-				t.Skipf("not a model decoder.Load reads directly: %v", err)
+				t.Skipf("not a model Load reads directly: %v", err)
 			}
 			defer direct.Close()
 			ref, why := greedyOrSkip(direct, prompts)
@@ -46,12 +44,12 @@ func TestDirSidecar_matchesDirectLoad(t *testing.T) {
 				t.Skipf("the direct load does not generate (an encoder or tower): %s", why)
 			}
 			out := filepath.Join(t.TempDir(), "s.giw")
-			if err := Transcode(context.Background(), dir, out, quant, true, target); err != nil {
+			if err := TranscodeGIW(context.Background(), dir, out, quant, true, target); err != nil {
 				fellBack = append(fellBack, e.Name())
 				t.Logf("transcode refused (modelload falls back to the direct load): %v", err)
 				return
 			}
-			side, err := decoder.Load(out, decoder.Options{})
+			side, err := Load(out, Options{})
 			if err != nil {
 				t.Fatalf("the sidecar does not load: %v", err)
 			}
@@ -88,8 +86,8 @@ func TestDirSidecar_cachePathAndFreshness(t *testing.T) {
 	if err := os.WriteFile(w, make([]byte, 1<<20), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cache := streamCachePath(dir, "int4", true, decoder.GIWTargetMetal)
-	if want := filepath.Join(root, fmt.Sprintf("qwen2.5-0.5b-instruct.int4.e4h.metal.v%d.giw", decoder.GIWFormatVersion)); cache != want {
+	cache := streamCachePath(dir, "int4", true, GIWTargetMetal)
+	if want := filepath.Join(root, fmt.Sprintf("qwen2.5-0.5b-instruct.int4.e4h.metal.v%d.giw", GIWFormatVersion)); cache != want {
 		t.Fatalf("streamCachePath(dir) = %q, want %q", cache, want)
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -121,14 +119,14 @@ func hasSafetensors(dir string) bool {
 }
 
 // greedyOrSkip runs each prompt for 12 greedy tokens; why is non-empty when the model does not generate, and says why.
-func greedyOrSkip(m *decoder.Model, prompts [][]int) (out [][]int, why string) {
+func greedyOrSkip(m *Model, prompts [][]int) (out [][]int, why string) {
 	defer func() {
 		if p := recover(); p != nil {
 			why = fmt.Sprint("panic: ", p)
 		}
 	}()
 	for _, p := range prompts {
-		ch, gen := m.Generate(context.Background(), p, 12, decoder.SamplingParams{})
+		ch, gen := m.Generate(context.Background(), p, 12, SamplingParams{})
 		var ids []int
 		for id := range ch {
 			ids = append(ids, id)
@@ -154,7 +152,7 @@ func greedyOrSkip(m *decoder.Model, prompts [][]int) (out [][]int, why string) {
 func TestDirSidecar_keepsMRopeSection(t *testing.T) {
 	for _, fx := range []string{"qwen25vl-tiny", "qwen3vl-tiny"} {
 		t.Run(fx, func(t *testing.T) {
-			src := filepath.Join("../../testdata", fx)
+			src := filepath.Join("../testdata", fx)
 			if _, err := os.Stat(src); err != nil {
 				t.Skipf("no fixture: %v", err)
 			}
@@ -211,7 +209,7 @@ func TestDirSidecar_keepsMRopeSection(t *testing.T) {
 			for _, v := range section {
 				half += int(v.(float64))
 			}
-			direct, err := decoder.Load(released, decoder.Options{Quant: "int4"})
+			direct, err := Load(released, Options{Quant: "int4"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -221,10 +219,10 @@ func TestDirSidecar_keepsMRopeSection(t *testing.T) {
 				t.Fatal("the direct load has no m-RoPE axis table: the rewritten config is not the released layout")
 			}
 			out := filepath.Join(t.TempDir(), "s.giw")
-			if err := Transcode(context.Background(), released, out, "int4", false, decoder.GIWTargetForBackend("metal")); err != nil {
+			if err := TranscodeGIW(context.Background(), released, out, "int4", false, GIWTargetForBackend("metal")); err != nil {
 				t.Fatal(err)
 			}
-			side, err := decoder.Load(out, decoder.Options{})
+			side, err := Load(out, Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -241,7 +239,7 @@ func TestDirSidecar_keepsMRopeSection(t *testing.T) {
 					}
 				}
 			})
-			if _, err := decoder.Load(none, decoder.Options{Quant: "int4"}); err == nil || !strings.Contains(err.Error(), "no m-RoPE section") {
+			if _, err := Load(none, Options{Quant: "int4"}); err == nil || !strings.Contains(err.Error(), "no m-RoPE section") {
 				t.Errorf("a config with no m-RoPE section loaded (err %v); it must be refused", err)
 			}
 		})

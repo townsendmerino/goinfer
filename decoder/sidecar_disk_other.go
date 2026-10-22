@@ -1,6 +1,6 @@
 //go:build !darwin && !linux
 
-package prequant
+package decoder
 
 // statfsFreeBytes has no portable probe on this platform — every unknown proceeds
 // (fitguard.go's own rule), so the disk-space guard in EnsureCachedGIW never refuses on a guess.

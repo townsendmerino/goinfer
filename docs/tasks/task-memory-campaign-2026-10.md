@@ -26,7 +26,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM0-nobara | done | — | 33ef5a21; `docs/measurements/mem0-2026-10/README.md` |
 | MEM0-Mac | done | — (no 7B cell: the coder 7B is not on the Mac, and pulling it and writing its sidecar would take 9 of the disk's 12 GB free) | `docs/measurements/mem0-2026-10/README.md` §4 |
 | MEM0-tack | done | — | 5310f789 |
-| MEM1 | open | either box: the `decoder.Options` sidecar field, on by default (D1, owner 2026-10-21); M | — |
+| MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
 | MEM2 | open | Mac: free the Metal tower scratch on grow, and a real `Close`; S | — |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
@@ -240,6 +240,28 @@ the sidecar by default as the apps do.
 **Gates (sketch).** Tier 0: on a tiny fixture through the public entry point, heap in use after load stays under a
 stated bound and the weights report mmap-aliased; logits byte-identical to the internal path. Tier 1: 0.5B footprint
 after load, library path before vs after.
+
+**Gates, registered 2026-10-21 before the code (MEM1-G).** The shape built: `decoder.Options.DirectLoad` (zero value: the
+sidecar), and the sidecar machinery moved from `internal/prequant` into `decoder` (prequant imports decoder, so `Load`
+cannot reach it where it was; prequant keeps its API as wrappers). A test binary's zero `Options` keeps the direct load
+(`testing.Testing()`, the `swapguard` precedent): the ~300 test files that load a `.gguf` test the direct path today, and
+under the default each would transcode and write a `.giw` beside its fixture or real checkpoint.
+
+| gate | tier | instrument | PASS iff | void |
+|---|---|---|---|---|
+| G0 production default | 0 | a non-test program (`go run`) loads a temp copy of `testdata/glm-tiny.gguf` with `Options{Quant: "int8int8"}` | the sidecar `SidecarPath` names exists beside the copy afterwards, and the program's greedy tokens equal the in-process load of that sidecar | the fixture is absent (a SKIP, counted as a failure here) |
+| G1 library default | 0 | in-package, the test-binary default turned off by a test hook; same copy and options | the model is the mapped `.giw` (its source is the sidecar, its mapping non-nil); a second load does not transcode (the sidecar's mtime unchanged); logits byte-identical to `Load(EnsureCachedGIW(...))`, the app path's two steps | — |
+| G2 opt-out | 0 | `Options{DirectLoad: true}` on the copy | no file is written beside it and the model is a heap load (no mapping) | — |
+| G3 test binaries | 0 | the zero `Options` in a test binary, no hook | no file is written beside the copy | — |
+| G4 refusal | 0 | the copy in a directory made read-only | `Load` returns an error naming `DirectLoad`, as the apps' refusal names `-direct-load`, and writes nothing | running as root (the chmod does not bind): SKIP |
+| G5 tier 1 | 1, Mac | `docs/measurements/mem0-2026-10/testdata/libload.go` on `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`, `Quant: "int4"`, one run | Go heap in use after `runtime.GC` + `FreeOSMemory` ≤ 100 MiB (MEM0 §4.2 read 647 MiB on this Mac) | the sidecar was not written (the load went direct) |
+
+> **Read 2026-10-21: all six PASS** (`docs/measurements/mem1-2026-10/README.md`). Each tier-0 gate went red under a
+> planted defect. G5: 1 MiB of Go heap in use after the library load of the 0.5B at int4 on the Mac, against MEM0's 647.
+
+G5's cost: one 0.5B transcode and load, about 1–2 min wall; no timed figure, so no interleaving. Stopping rule: one
+run each; a FAIL is diagnosed, not re-run. The f32 `Options{}` cell is not run: the int4 cell answers the mechanism,
+and an f32 sidecar writes ~2 GB beside the model for no new information.
 
 ### MEM2 · Metal tower scratch: free what grows, and close (S)
 
