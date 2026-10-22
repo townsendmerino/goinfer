@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measured it: the i8 step is 6.80× the f16 pass at 8K; building an int8 MMA prefill decided by the owner (D8, owner, 2026-10-22); D9 (owner, 2026-10-22): design (b), dequantize to an f16 scratch; P3b-2 gates registered, building | `docs/measurements/kv-precision-2026-10/p3a.md` |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measured it: the i8 step is 6.80× the f16 pass at 8K; building an int8 MMA prefill decided by the owner (D8, owner, 2026-10-22); D9 (owner, 2026-10-22): design (b), dequantize to an f16 scratch, built on branch `p3b2-int8-mma-prefill-2026-10`: G1 and G3 PASS (int8 at 1.000 and 1.006 of f16), G2 FAILED as registered and passes in the diagnosis's common-reference form; merge waits on D10 | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -299,6 +299,23 @@ phase 0's table gives the first real count of cells to move.
   attention reading int8 K/V directly, (b) build it by dequantizing each layer's cache into an f16 scratch, (c) park it. The
   owner's brief asked for bit-identity against the i8 step path and a speed bar against D7's f16 numbers, and for a decision if
   the design needs one; D9 below is that decision.
+- **D10 (asked 2026-10-22, open): P3B2-G2 after its data.**
+  - **As registered,** G2 failed: the i8 pass against the i8 step, beside the f16 pass against the f16 step. KL ratio 4.05 (UCB
+    6.19 against 1.10), agreement LCB −1.72 against −1.00, and 17 hard flips against 0.
+  - **The diagnosis,** run after and recorded as one: every arm scored against the f16 sequential decode. The i8 pass is
+    non-inferior to the i8 step, and nearer that reference in every cell: KL ratio 0.735 (UCB 0.897), agreement +1.23 pts (LCB
+    +0.69), 19 hard flips against 33.
+  - **Why the registered form fails:** the two int8 arms store different int8 caches (their K/V come from different kernels,
+    and int8's rounding step is far coarser than f16's), so they drift apart as two f16 caches do not.
+  - G1 and G3 pass; G3 at 1.000 and 1.006 against 1.25. Record: `docs/measurements/kv-precision-2026-10/p3b-2.md`.
+  - **Options:**
+    - (a) amend G2 to the diagnosis's form: the i8 pass non-inferior to the i8 step, both scored against the f16 step, by the
+      same criteria. It passes, and the PR merges.
+    - (b) keep G2 as registered: P3b-2 does not merge, and int8 prompts stay on the step (6.80× at 8K).
+    - (c) hold P3b-2 for a further gate, for example a quality cell against the CPU f32 reference.
+  - **Recommended: (a).** The registered form compares two int8 caches with each other, which no int8 prefill can pass. The
+    question it was meant to answer, whether the pass is worse than the step it replaces, is what the diagnosis measures, and
+    the answer is no.
 - **D9, decided (c), owner, 2026-10-22: the int8 MMA prefill's design, and its identity gate.** Build (b) with the gates below
   (P3b-2 gates); build (a) only if (b) misses G3, and stop for the owner before starting it. The question as asked:
   - **Bit-identity against the i8 step cannot hold for any MMA prefill.** The pass computes Q/K/V with its own f16 GEMMs and

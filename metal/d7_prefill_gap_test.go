@@ -33,10 +33,11 @@ func d7Load1() float64 {
 	return l1
 }
 
-// TestD7_int8StepVsF16Pass is D7's measurement (docs/tasks/task-kv-precision-everywhere-2026-10.md, "D7 measurement"): on
-// Qwen2.5-Coder-1.5B from ~/models, the resident prefill of a 2,048- and an 8,192-token prose prompt with an f16 cache (the MMA
-// pass) against an int8 cache (the step kernels), a warm-up pair and five order-alternating pairs per length, in one process.
-// A timed run: hold the timing lock.
+// TestD7_int8StepVsF16Pass is D7's measurement and P3B2-G3's instrument (docs/tasks/task-kv-precision-everywhere-2026-10.md, "D7
+// measurement", "P3b-2 gates"): on Qwen2.5-Coder-1.5B from ~/models, the resident prefill of a 2,048- and an 8,192-token prose
+// prompt with an f16 cache against an int8 cache, a warm-up pair and five order-alternating pairs per length, in one process. D7
+// ran with the int8 arm on the step kernels (main 725c840c); since P3b-2 both arms take the MMA pass, and the median int8 / f16
+// ratio must be at most 1.25 at both lengths. A timed run: hold the timing lock.
 //
 //	GOINFER_D7_SPEED=1 go test -count=1 -tags goinfer_testhooks -timeout 40m -run '^TestD7_int8StepVsF16Pass$' -v ./metal/
 func TestD7_int8StepVsF16Pass(t *testing.T) {
@@ -63,8 +64,8 @@ func TestD7_int8StepVsF16Pass(t *testing.T) {
 		}
 		_, why := a.PrefillPath()
 		fmt.Fprintf(os.Stderr, "[D7] --kv %-4q prefill path: %s\n", kv, why)
-		if want := map[string]string{"": "MMA", "i8": "step"}[kv]; !strings.Contains(why, want) {
-			t.Fatalf("--kv %q: the prefill path does not name %s: %s", kv, want, why)
+		if !strings.Contains(why, "MMA") {
+			t.Fatalf("--kv %q: the prefill path does not name the MMA pass: %s", kv, why)
 		}
 		return m
 	}
@@ -109,10 +110,14 @@ func TestD7_int8StepVsF16Pass(t *testing.T) {
 			} else {
 				ratios = append(ratios, di.Seconds()/df.Seconds())
 			}
-			fmt.Fprintf(os.Stderr, "[D7] %d tokens, %s (load1 %.2f, available %.2f GB at start): f16 pass %.2fs (%.0f tok/s), i8 step %.2fs (%.0f tok/s), i8/f16 %.3f; elapsed %.0fs\n",
+			fmt.Fprintf(os.Stderr, "[D7] %d tokens, %s (load1 %.2f, available %.2f GB at start): f16 %.2fs (%.0f tok/s), i8 %.2fs (%.0f tok/s), i8/f16 %.3f; elapsed %.0fs\n",
 				n, label, l1, float64(avail)/1e9, df.Seconds(), float64(n)/df.Seconds(), di.Seconds(), float64(n)/di.Seconds(), di.Seconds()/df.Seconds(), time.Since(start).Seconds())
 		}
 		sort.Float64s(ratios)
-		fmt.Fprintf(os.Stderr, "[D7] %d tokens: median i8 step / f16 pass %.3f (pairs %.3f)\n", n, ratios[len(ratios)/2], ratios)
+		med := ratios[len(ratios)/2]
+		fmt.Fprintf(os.Stderr, "[D7] %d tokens: median i8 / f16 %.3f (pairs %.3f)\n", n, med, ratios)
+		if med > 1.25 {
+			t.Errorf("P3B2-G3: at %d tokens the int8 prefill takes %.3f× the f16 one, over 1.25", n, med)
+		}
 	}
 }
