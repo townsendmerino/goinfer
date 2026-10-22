@@ -1,7 +1,7 @@
 name: zombie-probe-3
 
-# Temporary (docs/queue-correctness.md G50): on Windows hosts whose CPU is a Xeon Platinum 8573C, TestProgram_L under four arms,
-# four runs each, and a standalone recovered-fault probe. Other hosts print their CPU and stop. Lives only on the zombie-probe-3 branch.
+# Temporary (docs/queue-correctness.md G50): on Windows hosts whose CPU is a Xeon Platinum 8573C, TestProgram_L with the G50 fix and with
+# the nil dereference it replaces, six runs each, and a standalone recovered-fault probe. Other hosts print their CPU and stop. Lives only on the zombie-probe-3 branch.
 on:
   push:
     branches: [zombie-probe-3-2026-10-22]
@@ -50,15 +50,13 @@ jobs:
             Write-Host "SEGV run=$i rc=$rc $l"
           }
           $arms = [ordered]@{
-            'ctrl'     = @{ BIN = 'dec.test.exe' }
-            'soft'     = @{ BIN = 'dec.test.exe'; ZP_SOFTPANIC = '1' }
-            'noform'   = @{ BIN = 'dec.test.exe'; ZP_SKIP = 'ffn.Form' }
-            'nonemo'   = @{ BIN = 'dec.test.exe'; ZP_SKIP_FIXTURE = 'nemotron3nano-tiny' }
+            'fixed'    = @{ BIN = 'dec.test.exe' }
+            'oldnil'   = @{ BIN = 'dec.test.exe'; ZP_OLDNIL = '1' }
           }
           Set-Location decoder
-          foreach ($run in 1..4) {
+          foreach ($run in 1..6) {
             foreach ($name in $arms.Keys) {
-              foreach ($k in @('GODEBUG','ZP_FIXTURE','ZP_KEYS','ZP_SKIP','ZP_MODES','ZP_QUARANTINE','GOMAXPROCS','ZP_SOFTPANIC','ZP_SKIP_FIXTURE')) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+              foreach ($k in @('GODEBUG','ZP_FIXTURE','ZP_KEYS','ZP_SKIP','ZP_MODES','ZP_QUARANTINE','GOMAXPROCS','ZP_OLDNIL','ZP_SKIP_FIXTURE')) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
               foreach ($kv in $arms[$name].GetEnumerator()) { if ($kv.Key -ne 'BIN') { Set-Item "Env:$($kv.Key)" $kv.Value } }
               $env:GOTRACEBACK = 'all'
               $log = "..\zp\$name-$run.log"

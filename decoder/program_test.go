@@ -611,4 +611,4 @@ func zpWant(fixture, key string, mode walkerMode) bool {
 	return !in("ZP_SKIP", key)
 }
 
-func init() { zpSoftPanic = os.Getenv("ZP_SOFTPANIC") != "" }
+func init() { zpOldNil = os.Getenv("ZP_OLDNIL") != "" }
