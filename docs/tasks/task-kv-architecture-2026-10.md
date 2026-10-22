@@ -41,6 +41,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
 | KV8 | blocked | KV4 (KV5 for Metal) | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
+| KV8a-CUDA-cc28k | done | — | the 28K Claude Code chain on CUDA at main `799b98df`: PASS, 1 tested, 0 of 7 differ (`docs/measurements/kv8a-2026-10/README.md`, "The 28K Claude Code chain on CUDA") |
 | KV8a-Metal | active | Mac: M2(b) (about 2 h 45 min) and M5 (about 3 h 30 min, as two jobs) on the night queue, then grade and merge | branch `kv8a-metal-2026-10` |
 | KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
 | KV10 | blocked | KV4, KV5 | §6 |
