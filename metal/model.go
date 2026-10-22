@@ -1145,7 +1145,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if attnSoftcapDropForTest {
 		attnSoftcap = 0
 	}
-	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels, attnSoftcap) // + MC3 S3's multi-row forms, derived from allKernels (batch_rows.go)
+	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels+kvF32Kernels, attnSoftcap) // + MC3 S3's multi-row forms (batch_rows.go) and attention_f32 (kv_f32.go), derived from allKernels
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
