@@ -68,6 +68,9 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 	case "cuda":
 		return resolveCUDAKV(arch, o, req)
 	case "metal":
+		if arch != nil && arch.mla != nil {
+			return kvPrecF32, "an MLA model keeps its latent cache in f32 on Metal"
+		}
 		switch req {
 		case kvPrecF32:
 			return kvPrecF32, ""

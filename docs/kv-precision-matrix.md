@@ -50,7 +50,7 @@ Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (ho
 | sliding window (`gemma2-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
 | pairwise RoPE (`cohere-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
 | m-RoPE (VL) (`qwen25vl-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
-| MLA (`deepseek-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
+| MLA (`deepseek-tiny`) | f32 (an MLA model keeps its latent cache in f32 on Metal) | f32 (an MLA model keeps its latent cache in f32 on Metal) | refused: an MLA model keeps its latent cache in f32 on Metal | refused: an MLA model keeps its latent cache in f32 on Metal |
 | Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
 | Gated DeltaNet hybrid (`qwen3next-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |
 | Mamba-2 hybrid (`nemotron-tiny`) | f16 (auto is f16 on Metal) | f32 | f16 | i8 |

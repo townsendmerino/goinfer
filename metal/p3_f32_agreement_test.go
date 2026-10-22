@@ -64,7 +64,7 @@ func TestP3_metalF32AgreesWithCPU(t *testing.T) {
 				if !ok {
 					t.Fatalf("kv %q: not Metal-resident: %s", kv, m.ResidentDecline())
 				}
-				if a.r.kvF32 != (kv == "f32") {
+				if a.r.kvF32 != (kv == "f32" && a.r.mla == nil) { // an MLA latent is f32 without the GQA flag (D5)
 					t.Fatalf("kv %q: the resident's cache is f32 %v", kv, a.r.kvF32)
 				}
 				a.Reset()
@@ -115,7 +115,7 @@ func TestP3_metalF32BytesAndPaths(t *testing.T) {
 				t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
 			}
 			r := a.r
-			if !r.kvF32 || m.ResidentKVPrecision() != "f32" {
+			if r.kvF32 != (r.mla == nil) || m.ResidentKVPrecision() != "f32" { // an MLA latent is f32 without the GQA flag (D5)
 				t.Fatalf("the resident's cache is f32 %v, reported %q", r.kvF32, m.ResidentKVPrecision())
 			}
 			var got, elems int64
@@ -138,6 +138,9 @@ func TestP3_metalF32BytesAndPaths(t *testing.T) {
 				t.Errorf("allocated %d B for %d elements: not 4 B each", got, elems)
 			}
 			fmt.Fprintf(os.Stderr, "[P3-G3] %-15s f32: %d B of K/V (%d elements) = priced\n", name, got, elems)
+			if r.mla != nil {
+				return // MLA's own paths read the f32 latent; the f16 fast paths below never see it
+			}
 			if ok, why := a.PrefillPath(); ok && r.prefillOK {
 				t.Errorf("PrefillPath batched (%s) under an f32 cache", why)
 			}
