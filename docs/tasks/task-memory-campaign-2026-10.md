@@ -552,6 +552,27 @@ min for the parity refresh.
 > int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
 > and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
 
+**MEM12-scratch gates, registered 2026-10-21 before the code (SCR-G).** The build, three parts. (1) The MoE expert-major
+branch of the batched pass takes its K × hidden output, its done flags and `moeMLPBatch`'s buffers (router logits, the
+per-rank outputs, the gather, gate, up and down buffers) from `prefillPassScratch`, so a chunked prefill allocates them once;
+callers without a pass scratch allocate as before. (2) The LM head writes into a buffer the cache owns: a verify round's
+K × vocab into one the cache grows on demand, prefill's last row into the cache's decode logits buffer, which is what the
+sequential fallback already returns (valid until the next forward on that cache; every consumer reads it before then:
+`generateInto`, the three speculative loops, the VL prefill paths). Callers that keep rows (`PromptLogitsMany`, the
+batched CPU decode, audio) keep their own. (3) The sampler's six vocabulary-sized buffers come from a pool and go back when
+the generation ends (`generateInto`, the n-gram and grammar speculative loops); a sampler never released allocates as before.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| SCR-G1 MoE | 0 | `mixtral-tiny` (4 layers, hidden 64, 8 experts, top 2), expert-major on, `prefillChunkRows` 16, a 64-token prompt: bytes allocated (`TotalAlloc`, GC off) between the first chunk's end and the last's, branch against `origin/main` | the branch allocates at least 90% of the arithmetic MoE buffers less than main: 3 chunks × 4 layers × 4 B × (16·64 output + 16·8 router logits + 16·2·64 per-rank) = 153,600 bytes, so a fall of ≥ 138,240 |
+| SCR-G2 logits | 0 | `llama-tiny` (vocab 256): a warm verify round (`forwardN`, K = 4) and a 16-token `prefillLogits`, bytes allocated, branch against main | the round falls by ≥ 0.99 × 4 × 256 × 4 B and the prefill by ≥ 0.99 × 256 × 4 B |
+| SCR-G3 sampler | 0 | `internal/sampling`, vocabulary 151,936, ten requests each `NewSampler`, `Observe` of 64 ids, 8 draws with top-k, top-p, min-p and a repetition penalty, then the release; GC off | requests 2–10 each allocate ≤ 5% of request 1's bytes (main: each the same as request 1) |
+| SCR-G4 identity | 0 | on `mixtral-tiny` with expert-major on and on `llama-tiny`: the chunked batched prefill's last logits against the sequential decode's, byte-equal; the speculative tests (`TestSpec*`, `TestGenerateNgram*`), the sampler package's tests, then `scripts/refresh_parity_hashes.sh` | all byte-equal and PASS (not skip); the goldens green |
+
+Planted defects, each run once on the committed tree and reverted: the MoE branch allocating its output again (G1 red), the
+LM head allocating again (G2 red), the release not returning the buffers (G3 red). Stopping rule: one pass each; a FAIL is
+diagnosed, not re-run. Cost: seconds for G1–G3, a few minutes for G4's test sets and about 4 for the parity refresh.
+
 ### MEM13 · Small heap items (S each)
 
 | item | where | bytes | fix |
