@@ -22,7 +22,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
 | P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b (int8 and f32 inside the MMA prefill, batched decode and the layer-major prefills) not started | `docs/measurements/kv-precision-2026-10/p3a.md` |
+| P3 | open | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) registered 2026-10-22, building; P3b-2 (the MMA prefill and the layer-major paths) not started | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
@@ -209,6 +209,28 @@ whose latent is f32 already; the build is otherwise unchanged.
 | D5-G3 unchanged | 0, Mac | `deepseek-tiny` on Metal at auto and `--kv f32`, 32 positions teacher-forced; every other fixture's auto, f16 and i8 cells | deepseek's logits byte-equal to P3a's at both values; G3's readback (`TestKVDeliveredBytes_Metal`) PASS with its pending-D5 list empty |
 
 Stopping rule: one pass each. Cost: seconds. No timed run.
+
+### P3b-1 gates, registered 2026-10-22 before the code (P3B-G), for int8 and f32 on the batched step
+
+**The build.** An int8 cache's slots become one allocation per layer, codes and scales each, as f16's and f32's already are
+(`kvContig`), so a batched step reaches every row's slot through one buffer and a per-row offset (a row's scale offset is its code
+offset over `head_dim`). The step's KV store and attention gain int8 and f32 forms derived from the single-token kernels'
+source, as `mc3_attention_rows` is from `attention`: `mc3_kv_store_i8_rows` and `mc3_attention_i8_rows` from `kv_store_i8` and
+`attention_i8` (with no attention sink: a sink family stays off the step), and `mc3_kv_store_f32_rows` and
+`mc3_attention_f32_rows` from `kv_store_f32` and `attention_f32`. `batchIneligible` stops naming int8 and f32. Batched decode
+then runs at both precisions, and so does the step prefill (decode rows at every length, bit-identical to sequential). The MMA
+prefill still declines int8 and f32; that and the layer-major paths are P3b-2, registered when they start.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| P3B-G1 identity | 0, Mac | the MC3 identity tests (`mc3IdentityWith`: four sequences at depths 5, 23, 40 and 300, one batched step against each sequence's own single-token step; the prompt-in-rows test) at `--kv i8` and `--kv f32` | every row's logits bit-identical to its single-token step, at both precisions |
+| P3B-G2 paths | 0, Mac | `batchIneligible`, `stepPrefill` and `PrefillPath` on the MC3 fixture at i8 and f32; a prompt prefilled at each | batched decode eligible, the step prefill taken, and the prefilled logits bit-identical to a sequential prefill; a sink family still ineligible |
+| P3B-G3 bytes and slots | 0, Mac | G3's readback (`TestKVDeliveredBytes_Metal`), `ResidentKVBytes`, and the slot copy tests at i8 with two or more slots | G3 PASS; the int8 allocation is unchanged in bytes; a slot copy at i8 moves codes and scales |
+| P3B-G4 unchanged | 0, Mac | f16: the MC3 identity tests and nine fixtures' logits over 32 positions against the build before; the generated matrix | f16 bit-identical to before; the matrix unchanged |
+
+Planted defects, each once and reverted: the int8 rows attention reading slot 0's scales for every row (G1 red); the f32 rows
+store writing half (G1 red). Stopping rule: one pass each. Cost: seconds to a minute. No timed run: each path it opens is
+bit-identical to the sequential one it replaces, and the step is the path f16 already takes for the same work.
 
 ## 4. Gates (registered here, before any code; changing one after the data needs the owner's word and is recorded as such)
 
