@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"testing"
@@ -130,6 +132,7 @@ func runProgram(m *Model, prog *program, ids []int, mode walkerMode) (logits []f
 	mm.prog = prog
 	defer func() {
 		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "ZP panic %v\n%s\nZP endpanic\n", r, debug.Stack())
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
@@ -347,9 +350,15 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 				t.Fatalf("%s (%s): the unchanged program fails: %v", f.name, mode, err)
 			}
 			for _, key := range programParamKeys(f.m.prog) {
+				if !zpWant(f.name, key, mode) {
+					continue
+				}
 				c := cloneProgram(f.m.prog)
 				programPerturb(c, key)
+				fmt.Fprintf(os.Stderr, "ZP %s %s %s\n", mode, f.name, key)
 				got, err := runProgram(f.m, c, ids, mode)
+				runtime.GC()
+				fmt.Fprintf(os.Stderr, "ZP ok %v\n", err)
 				r := outcome(ref, got, err)
 				if res[mode][key] == nil {
 					res[mode][key] = map[string]string{}
@@ -571,4 +580,30 @@ func perturbValue(f reflect.Value) {
 	default:
 		panic(errors.New("perturbValue: unhandled kind " + f.Kind().String()))
 	}
+}
+
+// zpWant is the zombie probe's filter (temporary, probe branch only): ZP_FIXTURE names the one fixture to perturb, ZP_KEYS the only
+// keys, ZP_SKIP keys to leave out, ZP_MODES the walkers; ZP_QUARANTINE leaves out G50's one run.
+func zpWant(fixture, key string, mode walkerMode) bool {
+	in := func(env, v string) bool {
+		for _, s := range strings.Split(os.Getenv(env), ",") {
+			if s == v {
+				return true
+			}
+		}
+		return false
+	}
+	if os.Getenv("ZP_QUARANTINE") != "" && fixture == "nemotron3nano-tiny" && key == "ffn.Act" {
+		return false
+	}
+	if os.Getenv("ZP_FIXTURE") != "" && os.Getenv("ZP_FIXTURE") != fixture {
+		return false
+	}
+	if os.Getenv("ZP_KEYS") != "" && !in("ZP_KEYS", key) {
+		return false
+	}
+	if os.Getenv("ZP_MODES") != "" && !in("ZP_MODES", string(mode)) {
+		return false
+	}
+	return !in("ZP_SKIP", key)
 }
