@@ -129,3 +129,28 @@ func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 		t.Errorf("priceCtxAndKV for Metal: ctx %d f16 %v kv %d", f.effCtx, f.kvF16, f.kvBytes)
 	}
 }
+
+// TestKVPricingFor_metalMLAPricedAsAllocated: an MLA model on Metal holds one f32 latent buffer per layer whatever --kv says (D5), and
+// the fit guard's K-plus-V price at f16 is exactly that; the resolver's f32 answer must not double it.
+func TestKVPricingFor_metalMLAPricedAsAllocated(t *testing.T) {
+	withFakeMetalCompiled(t)
+	cfg := a3Config("deepseek_v2")
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil || arch.mla == nil {
+		t.Fatalf("deepseek_v2 config: arch %v, err %v; want an MLA architecture", arch, err)
+	}
+	for _, kv := range []string{"", "f32"} {
+		p, ok := kvPricingFor(cfg, Options{Backend: "metal", KVPrecision: kv})
+		if !ok || !p.metalSizing {
+			t.Fatalf("--kv %q: priced %+v ok=%v, want Metal sizing", kv, p, ok)
+		}
+		got := estimateKVBytes(cfg, 1024, p.kvF16, p.kvI8)
+		want := int64(0)
+		for l := 0; l < arch.NumLayers; l++ {
+			want += int64(arch.kvDimAt(l)) * 1024 * 4 // one f32 latent row per position (metal/mla.go)
+		}
+		if got != want {
+			t.Errorf("--kv %q: priced %d B for 1024 positions, Metal allocates %d B", kv, got, want)
+		}
+	}
+}

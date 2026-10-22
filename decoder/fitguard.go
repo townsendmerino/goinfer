@@ -874,8 +874,10 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	if metalWillBeResident(cfg, opts) {
 		p.metalSizing, p.kvF16 = true, true
 		if arch, _, err := resolveArchitecture(cfg); err == nil {
-			if got, _ := ResolveKV("metal", arch, opts); got == kvPrecF32 {
-				p.kvF16, p.kvI8 = false, false // an explicit --kv f32: 4 B per element
+			// An explicit --kv f32: 4 B per element. Not MLA: kvBytesForCtx prices a layer as K plus V, and Metal's one f32 latent
+			// buffer is what that comes to at 2 B.
+			if got, _ := ResolveKV("metal", arch, opts); got == kvPrecF32 && arch.mla == nil {
+				p.kvF16, p.kvI8 = false, false
 			}
 		}
 		p.ctx = MetalCtxDefault
