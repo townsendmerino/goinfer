@@ -87,3 +87,50 @@ func TestDeclineShortLeadReuse_boundary(t *testing.T) {
 		t.Errorf("a prompt AT the floor runs the fast kernels (passPromptLen >= floor), so its short reuse is declined, got %d", got)
 	}
 }
+
+// A conversation that takes another's idle slot in place keeps only as many of the shared rows as leave its own tail a pass
+// of the class its cold prefill runs: a 14-row tail after a 1,000-row shared preamble would run the exact kernels where the
+// cold prompt ran the fast ones, and the reply would depend on which conversation ran before it. Backed off to the block
+// edge at 960, the tail is 54 rows. A continuation whose reused rows include its own decoded reply, and a prompt under
+// the floor, keep their reuse.
+func TestResidentAcquire_capsInPlaceReuseToTheColdClass(t *testing.T) {
+	pre := longPrompt(nil, 1000)
+	tail := func(seed, n int) []int {
+		p := append([]int(nil), pre...)
+		for i := range n {
+			p = append(p, 50000+seed*100+i)
+		}
+		return p
+	}
+	reply := []int{1, 2, 3, 4}
+	for _, slots := range []int{1, 2} {
+		m := &Model{resident: &fastPrefillResident{&slotResident{n: slots}, 512}}
+		a := tail(1, 5)
+		m.residentAcquire(a, nil, nil)
+		m.residentForgetIDs()
+		m.residentCommitIDs(a, reply, nil, nil)
+		if got := m.residentAcquire(tail(2, 14), nil, nil); got != 960 {
+			t.Errorf("%d slots: a 14-row tail after a shared 1,000-row preamble reused %d, want 960", slots, got)
+		}
+	}
+
+	m := &Model{resident: &fastPrefillResident{&slotResident{n: 1}, 512}}
+	a := tail(1, 5)
+	m.residentAcquire(a, nil, nil)
+	m.residentForgetIDs()
+	m.residentCommitIDs(a, reply, nil, nil)
+	next := append(append(append([]int(nil), a...), reply...), 7, 8, 9)
+	if got, want := m.residentAcquire(next, nil, nil), len(a)+len(reply); got != want {
+		t.Errorf("a continuation over its own reply reused %d, want all %d", got, want)
+	}
+
+	m = &Model{resident: &fastPrefillResident{&slotResident{n: 1}, 512}}
+	short := longPrompt(nil, 300)
+	m.residentAcquire(short, nil, nil)
+	m.residentForgetIDs()
+	m.residentCommitIDs(short, reply, nil, nil)
+	under := append(append([]int(nil), short[:290]...), 9001, 9002, 9003)
+	if got := m.residentAcquire(under, nil, nil); got != 290 {
+		t.Errorf("a prompt under the floor reused %d, want 290 (its cold prefill is exact too)", got)
+	}
+}

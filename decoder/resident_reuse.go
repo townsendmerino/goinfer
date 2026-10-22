@@ -372,7 +372,7 @@ func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora 
 		m.residentRestoreSnapshot(prompt, lora, sc, &acq)
 	}
 	// the slot is bound now, so its window is the one to ask (a parked slot's score was not floored when it was counted)
-	acq.reuse = m.residentReuseFloor(m.declineShortLeadReuse(prompt, acq.reuse))
+	acq.reuse = m.residentReuseFloor(m.capInPlaceReuse(m.declineShortLeadReuse(prompt, acq.reuse), prompt, acq))
 	if acq.reuse < acq.shared { // the bound slot's window cannot serve the copied rows: none of them count
 		acq.shared = 0
 	}
@@ -401,6 +401,25 @@ const minLeadReuseFast = kvmgr.MinLeadReuse
 func (m *Model) declineShortLeadReuse(prompt []int, reuse int) int {
 	return m.kvLeadClassMap().DeclineShortLead(len(prompt), reuse)
 }
+
+// capInPlaceReuse caps a reuse of the bound slot's own rows so the prompt's remaining pass runs the kernel class its cold
+// prefill runs (kvmgr.ClassMap.CapInPlace). Copied and restored rows were capped where they were chosen and pass through. A
+// recurrent model's state cannot be rewound to an earlier row, so its reuse is never capped.
+func (m *Model) capInPlaceReuse(reuse int, prompt []int, acq kvAcquired) int {
+	if kvInPlaceCapOff || acq.shared > 0 || acq.snapRows > 0 || acq.slot < 0 || m.hasRecurrentState() {
+		return reuse
+	}
+	a := m.kvSlots()
+	sq := a.Seq(a.Bound())
+	if sq == nil {
+		return reuse
+	}
+	return m.kvClassMap().CapInPlace(sq.Classes(), sq.Images(), len(prompt), reuse)
+}
+
+// kvInPlaceCapOff switches capInPlaceReuse off. Set only by in-package tests that compare the slot choice with the
+// bookkeeping KV1 replaced, which knew no kernel classes.
+var kvInPlaceCapOff bool
 
 func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
 	n := m.residentSlotCount()

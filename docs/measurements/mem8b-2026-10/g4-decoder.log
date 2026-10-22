@@ -1,0 +1,151 @@
+=== RUN   TestGemma4_12B_logitParity
+    gemma4_12b_parity_test.go:19: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_12B_logitParity (0.00s)
+=== RUN   TestGemma4_12B_trace
+    gemma4_12btrace_test.go:16: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_12B_trace (0.00s)
+=== RUN   TestGemma4_26B_s10Grade
+    gemma4_26b_s10grade_test.go:26: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestGemma4_26B_s10Grade (0.00s)
+=== RUN   TestGemma4Admission_unconditional
+--- PASS: TestGemma4Admission_unconditional (0.00s)
+=== RUN   TestGemma4RunLayersFromEmbed_matchesTokenPath
+    gemma4_embed_test.go:16: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4RunLayersFromEmbed_matchesTokenPath (0.00s)
+=== RUN   TestGemma4EModel_realDeclinesResident
+    gemma4_emodel_real_test.go:16: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4EModel_realDeclinesResident (0.00s)
+=== RUN   TestGemma4EModel_safetensorsParity
+    gemma4_emodel_test.go:98: all 12 positions: worst cosine 1.00000000
+--- PASS: TestGemma4EModel_safetensorsParity (0.03s)
+=== RUN   TestGemma4GlobalGeometry
+--- PASS: TestGemma4GlobalGeometry (0.00s)
+=== RUN   TestGemma4EModel_residentEmbedRow
+    gemma4_emodel_test.go:221: PLE tail vs HF over 12 positions: max |diff| 1.19e-06
+--- PASS: TestGemma4EModel_residentEmbedRow (0.01s)
+=== RUN   TestGemma4EndToEndThroughput
+    gemma4_endtoend_throughput_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4EndToEndThroughput (0.00s)
+=== RUN   TestGemma4KVSrcAt_handDerived
+--- PASS: TestGemma4KVSrcAt_handDerived (0.00s)
+=== RUN   TestGemma4KVSrcAt_noSharing
+--- PASS: TestGemma4KVSrcAt_noSharing (0.00s)
+=== RUN   TestGemma4KVSrcAt_nonGemma4
+--- PASS: TestGemma4KVSrcAt_nonGemma4 (0.00s)
+=== RUN   TestGemma4Config_realGGUF
+    gemma4_load_test.go:15: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4Config_realGGUF (0.00s)
+=== RUN   TestGemma4Load
+    gemma4_load_test.go:92: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4Load (0.00s)
+=== RUN   TestGemma4MoEFFN_parity
+    gemma4_moe_ffn_test.go:97: gemma4 MoE FFN parity: maxAbs=9.54e-07 cosine=1.00000000 over 5 tokens
+--- PASS: TestGemma4MoEFFN_parity (0.01s)
+=== RUN   TestGemma4MoE_forwardParity
+    gemma4_moe_forward_test.go:121: no tiny checkpoint (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+--- SKIP: TestGemma4MoE_forwardParity (0.00s)
+=== RUN   TestGemma4MoEUnified_forwardParity
+    gemma4_moe_forward_test.go:135: no tiny checkpoint (../testdata/gemma4-moe-unified-tiny) — run scripts/make_gemma4_moe_unified.py
+--- SKIP: TestGemma4MoEUnified_forwardParity (0.00s)
+=== RUN   TestGemma4DenseTwoGeom_forwardParity
+    gemma4_moe_forward_test.go:148: no tiny checkpoint (../testdata/gemma4-dense-twogeom-tiny) — run scripts/pin_gemma4_dense_twogeom.py
+--- SKIP: TestGemma4DenseTwoGeom_forwardParity (0.00s)
+=== RUN   TestGemma4DenseScaled_forwardParity
+    gemma4_moe_forward_test.go:160: no tiny checkpoint (../testdata/gemma4-dense-scaled) — run scripts/pin_gemma4_dense_scaled.py
+--- SKIP: TestGemma4DenseScaled_forwardParity (0.00s)
+=== RUN   TestGemma4MoEKV_forwardParity
+    gemma4_moe_forward_test.go:172: argmax: got 14 (logit 0.4197) | want 14 (golden logit 0.4197)
+    gemma4_moe_forward_test.go:172: last-logit parity: cosine=1.00000000 maxAbs=3.159e-06 over 256 vocab
+    gemma4_moe_forward_test.go:172: continuation: got [14 209 26 26 26 171] | want [14 209 26 26 26 171]
+--- PASS: TestGemma4MoEKV_forwardParity (0.01s)
+=== RUN   TestGemma4MoEFFN_overlapBitIdentical
+--- PASS: TestGemma4MoEFFN_overlapBitIdentical (0.07s)
+=== RUN   TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption
+--- PASS: TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption (0.13s)
+=== RUN   TestGemma4MoE_quantizedLoad
+    gemma4_moe_quant_test.go:30: no tiny checkpoint (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+--- SKIP: TestGemma4MoE_quantizedLoad (0.00s)
+=== RUN   TestGemma4_logitParity
+    gemma4_parity_test.go:16: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_logitParity (0.00s)
+=== RUN   TestGemma4Architecture
+--- PASS: TestGemma4Architecture (0.00s)
+=== RUN   TestGemma4MoEDescriptor
+--- PASS: TestGemma4MoEDescriptor (0.00s)
+=== RUN   TestGemma4VLBidir_textParity
+    gemma4_vl_bidir_test.go:30: no checkpoint at ../testdata/gemma4-vl-bidir-tiny — run scripts/pin_gemma4_vl_bidir_tiny.py
+--- SKIP: TestGemma4VLBidir_textParity (0.00s)
+=== RUN   TestGemma4VLBidir_imageParity
+    gemma4_vl_bidir_test.go:132: no checkpoint — run scripts/pin_gemma4_vl_bidir_tiny.py
+--- SKIP: TestGemma4VLBidir_imageParity (0.00s)
+=== RUN   TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional
+    gemma4_vl_resident_test.go:100: no checkpoint — run scripts/pin_gemma4_vl_bidir_tiny.py
+--- SKIP: TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional (0.00s)
+=== RUN   TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped
+    gemma4_vl_resident_test.go:160: no checkpoint — run scripts/pin_gemma4_vl_bidir_tiny.py
+--- SKIP: TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped (0.00s)
+=== RUN   TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU
+    gemma4_vl_resident_test.go:192: no checkpoint — run scripts/pin_gemma4_vl_bidir_tiny.py
+--- SKIP: TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU (0.00s)
+=== RUN   TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers
+    gemma4_vl_resident_test.go:227: no checkpoint — run scripts/pin_gemma4_vl_tiny.py
+--- SKIP: TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers (0.00s)
+=== RUN   TestGenerateGemma4VL_eModelDecodesResident
+    gemma4_vl_resident_test.go:248: uploaded layers [0 1 2 3]; 4 resident forwards for 4 tokens
+--- PASS: TestGenerateGemma4VL_eModelDecodesResident (0.00s)
+=== RUN   TestGenerateGemma4VL_causalNonEModelStaysOnCPU
+    gemma4_vl_resident_test.go:257: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+--- SKIP: TestGenerateGemma4VL_causalNonEModelStaysOnCPU (0.00s)
+=== RUN   TestGemma4VL_textParity
+    gemma4_vl_test.go:30: no checkpoint at ../testdata/gemma4-vl-tiny — run scripts/pin_gemma4_vl_tiny.py
+--- SKIP: TestGemma4VL_textParity (0.00s)
+=== RUN   TestGemma4VL_imageParity
+    gemma4_vl_test.go:102: no checkpoint — run scripts/pin_gemma4_vl_tiny.py
+--- SKIP: TestGemma4VL_imageParity (0.00s)
+=== RUN   TestGemma4GGUF_moeLayerScalarMatchesLayer
+--- PASS: TestGemma4GGUF_moeLayerScalarMatchesLayer (0.00s)
+=== RUN   TestGemma4GGUF_streamedMatchesResident
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant=""
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant=""
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant=""
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant=""
+--- PASS: TestGemma4GGUF_streamedMatchesResident (0.03s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="" (0.00s)
+=== RUN   TestGemma4GGUF_streamCancelled
+--- PASS: TestGemma4GGUF_streamCancelled (0.00s)
+=== RUN   TestPLE_gatherTableIgnoresThePin
+--- PASS: TestPLE_gatherTableIgnoresThePin (0.01s)
+=== RUN   TestPLE_sidecarTag
+--- PASS: TestPLE_sidecarTag (0.01s)
+=== RUN   TestValidateShapes_gemma4PLE
+--- PASS: TestValidateShapes_gemma4PLE (0.00s)
+=== RUN   TestSerializeGemma4MoE_roundTrip
+    serialize_test.go:323: no gemma4-moe checkpoint at ../testdata/gemma4-moe-tiny — run scripts/pin_gemma4_moe_forward.py
+--- SKIP: TestSerializeGemma4MoE_roundTrip (0.00s)
+=== RUN   TestSerializeGemma4E2B_roundTrip
+    serialize_test.go:382: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializeGemma4E2B_roundTrip (0.00s)
+=== RUN   TestResidentWeightBytes_countsGemma4MoEExperts
+    weightbytes_test.go:68: no tiny checkpoint (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+--- SKIP: TestResidentWeightBytes_countsGemma4MoEExperts (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.784s

@@ -3,10 +3,8 @@
 package metal
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -66,8 +64,8 @@ func TestResidentKVBytes_matchesMetalAllocation(t *testing.T) {
 	}
 }
 
-// ResidentKVPrecision reports what the Metal resident runner allocates: f16 with no request, i8 when int8 KV was asked for. An explicit f32
-// request refuses the load by name (decoder.KVRefusal), since the f32 KV kernels are compiled out until phase 3. Serve's banner prints it.
+// ResidentKVPrecision reports what the Metal resident runner allocates: f16 with no request, f32 and i8 when asked for. Serve's banner
+// prints it.
 func TestResidentKVPrecision_metalReportsWhatRuns(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -76,18 +74,8 @@ func TestResidentKVPrecision_metalReportsWhatRuns(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
 		t.Skipf("no fixture: %v", err)
 	}
-	for req, want := range map[string]string{"": "f16", "f32": "refused", "i8": "i8"} {
+	for req, want := range map[string]string{"": "f16", "f32": "f32", "i8": "i8"} {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: req})
-		if want == "refused" {
-			var r *decoder.KVRefusal
-			if !errors.As(err, &r) || !strings.Contains(r.Reason, "phase 3") {
-				t.Errorf("kv request %q: load error %v, want a KV refusal naming phase 3", req, err)
-			}
-			if m != nil {
-				m.Close()
-			}
-			continue
-		}
 		if err != nil {
 			t.Fatalf("load (kv=%q): %v", req, err)
 		}

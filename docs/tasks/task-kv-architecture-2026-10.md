@@ -26,6 +26,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV2 | done | — | 772b1fb2 (#26); G5-C PASS, kv2-cuda-2026-10-15.md §7 |
 | KV2-FU1 | done | — | built on branch `kv2-fu1-2026-10`, merged through `kv2-fu1-merge-2026-10` (gates re-run green on that merge with main, 2026-10-21); `TestKV2FU1_ownRollbackScheduleIndependence`, `TestKV2FU1_cpuOwnRollback`; §6, KV2 follow-up 1, readings |
 | KV2-FU2 | done | — | 11b29ba5 (#37) |
+| KV2-FU3 | done | — | in-place reuse capped to the kernel class of the prompt's cold prefill (`internal/kvmgr/share.go:ClassMap.CapInPlace`); found on main by KV4's G3b (KV4's CUDA record on branch `kv4-2026-10-21`, "Found on main, not KV4's"); `TestKV2_inPlaceCap_tiny` red without it, green with it |
 | KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
 | KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
 | KV3-E4B | open | nobara: read the registered E4B cold-TTFT run | kv3-e4b-cold-ttft-2026-10-19 |
@@ -41,7 +42,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV7-rest | blocked | KV4: the disk tier, promotion, the block host pool; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
 | KV8 | blocked | KV4 (KV5 for Metal) | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
-| KV8a-Metal | active | Mac: M2(b) (about 2 h 45 min) and M5 (about 3 h 30 min, as two jobs) on the night queue, then grade and merge | branch `kv8a-metal-2026-10` |
+| KV8a-CUDA-cc28k | done | — | the 28K Claude Code chain on CUDA at main `799b98df`: PASS, 1 tested, 0 of 7 differ (`docs/measurements/kv8a-2026-10/README.md`, "The 28K Claude Code chain on CUDA") |
+| KV8a-Metal | done | — (owner, 2026-10-22: M2(b) graded on its 20K cells; the 28K chain is past a 16 GB Mac's swap guard and ran on CUDA instead, KV8a-CUDA-cc28k) | branch `kv8a-metal-2026-10`; M1–M5 PASS, `docs/measurements/kv8a-metal-2026-10/README.md` § "The grade" |
 | KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
 | KV10 | blocked | KV4, KV5 | §6 |
 | KV11 | blocked | KV4 and KV7; its KV-share trade curve needs no pool and can run now (either box, M) | §6; lead4-perlayer-hitrate-2026-09-22.md |
@@ -217,7 +219,7 @@ slot is gone; and every KV feature is built three or four times.
 | feature | families (examples) | where it runs today | what the design does |
 |---|---|---|---|
 | full attention, GQA | most | all | full group |
-| sliding window W | Gemma 2/3/4 local layers, Mistral, Cohere2, gpt-oss, Mellum, Phi-3 | CPU ring; CUDA windowed view (on in the CLIs); Metal, WebGPU full + mask | window group: blocks behind the window are released |
+| sliding window W | Gemma 2/3/4 local layers, Mistral, Cohere2, gpt-oss, Mellum, Phi-3 | CPU ring, except gpt-oss: its sink attention is not on the batched kernel `decoder/arch.go:Architecture.kvRingsOK` admits, so its sliding layers keep append-forever f32 KV on the CPU (corrected 2026-10-22, kernel survey KS-F2); CUDA windowed view (on in the CLIs); Metal, WebGPU full + mask | window group: blocks behind the window are released |
 | chunked attention C | Llama 4 local layers (`attention_chunk_size`) | CPU (`attnChunkStart`) | chunk group: blocks before the current chunk are released |
 | NoPE layers | Cohere2 globals, Llama 4 | all | nothing extra: K is stored as computed |
 | MLA latent | DeepSeek V2/V3, Kimi K2, Ling 3.0's MLA layers | CPU, CUDA (one latent buffer), WebGPU | latent group (a row is the latent width) |

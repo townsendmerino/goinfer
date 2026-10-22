@@ -214,7 +214,7 @@ func (r *resident) recurrentPrefillOK() bool {
 // q4kLaneShapeOK reports whether the q4k lane covers this resident's shape: the plain dense pre-norm one (Phi-3, Llama).
 func (r *resident) q4kLaneShapeOK() bool {
 	return !(r.sandwich || r.postOnly || r.parallelBlock || r.outBias || r.layerNorm || r.moe != nil || r.g4moe != nil ||
-		r.recurrentModel() || r.pleP > 0 || r.attnSink || r.learnedPos || r.kvI8 || r.qkNorm)
+		r.recurrentModel() || r.pleP > 0 || r.attnSink || r.learnedPos || r.kvI8 || r.kvF32 || r.qkNorm)
 }
 
 // modelKnob is one of m's operator knobs (decoder.Model.Knob): the Load-time snapshot with Options.Knobs applied,
@@ -247,10 +247,15 @@ type resident struct {
 	pleP                     int
 	pleIn, pleG, pleQ, pleSc Buffer
 	ctxCeilKey               *decoder.Model // S18: the metalCtxCeiling entry this resident's context came from; nil when none
-	emodelLayerMajorRuns     int            // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
-	uPleP                    Buffer
-	g4VNorm                  bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
-	pSA, pSABias, pSAResid   Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
+	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): the save copies (live into checkpoint) and the restore copies, the
+	// checkpoint's bytes (0: none kept), and why a load kept none.
+	ckptSave, ckptRestore  []gpu.DeviceCopy
+	ckptBytes              int64
+	ckptDeclined           string
+	emodelLayerMajorRuns   int // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
+	uPleP                  Buffer
+	g4VNorm                bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
+	pSA, pSABias, pSAResid Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
 	// The W4F16 decode lane: f16 activations, no int8 quantization, selected by GOINFER_METAL_DECODE_LANE=w4f16
 	// (decodeLaneW4F16). The pipelines are always built; only dispatch is conditional (canUseF16Lane). It covers
 	// plain dense QKV, o-proj and gate-up only: down-proj and every special case (MoE, paged, sandwich, postOnly,
@@ -495,6 +500,7 @@ type resident struct {
 	stepDecline  string
 	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
+	pKvI8Rows, pAttnI8Rows                                     Pipeline           // the step's int8 KV store and attention (kv_rows.go)
 	pQKNormRows                                                Pipeline           // E-P07: qk_norm over the step's rows (batch_rows.go)
 	pMoeBatch                                                  [5]Pipeline        // D-P01: moe_batch_gemv at R = 2, 4 (prefill_g4batch.go)
 	pMoeCombine                                                Pipeline           // D-P01: moe_batch_combine
@@ -1140,7 +1146,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if attnSoftcapDropForTest {
 		attnSoftcap = 0
 	}
-	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels, attnSoftcap) // + MC3 S3's multi-row forms, derived from allKernels (batch_rows.go)
+	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels+kvF32Kernels+kvRowsKernels, attnSoftcap) // + MC3 S3's multi-row forms (batch_rows.go), attention_f32 (kv_f32.go) and the step's int8 and f32 KV forms (kv_rows.go), derived from allKernels
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
@@ -1246,16 +1252,24 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.attnSink = true
 		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)
 	}
-	// The f32 KV path (kv_store_f32, attention_f32) exists but is off: a matched-input confirmer showed f16 versus
-	// f32 KV storage is not what degrades Gemma's contexts. What was found, and the open claim about position-0 K/V,
-	// is in docs/code-notes/metal.md#buildResident.kvF32.
-	r.kvF32 = false
+	// The f32 KV path (kv_store_f32, attention_f32) runs when the resolver delivers f32: on an explicit --kv f32, never for auto
+	// (a matched-input confirmer showed f16 versus f32 KV storage is not what degrades Gemma's contexts,
+	// docs/code-notes/metal.md#buildResident.kvF32). Every fast path declines it by name.
+	// The resolver's answer, not the raw request (decoder.ResolveKV). It names the GQA K/V cache; an MLA model's latent is f32
+	// whatever it says (metal/mla.go), so neither flag applies there.
+	kvDelivered := m.KVDeliveredFor("metal")
+	if _, _, _, _, _, _, _, _, isMLA := m.MLAResidentParams(); isMLA {
+		kvDelivered = ""
+	}
+	r.kvF32 = kvDelivered == "f32"
 	if r.kvF32 {
 		r.pKv, r.pAttn = pipe("kv_store_f32"), pipe("attention_f32")
+		r.pKvRows, r.pAttnRows = pipe("mc3_kv_store_f32_rows"), pipe("mc3_attention_f32_rows")
 	}
-	r.kvI8 = m.KVCacheI8()
+	r.kvI8 = kvDelivered == "i8"
 	if r.kvI8 {
 		r.pKvI8, r.pAttnI8 = pipe("kv_store_i8"), pipe("attention_i8")
+		r.pKvI8Rows, r.pAttnI8Rows = pipe("mc3_kv_store_i8_rows"), pipe("mc3_attention_i8_rows")
 	}
 	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
 	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
@@ -1288,9 +1302,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, err
 	}
 	if r.mla != nil {
-		if r.kvI8 {
-			return nil, fmt.Errorf("metal: an MLA model keeps its latent cache in f32; int8 KV (-kv i8) does not apply, so it runs on the CPU")
-		}
 		r.pMlaStore, r.pMlaHeadMV, r.pMlaQRope, r.pMlaAttn = pipe("mla_store"), pipe("mla_head_mv"), pipe("mla_qrope"), pipe("mla_attn")
 		r.mlaS = buildMLAScratch(d, m, r.mla)
 	}
@@ -1379,7 +1390,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 		r.mla == nil // MLA's latent attention is in no prefill kernel
 
@@ -1742,21 +1753,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			paddedCtxCap := (r.ctxCap + 7) / 8 * 8
 			kvBytes := paddedCtxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
 			if r.kvI8 {
-				kvBytes = paddedCtxCap * L.geom.kvDim * 1 // int8 KV: 1 byte/elem
-				r.ks[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV)
-				r.vs[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV)
+				kvBytes = paddedCtxCap * L.geom.kvDim * 1 // int8 KV: 1 byte/elem, and one f32 scale per position and head
 			} else if r.kvF32 {
-				kvBytes = paddedCtxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
+				kvBytes = paddedCtxCap * L.geom.kvDim * 4 // f32 KV (--kv f32): 4 bytes/elem
 			}
-			// MC3 S3: with several resident KV slots (and not int8 KV), a layer's slots are ONE allocation, slot s at
-			// byte s*kvBytes (views: Buffer.At), so a batched step's single dispatch can reach every row's slot through
-			// one buffer plus a per-row offset — aikit binds at most 16 buffers per dispatch, too few to pass 8 slots'
-			// K and V separately. Each slot keeps its own padded region, so C-01's over-read stays inside it.
-			allocSlots := 1
-			if !r.kvI8 { // one slot is this layout's one-slot case: slot 0 at offset 0
-				allocSlots = kvSlots
-				r.kvContig = true
-			}
+			// MC3 S3: with several resident KV slots, a layer's slots are ONE allocation, slot s at byte s*kvBytes (views:
+			// Buffer.At), so a batched step's single dispatch can reach every row's slot through one buffer plus a per-row
+			// offset — aikit binds at most 16 buffers per dispatch, too few to pass 8 slots' K and V separately. Each slot
+			// keeps its own padded region, so C-01's over-read stays inside it. An int8 cache's scales are laid out the same
+			// way, slot s at its code offset over head_dim (kvScaleOff). One slot is this layout's one-slot case.
+			allocSlots := kvSlots
+			r.kvContig = true
 			if L.kvShared {
 				// S1.4: no cache of its own. Its geometry must be its source's (same attention type, so the same
 				// head_dim and KV heads); the buffers are aliased below, once every source exists.
@@ -1773,6 +1780,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.kvSlotBytes[l] = kvBytes
 			r.kc[l] = byteBuf(d, kvBytes*allocSlots)
 			r.vc[l] = byteBuf(d, kvBytes*allocSlots)
+			if r.kvI8 {
+				r.ks[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV * allocSlots)
+				r.vs[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV * allocSlots)
+			}
 		}
 		r.layers[l] = L
 	}
@@ -1801,7 +1812,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 					b.kc[l], b.vc[l] = byteBuf(d, r.kc[l].Len()), byteBuf(d, r.vc[l].Len())
 				}
 				if r.ks != nil && r.ks[l] != (Buffer{}) {
-					b.ks[l], b.vs[l] = d.NewBufferLen(r.ks[l].Len()), d.NewBufferLen(r.vs[l].Len())
+					b.ks[l], b.vs[l] = r.ks[l].At(4*r.kvScaleOff(s, l)), r.vs[l].At(4*r.kvScaleOff(s, l))
 				}
 			}
 			r.kvSlotBufs[s] = b
@@ -2159,8 +2170,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.mropeAxis = NewBufferUint32s(d, u)
 		}
 	}
-	r.buildBatch() // MC3: the batched decode step, when this resident can run one (batch.go)
-	ok = true      // construction complete — the resident owns everything; Close (not the defer) frees it
+	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
+	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
+	ok = true                     // construction complete — the resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
 
@@ -2616,6 +2628,21 @@ func (r *resident) kvHostOff(l, elemBytes int) int {
 	}
 	return r.kvSlot * r.kvSlotBytes[l] / elemBytes
 }
+
+// kvElemBytes is one element of the K/V cache: 1 for int8, 4 for f32, 2 for f16.
+func (r *resident) kvElemBytes() int {
+	switch {
+	case r.kvI8:
+		return 1
+	case r.kvF32:
+		return 4
+	}
+	return 2
+}
+
+// kvScaleOff is where slot s's int8 scales start, in floats, within layer l's scale allocation: a slot holds kvDim int8s and
+// nKV scales per position, so its scales sit at its code offset over head_dim.
+func (r *resident) kvScaleOff(s, l int) int { return s * r.kvSlotBytes[l] / r.layers[l].geom.hd }
 
 // kvSlotCount is how many resident KV slots were allocated (at least 1).
 func (r *resident) kvSlotCount() int { return max(1, len(r.kvSlotBufs)) }
@@ -3381,7 +3408,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 	if !r.decodeAttnFA || r.attnFAPartial == (Buffer{}) {
 		return false
 	}
-	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 || r.attnSoftcap != 0 {
+	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 || r.kvF32 || r.attnSoftcap != 0 {
 		return false
 	}
 	if r.loraLayers != nil {

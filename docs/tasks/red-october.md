@@ -240,6 +240,11 @@ moved 14.7 → 13.0 ms: nearly all of the six-week gain was slope work, and 8.9�
 **CUDA** is done: `gemm_w4a8_mma` runs 531 ms at K=3900 on the 1.5B = 0.136 ms/token, flat in K,
 against Ollama's *entire* marginal of 0.152. Nothing left to fund there.
 
+> **Amended 2026-10-22 (kernel survey KS-B1):** this compares against the whole-curve figure. The per-interval marginals of
+> 2026-09-21 (`docs/measurements/peer-prefill-cuda-2026-09-21.md`) put the GEMM at 0.133 ms per token at 512–1024 tokens,
+> above Ollama's whole token there (0.111). `gemm_w4a8_mma` runs at about 12% of the card's int8 tensor-core peak, and KS-B1
+> proposes a bit-identical rework, so this is not done.
+
 **Metal.** M-03 (32×32 per-simdgroup block, all-lane dequant, A staged per threadgroup) shipped
 2026-09-13 as scoped, but the TTFT ladder was never re-run; the audit's own §6 landscape puts 2× on
 the GEMM at ~1.8× behind at K=512 and ~2.2–2.6× at 3900, with parity needing ~3.5× on the kernel

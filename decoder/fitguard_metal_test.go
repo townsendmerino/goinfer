@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -60,11 +59,9 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 			t.Errorf("%s: got %+v ok=%v, want ctx %d f16 %v metal %v pinned %v", c.name, p, ok, c.ctx, c.f16, c.metal, c.pinned)
 		}
 	}
-	// An explicit -kv f32 on Metal is not priced at f16 any more: it refuses the load by name, until phase 3 restores the f32 kernels.
-	if arch, _, err := resolveArchitecture(q); err != nil {
-		t.Fatal(err)
-	} else if r := kvRefusal("metal", arch, Options{Backend: "metal", KVPrecision: "f32"}); r == nil || !strings.Contains(r.Reason, "phase 3") {
-		t.Errorf("metal -kv f32: refusal %v, want one naming phase 3", r)
+	// An explicit -kv f32 on Metal delivers f32, so it is priced at 4 B per element, not at f16.
+	if p, ok := kvPricingFor(q, Options{Backend: "metal", KVPrecision: "f32", KVQuant: "f32"}); !ok || !p.metalSizing || p.kvF16 || p.kvI8 {
+		t.Errorf("metal -kv f32: priced %+v ok=%v, want Metal sizing at f32", p, ok)
 	}
 	// A window smaller than Metal's default caps it.
 	small := a3Config("qwen2")
@@ -130,5 +127,30 @@ func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 	f := fitCheck{}.priceCtxAndKV(cfg, Options{Backend: "metal"})
 	if f.effCtx != MetalCtxDefault || !f.kvF16 || f.kvBytes != estimateKVBytes(cfg, MetalCtxDefault, true, false) {
 		t.Errorf("priceCtxAndKV for Metal: ctx %d f16 %v kv %d", f.effCtx, f.kvF16, f.kvBytes)
+	}
+}
+
+// TestKVPricingFor_metalMLAPricedAsAllocated: an MLA model on Metal holds one f32 latent buffer per layer whatever --kv says (D5), and
+// the fit guard's K-plus-V price at f16 is exactly that; the resolver's f32 answer must not double it.
+func TestKVPricingFor_metalMLAPricedAsAllocated(t *testing.T) {
+	withFakeMetalCompiled(t)
+	cfg := a3Config("deepseek_v2")
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil || arch.mla == nil {
+		t.Fatalf("deepseek_v2 config: arch %v, err %v; want an MLA architecture", arch, err)
+	}
+	for _, kv := range []string{"", "f32"} {
+		p, ok := kvPricingFor(cfg, Options{Backend: "metal", KVPrecision: kv})
+		if !ok || !p.metalSizing {
+			t.Fatalf("--kv %q: priced %+v ok=%v, want Metal sizing", kv, p, ok)
+		}
+		got := estimateKVBytes(cfg, 1024, p.kvF16, p.kvI8)
+		want := int64(0)
+		for l := 0; l < arch.NumLayers; l++ {
+			want += int64(arch.kvDimAt(l)) * 1024 * 4 // one f32 latent row per position (metal/mla.go)
+		}
+		if got != want {
+			t.Errorf("--kv %q: priced %d B for 1024 positions, Metal allocates %d B", kv, got, want)
+		}
 	}
 }

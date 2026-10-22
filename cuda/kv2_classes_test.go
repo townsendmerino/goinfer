@@ -17,7 +17,7 @@ import (
 
 // G4-C, KV1's carry-overs on the device (docs/measurements/kv2-cuda-2026-10-15.md).
 //
-//	go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKV2_(recordedClass|hitCap)' -v ./cuda/
+//	go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKV2_(recordedClass|hitCap|inPlaceCap)' -v ./cuda/
 //
 // GOINFER_HEAVY_TESTS=1 adds the 1.5B.
 
@@ -185,6 +185,44 @@ func TestKV2_hitCap_real1p5B(t *testing.T) {
 	kv2HitCap(t, path, decoder.Options{ResidentKVSlots: 2, ResidentContext: 2048, KVPrecision: "f16"})
 }
 
+// kv2InPlaceCap is the in-place twin of kv2HitCap: A holds the 970-token preamble and only 4 tokens of its own, so B takes
+// A's idle slot in place rather than copying. The shared 970 rows would leave B's 5-token tail to the exact kernels; the cap
+// backs the reuse off to 896, leaving 79 rows for the fast ones. The reply and every row equal the prompt run cold.
+func kv2InPlaceCap(t *testing.T, path string, opts decoder.Options) {
+	g := kv2Load(t, path, opts)
+	pre := g.toks(970, 41)
+	a := append(slices.Clone(pre), g.toks(4, 42)...)
+	b := append(slices.Clone(pre), g.toks(5, 43)...)
+	kv2Generate(t, g.m, a, 4)
+	ids, gb := kv2Generate(t, g.m, b, 8)
+	slot, _ := g.m.KVBoundClassesForTest()
+	got := g.rows(slot, len(b)+len(ids)-1)
+	_ = g.m.Close()
+	if gb.PrefillShared != 0 || gb.PrefillReused != 896 {
+		t.Errorf("B reused %d rows (copied %d), want 896 taken in place", gb.PrefillReused, gb.PrefillShared)
+	}
+	o := opts
+	o.ResidentKVSlots = 1
+	c := kv2Load(t, path, o)
+	want, _ := kv2Generate(t, c.m, b, 8)
+	if !slices.Equal(ids, want) {
+		t.Errorf("B after the in-place reuse: %v, cold %v", ids, want)
+	}
+	if !kv2SameRaw(got, c.rows(0, len(want)+len(b)-1)) {
+		t.Errorf("B's K/V rows after the in-place reuse differ from the cold run's")
+	}
+}
+
+func TestKV2_inPlaceCap_tiny(t *testing.T) {
+	const dir = "../testdata/llama-attnfa-tiny"
+	requireDeviceAndFixture(t, dir)
+	for _, kv := range []string{"f32", "f16"} {
+		t.Run(kv, func(t *testing.T) {
+			kv2InPlaceCap(t, dir, decoder.Options{ResidentKVSlots: 2, ResidentContext: 2048, KVPrecision: kv})
+		})
+	}
+}
+
 // kv2FastWindowFixture is llama-attnfa-tiny (head dimension 128, so the fused prefill kernels run) declared as a Mistral
 // with a 256-position sliding window: the same weights, every layer windowed. KV1's G2b instrument set the window on the
 // resident's layers behind the decoder; declaring it in the config is what makes the decoder's class map windowed too.
@@ -213,38 +251,52 @@ func kv2FastWindowFixture(t *testing.T) string {
 }
 
 // TestKV2_windowedUnalignedNotShared is G4-C(e): on a windowed model on the fast kernels, a pass that starts off a block
-// boundary writes rows no other request may take. A's first prompt is 700 tokens; A2 diverges from it at 670 and takes
-// A's slot in place, so its pass starts at 670. B shares A2's first 1,250 tokens and diverges inside them, so it copies:
-// only the 640 rows of the blocks A's aligned first pass wrote whole. B equals its cold run.
+// boundary writes rows no other request may take. A's first prompt is 700 tokens; A2 continues it two tokens into A's own
+// reply and diverges there, taking A's slot in place, so its pass starts at 702 (a reuse that holds decoded rows is not
+// capped to a block edge). B shares A2's first 1,250 tokens and arrives while A2 still decodes, so it copies from A2's busy
+// slot: only the 640 rows of the blocks A's aligned first pass wrote whole. B equals its cold run.
 func TestKV2_windowedUnalignedNotShared(t *testing.T) {
 	path := kv2FastWindowFixture(t)
 	g := kv2Load(t, path, decoder.Options{ResidentKVSlots: 2, ResidentContext: 2048})
 	if l := g.r.layers[0]; l.window != 256 {
 		t.Fatalf("layer 0's window is %d, want 256: the fixture is not windowed", l.window)
 	}
-	a1 := g.toks(700, 41)
-	kv2Generate(t, g.m, a1, 4)
-	a2 := append(slices.Clone(a1[:670]), g.toks(1130, 42)...)
-	a0 := g.r.fastAttnLaunches
-	_, ga2 := kv2Generate(t, g.m, a2, 4)
-	if ga2.PrefillReused != 670 || g.r.fastAttnLaunches == a0 {
-		t.Fatalf("A2 reused %d (want 670, its slot in place) with %d fused-attention launches: the case needs an unaligned fast pass", ga2.PrefillReused, g.r.fastAttnLaunches-a0)
+	if got := g.m.EnableResidentConcurrency(2); got != 2 {
+		t.Fatalf("EnableResidentConcurrency(2) = %d", got)
 	}
-	_, rec := g.m.KVBoundClassesForTest()
-	t.Logf("A's recorded classes: %s", kv2Runs(rec))
+	a1 := g.toks(700, 41)
+	reply, _ := kv2Generate(t, g.m, a1, 4)
+	a2 := append(append(slices.Clone(a1), reply[:2]...), g.toks(1100, 42)...)
+	a0 := g.r.fastAttnLaunches
+	chA, ga2 := g.m.Generate(context.Background(), a2, 32, decoder.SamplingParams{})
+	<-chA // A2 has prefilled and holds its slot while it decodes
+	if ga2.PrefillReused != 702 || g.r.fastAttnLaunches == a0 {
+		t.Fatalf("A2 reused %d (want 702, its slot in place) with %d fused-attention launches: the case needs an unaligned fast pass", ga2.PrefillReused, g.r.fastAttnLaunches-a0)
+	}
+	done := make(chan struct{})
+	go func() {
+		for range chA {
+		}
+		close(done)
+	}()
 	b := append(slices.Clone(a2[:1250]), g.toks(30, 43)...)
 	bids, gb := kv2Generate(t, g.m, b, 8)
-	slot, _ := g.m.KVBoundClassesForTest()
-	got := g.rows(slot, len(b)+len(bids)-1)
+	<-done
+	if err := ga2.Err(); err != nil {
+		t.Fatal(err)
+	}
 	t.Logf("B reused %d, copied %d, declined %q", gb.PrefillReused, gb.PrefillShared, gb.KVCopyDeclined)
+	n := len(b) + len(bids) - 1
+	got0, got1 := g.rows(0, n), g.rows(1, n)
 	_ = g.m.Close()
 	if gb.PrefillShared != 640 {
 		t.Errorf("B copied %d rows, want 640: the blocks of A's aligned first pass and none of the unaligned one", gb.PrefillShared)
 	}
 	c := kv2Load(t, path, decoder.Options{ResidentKVSlots: 1, ResidentContext: 2048})
 	want, _ := kv2Generate(t, c.m, b, 8)
-	if !slices.Equal(bids, want) || !kv2SameRaw(got, c.rows(0, len(b)+len(want)-1)) {
-		t.Errorf("B: %v, cold %v (K/V equal %v)", bids, want, kv2SameRaw(got, c.rows(0, len(b)+len(want)-1)))
+	cold := c.rows(0, len(b)+len(want)-1)
+	if !slices.Equal(bids, want) || !(kv2SameRaw(got0, cold) || kv2SameRaw(got1, cold)) {
+		t.Errorf("B: %v, cold %v (K/V equal in slot 0 %v, slot 1 %v)", bids, want, kv2SameRaw(got0, cold), kv2SameRaw(got1, cold))
 	}
 }
 

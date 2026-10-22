@@ -105,9 +105,9 @@ func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {
 // rmsnorm_f32 + qk_norm; llama-attnfa-tiny covers `attention_fa`, DEFAULT ON past depth 1024 (attnFADepthFloor,
 // metal/model.go): the other two fixtures fail canUseAttnFA's head_dim==128 guard (8 and 256) and can never dispatch it. Its
 // checkpoints straddle the floor exactly (1022 declines, 1023 engages) so an off-by-one at the boundary is caught. Union =
-// every pinned-width reduction kernel plus `attention_fa` this build DISPATCHES. attention_f32 is NOT covered and cannot be:
-// model.go hard-wires `r.kvF32 = false` and builds kv_store_f32/attention_f32 only inside `if r.kvF32`, so nothing dispatches
-// them (N-28; §A2-Metal).
+// every pinned-width reduction kernel plus `attention_fa` this build DISPATCHES at the default precision. attention_f32 runs only
+// under --kv f32 and is not covered here; it is derived from attention's source (metal/kv_f32.go) and pinned bit-identical to it
+// on exact inputs by TestP3_attentionF32MatchesF16OnExactInputs.
 func TestMetalSnapshotGolden(t *testing.T) {
 	models := []struct {
 		dir, quant  string

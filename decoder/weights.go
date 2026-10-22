@@ -1203,7 +1203,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 				copy(dst, row)
 				return rerr
 			}
-			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), 1, func() rowReader { return readPLE }); err != nil {
+			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.gatherTable(), needCanonical, !repackForDecode(sink), 1, func() rowReader { return readPLE }); err != nil {
 				return nil, err
 			}
 			if w.PerLayerModelProj, err = loadProj(mp("model.per_layer_model_projection.weight"), pleTotal, hd, false); err != nil {

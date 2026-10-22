@@ -94,6 +94,11 @@ half-precision KV cache on the CPU as the command lines' default, with f32 kept 
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
 decisions (2026-10-14), and its gates, registered that day before any code.
 
+[`task-kernel-survey-2026-10.md`](tasks/task-kernel-survey-2026-10.md) (survey, filed 2026-10-22) is a static read of
+every kernel in goinfer and aikit for speed and memory: about seventy candidates by backend (KS-A to KS-H), each with its
+arithmetic, identity class and first measurement, four owner decisions, and eleven places a doc or comment no longer
+matches the code. Nothing in it is built or measured.
+
 [`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (plan, filed 2026-10-20) makes
 `--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name: today's
 silent fallbacks, a single resolver and a ratchet test, the phases by backend (CUDA int8 is B39), and the gates.

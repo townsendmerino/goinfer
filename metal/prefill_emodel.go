@@ -42,7 +42,7 @@ var emodelBatchDefect int
 // implements (attention geometry on every layer, no K=V layer, f16 KV, int4 projections).
 func (a *metalResident) emodelBatched() bool {
 	r := a.r
-	if !emodelBatchedOn || !a.emodelLayerMajor() || r.kvI8 || r.w8 || r.w8Attn || r.q4kLane || r.recurrentModel() {
+	if !emodelBatchedOn || !a.emodelLayerMajor() || r.kvI8 || r.kvF32 || r.w8 || r.w8Attn || r.q4kLane || r.recurrentModel() {
 		return false
 	}
 	for l := range r.layers {

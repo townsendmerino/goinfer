@@ -92,7 +92,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	if _, ok := metalCtxCeiling.Load(m); ok {
 		res.ctxCeilKey = m // the entry lives as long as the resident (resident.Close deletes it)
 	}
-	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
+	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill(), need: func() int64 { return residentNeedBytes(m) }}
 	b.resident.ctxNote = metalContextNote(m, fit, res.ctxCap, res.kvSlotCount())
 	if got, want := b.resident.embLen(), m.ResidentEmbedLen(); got != want {
 		_ = res.Close()
@@ -498,6 +498,15 @@ const residentMemoryDeclinePrefix = "the resident build needs "
 
 // residentMemoryDecline is residentFitsMemory with its reason — "" when the build fits — so BuildResident
 // can hand it to the load path as a typed decline (decoder.DeclineResident) instead of printing it.
+// residentBudget is the memory guard's budget for this machine (metalMemoryCeiling of physical RAM), and false when RAM is unreadable.
+func residentBudget() (int64, bool) {
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if err != nil || ram == 0 {
+		return 0, false
+	}
+	return metalMemoryCeiling(ram), true
+}
+
 func residentMemoryDecline(m *decoder.Model) string {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return ""
@@ -605,6 +614,9 @@ type metalResident struct {
 	// quant is the precision ResidentQuant reports: the model's own quant when it runs int8 weights natively (r.w8),
 	// "" otherwise, which leaves the decoder's label (an int8 model on the int4 path is re-quantized, and says so).
 	quant string
+	// need is the memory guard's need for this model (residentNeedBytes), which prefillBlockBudget subtracts from the guard's
+	// budget; nil (a test's struct literal) leaves the block at prefillBlockScratch.
+	need func() int64
 
 	// fast is the batched-prefill decision, made once per resident on first use, so a change to the process environment mid-serve
 	// cannot switch a loaded model's kernels. Lazy (not set at build) so a test's struct-literal resident gets the same default.
@@ -816,7 +828,7 @@ func (a *metalResident) ResidentQuant() string { return a.quant }
 func (a *metalResident) PrefillKernelFloor() int { return a.prefillKernelFloor() }
 
 func (a *metalResident) prefillKernelFloor() int {
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvI8 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvI8 || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
 		return 0
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
@@ -840,8 +852,12 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		}
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)"
 	}
-	if a.r.kvI8 {
-		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
+	if a.r.kvI8 || a.r.kvF32 {
+		cache := map[bool]string{true: "int8 (-kv i8)", false: "f32 (-kv f32)"}[a.r.kvI8]
+		if a.stepPrefill() && !a.r.promptStepOff { // promptStepOK takes every prompt
+			return true, "decode rows on the batched step kernels at every length (bit-identical to sequential; the f16 MMA pass does not take this model's " + cache + " KV cache)"
+		}
+		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is " + cache
 	}
 	if a.r.attnSink {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
@@ -1049,6 +1065,9 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	// shape). Any of these declines here, and the caller re-runs the prompt through the sequential Forward loop.
 	if a.r.kvI8 {
 		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is int8 (-kv i8); using sequential path")
+	}
+	if a.r.kvF32 {
+		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is f32 (-kv f32); using sequential path")
 	}
 	if a.r.attnSoftcap != 0 && len(blocks) > 0 {
 		return nil, fmt.Errorf("metal: the image prefill's attention kernel is not gated with an attention softcap; using sequential path")
@@ -1358,10 +1377,11 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if a.r.kvI8 {
 		nKV := g.nKV
 		hd := g.hd
-		kc := a.r.kc[layer].Int8s()
-		vc := a.r.vc[layer].Int8s()
-		ks := a.r.ks[layer].Floats()
-		vs := a.r.vs[layer].Floats()
+		// the bound slot's codes and scales, when the slots are one allocation (MC3 S3; kvScaleOff)
+		kc := a.r.kc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
+		vc := a.r.vc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
+		ks := a.r.ks[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
+		vs := a.r.vs[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
 		for p := range n {
 			pos := base + p
 			for h := range nKV {
@@ -1475,8 +1495,8 @@ func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.
 func (a *metalResident) Close() error { return a.r.Close() }
 
-// prefillBlockScratch is the row-sized scratch one pass of a blocked prefill may allocate: PrefillBlockRows is the
-// number of rows that fit it. The speed reading that keeps it is docs/tasks/task-integration-harness-2026-10.md, "I8".
+// prefillBlockScratch is the most row-sized scratch one pass of a blocked prefill may allocate (prefillBlockBudget may
+// give less): PrefillBlockRows is the number of rows that fit the budget. The speed reading that keeps it is docs/tasks/task-integration-harness-2026-10.md, "I8".
 const prefillBlockScratch = 512 << 20
 
 // prefillBlockRowsMin is the shortest block PrefillBlockRows reports, for a model whose rows are so wide that fewer
@@ -1488,14 +1508,14 @@ const prefillBlockRowsMin = 256
 var prefillBlockRowsForTest int
 
 // PrefillBlockRows (decoder.ResidentPrefillBlocks) is the most rows the decoder hands one batched pass: as many as fit
-// prefillBlockScratch, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
+// prefillBlockBudget, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
 // without a block a prompt's prefill takes memory in proportion to its length. 0, meaning the prefill is not split,
 // for a resident whose prompts do not take the plain batched pass at every length: a layer-major route or an E-model,
 // an int8 KV cache, fast prefill off, an arch or norm the pass does not implement, and a model on the exact attention
 // kernel, whose pass declines past prefillExactAttnMaxKeys and must go on declining the whole prompt.
 func (a *metalResident) PrefillBlockRows() int {
 	r := a.r
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvI8 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvI8 || r.kvF32 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
 		(r.layerNorm && (r.layerNormBias || r.qkNorm)) || r.prefillUnaligned() != "" || r.prefillExactAttn() {
 		return 0
 	}
@@ -1506,7 +1526,26 @@ func (a *metalResident) PrefillBlockRows() int {
 	if per <= 0 {
 		return 0
 	}
-	return max(int(prefillBlockScratch/per)/64*64, prefillBlockRowsMin)
+	return max(int(a.prefillBlockBudget()/per)/64*64, prefillBlockRowsMin)
+}
+
+// prefillBlockBudget is the scratch one blocked pass may take: prefillBlockScratch, or less when the memory guard's budget
+// (metalMemoryCeiling, the "metal" probe the fit plan reads) leaves less after this model's need, so the need and one pass
+// stay inside that budget together. An unknown need or budget leaves prefillBlockScratch.
+func (a *metalResident) prefillBlockBudget() int64 {
+	budget := int64(prefillBlockScratch)
+	if a.need == nil {
+		return budget
+	}
+	need := a.need()
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if need <= 0 || err != nil || ram == 0 {
+		return budget
+	}
+	if ceiling := metalMemoryCeiling(ram); ceiling > 0 {
+		budget = min(budget, max(ceiling-need, 0))
+	}
+	return budget
 }
 
 // PrefillScratchBytes (decoder.ResidentPrefillBlocks) is what one batched pass over rows rows allocates.

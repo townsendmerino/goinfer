@@ -50,6 +50,11 @@ func (a *Architecture) keepsNoKV() bool {
 // under auto, or why an explicit request cannot be met (which Load refuses, KVRefusal). backend "cpu" is the CPU (host) cache, which a
 // load uses when no resident runner is active, whatever Options.Backend names.
 func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, reason string) {
+	if resolveKVHook != nil {
+		if got, why, ok := resolveKVHook(backend, opts); ok {
+			return got, why
+		}
+	}
 	if arch != nil && arch.keepsNoKV() {
 		return kvPrecNone, "this model keeps no attention KV"
 	}
@@ -63,9 +68,12 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 	case "cuda":
 		return resolveCUDAKV(arch, o, req)
 	case "metal":
+		if arch != nil && arch.mla != nil {
+			return kvPrecF32, "an MLA model keeps its latent cache in f32 on Metal"
+		}
 		switch req {
 		case kvPrecF32:
-			return kvPrecF16, "Metal's f32 KV kernels are compiled out until phase 3; the cache is f16"
+			return kvPrecF32, ""
 		case kvPrecI8:
 			return kvPrecI8, ""
 		case kvPrecAuto:
@@ -285,6 +293,19 @@ func (m *Model) KVPrecisionReports() []KVPrecisionReport {
 	}
 	got, why := ResolveKV("cpu", m.w.arch, m.kvOpts)
 	return append(out, KVPrecisionReport{Cache: "cpu", Requested: cpuKVRequested(m.kvOpts), Delivered: got, Reason: why})
+}
+
+// resolveKVHook, set only by a test (goinfer_testhooks), answers ResolveKV for the cases it claims (ok), so a test can make the
+// resolver and the raw request disagree and see which one a backend's build follows.
+var resolveKVHook func(backend string, opts Options) (delivered, reason string, ok bool)
+
+// KVDeliveredFor is the precision ResolveKV gives this model's KV cache on backend: what a backend's resident build allocates.
+func (m *Model) KVDeliveredFor(backend string) string {
+	if m.w == nil {
+		return ""
+	}
+	got, _ := ResolveKV(backend, m.w.arch, m.kvOpts)
+	return got
 }
 
 // KVDelivered is the precision of the cache a generation of this model writes (the request log's kv field).

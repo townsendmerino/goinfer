@@ -49,7 +49,7 @@ func newOrSkip(t *testing.T) *Context {
 // hardware-sensitive tests must skip on it. AdapterType==CPU catches the Vulkan
 // software path (lavapipe → what CI uses); the name match catches the OpenGL
 // software path (llvmpipe reports AdapterTypeUnknown) and other backends.
-func isSoftwareAdapter(c *Context) bool { return softwareAdapterInfo(c.adapter.GetInfo()) }
+func isSoftwareAdapter(c *Context) bool { return softwareAdapterInfo(c.info) }
 
 // TestSoftwareAdapterDetection pins the software-adapter heuristic (runs with no
 // GPU). CI's lavapipe reports AdapterType==CPU; the OpenGL software path
@@ -126,7 +126,7 @@ func newOrSkipHW(t *testing.T) *Context {
 	reportLive(t)
 	c := newOrSkip(t)
 	if isSoftwareAdapter(c) {
-		info := c.adapter.GetInfo()
+		info := c.info
 		c.Close()
 		t.Skipf("software adapter (%s %q); hardware-dependent test", info.AdapterType, info.Device)
 	}
