@@ -42,8 +42,9 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	saved := kvPolicies["cuda"]
 	defer func() { kvPolicies["cuda"] = saved }()
 	auto := true
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }})
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }, AutoDecline: CUDAKVF16AutoDecline})
 	gemma := &Architecture{Name: "gemma3", NumLayers: 1}
+	moe := &Architecture{Name: "qwen3_moe", NumLayers: 1, MoE: &MoEConfig{}}
 	for _, c := range []struct {
 		kv   string
 		a    *Architecture
@@ -53,6 +54,7 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 		{"", a, true, "f16"}, {"auto", a, true, "f16"}, {"f16", a, true, "f16"}, {"f32", a, true, "f32"},
 		{"", a, false, "f32"}, {"auto", a, false, "f32"}, {"f16", a, false, "f16"},
 		{"", gemma, true, "f32"}, {"f16", gemma, true, "f32"}, {"i8", a, true, "f32"},
+		{"", moe, true, "f32"}, {"auto", moe, true, "f32"}, {"f16", moe, true, "f16"}, {"f16", moe, false, "f16"},
 	} {
 		auto = c.auto
 		if got, _ := ResolveKV("cuda", c.a, Options{KVPrecision: c.kv}); got != c.want {
@@ -81,8 +83,12 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		{"phi3 dense", dense("phi3"), Options{}, ""},
 		{"gemma3 not cleared", dense("gemma3"), Options{}, "keeps f32"},
 		{"qwen3_5 not cleared", dense("qwen3_5"), Options{}, "keeps f32"},
-		{"qwen2 MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, "MoE"},
-		{"qwen2 paged experts", dense("qwen2"), Options{MoECacheExperts: true}, "paged-experts"},
+		{"qwen2 MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, ""},
+		{"qwen2_moe", KVFacts{Family: "qwen2_moe", MoE: true}, Options{}, ""},
+		{"qwen3_moe", KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, ""},
+		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, ""},
+		{"qwen3_moe paged experts", KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, ""},
+		{"gpt-oss not delivered", KVFacts{Family: "gpt-oss", MoE: true}, Options{}, "keeps f32"},
 		{"mistral sliding window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, "sliding-window"},
 		{"llama pairwise rope", KVFacts{Family: "llama", PairwiseRoPE: true}, Options{}, "pairwise RoPE"},
 		{"qwen2 m-rope", KVFacts{Family: "qwen2", MRoPE: true}, Options{}, "m-RoPE"},
@@ -97,8 +103,30 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		case c.want != "" && !strings.Contains(got, c.want):
 			t.Errorf("%s: decline = %q, want it to contain %q", c.name, got, c.want)
 		}
-		if c.want == "" && !cudaKVF16Cleared(c.f) {
-			t.Errorf("%s: allowed by the decline check but not in the cleared set", c.name)
+		if c.want == "" && !cudaKVF16Delivered(c.f) {
+			t.Errorf("%s: allowed by the decline check but not in the delivered set", c.name)
+		}
+	}
+}
+
+// TestCUDAKVF16AutoDecline_table pins which delivered models `--kv auto` keeps at f32 on CUDA: a group delivered on request whose quality
+// gate (G4) has not passed stays f32 under auto, and a cleared family is not held back.
+func TestCUDAKVF16AutoDecline_table(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		f    KVFacts
+		o    Options
+		auto bool
+	}{
+		{"qwen2 dense", KVFacts{Family: "qwen2"}, Options{}, true},
+		{"phi3 dense", KVFacts{Family: "phi3"}, Options{}, true},
+		{"qwen3_moe", KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, false},
+		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, false},
+		{"qwen2 with MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, false},
+		{"qwen2 paged experts", KVFacts{Family: "qwen2"}, Options{MoECacheExperts: true}, false},
+	} {
+		if got := CUDAKVF16AutoDecline(c.f, c.o); (got == "") != c.auto {
+			t.Errorf("%s: auto decline %q, want auto f16 %v", c.name, got, c.auto)
 		}
 	}
 }

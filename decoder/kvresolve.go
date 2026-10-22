@@ -110,6 +110,11 @@ func resolveCUDAKV(arch *Architecture, o Options, req string) (string, string) {
 	if why := p.Decline(arch.kvFacts(), o); why != "" {
 		return kvPrecF32, why
 	}
+	if p.AutoDecline != nil {
+		if why := p.AutoDecline(arch.kvFacts(), o); why != "" {
+			return kvPrecF32, why
+		}
+	}
 	return kvPrecF16, "auto is f16 on CUDA for this family"
 }
 
@@ -176,10 +181,24 @@ func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
 	return &KVRefusal{Path: path, Requested: req, Delivered: got, Reason: why}
 }
 
-// cudaKVF16Cleared lists the families `--kv auto` puts on an f16 KV cache on CUDA: the dense decoders the R6 gates measured the attention
-// kernels on (docs/tasks/task-cuda-f16-kv-2026-10.md). `--kv f16` asks for f16 on any family CUDAKVF16Decline lets through, which today is
-// the same set; a family joins by passing the fidelity and overflow gates, not by compiling.
-func cudaKVF16Cleared(f KVFacts) bool {
+// cudaKVF16Delivered lists the families whose every KV-touching CUDA path has an f16 kernel: `--kv f16` is delivered for them whatever
+// the quality reads (the precision doc's contract, item 4). A family group joins with its exact-input identity and delivered-bytes gates
+// (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), never by compiling.
+func cudaKVF16Delivered(f KVFacts) bool {
+	switch f.Family {
+	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral":
+		return true
+	}
+	return false
+}
+
+// cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (the
+// owner's D7: f16 becomes the default for each family as it clears its gate). MoE and the paged-experts build are delivered on request
+// and stay f32 under auto until their group's G4 passes.
+func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
+	if f.MoE || o.MoECacheExperts {
+		return false
+	}
 	switch f.Family {
 	case "llama", "mistral", "qwen2", "qwen3", "phi3":
 		return true
@@ -192,14 +211,10 @@ func cudaKVF16Cleared(f KVFacts) bool {
 // cuda package registers it as its policy.
 func CUDAKVF16Decline(f KVFacts, o Options) string {
 	switch {
-	case !cudaKVF16Cleared(f):
-		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3 and phi3 so far; " + f.Family + " keeps f32"
+	case !cudaKVF16Delivered(f):
+		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe and mixtral so far; " + f.Family + " keeps f32"
 	case f.MLA:
 		return "an MLA latent cache has no f16 form"
-	case f.MoE:
-		return "MoE models keep f32 KV so far"
-	case o.MoECacheExperts:
-		return "the paged-experts build keeps f32 KV"
 	case f.SlidingWindow:
 		return "sliding-window attention (the windowed KV ring) has no f16 form"
 	case f.PairwiseRoPE:
@@ -212,11 +227,19 @@ func CUDAKVF16Decline(f KVFacts, o Options) string {
 	return ""
 }
 
+// CUDAKVF16AutoDecline returns why `--kv auto` keeps a model CUDAKVF16Decline lets through at f32 on CUDA, or "" when auto picks f16.
+func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
+	if cudaKVF16AutoCleared(f, o) {
+		return ""
+	}
+	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
+}
+
 // The CUDA policy ResolveKV reads when the cuda package is not linked in, as in the decoder's own tests and the generated KV matrix:
 // auto is f16 for a cleared family (the owner's decision of 2026-10-13). The cuda package registers the same table with its own auto
 // switch, which its tests pin to f32.
 func init() {
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }})
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline})
 }
 
 // kvPath is the cache a generation of this model writes: the resident backend's when a runner is active, else the CPU's.

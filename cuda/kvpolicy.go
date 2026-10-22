@@ -14,8 +14,9 @@ import (
 // all depend on the KV width. The table itself is decoder.CUDAKVF16Decline, where decoder.ResolveKV reads it; this registers it with CUDA's auto switch.
 func init() {
 	decoder.RegisterKVF16Policy("cuda", decoder.KVF16Policy{
-		Decline: decoder.CUDAKVF16Decline,
-		Auto:    func() bool { return kvF16Auto.Load() },
+		Decline:     decoder.CUDAKVF16Decline,
+		Auto:        func() bool { return kvF16Auto.Load() },
+		AutoDecline: decoder.CUDAKVF16AutoDecline,
 	})
 	kvF16Auto.Store(true)
 }

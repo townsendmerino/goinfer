@@ -25,7 +25,8 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CUDA_FLASH_DECODE=16 \
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestKV16GateVsReference -v -timeout 3h
 //
-// Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV16_GATE_CELLS="D7:8000,S:3900" overrides.
+// Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV16_GATE_CELLS="D7:8000,S:3900" overrides. KV4b's family groups add
+// one checkpoint each (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), read at K=3900 and K=8000, both decision cells.
 func TestKV16GateVsReference(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)")
@@ -46,9 +47,12 @@ func TestKV16GateVsReference(t *testing.T) {
 	models := map[string]struct {
 		env, def string
 		decision bool
+		opts     decoder.Options // what the group's build needs beyond the cell's own Backend, Quant, KVPrecision and ResidentContext
 	}{
-		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true},
-		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false},
+		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true, decoder.Options{}},
+		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false, decoder.Options{}},
+		// KV4b group 1, MoE and the paged-experts build: Qwen1.5-MoE-A2.7B fits the 8 GB card only with its experts paged.
+		"QMOE": {"GOINFER_CUDA_GATE_MODEL_QMOE", "$HOME/models/qwen15-moe-a27b", true, decoder.Options{MoECacheExperts: true}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
@@ -79,7 +83,7 @@ func TestKV16GateVsReference(t *testing.T) {
 					t.Skipf("%s K=%d: reference missing for prompt %d — run Phase A first", name, K, pi)
 				}
 			}
-			runKV16GateCell(t, path, name, K, promptFiles, refDir, mc.decision)
+			runKV16GateCell(t, path, name, K, promptFiles, refDir, mc.decision, mc.opts)
 		})
 	}
 }
@@ -95,9 +99,10 @@ type kv16ArmResult struct {
 	layers     int
 }
 
-func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string) kv16ArmResult {
+func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
 	t.Helper()
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: kv, ResidentContext: K + 128})
+	opts.Backend, opts.Quant, opts.KVPrecision, opts.ResidentContext = "cuda", "int4", kv, K+128
+	m, err := decoder.Load(path, opts)
 	if err != nil {
 		t.Fatalf("load (-kv %s): %v", kv, err)
 	}
@@ -169,7 +174,7 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	return res
 }
 
-func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []string, refDir string, decision bool) {
+func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []string, refDir string, decision bool, opts decoder.Options) {
 	t.Helper()
 	tk, err := tokenizer.LoadGGUF(path)
 	if err != nil {
@@ -188,8 +193,8 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	}
 	contN := len(refTokens[0])
 
-	e := kv16RunArm(t, path, "f32", K, prompts, refTokens, true, false, model)
-	f := kv16RunArm(t, path, "f16", K, prompts, refTokens, false, true, model)
+	e := kv16RunArm(t, path, "f32", K, prompts, refTokens, true, false, model, opts)
+	f := kv16RunArm(t, path, "f16", K, prompts, refTokens, false, true, model, opts)
 
 	// PRECONDITION 4: the overflow survey, printed before any score.
 	worst := float32(0)
