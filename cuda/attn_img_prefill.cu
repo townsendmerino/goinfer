@@ -100,15 +100,10 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
     float inv = 1.f / denom; __syncthreads();
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        // kvpage.cuh's KV_SUM_RUNS, written out for this f32-only module: one lookup per run, the next run's row read first, the run unrolled.
-        const float* vb = vc + kvh * hd + d;
-        const float* vp = vb + KV_ROW(kvt, winStart) * kvDim;
         for (int s = winStart; s < nKeys;) {
             const int e = KV_RUN_END(s, nKeys);
-            const float* vn = (e < nKeys) ? vb + (long)kvt[e >> 6] * 64 * kvDim : vp;
-#pragma unroll 64
+            const float* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
             for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], *vp, acc);
-            vp = vn;
         }
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }

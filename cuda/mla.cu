@@ -180,17 +180,12 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
     __syncthreads();
     for (int d = t; d < rank; d += nt) {
         float acc = 0.0f;
-        // kvpage.cuh's KV_SUM_RUNS, written out for this f32-only module: one lookup per run, the next run's row read first, the run unrolled.
-        const float* vb = latCache + d;
-        const float* vp = vb + KV_ROW(kvt, winStart) * latDim;
         for (int s = winStart; s < nKeys;) {
             const int e = KV_RUN_END(s, nKeys);
-            const float* vn = (e < nKeys) ? vb + (long)kvt[e >> 6] * 64 * latDim : vp;
-#pragma unroll 64
+            const float* vp = latCache + KV_ROW(kvt, s) * latDim + d;
             for (; s < e; s++, vp += latDim) {
                 acc = __fmaf_rn(sc[s - winStart], *vp, acc);
             }
-            vp = vn;
         }
         wsum[(long)m * (nH * rank) + h * rank + d] = __fmul_rn(acc, inv);
     }

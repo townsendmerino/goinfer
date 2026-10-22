@@ -14,8 +14,9 @@
 #define KV_RUN_END(k, hi) (((k) | 63) + 1 < (hi) ? ((k) | 63) + 1 : (hi))
 // KV_SUM_RUNS(base, t, stride, lo, hi, acc, w): acc = fma(w, KV_LD(row of s), acc) for s in [lo, hi), ascending, where base is the
 // element of row 0 to read and w an expression of s. One lookup per 64-key run, whose next run's row is read before the run starts,
-// and the run fully unrolled: a latency-bound fold (one thread per output element walking every key) then issues its loads as far
-// ahead as the flat loop over a contiguous cache did, which a two-level loop without the unroll does not.
+// and the run fully unrolled. It is for a fold that runs about one warp per SM (splitkv_vsum): there every load's latency shows, and
+// only the unroll issues loads as far ahead as the flat loop over a contiguous cache did. A kernel with warps to spare keeps the plain
+// run loop: the unrolled body is code it would fetch again on every launch of a decode step, which cost more than the loop saved.
 #define KV_SUM_RUNS(base, t, stride, lo, hi, acc, w)                                                                          \
     {                                                                                                                        \
         const KV_T* kvsb_ = (base);                                                                                          \
