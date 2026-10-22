@@ -31,7 +31,7 @@ func kv7Restore(t *testing.T, g *kv2Rig, end int) {
 		_, base := g.raw(0)
 		snapLo = max(0, base, end-(g.r.kvWindow-1)-g.r.kvRollback())
 		if base == 0 {
-			t.Fatal("VOID: slot 0's base is 0 at the snapshot, so a windowed layer's rows are not read through a shifted view")
+			t.Fatal("VOID: slot 0's base is 0 at the snapshot, so no windowed layer has released a block below it and the moved ring is not exercised")
 		}
 	}
 	snap, err := g.r.SnapshotKV(0, end)

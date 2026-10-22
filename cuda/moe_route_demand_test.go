@@ -77,7 +77,7 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 	// assumed — Sigma and max differ by a factor here.
 	census := os.Getenv("GOINFER_A9_KERNELS") == "census"
 	var pRope, pRopeB Pipeline
-	var rq, rk, rv, rInv, rKc, rVc gpu.Buffer
+	var rq, rk, rv, rInv, rKc, rVc, rKvt gpu.Buffer
 	if census {
 		gm, e := dev.CompileLibrary(gemvFwdPTX)
 		if e != nil {
@@ -95,6 +95,10 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 		}
 		rq, rk, rv = gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64)
 		rInv, rKc, rVc = gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64)
+		rKvt = gpu.NewBufferLenOf[int32](dev, 1) // the identity block table over rKc/rVc
+		if e := gpu.Upload(rKvt, kvIdentityIDs(1)); e != nil {
+			t.Fatalf("upload KV table: %v", e)
+		}
 	}
 
 	// Back off on failure rather than stopping. A failed request means THAT SIZE does not fit, which
@@ -160,17 +164,17 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 	if census && lerr == nil {
 		// nH=1, nKV=1, hd=2, rhalf=1, pos=0 keeps idx=0 on the first branch, touching q[0..1] and
 		// invFreq[0] only. 64-float buffers are far larger than anything reachable.
-		lerr = q.Launch(pRope, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc),
+		lerr = q.Launch(pRope, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc), Arg(rKvt),
 			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(2)),
 			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), // pos, ropePos (equal — not under test here)
 			gpu.ArgValue(int32(1)), gpu.ArgValue(float32(1)), // mscale 1.0 = unscaled
 			gpu.ArgValue(float32(1))) // qTempScale 1.0 = no-op (FeatAttnTemp, G5) — not under test here
 	}
 	if census && lerr == nil {
-		lerr = q.Launch(pRopeB, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc),
+		lerr = q.Launch(pRopeB, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc), Arg(rKvt),
 			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(2)),
 			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(float32(1)),
-			gpu.ArgValue(float32(0)), gpu.ArgValue(float32(0))) // attnTempBeta=0 ⇒ off (FeatAttnTemp, G5) — not under test here
+			ArgNull()) // qTempRows null ⇒ no attention temperature (FeatAttnTemp, G5) — not under test here
 	}
 	serr := q.Sync()
 	after := read()

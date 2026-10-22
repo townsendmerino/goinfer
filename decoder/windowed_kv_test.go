@@ -5,7 +5,8 @@ import (
 )
 
 // G-W4 of docs/tasks/task-cuda-windowed-kv-2026-10.md, the decoder half: with Options.ResidentWindowedKV the CUDA price of a sliding-window
-// layer's KV is min(ctx, window+WindowedKVSlack) positions, and Plan chooses a context against that price. The allocation it must equal is
+// layer's KV is the blocks of min(ctx, window+WindowedKVSlack) positions (plus one past window+slack, for a range that starts mid-block),
+// beside the null blocks and the tables, and Plan chooses a context against that price. The allocation it must equal is
 // cuda's TestWindowedKV_allocation (needs a GPU).
 
 func loadWindowFixture(t *testing.T, on bool) *Model {
@@ -26,12 +27,20 @@ func TestWindowedKV_planPrices(t *testing.T) {
 	}
 	_, nLayers, _, _, _, _, _ := on.Dims()
 	for _, ctx := range []int{window, window + WindowedKVSlack, window + WindowedKVSlack + 1, 4096, 100000} {
-		var want int64
+		held := window + WindowedKVSlack
+		blocks := func(n int) int64 { return int64((n + KVBlockRows - 1) / KVBlockRows) }
+		want := 2 * 4 * blocks(ctx) // the two tables, 4 B a block
 		for l := range nLayers {
 			if !on.WindowedKVLayer(l) {
 				t.Fatalf("layer %d of an all-sliding-window model is not a windowed-KV layer", l)
 			}
-			want += int64(on.w.arch.kvDimAt(l)) * 2 * 4 * int64(min(ctx, window+WindowedKVSlack))
+			row := int64(on.w.arch.kvDimAt(l)) * 2 * 4 * KVBlockRows // K and V, f32, one block
+			want += row                                              // the null block
+			if ctx > held {
+				want += row * (blocks(held) + 1)
+			} else {
+				want += row * blocks(ctx)
+			}
 		}
 		if got := on.ResidentKVBytes("cuda", ctx, false, false); got != want {
 			t.Errorf("ctx %d: ResidentKVBytes(cuda) = %d, want %d", ctx, got, want)

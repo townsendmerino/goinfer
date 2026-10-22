@@ -145,6 +145,11 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 				}
 				out := m.reg(o.out, h, scr)
 				if o.ffn.Form == ffnGemma4Dense {
+					// A model without Gemma 4's per-token state gets an error, never a nil dereference: a recovered access
+					// violation here corrupted the Go heap on some Windows hosts (docs/queue-correctness.md G50).
+					if g4 == nil {
+						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
+					}
 					if err := m.gemma4DenseFFN(o.ffn.Act, m.reg(o.in, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
 						return nil, err
 					}

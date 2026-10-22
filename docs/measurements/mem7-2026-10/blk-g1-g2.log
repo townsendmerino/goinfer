@@ -1,0 +1,11 @@
+[BLK-G2] headroom 1 GiB: block 47616 rows (536537088 bytes of scratch); today 47616 rows
+[BLK-G2] headroom 200 MiB: block 18560 rows (209134080 bytes of scratch); today 47616 rows
+[BLK-G2] headroom 1 MiB: block 256 rows (2884608 bytes of scratch); today 47616 rows
+--- PASS: TestMEM7_blockFitsTheBudget (0.20s)
+--- PASS: TestI8_blocksMatchOnePass_dense (0.86s)
+--- PASS: TestI8_blocksMatchOnePass_MoE (0.35s)
+    --- PASS: TestI8_blocksMatchOnePass_MoE/mixtral-tiny (0.08s)
+    --- PASS: TestI8_blocksMatchOnePass_MoE/qwen3moe-tiny (0.08s)
+    --- PASS: TestI8_blocksMatchOnePass_MoE/qwen3moe-tiny-k3 (0.09s)
+    --- PASS: TestI8_blocksMatchOnePass_MoE/qwen3_5_moe-tiny (0.10s)
+--- PASS: TestI8_blockRows (0.13s)

@@ -107,8 +107,7 @@ func flashOracleRealKV(t *testing.T, path string, K int, strict bool) {
 		if Ly.window > 0 && nKeys > int(Ly.window) {
 			winStart = nKeys - int(Ly.window)
 		}
-		k := make([]float32, nKeys*kvDim)
-		v := make([]float32, nKeys*kvDim)
+		var k, v []float32
 		exact := make([]float32, nH*hd)
 		lane := make([]float32, nH*hd)
 		q := make([]float32, nH*hd)
@@ -117,11 +116,12 @@ func flashOracleRealKV(t *testing.T, path string, K int, strict bool) {
 			if e := rf.stream.Sync(); e != nil {
 				return e
 			}
-			if e := gpu.Download(rf.kc[l], k); e != nil {
+			var e error
+			if k, v, e = rf.kvRowsForTest(rf.kvSlot, l, 0, nKeys); e != nil {
 				return e
 			}
-			if e := gpu.Download(rf.vc[l], v); e != nil {
-				return e
+			if Ly.kvHalf {
+				k, v = kvHalvesToF32(kvWordsToHalves(k)), kvHalvesToF32(kvWordsToHalves(v))
 			}
 			for h := range nH {
 				p := (h*997 + 13) % nKeys
@@ -389,4 +389,13 @@ func runFlashGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model st
 	if decision && verdict != "PASSES" {
 		t.Errorf("%s K=%d is the DECISION cell and it did not pass (%s) — the lane stays opt-in, which is a RESULT", model, K, verdict)
 	}
+}
+
+// kvHalvesToF32 widens an f16 layer's cached halves to the f32 values the kernels read.
+func kvHalvesToF32(h []uint16) []float32 {
+	out := make([]float32, len(h))
+	for i, x := range h {
+		out[i] = f16BitsToF32(x)
+	}
+	return out
 }

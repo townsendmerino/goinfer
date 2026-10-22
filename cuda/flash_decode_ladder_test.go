@@ -67,23 +67,25 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 	hd, nKV := Ly.hd, Ly.nKV
 	kvDim := nKV * hd
 	rng := rand.New(rand.NewSource(3))
-	fill := func(b Buffer, n int) {
+	randn := func(n int) []float32 {
 		x := make([]float32, n)
 		for i := range x {
 			x[i] = float32(rng.NormFloat64())
 		}
-		if e := gpu.Upload(b, x); e != nil {
-			t.Fatalf("upload: %v", e)
-		}
+		return x
 	}
 	err = rf.do(func() error {
-		fill(rf.qB, rf.nH*hd)
-		fill(rf.kc[0], (maxD+1)*kvDim)
-		fill(rf.vc[0], (maxD+1)*kvDim)
+		if e := gpu.Upload(rf.qB, randn(rf.nH*hd)); e != nil {
+			t.Fatalf("upload: %v", e)
+		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("fill: %v", err)
+	}
+	// Layer 0's positions 0..maxD go in through the bound slot's table, which UploadKV maps.
+	if err := rf.UploadKV(0, 0, randn((maxD+1)*kvDim), randn((maxD+1)*kvDim)); err != nil {
+		t.Fatalf("fill KV: %v", err)
 	}
 	rf.skMinKeys = 0
 	type arm struct {

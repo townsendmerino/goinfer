@@ -99,14 +99,6 @@ type kv2Buf struct {
 	row   int // bytes a position takes
 }
 
-// slotBufs is slot's per-layer K and V buffers (the build's own with one slot).
-func (g *kv2Rig) slotBufs(slot int) cudaKVSlot {
-	if len(g.r.kvSlotBufs) == 0 {
-		return cudaKVSlot{g.r.kc, g.r.vc}
-	}
-	return g.r.kvSlotBufs[slot]
-}
-
 // bufs lists every buffer a slot owns: K and V of each layer that does not read another layer's KV, V only where it exists.
 func (g *kv2Rig) bufs() []kv2Buf {
 	var out []kv2Buf
@@ -120,7 +112,7 @@ func (g *kv2Rig) bufs() []kv2Buf {
 			elem = 2
 		}
 		for _, v := range []bool{false, true} {
-			if v && g.slotBufs(0).vc[l].Len() == 0 {
+			if v && g.r.vc[l].Len() == 0 {
 				continue
 			}
 			out = append(out, kv2Buf{layer: l, v: v, win: Ly.kvWin, row: Ly.kvDim * elem})
@@ -129,30 +121,41 @@ func (g *kv2Rig) bufs() []kv2Buf {
 	return out
 }
 
-// raw is every buffer of slot's KV as bytes, in bufs' order, and the slot's windowed base.
+// raw is every buffer of slot's KV as bytes, in bufs' order, read through the slot's tables, and the slot's windowed base. A full
+// layer's bytes are its positions [0, ctxCap); a windowed layer's start at its base, for window+slack positions. A position the slot
+// maps no block for reads as zeros.
 func (g *kv2Rig) raw(slot int) (out [][]byte, base int) {
 	g.t.Helper()
 	err := g.r.do(func() error {
 		if e := g.r.stream.Sync(); e != nil {
 			return e
 		}
-		for _, b := range g.bufs() {
-			buf := g.slotBufs(slot).kc[b.layer]
-			if b.v {
-				buf = g.slotBufs(slot).vc[b.layer]
-			}
-			elem := 4
-			if g.r.layers[b.layer].kvHalf {
-				elem = 2
-			}
-			p := make([]byte, buf.Len()*elem)
-			if e := gpu.Download(buf, p); e != nil {
-				return e
-			}
-			out = append(out, p)
-		}
 		if g.r.kvWin {
 			base = g.r.kvBases[slot]
+		}
+		for _, b := range g.bufs() {
+			buf := g.r.kc[b.layer]
+			if b.v {
+				buf = g.r.vc[b.layer]
+			}
+			grp, from, n := g.r.kvGroupOf(b.layer), 0, g.r.ctxCap
+			if b.win {
+				from, n = base, min(g.r.ctxCap, g.r.kvWindow+g.r.kvSlack)
+			}
+			p := make([]byte, n*b.row)
+			ids := g.r.kvTabs[slot].ids[grp]
+			for q := from; q < from+n && q < g.r.ctxCap; {
+				blk := q / kvBlock
+				m := min(from+n, (blk+1)*kvBlock) - q
+				if id := ids[blk]; id != 0 {
+					row := int(id)*kvBlock + q%kvBlock
+					if e := gpu.Download(buf.At(row*b.row), p[(q-from)*b.row:(q-from+m)*b.row]); e != nil {
+						return e
+					}
+				}
+				q += m
+			}
+			out = append(out, p)
 		}
 		return nil
 	})

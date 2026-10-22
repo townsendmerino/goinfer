@@ -1,0 +1,12 @@
+kv share: copied 16000 rows from another conversation in 0.19 ms
+kv share: copied 16000 rows from another conversation in 0.23 ms
+kv share: copied 16000 rows from another conversation in 0.20 ms
+cuda: kv copy: slot 0 -> 1 shares rows [0, 16000), 250 blocks; 251 of 1024 full-pool blocks in use
+cuda: kv copy: slot 0 -> 2 shares rows [0, 16000), 250 blocks; 252 of 1024 full-pool blocks in use
+cuda: kv copy: slot 0 -> 3 shares rows [0, 16000), 250 blocks; 254 of 1024 full-pool blocks in use
+preamble shared: 250 blocks; prompts [16045, 16043, 16042, 16043] tokens, generated [128, 128, 128, 128]; full pool in use at the last copy 254 (limit 266; 1012 if each stored its own)
+conversation 0: reused 0 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+conversation 1: reused 16000 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+conversation 2: reused 16000 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+conversation 3: reused 16000 tokens; reply equals its reference; equals its reply on a fresh server (reported)
+G3b served: PASS

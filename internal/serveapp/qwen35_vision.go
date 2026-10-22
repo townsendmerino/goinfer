@@ -57,6 +57,9 @@ func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
 				}
 			}
 			q.acc, q.err = q.plan.started("Qwen3.5", acc, err)
+			if q.acc != nil {
+				releaseTowerBlocks("Qwen3.5", q.enc)
+			}
 		}
 	})
 	return q.enc, q.err

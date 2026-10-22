@@ -84,8 +84,9 @@ func tileBitIdentical(t *testing.T, armID, bm int) {
 								return e
 							}
 						}
+						kvt := r.kvIdentityTab(t, nKeys)
 						args := func(dst Buffer) []gpu.KernelArg {
-							return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(g.nH)), gpu.ArgValue(int32(g.nKV)),
+							return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), Arg(kvt), gpu.ArgValue(int32(g.nH)), gpu.ArgValue(int32(g.nKV)),
 								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(sp)), gpu.ArgValue(float32(scale)), gpu.ArgValue(int32(0)),
 								gpu.ArgValue(int32(M)), Arg(dst), sinkArg}
 						}

@@ -947,10 +947,15 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			}
 		}
 		if rows != nil {
+			r.kvStepAbort = false
 			for _, rw := range rows {
 				if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
 					return e
 				}
+			}
+			if r.kvStepAbort {
+				// a row took back blocks from a borrower that may be another row of this step: run nothing, so each row can go alone
+				return fmt.Errorf("cuda step: a borrower was stopped while the rows were mapped: %w", decoder.ErrKVPoolFull)
 			}
 		} else if e := r.kvEnsure(startPos, M); e != nil {
 			return e
@@ -1239,7 +1244,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					t = r.profTic()
 					ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 					ropeArgs := []gpu.KernelArg{
-						Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)),
+						Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)),
 						gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(hd)),
 						gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
 						gpu.ArgValue(Ly.mscale),
@@ -1282,7 +1287,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					// argument list is identical for all of them, so it is built once; the launches differ only in pipeline, grid and shared
 					// memory. Each names its pipeline field directly (see useAttnFused for why a local variable will not do).
 					attnArgs := []gpu.KernelArg{
-						Arg(qBb), Arg(r.kvK(l)), Arg(r.kvV(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
+						Arg(qBb), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
 						gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
 						// r.sinkArg(l), not ArgNull(): decode threads the gpt-oss learned sink through, and this launch must not depend on a
 						// different check declining gpt-oss.

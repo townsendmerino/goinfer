@@ -34,10 +34,11 @@ func requireCUDAResidentMRoPE(t *testing.T) *cudaResident {
 }
 
 // ropeMRopeArgs builds rope_kv_mrope_batched's argument list — the scalar rope_kv_batched prefix
-// plus the three per-row position arrays and the cumulative section boundaries.
-func ropeMRopeArgs(q, k, v, invF, kc, vc Buffer, nH, nKV, hd, startPos, rhalf, M int, mscale float32, posT, posH, posW Buffer, sec0, sec1, mode int32) []gpu.KernelArg {
+// plus the three per-row position arrays and the cumulative section boundaries. kvt is the block
+// table over kc/vc (an identity table for a plain contiguous cache).
+func ropeMRopeArgs(q, k, v, invF, kc, vc, kvt Buffer, nH, nKV, hd, startPos, rhalf, M int, mscale float32, posT, posH, posW Buffer, sec0, sec1, mode int32) []gpu.KernelArg {
 	return []gpu.KernelArg{
-		Arg(q), Arg(k), Arg(v), Arg(invF), Arg(kc), Arg(vc),
+		Arg(q), Arg(k), Arg(v), Arg(invF), Arg(kc), Arg(vc), Arg(kvt),
 		gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 		gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
 		gpu.ArgValue(mscale),
@@ -47,9 +48,9 @@ func ropeMRopeArgs(q, k, v, invF, kc, vc Buffer, nH, nKV, hd, startPos, rhalf, M
 
 // ropeScalarArgs builds rope_kv_batched's own (scalar-position) argument list — the same prefix,
 // no trailing m-RoPE fields.
-func ropeScalarArgs(q, k, v, invF, kc, vc Buffer, nH, nKV, hd, startPos, rhalf, M int, mscale float32) []gpu.KernelArg {
+func ropeScalarArgs(q, k, v, invF, kc, vc, kvt Buffer, nH, nKV, hd, startPos, rhalf, M int, mscale float32) []gpu.KernelArg {
 	return []gpu.KernelArg{
-		Arg(q), Arg(k), Arg(v), Arg(invF), Arg(kc), Arg(vc),
+		Arg(q), Arg(k), Arg(v), Arg(invF), Arg(kc), Arg(vc), Arg(kvt),
 		gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 		gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
 		gpu.ArgValue(mscale),
@@ -128,6 +129,7 @@ func TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel(t *testing.T) {
 			return e
 		}
 		kcAb, vcAb := r.af(nKeys*kvDim), r.af(nKeys*kvDim)
+		kvt := r.kvIdentityTab(t, nKeys)
 
 		qB, e := mk(q)
 		if e != nil {
@@ -158,11 +160,11 @@ func TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel(t *testing.T) {
 		ropeN := nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
 		cfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 
-		scalarArgs := ropeScalarArgs(qA, kA, vA, invFB, kcAb, vcAb, nH, nKV, hd, startPos, rhalf, M, mscale)
+		scalarArgs := ropeScalarArgs(qA, kA, vA, invFB, kcAb, vcAb, kvt, nH, nKV, hd, startPos, rhalf, M, mscale)
 		if e := r.launch(r.bRopeKV, cfg, scalarArgs...); e != nil {
 			return fmt.Errorf("rope_kv_batched: %w", e)
 		}
-		mropeArgsList := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1, 0)
+		mropeArgsList := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, kvt, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1, 0)
 		if e := r.launch(r.bRopeKVMRoPE, cfg, mropeArgsList...); e != nil {
 			return fmt.Errorf("rope_kv_mrope_batched: %w", e)
 		}
@@ -275,6 +277,7 @@ func TestRopeKVMRoPEBatched_matchesCPUReference(t *testing.T) {
 			return e
 		}
 		kcBb, vcBb := r.af(nKeys*kvDim), r.af(nKeys*kvDim)
+		kvt := r.kvIdentityTab(t, nKeys)
 		posTB, e := mki(posT)
 		if e != nil {
 			return e
@@ -290,7 +293,7 @@ func TestRopeKVMRoPEBatched_matchesCPUReference(t *testing.T) {
 
 		ropeN := nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
 		cfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-		args := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1, 0)
+		args := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, kvt, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1, 0)
 		if e := r.launch(r.bRopeKVMRoPE, cfg, args...); e != nil {
 			return fmt.Errorf("rope_kv_mrope_batched: %w", e)
 		}

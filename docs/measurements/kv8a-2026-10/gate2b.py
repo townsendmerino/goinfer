@@ -4,9 +4,14 @@ restores the checkpoint at turn 1's end), and turn 2 again on a server with resi
 /v1/chat/completions equal logprob text, or the gate fails. Writes <out>/gate2b.json (statistics and token ids, no prompt text) and
 prints a VERDICT line; exit 0 PASS, 1 FAIL, 2 VOID.
 
-  python3 gate2b.py --serve <bin> --model <gguf> --key <ids key file> --bodies <bodies-pilot dir> --out <dir>
+  python3 gate2b.py --serve <bin> --model <gguf> --key <ids key file> --bodies <bodies-pilot dir> --ids <ids.jsonl> --out <dir>
+                   [--backend cuda|metal] [--configs h20,cc] [--start I --limit N]
+
+--backend names the resident backend; a server whose decode path is not that backend's resident one voids the run (a refused Metal
+load falls back to the CPU and would otherwise be measured). --configs and --limit (pairs per config) serve the Metal one-pair probe
+(docs/measurements/kv8a-metal-2026-10/README.md); a limited run is not a gate reading and prints no verdict.
 """
-import argparse, glob, json, os, signal, subprocess, sys, time, urllib.request
+import argparse, atexit, glob, json, os, signal, subprocess, sys, time, urllib.request
 
 PORT = 18208
 BASE = f"http://127.0.0.1:{PORT}"
@@ -16,6 +21,18 @@ CONFIGS = [  # (name, ctx, session dirs under --bodies)
 ]
 MAX_NEW = 24
 MIN_TESTED = 15
+
+
+_LIVE = []  # servers started and not yet closed: stopped at exit, so a crash cannot leave one holding the model and the port
+
+
+@atexit.register
+def _stop_live():
+    for p in _LIVE:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except Exception:
+            pass
 
 
 def say(msg):
@@ -29,13 +46,20 @@ class Server:
         env = dict(os.environ)
         if cold:
             env["GOINFER_NO_RESIDENT_REUSE"] = "1"
-        argv = [a.serve, "--model", a.model, "--backend", "cuda", "--ctx", str(ctx), "--addr", f"127.0.0.1:{PORT}", "--kv-sessions", "1",
+        argv = [a.serve, "--model", a.model, "--backend", a.backend, "--ctx", str(ctx), "--addr", f"127.0.0.1:{PORT}", "--kv-sessions", "1",
                 "--ids-key-file", a.key, "--log-requests", "--log-token-ids", self.tokfile]
         self.proc = subprocess.Popen(argv, stdout=self.log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True, env=env)
+        _LIVE.append(self.proc)
         t0 = time.time()
         while time.time() - t0 < 600:
             try:
                 urllib.request.urlopen(BASE + "/v1/models", timeout=1).read()
+                self.log.flush()
+                path = [ln for ln in open(self.log.name, errors="replace") if "decode path:" in ln][-1:]
+                if not path or f"{a.backend}-resident" not in path[0]:
+                    self.close()
+                    sys.exit(f"VOID: the server is not {a.backend}-resident ({tag}): {path[0].strip() if path else 'no decode path line'}")
+                say(f"  server {tag} up in {time.time() - t0:.1f} s: {path[0].strip()}")
                 return
             except Exception:
                 if self.proc.poll() is not None:
@@ -49,6 +73,8 @@ class Server:
             self.proc.wait(timeout=60)
         except Exception:
             os.killpg(self.proc.pid, signal.SIGKILL)
+        if self.proc in _LIVE:
+            _LIVE.remove(self.proc)
         self.log.close()
         time.sleep(3)
 
@@ -88,16 +114,24 @@ def main():
     ap = argparse.ArgumentParser()
     for k in ("serve", "model", "key", "bodies", "ids", "out"):
         ap.add_argument("--" + k, required=True)
+    ap.add_argument("--backend", default="cuda")
+    ap.add_argument("--configs", default="h20,cc")
+    ap.add_argument("--start", type=int, default=0)
+    ap.add_argument("--limit", type=int, default=0)
     a = ap.parse_args()
     ids = {os.path.realpath(r["file"]): r["ids"] for r in map(json.loads, open(a.ids)) if r.get("ids")}  # KV0-H's rendering of each body
     os.makedirs(a.out, exist_ok=True)
     pairs = []
     t_all = time.time()
     for name, ctx, sessions in CONFIGS:
+        if name not in a.configs.split(","):
+            continue
         recs = []
         for s in sessions:
             fs = sorted(glob.glob(os.path.join(a.bodies, s, "*.json")))
             recs += [(s, i, fs[i], fs[i + 1]) for i in range(len(fs) - 1)]
+        if a.limit:
+            recs = recs[a.start:a.start + a.limit]
         say(f"config {name} (-ctx {ctx}): {len(recs)} pairs; warm arm")
         srv = Server(a, ctx, f"{name}-warm", cold=False)
         mine = []
@@ -139,6 +173,9 @@ def main():
     for p in bad:
         print(f"DIFF {p['config']} {p['session']}#{p['pair']} {p['route']}: sha {p['warm_sha'] == p['cold_sha']}, gen {p['warm_gen'] == p['cold_gen']}, "
               f"logprobs {p['warm_lp'] == p['cold_lp']}, cold reused {p['cold_reused']}")
+    if a.limit:
+        print(f"PROBE: a limited run ({len(pairs)} pair(s), {len(tested)} tested, {len(bad)} differ) is not a gate reading; no verdict")
+        return 0
     if len(tested) < MIN_TESTED:
         print(f"VERDICT VOID ({len(tested)} tested, under {MIN_TESTED})")
         return 2

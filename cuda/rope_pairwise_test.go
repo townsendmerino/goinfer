@@ -146,6 +146,7 @@ func pwModules(t *testing.T) (*gc.Context, *gc.Stream, *gc.Module, *gc.Module, *
 
 type pwBufs struct {
 	q, k, v, invF, kc, vc *gc.Buffer[float32]
+	kvt                   *gc.Buffer[int32] // identity block table over kc/vc
 }
 
 func pwUpload(t *testing.T, cx *gc.Context, q, k, v, invF []float32, cacheRows, kvDim int) pwBufs {
@@ -168,10 +169,12 @@ func pwUpload(t *testing.T, cx *gc.Context, q, k, v, invF []float32, cacheRows, 
 			t.Fatalf("H2D: %v", e)
 		}
 	}
+	b.kvt = gcKVIdentityTab(t, cx, cacheRows)
 	t.Cleanup(func() {
 		for _, x := range []*gc.Buffer[float32]{b.q, b.k, b.v, b.invF, b.kc, b.vc} {
 			x.Close()
 		}
+		b.kvt.Close()
 	})
 	return b
 }
@@ -230,7 +233,7 @@ func TestRopePairwiseKernels_decode(t *testing.T) {
 			run := func(fn *gc.Function) pwRef {
 				b := pwUpload(t, cx, q, k, v, invF, c.startPos+1, kvDim)
 				if e := fn.LaunchOn(bg, stream, gc.LaunchConfig1D(n, 256),
-					gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc),
+					gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc), gc.Arg(b.kvt),
 					gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
 					gc.ArgValue(int32(c.startPos)), gc.ArgValue(int32(c.ropePos)), gc.ArgValue(int32(rhalf)),
 					gc.ArgValue(c.mscale), gc.ArgValue(c.qTempScale)); e != nil {
@@ -319,7 +322,7 @@ func TestRopePairwiseKernels_batched(t *testing.T) {
 					}
 					cfg := gc.LaunchConfig{GridX: uint32((n + 255) / 256), GridY: uint32(c.M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 					if e := fn.LaunchOn(bg, stream, cfg,
-						gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc),
+						gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc), gc.Arg(b.kvt),
 						gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
 						gc.ArgValue(int32(c.startPos)), gc.ArgValue(int32(rhalf)), gc.ArgValue(int32(c.M)),
 						gc.ArgValue(c.mscale), tbArg); e != nil {
@@ -408,7 +411,7 @@ func TestRopePairwiseKernels_mrope(t *testing.T) {
 		b := pwUpload(t, cx, q, k, v, invF, c.startPos+c.M, kvDim)
 		cfg := gc.LaunchConfig{GridX: uint32((n + 255) / 256), GridY: uint32(c.M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		args := []gc.KernelArg{
-			gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc),
+			gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc), gc.Arg(b.kvt),
 			gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
 			gc.ArgValue(int32(c.startPos)), gc.ArgValue(int32(rhalf)), gc.ArgValue(int32(c.M)), gc.ArgValue(c.mscale),
 			gc.Arg(tt), gc.Arg(hh), gc.Arg(ww), gc.ArgValue(sec0), gc.ArgValue(sec1),
@@ -449,7 +452,7 @@ func TestRopePairwiseKernels_mrope(t *testing.T) {
 		b := pwUpload(t, cx, q, k, v, invF, c.startPos+c.M, kvDim)
 		cfg := gc.LaunchConfig{GridX: uint32((n + 255) / 256), GridY: uint32(c.M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		if e := fnSc.LaunchOn(bg, stream, cfg,
-			gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc),
+			gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc), gc.Arg(b.kvt),
 			gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
 			gc.ArgValue(int32(c.startPos)), gc.ArgValue(int32(rhalf)), gc.ArgValue(int32(c.M)), gc.ArgValue(c.mscale),
 			gc.ArgValue(uint64(0))); e != nil {

@@ -402,6 +402,11 @@ func TestKVPlanLine(t *testing.T) {
 			"KV plan: 4 conversations x 5057 positions", false},
 		{"an explicit -ctx is named", bannerFacts{resident: true, kvSlots: 2, ctxWindow: 8192, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4, load: loadflags.Flags{Ctx: 8192}},
 			"KV plan: 2 conversations x 8192 positions (4 asked for; --ctx 8192)", false},
+		{"a shared pool one conversation can use past its share (the 7B on the 8 GB card)",
+			bannerFacts{resident: true, kvSlots: 4, ctxWindow: 32768, kvPool: 48128, kvShare: 12032, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4},
+			"KV plan: a 48128-position pool for 4 conversations; each is guaranteed 12032, and one can use up to 32768", false},
+		{"a pool whose cap is its share reads as before", bannerFacts{resident: true, kvSlots: 2, ctxWindow: 8192, kvPool: 16384, kvShare: 8192, decodePath: "cuda-resident (int4)"},
+			config{kvSessions: 4, load: loadflags.Flags{Ctx: 8192}}, "KV plan: 2 conversations x 8192 positions (4 asked for; --ctx 8192)", false},
 		{"not resident: no line", bannerFacts{kvSlots: 0, ctxWindow: 4096, decodePath: "cpu (int4)"}, config{kvSessions: 4}, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
