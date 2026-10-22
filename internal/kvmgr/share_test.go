@@ -370,8 +370,8 @@ func TestPickSlotFor_ownRollback(t *testing.T) {
 	if got := PickSlotFor([]int{900, 0}, []int{1080, 0}, firsts, uses, nil, BlockRows); got != 1 {
 		t.Errorf("a request that diverges inside the first prompt, 180 rows given up: PickSlotFor = %d, want 1", got)
 	}
-	if got := PickSlotFor([]int{1400, 0}, lens, firsts, uses, nil, BlockRows); got != 1 {
-		t.Errorf("own rollback that keeps less than it overwrites: PickSlotFor = %d, want 1 (main's rule stands)", got)
+	if got := PickSlotFor([]int{1400, 0}, lens, firsts, uses, nil, BlockRows); got != 0 {
+		t.Errorf("own rollback that keeps less than it overwrites: PickSlotFor = %d, want 0 (in place: what it gives up is its own history)", got)
 	}
 }
 

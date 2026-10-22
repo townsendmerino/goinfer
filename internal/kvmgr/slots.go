@@ -216,7 +216,7 @@ func PickSlot(scores, lens []int, uses []uint64, busy []bool) int {
 }
 
 // FirstPrompt is the length of the first prompt of the conversation slot holds (0: none known). A request that keeps
-// all of it but its last token is that conversation rolling back its own history (PickSlotFor).
+// all of it (KeepsFirst) is that conversation rolling back its own history (PickSlotFor).
 func (a *Slots) FirstPrompt(slot int) int {
 	if s := a.seqs[slot]; s != nil {
 		return s.first
@@ -224,20 +224,26 @@ func (a *Slots) FirstPrompt(slot int) int {
 	return 0
 }
 
-// PickSlotFor is PickSlotWithin that tells a conversation's own rollback from another conversation's request:
-// firsts[i] is slot i's FirstPrompt. A request whose score reaches firsts[i] - 1 keeps that conversation's whole first
-// prompt, so it is the same conversation rolling back, and it takes the slot in place however much it gives up (on the
-// keep-at-least-as-much-as-it-overwrites rule alone). Only a request that diverges inside the first prompt, such as a
-// new conversation sharing a preamble, is held to allowance.
-func PickSlotFor(scores, lens, firsts []int, uses []uint64, busy []bool, allowance int) int {
-	own := make([]int, len(scores))
-	for i := range scores {
-		own[i] = allowance
-		if i < len(firsts) && firsts[i] > 0 && scores[i] >= firsts[i]-1 {
-			own[i] = lens[i] + 1 // no limit: the slot's own conversation
-		}
+// KeepsFirst reports whether prompt begins with the whole first prompt of the conversation slot holds. A score cannot
+// say so: it leaves the prompt's last token to compute, so a request that differs from the first prompt only in its
+// last token scores what an exact rollback to it does.
+func (a *Slots) KeepsFirst(slot int, prompt []int) bool {
+	s := a.seqs[slot]
+	if s == nil || s.first == 0 || s.first > len(s.tokens) || len(prompt) < s.first {
+		return false
 	}
-	return pickSlot(scores, lens, uses, busy, own)
+	return slices.Equal(prompt[:s.first], s.tokens[:s.first])
+}
+
+// PickSlotFor is PickSlotWithin that tells a conversation's own rollback from another conversation's request:
+// firsts[i] is slot i's FirstPrompt when the request keeps all of it (Slots.KeepsFirst), else 0. Such a request whose
+// score reaches firsts[i] - 1 (a score leaves the last token to compute) is the same conversation rolling back, and when slot i is the best-scoring one it takes it in place
+// however much it gives up: the rows it discards are its own abandoned history. Only a request that diverges inside the
+// first prompt, such as a new conversation sharing a preamble, is held to PickSlotWithin's rule and allowance.
+func PickSlotFor(scores, lens, firsts []int, uses []uint64, busy []bool, allowance int) int {
+	return pickSlot(scores, lens, uses, busy, allowance, func(i int) bool {
+		return i < len(firsts) && firsts[i] > 0 && scores[i] >= firsts[i]-1
+	})
 }
 
 // RollbackFloor is the least a window group's rollback budget can be: its base compacts in 64-token steps, so it keeps
@@ -253,14 +259,12 @@ const RollbackFloor = 448
 // one. busy (nil: none) marks slots another running generation holds; they are never picked. -1 when every slot is
 // busy.
 func PickSlotWithin(scores, lens []int, uses []uint64, busy []bool, allowance int) int {
-	all := make([]int, len(scores))
-	for i := range all {
-		all[i] = allowance
-	}
-	return pickSlot(scores, lens, uses, busy, all)
+	return pickSlot(scores, lens, uses, busy, allowance, nil)
 }
 
-func pickSlot(scores, lens []int, uses []uint64, busy []bool, allowance []int) int {
+// pickSlot is PickSlotWithin, except that a best-scoring slot for which own (nil: none) is true is taken in place
+// whatever the request gives up of it.
+func pickSlot(scores, lens []int, uses []uint64, busy []bool, allowance int, own func(int) bool) int {
 	free := func(i int) bool { return i >= len(busy) || !busy[i] }
 	best := -1
 	for i, s := range scores {
@@ -268,8 +272,11 @@ func pickSlot(scores, lens []int, uses []uint64, busy []bool, allowance []int) i
 			best = i
 		}
 	}
-	if best >= 0 && scores[best] >= lens[best]-scores[best] && lens[best]-scores[best] < allowance[best] {
-		return best
+	if best >= 0 {
+		keep, cut := scores[best], lens[best]-scores[best]
+		if (own != nil && own(best)) || (keep >= cut && cut < allowance) {
+			return best
+		}
 	}
 	for i, l := range lens {
 		if free(i) && l == 0 {

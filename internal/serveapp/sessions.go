@@ -42,6 +42,12 @@ type sessionLRU struct {
 	// never read here (its generation is writing them) until checkin. Every access to the LRU is under the caller's
 	// lock (loadedModel.sessMu), which is not held across the generation itself.
 	busy map[*decoder.Session]bool
+
+	// first is the length of the first prompt of the conversation each resident session holds, as
+	// kvmgr.Slots.FirstPrompt is a slot's: kept by a request that keeps all of it but its last token (that
+	// conversation's own continuation or rollback), set to the prompt's length by any other. A session loaded from disk
+	// or faulted back from the cold tier has none (0) before the request that takes it. pickSessionFor reads it.
+	first map[*decoder.Session]int
 }
 
 // coldSession is a demoted session: its KV lives in a .giw-kv blob on disk and its
@@ -137,14 +143,16 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	if l.size == 0 {
 		return l.newSession()
 	}
-	lists := make([][]int, len(l.order))
+	lists, firsts := make([][]int, len(l.order)), make([]int, len(l.order))
 	for i, s := range l.order {
 		if !l.busy[s] { // a busy session's tokens are being written by its own generation: never read them
-			lists[i] = s.Tokens()
+			lists[i], firsts[i] = s.Tokens(), l.first[s]
 		}
 	}
 	var s *decoder.Session
-	if i := pickSession(lists, prompt, len(l.order) < l.size); i >= 0 {
+	own := false
+	if i := pickSessionFor(lists, firsts, prompt, len(l.order) < l.size); i >= 0 {
+		own = keepsFirst(firsts[i], commonPrefix(lists[i], prompt))
 		moveToFront(l.order, i)
 		l.mark(l.order[0])
 		s = l.order[0]
@@ -169,6 +177,12 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 				}
 			}
 		}
+	}
+	if !own {
+		if l.first == nil {
+			l.first = map[*decoder.Session]int{}
+		}
+		l.first[s] = len(prompt)
 	}
 	l.checkout(s)
 	return s
@@ -214,6 +228,8 @@ func (l *sessionLRU) checkin(s *decoder.Session) {
 	delete(l.busy, s)
 	if slices.Contains(l.order, s) {
 		l.mark(s)
+	} else {
+		delete(l.first, s)
 	}
 }
 
@@ -346,6 +362,7 @@ func (l *sessionLRU) tierOut(i int) (*decoder.Session, bool) {
 	l.cold = append([]*coldSession{{tokens: append([]int(nil), s.Tokens()...), path: path}}, l.cold...)
 	l.order = append(l.order[:i], l.order[i+1:]...)
 	delete(l.touched, s)
+	delete(l.first, s)
 	l.evictColdOverflow()
 	return s, true
 }
@@ -404,6 +421,7 @@ func (l *sessionLRU) makeRoom() {
 		return
 	}
 	delete(l.touched, l.order[i]) // couldn't tier: drop the coldest idle session to free the slot
+	delete(l.first, l.order[i])
 	l.order = append(l.order[:i], l.order[i+1:]...)
 }
 
@@ -532,8 +550,9 @@ func sessionDirOK(dir string) error {
 	return nil
 }
 
-// pickSession is acquire's choice: bestExtend's candidate, unless the LRU has room for a fresh session (spare) and
-// reusing the candidate would throw away more of it than it keeps. bestExtend's floor learns the shared preamble only
+// pickSession is acquire's choice with no first prompts known (pickSessionFor): bestExtend's candidate, unless the LRU
+// has room for a fresh session (spare) and reusing the candidate would throw away more of it than it keeps (the room
+// rule). bestExtend's floor learns the shared preamble only
 // from other resident sessions, so with a single one it cannot tell a chat-template preamble from a continuation: two
 // interleaved conversations then take each other's session on every turn, each truncating the other to the preamble,
 // and the LRU never grows past one session. A fresh session costs only re-prefilling the shared lead; the truncation
@@ -541,11 +560,25 @@ func sessionDirOK(dir string) error {
 // their session and still reuse. With no room, reusing the candidate is the eviction, so it stands. -1 means take a
 // fresh session.
 func pickSession(sessions [][]int, prompt []int, spare bool) int {
+	return pickSessionFor(sessions, nil, prompt, spare)
+}
+
+// pickSessionFor is pickSession that tells a conversation's own rollback from another conversation's request:
+// firsts[i] is the length of the first prompt of the conversation session i holds (0: unknown). A candidate whose first
+// prompt the request keeps (keepsFirst) is that conversation rolling back, and it is reused however much it gives up:
+// the rows it discards are its own abandoned history. The room rule holds every other candidate.
+func pickSessionFor(sessions [][]int, firsts []int, prompt []int, spare bool) int {
 	i := bestExtend(sessions, prompt)
 	if i >= 0 && spare {
-		if keep := commonPrefix(sessions[i], prompt); keep < len(sessions[i])-keep {
+		keep := commonPrefix(sessions[i], prompt)
+		if own := i < len(firsts) && keepsFirst(firsts[i], keep); !own && keep < len(sessions[i])-keep {
 			return -1
 		}
 	}
 	return i
 }
+
+// keepsFirst reports whether a request whose common prefix with a session is keep tokens keeps the whole first prompt
+// of the session's conversation, first tokens long (0: unknown, never): kvmgr.Slots.KeepsFirst's test for the same
+// conversation. keep is the whole common prefix, so an exact rollback to the first prompt keeps all of it.
+func keepsFirst(first, keep int) bool { return first > 0 && keep >= first }
