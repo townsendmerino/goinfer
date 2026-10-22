@@ -26,6 +26,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV2 | done | — | 772b1fb2 (#26); G5-C PASS, kv2-cuda-2026-10-15.md §7 |
 | KV2-FU1 | done | — | built on branch `kv2-fu1-2026-10`, merged through `kv2-fu1-merge-2026-10` (gates re-run green on that merge with main, 2026-10-21); `TestKV2FU1_ownRollbackScheduleIndependence`, `TestKV2FU1_cpuOwnRollback`; §6, KV2 follow-up 1, readings |
 | KV2-FU2 | done | — | 11b29ba5 (#37) |
+| KV2-FU3 | done | — | in-place reuse capped to the kernel class of the prompt's cold prefill (`internal/kvmgr/share.go:ClassMap.CapInPlace`); found on main by KV4's G3b (KV4's CUDA record on branch `kv4-2026-10-21`, "Found on main, not KV4's"); `TestKV2_inPlaceCap_tiny` red without it, green with it |
 | KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
 | KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
 | KV3-E4B | open | nobara: read the registered E4B cold-TTFT run | kv3-e4b-cold-ttft-2026-10-19 |
