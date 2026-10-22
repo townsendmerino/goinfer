@@ -93,6 +93,11 @@ func (q quantMode) embeddingWith(embedInt4 bool) quantMode {
 	return q.embedding()
 }
 
+// gatherTable is the precision of a table that is only gathered by row on the host, never multiplied (Gemma 4's per-layer
+// token table): int4 at int4, whatever the head pin (EmbedInt4) says, since the pin exists for the logit GEMV and the Metal
+// head kernel, neither of which reads it (D10, docs/tasks/task-memory-campaign-2026-10.md §7).
+func (q quantMode) gatherTable() quantMode { return q.embeddingWith(true) }
+
 // int4GroupSize is the number of consecutive input features that share one f32
 // scale in the int4 path. 32 matches GGUF Q4_K's sub-block granularity — small
 // enough to keep 4-bit accuracy, large enough that the per-group scale overhead

@@ -6,6 +6,7 @@ package decoder
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -438,7 +439,47 @@ func legacyCachePath(ggufPath, quant string, embedInt4 bool, target GIWTarget) s
 	if embedInt4 {
 		label += ".e4h"
 	}
+	label += gatherTableTag(ggufPath, quant, embedInt4)
 	return base + "." + label + "." + tgt + ".giw"
+}
+
+// gatherTableTag is the name segment of a sidecar whose per-layer token table (Gemma 4's E-models) is int4 while the head
+// keeps the int8 pin, ".ple4" (quantMode.gatherTable); "" otherwise. A sidecar written before the table left the pin holds it
+// at int8 under the name without the segment, so the two are never mistaken for each other, and no legacy (unversioned) name
+// carries it, so none is adopted.
+func gatherTableTag(src, quant string, embedInt4 bool) string {
+	if q, err := parseQuant(quant); err != nil || q != quantInt4 || embedInt4 || !hasPerLayerTable(src) {
+		return ""
+	}
+	return ".ple4"
+}
+
+// hasPerLayerTable reports whether src (a .gguf or a safetensors directory) carries Gemma 4's per-layer token table, from
+// the GGUF's tensor directory or the directory's config.json. An unreadable source reads as false.
+func hasPerLayerTable(src string) bool {
+	if isDir(src) {
+		raw, err := os.ReadFile(filepath.Join(src, "config.json"))
+		if err != nil {
+			return false
+		}
+		var c struct {
+			PLE  int `json:"hidden_size_per_layer_input"`
+			Text *struct {
+				PLE int `json:"hidden_size_per_layer_input"`
+			} `json:"text_config"`
+		}
+		if json.Unmarshal(raw, &c) != nil {
+			return false
+		}
+		return c.PLE > 0 || (c.Text != nil && c.Text.PLE > 0)
+	}
+	g, err := OpenGGUFMmap(src)
+	if err != nil {
+		return false
+	}
+	defer g.Close()
+	_, ok := g.Dims("per_layer_token_embd.weight")
+	return ok
 }
 
 // freshCache reports whether the sidecar at cache is fresh for src, adopting the legacy-named file first when this
