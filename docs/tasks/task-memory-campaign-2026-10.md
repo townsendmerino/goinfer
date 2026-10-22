@@ -36,7 +36,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
-| MEM8(b) | blocked | D12 (owner): PLE-G3 read AMBIGUOUS (94.25% top-1, KL 0.033); built on branch `mem8b-ple-2026-10`, not merged | `docs/measurements/mem8b-2026-10/README.md` |
+| MEM8(b) | done | — (D12 (a), owner, 2026-10-22: shipped as built; PLE-G3 read AMBIGUOUS, 94.25% top-1, KL 0.033) | branch `mem8b-ple-2026-10`; PLE-G1, G2, G4 PASS, G3 AMBIGUOUS and shipped on the owner's word, `docs/measurements/mem8b-2026-10/README.md` |
 | MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
@@ -893,7 +893,7 @@ choice in aikit and a storage choice in ken (**D4**).
   bit-identity of the CPU fallback after a reload; (b) leave MEM4(b) in aikit's queue until MEM4(a)'s aliasing work opens
   the same files. **Recommended: (a)**, with the aikit half done on an aikit branch for the owner to tag.
 
-- **D12** (MEM8(b), asked 2026-10-22, open). PLE-G3 read AMBIGUOUS, its pre-registered parked band: with Gemma 4's
+- **D12** (MEM8(b)): **DECIDED by the owner, 2026-10-22: (a)**, ship as built: Metal's default moves to the int4 per-layer table, and `TestS9EModelBatched_tiny`'s bar moves to 0.975 with the record as its mechanism. The question as asked: PLE-G3 read AMBIGUOUS, its pre-registered parked band: with Gemma 4's
   per-layer table at int4 instead of int8, E2B on Metal agrees on 94.25% of top-1 tokens (410/435, bar 95.0%) and the mean
   KL is 0.03257 nats (bar 0.05, inside PASS). The int4 table is what CPU and CUDA already run by default. Separately, the
   tiny fixture's batched E-model pass reads 0.97980 against its 0.98 bar (`TestS9EModelBatched_tiny`, not in CI), while at

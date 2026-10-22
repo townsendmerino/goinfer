@@ -4,7 +4,7 @@ Gates: `docs/tasks/task-memory-campaign-2026-10.md`, §4 MEM8, "MEM8(b) gates" (
 Machine: MacBook Pro, M1 Pro, 16 GB, macOS 26.6.2, Go 1.27.2, darwin/arm64; the owner's desktop open; load 2.4 at 07:00.
 Checkpoint: `~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf` and its two sidecars, both on local disk.
 
-**Status: PARKED for the owner on PLE-G3 (decision D12 in the task doc's §7). Not merged.**
+**Status: shipped on the owner's decision D12 (a), 2026-10-22** (the task doc's §7): PLE-G3 read AMBIGUOUS and the owner shipped it as built; `TestS9EModelBatched_tiny`'s bar moved from 0.98 to 0.975, this record being its mechanism (the tiny fixture's batched pass reads 0.97980 with the int4 table, unmoved at real size; the nearest planted defect reads 0.911). At 0.975 the test passes and every plant stays red.
 
 | gate | reading | result |
 |---|---|---|
