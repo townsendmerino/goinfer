@@ -33,7 +33,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
 | KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
 | KV4 | active | nobara: gates registered 2026-10-21; KV4a then KV4b. Pool = the VRAM main gives KV at the same flags (D-KV4-1 (a)); only a borrower past its share is stopped, as at the context cap (D-KV4-2) (owner, 2026-10-21); L | §6; `docs/measurements/kv4-cuda-2026-10-21.md` |
-| KV4a | active | nobara: KV4a-1 storage (bit-identical), then -2 sharing by reference, -3 capacity; the flash-decode and split-KV windowed read is its G1c | `kv4-cuda-2026-10-21.md` §1, §2 |
+| KV4a | active | nobara: built (KV4a-1 to -3); G1, G3, G4 and TTFT pass; MC3 0.973 to 0.983 against 0.98 and Gemma-3-1B decode ambiguous: D-KV4-3 is the owner's; G1b real assets, G1d heavy and G3b served still to read | `kv4-cuda-2026-10-21.md` §3, §5 |
 | KV4b | open | after KV4a: f16 pools, phase 1's family groups in order, each its own commit with G5 (`auto` moves per group on G4 PASS, D7) | `kv4-cuda-2026-10-21.md` §2 G5; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
 | KV5 | blocked | KV4; takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |

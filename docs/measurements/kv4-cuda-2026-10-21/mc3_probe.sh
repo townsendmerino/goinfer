@@ -8,6 +8,6 @@ for i in $(seq $PAIRS); do
   for k in old new; do
     bin=/home/francis/goinfer-bench/kv4-bins/serve-cuda-old; [ $k = new ] && bin=$NEWBIN
     BENCH_W7_MODEL=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf GOINFER_SERVE_CPU=$bin python3 -u scripts/bench_w7_plain.py "$OUT" \
-      --clients 4 --engines goinfer --backend cuda --key ${k}4_$i --fixed-nonce --serve-args "${ARGS:-}" 2>&1 | grep aggregate
+      --clients ${CLIENTS:-4} --engines goinfer --backend cuda --key ${k}4_$i --fixed-nonce --serve-args "${ARGS:-}" 2>&1 | grep aggregate
   done
 done
