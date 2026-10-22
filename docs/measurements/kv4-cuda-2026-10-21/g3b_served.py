@@ -103,14 +103,17 @@ for i, t in enumerate(TURNS):
     finally:
         stop(p)
 
-copies = [l for l in open(log) if "cuda: kv copy:" in l and "shares rows" in l]
-for l in copies:
+lines = open(log).readlines()
+copies = [l for l in lines if l.startswith("kv share: copied")]  # serve's line, on every build
+pooled = [l for l in lines if "cuda: kv copy:" in l and "shares rows" in l]  # the pool's count, on a build with KV4a-2
+for l in copies + pooled:
     print(l.rstrip())
-m = re.search(r"rows \[(\d+), (\d+)\), (\d+) blocks; (\d+) of (\d+) full-pool blocks in use", copies[-1]) if copies else None
-ok = True
-if not m or len(copies) < 3:
-    print(f"VOID: {len(copies)} shared copies logged, want 3")
-    ok = False
+m = re.search(r"rows \[(\d+), (\d+)\), (\d+) blocks; (\d+) of (\d+) full-pool blocks in use", pooled[-1]) if pooled else None
+ok = len(copies) >= 3
+if not ok:
+    print(f"VOID: {len(copies)} copies logged, want 3")
+elif not m:
+    print("no pool count logged (a build without shared blocks): the block bound is not read")
 else:
     shared = int(m.group(2)) // 64
     prompts = [u.get("prompt_tokens", 0) for _, u in together]
