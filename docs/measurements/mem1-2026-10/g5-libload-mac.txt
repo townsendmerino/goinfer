@@ -1,0 +1,11 @@
+# MEM1-G5, 2026-10-21 18:11 PDT, worktree HEAD 7c8cb779 + the staged helper fix; Apple M1 Pro, go1.27.2
+# load average at start: { 3.11 3.52 3.27 }
+# free disk: 12Gi
+# /Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, Options{Quant:"int4"}
+before load        map[]  heap_inuse=0 MiB heap_alloc=0 MiB sys=8 MiB
+stream-weights: transcoding qwen2.5-coder-0.5b-instruct-q4_k_m.gguf → qwen2.5-coder-0.5b-instruct-q4_k_m.int4.cpu-arm64.v17.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (459 MB) in 1s: stream 1.0s, self-check 0.0s
+after load         map[]  heap_inuse=19 MiB heap_alloc=18 MiB sys=727 MiB
+after GC+free      map[]  heap_inuse=1 MiB heap_alloc=0 MiB sys=727 MiB
+python3 scripts/timing_lock.py run --shared --label mem1-g5 -- go run   int4  1.35s user 0.91s system 127% cpu 1.771 total
+# sidecar after: -rw-r--r--@ 1 francistownsend-merino  staff  481009646 Oct 21 18:11 /Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.int4.cpu-arm64.v17.giw

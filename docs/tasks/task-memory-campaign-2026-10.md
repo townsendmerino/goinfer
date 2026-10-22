@@ -26,7 +26,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM0-nobara | done | — | 33ef5a21; `docs/measurements/mem0-2026-10/README.md` |
 | MEM0-Mac | done | — (no 7B cell: the coder 7B is not on the Mac, and pulling it and writing its sidecar would take 9 of the disk's 12 GB free) | `docs/measurements/mem0-2026-10/README.md` §4 |
 | MEM0-tack | done | — | 5310f789 |
-| MEM1 | active | Mac, branch `mem1-sidecar-2026-10`: gates MEM1-G registered (§4 MEM1) | — |
+| MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
 | MEM2 | open | Mac: free the Metal tower scratch on grow, and a real `Close`; S | — |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
@@ -255,6 +255,9 @@ under the default each would transcode and write a `.giw` beside its fixture or 
 | G3 test binaries | 0 | the zero `Options` in a test binary, no hook | no file is written beside the copy | — |
 | G4 refusal | 0 | the copy in a directory made read-only | `Load` returns an error naming `DirectLoad`, as the apps' refusal names `-direct-load`, and writes nothing | running as root (the chmod does not bind): SKIP |
 | G5 tier 1 | 1, Mac | `docs/measurements/mem0-2026-10/testdata/libload.go` on `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`, `Quant: "int4"`, one run | Go heap in use after `runtime.GC` + `FreeOSMemory` ≤ 100 MiB (MEM0 §4.2 read 647 MiB on this Mac) | the sidecar was not written (the load went direct) |
+
+> **Read 2026-10-21: all six PASS** (`docs/measurements/mem1-2026-10/README.md`). Each tier-0 gate went red under a
+> planted defect. G5: 1 MiB of Go heap in use after the library load of the 0.5B at int4 on the Mac, against MEM0's 647.
 
 G5's cost: one 0.5B transcode and load, about 1–2 min wall; no timed figure, so no interleaving. Stopping rule: one
 run each; a FAIL is diagnosed, not re-run. The f32 `Options{}` cell is not run: the int4 cell answers the mechanism,

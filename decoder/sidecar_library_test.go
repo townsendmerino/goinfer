@@ -80,8 +80,9 @@ func tokenizerTinyGGUF(t *testing.T, dir string) string {
 
 // sidecarDefaultOn turns the library default on inside this test binary.
 func sidecarDefaultOn(t *testing.T) {
+	was := sidecarInTests
 	sidecarInTests = true
-	t.Cleanup(func() { sidecarInTests = false })
+	t.Cleanup(func() { sidecarInTests = was })
 }
 
 const mem1Quant = "int8int8"

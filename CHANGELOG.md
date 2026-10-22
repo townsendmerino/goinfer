@@ -15,6 +15,12 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Changes behavior for library callers on macOS and Linux. `decoder.Load` of a `.gguf` or a safetensors directory opens its
+  sidecar `.giw`**, transcoding it once beside the source, as `serve` and `chat` already did (MEM1,
+  `docs/tasks/task-memory-campaign-2026-10.md`). The weights are a mapping of that file, not a heap copy: the 0.5B at int4 holds
+  1 MiB of Go heap after a load, against 647 MiB before. A `.gguf` whose sidecar cannot be written is refused, naming the new
+  `Options.DirectLoad`, which restores the direct load. Test binaries keep the direct load. The transcode and the sidecar cache
+  moved from `internal/prequant` into `decoder` (`EnsureCachedGIW`, `TranscodeGIW`, `SidecarPath`, ...; Experimental tier).
 - **Changes behavior on macOS. The fit guard's available memory counts cached files as available** (B41). It is now the free,
   file-backed and purgeable pages (speculative read-ahead counted once, as file-backed), read through `host_statistics64` without an exec, where it was free + inactive +
   speculative + purgeable pages from `vm_stat`, which counted the active file cache as used: right after a large model ran, a load
