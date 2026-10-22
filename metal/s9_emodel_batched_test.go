@@ -143,7 +143,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 	}
 	home, _ := os.UserHomeDir()
 	base := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it")
-	if _, err := os.Stat(base + ".int4.metal.giw"); err != nil {
+	if _, err := os.Stat(decoder.SidecarPath(base+".gguf", "int4", "metal", false)); err != nil {
 		t.Skipf("no sidecar: %v", err)
 	}
 	tk, err := tokenizer.LoadGGUF(base + ".gguf")
@@ -154,7 +154,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := decoder.Load(base+".int4.metal.giw", decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 512})
+	m, err := decoder.Load(decoder.SidecarPath(base+".gguf", "int4", "metal", false), decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 512})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
