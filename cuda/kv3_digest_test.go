@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -81,23 +80,18 @@ func TestKV3_prefillDigest(t *testing.T) {
 			if e := r.stream.Sync(); e != nil {
 				return e
 			}
+			// The digest is over each layer's logical rows [0, n), read through the slot's table, so it does not depend on which pool
+			// blocks hold them. The words are hashed in memory order: for an f16 layer that is the byte stream of its n*kvDim halves.
 			for l := range r.layers {
-				kd := r.layers[l].kvDim
-				kh, vh := make([]uint16, n*kd), make([]uint16, n*kd)
-				if e := gpu.Download(r.kc[l], kh); e != nil {
+				k, v, e := r.kvRowsForTest(r.kvSlot, l, 0, n)
+				if e != nil {
 					return e
 				}
-				if e := gpu.Download(r.vc[l], vh); e != nil {
-					return e
-				}
-				var b2 [2]byte
-				for _, x := range kh {
-					binary.LittleEndian.PutUint16(b2[:], x)
-					h.Write(b2[:])
-				}
-				for _, x := range vh {
-					binary.LittleEndian.PutUint16(b2[:], x)
-					h.Write(b2[:])
+				for _, w := range [][]float32{k, v} {
+					for _, x := range w {
+						binary.LittleEndian.PutUint32(b4[:], math.Float32bits(x))
+						h.Write(b4[:])
+					}
 				}
 			}
 			return nil

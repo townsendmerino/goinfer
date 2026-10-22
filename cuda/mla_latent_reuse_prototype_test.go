@@ -91,6 +91,8 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	defer dK.Close()
 	defer dV.Close()
 	defer dCtx.Close()
+	dKVT := gcKVIdentityTab(t, cx, nKeys)
+	defer dKVT.Close()
 	for _, c := range []struct {
 		b *gc.Buffer[float32]
 		h []float32
@@ -104,7 +106,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		cfg := gc.LaunchConfig{GridX: nH, GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((nKeys + 128) * 4)}
 		if e := fn.LaunchOn(bg, stream, cfg,
-			gc.Arg(dQ), gc.Arg(dK), gc.Arg(vbuf),
+			gc.Arg(dQ), gc.Arg(dK), gc.Arg(vbuf), gc.Arg(dKVT),
 			gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(latDim)),
 			gc.ArgValue(int32(nKeys-1)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
 			gc.ArgValue(int32(M)), gc.Arg(dCtx), gc.ArgDevicePtr(0)); e != nil {
@@ -206,7 +208,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		cfg := gc.LaunchConfig{GridX: nH, GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((nKeys + 128) * 4)}
 		run := func() {
-			_ = fn.LaunchOn(bg, stream, cfg, gc.Arg(dQ), gc.Arg(dK), gc.Arg(dV),
+			_ = fn.LaunchOn(bg, stream, cfg, gc.Arg(dQ), gc.Arg(dK), gc.Arg(dV), gc.Arg(dKVT),
 				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)),
 				gc.ArgValue(int32(nKeys-1)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
 				gc.ArgValue(int32(M)), gc.Arg(dCtx), gc.ArgDevicePtr(0))

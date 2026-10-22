@@ -105,6 +105,7 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 	_ = gc.CopyHtoD(bg, invF, inv)
 	// KV caches (pre-filled synthetic; per-token k/v store is a negligible 256-float copy, omitted)
 	kc, vc := af32(nKeys*kvDim, 0.01), af32(nKeys*kvDim, 0.01)
+	kvt := gcKVIdentityTab(t, ctx, nKeys)
 	// activations / scratch
 	x := af32(H, 0.1)
 	aq, aSc := ai32(H/4), af32(1, 0.02)
@@ -148,7 +149,7 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)), gc.ArgValue(float32(1)))
 			L(fRope, cfg1D(nKV*half, 64), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)), gc.ArgValue(float32(1))) // (offset into k slice handled below in real backend; here just work)
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-				gc.Arg(qkv), gc.Arg(kc), gc.Arg(vc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(cctx))
+				gc.Arg(qkv), gc.Arg(kc), gc.Arg(vc), gc.Arg(kvt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(cctx))
 			L(fQuant, one(256, 256*4), gc.Arg(cctx), gc.ArgValue(int32(qDim)), gc.Arg(cq), gc.Arg(cSc))
 			doGemv(Wo, cq, sO, H, qDim, oOut)
 			L(fResid, cfg1D(H, 256), gc.Arg(x), gc.Arg(oOut), gc.ArgValue(int32(H)))
@@ -343,6 +344,7 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		dk := mustAlloc[float32](t, ctx, nKeys*kvDim)
 		dv := mustAlloc[float32](t, ctx, nKeys*kvDim)
 		dc := mustAlloc[float32](t, ctx, nH*hd)
+		dt := gcKVIdentityTab(t, ctx, nKeys)
 		// ERRORS ARE CHECKED, NOT DROPPED. A dropped error leaves `dc` UNWRITTEN and `got` all zeros, and the
 		// assertion then reports "attention cosine 0.000000" with no error text: a resource failure wearing a
 		// numerics bug's clothes (the failure the header of cmd/gate/gpu.go describes). A zero cosine now means the
@@ -404,7 +406,7 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 				dq.Len(), dk.Len(), dv.Len(), dc.Len())
 		}
 		if e := fAttn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc)); e != nil {
+			gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(dc)); e != nil {
 			t.Fatalf("hd=%d: attention launch (shared=%d B): %v", hd, (nKeys+128)*4, e)
 		}
 		if e := stream.Synchronize(bg); e != nil {
@@ -422,6 +424,7 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		dk.Close()
 		dv.Close()
 		dc.Close()
+		dt.Close()
 	}
 	t.Logf("glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)")
 }

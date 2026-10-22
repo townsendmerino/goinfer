@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -88,7 +87,7 @@ func TestKV16GateVsReference(t *testing.T) {
 // kv16ArmResult is one arm's teacher-forced rows for every prompt, plus what its resident said about itself.
 type kv16ArmResult struct {
 	rows       [][][]float32 // [prompt][row][vocab]
-	kvBytes    int           // layer-0 K buffer bytes
+	kvBytes    int           // layer-0 K pool bytes
 	faLaunches int
 	f16        bool
 	aa         [][]float32 // a second run of prompt 0 (the f16 arm only), for the A/A precondition
@@ -126,16 +125,14 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 		}
 		if doSurvey {
 			for l := range rf.layers {
-				kvDim := rf.layers[l].kvDim
-				kb, vb := make([]float32, K*kvDim), make([]float32, K*kvDim)
+				var kb, vb []float32
 				if e := rf.do(func() error {
 					if e := rf.stream.Sync(); e != nil {
 						return e
 					}
-					if e := gpu.Download(rf.kc[l], kb); e != nil {
-						return e
-					}
-					return gpu.Download(rf.vc[l], vb)
+					var e error
+					kb, vb, e = rf.kvRowsForTest(rf.kvSlot, l, 0, K)
+					return e
 				}); e != nil {
 					t.Fatalf("survey download layer %d: %v", l, e)
 				}

@@ -136,8 +136,9 @@ func TestAttnFused_vsExact(t *testing.T) {
 						return e
 					}
 				}
+				kvt := r.kvIdentityTab(t, nKeys)
 				args := func(dst Buffer) []gpu.KernelArg {
-					return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb),
+					return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), Arg(kvt),
 						gpu.ArgValue(int32(c.nH)), gpu.ArgValue(int32(c.nKV)), gpu.ArgValue(int32(c.hd)),
 						gpu.ArgValue(int32(c.startPos)), gpu.ArgValue(float32(scale)),
 						gpu.ArgValue(c.window), gpu.ArgValue(int32(c.M)), Arg(dst), sinkArg}
@@ -306,7 +307,7 @@ func TestAttnFused_attendsKeysBeforeStartPos(t *testing.T) {
 			pipe, shmem := r.attnFusedFor(hd)
 			cfg := LaunchConfig{GridX: nH, GridY: (M + attnFusedBM - 1) / attnFusedBM, GridZ: 1,
 				BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
-			if e := r.launch(pipe, cfg, Arg(qb), Arg(kb), Arg(vb),
+			if e := r.launch(pipe, cfg, Arg(qb), Arg(kb), Arg(vb), Arg(r.kvIdentityTab(t, nKeys)),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(startPos)), gpu.ArgValue(float32(scale)),
 				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(ob), ArgNull()); e != nil {
@@ -571,7 +572,7 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 						cfg.GridY, cfg.BlockX = uint32((c.M+bmT-1)/bmT), uint32(bmT/16*32)
 						cfg.SharedMemBytes = uint32(2 * (bnT*(c.hd+attnFusedKPAD) + c.hd*(bnT+attnFusedKPAD)))
 					}
-					if e := r.launch(pipe, cfg, Arg(qb), Arg(kb), Arg(vb),
+					if e := r.launch(pipe, cfg, Arg(qb), Arg(kb), Arg(vb), Arg(r.kvIdentityTab(t, nKeys)),
 						gpu.ArgValue(int32(c.nH)), gpu.ArgValue(int32(c.nKV)), gpu.ArgValue(int32(c.hd)),
 						gpu.ArgValue(int32(c.startPos)), gpu.ArgValue(float32(scale)),
 						gpu.ArgValue(c.window), gpu.ArgValue(int32(c.M)), Arg(ob), sinkArg); e != nil {
