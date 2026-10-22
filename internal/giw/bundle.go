@@ -85,7 +85,7 @@ const weightsMagic = "GINFW"
 // WeightsVersionFile returns the format version of the weights blob inside the bundle at path (the u32
 // after the blob's "GINFW" magic — decoder's giwVersion as it stood when the file was written), reading
 // only the two headers. For a cache that must decide whether an existing file is worth keeping before
-// paying a full load (internal/prequant's cacheFresh).
+// paying a full load (decoder's cacheFresh).
 func WeightsVersionFile(path string) (uint32, error) {
 	f, err := os.Open(path)
 	if err != nil {

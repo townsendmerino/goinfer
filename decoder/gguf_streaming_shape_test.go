@@ -14,7 +14,7 @@ import (
 // per-layer: named "blk.{i}." + something, never a bare/model-level name.
 //
 // gpt-oss's closure is also proven byte-identical to the resident path on a real fixture (decoder/testdata/gptoss_tiny.gguf,
-// internal/prequant's TestGptOss_streamedMatchesResident). laguna, granite (the Mamba-2+MoE hybrid, arch.granite, not the
+// TestGptOss_streamedMatchesResident). laguna, granite (the Mamba-2+MoE hybrid, arch.granite, not the
 // plain dense Granite family gguf_granite_permute_test.go covers), nemotron and llama4 have no comparable GGUF fixture in
 // this repo, so this test is the structural half of the proof: it parses the source and checks the invariant directly, the
 // technique stream_test.go's TestTranscode_writesViaTempThenRenames uses for a property real execution cannot force. The

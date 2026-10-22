@@ -127,7 +127,14 @@ type gvDefect struct {
 
 func (a *gridVAccel) Name() string { return "metal" }
 
-func (a *gridVAccel) Close() error { return nil }
+// Close frees the tower's device memory; a forward after it is an error.
+func (a *gridVAccel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.closeDevice()
+	a.blocks, a.cap, a.segCap = nil, 0, 0
+	return nil
+}
 
 func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64) (*gridVAccel, error) {
 	if heads <= 0 || hidden%heads != 0 || (hidden/heads)%2 != 0 {
@@ -253,8 +260,13 @@ func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
 	return a, nil
 }
 
-func (a *gridVAccel) grow(np, maxSeg int) {
+// grow sizes the scratch for np patches and segments of up to maxSeg, releasing what it replaces.
+func (a *gridVAccel) grow(np, maxSeg int) error {
+	if err := a.open(); err != nil {
+		return err
+	}
 	if np > a.cap {
+		a.release(&a.x, &a.xn, &a.pt, &a.pos, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.f1, &a.f2, &a.ropeCos, &a.ropeSin)
 		H, I := a.hidden, a.inter
 		n := func(cols int) Buffer { return a.d.NewBufferLen(np * cols) }
 		a.x, a.xn, a.pt, a.pos = n(H), n(H), n(a.patchDim), n(H)
@@ -264,11 +276,13 @@ func (a *gridVAccel) grow(np, maxSeg int) {
 		a.cap = np
 	}
 	if maxSeg > a.segCap {
+		a.release(&a.qh, &a.kh, &a.vh, &a.sc, &a.vt, &a.ob)
 		H, B := a.hidden, min(eg2Block, maxSeg)
 		a.qh, a.kh, a.vh = a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H)
 		a.sc, a.vt, a.ob = a.d.NewBufferLen(B*maxSeg), a.d.NewBufferLen(a.hd*maxSeg), a.d.NewBufferLen(B*a.hd)
 		a.segCap = maxSeg
 	}
+	return nil
 }
 
 // linear runs out = x·Wᵀ (+ bias) over rows.
@@ -354,7 +368,9 @@ func (a *gridVAccel) hiddenLocked(pixels []float32, gridTHW [][3]int) ([]float32
 	if np == 0 || len(pixels) != np*a.patchDim {
 		return nil, fmt.Errorf("metal: %d pixel values for %d patches of %d", len(pixels), np, a.patchDim)
 	}
-	a.grow(np, maxSegment(segs))
+	if err := a.grow(np, maxSegment(segs)); err != nil {
+		return nil, err
+	}
 	copy(a.pt.Floats()[:np*a.patchDim], pixels)
 	cos, sin := a.ropeTables(gridTHW)
 	if err := a.stageRope(cos, sin, np); err != nil {

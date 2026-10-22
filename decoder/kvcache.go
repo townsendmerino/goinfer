@@ -352,10 +352,18 @@ func (c *KVCache) enableRings(window int, isGlobal func(int) bool) {
 	}
 }
 
-// setQuant switches the cache to int8 (kvI8) or f16 (kvqF16) KV storage. Global (append-forever) layers get parallel arrays;
-// ring layers inherit the mode via enableRings (call setQuant FIRST). f32 default leaves everything bit-exact.
+// setQuant switches the cache to int8 (kvI8) or f16 (kvqF16) KV storage. Global (append-forever) layers get parallel arrays
+// and give up any f32 capacity (left empty and non-nil, as a restored KV-shared layer is); ring layers inherit the mode via
+// enableRings (call setQuant FIRST). f32 default leaves everything bit-exact.
 func (c *KVCache) setQuant(q kvQuant, capHint int) {
 	c.quant = q
+	if q != kvqF32 {
+		for l := range c.numLayers {
+			if cap(c.keys[l]) > 0 || cap(c.vals[l]) > 0 {
+				c.keys[l], c.vals[l] = []float32{}, []float32{}
+			}
+		}
+	}
 	if q == kvqF16 {
 		c.keysH = make([][]uint16, c.numLayers)
 		c.valsH = make([][]uint16, c.numLayers)

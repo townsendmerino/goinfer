@@ -26,8 +26,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM0-nobara | done | — | 33ef5a21; `docs/measurements/mem0-2026-10/README.md` |
 | MEM0-Mac | done | — (no 7B cell: the coder 7B is not on the Mac, and pulling it and writing its sidecar would take 9 of the disk's 12 GB free) | `docs/measurements/mem0-2026-10/README.md` §4 |
 | MEM0-tack | done | — | 5310f789 |
-| MEM1 | open | either box: the `decoder.Options` sidecar field, on by default (D1, owner 2026-10-21); M | — |
-| MEM2 | open | Mac: free the Metal tower scratch on grow, and a real `Close`; S | — |
+| MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
+| MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
 | MEM4(b) | open | either box: drop the towers' host copy after attach, with a lazy reload on a CPU fallback (D2, owner 2026-10-21) | — |
@@ -44,18 +44,24 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
 | MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
 | MEM12-scratch | open | either box: MoE output, logits and sampler scratch, with tier-0 counters; M | — |
-| MEM12-f32res | open | either box: drop the f32 capacity in `setQuant` when the storage form changes (from cpu-kv-f16's F4 c); S, then refresh the parity hashes | — |
+| MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
+| MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
-| MEM13-tokenizer | open | either box: uint64 rank keys, a size hint, a typed reader; S | `mergeRank` |
+| MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
 | MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
-| MEM13-heapquant | open | after MEM1 | — |
+| MEM13-heapquant | moved | D8a-build and D8b-build below (D8 decided: build both) | §4 MEM13, "Heap-only quant, after MEM1" |
+| D8a-build | done | — | branch `d8a-single-copy-2026-10`; D8A-G1..G4 PASS, `docs/measurements/d8a-2026-10/README.md` |
+| D8b-build | done | — | branch `d8b-q4k-giw-2026-10` at v17 (D9); D8B-G1..G4 PASS, `docs/measurements/d8b-2026-10/README.md` |
+| D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges | — |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
 | MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
 | MEM17 | open | aikit, then ken: `chunk.Chunk` as a file and a byte range through a mapping; ken stores chunks that way (D4, owner 2026-10-21); an aikit minor bump | `chunk.Chunk.Text` |
 | ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |
 | D1–D4 | done | decided 2026-10-21 | the status block above |
+| D8 | done | — | owner, 2026-10-21: build both halves (§7) |
+| D9 | done | — | owner, 2026-10-21: stay at v17 (§7) |
 | D5 | moved | O3 (parked, defer) | — |
 | D6, D7 | done | — | aikit 5e4d3c5, a15bfa9 |
 
@@ -241,6 +247,28 @@ the sidecar by default as the apps do.
 stated bound and the weights report mmap-aliased; logits byte-identical to the internal path. Tier 1: 0.5B footprint
 after load, library path before vs after.
 
+**Gates, registered 2026-10-21 before the code (MEM1-G).** The shape built: `decoder.Options.DirectLoad` (zero value: the
+sidecar), and the sidecar machinery moved from `internal/prequant` into `decoder` (prequant imports decoder, so `Load`
+cannot reach it where it was; prequant keeps its API as wrappers). A test binary's zero `Options` keeps the direct load
+(`testing.Testing()`, the `swapguard` precedent): the ~300 test files that load a `.gguf` test the direct path today, and
+under the default each would transcode and write a `.giw` beside its fixture or real checkpoint.
+
+| gate | tier | instrument | PASS iff | void |
+|---|---|---|---|---|
+| G0 production default | 0 | a non-test program (`go run`) loads a temp copy of `testdata/glm-tiny.gguf` with `Options{Quant: "int8int8"}` | the sidecar `SidecarPath` names exists beside the copy afterwards, and the program's greedy tokens equal the in-process load of that sidecar | the fixture is absent (a SKIP, counted as a failure here) |
+| G1 library default | 0 | in-package, the test-binary default turned off by a test hook; same copy and options | the model is the mapped `.giw` (its source is the sidecar, its mapping non-nil); a second load does not transcode (the sidecar's mtime unchanged); logits byte-identical to `Load(EnsureCachedGIW(...))`, the app path's two steps | — |
+| G2 opt-out | 0 | `Options{DirectLoad: true}` on the copy | no file is written beside it and the model is a heap load (no mapping) | — |
+| G3 test binaries | 0 | the zero `Options` in a test binary, no hook | no file is written beside the copy | — |
+| G4 refusal | 0 | the copy in a directory made read-only | `Load` returns an error naming `DirectLoad`, as the apps' refusal names `-direct-load`, and writes nothing | running as root (the chmod does not bind): SKIP |
+| G5 tier 1 | 1, Mac | `docs/measurements/mem0-2026-10/testdata/libload.go` on `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`, `Quant: "int4"`, one run | Go heap in use after `runtime.GC` + `FreeOSMemory` ≤ 100 MiB (MEM0 §4.2 read 647 MiB on this Mac) | the sidecar was not written (the load went direct) |
+
+> **Read 2026-10-21: all six PASS** (`docs/measurements/mem1-2026-10/README.md`). Each tier-0 gate went red under a
+> planted defect. G5: 1 MiB of Go heap in use after the library load of the 0.5B at int4 on the Mac, against MEM0's 647.
+
+G5's cost: one 0.5B transcode and load, about 1–2 min wall; no timed figure, so no interleaving. Stopping rule: one
+run each; a FAIL is diagnosed, not re-run. The f32 `Options{}` cell is not run: the int4 cell answers the mechanism,
+and an f32 sidecar writes ~2 GB beside the model for no new information.
+
 ### MEM2 · Metal tower scratch: free what grows, and close (S)
 
 **Problem (checked).** The Metal tower accelerators reassign their buffers on growth without releasing the old ones —
@@ -257,6 +285,35 @@ resident (or `Close` wired into unload); optionally a patch ceiling with per-seg
 
 **Gates.** Tier 0: device bytes live after N grows equal the last capacity; after `Close`, zero (mutation: drop the
 release, red). Tier 1: one 4K image turn then unload, Metal footprint returns to the pre-load figure.
+
+**MEM2 gates, registered 2026-10-21 before the code (MEM2-G).** The build: each Metal tower accelerator (the Gemma 4
+vision and audio towers, EmbeddingGemma 2's text encoder, and the grid base under the Qwen3.5+, GLM-OCR, SigLIP and
+Qwen2.5-VL towers) releases the scratch a `grow` replaces, and the rope tables EmbeddingGemma 2's cache drops; `Close`
+waits out the forward in flight (the accelerator's lock), releases every buffer and object on the accelerator's own
+device ledger, and is idempotent; a forward after `Close` is an error. The SigLIP and Qwen2.5-VL resident wrappers'
+`Close` closes their accelerator (aikit's `Encoder.Close` already calls it). serve's unload (`closeEntryNatives`)
+closes the Gemma 4 vision tower, the Qwen3.5+ and GLM-OCR towers' accelerators and the Gemma 4 audio accelerator.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| MEM2-G1 grow | 0, Mac | each of the seven towers on its committed tiny fixture: accelerator A runs three inputs of increasing size, accelerator B the same three largest first, so B grows once; the device ledger's buffer count (`LedgerLen`) and Metal's own allocated size (`CurrentAllocatedSize`, net of the reading before each build) | A's ledger count equals B's exactly, A's allocated size is within 64 KiB of B's, and A's output at every size is byte-equal to B's |
+| MEM2-G2 close | 0, Mac | the same seven, after `Close` | the ledger reads (0, 0); Metal's allocated size is back within 64 KiB of its reading before the build; a second `Close` returns nil; a forward after `Close` returns an error |
+| MEM2-G3 unload | 0, any | serve's admin unload through the real drain, an entry holding a counting fake Gemma 4 tower, Qwen3.5+ and GLM-OCR accelerators and a Gemma 4 audio accelerator | each fake is closed exactly once and the entry holds none afterwards; an entry that never built one closes nothing |
+| MEM2-G4 tier 1 | 1, Mac | the Qwen3-VL-2B tower (`~/models/qwen3-vl-2b-instruct`) on Metal, float32, in-process: a 1080p grid, then a 3840×2160 grid, then `Close`; Metal's allocated size at each step | after the 4K forward the allocated size is the weights plus one 4K scratch (within 1%: the 1080p scratch is gone, against main, where it stays); after `Close` it is back within 16 MiB of the reading before the build |
+
+Planted defects, each run once on the committed tree and reverted: the release dropped from the grid tower's `grow` (G1
+red), `Close` left a no-op (G2 red), and one of serve's new closes dropped (G3 red). The existing matches-CPU gates of
+every tower (`TestG4VMetal_matchesCPU`, `TestGridVisionMetal_matchesCPU`, `TestS3Towers_tiny`, `TestG4AMetal_matchesCPU`,
+`TestEG2Metal_matchesCPU`) stay green. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for
+G1–G3; about 2 min for G4 (a 32,400-patch tower forward; not a timed run, so it holds the timing lock shared).
+
+> **Read 2026-10-21: G2–G4 PASS; G1 FAILED as registered on its byte cross-check and PASSES as amended**
+> (`docs/measurements/mem2-2026-10/README.md`). The ledger counts matched on all seven towers; Metal's own reading was
+> 256 KiB over on the process's first Gemma 4 vision build (present before any forward, absent on a second build) and
+> 128 KiB over on EmbeddingGemma 2 with the same buffers (suballocation). **Amendment, after the reading:** each tower is
+> built and closed once first, and G1's byte bar is 256 KiB; G2's stays 64 KiB. G4: Qwen3-VL-2B holds one 4K scratch
+> (2622.5 MiB) after 1080p then 4K and returns to +0.3 MiB after `Close`; main strands 665.5 MiB and keeps 3875.4 MiB
+> after `Close`. All three plants red.
 
 ### MEM3 · aikit audio loaders hold their checkpoint and can close it (S) — SHIPPED in aikit v1.71.0
 
@@ -473,6 +530,28 @@ consider off-heap (anonymous-mmap) arenas for KV and session scratch, or a pacin
 **Gates.** Tier 0: `testing.AllocsPerRun` / bytes allocated per decode token and per verify round fall to the stated
 bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
 
+**MEM12-f32res gates, registered 2026-10-21 before the code (F32R-G).** The build: a CPU cache that stores K/V as f16 or
+int8 reserves no f32 capacity. `NewCache` passes no f32 hint to `NewKVCache` when it will call `setQuant`, and `setQuant`
+replaces any f32 capacity the cache holds with an empty, non-nil slice (the snapshot restore keeps an empty slice non-nil),
+so its own callers cannot leave one either. CPU KV pricing (`decoder/residentneed.go:Model.ResidentKVBytes`) already
+counts only the quantized bytes, so nothing there moves. Tier 0 answers it: the term is a reservation, so its size is a
+counter, and its residency (an untouched `make` on fresh pages may never be resident) is not the question; its weight in
+the Go heap's accounting, which paces the collector, is.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| F32R-G1 bytes | 0 | `llama-tiny` and `gemma2-tiny` (its global layers append, its local ones ring), each with f16 and with int8 KV where the family allows it, and f32: `NewCache(512)`; every layer's `cap` of the f32 and quantized K/V slices; the bytes `NewCache(512)` allocates over `NewCache(0)` (`runtime.MemStats.TotalAlloc`, GC off) | under f16 and int8 every f32 K/V capacity is 0 and the quantized ones are 512 × the layer's KV width, as before; under f32 the f32 capacities are unchanged; and the bytes over `NewCache(0)` are within 1% of the quantized reservation alone (on main they also carry the f32 reservation) |
+| F32R-G2 identity | 0 | the f16 and int8 KV tests (`TestKVF16_*`, `TestKVI8_*`), the prefix- and session-share tests, then `scripts/refresh_parity_hashes.sh` | all PASS (not skip); the parity refresh is green |
+
+Planted defect, run once on the committed tree and reverted: `setQuant` keeping the f32 capacity with `NewCache` still
+passing the hint (G1 red). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1, about 4
+min for the parity refresh.
+
+> **Read 2026-10-21: both PASS** (`docs/measurements/mem12-f32res-2026-10/README.md`). The hint costs the quantized
+> reservation to the byte; on the tree before, an f16 cache's hint cost three times its own storage. G2's three heavy
+> int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
+> and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
+
 ### MEM13 · Small heap items (S each)
 
 | item | where | bytes | fix |
@@ -482,6 +561,98 @@ bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
 | feature cache not priced | `internal/serveapp/feature_cache.go:featureCacheBudget` | 256 MiB per vision model | count it in the fit plan, or size it from free memory |
 | token bytes per adapter | `internal/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
 | heap-only quant | q4k (phi3's default on CPU/CUDA) has no `.giw` form; on the arm64 heap path o_proj, down_proj and experts keep the dual copy even with `Backend: "cpu"` | model-sized | after MEM1, decide whether the heap path still matters |
+
+**D8b-build gates, registered 2026-10-21 before the code (D8B-G).** The build: a `.giw` tensor kind 7 for a native Q4_K
+matrix (the header, then the raw super-blocks, aligned and aliased from the mapping through `linalg.WrapQ4K`), the
+weights format version 17 → 18 (every sidecar of an older version is rebuilt on its next load, as the version rule
+already does), the writer no longer refusing q4k, a q4k `.gguf` routed to its sidecar by `decoder.Load`'s default and
+by `internal/modelload` (q4k leaves the direct-only list for a `.gguf`; a safetensors directory at q4k stays direct), and
+a q4k bundle's per-32 activation group stamped from its baked quant label when `Options` does not set it.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D8B-G1 round trip | 0 | a one-layer llama `.gguf` written by the test with Q4_K attention and MLP tensors (`q4kTestMat`'s blocks; the table f32), loaded at q4k directly and through `TranscodeGIW(q4k)` then `Load` of the bundle, `Backend: "cpu"` | the bundle's Q4_K tensors are kind 7, aliased from the mapping (no heap copy of their bytes); the logits of an 8-token prompt token by token and 8 greedy tokens are byte-equal between the two loads |
+| D8B-G2 routing | 0 | `decoder.Load` (default on, the test hook) and `modelload.Plan`/`Load` on the same q4k `.gguf` | both open the q4k sidecar; a safetensors directory at q4k still loads directly |
+| D8B-G3 version | 0 | the existing version tests (`TestEnsureCachedGIW_olderFormatIsRebuiltOnce` and its siblings) at version 18, and a kind-7 record read by a reader of the previous version's rules | green, and a v17 file is rebuilt once |
+| D8B-G4 tier 1 | 1, Mac | `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` at `Quant: "q4k"`, `Backend: "cpu"`: the direct load against the sidecar load, one run each: Go heap in use after `runtime.GC` + `FreeOSMemory`, and 16 greedy tokens | tokens equal; the sidecar load's heap ≤ 0.25 × the direct load's |
+| D8B-cuda | — | nobara's cell, ledger row D8b-cuda | not run here |
+
+> **Amended during the build, before any verdict.** The kind is **8**: kind 7 was a pre-v16 kind (`decoder/serialize.go`'s
+> kind list). The **version stays 17**: `docs/giw-bundles.md` § "From v17: a new encoding needs no new version" names
+> q4k's form as the case that needs none (an older build refuses only the tensor it cannot read and rebuilds that
+> sidecar), and a bump re-transcodes every cached sidecar on both boxes. "A format version" was this doc's own D8 wording,
+> written before that rule was read, so the version was put back to the owner as **D9** (§7); he chose v17 the same day. D8B-G3 then reads: the version tests green at 17, and a kind-8 tensor refused by name by a reader
+> that does not know kind 8.
+
+> **Read 2026-10-21: all four PASS at v17** (`docs/measurements/d8b-2026-10/README.md`): the round trip byte-equal; the
+> 0.5B's heap 583.6 MiB direct → 1.7 MiB through the q4k sidecar, same tokens; main's reader refuses kind 8 by name.
+
+Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1–G3; about 2 min for G4 (one
+0.5B q4k transcode, ~0.5 GB on disk). Plants: kind 7 written as an empty record (G1 red); the routing left direct (G2 red).
+
+**D8a-build gates, registered 2026-10-21 before the code (D8A-G).** The build: under `Backend: "cpu"` (the stated promise
+`decoder/weightmat.go:wantsCanonicalInt4` reads), the int4 layer tensors outside the batched Q/K/V/gate/up dispatch and the
+embedding tables (`o_proj`, `down_proj`, routed and shared experts, and the router and family-specific layer tensors in the
+same class, the one `quantizeWMSkipRow4` already names) are built as one row4 copy where `linalg.Int4Row4Usable` accepts the
+shape, through `repackedOnlyOrCanonical`, as Q/K/V/gate/up already are. The reading behind it (aikit v1.71.0,
+`linalg/weightmat_row4_arm64.go`): when a row4 layout is present, `WeightMat.matmulBTW4A8Q` dispatches to it at every M,
+grouped activations included, so the canonical copy of these tensors is never read by a CPU kernel; they never reach
+`matmulW4A8Batch`. amd64 is unchanged (no row4 there). Phi-3's fused-split tensors are batched-dispatch tensors and stay out.
+The `.giw` writer refuses a repacked-only int4 tensor by name instead of writing it as an empty f32 record (it needs the
+canonical bytes; a `Backend: "cpu"` heap model already reaches that with Q/K/V/gate/up today).
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D8A-G1 bytes | 0, arm64 | every tracked tiny fixture under `testdata/` and `decoder/testdata/` that `Load` reads as a text model, at int4, `Backend: "cpu"` against `Backend: ""` | every in-class int4 tensor whose shape row4 accepts is row4-only (`Int4Layout() == "row4"`), and its bytes are the row4 bytes alone; ≥ 20 families load and ≥ 4 of them are MoE, else the gate is void |
+| D8A-G2 bit-identity | 0, arm64 | the same loads: the logits of an 8-token prompt token by token, and 8 greedy tokens through `Generate` (batched CPU prefill) | byte-equal between `Backend: "cpu"` and `Backend: ""` on every family |
+| D8A-G3 writer | 0 | `SerializeWeights` of a `Backend: "cpu"` int4 tiny model | an error naming the repacked-only tensor; no bytes claimed written |
+| D8A-G4 tier 1 | 1, Mac | `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`, `DirectLoad`, `Backend: "cpu"`, int4: Go heap in use after `runtime.GC` + `FreeOSMemory`, and 16 greedy tokens, main against the branch, one run each | the heap falls by ≥ 50 MiB (the arithmetic canonical bytes of `o_proj` and `down_proj`: 24 × (896·896 + 896·4864)/2 × 17/16 ≈ 63 MiB), and the tokens are equal |
+
+> **Read 2026-10-21: all four PASS** (`docs/measurements/d8a-2026-10/README.md`): 40 families, 15 of them MoE, one copy
+> and byte-equal logits; the 0.5B's heap 522.0 → 455.3 MiB under `Backend: "cpu"`, same tokens. Both plants red.
+
+Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1–G3; about 1 min for G4. The planted
+defects (a canonical copy kept; a row4 tile path forced off) are run once each and must turn G1 or G2 red.
+
+**MEM13-tokenizer gates, registered 2026-10-21 before the code (TK-G).** The build: merge ranks keyed by the two pieces'
+ids packed in a uint64 (a merge whose piece is not in the vocabulary keeps a string key, so no merge is lost), the merge
+loop carrying each node's id, a size hint on the GGUF path's rank map, and a typed metadata reader in `tokenizer` that
+walks the GGUF key-value section once and decodes only the keys the tokenizer reads, each to its own type, instead of
+aikit's `map[string]any` of boxed values. Fixture: the committed `tokenizer/testdata/qwen2-0.5b-coder-meta.gguf` (Qwen's
+151,646-token vocabulary and its merges), and the other two committed tokenizer GGUFs for identity.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| TK-G1 identity | 0 | the `tokenizer` package's tests; a differential test that the typed reader returns what aikit's reader returns for every key the tokenizer reads, on each committed tokenizer GGUF; token ids of a fixed corpus (English, code, CJK, emoji, digits, whitespace runs) on each committed tokenizer GGUF, pinned from `main` before the change | every test passes with no new skip; every key equal; every id equal |
+| TK-G2 memory | 0 | `LoadGGUF` of the Qwen fixture in a test: bytes allocated by the load (`TotalAlloc` delta) and heap kept with the tokenizer alive (`HeapAlloc` after `runtime.GC`, less the same before), each the median of 5 loads, read on `main` and on the branch | allocated ≤ 0.70 × main's, and kept ≤ main's − 3 MiB |
+| TK-G3 encode speed | 0, by day | a new `BenchmarkEncode` (the TK-G1 corpus, Qwen fixture), built as a test binary from `main` plus the benchmark file and from the branch, run A B B A × 3 (`-benchtime 2s`), one at a time under the timing lock | the median of the six new/old ns/op ratios ≤ 1.02 (encode no more than 2% slower) |
+
+> **Read 2026-10-21: all three PASS** (`docs/measurements/mem13-tokenizer-2026-10/README.md`): a load allocates 24.36 MiB
+> against 88.58 and keeps 15.32 against 24.61 (two GCs; the instrument was fixed before the verdict, as the record says);
+> encode 0.9935 of main's time.
+
+Void: a TK-G3 cell whose 1-minute load average is above 4.0 at its start (CLAUDE.md's heavy-load rule) is re-run in its
+place. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about 2 min for G3.
+
+**Heap-only quant, after MEM1 (read 2026-10-21, code at `58cd3021`).** With MEM1 merged, a load builds weights in the heap
+only when it is asked to or has no `.giw` form: `Options.DirectLoad` (the apps' `-direct-load`), a q4k `.gguf`, a
+safetensors directory with a LoRA or at bf16/f16, a platform other than darwin and linux, and test binaries. The item has
+two halves, and the reading separates them:
+
+- **The arm64 dual copy is now opt-in.** It is `decoder/weightmat.go:wantsRow4Fallback`'s CPU-fallback safety net on the
+  heap path; the sidecar path never builds it (a `.giw` is mapped and gets no row4 copy). MEM0 §4.2 measured what it costs
+  where it applies: arm64's int4 library load held 647 MiB on the 0.5B and 1,854 on the 1.5B, against amd64's 454 and
+  1,150 (42–61% more; `Backend` empty, so every projection kept both forms). After MEM1 the same library load holds 1 MiB
+  (`docs/measurements/mem1-2026-10/README.md`). Only a caller who sets `DirectLoad` pays it, and that caller asked for
+  the heap build.
+- **q4k still has no `.giw` form, so phi3 on the CPU or CUDA is still a heap load by default.** `internal/modelload`'s
+  `activationSafeQuant` picks q4k for a phi3 `.gguf` on the CPU or CUDA (phi3 is the only family
+  `decoder.ActivationQuantHazard` names), and q4k routes direct. Phi-3-mini's `.gguf` is 2.39 GB, and the heap build
+  should hold about that (Q4_K tensors wrapped exact, the rest int8; arithmetic, not measured). On Metal, phi3 loads int8int8 through its sidecar and is not
+  affected.
+
+So the dual-copy half has no default caller left, and the q4k half is one family on two backends. **D8** (§7) asks which
+of them to build.
 
 ## 5. The aikit items
 
@@ -585,6 +756,21 @@ choice in aikit and a storage choice in ken (**D4**).
   under a real cleanup.
 - **D7** (MEM16): **DECIDED 2026-10-17** — word-embedding tables load native-precision and mapped; f16/int8 heap tables
   are opt-ins.
+
+- **D8** (MEM13-heapquant): **DECIDED by the owner, 2026-10-21: build both**, against the recommendations below. (a) single-copy
+  weights for `o_proj`, `down_proj` and experts under `Backend: "cpu"` on arm64, every CPU kernel that reads them taking
+  the single copy, gated on bytes and bit-identity; (b) a `.giw` form for q4k, a new tensor kind and a format version, so
+  phi3 on the CPU and CUDA maps too. Order: (a), then (b); (b)'s CUDA cell is nobara's. The question as asked: (a) the arm64 dual copy on the heap path: close it now that the heap path is
+  opt-in (recommended), or build row4-only `o_proj`/`down_proj`/experts under `Backend: "cpu"` (S–M: every CPU kernel
+  that reads them must take row4-only, gated on bytes and bit-identity)? (b) q4k: give it a `.giw` form, a new tensor kind
+  and a format version (M–L; phi3 on the CPU and CUDA then maps too), or leave phi3's CPU/CUDA load on the heap until a
+  user meets it (recommended: one family, and its Metal load already maps)?
+
+- **D9** (D8b-build): **DECIDED by the owner, 2026-10-21: (a), stay at v17.** The question as asked: the `.giw` format version for q4k's new kind 8. (a) **Stay at v17**, as
+  `docs/giw-bundles.md` § "From v17" prescribes for a new encoding: only q4k sidecars are new, and nothing else rebuilds
+  (recommended). (b) **Bump to v18**, as D8's wording said: every cached sidecar on both boxes re-transcodes once on its
+  next load (each about the model's size on disk; the Mac is at 97% disk), with nothing gained that (a) lacks. The
+  branch is built at v17; (b) is a one-line change.
 
 ## 8. Sequencing
 

@@ -63,6 +63,8 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
+    Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
     Scan("decoder", "TestStreamableFamilyClosures_onlyReadPerLayerTensors", F("decoder/gguf.go")),
     Scan("decoder", "TestEmbedInt4_noLoaderPinsTheHeadItself", NT("decoder")),
@@ -115,8 +117,6 @@ SCANS = [
     Scan("internal/fitcmd", "TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn", F("cuda/resident.go", "internal/fitcmd/fit.go")),
     Scan("internal/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/fitcmd/fit.go")),
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
-    Scan("internal/prequant", "TestTranscode_writesViaTempThenRenames", F("internal/prequant/prequant.go")),
-    Scan("internal/prequant", "TestTranscodeDir_writesViaTempThenRenames", F("internal/prequant/prequant.go")),
     Scan("internal/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("examples/*/main.go", "docs/use-from-go.md")),

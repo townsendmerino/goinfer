@@ -1,0 +1,30 @@
+== branch
+=== RUN   TestKVI8_snapshotRoundtrip
+    kvi8_test.go:203: snapshot v2 (int8 + ring) round-trip: next-token logits bit-identical (151936-dim, 614441-byte blob)
+--- PASS: TestKVI8_snapshotRoundtrip (3.00s)
+=== RUN   TestKVI8_genParity
+    kvi8_test.go:267: int8 KV vs f32 (95 tokens): per-step argmax agree 89.5%, avg cosine 0.98859
+    kvi8_test.go:272: avg per-step logit cosine 0.98859 < 0.99
+--- FAIL: TestKVI8_genParity (2.20s)
+=== RUN   TestKVI8_batchedPrefill
+    kvi8_test.go:326: batched int8 prefill vs batched f32 (95 tokens): argmax 89.5%, avg cosine 0.98859
+    kvi8_test.go:331: batched int8 prefill avg cosine 0.98859 < 0.99
+--- FAIL: TestKVI8_batchedPrefill (0.62s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	6.224s
+FAIL
+== origin/main 074775f7
+=== RUN   TestKVI8_snapshotRoundtrip
+    kvi8_test.go:203: snapshot v2 (int8 + ring) round-trip: next-token logits bit-identical (151936-dim, 614441-byte blob)
+--- PASS: TestKVI8_snapshotRoundtrip (1.93s)
+=== RUN   TestKVI8_genParity
+    kvi8_test.go:267: int8 KV vs f32 (95 tokens): per-step argmax agree 89.5%, avg cosine 0.98859
+    kvi8_test.go:272: avg per-step logit cosine 0.98859 < 0.99
+--- FAIL: TestKVI8_genParity (2.21s)
+=== RUN   TestKVI8_batchedPrefill
+    kvi8_test.go:326: batched int8 prefill vs batched f32 (95 tokens): argmax 89.5%, avg cosine 0.98859
+    kvi8_test.go:331: batched int8 prefill avg cosine 0.98859 < 0.99
+--- FAIL: TestKVI8_batchedPrefill (0.70s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	5.282s
+FAIL

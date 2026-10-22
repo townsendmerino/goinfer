@@ -94,7 +94,9 @@ func (r *siglipVResident) hidden(patches []float32) ([]float32, error) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.grow(np, np)
+	if err := a.grow(np, np); err != nil {
+		return nil, err
+	}
 	copy(a.pt.Floats()[:np*a.patchDim], patches)
 	if err := a.stagePos(a.posEmbeds(nil), np); err != nil {
 		return nil, err
@@ -112,7 +114,8 @@ func (r *siglipVResident) ForwardPatches(patches []float32) ([]float32, error) {
 	return r.enc.FinishHidden(h)
 }
 
-func (r *siglipVResident) Close() {}
+// Close frees the tower's device memory (aikit's Encoder.Close calls it).
+func (r *siglipVResident) Close() { _ = r.a.Close() }
 
 // qwen25VResident is the Qwen2.5-VL tower on Metal (vision.QwenResidentEncoder).
 type qwen25VResident struct {
@@ -210,7 +213,9 @@ func (r *qwen25VResident) ForwardViT(pixels []float32, gridTHW [][3]int) ([]floa
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.grow(np, max(maxSegment(win), maxSegment(fullSegs)))
+	if err := a.grow(np, max(maxSegment(win), maxSegment(fullSegs))); err != nil {
+		return nil, err
+	}
 	pt := a.pt.Floats()
 	for i, src := range order {
 		copy(pt[i*pd:(i+1)*pd], pixels[src*pd:(src+1)*pd])
@@ -234,4 +239,5 @@ func (r *qwen25VResident) ForwardViT(pixels []float32, gridTHW [][3]int) ([]floa
 	return out, nil
 }
 
-func (r *qwen25VResident) Close() {}
+// Close frees the tower's device memory (aikit's QwenVisionEncoder.Close calls it).
+func (r *qwen25VResident) Close() { _ = r.a.Close() }

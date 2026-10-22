@@ -53,7 +53,7 @@ func TestLoadFusedExperts_perExpertSlicing(t *testing.T) {
 	}
 	defer st.Close()
 
-	experts, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, false, nil)
+	experts, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, true, false, nil)
 	if err != nil {
 		t.Fatalf("loadFusedExperts: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestLoadFusedExperts_shapeMismatch(t *testing.T) {
 	}
 	defer st.Close()
 
-	if _, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, false, nil); err == nil {
+	if _, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, true, false, nil); err == nil {
 		t.Fatal("loadFusedExperts should reject a gate_up_proj tensor with the wrong element count")
 	}
 }
@@ -161,11 +161,11 @@ func TestLoadFusedExperts_transposedLayoutGivesTheRowLayout(t *testing.T) {
 
 	for _, quant := range []quantMode{quantNone, quantInt8, quantInt8I8, quantInt4} {
 		for _, sink := range []*giwWriter{nil, {sink: io.Discard}} {
-			want, err := loadFusedExperts(rows, "gate_up_proj", "down_proj", nExpert, inter, hidden, quant, false, sink)
+			want, err := loadFusedExperts(rows, "gate_up_proj", "down_proj", nExpert, inter, hidden, quant, true, false, sink)
 			if err != nil {
 				t.Fatalf("quant %d, row layout: %v", quant, err)
 			}
-			got, err := loadFusedExperts(cols, "gate_up_proj", "down_proj", nExpert, inter, hidden, quant, false, sink)
+			got, err := loadFusedExperts(cols, "gate_up_proj", "down_proj", nExpert, inter, hidden, quant, true, false, sink)
 			if err != nil {
 				t.Fatalf("quant %d, transposed layout: %v", quant, err)
 			}
@@ -217,7 +217,7 @@ func TestLoadFusedExperts_f32ExpertsOwnTheirData(t *testing.T) {
 			at := uintptr(unsafe.Pointer(p))
 			return at >= lo && at <= hi
 		}
-		experts, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, false, nil)
+		experts, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, true, false, nil)
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}

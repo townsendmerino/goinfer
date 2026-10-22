@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -91,6 +92,37 @@ func newEG2Ops(extra string, more map[string]*Pipeline) (eg2Ops, error) {
 	return o, nil
 }
 
+// errTowerClosed is what a forward returns after Close.
+var errTowerClosed = errors.New("metal: the accelerator is closed")
+
+// open reports errTowerClosed once closeDevice has run. The caller holds the accelerator's lock.
+func (o *eg2Ops) open() error {
+	if o.d == nil {
+		return errTowerClosed
+	}
+	return nil
+}
+
+// release frees each buffer from the device ledger and zeroes it. The caller holds the accelerator's lock, and every
+// forward waits for its command buffers, so no GPU work reads them.
+func (o *eg2Ops) release(bufs ...*Buffer) {
+	for _, b := range bufs {
+		o.d.ReleaseBuf(*b)
+		*b = Buffer{}
+	}
+}
+
+// closeDevice releases every buffer and object on the device ledger (weights, scratch, pipelines, the queue) and the
+// device handle. Idempotent; the caller holds the accelerator's lock.
+func (o *eg2Ops) closeDevice() {
+	if o.d == nil {
+		return
+	}
+	o.d.ReleaseAll()
+	o.d.ReleaseObjects()
+	o.d = nil
+}
+
 // eg2Accel is the Metal accelerator. One forward at a time (mu): its scratch and scalar arena are shared.
 type eg2Accel struct {
 	mu sync.Mutex
@@ -155,7 +187,14 @@ func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 
 func (a *eg2Accel) Name() string { return "metal" }
 
-func (a *eg2Accel) Close() error { return nil }
+// Close frees the encoder's device memory; a forward after it is an error.
+func (a *eg2Accel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.closeDevice()
+	a.layers, a.ropes, a.cap, a.scr = nil, nil, 0, eg2Scratch{}
+	return nil
+}
 
 // u32 and f32 write one scalar into its own arena slot and return the slot to bind.
 func (a *eg2Ops) u32(v uint32) Buffer {
@@ -169,10 +208,17 @@ func (a *eg2Ops) u32(v uint32) Buffer {
 }
 func (a *eg2Ops) f32(v float32) Buffer { return a.u32(math.Float32bits(v)) }
 
-func (a *eg2Accel) grow(T int) {
-	if T <= a.cap {
-		return
+// grow sizes the scratch for T rows, releasing what it replaces.
+func (a *eg2Accel) grow(T int) error {
+	if err := a.open(); err != nil {
+		return err
 	}
+	if T <= a.cap {
+		return nil
+	}
+	s := &a.scr
+	a.release(&s.x, &s.xn, &s.q, &s.k, &s.v, &s.ctx, &s.o, &s.g, &s.u, &s.f, &s.gg, &s.pr, &s.ple, &s.out, &s.qh, &s.kh,
+		&s.vh, &s.sc, &s.vt, &s.ob)
 	c := a.cfg
 	maxQD, maxKVD, maxHD := 0, 0, 0
 	for _, ly := range a.layers {
@@ -186,6 +232,7 @@ func (a *eg2Accel) grow(T int) {
 		ple: n(c.Layers * c.PLEDim), out: n(c.EmbeddingDim), qh: n(maxQD), kh: n(maxKVD), vh: n(maxKVD),
 		sc: a.d.NewBufferLen(min(eg2Block, T) * T), vt: a.d.NewBufferLen(maxHD * T), ob: a.d.NewBufferLen(min(eg2Block, T) * maxHD)}
 	a.cap = T
+	return nil
 }
 
 func (a *eg2Ops) gemm(e *Encoder, A, B, C Buffer, M, N, K int) {
@@ -227,7 +274,9 @@ func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float3
 	if T == 0 || len(x0) != T*H {
 		return nil, nil, fmt.Errorf("metal: %d input values for %d rows of %d", len(x0), T, H)
 	}
-	a.grow(T)
+	if err := a.grow(T); err != nil {
+		return nil, nil, err
+	}
 	s := &a.scr
 	x := s.x.Floats()[:T*H]
 	copy(x, x0)
@@ -330,14 +379,18 @@ func (a *eg2Ops) attention(e *Encoder, s eg2AttnBufs, T, nH, hd, nKV int, win ui
 
 // ropeTables returns the CPU's own cos/sin tables for T positions at this head dim and theta, uploaded once and never
 // written again, so every layer and every in-flight command buffer can read the same buffers. At most 16 lengths are
-// kept; the 17th clears the cache (a forward holds the lock, so no command buffer is using a dropped table).
+// kept; the 17th clears the cache and releases its tables (a forward holds the lock, so no command buffer is using a
+// dropped table).
 func (a *eg2Accel) ropeTables(T, hd int, theta float64) (Buffer, Buffer) {
 	k := eg2RopeKey{T, hd, theta}
 	if b, ok := a.ropes[k]; ok {
 		return b[0], b[1]
 	}
 	if len(a.ropes) >= 16 {
-		clear(a.ropes)
+		for k, b := range a.ropes {
+			a.release(&b[0], &b[1])
+			delete(a.ropes, k)
+		}
 	}
 	cs, sn := embeddinggemma2.RopeTables(T, hd, theta)
 	b := [2]Buffer{NewBufferFloats(a.d, cs), NewBufferFloats(a.d, sn)}

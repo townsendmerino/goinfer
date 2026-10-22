@@ -170,7 +170,7 @@ func TestRun_measureRateExcludesPrefill(t *testing.T) {
 // first Load BEFORE calling selfMeasure; leaving it open holds two full quantized copies resident on the CPU backend,
 // which can itself trip the memory guard the probe exists to measure honestly. A real large checkpoint tripping the
 // guard can't be reproduced with this repo's tiny fixtures, so this is asserted structurally, the same technique
-// TestTranscode_writesViaTempThenRenames (internal/prequant) uses for an ordering property: parse Run's AST and confirm
+// TestTranscode_writesViaTempThenRenames (decoder) uses for an ordering property: parse Run's AST and confirm
 // the statement calling m.Close() appears BEFORE the `if *measure` block that calls selfMeasure.
 func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	fset := token.NewFileSet()
@@ -280,7 +280,7 @@ func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ver := fmt.Sprintf(".v%d.giw", decoder.GIWFormatVersion) // the name carries the format version (internal/prequant)
+	ver := fmt.Sprintf(".v%d.giw", decoder.GIWFormatVersion) // the name carries the format version (decoder.SidecarPath)
 	cpuSidecar := filepath.Join(dir, "tiny."+label+"."+string(target)+ver)
 	if target == decoder.GIWTargetNone {
 		cpuSidecar = filepath.Join(dir, "tiny."+label+".canonical"+ver) // a GOARCH with no cpu-specific target

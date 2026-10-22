@@ -443,6 +443,7 @@ All flags:
 		// --stream-weights (and its budget) is the target's, never the draft's.
 		dopts := opts
 		dopts.StreamWeights, dopts.WeightCacheBytes = false, 0
+		dopts.DirectLoad = true
 		dm, derr := decoder.Load(*cf.draft, dopts)
 		if derr != nil {
 			fmt.Fprintf(os.Stderr, "load draft model: %v\n", derr)

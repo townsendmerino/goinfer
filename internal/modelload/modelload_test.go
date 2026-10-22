@@ -141,8 +141,29 @@ func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 		t.Errorf("explicit int4: LoadPath %q, Quant() %q; want the sidecar and int4", ex.LoadPath, ex.Model.Quant())
 	}
 	for _, o := range []decoder.Options{{Quant: "int4", LoRA: "/an/adapter"}, {Quant: "q4k"}, {Quant: "bf16"}, {Quant: "f16"}, {Quant: "int4", StreamWeights: true}} {
-		if dirSidecarApplies(src, o) {
-			t.Errorf("dirSidecarApplies(%+v) = true, want false", o)
+		if decoder.DirSidecarApplies(src, o) {
+			t.Errorf("DirSidecarApplies(%+v) = true, want false", o)
 		}
+	}
+}
+
+// TestRouteFor_q4kTakesTheSidecar is D8B-G2's app half (docs/tasks/task-memory-campaign-2026-10.md, D8b-build gates): a
+// q4k .gguf takes its sidecar where the platform defaults to one, refuses -stream-weights, and a directory at q4k stays
+// direct.
+func TestRouteFor_q4kTakesTheSidecar(t *testing.T) {
+	if !prequant.DefaultToSidecar(false) {
+		t.Skip("the sidecar default is darwin and linux only")
+	}
+	if r, err := routeFor("m.gguf", decoder.Options{Quant: "q4k"}, false); err != nil || r != routeSidecar {
+		t.Errorf("q4k .gguf: route %v, err %v; want the sidecar", r, err)
+	}
+	if r, err := routeFor("m.gguf", decoder.Options{Quant: "q4k"}, true); err != nil || r != routeDirect {
+		t.Errorf("q4k .gguf with -direct-load: route %v, err %v; want direct", r, err)
+	}
+	if _, err := routeFor("m.gguf", decoder.Options{Quant: "q4k", StreamWeights: true}, false); err == nil {
+		t.Error("q4k .gguf with -stream-weights: no refusal")
+	}
+	if r, _ := routeFor(t.TempDir(), decoder.Options{Quant: "q4k"}, false); r != routeDirect {
+		t.Errorf("a directory at q4k: route %v, want direct", r)
 	}
 }

@@ -92,18 +92,31 @@ func newG4AAccel(enc *audio.Gemma4AudioEncoder) (*g4aAccel, error) {
 
 func (a *g4aAccel) Name() string { return "metal" }
 
-func (a *g4aAccel) Close() error { return nil }
+// Close frees the tower's device memory; a forward after it is an error.
+func (a *g4aAccel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.closeDevice()
+	a.layers, a.cap = nil, 0
+	return nil
+}
 
-func (a *g4aAccel) grow(n int) {
-	if n <= a.cap {
-		return
+// grow sizes the scratch for n rows, releasing what it replaces.
+func (a *g4aAccel) grow(n int) error {
+	if err := a.open(); err != nil {
+		return err
 	}
+	if n <= a.cap {
+		return nil
+	}
+	a.release(&a.x, &a.xn, &a.cp, &a.u, &a.f, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.g, &a.gl, &a.cv)
 	H := a.cfg.HiddenSize
 	b := func(cols int) Buffer { return a.d.NewBufferLen(n * cols) }
 	a.x, a.xn, a.cp, a.u, a.f = b(H), b(H), b(4*H), b(4*H), b(H)
 	a.q, a.k, a.v, a.ctx, a.o = b(H), b(H), b(H), b(H), b(H)
 	a.g, a.gl, a.cv = b(2*H), b(H), b(H)
 	a.cap = n
+	return nil
 }
 
 // proj is a ClippableLinear over rows of x into out (as g4vAccel.proj).
@@ -142,7 +155,9 @@ func (a *g4aAccel) Blocks(h []float32, n int) ([]float32, error) {
 	if n <= 0 || len(h) != n*H {
 		return nil, fmt.Errorf("metal: %d values for %d rows of %d", len(h), n, H)
 	}
-	a.grow(n)
+	if err := a.grow(n); err != nil {
+		return nil, err
+	}
 	copy(a.x.Floats()[:n*H], h)
 	nH4 := n * H
 	for li := range a.layers {

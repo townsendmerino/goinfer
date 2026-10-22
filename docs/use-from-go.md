@@ -45,6 +45,16 @@ generates and prints. `decoder.Load` takes the path to the model file itself:
 The zero `decoder.Options` loads the weights at f32. `Options{Quant: "int4"}` is what the
 command-line tools default to, and uses about a quarter of the memory.
 
+On macOS and Linux, the first `Load` of a `.gguf` (or a safetensors directory) writes a `.giw`
+file beside it, at that quant and backend, and every later `Load` maps that file instead of
+building the weights in memory, as `goinfer-serve` and `goinfer-chat` do. The weights are then
+file-backed pages that the system can drop and re-read, not a copy on the Go heap: the 0.5B at
+int4 holds 1 MiB of heap after a load this way, and 647 MiB without it. The first load takes a
+little longer, and the `.giw` takes about as much disk as the model. A `.gguf` in a directory
+that cannot be written to is refused with an error that says so; set `Options{DirectLoad: true}`
+to load it into memory without the `.giw`. Go test binaries load directly unless a test asks
+otherwise, so a test suite does not write files beside its fixtures.
+
 The tokenizer comes from the same file. `PreTokenizerDecline` names a pre-tokenizer the
 checkpoint declares and goinfer does not implement. Text can then split into different tokens
 than the reference tokenizer would produce, and the example says so rather than staying quiet:

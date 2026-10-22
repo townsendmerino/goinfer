@@ -84,6 +84,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 
 - `AcceptSlowMoE`: an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards
 - `BackendAuto`: tells a backend at load that "auto" chose it, so it may decline a precision it would requantize
+- `DirectLoad`: chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened
 - `DisableFit`: selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)
 - `Drafter`: tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses
 - `ExtraResidentBytes`: prices a companion allocation when the resident is planned

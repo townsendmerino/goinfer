@@ -438,7 +438,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
    - `decoder/prefill_coverage_test.go:TestPrefillCoverageAudit`: claimed an audit against seven `PrefillLast` guards; the body models two.
    - `decoder/a3_divergence_test.go:TestA3FastAttentionDivergence`: the "default OFF, unset identical to acc64" claim holds only below
      `fastAttnMinPrompt`; the body loads the dense checkpoint only.
-   - `internal/prequant/stream_families_test.go:TestStreamTranscode_perFamilyBodiesCarryTheirLayers`: named five GGUF families; the table drives gpt-oss and
+   - `decoder/sidecar_stream_families_test.go:TestStreamTranscode_perFamilyBodiesCarryTheirLayers`: named five GGUF families; the table drives gpt-oss and
      the glm-tiny control.
    - `cuda/prefill_moe_test.go:TestPrefillMoE_bitIdentical`: "both fixtures are exercised"; one subtest declines and skips, the other's weights are
      absent in a fresh worktree. `cuda/siglip_vision_test.go`: of three planted defects, two are asserted and one is only logged.

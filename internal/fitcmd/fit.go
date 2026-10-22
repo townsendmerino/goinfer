@@ -104,7 +104,7 @@ func Run(args []string) int {
 	if cached, be, ok := freshSidecar(path, *quant); ok {
 		loadPath, loadBackend = cached, be
 	}
-	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend})
+	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend, DirectLoad: true})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load %s: %v\n", loadPath, err)
 		return 1
@@ -187,7 +187,7 @@ func selfMeasure(path, quant string, admitted []string) {
 	if cached, ok := sidecarIfFresh(path, quant, backend); ok && strings.HasSuffix(path, ".gguf") {
 		measurePath = cached // the sidecar a `--backend <this>` load built: mapped, not rebuilt
 	}
-	pm, err := decoder.Load(measurePath, decoder.Options{Backend: backend, Quant: quant})
+	pm, err := decoder.Load(measurePath, decoder.Options{Backend: backend, Quant: quant, DirectLoad: true})
 	if err != nil {
 		fmt.Printf("\n(measure) %s: load failed, skipping probe: %v\n", backend, err)
 		return

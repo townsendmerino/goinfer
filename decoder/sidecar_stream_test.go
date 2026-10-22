@@ -1,0 +1,635 @@
+package decoder
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"errors"
+	"hash/crc32"
+	"os"
+	"path/filepath"
+	"testing"
+	"unsafe"
+
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
+	"strings"
+	"time"
+)
+
+// TestGIWRoundTripPreservesRouterBias guards the .giw serialize format against
+// silently dropping per-layer fields. The byte-identity test above can't catch a
+// field BOTH the streamed and resident paths skip (they share the serializer); only
+// a transcode → load → inspect round-trip does. RouterBias (GLM/DeepSeek
+// e_score_correction_bias) must be in the giw format, or a stream-weights GLM loses its routing
+// bias. This pins it on the tiny GLM model.
+func TestGIWRoundTripPreservesRouterBias(t *testing.T) {
+	gguf := filepath.Join("..", "testdata", "glm-tiny.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no tiny GLM GGUF at %s — run scripts/pin_glm_tiny_gguf.py", gguf)
+	}
+	// The tiny fixture carries no tokenizer, so go through the weights serializer
+	// directly (StreamTranscodeGGUF → LoadSerializedWeights) rather than the full
+	// .giw bundle — it's the serialize round-trip we're guarding.
+	var body bytes.Buffer
+	if _, err := StreamTranscodeGGUF(context.Background(), gguf, &body, "int4", false, GIWTargetNone, "glm-tiny"); err != nil {
+		t.Fatalf("StreamTranscodeGGUF: %v", err)
+	}
+	w, err := LoadSerializedWeights(body.Bytes())
+	if err != nil {
+		t.Fatalf("LoadSerializedWeights: %v", err)
+	}
+	layers := w.Layers
+	if layers[0].Experts != nil {
+		t.Errorf("layer 0 (dense prefix) has experts after round-trip")
+	}
+	for i := 1; i < len(layers); i++ {
+		if len(layers[i].RouterBias) == 0 {
+			t.Errorf("layer %d RouterBias dropped by the .giw round-trip", i)
+		}
+	}
+}
+
+// TestStreamTranscode_ctxCancel_M21 gates the M-21 cancellation contract: an
+// already-cancelled context makes StreamTranscodeGGUF abort with the context error
+// instead of running the whole multi-GB pass. The sink counts bytes so we also prove
+// nothing was written (the ctxWriter refuses the first write).
+func TestStreamTranscode_ctxCancel_M21(t *testing.T) {
+	gguf := filepath.Join("..", "testdata", "glm-tiny.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no tiny GLM GGUF at %s — run scripts/pin_glm_tiny_gguf.py", gguf)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancelled
+	var body bytes.Buffer
+	n, err := StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, GIWTargetNone, "glm-tiny")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
+	}
+	if body.Len() != 0 {
+		t.Errorf("wrote %d bytes after cancellation; want 0 (the transcode must abort before writing)", body.Len())
+	}
+}
+
+// giwSplit splits a .giw bundle at the v5 quant-label field and verifies the trailing CRC32-IEEE is
+// valid for that bundle. Returns the bytes before the label field and the bytes after it (both
+// excluding the CRC). A wrong CRC or a wrong label is a FAILURE, not an exemption — that is what
+// keeps the comparison below strict rather than "modulo the label".
+func giwSplit(t *testing.T, b []byte, at int, wantLabel string) (pre, post []byte) {
+	t.Helper()
+	if len(b) < 4 {
+		t.Fatalf("bundle too short to carry a CRC (%d B)", len(b))
+	}
+	body, crc := b[:len(b)-4], binary.LittleEndian.Uint32(b[len(b)-4:])
+	if got := crc32.ChecksumIEEE(body); got != crc {
+		t.Fatalf("CRC invalid: stored %08x, computed %08x", crc, got)
+	}
+	if at+4 > len(body) {
+		t.Fatalf("label offset %d past end of body (%d B)", at, len(body))
+	}
+	n := int(binary.LittleEndian.Uint32(body[at : at+4]))
+	if n != len(wantLabel) {
+		t.Fatalf("label length word at %d = %d, want %d (for %q)", at, n, len(wantLabel), wantLabel)
+	}
+	if got := string(body[at+4 : at+4+n]); got != wantLabel {
+		t.Fatalf("label at %d = %q, want %q", at, got, wantLabel)
+	}
+	end := at + 4 + n
+	// v12+: the header ends on a 16-byte boundary (giwWriter.alignHead) so that what follows sits at
+	// the SAME offsets whether or not the label is present. The pad is all zeros and its length
+	// depends on the label, so it is checked here and excluded from the "everything else is
+	// byte-identical" comparison rather than counted as a difference.
+	if ver := binary.LittleEndian.Uint32(body[5:9]); ver >= 12 {
+		pad := (-end) & 15
+		if end+pad > len(body) {
+			t.Fatalf("header pad (%d B) runs past the body", pad)
+		}
+		for i, c := range body[end : end+pad] {
+			if c != 0 {
+				t.Fatalf("header alignment pad byte %d is %#x, want zero", end+i, c)
+			}
+		}
+		end += pad
+	}
+	return body[:at], body[end:]
+}
+
+// giwLabelOffset returns the byte offset of the v5 quant-label field by PARSING the .giw header,
+// per the format spec in decoder/serialize.go:
+//
+//	magic [5]byte "GINFW" | version u32 | id str | config str | sidecarQuantLabel str | …
+//	str = u32 length + that many bytes
+//
+// Parsing beats locating the field as "the first byte where the two bundles differ": that would
+// silently relocate itself if the bundles ever diverged EARLIER for some other reason, quietly
+// measuring the wrong field and reporting the wrong thing. Here a layout change fails loudly with a
+// specific message instead.
+func giwLabelOffset(t *testing.T, b []byte) int {
+	t.Helper()
+	const magic = "GINFW"
+	if len(b) < len(magic)+8 {
+		t.Fatalf("bundle too short to hold a header (%d B)", len(b))
+	}
+	if got := string(b[:len(magic)]); got != magic {
+		t.Fatalf("bad magic %q, want %q", got, magic)
+	}
+	off := len(magic) + 4 // magic + version
+	// Skip the two length-prefixed strings that precede the label: id, then config JSON.
+	for _, field := range []string{"id", "config"} {
+		if off+4 > len(b) {
+			t.Fatalf("header truncated before %s field (offset %d, len %d)", field, off, len(b))
+		}
+		n := int(binary.LittleEndian.Uint32(b[off : off+4]))
+		if n < 0 || off+4+n > len(b) {
+			t.Fatalf("%s field length %d at offset %d overruns the bundle (%d B)", field, n, off, len(b))
+		}
+		off += 4 + n
+	}
+	return off
+}
+
+// transcodeBothWays returns the resident and streamed .giw bundles for one quant mode, plus the
+// resolved quant label the buffer path records: the live load's own Quant(). The fixture is a MoE
+// whose router stays f32 at every quant, which is a pin and not a mix, so at "int4" both say int4.
+func transcodeBothWays(t *testing.T, gguf, quant string) (resident, streamed []byte, label string) {
+	return transcodeBothWaysFor(t, gguf, quant, GIWTargetNone)
+}
+
+// transcodeBothWaysFor is transcodeBothWays for one named .giw target — v13's fused groups exist only
+// for the Metal target, and the streaming writer must lay them out exactly as the resident writer does.
+func transcodeBothWaysFor(t *testing.T, gguf, quant string, target GIWTarget) (resident, streamed []byte, label string) {
+	t.Helper()
+	m, err := Load(gguf, Options{Quant: quant})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	label = m.Quant()
+	resident, err = SerializeWeightsForTarget(m.Weights(), "glm-tiny.gguf", target)
+	m.Close()
+	if err != nil {
+		t.Fatalf("SerializeWeightsForTarget: %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := StreamTranscodeGGUF(context.Background(), gguf, &buf, quant, false, target, "glm-tiny.gguf"); err != nil {
+		t.Fatalf("StreamTranscodeGGUF: %v", err)
+	}
+	return resident, buf.Bytes(), label
+}
+
+func giwFixture(t *testing.T) string {
+	t.Helper()
+	gguf := filepath.Join("..", "testdata", "glm-tiny.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no tiny GLM GGUF at %s — run scripts/pin_glm_tiny_gguf.py", gguf)
+	}
+	return gguf
+}
+
+// TestGiwQuantLabel_headerAsymmetry pins a v5 behaviour that otherwise lives only as a comment in
+// decoder/serialize.go: the BUFFER path (full weights in hand) records the resolved quant label,
+// while the STREAMING transcode records "" — it writes the header BEFORE its layers load and cannot
+// yet know the resolved quant, so a reader of a streamed bundle falls back to inference (the pre-v5
+// behaviour).
+//
+// This is a gate, not a nicety: that asymmetry is what makes a byte-identity assertion over the whole
+// bundle wrong, and the test has to run in CI (testdata/glm-tiny.gguf must be tracked, or it self-skips).
+func TestGiwQuantLabel_headerAsymmetry(t *testing.T) {
+	gguf := giwFixture(t)
+	for _, quant := range []string{"int4", "int8int8", ""} {
+		t.Run("quant="+quant, func(t *testing.T) {
+			resident, streamed, label := transcodeBothWays(t, gguf, quant)
+			if label == "" {
+				t.Fatalf("Model.Quant() is empty for quant=%q; the buffer path must resolve a label", quant)
+			}
+			giwSplit(t, resident, giwLabelOffset(t, resident), label) // buffer path: resolved label
+			giwSplit(t, streamed, giwLabelOffset(t, streamed), "")    // streaming path: absent
+		})
+	}
+}
+
+// TestStreamTranscodeMatchesResident proves the streaming transcode (one layer at a time, for a
+// model too large to hold resident) produces the same .giw WEIGHTS as the resident path (Load +
+// SerializeWeights). Same input bytes → same per-tensor quantization regardless of load order, so
+// the streaming path is a drop-in, not an approximation.
+//
+// Byte-identity is asserted over everything outside the two fields that MUST differ, and each of
+// those is pinned exactly rather than skipped: the v5 quant label (see the asymmetry test above;
+// giwSplit re-asserts it here) and the trailing CRC32 covering it (giwSplit verifies each bundle's
+// CRC independently, so a wrong CRC fails). Every remaining byte is equal across all three quant
+// modes; a size delta alone would not show that.
+func TestStreamTranscodeMatchesResident(t *testing.T) {
+	gguf := giwFixture(t)
+	for _, quant := range []string{"int4", "int8int8", ""} {
+		t.Run("quant="+quant, func(t *testing.T) {
+			resident, streamed, label := transcodeBothWays(t, gguf, quant)
+			rPre, rPost := giwSplit(t, resident, giwLabelOffset(t, resident), label)
+			sPre, sPost := giwSplit(t, streamed, giwLabelOffset(t, streamed), "")
+
+			if !bytes.Equal(rPre, sPre) {
+				t.Errorf("bundles differ BEFORE the quant label (%d vs %d B) — the header itself diverges",
+					len(rPre), len(sPre))
+			}
+			if !bytes.Equal(rPost, sPost) {
+				n := 0
+				for i := 0; i < len(rPost) && i < len(sPost); i++ {
+					if rPost[i] != sPost[i] {
+						n++
+					}
+				}
+				t.Fatalf("bundles differ AFTER the quant label: %d of %d bytes (lengths %d vs %d) — the "+
+					"streaming and resident paths do NOT produce the same weights",
+					n, len(rPost), len(rPost), len(sPost))
+			}
+		})
+	}
+}
+
+// TestStreamTranscodeMatchesResident_metalTarget is the same byte-identity gate for the Metal target,
+// where v13 writes fused groups: the streaming sink and the resident writer share giwWriter.layer, so a
+// group block laid out differently between them (padding is a function of the absolute offset, which
+// the streamer and the resident writer reach differently before the layers) would diverge here.
+func TestStreamTranscodeMatchesResident_metalTarget(t *testing.T) {
+	gguf := giwFixture(t)
+	resident, streamed, label := transcodeBothWaysFor(t, gguf, "int4", GIWTargetMetal)
+	rPre, rPost := giwSplit(t, resident, giwLabelOffset(t, resident), label)
+	sPre, sPost := giwSplit(t, streamed, giwLabelOffset(t, streamed), "")
+	if !bytes.Equal(rPre, sPre) {
+		t.Errorf("metal-target bundles differ before the quant label (%d vs %d B)", len(rPre), len(sPre))
+	}
+	if !bytes.Equal(rPost, sPost) {
+		t.Fatalf("metal-target streaming and resident bundles differ after the quant label (lengths %d vs %d)", len(rPost), len(sPost))
+	}
+	// Not vacuous: the fixture must actually have produced a fused group (a kind-6 record).
+	w, err := LoadSerializedWeights(streamed)
+	if err != nil {
+		t.Fatalf("LoadSerializedWeights: %v", err)
+	}
+	fused := 0
+	for i := range w.Layers {
+		if a, _, _, ok := w.Layers[i].GateProj.Int4F16(); ok {
+			if b, _, _, ok2 := w.Layers[i].UpProj.Int4F16(); ok2 && len(a) > 0 && len(b) > 0 {
+				if uintptr(unsafe.Pointer(&a[0]))+uintptr(len(a)) == uintptr(unsafe.Pointer(&b[0])) {
+					fused++
+				}
+			}
+		}
+	}
+	if fused == 0 {
+		t.Skip("the glm-tiny fixture has no eligible gate|up pair (K%32 != 0) — byte identity held, but nothing was fused")
+	}
+}
+
+// TestTranscode_embedInt4Threaded gates M-31: TranscodeGIW's GGUF branch must thread the embedInt4 it is
+// given into StreamTranscodeGGUF (it once hardcoded `false`), or `cmd/prequant -embed-int4` silently
+// produces an int8-pinned embed/head table for every GGUF input — identical to omitting the flag, with
+// no error. The safetensors-directory branch (transcodeDir) threads it; only the GGUF branch was at risk.
+func TestTranscode_embedInt4Threaded(t *testing.T) {
+	gguf := giwFixture(t)
+	var pinnedBuf, relaxedBuf bytes.Buffer
+	if _, err := StreamTranscodeGGUF(context.Background(), gguf, &pinnedBuf, "int4", false, GIWTargetNone, "glm-tiny.gguf"); err != nil {
+		t.Fatalf("StreamTranscodeGGUF (embedInt4=false): %v", err)
+	}
+	if _, err := StreamTranscodeGGUF(context.Background(), gguf, &relaxedBuf, "int4", true, GIWTargetNone, "glm-tiny.gguf"); err != nil {
+		t.Fatalf("StreamTranscodeGGUF (embedInt4=true): %v", err)
+	}
+	pinnedW, err := LoadSerializedWeights(pinnedBuf.Bytes())
+	if err != nil {
+		t.Fatalf("LoadSerializedWeights (pinned): %v", err)
+	}
+	relaxedW, err := LoadSerializedWeights(relaxedBuf.Bytes())
+	if err != nil {
+		t.Fatalf("LoadSerializedWeights (relaxed): %v", err)
+	}
+	if _, _, _, ok := pinnedW.Embed.Int8(); !ok {
+		t.Errorf("embedInt4=false: embed should be int8-pinned, kind=%s", pinnedW.Embed.Kind())
+	}
+	if _, _, _, ok := relaxedW.Embed.Int4F16(); !ok {
+		t.Errorf("embedInt4=true: embed should be int4, kind=%s", relaxedW.Embed.Kind())
+	}
+
+}
+
+// TestTranscode_embedInt4ThreadedThroughRealGGUF proves M-31 through the actual regression
+// surface — TranscodeGIW/cmd/prequant's own call path, not StreamTranscodeGGUF directly — so a
+// future re-hardcoding at the sidecar.go call site fails this test even if
+// StreamTranscodeGGUF itself stays correct. Needs a real, tokenizer-bearing GGUF: glm-tiny.gguf
+// (used above) carries no embedded tokenizer, and TranscodeGIW's first phase requires one.
+func TestTranscode_embedInt4ThreadedThroughRealGGUF(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real GGUF)")
+	}
+	var gguf string
+	for _, cand := range []string{
+		filepath.Join("..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		filepath.Join(os.Getenv("HOME"), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+	} {
+		if fi, err := os.Stat(cand); err == nil && fi.Size() > 1<<20 {
+			gguf = cand
+			break
+		}
+	}
+	if gguf == "" {
+		t.Skip("no small tokenizer-bearing GGUF found (testdata/ or ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf)")
+	}
+
+	dir := t.TempDir()
+	pinnedOut := filepath.Join(dir, "pinned.int4.giw")
+	relaxedOut := filepath.Join(dir, "relaxed.int4.giw")
+	if err := TranscodeGIW(context.Background(), gguf, pinnedOut, "int4", false, GIWTargetNone); err != nil {
+		t.Fatalf("TranscodeGIW (embedInt4=false): %v", err)
+	}
+	if err := TranscodeGIW(context.Background(), gguf, relaxedOut, "int4", true, GIWTargetNone); err != nil {
+		t.Fatalf("TranscodeGIW (embedInt4=true): %v", err)
+	}
+	pinnedM, err := Load(pinnedOut, Options{})
+	if err != nil {
+		t.Fatalf("Load pinned bundle: %v", err)
+	}
+	defer pinnedM.Close()
+	relaxedM, err := Load(relaxedOut, Options{})
+	if err != nil {
+		t.Fatalf("Load relaxed bundle: %v", err)
+	}
+	defer relaxedM.Close()
+	if _, _, _, ok := pinnedM.Weights().Embed.Int8(); !ok {
+		t.Errorf("TranscodeGIW embedInt4=false: embed should be int8-pinned, kind=%s", pinnedM.Weights().Embed.Kind())
+	}
+	if _, _, _, ok := relaxedM.Weights().Embed.Int4F16(); !ok {
+		t.Errorf("TranscodeGIW embedInt4=true: embed should be int4, kind=%s — cmd/prequant -embed-int4 "+
+			"is being silently ignored for this GGUF input", relaxedM.Weights().Embed.Kind())
+	}
+}
+
+// M-12: the sidecar was written IN PLACE, and freshness was mtime alone.
+//
+// giw.WriteStream patches the body-length placeholder at the END, so a bundle whose write was
+// interrupted carries a ZERO length in its header. The error paths in TranscodeGIW cannot help,
+// because the interruptions that matter run no cleanup at all: SIGKILL, the OOM killer, power
+// loss. Written in place, such a file EXISTS and has an mtime newer than the source, so it is
+// "fresh" forever — and every later `serve --stream-weights` dies at boot with "truncated
+// bundle", naming the .giw rather than the cause, until a human deletes it.
+func TestSidecar_interruptedWriteDoesNotPoisonTheCache(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "model.gguf")
+	if err := os.WriteFile(src, []byte("not really a gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache := filepath.Join(dir, "model.int8.giw")
+
+	// What a killed transcode leaves behind: a partial bundle at the FINAL path, newer than
+	// the source. This is the state the old writer produced and could never recover from.
+	if err := os.WriteFile(cache, []byte("GIW\x00truncated"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The source an hour older than the cache, set rather than left to the write order: Windows' file clock ticks
+	// every ~1-16 ms, so two files written back to back can carry the same mtime.
+	now := time.Now()
+	if err := os.Chtimes(src, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(cache, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// The mtime half says fresh — which is exactly the trap, so assert it rather than assume
+	// it: if this ever stopped being true the test below would pass for the wrong reason.
+	if !cacheNewer(cache, src) {
+		t.Fatal("premise broke: the partial cache is not newer than the source, so this no " +
+			"longer reproduces the state a killed transcode leaves")
+	}
+	if cacheFresh(cache, src) {
+		t.Error("a truncated bundle newer than its source is reported FRESH — serve then fails " +
+			"at boot with `truncated bundle` and never rebuilds (M-12)")
+	}
+}
+
+// The other half: the write must not publish the final path until the bytes are complete AND
+// self-checked. Asserted on the writer's behaviour under a failure, since SIGKILL cannot be
+// simulated in-process — a transcode that fails leaves no sidecar, only (at most) a .tmp.
+func TestSidecar_failedTranscodeLeavesNoFinalFile(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "model.gguf")
+	if err := os.WriteFile(src, []byte("not a gguf at all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "model.int8.giw")
+
+	if err := TranscodeGIW(context.Background(), src, out, "int8", false, GIWTargetNone); err == nil {
+		t.Fatal("TranscodeGIW accepted a non-GGUF source")
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Error("a failed transcode left the FINAL sidecar in place; the next run would treat " +
+			"it as a cache rather than rebuilding (M-12)")
+	}
+}
+
+// V-01 (docs/completed/review-2026-09-04.md): a SUCCESSFUL GGUF TranscodeGIW must be driven end to end —
+// the M-12 tests above assert failure on a non-GGUF source and an AST shape, neither of which
+// exercises selfCheck on a real bundle (a temp name `out + ".tmp"`, not ending in ".giw", could never
+// route Load's suffix dispatch in selfCheck to the bundle loader, so every real TranscodeGIW
+// failed its own self-check). This drives the whole function end to end on a real tokenizer-bearing
+// GGUF (glm-tiny.gguf has no tokenizer -- see giwFixture's own comment -- so this needs a different,
+// real small checkpoint) and loads the PUBLISHED bundle afterward, proving both that TranscodeGIW
+// succeeds and that the file it left behind is loadable.
+//
+// GOINFER_HEAVY_TESTS-gated like every other real-checkpoint test in this repo (decoder's
+// requireHeavyModel), but deliberately NOT through testdata/assets.json's GOINFER_PREQUANT_GGUF:
+// that name is enforced single-resolution-site by TestAssetRegistry_noDirectReads
+// (decoder/asset_registry_test.go), which flags any os.Getenv read of a registered name outside
+// that file. A local path check avoids colliding with that enforcement rather than fighting it.
+func TestTranscode_realGGUFSucceedsAndPublishedBundleLoads(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real GGUF)")
+	}
+	var gguf string
+	for _, cand := range []string{
+		filepath.Join("..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		filepath.Join(os.Getenv("HOME"), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+	} {
+		if fi, err := os.Stat(cand); err == nil && fi.Size() > 1<<20 {
+			gguf = cand
+			break
+		}
+	}
+	if gguf == "" {
+		t.Skip("no small tokenizer-bearing GGUF found (testdata/ or ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf)")
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "qwen05.int4.giw")
+
+	if err := TranscodeGIW(context.Background(), gguf, out, "int4", false, GIWTargetNone); err != nil {
+		t.Fatalf("TranscodeGIW: %v", err)
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Fatalf("TranscodeGIW reported success but left no bundle at %s: %v", out, err)
+	}
+	m, err := Load(out, Options{})
+	if err != nil {
+		t.Fatalf("published bundle does not load: %v", err)
+	}
+	m.Close()
+}
+
+// The temp+rename half of M-12 cannot be shown by a failing TranscodeGIW: the error paths remove
+// the file either way, so an in-place writer passes the tests above unchanged (measured — that
+// is why this exists). The property is about what is on disk DURING the write, and the
+// interruption that matters (SIGKILL, OOM-kill, power loss) cannot be simulated in-process.
+//
+// So it is asserted structurally: TranscodeGIW must os.Create something that is NOT the final
+// path, and must os.Rename onto the final path. A writer that satisfies both cannot leave a
+// partial bundle where the cache lookup will find it.
+func TestTranscode_writesViaTempThenRenames(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "sidecar.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var fn *ast.FuncDecl
+	ast.Inspect(af, func(n ast.Node) bool {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "TranscodeGIWTimed" { // the GGUF branch's body; TranscodeGIW wraps it
+			fn = d
+		}
+		return true
+	})
+	if fn == nil {
+		t.Fatal("TranscodeGIWTimed not found — this guard is watching nothing")
+	}
+	render := func(e ast.Expr) string {
+		var b strings.Builder
+		_ = printer.Fprint(&b, fset, e)
+		return b.String()
+	}
+	var createdFinal, renamedToFinal, creates int
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || render(sel.X) != "os" || len(call.Args) == 0 {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Create":
+			creates++
+			if render(call.Args[0]) == "out" {
+				createdFinal++
+			}
+		case "Rename":
+			if len(call.Args) == 2 && render(call.Args[1]) == "out" {
+				renamedToFinal++
+			}
+		}
+		return true
+	})
+	if creates == 0 {
+		t.Fatal("TranscodeGIWTimed creates no file — the guard is watching the wrong function")
+	}
+	if createdFinal > 0 {
+		t.Error("TranscodeGIW os.Creates the FINAL sidecar path directly. giw.WriteStream patches " +
+			"the body length at the END, so a killed write leaves a zero-length header at a path " +
+			"that is newer than its source and therefore 'fresh' forever (M-12)")
+	}
+	if renamedToFinal != 1 {
+		t.Errorf("TranscodeGIW renames onto the final path %d times, want exactly 1 — the sidecar "+
+			"must appear only once the bytes are complete and self-checked", renamedToFinal)
+	}
+}
+
+// M-33 (audit-2026-09-10): transcodeDir — the safetensors-directory sibling of TranscodeGIW's GGUF
+// branch, used for safetensors-only families like Mellum2 — must write via a temp file and remove only
+// the temp on failure, as the GGUF branch does (the M-12 class): an OOM-kill during the write (this
+// path holds the WHOLE resident model in RAM, exactly where a killer fires) would otherwise leave a
+// placeholder-length bundle at the final path, newer than its source, "fresh" forever, and `serve`
+// then fails at boot with "truncated bundle" until a human deletes it. Same structural guard as
+// TestTranscode_writesViaTempThenRenames, targeting transcodeDir instead.
+func TestTranscodeDir_writesViaTempThenRenames(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "sidecar.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var fn *ast.FuncDecl
+	ast.Inspect(af, func(n ast.Node) bool {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "transcodeDir" {
+			fn = d
+		}
+		return true
+	})
+	if fn == nil {
+		t.Fatal("transcodeDir not found — this guard is watching nothing")
+	}
+	render := func(e ast.Expr) string {
+		var b strings.Builder
+		_ = printer.Fprint(&b, fset, e)
+		return b.String()
+	}
+	var createdFinal, renamedToFinal, creates int
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || render(sel.X) != "os" || len(call.Args) == 0 {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Create":
+			creates++
+			if render(call.Args[0]) == "out" {
+				createdFinal++
+			}
+		case "Rename":
+			if len(call.Args) == 2 && render(call.Args[1]) == "out" {
+				renamedToFinal++
+			}
+		}
+		return true
+	})
+	if creates == 0 {
+		t.Fatal("transcodeDir creates no file — the guard is watching the wrong function")
+	}
+	if createdFinal > 0 {
+		t.Error("transcodeDir os.Creates the FINAL bundle path directly. giw.WriteStream patches " +
+			"the body length at the END, so a killed write (e.g. an OOM-kill — this path holds the " +
+			"whole resident model in RAM) leaves a zero-length header at a path that is newer than " +
+			"its source and therefore 'fresh' forever (M-33)")
+	}
+	if renamedToFinal != 1 {
+		t.Errorf("transcodeDir renames onto the final path %d times, want exactly 1 — the bundle "+
+			"must appear only once the bytes are complete and self-checked", renamedToFinal)
+	}
+}
+
+// The behavioral half of M-33: a transcodeDir call that fails after the load step (a bad target
+// makes SerializeWeightsToForTarget or selfCheck fail) must leave no file at the FINAL path —
+// only, at most, a cleaned-up temp file. Uses the tiny real llama fixture (a safetensors
+// directory) so Load succeeds and the failure is isolated to the write/self-check half.
+func TestTranscodeDir_failedWriteLeavesNoFinalFile(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "llama-tiny")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no llama-tiny fixture: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "llama-tiny.int8.giw")
+
+	// GIWTargetCPUArm64 on a shape the repack functions reject, or on non-arm64, falls back to
+	// kind 3 automatically per TranscodeGIW's own doc comment — so this alone would not force a
+	// failure. Instead force one directly: a bogus quant string makes Load itself fail,
+	// which is enough to prove no partial file is left at `out` (the property under test is
+	// "never publish an incomplete bundle," not "this specific step fails").
+	if _, err := transcodeDir(context.Background(), dir, "", out, "not-a-real-quant", false, GIWTargetNone); err == nil {
+		t.Fatal("transcodeDir accepted a bogus quant string")
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Error("a failed transcodeDir left the FINAL bundle in place; the next run would treat " +
+			"it as a cache rather than rebuilding (M-33)")
+	}
+	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(out), "*.tmp.giw"))
+	if len(matches) != 0 {
+		t.Errorf("leftover temp file(s) after a failed transcodeDir: %v", matches)
+	}
+}
