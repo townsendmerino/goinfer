@@ -218,7 +218,7 @@ slot is gone; and every KV feature is built three or four times.
 | feature | families (examples) | where it runs today | what the design does |
 |---|---|---|---|
 | full attention, GQA | most | all | full group |
-| sliding window W | Gemma 2/3/4 local layers, Mistral, Cohere2, gpt-oss, Mellum, Phi-3 | CPU ring; CUDA windowed view (on in the CLIs); Metal, WebGPU full + mask | window group: blocks behind the window are released |
+| sliding window W | Gemma 2/3/4 local layers, Mistral, Cohere2, gpt-oss, Mellum, Phi-3 | CPU ring, except gpt-oss: its sink attention is not on the batched kernel `decoder/arch.go:Architecture.kvRingsOK` admits, so its sliding layers keep append-forever f32 KV on the CPU (corrected 2026-10-22, kernel survey KS-F2); CUDA windowed view (on in the CLIs); Metal, WebGPU full + mask | window group: blocks behind the window are released |
 | chunked attention C | Llama 4 local layers (`attention_chunk_size`) | CPU (`attnChunkStart`) | chunk group: blocks before the current chunk are released |
 | NoPE layers | Cohere2 globals, Llama 4 | all | nothing extra: K is stored as computed |
 | MLA latent | DeepSeek V2/V3, Kimi K2, Ling 3.0's MLA layers | CPU, CUDA (one latent buffer), WebGPU | latent group (a row is the latent width) |

@@ -656,3 +656,44 @@ func SetResolveKVHookForTest(f func(backend string, opts Options) (delivered, re
 	resolveKVHook = f
 	return func() { resolveKVHook = prev }
 }
+
+// kvReadback is what a CPU cache holds, by precision, over every layer (append-forever and ring): the f32 elements (the f32 K/V
+// rows and an MLA latent), the f16 elements, the int8 elements, and the int8 scales.
+type kvReadback struct{ n32, n16, n8, nScale int64 }
+
+func readbackCPUKV(c *KVCache) (r kvReadback) {
+	for l := range c.numLayers {
+		r.n32 += int64(len(c.keys[l]) + len(c.vals[l]))
+		if c.keysH != nil {
+			r.n16 += int64(len(c.keysH[l]) + len(c.valsH[l]))
+		}
+		if c.keysQ != nil {
+			r.n8 += int64(len(c.keysQ[l]) + len(c.valsQ[l]))
+			r.nScale += int64(len(c.keyScale[l]) + len(c.valScale[l]))
+		}
+		if c.mlaLatent != nil {
+			r.n32 += int64(len(c.mlaLatent[l]))
+		}
+		if rg := c.rings[l]; rg != nil {
+			r.n32 += int64(len(rg.k) + len(rg.v))
+			r.n16 += int64(len(rg.kh) + len(rg.vh))
+			r.n8 += int64(len(rg.kq) + len(rg.vq))
+			r.nScale += int64(len(rg.ksc) + len(rg.vsc))
+		}
+	}
+	return r
+}
+
+// KVReadbackForTest decodes n positions on the CPU cache this model's generations use and reads it back (G3's readback, for a
+// backend whose resident declines and leaves the model on the CPU cache).
+func (m *Model) KVReadbackForTest(n int) (n32, n16, n8, nScale int64, err error) {
+	cache := m.NewCache(n)
+	_, _, _, _, _, _, vocab := m.Dims()
+	for i := range n {
+		if _, err := m.forward((i*37+11)%vocab, cache); err != nil {
+			return 0, 0, 0, 0, err
+		}
+	}
+	r := readbackCPUKV(cache)
+	return r.n32, r.n16, r.n8, r.nScale, nil
+}
