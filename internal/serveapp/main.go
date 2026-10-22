@@ -1328,6 +1328,23 @@ func attachResidentTower(family string, enc interface{ EnableResident() error },
 	return true, nil
 }
 
+// blockReleaser is a vision encoder that can drop its encoder blocks from the host once a device tower holds them, and
+// load them again on its CPU path's first use (aikit's ReleaseBlocks).
+type blockReleaser interface{ ReleaseBlocks() error }
+
+// releaseTowerBlocks drops a device-attached tower's host blocks (D2, docs/tasks/task-memory-campaign-2026-10.md §7): the
+// device tower serves the images, and a CPU fallback reloads them. Called once per tower, after its device tower is built
+// and before any request runs it. A variable so a test can count the calls.
+var releaseTowerBlocks = func(family string, enc any) {
+	r, ok := enc.(blockReleaser)
+	if !ok {
+		return
+	}
+	if err := r.ReleaseBlocks(); err != nil {
+		fmt.Fprintf(os.Stderr, "vision: the %s tower keeps its host blocks: %v\n", family, err)
+	}
+}
+
 // visionModelType returns dir/config.json's model_type ("" if absent/unreadable) —
 // the family discriminator for the vision path (qwen2_5_vl vs Gemma 3 SigLIP).
 func visionModelType(dir string) string {
@@ -1379,6 +1396,9 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 	} else if where, err = qwenTowerPlacement(backend, int8Tower, asked, require, enc.EnableResident, os.Stderr); err != nil {
 		return err
 	}
+	if !strings.HasPrefix(where, "CPU") {
+		releaseTowerBlocks("Qwen2.5-VL", enc)
+	}
 	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
 	if err != nil {
 		return fmt.Errorf("qwen2.5-vl preprocessor config (%s): %w", dir, err)
@@ -1423,6 +1443,9 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 	tower, where, err := chooseGemma4Tower(enc, int8Tower, backend, asked, require)
 	if err != nil {
 		return err
+	}
+	if tower != nil {
+		releaseTowerBlocks("Gemma 4", enc)
 	}
 	for _, lm := range s.models {
 		lm.gemma4Enc, lm.gemma4Tower = enc, tower

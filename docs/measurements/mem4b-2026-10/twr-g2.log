@@ -1,0 +1,5 @@
+vision: the Qwen3.5 tower ran out of device memory (device allocation failed (fake)); it runs on the CPU from now on
+vision: the GLM-OCR tower ran out of device memory (device allocation failed (fake)); it runs on the CPU from now on
+--- PASS: TestTowerRelease_gridTowersFallBackOnReloadedBlocks (0.02s)
+--- PASS: TestTowerRelease_startupTowers (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.479s

@@ -49,6 +49,9 @@ func (g *glmOcrTower) encoder() (*vision.GlmOcrVisionEncoder, error) {
 		if g.plan.device != "" {
 			acc, err := multimodal.NewGlmOcrTower(g.plan.device, g.enc)
 			g.acc, g.err = g.plan.started("GLM-OCR", acc, err)
+			if g.acc != nil {
+				releaseTowerBlocks("GLM-OCR", g.enc)
+			}
 		}
 	})
 	return g.enc, g.err
