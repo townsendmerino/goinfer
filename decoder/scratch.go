@@ -25,6 +25,7 @@ type decodeScratch struct {
 	scores   []float32 // [>=nKeys] attention scores; grown on demand as context extends
 	attnGate []float32 // [>=nH or nH*hd] Laguna attention output-gate scratch (g_proj result, pre-softplus); nil for every other family
 	logits   []float32 // [vocab]
+	logitsN  []float32 // [K*vocab] a batched pass's logits, a verify round's or a prefill's last row (KVCache.headLogits), grown on demand
 
 	// headPool is per-head worker scratch for single-token attention, which routes through attendBatchedHeads (K=1) with the same
 	// acc64 matmul as batched prefill, so the discrete MoE router never sees a prefill/decode numerical discontinuity. It is a pool,
@@ -370,4 +371,17 @@ func (s *decodeScratch) localBufs(n int) (lk, lv []float32) {
 		s.localV = make([]float32, g)
 	}
 	return s.localK[:n], s.localV[:n]
+}
+
+// headLogits returns n floats the cache owns for a batched pass's LM-head output, valid until the next batched prefill or
+// verify on this cache. It is not the decode logits buffer, so a prefill's row outlives the decode forwards after it. nil when
+// the cache has no decode scratch (one built outside Model.NewCache), and the caller allocates.
+func (c *KVCache) headLogits(n int) []float32 {
+	if c == nil || c.scr == nil {
+		return nil
+	}
+	if cap(c.scr.logitsN) < n {
+		c.scr.logitsN = make([]float32, n)
+	}
+	return c.scr.logitsN[:n]
 }
