@@ -49,7 +49,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | open | either box: uint64 rank keys, a size hint, a typed reader; S | `mergeRank` |
 | MEM13-features | done | — | sized from the fit plan: up to 256 MiB, less when the plan leaves less after its KV (`featureCacheBudgetFor`); #120 |
-| MEM13-heapquant | open | after MEM1 | — |
+| MEM13-heapquant | decision | D8 (§7): the owner's call on its two halves; read 2026-10-21 after MEM1 | §4 MEM13, "Heap-only quant, after MEM1" |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
 | MEM13-copies-CUDA | open | nobara: remove CUDA's dense host pack (owner, 2026-10-21, from never-swap); S–M | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
@@ -505,6 +505,26 @@ bound. Tier 1: the 1.5B 20K footprint vs live heap, before/after.
 | token bytes per adapter | `internal/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
 | heap-only quant | q4k (phi3's default on CPU/CUDA) has no `.giw` form; on the arm64 heap path o_proj, down_proj and experts keep the dual copy even with `Backend: "cpu"` | model-sized | after MEM1, decide whether the heap path still matters |
 
+**Heap-only quant, after MEM1 (read 2026-10-21, code at `58cd3021`).** With MEM1 merged, a load builds weights in the heap
+only when it is asked to or has no `.giw` form: `Options.DirectLoad` (the apps' `-direct-load`), a q4k `.gguf`, a
+safetensors directory with a LoRA or at bf16/f16, a platform other than darwin and linux, and test binaries. The item has
+two halves, and the reading separates them:
+
+- **The arm64 dual copy is now opt-in.** It is `decoder/weightmat.go:wantsRow4Fallback`'s CPU-fallback safety net on the
+  heap path; the sidecar path never builds it (a `.giw` is mapped and gets no row4 copy). MEM0 §4.2 measured what it costs
+  where it applies: arm64's int4 library load held 647 MiB on the 0.5B and 1,854 on the 1.5B, against amd64's 454 and
+  1,150 (42–61% more; `Backend` empty, so every projection kept both forms). After MEM1 the same library load holds 1 MiB
+  (`docs/measurements/mem1-2026-10/README.md`). Only a caller who sets `DirectLoad` pays it, and that caller asked for
+  the heap build.
+- **q4k still has no `.giw` form, so phi3 on the CPU or CUDA is still a heap load by default.** `internal/modelload`'s
+  `activationSafeQuant` picks q4k for a phi3 `.gguf` on the CPU or CUDA (phi3 is the only family
+  `decoder.ActivationQuantHazard` names), and q4k routes direct. Phi-3-mini's `.gguf` is 2.39 GB, and the heap build
+  should hold about that (Q4_K tensors wrapped exact, the rest int8; arithmetic, not measured). On Metal, phi3 loads int8int8 through its sidecar and is not
+  affected.
+
+So the dual-copy half has no default caller left, and the q4k half is one family on two backends. **D8** (§7) asks which
+of them to build.
+
 ## 5. The aikit items
 
 ### MEM14 · BM25: an incremental build and one postings arena (M)
@@ -607,6 +627,12 @@ choice in aikit and a storage choice in ken (**D4**).
   under a real cleanup.
 - **D7** (MEM16): **DECIDED 2026-10-17** — word-embedding tables load native-precision and mapped; f16/int8 heap tables
   are opt-ins.
+
+- **D8** (MEM13-heapquant, 2026-10-21): (a) the arm64 dual copy on the heap path: close it now that the heap path is
+  opt-in (recommended), or build row4-only `o_proj`/`down_proj`/experts under `Backend: "cpu"` (S–M: every CPU kernel
+  that reads them must take row4-only, gated on bytes and bit-identity)? (b) q4k: give it a `.giw` form, a new tensor kind
+  and a format version (M–L; phi3 on the CPU and CUDA then maps too), or leave phi3's CPU/CUDA load on the heap until a
+  user meets it (recommended: one family, and its Metal load already maps)?
 
 ## 8. Sequencing
 
