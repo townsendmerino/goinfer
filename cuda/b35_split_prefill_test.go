@@ -83,8 +83,9 @@ func TestB35SplitPrefill(t *testing.T) {
 			case Ly.kvHalf || Ly.kvShared || Ly.kvDim == 0:
 				// f16 or aliased K/V: the logits and the later layers' state already depend on it.
 			default:
-				a.kRows = append(a.kRows, dl(r.kc[l], n*Ly.kvDim))
-				a.vRow = append(a.vRow, dl(r.vc[l], n*Ly.kvDim))
+				k, v := r.readKVForTest(l, n)
+				a.kRows = append(a.kRows, k)
+				a.vRow = append(a.vRow, v)
 			}
 		}
 		return a

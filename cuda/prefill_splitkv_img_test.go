@@ -95,6 +95,7 @@ func TestPrefillSplitKV_rowsEqualAttnImgBatched(t *testing.T) {
 			}
 			dKc, dVc, dQ := mustAlloc[float32](t, cx, len(kc)), mustAlloc[float32](t, cx, len(vc)), mustAlloc[float32](t, cx, len(q))
 			dBlk := mustAlloc[int32](t, cx, len(flat))
+			dKvt := gcKVIdentityTab(t, cx, nTot)
 			for _, e := range []error{gc.CopyHtoD(bg, dKc, kc), gc.CopyHtoD(bg, dVc, vc), gc.CopyHtoD(bg, dQ, q), gc.CopyHtoD(bg, dBlk, flat)} {
 				if e != nil {
 					t.Fatalf("H2D: %v", e)
@@ -111,7 +112,7 @@ func TestPrefillSplitKV_rowsEqualAttnImgBatched(t *testing.T) {
 			maxNWin = imgBlocksMaxNWin(maxNWin, window, tc.blocks)
 			dRef := mustAlloc[float32](t, cx, M*qDim)
 			launch(fnImg, gc.LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},
-				gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
+				gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc), gc.Arg(dKvt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
 				gc.ArgValue(scale), gc.ArgValue(int32(window)), gc.ArgValue(int32(M)), gc.Arg(dRef), gc.ArgDevicePtr(0), gc.Arg(dBlk), gc.ArgValue(int32(len(tc.blocks))))
 			if e := stream.Synchronize(bg); e != nil {
 				t.Fatal(e)
@@ -134,13 +135,13 @@ func TestPrefillSplitKV_rowsEqualAttnImgBatched(t *testing.T) {
 				for row0 := 0; row0 < M; row0 += R {
 					n := min(R, M-row0)
 					launch(fnSc, gc.LaunchConfig{GridX: uint32(nH), GridY: uint32((stride + 127) / 128), GridZ: uint32(n), BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(hd * 4)},
-						gc.Arg(dQ), gc.Arg(dKc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
+						gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dKvt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
 						gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)), gc.ArgValue(scale), gc.Arg(dSc), gc.ArgValue(int32(stride)), blk, gc.ArgValue(nb))
 					launch(fnSm, gc.LaunchConfig{GridX: uint32(nH), GridY: uint32(n), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
 						gc.Arg(dSc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(startPos)), gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)),
 						gc.ArgValue(int32(stride)), gc.Arg(dInv), gc.ArgDevicePtr(0), blk, gc.ArgValue(nb))
 					launch(fnVs, gc.LaunchConfig{GridX: uint32(nH), GridY: uint32((hd + 31) / 32), GridZ: uint32(n), BlockX: 32, BlockY: 1, BlockZ: 1},
-						gc.Arg(dSc), gc.Arg(dVc), gc.Arg(dInv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
+						gc.Arg(dSc), gc.Arg(dVc), gc.Arg(dKvt), gc.Arg(dInv), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(startPos)),
 						gc.ArgValue(int32(window)), gc.ArgValue(int32(row0)), gc.ArgValue(int32(stride)), gc.Arg(dCtx), blk, gc.ArgValue(nb))
 				}
 				if e := stream.Synchronize(bg); e != nil {
@@ -186,6 +187,7 @@ func TestPrefillSplitKV_rowsEqualAttnImgBatched(t *testing.T) {
 			dVc.Close()
 			dQ.Close()
 			dBlk.Close()
+			dKvt.Close()
 		}
 	}
 	t.Logf("%d cases bit-identical to attn_img_batched; %d plants (blocks withheld) all differ", checked, planted)

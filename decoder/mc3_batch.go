@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -322,6 +323,9 @@ func (b *residentBatcher) markSlot(slot int, busy bool) {
 		b.slotBusy[slot] = busy
 	}
 	b.mu.Unlock()
+	if act, ok := b.stepper.(ResidentKVSlotActivity); ok && slot >= 0 {
+		act.SetKVSlotBusy(slot, busy)
+	}
 }
 
 // busySlots is a snapshot of the slots holders are using, for residentAcquire (called inside exclusive).
@@ -420,6 +424,14 @@ func (b *residentBatcher) stepResident(run []*batchReq) {
 		seqs[i] = r.seq
 	}
 	out, err := b.stepper.StepBatch(seqs)
+	if errors.Is(err, ErrKVPoolFull) {
+		// A row past its share found no block. The step maps every row's blocks before it writes anything, so it wrote nothing:
+		// run each token on its own, and only the row that cannot get a block ends.
+		for _, r := range run {
+			r.err = runSolo(r.solo)
+		}
+		return
+	}
 	if err == nil && len(out) != len(run) {
 		err = fmt.Errorf("decoder: StepBatch returned %d rows for %d sequences", len(out), len(run))
 	}

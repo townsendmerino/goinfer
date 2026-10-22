@@ -91,35 +91,54 @@ func (m *Model) residentHostCopyFor(backend string, slots int) int64 {
 	return m.ResidentHostCopyBytes(slots)
 }
 
-// cudaKVBytes is ResidentKVBytes("cuda", ctx, …): what cuda/backend.go allocates for the K/V caches —
-// r.af(ctx*kvDim) (f32) for K and for V on every attention layer, a single latent buffer of
-// ctx*latDim on an MLA layer (the V head is reconstructed from the latent), nothing on a layer that
-// holds no attention K/V (DeltaNet and the other recurrent mixers). kvF16 prices an f16 cache (half the bytes), but only for an architecture
-// the CUDA backend's KV policy covers (kvpolicy.go): any other asks for f16 and gets f32 on the device, so it is priced as f32. int8 is not a CUDA cache.
+// cudaKVBytes is ResidentKVBytes("cuda", ctx, …): what a one-slot cuda resident allocates for its paged K/V (cuda/kvpool.go). One
+// slot's blocks: ceil(ctx/KVBlockRows) blocks of K and V (f32, or f16) on a full-attention layer and of one latent row on an MLA layer
+// (the V head is reconstructed from the latent), and on a windowed layer the blocks of window+slack positions plus one; its two
+// tables, 4 B a block each. Then the pools' null blocks, one block of every layer that holds K/V, once per load. Nothing on a layer that
+// holds no attention K/V (DeltaNet and the other recurrent mixers). kvF16 prices an f16 cache (half the bytes), but only for an
+// architecture the CUDA backend's KV policy covers (kvpolicy.go): any other asks for f16 and gets f32 on the device, so it is priced as
+// f32. int8 is not a CUDA cache. Each further slot costs CUDAKVSlotBytes.
 func (m *Model) cudaKVBytes(ctx int, kvF16 bool) int64 {
+	slot, null := m.cudaKVParts(ctx, kvF16)
+	return slot + null
+}
+
+// CUDAKVSlotBytes is what one more resident KV slot costs a cuda load at ctx positions: cudaKVBytes less the null blocks.
+func (m *Model) CUDAKVSlotBytes(ctx int, kvF16 bool) int64 {
+	slot, _ := m.cudaKVParts(ctx, kvF16)
+	return slot
+}
+
+func (m *Model) cudaKVParts(ctx int, kvF16 bool) (slot, null int64) {
 	a := m.w.arch
 	elem := int64(4) // f32; an f16 cache holds half
 	if kvF16 && kvF16Decline("cuda", a, Options{Backend: "cuda"}) == "" {
 		elem = 2
 	}
+	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
 	_, nLayers, _, _, _, _, _ := m.Dims()
-	var perPos, windowed int64
+	var perBlock, windowed int64
 	for l := range nLayers {
 		if m.KVSrcAtResident(l) != l {
 			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (cuda/backend.go)
 		}
 		kvDim := int64(a.kvDimAt(l)) // 0 for a no-attention-KV layer; the latent width on MLA
+		if kvDim == 0 {
+			continue
+		}
 		if a.mla != nil {
-			perPos += kvDim * 4 // one latent row per position (MLA keeps f32)
+			perBlock += KVBlockRows * kvDim * 4 // one latent row per position (MLA keeps f32)
+			null += KVBlockRows * kvDim * 4
 			continue
 		}
-		if m.WindowedKVLayer(l) {
-			// A windowed layer holds window+slack positions (cuda/kvwindow.go allocates exactly this), not the context.
-			win := int64(ResidentWindowedKVCap(m.SlidingWindowResident(), ctx))
-			windowed += 2 * kvDim * elem * win
+		null += 2 * KVBlockRows * kvDim * elem
+		if held := m.SlidingWindowResident() + WindowedKVSlack; m.WindowedKVLayer(l) && ctx > held {
+			// A windowed layer maps window+slack positions however long the context, plus a block for a range that starts mid-block
+			// (cuda/kvpool.go's kvWindowBlocks); at a context no longer than that, the windowed KV does not engage.
+			windowed += 2 * kvDim * elem * KVBlockRows * int64((held+KVBlockRows-1)/KVBlockRows+1)
 			continue
 		}
-		perPos += 2 * kvDim * elem // K and V
+		perBlock += 2 * KVBlockRows * kvDim * elem // K and V
 	}
-	return perPos*int64(ctx) + windowed
+	return perBlock*blocks + windowed + 2*4*blocks, null
 }

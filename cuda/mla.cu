@@ -4,22 +4,26 @@
 // Replaces per-head materialized K/V with a single compressed-KV latent row per position:
 // [kv_lora_rank (rank) | qk_rope_head_dim (qkRope)]
 //
-// 1. mla_latent_store: RMSNorm(kvDown[:rank]) + decoupled RoPE(kvDown[rank:]) -> latCache[pos*latDim]
+// 1. mla_latent_store: RMSNorm(kvDown[:rank]) + decoupled RoPE(kvDown[rank:]) -> the latent row of storage position spos
 // 2. mla_head_matvec: per-head block-diagonal matvec for W_UK absorb and W_UV lift
 // 3. mla_q_rope: decoupled RoPE on query's qkRope slice -> qAbs
 // 4. mla_attn: causal attention over latDim keys, value accumulation over rank prefix ONLY.
 
 #include <cuda_runtime.h>
 #include "attnscore.cuh"
+#include "kvpage.cuh"
 
 extern "C" __global__ void mla_latent_store(const float* __restrict__ kvDown,
                                             const float* __restrict__ normW,
                                             const float* __restrict__ invFreq,
                                             float* __restrict__ latCache,
+                                            const int* __restrict__ kvt,
                                             int rank, int qkRope, int pos,
-                                            float eps, int base, float ropeScale,
+                                            float eps, int spos, float ropeScale,
                                             int interleave) {
     int t = threadIdx.x;
+    // pos is the rotation's position, spos the row's storage position (they differ under m-RoPE-style deltas).
+    long base = KV_ROW(kvt, spos) * (rank + qkRope);
     // RMSNorm over the rank latent -> cn
     float ss = 0.0f;
     for (int i = t; i < rank; i += 64) {
@@ -115,6 +119,7 @@ extern "C" __global__ void mla_q_rope(const float* __restrict__ q,
 
 extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
                                     const float* __restrict__ latCache,
+                                    const int* __restrict__ kvt,
                                     float* __restrict__ wsum,
                                     int nH, int latDim, int rank,
                                     int startPos, float scale, int window,
@@ -133,8 +138,12 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
     float lm = -1e30f;
     int d4 = latDim >> 2;
     const float4* q4 = (const float4*)qh;
+    // Each key's row is looked up one iteration ahead (rowNext), so the table load overlaps the dot product before it (glue.cu's attention).
+    long rowNext = (winStart + t < nKeys) ? KV_ROW(kvt, winStart + t) : 0;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const float* ks = latCache + (long)s * latDim;
+        const long row = rowNext;
+        if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
+        const float* ks = latCache + row * latDim;
         float dot = 0.0f;
         const float4* k4 = (const float4*)ks;
         for (int i = 0; i < d4; i++) {
@@ -175,8 +184,12 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
     __syncthreads();
     for (int d = t; d < rank; d += nt) {
         float acc = 0.0f;
-        for (int s = winStart; s < nKeys; s++) {
-            acc = __fmaf_rn(sc[s - winStart], latCache[(long)s * latDim + d], acc);
+        for (int s = winStart; s < nKeys;) {
+            const int e = KV_RUN_END(s, nKeys);
+            const float* vp = latCache + KV_ROW(kvt, s) * latDim + d;
+            for (; s < e; s++, vp += latDim) {
+                acc = __fmaf_rn(sc[s - winStart], *vp, acc);
+            }
         }
         wsum[(long)m * (nH * rank) + h * rank + d] = __fmul_rn(acc, inv);
     }

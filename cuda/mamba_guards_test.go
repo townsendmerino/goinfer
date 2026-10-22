@@ -33,11 +33,15 @@ func loadGuardResident(t *testing.T, c guardCase) (*decoder.Model, *cudaResident
 	return m, r
 }
 
-// withTwoSlots gives r a second slot entry that aliases the first's buffers, so the checks that run only on a multi-slot resident (the batched step, the
-// copy) get past the slot count to the guard under test. Nothing is copied or run through it.
+// withTwoSlots gives r a second slot entry with empty tables, so the checks that run only on a multi-slot resident (the batched step, the copy) get
+// past the slot count to the guard under test. Nothing is copied or run through it.
 func withTwoSlots(r *cudaResident) {
 	if r.KVSlots() < 2 {
-		r.kvSlotBufs = []cudaKVSlot{{kc: r.kc, vc: r.vc}, {kc: r.kc, vc: r.vc}}
+		var t kvSlotTabs
+		for g := range kvGroups {
+			t.ids[g] = make([]int32, r.kvMaxBlocks())
+		}
+		r.kvTabs = append(r.kvTabs, t)
 	}
 }
 
@@ -152,11 +156,13 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	if attn == 0 || attn == int64(len(r.layers)) || nMamba == 0 {
 		t.Fatalf("VOID: nemotron-tiny has %d attention and %d Mamba layers of %d: the reading cannot tell the kinds apart", attn, nMamba, len(r.layers))
 	}
-	if got := kvBytesForCap(ctx, r.layers); got != want {
-		t.Errorf("kvBytesForCap(%d) = %d, the %d attention layers alone are %d", ctx, got, attn, want)
+	// A slot is its attention layers' blocks (ctx is whole blocks here) and its two tables; a one-slot load adds the null blocks (kvpool.go).
+	tabs := int64(kvGroups * 4 * kvBlocksFor(ctx))
+	if got := kvBytesForCap(ctx, r.layers); got != want+tabs {
+		t.Errorf("kvBytesForCap(%d) = %d, the %d attention layers alone are %d and the tables %d", ctx, got, attn, want, tabs)
 	}
-	if got := m.ResidentKVBytes("cuda", ctx, r.kvF16, false); got != want {
-		t.Errorf("the decoder's ResidentKVBytes(cuda, %d) = %d, want %d", ctx, got, want)
+	if got, w := m.ResidentKVBytes("cuda", ctx, r.kvF16, false), want+tabs+kvPoolNullBytes(r.layers); got != w {
+		t.Errorf("the decoder's ResidentKVBytes(cuda, %d) = %d, want %d", ctx, got, w)
 	}
 	if got := mambaStateBytes(r.mamba, nMamba); got != stateBytes {
 		t.Errorf("mambaStateBytes = %d, the %d Mamba layers' state buffers are %d bytes", got, nMamba, stateBytes)

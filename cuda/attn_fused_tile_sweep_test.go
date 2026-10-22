@@ -60,7 +60,7 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 							return e
 						}
 					}
-					args := []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(hc.nH)), gpu.ArgValue(int32(hc.nKV)), gpu.ArgValue(int32(hc.hd)),
+					args := []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), Arg(r.kvIdentityTab(t, nKeys)), gpu.ArgValue(int32(hc.nH)), gpu.ArgValue(int32(hc.nKV)), gpu.ArgValue(int32(hc.hd)),
 						gpu.ArgValue(int32(sp)), gpu.ArgValue(float32(0.125)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(ob), ArgNull()}
 					p64, sh64 := r.attnFusedFor(hc.hd)
 					c64 := LaunchConfig{GridX: uint32(hc.nH), GridY: uint32((M + 63) / 64), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: sh64}

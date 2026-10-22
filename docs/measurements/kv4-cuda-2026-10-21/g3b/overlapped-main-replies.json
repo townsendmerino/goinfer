@@ -1,0 +1,116 @@
+{
+ "together": [
+  [
+   "the helfer,1\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n",
+   {
+    "prompt_tokens": 16045,
+    "completion_tokens": 128,
+    "total_tokens": 16173,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 128,
+    "total_tokens": 16171,
+    "prefill_reused_tokens": 16000
+   }
+  ],
+  [
+   "```python\n```\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n",
+   {
+    "prompt_tokens": 16042,
+    "completion_tokens": 128,
+    "total_tokens": 16170,
+    "prefill_reused_tokens": 16000
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n```",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 128,
+    "total_tokens": 16171,
+    "prefill_reused_tokens": 16000
+   }
+  ]
+ ],
+ "refs": [
+  [
+   "the helfer,1\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n",
+   {
+    "prompt_tokens": 16045,
+    "completion_tokens": 128,
+    "total_tokens": 16173,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 128,
+    "total_tokens": 16171,
+    "prefill_reused_tokens": 16000
+   }
+  ],
+  [
+   "```python\n```\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n",
+   {
+    "prompt_tokens": 16042,
+    "completion_tokens": 128,
+    "total_tokens": 16170,
+    "prefill_reused_tokens": 16000
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n```",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 128,
+    "total_tokens": 16171,
+    "prefill_reused_tokens": 16000
+   }
+  ]
+ ],
+ "alone": [
+  [
+   "the helfer,1\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n",
+   {
+    "prompt_tokens": 16045,
+    "completion_tokens": 128,
+    "total_tokens": 16173,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 128,
+    "total_tokens": 16171,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n`\n",
+   {
+    "prompt_tokens": 16042,
+    "completion_tokens": 128,
+    "total_tokens": 16170,
+    "prefill_reused_tokens": 0
+   }
+  ],
+  [
+   "```python\n```python\n```python\n```python\n```python\n```python\n```python\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n````\n```",
+   {
+    "prompt_tokens": 16043,
+    "completion_tokens": 128,
+    "total_tokens": 16171,
+    "prefill_reused_tokens": 0
+   }
+  ]
+ ]
+}

@@ -103,6 +103,7 @@ func TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference(t *testing.T) {
 				return e
 			}
 			kcB, vcB := r.af(nKeys*kvDim), r.af(nKeys*kvDim)
+			kvt := r.kvIdentityTab(t, nKeys)
 			pT, e := mki(posT)
 			if e != nil {
 				return e
@@ -117,7 +118,7 @@ func TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference(t *testing.T) {
 			}
 			ropeN := nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
 			cfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-			args := ropeMRopeArgs(qB, kB, vB, invFB, kcB, vcB, nH, nKV, hd, startPos, rhalf, M, mscale, pT, pH, pW, sec0, sec1, mode)
+			args := ropeMRopeArgs(qB, kB, vB, invFB, kcB, vcB, kvt, nH, nKV, hd, startPos, rhalf, M, mscale, pT, pH, pW, sec0, sec1, mode)
 			if e := r.launch(r.bRopeKVMRoPE, cfg, args...); e != nil {
 				return fmt.Errorf("rope_kv_mrope_batched: %w", e)
 			}

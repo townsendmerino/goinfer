@@ -61,9 +61,10 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 				k[i] = float32(rng.NormFloat64())
 				v[i] = float32(rng.NormFloat64())
 			}
-			var qb, kb, vb, cb, q1, c1 Buffer
+			var qb, kb, vb, cb, q1, c1, kt Buffer
 			if e := rf.do(func() error {
 				qb, kb, vb, cb = rf.af(len(q)), rf.af(len(k)), rf.af(len(v)), rf.af(maxM*qDim)
+				kt = rf.kvIdentityTab(t, len(k)/(nKV*hd))
 				q1, c1 = rf.af(qDim), rf.af(qDim)
 				for _, u := range []struct {
 					b Buffer
@@ -102,7 +103,7 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 							got := make([]float32, M*qDim)
 							if e := rf.do(func() error {
 								for _, run := range runs {
-									if e := rf.flashDecodeRowsLaunch(qb, kb, vb, cb, hd, nKV, run); e != nil {
+									if e := rf.flashDecodeRowsLaunch(qb, kb, vb, kt, cb, hd, nKV, run); e != nil {
 										return e
 									}
 								}
@@ -127,7 +128,7 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 									if e := gpu.Upload(q1, q[i*qDim:(i+1)*qDim]); e != nil {
 										return e
 									}
-									if e := rf.flashDecodeLaunch(q1, kb, vb, c1, hd, nKV, ws, nk); e != nil {
+									if e := rf.flashDecodeLaunch(q1, kb, vb, kt, c1, hd, nKV, ws, nk); e != nil {
 										return e
 									}
 									if e := rf.stream.Sync(); e != nil {

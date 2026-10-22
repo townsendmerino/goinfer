@@ -1,4 +1,5 @@
 #include "kvtype.cuh" // KV_T / KV_LD: the cache element type of `attention` (the _kv16 twin module)
+#include "kvpage.cuh" // KV_ROW: the paged row of a key
 #include "attnscore.cuh"
 // glue.cu — the per-token elementwise/attention kernels the GEMV-only projection omitted,
 // so the cgo-free CUDA decode measurement is end-to-end (docs/prompts/cuda-measure-e2e-decode.md).
@@ -203,7 +204,7 @@ __global__ void rope(float* __restrict__ vec, const float* __restrict__ invFreq,
 // than nKeys — which also lifts the ~12k-key ceiling the old (nKeys+blockDim)*4 request hit
 // against the 48 KB per-block limit.
 __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                          const KV_T* __restrict__ vc, int nH, int nKV, int hd, int nKeys,
+                          const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int nKeys,
                           float scale, int window, float* __restrict__ ctx ATTN_CAP_PARAM) {
     extern __shared__ float sm[];       // [nWin] scores/weights + [blockDim] reduce
     int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
@@ -216,8 +217,13 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
     int t = threadIdx.x, nt = blockDim.x;
     // scores + local max
     float lm = -1e30f;
+    // Each key's row is looked up one iteration ahead (rowNext), so the table load overlaps the dot product before it instead of
+    // stalling the row's loads: with as few warps as a decode launch has, that stall showed.
+    long rowNext = (winStart + t < nKeys) ? KV_ROW(kvt, winStart + t) : 0;
     for (int s = winStart + t; s < nKeys; s += nt) {
-        const KV_T* ks = kc + s * kvDim + kvh * hd;
+        const long row = rowNext;
+        if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
+        const KV_T* ks = kc + row * kvDim + kvh * hd;
         float dot = 0.f;
         for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
         dot = attn_score(dot, scale ATTN_CAP_ARG); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
@@ -234,7 +240,11 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
     // ctx[d] = sum_s (sc[s]*inv) * V[s,d]  over the window only
     for (int d = t; d < hd; d += nt) {
         float acc = 0.f;
-        for (int s = winStart; s < nKeys; s++) acc = __fmaf_rn(sc[s - winStart], KV_LD(vc + (s * kvDim + kvh * hd + d)), acc);
+        for (int s = winStart; s < nKeys;) {
+            const int e = KV_RUN_END(s, nKeys);
+            const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+        }
         ctx[h * hd + d] = acc * inv;
     }
 }

@@ -197,6 +197,7 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 	var aq, cq, mq, dq *gc.Buffer[int32]
 	var argIdx *gc.Buffer[int32]
 	var kc, vc []*gc.Buffer[float32]
+	var kvt *gc.Buffer[int32] // the identity block table: every layer's cache is a plain [ctxCap][kvDim] buffer
 	const ctxCap = 4096
 
 	// upload helpers (run only inside jobs, ctx current on the pinned thread)
@@ -279,6 +280,7 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 		for l := range kc {
 			kc[l], vc[l] = af(ctxCap*kvDim), af(ctxCap*kvDim)
 		}
+		kvt = gcKVIdentityTab(b, cx, ctxCap)
 		cctx, cSc, cq = af(qDim), af(1), ai(qDim/4)
 		mSc, mq = af(1), ai(H/4)
 		gO, uO = af(I), af(I)
@@ -322,14 +324,14 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 			doG(Ly.q, aq, aSc, qb, qB, 0)
 			doG(Ly.k, aq, aSc, kb, kB, 0)
 			doG(Ly.v, aq, aSc, vb, vB, 0)
-			L(ropeKV, g1(nH*half+nKV*half, 256), gc.Arg(qB), gc.Arg(kB), gc.Arg(vB), gc.Arg(invF), gc.Arg(kc[l]), gc.Arg(vc[l]),
+			L(ropeKV, g1(nH*half+nKV*half, 256), gc.Arg(qB), gc.Arg(kB), gc.Arg(vB), gc.Arg(invF), gc.Arg(kc[l]), gc.Arg(vc[l]), gc.Arg(kvt),
 				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)),
 				gc.ArgValue(int32(pos)),                           // ropePos == pos: not under test here (Qwen2.5-VL m-RoPE)
 				gc.ArgValue(int32(half)), gc.ArgValue(float32(1)), // mscale 1.0 = unscaled
 				gc.ArgValue(float32(1))) // qTempScale 1.0 = no-op (FeatAttnTemp, G5) — not under test here
 			nKeys := pos + 1
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
-				gc.Arg(qB), gc.Arg(kc[l]), gc.Arg(vc[l]), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(attnScale), gc.ArgValue(int32(0)), gc.Arg(cctx))
+				gc.Arg(qB), gc.Arg(kc[l]), gc.Arg(vc[l]), gc.Arg(kvt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(attnScale), gc.ArgValue(int32(0)), gc.Arg(cctx))
 			L(fQ, one(256, 256*4), gc.Arg(cctx), gc.ArgValue(int32(qDim)), gc.Arg(cq), gc.Arg(cSc))
 			doG(Ly.o, cq, cSc, nullBias, x, 1)
 			rms(x, Ly.postNorm, mq, mSc)

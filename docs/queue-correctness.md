@@ -17,6 +17,33 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 
 ## Queued
 
+**G50 · Windows: `fatal error: found pointer to free object` in gate L on some Xeon 8573C runners** — `windows`, **filed
+2026-10-22 (owner: "hunt by day, quarantine meanwhile"); fixed the same day**
+
+`root-windows` goes red at random on some GitHub Windows runners whose CPU is an Intel Xeon Platinum 8573C: the GC finds its
+own span metadata damaged during `TestProgram_L_everyParameterIsLive`, in the token walker's `ffn.Act` perturbation of fixture
+`nemotron3nano-tiny`, which runs right after `ffn.Form`'s recovered nil-pointer panic in `walkToken`'s Gemma 4 dense-FFN branch.
+A failing host fails nearly every run; other 8573C hosts and every AMD and Xeon 8370C host pass (about 400 runs). Ruled out:
+aikit's assembly (`aikit_noavx2` and `aikit_noavx512` builds fail the same), the Go runtime's Intel paths (`GODEBUG` cpu
+features off), races and checkptr, the Go 1.27.3 toolchain bump, and the 2026-10-21 PRs.
+
+**Fixed 2026-10-22; the quarantine is removed.** The trigger is the hardware fault, not `ffn.Act`. `ffn.Form` gives a model
+without Gemma 4's per-token state Gemma 4's dense FFN form, `walkToken` dereferenced the nil state, and `runProgram` recovered the
+access violation. On the failing hosts the heap is damaged from then on, and the GC reports it a run or two later. Measured on
+GitHub's Windows runners through the probe workflow on branch `zombie-probe-3-2026-10-22` (8 of the 15 8573C hosts that four
+rounds drew were failing hosts):
+- skipping `ffn.Act` (the first quarantine) only moved the crash to the next key, `ffn.MoE.NumExperts`;
+- `GODEBUG=asyncpreemptoff=1`, `GOMAXPROCS=1`, and the runtime's AVX paths off (with and without `aikit_noavx2`) all still crash;
+- skipping `ffn.Form`, or raising the nil case as a Go `panic` instead of a fault, runs clean;
+- the fix (`walkToken` returns an error for that form without the state; `TestProgram_gemma4DenseFormWithoutStateIsAnError`) ran
+  clean 6 of 6 on two failing hosts, where the old nil path crashed 6 of 6 in the same jobs.
+
+The standard library's `bytes`, `strings` and `sort` tests pass on the failing hosts, which report the same CPU signature
+(family 6, model 207, stepping 2) and Windows builds as the passing ones. A standalone program that recovers nil faults while
+the GC runs does not reproduce it. So why a recovered fault in this frame damages the heap on some hosts is not pinned: a Go
+runtime or host defect, with no standalone reproduction yet to report upstream. Any other recovered hardware fault in a test can
+set it off again.
+
 **G49 · `/v1/messages` accepts `output_config.format` and ignores it** — `any`, **filed 2026-10-21 (moved from
 `docs/tasks/task-integration-harness-2026-10.md` §0a, which found it and gave it no owner)**
 

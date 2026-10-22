@@ -69,6 +69,8 @@ func TestAttnBatchedBandwidth(t *testing.T) {
 	defer dKc.Close()
 	defer dVc.Close()
 	defer dCtx.Close()
+	dKvt := gcKVIdentityTab(t, cx, M)
+	defer dKvt.Close()
 	_ = gc.CopyHtoD(bg, dQ, q)
 	_ = gc.CopyHtoD(bg, dKc, kc)
 	_ = gc.CopyHtoD(bg, dVc, vc)
@@ -81,7 +83,7 @@ func TestAttnBatchedBandwidth(t *testing.T) {
 		SharedMemBytes: uint32((maxNWin + 128) * 4)}
 	launch := func() {
 		_ = fn.LaunchOn(bg, stream, cfg,
-			gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)),
+			gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc), gc.Arg(dKvt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)),
 			gc.ArgValue(int32(hd)), gc.ArgValue(int32(0)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
 			gc.ArgValue(int32(M)), gc.Arg(dCtx))
 	}

@@ -32,8 +32,9 @@ type residentDrafter struct {
 	// hold K/V projected from the FUSED tap hidden states, which is a different tensor at the
 	// same indices.
 	kc, vc []Buffer
-	kvCap  int // positions each cache can hold
-	ctxLen int // positions currently valid
+	kvt    Buffer // the identity block table rope_kv_batched writes kc/vc through: the drafter's cache is contiguous, not paged
+	kvCap  int    // positions each cache can hold
+	ctxLen int    // positions currently valid
 	rhalf  int
 
 	// Scratch for the context fusion and the per-layer projections, sized to the widest ctx seen.
@@ -273,6 +274,14 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 				d.kc[l] = d.r.af(capRows * kvDim)
 				d.vc[l] = d.r.af(capRows * kvDim)
 			}
+			ids := make([]int32, kvBlocksFor(capRows))
+			for i := range ids {
+				ids[i] = int32(i)
+			}
+			d.kvt = d.r.ai(len(ids))
+			if e := gpu.Upload(d.kvt, ids); e != nil {
+				return e
+			}
 			d.kvCap = capRows
 		}
 		// Sized from THIS call's row count, not from whatever FuseContext last allocated: coupling them would make ExtendContext
@@ -336,7 +345,7 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 			// rope at absolute positions ctxLen+i, and store K/V into this layer's cache.
 			if e := d.r.launch(d.r.bRopeKV, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(n), GridZ: 1,
 				BlockX: 256, BlockY: 1, BlockZ: 1},
-				Arg(d.ctxQ2), Arg(d.ctxKB), Arg(d.ctxVB), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]),
+				Arg(d.ctxQ2), Arg(d.ctxKB), Arg(d.ctxVB), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]), Arg(d.kvt),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(n)),
 				// Drafters build from a geometry (no decoder.Model), which carries no YaRN attention_factor, so 1.0. A YaRN drafter
@@ -482,7 +491,7 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 			// rope at the block's absolute positions, and write its K/V after the context's.
 			if e := d.r.launch(d.r.bRopeKV, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1,
 				BlockX: 256, BlockY: 1, BlockZ: 1},
-				Arg(s.q), Arg(s.k), Arg(s.v), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]),
+				Arg(s.q), Arg(s.k), Arg(s.v), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]), Arg(d.kvt),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(M)),
 				gpu.ArgValue(float32(1)),                                       // no YaRN on a drafter geometry — see the note above

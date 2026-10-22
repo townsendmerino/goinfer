@@ -90,23 +90,24 @@ func kv8aRec(t *testing.T, r *cudaResident) [][]float32 {
 	return out
 }
 
-// kv8aKV downloads the first n positions of every attention layer's own K and V rows (f32 layers).
+// kv8aKV reads the first n positions of every attention layer's own K and V rows (f32 layers) in the bound slot, through its table.
 func kv8aKV(t *testing.T, r *cudaResident, n int) [][]float32 {
 	t.Helper()
 	var out [][]float32
 	if err := r.do(func() error {
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
 		for l := range r.layers {
 			Ly := &r.layers[l]
 			if Ly.noKV() || Ly.kvShared || Ly.kvHalf || Ly.kvDim == 0 {
 				continue
 			}
-			for _, b := range []Buffer{r.kc[l], r.vc[l]} {
-				v := make([]float32, n*Ly.kvDim)
-				if e := gpu.Download(b.At(0), v); e != nil {
-					return e
-				}
-				out = append(out, v)
+			k, v, e := r.kvRowsForTest(r.kvSlot, l, 0, n)
+			if e != nil {
+				return e
 			}
+			out = append(out, k, v)
 		}
 		return nil
 	}); err != nil {

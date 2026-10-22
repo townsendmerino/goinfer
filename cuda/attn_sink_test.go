@@ -72,6 +72,7 @@ func TestAttnSink_matchesReference(t *testing.T) {
 	dV := mustAlloc[float32](t, cx, len(vc))
 	dCtx := mustAlloc[float32](t, cx, M*qDim)
 	dSink := mustAlloc[float32](t, cx, nH)
+	dKvt := gcKVIdentityTab(t, cx, nKeys)
 	for _, cp := range []struct {
 		d *gc.Buffer[float32]
 		h []float32
@@ -130,7 +131,7 @@ func TestAttnSink_matchesReference(t *testing.T) {
 		cfg := gc.LaunchConfig{GridX: nH, GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((nKeys + 128) * 4)}
 		if e := fn.LaunchOn(bg, stream, cfg,
-			gc.Arg(dQ), gc.Arg(dK), gc.Arg(dV),
+			gc.Arg(dQ), gc.Arg(dK), gc.Arg(dV), gc.Arg(dKvt),
 			gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)),
 			gc.ArgValue(int32(startPos)), gc.ArgValue(scale),
 			gc.ArgValue(int32(window)), gc.ArgValue(int32(M)), gc.Arg(dCtx), arg); e != nil {
