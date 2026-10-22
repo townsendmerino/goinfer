@@ -217,9 +217,9 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		if mb := l.mamba; mb != nil {
 			dense += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj) + wmBytes(&mb.inQ) + wmBytes(&mb.outQ)
 		}
-		// LFM2's gated short-convolution mixer, kept as f32.
+		// LFM2's gated short-convolution mixer: its projections bf16 or f32 (islandMat), its depthwise kernel f32.
 		if sc := l.shortConv; sc != nil {
-			dense += f32SliceBytes(sc.inProj) + f32SliceBytes(sc.convW) + f32SliceBytes(sc.outProj)
+			dense += wmBytes(&sc.inProj) + f32SliceBytes(sc.convW) + wmBytes(&sc.outProj)
 		}
 		// Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown alias l.GateProj/UpProj/DownProj (the gemma4Layer comment in
 		// serialize.go) and are already counted above; only routerProj and the fused experts are new tensors. The fused experts

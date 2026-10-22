@@ -25,7 +25,8 @@ func shortConvStep(n []float32, w *shortConvWeights, g lfm2Params, hidden int, s
 	cd, K := g.ConvDim, g.ConvLCache
 
 	// in_proj is [3*convDim, hidden]; B|C|x are consecutive blocks in that order.
-	bcx := matvec(w.inProj, 3*cd, hidden, n)
+	bcx := make([]float32, 3*cd)
+	w.inProj.MatmulBT(n, bcx, 1)
 	B, C, x := bcx[:cd], bcx[cd:2*cd], bcx[2*cd:]
 
 	bx := make([]float32, cd)
@@ -52,5 +53,7 @@ func shortConvStep(n []float32, w *shortConvWeights, g lfm2Params, hidden int, s
 	for c := range cd {
 		y[c] = C[c] * conv[c]
 	}
-	return matvec(w.outProj, hidden, cd, y)
+	out := make([]float32, hidden)
+	w.outProj.MatmulBT(y, out, 1)
+	return out
 }
