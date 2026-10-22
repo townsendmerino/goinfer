@@ -141,8 +141,8 @@ func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 		t.Errorf("explicit int4: LoadPath %q, Quant() %q; want the sidecar and int4", ex.LoadPath, ex.Model.Quant())
 	}
 	for _, o := range []decoder.Options{{Quant: "int4", LoRA: "/an/adapter"}, {Quant: "q4k"}, {Quant: "bf16"}, {Quant: "f16"}, {Quant: "int4", StreamWeights: true}} {
-		if dirSidecarApplies(src, o) {
-			t.Errorf("dirSidecarApplies(%+v) = true, want false", o)
+		if decoder.DirSidecarApplies(src, o) {
+			t.Errorf("DirSidecarApplies(%+v) = true, want false", o)
 		}
 	}
 }

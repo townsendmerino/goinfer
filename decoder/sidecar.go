@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -235,7 +236,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, target GIWTarget, id string) (int64, error) {
 	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same).
 	// Unpinned, the fit guard prices the model's full context and can refuse a model whose weights fit.
-	m, err := Load(dir, Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora, ResidentContext: 1})
+	m, err := Load(dir, Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora, ResidentContext: 1, DirectLoad: true})
 	if err != nil {
 		return 0, fmt.Errorf("load %s (%s): %w", dir, quant, err)
 	}
@@ -353,6 +354,58 @@ func DefaultToSidecar(directLoad bool) bool {
 		return false
 	}
 	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
+}
+
+// sidecarInTests is whether Load takes the sidecar default inside a test binary. Off: a test that loads a .gguf or a
+// safetensors directory keeps testing that load, and writes nothing beside its fixture or checkpoint. A test of the
+// default itself turns it on.
+var sidecarInTests = false
+
+// sidecarRoute is what Load opens for src: src itself, or the sidecar .giw the apps open for it (internal/modelload
+// routes by the same rules). A .gguf whose sidecar cannot be built is the load's error, naming Options.DirectLoad as the
+// apps' refusal names -direct-load; a safetensors directory falls back to the direct load with a note. q4k has no .giw
+// form, so a q4k .gguf loads directly.
+func sidecarRoute(src string, opts Options) (string, error) {
+	if opts.DirectLoad || opts.noSelfTest || opts.planResidency || testing.Testing() && !sidecarInTests {
+		return src, nil
+	}
+	backend := opts.Backend
+	if backend == "" {
+		backend = "cpu" // Options.Backend's default; GIWTargetForBackend reads "" as no target
+	}
+	ensure := func() (string, error) {
+		return EnsureCachedGIW(context.Background(), src, opts.Quant, backend, opts.EmbedInt4)
+	}
+	gguf := strings.HasSuffix(src, ".gguf")
+	switch {
+	case gguf && opts.Quant == "q4k":
+		return src, nil
+	case gguf && (opts.StreamWeights || DefaultToSidecar(false)):
+		p, err := ensure()
+		if err != nil {
+			return "", fmt.Errorf("decoder: sidecar .giw for %s: %w — set Options.DirectLoad to load this .gguf straight into the heap instead", src, err)
+		}
+		return p, nil
+	case DirSidecarApplies(src, opts) && DefaultToSidecar(false):
+		p, err := ensure()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "decoder: loading %s directly: its sidecar .giw could not be built (%v)\n", src, err)
+			return src, nil
+		}
+		return p, nil
+	}
+	return src, nil
+}
+
+// DirSidecarApplies reports whether a safetensors directory source takes the sidecar default: not with a LoRA to merge
+// (the merge needs the safetensors base, and a plain sidecar would drop the adapter), not at q4k, bf16 or f16 (no .giw
+// form), and not under StreamWeights, which streams only a .gguf's sidecar.
+func DirSidecarApplies(src string, opts Options) bool {
+	if opts.LoRA != "" || opts.Quant == "q4k" || opts.Quant == "bf16" || opts.Quant == "f16" || opts.StreamWeights || !isDir(src) {
+		return false
+	}
+	m, _ := filepath.Glob(filepath.Join(src, "*.safetensors"))
+	return len(m) > 0
 }
 
 // streamCachePath is the sidecar cache for a GGUF at a quant, embedInt4 setting and target:
@@ -521,8 +574,11 @@ func selfCheck(path string) error {
 }
 
 // transcodeSelfCheck is the self-check a transcode runs on the bundle it has just written. A variable so a test can
-// make the span it is timed over longer than the clock's resolution.
-var transcodeSelfCheck = selfCheck
+// make the span it is timed over longer than the clock's resolution. Set in init: selfCheck reaches Load, which reaches the
+// transcode, so a package-level initializer would be a cycle.
+var transcodeSelfCheck func(path string) error
+
+func init() { transcodeSelfCheck = selfCheck }
 
 // afterWriteForTest, when set, is called with the temp bundle once it is written and markWritten has run, before its
 // self-check.
