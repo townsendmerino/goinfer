@@ -1390,7 +1390,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 && !r.kvF32 &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 		r.mla == nil // MLA's latent attention is in no prefill kernel
 

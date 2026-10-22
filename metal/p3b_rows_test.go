@@ -137,8 +137,9 @@ func TestP3b_promptInRowsBitIdentical(t *testing.T) {
 	}
 }
 
-// TestP3b_stepPrefillTakesInt8AndF32 is P3B-G2: at --kv i8 and f32 the batched step is built, PrefillPath reports the step at every
-// length, and PrefillLast of a 40-token prompt returns logits bit-identical to the sequential loop's.
+// TestP3b_stepPrefillTakesInt8AndF32 is P3B-G2: at --kv i8 and f32 the batched step is built, PrefillPath names it, and PrefillLast
+// of a 20-token prompt (below the step's ceiling, where an int8 cache takes the step too since P3b-2 gave it the MMA pass above
+// it) returns logits bit-identical to the sequential loop's.
 func TestP3b_stepPrefillTakesInt8AndF32(t *testing.T) {
 	for _, kv := range p3bKVs {
 		t.Run(kv, func(t *testing.T) {
@@ -157,7 +158,7 @@ func TestP3b_stepPrefillTakesInt8AndF32(t *testing.T) {
 			}
 			seed := uint32(4242)
 			rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
-			embs := make([][]float32, 40)
+			embs := make([][]float32, 20)
 			for i := range embs {
 				embs[i] = mc3Emb(r, rnd())
 			}
@@ -181,7 +182,7 @@ func TestP3b_stepPrefillTakesInt8AndF32(t *testing.T) {
 					diff++
 				}
 			}
-			fmt.Fprintf(os.Stderr, "[P3B-G2] --kv %s: PrefillPath step; a 40-token prompt's last logits: %d of %d differ from sequential\n", kv, diff, len(ref))
+			fmt.Fprintf(os.Stderr, "[P3B-G2] --kv %s: PrefillPath step; a 20-token prompt's last logits: %d of %d differ from sequential\n", kv, diff, len(ref))
 			if diff != 0 {
 				t.Errorf("%d of %d last-row logits differ from the sequential loop", diff, len(ref))
 			}
