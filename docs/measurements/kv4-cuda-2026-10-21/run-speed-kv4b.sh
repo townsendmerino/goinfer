@@ -24,7 +24,8 @@ rc=0
 for m in ${MODELS:-qmoe gemma3-4b cr7b qvl3 E2B dsv2lite}; do
   idle || { echo "VOID: $m not started (box busy)"; rc=1; continue; }
   BENCH_MODELS=$m BENCH_DEPTHS=128,2048 python3 scripts/bench_peer.py "$OUT/decode-$m.json" 2>&1 | tee "$OUT/decode-$m.log"
-  [ -s "$OUT/decode-$m.json" ] || { echo "VOID: no results for $m (the harness refused or failed)"; rc=1; }
+  # bench_peer writes its results file before the cells run, so a crash leaves one behind: read the log, not the file.
+  if [ ! -s "$OUT/decode-$m.json" ] || grep -qE "^Traceback|REFUSED" "$OUT/decode-$m.log"; then echo "VOID: no results for $m (the harness refused or failed)"; rc=1; fi
 done
 echo "RUN-SPEED-KV4B-DONE"
 exit $rc
