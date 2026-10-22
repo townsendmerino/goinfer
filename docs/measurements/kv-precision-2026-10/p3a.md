@@ -27,3 +27,9 @@ and Metal's MLA pricing is right.
 After `main` brought in G3 (`TestKVDeliveredBytes_Metal`, `docs/measurements/kv-precision-2026-10/g3.md`), its readback runs on this
 branch's f32 cells too: 35 Metal cells read back, every resident f32 cell 4 B per element, and the three no-resident `/f32` cells
 leave its matrix-differs list (the matrix's Metal answer is now f32, which is what their CPU cache holds).
+
+**CI caught a pricing gap in the build above: the load-time fit guard still priced `--kv f32` on Metal at f16.**
+`TestKVPricingFor_pricesWhatTheBackendAllocates` still expected a Metal f32 refusal. P3-G3 checked `ResidentKVBytes` (the resident's
+own guard and Plan), but not `kvPricingFor`. `kvPricingFor` forced f16 for every Metal-resident load, which under-prices an f32
+cache by half. It now prices f32 wherever the resolver delivers f32 on Metal. An int8 cache stays priced at f16, which is above
+what it allocates; that is unchanged. The test asserts the f32 pricing.
