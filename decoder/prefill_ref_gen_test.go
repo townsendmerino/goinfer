@@ -100,6 +100,8 @@ func TestPrefillGateReference(t *testing.T) {
 		{"QVL3", "GOINFER_CPU_MODEL_QVL3", "$HOME/models/qwen2.5-vl-3b", "", refKs([]int{3900, 8000})},
 		// Q359, Qwen3.5-9B: group 5's (the hybrids), weight-only int8 like D7.
 		{"Q359", "GOINFER_CPU_MODEL_Q359", "$HOME/models/qwen3.5-9b", "int8", refKs([]int{3900, 8000})},
+		// DSV2L, DeepSeek-V2-Lite: group 6's (MLA), weight-only int8 like D7.
+		{"DSV2L", "GOINFER_CPU_MODEL_DSV2L", "$HOME/models/deepseek-v2-lite", "int8", refKs([]int{3900, 8000})},
 	}
 	// GOINFER_CPU_REF_MODELS (comma-separated cell names) narrows the run; unset builds S and D7, as before Q05.
 	want := map[string]bool{"S": true, "D7": true}

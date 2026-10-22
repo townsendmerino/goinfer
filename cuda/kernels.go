@@ -284,6 +284,11 @@ var fusedGURowsPTX []byte
 //go:embed testdata/mla.ptx
 var mlaPTX []byte
 
+// mlaKV16PTX: mla.cu built with the latent cache as f16 (kvtype.cuh), bound by kvPTX for an f16 cache.
+//
+//go:embed testdata/mla_kv16.ptx
+var mlaKV16PTX []byte
+
 // nibblePosFast maps a weight's index within an 8-weight word (0..7) to its nibble slot,
 // so the coalesced GEMV's even/odd byte split (word&0x0F0F0F0F / (word>>4)&0x0F0F0F0F)
 // lands weights 0..3 in the low-nibble bytes and 4..7 in the high-nibble bytes.

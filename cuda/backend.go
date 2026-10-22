@@ -1352,7 +1352,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		if r.isMLA {
-			mlamod, me := r.dev.CompileLibrary(mlaPTX)
+			mlamod, me := r.dev.CompileLibrary(r.kvPTX(mlaPTX, mlaKV16PTX))
 			if me != nil {
 				return fmt.Errorf("cuda: JIT mla.ptx: %w", me)
 			}
@@ -1633,7 +1633,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.layers {
-			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA() && !r.layers[l].noKV() && !r.layers[l].kvShared
+			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].noKV() && !r.layers[l].kvShared
 		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check

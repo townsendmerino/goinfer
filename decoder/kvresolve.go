@@ -187,7 +187,7 @@ func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
 func cudaKVF16Delivered(f KVFacts) bool {
 	switch f.Family {
 	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss", "cohere",
-		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4":
+		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4", "deepseek_v2", "deepseek_v3", "kimi_k2":
 		return true
 	}
 	return false
@@ -195,10 +195,10 @@ func cudaKVF16Delivered(f KVFacts) bool {
 
 // cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (the
 // owner's D7: f16 becomes the default for each family as it clears its gate). MoE and the paged-experts build are delivered on request
-// sliding-window attention, pairwise RoPE, m-RoPE and the hybrids are delivered on request and stay f32 under auto until their group's G4
-// passes.
+// sliding-window attention, pairwise RoPE, m-RoPE, the hybrids and MLA's latent cache are delivered on request and stay f32 under auto
+// until their group's G4 passes.
 func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
-	if f.MoE || o.MoECacheExperts || f.SlidingWindow || f.PairwiseRoPE || f.MRoPE || f.Hybrid {
+	if f.MoE || o.MoECacheExperts || f.SlidingWindow || f.PairwiseRoPE || f.MRoPE || f.Hybrid || f.MLA {
 		return false
 	}
 	switch f.Family {
@@ -208,17 +208,15 @@ func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
 	return false
 }
 
-// CUDAKVF16Decline returns why a CUDA resident cannot hold this model's KV cache as f16, or "" when it can. Each reason names a path whose
-// kernels read or write the cache and have no f16 twin yet. It lives here so ResolveKV answers for CUDA without the cuda package; the
-// cuda package registers it as its policy.
-func CUDAKVF16Decline(f KVFacts, o Options) string {
-	switch {
-	case !cudaKVF16Delivered(f):
+// CUDAKVF16Decline returns why a CUDA resident cannot hold this model's KV cache as f16, or "" when it can: a family outside
+// cudaKVF16Delivered. Every kernel that reads or writes the cache, MLA's latent included, has an f16 twin; a family joins the list
+// with its group's gates, so one whose paths were never checked stays f32. It lives here so ResolveKV answers for CUDA without the
+// cuda package; the cuda package registers it as its policy.
+func CUDAKVF16Decline(f KVFacts, _ Options) string {
+	if !cudaKVF16Delivered(f) {
 		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, " +
-			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next and gemma4 so far; " +
+			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; " +
 			f.Family + " keeps f32"
-	case f.MLA:
-		return "an MLA latent cache has no f16 form"
 	}
 	return ""
 }

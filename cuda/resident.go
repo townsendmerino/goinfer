@@ -202,7 +202,7 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 			elem = 2
 		}
 		if layers[i].isMLA() {
-			perBlock += kvBlock * int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
+			perBlock += kvBlock * int64(layers[i].kvDim) * elem // MLA caches 1 latent row per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer maps window+slack positions however long the context (kvWindowBlocks)
 			held := int64(kvWindowBlocks(cap, int(layers[i].window)+kvWindowSlack))

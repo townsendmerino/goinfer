@@ -61,6 +61,8 @@ func TestKV16GateVsReference(t *testing.T) {
 		"QVL3": {"GOINFER_CUDA_GATE_MODEL_QVL3", "$HOME/models/qwen2.5-vl-3b", true, decoder.Options{}},
 		// Group 5, the hybrids: Qwen3.5-9B (Gated DeltaNet with a full-attention layer in four).
 		"Q359": {"GOINFER_CUDA_GATE_MODEL_Q359", "$HOME/models/qwen3.5-9b", true, decoder.Options{}},
+		// Group 6, MLA's latent cache: DeepSeek-V2-Lite, which fits the 8 GB card with its experts paged.
+		"DSV2L": {"GOINFER_CUDA_GATE_MODEL_DSV2L", "$HOME/models/deepseek-v2-lite", true, decoder.Options{MoECacheExperts: true}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
@@ -129,7 +131,7 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	}
 	res := kv16ArmResult{f16: rf.kvF16, kvBytes: rf.kc[kl].Len() * map[bool]int{true: 2, false: 4}[rf.layers[kl].kvHalf], layers: len(rf.layers)}
 	for l := range rf.layers {
-		if w := int(rf.layers[l].window); !rf.layers[l].noKV() && rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
+		if w := int(rf.layers[l].window); !rf.layers[l].noKV() && !rf.layers[l].isMLA() && rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
 			res.faLayers++
 		}
 	}
@@ -234,7 +236,7 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	if f.kvBytes*2 != e.kvBytes {
 		t.Fatalf("PRECONDITION 1: the f16 arm's K buffer is %d B against the f32 arm's %d B, not half", f.kvBytes, e.kvBytes)
 	}
-	if want := f.faLayers * (contN - 1) * len(prompts); f.faLayers == 0 || f.faLaunches < want {
+	if want := f.faLayers * (contN - 1) * len(prompts); f.faLaunches < want { // an MLA model has no layer the lane takes; the rows below still must differ
 		t.Fatalf("PRECONDITION 1 (vacuity): the f16 arm launched fa_partial %d times, expected >= %d", f.faLaunches, want)
 	}
 	// PRECONDITION 2: A/A.

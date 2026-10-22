@@ -4,11 +4,14 @@ package cuda
 
 import (
 	"context"
+	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -30,6 +33,7 @@ var kv4bGroups = []struct {
 	{"m-rope", []string{"qwen25vl-tiny", "qwen3vl-tiny"}, decoder.Options{}, false},
 	{"hybrid", []string{"decoder/testdata/qwen3_5-tiny", "qwen35-tiny", "qwen3next-tiny", "gemma4-dense-twogeom-tiny", "gemma4-moe-kv-tiny32",
 		"gemma4-moe-tiny"}, decoder.Options{}, false},
+	{"mla", []string{"deepseek-tiny", "kimi-tiny"}, decoder.Options{}, false},
 }
 
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.
@@ -115,7 +119,7 @@ func TestKV4b_deliveredBytes(t *testing.T) {
 
 // TestKV4b_layer0StoreIsTheRoundedF32Store is G1's store half for every delivered group: layer 0's K and V come from the same embedding by
 // the same f32 arithmetic in both arms, so the f16 arm's layer-0 cache equals the f32 arm's rounded to nearest even, bit for bit, at every
-// position written by the batched prefill and by decode. The group's attention readers are the _kv16 kernels TestKV16_exactInputIdentity_*
+// position written by the batched prefill and by decode (an MLA layer's latent row stands for K). The group's attention readers are the _kv16 kernels TestKV16_exactInputIdentity_*
 // hold to the same bar.
 func TestKV4b_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 	requireCUDADevice(t)
@@ -123,8 +127,8 @@ func TestKV4b_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 		for _, fx := range g.fixtures {
 			t.Run(g.group+"/"+filepath.Base(fx), func(t *testing.T) {
 				_, m16, r32, r16 := kv4bPair(t, fx, g.opts, g.windowed)
-				if r16.layers[0].noKV() || r16.layers[0].isMLA() {
-					t.Skip("layer 0 keeps no f16 K/V")
+				if r16.layers[0].noKV() {
+					t.Skip("layer 0 keeps no K/V")
 				}
 				_, _, _, _, _, _, vocab := m16.Dims()
 				nPrompt, nDecode := min(70, r16.ctxCap/2), 6
@@ -134,7 +138,13 @@ func TestKV4b_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 				}
 				ctx := context.Background()
 				for _, r := range []*cudaResident{r32, r16} {
-					if _, err := r.PrefillLast(ctx, embs, 0); err != nil {
+					if _, err := r.PrefillLast(ctx, embs, 0); errors.Is(err, errPrefillDeclined) {
+						for i, e := range embs { // a family the batched prefill declines writes its rows one at a time
+							if _, err := r.Forward(e, i); err != nil {
+								t.Fatalf("prefill by decode at %d: %v", i, err)
+							}
+						}
+					} else if err != nil {
 						t.Fatalf("prefill: %v", err)
 					}
 					for i := range nDecode {
@@ -160,11 +170,15 @@ func TestKV4b_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 				}
 				k32, v32 := rows(r32)
 				k16, v16 := rows(r16)
-				for _, c := range []struct {
+				cases := []struct {
 					name string
 					f    []float32
 					h    []uint16
-				}{{"K", k32, kvWordsToHalves(k16)}, {"V", v32, kvWordsToHalves(v16)}} {
+				}{{"K", k32, kvWordsToHalves(k16)}, {"V", v32, kvWordsToHalves(v16)}}
+				if r16.layers[0].isMLA() {
+					cases = cases[:1] // one latent row per position, no V
+				}
+				for _, c := range cases {
 					bad, nonzero := 0, 0
 					for i := range n {
 						if want := f32ToF16RNE(c.f[i]); c.h[i] != want {
@@ -185,6 +199,62 @@ func TestKV4b_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// TestKV4b_mlaAttnExactInputIdentity is G1's reader half for MLA: on a latent cache holding f16-representable rows, mla_attn's f16 twin
+// gives the same bits as the f32 kernel for the same query, at several depths. The store half is TestKV4b_layer0StoreIsTheRoundedF32Store.
+func TestKV4b_mlaAttnExactInputIdentity(t *testing.T) {
+	requireCUDADevice(t)
+	_, _, r32, r16 := kv4bPair(t, "deepseek-tiny", decoder.Options{}, false)
+	if !r16.layers[0].isMLA() || !r16.layers[0].kvHalf || r32.layers[0].kvHalf {
+		t.Fatalf("layer 0: MLA %v, f16 arm kvHalf %v, f32 arm kvHalf %v", r16.layers[0].isMLA(), r16.layers[0].kvHalf, r32.layers[0].kvHalf)
+	}
+	nH, latDim, rank := r32.nH, r32.mlaLatDim, r32.mlaRank
+	for _, pos := range []int{0, 63, 64, 200} {
+		n := pos + 1
+		lat := kv16Representable(n*latDim, uint32(3+n))
+		q := kv16Representable(nH*latDim, uint32(7+n))
+		var out [2][]float32
+		for i, r := range []*cudaResident{r32, r16} {
+			if err := r.UploadKV(0, 0, lat, nil); err != nil {
+				t.Fatal(err)
+			}
+			out[i] = make([]float32, nH*rank)
+			if err := r.do(func() error {
+				qB := gpu.NewBufferLenOf[float32](r.dev, len(q))
+				wB := gpu.NewBufferLenOf[float32](r.dev, nH*rank)
+				if e := gpu.Upload(qB, q); e != nil {
+					return e
+				}
+				cfg := LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((n + 128) * 4)}
+				if e := r.launch(r.fMlaAttn, cfg, Arg(qB), Arg(r.kc[0]), Arg(r.kvT(0)), Arg(wB), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(latDim)),
+					gpu.ArgValue(int32(rank)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1))); e != nil {
+					return e
+				}
+				if e := r.stream.Sync(); e != nil {
+					return e
+				}
+				return gpu.Download(wB, out[i])
+			}); err != nil {
+				t.Fatalf("pos %d arm %d: %v", pos, i, err)
+			}
+		}
+		diff, nz := 0, 0
+		for i := range out[0] {
+			if math.Float32bits(out[0][i]) != math.Float32bits(out[1][i]) {
+				diff++
+			}
+			if out[0][i] != 0 {
+				nz++
+			}
+		}
+		if nz == 0 {
+			t.Errorf("pos %d: the f32 arm's output is all zero, so the comparison is vacuous", pos)
+		}
+		if diff != 0 {
+			t.Errorf("pos %d: %d/%d elements differ between the f16 mla_attn and the f32 original", pos, diff, len(out[0]))
 		}
 	}
 }
