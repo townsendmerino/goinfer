@@ -1,0 +1,36 @@
+=== RUN   TestMEM2_towerScratchFreed
+=== RUN   TestMEM2_towerScratchFreed/gemma4-vision
+[MEM2] gemma4-vision order [0 1 2]: 52 buffers, +4587520 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] gemma4-vision order [2 1 0]: 52 buffers, +4587520 bytes live; after Close ledger (0, 0), +0 bytes
+=== RUN   TestMEM2_towerScratchFreed/gemma4-audio
+[MEM2] gemma4-audio order [0 1 2]: 58 buffers, +5210112 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] gemma4-audio order [2 1 0]: 58 buffers, +5210112 bytes live; after Close ledger (0, 0), +0 bytes
+=== RUN   TestMEM2_towerScratchFreed/embeddinggemma2
+[MEM2] embeddinggemma2 order [0 1 2]: 134 buffers, +7389184 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] embeddinggemma2 order [2 1 0]: 134 buffers, +7258112 bytes live; after Close ledger (0, 0), +0 bytes
+=== RUN   TestMEM2_towerScratchFreed/qwen3.5
+[MEM2] qwen3.5 order [0 1 2]: 54 buffers, +4587520 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] qwen3.5 order [2 1 0]: 54 buffers, +4587520 bytes live; after Close ledger (0, 0), +0 bytes
+=== RUN   TestMEM2_towerScratchFreed/glm-ocr
+[MEM2] glm-ocr order [0 1 2]: 58 buffers, +5423104 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] glm-ocr order [2 1 0]: 58 buffers, +5423104 bytes live; after Close ledger (0, 0), +0 bytes
+=== RUN   TestMEM2_towerScratchFreed/siglip
+[MEM2] siglip order [0 1 2]: 54 buffers, +4227072 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] siglip order [2 1 0]: 54 buffers, +4227072 bytes live; after Close ledger (0, 0), +0 bytes
+=== RUN   TestMEM2_towerScratchFreed/qwen2.5-vl
+[MEM2] qwen2.5-vl order [0 1 2]: 53 buffers, +6209536 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] qwen2.5-vl order [2 1 0]: 53 buffers, +6209536 bytes live; after Close ledger (0, 0), +0 bytes
+--- PASS: TestMEM2_towerScratchFreed (0.29s)
+    --- PASS: TestMEM2_towerScratchFreed/gemma4-vision (0.03s)
+    --- PASS: TestMEM2_towerScratchFreed/gemma4-audio (0.03s)
+    --- PASS: TestMEM2_towerScratchFreed/embeddinggemma2 (0.05s)
+    --- PASS: TestMEM2_towerScratchFreed/qwen3.5 (0.02s)
+    --- PASS: TestMEM2_towerScratchFreed/glm-ocr (0.03s)
+    --- PASS: TestMEM2_towerScratchFreed/siglip (0.02s)
+    --- PASS: TestMEM2_towerScratchFreed/qwen2.5-vl (0.03s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	0.737s
+=== RUN   TestUnload_closesTheDeviceTowers
+--- PASS: TestUnload_closesTheDeviceTowers (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.508s
