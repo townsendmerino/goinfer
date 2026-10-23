@@ -573,6 +573,21 @@ tiling reproduces").**
   - Then `TestR18InSequence`, 7 paired reps.
   - Kill it under 1.03× or on any differing byte.
 
+**KS-C2 first measurement, registered 2026-10-23 before the code, on the owner's order of 11:50.** The prototype,
+`gemv_w4a8_resid_mk<R>` in `metal/gemv_r18_test.go`'s `r18Kernels`: `gemv_w4a8_resid_staged<R>` (production's down) with each
+word's integer sum taken as R18b does, through two masked half-word dots against the word's eight activations pre-scaled by
+16^-(k mod 4), less 8·Σa. The activations stay staged as int8 (K bytes, so the 7B's 18,944 fits) and are scaled in registers.
+Every partial sum is an integer below 2^24, so `float(gi)` is the shipped integer exactly and the per-row chain
+`acc += float(gi) · scale` is unchanged. Instruments, in order:
+1. `TestR18Step0Standalone`'s down step at the 1.5B's (1,536 × 8,960) and the 7B's (3,584 × 18,944) shapes: `resid_mk2` and
+   `resid_mk4` against `gemv_w4a8_resid`, byte-equal, timed beside `resid_st4`.
+2. `TestR18InSequence` on the 1.5B (the Metal `.gguf` at int4), 7 paired reps, a new arm `h4244m` (production with the masked down)
+   against production `h4244`: its bit-identity precondition and the in-sequence down-category work.
+
+**Kill** on any differing byte in either instrument, or if the in-sequence down work of `h4244m` is under 1.03× production's
+(median over the 7 reps); otherwise the wiring follows, behind a whole-token in-process A/B. Timed, Mac, the timing lock held
+exclusively. Stopping rule: one pass each. Cost: about 2 and 10 minutes.
+
 **KS-C3 · Native int8 decode GEMVs get R18's rows and staging (bit-identical).**
 - **Waste:** `W8A8_SA_BODY` / `W8A8_COAL_BODY` run one row per simdgroup with 4-byte loads, and the down projection re-reads
   activations from device memory in every lane. The 1.5B at int8int8 decodes at 70.6 tok/s, with its int8 body near
