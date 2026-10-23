@@ -1148,6 +1148,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		attnSoftcap = 0
 	}
 	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels+kvF32Kernels+kvRowsKernels, attnSoftcap) // + MC3 S3's multi-row forms (batch_rows.go), attention_f32 (kv_f32.go) and the step's int8 and f32 KV forms (kv_rows.go), derived from allKernels
+	if ksd7OldDequantForTest {
+		libSrc = "#define KSD7_OLD_DEQUANT 1\n" + libSrc
+	}
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
@@ -3742,3 +3745,7 @@ var (
 	g4KVSrcOffForTest          bool // (3) a shared layer reads the previous owning layer of its type, not its source
 	g4OneFFNWidthForTest       bool // (4) every dense layer at the model's one intermediate width
 )
+
+// ksd7OldDequantForTest builds the resident with the per-weight nibble dequant in the prefill GEMM's staging (KSD7_OLD_DEQUANT):
+// the old arm of KS-D7's A/B.
+var ksd7OldDequantForTest bool

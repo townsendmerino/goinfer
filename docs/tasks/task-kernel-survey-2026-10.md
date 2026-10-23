@@ -728,6 +728,13 @@ merged.** D7-G1, model identity: llama-tiny and Qwen2.5-Coder-1.5B, a batched pr
 new. D7-G2, speed: Qwen2.5-Coder-1.5B, a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs; SHIP iff
 the median new/old is ≤ 0.98 and at least 9 of 10 pairs are below 1, otherwise the row closes as measured.
 
+**KS-D7 shipped by owner decision, 2026-10-23 (8:36 am), over the registered 2% bar.** Francis: "it seems silly to give up gains,
+any gains, if it's bit-identical and doesn't use more memory." The re-run read a median of 0.9888 with 10 of 10 pairs below 1
+(`docs/measurements/ks-night-2026-10/README.md`). His condition is a gate, registered here before it ran: **D7-G3 memory**. The
+1.5B (the Metal `.giw`), a 3,900-token prefill per arm, the half2 build against the per-weight build: the prefill scratch counter
+(`prefillScratchSeen`) and Metal's allocated size after the prefill must be equal or lower, and the logits byte-equal. If memory
+goes up, stop and tell him.
+
 **KS-D8 · Batched Mamba-2 prefill on Metal (Nemotron-H).**
 - **Waste:** `metal/model.go:resident.recurrentPrefillOK` declines Mamba, so every prompt token is a decode step.
 - **Gain (est.):** the DeltaNet precedent was 6.7–8.4×, so 5–8×.

@@ -37,14 +37,32 @@ using namespace metal;
 // weights), so each W row is a multiple of 16 bytes and the two words a thread reads form an
 // aligned uint2; activation rows are 64-byte multiples, so the half4 loads are aligned. N % 8 == 0
 // (audit C-10); features past N stage zeros and are never stored.
+//
+// The nibble dequant takes two weights (nibbles kl and kl+4) per half2 operation: OR-ing a nibble pair into 0x6400's mantissa
+// gives 1024+n exactly, minus 1032 gives n-8 exactly, and the half multiply by the (half) scale is the same single rounding as
+// half(float(n-8) * sc). Equal in every bit to the per-weight form for all 16 nibbles x 65,536 scales
+// (TestKSD7_half2DequantExhaustive); KSD7_OLD_DEQUANT compiles the per-weight form back for the A/B.
+inline half2 gemm_dq2(uint word, ushort kl, half2 hs) {
+    return (as_type<half2>(((word >> (4u*kl)) & 0x000F000Fu) | 0x64006400u) - half2(1032.0h)) * hs;
+}
+
 inline void gemm_stage_w(threadgroup half* sa, uint2 wv, float sc, bool wok, ushort fb, ushort kh, ushort nl) {
     for (ushort w = 0; w < 2; w++) {
         uint word = wv[w];
         threadgroup half* p = sa + (fb*4 + kh*2 + w)*72 + nl;
+#ifdef KSD7_OLD_DEQUANT
         for (ushort kl = 0; kl < 8; kl++) {
             *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
             p += 8;
         }
+#else
+        const half2 hs = half2(half(sc));
+        for (ushort kl = 0; kl < 4; kl++) {
+            const half2 v = wok ? gemm_dq2(word, kl, hs) : half2(0.0h);
+            p[kl*8] = v.x;
+            p[(kl+4)*8] = v.y;
+        }
+#endif
     }
 }
 
@@ -188,10 +206,19 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
                 const ushort kb = kq*WPT + w;
                 const uint word = wok ? W[ncol*wpr + k0/8u + kb] : 0u;
                 threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
+#ifdef KSD7_OLD_DEQUANT
                 for (ushort kl = 0; kl < 8; kl++) {
                     *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
                     p += 8;
                 }
+#else
+                const half2 hs = half2(half(sc));
+                for (ushort kl = 0; kl < 4; kl++) {
+                    const half2 v = wok ? gemm_dq2(word, kl, hs) : half2(0.0h);
+                    p[kl*8] = v.x;
+                    p[(kl+4)*8] = v.y;
+                }
+#endif
             }
         }
         for (ushort j = 0; j < BPT && (TM >= 32 || tr < TM); j++) {
