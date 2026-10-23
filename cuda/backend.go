@@ -813,6 +813,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
+		// launch issues kernels from this thread (Queue.LaunchDirect), which needs the context current here.
+		if e := r.dev.BindCurrentThread(); e != nil {
+			return e
+		}
 		// checkWeightsFit runs first, right after the device exists and before the kernel compiles and uploads, and before this
 		// backend's other declines, so a model whose fixed (non-expert) weights exceed free VRAM gets a clean decline naming
 		// that rather than whichever raw driver error the first oversized allocation produced.

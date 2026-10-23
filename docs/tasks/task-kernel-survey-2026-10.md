@@ -19,7 +19,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | KS-A1 | decision | KS-O1, then nobara: a Q5_K GEMV against `gemv_w8a8_g32`. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 (+284.3 Q5_K qkv, +72.6 Q6_K down, +17.8 Q6_K head, all int8 copies) | `docs/measurements/kernel-survey-2026-10/README.md` |
-| KS-A2 | decision | owner: build the cheaper launch path (raw launches from the caller's thread, pre-packed arguments; M)? Measured 2026-10-23 on the 0.5B at depth 128: graphs ÷ live **1.454×** median, 10 of 10 quads (348 → 512 tok/s); 12.9 µs a launch; 1,161 voluntary context switches a token | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A2 | building | gated 2026-10-23; aikit `gpu/v0.34.0` tagged (aikit #13, #14), `cuda/go.mod` bumped; merge after the touched device tests on the tagged module: direct launches from the resident's executor thread (aikit `Queue.LaunchDirect`). Logits byte-equal; the 0.5B at depth 128 **1.492×** median, 10 of 10 ABBA quads (345 → 521 tok/s), gemma3-1b 1.465× (197 → 291); 10.4 → 2.3 µs a launch; CUDA device suite green | `docs/measurements/ks-a2-2026-10/README.md` |
 | KS-A3 | decision | owner: build the multi-block `topk_select` (S–M)? Measured 2026-10-23: one block, **101.7 µs** at (152k, 256), **211.5 µs** at (262k, 1024) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
 | KS-A5 | decision | owner: build the one-round row loads (S–M), after KS-A2's launch path, since the gain needs decode GPU-bound? Measured 2026-10-23: `fused_rms_gu` at (896, 4864) runs at **55.2%** of DRAM peak (kill was ≥ 80%) | `docs/measurements/kernel-survey-2026-10/README.md` |
@@ -42,15 +42,17 @@
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
 | KS-B15 | decision | KS-O2 | — |
 | KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
-| KS-C2 | open | Mac: a masked down-projection prototype, byte-equal at both shapes | — |
+| KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
-| KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
-| KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
+| KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
+| KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
-| KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
+| KS-D2b | open | Mac: admit steel at head dim 96 after Phi-3 (int4) passes set A (its CPU references first); 80 when a model at it is on disk | — |
+| KS-D4 | done | done 2026-10-23 (w32): the EmbeddingGemma 2 encoder and the Gemma 4 vision and audio towers run their GEMMs on `tower_gemm_w32`, byte-identical to aikit's (D4-G1, G2); the E4B vision tower 1.61× faster, median 0.6192, 10 of 10 (D4-G3 SHIP). Open: w16 weights and the fused attention, each under the tower gate | survey, "KS-D4 read" |
 | KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
@@ -573,6 +575,48 @@ tiling reproduces").**
   - Then `TestR18InSequence`, 7 paired reps.
   - Kill it under 1.03× or on any differing byte.
 
+**KS-C2 first measurement, registered 2026-10-23 before the code, on the owner's order of 11:50.** The prototype,
+`gemv_w4a8_resid_mk<R>` in `metal/gemv_r18_test.go`'s `r18Kernels`: `gemv_w4a8_resid_staged<R>` (production's down) with each
+word's integer sum taken as R18b does, through two masked half-word dots against the word's eight activations pre-scaled by
+16^-(k mod 4), less 8·Σa. The activations stay staged as int8 (K bytes, so the 7B's 18,944 fits) and are scaled in registers.
+Every partial sum is an integer below 2^24, so `float(gi)` is the shipped integer exactly and the per-row chain
+`acc += float(gi) · scale` is unchanged. Instruments, in order:
+1. `TestR18Step0Standalone`'s down step at the 1.5B's (1,536 × 8,960) and the 7B's (3,584 × 18,944) shapes: `resid_mk2` and
+   `resid_mk4` against `gemv_w4a8_resid`, byte-equal, timed beside `resid_st4`.
+2. `TestR18InSequence` on the 1.5B (the Metal `.gguf` at int4), 7 paired reps, a new arm `h4244m` (production with the masked down)
+   against production `h4244`: its bit-identity precondition and the in-sequence down-category work.
+
+**Kill** on any differing byte in either instrument, or if the in-sequence down work of `h4244m` is under 1.03× production's
+(median over the 7 reps); otherwise the wiring follows, behind a whole-token in-process A/B. Timed, Mac, the timing lock held
+exclusively. Stopping rule: one pass each. Cost: about 2 and 10 minutes.
+
+**KS-C2 first measurement read 2026-10-23 (12:53–12:54, the timing lock held exclusively, load 2.23 then 2.04, 5.2 GB available).**
+Standalone, byte-equal at both shapes: the 1.5B's down `resid_mk4` 0.062 ms against production's `resid_st4` 0.089 (1.44×), the 7B's
+0.237 against 0.344 (1.45×). In sequence on the 1.5B (7 reps): `h4244m` 0 of 151,936 logits differ over 16 positions; its down work
+1.741 ms against production's 2.571 (**1.48×**), all four GEMVs 1.133× production's (bar ≥ 1.03), the full token −0.77 ms (10.55 →
+9.78). Not killed: the wiring follows. Log: `~/goinfer-logs/ksc2-2026-10-23.log`.
+
+**KS-C2 wiring gates, registered 2026-10-23 before the code (C2b-G).** The build replaces the bodies of production's
+`gemv_w4a8_resid_staged<R>` and `gemv_w4a8_coal_staged<R>` with the masked form; `KSC2_OLD_DOWN` (prepended to the decode library
+by `ksc2OldDownForTest`, read at build) compiles the per-word integer form back for the A/B, as `KSD7_OLD_DEQUANT` does.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C2b-G1 identity | 0 | `gemv_w4a8_resid_staged<2,4>` against `gemv_w4a8_resid` and `gemv_w4a8_coal_staged<2,4>` against `gemv_w4a8_coal` at the 1.5B's and the 7B's down shapes, random int4 weights, f16 scales and int8 activations, fast-math and precise libraries; the 1.5B's Metal `.giw` and qwen35-tiny (a DeltaNet layer, `coal_staged`), 32 greedy decode steps, every step's logits, the new library against `KSC2_OLD_DOWN` | byte-equal everywhere |
+| C2b-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B's Metal `.giw`: two residents in one process (old and new library), 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old per-token time is ≤ 0.98 and at least 9 of 10 pairs are faster; otherwise PARK with the reading |
+
+Planted defect: the high half-word dotted with the low half's activations (`x0` for `x1`); C2b-G1 goes red. Stopping rule: one pass
+each. Cost: G1 seconds; G2 about 4 minutes.
+
+**KS-C2 wiring read 2026-10-23.** C2b-G1 **PASS**: 16 kernel cells (both staged kernels, R = 2 and 4, both shapes, both libraries)
+0 differ; qwen35-tiny 0 of 8,192 and the 1.5B 0 of 4,861,952 logits differ over 32 decode steps. The registered plant (`x0` for `x1`)
+turned every masked cell red; a second plant inside the `KSC2_OLD_DOWN` branch only turned the model identity red, so the define
+reaches the old arm (KS-D7's lesson). C2b-G2 (12:57–12:58, the lock held exclusively, load 1.37 at the start, 5.4 GB available;
+each pair's load 1.14–1.50): old 10.70–10.86 ms a token, masked 9.97–10.13, **median 0.9332, 10 of 10: SHIP**. Logs:
+`~/goinfer-logs/ksc2b-g1-2026-10-23.log`, `~/goinfer-logs/ksc2b-g2-2026-10-23.log`. Also: `touched.py` green after merging main; the
+decode families by name (`R18|MC3|DeltaNet|Qwen35|Decode|Step|Gemv|GEMV|Coal|Staged|KSC2`) 53 pass, 31 skip, 0 fail; staticcheck
+clean.
+
 **KS-C3 · Native int8 decode GEMVs get R18's rows and staging (bit-identical).**
 - **Waste:** `W8A8_SA_BODY` / `W8A8_COAL_BODY` run one row per simdgroup with 4-byte loads, and the down projection re-reads
   activations from device memory in every lane. The 1.5B at int8int8 decodes at 70.6 tok/s, with its int8 body near
@@ -629,6 +673,51 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **First measurement:** a test seam that skips the attention dispatch, timed on E2B at 4,096 (about 3 minutes). Kill it
   under 50%.
 
+**KS-D1 first measurement, registered 2026-10-23 before the run, on the owner's order of 11:50.** Instrument:
+`TestKSD1_attnShare`, Gemma 4 E2B (its default Metal sidecar, `decoder.SidecarPath`), `PrefillLast` on 4,096 resident rows through
+the batched E-model pass (`emodelBatched`, the fast-prefill floor set to 0), the full pass against the same pass with the prefill
+attention dispatch skipped (`prefillAttnSkipForTest`, a new test seam; the output is then meaningless and is not read), A B B A
+over 3 pairs after one warm run each. The reading is attention's share, 1 − skip/full, the median over the pairs. Timed, Mac, the
+timing lock held exclusively, a cell started under the void rule's load or memory line re-run. **Kill under 50%**; otherwise the
+build's gates are registered next. Stopping rule: one pass. Cost: about 4 minutes.
+
+**Read 2026-10-23 (13:28–13:30, the timing lock held exclusively, the 1-minute load 1.33 at the start, 5.8 GB available; each
+pair's 1.03–2.41).** E2B's default sidecar (`…int4.ple4.metal.v17.giw`), 4,096 rows in one pass (the exact kernel's widest head dim
+512, so `PrefillBlockRows` 0): full 28.17–28.35 s, without attention 5.29 s in every pair; **attention 81.2% (median of 3), over
+the 50% line**. The build follows. Log: `~/goinfer-logs/ksd1-share-2026-10-23.log`.
+
+**KS-D1 gates, registered 2026-10-23 (13:32) before the code (D1-G).** The build: `attention_prefill_steel_split<HD>` for head dims
+256 and 512, R19's kernel with the head dim split over the threadgroup's 8 simdgroups: NS = HD/128 slices of 128, 8/NS row groups
+of 8 rows (32 query rows a threadgroup at 256, 16 at 512), K/V blocks of 16 keys at 256 and 8 at 512 staged once in padded
+threadgroup memory (17 KB). Each simdgroup forms its slice's partial Q·Kᵀ, writes it to threadgroup memory, and sums its row
+group's NS partials in slice order, so every slice of a row group holds the same scores and the same online-softmax state; it then
+accumulates its own 128 output columns. A layer whose head dim is 256 or 512 takes it where the pass would take the exact kernel
+(not an image block, not a softcap); `prefillSteelAttnOff` keeps the exact kernel for the A/B. Not bit-identical (half P, exp2, the
+order): fidelity-gated.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D1-G1 kernel | 0 | the split kernel against an f64 attention at head dims 256 and 512: random q, k, v; M = 100 and 300; start 0 and 37; window 0 and 64 (at 256); 8 query heads over 1 KV head | every output finite; max-abs error ≤ 4e-3 and mean-abs ≤ 2e-4 in every cell (about 4× D2-G2's steel readings at head dim 64) |
+| D1-G2 fidelity | 2, Mac, by day | (a) G-S9d (`TestS9EModelBatched_realE2B`) with the split kernel in the batched pass, its own rule against the layer-major reference (PASS: agreement ≥ the reference's − 2.0 points and free-run passes ≥ the reference's − 1); (b) a long cell: E2B, a 2,048-token prompt (this repository's text), the CPU int4 reference over the last prompt row and 32 teacher-forced positions, argmax agreement of the split kernel's batched pass against the exact kernel's. Tier 2 because only a reference can say which arm is closer; budget about 30 min | (a) PASS by its rule, and (b) agreement ≥ the exact kernel's − 2.0 points |
+| D1-G3 speed | timed, Mac, timing lock | E2B, `PrefillLast` on 4,096 rows through the batched pass, split kernel against exact (`prefillSteelAttnOff`), A B B A over 3 pairs after one warm run each | SHIP iff the median new/old is ≤ 0.80 (≥ 1.25×); otherwise PARK |
+
+Planted defect: the row group sums only its own slice's partial (no exchange); D1-G1 goes red. Stopping rule: one pass each; a red G1
+stops the build until understood. Cost: G1 seconds; G2 about 30 min; G3 about 4 min.
+
+**KS-D1 read 2026-10-23.** D1-G1 **PASS** (13:37): 12 cells, max-abs 0.38–1.21e-3, mean-abs 2.6–4.8e-5, all finite; not a gate, but
+recorded: every cell's 300 rows run as two passes of 150 equal the single pass byte for byte. The plant (each simdgroup's own slice
+only) read max-abs 2.0, red. D1-G3 (13:42–13:44, the lock held exclusively, the 1-minute load 3.59 at the start, 8.3 GB available):
+exact 28.24–28.30 s, split 6.13 s in every pair, **median 0.2170 (4.61×): SHIP**. D1-G2 (13:44–13:47, shared): (a) G-S9d, the batched
+pass with the split kernel 95.31% (244/256) and 8/8 free-run passes against layer-major's 96.48% (247/256) and 7/8, delta −1.17
+points: **PASS**; (b) the long cell, `CLAUDE.md` (sha256 `374fae4f…`) cut to 2,048 tokens, exact 31/32 and split 31/32: **PASS**. Logs:
+`~/goinfer-logs/ksd1-g1-2026-10-23.log`, `~/goinfer-logs/ksd1-gates-2026-10-23.log`. Also: `touched.py` green; the prefill and E-model
+families by name (`Prefill|MC5|DB01|R19|Steel|Chunk|Batched|Attention|S9|EModel|KH1|Gemma4|Gemma3|KSD1`) 60 pass, 71 skip, 0 fail.
+
+Two consequences beyond the speed. With no exact-attention layer left, E2B and E4B no longer report `exactAttnHeadDim` 512, so
+`PrefillBlockRows` now blocks their prompts like the plain pass (KS-H1's open head-dim-512 item): the two-pass byte check above is
+what makes that safe. And every model with head dim 256 or 512 and no softcap takes the kernel, Gemma 3 included; only E2B was graded
+at model level.
+
 **KS-D2 · Steel prefill attention for head dims 64, 80 and 96.**
 - **Where:** `metal/prefill.go:resident.prefillAttnKernels` takes steel only for head dim 128. Others run
   `attention_prefill_fused`, which R19 measured 7.2× slower.
@@ -637,6 +726,27 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **Class:** fidelity-gated.
 - **Size:** M.
 - **First measurement:** `TestMetalPrefillDecomp` on the 0.5B. Kill it if attention is under 30% at 3900.
+
+**KS-D2 first measurement, 2026-10-23 (11:59).** `TestMetalPrefillDecomp` on Qwen2.5-Coder-0.5B (`.gguf`, int4), 5 reps, the timing
+lock held exclusively (1-minute load 3.46 at the start, 2.84 GB available): at K=3,900 attention is **2,504.8 of 3,603.3 ms GPU,
+69.5%** (GEMM 26.9%); at K=512, 57.4 of 195.2 ms, 29.4%. The replica's logits equal `PrefillLast`'s bit for bit at both. Over the
+30% kill line: the build follows. Log: `~/goinfer-logs/ksd2-decomp-2026-10-23.log`.
+
+**KS-D2 gates, registered 2026-10-23 (12:02) before the code (D2-G), on the owner's order of 11:50.** The build:
+`attention_prefill_steel` becomes a template on the head dim, instances 64, 80, 96 and 128, its K/V staging a loop over the block's
+`16 × HD / 4` half4 words (at 128 the same four words a thread as today). `prefillAttnKernels` admits steel at head dim 64 as well as
+128. The 80 and 96 instances are built and checked at tier 0 but not admitted: no model at those head dims has references on this
+Mac, so each waits for its own model-level gate (Phi-3 at int4 for 96). `prefillSteelAttnOff` keeps the A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D2-G1 128 unchanged | 0 | the 1.5B (Metal `.giw`), `PrefillLast` at K=512 and 3,900, last logits, a test binary at this branch against one at its base | byte-equal at both |
+| D2-G2 kernel | 0 | steel against an f64 CPU attention at head dims 64, 80 and 96: random q, k, v; M = 100 and 300; start 0 and 37; window 0 and 64; 14 query heads over 2 KV heads. The fused kernel against the same reference, the same cells | every output finite, and steel's max-abs error at most 2× the fused kernel's and its mean-abs error at most 1.25× the fused kernel's in every cell |
+| D2-G3 fidelity | 2, Mac, by day | set A's §3.2 pooled gate (`TestPrefillGateVsReference`), a new cell Q05 (the 0.5B, f32 CPU references at K = 256, 512, 1,024 decision and 3,900 confirm, built first by `TestPrefillGateReference`), steel as production's prefill attention; the fused kernel's run (`GOINFER_METAL_R19_BASELINE=1`) beside it, reported. Tier 2 because tiers 0 and 1 cannot say which arm is closer to the reference; budget: references about 15 min, two gate runs about 25 min | Q05 **SHIPS** (critA, critB and critC all true) |
+| D2-G4 speed | timed, Mac, timing lock | the 0.5B, `PrefillLast` at K=3,900 and at K=512, steel against fused on one resident, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median steel/fused ratio is ≤ 0.80 at 3,900 (R19's ≥ 1.25× band) and ≤ 1.02 at 512; under 1.25× at 3,900, PARK with the reading |
+
+Planted defect: the hd-64 staging takes the 128 instance's word index (`(idx & 31) × 4`); D2-G2 goes red. Stopping rule: one pass
+each; a red G1 or G2 stops the build until it is understood. Cost: G1 and G2 seconds; G3 about 40 min; G4 about 3 min.
 
 **KS-D3 · DeltaNet prefill scan with the state on chip (bit-identical).**
 - **Where:** `delta_rule_seq` in `metal/kernels/deltanet_kernels_msl.go`, from
@@ -680,6 +790,28 @@ about a minute.
 - **Class:** w32 is expected to be bit-identical (confirm by bytes); w16 and fused attention take the tower gate.
 - **Size:** S–M.
 
+**KS-D4 gates, registered 2026-10-23 before the code (D4-G), on the owner's order of 11:50.** Scope: the w32 lever only.
+`eg2Ops.gemm` (the GEMMs of the EmbeddingGemma 2 text encoder and of the Gemma 4 vision and audio towers, their unfused attention's
+score and value products included) moves from aikit's `GEMMF32Plan` (`gemm_f32_sg_big` where M and N are multiples of 32, else
+`gemm_f32_sg`) to S17's `tower_gemm_w32`. w16 and the fused attention change outputs; each takes the tower gate as its own item.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D4-G1 class | 0 | `tower_gemm_w32` against `GEMMF32Plan`'s kernel at (M, N, K) = (256, 768, 768), (1,024, 3,072, 768), (1,024, 768, 3,072), (100, 768, 768), (37, 1,536, 1,536) and (512, 512, 64), random f32, both in the precise library the towers compile | byte-equal in every cell. **A differing byte stops the w32 swap as a bit-identical change:** the reading is recorded and the lever goes to the tower gate, registered separately |
+| D4-G2 identity | 0 | after the swap: each tower's committed tiny fixture (EmbeddingGemma 2, the Gemma 4 vision tower, the Gemma 4 audio tower), its output against `main`'s, through a test binary at each | byte-equal |
+| D4-G3 speed | timed, Mac, timing lock | the Gemma 4 E4B vision tower (`~/models/gemma-4-E4B-qat-unq-towers`), one forward per image over the F2a images, the new GEMM against aikit's on one accelerator (a test seam), A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old forward time is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise PARK |
+
+Stopping rule: one pass each; G1 red stops the item. Cost: G1 seconds; G3 about 5 minutes.
+
+**KS-D4 read 2026-10-23.** D4-G1 **PASS**: `tower_gemm_w32` equals aikit's kernel byte for byte in all six cells, the `sg_big`
+and the `sg` paths both. D4-G2 **PASS**: `mem2Towers`' seven tiny-fixture towers × three inputs, 21 output hashes equal at the base
+(9bafcc12's merge-base) and the change; a planted `dbg = 3` in `eg2Ops.gemm` changed all 21, so the new path runs in every tower.
+D4-G3 (13:18–13:20, the lock held exclusively, the 1-minute load 2.90 at the start falling to 1.10, 4.9 GB available): the E4B
+vision tower over S3's four images at serve's cap, aikit 7,438–7,499 ms, `tower_gemm_w32` 4,581–4,673 ms, both arms' outputs equal
+in every pair; **median 0.6192 (1.61×), 10 of 10: SHIP**. Logs: `~/goinfer-logs/ksd4-g1-2026-10-23.log`,
+`~/goinfer-logs/ksd4-g3-2026-10-23.log`. Also: `touched.py` green after merging main; the tower families by name 12 pass, 17 skip,
+0 fail; staticcheck clean. Left as their own items: w16 weights and the fused attention for these towers (both change outputs).
+
 **KS-D5 · Fuse SwiGLU into the gate|up GEMM and drop `guF` (bit-identical).**
 - **Waste:** `guF` exists only to carry gate and up to `swiglu_f16`. It is 52–55% of the 1.5B's and 7B's per-row prefill
   scratch.
@@ -719,6 +851,30 @@ threadgroup memory. The build: `gemm_w4f16_swiglu` places the half tile in the s
 | D5b-G3 speed | timed, Mac, timing lock | D5-G3's instrument, the new build | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise KS-D5 closes as parked, with both readings |
 
 Stopping rule: one pass each, no further build on a miss. Cost: seconds; D5b-G3 about 2 minutes.
+
+**KS-D5c gates, registered 2026-10-23 (10:12) before the code (D5c-G), from KS-D5's handoff ("a fused form of those is the next
+idea").** Of the three lanes that keep `guF`, the small-M tiles hold at most 128 rows (under 5 MB on the 1.5B) and the MoE expert
+GEMMs pick a tile per expert from its row count, so neither is a straight extension. The native int8 lane is: on by default for an
+int8 dense model (`w8Eligible`), it runs the same 64 × 64 MMA chain (`gemm_w8f16_m64n64`), and its `guF` is the same 53% of a long
+pass, since the scratch is half-precision whatever the weights. The build: `gemm_w4f16_swiglu` becomes a template on `W8`, and the
+`W8` instance (`gemm_w8f16_swiglu`) stages its weights as `gemm_w4f16_tile<64, 64, true>` does (int8 codes, one f32 scale a row);
+the epilogue is the shipped one. `swigluFused` admits a native int8 resident. `swigluFusedOffForTest` keeps the A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5c-G1 identity | 0 | the W8 fused GEMM against `gemm_w8f16_m64n64` + `swiglu_f16` at random int8 weights and f32 row scales, D5-G1's 12 cells; the Metal prefill of llama-tiny at int8int8 (native int8) and of the 1.5B at int8int8 (the `.gguf`, a direct load) at 3,900 rows, last logits | byte-equal everywhere, and the int4 cells of D5-G1 still byte-equal |
+| D5c-G2 scratch | 0 | D5-G2's counter, the 1.5B at int8int8, one 3,900-row pass | at most 123 MB |
+| D5c-G3 speed | timed, Mac, timing lock | D5-G3's instrument on the 1.5B at int8int8 | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise PARK with the reading (the owner's bit-identical rule of 2026-10-23 also ships it at 9 of 10 pairs faster) |
+
+Planted defect: the up rows read the gate rows' scale (`WS[i0 + (fr & 31)]`). D5c-G1's kernel cells go red. Stopping rule: one pass
+each, no further build on a miss. Cost: seconds; D5c-G3 about 3 minutes with the load.
+
+**Amended 2026-10-23 (10:15), before any model reading: the 0.5B replaces the 1.5B in D5c-G1's model cell, D5c-G2 and D5c-G3.** The
+fit guard refused the 1.5B at int8int8 (2.8 GB needed against a 2.1 GB budget, 3.0 GB available with the owner's apps open). The
+0.5B (`qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` at int8int8, a direct load) takes the same 64 × 64 tile at 3,900 rows with
+I = 4,864, a multiple of 32, so it exercises the same mechanism; the tier rule asks for the smallest such model. D5c-G2's bar becomes
+the 0.5B's own: the two-step pass's counted scratch less `guF` (Mpad × 2 × 4,864 halves), within 1%. The bars of D5c-G1 and D5c-G3
+are unchanged. The kernel cells (K = 1,536, I = 96 and 8,960) already ran and passed at 10:13; they stand.
 
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow`.

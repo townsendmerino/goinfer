@@ -601,13 +601,16 @@ type cudaResident struct {
 	hidCapOut  [][]float32 // [len(hidCapTaps)][hidden], overwritten per token
 	// The BATCHED counterpart, for the block-drafting verify: one download per tap covering
 	// all M rows, instead of the per-token seam's one per tap PER TOKEN.
-	capBTaps   []int       // layer indices, ascending; nil ⇒ off
-	capBOut    [][]float32 // [len(capBTaps)][M*hidden], overwritten per batched call
-	launchN    int         // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
-	cacheSlots int         // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
-	slotIdx    Buffer      // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
-	hostIdx    []uint32    // C′: scratch for the per-layer rIdx device→host readback
-	hostSlot   []uint32    // C′: scratch for the per-token slot ids uploaded to slotIdx
+	capBTaps []int       // layer indices, ascending; nil ⇒ off
+	capBOut  [][]float32 // [len(capBTaps)][M*hidden], overwritten per batched call
+	launchN  int         // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
+	// launchViaExecutor sends launch through gocudrv's executor thread (Queue.Launch) instead of issuing it from this
+	// thread (Queue.LaunchDirect). Same kernels and arguments either way; tests set it for the A/B between the two.
+	launchViaExecutor bool
+	cacheSlots        int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
+	slotIdx           Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
+	hostIdx           []uint32 // C′: scratch for the per-layer rIdx device→host readback
+	hostSlot          []uint32 // C′: scratch for the per-token slot ids uploaded to slotIdx
 
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4: its output steers a
 	// DISCRETE choice, so a quantization error near a tie does not perturb the result slightly, it runs a DIFFERENT
@@ -2494,7 +2497,12 @@ func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) e
 		}
 	}
 	r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)
-	e := r.stream.Launch(f, cfg, args...)
+	var e error
+	if r.launchViaExecutor {
+		e = r.stream.Launch(f, cfg, args...)
+	} else {
+		e = r.stream.LaunchDirect(f, cfg, args...)
+	}
 	if e != nil {
 		e = r.describeLaunchErr(f, e)
 	}
