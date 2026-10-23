@@ -459,6 +459,24 @@ unchanged).
 Planted defect, run once on the committed tree and reverted: the cut rule off, so a cut can fall inside an image block. V1-G1's
 gemma3-vl-tiny cell goes red. Stopping rule: one pass each. Cost: seconds; V1-G4 a few minutes, untimed, in the morning.
 
+**MEM5-VL (2) gates, Gemma 4's bidirectional image prefill, registered 2026-10-22 before the code (V2-G).** Gemma 4's causal
+image prefill already runs one token at a time; the bidirectional one (`use_bidirectional_attention: "vision"`, the 26B and 31B
+class) runs `runLayersGemma4FromEmbedN` over the whole prompt, allocating each layer's buffers at the prompt's rows. Its attention
+is the exact single-row kernel over absolute key ranges (`gemma4AttendRange`), so the sliding-window question of MEM5-ring does
+not arise. The build: `prefillLogitsGemma4VLBidirectionalSpans` runs the prompt in passes of `prefillChunkRows`, cut outside the
+image blocks by the same rule as route 1. Each pass embeds and splices its own rows. `runLayersGemma4FromEmbedN` reads a row's
+image membership at its absolute position, so a pass may start after earlier ones. A capture or a speculative tree keeps one
+pass.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V2-G1 identity | 0 | gemma4-vl-bidir-tiny, route 1's two-span prompt, with `prefillChunkRows` at 7 and 16, at f32 and int4: the last logits and four decode steps after, against one pass; the pass count | byte-equal, more than one pass at each size |
+| V2-G2 bytes | 0 | TotalAlloc of each pass (the chunk hook) on a 200-row prompt with a 20-row block, against the single pass's | the largest pass allocates no more than the single pass's allocation scaled to its rows, plus its key-sized attention scratch and 64 KiB |
+| V2-G3 unchanged | 0 | `TestGemma4VLBidir_textParity`, `TestGemma4VLBidir_imageParity` (HF goldens), `TestTwoImages_gemma4Bidir`; `scripts/refresh_parity_hashes.sh` | pass; green |
+| V2-G4 peak, tier 1 | 1 | a bidirectional Gemma 4 checkpoint with one image and about 8K text tokens, main against the branch, live heap at the prefill's peak | none is in the Mac's bench set (the E-models are causal), so this is an open row for a box that holds one |
+
+Planted defect: the cut rule off. V2-G1 goes red. Stopping rule: one pass each. Cost: seconds.
+
 ### MEM6 · Resident prefill embeds per chunk (S)
 
 **Problem.** On the resident paths that do not block the prompt (CUDA's chunked prefill, Metal's layer-major and E-model
