@@ -99,3 +99,17 @@ slices of the pass's `mixed` slab (its own comment says so: "mixed's rows are re
 linear layers keeps its whole `K × convDim` slab alive until K−1 decode steps have replaced the window's rows. Chunking already
 bounds it to the last pass's slab (0.86 GB above base after the prefill). Copying the K−1 rows the window keeps would free the
 slab at the end of each layer. That is a small, bit-identical change, recorded as ledger row MEM5-VL-convwin rather than made here.
+
+## MEM5-VL-convwin: the conv window copies its rows (CW-G)
+
+**The build.** `deltaNetCoreN` copies the K−1 rows the conv window keeps, at most 3 × `convDim` floats a layer, instead of
+slicing the pass's `mixed` slab. The per-token `deltaNetCore` is unchanged (its argument is one row). `convWinSliceForTest` keeps
+the old arm.
+
+| gate | reading | result |
+|---|---|---|
+| CW-G1 identity | `TestConvWin_qwen35BitIdentical`: qwen35-tiny, qwen3_5-tiny, qwen3_5_moe-tiny, qwen35vl-tiny, a 40-token batched pass (`runLayersQwen35N`) and 8 decode steps: 0 of 2,304 logits differ, copied against sliced; `TestDeltaNetCoreN_bitIdentical`, `TestGatedDeltaNet_parity` and the Qwen3.5 suites pass | **PASS** |
+| CW-G2 no slab retained | `TestConvWin_noSlabRetained`: after `deltaNetCoreN` at K = 2, 3, 9, no window row lies in the slab | **PASS** |
+| CW-G3 dead memory | `TestMEM5VL_peakTier1`, Qwen3.5-0.8B, 8,192 tokens, run at night on the owner's word, 2026-10-22, 23:22, timing lock held shared: the one-pass arm's live heap after the prefill **+1.5 MiB over base, from +3,456.2 MiB** on main (V3-G4); the sampled peak one pass 5,566.6 → 2,735.1 MiB, chunked 1,904.6 → 1,176.6 MiB. Log: `~/goinfer-logs/convwin-g3-2026-10-22.log` | **PASS** (bar: at most 512 MiB over base) |
+
+**Plant** (the last window row left as a slice): CW-G2 red at every K.
