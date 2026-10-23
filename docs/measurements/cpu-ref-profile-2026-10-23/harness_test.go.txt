@@ -1,0 +1,138 @@
+//go:build goinfer_testhooks
+
+package decoder
+
+// SCRATCH, never committed (ref-profile session 2026-10-23): profiles ONE prompt of TestPrefillGateReference's cell,
+// split into its two phases (the K-token prefill, then the 63 one-token continuation steps), with a wall budget after
+// which the profile is written and the test returns.
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func cpuSecs() float64 {
+	b, err := os.ReadFile("/proc/self/stat")
+	if err != nil {
+		return 0
+	}
+	s := string(b)
+	f := strings.Fields(s[strings.LastIndexByte(s, ')')+2:])
+	u, _ := strconv.ParseFloat(f[11], 64)
+	st, _ := strconv.ParseFloat(f[12], 64)
+	return (u + st) / 100
+}
+
+func TestScratchRefProfile(t *testing.T) {
+	path := os.Getenv("RP_MODEL")
+	if path == "" {
+		t.Skip("RP_MODEL")
+	}
+	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
+	K, _ := strconv.Atoi(os.Getenv("RP_K"))
+	steps, _ := strconv.Atoi(os.Getenv("RP_STEPS"))
+	workers, _ := strconv.Atoi(os.Getenv("RP_WORKERS"))
+	if workers < 1 {
+		workers = 1
+	}
+	budget, _ := time.ParseDuration(os.Getenv("RP_BUDGET"))
+	out := os.Getenv("RP_OUT")
+	quant := os.Getenv("RP_QUANT")
+
+	t0 := time.Now()
+	m, err := Load(path, Options{Backend: "cpu", Quant: quant, ResidentContext: K + 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	tk, err := loadRefTokenizer(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, files := PrefillGatePromptSet()
+	fmt.Fprintf(os.Stderr, "[rp] load %s quant=%q K=%d workers=%d GOMAXPROCS=%d took %s\n", path, quant, K, workers, runtime.GOMAXPROCS(0), time.Since(t0).Round(time.Millisecond))
+
+	deadline := time.Now().Add(budget)
+	stop := make(chan struct{})
+	go func() {
+		tk := time.NewTicker(30 * time.Second)
+		defer tk.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-tk.C:
+				fmt.Fprintf(os.Stderr, "[rp] heartbeat elapsed=%s cpu=%.0fs\n", time.Since(t0).Round(time.Second), cpuSecs())
+			}
+		}
+	}()
+	defer close(stop)
+
+	phase := func(name string, fn func(w int)) bool {
+		pf, err := os.Create(out + "-" + name + ".pprof")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := pprof.StartCPUProfile(pf); err != nil {
+			t.Fatal(err)
+		}
+		c0, w0 := cpuSecs(), time.Now()
+		done := make(chan struct{})
+		var wg sync.WaitGroup
+		for w := range workers {
+			wg.Go(func() { fn(w) })
+		}
+		go func() { wg.Wait(); close(done) }()
+		finished := true
+		select {
+		case <-done:
+		case <-time.After(time.Until(deadline)):
+			finished = false
+		}
+		pprof.StopCPUProfile()
+		pf.Close()
+		wall := time.Since(w0).Seconds()
+		cpu := cpuSecs() - c0
+		fmt.Fprintf(os.Stderr, "[rp] phase %s finished=%v wall=%.1fs cpu=%.1fs avgCores=%.2f\n", name, finished, wall, cpu, cpu/wall)
+		return finished
+	}
+
+	caches := make([]*KVCache, workers)
+	seeds := make([][]float32, workers)
+	ok := phase("prefill", func(w int) {
+		ids := PrefillGateProseIDsForTest(t, tk, files[w], K)[:K]
+		caches[w] = m.NewCache(K + 64 + 4)
+		lg, err := m.PrefillLogitsForTest(context.Background(), ids, caches[w])
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		seeds[w] = append([]float32(nil), lg...)
+	})
+	if !ok {
+		return
+	}
+	phase("decode", func(w int) {
+		cur := seeds[w]
+		for i := range steps {
+			s0 := time.Now()
+			lg, err := m.ForwardForTest(refArgmax(cur), caches[w])
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			cur = append([]float32(nil), lg...)
+			if w == 0 && (i < 3 || i == steps-1) {
+				fmt.Fprintf(os.Stderr, "[rp] decode step %d %.2fs\n", i, time.Since(s0).Seconds())
+			}
+		}
+	})
+}

@@ -1,0 +1,36 @@
+start 2026-10-23 09:06:40 PDT tree 94fb6649c4b315f239d7baf806133b2d0fe539b5 load: 15.22 15.29 15.42 2/1348 3897957
+Mem:           64238        6452       18304          60       40220       57785
+=== RUN   TestScratchRefProfile
+[rp] load /home/francis/models/command-r7b quant="int8" K=1024 workers=3 GOMAXPROCS=16 took 9.037s
+[rp] heartbeat elapsed=39s cpu=518s
+[rp] heartbeat elapsed=1m9s cpu=958s
+[rp] heartbeat elapsed=1m39s cpu=1407s
+[rp] heartbeat elapsed=2m9s cpu=1857s
+[rp] heartbeat elapsed=2m39s cpu=2307s
+[rp] heartbeat elapsed=3m9s cpu=2757s
+[rp] heartbeat elapsed=3m39s cpu=3207s
+[rp] heartbeat elapsed=4m9s cpu=3657s
+[rp] heartbeat elapsed=4m39s cpu=4106s
+[rp] heartbeat elapsed=5m9s cpu=4554s
+[rp] heartbeat elapsed=5m39s cpu=5004s
+[rp] heartbeat elapsed=6m9s cpu=5454s
+[rp] heartbeat elapsed=6m39s cpu=5903s
+[rp] heartbeat elapsed=7m9s cpu=6353s
+[rp] heartbeat elapsed=7m39s cpu=6803s
+[rp] heartbeat elapsed=8m9s cpu=7254s
+[rp] heartbeat elapsed=8m39s cpu=7703s
+[rp] heartbeat elapsed=9m9s cpu=8151s
+[rp] heartbeat elapsed=9m39s cpu=8602s
+[rp] heartbeat elapsed=10m9s cpu=9052s
+[rp] heartbeat elapsed=10m39s cpu=9489s
+[rp] heartbeat elapsed=11m9s cpu=9936s
+[rp] heartbeat elapsed=11m39s cpu=10386s
+[rp] heartbeat elapsed=12m9s cpu=10831s
+[rp] heartbeat elapsed=12m39s cpu=11248s
+[rp] heartbeat elapsed=13m9s cpu=11695s
+[rp] heartbeat elapsed=13m39s cpu=12127s
+[rp] heartbeat elapsed=14m9s cpu=12578s
+[rp] phase prefill finished=false wall=840.2s cpu=12493.0s avgCores=14.87
+--- PASS: TestScratchRefProfile (849.22s)
+PASS
+end 2026-10-23 09:20:49 PDT load: 17.98 17.80 16.92 1/1334 3902309

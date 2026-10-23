@@ -1,0 +1,74 @@
+#include "textflag.h"
+
+TEXT ·dotFMA(SB), NOSPLIT, $0-28
+	MOVQ a+0(FP), SI
+	MOVQ b+8(FP), DI
+	MOVQ n+16(FP), CX
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+	MOVQ CX, AX // AX = remaining element count
+
+loop32:
+	CMPQ AX, $32
+	JL   loop8
+	VMOVUPS 0(SI), Y4
+	VMOVUPS 32(SI), Y5
+	VMOVUPS 64(SI), Y6
+	VMOVUPS 96(SI), Y7
+	VMOVUPS 0(DI), Y8
+	VMOVUPS 32(DI), Y9
+	VMOVUPS 64(DI), Y10
+	VMOVUPS 96(DI), Y11
+	VFMADD231PS Y8, Y4, Y0
+	VFMADD231PS Y9, Y5, Y1
+	VFMADD231PS Y10, Y6, Y2
+	VFMADD231PS Y11, Y7, Y3
+	ADDQ $128, SI // 32 floats × 4 bytes
+	ADDQ $128, DI
+	SUBQ $32, AX
+	JMP  loop32
+
+loop8:
+	CMPQ AX, $8
+	JL   reduce
+	VMOVUPS 0(SI), Y4
+	VMOVUPS 0(DI), Y8
+	VFMADD231PS Y8, Y4, Y0
+	ADDQ $32, SI
+	ADDQ $32, DI
+	SUBQ $8, AX
+	JMP  loop8
+
+reduce:
+	// Fold the 4 YMM accumulators into Y0, then horizontally sum its
+	// 8 lanes into the low f32 of X0.
+	VADDPS       Y1, Y0, Y0
+	VADDPS       Y3, Y2, Y2
+	VADDPS       Y2, Y0, Y0
+	VEXTRACTF128 $1, Y0, X1 // high 128 bits → X1
+	VADDPS       X1, X0, X0 // X0 = 4 partial sums
+	VHADDPS      X0, X0, X0
+	VHADDPS      X0, X0, X0 // X0 low lane = total
+
+tail:
+	// Scalar remainder (AX < 8). VEX scalar forms keep us out of legacy
+	// SSE so VZEROUPPER below is the only transition guard needed.
+	CMPQ AX, $0
+	JE   done
+	VMOVSS 0(SI), X2
+	VMULSS 0(DI), X2, X2
+	VADDSS X2, X0, X0
+	ADDQ   $4, SI
+	ADDQ   $4, DI
+	DECQ   AX
+	JMP    tail
+
+done:
+	VZEROUPPER
+	MOVSS X0, ret+24(FP)
+	RET
+
