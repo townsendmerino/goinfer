@@ -31,7 +31,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
-| MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
+| MEM5-VL | open (route 1 done 2026-10-22 at tier 0) | either box: chunk the prefill of the families G40 left out; L in total. Four routes, in order: the shared batched route (done at tier 0: V1-G1 to G3 PASS; V1-G4, the Qwen2.5-VL-3B peak, by day), Gemma 4, Qwen3.5, audio (§4 MEM5) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open (CUDA) | Metal routes done 2026-10-22: the resident reads the suffix a chunk at a time (`ResidentPrefillRows`), at most 256 embedding rows held (was the whole suffix), logits byte-equal; MEM6-G1 to G3 PASS. Left: the CUDA cells and the `RssAnon` gate, on nobara | `docs/measurements/mem6-2026-10/README.md` |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
@@ -428,6 +428,36 @@ newest families and on every image turn.
 
 **Gates.** Tier 0 per family: chunked vs whole logits byte-identical on the tiny fixture at two chunk sizes, one
 boundary inside each layer kind. Tier 1: one family's 20K footprint before/after (the G40 harness).
+
+**MEM5-VL: the routes, and the order (2026-10-22, before any code).** A text prompt on a `manualPos` family never reaches a
+whole-prompt pass on the CPU: `canBatchN` is false for every one of them (checked on each tiny fixture), so they prefill a token at a
+time and hold one row. The whole-prompt passes `prefillChunkable` leaves single are the image and audio prefills:
+- (1) the shared batched route, `runLayersFromEmbedN` under `prefillHiddenVLSpans` (Gemma 3, Pixtral/Ministral 3: image blocks or
+  causal spans) and `prefillLogitsQwenVLSpans` (Qwen2.5-VL, Qwen3-VL dense and MoE, GLM-OCR: m-RoPE, DeepStack);
+- (2) Gemma 4's image prefills (`runLayersGemma4FromEmbedN`);
+- (3) Qwen3.5's image prefill and prefix sharing (`runLayersQwen35N`, a DeltaNet recurrence across passes);
+- (4) audio (`prefillLogitsAudio`).
+LFM2-VL already runs one row at a time. Each route holds about the same bytes per row, its pass's working set (G40's 108 to 236
+KiB a row on the 1.5B to 7B shapes). (1) serves the most families and the largest dense vision models in the bench set (Qwen2.5-VL,
+Gemma 3), so it goes first. Every position the passes read is absolute (`mropePos[seqPos]`, `attendHi(pos)`, DeepStack by
+`startPos`), so a pass composes with the ones before it unless a cut falls inside a bidirectional image block.
+
+**MEM5-VL (1) gates, the shared batched route, registered 2026-10-22 before the code (V1-G).** The build: the chunk loop G40 gave
+`prefillLogits` becomes one helper that the text prefill and both image routes call. It embeds and splices each chunk's rows (an
+image span's features at the rows the chunk covers), and never cuts inside an image block: a cut that would land inside one moves
+back to the block's start, or forward to its end when the block starts the chunk. `prefillChunkable` stops excluding image
+blocks, m-RoPE positions and DeepStack rows. A sliding-window cache under fast attention keeps the single pass (MEM5-ring, G43,
+unchanged).
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V1-G1 identity | 0 | with `prefillChunkRows` at 7 and 16, the image prefill of gemma3-vl-tiny (a bidirectional block, and one longer than a chunk), ministral3-tiny (causal spans), qwen25vl-tiny (m-RoPE), qwen3vl-tiny and qwen3vlmoe-tiny (DeepStack), glm-ocr-tiny where its fixture loads: every position's hidden rows, the last logits and four decode steps after, against the single pass; and the pass count | every value byte-equal, and more than one pass at each chunk size |
+| V1-G2 bytes | 0 | the pass's working set (`prefillPassScratch`, every buffer's capacity summed) after a chunked and a single image prefill on gemma3-vl-tiny and qwen25vl-tiny at about 200 rows; TotalAlloc per chunk (G40-T0a's hook) | the working set is a chunk's (no more than C rows' worth, or the longest image block's when it is longer) and not the prompt's; every chunk after the first allocates at most 1 MiB, unless it holds more rows than the first |
+| V1-G3 unchanged | 0 | the text prefill's G40 gates (`prefill_chunk_alloc_test.go`, `kv_plan_test.go`), the image goldens against HF (Gemma 3, Qwen2.5-VL, Qwen3-VL, Qwen3-VL-MoE, Pixtral, two-image tests), `scripts/refresh_parity_hashes.sh` | all pass; forward goldens green |
+| V1-G4 peak, tier 1 | 1, Mac, by day after 07:00 | Qwen2.5-VL-3B (`~/models/qwen25vl-3b-instruct`) at int4, one image and about 8K text tokens, main against the branch: the live heap after GC at the prefill's peak (`prefillChunkDone`), not timed | the branch's peak is lower by at least half the per-row working set times the rows beyond one chunk; read, then graded |
+
+Planted defect, run once on the committed tree and reverted: the cut rule off, so a cut can fall inside an image block. V1-G1's
+gemma3-vl-tiny cell goes red. Stopping rule: one pass each. Cost: seconds; V1-G4 a few minutes, untimed, in the morning.
 
 ### MEM6 · Resident prefill embeds per chunk (S)
 

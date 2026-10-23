@@ -1269,32 +1269,9 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 		}
 		return m.forward(prompt[len(prompt)-1], cache)
 	}
-	// A sliding-window layer's fast attention is not chunk-invariant (G40-1: its output depends on where the pass's key window
-	// starts), so a cache with one keeps the single pass whenever the suffix takes fast attention.
-	fast := m.cpuFastAttention() && len(prompt) >= fastAttnMinPrompt
-	C := len(prompt)
-	if cache.prefillChunkable() && !(cache.localAny && fast) {
-		C = prefillChunkRows
-	}
-	// One working set for every chunk, sized by the first (the largest) and the whole prefill's keys (G40's amendment).
-	ps := &prefillPassScratch{poolKeys: cache.Pos() + len(prompt)}
-	var h []float32
-	for c0 := 0; c0 < len(prompt); c0 += C {
-		c1 := min(c0+C, len(prompt))
-		if c0 == C {
-			cache.reserveRows(max(cache.Pos()+len(prompt)-c0, cache.planRows) - cache.Pos()) // the first chunk taught the cache each layer's width
-			if prefillChunkDone != nil {
-				prefillChunkDone(-1) // the KV reserve, which a gate on working buffers reads apart from them
-			}
-		}
-		var err error
-		atomic.AddInt64(&prefillPasses, 1)
-		if h, err = m.runLayersFromEmbedNFloor(ctx, m.embedNInto(ps.take(&ps.h, (c1-c0)*m.w.arch.HiddenDim), prompt[c0:c1]), cache, m.cpuFastAttention(), len(prompt), ps); err != nil {
-			return nil, err
-		}
-		if prefillChunkDone != nil {
-			prefillChunkDone(c0 / C)
-		}
+	h, err := m.prefillPassesN(ctx, len(prompt), cache, func(dst []float32, lo, hi int) { m.embedNInto(dst, prompt[lo:hi]) }, nil)
+	if err != nil {
+		return nil, err
 	}
 	cache.reserveRows(cache.planRows - cache.Pos()) // a one-pass prefill reserves the request's generation here
 	hidden := m.w.arch.HiddenDim
@@ -1304,6 +1281,57 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 	}
 	return logits, nil
 }
+
+// prefillPassesN runs the n rows of a prefill through the batched layers, in passes of at most prefillChunkRows rows when the
+// cache allows it (prefillChunkable) and in one otherwise. embed fills dst with the prefill's rows [lo, hi), embedded and with any
+// image features spliced in. keep, if non-nil, sees each pass's output rows, which start at row lo and are valid only during the
+// call. It returns the last pass's output rows, post final norm.
+//
+// A sliding-window layer's fast attention is not chunk-invariant (G40-1: its output depends on where the pass's key window starts),
+// so a cache with one keeps the single pass whenever the prefill takes fast attention. A cut never falls inside an image block
+// (KVCache.prefillCut), so every block's rows share a pass.
+func (m *Model) prefillPassesN(ctx context.Context, n int, cache *KVCache, embed func(dst []float32, lo, hi int), keep func(lo int, rows []float32)) ([]float32, error) {
+	fast := m.cpuFastAttention() && n >= fastAttnMinPrompt
+	C := n
+	if cache.prefillChunkable() && !(cache.localAny && fast) {
+		C = prefillChunkRows
+	}
+	hidden, start := m.w.arch.HiddenDim, cache.Pos()
+	// One working set for every chunk, sized by the first (the largest, unless an image block stretches a later one) and the
+	// whole prefill's keys (G40's amendment).
+	ps := &prefillPassScratch{poolKeys: start + n}
+	var h []float32
+	for c0, i := 0, 0; c0 < n; i++ {
+		c1 := cache.prefillCut(start, c0, min(c0+C, n))
+		if i == 1 {
+			cache.reserveRows(max(start+n, cache.planRows) - cache.Pos()) // the first chunk taught the cache each layer's width
+			if prefillChunkDone != nil {
+				prefillChunkDone(-1) // the KV reserve, which a gate on working buffers reads apart from them
+			}
+		}
+		dst := ps.take(&ps.h, (c1-c0)*hidden)
+		embed(dst, c0, c1)
+		var err error
+		atomic.AddInt64(&prefillPasses, 1)
+		if h, err = m.runLayersFromEmbedNFloor(ctx, dst, cache, m.cpuFastAttention(), n, ps); err != nil {
+			return nil, err
+		}
+		if keep != nil {
+			keep(c0, h)
+		}
+		if prefillChunkDone != nil {
+			prefillChunkDone(i)
+		}
+		c0 = c1
+	}
+	if prefillScratchSeen != nil {
+		prefillScratchSeen(ps)
+	}
+	return h, nil
+}
+
+// prefillScratchSeen, when set (tests only), sees the working set a prefill's passes used, after the last one.
+var prefillScratchSeen func(ps *prefillPassScratch)
 
 // prefillPassScratch is a batched pass's working set. A chunked prefill (Model.prefillLogits) makes one and passes it to
 // every chunk, so the chunks after the first allocate no working buffers; any other caller passes nil and gets fresh ones.
@@ -1371,12 +1399,18 @@ func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []fl
 // imageEmbeds holds every span's rows concatenated in span order.
 // causal (Pixtral, S10) splices the spans without a bidirectional block: plain causal attention over the prompt.
 func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
-	hN, err := m.prefillHiddenVLSpans(ctx, ids, spans, imageEmbeds, cache, causal)
+	var hN []float32
+	var err error
+	if causal && m.w.arch.lfm2 != nil {
+		hN, err = m.prefillHiddenLFM2VL(ctx, ids, spans, imageEmbeds, cache)
+	} else {
+		hN, err = m.prefillVLRows(ctx, ids, spans, imageEmbeds, cache, causal, false)
+	}
 	if err != nil {
 		return nil, err
 	}
 	hidden := m.w.arch.HiddenDim
-	return m.lmHeadNInto(hN[(len(ids)-1)*hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
+	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
 }
 
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
@@ -1385,6 +1419,12 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 	if causal && m.w.arch.lfm2 != nil { // S10, LFM2-VL: lfm2 has no batched pass; its own forward, one row at a time
 		return m.prefillHiddenLFM2VL(ctx, ids, spans, imageEmbeds, cache)
 	}
+	return m.prefillVLRows(ctx, ids, spans, imageEmbeds, cache, causal, true)
+}
+
+// prefillVLRows runs the image prefill of prefillHiddenVLSpans in passes (prefillPassesN), each embedding its own rows with the
+// raw projected features spliced in. It returns every position's rows when all, else the last pass's.
+func (m *Model) prefillVLRows(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal, all bool) ([]float32, error) {
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: multimodal prefill needs the batched path (canBatchN false)")
 	}
@@ -1392,12 +1432,30 @@ func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []Ima
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
 	}
-	h := m.embedN(ids)
-	spliceImageSpans(h, spans, imageEmbeds, hidden) // raw projected features, no embed scale
 	if !causal {
 		cache.SetImageBlocks(imageSpanBlocks(spans))
 	}
-	return m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
+	return m.prefillSpliced(ctx, ids, spans, imageEmbeds, cache, all)
+}
+
+// prefillSpliced runs ids through prefillPassesN with each pass's image rows replaced by their features (raw, no embed scale),
+// returning every position's rows when all, else the last pass's.
+func (m *Model) prefillSpliced(ctx context.Context, ids []int, spans []ImageSpan, feats []float32, cache *KVCache, all bool) ([]float32, error) {
+	hidden := m.w.arch.HiddenDim
+	var out []float32
+	var keep func(lo int, rows []float32)
+	if all {
+		out = make([]float32, len(ids)*hidden)
+		keep = func(lo int, rows []float32) { copy(out[lo*hidden:], rows) }
+	}
+	h, err := m.prefillPassesN(ctx, len(ids), cache, func(dst []float32, lo, hi int) {
+		m.embedNInto(dst, ids[lo:hi])
+		spliceImageSpansRange(dst, spans, feats, hidden, lo, hi)
+	}, keep)
+	if all {
+		return out, err
+	}
+	return h, err
 }
 
 // prefillHiddenLFM2VL is prefillHiddenVLSpans for lfm2 (LFM2-VL, S10): the text embeddings with the image rows spliced
@@ -1455,15 +1513,13 @@ func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans [
 	if len(mropePos) != len(ids) {
 		return nil, fmt.Errorf("decoder: mropePos len %d, want %d (one per token)", len(mropePos), len(ids))
 	}
-	h := m.embedN(ids)
-	spliceImageSpans(h, spans, imageFeats, hidden)    // raw merged features, no embed scale
 	cache.mropePos = mropePos                         // ropeAt switches to m-RoPE for this prefill
 	cache.mropeDelta = mropeDelta(mropePos, len(ids)) // decode past the prefill rotates at seqPos+delta
-	hN, err := m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
+	hN, err := m.prefillSpliced(ctx, ids, spans, imageFeats, cache, false)
 	if err != nil {
 		return nil, err
 	}
-	return m.lmHeadNInto(hN[(len(ids)-1)*hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
+	return m.lmHeadNInto(hN[len(hN)-hidden:], 1, cache.headLogits(m.w.arch.VocabSize)), nil
 }
 
 // addDeepstack adds DeepStack set l to the rows of h ([K*hidden], positions startPos..startPos+K) that fall in the image
