@@ -1054,6 +1054,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					}
 				}
 				loadImg(&r.bAttnImg, "attn_img_batched")
+				var pe error
+				if r.bAttnSpan, pe = r.dev.NewComputePipeline(imod, "attn_span_batched"); pe == nil {
+					r.spanPrefillReady = true
+				} else {
+					r.bAttnSpan = Pipeline{}
+				}
 			}
 		}
 		// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentMRoPEPrefill): own module, prefill_batched.ptx untouched. Loaded

@@ -104,6 +104,11 @@ func (m *Model) PrefillLogitsGemma4VLBidirectionalForTest(ctx context.Context, i
 	return m.prefillLogitsGemma4VLBidirectional(ctx, ids, imageFeats, imgPos, imgLen, cache)
 }
 
+// PrefillLogitsGemma4VLBidirectionalSpansForTest is PrefillLogitsGemma4VLBidirectionalForTest for several spans.
+func (m *Model) PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsGemma4VLBidirectionalSpans(ctx, ids, imageFeats, spans, cache)
+}
+
 // MRopePositionsForTest exposes mropePositions, Qwen2.5-VL's per-token (t,h,w) rotary positions from the image grid, so
 // a cross-package test can reproduce GenerateQwenVL's cache.mropeDelta.
 func MRopePositionsForTest(ids []int, imageToken int, gridTHW [][3]int, merge int) ([][3]int, error) {

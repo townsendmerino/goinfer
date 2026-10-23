@@ -113,4 +113,80 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
     }
 }
 
+
+// attn_span_batched is attn_img_batched under Gemma 4's bidirectional mask (decoder/forward_gemma4_batched.go,
+// gemma4AttendRange): a row inside a span sees its whole span and, on a sliding layer, its window reaches back to the
+// span's start as well. The two kernels differ only when a span is longer than the window. A separate function so
+// attn_img_batched, Gemma 3's validated kernel, compiles to the same PTX.
+__global__ void attn_span_batched(const float* __restrict__ q, const float* __restrict__ kc,
+                             const float* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
+                             float scale, int window, int M, float* __restrict__ ctx,
+                             const float* __restrict__ sinks, const int* __restrict__ blocks, int nBlocks) {
+    int h = blockIdx.x; if (h >= nH) return;
+    int m = blockIdx.y; if (m >= M) return;
+    int pos = startPos + m;
+    int nKeysCausal = pos + 1;
+    // IMAGE-BLOCK WIDENING: only a row whose OWN position lies inside a block [blocks[2b], blocks[2b+1])
+    // sees that whole block (its own block only: several blocks for several images, S11); every other
+    // row stays exactly causal. nBlocks==0 is "no block".
+    int nKeys = nKeysCausal, spanStart = -1;
+    for (int b = 0; b < nBlocks; b++) {
+        if (pos >= blocks[2 * b] && pos < blocks[2 * b + 1]) { nKeys = blocks[2 * b + 1]; spanStart = blocks[2 * b]; break; }
+    }
+    // The causal window's start, then reached back to the row's own span start when the span is longer than the window:
+    // gemma4AttendRange's lo, min(WindowStart(pos), span start).
+    int winStart = (window > 0 && nKeysCausal > window) ? nKeysCausal - window : 0;
+    if (spanStart >= 0 && spanStart < winStart) winStart = spanStart;
+    int nWin = nKeys - winStart;
+    extern __shared__ float sm[];
+    float* sc = sm;            // [nWin]
+    float* red = sm + nWin;    // [blockDim]
+    int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
+    int qDim = nH * hd;
+    const float* qh = q + (long)m * qDim + h * hd;
+    int t = threadIdx.x, nt = blockDim.x;
+    float lm = -1e30f;
+    // Each key's row is looked up one iteration ahead (rowNext), so the table load overlaps the dot product before it (glue.cu's attention).
+    long rowNext = (winStart + t < nKeys) ? KV_ROW(kvt, winStart + t) : 0;
+    for (int s = winStart + t; s < nKeys; s += nt) {
+        const long row = rowNext;
+        if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
+        const float* ks = kc + row * kvDim + kvh * hd;
+        float dot = 0.f;
+        // float4 the K read — see attn_batched's identical comment for the rationale.
+        int d4 = hd >> 2;
+        const float4* q4 = (const float4*)qh;
+        const float4* k4 = (const float4*)ks;
+        for (int i = 0; i < d4; i++) {
+            float4 qq = q4[i], kk = k4[i];
+            dot = __fmaf_rn(qq.x, kk.x, dot);
+            dot = __fmaf_rn(qq.y, kk.y, dot);
+            dot = __fmaf_rn(qq.z, kk.z, dot);
+            dot = __fmaf_rn(qq.w, kk.w, dot);
+        }
+        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
+        dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
+    }
+    red[t] = lm; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); }
+    float mx = red[0]; __syncthreads();
+    float sink = 0.f; bool hasSink = (sinks != nullptr);
+    if (hasSink) { sink = sinks[h]; mx = fmaxf(mx, sink); }
+    float ls = 0.f;
+    for (int s = winStart + t; s < nKeys; s += nt) { float e = __expf(sc[s - winStart] - mx); sc[s - winStart] = e; ls += e; }
+    red[t] = ls; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
+    float denom = red[0]; if (hasSink) denom += __expf(sink - mx);
+    float inv = 1.f / denom; __syncthreads();
+    for (int d = t; d < hd; d += nt) {
+        float acc = 0.f;
+        for (int s = winStart; s < nKeys;) {
+            const int e = KV_RUN_END(s, nKeys);
+            const float* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], *vp, acc);
+        }
+        ctx[(long)m * qDim + h * hd + d] = acc * inv;
+    }
+}
+
 } // extern "C"

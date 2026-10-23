@@ -153,10 +153,10 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 		}
 		bidirectional := m.w.Cfg.UseBidirectionalAttention != ""
 		eModel := gemma4IsEModel(m.w.arch)
-		// An E-model's image turn prefills on the resident when the backend takes it, from the rows the CPU path would run: a
-		// text position's resident embedding ([h || PLE]), an image position's projected feature, unscaled, with PLE from PAD's
-		// token identity. A decline falls through to the CPU prefill and upload below, unchanged.
-		if eModel && !bidirectional {
+		// An E-model's or a bidirectional checkpoint's image turn prefills on the resident when the backend takes it, from the
+		// rows the CPU path would run (gemma4VLResidentPrefill). A decline falls through to the CPU prefill and upload below,
+		// unchanged.
+		if eModel != bidirectional {
 			if done := m.gemma4VLResidentPrefill(ctx, out, g, ids, feats, spans, maxTokens, sp); done {
 				return
 			}
@@ -224,22 +224,42 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 	return out, g
 }
 
-// gemma4VLResidentPrefill is GenerateGemma4VL's resident image prefill for an E-model: the whole prompt through the
-// backend's Prefiller, then resident decode. It reports whether it ran the turn (true: the generation is done, g holds
-// its result); false means the backend has no prefill, the resident is busy, or the prefill declined, and the caller
-// runs the CPU path. A cancelled prefill is not a decline: it ends the turn.
+// gemma4VLResidentPrefill is GenerateGemma4VL's resident image prefill, then resident decode. An E-model (causal) runs
+// the whole prompt through the backend's Prefiller; a bidirectional non-E checkpoint through its ResidentSpanPrefill,
+// with each span its own block. It reports whether it ran the turn (true: the generation is done, g holds its result);
+// false means the backend has no such prefill, the resident is busy, or the prefill declined, and the caller runs the
+// CPU path. A cancelled prefill is not a decline: it ends the turn.
 func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *Generation, ids []int, feats []float32, spans []ImageSpan, maxTokens int, sp SamplingParams) bool {
-	pf, ok := m.resident.(Prefiller)
-	if !ok || m.knobs.get(knobBatchedPrefill) == "0" || !m.tryClaimResident() {
+	if m.knobs.get(knobBatchedPrefill) == "0" {
 		return false
 	}
-	rows, err := m.gemma4EModelImageRowsSpans(ids, feats, spans)
+	var prefill func(rows [][]float32) ([]float32, error)
+	build := m.gemma4EModelImageRowsSpans
+	if m.w.Cfg.UseBidirectionalAttention != "" {
+		ssp, ok := m.resident.(ResidentSpanPrefill)
+		if !ok || gemma4IsEModel(m.w.arch) {
+			return false
+		}
+		blocks := imageSpanBlocks(spans)
+		prefill = func(rows [][]float32) ([]float32, error) { return ssp.PrefillSpansLast(ctx, rows, 0, blocks) }
+		build = m.gemma4BidirImageRowsSpans
+	} else {
+		pf, ok := m.resident.(Prefiller)
+		if !ok {
+			return false
+		}
+		prefill = func(rows [][]float32) ([]float32, error) { return pf.PrefillLast(ctx, rows, 0) }
+	}
+	if !m.tryClaimResident() {
+		return false
+	}
+	rows, err := build(ids, feats, spans)
 	if err != nil { // a malformed image run is the CPU path's to report; it is not this one's to panic on
 		atomic.StoreInt32(&m.resBusy, 0)
 		return false
 	}
 	m.residentForgetIDsIn(kvScopeOf(ctx)) // the prefill overwrites the resident cache from position 0
-	logits, err := pf.PrefillLast(ctx, rows, 0)
+	logits, err := prefill(rows)
 	if err != nil {
 		atomic.StoreInt32(&m.resBusy, 0)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -334,7 +354,38 @@ func (m *Model) gemma4EModelImageRowsSpans(ids []int, feats []float32, spans []I
 	return rows, nil
 }
 
-// gemma4VLRowsDefectForTest is a planted-defect selector for gemma4EModelImageRowsSpans (0 = none): 1 pad id replaced
+// gemma4BidirImageRowsSpans builds the resident rows of a bidirectional (non-E) Gemma 4 image prompt, exactly as
+// prefillLogitsGemma4VLBidirectionalSpans embeds them: embedN of the ids (the program's embed scale applied), with each
+// span's projected features spliced in unscaled. gemma4VLRowsDefectForTest 2 scales the features by the embed scale.
+func (m *Model) gemma4BidirImageRowsSpans(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
+	arch := m.w.arch
+	if arch.gemma4 == nil {
+		return nil, fmt.Errorf("decoder: gemma4BidirImageRows on a non-gemma4 model")
+	}
+	hidden := arch.HiddenDim
+	if err := checkImageSpans(spans, len(ids), feats, hidden); err != nil {
+		return nil, err
+	}
+	h := m.embedN(ids)
+	spliceImageSpans(h, spans, feats, hidden)
+	if gemma4VLRowsDefectForTest == 2 {
+		if e := m.program().embed.Scale; e != 0 && e != 1 {
+			for _, s := range spans {
+				for i := s.Pos * hidden; i < (s.Pos+s.Len)*hidden; i++ {
+					h[i] *= float32(e)
+				}
+			}
+		}
+	}
+	rows := make([][]float32, len(ids))
+	for i := range rows {
+		rows[i] = h[i*hidden : (i+1)*hidden : (i+1)*hidden]
+	}
+	return rows, nil
+}
+
+// gemma4VLRowsDefectForTest is a planted-defect selector for gemma4EModelImageRowsSpans (0 = none; 2 also in
+// gemma4BidirImageRowsSpans): 1 pad id replaced
 // by the placeholder's id, 2 the feature scaled by the embed scale, 3 the PLE tail zero, 4 image positions built as
 // text rows. Set only through SetGemma4VLRowsDefectForTest (goinfer_testhooks).
 var gemma4VLRowsDefectForTest int
