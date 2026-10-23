@@ -8,14 +8,40 @@ import (
 	"testing"
 )
 
-// TestDeltaNetSeqKernels_matchDecodeBitwise is D-B01's kernel gate (docs/tasks/task-metal-audit-2026-10.md): the mixer's
-// row kernels (delta_conv_seq, delta_gates_rows, delta_norm_rows, delta_rule_seq, delta_gnorm_rows), each dispatched
-// once over M rows, against the decode kernels they copy run M times, one row at a time, on the same inputs. Every
-// row's output of every stage, the conv window and the recurrent state after the last row must be equal bit for bit.
-// The window and state start non-zero, as a continuation from an earlier prompt leaves them. Inputs that arrive as
-// half on the batched lane (the projection GEMMs' outputs: mixed and z) are given to both sides as the same halves.
-// Real Qwen3.5 geometry (nk = 16, nv = 48, hk = hv = 128, K = 4), and M = 1, 7 and 33.
+// TestDeltaNetSeqKernels_matchDecodeBitwise is D-B01's kernel gate (docs/tasks/task-metal-audit-2026-10.md), and KS-D3's
+// D3-G1 (docs/tasks/task-kernel-survey-2026-10.md): the mixer's row kernels (delta_conv_seq, delta_gates_rows, delta_norm_rows,
+// delta_rule_seq, delta_gnorm_rows), each dispatched once over M rows, against the decode kernels they copy run M times, one row
+// at a time, on the same inputs. Every row's output of every stage, the conv window and the recurrent state after the last row
+// must be equal bit for bit. The window and state start non-zero, as a continuation from an earlier prompt leaves them. Inputs
+// that arrive as half on the batched lane (the projection GEMMs' outputs: mixed and z) are given to both sides as the same
+// halves. Both scan forms run: the device-memory kernels and the on-chip ones the prefill takes (delta_conv_seq_reg,
+// delta_rule_seq_tg). Real Qwen3.5 geometry (nk = 16, nv = 48, hk = hv = 128, K = 4) and the tiny fixtures' (qwen35-tiny,
+// olmo_hybrid-tiny), at M = 1, 7 and 33.
 func TestDeltaNetSeqKernels_matchDecodeBitwise(t *testing.T) {
+	for _, g := range []deltaSeqGeom{
+		{"qwen3.5", 128, 128, 16, 48, 4},
+		{"qwen35-tiny", 16, 16, 2, 4, 4},
+		{"olmo_hybrid-tiny", 8, 16, 4, 4, 4},
+	} {
+		for _, v := range []struct {
+			conv, rule string
+			tg         int
+		}{{"delta_conv_seq", "delta_rule_seq", 128}, {"delta_conv_seq_reg", "delta_rule_seq_tg", 32}} {
+			t.Run(g.name+"/"+v.rule, func(t *testing.T) { deltaSeqBitwise(t, g, v.conv, v.rule, v.tg) })
+		}
+	}
+}
+
+// deltaSeqGeom is a Gated-DeltaNet mixer's geometry.
+type deltaSeqGeom struct {
+	name           string
+	hk, hv, nk, nv int
+	convK          int
+}
+
+// deltaSeqBitwise is TestDeltaNetSeqKernels_matchDecodeBitwise for one geometry, with the batched lane's scan kernels convSeq
+// and ruleSeq (the rule dispatched in threadgroups of ruleTG).
+func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, ruleTG int) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -32,18 +58,13 @@ func TestDeltaNetSeqKernels_matchDecodeBitwise(t *testing.T) {
 		return p
 	}
 	pConv, pGates, pNorm, pRule, pGNorm := pipe("delta_conv"), pipe("delta_gates"), pipe("delta_norm"), pipe("delta_rule"), pipe("delta_gnorm")
-	sConv, sGates, sNorm, sRule, sGNorm := pipe("delta_conv_seq"), pipe("delta_gates_rows"), pipe("delta_norm_rows"), pipe("delta_rule_seq"), pipe("delta_gnorm_rows")
+	sConv, sGates, sNorm, sRule, sGNorm := pipe(convSeq), pipe("delta_gates_rows"), pipe("delta_norm_rows"), pipe(ruleSeq), pipe("delta_gnorm_rows")
 
-	const (
-		hk, hv   = 128, 128
-		nk, nv   = 16, 48
-		rep      = nv / nk
-		convK    = 4
-		keyDim   = nk * hk
-		valueDim = nv * hv
-		convDim  = 2*keyDim + valueDim
-		eps      = 1e-6
-	)
+	hk, hv, nk, nv, convK := g.hk, g.hv, g.nk, g.nv, g.convK
+	rep := nv / nk
+	keyDim, valueDim := nk*hk, nv*hv
+	convDim := 2*keyDim + valueDim
+	const eps = 1e-6
 	rng := rand.New(rand.NewSource(7))
 	rnd := func(n int, scale float64) []float32 {
 		s := make([]float32, n)
@@ -75,7 +96,7 @@ func TestDeltaNetSeqKernels_matchDecodeBitwise(t *testing.T) {
 	u := func(v int) Buffer { return NewBufferU32(d, uint32(v)) }
 	uConvDim, uK, uNv, uNk, uHk, uHv := u(convDim), u(convK), u(nv), u(nk), u(hk), u(hv)
 	uKeyDim, uRep, uVBase := u(keyDim), u(rep), u(2*keyDim)
-	uQScale, uEps := NewBufferFloats(d, []float32{float32(1 / math.Sqrt(hk))}), NewBufferFloats(d, []float32{eps})
+	uQScale, uEps := NewBufferFloats(d, []float32{float32(1 / math.Sqrt(float64(hk)))}), NewBufferFloats(d, []float32{eps})
 	dConvW, dDt, dNegA, dNormW := NewBufferFloats(d, convW), NewBufferFloats(d, dtBias), NewBufferFloats(d, negExpA), NewBufferFloats(d, normW)
 	q := d.NewCommandQueue()
 
@@ -121,7 +142,7 @@ func TestDeltaNetSeqKernels_matchDecodeBitwise(t *testing.T) {
 		e.Dispatch(sConv, convDim, 256, sMixed, dConvW, sWin, sConvOut, uConvDim, uK, uM)
 		e.Dispatch(sGates, M*nv, 64, sBt, sAt, dDt, dNegA, sHeadP, uNv, uM)
 		e.Dispatch(sNorm, M*nk*128, 128, sConvOut, sQn, sKn, uNk, uHk, uKeyDim, uQScale, uConvDim, uM)
-		e.Dispatch(sRule, nv*hv, 128, sQn, sKn, sConvOut, sHeadP, sState, sCore, uNv, uHk, uHv, uRep, uVBase, uKeyDim, uConvDim, uM)
+		e.Dispatch(sRule, nv*hv, ruleTG, sQn, sKn, sConvOut, sHeadP, sState, sCore, uNv, uHk, uHv, uRep, uVBase, uKeyDim, uConvDim, uM)
 		e.Dispatch(sGNorm, M*nv*128, 128, sCore, sZ, dNormW, sOut, uNv, uHv, uEps, uM)
 		e.End()
 

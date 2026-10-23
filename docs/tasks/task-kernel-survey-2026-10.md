@@ -48,7 +48,7 @@
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
 | KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
 | KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
-| KS-D3 | open | Mac: GPU time of `delta_rule_seq` alone at M=512 | — |
+| KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | open | Mac: scratch-byte counter and a tiny-fixture byte compare | — |
 | KS-D6 | open | Mac: MEM2-G1's allocated-size counters, outputs byte-equal | — |
@@ -652,6 +652,25 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **Gate:** `TestDeltaNetSeqKernels_matchDecodeBitwise`.
 - **Size:** S–M.
 - **Prior art:** a new form. D-B05 reorders the sums and waits on O2; this needs no decision.
+
+**KS-D3 gates, registered 2026-10-22 before the code (D3-G).** Re-checked on main at 14eea5f8: `delta_rule_seq` still reads and
+writes each thread's `hk`-float state row in device memory for every prompt row, with 128 threads per threadgroup and rows `hk`
+floats apart. `delta_conv_seq` still shifts its window through device memory. The build:
+- **`delta_rule_seq_tg`:** a 32-thread threadgroup holds its 32 state rows in threadgroup memory (16 KB at `hk` = 128, element `kd` of
+  lane `l` at `kd*32 + l`, so the 32 lanes hit 32 banks). It loads once, runs the same loop in the same order, and stores once.
+  It is taken when `hk` ≤ 128.
+- **`delta_conv_seq_reg`:** the conv window in registers when `K` ≤ 5, the same order of operations.
+- The current kernels stay as the fallback and as the in-process A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D3-G1 kernel identity | 0 | `TestDeltaNetSeqKernels_matchDecodeBitwise` with the new kernels, Qwen3.5 geometry (`hk` = `hv` = 128, `nv` = 48), M = 1, 7, 33; and the same at a tiny fixture's geometry | every stage's output, the window and the state equal the decode kernels' bit for bit (as the current seq kernels do) |
+| D3-G2 model identity | 0 | Metal resident at int4 on qwen35-tiny, qwen3_5-tiny, qwen3_5_moe-tiny and olmo_hybrid-tiny (the Gated-DeltaNet fixtures, #163's included): a 40-token batched prefill's last logits and 8 decode steps after, new kernels against the current ones in one process | byte-equal on every fixture |
+| D3-G3 speed | timed, Mac, by day after 07:00, timing lock | GPU time (GPUEnd − GPUStart) of `delta_rule_seq` alone at M = 512, Qwen3.5 geometry, the current kernel against `delta_rule_seq_tg`, interleaved A B B A, 10 pairs in one process; `delta_conv_seq` the same, read only | SHIP if the median new/old ratio is ≤ 0.98 and at least 9 of 10 pairs are below 1; PARK at 0.98 to 1.00; OFF above 1.00 (no change to the default) |
+
+Planted defect, run once on the committed tree and reverted: the new rule kernel's two dot products in a different order
+(`kvdot` summed in reverse). D3-G1 goes red. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds; D3-G3
+about a minute.
 
 **KS-D4 · Gemma 4 vision and audio towers and EmbeddingGemma 2 onto S17's kernels.**
 - **Where:** `metal/embeddinggemma2.go:eg2Ops.gemm`.
