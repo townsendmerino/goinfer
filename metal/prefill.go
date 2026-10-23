@@ -40,7 +40,26 @@ func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 // gemmTileFor is gemmTile for a weight of a given kind: w8 picks the W8 tiles (int8 slice 2), else the int4 ones. An
 // int4mix resident (w8Attn) passes true for its attention GEMMs and false for its FFN.
 func (pf *prefillState) gemmTileFor(rows, N int, w8 bool) (Pipeline, int, int) {
-	tm, tn := 64, 64
+	tm, tn := gemmTileSize(rows, N)
+	if w8 { // int8 slice 2: the native int8 path's weights, the same tile
+		return pf.pW8[[2]int{tm, tn}], tm, tn
+	}
+	switch {
+	case tm == 16 && tn == 32:
+		return pf.pGemmM16N32, 16, 32
+	case tm == 32 && tn == 32:
+		return pf.pGemmM32N32, 32, 32
+	case tm == 32:
+		return pf.pGemmM32N64, 32, 64
+	case tn == 32:
+		return pf.pGemmM64N32, 64, 32
+	}
+	return pf.pGemmStore, 64, 64
+}
+
+// gemmTileSize is the prefill GEMM's tile, TM tokens by TN features, for a pass of rows rows and N output features.
+func gemmTileSize(rows, N int) (tm, tn int) {
+	tm, tn = 64, 64
 	switch gemmTilePolicy {
 	case "":
 		pad := (rows + 63) / 64 * 64
@@ -62,25 +81,35 @@ func (pf *prefillState) gemmTileFor(rows, N int, w8 bool) (Pipeline, int, int) {
 			tn = 32
 		}
 	}
-	if w8 { // int8 slice 2: the native int8 path's weights, the same tile
-		return pf.pW8[[2]int{tm, tn}], tm, tn
+	return tm, tn
+}
+
+// swigluFusedOffForTest keeps the gate|up GEMM and swiglu_f16 as two steps with guF between them: the old arm of KS-D5's A/B.
+var swigluFusedOffForTest bool
+
+// swigluFused reports whether a pass of Mpad rows runs every dense layer's gate|up projection through gemm_w4f16_swiglu, so it
+// needs no guF: the int4 weights (not the native int8 lane), the 64 x 64 tile for every layer's width, a width that is a
+// multiple of 32, and no MoE layer (its expert GEMMs write guF). The pass and prefillScratchBytes both ask it.
+func (r *resident) swigluFused(Mpad int) bool {
+	if swigluFusedOffForTest || r.w8 || r.moe != nil {
+		return false
 	}
-	switch {
-	case tm == 16 && tn == 32:
-		return pf.pGemmM16N32, 16, 32
-	case tm == 32 && tn == 32:
-		return pf.pGemmM32N32, 32, 32
-	case tm == 32:
-		return pf.pGemmM32N64, 32, 64
-	case tn == 32:
-		return pf.pGemmM64N32, 64, 32
+	for l := -1; l < len(r.layers); l++ {
+		fI := r.I
+		if l >= 0 && r.layers[l].ffnI != 0 {
+			fI = r.layers[l].ffnI
+		}
+		if tm, tn := gemmTileSize(Mpad, 2*fI); tm != 64 || tn != 64 || fI%32 != 0 {
+			return false
+		}
 	}
-	return pf.pGemmStore, 64, 64
+	return true
 }
 
 // prefillState holds the lazily compiled prefill pipelines (ensurePrefill); a decode-only run never builds it.
 type prefillState struct {
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
+	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu (KS-D5)
 	pKvI8, pDeqI8                                              Pipeline // an int8 cache's store and dequantize-to-scratch (kv_i8_prefill.go)
 	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
 	pAttnImg                                                   Pipeline // S17: attention_prefill with a bidirectional image block
@@ -175,7 +204,7 @@ func (r *resident) ensurePrefill() {
 		return pp
 	}
 	r.pf = &prefillState{
-		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
+		pGemmStore: p("gemm_w4f16_store"), pGemmSwiglu: p("gemm_w4f16_swiglu"), pRms: p("rmsnorm_f16"),
 		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"), pGemmM16N32: p("gemm_w4f16_m16n32"),
 		pLN: p("layernorm_f16"), pLNQ: p("layernorm_quant_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p(ropeF16Name(r.pairwiseRoPE, false)), pRopeM: p(ropeF16Name(r.pairwiseRoPE, true)),
@@ -303,7 +332,11 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 	}
 	m, mp, H := int64(M), int64((M+7)/8*8), int64(r.H)
 	qkvDim, qDim, maxI := r.prefillWidths()
-	n := 2*mp*(2*H+int64(qkvDim)+int64(qDim)+3*int64(maxI)) + 4*mp
+	ffnRows := int64(3) // guF (2 x maxI) and dqF (maxI)
+	if r.swigluFused(int(mp)) {
+		ffnRows = 1 // dqF only: gemm_w4f16_swiglu writes it with no guF
+	}
+	n := 2*mp*(2*H+int64(qkvDim)+int64(qDim)+ffnRows*int64(maxI)) + 4*mp
 	if e := r.moe; e != nil {
 		k := int64(e.k)
 		n += 4*m*int64(e.nE) + 8*m*k + 4*mp*H + 8*mp*k
@@ -506,7 +539,11 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	normF := prefillScratchU16(d, Mpad*H)
 	qkvF := prefillScratchU16(d, Mpad*qkvDim)
 	ctxF := prefillScratchU16(d, Mpad*qDim)
-	guF := prefillScratchU16(d, Mpad*2*maxI)
+	fusedSw := r.swigluFused(Mpad)
+	var guF Buffer // the gate|up rows between the GEMM and swiglu_f16; none when the pass fuses them (swigluFused)
+	if !fusedSw {
+		guF = prefillScratchU16(d, Mpad*2*maxI)
+	}
 	dqF := prefillScratchU16(d, Mpad*maxI)
 	posv := make([]uint32, Mpad)
 	for m := range M {
@@ -1050,10 +1087,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		if fI != I {
 			uFI, u2FI = getU32(fI), getU32(2*fI)
 		}
-		// gate/up
-		gemm(e, Mpad, 2*fI, inFFN, L.guW, L.guS, guF, uM, u2FI, uH, dummyBias, m0)
-		// swiglu/geglu (G8: r.uAct selects — 0 for every family without FeatGatedGELU)
-		e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
+		// gate/up, then swiglu/geglu (G8: r.uAct selects, 0 for every family without FeatGatedGELU): one fused GEMM when the pass
+		// takes it (swigluFused), else the GEMM into guF and swiglu_f16.
+		if fusedSw {
+			e.Dispatch2D(pf.pGemmSwiglu, (fI+31)/32, (Mpad+63)/64, 128, 1, inFFN, L.guW, L.guS, dqF, uM, uFI, uH, r.uAct)
+		} else {
+			gemm(e, Mpad, 2*fI, inFFN, L.guW, L.guS, guF, uM, u2FI, uH, dummyBias, m0)
+			e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
+		}
 		// down-proj, same plain-vs-sandwich split as o-proj above.
 		if r.sandwich || r.postOnly {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uFI, dummyBias, m0)
