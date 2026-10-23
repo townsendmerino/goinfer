@@ -69,3 +69,21 @@ release allocates again. A generation counter makes a release that fires late a 
 buffer.
 
 A 4K forward of this f32 tower is about 50 s on the M1 Pro, so H4-G3 took 12.5 minutes, not the minute registered.
+
+## KS-D7 shipped by owner decision (D7-G3), 2026-10-23
+
+Francis (8:36 am): "it seems silly to give up gains, any gains, if it's bit-identical and doesn't use more memory." So the half2
+dequant ships over the registered 2% bar, on the re-run's reading above (median 0.9888, 10 of 10 pairs below 1). His memory
+condition was registered as D7-G3 before it ran (survey doc, "KS-D7 shipped by owner decision").
+
+| gate | reading | result |
+|---|---|---|
+| D7-G1 identity | as above, on the shipping build: llama-tiny 0 of 256 logits differ; `TestKSD7_half2DequantExhaustive` 0 of 1,048,576 | **PASS** |
+| D7-G3 memory | `TestKSD7_memoryUnchanged`, the 1.5B, one 3,900-token prefill per build, 08:37, timing lock held shared: prefill scratch counted 261.865 MB for both; Metal allocated after the prefill, net of the build, 0.131 MB per-weight and 0.000 MB half2; logits 0 of 151,936 differ. Log: `~/goinfer-logs/ksd7-g3-2026-10-23.log` | **PASS** (not higher) |
+
+The per-weight form stays in the source behind `KSD7_OLD_DEQUANT`, compiled only for the tests' old arm, so D7-G1 and D7-G3 can be
+re-run. Production compiles the half2 form alone.
+
+It also ships under the owner's standing rule of the same day (CLAUDE.md, "Measurement discipline": a bit-identical speed change
+ships under its registered bar). All four of its conditions hold: the outputs are bit-identical, memory is not higher, 10 of 10
+pairs are faster, and the half2 form replaces the per-weight one (the define is a test-only switch back).
