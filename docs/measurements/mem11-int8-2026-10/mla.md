@@ -174,3 +174,7 @@ discarded.
 token on the CPU, which is the extra 0.94 GB of f32 projections read per token. This is the CPU reference path only; a GPU load
 makes its own int8 from the f32 either way, so GPU decode is unchanged. It is the speed main had before #162, given back, not a
 new loss. The absolute rate (0.8 tok/s) is this harness's whole-token CPU forward on the 3700X, not a served figure.
+
+**Confirmed on main after the merge** (9bafcc121, which also carries aikit v1.73.0's column-blocked int8 matmul; log
+`~/goinfer-logs/d14-mla/gates-main-9bafcc12.log`, 13:00 PDT): V2-Lite cosine 0.999243 and Moonlight 0.999508, continuations
+exact, the same readings as at d5c5a1d53. The validated rows hold on main as merged.
