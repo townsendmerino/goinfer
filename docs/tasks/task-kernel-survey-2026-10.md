@@ -19,7 +19,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | KS-A1 | decision | KS-O1, then nobara: a Q5_K GEMV against `gemv_w8a8_g32`. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 (+284.3 Q5_K qkv, +72.6 Q6_K down, +17.8 Q6_K head, all int8 copies) | `docs/measurements/kernel-survey-2026-10/README.md` |
-| KS-A2 | decision | owner: build the cheaper launch path (raw launches from the caller's thread, pre-packed arguments; M)? Measured 2026-10-23 on the 0.5B at depth 128: graphs ÷ live **1.454×** median, 10 of 10 quads (348 → 512 tok/s); 12.9 µs a launch; 1,161 voluntary context switches a token | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A2 | building | gated 2026-10-23; aikit `gpu/v0.34.0` tagged (aikit #13, #14), `cuda/go.mod` bumped; merge after the touched device tests on the tagged module: direct launches from the resident's executor thread (aikit `Queue.LaunchDirect`). Logits byte-equal; the 0.5B at depth 128 **1.492×** median, 10 of 10 ABBA quads (345 → 521 tok/s), gemma3-1b 1.465× (197 → 291); 10.4 → 2.3 µs a launch; CUDA device suite green | `docs/measurements/ks-a2-2026-10/README.md` |
 | KS-A3 | decision | owner: build the multi-block `topk_select` (S–M)? Measured 2026-10-23: one block, **101.7 µs** at (152k, 256), **211.5 µs** at (262k, 1024) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
 | KS-A5 | decision | owner: build the one-round row loads (S–M), after KS-A2's launch path, since the gain needs decode GPU-bound? Measured 2026-10-23: `fused_rms_gu` at (896, 4864) runs at **55.2%** of DRAM peak (kill was ≥ 80%) | `docs/measurements/kernel-survey-2026-10/README.md` |
