@@ -198,7 +198,11 @@ func TestKSC1_gemvTiming(t *testing.T) {
 			base = "gemv_q4k_f32"
 		}
 		var old float64
-		for _, R := range []int{0, 1, 2, 4} {
+		Rs := []int{0, 1, 2, 4}
+		if s.q4k {
+			Rs = append(Rs, 8)
+		}
+		for _, R := range Rs {
 			name, n := base, s.N*32
 			if R > 0 {
 				name, n = fmt.Sprintf("%s_rows%d", base, R), (s.N+R-1)/R*32

@@ -585,6 +585,12 @@ Q4_K kernel stays under a third of the ceiling because every lane decodes two su
 flight (lane l: super-blocks l/8, l/8 + 4, …; within one, chunk (l mod 8)/2 and half l mod 2, one `uint4` of quants, 16 low and 16
 high nibbles against 8 `float4` activations), so the scale decode, d·dmin and the min-term sums are paid once per 32 weights. Its
 own C1-G0 reading picks R; the gates and bars are unchanged.
+
+**C1-G0 re-read with the amended layout (14:09, load 3.99, 3.1 GB available), and R = 8 added before any grading gate.** Ceiling
+179.3 GB/s. Q4_K old → R = 1 / 2 / 4: o 0.140 → 0.101 / 0.090 / **0.082 ms (1.70×, 64 GB/s)**; gate|up 0.708 → 0.514 / 0.423 / **0.364
+(1.94×, 78 GB/s)**; down 0.365 → 0.248 / 0.225 / **0.201 (1.81×, 70 GB/s)**. Int8 as before: qkv best at R = 2 (1.06×), the Q6_K down
+layers at R = 4 (1.09×). Still improving at R = 4, so the Q4_K R set gains 8 (one more C1-G0 pass); the rule stays the fastest R.
+Log: `~/goinfer-logs/ksc1-g0b-2026-10-23.log`.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 

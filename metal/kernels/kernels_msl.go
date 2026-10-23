@@ -918,29 +918,40 @@ kernel void gemv_w8_f32_bias(device const char* wq[[buffer(0)]], device const fl
 }
 
 // KS-C1: the q4k lane's GEMVs at R rows a simdgroup (grid ceil(N/R)*32, tg 256; rows past N are skipped).
-// q4k_rows_acc puts all 32 lanes on one super-block: lane l takes byte group l mod 8 of 64-weight chunk l/8 (one uint of
-// quants: low nibbles are elements 64j+4t..+3, high ones 64j+32+4t..+3), its two float4 activations loaded once for the R
-// rows, d*sc*dot(q, a) per half and the min term as dmin*m*sum(a). Not gemv_q4k_f32's order: G-Q1's bar and G-Q2 grade it.
-// The batched step's mc3_gemv_q4k_f32_rows (batch_rows.go) repeats this loop per activation row, so it stays decode's bits.
+// q4k_rows_acc puts 8 lanes on a super-block and 4 super-blocks in flight (lane l takes super-blocks l/8, l/8+4, ...). Within
+// one, lane l mod 8 takes chunk j = (l mod 8)/2 and half h = l mod 2: one uint4 of quants (bytes 32j+16h..+15, whose low
+// nibbles are elements 64j+16h..+15 of sub-block 2j and high ones 64j+32+16h..+15 of 2j+1) against 8 float4 activations loaded
+// once for the R rows; d*sc*dot(q, a) per sub-block and the min term as dmin*m*sum(a), the scales decoded once per 32 weights.
+// Not gemv_q4k_f32's order: G-Q1's bar and G-Q2 grade it. The batched step's mc3_gemv_q4k_f32_rows (batch_rows.go) repeats
+// this loop per activation row, so it stays decode's bits.
 template <uint R>
 inline void q4k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
     thread float* acc) {
-    const uint NB = K >> 8u, j = lane >> 3u, t = lane & 7u;
+    const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
     SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) acc[r] = 0.0f;
-    for (uint b = 0u; b < NB; b++) {
-        device const float4* a4 = (device const float4*)(ax + b*256u + j*64u + t*4u);
-        float4 alo = a4[0], ahi = a4[8];
-        float slo = (alo.x + alo.y) + (alo.z + alo.w), shi = (ahi.x + ahi.y) + (ahi.z + ahi.w);
+    for (uint b = ix; b < NB; b += 4u) {
+        device const float4* alo4 = (device const float4*)(ax + b*256u + j*64u + h*16u);
+        float4 al[4], ah[4];
+        float slo = 0.0f, shi = 0.0f;
+        for (uint i = 0u; i < 4u; i++) {
+            al[i] = alo4[i]; ah[i] = alo4[8u + i];
+            slo += (al[i].x + al[i].y) + (al[i].z + al[i].w);
+            shi += (ah[i].x + ah[i].y) + (ah[i].z + ah[i].w);
+        }
         SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) {
             if (row0 + r >= N) break;
             device const uchar* blk = wq + (ulong)(row0 + r)*(ulong)NB*144ul + b*144u;
             half2 dd = as_type<half2>(*(device const uint*)blk);
             float sc0, m0, sc1, m1; q4k_scale_min(2u*j, blk + 4, sc0, m0); q4k_scale_min(2u*j + 1u, blk + 4, sc1, m1);
-            uint q = *(device const uint*)(blk + 16u + j*32u + t*4u);
-            float4 lo = float4(float(q & 15u), float((q >> 8u) & 15u), float((q >> 16u) & 15u), float((q >> 24u) & 15u));
-            float4 hi = float4(float((q >> 4u) & 15u), float((q >> 12u) & 15u), float((q >> 20u) & 15u), float(q >> 28u));
+            uint4 q = *(device const uint4*)(blk + 16u + j*32u + h*16u);
+            float dlo = 0.0f, dhi = 0.0f;
+            for (uint i = 0u; i < 4u; i++) {
+                uint w = q[i];
+                dlo += dot(float4(float(w & 15u), float((w >> 8u) & 15u), float((w >> 16u) & 15u), float((w >> 24u) & 15u)), al[i]);
+                dhi += dot(float4(float((w >> 4u) & 15u), float((w >> 12u) & 15u), float((w >> 20u) & 15u), float(w >> 28u)), ah[i]);
+            }
             float d = float(dd.x), dm = float(dd.y);
-            acc[r] += d*sc0*dot(lo, alo) + d*sc1*dot(hi, ahi) - dm*(m0*slo + m1*shi);
+            acc[r] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);
         }
     }
     SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) acc[r] = simd_sum(acc[r]);
@@ -1024,12 +1035,15 @@ kernel void gemv_w8_f32_bias_rows(device const char* wq[[buffer(0)]], device con
 template [[host_name("gemv_q4k_f32_rows1")]] kernel decltype(gemv_q4k_f32_rows<1>) gemv_q4k_f32_rows<1>;
 template [[host_name("gemv_q4k_f32_rows2")]] kernel decltype(gemv_q4k_f32_rows<2>) gemv_q4k_f32_rows<2>;
 template [[host_name("gemv_q4k_f32_rows4")]] kernel decltype(gemv_q4k_f32_rows<4>) gemv_q4k_f32_rows<4>;
+template [[host_name("gemv_q4k_f32_rows8")]] kernel decltype(gemv_q4k_f32_rows<8>) gemv_q4k_f32_rows<8>;
 template [[host_name("gemv_q4k_f32_resid_rows1")]] kernel decltype(gemv_q4k_f32_resid_rows<1>) gemv_q4k_f32_resid_rows<1>;
 template [[host_name("gemv_q4k_f32_resid_rows2")]] kernel decltype(gemv_q4k_f32_resid_rows<2>) gemv_q4k_f32_resid_rows<2>;
 template [[host_name("gemv_q4k_f32_resid_rows4")]] kernel decltype(gemv_q4k_f32_resid_rows<4>) gemv_q4k_f32_resid_rows<4>;
+template [[host_name("gemv_q4k_f32_resid_rows8")]] kernel decltype(gemv_q4k_f32_resid_rows<8>) gemv_q4k_f32_resid_rows<8>;
 template [[host_name("gemv_q4k_f32_bias_rows1")]] kernel decltype(gemv_q4k_f32_bias_rows<1>) gemv_q4k_f32_bias_rows<1>;
 template [[host_name("gemv_q4k_f32_bias_rows2")]] kernel decltype(gemv_q4k_f32_bias_rows<2>) gemv_q4k_f32_bias_rows<2>;
 template [[host_name("gemv_q4k_f32_bias_rows4")]] kernel decltype(gemv_q4k_f32_bias_rows<4>) gemv_q4k_f32_bias_rows<4>;
+template [[host_name("gemv_q4k_f32_bias_rows8")]] kernel decltype(gemv_q4k_f32_bias_rows<8>) gemv_q4k_f32_bias_rows<8>;
 template [[host_name("gemv_w8_f32_rows1")]] kernel decltype(gemv_w8_f32_rows<1>) gemv_w8_f32_rows<1>;
 template [[host_name("gemv_w8_f32_rows2")]] kernel decltype(gemv_w8_f32_rows<2>) gemv_w8_f32_rows<2>;
 template [[host_name("gemv_w8_f32_rows4")]] kernel decltype(gemv_w8_f32_rows<4>) gemv_w8_f32_rows<4>;
