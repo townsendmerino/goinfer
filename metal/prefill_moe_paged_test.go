@@ -189,3 +189,14 @@ func TestMoELayerMajor_generateThroughDecoder(t *testing.T) {
 		})
 	}
 }
+
+// TestKSD9_plantSeenByTheGate runs TestMoELayerMajor_matchesSequential with the startup self-test skipped, so a planted defect in
+// the batched phase 2 reaches the gate instead of declining the backend first (KS-D9's planted-defect check). Armed by
+// GOINFER_KSD9_PLANT=1 only: it skips the self-test for the whole process.
+func TestKSD9_plantSeenByTheGate(t *testing.T) {
+	if os.Getenv("GOINFER_KSD9_PLANT") != "1" {
+		t.Skip("set GOINFER_KSD9_PLANT=1 (skips the process's startup self-test)")
+	}
+	decoder.SkipSelfTests()
+	TestMoELayerMajor_matchesSequential(t)
+}
