@@ -67,3 +67,40 @@ the golden's tokens from the fourth position on.
 
 **The manifest is unchanged.** `deepseek_v2`, `deepseek_v3` and `kimi_k2` stay pending; V2-Lite's passing row was not refreshed
 on its own, since the three share one forward and one decision. The question is the memory campaign's D14.
+
+## D14 (b): the per-projection search, registered 2026-10-23 before running
+
+Owner decision D14 (b), 2026-10-23: find the int8 MLA projection that carries Moonlight's flip and keep only that one f32;
+(a), all MLA projections f32, if no single projection accounts for it.
+
+**Arms.** Moonlight and V2-Lite are both direct-q (`q_lora_rank` null), so the candidates are three, each held f32 on every
+layer while the other two stay int8: **q** (`q_proj`), **kv-A** (`kv_a_proj_with_mqa`) and **o** (`o_proj`). kv-B is f32 in
+every arm. The cost of keeping each f32, by arithmetic over both checkpoints' shapes (27 layers, hidden 2048, 16 heads, f32
+bytes less the per-row int8 codes and scales): kv-A **95.5 MB**, o **339.5 MB**, q **509.3 MB**; all three are the 944 MB
+that MEM11-int8 saved.
+
+**Instrument.** The family gate's own body (`deepseekRealGate`: int8int8 load, argmax, 6-token greedy continuation, cosine
+≥ 0.99 against the HF bf16 golden), run under a test-only seam that keeps the named projection f32. Each run also logs, at
+every continuation step, the logit gap between the golden's token and the token taken: diagnosis, not gated. One run per arm
+(the CPU forward is deterministic within a build); not timed, so the timing lock is held shared.
+
+**Order and stopping rule.**
+1. Moonlight with each single arm: q, kv-A, o.
+2. Each single arm whose Moonlight continuation is exact runs V2-Lite. **An arm clears iff both gates pass** (argmax and
+   continuation exact, cosine ≥ 0.99, the bars unchanged).
+3. **If more than one single arm clears, ship the cheapest by the bytes above** (kv-A, then o, then q). It is the smallest
+   change that clears; the record names every arm that cleared, since a near-tie flip can clear under more than one.
+4. If no single arm clears, the three pairs run (diagnosis). A clearing pair is not "a single projection", so it comes back as a
+   decision rather than shipping; with no clearing pair, (a) ships.
+
+**Then, for the shipped arm only:**
+- **memory:** `ResidentWeightBytes` on Moonlight at int8int8, all-int8 against the shipped arm (it should rise by that arm's
+  bytes above);
+- **speed:** an in-process whole-token decode A/B on Moonlight at int8int8, the two loads interleaved A B B A in one process
+  under `timing_lock.py run`, 4 pairs of 32 decode tokens; the cell's load average and free memory recorded at its start, and
+  void under the run-budget rule (load above 8.0, or free memory under the two loads plus 2 GB). Read as a ratio with its pair
+  signs; not gated: the decision is the parity bar's, and the speed cost is recorded beside it.
+
+**The ship:** `quantizeProjections` leaves that projection f32 on every DeepSeek-family load (one forward, so `deepseek_v2`,
+`deepseek_v3` and `kimi_k2` move together), the fit estimators price it f32, and the three manifest rows refresh from the
+passing gate run on the shipped build.
