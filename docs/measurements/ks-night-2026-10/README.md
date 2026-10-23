@@ -83,3 +83,7 @@ condition was registered as D7-G3 before it ran (survey doc, "KS-D7 shipped by o
 
 The per-weight form stays in the source behind `KSD7_OLD_DEQUANT`, compiled only for the tests' old arm, so D7-G1 and D7-G3 can be
 re-run. Production compiles the half2 form alone.
+
+It also ships under the owner's standing rule of the same day (CLAUDE.md, "Measurement discipline": a bit-identical speed change
+ships under its registered bar). All four of its conditions hold: the outputs are bit-identical, memory is not higher, 10 of 10
+pairs are faster, and the half2 form replaces the per-weight one (the define is a test-only switch back).
