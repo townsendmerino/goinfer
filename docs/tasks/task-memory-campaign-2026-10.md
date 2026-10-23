@@ -31,7 +31,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
-| MEM5-VL | open (routes 1 to 3 done 2026-10-22 at tier 0) | either box: chunk the prefill of the families G40 left out; L in total. Four routes, in order: the shared batched route (done at tier 0: V1-G1 to G3 PASS; V1-G4, the Qwen2.5-VL-3B peak, by day), Gemma 4 (done at tier 0: V2-G1 to G3 PASS; V2-G4 needs a bidirectional Gemma 4 checkpoint), Qwen3.5 (done at tier 0: V3-G1 to G3 PASS; V3-G4 by day), audio (§4 MEM5) | `docs/measurements/mem5vl-2026-10/README.md` |
+| MEM5-VL | open (all four routes done 2026-10-22 at tier 0; the tier-1 peaks open) | either box: chunk the prefill of the families G40 left out; L in total. Four routes, in order: the shared batched route (done at tier 0: V1-G1 to G3 PASS; V1-G4, the Qwen2.5-VL-3B peak, by day), Gemma 4 (done at tier 0: V2-G1 to G3 PASS; V2-G4 needs a bidirectional Gemma 4 checkpoint), Qwen3.5 (done at tier 0: V3-G1 to G3 PASS; V3-G4 by day), audio (done: V4-G1 to G3 PASS) (§4 MEM5). Open: the tier-1 peaks V1-G4 and V3-G4 by day, V2-G4 on a box with a bidirectional Gemma 4 | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open (CUDA) | Metal routes done 2026-10-22: the resident reads the suffix a chunk at a time (`ResidentPrefillRows`), at most 256 embedding rows held (was the whole suffix), logits byte-equal; MEM6-G1 to G3 PASS. Left: the CUDA cells and the `RssAnon` gate, on nobara | `docs/measurements/mem6-2026-10/README.md` |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
@@ -494,6 +494,28 @@ and are left as they are.
 
 Planted defect: each pass splices the image features at rows counted from the pass, not the prompt. V3-G1 goes red. Stopping rule:
 one pass each. Cost: seconds.
+
+**V1-G4 and V3-G4 amended 2026-10-22, before any tier-1 data.** Both run `TestMEM5VL_peakTier1`. The single-pass arm is the branch with
+`prefillChunkRows` above the prompt, which is main's shape: V1-G1 and V3-G1 show its passes byte-equal and its buffers the same.
+Each arm takes two readings. The registered one is the live heap after a collection at every pass boundary, which sees a pass's
+working set only where the pass still holds it (route 1's `prefillPassScratch`). The added one is heap in use sampled every 20 ms
+without a collection. Qwen3.5's runner drops its per-layer buffers before the boundary, so only the sampled reading sees its
+transient. The prompt: 8,192 tokens with a 1,024-row image. Qwen3.6-35B-A3B's `.giw` is not on the Mac, so V3-G4 runs on
+Qwen3.5-0.8B. Graded on the sampled reading: the chunked peak over base lower by at least half the single pass's.
+
+**MEM5-VL (4) gates, the audio prefill, registered 2026-10-22 before the code (V4-G).** `prefillLogitsAudio` (Voxtral,
+Qwen3-ASR) embeds the whole prompt, splices the audio run's features and runs one `runLayersFromEmbedN` pass. Its audio rows attend
+causally (no block), so it is route 1's case with one causal span. The build: it calls route 1's `prefillSpliced` with the audio run
+as the span.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V4-G1 identity | 0 | voxtral-tiny and qwen3asr-tiny, a 60-token prompt with a 20-row audio run, with `prefillChunkRows` at 7 and 16, at f32 and int4: the last logits and four decode steps after, against one pass; the pass count | byte-equal, more than one pass at each size |
+| V4-G2 bytes | 0 | route 1's row-buffer instrument on a 200-row prompt with a 40-row audio run, 16-row chunks | row buffers exactly the single pass's scaled to 16 of 200 rows; key-sized buffers equal |
+| V4-G3 unchanged | 0 | the Voxtral and Qwen3-ASR tests (`voxtral_test.go`, `qwen3asr_test.go`, against HF goldens); `scripts/refresh_parity_hashes.sh` | pass; green |
+
+Planted defect: the audio features spliced at rows counted from the pass. V4-G1 goes red. Stopping rule: one pass each. Cost:
+seconds. No tier-1 cell: the bench set's audio checkpoints are short-prompt ASR, where a whole-prompt pass is small.
 
 ### MEM6 · Resident prefill embeds per chunk (S)
 
