@@ -591,6 +591,11 @@ the timing lock held exclusively. The reading is the body's bandwidth: the four 
 **Build iff** that is under 145 GB/s **and** under 80% of the ceiling read in the same run; otherwise the headroom to the
 estimate's 160–165 GB/s is under 10% and KS-C3 closes as measured. Stopping rule: one pass. Cost: about 2 minutes.
 
+**Read 2026-10-23 (12:37), the timing lock held exclusively (1-minute load 1.43, 5.3 GB available):** the streaming ceiling
+179.7 GB/s; the int8 body at the 1.5B's shapes qkv 0.028 ms (113 GB/s), o 0.025 ms (93), gate|up 0.187 ms (148), down 0.108 ms
+(127): **47.0 MB in 0.348 ms, 135 GB/s, 75.1% of the ceiling**. Under both lines: **build**. At 160–165 GB/s the four would take
+0.285–0.294 ms, −0.054 to −0.063 ms a layer, −1.5 to −1.8 ms a token over 28 layers. Log: `~/goinfer-logs/ksc3-gemv-2026-10-23.log`.
+
 **KS-C4 · Fold the single-threadgroup quantizers into their neighbors (designed bit-identical).**
 - **Waste:** `swiglu_quant` and `quant_vec` are dispatched as one 256-thread threadgroup (one core of 16), and
   `swiglu_quant` makes two passes, computing `exp` twice.
