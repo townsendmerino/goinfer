@@ -680,6 +680,19 @@ about a minute.
 - **Class:** w32 is expected to be bit-identical (confirm by bytes); w16 and fused attention take the tower gate.
 - **Size:** S–M.
 
+**KS-D4 gates, registered 2026-10-23 before the code (D4-G), on the owner's order of 11:50.** Scope: the w32 lever only.
+`eg2Ops.gemm` (the GEMMs of the EmbeddingGemma 2 text encoder and of the Gemma 4 vision and audio towers, their unfused attention's
+score and value products included) moves from aikit's `GEMMF32Plan` (`gemm_f32_sg_big` where M and N are multiples of 32, else
+`gemm_f32_sg`) to S17's `tower_gemm_w32`. w16 and the fused attention change outputs; each takes the tower gate as its own item.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D4-G1 class | 0 | `tower_gemm_w32` against `GEMMF32Plan`'s kernel at (M, N, K) = (256, 768, 768), (1,024, 3,072, 768), (1,024, 768, 3,072), (100, 768, 768), (37, 1,536, 1,536) and (512, 512, 64), random f32, both in the precise library the towers compile | byte-equal in every cell. **A differing byte stops the w32 swap as a bit-identical change:** the reading is recorded and the lever goes to the tower gate, registered separately |
+| D4-G2 identity | 0 | after the swap: each tower's committed tiny fixture (EmbeddingGemma 2, the Gemma 4 vision tower, the Gemma 4 audio tower), its output against `main`'s, through a test binary at each | byte-equal |
+| D4-G3 speed | timed, Mac, timing lock | the Gemma 4 E4B vision tower (`~/models/gemma-4-E4B-qat-unq-towers`), one forward per image over the F2a images, the new GEMM against aikit's on one accelerator (a test seam), A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old forward time is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise PARK |
+
+Stopping rule: one pass each; G1 red stops the item. Cost: G1 seconds; G3 about 5 minutes.
+
 **KS-D5 · Fuse SwiGLU into the gate|up GEMM and drop `guF` (bit-identical).**
 - **Waste:** `guF` exists only to carry gate and up to `swiglu_f16`. It is 52–55% of the 1.5B's and 7B's per-row prefill
   scratch.
