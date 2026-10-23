@@ -478,11 +478,11 @@ func measureBytesPerElem(q quantMode) float64 {
 // Nemotron-H's Mamba-2 in_proj/out_proj/conv1d ARE matched, via the full "mixer.in_proj"/"mixer.out_proj"/"mixer.conv1d" compound
 // (never bare "mixer." or bare "in_proj"), which no other Nemotron block kind contains.
 //
-// A quantized load holds MLA's q-LoRA pair and kv-A at int8 instead (mlaInt8TensorName, checked first); kv-B stays f32 at every quant.
+// A load armed for int8 MLA (mlaProjInt8, tests only) holds its q-LoRA pair and kv-A at int8 instead (mlaInt8TensorName, checked first).
 //
 // KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection (self_attn.o_proj.weight / Bailing's dense.weight)
-// and a LoRA-less q_proj are held at int8 on a quantized load and f32 otherwise, but "o_proj"/"q_proj"/"dense.weight" are ordinary
-// quantizable tensor names in every non-MLA family, so they are priced at the load's rate: a small, honest under-estimate at int4
+// and a LoRA-less q_proj are held f32, but "o_proj"/"q_proj"/"dense.weight" are ordinary quantizable tensor names in every non-MLA
+// family, so they are priced at the load's rate: a small, honest under-estimate at int4
 // (TestFitEstimate_f32PinnedMixersAgreeWithResident).
 func f32PinnedTensorName(name string) bool {
 	for _, s := range []string{
@@ -498,7 +498,7 @@ func f32PinnedTensorName(name string) bool {
 	return false
 }
 
-// mlaInt8TensorName reports whether name is an MLA q-LoRA or kv-A projection, which a load at an integer quant holds as per-row int8
+// mlaInt8TensorName reports whether name is an MLA q-LoRA or kv-A projection, which a load armed for int8 MLA holds as per-row int8
 // (mlaProjInt8). kv_b is not one: it stays f32.
 func mlaInt8TensorName(name string) bool {
 	for _, s := range []string{"attn_q_a.", "attn_q_b.", "attn_kv_a_mqa.", "q_a_proj.", "q_b_proj.", "kv_a_proj"} {
@@ -587,7 +587,7 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 			sum += quantBytesPerElem(quantInt8I8) * float64(n)
 			continue
 		}
-		// A quantized load holds MLA's q (or q-LoRA pair) and kv-A projections at int8 (mlaProjInt8).
+		// A load armed for int8 MLA holds its q (or q-LoRA pair) and kv-A projections at int8 (mlaProjInt8).
 		if mlaProjInt8(q) && mlaInt8TensorName(name) {
 			sum += quantBytesPerElem(quantInt8I8) * float64(n)
 			continue

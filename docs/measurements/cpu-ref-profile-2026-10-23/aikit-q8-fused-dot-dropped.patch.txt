@@ -1,0 +1,284 @@
+diff --git a/linalg/dot_f32i8.go b/linalg/dot_f32i8.go
+new file mode 100644
+index 0000000..97210f2
+--- /dev/null
++++ b/linalg/dot_f32i8.go
+@@ -0,0 +1,40 @@
++//go:build !arm64
++
++package linalg
++
++import "unsafe"
++
++// dotF32I8 is dotF32(a, widen(q)) without the widened row: the same reduction,
++// reading q as float32(q[k]) in place. Bit-identical to dotF32 over
++// dequantRowInt8(·, q, 1.0), since that widen is exact and every add happens in
++// the same order (dotFMAI8 on AVX2, dotGenericI8 otherwise, then the same tail).
++func dotF32I8(a []float32, q []int8) float32 {
++	n := len(a)
++	if n != len(q) {
++		panic("linalg: dotF32I8 length mismatch")
++	}
++	if n == 0 {
++		return 0
++	}
++	n4 := n / 4
++	var sum float32
++	if n4 > 0 {
++		sum = dotI8Widen(&a[0], &q[0], n4)
++	}
++	for k := n4 * 4; k < n; k++ {
++		sum += a[k] * float32(q[k])
++	}
++	return sum
++}
++
++// dotGenericI8 is dotGeneric with b read as float32(q[i]).
++func dotGenericI8(a *float32, q *int8, n4 int) float32 {
++	n := n4 * 4
++	aSlice := unsafe.Slice(a, n)
++	qSlice := unsafe.Slice(q, n)
++	var sum float32
++	for i := range n {
++		sum += aSlice[i] * float32(qSlice[i])
++	}
++	return sum
++}
+diff --git a/linalg/dot_f32i8_amd64.go b/linalg/dot_f32i8_amd64.go
+new file mode 100644
+index 0000000..1b35e39
+--- /dev/null
++++ b/linalg/dot_f32i8_amd64.go
+@@ -0,0 +1,16 @@
++//go:build amd64
++
++package linalg
++
++// dotFMAI8 is dotFMA with b given as int8 and widened in the loop
++// (dot_f32i8_amd64.s); n is a multiple of 4.
++//
++//go:noescape
++func dotFMAI8(a *float32, q *int8, n int) float32
++
++func dotI8Widen(a *float32, q *int8, n4 int) float32 {
++	if !hasAVX2 {
++		return dotGenericI8(a, q, n4)
++	}
++	return dotFMAI8(a, q, n4*4)
++}
+diff --git a/linalg/dot_f32i8_amd64.s b/linalg/dot_f32i8_amd64.s
+new file mode 100644
+index 0000000..74d0bca
+--- /dev/null
++++ b/linalg/dot_f32i8_amd64.s
+@@ -0,0 +1,82 @@
++// dotFMAI8 — Σ a[i]*float32(q[i]) over n elements (n a multiple of 4), the
++// int8 widen fused into dotFMA's loop. Every instruction that touches the
++// accumulators is dotFMA's, in dotFMA's order: four YMM accumulators over 32
++// elements, one over 8, the same fold, then the scalar tail as a VMULSS and a
++// VADDSS. VPMOVSXBD+VCVTDQ2PS gives exactly float32(q[i]), the value dotFMA
++// reads from the widened row, so the result is bit-identical to
++// dotFMA(a, widen(q), n).
++
++#include "textflag.h"
++
++// func dotFMAI8(a *float32, q *int8, n int) float32
++TEXT ·dotFMAI8(SB), NOSPLIT, $0-28
++	MOVQ a+0(FP), SI
++	MOVQ q+8(FP), DI
++	MOVQ n+16(FP), AX
++
++	VXORPS Y0, Y0, Y0
++	VXORPS Y1, Y1, Y1
++	VXORPS Y2, Y2, Y2
++	VXORPS Y3, Y3, Y3
++
++loop32:
++	CMPQ      AX, $32
++	JL        loop8
++	VMOVUPS   0(SI), Y4
++	VMOVUPS   32(SI), Y5
++	VMOVUPS   64(SI), Y6
++	VMOVUPS   96(SI), Y7
++	VPMOVSXBD 0(DI), Y8
++	VPMOVSXBD 8(DI), Y9
++	VPMOVSXBD 16(DI), Y10
++	VPMOVSXBD 24(DI), Y11
++	VCVTDQ2PS Y8, Y8
++	VCVTDQ2PS Y9, Y9
++	VCVTDQ2PS Y10, Y10
++	VCVTDQ2PS Y11, Y11
++	VFMADD231PS Y8, Y4, Y0
++	VFMADD231PS Y9, Y5, Y1
++	VFMADD231PS Y10, Y6, Y2
++	VFMADD231PS Y11, Y7, Y3
++	ADDQ      $128, SI
++	ADDQ      $32, DI
++	SUBQ      $32, AX
++	JMP       loop32
++
++loop8:
++	CMPQ        AX, $8
++	JL          reduce
++	VMOVUPS     0(SI), Y4
++	VPMOVSXBD   0(DI), Y8
++	VCVTDQ2PS   Y8, Y8
++	VFMADD231PS Y8, Y4, Y0
++	ADDQ        $32, SI
++	ADDQ        $8, DI
++	SUBQ        $8, AX
++	JMP         loop8
++
++reduce:
++	VADDPS       Y1, Y0, Y0
++	VADDPS       Y3, Y2, Y2
++	VADDPS       Y2, Y0, Y0
++	VEXTRACTF128 $1, Y0, X1
++	VADDPS       X1, X0, X0
++	VHADDPS      X0, X0, X0
++	VHADDPS      X0, X0, X0
++
++tail:
++	CMPQ       AX, $0
++	JE         done
++	MOVBLSX    0(DI), BX
++	VCVTSI2SSL BX, X2, X2
++	VMULSS     0(SI), X2, X2
++	VADDSS     X2, X0, X0
++	ADDQ       $4, SI
++	ADDQ       $1, DI
++	DECQ       AX
++	JMP        tail
++
++done:
++	VZEROUPPER
++	MOVSS X0, ret+24(FP)
++	RET
+diff --git a/linalg/dot_f32i8_other.go b/linalg/dot_f32i8_other.go
+new file mode 100644
+index 0000000..b4d85d1
+--- /dev/null
++++ b/linalg/dot_f32i8_other.go
+@@ -0,0 +1,5 @@
++//go:build !arm64 && !amd64
++
++package linalg
++
++func dotI8Widen(a *float32, q *int8, n4 int) float32 { return dotGenericI8(a, q, n4) }
+diff --git a/linalg/dot_f32i8_test.go b/linalg/dot_f32i8_test.go
+new file mode 100644
+index 0000000..9adc532
+--- /dev/null
++++ b/linalg/dot_f32i8_test.go
+@@ -0,0 +1,36 @@
++//go:build !arm64
++
++package linalg
++
++import (
++	"fmt"
++	"math/rand"
++	"testing"
++)
++
++// dotF32I8 against dotF32 over the widened row, raw bits, at every length to 300
++// (each %32, %8 and %4 tail) and at transformer K, with activations spread over
++// many binades so a reordered add would show.
++func TestDotF32I8_bitIdenticalToWidenThenDot(t *testing.T) {
++	rng := rand.New(rand.NewSource(0xd07))
++	lens := []int{}
++	for n := 0; n <= 300; n++ {
++		lens = append(lens, n)
++	}
++	lens = append(lens, 1023, 1536, 2048, 4095, 4096, 14336, 14339)
++	for _, n := range lens {
++		for trial := range 3 {
++			a := make([]float32, n)
++			q := make([]int8, n)
++			for i := range a {
++				a[i] = float32(rng.NormFloat64()) * float32(int(1)<<rng.Intn(20)) / 1024
++				q[i] = int8(rng.Intn(256) - 128)
++			}
++			deq := make([]float32, n)
++			dequantRowInt8(deq, q, 1.0)
++			want := dotF32(a, deq)
++			got := dotF32I8(a, q)
++			compareBits(t, fmt.Sprintf("n=%d trial=%d", n, trial), []float32{got}, []float32{want})
++		}
++	}
++}
+diff --git a/linalg/q8span_block_test.go b/linalg/q8span_block_test.go
+index 3ca61b9..5c843d3 100644
+--- a/linalg/q8span_block_test.go
++++ b/linalg/q8span_block_test.go
+@@ -44,7 +44,7 @@ func TestQ8SpanCols_boundsTheBlock(t *testing.T) {
+ 	}
+ 	// The column form needs one widened row, so the pooled scratch stays K floats
+ 	// wherever q8Span does not block.
+-	for _, c := range []struct{ M, K, want int }{{1, 4096, 4096}, {64, 14336, 14336}, {512, 4096, 4096}, {513, 4096, 16 * 4096}, {256, 14336, 16 * 14336}} {
++	for _, c := range []struct{ M, K, want int }{{1, 4096, 0}, {2, 4096, 4096}, {64, 14336, 14336}, {512, 4096, 4096}, {513, 4096, 16 * 4096}, {256, 14336, 16 * 14336}} {
+ 		if got := q8SpanScratchLen(c.M, c.K); got != c.want {
+ 			t.Errorf("q8SpanScratchLen(%d, %d) = %d, want %d", c.M, c.K, got, c.want)
+ 		}
+@@ -84,9 +84,9 @@ func q8SpanOperands(rng *rand.Rand, M, K, N int) (a []float32, bQ []int8, bScale
+ }
+ 
+ // BenchmarkQ8SpanBlock times the parallel weight-only int8 matmul at the decoder's
+-// projection shapes: the column form (jb=1, the form before blocking), the blocked
+-// form at q8SpanCols(K), and q8Span's own choice between them, in one binary so the
+-// forms can be interleaved.
++// projection shapes: the column form (q8SpanColumn per column), the blocked form
++// at q8SpanCols(K), and q8Span itself, in one binary so the forms can be
++// interleaved.
+ func BenchmarkQ8SpanBlock(b *testing.B) {
+ 	rng := rand.New(rand.NewSource(1))
+ 	for _, sh := range []struct{ K, N int }{{4096, 14336}, {14336, 4096}, {4096, 4096}} {
+@@ -99,7 +99,11 @@ func BenchmarkQ8SpanBlock(b *testing.B) {
+ 				name string
+ 				span func(j0, j1 int, deq []float32)
+ 			}{
+-				{"column", func(j0, j1 int, deq []float32) { q8SpanBlocked(a, bQ, bScales, dst, M, K, N, j0, j1, 1, deq) }},
++				{"column", func(j0, j1 int, deq []float32) {
++					for j := j0; j < j1; j++ {
++						q8SpanColumn(a, bQ, bScales, dst, M, K, N, j, deq[:K])
++					}
++				}},
+ 				{"blocked", func(j0, j1 int, deq []float32) {
+ 					q8SpanBlocked(a, bQ, bScales, dst, M, K, N, j0, j1, q8SpanCols(K), deq)
+ 				}},
+diff --git a/linalg/q8span_other.go b/linalg/q8span_other.go
+index c21c141..4a065b0 100644
+--- a/linalg/q8span_other.go
++++ b/linalg/q8span_other.go
+@@ -24,8 +24,14 @@ func q8SpanCols(K int) int {
+ }
+ 
+ // q8SpanScratchLen is the length of the widened-row scratch q8Span needs for an
+-// M×K activation block: one row in the column form, a block of rows past the line.
+-func q8SpanScratchLen(M, K int) int { return q8SpanWidth(M, K) * K }
++// M×K activation block: none for one row, one row in the column form, a block of
++// rows past the line.
++func q8SpanScratchLen(M, K int) int {
++	if M == 1 {
++		return 0
++	}
++	return q8SpanWidth(M, K) * K
++}
+ 
+ // q8SpanWidth is the column-block width q8Span uses for an M×K activation block.
+ func q8SpanWidth(M, K int) int {
+@@ -52,6 +58,14 @@ func q8Span(a []float32, bQ []int8, bScales, dst []float32, M, K, N, j0, j1 int,
+ // q8SpanBlocked is q8Span with the column-block width jb given; deq holds at
+ // least jb*K floats.
+ func q8SpanBlocked(a []float32, bQ []int8, bScales, dst []float32, M, K, N, j0, j1, jb int, deq []float32) {
++	if M == 1 {
++		// One activation row: the dot reads the int8 row in place (dotF32I8),
++		// with no widened copy.
++		for j := j0; j < j1; j++ {
++			dst[j] = dotF32I8(a[:K], bQ[j*K:j*K+K]) * bScales[j]
++		}
++		return
++	}
+ 	if jb == 1 {
+ 		for j := j0; j < j1; j++ {
+ 			q8SpanColumn(a, bQ, bScales, dst, M, K, N, j, deq[:K])
