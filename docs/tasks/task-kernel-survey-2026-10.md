@@ -47,8 +47,9 @@
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
 | KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
-| KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
+| KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
+| KS-D2b | open | Mac: admit steel at head dim 96 after Phi-3 (int4) passes set A (its CPU references first); 80 when a model at it is on disk | — |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
@@ -638,6 +639,27 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **Class:** fidelity-gated.
 - **Size:** M.
 - **First measurement:** `TestMetalPrefillDecomp` on the 0.5B. Kill it if attention is under 30% at 3900.
+
+**KS-D2 first measurement, 2026-10-23 (11:59).** `TestMetalPrefillDecomp` on Qwen2.5-Coder-0.5B (`.gguf`, int4), 5 reps, the timing
+lock held exclusively (1-minute load 3.46 at the start, 2.84 GB available): at K=3,900 attention is **2,504.8 of 3,603.3 ms GPU,
+69.5%** (GEMM 26.9%); at K=512, 57.4 of 195.2 ms, 29.4%. The replica's logits equal `PrefillLast`'s bit for bit at both. Over the
+30% kill line: the build follows. Log: `~/goinfer-logs/ksd2-decomp-2026-10-23.log`.
+
+**KS-D2 gates, registered 2026-10-23 (12:02) before the code (D2-G), on the owner's order of 11:50.** The build:
+`attention_prefill_steel` becomes a template on the head dim, instances 64, 80, 96 and 128, its K/V staging a loop over the block's
+`16 × HD / 4` half4 words (at 128 the same four words a thread as today). `prefillAttnKernels` admits steel at head dim 64 as well as
+128. The 80 and 96 instances are built and checked at tier 0 but not admitted: no model at those head dims has references on this
+Mac, so each waits for its own model-level gate (Phi-3 at int4 for 96). `prefillSteelAttnOff` keeps the A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D2-G1 128 unchanged | 0 | the 1.5B (Metal `.giw`), `PrefillLast` at K=512 and 3,900, last logits, a test binary at this branch against one at its base | byte-equal at both |
+| D2-G2 kernel | 0 | steel against an f64 CPU attention at head dims 64, 80 and 96: random q, k, v; M = 100 and 300; start 0 and 37; window 0 and 64; 14 query heads over 2 KV heads. The fused kernel against the same reference, the same cells | every output finite, and steel's max-abs error at most 2× the fused kernel's and its mean-abs error at most 1.25× the fused kernel's in every cell |
+| D2-G3 fidelity | 2, Mac, by day | set A's §3.2 pooled gate (`TestPrefillGateVsReference`), a new cell Q05 (the 0.5B, f32 CPU references at K = 256, 512, 1,024 decision and 3,900 confirm, built first by `TestPrefillGateReference`), steel as production's prefill attention; the fused kernel's run (`GOINFER_METAL_R19_BASELINE=1`) beside it, reported. Tier 2 because tiers 0 and 1 cannot say which arm is closer to the reference; budget: references about 15 min, two gate runs about 25 min | Q05 **SHIPS** (critA, critB and critC all true) |
+| D2-G4 speed | timed, Mac, timing lock | the 0.5B, `PrefillLast` at K=3,900 and at K=512, steel against fused on one resident, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median steel/fused ratio is ≤ 0.80 at 3,900 (R19's ≥ 1.25× band) and ≤ 1.02 at 512; under 1.25× at 3,900, PARK with the reading |
+
+Planted defect: the hd-64 staging takes the 128 instance's word index (`(idx & 31) × 4`); D2-G2 goes red. Stopping rule: one pass
+each; a red G1 or G2 stops the build until it is understood. Cost: G1 and G2 seconds; G3 about 40 min; G4 about 3 min.
 
 **KS-D3 · DeltaNet prefill scan with the state on chip (bit-identical).**
 - **Where:** `delta_rule_seq` in `metal/kernels/deltanet_kernels_msl.go`, from
