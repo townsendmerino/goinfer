@@ -199,11 +199,11 @@ func TestB27_unknownEncodingRefusedByName(t *testing.T) {
 		{"array", func(r *giwReader) { r.f32() }},
 		{"matrix", func(r *giwReader) { r.weightMat() }},
 	} {
-		r := &giwReader{data: []byte{9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
+		r := &giwReader{data: []byte{10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
 		c.read(r)
 		var se *SerializeError
-		if !errors.As(r.err, &se) || !strings.Contains(se.Error(), "encoding 9") {
-			t.Errorf("%s with encoding 9: err %v, want a *SerializeError naming encoding 9", c.name, r.err)
+		if !errors.As(r.err, &se) || !strings.Contains(se.Error(), "encoding 10") {
+			t.Errorf("%s with encoding 10: err %v, want a *SerializeError naming encoding 10", c.name, r.err)
 		}
 	}
 	r := &giwReader{data: []byte{giwEncF32, 1, 0, 0, 0, 0, 0, 128, 63}}
