@@ -84,7 +84,7 @@
 | KS-G8 | open | aikit: a cold-cache HNSW query benchmark | — |
 | KS-G9 | open | aikit: time the final loop in `BenchmarkFlatBinaryQuery` | — |
 | KS-G10 | open | aikit: an offline block-max simulation counting documents scored | — |
-| KS-H1 | open | Mac: tier 0 blocked-versus-whole byte compare on `llama-tiny` with the exact kernel forced | — |
+| KS-H1 | open (512, G5) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. Left: G5 (Qwen3.5-9B at 20K, by day) and head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
 | KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
 | KS-H4 | open | Mac: allocated size after a 4K forward and 10 s later | — |
@@ -95,7 +95,7 @@
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
 | KS-DOC | done | — | notes 1–3, 5 and 7–10 corrected in their docs, 2026-10-22, in the commit that closed this row |
-| KS-DOC-code | open | the next change to `cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 is KS-H1's code change | — |
+| KS-DOC-code | open | the next change to `cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 done 2026-10-22 with KS-H1 (`PrefillBlockRows`' comment) | — |
 
 ## 0. Where to start
 
@@ -989,6 +989,28 @@ prefill GEMMs and int8 KV attention use it.
   whole must be byte-equal, and the scratch seen must stay at or under the block's figure. Then the qwen35 and E-model tiny
   fixtures, then a 20k-token prompt on Qwen3.5-9B under `mem0_darwin.py`.
 - **Prior art:** new. I8's "what this leaves" listed these routes, and no ledger row owns them.
+
+**KS-H1 gates, registered 2026-10-22 before the code (KH1-G).** Re-checked on main 0e620108 (after P3b-2 and MEM7): the
+finding holds. `PrefillBlockRows` still returns 0 for `prefillExactAttn()` and `emodelLayerMajor()`, the tile choice keys on
+each pass's own end (`exactAttnTile(startPos+M)`), and such a resident is still priced by the CPU formula.
+
+**The build.**
+- `metal/backend.go:metalResident.PrefillBlockRows` stops excluding exact-attention models and Gemma 4 E-models whose widest
+  exact-attention head dim is at most 256. There the exact and tiled kernels are bit-identical, so a block may take either.
+- The decoder then splits their prompts in blocks, and admission prices one pass (`residentPrefillScratch`).
+- A model whose exact-attention head dim is 512 (Gemma 4's global layers) stays unblocked. Blocking it needs the tile choice
+  keyed on the whole prompt's length, which the resident does not know today; asked as a decision, not built.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| KH1-G1 identity, llama | 0, Mac | `llama-tiny`, Metal, the exact kernel forced (`GOINFER_METAL_FUSED_ATTENTION=0`), a small tile (`exactAttnTileForTest` 32): a 300-row prompt prefilled whole against in 64-row blocks; and each block pass's scratch (`prefillScratchSeen`) against `PrefillScratchBytes` of its rows | last logits and every layer's K/V bytes byte-equal; each pass's scratch at or under its figure |
+| KH1-G2 identity, qwen35 and E-model | 0, Mac | `qwen35-tiny` and `gemma4-emodel-tiny` (window raised in a copy, MEM6's helper), Metal, the batched route: a 600-row prompt whole against in blocks of 128 | byte-equal, as KH1-G1 |
+| KH1-G3 admission | 0 | `Model.residentPrefillScratch` for a 20,000-token prompt on the exact-forced `llama-tiny` resident | reports a blocked price: `PrefillScratchBytes` of the longest pass plus its embeddings, not the CPU formula (main: not ok, so the CPU formula) |
+| KH1-G4 unchanged | 0 | `touched.py`; the Metal prefill, MEM7 (BLK), I8 and MC5 tests; a fused-attention model's `PrefillBlockRows` and logits | unchanged |
+| KH1-G5 measure | 1, Mac, by day | Qwen3.5-9B (`~/models`, its Metal sidecar), a 20K-token prompt, transient prefill scratch and RSS under `mem0_darwin.py`, main against the branch | read, not gated; the survey's estimate is 4.8 → about 0.5 GiB. Run only after its fit check passes on the day |
+
+Planted defect, run once on the committed tree and reverted: an exact-attention block pass attending from position 0 instead of its
+start (`uStartPos` 0; G1 red). Stopping rule: one pass each. Cost: G1–G4 seconds; G5 about 10 minutes.
 
 **KS-H2 · CUDA: suballocate weights, KV pools and expert slots from arenas (bit-identical).**
 - **Where:** one `cuMemAlloc` per weight buffer (`cuda/resident.go:cudaResident.upW`, `cuda/pack_stream.go`), per layer's

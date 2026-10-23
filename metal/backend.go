@@ -1517,14 +1517,16 @@ var prefillBlockRowsForTest int
 
 // PrefillBlockRows (decoder.ResidentPrefillBlocks) is the most rows the decoder hands one batched pass: as many as fit
 // prefillBlockBudget, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
-// without a block a prompt's prefill takes memory in proportion to its length. 0, meaning the prefill is not split,
-// for a resident whose prompts do not take the plain batched pass at every length: a layer-major route or an E-model,
-// an int8 KV cache, fast prefill off, an arch or norm the pass does not implement, and a model on the exact attention
-// kernel, whose pass declines past prefillExactAttnMaxKeys and must go on declining the whole prompt.
+// without a block a prompt's prefill takes memory in proportion to its length. 0, meaning the prefill is not split, for a
+// resident whose prompts do not take the batched pass at every length: a paged layer-major route, an E-model without its
+// batched pass, an f32 KV cache, fast prefill off, an arch or norm the pass does not implement. An exact-attention layer
+// blocks only at head dim ≤ 256, where the exact and tiled kernels a block may choose are bit-identical; at 512 the choice
+// would have to key on the whole prompt's length (KS-H1, docs/tasks/task-kernel-survey-2026-10.md).
 func (a *metalResident) PrefillBlockRows() int {
 	r := a.r
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || r.kvF32 || r.attnSink || !r.prefillOK || !a.fastPrefill() ||
-		(r.layerNorm && (r.layerNormBias || r.qkNorm)) || r.prefillUnaligned() != "" || r.prefillExactAttn() {
+	emodel := a.emodelLayerMajor() && a.emodelBatched()
+	if a.g4LayerMajor() || a.moeLayerMajor() || (a.emodelLayerMajor() && !emodel) || r.kvF32 || r.attnSink || (!r.prefillOK && !emodel) ||
+		!a.fastPrefill() || (r.layerNorm && (r.layerNormBias || r.qkNorm)) || r.prefillUnaligned() != "" || r.exactAttnHeadDim() > 256 {
 		return 0
 	}
 	if prefillBlockRowsForTest > 0 {
