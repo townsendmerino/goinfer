@@ -11,6 +11,14 @@ import (
 
 const gemma4BidirDir = "../testdata/gemma4-vl-bidir-tiny"
 
+// needGemma4Bidir skips when the gitignored bidirectional fixture is absent (scripts/pin_gemma4_vl_bidir_tiny.py makes it).
+func needGemma4Bidir(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat(gemma4BidirDir + "/model.safetensors"); err != nil {
+		t.Skipf("no checkpoint at %s — run scripts/pin_gemma4_vl_bidir_tiny.py", gemma4BidirDir)
+	}
+}
+
 // v2KVCaps is the byte capacity of each of c's KV arrays, in a fixed order.
 func v2KVCaps(c *KVCache) []int {
 	var out []int
@@ -59,6 +67,7 @@ func v2Run(t *testing.T, m *Model, chunk int) ([][]float32, int64) {
 // TestMEM5VL_gemma4BidirChunked is V2-G1 (docs/tasks/task-memory-campaign-2026-10.md, "MEM5-VL (2) gates"): the bidirectional
 // image prefill in 7- and 16-row passes against one pass; the last logits and four decode steps after are byte-equal.
 func TestMEM5VL_gemma4BidirChunked(t *testing.T) {
+	needGemma4Bidir(t)
 	for _, q := range []string{"", "int4"} {
 		m, err := Load(gemma4BidirDir, Options{Quant: q})
 		if err != nil {
@@ -89,6 +98,7 @@ func TestMEM5VL_gemma4BidirChunked(t *testing.T) {
 // pass allocates no more than the single pass's allocation scaled to its rows, plus its key-sized attention scratch and 64 KiB.
 // Each pass's reading leaves out the KV arrays it grew, which are the cache's storage, not the pass's.
 func TestMEM5VL_gemma4BidirBytes(t *testing.T) {
+	needGemma4Bidir(t)
 	m, err := Load(gemma4BidirDir, Options{Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)

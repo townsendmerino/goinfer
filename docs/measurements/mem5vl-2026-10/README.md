@@ -43,6 +43,7 @@ sliding-window question does not arise. Gemma 4's causal image prefill already r
 |---|---|---|
 | V2-G1 identity | `TestMEM5VL_gemma4BidirChunked`, gemma4-vl-bidir-tiny, route 1's two-span prompt at chunk 7 and 16, f32 and int4: the last logits and four decode steps after equal one pass's in every bit, in 9 and 5 passes | **PASS** |
 | V2-G2 bytes | `TestMEM5VL_gemma4BidirBytes`, 200 rows with a 20-row block, 16-row chunks: one pass allocates 17.27 MB; the largest chunked pass 2.06 MB (bound 2.61 MB: 20 rows' share, the attention scratch at 200 keys, 64 KiB) | **PASS** |
+| V2-G1 and V2-G2 where they run | gemma4-vl-bidir-tiny is gitignored (`scripts/pin_gemma4_vl_bidir_tiny.py` makes it), so CI skips both tests, as it skips the existing bidirectional tests; they ran on the Mac with the fixture present | note |
 | V2-G3 unchanged | `TestGemma4VLBidir_textParity`, `TestGemma4VLBidir_imageParity` (HF goldens), `TestTwoImages_gemma4Bidir` | **PASS** |
 | V2-G4 peak, tier 1 | a bidirectional Gemma 4 (26B or 31B class), one image and about 8K tokens | open: no such checkpoint in the Mac's bench set |
 
