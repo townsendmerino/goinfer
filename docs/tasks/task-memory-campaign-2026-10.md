@@ -650,6 +650,26 @@ GB) come after, each with its own registration.
 Planted defect, run once on the committed tree and reverted: kv-B quantized too (G2's Metal logits red: W_UK/W_UV sliced from
 int8). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds; G4 about a minute (two loads of the slice).
 
+**MEM11-giw-bf16 gates, registered 2026-10-22 before the code (GB-G), on D13 (b).** The build: a weight-matrix kind 9 in the
+`.giw`, bf16, whose values are one aligned binary16 array aliased from the mapping as kind 3's scales are. LFM2's short-conv
+`inProj` and `outProj` are written as a kind-9 record when the load holds them bf16, and as the f32 array they are today
+otherwise. The reader tells the two apart by the encoding byte, as B27's `mambaProj` does, so a bundle written before this
+still loads. No version bump: under `docs/giw-bundles.md` § "From v17: a new encoding needs no new version" this is a new
+encoding, not a layout change. An older build refuses a kind-9 sidecar and rebuilds its own. `mmapAliasedBytes` counts an
+aliased bf16 matrix, and the short-conv islands go through the same aliased-bytes count as every other matrix.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| GB-G1 identity | 0 | lfm2-tiny with its islands rounded to bf16 (B16-G1's fixture), written to a `.giw` file and loaded mapped; and the committed fixture (f32 islands, not bf16-exact) the same way | the rounded islands come back kind bf16, aliased in the mapping, and the logits over 16 tokens equal the direct load's bit for bit; the committed fixture's islands come back f32 with logits unchanged |
+| GB-G2 heap | 0, then 1 (Mac) | tier 0: `ResidentHostCopyBytes` on G1's bundle; tier 1: LFM2.5-2.6B (`~/models/lfm2.5-2.6b`) at int4, written as a `.giw` by this writer and by the f32 form (G3's seam), each loaded mapped, Go heap in use after GC | tier 0: `ResidentWeightBytes` unchanged and `ResidentHostCopyBytes` lower by exactly the islands' bf16 bytes; tier 1: heap lower by the islands' bf16 bytes within 5% (about 0.74 GB), and the two loads' logits over 8 tokens bit-identical |
+| GB-G3 an older bundle | 0 | the tiny bundle written in the f32 form (a writer seam that writes islands as main does), and one written by `origin/main`'s build, loaded by this build | both load, islands bf16 on the heap as before, logits bit-identical to G1's |
+| GB-G4 unchanged | 0 | every other family's `.giw` round trip and the serialize census; `scripts/refresh_parity_hashes.sh` | green |
+
+Planted defect, run once on the committed tree and reverted: the writer takes kind 9 for an island that is not bf16-exact (its
+values rounded). G1's committed-fixture half goes red. Stopping rule: one pass each. Cost: seconds; G2's tier 1 about three
+minutes, untimed, so the lock is held shared (two loads of the 2.6B and two `.giw` writes, about 5 GB of temporary disk, deleted
+after).
+
 ### MEM12 · The CPU heap: GC headroom and per-request churn (M)
 
 **Problem.** The CPU KV lives on the Go heap (f32 by default), and no `GOGC` or `GOMEMLIMIT` is set, so the heap may
