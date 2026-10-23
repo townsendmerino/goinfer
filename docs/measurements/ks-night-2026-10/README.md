@@ -27,3 +27,17 @@ the per-weight form back. Run 05:03 on the owner's word, 2026-10-23 (started 05:
 
 The dequant is bit-identical but buys nothing measurable at this shape: the staging is not where the 3,900-token prefill spends
 its time. The change was not merged, and the row closes as measured.
+
+## KS-D6, the fix (D6-G), 2026-10-23
+
+Gates registered before the code (survey doc, "KS-D6 gates"). The build in `gridVAccel.grow` has three parts. The unfused
+attention's `qh`, `kh`, `vh`, `sc`, `vt` and `ob` are allocated only when that attention can run. `f2` is allocated only for a
+gated MLP. `pt` is a view of `f1` when `f1` is wide enough. `gridScratchAllForTest` restores main's allocation.
+
+| gate | reading | result |
+|---|---|---|
+| D6-G1 identity | `TestKSD6_towerOutputsUnchanged`: MEM2-G1's seven towers, three inputs each, new allocation against main's: 0 differ on every tower (gemma4-vision 4,032, gemma4-audio 4,352, embeddinggemma2 16,560, qwen3.5 7,936, glm-ocr 15,872, siglip 1,536, qwen2.5-vl 16,384 outputs). The qwen3.5 and glm-ocr grids under `oldAttn` run the unfused attention on its lazily allocated scratch, with no NaN. `TestGridVisionMetal_matchesCPU` and `TestMEM2_towerScratchFreed` pass | **PASS** |
+| D6-G2 allocated size | `TestKSD6H4_gridTowerScratch`, Qwen3-VL-2B at 4K, 05:19, timing lock held shared: Metal's allocated size net of the build **2,622.5 → 1,515.4 MiB** (bar ≤ 1,520); the NaN fill still changes 0 of 32,931,840 outputs (there is nothing left to fill). The test's buffer sum (2,017.9 MiB) counts `pt` and `f1` twice, since they are now one buffer. Log: `~/goinfer-logs/ks-d6g2-2026-10-23.log` | **PASS** |
+
+**Plant** (`pt` aliased to `x`): red. On the tiny grid fixtures `x` is narrower than the patch rows, so the staging copy panics
+(slice bounds) before any output.

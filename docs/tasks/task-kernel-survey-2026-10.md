@@ -51,7 +51,7 @@
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | open (measured 2026-10-22) | next: SwiGLU fused into the gate\|up GEMM, behind a tiny-fixture byte compare. Measured: one 3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%) | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D6 | open (measured 2026-10-22) | next: allocate the unread buffers only where read, gated on MEM2-G1's fixtures. Measured: Qwen3-VL-2B at 4K, 918.7 of 2,622.5 MiB (35.0%) unread; NaN-filled, 0 of 32.9M outputs differ; `pt` 188.4 MiB | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | measured (KILL) | closed 2026-10-23: the half2 dequant is bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal) but the prefill is 0.9983 of the old time, 5 of 10 pairs faster (kill under 2%; run 05:03 on the owner's word). Not merged | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
@@ -698,6 +698,23 @@ about a minute.
   - `pt` is dead after the patch embed.
   - Qwen3-VL-2B on a 4K image: 970 MB unread (35% of MEM2-G4's 2,622.5 MiB), plus 199 MB from aliasing `pt`.
 - **Size:** S.
+
+**KS-D6 gates, registered 2026-10-23 (05:20) before the code (D6-G), on the owner's plan of 5:16 am.** The first measurement
+(`docs/measurements/ks-night-2026-10/README.md`) showed 918.7 of 2,622.5 MiB unread on Qwen3-VL-2B at 4K, and a NaN fill of those
+buffers changed no output. The build in `gridVAccel.grow`:
+- the unfused attention's `qh`, `kh`, `vh`, `sc`, `vt`, `ob` only when that attention can run (no fused kernel for the head
+  dim, or the `oldAttn` seam);
+- `f2` only for a gated MLP (`gvKind.gated`);
+- `pt` (the patch rows, dead after the patch embed) as a view of `f1` when `f1` is at least as wide, else its own buffer.
+`gridScratchAllForTest` restores main's allocation for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D6-G1 identity | 0 | MEM2-G1's seven tower fixtures (gemma4-vision, gemma4-audio, embeddinggemma2, qwen3.5 and glm-ocr grids, siglip, qwen2.5-vl), three inputs each, new allocation against main's in one process; `TestGridVisionMetal_matchesCPU`; S17's fused/unfused A/B (the `oldAttn` path still runs) | every output byte-equal; the grid tests pass |
+| D6-G2 allocated size | 1, Mac, memory read, timing lock shared | `TestKSD6H4_gridTowerScratch` on Qwen3-VL-2B at 4K, Metal's allocated size net of the build after the forward | at most 1,520 MiB (main 2,622.5; the unread 918.7 and `pt`'s 188.4 removed), and the NaN-fill check still shows 0 outputs differing |
+
+Planted defect: `pt` aliased to `x` (which the patch embed writes while reading `pt`). D6-G1 goes red on the grid towers. Stopping
+rule: one pass each. Cost: seconds; D6-G2 about 2 minutes.
 
 **KS-D7 · Cheaper nibble dequant in the prefill GEMM's staging.**
 - **Change:** `((word >> s) & 0x000F000F) | 0x64006400` read as half2, minus half2(1032), times half2(scale). That is two
