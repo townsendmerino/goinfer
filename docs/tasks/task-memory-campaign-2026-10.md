@@ -476,6 +476,24 @@ pass.
 | V2-G4 peak, tier 1 | 1 | a bidirectional Gemma 4 checkpoint with one image and about 8K text tokens, main against the branch, live heap at the prefill's peak | none is in the Mac's bench set (the E-models are causal), so this is an open row for a box that holds one |
 
 Planted defect: the cut rule off. V2-G1 goes red. Stopping rule: one pass each. Cost: seconds.
+**MEM5-VL (3) gates, Qwen3.5's image prefill, registered 2026-10-22 before the code (V3-G).** `prefillQwen35VLBatched` runs
+`runLayersQwen35N` over the whole prompt: the DeltaNet layers' conv window and recurrent state carry in the cache, the full-attention
+layers rotate by `cache.mropePos` at absolute positions, and every buffer is sized by the pass's rows. The DeltaNet core takes
+`deltaNetCoreN` for a pass of two rows or more and the per-token core for one, so a one-row last pass is a cell of its own. Image
+rows are causal here (no block), so any cut is allowed. The build: the prompt runs in passes of `prefillChunkRows`, each embedding
+and splicing its own rows, under the same exclusions as `qwen35BatchNAnyPos` plus a capture or speculative tree. The library calls
+that run `runLayersQwen35N` over a whole text prompt (`PromptHiddenMany`, `PromptHiddenAll`, the embedding API) are not prefills
+and are left as they are.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V3-G1 identity | 0 | qwen35vl-tiny, route 1's two-span prompt with its m-RoPE triples, with `prefillChunkRows` at 7, 16 and 59 (a one-row last pass), at f32 and int4: the last logits and four decode steps after, against one pass; the pass count | byte-equal, more than one pass at each size |
+| V3-G2 bytes | 0 | TotalAlloc of each pass, the KV arrays a pass grows left out (V2-G2's instrument), on a 200-row prompt in 16-row passes, against the single pass's | the largest pass allocates no more than the single pass's scaled to its rows, plus its key-sized attention scratch and 64 KiB |
+| V3-G3 unchanged | 0 | `TestQwen35VL_*` (HF goldens and the batched-against-per-token bound), `TestTwoImages_qwen35vl`; `scripts/refresh_parity_hashes.sh` | pass; green |
+| V3-G4 peak, tier 1 | 1, Mac, by day after 07:00 | Qwen3.6-35B-A3B (`~/models/qwen3.6-35b-a3b-int4-v12.giw.verified` if the CPU loads it, else Qwen3.5-0.8B with an image), one image and about 8K text tokens, main against the branch: the live heap at the prefill's peak; fit-checked first | read, then graded as V1-G4 |
+
+Planted defect: each pass splices the image features at rows counted from the pass, not the prompt. V3-G1 goes red. Stopping rule:
+one pass each. Cost: seconds.
 
 ### MEM6 · Resident prefill embeds per chunk (S)
 
