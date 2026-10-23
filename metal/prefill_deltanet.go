@@ -47,6 +47,29 @@ func (r *resident) newPrefillDelta(M, Mpad int) *prefillDelta {
 	return s
 }
 
+// dnSeqOldForTest makes the prefill take the device-memory scan kernels (delta_rule_seq, delta_conv_seq): the old arm of
+// KS-D3's A/B.
+var dnSeqOldForTest bool
+
+// dnSeqPipelines returns the prefill mixer's scan kernels and the rule's threadgroup size: the on-chip forms
+// (delta_rule_seq_tg, 32 threads, its state rows in threadgroup memory; delta_conv_seq_reg, the window in registers) where
+// the geometry fits them (hk at most 128, K at most 5), else the device-memory forms. Both forms run the same operations in
+// the same order, so the output is the same bits (TestDeltaNetSeqKernels_matchDecodeBitwise).
+func (r *resident) dnSeqPipelines() (rule, conv Pipeline, ruleTG int) {
+	dp := r.dnet
+	rule, conv, ruleTG = r.pDnRuleSeq, r.pDnConvSeq, 128
+	if dnSeqOldForTest {
+		return
+	}
+	if dp.hk <= 128 {
+		rule, ruleTG = r.pDnRuleSeqTG, 32
+	}
+	if dp.convK <= 5 {
+		conv = r.pDnConvSeqReg
+	}
+	return
+}
+
 // encodePrefillDeltaMixer is encodeDeltaNetMixer over the pass's M rows: pre-norm, the projections, the mixer, and
 // out_proj accumulated into the f16 residual xF. normF is the pass's norm scratch; gemm is PrefillLast's tiled GEMM.
 func (r *resident) encodePrefillDeltaMixer(e *Encoder, L *residLayer, xF, normF Buffer, s *prefillDelta, M, Mpad int,
@@ -57,11 +80,12 @@ func (r *resident) encodePrefillDeltaMixer(e *Encoder, L *residLayer, xF, normF 
 	gemm(e, Mpad, dp.valueDim, normF, D.zW, D.zS, s.zF, uMpad, s.uValueDim, r.uH, dummyBias, m0)
 	e.Dispatch(r.pDnProjW8Rows, M*dp.nv*32, 32, normF, D.bW, D.bS, s.bt, r.uH, r.uDnNv, s.uM)
 	e.Dispatch(r.pDnProjW8Rows, M*dp.nv*32, 32, normF, D.aW, D.aS, s.at, r.uH, r.uDnNv, s.uM)
-	e.Dispatch(r.pDnConvSeq, dp.convDim, 256, s.mixedF, D.convW, D.win, s.conv, r.uDnConvDim, r.uDnK, s.uM)
+	rule, conv, ruleTG := r.dnSeqPipelines()
+	e.Dispatch(conv, dp.convDim, 256, s.mixedF, D.convW, D.win, s.conv, r.uDnConvDim, r.uDnK, s.uM)
 	e.Dispatch(r.pDnGatesRows, M*dp.nv, 64, s.bt, s.at, D.dtBias, D.negExpA, s.headP, r.uDnNv, s.uM)
 	e.Dispatch(r.pDnNormRows, M*dp.nk*tgReduceAttn, tgReduceAttn, s.conv, s.qn, s.kn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale,
 		r.uDnConvDim, s.uM)
-	e.Dispatch(r.pDnRuleSeq, dp.valueDim, 128, s.qn, s.kn, s.conv, s.headP, D.state, s.core,
+	e.Dispatch(rule, dp.valueDim, ruleTG, s.qn, s.kn, s.conv, s.headP, D.state, s.core,
 		r.uDnNv, r.uDnHk, r.uDnHv, r.uDnRep, r.uDnVBase, r.uDnKeyDim, r.uDnConvDim, s.uM)
 	e.Dispatch(r.pDnGNormRows, M*dp.nv*tgReduceAttn, tgReduceAttn, s.core, s.zF, D.normW, s.gated, r.uDnNv, r.uDnHv, r.uEps, s.uM)
 	e.Dispatch(r.pF32ToF16, M*dp.valueDim, 256, s.gated, s.gatedH)

@@ -580,7 +580,8 @@ type resident struct {
 	pDnQSplit, pDnAttnGate                        Pipeline // this family's fused double-width q_proj + output gate
 	// D-B01: the mixer over M prompt rows (deltanet_kernels.go's _seq/_rows forms; prefill_deltanet.go)
 	pDnConvSeq, pDnGatesRows, pDnNormRows, pDnRuleSeq, pDnGNormRows, pDnProjW8Rows Pipeline
-	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP                                        Buffer // per-token scratch, sized from dnet (model-level, uniform across layers)
+	pDnRuleSeqTG, pDnConvSeqReg                                                    Pipeline // the on-chip forms (KS-D3); see dnSeqOnChip
+	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP                                        Buffer   // per-token scratch, sized from dnet (model-level, uniform across layers)
 	dnBt, dnAt, dnZOut, dnCore, dnGated                                            Buffer
 	dnGq, dnGSc                                                                    Buffer // int8 activation + scale for the gated output's out_proj GEMV
 	dnQg, dnAGate                                                                  Buffer // qGate scratch: [2*maxNHhd] fused [query‖gate] q_proj output, [maxNHhd] the split gate
@@ -1312,6 +1313,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pDnQSplit, r.pDnAttnGate = pipe("delta_qsplit"), pipe("delta_attn_gate")
 		r.pDnConvSeq, r.pDnGatesRows, r.pDnNormRows = pipe("delta_conv_seq"), pipe("delta_gates_rows"), pipe("delta_norm_rows")
 		r.pDnRuleSeq, r.pDnGNormRows, r.pDnProjW8Rows = pipe("delta_rule_seq"), pipe("delta_gnorm_rows"), pipe("delta_proj_w8_rows")
+		r.pDnRuleSeqTG, r.pDnConvSeqReg = pipe("delta_rule_seq_tg"), pipe("delta_conv_seq_reg")
 		r.dnMixed, r.dnConvOut = d.NewBufferLen(dp.convDim), d.NewBufferLen(dp.convDim)
 		r.dnBt, r.dnAt = d.NewBufferLen(dp.nv), d.NewBufferLen(dp.nv)
 		r.dnHeadP = d.NewBufferLen(dp.nv * 2)

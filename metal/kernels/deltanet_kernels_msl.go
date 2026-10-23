@@ -392,6 +392,109 @@ kernel void delta_rule_seq(device const float* qnAll[[buffer(0)]], device const 
     }
 }
 
+// delta_rule_seq_tg is delta_rule_seq with each thread's state row held in threadgroup memory for the whole pass: loaded
+// once, updated by the same loop in the same order, stored once. A threadgroup is exactly 32 threads and hk is at most 128;
+// element kd of lane l sits at kd*32+l, so the lanes of a load hit 32 distinct banks. No barrier: a lane reads only its own
+// row.
+kernel void delta_rule_seq_tg(device const float* qnAll[[buffer(0)]], device const float* knAll[[buffer(1)]],
+    device const float* vAll[[buffer(2)]], device const float* headPAll[[buffer(3)]],
+    device float* state[[buffer(4)]], device float* youtAll[[buffer(5)]],
+    constant uint& nv[[buffer(6)]], constant uint& hk[[buffer(7)]], constant uint& hv[[buffer(8)]],
+    constant uint& rep[[buffer(9)]], constant uint& vBase[[buffer(10)]],
+    constant uint& keyDim[[buffer(11)]], constant uint& convDim[[buffer(12)]], constant uint& M[[buffer(13)]],
+    uint t[[thread_position_in_grid]], uint lt[[thread_index_in_threadgroup]]) {
+    threadgroup float Ssh[128*32];
+    if (t >= nv*hv) return;
+    uint headV = t / hv;
+    uint vd = t % hv;
+    uint headK = headV / rep;
+    device float* Sd = state + (uint)(headV*hv+vd)*hk;
+    threadgroup float* S = Ssh + lt;
+    for (uint kd=0; kd<hk; kd++) S[kd*32] = Sd[kd];
+    for (uint r=0; r<M; r++) {
+    device const float* headP = headPAll + r*2*nv;
+    device const float* v = vAll + r*convDim;
+    device float* yout = youtAll + r*nv*hv;
+    float beta = headP[headV*2+0];
+    float gt = headP[headV*2+1];
+    device const float* k = knAll + r*keyDim + headK*hk;
+    device const float* q = qnAll + r*keyDim + headK*hk;
+
+    float kvdot = 0.0f;
+    uint kd = 0;
+    for (; kd+7 < hk; kd += 8) {
+        float k0=k[kd],k1=k[kd+1],k2=k[kd+2],k3=k[kd+3],k4=k[kd+4],k5=k[kd+5],k6=k[kd+6],k7=k[kd+7];
+        float s0=S[kd*32]*gt,s1=S[(kd+1)*32]*gt,s2=S[(kd+2)*32]*gt,s3=S[(kd+3)*32]*gt;
+        float s4=S[(kd+4)*32]*gt,s5=S[(kd+5)*32]*gt,s6=S[(kd+6)*32]*gt,s7=S[(kd+7)*32]*gt;
+        S[kd*32]=s0; S[(kd+1)*32]=s1; S[(kd+2)*32]=s2; S[(kd+3)*32]=s3; S[(kd+4)*32]=s4; S[(kd+5)*32]=s5; S[(kd+6)*32]=s6; S[(kd+7)*32]=s7;
+        kvdot = fma(s0, k0, kvdot);
+        kvdot = fma(s1, k1, kvdot);
+        kvdot = fma(s2, k2, kvdot);
+        kvdot = fma(s3, k3, kvdot);
+        kvdot = fma(s4, k4, kvdot);
+        kvdot = fma(s5, k5, kvdot);
+        kvdot = fma(s6, k6, kvdot);
+        kvdot = fma(s7, k7, kvdot);
+    }
+    for (; kd < hk; kd++) {
+        float s = S[kd*32] * gt;
+        S[kd*32] = s;
+        kvdot = fma(s, k[kd], kvdot);
+    }
+    float delta = (v[vBase+headV*hv+vd] - kvdot) * beta;
+    float o = 0.0f;
+    kd = 0;
+    for (; kd+7 < hk; kd += 8) {
+        float k0=k[kd],k1=k[kd+1],k2=k[kd+2],k3=k[kd+3],k4=k[kd+4],k5=k[kd+5],k6=k[kd+6],k7=k[kd+7];
+        float q0=q[kd],q1=q[kd+1],q2=q[kd+2],q3=q[kd+3],q4=q[kd+4],q5=q[kd+5],q6=q[kd+6],q7=q[kd+7];
+        float s0 = fma(k0, delta, S[kd*32]);
+        float s1 = fma(k1, delta, S[(kd+1)*32]);
+        float s2 = fma(k2, delta, S[(kd+2)*32]);
+        float s3 = fma(k3, delta, S[(kd+3)*32]);
+        float s4 = fma(k4, delta, S[(kd+4)*32]);
+        float s5 = fma(k5, delta, S[(kd+5)*32]);
+        float s6 = fma(k6, delta, S[(kd+6)*32]);
+        float s7 = fma(k7, delta, S[(kd+7)*32]);
+        S[kd*32]=s0; S[(kd+1)*32]=s1; S[(kd+2)*32]=s2; S[(kd+3)*32]=s3; S[(kd+4)*32]=s4; S[(kd+5)*32]=s5; S[(kd+6)*32]=s6; S[(kd+7)*32]=s7;
+        o = fma(s0, q0, o);
+        o = fma(s1, q1, o);
+        o = fma(s2, q2, o);
+        o = fma(s3, q3, o);
+        o = fma(s4, q4, o);
+        o = fma(s5, q5, o);
+        o = fma(s6, q6, o);
+        o = fma(s7, q7, o);
+    }
+    for (; kd < hk; kd++) {
+        float s = fma(k[kd], delta, S[kd*32]);
+        S[kd*32] = s;
+        o = fma(s, q[kd], o);
+    }
+    yout[headV*hv+vd] = o;
+    }
+    for (uint kd=0; kd<hk; kd++) Sd[kd] = S[kd*32];
+}
+
+// delta_conv_seq_reg is delta_conv_seq with the window held in registers for the whole pass (K at most 5): loaded once,
+// the same operations in the same order, stored once.
+kernel void delta_conv_seq_reg(device const half* mixed[[buffer(0)]], device const float* convW[[buffer(1)]],
+    device float* win[[buffer(2)]], device float* conv[[buffer(3)]],
+    constant uint& convDim[[buffer(4)]], constant uint& K[[buffer(5)]], constant uint& M[[buffer(6)]],
+    uint c[[thread_position_in_grid]]) {
+    if (c >= convDim) return;
+    float w[4];
+    for (uint j=0; j<4; j++) if (j < K-1) w[j] = win[j*convDim+c];
+    for (uint r=0; r<M; r++) {
+        float xc = float(mixed[r*convDim + c]);
+        float s = convW[c*K + (K-1)] * xc; // tap j=K-1 is the current token
+        for (uint j=0; j<4; j++) if (j < K-1) s = fma(convW[c*K+j], w[j], s);
+        conv[r*convDim + c] = dn_silu(s);
+        for (uint j=0; j<3; j++) if (j+1 < K-1) w[j] = w[j+1];
+        for (uint j=0; j<4; j++) if (j == K-2) w[j] = xc;
+    }
+    for (uint j=0; j<4; j++) if (j < K-1) win[j*convDim+c] = w[j];
+}
+
 // delta_gnorm_rows: delta_gnorm, one threadgroup per (row, value head); core and out rows are nv*hv
 // floats, z rows are half (the z projection's prefill GEMM output, row stride nv*hv).
 kernel void delta_gnorm_rows(device const float* coreAll[[buffer(0)]], device const half* zAll[[buffer(1)]],
