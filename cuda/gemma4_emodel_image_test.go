@@ -34,7 +34,7 @@ func eModelFeatures(n, hidden int) []float32 {
 }
 
 // eModelImageGrade is one layout's reading: the resident's batched last-position logits on the built rows against the CPU int4 forward (the image turn's
-// reference, prefillLogitsGemma4VL) and against the CPU f32 forward (the envelope), under G1c's rule.
+// reference, prefillLogitsGemma4VL) and against the CPU f32 forward (the envelope), under G1c's rule plus the row bar (eModelImageMinCos).
 type eModelImageGrade struct {
 	name                     string
 	cosCPU4, cosEnv          float64
@@ -43,12 +43,21 @@ type eModelImageGrade struct {
 	seqIdentical, nonVacuous bool
 }
 
+// eModelImageMinCos is G1q's row bar: both sides run the same int4 weights, so the resident's logits on correctly built rows
+// track the CPU int4 forward far tighter than the int4-vs-f32 envelope (0.76-0.90 here), which no row defect smaller than a
+// zeroed tail can cross. The placeholder-id tail (G2q's defect 1) reads 0.988-0.998, a correct build 0.9998 or better; the
+// readings and the amendment are in docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA part B").
+const eModelImageMinCos = 0.999
+
 func (g eModelImageGrade) pass() (bool, string) {
 	if g.argCuda != g.argCPU4 && g.gap > 0.03 {
 		return false, "argmax diverges by more than 3% (not a near-tie)"
 	}
 	if g.cosCPU4 < g.cosEnv {
 		return false, "CUDA-vs-CPUint4 cosine below the CPU's own int4-vs-f32 cosine"
+	}
+	if g.cosCPU4 < eModelImageMinCos {
+		return false, "CUDA-vs-CPUint4 cosine below the row bar " + strconv.FormatFloat(eModelImageMinCos, 'f', -1, 64)
 	}
 	return true, ""
 }
@@ -110,7 +119,7 @@ func runEModelImageG1q(t *testing.T) []eModelImageGrade {
 	return out
 }
 
-// TestGemma4EModelImage_batchedPrefillMatchesCPU is G1q: for each layout the image turn's batched resident logits against the CPU forward under G1c's rule,
+// TestGemma4EModelImage_batchedPrefillMatchesCPU is G1q: for each layout the image turn's batched resident logits against the CPU forward under G1c's rule and the row bar,
 // and bit-identical to the same rows run sequentially on the resident.
 func TestGemma4EModelImage_batchedPrefillMatchesCPU(t *testing.T) {
 	for _, g := range runEModelImageG1q(t) {
