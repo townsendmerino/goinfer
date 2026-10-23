@@ -76,3 +76,16 @@ code's own worker count and tile (`prefillAttnWorkersK`, `attnRowTileK`). The bo
 
 **Plant** (the image features spliced at rows counted from the pass): red. 1,280 logits differ at chunk 7 and 16 (at 59 the second
 pass holds no image row).
+
+## Route 4: the audio prefill (V4-G)
+
+**The build.** `prefillLogitsAudio` (Voxtral, Qwen3-ASR) calls route 1's `prefillSpliced` with the audio run as its span, instead of
+embedding the whole prompt and running one pass. Its audio rows attend causally, so any cut is allowed.
+
+| gate | reading | result |
+|---|---|---|
+| V4-G1 identity | `TestMEM5VL_audioChunked`, voxtral-tiny and qwen3asr-tiny, a 60-token prompt with a 20-row audio run at chunk 7 and 16, f32 and int4: the last logits and four decode steps after equal one pass's in every bit, in 9 and 4 passes | **PASS** (4 cells) |
+| V4-G2 bytes | `TestMEM5VL_audioBytes`, voxtral-tiny, 200 rows with a 40-row run, 16-row chunks: row buffers 460,800 B → 36,864 B, exactly 16/200 | **PASS** |
+| V4-G3 unchanged | `TestVoxtral_tiny*` and `TestQwen3ASR_tiny*` (text and composition parity against HF, their planted-defect tests) | **PASS** (7 tests) |
+
+**Plant** (the features spliced at rows counted from the pass): red. 800 logits differ in every cell.
