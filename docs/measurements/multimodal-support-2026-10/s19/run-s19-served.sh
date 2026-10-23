@@ -7,7 +7,7 @@
 #
 # Usage (from the repo root): run-s19-served.sh <out dir> <label>=<serve binary>[:<env>] ...
 #   e.g. run-s19-served.sh ~/goinfer-logs/g4-bidir/g3 new=$NEW ctl=$NEW:GOINFER_BATCHED_PREFILL=0
-# MODEL, VISION, IMAGES (space-separated), MAXTOK, PORT, SETTLE override the defaults below.
+# MODEL, VISION, IMAGES (space-separated), MAXTOK, PORT, SETTLE override the defaults below; EXTRA adds serve flags to every arm.
 set -uo pipefail
 OUT=${1:?}; shift
 MODEL=${MODEL:-$HOME/models/gemma4-26b-int4.giw}
@@ -23,7 +23,7 @@ for arm in "$@"; do
   [[ $rest == *:* ]] && envs=${rest#*:}
   { echo "[$(date '+%F %T %Z')] arm $lab: $bin ($(cat "$bin.rev" 2>/dev/null || basename "$bin")) env=[$envs]"
     echo "  gpu: $(nvidia-smi --query-gpu=memory.used --format=csv,noheader)  load: $(cut -d' ' -f1-3 /proc/loadavg)  mem avail: $(awk '/MemAvailable/{printf "%.1f GB", $2/1048576}' /proc/meminfo)"; } | tee -a "$OUT/provenance.txt"
-  env $envs "$bin" --model "$MODEL" --vision "$VISION" -backend cuda -moe-cache-experts --ctx 16384 --addr 127.0.0.1:$PORT >"$OUT/$lab.serve.log" 2>&1 </dev/null &
+  env $envs "$bin" --model "$MODEL" --vision "$VISION" -backend cuda -moe-cache-experts --ctx 16384 ${EXTRA:-} --addr 127.0.0.1:$PORT >"$OUT/$lab.serve.log" 2>&1 </dev/null &
   pid=$!
   up=0
   for _ in $(seq 1 900); do
