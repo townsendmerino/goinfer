@@ -42,7 +42,7 @@
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
 | KS-B15 | decision | KS-O2 | — |
 | KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
-| KS-C2 | open | Mac: a masked down-projection prototype, byte-equal at both shapes | — |
+| KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
@@ -605,6 +605,15 @@ by `ksc2OldDownForTest`, read at build) compiles the per-word integer form back 
 
 Planted defect: the high half-word dotted with the low half's activations (`x0` for `x1`); C2b-G1 goes red. Stopping rule: one pass
 each. Cost: G1 seconds; G2 about 4 minutes.
+
+**KS-C2 wiring read 2026-10-23.** C2b-G1 **PASS**: 16 kernel cells (both staged kernels, R = 2 and 4, both shapes, both libraries)
+0 differ; qwen35-tiny 0 of 8,192 and the 1.5B 0 of 4,861,952 logits differ over 32 decode steps. The registered plant (`x0` for `x1`)
+turned every masked cell red; a second plant inside the `KSC2_OLD_DOWN` branch only turned the model identity red, so the define
+reaches the old arm (KS-D7's lesson). C2b-G2 (12:57–12:58, the lock held exclusively, load 1.37 at the start, 5.4 GB available;
+each pair's load 1.14–1.50): old 10.70–10.86 ms a token, masked 9.97–10.13, **median 0.9332, 10 of 10: SHIP**. Logs:
+`~/goinfer-logs/ksc2b-g1-2026-10-23.log`, `~/goinfer-logs/ksc2b-g2-2026-10-23.log`. Also: `touched.py` green after merging main; the
+decode families by name (`R18|MC3|DeltaNet|Qwen35|Decode|Step|Gemv|GEMV|Coal|Staged|KSC2`) 53 pass, 31 skip, 0 fail; staticcheck
+clean.
 
 **KS-C3 · Native int8 decode GEMVs get R18's rows and staging (bit-identical).**
 - **Waste:** `W8A8_SA_BODY` / `W8A8_COAL_BODY` run one row per simdgroup with 4-byte loads, and the down projection re-reads
