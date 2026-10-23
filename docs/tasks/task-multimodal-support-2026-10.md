@@ -2301,6 +2301,13 @@ different rows.
   - **G2q PASS, each planted defect in the row builder red on at least one layout:** (1) the placeholder's id instead of the pad id for an image tail: red on image-last only (cosine 0.989288, argmax off by 7.02%;
     the other two layouts read 0.998928 and 0.995355 and stay green, so this defect is the one the fixture sees least); (2) the feature scaled by the embed scale: red on image-first and image-last (0.890795, 0.493592);
     (3) an image tail zero: red on image-first and image-last (0.959385, 0.734399); (4) image positions built as text rows (the placeholder ids' embedding): red on image-first and image-last (0.783826, -0.051670).
+  - **G1q amended 2026-10-23 (issue #177, on Francis's word via the coordinator): a row bar, CUDA-vs-CPUint4 cosine at least 0.999 on every layout, on top of G1c's rule.** Defect (1) was only ever
+    caught by the one argmax flip above. MEM8(b) (#146, `591cdbe2f`) made the per-layer token table int4 at an int4 load, which moved the CPU int4 logits (int4-vs-f32 0.805328 / 0.762957 / 0.900986 to
+    0.802930 / 0.764653 / 0.899578; f32 unchanged; bisected over the CPU references at `8d7ca85bd`, `50a66eb10`, `591cdbe2f`, `d478f342`), and the flip went under the 3% near-tie line: the
+    2026-10-23 cuda-device-suite read defect (1) green on every layout (0.998411 / 0.993557 / 0.987711, argmax identical). The defect still differs; G1c's cosine bar is the int4-vs-f32 envelope
+    (0.76-0.90), which no row defect smaller than a zeroed tail can cross. Both sides run the same int4 weights, so a correctly built row tracks the CPU far tighter: 1.000000 / 0.999800 / 0.999785
+    on the amended tree. Re-read on nobara, `cuda` + `goinfer_testhooks`: G1q PASS; G2q PASS with defect (1) red on all three layouts under the row bar, (2) to (4) red as before; the flow test PASS.
+    The bar sits at 4.6x the worst clean 1-cosine (2.15e-4) and below defect (1)'s best by 1.6x on image-first, 12x on image-last.
   - **The flow, `TestGemma4EModelImage_generateTakesTheResidentPath`:** three turns on one CUDA model (image, the same image, then plain text) generate the CPU model's greedy tokens, the image turns report
     `ImgPrefillResident` and `DecodeResident`; with `GOINFER_BATCHED_PREFILL=0` the same turn reports `ImgPrefillResident=false`, `DecodeResident=true` and still matches (the fall-through).
   - **G3q, served, real `gemma-4-E2B_q4_0-it.gguf` + `~/models/gemma-4-E2B-unq` on CUDA, `--kv-sessions 1 -ctx 4096`, the S4 table image, greedy, 32 tokens with top-3 logprobs: PASS.**
