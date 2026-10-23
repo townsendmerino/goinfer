@@ -641,6 +641,78 @@ template [[host_name("mc3_gemv_w4a8_sa_bias_rows_adj4")]] kernel decltype(mc3_ge
 template [[host_name("gemv_w4a8_sa_resid_rows2")]] kernel decltype(gemv_w4a8_sa_resid_rows<2>) gemv_w4a8_sa_resid_rows<2>;
 template [[host_name("gemv_w4a8_sa_resid_rows4")]] kernel decltype(gemv_w4a8_sa_resid_rows<4>) gemv_w4a8_sa_resid_rows<4>;
 
+// KS-C3: the native int8 twins of R18's rows kernels, each taking its int4 twin's arguments in the same order at the same
+// launch shape (grid rows*32/R, tg 256, full threadgroups only; gemvRowsFor). The activation is staged as uint4 words and
+// each lane reads uint4 words of R rows, so K must be a multiple of 16. The int32 dot is exact in any order and the epilogue
+// is W8A8_SA_BODY's (simd_broadcast_first included), so each output is the shipped one-row kernel's bits.
+template <uint R>
+inline void w8_rows_acc(device const uint4* wq, device const float* sct, device const char* aq, device const float* asc,
+    uint K, threadgroup uint4* As, uint tgid, uint tid, uint tgs, uint sgid, uint lane, thread float* y, thread uint& row0) {
+    device const uint4* a4 = reinterpret_cast<device const uint4*>(aq);
+    uint G = K >> 4u;
+    for (uint i = tid; i < G; i += tgs) As[i] = a4[i];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    row0 = (tgid*(tgs>>5u) + sgid)*R;
+    int acc[R];
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0;
+    for (uint g = lane; g < G; g += 32u) {
+        uint4 a = As[g];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            uint4 w = wq[(row0+r)*G + g];
+            acc[r] += DOT4I8(a.x, w.x) + DOT4I8(a.y, w.y) + DOT4I8(a.z, w.z) + DOT4I8(a.w, w.w);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) y[r] = simd_broadcast_first(float(simd_sum(acc[r])) * asc[0] * sct[row0+r]);
+}
+template <uint R>
+kernel void gemv_w8a8_sa_rows(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup uint4* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(wq, sct, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = y[r]; }
+}
+template <uint R>
+kernel void gemv_w8a8_sa_bias_rows(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup uint4* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(wq, sct, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = y[r] + bias[row0+r]; }
+}
+template <uint R>
+kernel void gemv_w8a8_sa_resid_rows(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup uint4* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(wq, sct, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += y[r]; }
+}
+// The down projection's twin of gemv_w4a8_resid_staged: gemv_w8a8_body_resid's output, the same rows kernel.
+template <uint R>
+kernel void gemv_w8a8_body_resid_staged(device const uint4* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup uint4* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(bq, bsc, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += y[r]; }
+}
+template [[host_name("gemv_w8a8_sa_rows2")]] kernel decltype(gemv_w8a8_sa_rows<2>) gemv_w8a8_sa_rows<2>;
+template [[host_name("gemv_w8a8_sa_rows4")]] kernel decltype(gemv_w8a8_sa_rows<4>) gemv_w8a8_sa_rows<4>;
+template [[host_name("gemv_w8a8_sa_bias_rows2")]] kernel decltype(gemv_w8a8_sa_bias_rows<2>) gemv_w8a8_sa_bias_rows<2>;
+template [[host_name("gemv_w8a8_sa_bias_rows4")]] kernel decltype(gemv_w8a8_sa_bias_rows<4>) gemv_w8a8_sa_bias_rows<4>;
+template [[host_name("gemv_w8a8_sa_resid_rows2")]] kernel decltype(gemv_w8a8_sa_resid_rows<2>) gemv_w8a8_sa_resid_rows<2>;
+template [[host_name("gemv_w8a8_sa_resid_rows4")]] kernel decltype(gemv_w8a8_sa_resid_rows<4>) gemv_w8a8_sa_resid_rows<4>;
+template [[host_name("gemv_w8a8_body_resid_staged2")]] kernel decltype(gemv_w8a8_body_resid_staged<2>) gemv_w8a8_body_resid_staged<2>;
+template [[host_name("gemv_w8a8_body_resid_staged4")]] kernel decltype(gemv_w8a8_body_resid_staged<4>) gemv_w8a8_body_resid_staged<4>;
 // R18: gemv_w4a8_resid (the coal down projection) with its int8 activations staged ONCE per threadgroup (K bytes of
 // threadgroup memory; the host checks it fits) and R rows per simdgroup. Lane l still owns words l, l+32, ... of each
 // row, in order, with W4A8_BODY's per-word integer sum and float(gi)*scale accumulation -> bit-identical to
