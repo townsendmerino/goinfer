@@ -629,6 +629,14 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **First measurement:** a test seam that skips the attention dispatch, timed on E2B at 4,096 (about 3 minutes). Kill it
   under 50%.
 
+**KS-D1 first measurement, registered 2026-10-23 before the run, on the owner's order of 11:50.** Instrument:
+`TestKSD1_attnShare`, Gemma 4 E2B (its default Metal sidecar, `decoder.SidecarPath`), `PrefillLast` on 4,096 resident rows through
+the batched E-model pass (`emodelBatched`, the fast-prefill floor set to 0), the full pass against the same pass with the prefill
+attention dispatch skipped (`prefillAttnSkipForTest`, a new test seam; the output is then meaningless and is not read), A B B A
+over 3 pairs after one warm run each. The reading is attention's share, 1 − skip/full, the median over the pairs. Timed, Mac, the
+timing lock held exclusively, a cell started under the void rule's load or memory line re-run. **Kill under 50%**; otherwise the
+build's gates are registered next. Stopping rule: one pass. Cost: about 4 minutes.
+
 **KS-D2 · Steel prefill attention for head dims 64, 80 and 96.**
 - **Where:** `metal/prefill.go:resident.prefillAttnKernels` takes steel only for head dim 128. Others run
   `attention_prefill_fused`, which R19 measured 7.2× slower.
