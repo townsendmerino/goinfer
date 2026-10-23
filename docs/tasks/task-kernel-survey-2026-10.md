@@ -638,6 +638,27 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **Size:** M.
 - **First measurement:** `TestMetalPrefillDecomp` on the 0.5B. Kill it if attention is under 30% at 3900.
 
+**KS-D2 first measurement, 2026-10-23 (11:59).** `TestMetalPrefillDecomp` on Qwen2.5-Coder-0.5B (`.gguf`, int4), 5 reps, the timing
+lock held exclusively (1-minute load 3.46 at the start, 2.84 GB available): at K=3,900 attention is **2,504.8 of 3,603.3 ms GPU,
+69.5%** (GEMM 26.9%); at K=512, 57.4 of 195.2 ms, 29.4%. The replica's logits equal `PrefillLast`'s bit for bit at both. Over the
+30% kill line: the build follows. Log: `~/goinfer-logs/ksd2-decomp-2026-10-23.log`.
+
+**KS-D2 gates, registered 2026-10-23 (12:02) before the code (D2-G), on the owner's order of 11:50.** The build:
+`attention_prefill_steel` becomes a template on the head dim, instances 64, 80, 96 and 128, its K/V staging a loop over the block's
+`16 × HD / 4` half4 words (at 128 the same four words a thread as today). `prefillAttnKernels` admits steel at head dim 64 as well as
+128. The 80 and 96 instances are built and checked at tier 0 but not admitted: no model at those head dims has references on this
+Mac, so each waits for its own model-level gate (Phi-3 at int4 for 96). `prefillSteelAttnOff` keeps the A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D2-G1 128 unchanged | 0 | the 1.5B (Metal `.giw`), `PrefillLast` at K=512 and 3,900, last logits, a test binary at this branch against one at its base | byte-equal at both |
+| D2-G2 kernel | 0 | steel against an f64 CPU attention at head dims 64, 80 and 96: random q, k, v; M = 100 and 300; start 0 and 37; window 0 and 64; 14 query heads over 2 KV heads. The fused kernel against the same reference, the same cells | every output finite, and steel's max-abs error at most 2× the fused kernel's and its mean-abs error at most 1.25× the fused kernel's in every cell |
+| D2-G3 fidelity | 2, Mac, by day | set A's §3.2 pooled gate (`TestPrefillGateVsReference`), a new cell Q05 (the 0.5B, f32 CPU references at K = 256, 512, 1,024 decision and 3,900 confirm, built first by `TestPrefillGateReference`), steel as production's prefill attention; the fused kernel's run (`GOINFER_METAL_R19_BASELINE=1`) beside it, reported. Tier 2 because tiers 0 and 1 cannot say which arm is closer to the reference; budget: references about 15 min, two gate runs about 25 min | Q05 **SHIPS** (critA, critB and critC all true) |
+| D2-G4 speed | timed, Mac, timing lock | the 0.5B, `PrefillLast` at K=3,900 and at K=512, steel against fused on one resident, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median steel/fused ratio is ≤ 0.80 at 3,900 (R19's ≥ 1.25× band) and ≤ 1.02 at 512; under 1.25× at 3,900, PARK with the reading |
+
+Planted defect: the hd-64 staging takes the 128 instance's word index (`(idx & 31) × 4`); D2-G2 goes red. Stopping rule: one pass
+each; a red G1 or G2 stops the build until it is understood. Cost: G1 and G2 seconds; G3 about 40 min; G4 about 3 min.
+
 **KS-D3 · DeltaNet prefill scan with the state on chip (bit-identical).**
 - **Where:** `delta_rule_seq` in `metal/kernels/deltanet_kernels_msl.go`, from
   `metal/prefill_deltanet.go:resident.encodePrefillDeltaMixer`.
