@@ -51,6 +51,7 @@
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
@@ -719,6 +720,30 @@ threadgroup memory. The build: `gemm_w4f16_swiglu` places the half tile in the s
 | D5b-G3 speed | timed, Mac, timing lock | D5-G3's instrument, the new build | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise KS-D5 closes as parked, with both readings |
 
 Stopping rule: one pass each, no further build on a miss. Cost: seconds; D5b-G3 about 2 minutes.
+
+**KS-D5c gates, registered 2026-10-23 (10:12) before the code (D5c-G), from KS-D5's handoff ("a fused form of those is the next
+idea").** Of the three lanes that keep `guF`, the small-M tiles hold at most 128 rows (under 5 MB on the 1.5B) and the MoE expert
+GEMMs pick a tile per expert from its row count, so neither is a straight extension. The native int8 lane is: on by default for an
+int8 dense model (`w8Eligible`), it runs the same 64 × 64 MMA chain (`gemm_w8f16_m64n64`), and its `guF` is the same 53% of a long
+pass, since the scratch is half-precision whatever the weights. The build: `gemm_w4f16_swiglu` becomes a template on `W8`, and the
+`W8` instance (`gemm_w8f16_swiglu`) stages its weights as `gemm_w4f16_tile<64, 64, true>` does (int8 codes, one f32 scale a row);
+the epilogue is the shipped one. `swigluFused` admits a native int8 resident. `swigluFusedOffForTest` keeps the A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5c-G1 identity | 0 | the W8 fused GEMM against `gemm_w8f16_m64n64` + `swiglu_f16` at random int8 weights and f32 row scales, D5-G1's 12 cells; the Metal prefill of llama-tiny at int8int8 (native int8) and of the 1.5B at int8int8 (the `.gguf`, a direct load) at 3,900 rows, last logits | byte-equal everywhere, and the int4 cells of D5-G1 still byte-equal |
+| D5c-G2 scratch | 0 | D5-G2's counter, the 1.5B at int8int8, one 3,900-row pass | at most 123 MB |
+| D5c-G3 speed | timed, Mac, timing lock | D5-G3's instrument on the 1.5B at int8int8 | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise PARK with the reading (the owner's bit-identical rule of 2026-10-23 also ships it at 9 of 10 pairs faster) |
+
+Planted defect: the up rows read the gate rows' scale (`WS[i0 + (fr & 31)]`). D5c-G1's kernel cells go red. Stopping rule: one pass
+each, no further build on a miss. Cost: seconds; D5c-G3 about 3 minutes with the load.
+
+**Amended 2026-10-23 (10:15), before any model reading: the 0.5B replaces the 1.5B in D5c-G1's model cell, D5c-G2 and D5c-G3.** The
+fit guard refused the 1.5B at int8int8 (2.8 GB needed against a 2.1 GB budget, 3.0 GB available with the owner's apps open). The
+0.5B (`qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` at int8int8, a direct load) takes the same 64 × 64 tile at 3,900 rows with
+I = 4,864, a multiple of 32, so it exercises the same mechanism; the tier rule asks for the smallest such model. D5c-G2's bar becomes
+the 0.5B's own: the two-step pass's counted scratch less `guF` (Mpad × 2 × 4,864 halves), within 1%. The bars of D5c-G1 and D5c-G3
+are unchanged. The kernel cells (K = 1,536, I = 96 and 8,960) already ran and passed at 10:13; they stand.
 
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow`.
