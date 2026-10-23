@@ -27,7 +27,7 @@ prompts whenever fast attention is on.
 | V1-G1 identity | `TestMEM5VL_sharedRouteChunked`: a 60-token prompt with a 12-row image span (longer than a 7-row chunk, crossing the 16-row cut) and a 4-row one, at chunk 7 and 16, at f32 and int4, on gemma3-vl-tiny (bidirectional), ministral3-tiny (causal), qwen25vl-tiny and glm-ocr-tiny (m-RoPE), qwen3vl-tiny and qwen3vlmoe-tiny (m-RoPE and DeepStack): every position's rows, the last logits and four decode steps after equal one pass's in every bit, in 9 passes at 7 rows and 4 to 5 at 16 | **PASS** (12 cells) |
 | V1-G2 bytes | `TestMEM5VL_sharedRouteBytes`, a 200-row prompt with a 20-row first span, 16-row chunks: the pass's row-sized buffers 563,200 B in one pass → 56,320 B on gemma3-vl-tiny (the 20-row block's pass) and 45,056 B on qwen25vl-tiny (16 rows; its image rows are causal), each exactly the single pass's scaled to its longest pass; the key-sized attention buffers (`alk`, `alv`, sized by the whole prefill's keys as G40 amended) equal in both, 51,200 B on Gemma 3; every chunk after the first allocates at most 86 KB (bar 1 MiB) | **PASS** |
 | V1-G3 unchanged | the decoder tests matching the image routes, the G40 chunk gates and the prefill tests: ok in 947 s | **PASS** |
-| V1-G4 peak, tier 1 | Qwen2.5-VL-3B with one image and about 8K text tokens, main against the branch | open: by day after 07:00 |
+| V1-G4 peak, tier 1 | `TestMEM5VL_peakTier1`, Qwen2.5-VL-3B (`~/models/qwen25vl-3b-instruct`) at int4, 8,192 tokens with a 1,024-row image, one pass (main's shape) against 2,048-row passes; run at night on the owner's word, 2026-10-22, 22:51, shared lock, untimed: live heap over the 3,862.5 MiB base, **sampled 1,261.3 → 356.5 MiB** (pass-boundary reading 1,245.0 → 352.5 MiB). Log: `~/goinfer-logs/mem5vl-v1g4-2026-10-22.log` | **PASS** (bar, as amended before data: at least halved) |
 
 **Plant** (the cut rule off): red. gemma3-vl-tiny differs in 3,520 rows and 1,305 logits at both chunk sizes.
 
@@ -68,7 +68,7 @@ prompt. They are library calls, not prefills, and are unchanged.
 | V3-G1 identity | `TestMEM5VL_qwen35Chunked`, qwen35vl-tiny, route 1's prompt and m-RoPE triples at chunk 7, 16 and 59 (the last pass one row, which takes the per-token DeltaNet core), f32 and int4: the last logits and four decode steps after equal one pass's in every bit, in 9, 4 and 2 passes | **PASS** |
 | V3-G2 bytes | `TestMEM5VL_qwen35Bytes`, 200 rows, 16-row passes, the KV a pass grows left out: one pass allocates 7.09 MB; the largest chunked pass 1.12 MB (bound 1.33 MB: 16 rows' share, the full-attention worker pool at 200 keys, 64 KiB). On the tiny fixture the key-sized pool is most of a pass; on a real model the rows are | **PASS** |
 | V3-G3 unchanged | `TestQwen35VL_batchedPrefillMatchesPerToken`, `_imageParity`, `_positions`, `_loaderSetsMRope`, `_e2eChain`, `TestTwoImages_qwen35vl` | **PASS** |
-| V3-G4 peak, tier 1 | Qwen3.6-35B-A3B or Qwen3.5-0.8B with an image and about 8K tokens | open: by day after 07:00 |
+| V3-G4 peak, tier 1 | `TestMEM5VL_peakTier1`, Qwen3.5-0.8B (`~/models/qwen3.5-0.8b`; Qwen3.6-35B-A3B's `.giw` is not on the Mac) at int4, the same prompt; run at night on the owner's word, 2026-10-22, 22:55, shared lock, untimed (the 1-minute load was 8.16 at the start, left by the previous cell's build; a memory reading, so not voided): **sampled 5,566.6 → 1,904.6 MiB** over the 998 MiB base (pass-boundary 3,532.5 → 897.7). Log: `~/goinfer-logs/mem5vl-v3g4-2026-10-22.log` | **PASS** |
 
 **V3-G2's bound, computed from the code after its first reading.** The registration bounds a pass by its rows' share plus "its
 key-sized attention scratch". The test first estimated that scratch as one copy of the keys and values (0.20 MB) and read the largest
@@ -90,3 +90,12 @@ embedding the whole prompt and running one pass. Its audio rows attend causally,
 | V4-G3 unchanged | `TestVoxtral_tiny*` and `TestQwen3ASR_tiny*` (text and composition parity against HF, their planted-defect tests) | **PASS** (7 tests) |
 
 **Plant** (the features spliced at rows counted from the pass): red. 800 logits differ in every cell.
+
+## A finding from V3-G4: the DeltaNet conv window holds the pass's whole `mixed` slab
+
+After the single-pass prefill on Qwen3.5-0.8B, the live heap stays 3.46 GB above base. The prompt's KV by geometry is about 0.2 GB
+(6 full-attention layers, 512-wide K and V, 8,192 rows). The cause is `deltaNetCoreN`: it leaves the conv window (`st.convWin`) as
+slices of the pass's `mixed` slab (its own comment says so: "mixed's rows are retained in st's conv window"). So each of the 18
+linear layers keeps its whole `K × convDim` slab alive until K−1 decode steps have replaced the window's rows. Chunking already
+bounds it to the last pass's slab (0.86 GB above base after the prefill). Copying the K−1 rows the window keeps would free the
+slab at the end of each layer. That is a small, bit-identical change, recorded as ledger row MEM5-VL-convwin rather than made here.
