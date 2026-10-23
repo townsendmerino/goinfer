@@ -642,6 +642,24 @@ pair's 1.03–2.41).** E2B's default sidecar (`…int4.ple4.metal.v17.giw`), 4,0
 512, so `PrefillBlockRows` 0): full 28.17–28.35 s, without attention 5.29 s in every pair; **attention 81.2% (median of 3), over
 the 50% line**. The build follows. Log: `~/goinfer-logs/ksd1-share-2026-10-23.log`.
 
+**KS-D1 gates, registered 2026-10-23 (13:32) before the code (D1-G).** The build: `attention_prefill_steel_split<HD>` for head dims
+256 and 512, R19's kernel with the head dim split over the threadgroup's 8 simdgroups: NS = HD/128 slices of 128, 8/NS row groups
+of 8 rows (32 query rows a threadgroup at 256, 16 at 512), K/V blocks of 16 keys at 256 and 8 at 512 staged once in padded
+threadgroup memory (17 KB). Each simdgroup forms its slice's partial Q·Kᵀ, writes it to threadgroup memory, and sums its row
+group's NS partials in slice order, so every slice of a row group holds the same scores and the same online-softmax state; it then
+accumulates its own 128 output columns. A layer whose head dim is 256 or 512 takes it where the pass would take the exact kernel
+(not an image block, not a softcap); `prefillSteelAttnOff` keeps the exact kernel for the A/B. Not bit-identical (half P, exp2, the
+order): fidelity-gated.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D1-G1 kernel | 0 | the split kernel against an f64 attention at head dims 256 and 512: random q, k, v; M = 100 and 300; start 0 and 37; window 0 and 64 (at 256); 8 query heads over 1 KV head | every output finite; max-abs error ≤ 4e-3 and mean-abs ≤ 2e-4 in every cell (about 4× D2-G2's steel readings at head dim 64) |
+| D1-G2 fidelity | 2, Mac, by day | (a) G-S9d (`TestS9EModelBatched_realE2B`) with the split kernel in the batched pass, its own rule against the layer-major reference (PASS: agreement ≥ the reference's − 2.0 points and free-run passes ≥ the reference's − 1); (b) a long cell: E2B, a 2,048-token prompt (this repository's text), the CPU int4 reference over the last prompt row and 32 teacher-forced positions, argmax agreement of the split kernel's batched pass against the exact kernel's. Tier 2 because only a reference can say which arm is closer; budget about 30 min | (a) PASS by its rule, and (b) agreement ≥ the exact kernel's − 2.0 points |
+| D1-G3 speed | timed, Mac, timing lock | E2B, `PrefillLast` on 4,096 rows through the batched pass, split kernel against exact (`prefillSteelAttnOff`), A B B A over 3 pairs after one warm run each | SHIP iff the median new/old is ≤ 0.80 (≥ 1.25×); otherwise PARK |
+
+Planted defect: the row group sums only its own slice's partial (no exchange); D1-G1 goes red. Stopping rule: one pass each; a red G1
+stops the build until understood. Cost: G1 seconds; G2 about 30 min; G3 about 4 min.
+
 **KS-D2 · Steel prefill attention for head dims 64, 80 and 96.**
 - **Where:** `metal/prefill.go:resident.prefillAttnKernels` takes steel only for head dim 128. Others run
   `attention_prefill_fused`, which R19 measured 7.2× slower.
