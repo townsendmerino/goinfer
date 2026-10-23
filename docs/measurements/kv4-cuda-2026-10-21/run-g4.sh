@@ -25,7 +25,7 @@ if [ "$PHASE" = ref ] || [ "$PHASE" = both ]; then
   (cd "$W" && python3 scripts/timing_lock.py run --shared --wait "${LOCK_WAIT:-3600}" --label "kv4b-g4-ref-$CELL-$DEPTH" -- \
     env GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CPU_REF_MODELS="$CELL" GOINFER_CPU_REF_KS="$DEPTH" \
     GOINFER_CPU_REF_PROMPTS_AT="$DEPTH:$N" GOINFER_CPU_REF_WORKERS="${WORKERS:-2}" \
-    go test -count=1 -tags goinfer_testhooks -run '^TestPrefillGateReference$' -v -timeout 3h ./decoder/) 2>&1 | tee -a "$log"
+    go test -count=1 -tags goinfer_testhooks -run '^TestPrefillGateReference$' -v -timeout "${REF_TIMEOUT:-3h}" ./decoder/) 2>&1 | tee -a "$log"
   [ "${PIPESTATUS[0]}" = 0 ] && grep -q "^--- PASS: TestPrefillGateReference" "$log" || rc=1
   echo "reference files for $CELL K=$DEPTH: $(nref) (want at least $N)" | tee -a "$log"
   [ "$(nref)" -ge "$N" ] || rc=1
