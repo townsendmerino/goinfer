@@ -103,17 +103,13 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:8c1f6325327978056639f3b57ec679ebb763cb0c7fe72ea04882795bf6231561",
-      "status": "validated",
-      "validated_at": "7b50947a",
-      "date": "2026-10-05",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
       "reference": "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)",
       "machine": "linux-amd64",
       "method": "real-model-oracle",
-      "metrics": {
-        "argmax_pct": 100.0,
-        "cosine_min": 0.99924,
-        "cosine_mean": 0.99924
-      }
+      "metrics": null
     },
     "deepseek_v3": {
       "uses": [
@@ -126,17 +122,13 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:8c1f6325327978056639f3b57ec679ebb763cb0c7fe72ea04882795bf6231561",
-      "status": "validated",
-      "validated_at": "7b50947a",
-      "date": "2026-10-05",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
       "reference": "HF bf16 (Moonlight-16B-A3B; int8 resident)",
       "machine": "linux-amd64",
       "method": "real-model-oracle",
-      "metrics": {
-        "argmax_pct": 100.0,
-        "cosine_min": 0.99951,
-        "cosine_mean": 0.99951
-      }
+      "metrics": null
     },
     "gemma": {
       "uses": [
@@ -393,9 +385,9 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:8c1f6325327978056639f3b57ec679ebb763cb0c7fe72ea04882795bf6231561",
-      "status": "validated",
-      "validated_at": "b067007",
-      "date": "2026-08-05",
+      "status": "pending",
+      "validated_at": null,
+      "date": null,
       "reference": "rides deepseek_v3's real-model oracle (HF bf16 Moonlight-16B-A3B; int8 resident) \u2014 same forward_deepseek.go, same deps_hash. Kimi's config-delta (64 heads, 384 experts top-8, sigmoid noaux_tc routing default) is covered by TestKimi_descriptor / TestKimi_routingDefault / TestKimi_textParity (tiny golden, cosine 1.000000)",
       "machine": "linux-62gb",
       "method": "shared-path (via deepseek_v3)",
