@@ -36,7 +36,7 @@ func TestQ4KLane_realPhi3NonInferiority(t *testing.T) {
 	}
 	phi3 := decoder.AssetPathForTest(t, "GOINFER_PHI3_GGUF") // the asset registry (testdata/assets.json) resolves it
 	qb := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m")
-	rp, ra, rn := g3Model(t, qb+".int4.metal.giw", qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
+	rp, ra, rn := g3Model(t, fmt.Sprintf("%s.int4.metal.v%d.giw", qb, decoder.GIWFormatVersion), qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
 	pp, pa, pn := g3ModelQ4K(t, phi3, "Phi-3 mini q4k", false, logf)
 	refPct, pct := 100*float64(ra)/float64(rn), 100*float64(pa)/float64(pn)
 	delta := pct - refPct
