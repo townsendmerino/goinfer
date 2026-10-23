@@ -720,6 +720,23 @@ threadgroup memory. The build: `gemm_w4f16_swiglu` places the half tile in the s
 
 Stopping rule: one pass each, no further build on a miss. Cost: seconds; D5b-G3 about 2 minutes.
 
+**KS-D5c gates, registered 2026-10-23 (10:15) before the code (D5c-G), from KS-D5's handoff ("a fused form of those is the next
+idea").** Of the three lanes that keep `guF`, the small-M tiles hold at most 128 rows (under 5 MB on the 1.5B) and the MoE expert
+GEMMs pick a tile per expert from its row count, so neither is a straight extension. The native int8 lane is: on by default for an
+int8 dense model (`w8Eligible`), it runs the same 64 × 64 MMA chain (`gemm_w8f16_m64n64`), and its `guF` is the same 53% of a long
+pass, since the scratch is half-precision whatever the weights. The build: `gemm_w4f16_swiglu` becomes a template on `W8`, and the
+`W8` instance (`gemm_w8f16_swiglu`) stages its weights as `gemm_w4f16_tile<64, 64, true>` does (int8 codes, one f32 scale a row);
+the epilogue is the shipped one. `swigluFused` admits a native int8 resident. `swigluFusedOffForTest` keeps the A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5c-G1 identity | 0 | the W8 fused GEMM against `gemm_w8f16_m64n64` + `swiglu_f16` at random int8 weights and f32 row scales, D5-G1's 12 cells; the Metal prefill of llama-tiny at int8int8 (native int8) and of the 1.5B at int8int8 (the `.gguf`, a direct load) at 3,900 rows, last logits | byte-equal everywhere, and the int4 cells of D5-G1 still byte-equal |
+| D5c-G2 scratch | 0 | D5-G2's counter, the 1.5B at int8int8, one 3,900-row pass | at most 123 MB |
+| D5c-G3 speed | timed, Mac, timing lock | D5-G3's instrument on the 1.5B at int8int8 | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise PARK with the reading (the owner's bit-identical rule of 2026-10-23 also ships it at 9 of 10 pairs faster) |
+
+Planted defect: the up rows read the gate rows' scale (`WS[i0 + (fr & 31)]`). D5c-G1's kernel cells go red. Stopping rule: one pass
+each, no further build on a miss. Cost: seconds; D5c-G3 about 3 minutes with the load.
+
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow`.
 - **Waste:**
