@@ -22,7 +22,7 @@
 | KS-A2 | building | gated 2026-10-23; aikit `gpu/v0.34.0` tagged (aikit #13, #14), `cuda/go.mod` bumped; merge after the touched device tests on the tagged module: direct launches from the resident's executor thread (aikit `Queue.LaunchDirect`). Logits byte-equal; the 0.5B at depth 128 **1.492×** median, 10 of 10 ABBA quads (345 → 521 tok/s), gemma3-1b 1.465× (197 → 291); 10.4 → 2.3 µs a launch; CUDA device suite green | `docs/measurements/ks-a2-2026-10/README.md` |
 | KS-A3 | decision | owner: build the multi-block `topk_select` (S–M)? Measured 2026-10-23: one block, **101.7 µs** at (152k, 256), **211.5 µs** at (262k, 1024) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
-| KS-A5 | decision | owner: build the one-round row loads (S–M), after KS-A2's launch path, since the gain needs decode GPU-bound? Measured 2026-10-23: `fused_rms_gu` at (896, 4864) runs at **55.2%** of DRAM peak (kill was ≥ 80%) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A5 | building | gate registered 2026-10-23 (`docs/measurements/ks-a5-2026-10/README.md`): one-round row loads in `fused_rms_qkv` / `fused_rms_gu` for rows ≤ 256 words, bit-identical by construction; G1 logits byte-equal on the 0.5B, gemma3-1b and 1.5B, G2 at least 9 of 10 ABBA quads on 0.5B decode. Survey reading: `fused_rms_gu` at (896, 4864) **55.2%** of DRAM peak | `docs/measurements/ks-a5-2026-10/README.md` |
 | KS-A6 | open | nobara: host timestamps around upload, readback and hand-off | — |
 | KS-A7 | open | nobara: launch counter, then an A/B on phi3-mini | — |
 | KS-A8 | open | nobara: an A/B after A2 reads | — |

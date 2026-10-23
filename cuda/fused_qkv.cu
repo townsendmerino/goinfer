@@ -14,6 +14,43 @@
 //
 // grid: (qDim+2*kvDim + 7)/8 blocks × 256 threads (8 warps, one output row per warp).
 // A block never straddles a projection boundary (qDim/kvDim are multiples of 8).
+//
+// A row's words, as each lane reads them, are wi = lane + 32m for m ascending (the 2x-unrolled loop and its tail are
+// that order), and the row's FMA chain runs in that order. A row of at most FQ_MAXW * 32 words loads all of its words and
+// scales in one round (fq_load) and then runs the same chain (fq_dot), so the result is the loop's bit for bit with no
+// load waiting on the previous round's FMAs. Longer rows keep the loop.
+#define FQ_MAXW 8
+struct fq_row {
+    unsigned int w[FQ_MAXW];
+    float s[FQ_MAXW];
+};
+
+__device__ __forceinline__ void fq_load(fq_row& a, const unsigned int* __restrict__ wr, const __half* __restrict__ sr,
+                                        int Kwords, int lane) {
+#pragma unroll
+    for (int m = 0; m < FQ_MAXW; m++) {
+        const int wi = lane + 32 * m;
+        a.w[m] = 0u;
+        a.s[m] = 0.f;
+        if (wi < Kwords) { a.w[m] = wr[wi]; a.s[m] = __half2float(sr[wi >> 2]); }
+    }
+}
+
+__device__ __forceinline__ float fq_dot(const fq_row& a, const int* __restrict__ aq, int Kwords, int lane) {
+    float facc = 0.f;
+#pragma unroll
+    for (int m = 0; m < FQ_MAXW; m++) {
+        const int wi = lane + 32 * m;
+        if (wi < Kwords) {
+            int p = 0;
+            p = __dp4a((int)__vsub4(a.w[m] & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi], p);
+            p = __dp4a((int)__vsub4((a.w[m] >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi + 1], p);
+            facc = __fmaf_rn((float)p, a.s[m], facc);
+        }
+    }
+    return facc;
+}
+
 extern "C" __global__ void fused_rms_qkv(
     const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps, int addOne,
     const unsigned int* __restrict__ Wq, const __half* __restrict__ gsq, const float* __restrict__ bq,
@@ -64,6 +101,11 @@ extern "C" __global__ void fused_rms_qkv(
     const unsigned int* wr = W + (long)row * Kwords;
     const __half* sr = gs + (long)row * Kgroups;
     float facc = 0.f;
+    if (Kwords <= FQ_MAXW * 32) {
+        fq_row a;
+        fq_load(a, wr, sr, Kwords, lane);
+        facc = fq_dot(a, aq, Kwords, lane);
+    } else {
     int base = 0;
     for (; base + 64 <= Kwords; base += 64) {           // 2x ILP unroll (matches gemv_w4a8_fwd)
         int wi0 = base + lane, wi1 = base + 32 + lane;
@@ -85,6 +127,7 @@ extern "C" __global__ void fused_rms_qkv(
             p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi + 1], p);
             facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
         }
+    }
     }
     #pragma unroll
     for (int o = 16; o > 0; o >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, o);
@@ -113,6 +156,18 @@ extern "C" __global__ void fused_rms_gu(
     float* red    = normed + H;
     int*   aq     = (int*)(red + 256);
     int t = threadIdx.x, nt = blockDim.x;
+    int warp = t / 32, lane = t & 31, warps = nt / 32;
+    int blockBase = blockIdx.x * (warps * ROWS_PER_WARP);
+    const int r0 = blockBase + warp * ROWS_PER_WARP;
+    // One-round rows (fq_load): the warp's first row is loaded before the norm prologue and each next row while the
+    // current one is reduced, so the weight loads overlap the prologue's barriers and the shuffle reduction.
+    const bool oneRound = Kwords <= FQ_MAXW * 32;
+    fq_row cur;
+    if (oneRound && r0 < 2 * I) {
+        const unsigned int* wr0 = (r0 < I) ? Wg + (long)r0 * Kwords : Wu + (long)(r0 - I) * Kwords;
+        const __half* sr0 = (r0 < I) ? gsg + (long)r0 * Kgroups : gsu + (long)(r0 - I) * Kgroups;
+        fq_load(cur, wr0, sr0, Kwords, lane);
+    }
 
     float ss = 0.f;
     for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
@@ -137,10 +192,8 @@ extern "C" __global__ void fused_rms_gu(
     }
     __syncthreads();
 
-    int warp = t / 32, lane = t & 31, warps = nt / 32;
-    int blockBase = blockIdx.x * (warps * ROWS_PER_WARP);
     for (int i = 0; i < ROWS_PER_WARP; i++) {
-        int r = blockBase + warp * ROWS_PER_WARP + i;   // this warp's i-th row
+        int r = r0 + i;   // this warp's i-th row
         if (r >= 2 * I) return;
         const unsigned int* W; const __half* gs; float* dst; int row;
         if (r < I) { W = Wg; gs = gsg; dst = gOut; row = r; }
@@ -148,6 +201,17 @@ extern "C" __global__ void fused_rms_gu(
         const unsigned int* wr = W + (long)row * Kwords;
         const __half* sr = gs + (long)row * Kgroups;
         float facc = 0.f;
+        if (oneRound) {
+            fq_row nxt;
+            const int rn = r + 1, rows = 2 * I;
+            if (i + 1 < ROWS_PER_WARP && rn < rows) {
+                const unsigned int* wrn = (rn < I) ? Wg + (long)rn * Kwords : Wu + (long)(rn - I) * Kwords;
+                const __half* srn = (rn < I) ? gsg + (long)rn * Kgroups : gsu + (long)(rn - I) * Kgroups;
+                fq_load(nxt, wrn, srn, Kwords, lane);
+            }
+            facc = fq_dot(cur, aq, Kwords, lane);
+            cur = nxt;
+        } else {
         int base = 0;
         for (; base + 64 <= Kwords; base += 64) {
             int wi0 = base + lane, wi1 = base + 32 + lane;
@@ -169,6 +233,7 @@ extern "C" __global__ void fused_rms_gu(
                 p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), aq[2 * wi + 1], p);
                 facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
             }
+        }
         }
         #pragma unroll
         for (int o = 16; o > 0; o >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, o);
