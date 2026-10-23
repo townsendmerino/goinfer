@@ -495,6 +495,14 @@ and are left as they are.
 Planted defect: each pass splices the image features at rows counted from the pass, not the prompt. V3-G1 goes red. Stopping rule:
 one pass each. Cost: seconds.
 
+**V1-G4 and V3-G4 amended 2026-10-22, before any tier-1 data.** Both run `TestMEM5VL_peakTier1`. The single-pass arm is the branch with
+`prefillChunkRows` above the prompt, which is main's shape: V1-G1 and V3-G1 show its passes byte-equal and its buffers the same.
+Each arm takes two readings. The registered one is the live heap after a collection at every pass boundary, which sees a pass's
+working set only where the pass still holds it (route 1's `prefillPassScratch`). The added one is heap in use sampled every 20 ms
+without a collection. Qwen3.5's runner drops its per-layer buffers before the boundary, so only the sampled reading sees its
+transient. The prompt: 8,192 tokens with a 1,024-row image. Qwen3.6-35B-A3B's `.giw` is not on the Mac, so V3-G4 runs on
+Qwen3.5-0.8B. Graded on the sampled reading: the chunked peak over base lower by at least half the single pass's.
+
 **MEM5-VL (4) gates, the audio prefill, registered 2026-10-22 before the code (V4-G).** `prefillLogitsAudio` (Voxtral,
 Qwen3-ASR) embeds the whole prompt, splices the audio run's features and runs one `runLayersFromEmbedN` pass. Its audio rows attend
 causally (no block), so it is route 1's case with one causal span. The build: it calls route 1's `prefillSpliced` with the audio run
