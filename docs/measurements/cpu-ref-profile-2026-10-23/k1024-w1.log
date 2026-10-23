@@ -1,0 +1,20 @@
+start 2026-10-23 08:48:26 PDT tree 94fb6649c4b315f239d7baf806133b2d0fe539b5 load: 2.10 8.94 16.24 1/1368 3871252
+Mem:           64238        6841       26724          10       31274       57396
+=== RUN   TestScratchRefProfile
+[rp] load /home/francis/models/command-r7b quant="int8" K=1024 workers=1 GOMAXPROCS=16 took 15.84s
+[rp] heartbeat elapsed=46s cpu=495s
+[rp] heartbeat elapsed=1m16s cpu=894s
+[rp] heartbeat elapsed=1m46s cpu=1304s
+[rp] heartbeat elapsed=2m16s cpu=1704s
+[rp] heartbeat elapsed=2m46s cpu=2105s
+[rp] heartbeat elapsed=3m16s cpu=2502s
+[rp] phase prefill finished=true wall=208.2s cpu=2781.3s avgCores=13.36
+[rp] decode step 0 0.50s
+[rp] decode step 1 0.53s
+[rp] decode step 2 0.51s
+[rp] heartbeat elapsed=3m46s cpu=2903s
+[rp] decode step 7 0.50s
+[rp] phase decode finished=true wall=4.0s cpu=40.4s avgCores=10.06
+--- PASS: TestScratchRefProfile (228.02s)
+PASS
+end 2026-10-23 08:52:14 PDT load: 13.47 11.97 15.93 1/1376 3873624
