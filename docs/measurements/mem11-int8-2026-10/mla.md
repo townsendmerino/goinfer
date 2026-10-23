@@ -17,7 +17,7 @@ manifest rows are pending until nobara re-runs their real-model gates at int8 (l
 | I8M-G2 the upload | the codes and row scales, on load and after a bundle round trip, equal `linalg.QuantizeInt8` of main's f32 projections; Metal resident at int4 on deepseek-tiny: logits hash `0x7e63e089…`, unchanged from main (`TestD5_mlaOnMetal`); the Metal MLA tests and WebGPU's MLA tests pass; CUDA vetted and staticchecked from the Mac | **PASS** |
 | I8M-G3 CPU fidelity, tiny | deepseek-tiny at int4, int8-MLA CPU against f32-MLA CPU, 32 steps of greedy lockstep: **min cosine 0.999887, argmax 31/32** (bar 0.999, 30) | **PASS** |
 | I8M-G4 CPU fidelity, real slice | DeepSeek-V2-Lite-Chat Q4_K_M, layers 0–1, int4: **min cosine 0.997303, argmax 31/32** (bar 0.99, 28); resident weight bytes 1,248,837,632 → 1,178,890,752 for two layers, about 35 MB a layer (~0.94 GB over the model's 27) | **PASS** |
-| I8M-G5 the family gate | `TestDeepseekV2LiteReal` and the Moonlight gate at int8int8, on nobara | open: MEM11-int8-MLA-T3 |
+| I8M-G5 the family gate | `TestDeepseekV2LiteReal_gate` and `TestDeepseekMoonlightReal_gate` at int8int8, on nobara, 2026-10-23: V2-Lite argmax and continuation exact, cosine 0.999297; **Moonlight's continuation diverges at its second token** (13 for 11), argmax exact, cosine 0.999542. Below | **FAIL** (Moonlight) |
 
 **Plant** (kv-B quantized too): red. kv-B differs on every layer, and Metal's logits hash moves (`0x621d19fb…`).
 
@@ -48,3 +48,22 @@ to compare:
 
 The capability matrix (`docs/capability-matrix.md`, `.json`, `pull/capability-matrix.json`) now shows the three as pending; the
 site module's tests and build pass with it. The other 39 rows' hashes are refreshed with forward goldens green (43 passed).
+
+## I8M-G5 on nobara, 2026-10-23
+
+nobara-pc (Ryzen 7 3700X, 62 GB, Go 1.27.3), the CPU forward at int8int8 against the HF bf16 goldens, checkpoints from `~/models`.
+Run at 08:40 with the timing lock held shared; the gates are numeric, not timed. Log: `~/goinfer-logs/kernel-survey-2026-10/mem11-t3.log`.
+
+| gate | at d6214db6b (int8 MLA) | at a570f8dfc (main before #162, f32 MLA) |
+|---|---|---|
+| `TestDeepseekV2LiteReal_gate` | argmax 8913 = golden; continuation `[8913 13 185 549 6077 280]` = golden; cosine **0.999297**: **PASS** | not re-run (passes at int8) |
+| `TestDeepseekMoonlightReal_gate` | argmax 17374 = golden; cosine **0.999542**; continuation `[17374 13 1344 387 7081 306]` against `[17374 11 1155 387 7081 306]`: **FAIL** at `continuation[1]` | argmax 17374; cosine 0.999508; continuation exact: **PASS** |
+
+The second column is a diagnosis, one run, not a re-run of the gate: the same test on the tree just before MLA's int8 merged
+(log: `~/goinfer-logs/kernel-survey-2026-10/mem11-diag-pre162.log`). The int8 projections move Moonlight's greedy continuation
+at its second token. The last-token logits agree with the golden more closely than f32 MLA's (0.999542 against 0.999508), so
+this is a ranking flip at one position, not a drifted forward; the bar is the continuation all the same. Moonlight returns to
+the golden's tokens from the fourth position on.
+
+**The manifest is unchanged.** `deepseek_v2`, `deepseek_v3` and `kimi_k2` stay pending; V2-Lite's passing row was not refreshed
+on its own, since the three share one forward and one decision. The question is the memory campaign's D14.

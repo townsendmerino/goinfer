@@ -46,7 +46,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
 | MEM11-int8 | done | done 2026-10-22: MLA int8 on quantized loads (about 0.94 GB on V2-Lite); the drafters and LFM2 stay bf16, mapped (D13 (b), owner, 2026-10-22). Open: MEM11-int8-MLA-T3 | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM11-giw-bf16 | done | done 2026-10-22: kind 9 (bf16) in the `.giw`, aliased on load; an older bundle still loads, version unchanged (v17's new-encoding rule). LFM2.5-2.6B `.giw` heap 0.748 → 0.014 GB, bit-identical; GB-G1 to G4 PASS (D13 (b), owner, 2026-10-22) | `docs/measurements/mem11-2026-10/giw-bf16.md` |
-| MEM11-int8-MLA-T3 | open | nobara: `TestDeepseekV2LiteReal` and the Moonlight gate (`go test -tags realckpt ./decoder/ -run TestDeepseek.*Real`) at int8int8, then refresh `deepseek_v2`, `deepseek_v3` and `kimi_k2` in `testdata/parity_manifest.json` from pending to validated with the new readings (D10, owner, 2026-10-22) | `docs/measurements/mem11-int8-2026-10/mla.md` |
+| MEM11-int8-MLA-T3 | decision | D14 (owner). Read 2026-10-23 on nobara: V2-Lite PASS (cosine 0.999297, continuation exact); Moonlight FAIL, its greedy continuation diverges at the second token (13 for 11) at int8 MLA, argmax exact, cosine 0.999542, and passes at f32 MLA (main before #162). The three manifest rows stay pending | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -1050,6 +1050,19 @@ choice in aikit and a storage choice in ken (**D4**).
 
 ## 7. Owner decisions
 
+- **D14** (MEM11-int8-MLA-T3, open, 2026-10-23): **Moonlight's family gate fails at int8 MLA.** I8M-G5 on nobara: V2-Lite
+  passes (argmax, a 6-token greedy continuation, cosine 0.999297). Moonlight's last-token argmax matches the HF bf16 golden and its
+  cosine is 0.999542, but its greedy continuation takes 13 where the golden takes 11 at the second token. The same gate passes on
+  main before #162 (f32 MLA, cosine 0.999508). The three manifest rows stay pending
+  (`docs/measurements/mem11-int8-2026-10/mla.md`, "I8M-G5 on nobara").
+  - **Options:**
+    - (a) MLA back to f32 on quantized loads; the rows re-validate as before, and the ~0.94 GB on V2-Lite is given up;
+    - (b) narrow it: run the Moonlight gate with each of the five int8 projections (q, kv-A, o, per layer kind) held f32 in turn
+      (about a minute a run on nobara), keep f32 whichever carries the flip, and re-run I8M-G5; if no single one does, (a);
+    - (c) keep int8 MLA as it is: refresh `deepseek_v2` from this reading and leave `deepseek_v3` and `kimi_k2` pending, shown
+      unvalidated in the capability matrix.
+  - The bar itself (argmax, continuation, cosine ≥ 0.99) is not among the options; moving it is a separate decision.
+  - **Recommended: (b),** then (a) if it does not isolate.
 - **D13** (MEM11-int8, decided (b), owner, 2026-10-22): **int8 for the drafters and LFM2, whose islands are already mapped.**
   MEM11-int8 closes with MLA. The drafters and LFM2 stay as MEM11-bf16 left them. The follow-up MEM11-giw-bf16: the `.giw`
   carries LFM2's islands as bf16 records mapped on load, read by encoding byte as B27's `mambaProj` is, so an older bundle still
