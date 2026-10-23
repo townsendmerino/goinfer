@@ -52,7 +52,7 @@
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | open (measured 2026-10-22) | next: SwiGLU fused into the gate\|up GEMM, behind a tiny-fixture byte compare. Measured: one 3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | open (measured 2026-10-22) | next: allocate the unread buffers only where read, gated on MEM2-G1's fixtures. Measured: Qwen3-VL-2B at 4K, 918.7 of 2,622.5 MiB (35.0%) unread; NaN-filled, 0 of 32.9M outputs differ; `pt` 188.4 MiB | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D7 | open (measured 2026-10-22) | next, by day: time to first token at 3,900, kill under 2%. Measured: the half2 dequant equals the current one in all 1,048,576 cases (plant red) | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D7 | measured (KILL) | closed 2026-10-23: the half2 dequant is bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal) but the prefill is 0.9983 of the old time, 5 of 10 pairs faster (kill under 2%; run 05:03 on the owner's word). Not merged | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
@@ -705,6 +705,11 @@ about a minute.
 - **Gain (est.):** 0–5% time to first token at 3900.
 - **Class:** bit-identical only if an exhaustive device check passes (16 nibbles × 65,536 half scales).
 - **Size:** S. Kill it under 2%.
+
+**KS-D7 gates, registered 2026-10-23 (05:05) before the change (D7-G); the reading is in the record, and the change was not
+merged.** D7-G1, model identity: llama-tiny and Qwen2.5-Coder-1.5B, a batched prefill's last logits byte-equal, old form against
+new. D7-G2, speed: Qwen2.5-Coder-1.5B, a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs; SHIP iff
+the median new/old is ≤ 0.98 and at least 9 of 10 pairs are below 1, otherwise the row closes as measured.
 
 **KS-D8 · Batched Mamba-2 prefill on Metal (Nemotron-H).**
 - **Waste:** `metal/model.go:resident.recurrentPrefillOK` declines Mamba, so every prompt token is a decode step.
