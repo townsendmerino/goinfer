@@ -42,7 +42,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
 | MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
-| MEM11-int8 | open (MLA done 2026-10-22; the drafters and LFM2 wait on D13) | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
+| MEM11-int8 | done | done 2026-10-22: MLA int8 on quantized loads (about 0.94 GB on V2-Lite); the drafters and LFM2 stay bf16, mapped (D13 (b), owner, 2026-10-22). Open: MEM11-int8-MLA-T3 | `docs/measurements/mem11-int8-2026-10/mla.md` |
+| MEM11-giw-bf16 | open | the `.giw` carries LFM2's islands as bf16 records, mapped on load, read by encoding byte so an older bundle still loads: LFM2's `.giw` heap 0.74 GB → 0, bit-identical (D13 (b), owner, 2026-10-22) | — |
 | MEM11-int8-MLA-T3 | open | nobara: `TestDeepseekV2LiteReal` and the Moonlight gate (`go test -tags realckpt ./decoder/ -run TestDeepseek.*Real`) at int8int8, then refresh `deepseek_v2`, `deepseek_v3` and `kimi_k2` in `testdata/parity_manifest.json` from pending to validated with the new readings (D10, owner, 2026-10-22) | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -923,7 +924,10 @@ choice in aikit and a storage choice in ken (**D4**).
 
 ## 7. Owner decisions
 
-- **D13** (MEM11-int8, open, asked 2026-10-22): **int8 for the drafters and LFM2, whose islands are already mapped.** The
+- **D13** (MEM11-int8, decided (b), owner, 2026-10-22): **int8 for the drafters and LFM2, whose islands are already mapped.**
+  MEM11-int8 closes with MLA. The drafters and LFM2 stay as MEM11-bf16 left them. The follow-up MEM11-giw-bf16: the `.giw`
+  carries LFM2's islands as bf16 records mapped on load, read by encoding byte as B27's `mambaProj` is, so an older bundle still
+  loads (a version bump only if `docs/giw-bundles.md`'s own rule clearly calls for one; otherwise ask). The question as asked: the
   registration put them after MLA as "largest bytes saved first". But MEM11-bf16 already holds both families' islands as the
   checkpoint's own mapped bf16 pages on a direct load (`decoder/island.go:stIsland`; LFM2.5-2.6B's Go heap 4.07 → 2.59 GB). So
   int8 would not take heap off; it would add some.
