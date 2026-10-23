@@ -105,4 +105,122 @@ reading goes in `docs/measurements/mem11-int8-2026-10/mla.md`.
 
 ## Readings
 
-Not yet run.
+All at `origin/main` d6214db6b plus this record's commits (no product code), 2026-10-23. Logs are under
+`~/goinfer-logs/kernel-survey-2026-10/`, one per phase.
+
+| id | reading | verdict |
+|---|---|---|
+| KS-A2 | graphs ÷ live **1.454× median** (1.414–1.626), **10 of 10 quads above 1**; live 2,874 µs a token (347.9 tok/s), graphs 1,955 µs (511.6 tok/s); 195 launches a token, so 14.7 µs a launch; `TestCUDA_launchCost` 12.92 µs on a 1×1 grid, 10.95 µs on 512 blocks; argmax ids identical across arms | **confirmed** |
+| KS-B8 | attention at K = 3,900: 340.9 / 340.4 ms at 512 rows, 276.8 / 276.4 at 1,024, 218.9 / 218.9 at 2,048: **1.231× and 1.556×**, each pass within 0.2% of the other; whole prefill 933 → 840 → 748 ms (**1.25×** at 2,048) | **confirmed** |
+| KS-A3 | `topk_select` is **one block** of 1,024 threads (33.5 KB static shared memory, 64 registers); SM throughput 1.3–1.7% of the device. **101.7 µs** median at (152k, 256), **211.5 µs** at (262k, 1,024) | **confirmed** |
+| KS-B2 | `attn_fused_bm128_hd128`, the seventh pass (48 blocks): `long_scoreboard` + `lg_throttle` **59.7%** of stall cycles (barrier 0.7%); tensor pipe active **8.8%**; global loads **4.03 bytes** per thread per instruction (scalar); 180 registers, one block per SM, 25% of warps active; 2.75 ms a launch | **confirmed** |
+| KS-A1 | goinfer's q4k plan reads **2,710.96 MB** a token (q4k native 1,302.33, int8 with scales 1,408.63) against the file's own **2,336.28 MB**: +373.7 MB, all of it the int8 copies of the Q5_K and Q6_K tensors | count matches the survey; stays `decision` (KS-O1) |
+
+### KS-A2
+
+Run 08:41–08:43. The first quad was voided six times while the 1-minute load came down from 19.6 (another session's loaders
+had just released the lock); every quad that counted started at 7.39–7.44, under the 8.0 bar, with 57 GB available.
+
+| quad | live µs/token | graphs µs/token | graphs ÷ live |
+|---|---:|---:|---:|
+| 0 | 3,381.7 | 2,079.3 | 1.6264 |
+| 1 | 2,863.1 | 1,944.8 | 1.4722 |
+| 2 | 2,873.3 | 1,938.1 | 1.4825 |
+| 3 | 2,749.9 | 1,943.8 | 1.4147 |
+| 4 | 2,873.0 | 1,944.2 | 1.4777 |
+| 5 | 2,819.2 | 1,945.9 | 1.4488 |
+| 6 | 2,809.0 | 1,941.8 | 1.4466 |
+| 7 | 2,726.7 | 1,928.2 | 1.4141 |
+| 8 | 2,807.4 | 1,937.8 | 1.4487 |
+| 9 | 2,837.2 | 1,944.0 | 1.4595 |
+
+- **What it says.** The graph arm is steady at 1.93–1.96 ms a token; the live arm moves 2.62–3.78 ms between blocks. 195 launches
+  at 12.9 µs of host cost each is 2.5 ms, more than the GPU-bound token, so the live 0.5B is limited by issuing launches, not
+  by the kernels. The survey's "GPU-bound near 2.0–2.1 ms" reads 1.95 ms.
+- **Context switches** (instrument 3, whole process, 200 tokens): live 232,286 voluntary, **1,161 a token** (about 6 a
+  launch), 399 involuntary; graphs 150,854 voluntary, 754 a token. The four busiest threads took 44,713 / 23,669 / 23,508 /
+  23,012 on the live arm. Those are threads sleeping and waking a thousand times a token: the hand-offs between locked
+  executor threads the survey inferred. A futex count by syscall was not available (no `strace` or `perf` on this box).
+- **Caveat:** graphs are forced past the tenancy gate here (`GOINFER_CUDA_GRAPHS_UNSAFE`); this is the size of the launch
+  cost, not a proposal to ship graphs. The survey's change is a cheaper launch path (raw launches from the caller's thread,
+  pre-packed arguments), and graphs bound what it can buy: up to 1.45× on the 0.5B.
+
+### KS-B8
+
+Run 08:43–08:44, one process per width in the order 512, 1024, 2048, 2048, 1024, 512; 1-minute load 4.7–7.1 at each start,
+58 GB available. Best of 3 profiled passes; "wall" is the warm, unprofiled pass.
+
+| width | K | GEMV ms | attention ms | glue ms | wall ms |
+|---:|---:|---:|---:|---:|---:|
+| 512 | 2,048 | 272.8 / 272.9 | 98.0 / 97.9 | 45.2 / 45.0 | 432 / 431 |
+| 1,024 | 2,048 | 254.0 / 254.7 | 70.7 / 70.8 | 37.5 / 38.9 | 393 / 385 |
+| 2,048 | 2,048 | 244.0 / 244.1 | 52.3 / 51.9 | 34.6 / 34.7 | 355 / 352 |
+| 512 | 3,900 | 528.7 / 528.9 | 340.9 / 340.4 | 89.5 / 88.7 | 933 / 932 |
+| 1,024 | 3,900 | 493.5 / 492.7 | 276.8 / 276.4 | 74.9 / 75.7 | 840 / 838 |
+| 2,048 | 3,900 | 461.7 / 461.7 | 218.9 / 218.9 | 66.7 / 67.0 | 748 / 748 |
+
+(first / second pass of the order.)
+
+- **Attention** at K = 3,900: 1.231× at 1,024 rows, **1.556× at 2,048** (the simulation said 1.16–1.26 and 1.37–1.47). At
+  K = 2,048: 1.38× and 1.88×.
+- **The rest moves too.** A wider pass reuses each weight over more rows: GEMV 528.7 → 461.7 ms (1.145×) and glue 89.5 → 66.7
+  ms at K = 3,900, so the whole prefill gains **1.247×** at 2,048 rows (933 → 748 ms) and 1.11× at 1,024; 1.22× at K = 2,048.
+- **Not measured here:** scratch and admission at 2,048 rows (the survey's 276 MiB on the 1.5B), and models other than the 1.5B.
+
+### KS-A1
+
+`TestKS_A1_planBytes`, a CPU load of the file at `--quant q4k` and `planWeight` over every projection and the head; the GGUF
+tensor table read with the `gguf` Python reader. Per token, embeddings and norms excluded:
+
+| tensors | file type | file MB | goinfer kind | goinfer MB | extra MB |
+|---|---|---:|---|---:|---:|
+| `attn_qkv` × 32 (split into q, k, v at load) | Q5_K | 622.85 | int8 | 907.14 | +284.29 |
+| `ffn_down` × 16 | Q6_K | 330.30 | int8 | 402.85 | +72.55 |
+| `output` | Q6_K | 80.80 | int8 | 98.63 | +17.83 |
+| `ffn_down` × 16 | Q4_K | 226.49 | q4k | 226.49 | 0 |
+| `ffn_up` × 32 (split into gate, up) | Q4_K | 905.97 | q4k | 905.96 | 0 |
+| `attn_output` × 32 | Q4_K | 169.87 | q4k | 169.87 | 0 |
+| **total** | | **2,336.28** | | **2,710.96** | **+374.7** |
+
+The survey's 2,711 against 2,336 MB, and its +283 / +72 / +18 split, hold to the megabyte. The GPU A/B the row also names (a
+Q5_K GEMV against `gemv_w8a8_g32`) waits on KS-O1.
+
+### KS-A3
+
+`TestKS_A3A5_decodeUnderNcu` under `ncu -k regex:^topk_select$` (run 08:47, timing lock exclusive), every launch: 8 on the 0.5B at
+k = 256, then 8 on gemma3-1b at k = 1,024, each after 8 greedy tokens.
+
+| shape | µs per launch (8 launches) | median |
+|---|---|---:|
+| vocab 151,936, k = 256 | 101.4, 128.3, 129.2, 126.5, 101.9, 101.0, 101.1, 101.1 | 101.7 |
+| vocab 262,144, k = 1,024 | 152.3, 151.9, 152.1, 215.0, 211.3, 214.3, 211.6, 211.9 | 211.5 |
+
+The grid is a single block in every launch and DRAM throughput stays under 2.5% of peak (the row is L2-resident after the head),
+so one SM does all of the work. The survey's 102 µs reads 101.7 at the 0.5B shape; at gemma3's it is 152–215 µs, above the
+survey's +125 µs preset cost. Each shape shows two levels (about 101 and 127 µs; 152 and 213 µs); this read does not say why.
+
+### KS-B2
+
+`TestKS_B2_prefillUnderNcu` under `ncu -k regex:attn_fused_bm128_hd128 --launch-skip 168 -c 4` (run 08:48, timing lock
+exclusive): one 3,900-token `PrefillLast` on the 1.5B loaded as serve loads it, 512-row passes; the four profiled launches
+are layers 0–3 of the seventh pass (grid 48 = 4 row tiles × 12 heads, as registered).
+
+| metric | layer 0 | 1 | 2 | 3 |
+|---|---:|---:|---:|---:|
+| duration, ms | 2.748 | 2.761 | 2.740 | 2.763 |
+| `long_scoreboard`, % of stall cycles | 59.05 | 59.18 | 59.1 | 59.0 |
+| `lg_throttle`, % | 0.63 | 0.63 | 0.6 | 0.6 |
+| barrier, % | 0.70 | 0.72 | 0.7 | 0.7 |
+| tensor pipe active, % of peak | 8.83 | 8.77 | 8.82 | 8.78 |
+| warps active, % of peak | 25.0 | 25.0 | 25.0 | 24.8 |
+
+The rest of the stall cycles (layer 0): `wait` 13.4%, `selected` 8.2, `math_pipe_throttle` 7.0, `branch_resolving` 4.3,
+`short_scoreboard` 3.1. Global loads: 1,347,456 warp instructions for 173.66 MB, **4.03 bytes per thread per load**: every
+staging load is a scalar 32-bit word. Registers (180) limit the kernel to one 256-thread block per SM.
+
+- **The finding holds after KV4a.** KV4a's paged reads changed how a tile finds its keys (a block-table lookup per tile),
+  not how it stages them: the warps wait on global loads for 59% of their stalled cycles while the tensor pipe idles 91% of
+  the time.
+- **This load holds f32 KV.** The serve-shaped 1.5B load reports `kvF16 false`, so this is the f32 twin. KV4b (#157, f16 KV per
+  group) was still open at this read; if it merges, the `_kv16` twin (2-byte elements) is the one to read next, with the same
+  instrument.

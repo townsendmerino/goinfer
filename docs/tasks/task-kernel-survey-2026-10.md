@@ -18,22 +18,22 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| KS-A1 | decision | KS-O1, then nobara: plan bytes per token (tier 0), a Q5_K GEMV against `gemv_w8a8_g32` | — |
-| KS-A2 | open | nobara: `TestCUDA_launchCost`, the 0.5B graphs A/B, a futex count (minutes) | — |
-| KS-A3 | open | nobara: ncu of `topk_select` at (152k, 256) and (262k, 1024) | — |
+| KS-A1 | decision | KS-O1, then nobara: a Q5_K GEMV against `gemv_w8a8_g32`. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 (+284.3 Q5_K qkv, +72.6 Q6_K down, +17.8 Q6_K head, all int8 copies) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A2 | decision | owner: build the cheaper launch path (raw launches from the caller's thread, pre-packed arguments; M)? Measured 2026-10-23 on the 0.5B at depth 128: graphs ÷ live **1.454×** median, 10 of 10 quads (348 → 512 tok/s); 12.9 µs a launch; 1,161 voluntary context switches a token | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A3 | decision | owner: build the multi-block `topk_select` (S–M)? Measured 2026-10-23: one block, **101.7 µs** at (152k, 256), **211.5 µs** at (262k, 1024) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
 | KS-A5 | open | nobara: ncu DRAM percent of `fused_rms_gu` at (896, 4864) | — |
 | KS-A6 | open | nobara: host timestamps around upload, readback and hand-off | — |
 | KS-A7 | open | nobara: launch counter, then an A/B on phi3-mini | — |
 | KS-A8 | open | nobara: an A/B after A2 reads | — |
 | KS-B1 | open | nobara: ncu on the gate and k launches at M=512; the int-to-float swap alone, bit-gated | — |
-| KS-B2 | open | nobara: ncu staging share of `attn_fused_bm128_hd128`, then the attention A/B | — |
+| KS-B2 | decision | owner: build vector-load staging (S–M), then the attention A/B under the 456-shape sweep? Measured 2026-10-23 after KV4a (f32 KV): `long_scoreboard` + `lg_throttle` **59.7%** of stall cycles, tensor pipe 8.8%, 4.03 bytes a load, one block per SM. KV4b's `_kv16` twin not yet read | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-B3 | open | nobara: MoE category and launch count on M26 at M=512 | — |
 | KS-B4 | open | nobara: attention/GEMV/recurrence split on Qwen3.5-9B at 8k and 16k | — |
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |
 | KS-B6 | open | nobara: served TTFT for phi3-mini at q4k against Ollama | — |
 | KS-B7 | open | nobara: a prototype against `gemv_w4a8_rn` at the 1.5B gate shape | — |
-| KS-B8 | open | nobara: `TestPrefillDecomp` at pass widths 512/1024/2048 (no code) | — |
+| KS-B8 | decision | owner: a 2,048-row default pass where scratch allows (admission prices it)? Measured 2026-10-23 on the 1.5B at K=3,900: attention **1.556×** at 2,048 rows (1.231× at 1,024), whole prefill **1.247×** (933 → 748 ms) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-B9 | open | nobara: launch and grid counters, then the GEMV-category A/B | — |
 | KS-B10 | open | nobara: sync and launch counters in the generic expert-major Phase 1 | — |
 | KS-B11 | open | nobara: `PrefillScratchBytes` delta, then a glue+GEMM A/B | — |
