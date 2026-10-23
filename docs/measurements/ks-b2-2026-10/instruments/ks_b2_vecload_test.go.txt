@@ -161,6 +161,11 @@ func TestKSB2_oldNew(t *testing.T) {
 						err := r.do(func() error {
 							qb, kb, vb := r.af(len(q)), kvBuf(len(kc)), kvBuf(len(vc))
 							o0, o1 := r.af(M*qDim), r.af(M*qDim)
+							defer func() { // per shape: 1,080 shapes of buffers do not fit the card at once
+								for _, b := range []Buffer{qb, kb, vb, o0, o1} {
+									r.dev.ReleaseBuf(b)
+								}
+							}()
 							sinkArg := ArgNull()
 							if g.sinks {
 								sv := make([]float32, g.nH)
@@ -168,6 +173,7 @@ func TestKSB2_oldNew(t *testing.T) {
 									sv[i] = float32(math.Cos(float64(i)*1.7)) * 2
 								}
 								sb := r.af(len(sv))
+								defer r.dev.ReleaseBuf(sb)
 								if e := gpu.Upload(sb, sv); e != nil {
 									return e
 								}
@@ -183,6 +189,7 @@ func TestKSB2_oldNew(t *testing.T) {
 								return e
 							}
 							kvt := r.kvIdentityTab(t, nKeys)
+							defer r.dev.ReleaseBuf(kvt)
 							args := func(dst Buffer) []gpu.KernelArg {
 								return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), Arg(kvt), gpu.ArgValue(int32(g.nH)), gpu.ArgValue(int32(g.nKV)),
 									gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(sp)), gpu.ArgValue(float32(scale)), gpu.ArgValue(int32(window)),
