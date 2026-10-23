@@ -16,7 +16,8 @@ import (
 // on Mixtral, two Qwen3-MoE shapes and the Qwen3.5 DeltaNet MoE hybrid, paged at 2 and 3 slots, prompts of 1, 5 and 9
 // rows from position 0 and 6 rows continuing a 3-row prefix, through the layer-major path and through the sequential
 // loop. The last row's logits and 3 decode steps after it (which read every layer's K/V and DeltaNet state) must be
-// equal bit for bit, and every attention layer's K/V. Each arm starts from Reset (a DeltaNet's state zeroed).
+// equal bit for bit, and every attention layer's K/V. Each arm starts from Reset (a DeltaNet's state zeroed). Where its
+// shapes admit it, the layer-major arm runs KS-D9's batched phase 2, which must have run.
 func TestMoELayerMajor_matchesSequential(t *testing.T) {
 	for _, fx := range []string{"../testdata/mixtral-tiny", "../testdata/qwen3moe-tiny", "../testdata/qwen3moe-tiny-k3", "../decoder/testdata/qwen3_5_moe-tiny"} {
 		for _, slots := range []int{2, 3} {
@@ -122,7 +123,12 @@ func TestMoELayerMajor_matchesSequential(t *testing.T) {
 						}
 					}
 				}
-				t.Logf("4 prompt shapes: logits, K/V (%d attention layers) and 3 decode steps bit-identical", len(kv(1))/2)
+				// KS-D9 (D9-G1): where the shapes admit the batched phase 2, the layer-major arm above must have taken it.
+				if r.moeExpertBatchOK() && r.moeBatchGroups == 0 {
+					t.Errorf("the batched phase 2 admits this model but no slot group took it")
+				}
+				t.Logf("4 prompt shapes: logits, K/V (%d attention layers) and 3 decode steps bit-identical; batched phase 2 admitted %v, %d slot groups",
+					len(kv(1))/2, r.moeExpertBatchOK(), r.moeBatchGroups)
 			})
 		}
 	}

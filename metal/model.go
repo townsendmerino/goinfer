@@ -504,6 +504,7 @@ type resident struct {
 	pQKNormRows                                                Pipeline           // E-P07: qk_norm over the step's rows (batch_rows.go)
 	pMoeBatch                                                  [5]Pipeline        // D-P01: moe_batch_gemv at R = 2, 4 (prefill_g4batch.go)
 	pMoeCombine                                                Pipeline           // D-P01: moe_batch_combine
+	pMoeCombineAcc                                             Pipeline           // KS-D9: moe_batch_combine_acc
 	kvI8                                                       bool               // m.KVCacheI8() (CLI flag --kv i8)
 	pKvI8, pAttnI8                                             Pipeline           // int8 KV store and attention pipelines
 	moe                                                        *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
@@ -511,6 +512,7 @@ type resident struct {
 	pagedNoHead                                                bool               // a paged forward skips the final norm and LM head (ForwardEmbNoLogitsPipe); exec-thread only
 	g4LayerMajorRuns                                           int                // prompts prefillG4Paged ran (4b); a test reads it to see the route was taken
 	g4BatchGroups, g4BatchMaxCnt                               int                // D-P01: slot groups the batched phase 2 ran, and the most pairs one entry shared
+	moeBatchGroups                                             int                // KS-D9: slot groups the generic batched phase 2 ran
 	moeLayerMajorRuns                                          int                // prompts prefillMoEPaged ran; a test reads it to see the route was taken
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
@@ -1220,7 +1222,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pKvRows, r.pAttnRows = pipe("mc3_kv_store_rows"), pipe("mc3_attention_rows")
 	r.pQKNormRows = pipe("mc3_qk_norm_rows")
 	r.pMoeBatch[2], r.pMoeBatch[4] = pipe("moe_batch_gemv2"), pipe("moe_batch_gemv4")
-	r.pMoeCombine = pipe("moe_batch_combine")
+	r.pMoeCombine, r.pMoeCombineAcc = pipe("moe_batch_combine"), pipe("moe_batch_combine_acc")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	if r.q4kLane { // the same buffer order and launch shapes, f32 activations: every head dispatch site runs unchanged
 		r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8f32_head"), pipe("gemv_w8f32_amax")

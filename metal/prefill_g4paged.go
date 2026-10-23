@@ -305,6 +305,8 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 		r.recordExecErr(e.Err())
 		lmProf(e, w0, gpu, wall)
 	}
+	batchOK := r.moeExpertBatchOK()
+	var batch moeBatch
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		if L.moe == nil || L.moe.pool == nil {
@@ -336,13 +338,23 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 			return nil
 		}
 		pool := L.moe.pool
+		var group func(e *Encoder, i, j int)
+		if batchOK { // KS-D9: the group's routed experts expert by expert (prefill_moebatch.go)
+			group = func(e2 *Encoder, i, j int) {
+				g := rows[i:j]
+				r.encodeMoEPhase2Batch(e2, L, pool, &batch, moeBatchRows{n: len(g),
+					x: func(k int) Buffer { return g[k].x }, mq: func(k int) Buffer { return g[k].mq },
+					mSc: func(k int) Buffer { return g[k].mSc }, rWgt: func(k int) Buffer { return g[k].rWgt },
+					slotIdx: func(k int) Buffer { return g[k].slot }, use: func(k int) { use(&g[k]) }}, nb)
+			}
+		}
 		ok := r.layerMajorExpertGroups(len(rows), pool, mo.k,
 			func(i int) []uint32 { return rows[i].rIdx.U32s()[:mo.k] },
 			func(i int) []uint32 { return rows[i].slot.U32s() },
 			func(e2 *Encoder, i int) {
 				use(&rows[i])
 				r.encodeMoEExpertsPaged(e2, L, pool)
-			}, nil)
+			}, group)
 		if !ok {
 			return nil
 		}
