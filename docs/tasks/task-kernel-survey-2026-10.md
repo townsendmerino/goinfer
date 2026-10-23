@@ -48,7 +48,7 @@
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
 | KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
 | KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
-| KS-D3 | open (built 2026-10-22; D3-G1 and G2 PASS) | Mac, by day: D3-G3, the GPU time of `delta_rule_seq` alone at M=512 against `delta_rule_seq_tg` | `docs/measurements/ksd3-2026-10/README.md` |
+| KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | open | Mac: scratch-byte counter and a tiny-fixture byte compare | — |
 | KS-D6 | open | Mac: MEM2-G1's allocated-size counters, outputs byte-equal | — |
