@@ -8217,21 +8217,22 @@ for a ~1,500-token reply is projected as ttft + 1499 / decode rate.
   39.3 tok/s within 10%; outside that, it is a regression question, recorded, not chased here.
   Predictions: A 8 slots, 17 to 19 tok/s; B about 15 slots, 23 to 28; C about 40 slots, 36 to 42; D about 33 slots,
   32 to 38 tok/s, with a slower encode.
-- **G-S20b, `--ctx 4096` (step 2a, tier 1).** A B B A against today's config, image cells. **PASS (recommend the
-  config):** the new/old decode-rate ratio is at least 1.05 in both pairs. 1.00 to 1.05: parked. Output identity is
-  reported: identical over the reply, or the first difference at a near-tie (R10: the runner-up at least half the leader).
+- **G-S20b, `--ctx 4096` (step 2a): withdrawn as a config, kept as a diagnostic.** Francis (2026-10-23 15:45, relayed):
+  16K context stays the target for general use and nothing ships at 4K. Cell B of G-S20a runs once, only to learn whether
+  VRAM headroom limits decode; there is no A B B A at 4K. If it does limit decode, the fixes must free VRAM while keeping 16K.
 - **G-S20c, the block drafter (step 2b).** First a load check: does serve start with `-drafter ~/models/gemma4-26b-dflash`
-  beside `--vision` and `-moe-cache-experts`, at `--ctx 16384` and `--ctx 4096`? If it loads, A B B A against the same
+  beside `--vision` and `-moe-cache-experts` at `--ctx 16384`? If it loads, A B B A against the same
   config without it. **PASS:** at least 1.10 in both pairs and the greedy reply identical (the drafter is lossless by
   contract, so any difference is a defect, recorded). Prediction: it declines at load, or it reads at most 1.0, because a
   verify pass on a paged MoE copies the experts of every verified position.
 - **G-S20d, slots into freed VRAM (step 2c).** The only config that frees the tower's 2.6 GB is the tower on the CPU.
-  A B B A, today's config against `-vision-device cpu` at the better of the two contexts from G-S20b. The measure is
+  A B B A, today's config against `-vision-device cpu`, both at `--ctx 16384`. The measure is
   per-form time for a ~1,500-token reply, so the CPU tower's slower encode counts against it. **PASS:** at least 5% lower
   in both pairs. `-moe-cache-slots` cannot raise the count past what free VRAM allows (`capSlots` caps it), so it is
   read from the code, not measured.
-- Step 3's gates (releasing the tower's VRAM after an encode; sizing the cache to what is free after load) are registered
-  after G-S20a reads, before any code.
+- Step 3's candidates, gates registered after G-S20a reads and before any code: release the tower's VRAM between images
+  (reload it on the next image) so the expert cache can grow into it; size the expert cache to what is free after load;
+  and (Francis, 2026-10-23 15:45) grow the KV cache on demand instead of reserving all 16K positions at load.
 
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
