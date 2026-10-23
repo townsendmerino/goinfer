@@ -771,6 +771,14 @@ goes up, stop and tell him.
 - **Class:** fidelity-gated, like D-B01.
 - **Size:** M–L. Pairs with KS-B12.
 
+**KS-D8 baseline, registered 2026-10-23 before the run, on the owner's order of 11:50 (the night queue, case (a)).** Instrument:
+`TestKSD8_sequentialPrefillBaseline`, NVIDIA-Nemotron-Nano-9B-v2's int4 Metal `.giw` resident on Metal (`ResidentContext` 1024),
+one warm 512-token greedy generation of one token, then three timed ones on prompts that differ in their first token; the reading
+is 512 / time to the first token, each run's start load recorded. The test also prints whether the resident admits the batched
+prefill, which must read false (`recurrentPrefillOK` declines Mamba). Read, not gated: it is the denominator for KS-D8's estimated
+5–8× and KS-B12's CUDA baseline. Through `docs/measurements/ks-night-2026-10/run-ksd8-baseline.sh` (a test binary built at the
+registering commit; exits 75 on a fit refusal). Stopping rule: one pass. Cost: about 5 minutes.
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
@@ -1089,6 +1097,13 @@ each pass's own end (`exactAttnTile(startPos+M)`), and such a resident is still 
 
 Planted defect, run once on the committed tree and reverted: an exact-attention block pass attending from position 0 instead of its
 start (`uStartPos` 0; G1 red). Stopping rule: one pass each. Cost: G1–G4 seconds; G5 about 10 minutes.
+
+**KH1-G5 amended 2026-10-23 (owner's order of 11:50: the night queue, case (a)).** The branch merged (a570f8df), so "main against
+the branch" is `serve` built at 421a4347 (main just before the merge) against `serve` at a570f8df, one cold cell each in that order,
+`mem0_darwin.py`'s new `metal:qwen35-9b` cell (the Metal `.giw`, `-ctx 32768`, the same 20K preamble). Its by-day fit check refuses
+beside the owner's apps (the 9B's 5.96 GB mapping), so it runs at night through `docs/measurements/ks-night-2026-10/run-kh1-g5.sh`,
+which exits 75 on a refusal. Still read, not gated: each cell's peak footprint and RSS during the request against its footprint
+after load, the survey's estimate 4.8 → about 0.5 GiB of transient prefill scratch. A cell the server could not come up for is void.
 
 **KS-H2 · CUDA: suballocate weights, KV pools and expert slots from arenas (bit-identical).**
 - **Where:** one `cuMemAlloc` per weight buffer (`cuda/resident.go:cudaResident.upW`, `cuda/pack_stream.go`), per layer's

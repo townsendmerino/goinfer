@@ -9,7 +9,7 @@ the peak during the request, at the end of the request, and 10 s after, with foo
 points. Available memory and swap-used are read before and after (context only). Nothing is graded.
 
   python3 mem0_darwin.py --serve <metal serve binary> --out <dir> --repo <checkout with e42db592> --cell metal:1.5b [--cell ...]
-cells: cpu:1.5b (warm its CPU sidecar first: --warm), metal:1.5b, metal:e2b, tower:qwen3vl-2b (Metal)
+cells: cpu:1.5b (warm its CPU sidecar first: --warm), metal:1.5b, metal:e2b, tower:qwen3vl-2b (Metal), metal:qwen35-9b (KH1-G5)
 """
 import argparse, base64, json, os, re, signal, struct, subprocess, threading, time, urllib.request, zlib
 
@@ -22,6 +22,7 @@ CELLS = {  # name: (serve -model path, extra flags)
     "metal:1.5b": (f"{HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw", ["-ctx", "32768"]),
     "metal:e2b": (f"{HOME}/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.v17.giw", ["-ctx", "32768"]),
     "tower:qwen3vl-2b": (f"{HOME}/models/qwen3-vl-2b-instruct", ["-vision", f"{HOME}/models/qwen3-vl-2b-instruct"]),
+    "metal:qwen35-9b": (f"{HOME}/models/Qwen3.5-9B-Q4_K_M.int4.metal.v17.giw", ["-ctx", "32768"]),  # KS-H1's KH1-G5
 }
 MiB = 1 << 20
 PAGE = 16384
