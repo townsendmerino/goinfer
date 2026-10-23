@@ -52,7 +52,7 @@
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | open (measured 2026-10-22) | next: SwiGLU fused into the gate\|up GEMM, behind a tiny-fixture byte compare. Measured: one 3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D7 | measured (KILL) | closed 2026-10-23: the half2 dequant is bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal) but the prefill is 0.9983 of the old time, 5 of 10 pairs faster (kill under 2%; run 05:03 on the owner's word). Not merged | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
@@ -87,7 +87,7 @@
 | KS-H1 | open (512, G5) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. Left: G5 (Qwen3.5-9B at 20K, by day) and head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
 | KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
-| KS-H4 | open (measured 2026-10-22) | next: release the tower scratch above a ceiling after the forward. Measured: Qwen3-VL-2B holds 2,622.5 MiB after a 4K forward and still 10 s later | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
 | KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2) | — |
@@ -728,6 +728,13 @@ merged.** D7-G1, model identity: llama-tiny and Qwen2.5-Coder-1.5B, a batched pr
 new. D7-G2, speed: Qwen2.5-Coder-1.5B, a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs; SHIP iff
 the median new/old is ≤ 0.98 and at least 9 of 10 pairs are below 1, otherwise the row closes as measured.
 
+**KS-D7 shipped by owner decision, 2026-10-23 (8:36 am), over the registered 2% bar.** Francis: "it seems silly to give up gains,
+any gains, if it's bit-identical and doesn't use more memory." The re-run read a median of 0.9888 with 10 of 10 pairs below 1
+(`docs/measurements/ks-night-2026-10/README.md`). His condition is a gate, registered here before it ran: **D7-G3 memory**. The
+1.5B (the Metal `.giw`), a 3,900-token prefill per arm, the half2 build against the per-weight build: the prefill scratch counter
+(`prefillScratchSeen`) and Metal's allocated size after the prefill must be equal or lower, and the logits byte-equal. If memory
+goes up, stop and tell him.
+
 **KS-D8 · Batched Mamba-2 prefill on Metal (Nemotron-H).**
 - **Waste:** `metal/model.go:resident.recurrentPrefillOK` declines Mamba, so every prompt token is a decode step.
 - **Gain (est.):** the DeltaNet precedent was 6.7–8.4×, so 5–8×.
@@ -1093,6 +1100,22 @@ start (`uStartPos` 0; G1 red). Stopping rule: one pass each. Cost: G1–G4 secon
 - **Change:** release above a ceiling after the forward, or MEM2's optional patch ceiling.
 - **Gain:** up to 2.6 GiB back on the 16 GB Mac.
 - **Size:** S.
+
+**KS-H4 gates, registered 2026-10-23 (05:30) before the code (H4-G), on the owner's plan of 5:16 am.** The first measurement:
+Qwen3-VL-2B's grid tower holds its 4K scratch until `Close` (2,622.5 MiB on main, 1,515.4 after KS-D6), unchanged 10 s after the
+forward. The build: after a forward whose scratch is over a ceiling (256 MiB), the grid tower releases its scratch once it has
+been idle for `gridIdleRelease` (5 s). A forward in the meantime cancels the release and reuses the buffers, so a repeat image
+call pays nothing. The next call after a release allocates again. Scope: `gridVAccel`, the measured tower. The other tower
+accelerators and aikit's `qwenmetal`/`visionmetal` are left for their own rows.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| H4-G1 identity | 0 | the grid tiny fixtures (qwen3.5, glm-ocr, qwen2.5-vl), with the ceiling at 0 and the idle wait at 0: a forward, the release, a forward of a larger then a smaller grid; against the tower with release off | every output byte-equal; the scratch reads 0 bytes after each release |
+| H4-G2 allocated after 10 s | 1, Mac, memory read, timing lock shared | `TestKSD6H4_gridTowerScratch` on Qwen3-VL-2B at 4K: Metal's allocated size net of the build right after the forward and 10 s later | 10 s later at most 16 MiB, from 1,515.4 right after |
+| H4-G3 repeat call | timed, Mac, timing lock | Qwen3-VL-2B at 4K, the wall time of a repeat `Hidden` issued right after the previous one, release on against release off, two towers in one process, A B B A over 5 pairs after a warm run each; the first call after a release read, not graded | SHIP iff the median on/off ratio is ≤ 1.02 (no regression); otherwise PARK and decide |
+
+Planted defect: the release keeps `cap` (so the next forward skips the allocation and writes into released buffers). H4-G1 goes
+red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 about 1 minute.
 
 **KS-H5 · Buffers only speculative verify reads, allocated at build (bit-identical).**
 - **Waste:**

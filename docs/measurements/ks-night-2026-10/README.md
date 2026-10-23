@@ -15,18 +15,28 @@ Logs: `~/goinfer-logs/ks-d5-2026-10-22.log`, `~/goinfer-logs/ks-d6h4-2026-10-22.
 
 ## KS-D7's speed read (D7-G), 2026-10-23
 
-Gates registered before the change, on a branch that was not merged (the survey doc's "KS-D7 gates" carry them here). The build
-under test: both staging sites of the prefill GEMM dequantize two nibbles per half2 operation, with `KSD7_OLD_DEQUANT` compiling
-the per-weight form back. Run 05:03 on the owner's word, 2026-10-23 (started 05:09, timing lock held exclusively, the 1-minute load
-1.35 at the start, 6.3 GB available).
+Gates registered before the change (survey doc, "KS-D7 gates"). The build under test: both staging sites of the prefill GEMM
+dequantize two nibbles per half2 operation, and `KSD7_OLD_DEQUANT` compiles the per-weight form back. The change was not merged.
+
+**The first read (05:09) was an A/A, and is withdrawn.** The A/B's switch prepended `KSD7_OLD_DEQUANT` to the resident's main
+library (`allKernels`). But the prefill GEMM's staging is in `prefillKernels`, which `ensurePrefill` compiles into its own library,
+lazily, at the first prefill. So both arms ran the half2 staging. Its 0.9983 median, 5 of 10 pairs, measured nothing, and so did
+the D7-G1 byte compare (the plant then turned red only through the startup self-test). The KILL recorded from that read stood on
+no measurement.
+
+**The re-run (08:31, on the owner's word, 2026-10-23).** The switch now goes on the prefill library's source, captured by the
+resident at build time (the library compiles after the test's switch is reset). Before the run, a defect planted only in the old
+branch (`#ifdef KSD7_OLD_DEQUANT`) made the startup self-test decline the old arm, so the define reaches the prefill library, and
+only that arm. The timing lock was held exclusively; the 1-minute load was 2.77 at the start, with 7.5 GB available.
 
 | gate | reading | result |
 |---|---|---|
-| D7-G1 model identity | llama-tiny at int4, a 100-token prefill: 0 of 256 logits differ; Qwen2.5-Coder-1.5B, a 3,900-token prefill: 0 of 151,936 differ. A plant (1031 for 1032) turned the tiny cell red, and the startup self-test declined the backend | **PASS** |
-| D7-G2 speed | Qwen2.5-Coder-1.5B (the Metal `.giw`), a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs: per-weight 4,094–4,165 ms, half2 4,094–4,164 ms; **median new/old 0.9983, 5 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd7-g2-2026-10-23.log` | **KILL** (bar: ≤ 0.98 and 9 of 10) |
+| D7-G1 model identity | llama-tiny at int4, a 100-token prefill: 0 of 256 logits differ; Qwen2.5-Coder-1.5B, a 3,900-token prefill: 0 of 151,936 differ, per-weight against half2 | **PASS** |
+| D7-G2 speed | Qwen2.5-Coder-1.5B (the Metal `.giw`), a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs: per-weight 4,194–4,230 ms, half2 4,150–4,187 ms; **median new/old 0.9888, 10 of 10 pairs below 1** (1.1% faster). Log: `~/goinfer-logs/ksd7-g2-rerun-2026-10-23.log` | **KILL** by the registered bar (≤ 0.98 and 9 of 10; "kill under 2%"): the gain is real and consistent but under 2% |
 
-The dequant is bit-identical but buys nothing measurable at this shape: the staging is not where the 3,900-token prefill spends
-its time. The change was not merged, and the row closes as measured.
+The half2 dequant is bit-identical and makes the 3,900-token prefill 1.1% faster on the 1.5B, every pair agreeing. That is under the
+survey's 2% kill line, so the row closes as measured. A 1.1% bit-identical gain is a smaller bar than this item registered; whether
+to take it is the owner's call, not the gate's.
 
 ## KS-D6, the fix (D6-G), 2026-10-23
 
@@ -41,3 +51,39 @@ gated MLP. `pt` is a view of `f1` when `f1` is wide enough. `gridScratchAllForTe
 
 **Plant** (`pt` aliased to `x`): red. On the tiny grid fixtures `x` is narrower than the patch rows, so the staging copy panics
 (slice bounds) before any output.
+
+## KS-H4, the fix (H4-G), 2026-10-23
+
+Gates registered before the code (survey doc, "KS-H4 gates"). The build: after a forward whose scratch is over 256 MiB, the grid
+tower releases it once idle for 5 s. A forward in the meantime (in `grow`) cancels the release, and the next forward after a
+release allocates again. A generation counter makes a release that fires late a no-op, and `Close` cancels it.
+`gridReleaseOffForTest` keeps the scratch until `Close`.
+
+| gate | reading | result |
+|---|---|---|
+| H4-G1 identity | `TestKSH4_releaseKeepsOutputs`, ceiling 0 and a 1 ms wait, under `-race`: qwen3.5 and glm-ocr grids release after every forward (scratch 0 bytes) and give 0 of 8,960 and 0 of 17,920 outputs differing from a tower that never releases, over grids small, large, middle and small again; qwen2.5-vl 0 differ | **PASS** |
+| H4-G2 allocated after 10 s | `TestKSD6H4_gridTowerScratch`, Qwen3-VL-2B at 4K, 05:27, timing lock held shared: right after the forward 1,515.4 MiB, **10 s later 0.0 MiB** (bar ≤ 16). Log: `~/goinfer-logs/ks-h4g2-2026-10-23.log` | **PASS** |
+| H4-G3 repeat call | `TestKSH4_repeatCallTiming`, Qwen3-VL-2B at 4K, 05:29, timing lock held exclusively (the 1-minute load 0.95 at the start, 9.2 GB available): a repeat call 49.9–50.1 s with the release on and off, **median on/off 0.9996** (bar ≤ 1.02). Read only: the first call after a release 50,092.8 ms against a warm call's 50,025.8 ms, **+67 ms (0.13%)**. Log: `~/goinfer-logs/ks-h4g3-2026-10-23.log` | **SHIP** |
+
+**Plant** (the release keeps `cap`, so the next forward skips the allocation): H4-G1 red, a slice-bounds panic on the released
+buffer.
+
+A 4K forward of this f32 tower is about 50 s on the M1 Pro, so H4-G3 took 12.5 minutes, not the minute registered.
+
+## KS-D7 shipped by owner decision (D7-G3), 2026-10-23
+
+Francis (8:36 am): "it seems silly to give up gains, any gains, if it's bit-identical and doesn't use more memory." So the half2
+dequant ships over the registered 2% bar, on the re-run's reading above (median 0.9888, 10 of 10 pairs below 1). His memory
+condition was registered as D7-G3 before it ran (survey doc, "KS-D7 shipped by owner decision").
+
+| gate | reading | result |
+|---|---|---|
+| D7-G1 identity | as above, on the shipping build: llama-tiny 0 of 256 logits differ; `TestKSD7_half2DequantExhaustive` 0 of 1,048,576 | **PASS** |
+| D7-G3 memory | `TestKSD7_memoryUnchanged`, the 1.5B, one 3,900-token prefill per build, 08:37, timing lock held shared: prefill scratch counted 261.865 MB for both; Metal allocated after the prefill, net of the build, 0.131 MB per-weight and 0.000 MB half2; logits 0 of 151,936 differ. Log: `~/goinfer-logs/ksd7-g3-2026-10-23.log` | **PASS** (not higher) |
+
+The per-weight form stays in the source behind `KSD7_OLD_DEQUANT`, compiled only for the tests' old arm, so D7-G1 and D7-G3 can be
+re-run. Production compiles the half2 form alone.
+
+It also ships under the owner's standing rule of the same day (CLAUDE.md, "Measurement discipline": a bit-identical speed change
+ships under its registered bar). All four of its conditions hold: the outputs are bit-identical, memory is not higher, 10 of 10
+pairs are faster, and the half2 form replaces the per-weight one (the define is a test-only switch back).

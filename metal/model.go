@@ -572,6 +572,9 @@ type resident struct {
 	// pfErr latches a compile or pipeline-creation failure from ensurePrefill, so r.pf staying nil does not make
 	// every later PrefillLast retry the full MSL compile and panic again.
 	pfErr error
+	// ksd7Old is ksd7OldDequantForTest at build time: the prefill library compiles lazily (ensurePrefill), after a test's switch
+	// is back.
+	ksd7Old bool
 
 	// Gated-DeltaNet mixer (deltanet_kernels.go — own module, nothing else here is recurrent).
 	// dnet nil ⇒ dense model; every field below is loaded/allocated only when it is non-nil.
@@ -1391,6 +1394,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.q4kLane && !r.q4kLaneShapeOK() {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
+	r.ksd7Old = ksd7OldDequantForTest
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
 		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
