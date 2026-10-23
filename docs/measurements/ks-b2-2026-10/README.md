@@ -76,4 +76,30 @@ copied into `cuda/` as `ks_b2_scratch_test.go` for the run and removed afterward
 
 ## Readings
 
-(not yet run: the GPU is reserved for the owner's work until the coordinator releases it)
+At 4171ac2e8, the new arm (the old arm being origin/main's committed PTX), 2026-10-23. Logs: `~/goinfer-logs/ks-b2-2026-10/`.
+
+**G1, run 13:06–13:09 PDT, holding the lock shared** (kv4b-grade's CR7B CPU reference held it shared too; G1 times nothing):
+
+| | f32 KV | f16 KV | verdict |
+|---|---|---|---|
+| G1a, six entry points × 180 shapes | 1,080 shapes, **0 differ** | 1,080 shapes, **0 differ** | **PASS** |
+| G1b, 3,900-token prefill, last-row logits | **0 of 151,936 differ** | **0 of 151,936 differ** | **PASS** |
+
+The first f32 G1 attempt stopped at shape `bm128_hd128 M129 sp384` with `CUDA_ERROR_OUT_OF_MEMORY`. The instrument allocated
+every shape's buffers and freed none. It now releases them per shape, and the f32 pass above is the re-run of the same sweep.
+The f16 pass, smaller, ran clean the first time.
+
+**Registers and local memory** (f32 twin; JIT on driver 595.91.07):
+
+| entry point | old | new | local bytes, old / new |
+|---|---:|---:|---|
+| `attn_fused_bm32_hd64` | 134 | 142 | 0 / 0 |
+| `attn_fused_bm32_hd128` | 180 | 186 | 0 / 0 |
+| `attn_fused_bm32n32_hd64` | 140 | 174 | 0 / 0 |
+| `attn_fused_bm32n32_hd128` | 164 | 168 | 0 / 0 |
+| `attn_fused_bm128_hd64` | 134 | 165 | 0 / 0 |
+| `attn_fused_bm128_hd128` | 180 | 224 | 0 / 0 |
+
+Occupancy is unchanged. The 128-row kernels run 256 threads, and 256 × 224 = 57,344 of the SM's 65,536 registers, still one
+block an SM as at 180. The 32-row kernels are bounded by shared memory (one block of about 35 KB at head dim 128, three of
+about 18 KB at 64) before registers.
