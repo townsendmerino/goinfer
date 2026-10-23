@@ -103,3 +103,18 @@ The f16 pass, smaller, ran clean the first time.
 Occupancy is unchanged. The 128-row kernels run 256 threads, and 256 × 224 = 57,344 of the SM's 65,536 registers, still one
 block an SM as at 180. The 32-row kernels are bounded by shared memory (one block of about 35 KB at head dim 128, three of
 about 18 KB at 64) before registers.
+
+**G2, run 13:57–13:59 PDT, lock exclusive** (the first attempt, 13:50, could not load the 1.5B: another session's 26B test
+held 6,970 MiB of the card outside the lock; nothing was timed, and the run waited for that process to exit):
+
+| | f32 KV (decides) | f16 KV |
+|---|---|---|
+| prefill 3,900 tokens, old → new | 937.1 → 741.9 ms | 920.2 → 721.6 ms |
+| new speedup, median (min–max) | **1.2632×** (1.2608–1.2658) | **1.2748×** (1.2742–1.2785) |
+| quads above 1 | **10 of 10**, 0 void | **10 of 10**, 0 void |
+| attention only, (M 512, start 3,072), old → new | 2.664 / 2.716 → 1.099 / 1.104 ms (**2.44×**) | 2.583 / 2.577 → 0.928 / 0.922 ms (**2.79×**) |
+| load1 at quad starts | 4.97–6.94 | 2.62–3.68 |
+
+**Verdict: SHIP** at both KV types (f32 decides; f16 above 1.00). G1 held again inside both G2 runs (1,080 shapes, and the
+3,900-token prefill byte-equal). The whole-prefill gain matches the survey's 1.27–1.36× estimate at its low end, and attention's
+2.4–2.8× sits inside the 2.5–4× it estimated, a little under at f32.
