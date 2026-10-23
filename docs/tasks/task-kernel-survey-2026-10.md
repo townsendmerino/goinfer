@@ -583,6 +583,14 @@ tiling reproduces").**
 - **Size:** S–M.
 - **Prior art:** `docs/tasks/task-metal-int8-2026-10.md` slice 1, "can follow", never built.
 
+**KS-C3 first measurement, registered 2026-10-23 before the run, on the owner's order of 11:50.** Instrument: `TestMetalGEMVS0`
+gains the native int8 body at the 1.5B's shapes, each the kernel decode dispatches there: qkv (`gemv_w8a8_sa`, 2,048 × 1,536), o
+(`gemv_w8a8_sa`, 1,536 × 1,536), gate|up (`gemv_w8a8_sa`, 17,920 × 1,536) and down (`gemv_w8a8_body_resid`, 1,536 × 8,960), timed
+as its other rows are (SLC-defeating rotation, GPU timestamps, median of 7), beside the run's streaming-read ceiling. Timed, Mac,
+the timing lock held exclusively. The reading is the body's bandwidth: the four categories' bytes over their summed time.
+**Build iff** that is under 145 GB/s **and** under 80% of the ceiling read in the same run; otherwise the headroom to the
+estimate's 160–165 GB/s is under 10% and KS-C3 closes as measured. Stopping rule: one pass. Cost: about 2 minutes.
+
 **KS-C4 · Fold the single-threadgroup quantizers into their neighbors (designed bit-identical).**
 - **Waste:** `swiglu_quant` and `quant_vec` are dispatched as one 256-thread threadgroup (one core of 16), and
   `swiglu_quant` makes two passes, computing `exp` twice.
