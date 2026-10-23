@@ -707,6 +707,19 @@ and `guF` is allocated only for a pass that takes one of them. `swigluFusedOffFo
 Planted defect: the fused epilogue computes the activation on the f32 accumulators, before the half rounding `guF` imposed.
 D5-G1 goes red. Stopping rule: one pass each. Cost: seconds; D5-G3 about 2 minutes.
 
+**KS-D5b gates, registered 2026-10-23 (9:05 am) before the build, on the owner's "try it" (D5b-G).** D5-G3 parked the fused
+kernel at 10.4% slower. The suspected cause: its added 8 KB threadgroup tile, which takes the kernel from about 9.6 KB to 17.6 KB of
+threadgroup memory. The build: `gemm_w4f16_swiglu` places the half tile in the staging arrays' memory (one array holding `sa`, then
+`sb`, 8.7 KB; the tile needs 8 KB), after a threadgroup barrier that ends the K loop's reads of them. Nothing else changes.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5b-G1 identity | 0 | D5-G1's instruments: the 12 kernel cells, llama-tiny, the 1.5B at 3,900 rows | byte-equal everywhere |
+| D5b-G2 scratch | 0 | D5-G2's counter | at most 123 MB |
+| D5b-G3 speed | timed, Mac, timing lock | D5-G3's instrument, the new build | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise KS-D5 closes as parked, with both readings |
+
+Stopping rule: one pass each, no further build on a miss. Cost: seconds; D5b-G3 about 2 minutes.
+
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow`.
 - **Waste:**
