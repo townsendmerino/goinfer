@@ -87,11 +87,12 @@ func gemmTileSize(rows, N int) (tm, tn int) {
 // swigluFusedOffForTest keeps the gate|up GEMM and swiglu_f16 as two steps with guF between them: the old arm of KS-D5's A/B.
 var swigluFusedOffForTest bool
 
-// swigluFused reports whether a pass of Mpad rows runs every dense layer's gate|up projection through gemm_w4f16_swiglu, so it
-// needs no guF: the int4 weights (not the native int8 lane), the 64 x 64 tile for every layer's width, a width that is a
-// multiple of 32, and no MoE layer (its expert GEMMs write guF). The pass and prefillScratchBytes both ask it.
+// swigluFused reports whether a pass of Mpad rows runs every dense layer's gate|up projection through the fused GEMM
+// (gemm_w4f16_swiglu, or gemm_w8f16_swiglu on the native int8 lane), so it needs no guF: the 64 x 64 tile for every layer's
+// width, a width that is a multiple of 32, and no MoE layer (its expert GEMMs write guF). The pass and prefillScratchBytes
+// both ask it.
 func (r *resident) swigluFused(Mpad int) bool {
-	if swigluFusedOffForTest || r.w8 || r.moe != nil {
+	if swigluFusedOffForTest || r.moe != nil {
 		return false
 	}
 	for l := -1; l < len(r.layers); l++ {
@@ -109,7 +110,7 @@ func (r *resident) swigluFused(Mpad int) bool {
 // prefillState holds the lazily compiled prefill pipelines (ensurePrefill); a decode-only run never builds it.
 type prefillState struct {
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
-	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu (KS-D5)
+	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu (KS-D5), gemm_w8f16_swiglu on a native int8 resident
 	pKvI8, pDeqI8                                              Pipeline // an int8 cache's store and dequantize-to-scratch (kv_i8_prefill.go)
 	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
 	pAttnImg                                                   Pipeline // S17: attention_prefill with a bidirectional image block
@@ -231,6 +232,9 @@ func (r *resident) ensurePrefill() {
 		r.pf.w8, r.pf.pW8 = r.w8, map[[2]int]Pipeline{}
 		for _, t := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
 			r.pf.pW8[t] = p(fmt.Sprintf("gemm_w8f16_m%dn%d", t[0], t[1]))
+		}
+		if r.w8 { // an int4mix resident's FFN is int4 and keeps gemm_w4f16_swiglu
+			r.pf.pGemmSwiglu = p("gemm_w8f16_swiglu")
 		}
 	}
 }

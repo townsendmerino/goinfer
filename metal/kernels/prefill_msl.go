@@ -152,7 +152,10 @@ inline float glu_act_f16(float x, uint act); // defined with swiglu_f16, below
 // stages the 32 gate rows [32x, 32x+32) as features 0..31 and the matching up rows as 32..63, the same dequant and MMA chain,
 // then rounds the tile to half as guF held it and writes glu_act_f16(g) * u for its 32 pairs, C = [M x I]. The same values in the
 // same order as the two-step form, so the output is the same bits, and guF is never written. grid = (ceil(I/32), ceil(M/64)).
-kernel void gemm_w4f16_swiglu(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
+// W8 (KS-D5c, gemm_w8f16_swiglu) stages the native int8 path's weights as gemm_w4f16_tile<64, 64, true> does, so it is
+// gemm_w8f16_m64n64 + swiglu_f16 bit for bit.
+template <bool W8>
+kernel void gemm_swiglu(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
     device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],
     constant uint& M[[buffer(4)]], constant uint& I[[buffer(5)]], constant uint& K[[buffer(6)]],
     constant uint& act[[buffer(7)]],
@@ -183,9 +186,23 @@ kernel void gemm_w4f16_swiglu(device const half* A[[buffer(0)]], device const ui
 
     for (uint k0 = 0; k0 < K; k0 += 32u) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
-        uint2 wv = uint2(0u); float sc = 0.0f;
-        if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
-        gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+        if constexpr (W8) { // K bytes of int8 codes a row and one f32 scale a row; an 8-k block is two words
+            const float sc = wok ? reinterpret_cast<device const float*>(WS)[ncol] : 0.0f;
+            for (ushort w = 0; w < 2; w++) {
+                const ushort kb = kh*2 + w;
+                const uint2 wd = wok ? *reinterpret_cast<device const uint2*>(W + (ncol*K + k0 + kb*8u)/4u) : uint2(0u);
+                const char4 c0 = as_type<char4>(wd.x), c1 = as_type<char4>(wd.y);
+                threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
+                for (ushort kl = 0; kl < 8; kl++) {
+                    *p = wok ? half(float(kl < 4 ? c0[kl] : c1[kl - 4]) * sc) : 0.0h;
+                    p += 8;
+                }
+            }
+        } else {
+            uint2 wv = uint2(0u); float sc = 0.0f;
+            if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
+            gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+        }
         for (ushort j = 0; j < 2; j++) {
             const ushort kb = kh2*2 + j;
             threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
@@ -234,6 +251,8 @@ kernel void gemm_w4f16_swiglu(device const half* A[[buffer(0)]], device const ui
         }
     }
 }
+template [[host_name("gemm_w4f16_swiglu")]] kernel decltype(gemm_swiglu<false>) gemm_swiglu<false>;
+template [[host_name("gemm_w8f16_swiglu")]] kernel decltype(gemm_swiglu<true>) gemm_swiglu<true>;
 
 // A-P01 (docs/audit-metal-2026-09-30.md): gemm_w4f16_store's tile as template parameters, TM tokens × TN features per
 // threadgroup, for the small-M passes where a 64 × 64 tile leaves cores idle (o, down and qkv run 24-32 threadgroups on

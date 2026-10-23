@@ -1,0 +1,225 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// KS-A2 build gate instrument (docs/measurements/ks-a2-2026-10/README.md). Kept under docs as .go.txt and copied into
+// cuda/ as ks_a2_scratch_test.go for a run; never committed under cuda/. Gated on GOINFER_KS=1.
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	gpu "github.com/townsendmerino/aikit/gpu"
+)
+
+func ksa2Load1() float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
+	return f
+}
+
+func ksa2MemAvailMB() int64 {
+	b, _ := os.ReadFile("/proc/meminfo")
+	for _, ln := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(ln, "MemAvailable:") {
+			kb, _ := strconv.ParseInt(strings.Fields(ln)[1], 10, 64)
+			return kb / 1024
+		}
+	}
+	return -1
+}
+
+func ksa2VolCtx() int64 {
+	var vol int64
+	tasks, _ := filepath.Glob("/proc/self/task/*/status")
+	for _, p := range tasks {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		for _, ln := range strings.Split(string(b), "\n") {
+			if f := strings.Fields(ln); len(f) == 2 && f[0] == "voluntary_ctxt_switches:" {
+				n, _ := strconv.ParseInt(f[1], 10, 64)
+				vol += n
+			}
+		}
+	}
+	return vol
+}
+
+// TestKSA2_directAB: one resident per model, loaded as serve loads it; arm A launches through gocudrv's executor
+// (launchViaExecutor), arm B directly (the build). G1: full logits over 64 positions at depth 128 byte-equal across arms.
+// G2: 10 ABBA quads of 64-token greedy blocks over positions 128..191. Reported: launches a token, voluntary context
+// switches a token, host cost a launch on a 1x1 grid.
+func TestKSA2_directAB(t *testing.T) {
+	if os.Getenv("GOINFER_KS") == "" {
+		t.Skip("set GOINFER_KS=1 (KS-A2 instrument)")
+	}
+	for _, name := range []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "gemma3-1b-q4_k_m.gguf"} {
+		t.Run(name, func(t *testing.T) {
+			mc, err := loadLikeServe(t, modelPath(name), "-backend", "cuda", "-quant", "int4")
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer mc.Close()
+			r := mustResident(t, mc)
+			if r.graphs {
+				t.Fatal("graphs are on; this gate measures live launches")
+			}
+			if free, total, err := r.dev.Context().MemInfo(); err == nil {
+				fmt.Fprintf(os.Stderr, "[A2b] %s free VRAM after load: %d MiB of %d\n", name, free>>20, total>>20)
+			}
+			_, _, _, _, _, _, vocab := mc.Dims()
+			emb := func(i int) []float32 { return mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
+			const depth, block = 128, 64
+			for i := range depth {
+				if _, err := r.ForwardArgmax(emb(i), i); err != nil {
+					t.Fatalf("warm: %v", err)
+				}
+			}
+			// G1: full logits, both arms, same positions and inputs.
+			logits := func(viaExecutor bool) [][]float32 {
+				r.launchViaExecutor = viaExecutor
+				out := make([][]float32, block)
+				for i := range block {
+					lg, err := r.Forward(emb(1000+i), depth+i)
+					if err != nil {
+						t.Fatalf("forward: %v", err)
+					}
+					out[i] = append([]float32(nil), lg...)
+				}
+				return out
+			}
+			la, lb := logits(true), logits(false)
+			diff := 0
+			for i := range la {
+				for j := range la[i] {
+					if math.Float32bits(la[i][j]) != math.Float32bits(lb[i][j]) {
+						diff++
+					}
+				}
+			}
+			fmt.Fprintf(os.Stderr, "[A2b] %s G1: %d positions x %d logits, %d differing bits-wise\n", name, block, len(la[0]), diff)
+			if diff != 0 {
+				t.Fatalf("G1 FAIL: %d logits differ between the executor and direct paths", diff)
+			}
+
+			r.launchViaExecutor = false
+			r.launchN = 0
+			if _, err := r.ForwardArgmax(emb(1000), depth); err != nil {
+				t.Fatal(err)
+			}
+			nLaunch := r.launchN
+
+			run := func(viaExecutor bool) (time.Duration, []int) {
+				r.launchViaExecutor = viaExecutor
+				ids := make([]int, block)
+				t0 := time.Now()
+				for i := range block {
+					id, err := r.ForwardArgmax(emb(1000+i), depth+i)
+					if err != nil {
+						t.Fatalf("decode: %v", err)
+					}
+					ids[i] = id
+				}
+				return time.Since(t0), ids
+			}
+			run(true)
+			run(false)
+			quads := 10
+			if os.Getenv("GOINFER_KS_A2_NOBAR_ONLY") != "" { // the timed quads already read: only the no-bar counts
+				quads = 2
+			}
+			var ratios []float64
+			var sumA, sumB time.Duration
+			same := true
+			voids := 0
+			for q := 0; q < quads; q++ {
+				l1, mem := ksa2Load1(), ksa2MemAvailMB()
+				if l1 > 8.0 {
+					voids++
+					fmt.Fprintf(os.Stderr, "[A2b] %s quad %d VOID: load1 %.2f > 8.0 at start (memavail %d MB); re-running\n", name, q, l1, mem)
+					q--
+					time.Sleep(10 * time.Second)
+					continue
+				}
+				a1, ia := run(true)
+				b1, ib := run(false)
+				b2, _ := run(false)
+				a2, _ := run(true)
+				for i := range ia {
+					if ia[i] != ib[i] {
+						same = false
+					}
+				}
+				ra := float64(a1+a2) / float64(b1+b2)
+				ratios = append(ratios, ra)
+				sumA += a1 + a2
+				sumB += b1 + b2
+				fmt.Fprintf(os.Stderr, "[A2b] %s quad %d load1 %.2f memavail %d MB | executor %.1f µs/tok (%.1f, %.1f) direct %.1f µs/tok (%.1f, %.1f) | direct speedup %.4f\n",
+					name, q, l1, mem,
+					float64((a1+a2).Microseconds())/(2*block), float64(a1.Microseconds())/block, float64(a2.Microseconds())/block,
+					float64((b1+b2).Microseconds())/(2*block), float64(b1.Microseconds())/block, float64(b2.Microseconds())/block, ra)
+			}
+			s := append([]float64(nil), ratios...)
+			sort.Float64s(s)
+			med := (s[quads/2-1] + s[quads/2]) / 2
+			above := 0
+			for _, x := range ratios {
+				if x > 1 {
+					above++
+				}
+			}
+			nTok := float64(quads * 2 * block)
+
+			ctx := func(viaExecutor bool) float64 {
+				r.launchViaExecutor = viaExecutor
+				v0 := ksa2VolCtx()
+				for i := range 200 {
+					if _, err := r.ForwardArgmax(emb(2000+i), depth+(i%block)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return float64(ksa2VolCtx()-v0) / 200
+			}
+			cA, cB := ctx(true), ctx(false)
+
+			launchCost := func(viaExecutor bool) float64 {
+				r.launchViaExecutor = viaExecutor
+				cfg := LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1}
+				const n = 20000
+				var us float64
+				_ = r.do(func() error {
+					for range 200 {
+						_ = r.launch(r.fRes, cfg, Arg(r.x), Arg(r.x), gpu.ArgValue(int32(0))) // residual over 0 elements: a no-op every model binds
+					}
+					_ = r.stream.Sync()
+					t0 := time.Now()
+					for range n {
+						_ = r.launch(r.fRes, cfg, Arg(r.x), Arg(r.x), gpu.ArgValue(int32(0))) // residual over 0 elements: a no-op every model binds
+					}
+					_ = r.stream.Sync()
+					us = time.Since(t0).Seconds() * 1e6 / n
+					return nil
+				})
+				return us
+			}
+			lA, lB := launchCost(true), launchCost(false)
+			r.launchViaExecutor = false
+			if r.launchErr != nil {
+				t.Fatalf("a launch failed: %v", r.launchErr)
+			}
+
+			t.Logf("KS-A2b %s: executor %.2f µs/token (%.1f tok/s), direct %.2f µs/token (%.1f tok/s); direct speedup median %.4f, min %.4f, max %.4f, %d/%d quads above 1, %d void; argmax ids identical: %v; %d launches a token; voluntary context switches a token: executor %.1f, direct %.1f; host cost a 1x1 launch: executor %.2f µs, direct %.2f µs",
+				name, float64(sumA.Microseconds())/nTok, nTok/sumA.Seconds(), float64(sumB.Microseconds())/nTok, nTok/sumB.Seconds(),
+				med, s[0], s[quads-1], above, quads, voids, same, nLaunch, cA, cB, lA, lB)
+		})
+	}
+}

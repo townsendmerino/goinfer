@@ -121,6 +121,24 @@ The first build's 10.4% loss (median 1.1040) was the added 8 KB of threadgroup m
 memory, the fused pass is 1.2% faster than the two-step one and drops `guF`'s 139.9 MB from a 3,900-row pass on the 1.5B. That also
 means 2.1× the rows per prefill block: `PrefillBlockRows` prices the cheaper row.
 
+## KS-D5c, the fused SwiGLU on the native int8 lane (D5c-G), 2026-10-23: shipped
+
+Gates registered before the code (survey doc, "KS-D5c gates", 10:12), amended before any model reading (10:15) to the 0.5B because the
+fit guard refused the 1.5B at int8int8 beside the owner's apps (2.8 GB needed, a 2.1 GB budget). The build: `gemm_w4f16_swiglu`
+becomes a template on `W8`; its `W8` instance, `gemm_w8f16_swiglu`, stages int8 codes with one f32 scale a row as
+`gemm_w4f16_tile<64, 64, true>` does, and `swigluFused` admits a native int8 resident.
+
+| gate | reading | result |
+|---|---|---|
+| D5c-G1 identity | `TestKSD5c_w8FusedSwigluMatchesTwoStep`: D5-G1's 12 cells against `gemm_w8f16_m64n64` + `swiglu_f16`, in the fast-math and the precise library, 0 of every cell differ; D5-G1's int4 cells still 0. `TestKSD5_prefillFusedIdentity`: llama-tiny at int8int8 (native int8) 0 of 256; Qwen2.5-Coder-0.5B at int8int8 (the `.gguf`, a direct load), 3,900 rows, 0 of 151,936 logits differ. Plant (the up rows read the gate rows' scale): 5,897 of 6,144 differ in the first cell. Log: `~/goinfer-logs/ksd5c-g1g2-2026-10-23.log` | **PASS** |
+| D5c-G2 scratch | `TestKSD5_guFShare`, the 0.5B at int8int8, one 3,900-row pass: two-step **143.9 MB**, fused **68.0 MB** counted (68.0 planned), the two-step less `guF`'s 76.0 MB exactly. Log: `~/goinfer-logs/ksd5c-g2-2026-10-23.log` | **PASS** |
+| D5c-G3 speed | `TestKSD5_prefillSpeed`, the 0.5B at int8int8, a 3,900-token `PrefillLast`, fused against two-step on one resident, A B B A over 10 pairs after 2 warm runs each, the timing lock held exclusively, 11:51–11:53. At the start: the 1-minute load 3.94, 4.32 GB available (the void line: about 1.2 GB fit need plus 2 GB); at the end 7.54 (macOS's photo analyzer). Two-step 3,650–3,755 ms, fused 3,603–3,754 ms, **median 0.9931, 7 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd5c-g3-2026-10-23.log` | **SHIP** (bar ≤ 1.01) |
+
+A first wait for the void line (10:17–11:47) never saw the load under 4.0 and 3.5 GB available together; 3.5 GB was an
+over-estimate of the line, corrected to 3.2 GB before the second wait (`~/goinfer-logs/ksd5c-g3-wait1-2026-10-23.log`). The fused
+int8 pass is bit-identical, drops `guF` (52.8% of the 0.5B's long-pass scratch) and is not slower. The lanes that still keep `guF`
+are the small-M tiles (at most 128 rows) and the MoE expert GEMMs, whose tile follows each expert's row count.
+
 ## KS-D2, steel prefill attention at head dim 64 (D2-G), 2026-10-23
 
 The first measurement (`TestMetalPrefillDecomp`, the 0.5B, 11:59): attention 69.5% of the 3,900-row pass, 29.4% at 512 (survey,
