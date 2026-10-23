@@ -19,16 +19,17 @@ import (
 // per-component comparison. The post-only pre-norm skip (quant_vec instead of rmsnorm_quant) reuses a kernel ctx-before-o-proj
 // already dispatches, so it rests on that coverage plus the admission and no-NaN checks here.
 func TestOlmo3ResidentSmokeMetal(t *testing.T) {
-	testOlmoFamilyResidentSmoke(t, "../testdata/olmo3-tiny")
+	testOlmoFamilyResidentSmoke(t, "../testdata/olmo3-tiny", "int8int8")
 }
 
+// Olmo Hybrid loads at int4: Metal declines a Gated-DeltaNet model loaded with int8 projections (buildDeltaNet), and the CPU runs it.
 func TestOlmoHybridResidentSmokeMetal(t *testing.T) {
-	testOlmoFamilyResidentSmoke(t, "../testdata/olmo_hybrid-tiny")
+	testOlmoFamilyResidentSmoke(t, "../testdata/olmo_hybrid-tiny", "int4")
 }
 
-func testOlmoFamilyResidentSmoke(t *testing.T, ckpt string) {
+func testOlmoFamilyResidentSmoke(t *testing.T, ckpt, quant string) {
 	t.Helper()
-	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "metal", Quant: "int8int8"})
+	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "metal", Quant: quant})
 	if err != nil {
 		t.Fatalf("load metal: %v", err)
 	}
