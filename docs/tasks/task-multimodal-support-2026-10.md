@@ -8347,6 +8347,49 @@ refused resize).
 - **Still open:** on-demand KV (parked; G-S20a prices it at about 5% once the swap is in); computing cold experts on the CPU
   (step 4, an owner decision).
 
+**Step 4, cold experts computed on the CPU (Francis, 2026-10-23 16:45, relayed: build it outright; gates bit-identical
+against the GPU path, the per-layer sync cost, and decode tok/s against #198's 31.6).**
+
+*What the GPU computes, read from `cuda/moe.cu`, `cuda/glue.cu` and their committed PTX (`cuda/testdata/moe.ptx`,
+`glue.ptx`).* Each routed expert runs three kernels in order:
+- `gemv_w4a8_moe` (gate and up). Integer `dp4a` products, per lane `facc = facc + fma(s0, p0, round(s1·p1))` over the word
+  pairs, one `fma` for a ragged tail, a fixed shuffle tree, then `× aScale`. All of it is IEEE-exact and reproducible on a
+  CPU.
+- `glu_quant` (GELU and requantization to int8). Its `tanhf` compiles to `ex2.approx` and `rcp.approx`, hardware
+  approximations a CPU cannot reproduce bit for bit, so this kernel stays on the GPU.
+- `gemv_w4a8_moe_wacc` (down, weighted into `g4x2` in expert order). Reproducible, like the first.
+
+*Design.* For each MoE layer, the misses split between the PCIe copy (today's path) and the CPU:
+- **Round trip 1.** The existing router readback, plus the layer's int8 activation. The CPU computes the gate/up products
+  for its share of the misses and uploads them.
+- **Round trip 2.** The GPU runs `glu_quant` on them, the CPU reads back the int8 result, computes the down products, and
+  uploads them.
+- **Order.** The weighted accumulation into `g4x2` stays in expert order. Hit experts write their down product to scratch,
+  and one combine kernel replays the accumulate epilogue for every expert in order, so the GPU's own experts do not wait
+  behind a CPU one.
+- **Cache.** CPU-computed misses are not admitted to the slot cache; the copied ones are, as today.
+
+*Estimate, revised from the 16:3x report.* The activation has to round-trip through the GPU, and each layer's output
+feeds the next, so the CPU's time does not hide behind GPU work; the gain is splitting a layer's misses between PCIe and
+the CPU at once. With 0.23 ms per copied miss (G-S20a), an assumed 0.1 ms per CPU expert and 0.08 ms of round trips per
+layer that uses the CPU, the projection is about 36 to 40 tok/s (52 to 56 s a form), not 38 to 45.
+
+*Gates, registered 2026-10-23 before any code.*
+- **G-S20h, the CPU kernels (tier 0).** A Go replica of `gemv_w4a8_moe` and of the down product's pre-accumulate result:
+  bit-identical to the GPU kernels on random int4 weights, f16 scales and int8 activations at the 26B's geometry (2816 →
+  1408 gate/up, 704 → 2816 down), every row of 8 random experts. Planted defects, each of which must turn it red: the tail
+  `fma` written as a multiply and an add, the pair sum's operands swapped, and the shuffle tree's order reversed.
+- **G-S20i, exactness of the split (tier 0).** Two parts:
+  - The reordered GPU-only path (scratch plus in-order combine) is bit-identical to today's chain.
+  - On `testdata/gemma4-moe-tiny`, with forced patterns (every miss to the CPU, none, alternating), every position's
+    logits are bit-identical to the fully resident run.
+- **G-S20j, the per-layer sync cost and the CPU's rate (tier 1, real 26B, in process).** Reported: the two round trips' cost
+  per layer with no CPU work, and the CPU's time per expert (gate/up and down) at the worker count used. **Kill rule:** if
+  the gain these two numbers project, by the S20 line, is under 10% of decode time, stop and report before the served gate.
+- **G-S20k, served speed and identity (tier 1).** A B B A, #198's binary against the new one, inv01 to inv03, as G-S20g.
+  **PASS:** decode at least 1.15 of #198's in both pairs (31.6 → 36.3 tok/s), and replies byte-identical. 1.05 to 1.15:
+  parked. Prediction: 36 to 40 tok/s.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
