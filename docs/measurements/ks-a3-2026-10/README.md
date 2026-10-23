@@ -21,8 +21,48 @@ Registered 2026-10-23 before it runs. It informs the build's design and decides 
 - **Run:** `bash docs/measurements/ks-a3-2026-10/instruments/run-phases.sh`, under the timing lock. **Cost:** two loads and
   42 launches, under a minute.
 
-The build's own gate (output byte-identical to the shipped kernel on the existing `topk_test.go` cases and a sweep of real
-and adversarial rows, plus the speed bar) is registered here after this read and before the build is measured.
+## The build
+
+`cuda/topk.cu` becomes three launches, in stream order, from `cuda/topk.go:cudaResident.topkReadback`:
+- **`topk_compact`** (fast path only, 32 blocks of 1,024): each block finds the same threshold by an exact radix select of the
+  R-th largest sample (`tk_kth`, the slow path's own passes) instead of a bitonic sort. It then appends every entry ≥ t0 of
+  its slice of the row to a global candidate buffer.
+- **`topk_finish`** (one block): selects the K-th largest candidate key and sorts only the K survivors. When more candidates
+  tie at the boundary than are needed, it sorts the whole set as before; a count outside [K, CAP] takes the unchanged slow
+  path. It writes ids, logit bits and the row max, and resets the candidate count.
+- **`topk_z`** (32 blocks of 32): the same 1,024 virtual threads each sum the same entries in the same order in f32. The last
+  block runs the same double tree over the partials.
+
+Output is the first K of (logit desc, id asc), a total order, so it should equal the one-block kernel's word for word, Z
+included. The one-block `topk_select` is removed; the old arm below is origin/main's committed PTX.
+
+**Memory:** +36.9 KB of device scratch a resident: 4,096 candidate values and ids, Z's 1,024 partials, three counters. This
+is an increase, so CLAUDE.md's small-gains rule (which requires none) does not cover the item, and the speed bar below is
+stricter than its 9-of-10 alone.
+
+## Pre-registration: the build gate
+
+Registered 2026-10-23 before the build is measured. Instrument: `instruments/ks_a3_build_test.go.txt`, copied into `cuda/` for
+the run. The old arm is origin/main's committed `topk.ptx` (`topk_select`), loaded beside the build on one resident: the
+Qwen2.5-Coder-0.5B Q4_K_M loaded as serve loads it. Held under the timing lock.
+- **G1, bit-identity (tier 0, on device):** every output word, old against new: ids, logit bits and (when asked) Z's two
+  float words.
+  - Vocabularies 151,936 (the model's), 32,000, 8,192, 5,000 and 1,000.
+  - Row kinds: normal, coarse ties, all equal, signed zeros, ascending, descending, peaked.
+  - K 1, 40, 256 and 1,024; temperature 1 and 0.7; Z on and off.
+  - Plus 16 real rows of the 0.5B at K 40, 256 and 1,024.
+  - One differing word stops the item.
+  - Before merge also: `TestTopKSelect_matchesReference` and the CUDA device suite.
+- **G2, speed (tier 1, in process):** 10 ABBA quads of 64 sampled tokens at depth 128. Each token is `ForwardTopK`'s work:
+  the forward, the top-K at k 256 with Z, temperature 0.7, and the readback. Readout: the per-quad ratio (A1 + A2) / (B1 + B2)
+  of old over new, its median, and quads above 1.
+  - **ship:** at least 9 of 10 above 1 **and** a median of at least 1.02;
+  - **parked, to the owner:** 6–8 of 10, or a median in [1.00, 1.02);
+  - **killed:** 5 or fewer, or a median below 1.00.
+- **Recorded, no bar:** the top-K alone (launch, sync and readback) at k 256 and 1,024, old and new interleaved.
+- **Load rule:** a quad started with the 1-minute load above 8.0 is void and re-run in order.
+- **Cost:** one load and about 2,500 G1 cases of under a millisecond, then 42 blocks of 64 tokens at about 2 ms: about 2
+  minutes.
 
 ## Readings
 
