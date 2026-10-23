@@ -16,6 +16,10 @@ import (
 // baseline arm of R19's §3.2 gate and of the decomposition harness's A/B.
 var prefillSteelAttnOff bool
 
+// prefillAttnSkipForTest, set only by KS-D1's share measurement (TestKSD1_attnShare), skips the batched pass's attention
+// dispatch, so a timed pass without it prices attention. The pass's output is then meaningless.
+var prefillAttnSkipForTest bool
+
 // gemmTilePolicy picks gemmTile's rule: "" the default (D-B02's padding rule below), "a01" A-P01's rule as it shipped,
 // "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only A-P01's 32-token / 32-feature rule.
 // Test-only: the arms of the grades (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
@@ -871,7 +875,9 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 				kc, vc = zeroKV, zeroKV
 			}
 			// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
-			if imgB != (Buffer{}) {
+			if prefillAttnSkipForTest {
+				// no attention: ctxF keeps what it held (KS-D1's share measurement)
+			} else if imgB != (Buffer{}) {
 				e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB, imgN)
 			} else if lu.steel {
 				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)

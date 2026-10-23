@@ -46,7 +46,7 @@
 | KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
-| KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
+| KS-D1 | open (build) | first measurement 2026-10-23: attention 81.2% of E2B's 4,096-row prefill (28.2 s; 5.29 s without it). Next: the build's gates (L) | survey, "KS-D1 first measurement" |
 | KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
@@ -636,6 +636,11 @@ attention dispatch skipped (`prefillAttnSkipForTest`, a new test seam; the outpu
 over 3 pairs after one warm run each. The reading is attention's share, 1 − skip/full, the median over the pairs. Timed, Mac, the
 timing lock held exclusively, a cell started under the void rule's load or memory line re-run. **Kill under 50%**; otherwise the
 build's gates are registered next. Stopping rule: one pass. Cost: about 4 minutes.
+
+**Read 2026-10-23 (13:28–13:30, the timing lock held exclusively, the 1-minute load 1.33 at the start, 5.8 GB available; each
+pair's 1.03–2.41).** E2B's default sidecar (`…int4.ple4.metal.v17.giw`), 4,096 rows in one pass (the exact kernel's widest head dim
+512, so `PrefillBlockRows` 0): full 28.17–28.35 s, without attention 5.29 s in every pair; **attention 81.2% (median of 3), over
+the 50% line**. The build follows. Log: `~/goinfer-logs/ksd1-share-2026-10-23.log`.
 
 **KS-D2 · Steel prefill attention for head dims 64, 80 and 96.**
 - **Where:** `metal/prefill.go:resident.prefillAttnKernels` takes steel only for head dim 128. Others run
