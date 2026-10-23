@@ -120,3 +120,20 @@ loop. So the kernel needs no more threadgroup memory than `gemm_w4f16_store`.
 The first build's 10.4% loss (median 1.1040) was the added 8 KB of threadgroup memory. With the tile in the staging arrays'
 memory, the fused pass is 1.2% faster than the two-step one and drops `guF`'s 139.9 MB from a 3,900-row pass on the 1.5B. That also
 means 2.1× the rows per prefill block: `PrefillBlockRows` prices the cheaper row.
+
+## KS-D2, steel prefill attention at head dim 64 (D2-G), 2026-10-23
+
+The first measurement (`TestMetalPrefillDecomp`, the 0.5B, 11:59): attention 69.5% of the 3,900-row pass, 29.4% at 512 (survey,
+"KS-D2 first measurement"). Gates registered before the code (survey, "KS-D2 gates", 12:02). The build: `attention_prefill_steel`
+templated on the head dim (64, 80, 96, 128); head dim 64 admitted beside 128; 80 and 96 built, checked at tier 0, not admitted.
+
+| gate | reading | result |
+|---|---|---|
+| D2-G1 128 unchanged | `TestKSD2_steel128Logits`, the 1.5B `.giw`, a test binary at the base (6129031b) and one at the change: last-logits SHA-256 `041603c7…` at K=512 and `ac6daeb1…` at K=3,900 from both. Log: `~/goinfer-logs/ksd2-g1-2026-10-23.log` | **PASS** |
+| D2-G2 kernel | `TestKSD2_steelHeadDims`, 24 cells (head dim 64/80/96 × M 100/300 × start 0/37 × window 0/64), both kernels against an f64 attention: steel/fused max-abs error 0.92–1.12 (bar ≤ 2), mean-abs 0.99 in every cell (bar ≤ 1.25), all finite. Plant (the 128 instance's word index at 64): steel NaN, red. Log: `~/goinfer-logs/ksd2-g2-2026-10-23.log` | **PASS** |
+| D2-G3 fidelity | set A's pooled gate on Q05: references pending (the f32 CPU load needs about 4.5 GB available) | pending |
+| D2-G4 speed | `TestKSD2_prefillSpeed`, the 0.5B (`.gguf`, int4), 12:07–12:08, the timing lock held exclusively (the 1-minute load 2.91 at the start, 4.27 GB available; 2.25 and 3.99 GB at the end): K=3,900 fused 3,579–3,583 ms, steel about 1,244 ms, **median 0.3473 (2.88×), 10 of 10**; K=512 fused 194.3–194.9 ms, steel 146.2–147.0 ms, **median 0.7528 (1.33×), 10 of 10**. Log: `~/goinfer-logs/ksd2-g4-2026-10-23.log` | **SHIP** (bars ≤ 0.80 and ≤ 1.02) |
+
+Also: `touched.py` green; the Metal prefill families by name (`Prefill|MC5|DB01|R19|Steel|Chunk|Batched|Attention`) 52 pass, 38
+skip, 0 fail; staticcheck clean on `metal` (canary red).
+
