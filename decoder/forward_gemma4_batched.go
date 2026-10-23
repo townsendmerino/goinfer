@@ -39,8 +39,9 @@ func gemma4AttendRange(cache *KVCache, pos int, global bool, spans []ImageSpan) 
 // calls. That is the only way to let a query inside an image/audio block see later block positions (gemma4AttendRange), which a
 // strict sequential KV-append forward cannot express.
 //
-// It assumes a fresh cache (cache.Pos()==0 at entry; its caller prefillLogitsGemma4VLBidirectional always passes one, as the
-// sequential twin prefillLogitsGemma4VL does). ids[row] is the row's real token id, used only for PLE's token-identity lookup
+// spans are absolute positions in a prompt that starts at position 0; a pass may start after earlier passes of the same prefill
+// (prefillLogitsGemma4VLBidirectionalSpans), and a row's image membership is read at its absolute position. ids[row] is the row's
+// real token id, used only for PLE's token-identity lookup
 // (image rows substitute arch.gemma4.PadTokenID, mirroring the sequential path; see runLayersFromEmbedPLE). gemma4Attend, the
 // unchanged single-query-row kernel, is reused per row with that row's gemma4AttendRange; it already accepts an arbitrary
 // [start,nKeys) range into the full cache arrays, so no new attention math is introduced.
@@ -78,7 +79,7 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 		inv2 := float32(1.0 / math.Sqrt2)
 		for row := range K {
 			tid := ids[row]
-			if _, in := imageSpanRow(spans, row); in {
+			if _, in := imageSpanRow(spans, startPos+row); in {
 				tid = g4.PadTokenID
 			}
 			rowPL := perLayer[row*rowStride : (row+1)*rowStride]

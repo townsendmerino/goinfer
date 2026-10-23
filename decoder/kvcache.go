@@ -631,8 +631,13 @@ func (c *KVCache) prefillChunkable() bool {
 // falls inside an image block, which a pass must hold whole (its rows attend to each other). The cut then moves back to the
 // block's start, or forward to its end when the block starts at or before lo.
 func (c *KVCache) prefillCut(start, lo, hi int) int {
+	return cutOutsideBlocks(c.imgBlocks, start, lo, hi)
+}
+
+// cutOutsideBlocks is prefillCut over the bidirectional blocks given ([start, end), absolute positions).
+func cutOutsideBlocks(blocks [][2]int, start, lo, hi int) int {
 	p := start + hi
-	for _, b := range c.imgBlocks {
+	for _, b := range blocks {
 		if b[0] < p && p < b[1] {
 			if b[0] > start+lo {
 				return b[0] - start
