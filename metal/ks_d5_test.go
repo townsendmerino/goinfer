@@ -16,11 +16,11 @@ import (
 // of them (Mpad × 2 × maxI halves). It changes no product code. Not timed; a real checkpoint (GOINFER_HEAVY_TESTS=1).
 func TestKSD5_guFShare(t *testing.T) {
 	requireHeavyModel(t)
-	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw")
+	path, opts := ksd5Checkpoint()
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
 	}
-	m, err := decoder.Load(path, decoder.Options{Backend: "metal", ResidentContext: 4096})
+	m, err := decoder.Load(path, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
