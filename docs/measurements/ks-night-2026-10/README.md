@@ -41,3 +41,21 @@ gated MLP. `pt` is a view of `f1` when `f1` is wide enough. `gridScratchAllForTe
 
 **Plant** (`pt` aliased to `x`): red. On the tiny grid fixtures `x` is narrower than the patch rows, so the staging copy panics
 (slice bounds) before any output.
+
+## KS-H4, the fix (H4-G), 2026-10-23
+
+Gates registered before the code (survey doc, "KS-H4 gates"). The build: after a forward whose scratch is over 256 MiB, the grid
+tower releases it once idle for 5 s. A forward in the meantime (in `grow`) cancels the release, and the next forward after a
+release allocates again. A generation counter makes a release that fires late a no-op, and `Close` cancels it.
+`gridReleaseOffForTest` keeps the scratch until `Close`.
+
+| gate | reading | result |
+|---|---|---|
+| H4-G1 identity | `TestKSH4_releaseKeepsOutputs`, ceiling 0 and a 1 ms wait, under `-race`: qwen3.5 and glm-ocr grids release after every forward (scratch 0 bytes) and give 0 of 8,960 and 0 of 17,920 outputs differing from a tower that never releases, over grids small, large, middle and small again; qwen2.5-vl 0 differ | **PASS** |
+| H4-G2 allocated after 10 s | `TestKSD6H4_gridTowerScratch`, Qwen3-VL-2B at 4K, 05:27, timing lock held shared: right after the forward 1,515.4 MiB, **10 s later 0.0 MiB** (bar ≤ 16). Log: `~/goinfer-logs/ks-h4g2-2026-10-23.log` | **PASS** |
+| H4-G3 repeat call | `TestKSH4_repeatCallTiming`, Qwen3-VL-2B at 4K, 05:29, timing lock held exclusively (the 1-minute load 0.95 at the start, 9.2 GB available): a repeat call 49.9–50.1 s with the release on and off, **median on/off 0.9996** (bar ≤ 1.02). Read only: the first call after a release 50,092.8 ms against a warm call's 50,025.8 ms, **+67 ms (0.13%)**. Log: `~/goinfer-logs/ks-h4g3-2026-10-23.log` | **SHIP** |
+
+**Plant** (the release keeps `cap`, so the next forward skips the allocation): H4-G1 red, a slice-bounds panic on the released
+buffer.
+
+A 4K forward of this f32 tower is about 50 s on the M1 Pro, so H4-G3 took 12.5 minutes, not the minute registered.
