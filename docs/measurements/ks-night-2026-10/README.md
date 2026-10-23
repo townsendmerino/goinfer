@@ -87,3 +87,36 @@ re-run. Production compiles the half2 form alone.
 It also ships under the owner's standing rule of the same day (CLAUDE.md, "Measurement discipline": a bit-identical speed change
 ships under its registered bar). All four of its conditions hold: the outputs are bit-identical, memory is not higher, 10 of 10
 pairs are faster, and the half2 form replaces the per-weight one (the define is a test-only switch back).
+
+## KS-D5, the fused SwiGLU (D5-G), 2026-10-23: the first build parked; D5b shipped
+
+Gates registered before the code (survey doc, "KS-D5 gates"). The build is `gemm_w4f16_swiglu`: the 64 × 64 int4 GEMM with its
+feature tile split into 32 gate rows and the matching 32 up rows. It rounds the tile to half in threadgroup memory as `guF` held it,
+and writes `glu_act_f16(g) × u`. A dense layer whose pass takes the 64 × 64 tile uses it, and `guF` is allocated only for a pass that
+keeps the two-step form. `PrefillBlockRows` now prices a row on a long pass and steps to the most rows that fit, since a short pass
+may keep `guF`.
+
+| gate | reading | result |
+|---|---|---|
+| D5-G1 identity | `TestKSD5_fusedSwigluMatchesTwoStep`: 12 cells (I = 96 and 8,960, M = 64, 100, 200, SiLU and GELU-tanh), 0 outputs differ; `TestKSD5_prefillFusedIdentity`: llama-tiny 0 of 256, Qwen2.5-Coder-1.5B at 3,900 rows 0 of 151,936 logits differ. Plant (the activation on the unrounded accumulators): 2,532 of 6,144 differ in the first cell | **PASS** |
+| D5-G2 scratch | `TestKSD5_guFShare`'s counter, one 3,900-row pass on the 1.5B: **121.9 MB** counted (planned 121.9), from 261.9 | **PASS** (bar ≤ 123) |
+| D5-G3 speed | `TestKSD5_prefillSpeed`, the 1.5B, a 3,900-token `PrefillLast`, fused against two-step on one resident, 08:52, timing lock held exclusively (the 1-minute load 3.37 at the start, 9.3 GB available): two-step 4,177–4,239 ms, fused 4,619–4,660 ms, **median 1.1040, 0 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd5-g3-2026-10-23.log` | **PARK** (bar ≤ 1.01): 10.4% slower |
+
+The fused kernel saves `guF`'s 139.9 MB on that pass and is bit-identical, but makes the prefill 10.4% slower. The likely cause, not
+measured: its added 8 KB threadgroup tile, which takes the kernel from about 9.6 KB to 17.6 KB of threadgroup memory and so
+cuts occupancy. The staging arrays (`sa`, `sb`) are dead once the K loop ends, so a build that places the tile in their memory would
+test that. The branch is pushed and not merged; the next step is the owner's decision.
+
+**KS-D5b, the shipped build (D5b-G).** Registered before the build (survey doc, "KS-D5b gates"), on the owner's "try it". The half
+tile now lives in the staging arrays' memory: one array holds `sa` then `sb`, and the tile reuses it after a barrier that ends the K
+loop. So the kernel needs no more threadgroup memory than `gemm_w4f16_store`.
+
+| gate | reading | result |
+|---|---|---|
+| D5b-G1 identity | the 12 kernel cells 0 differ; llama-tiny 0 of 256; the 1.5B at 3,900 rows 0 of 151,936 logits differ (fused against two-step, on main's half2 staging) | **PASS** |
+| D5b-G2 scratch | the 1.5B's 3,900-row pass: 121.9 MB counted, 121.9 planned (from 261.9) | **PASS** |
+| D5b-G3 speed | the same instrument, 09:06, timing lock held exclusively (the 1-minute load 3.32 at the start, after a wait from 4.20; 5.0 GB available): two-step 4,095–4,290 ms, fused 4,052–4,192 ms, **median 0.9881, 8 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd5b-g3-2026-10-23.log` | **SHIP** (bar ≤ 1.01) |
+
+The first build's 10.4% loss (median 1.1040) was the added 8 KB of threadgroup memory. With the tile in the staging arrays'
+memory, the fused pass is 1.2% faster than the two-step one and drops `guF`'s 139.9 MB from a 3,900-row pass on the 1.5B. That also
+means 2.1× the rows per prefill block: `PrefillBlockRows` prices the cheaper row.

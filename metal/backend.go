@@ -1532,11 +1532,23 @@ func (a *metalResident) PrefillBlockRows() int {
 	if prefillBlockRowsForTest > 0 {
 		return prefillBlockRowsForTest
 	}
-	per := r.prefillScratchBytes(64) / 64
+	// A row's price is not the same at every pass length: a long pass fuses the gate|up GEMM with SwiGLU and needs no guF
+	// (swigluFused), a short one may not. So the estimate is taken on a long pass, then stepped to the most multiple-of-64 rows
+	// that fit.
+	const probe = 4096
+	per := r.prefillScratchBytes(probe) / probe
 	if per <= 0 {
 		return 0
 	}
-	return max(int(a.prefillBlockBudget()/per)/64*64, prefillBlockRowsMin)
+	budget := a.prefillBlockBudget()
+	B := max(int(budget/per)/64*64, prefillBlockRowsMin)
+	for r.prefillScratchBytes(B+64) <= budget {
+		B += 64
+	}
+	for B > prefillBlockRowsMin && r.prefillScratchBytes(B) > budget {
+		B -= 64
+	}
+	return B
 }
 
 // prefillBlockBudget is the scratch one blocked pass may take: prefillBlockScratch, or less when the memory guard's budget
