@@ -30,3 +30,26 @@ prompts whenever fast attention is on.
 | V1-G4 peak, tier 1 | Qwen2.5-VL-3B with one image and about 8K text tokens, main against the branch | open: by day after 07:00 |
 
 **Plant** (the cut rule off): red. gemma3-vl-tiny differs in 3,520 rows and 1,305 logits at both chunk sizes.
+
+## Route 2: Gemma 4's bidirectional image prefill (V2-G)
+
+**The build.** `prefillLogitsGemma4VLBidirectionalSpans` runs the prompt in passes of `prefillChunkRows`. Each pass embeds and splices
+its own rows and is cut outside the image blocks (`cutOutsideBlocks`, route 1's rule over the spans). It reserves the prefill's KV
+after the first pass, as the text path does. `runLayersGemma4FromEmbedN` reads a row's image membership at its absolute position, so
+a pass may start after earlier ones. Its attention is the exact single-row kernel over absolute key ranges, so MEM5-ring's
+sliding-window question does not arise. Gemma 4's causal image prefill already ran one token at a time and is unchanged.
+
+| gate | reading | result |
+|---|---|---|
+| V2-G1 identity | `TestMEM5VL_gemma4BidirChunked`, gemma4-vl-bidir-tiny, route 1's two-span prompt at chunk 7 and 16, f32 and int4: the last logits and four decode steps after equal one pass's in every bit, in 9 and 5 passes | **PASS** |
+| V2-G2 bytes | `TestMEM5VL_gemma4BidirBytes`, 200 rows with a 20-row block, 16-row chunks: one pass allocates 17.27 MB; the largest chunked pass 2.06 MB (bound 2.61 MB: 20 rows' share, the attention scratch at 200 keys, 64 KiB) | **PASS** |
+| V2-G3 unchanged | `TestGemma4VLBidir_textParity`, `TestGemma4VLBidir_imageParity` (HF goldens), `TestTwoImages_gemma4Bidir` | **PASS** |
+| V2-G4 peak, tier 1 | a bidirectional Gemma 4 (26B or 31B class), one image and about 8K tokens | open: no such checkpoint in the Mac's bench set |
+
+**V2-G2's instrument, corrected after its first reading.** The first reading put the first pass at 5.87 MB, against a 3.0 MB bound.
+A memory profile showed it was the cache: `KVCache.Append` allocating each layer's KV on its first write (about 4 MB), and in an
+earlier reading the cache's own creation, which the test made after its baseline. Both are the cache's storage, not the pass's
+working set, which is what the gate bounds. The instrument now creates the cache before the baseline and leaves out of each pass's
+reading the KV arrays it reallocated. The bar did not move.
+
+**Plant** (the cut rule off): red. A pass ending inside the block reads keys past the end of the cache (a slice-bounds panic).
