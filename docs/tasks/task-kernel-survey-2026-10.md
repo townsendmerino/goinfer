@@ -41,7 +41,7 @@
 | KS-B13 | open | aikit: a microbenchmark at SigLIP shapes, bit-gated | — |
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
 | KS-B15 | decision | KS-O2 | — |
-| KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
+| KS-C1 | open (G3, G4 tonight) | (a)+(b) built on branch `ksc1-q4k-gemv-2026-10`: the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0), G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 and the Phi-3 whole-token A/B are on the night queue (fit-refused by day). (c) waits on KS-O1 after these read | survey, "KS-C1 read" |
 | KS-C2 | open | Mac: a masked down-projection prototype, byte-equal at both shapes | — |
 | KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
@@ -595,6 +595,17 @@ Log: `~/goinfer-logs/ksc1-g0b-2026-10-23.log`.
 **C1-G0 with R = 8 (14:11, load 3.25, 3.4 GB available):** Q4_K R = 4 / 8: o 0.083 / **0.080 ms (1.75×)**, gate|up 0.365 / **0.351
 (2.02×, 81 GB/s)**, down 0.202 / **0.198 (1.84×)**; summed, R = 8 is 3.3% under R = 4, outside the 2% tie: **Q4_K R = 8**. Int8 summed
 over its two shapes: R = 2 0.336 ms against R = 1 0.346 and R = 4 0.338: **int8 R = 2**. Log: `~/goinfer-logs/ksc1-g0c-2026-10-23.log`.
+
+**KS-C1 read 2026-10-23, by day.** C1-G1 **PASS**: G-Q1 on the rows kernels at every built R, worst |err|/Σ|w·a| 1.65e-7 (Q4_K) and
+1.26e-7 (int8) against 1e-5; all five plants red, the registered one (the high half's min term) at 2.98e-2. The int8 rows kernels
+equal `gemv_w8_f32` and its variants byte for byte in 72 cells (both libraries), once the old kernels compile where they stood:
+appended elsewhere, the precise library contracted their residual and bias epilogues differently (`ksc1OldLib`). C1-G2 **PASS**: the
+four `TestQ4KStep_*` tests (the plant retargeted at the new step text, red at 151,936 logits) and a kernel-level step-vs-decode check.
+Getting there took one fix: under fast math the compiler reassociated the Q4_K sum differently in decode's and the step's code
+shapes (500 of 1,000 outputs differed), so both loops carry `#pragma clang fp reassociate(off)`, which C1-G0 re-read at no cost
+(R = 8: 0.080 / 0.348 / 0.198 ms). C1-G3 and C1-G4: Phi-3 at q4k is fit-refused beside the owner's apps (G-Q2's own load, 14:20), so
+both are on the night queue as case (a) (`docs/measurements/ks-night-2026-10/run-ksc1-g3.sh`, `run-ksc1-g4.sh`). G-Q2's reference
+path named the unversioned `….int4.metal.giw`, which no longer exists; it now names the v17 sidecar. Logs: `~/goinfer-logs/ksc1-*-2026-10-23.log`.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 
