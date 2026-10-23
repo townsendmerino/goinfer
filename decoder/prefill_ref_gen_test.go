@@ -70,6 +70,12 @@ func TestPrefillGateReference(t *testing.T) {
 	}
 	t.Logf("prompt set %q (%d files) -> %s", setLabel, len(promptFiles), outDir)
 
+	if n, differ, err := BackfillPrefillRefWitnessesForTest(); err != nil {
+		t.Fatalf("reference cache witnesses: %v", err)
+	} else if n > 0 {
+		fmt.Printf("[ref] recorded %d source witnesses from pairs already in the cache (%d differ)\n", n, differ)
+	}
+
 	const continuationN = 64
 	workers := refWorkers(min(8, runtime.NumCPU()))
 	// K=512 is in the decision set because a floor must be measured at the depth it is set to, not interpolated between cells
@@ -283,15 +289,38 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 // source + arch/quant/continuation. A hit is linked into outDir and skipped; a miss is computed, stored atomically, then
 // linked. So a rerun after an interruption computes only the prompts not yet stored, and a reference for different
 // text, weights or code can never be picked up by accident.
+//
+// A miss whose prompt is cached under another source is adopted when a witness has shown that source to agree with this one
+// (prefill_ref_witness_testhook.go). When none has, one such prompt per source is computed first, in the first round beside
+// the prompts with nothing cached, as the witness: byte-identical adopts the rest, anything else computes them.
+//
+// A prompt is not started when the slowest prompt this cell has finished says it would end past the test's deadline: the
+// test then fails naming how many were left, every finished prompt stays stored, and a rerun resumes.
 func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpointPath, quant string, K int, prompts [][]int, outDir string, continuationN, workers int) {
 	t.Helper()
 	type job struct {
-		pi    int
-		ids   []int
-		parts PrefillRefKeyParts
+		pi              int
+		ids             []int
+		parts           PrefillRefKeyParts
+		sibling, source string // a witness job's sibling reference and its source
 	}
-	jobs := make(chan job, len(prompts))
-	cached := 0
+	outPathOf := func(pi int) string { return filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, pi)) }
+	link := func(cp string, j job) {
+		if err := LinkPrefillRefForTest(cp, outPathOf(j.pi), j.parts); err != nil {
+			t.Fatalf("link cached reference %s -> %s: %v", cp, outPathOf(j.pi), err)
+		}
+	}
+	adopt := func(j job) {
+		cp, err := AdoptPrefillRefForTest(j.sibling, j.parts)
+		if err != nil {
+			t.Fatalf("prompt %d: adopt %s: %v", j.pi, j.sibling, err)
+		}
+		link(cp, j)
+	}
+	var fresh []job
+	pending := map[string][]job{} // by a sibling source no witness covers yet
+	var sources []string
+	cached, adopted := 0, 0
 	for pi, ids := range prompts {
 		if len(ids) < K {
 			t.Fatalf("prompt %d: only %d tokens, need >= %d", pi, len(ids), K)
@@ -300,63 +329,135 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 		if err != nil {
 			t.Fatalf("prompt %d: reference key: %v", pi, err)
 		}
-		outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, pi))
+		j := job{pi: pi, ids: ids[:K], parts: parts}
 		if cp, ok := LookupPrefillRefForTest(parts); ok {
-			if err := LinkPrefillRefForTest(cp, outPath, parts); err != nil {
-				t.Fatalf("link cached reference %s -> %s: %v", cp, outPath, err)
-			}
+			link(cp, j)
 			cached++
 			continue
 		}
-		jobs <- job{pi, ids[:K], parts}
+		if sib, src, ok := PrefillRefSiblingForTest(parts); ok {
+			j.sibling, j.source = sib, src
+			switch agree, known := PrefillRefSourcesAgreeForTest(parts, src); {
+			case agree:
+				adopt(j)
+				adopted++
+				continue
+			case !known:
+				if pending[src] == nil {
+					sources = append(sources, src)
+				}
+				pending[src] = append(pending[src], j)
+				continue
+			}
+		}
+		j.sibling, j.source = "", ""
+		fresh = append(fresh, j)
 	}
-	close(jobs)
-	fmt.Printf("[ref] %s K=%d: %d of %d prompts already in the reference cache, %d to compute\n",
-		modelName, K, cached, len(prompts), len(prompts)-cached)
+	round := fresh
+	for _, src := range sources {
+		round = append(round, pending[src][0])
+	}
+	fmt.Printf("[ref] %s K=%d: %d of %d prompts already in the reference cache, %d adopted from a source a witness agrees with, "+
+		"%d to compute now (%d of them witnesses for another source's %d cached prompts)\n",
+		modelName, K, cached, len(prompts), adopted, len(round), len(sources), len(prompts)-cached-adopted-len(fresh))
 
 	var (
 		mu       sync.Mutex
 		firstErr error
 		done     int
-		wg       sync.WaitGroup
+		slowest  time.Duration
+		left     int
+		agreed   = map[string]bool{}
 	)
+	deadline, hasDeadline := t.Deadline()
 	t0 := time.Now()
-	for range workers {
-		wg.Go(func() {
-			for j := range jobs {
-				seedLogits, refTokens, refLogits, err := prefillReferenceCell(m, j.ids, continuationN, K)
-				if err != nil {
-					mu.Lock()
-					if firstErr == nil {
-						firstErr = fmt.Errorf("prompt %d: %w", j.pi, err)
-					}
-					mu.Unlock()
-					continue
-				}
-				outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, j.pi))
-				cp, err := StorePrefillRefForTest(j.parts, seedLogits, refTokens, refLogits)
-				if err == nil {
-					err = LinkPrefillRefForTest(cp, outPath, j.parts)
-				}
-				if err != nil {
-					mu.Lock()
-					if firstErr == nil {
-						firstErr = fmt.Errorf("store %s: %w", outPath, err)
-					}
-					mu.Unlock()
-					continue
-				}
-				mu.Lock()
-				done++
-				fmt.Printf("[ref] %s K=%d prompt %2d done (%d/%d computed) -> %s elapsed=%s\n",
-					modelName, K, j.pi+1, done, len(prompts)-cached, outPath, time.Since(t0).Round(time.Second))
-				mu.Unlock()
-			}
-		})
+	fail := func(err error) {
+		mu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		mu.Unlock()
 	}
-	wg.Wait()
+	run := func(js []job) {
+		ch := make(chan job, len(js))
+		for _, j := range js {
+			ch <- j
+		}
+		close(ch)
+		var wg sync.WaitGroup
+		for range workers {
+			wg.Go(func() {
+				for j := range ch {
+					mu.Lock()
+					late := hasDeadline && slowest > 0 && time.Now().Add(slowest).After(deadline.Add(-time.Minute))
+					if late {
+						left++
+					}
+					mu.Unlock()
+					if late {
+						continue
+					}
+					start := time.Now()
+					seedLogits, refTokens, refLogits, err := prefillReferenceCell(m, j.ids, continuationN, K)
+					if err != nil {
+						fail(fmt.Errorf("prompt %d: %w", j.pi, err))
+						continue
+					}
+					cp, err := StorePrefillRefForTest(j.parts, seedLogits, refTokens, refLogits)
+					if err == nil {
+						err = LinkPrefillRefForTest(cp, outPathOf(j.pi), j.parts)
+					}
+					if err != nil {
+						fail(fmt.Errorf("store %s: %w", outPathOf(j.pi), err))
+						continue
+					}
+					witness := ""
+					if j.sibling != "" {
+						same, err := WitnessPrefillRefForTest(j.parts, cp, j.sibling, j.source)
+						if err != nil {
+							fail(fmt.Errorf("prompt %d: witness: %w", j.pi, err))
+							continue
+						}
+						witness = fmt.Sprintf(", witness for source %s…: byte-identical=%v", j.source[:12], same)
+						mu.Lock()
+						agreed[j.source] = same
+						mu.Unlock()
+					}
+					mu.Lock()
+					done++
+					slowest = max(slowest, time.Since(start))
+					fmt.Printf("[ref] %s K=%d prompt %2d done (%d computed) -> %s took=%s elapsed=%s%s\n",
+						modelName, K, j.pi+1, done, outPathOf(j.pi), time.Since(start).Round(time.Second), time.Since(t0).Round(time.Second), witness)
+					mu.Unlock()
+				}
+			})
+		}
+		wg.Wait()
+	}
+	run(round)
+	var rest []job
+	after := 0 // adopted once a witness agreed
+	for _, src := range sources {
+		for _, j := range pending[src][1:] {
+			if agreed[src] {
+				adopt(j)
+				after++
+				continue
+			}
+			j.sibling, j.source = "", ""
+			rest = append(rest, j)
+		}
+	}
+	if len(sources) > 0 {
+		fmt.Printf("[ref] %s K=%d: %d adopted after their witness, %d more to compute\n", modelName, K, after, len(rest))
+	}
+	run(rest)
 	if firstErr != nil {
 		t.Fatalf("%s K=%d: %v", modelName, K, firstErr)
+	}
+	if left > 0 {
+		t.Fatalf("%s K=%d: %d prompts not started: the slowest finished prompt took %s, so they would end past the test deadline (%s); "+
+			"the %d finished are stored, and a rerun resumes", modelName, K, left, slowest.Round(time.Second), deadline.Format(time.Kitchen), done)
 	}
 }
 
