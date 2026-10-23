@@ -158,10 +158,13 @@ kernel void gemm_w4f16_swiglu(device const half* A[[buffer(0)]], device const ui
     constant uint& act[[buffer(7)]],
     uint2 tgp[[threadgroup_position_in_grid]], ushort tid[[thread_index_in_threadgroup]],
     ushort sg[[simdgroup_index_in_threadgroup]], ushort lane[[thread_index_in_simdgroup]]) {
-    threadgroup half sa[32*72];   // weights:     [feature block 0..7][k block 0..3] of 8x8 [k][feature], padded
-    threadgroup half sb[64*32];   // activations: [token block 0..7][k block 0..3] of 8x8 [token][k]
-    threadgroup float cs[4*64];   // per-simdgroup epilogue scratch
-    threadgroup half gu[64*64];   // the tile rounded to half, as guF held it: [token][gate 0..31 | up 0..31]
+    // The staging arrays and, once the K loop is done with them, the half tile share one array: the tile (64 x 64 halves) fits
+    // in sa then sb (32*72 + 64*32 halves), so the kernel needs no more threadgroup memory than gemm_w4f16_store.
+    threadgroup half sab[32*72 + 64*32];
+    threadgroup half* sa = sab;          // weights:     [feature block 0..7][k block 0..3] of 8x8 [k][feature], padded
+    threadgroup half* sb = sab + 32*72;  // activations: [token block 0..7][k block 0..3] of 8x8 [token][k]
+    threadgroup float cs[4*64];          // per-simdgroup epilogue scratch
+    threadgroup half* gu = sab;          // after the K loop: the tile rounded to half, as guF held it: [token][gate 0..31 | up 0..31]
 
     const uint i0 = tgp.x*32u, m0 = tgp.y*64u;
     const uint wpr = K/8u, gpr = K/32u;
@@ -211,6 +214,7 @@ kernel void gemm_w4f16_swiglu(device const half* A[[buffer(0)]], device const ui
         }
     }
 
+    threadgroup_barrier(mem_flags::mem_threadgroup); // every simdgroup's last MMA has read sa and sb before the tile overwrites them
     threadgroup float* myc = cs + sg*64;
     for (ushort t = 0; t < 4; t++)
         for (ushort f = 0; f < 4; f++) {
