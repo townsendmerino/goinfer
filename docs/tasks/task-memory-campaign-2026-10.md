@@ -31,7 +31,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
-| MEM5-VL | open (gates for route 1 registered) | either box: chunk the prefill of the families G40 left out; L in total. Four routes, in order: the shared batched route, Gemma 4, Qwen3.5, audio (§4 MEM5) | `KVCache.prefillChunkable` |
+| MEM5-VL | open (route 1 done 2026-10-22 at tier 0) | either box: chunk the prefill of the families G40 left out; L in total. Four routes, in order: the shared batched route (done at tier 0: V1-G1 to G3 PASS; V1-G4, the Qwen2.5-VL-3B peak, by day), Gemma 4, Qwen3.5, audio (§4 MEM5) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open (CUDA) | Metal routes done 2026-10-22: the resident reads the suffix a chunk at a time (`ResidentPrefillRows`), at most 256 embedding rows held (was the whole suffix), logits byte-equal; MEM6-G1 to G3 PASS. Left: the CUDA cells and the `RssAnon` gate, on nobara | `docs/measurements/mem6-2026-10/README.md` |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
