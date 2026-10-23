@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -42,8 +43,12 @@ func TestKSD5_guFShare(t *testing.T) {
 		prevOff := swigluFusedOffForTest
 		swigluFusedOffForTest = twoStep
 		defer func() { swigluFusedOffForTest = prevOff }()
+		p := slices.Clone(prompt)
+		if twoStep { // a different first token, so the second arm does not reuse the first arm's prefix
+			p[0] = (p[0] + 1) % vocab
+		}
 		before := prefillScratchSeen.Load()
-		mgGen(t, m, prompt, 1)
+		mgGen(t, m, p, 1)
 		return prefillScratchSeen.Load() - before
 	}
 	seenTwo := pass(true)
@@ -53,8 +58,8 @@ func TestKSD5_guFShare(t *testing.T) {
 	guF := int64(mpad * 2 * maxI * 2)
 	planned := a.PrefillScratchBytes(n)
 	const MB = 1e6
-	fmt.Fprintf(os.Stderr, "[KS-D5] %s (%q, w8 %v, fused %v), one %d-row pass: scratch counted %.1f MB, planned %.1f MB; guF %.1f MB = %.1f%% of the counted (maxI %d, Mpad %d); without it %.1f MB\n",
-		path, opts.Quant, a.r.w8, a.r.swigluFused(mpad), n, float64(seen)/MB, float64(planned)/MB, float64(guF)/MB, 100*float64(guF)/float64(seen), maxI, mpad, float64(seen-guF)/MB)
+	fmt.Fprintf(os.Stderr, "[KS-D5] %s (%q, w8 %v, fused %v), one %d-row pass: scratch counted %.1f MB, planned %.1f MB; guF %.1f MB = %.1f%% of the two-step pass (maxI %d, Mpad %d); without it %.1f MB\n",
+		path, opts.Quant, a.r.w8, a.r.swigluFused(mpad), n, float64(seen)/MB, float64(planned)/MB, float64(guF)/MB, 100*float64(guF)/float64(seenTwo), maxI, mpad, float64(seenTwo-guF)/MB)
 	fmt.Fprintf(os.Stderr, "[KS-D5] the two-step pass counted %.1f MB; less guF %.1f MB; this pass %.1f MB\n",
 		float64(seenTwo)/MB, float64(seenTwo-guF)/MB, float64(seen)/MB)
 }
