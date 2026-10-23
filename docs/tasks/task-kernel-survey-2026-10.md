@@ -42,7 +42,7 @@
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
 | KS-B15 | decision | KS-O2 | — |
 | KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
-| KS-C2 | open | Mac: a masked down-projection prototype, byte-equal at both shapes | — |
+| KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
@@ -574,6 +574,48 @@ tiling reproduces").**
   - A `resid_mk4` prototype beside `resid_st4` in `metal/gemv_r18_test.go`, byte-equal at both shapes.
   - Then `TestR18InSequence`, 7 paired reps.
   - Kill it under 1.03× or on any differing byte.
+
+**KS-C2 first measurement, registered 2026-10-23 before the code, on the owner's order of 11:50.** The prototype,
+`gemv_w4a8_resid_mk<R>` in `metal/gemv_r18_test.go`'s `r18Kernels`: `gemv_w4a8_resid_staged<R>` (production's down) with each
+word's integer sum taken as R18b does, through two masked half-word dots against the word's eight activations pre-scaled by
+16^-(k mod 4), less 8·Σa. The activations stay staged as int8 (K bytes, so the 7B's 18,944 fits) and are scaled in registers.
+Every partial sum is an integer below 2^24, so `float(gi)` is the shipped integer exactly and the per-row chain
+`acc += float(gi) · scale` is unchanged. Instruments, in order:
+1. `TestR18Step0Standalone`'s down step at the 1.5B's (1,536 × 8,960) and the 7B's (3,584 × 18,944) shapes: `resid_mk2` and
+   `resid_mk4` against `gemv_w4a8_resid`, byte-equal, timed beside `resid_st4`.
+2. `TestR18InSequence` on the 1.5B (the Metal `.gguf` at int4), 7 paired reps, a new arm `h4244m` (production with the masked down)
+   against production `h4244`: its bit-identity precondition and the in-sequence down-category work.
+
+**Kill** on any differing byte in either instrument, or if the in-sequence down work of `h4244m` is under 1.03× production's
+(median over the 7 reps); otherwise the wiring follows, behind a whole-token in-process A/B. Timed, Mac, the timing lock held
+exclusively. Stopping rule: one pass each. Cost: about 2 and 10 minutes.
+
+**KS-C2 first measurement read 2026-10-23 (12:53–12:54, the timing lock held exclusively, load 2.23 then 2.04, 5.2 GB available).**
+Standalone, byte-equal at both shapes: the 1.5B's down `resid_mk4` 0.062 ms against production's `resid_st4` 0.089 (1.44×), the 7B's
+0.237 against 0.344 (1.45×). In sequence on the 1.5B (7 reps): `h4244m` 0 of 151,936 logits differ over 16 positions; its down work
+1.741 ms against production's 2.571 (**1.48×**), all four GEMVs 1.133× production's (bar ≥ 1.03), the full token −0.77 ms (10.55 →
+9.78). Not killed: the wiring follows. Log: `~/goinfer-logs/ksc2-2026-10-23.log`.
+
+**KS-C2 wiring gates, registered 2026-10-23 before the code (C2b-G).** The build replaces the bodies of production's
+`gemv_w4a8_resid_staged<R>` and `gemv_w4a8_coal_staged<R>` with the masked form; `KSC2_OLD_DOWN` (prepended to the decode library
+by `ksc2OldDownForTest`, read at build) compiles the per-word integer form back for the A/B, as `KSD7_OLD_DEQUANT` does.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C2b-G1 identity | 0 | `gemv_w4a8_resid_staged<2,4>` against `gemv_w4a8_resid` and `gemv_w4a8_coal_staged<2,4>` against `gemv_w4a8_coal` at the 1.5B's and the 7B's down shapes, random int4 weights, f16 scales and int8 activations, fast-math and precise libraries; the 1.5B's Metal `.giw` and qwen35-tiny (a DeltaNet layer, `coal_staged`), 32 greedy decode steps, every step's logits, the new library against `KSC2_OLD_DOWN` | byte-equal everywhere |
+| C2b-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B's Metal `.giw`: two residents in one process (old and new library), 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old per-token time is ≤ 0.98 and at least 9 of 10 pairs are faster; otherwise PARK with the reading |
+
+Planted defect: the high half-word dotted with the low half's activations (`x0` for `x1`); C2b-G1 goes red. Stopping rule: one pass
+each. Cost: G1 seconds; G2 about 4 minutes.
+
+**KS-C2 wiring read 2026-10-23.** C2b-G1 **PASS**: 16 kernel cells (both staged kernels, R = 2 and 4, both shapes, both libraries)
+0 differ; qwen35-tiny 0 of 8,192 and the 1.5B 0 of 4,861,952 logits differ over 32 decode steps. The registered plant (`x0` for `x1`)
+turned every masked cell red; a second plant inside the `KSC2_OLD_DOWN` branch only turned the model identity red, so the define
+reaches the old arm (KS-D7's lesson). C2b-G2 (12:57–12:58, the lock held exclusively, load 1.37 at the start, 5.4 GB available;
+each pair's load 1.14–1.50): old 10.70–10.86 ms a token, masked 9.97–10.13, **median 0.9332, 10 of 10: SHIP**. Logs:
+`~/goinfer-logs/ksc2b-g1-2026-10-23.log`, `~/goinfer-logs/ksc2b-g2-2026-10-23.log`. Also: `touched.py` green after merging main; the
+decode families by name (`R18|MC3|DeltaNet|Qwen35|Decode|Step|Gemv|GEMV|Coal|Staged|KSC2`) 53 pass, 31 skip, 0 fail; staticcheck
+clean.
 
 **KS-C3 · Native int8 decode GEMVs get R18's rows and staging (bit-identical).**
 - **Waste:** `W8A8_SA_BODY` / `W8A8_COAL_BODY` run one row per simdgroup with 4-byte loads, and the down projection re-reads

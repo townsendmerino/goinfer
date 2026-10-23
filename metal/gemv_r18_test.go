@@ -262,6 +262,44 @@ template [[host_name("gemv_w4a8_resid_st2")]] kernel gemv_w4a8_resid_st_t gemv_w
 template [[host_name("gemv_w4a8_resid_st4")]] kernel gemv_w4a8_resid_st_t gemv_w4a8_resid_st<4>;
 template [[host_name("gemv_w4a8_resid_st8")]] kernel gemv_w4a8_resid_st_t gemv_w4a8_resid_st<8>;
 
+// KS-C2: gemv_w4a8_resid_st with each word's integer sum taken in R18b's masked form. The word's eight int8 activations,
+// staged as int8 and scaled in registers by 16^-(k mod 4), are dotted with its two 16-bit halves masked in place (nibble k
+// as nib*16^(k mod 4)); less 8*sum(a), from the same scaled activations. Every partial is an integer below 2^24, so gi is
+// the shipped integer exactly and acc += gi*scale is gemv_w4a8_resid's chain: bit-identical.
+template <uint R>
+kernel void gemv_w4a8_resid_mk(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup char* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    constexpr float4 P4 = float4(1.0f, 0.0625f, 0.00390625f, 0.000244140625f);
+    constexpr float4 U4 = float4(1.0f, 16.0f, 256.0f, 4096.0f);
+    device const uint* aq4 = reinterpret_cast<device const uint*>(aq);
+    threadgroup uint* As4 = reinterpret_cast<threadgroup uint*>(As);
+    for (uint i=tid;i<(K>>2u);i+=tgs) As4[i]=aq4[i];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint wpr = K/8u, spr = K/32u;
+    uint row0 = (tgid*(tgs>>5u) + sgid)*R;
+    float acc[R];
+    R18_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
+    for (uint wi = lane; wi < wpr; wi += 32u) {
+        float4 x0 = float4(A[wi*2u]) * P4, x1 = float4(A[wi*2u+1u]) * P4;
+        float s8 = 8.0f * (dot(x0, U4) + dot(x1, U4));
+        R18_UNROLL for (uint r=0;r<R;r++) {
+            uint x = bq[(row0+r)*wpr + wi];
+            uint lo = x & 0xFFFFu, hi = x >> 16;
+            float g = dot(float4(float(lo & 0xFu), float(lo & 0xF0u), float(lo & 0xF00u), float(lo & 0xF000u)), x0)
+                    + dot(float4(float(hi & 0xFu), float(hi & 0xF0u), float(hi & 0xF00u), float(hi & 0xF000u)), x1);
+            acc[r] += (g - s8) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+    }
+    R18_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] += s*asc[0]; }
+}
+typedef decltype(gemv_w4a8_resid_mk<1>) gemv_w4a8_resid_mk_t;
+template [[host_name("gemv_w4a8_resid_mk2")]] kernel gemv_w4a8_resid_mk_t gemv_w4a8_resid_mk<2>;
+template [[host_name("gemv_w4a8_resid_mk4")]] kernel gemv_w4a8_resid_mk_t gemv_w4a8_resid_mk<4>;
+
 typedef decltype(gemv_w4a8_sa_fm<1,0>) gemv_w4a8_sa_fm_t;
 template [[host_name("gemv_w4a8_sa_fm1")]] kernel gemv_w4a8_sa_fm_t gemv_w4a8_sa_fm<1,0>;
 template [[host_name("gemv_w4a8_sa_fm2")]] kernel gemv_w4a8_sa_fm_t gemv_w4a8_sa_fm<2,0>;
@@ -683,7 +721,8 @@ func TestR18Step0Standalone(t *testing.T) {
 		cArms := []struct {
 			name string
 			R    int
-		}{{"gemv_w4a8_resid", 0}, {"gemv_w4a8_resid_st1", 1}, {"gemv_w4a8_resid_st2", 2}, {"gemv_w4a8_resid_st4", 4}, {"gemv_w4a8_resid_st8", 8}}
+		}{{"gemv_w4a8_resid", 0}, {"gemv_w4a8_resid_st1", 1}, {"gemv_w4a8_resid_st2", 2}, {"gemv_w4a8_resid_st4", 4}, {"gemv_w4a8_resid_st8", 8},
+			{"gemv_w4a8_resid_mk2", 2}, {"gemv_w4a8_resid_mk4", 4}} // KS-C2's masked prototype
 		disp := func(e *Encoder, name string, R int, c int, out Buffer) {
 			p := pipe(name)
 			if R == 0 {
