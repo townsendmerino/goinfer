@@ -33,7 +33,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
-| MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
+| MEM6 | building | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | done | — (D12 (a), owner, 2026-10-22: shipped as built; PLE-G3 read AMBIGUOUS, 94.25% top-1, KL 0.033) | branch `mem8b-ple-2026-10`; PLE-G1, G2, G4 PASS, G3 AMBIGUOUS and shipped on the owner's word, `docs/measurements/mem8b-2026-10/README.md` |
@@ -444,6 +444,25 @@ byte-identical.
 **and return the memory afterwards**; its gate adds: `RssAnon` 10 s after a 20K cold prompt is within 64 MiB of its value after load plus the
 session's retained state, on the 1.5B and the 7B (`mem0_linux.py`'s cells). Registered with the CUDA streaming change
 (`docs/measurements/cuda-stream-pack-2026-10-18/README.md`).
+
+**MEM6 (Metal routes) gates, made concrete 2026-10-22 before the code (the tier-0 gate above, with its instrument; MEM6-G).**
+The build: a resident that implements `decoder.ResidentPrefillRows` reads a suffix's embeddings a range of rows at a time from
+the decoder, which embeds them into one reused slab. Metal implements it on every route that takes a whole suffix in one call:
+- the three layer-major routes (paged Gemma 4, paged MoE, E-model), per 256-row chunk;
+- the batched pass, which fills its f16 input rows and an E-model's per-layer inputs straight into their device buffers,
+  chunk by chunk, so the host copy of every row's per-layer inputs goes too;
+- the step prefill, per piece.
+
+The CUDA cells and the `RssAnon` gate (Linux, `mem0_linux.py`) stay with nobara.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| MEM6-G1 bytes | 0, Mac | Go bytes allocated (`runtime.MemStats.TotalAlloc`) across one resident prefill of 1,024 and of 2,048 rows on `gemma4-emodel-tiny`, Metal, on the batched route and the layer-major route (`emodelBatchedOn` off) | the bytes a prompt row adds, (bytes(2048) − bytes(1024)) / 1024, are under an eighth of one embedding row's bytes (`ResidentEmbedLen` × 4): O(chunk), not O(prompt). Main adds at least one embedding row per prompt row (its suffix), plus the batched pass's per-layer-input copy |
+| MEM6-G2 identity | 0, Mac | the same prefills' last logits, and 32 decode steps after them, against main's | byte-equal on both routes |
+| MEM6-G3 unchanged | 0 | `touched.py`; the Metal prefill and E-model tests (`TestGemma4EModel*`, `TestS9*`, `TestI8_*`, `TestMEM7_*`) | all pass |
+
+Planted defect, run once on the committed tree and reverted: the decoder handing the resident the whole suffix in one rows call (G1
+red). Stopping rule: one pass each. Cost: seconds.
 
 ### MEM7 · Size the Metal prefill block to the machine (S)
 
