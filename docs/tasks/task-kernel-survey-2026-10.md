@@ -87,7 +87,7 @@
 | KS-H1 | open (512, G5) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. Left: G5 (Qwen3.5-9B at 20K, by day) and head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
 | KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
-| KS-H4 | open (measured 2026-10-22) | next: release the tower scratch above a ceiling after the forward. Measured: Qwen3-VL-2B holds 2,622.5 MiB after a 4K forward and still 10 s later | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
 | KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2) | — |
@@ -1093,6 +1093,22 @@ start (`uStartPos` 0; G1 red). Stopping rule: one pass each. Cost: G1–G4 secon
 - **Change:** release above a ceiling after the forward, or MEM2's optional patch ceiling.
 - **Gain:** up to 2.6 GiB back on the 16 GB Mac.
 - **Size:** S.
+
+**KS-H4 gates, registered 2026-10-23 (05:30) before the code (H4-G), on the owner's plan of 5:16 am.** The first measurement:
+Qwen3-VL-2B's grid tower holds its 4K scratch until `Close` (2,622.5 MiB on main, 1,515.4 after KS-D6), unchanged 10 s after the
+forward. The build: after a forward whose scratch is over a ceiling (256 MiB), the grid tower releases its scratch once it has
+been idle for `gridIdleRelease` (5 s). A forward in the meantime cancels the release and reuses the buffers, so a repeat image
+call pays nothing. The next call after a release allocates again. Scope: `gridVAccel`, the measured tower. The other tower
+accelerators and aikit's `qwenmetal`/`visionmetal` are left for their own rows.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| H4-G1 identity | 0 | the grid tiny fixtures (qwen3.5, glm-ocr, qwen2.5-vl), with the ceiling at 0 and the idle wait at 0: a forward, the release, a forward of a larger then a smaller grid; against the tower with release off | every output byte-equal; the scratch reads 0 bytes after each release |
+| H4-G2 allocated after 10 s | 1, Mac, memory read, timing lock shared | `TestKSD6H4_gridTowerScratch` on Qwen3-VL-2B at 4K: Metal's allocated size net of the build right after the forward and 10 s later | 10 s later at most 16 MiB, from 1,515.4 right after |
+| H4-G3 repeat call | timed, Mac, timing lock | Qwen3-VL-2B at 4K, the wall time of a repeat `Hidden` issued right after the previous one, release on against release off, two towers in one process, A B B A over 5 pairs after a warm run each; the first call after a release read, not graded | SHIP iff the median on/off ratio is ≤ 1.02 (no regression); otherwise PARK and decide |
+
+Planted defect: the release keeps `cap` (so the next forward skips the allocation and writes into released buffers). H4-G1 goes
+red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 about 1 minute.
 
 **KS-H5 · Buffers only speculative verify reads, allocated at build (bit-identical).**
 - **Waste:**
