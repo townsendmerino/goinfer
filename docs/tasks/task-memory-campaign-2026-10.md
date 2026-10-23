@@ -495,6 +495,20 @@ and are left as they are.
 Planted defect: each pass splices the image features at rows counted from the pass, not the prompt. V3-G1 goes red. Stopping rule:
 one pass each. Cost: seconds.
 
+**MEM5-VL (4) gates, the audio prefill, registered 2026-10-22 before the code (V4-G).** `prefillLogitsAudio` (Voxtral,
+Qwen3-ASR) embeds the whole prompt, splices the audio run's features and runs one `runLayersFromEmbedN` pass. Its audio rows attend
+causally (no block), so it is route 1's case with one causal span. The build: it calls route 1's `prefillSpliced` with the audio run
+as the span.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V4-G1 identity | 0 | voxtral-tiny and qwen3asr-tiny, a 60-token prompt with a 20-row audio run, with `prefillChunkRows` at 7 and 16, at f32 and int4: the last logits and four decode steps after, against one pass; the pass count | byte-equal, more than one pass at each size |
+| V4-G2 bytes | 0 | route 1's row-buffer instrument on a 200-row prompt with a 40-row audio run, 16-row chunks | row buffers exactly the single pass's scaled to 16 of 200 rows; key-sized buffers equal |
+| V4-G3 unchanged | 0 | the Voxtral and Qwen3-ASR tests (`voxtral_test.go`, `qwen3asr_test.go`, against HF goldens); `scripts/refresh_parity_hashes.sh` | pass; green |
+
+Planted defect: the audio features spliced at rows counted from the pass. V4-G1 goes red. Stopping rule: one pass each. Cost:
+seconds. No tier-1 cell: the bench set's audio checkpoints are short-prompt ASR, where a whole-prompt pass is small.
+
 ### MEM6 · Resident prefill embeds per chunk (S)
 
 **Problem.** On the resident paths that do not block the prompt (CUDA's chunked prefill, Metal's layer-major and E-model
