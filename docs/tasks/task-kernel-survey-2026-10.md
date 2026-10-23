@@ -720,7 +720,7 @@ threadgroup memory. The build: `gemm_w4f16_swiglu` places the half tile in the s
 
 Stopping rule: one pass each, no further build on a miss. Cost: seconds; D5b-G3 about 2 minutes.
 
-**KS-D5c gates, registered 2026-10-23 (10:15) before the code (D5c-G), from KS-D5's handoff ("a fused form of those is the next
+**KS-D5c gates, registered 2026-10-23 (10:12) before the code (D5c-G), from KS-D5's handoff ("a fused form of those is the next
 idea").** Of the three lanes that keep `guF`, the small-M tiles hold at most 128 rows (under 5 MB on the 1.5B) and the MoE expert
 GEMMs pick a tile per expert from its row count, so neither is a straight extension. The native int8 lane is: on by default for an
 int8 dense model (`w8Eligible`), it runs the same 64 × 64 MMA chain (`gemm_w8f16_m64n64`), and its `guF` is the same 53% of a long
@@ -737,7 +737,7 @@ the epilogue is the shipped one. `swigluFused` admits a native int8 resident. `s
 Planted defect: the up rows read the gate rows' scale (`WS[i0 + (fr & 31)]`). D5c-G1's kernel cells go red. Stopping rule: one pass
 each, no further build on a miss. Cost: seconds; D5c-G3 about 3 minutes with the load.
 
-**Amended 2026-10-23 (10:20), before any model reading: the 0.5B replaces the 1.5B in D5c-G1's model cell, D5c-G2 and D5c-G3.** The
+**Amended 2026-10-23 (10:15), before any model reading: the 0.5B replaces the 1.5B in D5c-G1's model cell, D5c-G2 and D5c-G3.** The
 fit guard refused the 1.5B at int8int8 (2.8 GB needed against a 2.1 GB budget, 3.0 GB available with the owner's apps open). The
 0.5B (`qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` at int8int8, a direct load) takes the same 64 × 64 tile at 3,900 rows with
 I = 4,864, a multiple of 32, so it exercises the same mechanism; the tier rule asks for the smallest such model. D5c-G2's bar becomes
