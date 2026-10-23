@@ -8234,6 +8234,57 @@ for a ~1,500-token reply is projected as ttft + 1499 / decode rate.
   (reload it on the next image) so the expert cache can grow into it; size the expert cache to what is free after load;
   and (Francis, 2026-10-23 15:45) grow the KV cache on demand instead of reserving all 16K positions at load.
 
+**G-S20a read 2026-10-23 15:48 to 15:57 on nobara** (binary `193de9f06`, S19's tree plus the per-turn cache line; driver
+595.91.07; one cell each, load 2.6 to 5.3 at the cell starts, none void; raw: `docs/measurements/multimodal-support-2026-10/s20/step1/`):
+
+| cell | config | slots/layer | hit rate | misses/token | decode tok/s | ttft | per-form, 1,500 tokens |
+|---|---|---|---|---|---|---|---|
+| A | image, `--ctx 16384` (today's) | 8 | 28.4% | 175 | 16.66 | 14.5 s | 104.5 s |
+| B | image, `--ctx 4096` (diagnostic) | 12 | 43.8% | 138 | 20.00 | 14.1 s | 89.0 s |
+| C | text, `--ctx 2048` (the README's cell) | 39 | 83.4% | 40 | 34.73 | 2.1 s | — |
+| C2 | text, `--ctx 16384` | 33 | 78.5% | 52 | 33.12 | 2.0 s | — |
+| D | image, `--ctx 16384`, `-vision-device cpu` | 33 | 78.1% | 54 | 31.31 | 41.6 s | 89.5 s |
+
+- **The hypothesis is CONFIRMED.** C2 is granted 33 slots and A 8, at the same context; the only difference is the 2.6 GB
+  held back for the tower. The decode rate ranks with the hit rate across all five cells.
+- **Where the time goes.** A least-squares line through the five cells puts a token at about 19 ms plus 0.23 ms for each
+  expert miss (one miss copies 3.35 MB, all of a layer's slot buffers for one expert). In A, 175 misses are about 40 of the
+  60 ms a token takes; at 33 slots, 52 misses are about 12 of 30.
+- **The VRAM split, A against C2** (nvidia-smi after load, 402 MiB used before either; a card of 8192 MiB): C2 holds 7321 MiB
+  with a 3.4 GB cache, so the core weights, the CUDA context and the 16K KV come to about 4.1 GB; A holds 7155 MiB with a 0.9 GB
+  cache, so the loaded tower holds about 2.2 GB, and the rest of the 2.6 GB reserve is its encode scratch, idle between images.
+  The 16K plan costs only 0.4 GB more than 4K (free before the cache: 4.0 against 4.4 GB, B against A), because windowed KV
+  already holds the sliding layers at 1,536 positions.
+- **The README does not reproduce within 10%:** C reads 34.73 tok/s against 39.3, 11.6% low, on a different prompt and reply
+  length from the peer sweep's. Recorded as a regression question, not chased here.
+- **Output identity.** A and B wrote byte-identical replies (1,073 tokens, 8 against 12 slots), and so did C and C2 (1,500 tokens,
+  39 against 33 slots): the slot count does not change the output. D's reply differs (1,169 tokens), because the CPU tower's
+  features are not the CUDA tower's.
+- **Predictions scored.** Slots: A 8, C about 40 (39) and D about 33 held; B about 15 missed (12). Rates: all four ranges missed
+  low (A 16.66 against 17 to 19, B 20.00 against 23 to 28, C 34.73 against 36 to 42, D 31.31 against 32 to 38).
+
+**Step 3 gates, registered 2026-10-23 after G-S20a's read and before any code.** The read ranks the three candidates:
+- **Releasing the tower between images is the lever.** It moves the cache from 8 slots to about 33 at 16K: by the line above,
+  about 60 → 31 ms a token, and a 1,500-token form from about 104 s to about 64 s.
+- **Sizing the cache to what is free after load buys at most 1 to 2 slots.** Free VRAM at steady state is 1037 MiB in A against
+  871 MiB in C2, so about 166 MiB idles. Dropped by this read.
+- **On-demand KV buys about 4 slots** (B against A). After the release that is 33 → about 37, which C against C2 prices at
+  about 5%. Parked unless the release falls short of its bar.
+
+The design: the cache is sized at load as if no tower were resident. Before an image is encoded, the cache shrinks to the
+slots that fit beside the tower and the tower loads. After the encode the tower's device memory is freed and the cache grows
+back. A resize frees and reallocates each layer's slot stacks and empties the LRU.
+- **G-S20e, exactness (tier 0 and 1).** (1) Tier 0, the tower: features from a tower rebuilt after a Close are bit-identical
+  to the first build's, on the same image. (2) Tier 1, the real 26B, served: the greedy reply under release is byte-identical
+  to today's binary on inv01, then inv02, then inv01 again (the second and third exercise a reload), over up to 1,500 tokens
+  each. A difference is a defect, not a near-tie question, since the cache is exact (G-S20a).
+- **G-S20f, VRAM (tier 1).** At `--ctx 16384` with `--vision`, decode runs with at least 30 slots/layer. Every image's encode
+  logs the tower on CUDA (no CPU fallback, no `CUDA_ERROR_OUT_OF_MEMORY`). The per-turn cache line shows the slots after
+  each grow.
+- **G-S20g, speed (tier 1).** A B B A, today's binary (`193de9f06`) against the new one, two forms per cell (inv01, then
+  inv02), under the timing lock. Per-form time for the reply, reported with the reload's own cost. **PASS:** new per-form
+  time at most 0.8 of old in both pairs. **Kill:** not faster, then it does not ship. Prediction: about 0.6.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

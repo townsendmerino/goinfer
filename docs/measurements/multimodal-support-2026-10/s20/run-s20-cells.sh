@@ -77,6 +77,7 @@ rate = (ntok - 1) / (wall - ttft) if ntok and ttft is not None and wall > ttft e
 print(f"  cell {n} {lab}: ttft {ttft:.1f}s turn {wall:.1f}s tokens {ntok} decode {rate:.2f} tok/s chars {len(''.join(text))}")
 PY
   echo "  gpu after turn: $(gpumem) MiB" | tee -a "$OUT/cells.txt"
+  sleep 2 # serve writes its per-turn lines after the last chunk reaches the client
   grep -E "expert cache:|vision: (encoded|decoded)" "$OUT/cell$n-$lab.serve.log" | cut -c1-200 | sed 's/^/  /' | tee -a "$OUT/cells.txt"
   kill $pid; wait $pid 2>/dev/null; sleep "$SETTLE"
 }
