@@ -553,6 +553,28 @@ tiling reproduces").**
 - **Class:** fidelity-gated by the existing G-Q1 (`TestQ4KLaneKernels`) and G-Q2 (`TestQ4KLane_realPhi3NonInferiority`).
   `q4kRowsSrc` is regenerated from the same body.
 - **Size:** M for (a)+(b), L for (c).
+
+**KS-C1 (a)+(b) gates, registered 2026-10-23 before the code (C1-G), on the owner's word of 1:55 pm (KS-O1 option A: build (a)+(b),
+decide O1 once they read).** The build:
+- (b) `gemv_w8_f32_rows<R>` (plain, residual, bias): R int8 rows a simdgroup sharing each lane's activation loads, every row's lane
+  loop, `simd_sum` and epilogue statement for statement `W8_F32_BODY`'s, so each output is `gemv_w8_f32`'s bits.
+- (a) `gemv_q4k_f32_rows<R>` (plain, residual, bias): all 32 lanes on one super-block, lane l on byte group l mod 8 of 64-weight
+  chunk l / 8 (one `uint` of quants a row), its two `float4` activations loaded once for R rows; d·sc·dot(q, a) per sub-block half
+  and the min term as dmin·m·Σa. A new order of the same products: not bit-identical, graded by G-Q1's bar and G-Q2.
+- `q4kGemv` launches them at ceil(rows / R) simdgroups; the batched step's `mc3_gemv_q4k_f32_rows<B>` takes (a)'s per-lane loop, so
+  the step stays decode's bits. R is chosen by C1-G0.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C1-G0 measure | timed, Mac | the survey's first measurement: `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3's shapes (o, gate\|up, down Q4_K; qkv, down's Q6_K layers int8), beside the streaming ceiling and the new kernels at R = 1, 2, 4, SLC-defeating rotation, median of 7 | read, not gated; R per family is the fastest, the smaller R on a tie within 2% |
+| C1-G1 kernels | 0 | G-Q1 (`TestQ4KLaneKernels`) on the new Q4_K kernels, its bar (per row within 1e-5 of Σ\|w·a\|) and its planted defects; the new int8 kernels against `gemv_w8_f32` at G-Q1's int8 shapes, every variant | (a) every row within the bar and every plant red; (b) byte-equal |
+| C1-G2 step | 0 | `TestQ4KStep_verifyRowsMatchDecode`, `_promptMatchesSequential`, `_twoSequencesMatchAlone` and `_plantIsRed` | as they assert today (byte-equal to decode) |
+| C1-G3 fidelity | 2, Mac | G-Q2 (`TestQ4KLane_realPhi3NonInferiority`) with the new kernels | PASS by its rule |
+| C1-G4 speed | timed, Mac, timing lock | a whole-token in-process A/B on Phi-3 mini at `--quant q4k`: one resident, its q4k-lane pipelines swapped between the new kernels and the old ones (a test-only library), 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise PARK |
+
+Phi-3's load is fit-checked first; refused by day, G3 and G4 go to the night queue as case (a). Planted defect for (a): the min term
+dropped from the high half (`m1·Σa_hi` omitted); C1-G1 goes red. Stopping rule: one pass each. Cost: G0 about 2 min; G1, G2 seconds;
+G3 about 20 min; G4 about 4 min.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 
