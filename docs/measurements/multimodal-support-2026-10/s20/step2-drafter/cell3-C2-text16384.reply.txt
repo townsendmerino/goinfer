@@ -1,0 +1,91 @@
+# The Lifecycle of a Supplier Invoice: A Comprehensive Guide to the Accounts Payable Workflow
+
+In the modern corporate landscape, the Accounts Payable (AP) department serves as the financial gatekeeper of an organization. It is not merely a function of paying bills; it is a critical control point for cash flow management, fraud prevention, and internal audit compliance. A single invoice does not simply move from a mailbox to a bank transfer; it undergoes a rigorous lifecycle designed to ensure that every dollar leaving the company is authorized, verified,1 and accurately recorded.
+
+The following is a detailed breakdown of the journey an invoice takes, from the moment it arrives to its final archiving.
+
+---
+
+## 1. Receipt: The Entry Point
+The lifecycle begins with the receipt of the invoice. In the past, this was a physical process involving paper envelopes and mailrooms. Today, the receipt phase is increasingly digital, though it remains a point of-risk for fraud and error.
+
+Invoices typically arrive via three channels:
+*   **Email/EDI (Electronic Data Interchange):** The gold standard. Invoices are sent directly to a dedicated "AP Inbox" or via machine-to-machine communication.
+*    Mail/Physical Post: Still common in certain industries or with-small vendors.
+*   **Supplier Portals:** Where vendors log in to upload documents directly.
+
+**The Goal:** The primary objective during receipt is to ensure the document is a valid "Tax Invoice" and to prevent "duplicate receipt" (e.g., receiving the same invoice via email and post).
+
+**Example:** A construction firm receives a physical invoice for-lumber via mail and an electronic copy via email. The AP clerk must first identify if these are two separate orders or the same order sent twice to ensure the liability isn't doubled in the system.
+
+---
+
+## 2. Data Capture: Digitization and Entry
+Once received, the invoice must be converted into a format the accounting system can process. This is the "Data Capture" phase.
+
+In manual environments, this involves "data entry"—typing invoice numbers, dates, amounts, and tax details into an ERP (Enterprise Resource Planning) system. In modern, automated environments, this is handled by **OCR (Optical Character Recognition)** technology. OCR scans the document, identifies key fields, and "reads" the data.
+
+**Key Data Points Captured:**
+*   Vendor Name and Tax ID.
+*   Invoice Number and Date. Due Date.
+*   Line-item descriptions.
+*   Net amount, Tax/VAT, and Total amount.
+*   Purchase Order (PO) numbers.
+
+**Example:** An OCR system scans a PDF invoice from a vendor. It identifies the "Total Amount" as $1,250.00. If the OCR reads a "8" as a "B", the system flags it for human review to ensure the data integrity is maintained before it hits the ledger.
+
+---
+
+## 3. The Three-Way Match: The Core Control
+This is the most critical stage of the AP process. The Three-Way Match is a control mechanism used to ensure that the company only pays for what it actually ordered and actually received. It involves comparing three distinct documents:
+
+1.  **The Purchase Order (PO):** The "What we *asked* for." (The contract/intent).
+2.    **The Goods Receipt Note (GRN) / Packing Slip:** The "What we *received*." (The physical reality).
+3.  **The Supplier Invoice:** The "What they are *charging* us for." (The financial claim).
+
+**The Check Process:**
+*   **Quantity Check:** Does the invoice quantity match the GRN? (e.g., We ordered 100 chairs, we received 100 chairs, but the invoice is for 105).
+*   **Price Check:** Does the unit price on the invoice match the price agreed upon in the PO?
+*   **Terms Check:** Does the invoice reflect the negotiated payment terms?
+
+**Example:** A manufacturing plant orders 500kg of steel at $10/kg. The PO says 500kg. The warehouse receives 480kg. The invoice arrives for 500kg. The Three-Way Match will flag a "Quantity Mismatch" because the invoice exceeds the received goods.
+
+---
+
+## 4. Approval Routing: The Authorization Path
+Not all invoices require a three-way match. For example, a monthly utility bill or a subscription service doesn't have a "Purchase Order" in the traditional sense. These fall under "Non-PO Invoices" and require **Approval Routing**.
+
+Approval routing is the automated workflow that sends the invoice to the correct department head or manager for digital "sign-off."
+
+**The Logic:**
+*   **Threshold-based routing:** An invoice under $500 might be auto-approved. An invoice over $10,000 might require the CFO’s signature.
+*   **Departmental routing:** An invoice for "Marketing Software" should be routed to the Marketing Manager, not the Warehouse Manager.
+
+**Example:** A manager receives a notification on their mobile app: *"Approve $2,000 for New Laptop for Marketing Dept?"* They click "Approve," and the invoice moves to the next stage.
+
+---
+
+## 5. Exception Handling: Resolating Discrepancies
+In a perfect world, every invoice would match perfectly. In reality, "Exceptions" occur frequently. An exception is any discrepancy that prevents the invoice from being cleared for payment.
+
+**Common Exceptions:**
+*   **Price Variance:** The price on the invoice is higher than the PO.
+*   **Quantity Variance:** The invoice is for more items than were received.
+s*   **Missing PO:** The vendor sent an invoice without a valid PO number.
+*   **Duplicate Invoice:** The system detects the same invoice number from the same vendor.
+
+**The Resolution:** When an exception is flagged, the AP clerk must investigate. They may contact the buyer (to check if the price increase was authorized) or the warehouse (to check if a shipment was short-delivered).
+
+**Example:** An invoice arrives for $1,100, but the PO was for $1,000. The system "blocks" the invoice. The AP clerk contacts the Purchasing Manager, who confirms a shipping surcharge was added. The manager then updates the PO to allow the $100 variance.
+
+---
+
+## 6. Payment Scheduling: Managing Cash Flow
+Once an invoice is "Matched" and "Approved," it moves to the "Ready for Payment" status. At this stage, the focus shifts from accuracy to **Cash Flow Management**.
+
+The AP department must balance two competing interests:
+1.  **Maintaining Vendor Relationships:** Paying on time to avoid late fees and ensure supply continuity.
+2.  **Optimizing Working Capital:** Holding onto cash as long as possible to maximize interest or liquidity.
+
+**Key Strategies:**
+*   **Early Payment Discounts:** Many vendors offer terms like "2/10, Net 30" (a

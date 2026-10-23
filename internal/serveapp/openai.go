@@ -148,6 +148,7 @@ type loadedModel struct {
 	// request via multimodal.Gemma4PooledTokens.
 	gemma4Enc     *vision.Gemma4Encoder
 	gemma4Tower   multimodal.Gemma4TowerAccelerator // nil: the CPU tower (docs/multimodal.md)
+	gemma4Swap    *towerSwap                        // non-nil: the device tower loads for each encode (towerSwap)
 	gemma4MaxSoft int
 	gemma4ImgTok  int // <|image|> id
 	// Gemma 4 audio: set when the checkpoint has an audio_config. The tower loads on the first audio request

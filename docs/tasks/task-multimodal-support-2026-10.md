@@ -8263,6 +8263,22 @@ for a ~1,500-token reply is projected as ttft + 1499 / decode rate.
 - **Predictions scored.** Slots: A 8, C about 40 (39) and D about 33 held; B about 15 missed (12). Rates: all four ranges missed
   low (A 16.66 against 17 to 19, B 20.00 against 23 to 28, C 34.73 against 36 to 42, D 31.31 against 32 to 38).
 
+**Step 2 read 2026-10-23 16:00 to 16:13 on nobara** (the same binary; load 2.1 to 5.5 at the cell starts, none void; raw:
+`docs/measurements/multimodal-support-2026-10/s20/step2-cputower/` and `step2-drafter/`):
+- **G-S20d, the tower on the CPU: PASS.** Per-form time for a 1,500-token reply, A B B A:
+  - today's config: 103.3 s and 103.0 s (16.80 and 16.81 tok/s, ttft 14.1 and 13.8 s);
+  - `-vision-device cpu`: 89.9 s and 89.2 s (31.25 and 31.48 tok/s, ttft 41.9 and 41.6 s; the encode is about 31 s instead of 3).
+
+  That is 0.87 of today's in both pairs. It is a fallback that needs no build, but its replies differ from today's
+  (1,169 tokens against 1,073 on inv01) because the CPU tower's features are not the CUDA tower's. Today's config repeated
+  step 1's reply byte for byte, and the same hit and miss counts.
+- **G-S20c, the drafter: FAIL at load, as predicted.** Beside the tower at `--ctx 16384` the resident declines, because
+  the 3.66 GB held back for the tower and the drafter leaves no room for the 0.88 GB 8-slot minimum (`expert cache (C′)
+  cannot fit its MINIMUM`), and serve then refuses `--drafter`. Not registered, a text-only screen at `--ctx 16384`: with
+  the drafter the cache gets 22 slots (1.1 GB held for it) and decodes at 27.62 tok/s, against 32.55 without it in the same
+  session; that is 0.85, with byte-identical replies. A verify pass looks up 241 experts a token, as plain decode does
+  (top-8 on 30 layers), so speculation does not reduce what a paged MoE copies.
+
 **Step 3 gates, registered 2026-10-23 after G-S20a's read and before any code.** The read ranks the three candidates:
 - **Releasing the tower between images is the lever.** It moves the cache from 8 slots to about 33 at 16K: by the line above,
   about 60 → 31 ms a token, and a 1,500-token form from about 104 s to about 64 s.
@@ -8276,13 +8292,14 @@ slots that fit beside the tower and the tower loads. After the encode the tower'
 back. A resize frees and reallocates each layer's slot stacks and empties the LRU.
 - **G-S20e, exactness (tier 0 and 1).** (1) Tier 0, the tower: features from a tower rebuilt after a Close are bit-identical
   to the first build's, on the same image. (2) Tier 1, the real 26B, served: the greedy reply under release is byte-identical
-  to today's binary on inv01, then inv02, then inv01 again (the second and third exercise a reload), over up to 1,500 tokens
-  each. A difference is a defect, not a near-tie question, since the cache is exact (G-S20a).
+  to today's binary on inv01, then inv02, then inv03, over up to 1,500 tokens each (the second and third exercise a
+  reload). Amended before any step 3 run: the registration first named inv01 again as the third, but serve's feature cache
+  answers a resent image without an encode, so it would not exercise a reload. A difference is a defect, not a near-tie question, since the cache is exact (G-S20a).
 - **G-S20f, VRAM (tier 1).** At `--ctx 16384` with `--vision`, decode runs with at least 30 slots/layer. Every image's encode
   logs the tower on CUDA (no CPU fallback, no `CUDA_ERROR_OUT_OF_MEMORY`). The per-turn cache line shows the slots after
   each grow.
 - **G-S20g, speed (tier 1).** A B B A, today's binary (`193de9f06`) against the new one, two forms per cell (inv01, then
-  inv02), under the timing lock. Per-form time for the reply, reported with the reload's own cost. **PASS:** new per-form
+  inv02, then inv03, as G-S20e(2) runs them in the same cells), under the timing lock. Per-form time for the reply, reported with the reload's own cost. **PASS:** new per-form
   time at most 0.8 of old in both pairs. **Kill:** not faster, then it does not ship. Prediction: about 0.6.
 
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)

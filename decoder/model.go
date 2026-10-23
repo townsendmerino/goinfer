@@ -302,6 +302,16 @@ func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
 	return ExpertCacheStats{}, false
 }
 
+// ResizeExpertCache resizes the resident's MoE expert cache (ResidentExpertCache) to leave reserve bytes of device memory
+// free, and returns its slots per layer. It errors when there is no resident or the resident keeps no cache.
+func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
+	c, ok := m.resident.(ResidentExpertCache)
+	if !ok {
+		return 0, fmt.Errorf("decoder: this model's resident keeps no expert cache")
+	}
+	return c.ResizeExpertCache(reserve)
+}
+
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
 // escape hatch): every "fit by default" behavior reverts to its previous default. Checked by backend packages that implement
 // a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate. See docs/tasks/task-fit-to-hardware.md.

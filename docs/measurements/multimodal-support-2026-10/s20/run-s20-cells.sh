@@ -6,7 +6,8 @@
 # start, the serve banner's plan lines (fit, KV plan, C′ cache), GPU memory after load and after the turn, the turn's
 # time to first token, wall, completion tokens and decode rate ((tokens-1) / (wall - ttft)), and serve's per-turn
 # expert-cache line. A cell started with load above 8.0 is VOID (CLAUDE.md "Run budget") and re-run in place; the record
-# lists it. The reply text goes to <out>/cell<n>-<label>.reply.txt for the identity checks. Run it under the timing lock.
+# lists it. IMG may name several images, sent in turn to the same server, each its own turn. The reply text goes to
+# <out>/cell<n>-<label>.<image>.reply.txt for the identity checks. Run it under the timing lock.
 # Usage (from the repo root): run-s20-cells.sh <out dir> <serve binary> <cell>...
 set -uo pipefail
 OUT=${1:?}; BIN=${2:?}; shift 2
@@ -46,8 +47,11 @@ cell() { # cell <label> <image|text> <extra flags>
   grep -E "C′ cache|fit:|KV plan|windowed KV|vision tower|drafter|decode path" "$OUT/cell$n-$lab.serve.log" | cut -c1-260 | sed 's/^/  /' | tee -a "$OUT/cells.txt"
   echo "  gpu after load: $(gpumem) MiB" | tee -a "$OUT/cells.txt"
   local prompt=$TEXT_PROMPT; [ "$mode" = image ] && prompt=$IMG_PROMPT
-  python3 - "$PORT" "$mode" "$IMG" "$MAXTOK" "$n" "$lab" "$prompt" "$OUT/cell$n-$lab.reply.txt" <<'PY' | tee -a "$OUT/cells.txt"
-import base64, json, sys, time, urllib.request
+  local imgs=("text"); [ "$mode" = image ] && read -r -a imgs <<<"$IMG"
+  local img
+  for img in "${imgs[@]}"; do
+  python3 - "$PORT" "$mode" "$img" "$MAXTOK" "$n" "$lab" "$prompt" "$OUT/cell$n-$lab.$(basename "$img" .png).reply.txt" <<'PY' | tee -a "$OUT/cells.txt"
+import base64, json, os, sys, time, urllib.request
 port, mode, img, maxtok, n, lab, prompt, replyf = sys.argv[1:9]
 content = [{"type": "text", "text": prompt}]
 if mode == "image":
@@ -74,8 +78,9 @@ with urllib.request.urlopen(req, timeout=3600) as r:
 wall = time.time() - t
 open(replyf, 'w').write(''.join(text))
 rate = (ntok - 1) / (wall - ttft) if ntok and ttft is not None and wall > ttft else float('nan')
-print(f"  cell {n} {lab}: ttft {ttft:.1f}s turn {wall:.1f}s tokens {ntok} decode {rate:.2f} tok/s chars {len(''.join(text))}")
+print(f"  cell {n} {lab} {os.path.basename(img) if mode == 'image' else 'text'}: ttft {ttft:.1f}s turn {wall:.1f}s tokens {ntok} decode {rate:.2f} tok/s chars {len(''.join(text))}")
 PY
+  done
   echo "  gpu after turn: $(gpumem) MiB" | tee -a "$OUT/cells.txt"
   sleep 2 # serve writes its per-turn lines after the last chunk reaches the client
   grep -E "expert cache:|vision: (encoded|decoded)" "$OUT/cell$n-$lab.serve.log" | cut -c1-200 | sed 's/^/  /' | tee -a "$OUT/cells.txt"

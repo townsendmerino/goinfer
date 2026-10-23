@@ -350,10 +350,13 @@ type ExpertCacheStats struct {
 }
 
 // ResidentExpertCache is an OPTIONAL ResidentForward extension, implemented by a resident that pages MoE experts through a
-// device cache. ok is false when this build keeps no cache. The counters are written by the generation in flight, so a
-// caller reads them between generations.
+// device cache. ExpertCacheStats' ok is false when this build keeps no cache; its counters are written by the generation in
+// flight, so a caller reads them between generations. ResizeExpertCache sizes the cache to what free device memory holds
+// with reserve bytes left over, up to the slots the load asked for, and returns the slots it now has; the cache restarts
+// empty. It is called between generations, and an error leaves the cache as it was.
 type ResidentExpertCache interface {
 	ExpertCacheStats() (s ExpertCacheStats, ok bool)
+	ResizeExpertCache(reserve int64) (slots int, err error)
 }
 
 // ResidentSpanPrefill is an OPTIONAL ResidentForward extension: the batched prefill of a Gemma 4 bidirectional

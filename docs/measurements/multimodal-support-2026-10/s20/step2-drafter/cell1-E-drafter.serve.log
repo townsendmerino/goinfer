@@ -1,0 +1,6 @@
+swap guard (load): armed for /home/francis/models/gemma4-26b-int4.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 9.18 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: expert cache (C′) cannot fit its MINIMUM: top-8 routed experts across 30 MoE layers need 0.88 GB of slots, but only 4.09 GB is free (3.66 GB reserved for a companion attach, --drafter) — 0 slots/layer fit. Free VRAM, lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright) — continuing on the CPU/staged path
+--drafter "/home/francis/models/gemma4-26b-dflash": this model has no resident GPU decode path that can host a block drafter. Block drafting needs a resident GPU backend (--backend cuda) and a model that actually resolved to it — check the startup banner for a residency decline
