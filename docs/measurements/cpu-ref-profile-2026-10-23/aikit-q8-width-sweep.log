@@ -1,0 +1,16 @@
+# Exploratory column-block width sweep (not a gate), 2026-10-23 10:19 PDT, nobara, load 0.41 0.71 1.46, MemAvailable 55 GB.
+# aikit 2cf0c29 + a scratch BenchmarkQ8SpanJbSweepScratch (q8SpanBlocked at fixed jb through ws.parallel, M=2048), benchtime 2x, count 2.
+BenchmarkQ8SpanJbSweepScratch/jb8/K4096_N14336-16         	       2	1232272590 ns/op	195182.60 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb8/K4096_N14336-16         	       2	1203012120 ns/op	199929.96 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb16/K4096_N14336-16        	       2	1143833610 ns/op	210273.74 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb16/K4096_N14336-16        	       2	1151996345 ns/op	208783.79 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb32/K4096_N14336-16        	       2	1176593594 ns/op	204419.07 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb32/K4096_N14336-16        	       2	1165420008 ns/op	206378.96 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb2/K14336_N4096-16         	       2	4008972322 ns/op	59994.97 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb2/K14336_N4096-16         	       2	4462572373 ns/op	53896.75 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb4/K14336_N4096-16         	       2	2807890552 ns/op	85657.96 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb4/K14336_N4096-16         	       2	2560870568 ns/op	93920.47 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb8/K14336_N4096-16         	       2	1655361894 ns/op	145296.43 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb8/K14336_N4096-16         	       2	1755158166 ns/op	137035.04 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb16/K14336_N4096-16        	       2	1283279835 ns/op	187424.57 MB/s
+BenchmarkQ8SpanJbSweepScratch/jb16/K14336_N4096-16        	       2	1297552018 ns/op	185363.03 MB/s
