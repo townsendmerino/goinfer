@@ -30,14 +30,14 @@ func TestD14_mlaProjSearch(t *testing.T) {
 				continue
 			}
 			t.Run(md.arch+"/"+arm, func(t *testing.T) {
-				prev := mlaProjF32ForTest
-				mlaProjF32ForTest = map[string]bool{}
+				prev, prevArmed := mlaProjF32ForTest, mlaInt8ForTest
+				mlaProjF32ForTest, mlaInt8ForTest = map[string]bool{}, true
 				for _, p := range strings.Split(arm, "+") {
 					if p != "all8" {
 						mlaProjF32ForTest[p] = true
 					}
 				}
-				defer func() { mlaProjF32ForTest = prev }()
+				defer func() { mlaProjF32ForTest, mlaInt8ForTest = prev, prevArmed }()
 				d14Gaps(t, assetPath(t, md.env), md.golden)
 				deepseekRealGate(t, assetPath(t, md.env), md.golden, md.arch, md.ref, md.arch == "deepseek_v3")
 			})

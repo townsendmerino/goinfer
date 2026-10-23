@@ -2,21 +2,22 @@ package decoder
 
 import "github.com/townsendmerino/aikit/linalg"
 
-// mlaProjInt8 reports whether a load at q holds MLA's q (or q-LoRA pair), kv-A and o projections as per-row int8: every integer
-// quant does, and an f32, bf16 or f16 load keeps them f32 (MEM11-int8, docs/tasks/task-memory-campaign-2026-10.md). kv-B stays
-// f32 at every quant: the backends slice it into W_UK and W_UV as f32, and the CPU's absorbed path reads it by row.
+// mlaProjInt8 reports whether a load at q holds MLA's q (or q-LoRA pair), kv-A and o projections as per-row int8. No production
+// load does: every load keeps all six f32, because the DeepSeek family's real-model gates fail with any of the three int8 (D14,
+// docs/measurements/mem11-int8-2026-10/mla.md). A GPU backend still makes its own int8 from the f32. The int8 form stays for a
+// .giw that carries it and for the tests that arm it (mlaInt8ForTest), on an integer quant only.
 func mlaProjInt8(q quantMode) bool {
 	switch q {
 	case quantInt8, quantInt8I8, quantInt4, quantInt4Mix, quantQ4K:
-		return !mlaKeepF32ForTest
+		return mlaInt8ForTest
 	}
 	return false
 }
 
-// mlaKeepF32ForTest keeps MLA's f32 projections on a quantized load: the f32 arm of MEM11-int8's fidelity bar.
-var mlaKeepF32ForTest bool
+// mlaInt8ForTest arms the int8 MLA projections on an integer-quantized load: MEM11-int8's gates and D14's search.
+var mlaInt8ForTest bool
 
-// mlaProjF32ForTest names single projections ("q", "kva", "o") a quantized load keeps f32 while the rest go int8: D14's
+// mlaProjF32ForTest names single projections ("q", "kva", "o") an armed load keeps f32 while the rest go int8: D14's
 // per-projection search (docs/measurements/mem11-int8-2026-10/mla.md).
 var mlaProjF32ForTest map[string]bool
 

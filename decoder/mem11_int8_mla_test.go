@@ -21,9 +21,9 @@ const mlaMainF32Hash uint64 = 0xbd704d523f8878ff
 // mlaLoad loads path at quant, with MLA's f32 projections kept when keepF32 (the f32 arm, and the plant's control).
 func mlaLoad(t *testing.T, path, quant string, keepF32 bool) *Model {
 	t.Helper()
-	prev := mlaKeepF32ForTest
-	mlaKeepF32ForTest = keepF32
-	defer func() { mlaKeepF32ForTest = prev }()
+	prev := mlaInt8ForTest
+	mlaInt8ForTest = !keepF32
+	defer func() { mlaInt8ForTest = prev }()
 	m, err := Load(path, Options{Quant: quant, ResidentContext: 64})
 	if err != nil {
 		t.Fatalf("load %s at %q (f32 MLA %v): %v", path, quant, keepF32, err)
