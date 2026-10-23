@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,19 +175,27 @@ func TestKSC3_decodeIdentity(t *testing.T) {
 	}
 }
 
-// TestKSC3_decodeSpeed is C3-G3: the 0.5B's .gguf at int8int8, 128 greedy decode tokens after a 32-token prompt
-// (Forward steps), the int8 rows kernels against the one-row kernels on one resident, A B B A over 10 pairs after 2 warm
-// runs each, each run's start load printed. A timed run: hold the timing lock (GOINFER_KSC3_TIMING=1).
+// TestKSC3_decodeSpeed is C3-G3 (and C3-G3b with GOINFER_KSC3_MODEL naming the 1.5B's .gguf): the 0.5B's .gguf at int8int8,
+// 128 greedy decode tokens after a 32-token prompt (Forward steps), the int8 rows kernels against the one-row kernels on one
+// resident, A B B A over 10 pairs after 2 warm runs each, each run's start load printed. A timed run: hold the timing lock
+// (GOINFER_KSC3_TIMING=1). A fit refusal prints FIT-REFUSED, which a night script turns into exit 75.
 func TestKSC3_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSC3_TIMING") == "" {
 		t.Skip("set GOINFER_KSC3_TIMING=1 (a timed run under the timing lock)")
 	}
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if p := os.Getenv("GOINFER_KSC3_MODEL"); p != "" {
+		path = p
+	}
 	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int8int8", DirectLoad: true, ResidentContext: 256})
 	if err != nil {
+		if strings.Contains(err.Error(), "NOT loaded") {
+			fmt.Fprintf(os.Stderr, "[C3-G3] FIT-REFUSED: %v\n", err)
+		}
 		t.Fatal(err)
 	}
 	defer m.Close()
+	fmt.Fprintf(os.Stderr, "[C3-G3] %s at int8int8\n", path)
 	a, ok := m.ResidentForwardForTest().(*metalResident)
 	if !ok {
 		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())

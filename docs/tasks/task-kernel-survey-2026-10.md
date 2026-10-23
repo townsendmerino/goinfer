@@ -615,6 +615,22 @@ Planted defect: the twin's epilogue drops `simd_broadcast_first` (the shipped ke
 add); if C3-G1 stays green the guard is not needed here and the plant becomes a scale off by one row (`sct[row0 + r + 1]`), which
 must go red. Stopping rule: one pass each. Cost: G1 seconds; G2 about 1 minute; G3 about 3 minutes.
 
+**KS-C3 read 2026-10-23 (12:41–12:49).** C3-G1 **PASS**: 32 kernel cells (both models' four shapes, R = 2 and 4, fast-math and
+precise) 0 differ; 32 decode steps at int8int8, llama-tiny 0 of 8,192 and the 0.5B 0 of 4,861,952 logits differ. The first plant
+(no `simd_broadcast_first`) turned 24 of 32 cells red, so the guard stays. C3-G2 (12:48, lock exclusive, load 1.39): the twins at the
+1.5B's shapes qkv 0.024 ms (129 GB/s, from 116), o 0.022 (106, from 109), gate|up 0.156 (176, from 148), down 0.097 (142, from 127):
+the body **157 GB/s, from 135**, the ceiling 179.0. C3-G3 (12:48–12:49, lock exclusive, load 1.36 falling to 1.03): the 0.5B at
+int8int8, **median 1.0021, 3 of 10 pairs faster: PARK** by the bar. Pairs 0–3 ran 5.8–8.4 ms a token as the GPU's clock settled;
+pairs 4–9 read 0.998–1.004 at 5.8 ms. Logs: `~/goinfer-logs/ksc3-g1-2026-10-23.log`, `~/goinfer-logs/ksc3-g2g3-2026-10-23.log`.
+
+**Amended 2026-10-23 (12:50), before any 1.5B decode reading: C3-G3b.** The 0.5B was the registered cell only because the 1.5B at
+int8 is fit-refused by day. Its int8 body is about 358 MB a token, 2.6 ms of a 5.8 ms token, so a 15% faster body is at most about
+0.4 ms there, and the reading did not resolve it. The survey's estimate is for the 1.5B (the body about 1.3 GB a token). C3-G3b is
+C3-G3's instrument on the 1.5B's `.gguf` at int8int8, at night as case (a), through
+`docs/measurements/ks-night-2026-10/run-ksc3-g3b.sh` (a test binary built at the registering commit; exit 75 on a fit refusal).
+Same bar: SHIP iff the median rows/one-row is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise KS-C3 closes as PARK with both
+readings. Stopping rule: one pass. Cost: about 5 minutes.
+
 **KS-C4 · Fold the single-threadgroup quantizers into their neighbors (designed bit-identical).**
 - **Waste:** `swiglu_quant` and `quant_vec` are dispatched as one 256-thread threadgroup (one core of 16), and
   `swiglu_quant` makes two passes, computing `exp` twice.

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -155,6 +156,8 @@ func TestMetalGEMVS0(t *testing.T) {
 		{"7B", "down", "coal", 3584, 18944}, {"7B", "LM head", "w8", 152064, 3584},
 		{"1.5B", "qkv", "w8sa", 2048, 1536}, {"1.5B", "o", "w8sa", 1536, 1536}, {"1.5B", "gate/up", "w8sa", 17920, 1536},
 		{"1.5B", "down", "w8body", 1536, 8960},
+		{"1.5B", "qkv", "w8sa4", 2048, 1536}, {"1.5B", "o", "w8sa2", 1536, 1536}, {"1.5B", "gate/up", "w8sa4", 17920, 1536},
+		{"1.5B", "down", "w8body4", 1536, 8960},
 	}
 	type res struct {
 		s                shape
@@ -163,7 +166,7 @@ func TestMetalGEMVS0(t *testing.T) {
 	var results []res
 	for _, s := range shapes {
 		var bytes int // weight bytes read per dispatch
-		w8 := s.fam == "w8" || s.fam == "w8sa" || s.fam == "w8body"
+		w8 := strings.HasPrefix(s.fam, "w8")
 		if w8 {
 			bytes = s.N*s.K + s.N*4
 		} else {
@@ -234,6 +237,16 @@ func TestMetalGEMVS0(t *testing.T) {
 			pp := pipe("gemv_w8a8_body_resid")
 			prod = timeIt(per, func(e *Encoder, i int) {
 				e.Dispatch(pp, s.N*32, 32, ws[i%copies], ss[i%copies], aqb, asc, out, uK)
+			})
+		case "w8sa2", "w8sa4", "w8body4": // KS-C3's rows twins at R18's widths
+			R := int(s.fam[len(s.fam)-1] - '0')
+			name := fmt.Sprintf("gemv_w8a8_sa_rows%d", R)
+			if s.fam == "w8body4" {
+				name = "gemv_w8a8_body_resid_staged4"
+			}
+			pp := pipe(name)
+			prod = timeIt(per, func(e *Encoder, i int) {
+				e.DispatchTG(pp, s.N*32/R, 256, s.K, ws[i%copies], ss[i%copies], aqb, asc, out, uK)
 			})
 		case "w8":
 			pp := pipe("gemv_w8a8_coal")
