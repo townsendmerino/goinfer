@@ -100,3 +100,10 @@ forced (`GOINFER_CUDA_GRAPHS_UNSAFE=1`), so they are run forced on their own (be
 including all seven `TestGemma4Graphs_bitExact_*` / `locateDivergence` / `sameModelUnderLoad` gates. Capture now records launches
 issued from the resident's thread while gocudrv's executor began the capture, and replay stays bit-exact to live. Log:
 `~/goinfer-logs/ks-a2-2026-10/graphs-unsafe-full.log`.
+
+**Re-run on the tagged module** (after `cuda/go.mod` moved to aikit `gpu v0.34.0`, 13fac0f19, with `go.work` no longer pointing at a
+local aikit), 14:20 PDT, under the timing lock, with graphs forced (`GOINFER_CUDA_GRAPHS_UNSAFE=1`): `TestLaunchDirect_bitIdentical`,
+`TestCUDA_launchCost`, every `TestGemma4Graphs_*`, `TestGraphsSafeGate`, `TestCUDA_graph*`, `TestCUDAKVSlots_graphs` and
+`TestKernelLocalMemoryCensus`: **GREEN, 19 passed, 0 failed, 0 skips** (`scripts/cuda_device_suite.py`). Log:
+`~/goinfer-logs/ks-a2-2026-10/bump-touched.log`. aikit's post-tag checks: `consumergate --tag gpu/v0.34.0` PASS, and the backends
+pin `gpu v0.34.0` (aikit #14, `gpupins` PASS).
