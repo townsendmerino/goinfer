@@ -16,12 +16,18 @@ func mlaProjInt8(q quantMode) bool {
 // mlaKeepF32ForTest keeps MLA's f32 projections on a quantized load: the f32 arm of MEM11-int8's fidelity bar.
 var mlaKeepF32ForTest bool
 
+// mlaProjF32ForTest names single projections ("q", "kva", "o") a quantized load keeps f32 while the rest go int8: D14's
+// per-projection search (docs/measurements/mem11-int8-2026-10/mla.md).
+var mlaProjF32ForTest map[string]bool
+
 // quantizeProjections replaces the q (or q-LoRA pair), kv-A and o projections with their int8 form: linalg.QuantizeInt8 of the
 // f32, weight-only, the codes and scales every GPU backend makes from the f32 (B27's form for Mamba).
 func (w *mlaWeights) quantizeProjections(arch *Architecture) {
 	p := arch.mla
 	H, hidden, qkHead := arch.NumHeads, arch.HiddenDim, p.QKNopeHeadDim+p.QKRopeHeadDim
-	if p.QLoRARank > 0 {
+	if mlaProjF32ForTest["q"] {
+		// q stays f32.
+	} else if p.QLoRARank > 0 {
 		w.qAQ = linalg.QuantizeInt8(w.qAProj, p.QLoRARank, hidden, false)
 		w.qBQ = linalg.QuantizeInt8(w.qBProj, H*qkHead, p.QLoRARank, false)
 		w.qAProj, w.qBProj = nil, nil
@@ -29,9 +35,14 @@ func (w *mlaWeights) quantizeProjections(arch *Architecture) {
 		w.qQ = linalg.QuantizeInt8(w.qProj, H*qkHead, hidden, false)
 		w.qProj = nil
 	}
-	w.kvAQ = linalg.QuantizeInt8(w.kvAProj, p.KVLoRARank+p.QKRopeHeadDim, hidden, false)
-	w.oQ = linalg.QuantizeInt8(w.oProj, hidden, H*p.VHeadDim, false)
-	w.kvAProj, w.oProj = nil, nil
+	if !mlaProjF32ForTest["kva"] {
+		w.kvAQ = linalg.QuantizeInt8(w.kvAProj, p.KVLoRARank+p.QKRopeHeadDim, hidden, false)
+		w.kvAProj = nil
+	}
+	if !mlaProjF32ForTest["o"] {
+		w.oQ = linalg.QuantizeInt8(w.oProj, hidden, H*p.VHeadDim, false)
+		w.oProj = nil
+	}
 }
 
 // mlaMatvec is one MLA projection of x: its int8 form q when the load holds one, else the f32 f [rows, cols].
