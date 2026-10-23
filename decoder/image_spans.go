@@ -51,6 +51,19 @@ func spliceImageSpans(h []float32, spans []ImageSpan, feats []float32, hidden in
 	}
 }
 
+// spliceImageSpansRange is spliceImageSpans for the rows [lo, hi) of a prompt, held in h from row lo: each span's features
+// replace the rows of it that fall in the range.
+func spliceImageSpansRange(h []float32, spans []ImageSpan, feats []float32, hidden, lo, hi int) {
+	off := 0
+	for _, s := range spans {
+		a, b := max(s.Pos, lo), min(s.Pos+s.Len, hi)
+		if a < b {
+			copy(h[(a-lo)*hidden:(b-lo)*hidden], feats[off+(a-s.Pos)*hidden:off+(b-s.Pos)*hidden])
+		}
+		off += s.Len * hidden
+	}
+}
+
 // imageSpanBlocks is spans as [start, end) blocks, the form KVCache.SetImageBlocks and the resident prefills take.
 func imageSpanBlocks(spans []ImageSpan) [][2]int {
 	b := make([][2]int, len(spans))
