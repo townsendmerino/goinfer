@@ -575,6 +575,16 @@ decide O1 once they read).** The build:
 Phi-3's load is fit-checked first; refused by day, G3 and G4 go to the night queue as case (a). Planted defect for (a): the min term
 dropped from the high half (`m1·Σa_hi` omitted); C1-G1 goes red. Stopping rule: one pass each. Cost: G0 about 2 min; G1, G2 seconds;
 G3 about 20 min; G4 about 4 min.
+
+**C1-G0 read 2026-10-23 (13:56, the lock held exclusively, load 3.50, 3.4 GB available), and an amendment to (a) before any grading
+gate.** Ceiling 178.6 GB/s. The first Q4_K layout (one `uint` of quants a lane, 8 weights) read old → R = 1: o 0.139 → 0.103 ms (38 →
+52 GB/s), gate|up 0.708 → 0.517 (40 → 55), down 0.365 → 0.266 (39 → 53), R = 2 and 4 no better; the int8 kernels qkv 0.170 → 0.160 at
+R = 2 (166 → 177 GB/s), the Q6_K down layers 0.175 → 0.158 at R = 4 (144 → 160). Log: `~/goinfer-logs/ksc1-g0-2026-10-23.log`. The
+Q4_K kernel stays under a third of the ceiling because every lane decodes two sub-blocks' scales, d and dmin for 8 weights.
+**Amended (a), before C1-G1 to G4 ran:** each lane takes 32 weights of one super-block, 8 lanes a super-block and 4 super-blocks in
+flight (lane l: super-blocks l/8, l/8 + 4, …; within one, chunk (l mod 8)/2 and half l mod 2, one `uint4` of quants, 16 low and 16
+high nibbles against 8 `float4` activations), so the scale decode, d·dmin and the min-term sums are paid once per 32 weights. Its
+own C1-G0 reading picks R; the gates and bars are unchanged.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 
