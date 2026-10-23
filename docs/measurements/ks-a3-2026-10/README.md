@@ -116,3 +116,11 @@ used) and the 1-minute load 2.67. Log: `~/goinfer-logs/ks-a3-2026-10/gate.log`.
   same sync and readback, so that does not explain the gap; it is unexplained. Not chased: the token is the gate's instrument,
   and it decided.
 - **Memory:** +36.9 KB of device scratch a resident, as registered.
+
+**Device tests** at d123b4352, under the timing lock:
+- **The CUDA device suite** (`scripts/cuda_device_suite.py`, the whole `cuda` module): **GREEN, 772 passed, 0 failed, 0 device skips,
+  236 other skips**. Log: `~/goinfer-logs/ks-a3-2026-10/device-suite/`.
+- **The heavy top-K gates.** Inside that run `TestTopKSelect_matchesReference`, `TestSampledTopKStreamIdentity` and
+  `TestSampledGumbelStreamIdentity` skip without `GOINFER_HEAVY_TESTS=1`, so they ran on their own with it. **All three pass**:
+  272 (vocab × shape × K) rows in the reference order with Z within 1e-6, and both sampled-stream identity tests. Log:
+  `~/goinfer-logs/ks-a3-2026-10/heavy-topk.log`.
