@@ -44,4 +44,26 @@ run. The old arm is origin/main's committed `fused_qkv.ptx`, loaded beside the n
 
 ## Readings
 
-(not yet run: the GPU is reserved for the owner's work until 18:00)
+Run 2026-10-23 15:57 PDT at 6ababd5e3 (old arm: origin/main's committed `fused_qkv.ptx`), under the timing lock, the card
+clear (402 MiB used) and the 1-minute load 4.81 at the start. Log: `~/goinfer-logs/ks-a5-2026-10/gate.log`.
+
+| id | reading | verdict |
+|---|---|---|
+| G1 | logits byte-equal over 32 positions on all three: the 0.5B (151,936 a position), gemma3-1b (262,144) and the 1.5B (151,936) | **PASS** |
+| G2 | 0.5B greedy token 1,909.3 → **2,000.5 µs** (523.7 → 499.9 tok/s); new speedup **median 0.9548×** (0.9507–0.9569), **0 of 10** quads above 1, 0 void; quad loads 4.53–4.75 | **KILLED** |
+
+**Dispatch:**
+- The 0.5B takes gate/up through the changed `fused_rms_gu` (rows-per-warp 8; 112 words a row).
+- gemma3-1b (rows-per-warp 11, 144 words) and the 1.5B (14, 192 words) take it through `fused_rms_gu_rows`, which this build
+  does not change.
+
+So only the 0.5B's gate/up and every model's `fused_rms_qkv` (when it is dispatched) ran the new code.
+
+**The build is slower, consistently: about 4.5%, 91 µs a token on the 0.5B.** Bit-identity held, so this is purely speed.
+Not established: why. The registered no-bar readout of registers and local bytes was not in the instrument, and a probe
+run afterwards to read them was not permitted in this session. The likely suspects:
+- the next-row prefetch holding a second 16-register row set live across the reduction, which costs occupancy;
+- the first row's loads held live across the norm prologue's barriers.
+
+Each is a separate variant (one-round loads without the prefetch, or prefetch without the pre-prologue load), and each
+would need its own pre-registration; none was tried. The code is in history at 6ababd5e3; `cuda/` on this branch is main's.
