@@ -37,14 +37,32 @@ using namespace metal;
 // weights), so each W row is a multiple of 16 bytes and the two words a thread reads form an
 // aligned uint2; activation rows are 64-byte multiples, so the half4 loads are aligned. N % 8 == 0
 // (audit C-10); features past N stage zeros and are never stored.
+//
+// The nibble dequant takes two weights (nibbles kl and kl+4) per half2 operation: OR-ing a nibble pair into 0x6400's mantissa
+// gives 1024+n exactly, minus 1032 gives n-8 exactly, and the half multiply by the (half) scale is the same single rounding as
+// half(float(n-8) * sc). Equal in every bit to the per-weight form for all 16 nibbles x 65,536 scales
+// (TestKSD7_half2DequantExhaustive); KSD7_OLD_DEQUANT compiles the per-weight form back for the A/B.
+inline half2 gemm_dq2(uint word, ushort kl, half2 hs) {
+    return (as_type<half2>(((word >> (4u*kl)) & 0x000F000Fu) | 0x64006400u) - half2(1032.0h)) * hs;
+}
+
 inline void gemm_stage_w(threadgroup half* sa, uint2 wv, float sc, bool wok, ushort fb, ushort kh, ushort nl) {
     for (ushort w = 0; w < 2; w++) {
         uint word = wv[w];
         threadgroup half* p = sa + (fb*4 + kh*2 + w)*72 + nl;
+#ifdef KSD7_OLD_DEQUANT
         for (ushort kl = 0; kl < 8; kl++) {
             *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
             p += 8;
         }
+#else
+        const half2 hs = half2(half(sc));
+        for (ushort kl = 0; kl < 4; kl++) {
+            const half2 v = wok ? gemm_dq2(word, kl, hs) : half2(0.0h);
+            p[kl*8] = v.x;
+            p[(kl+4)*8] = v.y;
+        }
+#endif
     }
 }
 
@@ -128,6 +146,95 @@ kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uin
             gemm_epilogue(myc, acc[t*4 + f], m0 + (th*4 + t)*8u, n0 + (fh*4 + f)*8u, M, N, C, bias, mode, lane);
 }
 
+inline float glu_act_f16(float x, uint act); // defined with swiglu_f16, below
+
+// gemm_w4f16_swiglu (KS-D5) is gemm_w4f16_store over the gate|up projection followed by swiglu_f16, in one pass: threadgroup x
+// stages the 32 gate rows [32x, 32x+32) as features 0..31 and the matching up rows as 32..63, the same dequant and MMA chain,
+// then rounds the tile to half as guF held it and writes glu_act_f16(g) * u for its 32 pairs, C = [M x I]. The same values in the
+// same order as the two-step form, so the output is the same bits, and guF is never written. grid = (ceil(I/32), ceil(M/64)).
+kernel void gemm_w4f16_swiglu(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
+    device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],
+    constant uint& M[[buffer(4)]], constant uint& I[[buffer(5)]], constant uint& K[[buffer(6)]],
+    constant uint& act[[buffer(7)]],
+    uint2 tgp[[threadgroup_position_in_grid]], ushort tid[[thread_index_in_threadgroup]],
+    ushort sg[[simdgroup_index_in_threadgroup]], ushort lane[[thread_index_in_simdgroup]]) {
+    // The staging arrays and, once the K loop is done with them, the half tile share one array: the tile (64 x 64 halves) fits
+    // in sa then sb (32*72 + 64*32 halves), so the kernel needs no more threadgroup memory than gemm_w4f16_store.
+    threadgroup half sab[32*72 + 64*32];
+    threadgroup half* sa = sab;          // weights:     [feature block 0..7][k block 0..3] of 8x8 [k][feature], padded
+    threadgroup half* sb = sab + 32*72;  // activations: [token block 0..7][k block 0..3] of 8x8 [token][k]
+    threadgroup float cs[4*64];          // per-simdgroup epilogue scratch
+    threadgroup half* gu = sab;          // after the K loop: the tile rounded to half, as guF held it: [token][gate 0..31 | up 0..31]
+
+    const uint i0 = tgp.x*32u, m0 = tgp.y*64u;
+    const uint wpr = K/8u, gpr = K/32u;
+    const ushort fh = sg & 1, th = sg >> 1;
+    simdgroup_float8x8 acc[16];
+    for (ushort i = 0; i < 16; i++) acc[i] = make_filled_simdgroup_matrix<float,8,8>(0.0f);
+
+    const ushort fr = tid >> 1, kh = tid & 1;     // weight row 0..63, k half (two 8-wide k blocks)
+    const ushort fb = fr >> 3, nl = fr & 7;
+    const bool wok = i0 + (fr & 31u) < I;
+    const uint ncol = fr < 32 ? i0 + fr : I + i0 + (fr - 32u); // features 0..31 the gate rows, 32..63 the matching up rows
+    const ushort tr = tid >> 1, kh2 = tid & 1;    // token row 0..63, k half
+    const ushort tb = tr >> 3, rl = tr & 7;
+    const uint mrow = m0 + tr;
+    const bool aok = mrow < M;
+
+    for (uint k0 = 0; k0 < K; k0 += 32u) {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        uint2 wv = uint2(0u); float sc = 0.0f;
+        if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
+        gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+        for (ushort j = 0; j < 2; j++) {
+            const ushort kb = kh2*2 + j;
+            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
+            if (aok) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + k0 + kb*8u);
+                d4[0] = s4[0]; d4[1] = s4[1];
+            } else {
+                d4[0] = half4(0.0h); d4[1] = half4(0.0h);
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (ushort ik = 0; ik < 4; ik++) {
+            simdgroup_half8x8 a[4], b[4];
+            // Constant trip counts and NO per-block predicate — prototype 4's loop exactly. Two attempts
+            // to skip the MMAs of token blocks wholly past M (for few-row MoE expert GEMMs) were measured
+            // on the 1.5B during wiring (R16, 2026-09-25), both bit-identical and both slower: a runtime
+            // loop bound 't < tlive' (no full unroll, acc[] dynamically indexed and spilled) was 5.6x
+            // slower than this loop; the same skip as a uniform predicate inside constant loops was
+            // still ~37% slower (GEMM category 650.6 vs 476.6 ms).
+            for (ushort t = 0; t < 4; t++) simdgroup_load(a[t], sb + ((th*4 + t)*4 + ik)*64, 8);
+            for (ushort f = 0; f < 4; f++) simdgroup_load(b[f], sa + ((fh*4 + f)*4 + ik)*72, 8);
+            for (ushort t = 0; t < 4; t++)
+                for (ushort f = 0; f < 4; f++)
+                    simdgroup_multiply_accumulate(acc[t*4 + f], a[t], b[f], acc[t*4 + f]);
+        }
+    }
+
+    threadgroup_barrier(mem_flags::mem_threadgroup); // every simdgroup's last MMA has read sa and sb before the tile overwrites them
+    threadgroup float* myc = cs + sg*64;
+    for (ushort t = 0; t < 4; t++)
+        for (ushort f = 0; f < 4; f++) {
+            simdgroup_store(acc[t*4 + f], myc, 8);
+            simdgroup_barrier(mem_flags::mem_threadgroup);
+            for (ushort e = lane; e < 64; e += 32)
+                gu[((th*4 + t)*8 + e/8)*64 + (fh*4 + f)*8 + e%8] = half(myc[e]);
+            simdgroup_barrier(mem_flags::mem_threadgroup);
+        }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (ushort e = tid; e < 64*32; e += 128) {
+        const ushort r = e / 32, j = e % 32;
+        const uint m = m0 + r, i = i0 + j;
+        if (m < M && i < I) {
+            float g = float(gu[r*64 + j]), u = float(gu[r*64 + 32 + j]);
+            C[m*I + i] = half(glu_act_f16(g, act)*u);
+        }
+    }
+}
+
 // A-P01 (docs/audit-metal-2026-09-30.md): gemm_w4f16_store's tile as template parameters, TM tokens × TN features per
 // threadgroup, for the small-M passes where a 64 × 64 tile leaves cores idle (o, down and qkv run 24-32 threadgroups on
 // the 1.5B) and, at M <= 32, runs MMAs for rows that are not there. Same 128 threads, same 2 × 2 simdgroups, each owning
@@ -188,10 +295,19 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
                 const ushort kb = kq*WPT + w;
                 const uint word = wok ? W[ncol*wpr + k0/8u + kb] : 0u;
                 threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
+#ifdef KSD7_OLD_DEQUANT
                 for (ushort kl = 0; kl < 8; kl++) {
                     *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
                     p += 8;
                 }
+#else
+                const half2 hs = half2(half(sc));
+                for (ushort kl = 0; kl < 4; kl++) {
+                    const half2 v = wok ? gemm_dq2(word, kl, hs) : half2(0.0h);
+                    p[kl*8] = v.x;
+                    p[(kl+4)*8] = v.y;
+                }
+#endif
             }
         }
         for (ushort j = 0; j < BPT && (TM >= 32 || tr < TM); j++) {

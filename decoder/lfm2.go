@@ -1,6 +1,9 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/embed"
+import (
+	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // shortConvWeights is one LFM2 gated short-convolution mixer.
 //
@@ -23,9 +26,9 @@ import "github.com/townsendmerino/aikit/embed"
 //     the one that multiplies AFTER is second. Swapping B and C is a silent transposition
 //     of two gates that are both elementwise and both [convDim], so nothing errors.
 type shortConvWeights struct {
-	inProj  []float32 // [3*convDim, hidden] — B|C|x stacked in that order
-	convW   []float32 // [convDim, K]        — depthwise ([convDim,1,K] flattened)
-	outProj []float32 // [hidden, convDim]
+	inProj  linalg.WeightMat // [3*convDim, hidden] — B|C|x stacked in that order; bf16 or f32 (islandMat)
+	convW   []float32        // [convDim, K]        — depthwise ([convDim,1,K] flattened)
+	outProj linalg.WeightMat // [hidden, convDim]; bf16 or f32 (islandMat)
 }
 
 // loadLFM2Conv reads one LFM2 gated short-convolution mixer from a safetensors checkpoint.
@@ -45,7 +48,7 @@ func loadLFM2Conv(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Archi
 	nm := func(suf string) string { return tn(i, suf) }
 	c := &shortConvWeights{}
 	var err error
-	if c.inProj, err = st.TensorF32(nm("conv.in_proj.weight"), 3*g.ConvDim, hidden); err != nil {
+	if c.inProj, err = stIsland(st, nm("conv.in_proj.weight"), 3*g.ConvDim, hidden); err != nil {
 		return err
 	}
 	// [convDim, 1, K] on disk — the middle dim is the depthwise groups=channels marker and is
@@ -53,7 +56,7 @@ func loadLFM2Conv(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Archi
 	if c.convW, err = st.TensorF32(nm("conv.conv.weight"), g.ConvDim, 1, g.ConvLCache); err != nil {
 		return err
 	}
-	if c.outProj, err = st.TensorF32(nm("conv.out_proj.weight"), hidden, g.ConvDim); err != nil {
+	if c.outProj, err = stIsland(st, nm("conv.out_proj.weight"), hidden, g.ConvDim); err != nil {
 		return err
 	}
 	l.shortConv = c

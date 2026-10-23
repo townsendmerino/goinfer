@@ -1575,6 +1575,9 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
 		if pf, ok := m.resident.(Prefiller); ok {
 			embed := func(ids []int) [][]float32 {
+				if embedRowsObserver != nil {
+					embedRowsObserver(len(ids))
+				}
 				embs := make([][]float32, len(ids))
 				for i, id := range ids {
 					embs[i] = m.embedResident(id)
@@ -1600,6 +1603,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 				var lg []float32
 				if mp, ok := pf.(ResidentPrefillMarked); ok && mk != nil {
 					lg, perr = mp.PrefillLastMarked(ctx, embed(prompt[from:]), from, mk.q, mk.at)
+				} else if pr, ok := pf.(ResidentPrefillRows); ok { // MEM6: the resident reads the suffix a chunk at a time
+					lg, perr = pr.PrefillLastRows(ctx, len(prompt)-from, from, m.suffixRows(prompt[from:]))
 				} else {
 					lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from)
 				}

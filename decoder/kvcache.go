@@ -619,12 +619,33 @@ func (c *KVCache) AppendLatent(layer int, latent []float32) {
 // Latent returns the stored MLA latent history for a layer as [storedPos, latentDim].
 func (c *KVCache) Latent(layer int) []float32 { return c.mlaLatent[layer] }
 
-// prefillChunkable reports whether a text prefill into this cache may run in several passes: nothing on the cache keeps
-// per-pass state that a pass boundary would split (an image block, m-RoPE positions, DeepStack rows, a hidden-state
-// capture, a speculative tree, a caller-driven position).
+// prefillChunkable reports whether a prefill into this cache may run in several passes: nothing on the cache keeps per-pass
+// state that a pass boundary would split (a hidden-state capture, a speculative tree, a caller-driven position). Image blocks,
+// m-RoPE positions and DeepStack rows are addressed by absolute position, so they carry across passes; prefillCut keeps each
+// image block in one pass.
 func (c *KVCache) prefillChunkable() bool {
-	return c.imgBlocks == nil && c.mropePos == nil && c.deepstack == nil && c.captureLayers == nil && !c.subCapture &&
-		c.treeRowPos == nil && c.treeMask == nil && !c.manualPos
+	return c.captureLayers == nil && !c.subCapture && c.treeRowPos == nil && c.treeMask == nil && !c.manualPos
+}
+
+// prefillCut returns where a pass of a prefill starting at position start should end, given its rows [lo, hi): hi, unless that
+// falls inside an image block, which a pass must hold whole (its rows attend to each other). The cut then moves back to the
+// block's start, or forward to its end when the block starts at or before lo.
+func (c *KVCache) prefillCut(start, lo, hi int) int {
+	return cutOutsideBlocks(c.imgBlocks, start, lo, hi)
+}
+
+// cutOutsideBlocks is prefillCut over the bidirectional blocks given ([start, end), absolute positions).
+func cutOutsideBlocks(blocks [][2]int, start, lo, hi int) int {
+	p := start + hi
+	for _, b := range blocks {
+		if b[0] < p && p < b[1] {
+			if b[0] > start+lo {
+				return b[0] - start
+			}
+			return b[1] - start
+		}
+	}
+	return hi
 }
 
 // reserveRows grows each append-forever attention layer's arrays so that rows more positions append without reallocating.

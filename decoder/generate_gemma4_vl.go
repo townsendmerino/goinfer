@@ -79,11 +79,36 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
 	}
-	h := m.embedN(ids)
-	spliceImageSpans(h, spans, imageEmbeds, hidden) // raw projected features, no embed scale — same convention as embedN's own doc comment (forwardn.go)
-	hLast, err := m.runLayersGemma4FromEmbedN(ctx, h, ids, spans, cache)
-	if err != nil {
-		return nil, err
+	// Passes of prefillChunkRows rows, cut outside the image blocks (MEM5-VL): each pass embeds its own rows, with the raw projected
+	// features (no embed scale) spliced in. A capture or a speculative tree keeps one pass.
+	n, C := len(ids), len(ids)
+	if cache.captureLayers == nil && !cache.subCapture && cache.treeRowPos == nil && cache.treeMask == nil {
+		C = prefillChunkRows
+	}
+	blocks, start := imageSpanBlocks(spans), cache.Pos()
+	var buf, hLast []float32
+	for c0, i := 0, 0; c0 < n; i++ {
+		c1 := cutOutsideBlocks(blocks, start, c0, min(c0+C, n))
+		if i == 1 {
+			cache.reserveRows(max(start+n, cache.planRows) - cache.Pos()) // the first pass taught the cache each layer's width
+			if prefillChunkDone != nil {
+				prefillChunkDone(-1)
+			}
+		}
+		if cap(buf) < (c1-c0)*hidden {
+			buf = make([]float32, (c1-c0)*hidden)
+		}
+		h := m.embedNInto(buf[:(c1-c0)*hidden], ids[c0:c1])
+		spliceImageSpansRange(h, spans, imageEmbeds, hidden, c0, c1)
+		atomic.AddInt64(&prefillPasses, 1)
+		var err error
+		if hLast, err = m.runLayersGemma4FromEmbedN(ctx, h, ids[c0:c1], spans, cache); err != nil {
+			return nil, err
+		}
+		if prefillChunkDone != nil {
+			prefillChunkDone(i)
+		}
+		c0 = c1
 	}
 	return m.logitsFromHidden(hLast, cache), nil
 }

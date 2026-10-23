@@ -59,6 +59,11 @@ func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
 			n += int64(len(p4)) + 2*int64(len(sc))
 		}
 	}
+	if u, _, ok := w.Half16(); ok && len(u) > 0 {
+		if _, aliased := m.MmapByteOffset(unsafe.Slice((*byte)(unsafe.Pointer(&u[0])), 2*len(u))); aliased {
+			n += 2 * int64(len(u))
+		}
+	}
 	return n
 }
 
@@ -211,15 +216,28 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		// copies float arrays), so there is no mmap counterpart.
 		if mla := l.mla; mla != nil {
 			dense += f32SliceBytes(mla.qAProj) + f32SliceBytes(mla.qBProj) + f32SliceBytes(mla.qProj) +
-				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj)
+				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj) +
+				wmBytes(&mla.qAQ) + wmBytes(&mla.qBQ) + wmBytes(&mla.qQ) + wmBytes(&mla.kvAQ) + wmBytes(&mla.oQ) +
+				f32SliceBytes(mla.gProj)
+		}
+		// Kimi Delta Attention (Bailing Hybrid's linear layers): six quantized projections, the three depthwise conv kernels and
+		// the small f32 gates.
+		if k := l.kda; k != nil {
+			for _, w := range []*linalg.WeightMat{&k.qProj, &k.kProj, &k.vProj, &k.fProj, &k.gProj, &k.oProj} {
+				count(w)
+			}
+			dense += f32SliceBytes(k.qConvW) + f32SliceBytes(k.kConvW) + f32SliceBytes(k.vConvW) + f32SliceBytes(k.bProj) +
+				f32SliceBytes(k.dtBias) + f32SliceBytes(k.aLog) + f32SliceBytes(k.oNormW)
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
 		if mb := l.mamba; mb != nil {
 			dense += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj) + wmBytes(&mb.inQ) + wmBytes(&mb.outQ)
 		}
-		// LFM2's gated short-convolution mixer, kept as f32.
+		// LFM2's gated short-convolution mixer: its projections bf16 or f32 (islandMat), its depthwise kernel f32.
 		if sc := l.shortConv; sc != nil {
-			dense += f32SliceBytes(sc.inProj) + f32SliceBytes(sc.convW) + f32SliceBytes(sc.outProj)
+			count(&sc.inProj)
+			count(&sc.outProj)
+			dense += f32SliceBytes(sc.convW)
 		}
 		// Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown alias l.GateProj/UpProj/DownProj (the gemma4Layer comment in
 		// serialize.go) and are already counted above; only routerProj and the fused experts are new tensors. The fused experts

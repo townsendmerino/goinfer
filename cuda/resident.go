@@ -3970,8 +3970,14 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 			wpk[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
 		}
 		return hostW{kind: "q4k", wpk: wpk, N: N, K: K}, nil
-	default: // "f32": planWeight has refused every other kind
-		f32, _ := w.F32()
+	default: // "f32" or "bf16": planWeight has refused every other kind
+		f32, ok := w.F32()
+		if !ok { // bf16: widened row by row, so the bytes are the f32 weight's
+			f32 = make([]float32, N*K)
+			for i := range N {
+				w.Row(i, f32[i*K:(i+1)*K])
+			}
+		}
 		q8, sc := linalg.QuantizeRowsInt8(f32, N, K)
 		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
 	}

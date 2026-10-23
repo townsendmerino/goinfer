@@ -1641,6 +1641,12 @@ func (m *Model) embedIsTableRow() bool {
 // which the resident interface does not carry, so the host computes them here with the CPU's own helper
 // (gemma4PLEInputs) and the backend reads them from the row's tail (S1.2, docs/tasks/task-multimodal-support-2026-10.md).
 func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
+	return m.embedResidentScratch(id, dst, nil)
+}
+
+// embedResidentScratch is embedResidentInto with a Gemma 4 E-model's per-layer-input scratch (gemma4PLEInputsScratch) supplied,
+// so embedding row after row allocates nothing per row.
+func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float32 {
 	hidden := m.w.arch.HiddenDim
 	n := m.ResidentEmbedLen()
 	var row []float32
@@ -1668,7 +1674,7 @@ func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 	}
 	if n > hidden {
 		tail := row[hidden:]
-		m.gemma4PLEInputs(h, id, tail)
+		m.gemma4PLEInputsScratch(h, id, tail, pleScratch)
 		if gemma4PLEDropTokenForTest {
 			// G2 defect (2), resident row only: take the token-identity term back out, leaving context_aware/√2.
 			tok := make([]float32, len(tail))

@@ -176,7 +176,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		map[ogPath]ogCell{
 			pathResidentDecode: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
 				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
-			pathResidentPrefill: ogWithCUDA(ogDeclinedAt("PrefillPath", "TestPrefill_declinesInt8KV"),
+			pathResidentPrefill: ogWithCUDA(ogTestedBy("TestPrefill_int8KVOnThePass"),
 				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
 			pathSpecVerify: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
 				ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),

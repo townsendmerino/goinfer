@@ -5,9 +5,11 @@ package metal
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -61,25 +63,45 @@ func tinyEmbs(n int) [][]float32 {
 	return embs
 }
 
-// A-C01: with -kv i8 the prefill kernels wrote half-precision K/V (kv_store_f16, 2 bytes at pos*kvDim) into a cache
-// allocated at 1 byte per element, and read it back as half: every position in the wrong layout, and positions at or past
-// ctxCap/2 past the buffer.
-func TestPrefill_declinesInt8KV(t *testing.T) {
+// A-C01's int8 case, since P3b-2: with -kv i8 the f16 MMA pass stores K/V through kv_store_i8_prefill (int8 codes and scales in
+// the cache's own layout) and attends over each layer's cache dequantized into f16 scratch, so a prompt takes the pass and its
+// logits agree with the sequential loop's as the f16 pass's agree with f16's (A-C01 was half-precision K/V written into a 1-byte
+// cache; the PrefillPath and PrefillLast checks below would see that as garbage logits).
+func TestPrefill_int8KVOnThePass(t *testing.T) {
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
-	a := tinyPrefillResident(t, decoder.Options{Quant: "int8int8", KVPrecision: "i8"}, 256)
-	if !a.r.kvI8 {
-		t.Fatal("KVPrecision i8 did not build an int8 KV cache; the test proves nothing")
+	cos := func(kv string) float64 {
+		a := tinyPrefillResident(t, decoder.Options{Quant: "int8int8", KVPrecision: kv}, 256)
+		if a.r.kvI8 != (kv == "i8") {
+			t.Fatalf("KVPrecision %q built kvI8 %v; the test proves nothing", kv, a.r.kvI8)
+		}
+		if ok, why := a.PrefillPath(); !ok || !strings.Contains(why, "MMA") {
+			t.Fatalf("--kv %q: PrefillPath = %v, %q; want the MMA pass", kv, ok, why)
+		}
+		embs := tinyEmbs(32)
+		got, err := a.PrefillLast(context.Background(), embs, 0)
+		if err != nil {
+			t.Fatalf("--kv %q: PrefillLast: %v", kv, err)
+		}
+		got = slices.Clone(got)
+		a.Reset()
+		var ref []float32
+		for i, e := range embs {
+			if ref, err = a.Forward(e, i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var dot, na, nb float64
+		for i := range ref {
+			dot += float64(got[i]) * float64(ref[i])
+			na += float64(got[i]) * float64(got[i])
+			nb += float64(ref[i]) * float64(ref[i])
+		}
+		return dot / math.Sqrt(na*nb)
 	}
-	if ok, why := a.PrefillPath(); ok || !strings.Contains(why, "int8") {
-		t.Errorf("PrefillPath = %v, %q; want sequential, naming the int8 KV cache", ok, why)
-	}
-	if _, err := a.PrefillLast(context.Background(), tinyEmbs(32), 0); err == nil || !strings.Contains(err.Error(), "-kv i8") {
-		t.Errorf("PrefillLast with -kv i8: err %v, want a decline naming -kv i8", err)
-	}
-	// the control: the same model with an f16 cache still prefills in a batch
-	b := tinyPrefillResident(t, decoder.Options{Quant: "int8int8"}, 256)
-	if _, err := b.PrefillLast(context.Background(), tinyEmbs(32), 0); err != nil {
-		t.Errorf("PrefillLast with the default KV declined: %v", err)
+	c16, c8 := cos(""), cos("i8")
+	fmt.Fprintf(os.Stderr, "[A-C01] 32-token prompt, the pass against the sequential loop: cosine %.6f at f16, %.6f at int8\n", c16, c8)
+	if c8 < c16-0.01 {
+		t.Errorf("int8 pass vs sequential cosine %.6f, f16's %.6f: the int8 pass is further from its loop than f16's by more than 0.01", c8, c16)
 	}
 }
 

@@ -51,9 +51,9 @@ func TestLFM2_serializeRoundTripsTheConvMixer(t *testing.T) {
 			name      string
 			got, want []float32
 		}{
-			{"inProj", got.inProj, want.inProj},
+			{"inProj", islandF32(&got.inProj), islandF32(&want.inProj)},
 			{"convW", got.convW, want.convW},
-			{"outProj", got.outProj, want.outProj},
+			{"outProj", islandF32(&got.outProj), islandF32(&want.outProj)},
 		} {
 			if len(c.got) != len(c.want) {
 				t.Fatalf("layer %d %s: len %d, want %d", l, c.name, len(c.got), len(c.want))

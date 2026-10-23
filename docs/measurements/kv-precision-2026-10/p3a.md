@@ -33,3 +33,28 @@ leave its matrix-differs list (the matrix's Metal answer is now f32, which is wh
 own guard and Plan), but not `kvPricingFor`. `kvPricingFor` forced f16 for every Metal-resident load, which under-prices an f32
 cache by half. It now prices f32 wherever the resolver delivers f32 on Metal. An int8 cache stays priced at f16, which is above
 what it allocates; that is unchanged. The test asserts the f32 pricing.
+
+## D7: the int8 step against the f16 MMA pass, 2026-10-22 (owner, 2026-10-22: measure first, int8 only)
+
+Registered before the run in `docs/tasks/task-kv-precision-everywhere-2026-10.md`, "D7 measurement" (7f4599c5). The test is
+`metal/d7_prefill_gap_test.go:TestD7_int8StepVsF16Pass`, at main 725c840c (P3b-1 merged). Run setup:
+
+- Machine: MacBook Pro, M1 Pro, 16 GB, macOS 26.6.2, Go 1.27.2, plugged in.
+- Model: `~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` through its Metal sidecar (`.int4.metal.v17.giw`).
+- Arms: two resident loads in one process (f16 on the MMA pass, i8 on the step kernels).
+- Prompts: the prefill gate's prose. Each arm's logits matched its own first run on every run.
+- Wall: 13:04 to 13:13 PDT under the timing lock. Log: `~/goinfer-logs/d7/d7-2026-10-22.log`.
+
+| prompt | f16 MMA pass | i8 step | median i8 / f16 (five pairs) |
+|---|---|---|---|
+| 2,048 tokens | 2.06 s (996 tok/s) | 7.24 s (283 tok/s) | **3.52** (3.49, 3.51, 3.52, 3.54, 3.59) |
+| 8,192 tokens | 10.03 s (817 tok/s) | 68.2 s (120 tok/s) | **6.80** (6.77, 6.79, 6.80, 6.82, 6.86) |
+
+Void rule: no pair void. Load at pair start was 0.36 to 1.80, under 4.0, and available memory was 6.09 to 6.33 GB, above the two
+loads plus 2 GB.
+
+The ratio grows with length because the step's attention is a decode attention per row, linear in keys, so the prompt pays
+quadratically without the pass's tiled MMA. Before P3b-1, an i8 prompt ran one token at a time, slower still.
+
+**Reading against the registered bands: over 2.0 at 8K (6.80), which recommends building an int8 MMA prefill.** The build is
+the owner's call; nothing is started.

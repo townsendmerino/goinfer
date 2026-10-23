@@ -18,22 +18,22 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| KS-A1 | decision | KS-O1, then nobara: plan bytes per token (tier 0), a Q5_K GEMV against `gemv_w8a8_g32` | — |
-| KS-A2 | open | nobara: `TestCUDA_launchCost`, the 0.5B graphs A/B, a futex count (minutes) | — |
-| KS-A3 | open | nobara: ncu of `topk_select` at (152k, 256) and (262k, 1024) | — |
+| KS-A1 | decision | KS-O1, then nobara: a Q5_K GEMV against `gemv_w8a8_g32`. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 (+284.3 Q5_K qkv, +72.6 Q6_K down, +17.8 Q6_K head, all int8 copies) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A2 | decision | owner: build the cheaper launch path (raw launches from the caller's thread, pre-packed arguments; M)? Measured 2026-10-23 on the 0.5B at depth 128: graphs ÷ live **1.454×** median, 10 of 10 quads (348 → 512 tok/s); 12.9 µs a launch; 1,161 voluntary context switches a token | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A3 | decision | owner: build the multi-block `topk_select` (S–M)? Measured 2026-10-23: one block, **101.7 µs** at (152k, 256), **211.5 µs** at (262k, 1024) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
-| KS-A5 | open | nobara: ncu DRAM percent of `fused_rms_gu` at (896, 4864) | — |
+| KS-A5 | decision | owner: build the one-round row loads (S–M), after KS-A2's launch path, since the gain needs decode GPU-bound? Measured 2026-10-23: `fused_rms_gu` at (896, 4864) runs at **55.2%** of DRAM peak (kill was ≥ 80%) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A6 | open | nobara: host timestamps around upload, readback and hand-off | — |
 | KS-A7 | open | nobara: launch counter, then an A/B on phi3-mini | — |
 | KS-A8 | open | nobara: an A/B after A2 reads | — |
 | KS-B1 | open | nobara: ncu on the gate and k launches at M=512; the int-to-float swap alone, bit-gated | — |
-| KS-B2 | open | nobara: ncu staging share of `attn_fused_bm128_hd128`, then the attention A/B | — |
+| KS-B2 | decision | owner: build vector-load staging (S–M), then the attention A/B under the 456-shape sweep? Measured 2026-10-23 after KV4a (f32 KV): `long_scoreboard` + `lg_throttle` **59.7%** of stall cycles, tensor pipe 8.8%, 4.03 bytes a load, one block per SM. KV4b's `_kv16` twin not yet read | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-B3 | open | nobara: MoE category and launch count on M26 at M=512 | — |
 | KS-B4 | open | nobara: attention/GEMV/recurrence split on Qwen3.5-9B at 8k and 16k | — |
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |
 | KS-B6 | open | nobara: served TTFT for phi3-mini at q4k against Ollama | — |
 | KS-B7 | open | nobara: a prototype against `gemv_w4a8_rn` at the 1.5B gate shape | — |
-| KS-B8 | open | nobara: `TestPrefillDecomp` at pass widths 512/1024/2048 (no code) | — |
+| KS-B8 | decision | owner: a 2,048-row default pass where scratch allows (admission prices it)? Measured 2026-10-23 on the 1.5B at K=3,900: attention **1.556×** at 2,048 rows (1.231× at 1,024), whole prefill **1.247×** (933 → 748 ms) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-B9 | open | nobara: launch and grid counters, then the GEMV-category A/B | — |
 | KS-B10 | open | nobara: sync and launch counters in the generic expert-major Phase 1 | — |
 | KS-B11 | open | nobara: `PrefillScratchBytes` delta, then a glue+GEMM A/B | — |
@@ -48,11 +48,11 @@
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
 | KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
 | KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
-| KS-D3 | open | Mac: GPU time of `delta_rule_seq` alone at M=512 | — |
+| KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
-| KS-D5 | open | Mac: scratch-byte counter and a tiny-fixture byte compare | — |
-| KS-D6 | open | Mac: MEM2-G1's allocated-size counters, outputs byte-equal | — |
-| KS-D7 | open | Mac: an exhaustive device check of the half2 dequant | — |
+| KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
@@ -84,10 +84,10 @@
 | KS-G8 | open | aikit: a cold-cache HNSW query benchmark | — |
 | KS-G9 | open | aikit: time the final loop in `BenchmarkFlatBinaryQuery` | — |
 | KS-G10 | open | aikit: an offline block-max simulation counting documents scored | — |
-| KS-H1 | open | Mac: tier 0 blocked-versus-whole byte compare on `llama-tiny` with the exact kernel forced | — |
+| KS-H1 | open (512, G5) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. Left: G5 (Qwen3.5-9B at 20K, by day) and head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
 | KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
-| KS-H4 | open | Mac: allocated size after a 4K forward and 10 s later | — |
+| KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
 | KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2) | — |
@@ -95,7 +95,7 @@
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
 | KS-DOC | done | — | notes 1–3, 5 and 7–10 corrected in their docs, 2026-10-22, in the commit that closed this row |
-| KS-DOC-code | open | the next change to `cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 is KS-H1's code change | — |
+| KS-DOC-code | open | the next change to `cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 done 2026-10-22 with KS-H1 (`PrefillBlockRows`' comment) | — |
 
 ## 0. Where to start
 
@@ -653,6 +653,25 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **Size:** S–M.
 - **Prior art:** a new form. D-B05 reorders the sums and waits on O2; this needs no decision.
 
+**KS-D3 gates, registered 2026-10-22 before the code (D3-G).** Re-checked on main at 14eea5f8: `delta_rule_seq` still reads and
+writes each thread's `hk`-float state row in device memory for every prompt row, with 128 threads per threadgroup and rows `hk`
+floats apart. `delta_conv_seq` still shifts its window through device memory. The build:
+- **`delta_rule_seq_tg`:** a 32-thread threadgroup holds its 32 state rows in threadgroup memory (16 KB at `hk` = 128, element `kd` of
+  lane `l` at `kd*32 + l`, so the 32 lanes hit 32 banks). It loads once, runs the same loop in the same order, and stores once.
+  It is taken when `hk` ≤ 128.
+- **`delta_conv_seq_reg`:** the conv window in registers when `K` ≤ 5, the same order of operations.
+- The current kernels stay as the fallback and as the in-process A/B's old arm.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D3-G1 kernel identity | 0 | `TestDeltaNetSeqKernels_matchDecodeBitwise` with the new kernels, Qwen3.5 geometry (`hk` = `hv` = 128, `nv` = 48), M = 1, 7, 33; and the same at a tiny fixture's geometry | every stage's output, the window and the state equal the decode kernels' bit for bit (as the current seq kernels do) |
+| D3-G2 model identity | 0 | Metal resident at int4 on qwen35-tiny, qwen3_5-tiny, qwen3_5_moe-tiny and olmo_hybrid-tiny (the Gated-DeltaNet fixtures, #163's included): a 40-token batched prefill's last logits and 8 decode steps after, new kernels against the current ones in one process | byte-equal on every fixture |
+| D3-G3 speed | timed, Mac, by day after 07:00, timing lock | GPU time (GPUEnd − GPUStart) of `delta_rule_seq` alone at M = 512, Qwen3.5 geometry, the current kernel against `delta_rule_seq_tg`, interleaved A B B A, 10 pairs in one process; `delta_conv_seq` the same, read only | SHIP if the median new/old ratio is ≤ 0.98 and at least 9 of 10 pairs are below 1; PARK at 0.98 to 1.00; OFF above 1.00 (no change to the default) |
+
+Planted defect, run once on the committed tree and reverted: the new rule kernel's two dot products in a different order
+(`kvdot` summed in reverse). D3-G1 goes red. Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds; D3-G3
+about a minute.
+
 **KS-D4 · Gemma 4 vision and audio towers and EmbeddingGemma 2 onto S17's kernels.**
 - **Where:** `metal/embeddinggemma2.go:eg2Ops.gemm`.
 - **Waste:** these towers run aikit's `gemm_f32_sg_big` (1.19 TFLOPS) and unfused attention, against `tower_gemm_w32` / `w16`
@@ -671,6 +690,36 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **Size:** M.
 - **Risk:** fast-math may compile the inlined activation differently; a byte compare decides.
 
+**KS-D5 gates, registered 2026-10-23 (05:55) before the code (D5-G), on the owner's plan of 5:16 am.** The first measurement: one
+3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%). The build: `gemm_w4f16_swiglu`, the main 64 × 64
+int4 prefill GEMM with its feature tile split into 32 gate rows and the matching 32 up rows. It stages the same weights with the
+same dequant and MMA chain, rounds the tile to half in threadgroup memory as `guF` held it, and writes
+`glu_act_f16(g) × u` for its 32 pairs. So the output is `swiglu_f16`'s, bit for bit, and `guF` is not written. A dense layer whose
+pass takes the 64 × 64 tile uses it; the small-M tiles, the int8 and q4k lanes and the MoE expert GEMMs keep the two-step path,
+and `guF` is allocated only for a pass that takes one of them. `swigluFusedOffForTest` keeps the two-step path for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5-G1 identity | 0 | the fused GEMM against GEMM + `swiglu_f16` at random int4 weights, M = 64, 100 and 200, I = 96 and 8,960 (both activations); the Metal prefill of llama-tiny at int4 and of the 1.5B at 3,900 rows, last logits | byte-equal everywhere |
+| D5-G2 scratch | 0 | `TestKSD5_guFShare`'s counter, one 3,900-row pass on the 1.5B | at most 123 MB (261.9 counted on main; `guF`'s 139.9 gone) |
+| D5-G3 speed | timed, Mac, timing lock | the 1.5B (Metal `.giw`), a 3,900-token `PrefillLast`, fused against two-step, two residents in one process, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median fused/two-step ratio is ≤ 1.01 (the survey's "speed neutral to +1%"; the gain is the scratch); otherwise PARK and decide |
+
+Planted defect: the fused epilogue computes the activation on the f32 accumulators, before the half rounding `guF` imposed.
+D5-G1 goes red. Stopping rule: one pass each. Cost: seconds; D5-G3 about 2 minutes.
+
+**KS-D5b gates, registered 2026-10-23 (9:05 am) before the build, on the owner's "try it" (D5b-G).** D5-G3 parked the fused
+kernel at 10.4% slower. The suspected cause: its added 8 KB threadgroup tile, which takes the kernel from about 9.6 KB to 17.6 KB of
+threadgroup memory. The build: `gemm_w4f16_swiglu` places the half tile in the staging arrays' memory (one array holding `sa`, then
+`sb`, 8.7 KB; the tile needs 8 KB), after a threadgroup barrier that ends the K loop's reads of them. Nothing else changes.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5b-G1 identity | 0 | D5-G1's instruments: the 12 kernel cells, llama-tiny, the 1.5B at 3,900 rows | byte-equal everywhere |
+| D5b-G2 scratch | 0 | D5-G2's counter | at most 123 MB |
+| D5b-G3 speed | timed, Mac, timing lock | D5-G3's instrument, the new build | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise KS-D5 closes as parked, with both readings |
+
+Stopping rule: one pass each, no further build on a miss. Cost: seconds; D5b-G3 about 2 minutes.
+
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow`.
 - **Waste:**
@@ -680,12 +729,41 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
   - Qwen3-VL-2B on a 4K image: 970 MB unread (35% of MEM2-G4's 2,622.5 MiB), plus 199 MB from aliasing `pt`.
 - **Size:** S.
 
+**KS-D6 gates, registered 2026-10-23 (05:20) before the code (D6-G), on the owner's plan of 5:16 am.** The first measurement
+(`docs/measurements/ks-night-2026-10/README.md`) showed 918.7 of 2,622.5 MiB unread on Qwen3-VL-2B at 4K, and a NaN fill of those
+buffers changed no output. The build in `gridVAccel.grow`:
+- the unfused attention's `qh`, `kh`, `vh`, `sc`, `vt`, `ob` only when that attention can run (no fused kernel for the head
+  dim, or the `oldAttn` seam);
+- `f2` only for a gated MLP (`gvKind.gated`);
+- `pt` (the patch rows, dead after the patch embed) as a view of `f1` when `f1` is at least as wide, else its own buffer.
+`gridScratchAllForTest` restores main's allocation for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D6-G1 identity | 0 | MEM2-G1's seven tower fixtures (gemma4-vision, gemma4-audio, embeddinggemma2, qwen3.5 and glm-ocr grids, siglip, qwen2.5-vl), three inputs each, new allocation against main's in one process; `TestGridVisionMetal_matchesCPU`; S17's fused/unfused A/B (the `oldAttn` path still runs) | every output byte-equal; the grid tests pass |
+| D6-G2 allocated size | 1, Mac, memory read, timing lock shared | `TestKSD6H4_gridTowerScratch` on Qwen3-VL-2B at 4K, Metal's allocated size net of the build after the forward | at most 1,520 MiB (main 2,622.5; the unread 918.7 and `pt`'s 188.4 removed), and the NaN-fill check still shows 0 outputs differing |
+
+Planted defect: `pt` aliased to `x` (which the patch embed writes while reading `pt`). D6-G1 goes red on the grid towers. Stopping
+rule: one pass each. Cost: seconds; D6-G2 about 2 minutes.
+
 **KS-D7 · Cheaper nibble dequant in the prefill GEMM's staging.**
 - **Change:** `((word >> s) & 0x000F000F) | 0x64006400` read as half2, minus half2(1032), times half2(scale). That is two
   weights in ~5 operations instead of 14.
 - **Gain (est.):** 0–5% time to first token at 3900.
 - **Class:** bit-identical only if an exhaustive device check passes (16 nibbles × 65,536 half scales).
 - **Size:** S. Kill it under 2%.
+
+**KS-D7 gates, registered 2026-10-23 (05:05) before the change (D7-G); the reading is in the record, and the change was not
+merged.** D7-G1, model identity: llama-tiny and Qwen2.5-Coder-1.5B, a batched prefill's last logits byte-equal, old form against
+new. D7-G2, speed: Qwen2.5-Coder-1.5B, a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs; SHIP iff
+the median new/old is ≤ 0.98 and at least 9 of 10 pairs are below 1, otherwise the row closes as measured.
+
+**KS-D7 shipped by owner decision, 2026-10-23 (8:36 am), over the registered 2% bar.** Francis: "it seems silly to give up gains,
+any gains, if it's bit-identical and doesn't use more memory." The re-run read a median of 0.9888 with 10 of 10 pairs below 1
+(`docs/measurements/ks-night-2026-10/README.md`). His condition is a gate, registered here before it ran: **D7-G3 memory**. The
+1.5B (the Metal `.giw`), a 3,900-token prefill per arm, the half2 build against the per-weight build: the prefill scratch counter
+(`prefillScratchSeen`) and Metal's allocated size after the prefill must be equal or lower, and the logits byte-equal. If memory
+goes up, stop and tell him.
 
 **KS-D8 · Batched Mamba-2 prefill on Metal (Nemotron-H).**
 - **Waste:** `metal/model.go:resident.recurrentPrefillOK` declines Mamba, so every prompt token is a decode step.
@@ -990,6 +1068,28 @@ prefill GEMMs and int8 KV attention use it.
   fixtures, then a 20k-token prompt on Qwen3.5-9B under `mem0_darwin.py`.
 - **Prior art:** new. I8's "what this leaves" listed these routes, and no ledger row owns them.
 
+**KS-H1 gates, registered 2026-10-22 before the code (KH1-G).** Re-checked on main 0e620108 (after P3b-2 and MEM7): the
+finding holds. `PrefillBlockRows` still returns 0 for `prefillExactAttn()` and `emodelLayerMajor()`, the tile choice keys on
+each pass's own end (`exactAttnTile(startPos+M)`), and such a resident is still priced by the CPU formula.
+
+**The build.**
+- `metal/backend.go:metalResident.PrefillBlockRows` stops excluding exact-attention models and Gemma 4 E-models whose widest
+  exact-attention head dim is at most 256. There the exact and tiled kernels are bit-identical, so a block may take either.
+- The decoder then splits their prompts in blocks, and admission prices one pass (`residentPrefillScratch`).
+- A model whose exact-attention head dim is 512 (Gemma 4's global layers) stays unblocked. Blocking it needs the tile choice
+  keyed on the whole prompt's length, which the resident does not know today; asked as a decision, not built.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| KH1-G1 identity, llama | 0, Mac | `llama-tiny`, Metal, the exact kernel forced (`GOINFER_METAL_FUSED_ATTENTION=0`), a small tile (`exactAttnTileForTest` 32): a 300-row prompt prefilled whole against in 64-row blocks; and each block pass's scratch (`prefillScratchSeen`) against `PrefillScratchBytes` of its rows | last logits and every layer's K/V bytes byte-equal; each pass's scratch at or under its figure |
+| KH1-G2 identity, qwen35 and E-model | 0, Mac | `qwen35-tiny` and `gemma4-emodel-tiny` (window raised in a copy, MEM6's helper), Metal, the batched route: a 600-row prompt whole against in blocks of 128 | byte-equal, as KH1-G1 |
+| KH1-G3 admission | 0 | `Model.residentPrefillScratch` for a 20,000-token prompt on the exact-forced `llama-tiny` resident | reports a blocked price: `PrefillScratchBytes` of the longest pass plus its embeddings, not the CPU formula (main: not ok, so the CPU formula) |
+| KH1-G4 unchanged | 0 | `touched.py`; the Metal prefill, MEM7 (BLK), I8 and MC5 tests; a fused-attention model's `PrefillBlockRows` and logits | unchanged |
+| KH1-G5 measure | 1, Mac, by day | Qwen3.5-9B (`~/models`, its Metal sidecar), a 20K-token prompt, transient prefill scratch and RSS under `mem0_darwin.py`, main against the branch | read, not gated; the survey's estimate is 4.8 → about 0.5 GiB. Run only after its fit check passes on the day |
+
+Planted defect, run once on the committed tree and reverted: an exact-attention block pass attending from position 0 instead of its
+start (`uStartPos` 0; G1 red). Stopping rule: one pass each. Cost: G1–G4 seconds; G5 about 10 minutes.
+
 **KS-H2 · CUDA: suballocate weights, KV pools and expert slots from arenas (bit-identical).**
 - **Where:** one `cuMemAlloc` per weight buffer (`cuda/resident.go:cudaResident.upW`, `cuda/pack_stream.go`), per layer's
   K and V pool (`cuda/kvpool.go:cudaResident.kvAllocPools`), and four per MoE layer
@@ -1030,6 +1130,22 @@ prefill GEMMs and int8 KV attention use it.
 - **Change:** release above a ceiling after the forward, or MEM2's optional patch ceiling.
 - **Gain:** up to 2.6 GiB back on the 16 GB Mac.
 - **Size:** S.
+
+**KS-H4 gates, registered 2026-10-23 (05:30) before the code (H4-G), on the owner's plan of 5:16 am.** The first measurement:
+Qwen3-VL-2B's grid tower holds its 4K scratch until `Close` (2,622.5 MiB on main, 1,515.4 after KS-D6), unchanged 10 s after the
+forward. The build: after a forward whose scratch is over a ceiling (256 MiB), the grid tower releases its scratch once it has
+been idle for `gridIdleRelease` (5 s). A forward in the meantime cancels the release and reuses the buffers, so a repeat image
+call pays nothing. The next call after a release allocates again. Scope: `gridVAccel`, the measured tower. The other tower
+accelerators and aikit's `qwenmetal`/`visionmetal` are left for their own rows.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| H4-G1 identity | 0 | the grid tiny fixtures (qwen3.5, glm-ocr, qwen2.5-vl), with the ceiling at 0 and the idle wait at 0: a forward, the release, a forward of a larger then a smaller grid; against the tower with release off | every output byte-equal; the scratch reads 0 bytes after each release |
+| H4-G2 allocated after 10 s | 1, Mac, memory read, timing lock shared | `TestKSD6H4_gridTowerScratch` on Qwen3-VL-2B at 4K: Metal's allocated size net of the build right after the forward and 10 s later | 10 s later at most 16 MiB, from 1,515.4 right after |
+| H4-G3 repeat call | timed, Mac, timing lock | Qwen3-VL-2B at 4K, the wall time of a repeat `Hidden` issued right after the previous one, release on against release off, two towers in one process, A B B A over 5 pairs after a warm run each; the first call after a release read, not graded | SHIP iff the median on/off ratio is ≤ 1.02 (no regression); otherwise PARK and decide |
+
+Planted defect: the release keeps `cap` (so the next forward skips the allocation and writes into released buffers). H4-G1 goes
+red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 about 1 minute.
 
 **KS-H5 · Buffers only speculative verify reads, allocated at build (bit-identical).**
 - **Waste:**

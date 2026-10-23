@@ -31,18 +31,22 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
 | MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
-| MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
+| MEM5-VL | done | done 2026-10-22: all four image and audio prefill routes run in chunks, byte-equal (V1 to V4 G1 to G3 PASS); tier-1 peaks run at night on the owner's word: Qwen2.5-VL-3B 1,261 → 357 MiB, Qwen3.5-0.8B 5,567 → 1,905 MiB over base (V1-G4, V3-G4 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
+| MEM5-VL-G2T1 | open | a box with a bidirectional Gemma 4 (26B or 31B class): V2-G4, the route-2 peak with one image and about 8K tokens, `TestMEM5VL_peakTier1`'s form | `docs/measurements/mem5vl-2026-10/README.md` |
+| MEM5-VL-convwin | done | done 2026-10-22: the DeltaNet conv window copies its K−1 rows; after an 8K single-pass prefill on Qwen3.5-0.8B the live heap is +1.5 MiB over base, from +3,456 MiB, bit-identical (CW-G1 to G3 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
-| MEM6 | open | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
+| MEM6 | open (CUDA) | Metal routes done 2026-10-22: the resident reads the suffix a chunk at a time (`ResidentPrefillRows`), at most 256 embedding rows held (was the whole suffix), logits byte-equal; MEM6-G1 to G3 PASS. Left: the CUDA cells and the `RssAnon` gate, on nobara | `docs/measurements/mem6-2026-10/README.md` |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | done | — (D12 (a), owner, 2026-10-22: shipped as built; PLE-G3 read AMBIGUOUS, 94.25% top-1, KL 0.033) | branch `mem8b-ple-2026-10`; PLE-G1, G2, G4 PASS, G3 AMBIGUOUS and shipped on the owner's word, `docs/measurements/mem8b-2026-10/README.md` |
-| MEM8(b′) | open | either box: stream the logit and PLE tables during the transcode; M | `streamQuantizedEmbed` |
+| MEM8(b′) | done | done 2026-10-22: the streaming GGUF transcode writes the embedding, LM head and per-layer token table from their source rows; E2B transcode peak heap 2.84 → 0.59 GB, bytes identical; SQE-G1 to G3 PASS | `docs/measurements/mem8bp-2026-10/README.md` |
 | MEM9(a,b) | blocked | parked; trigger: a Mac that runs an MoE unpaged, or a user report | — |
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
-| MEM11-bf16 | open | either box: measure LFM2's resident bytes, then bf16 kinds per family (D3); S–M | — |
-| MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21) | — |
+| MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
+| MEM11-int8 | done | done 2026-10-22: MLA int8 on quantized loads (about 0.94 GB on V2-Lite); the drafters and LFM2 stay bf16, mapped (D13 (b), owner, 2026-10-22). Open: MEM11-int8-MLA-T3 | `docs/measurements/mem11-int8-2026-10/mla.md` |
+| MEM11-giw-bf16 | done | done 2026-10-22: kind 9 (bf16) in the `.giw`, aliased on load; an older bundle still loads, version unchanged (v17's new-encoding rule). LFM2.5-2.6B `.giw` heap 0.748 → 0.014 GB, bit-identical; GB-G1 to G4 PASS (D13 (b), owner, 2026-10-22) | `docs/measurements/mem11-2026-10/giw-bf16.md` |
+| MEM11-int8-MLA-T3 | decision | D14 (owner). Read 2026-10-23 on nobara: V2-Lite PASS (cosine 0.999297, continuation exact); Moonlight FAIL, its greedy continuation diverges at the second token (13 for 11) at int8 MLA, argmax exact, cosine 0.999542, and passes at f32 MLA (main before #162). The three manifest rows stay pending | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -427,6 +431,110 @@ newest families and on every image turn.
 **Gates.** Tier 0 per family: chunked vs whole logits byte-identical on the tiny fixture at two chunk sizes, one
 boundary inside each layer kind. Tier 1: one family's 20K footprint before/after (the G40 harness).
 
+**MEM5-VL: the routes, and the order (2026-10-22, before any code).** A text prompt on a `manualPos` family never reaches a
+whole-prompt pass on the CPU: `canBatchN` is false for every one of them (checked on each tiny fixture), so they prefill a token at a
+time and hold one row. The whole-prompt passes `prefillChunkable` leaves single are the image and audio prefills:
+- (1) the shared batched route, `runLayersFromEmbedN` under `prefillHiddenVLSpans` (Gemma 3, Pixtral/Ministral 3: image blocks or
+  causal spans) and `prefillLogitsQwenVLSpans` (Qwen2.5-VL, Qwen3-VL dense and MoE, GLM-OCR: m-RoPE, DeepStack);
+- (2) Gemma 4's image prefills (`runLayersGemma4FromEmbedN`);
+- (3) Qwen3.5's image prefill and prefix sharing (`runLayersQwen35N`, a DeltaNet recurrence across passes);
+- (4) audio (`prefillLogitsAudio`).
+LFM2-VL already runs one row at a time. Each route holds about the same bytes per row, its pass's working set (G40's 108 to 236
+KiB a row on the 1.5B to 7B shapes). (1) serves the most families and the largest dense vision models in the bench set (Qwen2.5-VL,
+Gemma 3), so it goes first. Every position the passes read is absolute (`mropePos[seqPos]`, `attendHi(pos)`, DeepStack by
+`startPos`), so a pass composes with the ones before it unless a cut falls inside a bidirectional image block.
+
+**MEM5-VL (1) gates, the shared batched route, registered 2026-10-22 before the code (V1-G).** The build: the chunk loop G40 gave
+`prefillLogits` becomes one helper that the text prefill and both image routes call. It embeds and splices each chunk's rows (an
+image span's features at the rows the chunk covers), and never cuts inside an image block: a cut that would land inside one moves
+back to the block's start, or forward to its end when the block starts the chunk. `prefillChunkable` stops excluding image
+blocks, m-RoPE positions and DeepStack rows. A sliding-window cache under fast attention keeps the single pass (MEM5-ring, G43,
+unchanged).
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V1-G1 identity | 0 | with `prefillChunkRows` at 7 and 16, the image prefill of gemma3-vl-tiny (a bidirectional block, and one longer than a chunk), ministral3-tiny (causal spans), qwen25vl-tiny (m-RoPE), qwen3vl-tiny and qwen3vlmoe-tiny (DeepStack), glm-ocr-tiny where its fixture loads: every position's hidden rows, the last logits and four decode steps after, against the single pass; and the pass count | every value byte-equal, and more than one pass at each chunk size |
+| V1-G2 bytes | 0 | the pass's working set (`prefillPassScratch`, every buffer's capacity summed) after a chunked and a single image prefill on gemma3-vl-tiny and qwen25vl-tiny at about 200 rows; TotalAlloc per chunk (G40-T0a's hook) | the working set is a chunk's (no more than C rows' worth, or the longest image block's when it is longer) and not the prompt's; every chunk after the first allocates at most 1 MiB, unless it holds more rows than the first |
+| V1-G3 unchanged | 0 | the text prefill's G40 gates (`prefill_chunk_alloc_test.go`, `kv_plan_test.go`), the image goldens against HF (Gemma 3, Qwen2.5-VL, Qwen3-VL, Qwen3-VL-MoE, Pixtral, two-image tests), `scripts/refresh_parity_hashes.sh` | all pass; forward goldens green |
+| V1-G4 peak, tier 1 | 1, Mac, by day after 07:00 | Qwen2.5-VL-3B (`~/models/qwen25vl-3b-instruct`) at int4, one image and about 8K text tokens, main against the branch: the live heap after GC at the prefill's peak (`prefillChunkDone`), not timed | the branch's peak is lower by at least half the per-row working set times the rows beyond one chunk; read, then graded |
+
+Planted defect, run once on the committed tree and reverted: the cut rule off, so a cut can fall inside an image block. V1-G1's
+gemma3-vl-tiny cell goes red. Stopping rule: one pass each. Cost: seconds; V1-G4 a few minutes, untimed, in the morning.
+
+**MEM5-VL (2) gates, Gemma 4's bidirectional image prefill, registered 2026-10-22 before the code (V2-G).** Gemma 4's causal
+image prefill already runs one token at a time; the bidirectional one (`use_bidirectional_attention: "vision"`, the 26B and 31B
+class) runs `runLayersGemma4FromEmbedN` over the whole prompt, allocating each layer's buffers at the prompt's rows. Its attention
+is the exact single-row kernel over absolute key ranges (`gemma4AttendRange`), so the sliding-window question of MEM5-ring does
+not arise. The build: `prefillLogitsGemma4VLBidirectionalSpans` runs the prompt in passes of `prefillChunkRows`, cut outside the
+image blocks by the same rule as route 1. Each pass embeds and splices its own rows. `runLayersGemma4FromEmbedN` reads a row's
+image membership at its absolute position, so a pass may start after earlier ones. A capture or a speculative tree keeps one
+pass.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V2-G1 identity | 0 | gemma4-vl-bidir-tiny, route 1's two-span prompt, with `prefillChunkRows` at 7 and 16, at f32 and int4: the last logits and four decode steps after, against one pass; the pass count | byte-equal, more than one pass at each size |
+| V2-G2 bytes | 0 | TotalAlloc of each pass (the chunk hook) on a 200-row prompt with a 20-row block, against the single pass's | the largest pass allocates no more than the single pass's allocation scaled to its rows, plus its key-sized attention scratch and 64 KiB |
+| V2-G3 unchanged | 0 | `TestGemma4VLBidir_textParity`, `TestGemma4VLBidir_imageParity` (HF goldens), `TestTwoImages_gemma4Bidir`; `scripts/refresh_parity_hashes.sh` | pass; green |
+| V2-G4 peak, tier 1 | 1 | a bidirectional Gemma 4 checkpoint with one image and about 8K text tokens, main against the branch, live heap at the prefill's peak | none is in the Mac's bench set (the E-models are causal), so this is an open row for a box that holds one |
+
+Planted defect: the cut rule off. V2-G1 goes red. Stopping rule: one pass each. Cost: seconds.
+**MEM5-VL (3) gates, Qwen3.5's image prefill, registered 2026-10-22 before the code (V3-G).** `prefillQwen35VLBatched` runs
+`runLayersQwen35N` over the whole prompt: the DeltaNet layers' conv window and recurrent state carry in the cache, the full-attention
+layers rotate by `cache.mropePos` at absolute positions, and every buffer is sized by the pass's rows. The DeltaNet core takes
+`deltaNetCoreN` for a pass of two rows or more and the per-token core for one, so a one-row last pass is a cell of its own. Image
+rows are causal here (no block), so any cut is allowed. The build: the prompt runs in passes of `prefillChunkRows`, each embedding
+and splicing its own rows, under the same exclusions as `qwen35BatchNAnyPos` plus a capture or speculative tree. The library calls
+that run `runLayersQwen35N` over a whole text prompt (`PromptHiddenMany`, `PromptHiddenAll`, the embedding API) are not prefills
+and are left as they are.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V3-G1 identity | 0 | qwen35vl-tiny, route 1's two-span prompt with its m-RoPE triples, with `prefillChunkRows` at 7, 16 and 59 (a one-row last pass), at f32 and int4: the last logits and four decode steps after, against one pass; the pass count | byte-equal, more than one pass at each size |
+| V3-G2 bytes | 0 | TotalAlloc of each pass, the KV arrays a pass grows left out (V2-G2's instrument), on a 200-row prompt in 16-row passes, against the single pass's | the largest pass allocates no more than the single pass's scaled to its rows, plus its key-sized attention scratch and 64 KiB |
+| V3-G3 unchanged | 0 | `TestQwen35VL_*` (HF goldens and the batched-against-per-token bound), `TestTwoImages_qwen35vl`; `scripts/refresh_parity_hashes.sh` | pass; green |
+| V3-G4 peak, tier 1 | 1, Mac, by day after 07:00 | Qwen3.6-35B-A3B (`~/models/qwen3.6-35b-a3b-int4-v12.giw.verified` if the CPU loads it, else Qwen3.5-0.8B with an image), one image and about 8K text tokens, main against the branch: the live heap at the prefill's peak; fit-checked first | read, then graded as V1-G4 |
+
+Planted defect: each pass splices the image features at rows counted from the pass, not the prompt. V3-G1 goes red. Stopping rule:
+one pass each. Cost: seconds.
+
+**V1-G4 and V3-G4 amended 2026-10-22, before any tier-1 data.** Both run `TestMEM5VL_peakTier1`. The single-pass arm is the branch with
+`prefillChunkRows` above the prompt, which is main's shape: V1-G1 and V3-G1 show its passes byte-equal and its buffers the same.
+Each arm takes two readings. The registered one is the live heap after a collection at every pass boundary, which sees a pass's
+working set only where the pass still holds it (route 1's `prefillPassScratch`). The added one is heap in use sampled every 20 ms
+without a collection. Qwen3.5's runner drops its per-layer buffers before the boundary, so only the sampled reading sees its
+transient. The prompt: 8,192 tokens with a 1,024-row image. Qwen3.6-35B-A3B's `.giw` is not on the Mac, so V3-G4 runs on
+Qwen3.5-0.8B. Graded on the sampled reading: the chunked peak over base lower by at least half the single pass's.
+
+**MEM5-VL (4) gates, the audio prefill, registered 2026-10-22 before the code (V4-G).** `prefillLogitsAudio` (Voxtral,
+Qwen3-ASR) embeds the whole prompt, splices the audio run's features and runs one `runLayersFromEmbedN` pass. Its audio rows attend
+causally (no block), so it is route 1's case with one causal span. The build: it calls route 1's `prefillSpliced` with the audio run
+as the span.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| V4-G1 identity | 0 | voxtral-tiny and qwen3asr-tiny, a 60-token prompt with a 20-row audio run, with `prefillChunkRows` at 7 and 16, at f32 and int4: the last logits and four decode steps after, against one pass; the pass count | byte-equal, more than one pass at each size |
+| V4-G2 bytes | 0 | route 1's row-buffer instrument on a 200-row prompt with a 40-row audio run, 16-row chunks | row buffers exactly the single pass's scaled to 16 of 200 rows; key-sized buffers equal |
+| V4-G3 unchanged | 0 | the Voxtral and Qwen3-ASR tests (`voxtral_test.go`, `qwen3asr_test.go`, against HF goldens); `scripts/refresh_parity_hashes.sh` | pass; green |
+
+Planted defect: the audio features spliced at rows counted from the pass. V4-G1 goes red. Stopping rule: one pass each. Cost:
+seconds. No tier-1 cell: the bench set's audio checkpoints are short-prompt ASR, where a whole-prompt pass is small.
+
+**MEM5-VL-convwin gates, registered 2026-10-22 (11:25 pm) before the code (CW-G), on the owner's word that night.**
+`deltaNetCoreN` leaves the conv window (`st.convWin`) as slices of the pass's `mixed` slab, so each linear layer's whole
+`K × convDim` slab stays live until K−1 decode steps replace the window's rows. On Qwen3.5-0.8B after an 8,192-token single
+pass, that is 18 × 8,192 × 6,144 × 4 B = 3,456 MiB, which is what V3-G4 read above base (3,456.2 MiB). The build: the window keeps
+copies of its K−1 rows (at most 3 × `convDim` floats a layer). The per-token `deltaNetCore` is unchanged: its argument is one
+row.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| CW-G1 identity | 0 | the DeltaNet tests (`deltanet_test.go`, `deltanet_n_test.go`); the CPU prefill of qwen35-tiny, qwen3_5-tiny, qwen3_5_moe-tiny and qwen35vl-tiny (40 tokens, one pass) and 8 decode steps after, with the copy and with the old slices (a test seam), in one process | all pass; byte-equal on every fixture |
+| CW-G2 the window holds no slab | 0 | after a `deltaNetCoreN` pass, each window row's backing array against the slab's | no window row shares the slab's memory |
+| CW-G3 dead memory | 1, Mac, memory read under the timing lock | `TestMEM5VL_peakTier1` on Qwen3.5-0.8B, the one-pass arm's live heap after the prefill, over its base; main read 3,456.2 MiB (V3-G4) | at most 512 MiB over base (the KV by geometry, about 200 MB, plus slack), down by at least 90% of the 3,456 MiB of slabs |
+
+Planted defect: the copy removed for the last window row only. CW-G2 goes red. Stopping rule: one pass each. Cost: seconds; CW-G3
+about 3 minutes.
+
 ### MEM6 · Resident prefill embeds per chunk (S)
 
 **Problem.** On the resident paths that do not block the prompt (CUDA's chunked prefill, Metal's layer-major and E-model
@@ -444,6 +552,25 @@ byte-identical.
 **and return the memory afterwards**; its gate adds: `RssAnon` 10 s after a 20K cold prompt is within 64 MiB of its value after load plus the
 session's retained state, on the 1.5B and the 7B (`mem0_linux.py`'s cells). Registered with the CUDA streaming change
 (`docs/measurements/cuda-stream-pack-2026-10-18/README.md`).
+
+**MEM6 (Metal routes) gates, made concrete 2026-10-22 before the code (the tier-0 gate above, with its instrument; MEM6-G).**
+The build: a resident that implements `decoder.ResidentPrefillRows` reads a suffix's embeddings a range of rows at a time from
+the decoder, which embeds them into one reused slab. Metal implements it on every route that takes a whole suffix in one call:
+- the three layer-major routes (paged Gemma 4, paged MoE, E-model), per 256-row chunk;
+- the batched pass, which fills its f16 input rows and an E-model's per-layer inputs straight into their device buffers,
+  chunk by chunk, so the host copy of every row's per-layer inputs goes too;
+- the step prefill, per piece.
+
+The CUDA cells and the `RssAnon` gate (Linux, `mem0_linux.py`) stay with nobara.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| MEM6-G1 bytes | 0, Mac | (i) the most embedding rows the decoder holds at once during one resident prefill of 2,048 rows on `gemma4-emodel-tiny` (window raised to 4,096 in a copy), Metal, on the batched route and the layer-major route (`emodelBatchedOn` off), through a test observer on the decoder's embedding; (ii) on the batched route, Go bytes allocated (`runtime.MemStats.TotalAlloc`) across prefills of 1,024 and 2,048 rows | (i) at most 256 rows (one chunk) on both routes; main holds 2,048. (ii) the bytes a prompt row adds, (bytes(2048) − bytes(1024)) / 1024, under an eighth of one embedding row's bytes. **Refined 2026-10-22 before any build data, after main's baseline:** `TotalAlloc` on the layer-major route reads 191,665 B per prompt row on main, command-encoding garbage rebuilt per row and freed at once, which no embedding change moves, so that route is graded by (i) alone; the batched route reads 3,177 B per row on main (1.77 embedding rows: the suffix plus the per-layer-input copy) |
+| MEM6-G2 identity | 0, Mac | the same prefills' last logits, and 32 decode steps after them, against main's | byte-equal on both routes |
+| MEM6-G3 unchanged | 0 | `touched.py`; the Metal prefill and E-model tests (`TestGemma4EModel*`, `TestS9*`, `TestI8_*`, `TestMEM7_*`) | all pass |
+
+Planted defect, run once on the committed tree and reverted: the decoder handing the resident the whole suffix in one rows call (G1
+red). Stopping rule: one pass each. Cost: seconds.
 
 ### MEM7 · Size the Metal prefill block to the machine (S)
 
@@ -521,6 +648,23 @@ name check red on the sidecar's contents). Stopping rule: one pass each; a FAIL 
 for G1, G2 and G4's tiny tests; G3 about 10 min plus a one-time transcode of E2B (about 2.8 GB written; 6.8 GB free at
 registration), not a timed run, so it holds the timing lock shared.
 
+**MEM8(b′) gates, registered 2026-10-22 before the code (SQE-G).** The build: in a streaming GGUF transcode (`sink != nil`),
+the embedding-shaped tables (`token_embd`, `output`, and Gemma 4's `per_layer_token_embd`) are not built in heap. The build
+registers each table's source with the writer, and `writeHeadGlobals` writes it from its source rows in two passes. Pass one
+computes every row's scales and writes them; pass two quantizes the rows again and writes their codes in row blocks, row4-repacked
+per 4-aligned block on a cpu-arm64 target. Quantization is per row and deterministic, so the bytes are those of today's
+whole-table write. The resident (non-streaming) load is unchanged. The safetensors transcode is out of scope.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| SQE-G1 bytes | 0 | `StreamTranscodeGGUF` of the synthetic GGUFs (`tinyGemma4GGUF` with `ple`, and a tied and an untied dense one), at int8 and int4, `EmbedInt4` on and off, targets metal, cpu-arm64 and cuda, against the same transcode with streaming off (a test hook) | the `.giw` bytes are identical in every cell |
+| SQE-G2 peak heap | 1, Mac | `StreamTranscodeGGUF` of E2B (`~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf`), int4, metal target, main against the branch, one at a time: the Go heap in use sampled every 20 ms through the transcode, and the output's sha256 | the branch's peak falls by at least 1.0 GB (the int4 per-layer table is about 1.32 GB; the token embedding adds its own), and the two outputs are byte-identical |
+| SQE-G3 unchanged | 0 | the transcode and `.giw` tests in `decoder` (`StreamTranscode`, `giw`, `Sidecar`), and a sidecar load's logits on the synthetic GGUF | all pass; logits byte-equal to the direct load's |
+
+Planted defect, run once on the committed tree and reverted: pass two writing one row's codes from the previous block's scratch
+(G1 red). Stopping rule: one pass each. Cost: seconds for G1 and G3. G2 is two transcodes of about a minute each, writing about
+2.8 GB each to scratch that is deleted afterwards. It is not a timed run, so it holds the timing lock shared.
+
 ### MEM9 · MoE on Metal: aliasable experts, the two writer gaps, the pool to KV11 (M)
 
 **Problem.**
@@ -570,6 +714,68 @@ where a family's parity bar allows, as an owner decision per family (**D3**); re
 
 **Gates.** Tier 0 per family: bf16 kind vs widened f32 bit-identical; int8 only behind the family's existing parity
 gate.
+
+**MEM11-bf16 gates, registered 2026-10-22 before the code (B16-G), on D3 (bf16 first).** The build: an f32 island tensor whose
+every value is exactly representable in bf16 is held as the bf16 `WeightMat` kind, and any other stays f32. That rule covers a
+bf16 checkpoint whatever the loader widened it through. The bf16 kind's matmul widens a tile and runs `MatmulBT`
+(`linalg/weightmat_half16.go`), so the forward is the f32 one's, bit for bit. The `.giw` format is unchanged: islands are still
+written as f32 and converted on load. Order: LFM2's short-conv `inProj` and `outProj`, then MLA's projections, then the DFlash
+drafter's. Each family lands only on its own G1 and G2.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B16-G0 measure | 1, Mac | `LFM2.5-2.6B` (`~/models/lfm2.5-2.6b`, bf16 safetensors) at int4 on the CPU, direct load: `ResidentWeightBytes` and the short-conv projections' share, before and after | read, not gated; the arithmetic expects about 1.48 GB of f32 projections, roughly half the model, falling to about 0.74 GB |
+| B16-G1 identity | 0 | per family, a fixture whose island weights are bf16-exact (the tiny fixtures' islands rounded to bf16 in the test) loaded with the rule on and off: logits over 16 tokens, and the `.giw` round trip | bit-identical on and off; the round-tripped bundle's logits equal the direct load's |
+| B16-G2 bytes and kinds | 0 | `ResidentWeightBytes` on those fixtures, and the island tensors' kinds; the fit-estimate agreement tests | each island is bf16 exactly when bf16-exact, its bytes halve, and the fit estimate still agrees with `ResidentWeightBytes` |
+| B16-G3 unchanged | 0 | every family without a bf16-exact island (the tiny fixtures as committed, whose f32 islands are not bf16-exact): the parity manifest and goldens | unchanged; `scripts/refresh_parity_hashes.sh` green |
+
+Planted defect, run once on the committed tree and reverted: the exactness check skipped, so an f32 island that is not
+bf16-exact is rounded (G1's "off" fixture red under G3's goldens). Stopping rule: one pass each. Cost: seconds, plus G0's two
+loads of the 2.6B (about a minute each; not timed, so the timing lock is held shared).
+
+**MEM11-int8 gates, MLA first, registered 2026-10-22 before the code (I8M-G), on D3 and memory D9 (a).** MLA saves the most:
+DeepSeek-V2-Lite holds 1.49 GB of f32 MLA projections on a quantized load. The drafters' bf16 islands (1.05 GB) and LFM2's (0.74
+GB) come after, each with its own registration.
+
+**The build,** B27's form for Mamba applied to MLA:
+- **What goes int8:** on an integer-quantized load (int8, int8int8, int4, q4k), five of MLA's six projections become per-row
+  int8, weight-only: q (or the q-LoRA pair), kv-A and o. They are `linalg.QuantizeInt8` of the f32, the codes and scales every GPU
+  backend makes from them today, so the backends take those codes directly.
+- **What stays f32:** kv-B, which the backends slice into W_UK and W_UV as f32 and the CPU's absorbed path reads by row. An f32,
+  bf16 or f16 load keeps all six f32.
+- **The `.giw`** carries the int8 as weight records beside f32 arrays, read by encoding byte (B27's `mambaProj`), so an older
+  bundle still loads.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| I8M-G1 holding | 0 | `deepseek-tiny` at int4 and int8int8, and at f32 | the five projections int8 on the quantized loads, kv-B f32, all six f32 at f32; `ResidentWeightBytes` falls by exactly the five's f32 bytes less their int8 bytes; the f32 load's logits byte-equal to main's (the tiny f32 golden untouched) |
+| I8M-G2 the upload | 0 | the int8 codes and row scales held, and a bundle round trip's, against `linalg.QuantizeInt8` of main's f32 projections; Metal resident at int4 on `deepseek-tiny`, logits over 32 positions against main's | codes and scales equal; the Metal logits byte-equal to main's (the device holds the same int8) |
+| I8M-G3 CPU fidelity, tiny | 0 | `deepseek-tiny` at int4, the int8-MLA CPU against the f32-MLA CPU, 32 steps of greedy lockstep (B27's instrument) | min logit cosine ≥ 0.999 from position 2 and argmax agreement ≥ 30/32 |
+| I8M-G4 CPU fidelity, real slice | 1, Mac | the first two layers of DeepSeek-V2-Lite-Chat's Q4_K_M GGUF (`~/models/deepseek-v2-lite-gguf`, the slice OP2a's tier 1 uses) at int4, the same lockstep | min logit cosine ≥ 0.99 and argmax ≥ 28/32 |
+| I8M-G5 the family gate | nobara, realckpt | `TestDeepseekV2LiteReal` at int8int8 against the HF bf16 golden (its bars unchanged: argmax, greedy continuation, cosine ≥ 0.99) | passes, after the merge; an open row until it runs |
+
+Planted defect, run once on the committed tree and reverted: kv-B quantized too (G2's Metal logits red: W_UK/W_UV sliced from
+int8). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds; G4 about a minute (two loads of the slice).
+
+**MEM11-giw-bf16 gates, registered 2026-10-22 before the code (GB-G), on D13 (b).** The build: a weight-matrix kind 9 in the
+`.giw`, bf16, whose values are one aligned binary16 array aliased from the mapping as kind 3's scales are. LFM2's short-conv
+`inProj` and `outProj` are written as a kind-9 record when the load holds them bf16, and as the f32 array they are today
+otherwise. The reader tells the two apart by the encoding byte, as B27's `mambaProj` does, so a bundle written before this
+still loads. No version bump: under `docs/giw-bundles.md` § "From v17: a new encoding needs no new version" this is a new
+encoding, not a layout change. An older build refuses a kind-9 sidecar and rebuilds its own. `mmapAliasedBytes` counts an
+aliased bf16 matrix, and the short-conv islands go through the same aliased-bytes count as every other matrix.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| GB-G1 identity | 0 | lfm2-tiny with its islands rounded to bf16 (B16-G1's fixture), written to a `.giw` file and loaded mapped; and the committed fixture (f32 islands, not bf16-exact) the same way | the rounded islands come back kind bf16, aliased in the mapping, and the logits over 16 tokens equal the direct load's bit for bit; the committed fixture's islands come back f32 with logits unchanged |
+| GB-G2 heap | 0, then 1 (Mac) | tier 0: `ResidentHostCopyBytes` on G1's bundle; tier 1: LFM2.5-2.6B (`~/models/lfm2.5-2.6b`) at int4, written as a `.giw` by this writer and by the f32 form (G3's seam), each loaded mapped, Go heap in use after GC | tier 0: `ResidentWeightBytes` unchanged and `ResidentHostCopyBytes` lower by exactly the islands' bf16 bytes; tier 1: heap lower by the islands' bf16 bytes within 5% (about 0.74 GB), and the two loads' logits over 8 tokens bit-identical |
+| GB-G3 an older bundle | 0 | the tiny bundle written in the f32 form (a writer seam that writes islands as main does), and one written by `origin/main`'s build, loaded by this build | both load, islands bf16 on the heap as before, logits bit-identical to G1's |
+| GB-G4 unchanged | 0 | every other family's `.giw` round trip and the serialize census; `scripts/refresh_parity_hashes.sh` | green |
+
+Planted defect, run once on the committed tree and reverted: the writer takes kind 9 for an island that is not bf16-exact (its
+values rounded). G1's committed-fixture half goes red. Stopping rule: one pass each. Cost: seconds; G2's tier 1 about three
+minutes, untimed, so the lock is held shared (two loads of the 2.6B and two `.giw` writes, about 5 GB of temporary disk, deleted
+after).
 
 ### MEM12 · The CPU heap: GC headroom and per-request churn (M)
 
@@ -843,6 +1049,61 @@ choice in aikit and a storage choice in ken (**D4**).
 | LM head on every prompt token; fused-attention scratch per decode token; KV regrowth garbage | fixed | audit-metal-2026-09-12; G40 |
 
 ## 7. Owner decisions
+
+- **D14** (MEM11-int8-MLA-T3, open, 2026-10-23): **Moonlight's family gate fails at int8 MLA.** I8M-G5 on nobara: V2-Lite
+  passes (argmax, a 6-token greedy continuation, cosine 0.999297). Moonlight's last-token argmax matches the HF bf16 golden and its
+  cosine is 0.999542, but its greedy continuation takes 13 where the golden takes 11 at the second token. The same gate passes on
+  main before #162 (f32 MLA, cosine 0.999508). The three manifest rows stay pending
+  (`docs/measurements/mem11-int8-2026-10/mla.md`, "I8M-G5 on nobara").
+  - **Options:**
+    - (a) MLA back to f32 on quantized loads; the rows re-validate as before, and the ~0.94 GB on V2-Lite is given up;
+    - (b) narrow it: run the Moonlight gate with each of the five int8 projections (q, kv-A, o, per layer kind) held f32 in turn
+      (about a minute a run on nobara), keep f32 whichever carries the flip, and re-run I8M-G5; if no single one does, (a);
+    - (c) keep int8 MLA as it is: refresh `deepseek_v2` from this reading and leave `deepseek_v3` and `kimi_k2` pending, shown
+      unvalidated in the capability matrix.
+  - The bar itself (argmax, continuation, cosine ≥ 0.99) is not among the options; moving it is a separate decision.
+  - **Recommended: (b),** then (a) if it does not isolate.
+- **D13** (MEM11-int8, decided (b), owner, 2026-10-22): **int8 for the drafters and LFM2, whose islands are already mapped.**
+  MEM11-int8 closes with MLA. The drafters and LFM2 stay as MEM11-bf16 left them. The follow-up MEM11-giw-bf16: the `.giw`
+  carries LFM2's islands as bf16 records mapped on load, read by encoding byte as B27's `mambaProj` is, so an older bundle still
+  loads (a version bump only if `docs/giw-bundles.md`'s own rule clearly calls for one; otherwise ask). The question as asked: the
+  registration put them after MLA as "largest bytes saved first". But MEM11-bf16 already holds both families' islands as the
+  checkpoint's own mapped bf16 pages on a direct load (`decoder/island.go:stIsland`; LFM2.5-2.6B's Go heap 4.07 → 2.59 GB). So
+  int8 would not take heap off; it would add some.
+  - **The trade:** int8 turns 1.05 GB (the 4B drafter) and 0.74 GB (LFM2.5-2.6B) of clean, reclaimable file-backed pages into
+    0.53 GB and 0.37 GB of anonymous heap. The resident total halves, but every byte left is heap that can swap, and the fit
+    guard's available reading counts file-backed pages as free. Each also needs its parity bar: the drafter's acceptance, and
+    LFM2's real gate, which loads the 2.6B at f32 (about 10 GB, nobara only).
+  - **Where heap remains:** LFM2 from a `.giw`. The bundle writes islands as f32, and the load converts them to bf16 on the heap
+    (0.74 GB on the 2.6B). The drafters have no `.giw` path. No LFM2 GGUF load exists.
+  - **Options:**
+    - (a) close MEM11-int8 with MLA, and leave the drafters and LFM2 as MEM11-bf16 left them;
+    - (b) (a), plus a small bit-identical follow-up: the `.giw` carries LFM2's islands as bf16 records mapped on load, read by
+      encoding byte as B27's `mambaProj` is, so an older bundle still loads. That takes LFM2's `.giw` heap from 0.74 GB to 0, with
+      no parity bar;
+    - (c) build int8 for both, as registered: a smaller resident total, more heap, and two parity bars, one of them on nobara.
+  - **Recommended: (b).**
+- **D10** (MEM11-int8 MLA, decided (b), owner, 2026-10-22): **how MLA's int8 lands against the parity manifest.** The three
+  rows (`deepseek_v2`, `deepseek_v3`, `kimi_k2`) are set `pending` (the manifest's own mechanism: a pending row's hash is not
+  enforced), MLA int8 merges, and nobara re-runs the real-model gates at int8 and refreshes the rows (ledger row MEM11-int8-MLA-T3).
+  The capability matrix and the site show DeepSeek and Kimi as pending until then. The question as asked:
+  - **What is built:** int8 MLA projections on quantized loads, I8M-G1 to G4 PASS on the Mac (tiny 0.999887 / 31 of 32; V2-Lite
+    slice 0.997303 / 31 of 32; about 0.94 GB saved on V2-Lite).
+  - **The conflict:** `deepseek_v2`, `deepseek_v3` and `kimi_k2` are validated in `testdata/parity_manifest.json` against HF
+    bf16 at int8 residency, the load this changes. CLAUDE.md says a numeric change re-runs T3 before `-update`.
+  - **Options:**
+    - (a) hold the PR until nobara runs `TestDeepseekV2LiteReal` and the Moonlight gate at int8int8 (I8M-G5, moved before the
+      merge), then refresh the rows with the new readings;
+    - (b) set the three rows to `pending`, merge now, and re-validate later; the capability matrix and the site show DeepSeek
+      unvalidated until then;
+    - (c) gate int8 MLA off by default until (a) runs.
+  - **Recommended: (a).** The family bar was always nobara's, and the slice's 0.997 suggests it passes.
+- **D9** (MEM11-bf16, decided (a), owner, 2026-10-22): **MLA's islands.** MLA is left to MEM11-int8, its quantized bytes
+  behind the family's parity bar; no bf16 island for MLA. The question as asked: DeepSeek-V2-Lite's MLA projections are Q4_K in the bench GGUF,
+  so a bf16 island saves nothing there; its 1.49 GB is widened Q4_K. Options: (a) leave MLA to MEM11-int8, keeping the
+  quantized bytes behind the family's parity bar; (b) also add a bf16 island for BF16 safetensors MLA sources, which touches the
+  CPU forward's row reads and the Metal, CUDA and WebGPU builders (an M) for checkpoints the bench set does not have; (c) both.
+  **Recommended: (a).**
 
 - **D1** (MEM1): the public API shape, and whether a library `.gguf` load takes the sidecar by default.
 - **D2** (MEM4b): a lazy host reload of tower weights on CPU fallback — acceptable?

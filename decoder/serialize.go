@@ -65,6 +65,8 @@ import (
 //	   scales follow the group's last header as two unprefixed 16-aligned blocks (giwWriter.fusedGroup).
 //	8  Q4_K (a --quant q4k load's native tensors): raw, the GGUF super-blocks as they are (144 bytes per 256 values),
 //	   aliased on load through linalg.WrapQ4K. group is 0.
+//	9  bf16: u16, rows×cols bf16 values, aliased on load through linalg.WrapBF16. group is 0. Written for an island
+//	   matrix the load holds bf16 (giwWriter.island); an f32 island is a standalone f32 array instead.
 //
 // Kinds 4 and 7 existed before v16 and are not read.
 
@@ -80,6 +82,8 @@ const (
 	// giwEncF32 is a standalone f32 array's encoding byte, in the weight-matrix kinds' namespace (kind 1 is f32). Every
 	// tensor record starts with its encoding, and a reader refuses only an encoding it does not know (unknownEncoding).
 	giwEncF32 = 1
+	// giwKindBF16 is a bf16 weight matrix's kind: one aligned binary16 array of rows×cols values, aliased on load.
+	giwKindBF16 = 9
 	// Sanity ceilings on the count fields, generous against any real checkpoint but low enough that a corrupt or hostile blob
 	// cannot drive a multi-GB make() before the body reader hits its first short read. A LayerWeights is a large struct, so an
 	// unbounded layer count is the worst offender.
@@ -217,8 +221,8 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	wr.str(label)
 	wr.alignHead() // the variable-length header (the label, present or not) must not shift what follows
 
-	wr.weightMat(&w.Embed)
-	wr.weightMat(&w.LMHead)
+	wr.headTable(&w.Embed)
+	wr.headTable(&w.LMHead)
 	wr.weightMatKind3Only(&w.PosEmbed)
 	wr.f32(w.FinalNorm)
 	wr.f32(w.FinalNormBias)
@@ -227,7 +231,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 	// E-model/26B variants, but present as empty WeightMats so the layout is stable).
 	// Written for gemma4 only; no other family's bundle carries them.
 	if wr.arch != nil && wr.arch.gemma4 != nil {
-		wr.weightMat(&w.PerLayerTokenEmbed)
+		wr.headTable(&w.PerLayerTokenEmbed)
 		wr.weightMat(&w.PerLayerModelProj)
 		wr.f32(w.PerLayerProjNorm)
 		// FFNPerLayer (the E-models' variable per-layer FFN widths) is json:"-" on
@@ -557,9 +561,9 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 					got  int
 					want int
 				}{
-					{"shortConv.inProj", len(c.inProj), 3 * cd * arch.HiddenDim},
+					{"shortConv.inProj", c.inProj.Rows() * c.inProj.Cols(), 3 * cd * arch.HiddenDim},
 					{"shortConv.convW", len(c.convW), cd * k},
-					{"shortConv.outProj", len(c.outProj), arch.HiddenDim * cd},
+					{"shortConv.outProj", c.outProj.Rows() * c.outProj.Cols(), arch.HiddenDim * cd},
 				} {
 					if e := eq(fmt.Sprintf("layer %d %s", i, ck.name), ck.got, ck.want); e != nil {
 						return e
@@ -899,6 +903,10 @@ type giwWriter struct {
 	// kind 3 for every int4 tensor.
 	target GIWTarget
 
+	// tables are the embedding-shaped tables a streaming GGUF build registered instead of building (streamedTable), keyed by
+	// the Weights field each stands for; writeHeadGlobals writes them from their sources.
+	tables map[*linalg.WeightMat]*streamedTable
+
 	// layerBudget is the memory streamLayers may hold in built, unwritten layers (stream mode). Zero builds one layer at
 	// a time.
 	layerBudget int64
@@ -1222,14 +1230,14 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 	} else {
 		w.raw([]byte{1})
 		m := l.mla
-		w.f32(m.qAProj)
+		w.mambaProj(m.qAProj, &m.qAQ) // a quantized load's int8 projections as weight records, else f32 arrays (MEM11-int8)
 		w.f32(m.qALayernorm)
-		w.f32(m.qBProj)
-		w.f32(m.qProj)
-		w.f32(m.kvAProj)
+		w.mambaProj(m.qBProj, &m.qBQ)
+		w.mambaProj(m.qProj, &m.qQ)
+		w.mambaProj(m.kvAProj, &m.kvAQ)
 		w.f32(m.kvALayernorm)
 		w.f32(m.kvBProj)
-		w.f32(m.oProj)
+		w.mambaProj(m.oProj, &m.oQ)
 	}
 	// Mamba-2 (Granite / Nemotron): presence byte then the eight tensors. The recurrent STATE is
 	// not written and must not be — it is per-sequence, rebuilt at load; only the weights are here.
@@ -1273,9 +1281,29 @@ func (w *giwWriter) v8Layer(l *LayerWeights) {
 	}
 	w.raw([]byte{1})
 	c := l.shortConv
-	w.f32(c.inProj)
+	w.island(&c.inProj)
 	w.f32(c.convW)
-	w.f32(c.outProj)
+	w.island(&c.outProj)
+}
+
+// giwIslandsF32ForTest writes islands as f32 arrays whatever kind the load holds: the form a bundle had before kind 9.
+var giwIslandsF32ForTest bool
+
+// island writes an island matrix in the kind it is held in: a bf16 one as a kind-9 record, its values aliased on load; an f32
+// one as a standalone f32 array (giwEncF32). The reader tells the two apart by the encoding byte (giwReader.island).
+func (w *giwWriter) island(m *linalg.WeightMat) {
+	u, bf16, ok := m.Half16()
+	if !ok || !bf16 || giwIslandsF32ForTest {
+		w.f32(islandF32(m))
+		return
+	}
+	w.raw([]byte{giwKindBF16})
+	w.u32(uint32(m.Rows()))
+	w.u32(uint32(m.Cols()))
+	w.u32(0)
+	w.raw([]byte{0})
+	w.alignArray()
+	w.scales16(u)
 }
 
 // v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attention-output gate (l.mla.gProj, added to
@@ -1568,7 +1596,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	if kind == 0 {
 		return linalg.WeightMat{}
 	}
-	if kind != 1 && kind != 2 && kind != 3 && kind != 5 && kind != 8 { // kind 6 is read as a fused group, never here
+	if kind != 1 && kind != 2 && kind != 3 && kind != 5 && kind != 8 && kind != giwKindBF16 { // kind 6 is read as a fused group, never here
 		r.unknownEncoding(kind)
 		return linalg.WeightMat{}
 	}
@@ -1644,6 +1672,14 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			return linalg.WeightMat{}
 		}
 		return wm
+	case giwKindBF16:
+		r.alignArray()
+		u := r.u16View(int(r.u32())) // zero-copy: aliased from the mapping
+		if len(u) != rows*cols {
+			r.fail(fmt.Sprintf("bf16 weightMat %d×%d has %d values", rows, cols, len(u)))
+			return linalg.WeightMat{}
+		}
+		return linalg.WrapBF16(u, rows, cols)
 	case 8:
 		r.alignArray()
 		raw := r.rawAlias() // zero-copy: the super-blocks are aliased from the mapping
@@ -1791,14 +1827,14 @@ func (r *giwReader) v6Layer(l *LayerWeights) {
 	l.SharedExpert.DownBias = r.f32()
 	if r.u8() != 0 {
 		m := &mlaWeights{}
-		m.qAProj = r.f32()
+		m.qAProj, m.qAQ = r.mambaProj()
 		m.qALayernorm = r.f32()
-		m.qBProj = r.f32()
-		m.qProj = r.f32()
-		m.kvAProj = r.f32()
+		m.qBProj, m.qBQ = r.mambaProj()
+		m.qProj, m.qQ = r.mambaProj()
+		m.kvAProj, m.kvAQ = r.mambaProj()
 		m.kvALayernorm = r.f32()
 		m.kvBProj = r.f32()
-		m.oProj = r.f32()
+		m.oProj, m.oQ = r.mambaProj()
 		l.mla = m
 	}
 	if r.u8() != 0 {
@@ -1823,10 +1859,32 @@ func (r *giwReader) v8Layer(l *LayerWeights) {
 		return
 	}
 	c := &shortConvWeights{}
-	c.inProj = r.f32()
+	hidden, cd := 0, 0
+	if r.arch != nil && r.arch.lfm2 != nil {
+		hidden, cd = r.arch.HiddenDim, r.arch.lfm2.ConvDim
+	}
+	c.inProj = r.island(3*cd, hidden)
 	c.convW = r.f32()
-	c.outProj = r.f32()
+	c.outProj = r.island(hidden, cd)
 	l.shortConv = c
+}
+
+// island reads giwWriter.island's record by its encoding byte: a kind-9 bf16 matrix aliased from the mapping, or an f32 array,
+// which becomes a WeightMat of the config's shape [rows, cols] through islandMat (bf16 on the heap when bf16-exact). An f32
+// array whose length does not fit that shape is kept as one row, for validateShapes to report.
+func (r *giwReader) island(rows, cols int) linalg.WeightMat {
+	if r.need(1) && r.data[r.off] != giwEncF32 {
+		wm := r.weightMat()
+		if r.err == nil && rows > 0 && (wm.Rows() != rows || wm.Cols() != cols) {
+			r.fail(fmt.Sprintf("an island matrix is %d×%d, want %d×%d", wm.Rows(), wm.Cols(), rows, cols))
+		}
+		return wm
+	}
+	f := r.f32()
+	if rows <= 0 || cols <= 0 || rows*cols != len(f) {
+		return linalg.WrapF32(f, 1, len(f))
+	}
+	return islandMat(f, rows, cols)
 }
 
 // v9Layer mirrors giwWriter.v9Layer. gProj is always present in the byte stream (possibly

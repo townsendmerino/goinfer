@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/vision"
@@ -95,6 +96,9 @@ type gridVAccel struct {
 	prof           *gvProfile                          // test seam: S17 step 0's per-class GPU split; nil in production
 	tap            func(bi, n int)                     // HiddenTaps: called after block bi\'s command buffer, with the residual\'s live length
 	cap, segCap    int
+	ptInF1         bool        // pt is a view of f1 (grow)
+	idle           *time.Timer // the pending scratch release (armRelease); nil when none
+	gen            uint64      // bumped by every grow and by Close, so a stale release does nothing
 	x, xn, pt, pos Buffer
 	q, k, v, ctx   Buffer
 	o, f1, f2      Buffer
@@ -131,6 +135,7 @@ func (a *gridVAccel) Name() string { return "metal" }
 func (a *gridVAccel) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.cancelRelease()
 	a.closeDevice()
 	a.blocks, a.cap, a.segCap = nil, 0, 0
 	return nil
@@ -262,20 +267,36 @@ func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
 
 // grow sizes the scratch for np patches and segments of up to maxSeg, releasing what it replaces.
 func (a *gridVAccel) grow(np, maxSeg int) error {
+	a.cancelRelease()
 	if err := a.open(); err != nil {
 		return err
 	}
 	if np > a.cap {
+		if a.ptInF1 {
+			a.pt = Buffer{} // a view of f1, released with it
+		}
 		a.release(&a.x, &a.xn, &a.pt, &a.pos, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.f1, &a.f2, &a.ropeCos, &a.ropeSin)
 		H, I := a.hidden, a.inter
 		n := func(cols int) Buffer { return a.d.NewBufferLen(np * cols) }
-		a.x, a.xn, a.pt, a.pos = n(H), n(H), n(a.patchDim), n(H)
+		a.x, a.xn, a.pos = n(H), n(H), n(H)
 		a.q, a.k, a.v, a.ctx, a.o = n(H), n(H), n(H), n(H), n(H)
-		a.f1, a.f2 = n(I), n(I)
+		a.f1 = n(I)
+		if a.kind.gated() || gridScratchAllForTest {
+			a.f2 = n(I)
+		}
+		// The patch rows are read once, by the patch embed, before any block writes f1, so they live in f1 when it is wide enough.
+		a.ptInF1 = I >= a.patchDim && !gridScratchAllForTest
+		if a.ptInF1 {
+			a.pt = a.f1
+		} else {
+			a.pt = n(a.patchDim)
+		}
 		a.ropeCos, a.ropeSin = n(a.hd/2), n(a.hd/2)
 		a.cap = np
 	}
-	if maxSeg > a.segCap {
+	// The unfused attention's scratch, only when that attention can run: no fused kernel for this head dim, or the oldAttn seam.
+	unfused := a.fusedAttn == (Pipeline{}) || a.oldAttn || gridScratchAllForTest
+	if unfused && (maxSeg > a.segCap || a.qh == (Buffer{})) {
 		a.release(&a.qh, &a.kh, &a.vh, &a.sc, &a.vt, &a.ob)
 		H, B := a.hidden, min(eg2Block, maxSeg)
 		a.qh, a.kh, a.vh = a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H)
@@ -284,6 +305,10 @@ func (a *gridVAccel) grow(np, maxSeg int) error {
 	}
 	return nil
 }
+
+// gridScratchAllForTest allocates every grid-tower scratch buffer as before KS-D6 (the unfused attention's, f2 on every kind, pt
+// on its own): the old arm of its A/B.
+var gridScratchAllForTest bool
 
 // linear runs out = x·Wᵀ (+ bias) over rows.
 func (a *gridVAccel) linear(e *Encoder, x Buffer, p *gvProj, out Buffer, rows int) {
@@ -571,5 +596,63 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 		a.tap(len(a.blocks)-1, np*H)
 	}
 	a.slot = 0
-	return append([]float32(nil), a.x.Floats()[:np*H]...), nil
+	out := append([]float32(nil), a.x.Floats()[:np*H]...)
+	a.armRelease()
+	return out, nil
+}
+
+// gridIdleRelease is how long a grid tower stays idle after a forward before it releases scratch over gridReleaseCeiling; a
+// forward in the meantime cancels the release and reuses the buffers. gridReleaseOffForTest keeps the scratch until Close, as
+// before KS-H4. Variables so a test can shorten them.
+var (
+	gridIdleRelease       = 5 * time.Second
+	gridReleaseCeiling    = int64(256 << 20)
+	gridReleaseOffForTest bool
+)
+
+// scratchBytes is the bytes the tower's scratch buffers hold (pt counted once when it is a view of f1).
+func (a *gridVAccel) scratchBytes() int64 {
+	n := 0
+	for _, b := range []Buffer{a.x, a.xn, a.pos, a.q, a.k, a.v, a.ctx, a.o, a.f1, a.f2, a.ropeCos, a.ropeSin, a.qh, a.kh, a.vh, a.sc, a.vt, a.ob} {
+		n += b.Len()
+	}
+	if !a.ptInF1 {
+		n += a.pt.Len()
+	}
+	return 4 * int64(n)
+}
+
+// armRelease schedules the scratch's release after gridIdleRelease when it is over gridReleaseCeiling. The caller holds a.mu.
+func (a *gridVAccel) armRelease() {
+	if gridReleaseOffForTest || a.scratchBytes() <= gridReleaseCeiling {
+		return
+	}
+	g := a.gen
+	a.idle = time.AfterFunc(gridIdleRelease, func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.gen == g && a.d != nil {
+			a.releaseScratch()
+		}
+	})
+}
+
+// cancelRelease stops a pending release and makes any that already fired a no-op. The caller holds a.mu.
+func (a *gridVAccel) cancelRelease() {
+	if a.idle != nil {
+		a.idle.Stop()
+		a.idle = nil
+	}
+	a.gen++
+}
+
+// releaseScratch frees every scratch buffer; the next forward allocates them again (grow). The caller holds a.mu.
+func (a *gridVAccel) releaseScratch() {
+	if a.ptInF1 {
+		a.pt = Buffer{} // a view of f1, released with it
+	}
+	a.release(&a.x, &a.xn, &a.pt, &a.pos, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.f1, &a.f2, &a.ropeCos, &a.ropeSin,
+		&a.qh, &a.kh, &a.vh, &a.sc, &a.vt, &a.ob)
+	a.cap, a.segCap, a.ptInF1 = 0, 0, false
+	a.idle = nil
 }

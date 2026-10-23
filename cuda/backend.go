@@ -356,24 +356,30 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			proj = []projEnt{{&hl.q, qP}, {&hl.k, kP}, {&hl.v, vP}, {&hl.o, oP}}
 		case hl.mixer == decoder.MixerMLA:
 			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(l)
+			qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(l)
 			hl.mlaQANorm, hl.mlaKVANorm = qANorm, kvANorm
 			latDim := kvLoRA + qkRope
+			// wm is a projection's int8 form when the load holds one (the codes packWeight makes from the f32), else its f32.
+			wm := func(q *linalg.WeightMat, f []float32, rows, cols int) *linalg.WeightMat {
+				if q.Rows() > 0 {
+					return q
+				}
+				w := linalg.WrapF32(f, rows, cols)
+				return &w
+			}
 			if qLoRA > 0 {
-				qaWM := linalg.WrapF32(qA, qLoRA, H)
-				qbWM := linalg.WrapF32(qB, nH*(qkNope+qkRope), qLoRA)
 				proj = append(proj,
-					projEnt{&hl.mlaQA, &qaWM},
-					projEnt{&hl.mlaQB, &qbWM},
+					projEnt{&hl.mlaQA, wm(qAQ, qA, qLoRA, H)},
+					projEnt{&hl.mlaQB, wm(qBQ, qB, nH*(qkNope+qkRope), qLoRA)},
 				)
 			} else {
-				qWM := linalg.WrapF32(qProj, nH*(qkNope+qkRope), H)
-				proj = append(proj, projEnt{&hl.mlaQ, &qWM})
+				proj = append(proj, projEnt{&hl.mlaQ, wm(qQ, qProj, nH*(qkNope+qkRope), H)})
 			}
-			kvaWM := linalg.WrapF32(kvA, latDim, H)
-			oWM := linalg.WrapF32(oProj, H, nH*vHead)
+			kvaWM := wm(kvAQ, kvA, latDim, H)
+			oWM := wm(oQ, oProj, H, nH*vHead)
 			proj = append(proj,
-				projEnt{&hl.mlaKVA, &kvaWM},
-				projEnt{&hl.o, &oWM},
+				projEnt{&hl.mlaKVA, kvaWM},
+				projEnt{&hl.o, oWM},
 			)
 			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows). Slice it into W_UKᵀ [nH, kvLoRA,
 			// qkNope] (transposed for the absorb GEMV) and W_UV [nH, vHead, kvLoRA] (the lift, as-is), as

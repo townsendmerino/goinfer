@@ -1,0 +1,339 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// Kernel-survey first-measurement instruments (docs/measurements/kernel-survey-2026-10/README.md). Kept under docs as
+// .go.txt and copied into cuda/ as ks_survey_scratch_test.go for a run; never committed under cuda/. Every test is
+// gated on GOINFER_KS=1 so a stray copy cannot run in a suite.
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func ksGate(t *testing.T) {
+	if os.Getenv("GOINFER_KS") == "" {
+		t.Skip("set GOINFER_KS=1 (kernel-survey instrument)")
+	}
+}
+
+func ksLoad1(t *testing.T) float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
+	return f
+}
+
+func ksMemAvailMB() int64 {
+	b, _ := os.ReadFile("/proc/meminfo")
+	for _, ln := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(ln, "MemAvailable:") {
+			kb, _ := strconv.ParseInt(strings.Fields(ln)[1], 10, 64)
+			return kb / 1024
+		}
+	}
+	return -1
+}
+
+// ksCtxSwitches sums voluntary and involuntary context switches over every thread of this process, and returns the
+// per-thread voluntary counts so a delta can name the threads that sleep.
+func ksCtxSwitches() (vol, invol int64, per map[string]int64) {
+	per = map[string]int64{}
+	tasks, _ := filepath.Glob("/proc/self/task/*/status")
+	for _, p := range tasks {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		for _, ln := range strings.Split(string(b), "\n") {
+			f := strings.Fields(ln)
+			if len(f) != 2 {
+				continue
+			}
+			n, _ := strconv.ParseInt(f[1], 10, 64)
+			switch f[0] {
+			case "voluntary_ctxt_switches:":
+				vol += n
+				per[filepath.Base(filepath.Dir(p))] = n
+			case "nonvoluntary_ctxt_switches:":
+				invol += n
+			}
+		}
+	}
+	return
+}
+
+// TestKS_A2_graphsAB: the 0.5B at depth 128, live launches (A) against CUDA graph replay (B, forced by the UNSAFE
+// override), two residents in one process, ABBA quads of 64-token blocks over the same positions 128..191 and the same
+// fed embeddings. Also: launches per token, and context switches per token on each arm over 200 tokens.
+func TestKS_A2_graphsAB(t *testing.T) {
+	ksGate(t)
+	path := modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	load := func(graphs bool) (*decoder.Model, *cudaResident) {
+		if graphs {
+			t.Setenv("GOINFER_CUDA_GRAPHS", "1")
+			t.Setenv("GOINFER_CUDA_GRAPHS_UNSAFE", "1")
+		} else {
+			t.Setenv("GOINFER_CUDA_GRAPHS", "")
+			t.Setenv("GOINFER_CUDA_GRAPHS_UNSAFE", "")
+		}
+		mc, err := loadLikeServe(t, path, "-backend", "cuda", "-quant", "int4")
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		rf := mustResident(t, mc)
+		if rf.graphs != graphs {
+			t.Fatalf("graphs=%v requested, resident has %v", graphs, rf.graphs)
+		}
+		return mc, rf
+	}
+	mA, rA := load(false)
+	defer mA.Close()
+	mB, rB := load(true)
+	defer mB.Close()
+	_, _, _, _, _, _, vocab := mA.Dims()
+	emb := func(i int) []float32 { return mA.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
+	const depth, block = 128, 64
+	for _, r := range []*cudaResident{rA, rB} {
+		for i := range depth {
+			if _, err := r.ForwardArgmax(emb(i), i); err != nil {
+				t.Fatalf("warm: %v", err)
+			}
+		}
+	}
+	rA.launchN = 0
+	if _, err := rA.ForwardArgmax(emb(1000), depth); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("launches per token (live arm, pos %d): %d", depth, rA.launchN)
+
+	run := func(r *cudaResident) (time.Duration, []int) {
+		ids := make([]int, block)
+		t0 := time.Now()
+		for i := range block {
+			id, err := r.ForwardArgmax(emb(1000+i), depth+i)
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			ids[i] = id
+		}
+		return time.Since(t0), ids
+	}
+	// one untimed block per arm so both have run the timed positions once
+	run(rA)
+	run(rB)
+	const quads = 10
+	var ratios []float64
+	var sumA, sumB time.Duration
+	same := true
+	for q := 0; q < quads; q++ {
+		l1 := ksLoad1(t)
+		if l1 > 8.0 {
+			t.Logf("quad %d VOID: load1 %.2f > 8.0 at start; re-running", q, l1)
+			q--
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		a1, ia := run(rA)
+		b1, ib := run(rB)
+		b2, _ := run(rB)
+		a2, _ := run(rA)
+		for i := range ia {
+			if ia[i] != ib[i] {
+				same = false
+			}
+		}
+		ra := float64(a1+a2) / float64(b1+b2)
+		ratios = append(ratios, ra)
+		sumA += a1 + a2
+		sumB += b1 + b2
+		fmt.Fprintf(os.Stderr, "[A2] quad %d load1 %.2f memavail %d MB | live %.1f µs/tok (%.1f, %.1f) graphs %.1f µs/tok (%.1f, %.1f) | graphs speedup %.4f\n",
+			q, l1, ksMemAvailMB(),
+			float64((a1+a2).Microseconds())/(2*block), float64(a1.Microseconds())/block, float64(a2.Microseconds())/block,
+			float64((b1+b2).Microseconds())/(2*block), float64(b1.Microseconds())/block, float64(b2.Microseconds())/block, ra)
+	}
+	s := append([]float64(nil), ratios...)
+	sort.Float64s(s)
+	med := (s[quads/2-1] + s[quads/2]) / 2
+	above := 0
+	for _, r := range ratios {
+		if r > 1 {
+			above++
+		}
+	}
+	nTok := float64(quads * 2 * block)
+	t.Logf("A2: live %.2f µs/token (%.1f tok/s), graphs %.2f µs/token (%.1f tok/s); pair ratios median %.4f, min %.4f, max %.4f, %d/%d above 1; argmax ids identical across arms: %v",
+		float64(sumA.Microseconds())/nTok, nTok/sumA.Seconds(), float64(sumB.Microseconds())/nTok, nTok/sumB.Seconds(), med, s[0], s[quads-1], above, quads, same)
+
+	// context switches over 200 tokens, each arm (positions depth..depth+199)
+	for _, arm := range []struct {
+		name string
+		r    *cudaResident
+	}{{"live", rA}, {"graphs", rB}} {
+		v0, n0, p0 := ksCtxSwitches()
+		t0 := time.Now()
+		for i := range 200 {
+			if _, err := arm.r.ForwardArgmax(emb(2000+i), depth+i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		el := time.Since(t0)
+		v1, n1, p1 := ksCtxSwitches()
+		type td struct {
+			tid string
+			d   int64
+		}
+		var top []td
+		for k, v := range p1 {
+			if d := v - p0[k]; d > 0 {
+				top = append(top, td{k, d})
+			}
+		}
+		sort.Slice(top, func(i, j int) bool { return top[i].d > top[j].d })
+		if len(top) > 4 {
+			top = top[:4]
+		}
+		t.Logf("A2 ctx switches, %s, 200 tokens in %v: voluntary %d (%.2f/token), involuntary %d; top threads by voluntary: %v",
+			arm.name, el.Round(time.Millisecond), v1-v0, float64(v1-v0)/200, n1-n0, top)
+	}
+}
+
+// TestKS_A3A5_decodeUnderNcu drives the kernels ncu reads for KS-A3 and KS-A5: the 0.5B decodes with ForwardTopK at
+// k=256 (vocab 151,936; fused_rms_gu runs at hidden 896 / inter 4864), then gemma3-1b with ForwardTopK at k=1024
+// (vocab 262,144). Run it under ncu with a kernel-name filter.
+func TestKS_A3A5_decodeUnderNcu(t *testing.T) {
+	ksGate(t)
+	for _, c := range []struct {
+		file string
+		k    int
+	}{{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", 256}, {"gemma3-1b-q4_k_m.gguf", 1024}} {
+		mc, err := loadLikeServe(t, modelPath(c.file), "-backend", "cuda", "-quant", "int4")
+		if err != nil {
+			t.Fatalf("load %s: %v", c.file, err)
+		}
+		rf := mustResident(t, mc)
+		_, _, _, _, _, _, vocab := mc.Dims()
+		t.Logf("%s: vocab %d hidden %d, TopKAvailable %v", c.file, vocab, rf.hidden, rf.TopKAvailable())
+		if !rf.TopKAvailable() {
+			mc.Close()
+			t.Errorf("%s: top-K path unavailable", c.file)
+			continue
+		}
+		emb := func(i int) []float32 { return mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
+		for i := range 8 {
+			if _, err := rf.ForwardArgmax(emb(i), i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for i := range 8 {
+			if _, err := rf.ForwardTopK(emb(100+i), 8+i, c.k, 0.7, true); err != nil {
+				t.Fatalf("topk: %v", err)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[A3A5] %s done (k=%d, vocab=%d)\n", c.file, c.k, vocab)
+		mc.Close()
+	}
+}
+
+// TestKS_B2_prefillUnderNcu runs one 3,900-token prefill on the 1.5B, loaded as serve loads it, so ncu can read
+// attn_fused_bm128_hd128 on the last pass.
+func TestKS_B2_prefillUnderNcu(t *testing.T) {
+	ksGate(t)
+	mc, err := loadLikeServe(t, modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "-backend", "cuda", "-quant", "int4")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	rf := mustResident(t, mc)
+	_, _, _, _, _, _, vocab := mc.Dims()
+	n := 3900
+	embs := make([][]float32, n)
+	var s uint32 = uint32(n*2654435761 + 1)
+	for i := range embs {
+		s = s*1664525 + 1013904223
+		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+	}
+	t.Logf("pass rows %d, layers %d, kv f16 %v", rf.PrefillChunkRows(), len(rf.layers), rf.kvF16)
+	t0 := time.Now()
+	if _, err := rf.PrefillLast(context.Background(), embs, 0); err != nil {
+		t.Fatalf("prefill: %v", err)
+	}
+	t.Logf("prefill %d rows in %v", n, time.Since(t0))
+}
+
+// TestKS_A1_planBytes counts the bytes the CUDA upload plan (planWeight) gives every projection and the head of
+// phi3-mini's Q4_K_M GGUF at --quant q4k: what one decode token reads, by kind. The load is a CPU one: the plan reads the
+// host WeightMats, which a q4k load builds the same way for either backend, and no GPU is touched.
+func TestKS_A1_planBytes(t *testing.T) {
+	ksGate(t)
+	path := os.ExpandEnv("$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
+	m, err := decoder.Load(path, decoder.Options{Backend: "cpu", Quant: "q4k"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	type acc struct {
+		n     int
+		bytes int64
+	}
+	byRole := map[string]*acc{}
+	add := func(role string, w *linalg.WeightMat) {
+		if w.Rows() == 0 {
+			return
+		}
+		hw, err := planWeight(w)
+		if err != nil {
+			t.Fatalf("%s: %v", role, err)
+		}
+		key := role + " " + hw.kind
+		a := byRole[key]
+		if a == nil {
+			a = &acc{}
+			byRole[key] = a
+		}
+		a.n++
+		a.bytes += int64(hw.nWpk)*4 + int64(hw.nWs)*4 + int64(hw.nWs16)*2
+	}
+	w := m.Weights()
+	for i := range w.Layers {
+		ly := &w.Layers[i]
+		add("q", &ly.QProj)
+		add("k", &ly.KProj)
+		add("v", &ly.VProj)
+		add("o", &ly.OProj)
+		add("gate", &ly.GateProj)
+		add("up", &ly.UpProj)
+		add("down", &ly.DownProj)
+	}
+	if w.LMHead.Rows() > 0 {
+		add("head", &w.LMHead)
+	} else {
+		add("head(tied)", &w.Embed)
+	}
+	keys := make([]string, 0, len(byRole))
+	for k := range byRole {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var tot, totQ4K, totI8 int64
+	for _, k := range keys {
+		a := byRole[k]
+		t.Logf("A1 %-14s tensors %3d  %9.2f MB", k, a.n, float64(a.bytes)/1e6)
+		tot += a.bytes
+		if strings.HasSuffix(k, " q4k") {
+			totQ4K += a.bytes
+		} else {
+			totI8 += a.bytes
+		}
+	}
+	t.Logf("A1 total per token %.2f MB (q4k native %.2f MB, int8 + scales %.2f MB)", float64(tot)/1e6, float64(totQ4K)/1e6, float64(totI8)/1e6)
+}

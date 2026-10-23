@@ -182,10 +182,10 @@ func TestI8_blocksMatchOnePass_MoE(t *testing.T) {
 	}
 }
 
-// TestI8_exactKernelModelIsNotSplit: Qwen3.5 0.8B (head dim 256, so the exact attention kernel) reports no block, and a
-// forced block does not split it: its pass declines past prefillExactAttnMaxKeys and must go on declining the whole
-// prompt. Needs the checkpoint in ~/models.
-func TestI8_exactKernelModelIsNotSplit(t *testing.T) {
+// TestI8_exactKernelModelIsSplit (KS-H1): Qwen3.5 0.8B (head dim 256, so the exact attention kernel) reports a block, and its
+// prefill in blocks of 64 and 256 rows gives one pass's tokens, log-probabilities and resident state, as the fused-kernel models
+// do. At head dim ≤ 256 the exact and tiled kernels a block may choose are bit-identical.
+func TestI8_exactKernelModelIsSplit(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	path := filepath.Join(home, "models", "qwen3.5-0.8b")
 	if _, err := os.Stat(filepath.Join(path, "config.json")); err != nil {
@@ -197,20 +197,11 @@ func TestI8_exactKernelModelIsNotSplit(t *testing.T) {
 	}
 	_, files := decoder.PrefillGatePromptSet()
 	ids := decoder.PrefillGateProseIDsForTest(t, tk, files[1], 600)[:600]
-	i8Block(t, 64)
-	var one int64
-	got := i8Generate(t, path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024}, ids, func(a *metalResident) {
-		if !a.r.prefillExactAttn() {
-			t.Fatal("this checkpoint no longer runs the exact attention kernel; the test proves nothing")
+	i8Check(t, path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024}, ids, []int{64, 256}, func(a *metalResident) {
+		if !a.r.prefillExactAttn() || a.r.exactAttnHeadDim() > 256 {
+			t.Fatalf("exact attention %v at head dim %d: the test would not exercise a blocked exact-kernel model", a.r.prefillExactAttn(), a.r.exactAttnHeadDim())
 		}
-		if B := a.PrefillBlockRows(); B != 0 {
-			t.Errorf("PrefillBlockRows = %d for a model on the exact attention kernel, want 0", B)
-		}
-		one = a.PrefillScratchBytes(len(ids))
 	})
-	if got.scratch != one {
-		t.Errorf("the prefill allocated %d bytes of scratch, want one pass's %d", got.scratch, one)
-	}
 }
 
 // TestI8_blockRows: the block is the rows that fit prefillBlockScratch, a multiple of 64 and at least
@@ -229,9 +220,15 @@ func TestI8_blockRows(t *testing.T) {
 	if got := exact.PrefillBlockRows(); got != 0 {
 		t.Errorf("PrefillBlockRows = %d with --exact-prefill, want 0", got)
 	}
+	// An int8 cache takes the pass (P3b-2): it gets a block, and a row costs what it does at f16 plus the fixed dequantize
+	// scratch (kvI8ScratchRows positions of K and V at f16).
+	f16Price := a.PrefillScratchBytes(256)
 	r.kvI8 = true
-	if got := a.PrefillBlockRows(); got != 0 {
-		t.Errorf("PrefillBlockRows = %d with an int8 KV cache, want 0", got)
+	if got := a.PrefillBlockRows(); got <= 0 {
+		t.Errorf("PrefillBlockRows = %d with an int8 KV cache, want a block", got)
+	}
+	if got, want := a.PrefillScratchBytes(256)-f16Price, 4*int64(r.kvI8ScratchRows())*int64(r.prefillGeom().kvDim); got != want {
+		t.Errorf("an int8 cache adds %d bytes of prefill scratch, want %d (the dequantize scratch)", got, want)
 	}
 	r.kvI8 = false
 }

@@ -149,6 +149,9 @@ type mlaWeights struct {
 	kvBProj      []float32 // [numHeads*(qk_nope+v_head_dim), kv_lora_rank]
 	oProj        []float32 // [hidden, numHeads*v_head_dim]
 	gProj        []float32 // [numHeads] (head_wise) or [numHeads*v_head_dim] (element_wise); nil ⇒ no gate (every DeepSeek family)
+	// qAQ, qBQ, qQ, kvAQ and oQ are those projections as per-row int8 on a quantized load (mlaProjInt8, quantizeProjections),
+	// their f32 slices then nil.
+	qAQ, qBQ, qQ, kvAQ, oQ linalg.WeightMat
 }
 
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP. Mixtral names these
@@ -413,7 +416,7 @@ func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4
 	// Release the source mapping now when nothing can alias it, instead of holding it for the model's whole life. The mapping
 	// is the bf16 checkpoint, while the quantized weights decode reads are a separate, much smaller allocation; holding the
 	// source lets dead pages compete with hot weights for page cache (higher RSS and slower decode).
-	if why := mmapAliasRisk(st); why == "" && os.Getenv("GOINFER_P13_OFF") == "" {
+	if why := mmapAliasRisk(st); why == "" && !islandsMayAliasSource(w) && os.Getenv("GOINFER_P13_OFF") == "" {
 		_ = st.Close()
 		w.st = nil
 	}
@@ -445,6 +448,22 @@ func mmapAliasRisk(st *embed.SafetensorsFile) string {
 		}
 	}
 	return ""
+}
+
+// islandsMayAliasSource reports whether a bf16 island may be the checkpoint's own bits: stIsland keeps a BF16 tensor as a
+// zero-copy view of the mapping, which mmapAliasRisk's dtype rule does not see, so a load holding any bf16 island keeps the
+// source mapped. Conservative: an island islandMat made bf16 on the heap keeps it too.
+func islandsMayAliasSource(w *Weights) bool {
+	for i := range w.Layers {
+		if sc := w.Layers[i].shortConv; sc != nil {
+			for _, m := range []*linalg.WeightMat{&sc.inProj, &sc.outProj} {
+				if _, bf16, ok := m.Half16(); ok && bf16 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // riskyDType reports whether a stored dtype can be handed back as a slice aliasing the mapping.
@@ -915,6 +934,9 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		} else if arch.mla != nil {
 			if err = loadDeepseekAttn(st, i, l, arch, hd, tn); err != nil {
 				return err
+			}
+			if mlaProjInt8(quant) {
+				l.mla.quantizeProjections(arch)
 			}
 		} else if arch.gemma4 != nil {
 			// Gemma 4 attention has PER-LAYER widths: the global (full-attention) layers

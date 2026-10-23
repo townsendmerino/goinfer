@@ -478,10 +478,12 @@ func measureBytesPerElem(q quantMode) float64 {
 // Nemotron-H's Mamba-2 in_proj/out_proj/conv1d ARE matched, via the full "mixer.in_proj"/"mixer.out_proj"/"mixer.conv1d" compound
 // (never bare "mixer." or bare "in_proj"), which no other Nemotron block kind contains.
 //
-// KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection (self_attn.o_proj.weight / Bailing's dense.weight) is
-// ALSO f32-pinned (loadDeepseekAttn/loadDeepseekAttnGGUF), but "o_proj"/"dense.weight" are ordinary, widely used quantizable tensor names
-// in every non-MLA family, so matching them bare would misclassify most of the registry. The result is a small, honest under-estimate
-// (o_proj is a minority of MLA's attention weight: TestFitEstimate_f32PinnedMixersAgreeWithResident).
+// A quantized load holds MLA's q-LoRA pair and kv-A at int8 instead (mlaInt8TensorName, checked first); kv-B stays f32 at every quant.
+//
+// KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection (self_attn.o_proj.weight / Bailing's dense.weight)
+// and a LoRA-less q_proj are held at int8 on a quantized load and f32 otherwise, but "o_proj"/"q_proj"/"dense.weight" are ordinary
+// quantizable tensor names in every non-MLA family, so they are priced at the load's rate: a small, honest under-estimate at int4
+// (TestFitEstimate_f32PinnedMixersAgreeWithResident).
 func f32PinnedTensorName(name string) bool {
 	for _, s := range []string{
 		"ssm_", "mamba.",
@@ -489,6 +491,17 @@ func f32PinnedTensorName(name string) bool {
 		"attn_q_a", "attn_q_b", "attn_kv_a", "attn_kv_b",
 		"q_a_proj", "q_b_proj", "kv_a_proj", "kv_b_proj",
 	} {
+		if strings.Contains(name, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// mlaInt8TensorName reports whether name is an MLA q-LoRA or kv-A projection, which a load at an integer quant holds as per-row int8
+// (mlaProjInt8). kv_b is not one: it stays f32.
+func mlaInt8TensorName(name string) bool {
+	for _, s := range []string{"attn_q_a.", "attn_q_b.", "attn_kv_a_mqa.", "q_a_proj.", "q_b_proj.", "kv_a_proj"} {
 		if strings.Contains(name, s) {
 			return true
 		}
@@ -571,6 +584,11 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 		}
 		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8).
 		if nemoInt8 && (strings.HasSuffix(name, ".ssm_in.weight") || strings.HasSuffix(name, ".ssm_out.weight")) {
+			sum += quantBytesPerElem(quantInt8I8) * float64(n)
+			continue
+		}
+		// A quantized load holds MLA's q (or q-LoRA pair) and kv-A projections at int8 (mlaProjInt8).
+		if mlaProjInt8(q) && mlaInt8TensorName(name) {
 			sum += quantBytesPerElem(quantInt8I8) * float64(n)
 			continue
 		}
@@ -661,6 +679,10 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 		// Mamba-2/MLA tensors stay f32 regardless of the requested quant.
 		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8); these compound names are its alone.
 		if mambaProjInt8(q) && (strings.HasSuffix(name, "mixer.in_proj.weight") || strings.HasSuffix(name, "mixer.out_proj.weight")) {
+			total += quantBytesPerElem(quantInt8I8) * float64(n)
+			continue
+		}
+		if mlaProjInt8(q) && mlaInt8TensorName(name) {
 			total += quantBytesPerElem(quantInt8I8) * float64(n)
 			continue
 		}

@@ -572,6 +572,9 @@ type resident struct {
 	// pfErr latches a compile or pipeline-creation failure from ensurePrefill, so r.pf staying nil does not make
 	// every later PrefillLast retry the full MSL compile and panic again.
 	pfErr error
+	// ksd7Old is ksd7OldDequantForTest at build time: the prefill library compiles lazily (ensurePrefill), after a test's switch
+	// is back.
+	ksd7Old bool
 
 	// Gated-DeltaNet mixer (deltanet_kernels.go — own module, nothing else here is recurrent).
 	// dnet nil ⇒ dense model; every field below is loaded/allocated only when it is non-nil.
@@ -580,7 +583,8 @@ type resident struct {
 	pDnQSplit, pDnAttnGate                        Pipeline // this family's fused double-width q_proj + output gate
 	// D-B01: the mixer over M prompt rows (deltanet_kernels.go's _seq/_rows forms; prefill_deltanet.go)
 	pDnConvSeq, pDnGatesRows, pDnNormRows, pDnRuleSeq, pDnGNormRows, pDnProjW8Rows Pipeline
-	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP                                        Buffer // per-token scratch, sized from dnet (model-level, uniform across layers)
+	pDnRuleSeqTG, pDnConvSeqReg                                                    Pipeline // the on-chip forms (KS-D3); see dnSeqOnChip
+	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP                                        Buffer   // per-token scratch, sized from dnet (model-level, uniform across layers)
 	dnBt, dnAt, dnZOut, dnCore, dnGated                                            Buffer
 	dnGq, dnGSc                                                                    Buffer // int8 activation + scale for the gated output's out_proj GEMV
 	dnQg, dnAGate                                                                  Buffer // qGate scratch: [2*maxNHhd] fused [query‖gate] q_proj output, [maxNHhd] the split gate
@@ -1312,6 +1316,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pDnQSplit, r.pDnAttnGate = pipe("delta_qsplit"), pipe("delta_attn_gate")
 		r.pDnConvSeq, r.pDnGatesRows, r.pDnNormRows = pipe("delta_conv_seq"), pipe("delta_gates_rows"), pipe("delta_norm_rows")
 		r.pDnRuleSeq, r.pDnGNormRows, r.pDnProjW8Rows = pipe("delta_rule_seq"), pipe("delta_gnorm_rows"), pipe("delta_proj_w8_rows")
+		r.pDnRuleSeqTG, r.pDnConvSeqReg = pipe("delta_rule_seq_tg"), pipe("delta_conv_seq_reg")
 		r.dnMixed, r.dnConvOut = d.NewBufferLen(dp.convDim), d.NewBufferLen(dp.convDim)
 		r.dnBt, r.dnAt = d.NewBufferLen(dp.nv), d.NewBufferLen(dp.nv)
 		r.dnHeadP = d.NewBufferLen(dp.nv * 2)
@@ -1389,8 +1394,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.q4kLane && !r.q4kLaneShapeOK() {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
+	r.ksd7Old = ksd7OldDequantForTest
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 && !r.kvF32 &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 		r.mla == nil // MLA's latent attention is in no prefill kernel
 

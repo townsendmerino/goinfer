@@ -40,7 +40,26 @@ func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 // gemmTileFor is gemmTile for a weight of a given kind: w8 picks the W8 tiles (int8 slice 2), else the int4 ones. An
 // int4mix resident (w8Attn) passes true for its attention GEMMs and false for its FFN.
 func (pf *prefillState) gemmTileFor(rows, N int, w8 bool) (Pipeline, int, int) {
-	tm, tn := 64, 64
+	tm, tn := gemmTileSize(rows, N)
+	if w8 { // int8 slice 2: the native int8 path's weights, the same tile
+		return pf.pW8[[2]int{tm, tn}], tm, tn
+	}
+	switch {
+	case tm == 16 && tn == 32:
+		return pf.pGemmM16N32, 16, 32
+	case tm == 32 && tn == 32:
+		return pf.pGemmM32N32, 32, 32
+	case tm == 32:
+		return pf.pGemmM32N64, 32, 64
+	case tn == 32:
+		return pf.pGemmM64N32, 64, 32
+	}
+	return pf.pGemmStore, 64, 64
+}
+
+// gemmTileSize is the prefill GEMM's tile, TM tokens by TN features, for a pass of rows rows and N output features.
+func gemmTileSize(rows, N int) (tm, tn int) {
+	tm, tn = 64, 64
 	switch gemmTilePolicy {
 	case "":
 		pad := (rows + 63) / 64 * 64
@@ -62,25 +81,36 @@ func (pf *prefillState) gemmTileFor(rows, N int, w8 bool) (Pipeline, int, int) {
 			tn = 32
 		}
 	}
-	if w8 { // int8 slice 2: the native int8 path's weights, the same tile
-		return pf.pW8[[2]int{tm, tn}], tm, tn
+	return tm, tn
+}
+
+// swigluFusedOffForTest keeps the gate|up GEMM and swiglu_f16 as two steps with guF between them: the old arm of KS-D5's A/B.
+var swigluFusedOffForTest bool
+
+// swigluFused reports whether a pass of Mpad rows runs every dense layer's gate|up projection through gemm_w4f16_swiglu, so it
+// needs no guF: the int4 weights (not the native int8 lane), the 64 x 64 tile for every layer's width, a width that is a
+// multiple of 32, and no MoE layer (its expert GEMMs write guF). The pass and prefillScratchBytes both ask it.
+func (r *resident) swigluFused(Mpad int) bool {
+	if swigluFusedOffForTest || r.w8 || r.moe != nil {
+		return false
 	}
-	switch {
-	case tm == 16 && tn == 32:
-		return pf.pGemmM16N32, 16, 32
-	case tm == 32 && tn == 32:
-		return pf.pGemmM32N32, 32, 32
-	case tm == 32:
-		return pf.pGemmM32N64, 32, 64
-	case tn == 32:
-		return pf.pGemmM64N32, 64, 32
+	for l := -1; l < len(r.layers); l++ {
+		fI := r.I
+		if l >= 0 && r.layers[l].ffnI != 0 {
+			fI = r.layers[l].ffnI
+		}
+		if tm, tn := gemmTileSize(Mpad, 2*fI); tm != 64 || tn != 64 || fI%32 != 0 {
+			return false
+		}
 	}
-	return pf.pGemmStore, 64, 64
+	return true
 }
 
 // prefillState holds the lazily compiled prefill pipelines (ensurePrefill); a decode-only run never builds it.
 type prefillState struct {
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
+	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu (KS-D5)
+	pKvI8, pDeqI8                                              Pipeline // an int8 cache's store and dequantize-to-scratch (kv_i8_prefill.go)
 	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
 	pAttnImg                                                   Pipeline // S17: attention_prefill with a bidirectional image block
 	pRopeM                                                     Pipeline // S16: rope_mrope_f16
@@ -158,7 +188,10 @@ func (r *resident) ensurePrefill() {
 	if (r.w8 || r.w8Attn) && r.preciseMath { // the owner's precise-math decision for native int8 (w8PreciseMath) covers its prefill too
 		compile = r.d.CompileLibraryPrecise
 	}
-	src, err := withAttnSoftcap(prefillKernels, r.attnSoftcap)
+	src, err := withAttnSoftcap(prefillKernels+kvI8PrefillKernels, r.attnSoftcap) // + the int8 cache's store and dequantize (kv_i8_prefill.go)
+	if r.ksd7Old {
+		src = "#define KSD7_OLD_DEQUANT 1\n" + src
+	}
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill source: %v", err))
 	}
@@ -174,12 +207,12 @@ func (r *resident) ensurePrefill() {
 		return pp
 	}
 	r.pf = &prefillState{
-		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
+		pGemmStore: p("gemm_w4f16_store"), pGemmSwiglu: p("gemm_w4f16_swiglu"), pRms: p("rmsnorm_f16"),
 		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"), pGemmM16N32: p("gemm_w4f16_m16n32"),
 		pLN: p("layernorm_f16"), pLNQ: p("layernorm_quant_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p(ropeF16Name(r.pairwiseRoPE, false)), pRopeM: p(ropeF16Name(r.pairwiseRoPE, true)),
 		pPLEGeluMulF16: p("ple_gelu_mul_f16"), pLayerScaleF16: p("layer_scale_f16"),
-		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pAttnImg: p("attention_prefill_img"), pQK: p("qk_norm_f16"),
+		pKv: p("kv_store_f16"), pKvI8: p("kv_store_i8_prefill"), pDeqI8: p("kv_dequant_i8_f16"), pAttn: p("attention_prefill"), pAttnImg: p("attention_prefill_img"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"), pResScaled: p("residual_f16_scaled"),
 		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"), pAttnTiled: p("attention_prefill_tiled"),
@@ -302,13 +335,20 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 	}
 	m, mp, H := int64(M), int64((M+7)/8*8), int64(r.H)
 	qkvDim, qDim, maxI := r.prefillWidths()
-	n := 2*mp*(2*H+int64(qkvDim)+int64(qDim)+3*int64(maxI)) + 4*mp
+	ffnRows := int64(3) // guF (2 x maxI) and dqF (maxI)
+	if r.swigluFused(int(mp)) {
+		ffnRows = 1 // dqF only: gemm_w4f16_swiglu writes it with no guF
+	}
+	n := 2*mp*(2*H+int64(qkvDim)+int64(qDim)+ffnRows*int64(maxI)) + 4*mp
 	if e := r.moe; e != nil {
 		k := int64(e.k)
 		n += 4*m*int64(e.nE) + 8*m*k + 4*mp*H + 8*mp*k
 	}
 	if r.pleP > 0 {
 		n += 4*m*int64(r.nL*r.pleP) + 2*mp*int64(r.pleP)
+	}
+	if r.kvI8 { // the f16 K and V scratch one layer's int8 cache is dequantized into, the padded context long (kvI8Scratch)
+		n += 4 * int64(r.kvI8ScratchRows()) * int64(r.prefillGeom().kvDim)
 	}
 	if dp := r.dnet; dp != nil {
 		g0 := r.prefillGeom()
@@ -318,6 +358,10 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 	}
 	return n
 }
+
+// kvI8ScratchRows is the rows of an int8 cache's dequantize scratch: the cache's own padded capacity, so the attention
+// kernels' whole-tile reads past the last key stay inside it, as they do in the cache.
+func (r *resident) kvI8ScratchRows() int { return (r.ctxCap + 7) / 8 * 8 }
 
 // prefillScratchSeen counts the bytes of row-sized scratch the batched pass has allocated, at the allocations
 // themselves, so a test can hold prefillScratchBytes to what a pass really takes.
@@ -439,11 +483,17 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 // attention_prefill_img, the exact kernel with the blocks, in place of the fused and steel kernels, which carry no block
 // mask. No blocks: prefillLast exactly.
 func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
+	return r.prefillLastImgSrc(sliceRows(embs), startPos, mrope, deep, blocks)
+}
+
+// prefillLastImgSrc is prefillLastImg over a row source (rows.go): its input rows are read rowChunk at a time straight into the
+// pass's device buffers.
+func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
 	// Every K/V buffer holds kvCap positions, and a pass past them writes beyond the buffer. metalResident.checkCap refuses that for
 	// the decoder; an internal caller that skipped it is a programming error, named here rather than left to corrupt memory.
-	if c := r.kvCap(); startPos < 0 || startPos+len(embs) > c {
+	if c := r.kvCap(); startPos < 0 || startPos+src.n > c {
 		panic(fmt.Sprintf("metal: internal prefill of %d rows at position %d is past the resident KV cap of %d positions "+
-			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", len(embs), startPos, c))
+			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", src.n, startPos, c))
 	}
 	r.ensurePrefill()
 	runtime.LockOSThread()
@@ -453,7 +503,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	if r.layerNorm {
 		normPipe = pf.pLN
 	}
-	M := len(embs)
+	M := src.n
 	Mpad := (M + 7) / 8 * 8
 	H, I, V := r.H, r.I, r.V
 	// Prefill runs only for uniform families (prefillOK declines Gemma's per-layer geometry), so
@@ -470,11 +520,33 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	// them, instead of into a zeroed Go slice of Mpad rows that was then copied in whole.
 	xF := prefillScratchU16(d, Mpad*H)
 	residInv := 1 / r.prefillResidScale(deep)
-	parallelEmbedsF32ToF16Scaled(xF.U16s()[:M*H], embs, H, residInv)
+	// The input rows, read rowChunk at a time from the source: each row's first H values into xF as f16, and a Gemma 4
+	// E-model's [L·P] per-layer tail straight into the device buffer the PLE gate reads (S9 step 2), so the host holds a chunk.
+	var pleInB Buffer
+	if r.pleP > 0 {
+		LP := r.nL * r.pleP
+		pleInB = d.NewBufferLen(M * LP)
+		prefillScratchSeen.Add(int64(4 * M * LP))
+	}
+	for lo := 0; lo < M; lo += rowChunk {
+		hi := min(lo+rowChunk, M)
+		rows := src.rows(lo, hi)
+		parallelEmbedsF32ToF16Scaled(xF.U16s()[lo*H:hi*H], rows, H, residInv)
+		if r.pleP > 0 {
+			LP, pv := r.nL*r.pleP, pleInB.Floats()
+			for i, row := range rows {
+				copy(pv[(lo+i)*LP:(lo+i+1)*LP], row[H:H+LP])
+			}
+		}
+	}
 	normF := prefillScratchU16(d, Mpad*H)
 	qkvF := prefillScratchU16(d, Mpad*qkvDim)
 	ctxF := prefillScratchU16(d, Mpad*qDim)
-	guF := prefillScratchU16(d, Mpad*2*maxI)
+	fusedSw := r.swigluFused(Mpad)
+	var guF Buffer // the gate|up rows between the GEMM and swiglu_f16; none when the pass fuses them (swigluFused)
+	if !fusedSw {
+		guF = prefillScratchU16(d, Mpad*2*maxI)
+	}
 	dqF := prefillScratchU16(d, Mpad*maxI)
 	posv := make([]uint32, Mpad)
 	for m := range M {
@@ -514,6 +586,12 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
 	uMReal := NewBufferU32(d, uint32(M))
+	// An int8 cache: each layer's rows [0, startPos+M) are dequantized into these f16 buffers before its attention (D9 (b)).
+	var kScrI8, vScrI8, uEndI8 Buffer
+	if r.kvI8 {
+		kScrI8, vScrI8 = prefillScratchU16(d, r.kvI8ScratchRows()*kvDim), prefillScratchU16(d, r.kvI8ScratchRows()*kvDim)
+		uEndI8 = NewBufferU32(d, uint32(startPos+M))
+	}
 	attnTile := exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
 	uTile := NewBufferU32(d, uint32(max(attnTile, 1)))
 	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
@@ -565,6 +643,9 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	if r.moe != nil {
 		scratch = append(scratch, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf)
 	}
+	if r.kvI8 {
+		scratch = append(scratch, kScrI8, vScrI8, uEndI8)
+	}
 	// S17: the scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the residual, eps/s², so
 	// that x/s / sqrt(ms/s² + eps/s²) is x / sqrt(ms + eps) exactly (s is a power of two).
 	var uResidInv Buffer
@@ -576,19 +657,16 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	}
 	// S9 step 2: a Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
 	// gate's scratch.
-	var pleInB, pleGF, uP, uLP Buffer
+	var pleGF, uP, uLP Buffer
 	if r.pleP > 0 {
 		P, LP := r.pleP, r.nL*r.pleP
-		pv := make([]float32, M*LP)
-		for m := range M {
-			src := embs[m]
-			if emodelBatchDefect == 3 { // G-S9c (3): each row's PLE inputs taken from the next row
-				src = embs[min(m+1, M-1)]
+		if emodelBatchDefect == 3 { // G-S9c (3): each row's PLE inputs taken from the next row
+			pv := pleInB.Floats()
+			for m := 0; m+1 < M; m++ {
+				copy(pv[m*LP:(m+1)*LP], pv[(m+1)*LP:(m+2)*LP])
 			}
-			copy(pv[m*LP:(m+1)*LP], src[H:H+LP])
 		}
-		pleInB, pleGF, uP, uLP = NewBufferFloats(d, pv), prefillScratchU16(d, Mpad*P), NewBufferU32(d, uint32(P)), NewBufferU32(d, uint32(LP))
-		prefillScratchSeen.Add(int64(4 * len(pv)))
+		pleGF, uP, uLP = prefillScratchU16(d, Mpad*P), NewBufferU32(d, uint32(P)), NewBufferU32(d, uint32(LP))
 		scratch = append(scratch, pleInB, pleGF, uP, uLP)
 	}
 	// D-B01: a Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
@@ -779,10 +857,16 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 				}
 			}
 			// scatter K,V to cache; a KV-shared layer stores nothing (its cache is its source's)
-			if !L.kvShared {
+			if !L.kvShared && r.kvI8 {
+				e.Dispatch(pf.pKvI8, M*lu.g.nKV, 32, qkvF, posB, r.kc[l], r.vc[l], r.ks[l], r.vs[l], lu.g.uNKV, lu.g.uHd, lu.uStride, lu.uKOff, lu.uVOff, uMReal)
+			} else if !L.kvShared {
 				e.Dispatch(pf.pKv, M*lu.kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, lu.g.uKvDim, lu.uStride, lu.uKOff, lu.uVOff)
 			}
 			kc, vc := r.kc[l], r.vc[l]
+			if r.kvI8 { // the attention kernels read f16: this layer's cache, dequantized
+				e.Dispatch(pf.pDeqI8, (startPos+M)*lu.kvDim, 256, r.kc[l], r.vc[l], r.ks[l], r.vs[l], kScrI8, vScrI8, lu.g.uNKV, lu.g.uHd, uEndI8)
+				kc, vc = kScrI8, vScrI8
+			}
 			if L.kvShared && emodelBatchDefect == 1 {
 				kc, vc = zeroKV, zeroKV
 			}
@@ -1006,10 +1090,14 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 		if fI != I {
 			uFI, u2FI = getU32(fI), getU32(2*fI)
 		}
-		// gate/up
-		gemm(e, Mpad, 2*fI, inFFN, L.guW, L.guS, guF, uM, u2FI, uH, dummyBias, m0)
-		// swiglu/geglu (G8: r.uAct selects — 0 for every family without FeatGatedGELU)
-		e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
+		// gate/up, then swiglu/geglu (G8: r.uAct selects, 0 for every family without FeatGatedGELU): one fused GEMM when the pass
+		// takes it (swigluFused), else the GEMM into guF and swiglu_f16.
+		if fusedSw {
+			e.Dispatch2D(pf.pGemmSwiglu, (fI+31)/32, (Mpad+63)/64, 128, 1, inFFN, L.guW, L.guS, dqF, uM, uFI, uH, r.uAct)
+		} else {
+			gemm(e, Mpad, 2*fI, inFFN, L.guW, L.guS, guF, uM, u2FI, uH, dummyBias, m0)
+			e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
+		}
 		// down-proj, same plain-vs-sandwich split as o-proj above.
 		if r.sandwich || r.postOnly {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uFI, dummyBias, m0)
@@ -1166,3 +1254,8 @@ func dg01Mutate(idx []uint32, wgt []float32, M, k int) {
 		}
 	}
 }
+
+// ksd7OldDequantForTest builds the prefill library with the per-weight nibble dequant in the GEMM's staging (KSD7_OLD_DEQUANT): the
+// old arm of KS-D7's A/B. The staging is in prefillKernels, so the define goes on the prefill library's source; the resident takes
+// the switch when it is built (resident.ksd7Old).
+var ksd7OldDequantForTest bool

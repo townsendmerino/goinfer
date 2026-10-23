@@ -23,13 +23,13 @@ func (m *Model) prefillLogitsAudio(ctx context.Context, ids []int, feats []float
 	if len(feats) != n*hidden {
 		return nil, fmt.Errorf("decoder: audio features len %d, want %d (%d tokens x %d)", len(feats), n*hidden, n, hidden)
 	}
-	h := m.embedN(ids)
-	copy(h[pos*hidden:(pos+n)*hidden], feats) // raw projector output: no embed scale, as transformers' masked_scatter into inputs_embeds
-	hN, err := m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
+	// The audio run's rows are the raw projector output (no embed scale, as transformers' masked_scatter into inputs_embeds),
+	// spliced per pass; they attend causally, so any cut is allowed (MEM5-VL).
+	hN, err := m.prefillSpliced(ctx, ids, []ImageSpan{{Pos: pos, Len: n}}, feats, cache, false)
 	if err != nil {
 		return nil, err
 	}
-	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
+	return m.lmHeadN(hN[len(hN)-hidden:], 1), nil
 }
 
 // GenerateAudio streams a continuation for a prompt whose ids hold a run of audioLen placeholders at audioPos, replaced by the embeddings features returns. features is invoked once.
