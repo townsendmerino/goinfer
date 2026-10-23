@@ -13,9 +13,8 @@ Go 1.27.2. Every checkpoint is read from `~/models` on NVMe.
 ## Pre-registration
 
 Registered 2026-10-23 before any run below. Tier, instrument, readout, decision bands, stopping rule and cost for each.
-The timed runs (A2, B8) hold the timing lock exclusively; the ncu reads and the tier-0 count hold it shared (ncu serializes
-and replays kernels, so its durations are not wall-clock timings of the served path, and nothing else may time the card
-under it either way). Every timed cell records the 1-minute load and `MemAvailable` at its start; a cell started with the
+The timed runs (A2, B8) and the ncu reads hold the timing lock exclusively (ncu's durations are replayed kernel times, not
+the served path's wall clock, but its counters must not share the card); the build and the tier-0 count hold it shared. Every timed cell records the 1-minute load and `MemAvailable` at its start; a cell started with the
 1-minute load above 8.0 is VOID and re-run in the same order, and the record lists it.
 
 ### KS-A2 · is small-model decode bound by launch cost? (timed, tier 1)
