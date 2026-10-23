@@ -114,6 +114,7 @@ All at `origin/main` d6214db6b plus this record's commits (no product code), 202
 | KS-B8 | attention at K = 3,900: 340.9 / 340.4 ms at 512 rows, 276.8 / 276.4 at 1,024, 218.9 / 218.9 at 2,048: **1.231× and 1.556×**, each pass within 0.2% of the other; whole prefill 933 → 840 → 748 ms (**1.25×** at 2,048) | **confirmed** |
 | KS-A3 | `topk_select` is **one block** of 1,024 threads (33.5 KB static shared memory, 64 registers); SM throughput 1.3–1.7% of the device. **101.7 µs** median at (152k, 256), **211.5 µs** at (262k, 1,024) | **confirmed** |
 | KS-B2 | `attn_fused_bm128_hd128`, the seventh pass (48 blocks): `long_scoreboard` + `lg_throttle` **59.7%** of stall cycles (barrier 0.7%); tensor pipe active **8.8%**; global loads **4.03 bytes** per thread per instruction (scalar); 180 registers, one block per SM, 25% of warps active; 2.75 ms a launch | **confirmed** |
+| KS-A5 | `fused_rms_gu` (the 0.5B dispatches the original kernel, grid 152) at **55.2%** of DRAM peak, median of 24 launches (52.1–61.9), about 209 GB/s; 29.1 µs a launch under ncu's cold cache, 24.8 µs in the census run | **confirmed** (headroom) |
 | KS-A1 | goinfer's q4k plan reads **2,710.96 MB** a token (q4k native 1,302.33, int8 with scales 1,408.63) against the file's own **2,336.28 MB**: +373.7 MB, all of it the int8 copies of the Q5_K and Q6_K tensors | count matches the survey; stays `decision` (KS-O1) |
 
 ### KS-A2
@@ -224,3 +225,28 @@ staging load is a scalar 32-bit word. Registers (180) limit the kernel to one 25
 - **This load holds f32 KV.** The serve-shaped 1.5B load reports `kvF16 false`, so this is the f32 twin. KV4b (#157, f16 KV per
   group) was still open at this read; if it merges, the `_kv16` twin (2-byte elements) is the one to read next, with the same
   instrument.
+
+### KS-A5
+
+**The run as registered profiled the wrong launches, and was re-run.** The first ncu pass (08:46, `--launch-skip 96 -c 24`
+over `^fused_rms_gu`) read 24 launches of `fused_rms_gu_rows` on a 32-block grid at 4.6 µs and 1.5% of DRAM peak, which no
+weight read of this shape allows. A one-pass census of every `fused_rms_gu*` launch in the test binary's run (08:53) found
+three runs of launches: 496 of `fused_rms_gu_rows` on 32 blocks (4.6 µs) before the 0.5B's own, then the 0.5B's 384 of
+`fused_rms_gu` on 152 blocks (24.8 µs: 16 tokens × 24 layers), then gemma3-1b's 416 of `fused_rms_gu_rows` on 158 blocks
+(30.1 µs). The first 496 come from something the test binary runs before the 0.5B's first token; this read did not trace
+them. A first attempt with no launch cap was stopped after 78 launches: it would have held the card for about an hour.
+
+The registered read, re-run at 09:37 (timing lock exclusive) on launches 592–615 (the 0.5B's fifth token, every layer), with
+the registered sections:
+
+| metric | median | range |
+|---|---:|---:|
+| DRAM throughput, % of peak | **55.2** | 52.1–61.9 |
+| DRAM, GB/s | 209 | 203–222 |
+| duration, µs (cold cache) | 29.1 | 27.9–31.2 |
+| L2 hit rate, % | 18.0 | 16.0–18.5 |
+
+At 55% of peak the kernel is well short of the 80% kill line. The survey's ~10% of a 0.5B token depends on decode being
+GPU-bound first (KS-A2). The 1-minute load was 12.0 at this run's start (the load rule binds the timed cells, A2 and B8;
+DRAM share is a counter inside the kernel's own replay, and the exclusive lock kept other locked GPU jobs off the card).
+A3 and B2's runs started at loads 2.7 and 2.4.

@@ -22,7 +22,7 @@
 | KS-A2 | decision | owner: build the cheaper launch path (raw launches from the caller's thread, pre-packed arguments; M)? Measured 2026-10-23 on the 0.5B at depth 128: graphs ÷ live **1.454×** median, 10 of 10 quads (348 → 512 tok/s); 12.9 µs a launch; 1,161 voluntary context switches a token | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A3 | decision | owner: build the multi-block `topk_select` (S–M)? Measured 2026-10-23: one block, **101.7 µs** at (152k, 256), **211.5 µs** at (262k, 1024) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
-| KS-A5 | open | nobara: ncu DRAM percent of `fused_rms_gu` at (896, 4864) | — |
+| KS-A5 | decision | owner: build the one-round row loads (S–M), after KS-A2's launch path, since the gain needs decode GPU-bound? Measured 2026-10-23: `fused_rms_gu` at (896, 4864) runs at **55.2%** of DRAM peak (kill was ≥ 80%) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A6 | open | nobara: host timestamps around upload, readback and hand-off | — |
 | KS-A7 | open | nobara: launch counter, then an A/B on phi3-mini | — |
 | KS-A8 | open | nobara: an A/B after A2 reads | — |
