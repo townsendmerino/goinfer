@@ -33,7 +33,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | done | done 2026-10-22: all four image and audio prefill routes run in chunks, byte-equal (V1 to V4 G1 to G3 PASS); tier-1 peaks run at night on the owner's word: Qwen2.5-VL-3B 1,261 → 357 MiB, Qwen3.5-0.8B 5,567 → 1,905 MiB over base (V1-G4, V3-G4 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-VL-G2T1 | open | a box with a bidirectional Gemma 4 (26B or 31B class): V2-G4, the route-2 peak with one image and about 8K tokens, `TestMEM5VL_peakTier1`'s form | `docs/measurements/mem5vl-2026-10/README.md` |
-| MEM5-VL-convwin | open | either box: `deltaNetCoreN` keeps the conv window as slices of the pass's `mixed` slab, holding 3.46 GB after an 8K single-pass prefill on Qwen3.5-0.8B (0.86 GB chunked); copy the K−1 rows instead (small, bit-identical) | `docs/measurements/mem5vl-2026-10/README.md` |
+| MEM5-VL-convwin | open (gates registered 2026-10-22) | either box: `deltaNetCoreN` keeps the conv window as slices of the pass's `mixed` slab, holding 3.46 GB after an 8K single-pass prefill on Qwen3.5-0.8B (0.86 GB chunked); copy the K−1 rows instead (small, bit-identical) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
 | MEM6 | open (CUDA) | Metal routes done 2026-10-22: the resident reads the suffix a chunk at a time (`ResidentPrefillRows`), at most 256 embedding rows held (was the whole suffix), logits byte-equal; MEM6-G1 to G3 PASS. Left: the CUDA cells and the `RssAnon` gate, on nobara | `docs/measurements/mem6-2026-10/README.md` |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
@@ -518,6 +518,22 @@ as the span.
 
 Planted defect: the audio features spliced at rows counted from the pass. V4-G1 goes red. Stopping rule: one pass each. Cost:
 seconds. No tier-1 cell: the bench set's audio checkpoints are short-prompt ASR, where a whole-prompt pass is small.
+
+**MEM5-VL-convwin gates, registered 2026-10-22 (11:25 pm) before the code (CW-G), on the owner's word that night.**
+`deltaNetCoreN` leaves the conv window (`st.convWin`) as slices of the pass's `mixed` slab, so each linear layer's whole
+`K × convDim` slab stays live until K−1 decode steps replace the window's rows. On Qwen3.5-0.8B after an 8,192-token single
+pass, that is 18 × 8,192 × 6,144 × 4 B = 3,456 MiB, which is what V3-G4 read above base (3,456.2 MiB). The build: the window keeps
+copies of its K−1 rows (at most 3 × `convDim` floats a layer). The per-token `deltaNetCore` is unchanged: its argument is one
+row.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| CW-G1 identity | 0 | the DeltaNet tests (`deltanet_test.go`, `deltanet_n_test.go`); the CPU prefill of qwen35-tiny, qwen3_5-tiny, qwen3_5_moe-tiny and qwen35vl-tiny (40 tokens, one pass) and 8 decode steps after, with the copy and with the old slices (a test seam), in one process | all pass; byte-equal on every fixture |
+| CW-G2 the window holds no slab | 0 | after a `deltaNetCoreN` pass, each window row's backing array against the slab's | no window row shares the slab's memory |
+| CW-G3 dead memory | 1, Mac, memory read under the timing lock | `TestMEM5VL_peakTier1` on Qwen3.5-0.8B, the one-pass arm's live heap after the prefill, over its base; main read 3,456.2 MiB (V3-G4) | at most 512 MiB over base (the KV by geometry, about 200 MB, plus slack), down by at least 90% of the 3,456 MiB of slabs |
+
+Planted defect: the copy removed for the last window row only. CW-G2 goes red. Stopping rule: one pass each. Cost: seconds; CW-G3
+about 3 minutes.
 
 ### MEM6 · Resident prefill embeds per chunk (S)
 
