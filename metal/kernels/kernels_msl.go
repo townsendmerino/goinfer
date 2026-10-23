@@ -844,79 +844,7 @@ inline void q4k_scale_min(uint j, device const uchar* q, thread float& sc, threa
     else { sc = float((q[j+4u] & 15u) | ((q[j-4u] >> 6u) << 4u)); m = float((q[j+4u] >> 4u) | ((q[j] >> 6u) << 4u)); }
 }
 // Per 256 weights (144 bytes): d (f16), dmin (f16), scales[12], qs[128]; w = d*sc*q - dmin*m per 32-weight sub-block;
-// byte qs[32j+l] holds element 64j+l (low nibble) and 64j+32+l (high). Lane l takes byte l of each 32-byte group.
-#define Q4K_F32_BODY \
-    uint row = tgid*8u + sgid; \
-    if (row >= N) return; \
-    uint NB = K >> 8u; \
-    device const uchar* wr = wq + (ulong)row*(ulong)NB*144ul; \
-    float acc = 0.0f; \
-    for (uint b=0u; b<NB; b++) { \
-        device const uchar* blk = wr + b*144u; \
-        float d  = float(as_type<half>(ushort(uint(blk[0]) | (uint(blk[1])<<8u)))); \
-        float dm = float(as_type<half>(ushort(uint(blk[2]) | (uint(blk[3])<<8u)))); \
-        device const uchar* scs = blk + 4; device const uchar* qs = blk + 16; \
-        device const float* a = ax + b*256u; \
-        for (uint j=0u; j<4u; j++) { \
-            float sc0, m0, sc1, m1; q4k_scale_min(2u*j, scs, sc0, m0); q4k_scale_min(2u*j+1u, scs, sc1, m1); \
-            uint q = uint(qs[j*32u + lane]); \
-            float a0 = a[j*64u + lane], a1 = a[j*64u + 32u + lane]; \
-            acc += (d*sc0*float(q & 15u) - dm*m0) * a0 + (d*sc1*float(q >> 4u) - dm*m1) * a1; \
-        } \
-    } \
-    acc = simd_sum(acc);
-kernel void gemv_q4k_f32(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
-    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
-    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
-    uint lane[[thread_index_in_simdgroup]]) {
-    Q4K_F32_BODY
-    if (lane==0) out[row] = acc;
-}
-kernel void gemv_q4k_f32_resid(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
-    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
-    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
-    uint lane[[thread_index_in_simdgroup]]) {
-    Q4K_F32_BODY
-    if (lane==0) out[row] += acc;
-}
-kernel void gemv_q4k_f32_bias(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
-    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
-    device const float* bias[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
-    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
-    Q4K_F32_BODY
-    if (lane==0) out[row] = acc + bias[row];
-}
-// int8 weights (per-row scale) over f32 activations. K a multiple of 4.
-#define W8_F32_BODY \
-    uint row = tgid*8u + sgid; \
-    if (row >= N) return; \
-    device const char4* wr = (device const char4*)(wq + (ulong)row*(ulong)K); \
-    device const float4* a4 = (device const float4*)ax; \
-    float acc = 0.0f; \
-    for (uint g=lane; g<(K>>2u); g+=32u) acc += dot(float4(wr[g]), a4[g]); \
-    acc = simd_sum(acc) * sc[row];
-kernel void gemv_w8_f32(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
-    device const float* ax[[buffer(2)]], device float* out[[buffer(3)]], constant uint& K[[buffer(4)]],
-    constant uint& N[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
-    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
-    W8_F32_BODY
-    if (lane==0) out[row] = acc;
-}
-kernel void gemv_w8_f32_resid(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
-    device const float* ax[[buffer(2)]], device float* out[[buffer(3)]], constant uint& K[[buffer(4)]],
-    constant uint& N[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
-    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
-    W8_F32_BODY
-    if (lane==0) out[row] += acc;
-}
-kernel void gemv_w8_f32_bias(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
-    device const float* ax[[buffer(2)]], device float* out[[buffer(3)]], constant uint& K[[buffer(4)]],
-    constant uint& N[[buffer(5)]], device const float* bias[[buffer(6)]], uint tgid[[threadgroup_position_in_grid]],
-    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
-    W8_F32_BODY
-    if (lane==0) out[row] = acc + bias[row];
-}
-
+// byte qs[32j+l] holds element 64j+l (low nibble) and 64j+32+l (high).
 // KS-C1: the q4k lane's GEMVs at R rows a simdgroup (grid ceil(N/R)*32, tg 256; rows past N are skipped).
 // q4k_rows_acc puts 8 lanes on a super-block and 4 super-blocks in flight (lane l takes super-blocks l/8, l/8+4, ...). Within
 // one, lane l mod 8 takes chunk j = (l mod 8)/2 and half h = l mod 2: one uint4 of quants (bytes 32j+16h..+15, whose low
@@ -927,6 +855,7 @@ kernel void gemv_w8_f32_bias(device const char* wq[[buffer(0)]], device const fl
 template <uint R>
 inline void q4k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
     thread float* acc) {
+#pragma clang fp reassociate(off)
     const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
     SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) acc[r] = 0.0f;
     for (uint b = ix; b < NB; b += 4u) {

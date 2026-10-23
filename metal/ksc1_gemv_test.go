@@ -40,7 +40,7 @@ func TestKSC1_w8RowsMatch(t *testing.T) {
 		if precise {
 			compile = d.CompileLibraryPrecise
 		}
-		lib, err := compile(allKernels, MSL3_1)
+		lib, err := compile(ksc1OldLib(), MSL3_1)
 		if err != nil {
 			t.Fatalf("compile: %v", err)
 		}
@@ -113,7 +113,7 @@ func TestKSC1_gemvTiming(t *testing.T) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	lib, err := d.CompileLibrary(allKernels+"\n"+gemvS0Kernels[len("\n#include <metal_stdlib>\nusing namespace metal;\n"):], MSL3_1)
+	lib, err := d.CompileLibrary(ksc1OldLib()+"\n"+gemvS0Kernels[len("\n#include <metal_stdlib>\nusing namespace metal;\n"):], MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -226,5 +226,96 @@ func TestKSC1_gemvTiming(t *testing.T) {
 		}
 		fmt.Fprintf(os.Stderr, "[C1-G0] %s\n", line)
 		d.ReleaseAll()
+	}
+}
+
+// TestKSC1_stepMatchesDecodeKernels checks C1-G2's property at kernel level, in the decode library's fast-math build: the
+// batched step's mc3_gemv_q4k_f32_rows<B> and mc3_gemv_w8_f32_rows<B> (B = 1, 2, 4, 8; mode 0, 1, 2) against decode's rows
+// kernels at the resident's R on the same weights and each activation row alone. Byte-equal.
+func TestKSC1_stepMatchesDecodeKernels(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels+mc3RowsKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe := func(n string) Pipeline {
+		p, e := d.NewComputePipeline(lib, n)
+		if e != nil {
+			t.Fatalf("%s: %v", n, e)
+		}
+		return p
+	}
+	q := d.NewCommandQueue()
+	rng := rand.New(rand.NewSource(59))
+	const N, K = 1000, 3072
+	raw := ksc1Q4KRaw(rng, N, K)
+	wq := d.NewBufferBytes(len(raw))
+	for i, c := range raw {
+		wq.Int8s()[i] = int8(c)
+	}
+	w8 := d.NewBufferBytes(N * K)
+	for i := range w8.Int8s()[:N*K] {
+		w8.Int8s()[i] = int8(rng.Intn(255) - 127)
+	}
+	sc, bias, init := make([]float32, N), make([]float32, N), make([]float32, 8*N)
+	for i := range sc {
+		sc[i], bias[i] = float32(0.001+0.01*rng.Float64()), float32(rng.NormFloat64())
+	}
+	for i := range init {
+		init[i] = float32(rng.NormFloat64())
+	}
+	act := make([]float32, 8*K)
+	for i := range act {
+		act[i] = float32(rng.NormFloat64())
+	}
+	bS, bB, bA, uK, uN, uLda, uLdo := NewBufferFloats(d, sc), NewBufferFloats(d, bias), NewBufferFloats(d, act), NewBufferU32(d, K), NewBufferU32(d, N), NewBufferU32(d, K), NewBufferU32(d, N)
+	for _, fam := range []string{"q4k", "w8"} {
+		for mode := range 3 {
+			for _, B := range []int{1, 2, 4, 8} {
+				step := NewBufferFloats(d, slices.Clone(init[:B*N]))
+				e := q.Begin()
+				if fam == "q4k" {
+					e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_q4k_f32_rows%d", B)), N*32, 256, wq, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
+				} else {
+					e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_w8_f32_rows%d", B)), N*32, 256, w8, bS, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
+				}
+				e.End()
+				diff := 0
+				for b := range B {
+					out := NewBufferFloats(d, slices.Clone(init[b*N:(b+1)*N]))
+					variant := []string{"", "_bias", "_resid"}[mode]
+					e := q.Begin()
+					if fam == "q4k" {
+						R := q4kGemvRows
+						args := []Buffer{wq, bA.At(b * K * 4), out, uK, uN}
+						if mode == 1 {
+							args = append(args, bB)
+						}
+						e.Dispatch(pipe(fmt.Sprintf("gemv_q4k_f32%s_rows%d", variant, R)), (N+R-1)/R*32, 256, args...)
+					} else {
+						R := w8F32GemvRows
+						args := []Buffer{w8, bS, bA.At(b * K * 4), out, uK, uN}
+						if mode == 1 {
+							args = append(args, bB)
+						}
+						e.Dispatch(pipe(fmt.Sprintf("gemv_w8_f32%s_rows%d", variant, R)), (N+R-1)/R*32, 256, args...)
+					}
+					e.End()
+					got, want := step.U32s()[b*N:(b+1)*N], out.U32s()[:N]
+					for i := range want {
+						if got[i] != want[i] {
+							diff++
+						}
+					}
+				}
+				fmt.Fprintf(os.Stderr, "[C1-G2k] %s mode %d B=%d: %d of %d differ\n", fam, mode, B, diff, B*N)
+				if diff != 0 {
+					t.Errorf("%s mode %d B=%d: %d outputs differ between the step and decode", fam, mode, B, diff)
+				}
+			}
+		}
 	}
 }

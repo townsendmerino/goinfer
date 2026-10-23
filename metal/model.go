@@ -1184,8 +1184,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.decodeLaneW4F16 = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16"
 	if r.q4kLane = m.Quant() == "q4k"; r.q4kLane {
 		r.decodeLaneW4F16 = false
-		r.pQ4K, r.pQ4KResid, r.pQ4KBias = pipe("gemv_q4k_f32"), pipe("gemv_q4k_f32_resid"), pipe("gemv_q4k_f32_bias")
-		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32"), pipe("gemv_w8_f32_resid"), pipe("gemv_w8_f32_bias")
+		qr, wr := fmt.Sprint(q4kGemvRows), fmt.Sprint(w8F32GemvRows)
+		r.pQ4K, r.pQ4KResid, r.pQ4KBias = pipe("gemv_q4k_f32_rows"+qr), pipe("gemv_q4k_f32_resid_rows"+qr), pipe("gemv_q4k_f32_bias_rows"+qr)
+		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32_rows"+wr), pipe("gemv_w8_f32_resid_rows"+wr), pipe("gemv_w8_f32_bias_rows"+wr)
 		r.pRmsF32Out, r.pSwF32 = pipe("rmsnorm_f32_out"), pipe("swiglu_f32")
 		r.pRmsF32OutRows, r.pSwF32Rows = pipe("mc3_rmsnorm_f32_out_rows"), pipe("mc3_swiglu_f32_rows")
 		for B := 1; B <= batchMaxSeqs; B++ {
@@ -3164,25 +3165,31 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	}
 }
 
+// q4kGemvRows and w8F32GemvRows are the q4k lane's rows a simdgroup for its Q4_K and int8 GEMVs (gemv_q4k_f32_rows<R>,
+// gemv_w8_f32_rows<R>), KS-C1's C1-G0 reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates").
+const q4kGemvRows, w8F32GemvRows = 8, 2
+
 // q4kGemv dispatches one q4k-lane projection over the f32 activation ax (K = uK), one dispatch per segment into its
-// rows of out: gemv_q4k_f32 for Q4_K super-blocks, gemv_w8_f32 for int8 rows with per-row scales. resid accumulates
-// into out; a non-empty bias is added per row (resid and bias are never both set).
+// rows of out: gemv_q4k_f32_rows for Q4_K super-blocks, gemv_w8_f32_rows for int8 rows with per-row scales, at
+// ceil(rows/R) simdgroups. resid accumulates into out; a non-empty bias is added per row (resid and bias are never both
+// set).
 func (r *resident) q4kGemv(e *Encoder, segs []q4kSeg, resid bool, bias, ax, out, uK Buffer) {
 	for _, sg := range segs {
 		o := out.At(sg.off * 4)
+		nq, nw := (sg.rows+q4kGemvRows-1)/q4kGemvRows*32, (sg.rows+w8F32GemvRows-1)/w8F32GemvRows*32
 		switch {
 		case sg.q4k && resid:
-			e.Dispatch(r.pQ4KResid, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN)
+			e.Dispatch(r.pQ4KResid, nq, 256, sg.w, ax, o, uK, sg.uN)
 		case sg.q4k && bias != (Buffer{}):
-			e.Dispatch(r.pQ4KBias, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, bias.At(sg.off*4))
+			e.Dispatch(r.pQ4KBias, nq, 256, sg.w, ax, o, uK, sg.uN, bias.At(sg.off*4))
 		case sg.q4k:
-			e.Dispatch(r.pQ4K, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN)
+			e.Dispatch(r.pQ4K, nq, 256, sg.w, ax, o, uK, sg.uN)
 		case resid:
-			e.Dispatch(r.pW8F32Resid, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN)
+			e.Dispatch(r.pW8F32Resid, nw, 256, sg.w, sg.s, ax, o, uK, sg.uN)
 		case bias != (Buffer{}):
-			e.Dispatch(r.pW8F32Bias, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN, bias.At(sg.off*4))
+			e.Dispatch(r.pW8F32Bias, nw, 256, sg.w, sg.s, ax, o, uK, sg.uN, bias.At(sg.off*4))
 		default:
-			e.Dispatch(r.pW8F32, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN)
+			e.Dispatch(r.pW8F32, nw, 256, sg.w, sg.s, ax, o, uK, sg.uN)
 		}
 	}
 }

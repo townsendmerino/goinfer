@@ -591,6 +591,10 @@ own C1-G0 reading picks R; the gates and bars are unchanged.
 (1.94×, 78 GB/s)**; down 0.365 → 0.248 / 0.225 / **0.201 (1.81×, 70 GB/s)**. Int8 as before: qkv best at R = 2 (1.06×), the Q6_K down
 layers at R = 4 (1.09×). Still improving at R = 4, so the Q4_K R set gains 8 (one more C1-G0 pass); the rule stays the fastest R.
 Log: `~/goinfer-logs/ksc1-g0b-2026-10-23.log`.
+
+**C1-G0 with R = 8 (14:11, load 3.25, 3.4 GB available):** Q4_K R = 4 / 8: o 0.083 / **0.080 ms (1.75×)**, gate|up 0.365 / **0.351
+(2.02×, 81 GB/s)**, down 0.202 / **0.198 (1.84×)**; summed, R = 8 is 3.3% under R = 4, outside the 2% tie: **Q4_K R = 8**. Int8 summed
+over its two shapes: R = 2 0.336 ms against R = 1 0.346 and R = 4 0.338: **int8 R = 2**. Log: `~/goinfer-logs/ksc1-g0c-2026-10-23.log`.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 

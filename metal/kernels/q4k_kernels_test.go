@@ -12,8 +12,9 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestQ4KLaneKernels is G-Q1 of docs/tasks/task-metal-q4k-2026-10.md (registered before this code): the q4k lane's two
-// GEMVs (plain, residual and bias variants) against a float64 reference on the host, which dequantizes the same bytes through aikit (linalg.WrapQ4K's Row for
+// TestQ4KLaneKernels is G-Q1 of docs/tasks/task-metal-q4k-2026-10.md (registered before this code), and since KS-C1 its C1-G1
+// (docs/tasks/task-kernel-survey-2026-10.md): the q4k lane's two GEMVs (the rows kernels at every built R; plain, residual and
+// bias variants) against a float64 reference on the host, which dequantizes the same bytes through aikit (linalg.WrapQ4K's Row for
 // Q4_K; the per-row scale for int8) and dots them with the same f32 activations. Bar: per row, |got - ref| at most 1e-5
 // of Σ|w·a| (f32 accumulation order only). Shapes: every Phi-3 projection's (o, gate|up, down, qkv, the LM head) and
 // edge cases (one super-block, a partial threadgroup). Each registered planted defect, compiled into its own copy of the
@@ -65,25 +66,12 @@ func TestQ4KLaneKernels(t *testing.T) {
 		if err != nil {
 			t.Fatalf("compile: %v", err)
 		}
-		pq, err := d.NewComputePipeline(lib, "gemv_q4k_f32")
-		if err != nil {
-			t.Fatal(err)
-		}
-		pqr, err := d.NewComputePipeline(lib, "gemv_q4k_f32_resid")
-		if err != nil {
-			t.Fatal(err)
-		}
-		pw, err := d.NewComputePipeline(lib, "gemv_w8_f32")
-		if err != nil {
-			t.Fatal(err)
-		}
-		pqb, err := d.NewComputePipeline(lib, "gemv_q4k_f32_bias")
-		if err != nil {
-			t.Fatal(err)
-		}
-		pwb, err := d.NewComputePipeline(lib, "gemv_w8_f32_bias")
-		if err != nil {
-			t.Fatal(err)
+		pipe := func(name string) Pipeline {
+			p, err := d.NewComputePipeline(lib, name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return p
 		}
 		biases := func(N int) []float32 {
 			b := make([]float32, N)
@@ -122,16 +110,20 @@ func TestQ4KLaneKernels(t *testing.T) {
 			bias := biases(sh.N)
 			bBias, bOutB := NewBufferFloats(d, bias), d.NewBufferLen(sh.N)
 			uK, uN := NewBufferU32(d, uint32(sh.K)), NewBufferU32(d, uint32(sh.N))
-			e := q.Begin()
-			e.Dispatch(pq, sh.N*32, 256, bW, bA, bOut, uK, uN)
-			e.Dispatch(pqr, sh.N*32, 256, bW, bA, bRes, uK, uN)
-			e.Dispatch(pqb, sh.N*32, 256, bW, bA, bOutB, uK, uN, bBias)
-			e.End()
-			got, gotRes, gotB := bOut.Floats(), bRes.Floats(), bOutB.Floats()
-			for n := range sh.N {
-				worstQ4K = math.Max(worstQ4K, math.Abs(float64(got[n])-ref[n])/math.Max(mag[n], 1e-30))
-				worstQ4K = math.Max(worstQ4K, math.Abs(float64(gotRes[n])-(ref[n]+float64(init[n])))/math.Max(mag[n], 1e-30))
-				worstQ4K = math.Max(worstQ4K, math.Abs(float64(gotB[n])-(ref[n]+float64(bias[n])))/math.Max(mag[n], 1e-30))
+			for _, R := range []int{1, 2, 4, 8} {
+				n := (sh.N + R - 1) / R * 32
+				copy(bRes.Floats()[:sh.N], init)
+				e := q.Begin()
+				e.Dispatch(pipe(fmt.Sprintf("gemv_q4k_f32_rows%d", R)), n, 256, bW, bA, bOut, uK, uN)
+				e.Dispatch(pipe(fmt.Sprintf("gemv_q4k_f32_resid_rows%d", R)), n, 256, bW, bA, bRes, uK, uN)
+				e.Dispatch(pipe(fmt.Sprintf("gemv_q4k_f32_bias_rows%d", R)), n, 256, bW, bA, bOutB, uK, uN, bBias)
+				e.End()
+				got, gotRes, gotB := bOut.Floats(), bRes.Floats(), bOutB.Floats()
+				for n := range sh.N {
+					worstQ4K = math.Max(worstQ4K, math.Abs(float64(got[n])-ref[n])/math.Max(mag[n], 1e-30))
+					worstQ4K = math.Max(worstQ4K, math.Abs(float64(gotRes[n])-(ref[n]+float64(init[n])))/math.Max(mag[n], 1e-30))
+					worstQ4K = math.Max(worstQ4K, math.Abs(float64(gotB[n])-(ref[n]+float64(bias[n])))/math.Max(mag[n], 1e-30))
+				}
 			}
 		}
 		for _, sh := range w8Shapes {
@@ -156,14 +148,17 @@ func TestQ4KLaneKernels(t *testing.T) {
 			bias := biases(sh.N)
 			bBias, bOutB := NewBufferFloats(d, bias), d.NewBufferLen(sh.N)
 			uK, uN := NewBufferU32(d, uint32(sh.K)), NewBufferU32(d, uint32(sh.N))
-			e := q.Begin()
-			e.Dispatch(pw, sh.N*32, 256, bW, bS, bA, bOut, uK, uN)
-			e.Dispatch(pwb, sh.N*32, 256, bW, bS, bA, bOutB, uK, uN, bBias)
-			e.End()
-			got, gotB := bOut.Floats(), bOutB.Floats()
-			for n := range sh.N {
-				worstW8 = math.Max(worstW8, math.Abs(float64(got[n])-ref[n])/math.Max(mag[n], 1e-30))
-				worstW8 = math.Max(worstW8, math.Abs(float64(gotB[n])-(ref[n]+float64(bias[n])))/math.Max(mag[n], 1e-30))
+			for _, R := range []int{1, 2, 4} {
+				n := (sh.N + R - 1) / R * 32
+				e := q.Begin()
+				e.Dispatch(pipe(fmt.Sprintf("gemv_w8_f32_rows%d", R)), n, 256, bW, bS, bA, bOut, uK, uN)
+				e.Dispatch(pipe(fmt.Sprintf("gemv_w8_f32_bias_rows%d", R)), n, 256, bW, bS, bA, bOutB, uK, uN, bBias)
+				e.End()
+				got, gotB := bOut.Floats(), bOutB.Floats()
+				for n := range sh.N {
+					worstW8 = math.Max(worstW8, math.Abs(float64(got[n])-ref[n])/math.Max(mag[n], 1e-30))
+					worstW8 = math.Max(worstW8, math.Abs(float64(gotB[n])-(ref[n]+float64(bias[n])))/math.Max(mag[n], 1e-30))
+				}
 			}
 		}
 		return worstQ4K, worstW8
@@ -176,11 +171,13 @@ func TestQ4KLaneKernels(t *testing.T) {
 		t.Errorf("G-Q1 FAIL: worst error %.2e (q4k) / %.2e (int8), bar %.0e", wq, ww, bar)
 	}
 	defects := []struct{ name, from, to string }{
-		{"(1) the min term dropped", "(d*sc0*float(q & 15u) - dm*m0)", "(d*sc0*float(q & 15u))"},
+		{"(1) the min term dropped", "acc[r] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);", "acc[r] += d*sc0*dlo + d*sc1*dhi;"},
 		{"(2) the 6-bit scale and min unpack swapped", "if (j < 4u) { sc = float(q[j] & 63u); m = float(q[j+4u] & 63u); }",
 			"if (j < 4u) { m = float(q[j] & 63u); sc = float(q[j+4u] & 63u); }"},
-		{"(3) a super-block offset of one", "device const uchar* blk = wr + b*144u;", "device const uchar* blk = wr + ((b+1u)%NB)*144u;"},
-		{"(4) the int8 row scale dropped", "acc = simd_sum(acc) * sc[row];", "acc = simd_sum(acc);"},
+		{"(3) a super-block offset of one", "device const uchar* blk = wq + (ulong)(row0 + r)*(ulong)NB*144ul + b*144u;",
+			"device const uchar* blk = wq + (ulong)(row0 + r)*(ulong)NB*144ul + ((b+1u)%NB)*144u;"},
+		{"(4) the int8 row scale dropped", "acc[r] = simd_sum(acc[r]) * sc[min(row0 + r, N - 1u)];", "acc[r] = simd_sum(acc[r]);"},
+		{"(5) KS-C1: the high half's min term dropped", "- dm*(m0*slo + m1*shi);", "- dm*(m0*slo);"},
 	}
 	for _, df := range defects {
 		if !strings.Contains(AllKernels, df.from) {
