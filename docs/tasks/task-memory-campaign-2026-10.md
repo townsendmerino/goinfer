@@ -432,6 +432,12 @@ Amended 2026-10-23 (14:44), before any run: `qwen25vl_preprocess_image.png` is 8
 so ALS-G0's Qwen2.5-VL cell runs random patches at grid (1, 32, 44), 1,408 patches (about a 448×616 image); the SigLIP cell keeps
 its image (every SigLIP input is 4,096 patches).
 
+**ALS-G0's first run (15:09–15:19) is void.** The 1-minute load was 3.94 at the start, but every pair after the first started at
+4.7–14.3, above the void line (4.0): the tower forward runs on every core and the previous run holds the average up. It read
+16-bit/f32 0.9818 (Qwen2.5-VL) and 0.9849 (SigLIP), features equal in every pair, and is recorded, not graded
+(`~/goinfer-logs/als-g0-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
+most, else void) and prints the load each run starts at; nothing else changes.
+
 Stopping rule: one pass each; ALS-G0 failing stops the item before any code ships. Cost: ALS-G0 about 15 min; the rest seconds
 to minutes. Release: an aikit minor (a PR, then its tag through aikit's `RELEASING.md`; the nobara half and the tag push are the
 coordinator's), then goinfer's bump.
