@@ -94,3 +94,9 @@ goes through), 12:03–12:13 PDT at 17a22510c with aikit gpu 2049dc7, under the 
 skips, 236 other skips**. `TestLaunchDirect_bitIdentical`, `TestGraphsSafeGate`, `TestCUDAKVSlots_graphs` and the four
 `TestCUDA_graph*` pass. Log: `~/goinfer-logs/ks-a2-2026-10/device-suite/`. The Gemma 4 graph bit-exact gates skip unless graphs are
 forced (`GOINFER_CUDA_GRAPHS_UNSAFE=1`), so they are run forced on their own (below).
+
+**Graph gates, capture forced** (`GOINFER_CUDA_GRAPHS_UNSAFE=1`; `-run 'TestGemma4Graphs_|TestGraphsSafeGate|TestCUDA_graph|TestCUDAKVSlots_graphs'`),
+12:31 PDT at 388fe3d43 (this branch merged with main at 7b0ad9418) with aikit gpu 2049dc7, under the timing lock: **14 of 14 pass**,
+including all seven `TestGemma4Graphs_bitExact_*` / `locateDivergence` / `sameModelUnderLoad` gates. Capture now records launches
+issued from the resident's thread while gocudrv's executor began the capture, and replay stays bit-exact to live. Log:
+`~/goinfer-logs/ks-a2-2026-10/graphs-unsafe-full.log`.
