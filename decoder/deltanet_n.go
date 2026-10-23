@@ -3,6 +3,7 @@ package decoder
 import (
 	"math"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -65,7 +66,7 @@ func deltaNetCoreNOK(K int) bool {
 }
 
 // deltaNetCoreN is deltaNetCore over K rows. core [K*valueDim] receives the result; mixed [K*convDim], z [K*valueDim] and the raw gate projections bt, at
-// [K*nv] are K-row slabs. mixed's rows are retained in st's conv window, as deltaNetCore retains its argument, so the caller must not reuse the slab.
+// [K*nv] are K-row slabs. st's conv window keeps copies of the rows it needs, so the slab is the caller's again on return.
 func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, p qwen35Params, eps float64, st *deltaState) {
 	nk, nv := p.NumKeyHeads, p.NumValueHeads
 	hk, hv := p.KeyHeadDim, p.ValueHeadDim
@@ -217,7 +218,8 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 		}
 	})
 
-	// The conv window afterwards: the last Kc-1 of (prior ++ mixed rows), as the per-token loop leaves it (its rows are slices of the caller's slab).
+	// The conv window afterwards: the last Kc-1 of (prior ++ mixed rows), as the per-token loop leaves it. Rows from this pass are
+	// copied, so the window does not keep the whole K-row slab alive.
 	tail := make([][]float32, 0, Kc-1)
 	total := len(prior) + K
 	for pos := max(0, total-(Kc-1)); pos < total; pos++ {
@@ -225,8 +227,16 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 			tail = append(tail, prior[pos])
 		} else {
 			r := pos - len(prior)
-			tail = append(tail, mixed[r*convDim:(r+1)*convDim])
+			row := mixed[r*convDim : (r+1)*convDim]
+			if !convWinSliceForTest {
+				row = slices.Clone(row)
+			}
+			tail = append(tail, row)
 		}
 	}
 	st.convWin = tail
 }
+
+// convWinSliceForTest leaves the conv window as slices of the pass's slab, as it was before the copy: the old arm of
+// MEM5-VL-convwin's identity gate.
+var convWinSliceForTest bool
