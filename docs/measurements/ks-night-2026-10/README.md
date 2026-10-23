@@ -88,7 +88,7 @@ It also ships under the owner's standing rule of the same day (CLAUDE.md, "Measu
 ships under its registered bar). All four of its conditions hold: the outputs are bit-identical, memory is not higher, 10 of 10
 pairs are faster, and the half2 form replaces the per-weight one (the define is a test-only switch back).
 
-## KS-D5, the fused SwiGLU (D5-G), 2026-10-23: PARK
+## KS-D5, the fused SwiGLU (D5-G), 2026-10-23: the first build parked; D5b shipped
 
 Gates registered before the code (survey doc, "KS-D5 gates"). The build is `gemm_w4f16_swiglu`: the 64 × 64 int4 GEMM with its
 feature tile split into 32 gate rows and the matching 32 up rows. It rounds the tile to half in threadgroup memory as `guF` held it,
@@ -106,3 +106,17 @@ The fused kernel saves `guF`'s 139.9 MB on that pass and is bit-identical, but m
 measured: its added 8 KB threadgroup tile, which takes the kernel from about 9.6 KB to 17.6 KB of threadgroup memory and so
 cuts occupancy. The staging arrays (`sa`, `sb`) are dead once the K loop ends, so a build that places the tile in their memory would
 test that. The branch is pushed and not merged; the next step is the owner's decision.
+
+**KS-D5b, the shipped build (D5b-G).** Registered before the build (survey doc, "KS-D5b gates"), on the owner's "try it". The half
+tile now lives in the staging arrays' memory: one array holds `sa` then `sb`, and the tile reuses it after a barrier that ends the K
+loop. So the kernel needs no more threadgroup memory than `gemm_w4f16_store`.
+
+| gate | reading | result |
+|---|---|---|
+| D5b-G1 identity | the 12 kernel cells 0 differ; llama-tiny 0 of 256; the 1.5B at 3,900 rows 0 of 151,936 logits differ (fused against two-step, on main's half2 staging) | **PASS** |
+| D5b-G2 scratch | the 1.5B's 3,900-row pass: 121.9 MB counted, 121.9 planned (from 261.9) | **PASS** |
+| D5b-G3 speed | the same instrument, 09:06, timing lock held exclusively (the 1-minute load 3.32 at the start, after a wait from 4.20; 5.0 GB available): two-step 4,095–4,290 ms, fused 4,052–4,192 ms, **median 0.9881, 8 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd5b-g3-2026-10-23.log` | **SHIP** (bar ≤ 1.01) |
+
+The first build's 10.4% loss (median 1.1040) was the added 8 KB of threadgroup memory. With the tile in the staging arrays'
+memory, the fused pass is 1.2% faster than the two-step one and drops `guF`'s 139.9 MB from a 3,900-row pass on the 1.5B. That also
+means 2.1× the rows per prefill block: `PrefillBlockRows` prices the cheaper row.
