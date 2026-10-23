@@ -27,7 +27,7 @@
 | KS-A7 | open | nobara: launch counter, then an A/B on phi3-mini | — |
 | KS-A8 | open | nobara: an A/B after A2 reads | — |
 | KS-B1 | open | nobara: ncu on the gate and k launches at M=512; the int-to-float swap alone, bit-gated | — |
-| KS-B2 | decision | owner: build vector-load staging (S–M), then the attention A/B under the 456-shape sweep? Measured 2026-10-23 after KV4a (f32 KV): `long_scoreboard` + `lg_throttle` **59.7%** of stall cycles, tensor pipe 8.8%, 4.03 bytes a load, one block per SM. KV4b's `_kv16` twin not yet read | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-B2 | building | nobara: gate registered 2026-10-23 (`docs/measurements/ks-b2-2026-10/README.md`): 16-byte staging loads in the six `attn_fused_bm*` entry points; G1a old = new on 1,080 shapes a KV type, G1b 3,900-token prefill logits byte-equal, G2 at least 9 of 10 ABBA quads faster at f32 (f16 reported, parks if below 1.00). Survey reading: `long_scoreboard` + `lg_throttle` **59.7%** of stall cycles, 4.03 bytes a load | `docs/measurements/ks-b2-2026-10/README.md` |
 | KS-B3 | open | nobara: MoE category and launch count on M26 at M=512 | — |
 | KS-B4 | open | nobara: attention/GEMV/recurrence split on Qwen3.5-9B at 8k and 16k | — |
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |

@@ -1,0 +1,336 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// KS-B2 build gate instrument (docs/measurements/ks-b2-2026-10/README.md). Kept under docs as .go.txt and copied into
+// cuda/ as ks_b2_scratch_test.go for a run; never committed under cuda/. Gated on GOINFER_KS=1. GOINFER_KS_B2_OLD names a
+// directory holding origin/main's attn_fused_bm.ptx and attn_fused_bm_kv16.ptx (the old arm); the new arm is the
+// resident's own. GOINFER_KS_B2_KV is f32 or f16 (the -kv flag of the load).
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
+)
+
+func ksb2Load1() float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
+	return f
+}
+
+func ksb2MemAvailMB() int64 {
+	b, _ := os.ReadFile("/proc/meminfo")
+	for _, ln := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(ln, "MemAvailable:") {
+			kb, _ := strconv.ParseInt(strings.Fields(ln)[1], 10, 64)
+			return kb / 1024
+		}
+	}
+	return -1
+}
+
+var ksb2Entries = []struct {
+	name   string
+	hd, bm int
+	bn     int
+}{
+	{"attn_fused_bm32_hd64", 64, 32, 64}, {"attn_fused_bm32_hd128", 128, 32, 64},
+	{"attn_fused_bm32n32_hd64", 64, 32, 32}, {"attn_fused_bm32n32_hd128", 128, 32, 32},
+	{"attn_fused_bm128_hd64", 64, 128, 64}, {"attn_fused_bm128_hd128", 128, 128, 64},
+}
+
+func TestKSB2_oldNew(t *testing.T) {
+	if os.Getenv("GOINFER_KS") == "" {
+		t.Skip("set GOINFER_KS=1 (KS-B2 instrument)")
+	}
+	oldDir, kv := os.Getenv("GOINFER_KS_B2_OLD"), os.Getenv("GOINFER_KS_B2_KV")
+	if oldDir == "" || (kv != "f32" && kv != "f16") {
+		t.Fatal("set GOINFER_KS_B2_OLD=<dir of origin/main's attn_fused_bm*.ptx> and GOINFER_KS_B2_KV=f32|f16")
+	}
+	mc, err := loadLikeServe(t, modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "-backend", "cuda", "-quant", "int4", "-kv", kv)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r := mustResident(t, mc)
+	if r.kvF16 != (kv == "f16") {
+		t.Fatalf("-kv %s loaded kvF16=%v", kv, r.kvF16)
+	}
+	oldFile := "attn_fused_bm.ptx"
+	if r.kvF16 {
+		oldFile = "attn_fused_bm_kv16.ptx"
+	}
+	oldPTX, err := os.ReadFile(filepath.Join(oldDir, oldFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPTX := r.kvPTX(attnFusedBMPTX, attnFusedBMKV16PTX)
+	oldP, newP := map[string]Pipeline{}, map[string]Pipeline{}
+	if err := r.do(func() error {
+		lo, e := r.dev.CompileLibrary(oldPTX)
+		if e != nil {
+			return e
+		}
+		ln, e := r.dev.CompileLibrary(newPTX)
+		if e != nil {
+			return e
+		}
+		for _, en := range ksb2Entries {
+			if oldP[en.name], e = r.dev.NewComputePipeline(lo, en.name); e != nil {
+				return e
+			}
+			if newP[en.name], e = r.dev.NewComputePipeline(ln, en.name); e != nil {
+				return e
+			}
+		}
+		// Registers and local memory per entry point, from separate raw modules of the same PTX.
+		for _, arm := range []struct {
+			name string
+			ptx  []byte
+		}{{"old", oldPTX}, {"new", newPTX}} {
+			m, e := r.dev.Context().LoadModule(arm.ptx)
+			if e != nil {
+				return e
+			}
+			for _, en := range ksb2Entries {
+				f, e := m.Function(en.name)
+				if e != nil {
+					return e
+				}
+				regs, _ := f.Attribute(gc.FuncAttrNumRegs)
+				local, _ := f.Attribute(gc.FuncAttrLocalSizeBytes)
+				fmt.Fprintf(os.Stderr, "[B2b] kv %s %s %s: %d registers, %d bytes local\n", kv, arm.name, en.name, regs, local)
+			}
+			_ = m.Close()
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("pipelines: %v", err)
+	}
+
+	// ---- G1a: kernel sweep, old against new, every entry point ----
+	upload := func(b Buffer, v []float32) error {
+		if !r.kvF16 {
+			return gpu.Upload(b, v)
+		}
+		h := make([]uint16, len(v))
+		for i, x := range v {
+			h[i] = f32ToF16RNE(x)
+		}
+		return gpu.Upload(b, h)
+	}
+	kvBuf := func(n int) Buffer {
+		if r.kvF16 {
+			return gpu.NewBufferLenOf[uint16](r.dev, n)
+		}
+		return r.af(n)
+	}
+	const scale = 0.125
+	checked, diffs := 0, 0
+	for _, en := range ksb2Entries {
+		hd := en.hd
+		for _, M := range []int{1, 17, 64, 129, 517} {
+			for _, sp := range []int{0, 5, 384, 1024} {
+				for _, window := range []int{0, 100, 1000} {
+					for _, g := range []struct {
+						nH, nKV int
+						sinks   bool
+					}{{4, 4, false}, {12, 2, false}, {8, 2, true}} {
+						qDim, kvDim := g.nH*hd, g.nKV*hd
+						nKeys := sp + M
+						q, kc, vc := make([]float32, M*qDim), make([]float32, nKeys*kvDim), make([]float32, nKeys*kvDim)
+						for i := range q {
+							q[i] = float32(math.Sin(float64(i)*0.37)) * 0.5
+						}
+						for i := range kc {
+							kc[i] = float32(math.Cos(float64(i) * 0.21))
+							vc[i] = float32(math.Sin(float64(i)*0.13)) * 0.7
+						}
+						var a0, a1 []float32
+						err := r.do(func() error {
+							qb, kb, vb := r.af(len(q)), kvBuf(len(kc)), kvBuf(len(vc))
+							o0, o1 := r.af(M*qDim), r.af(M*qDim)
+							sinkArg := ArgNull()
+							if g.sinks {
+								sv := make([]float32, g.nH)
+								for i := range sv {
+									sv[i] = float32(math.Cos(float64(i)*1.7)) * 2
+								}
+								sb := r.af(len(sv))
+								if e := gpu.Upload(sb, sv); e != nil {
+									return e
+								}
+								sinkArg = Arg(sb)
+							}
+							if e := gpu.Upload(qb, q); e != nil {
+								return e
+							}
+							if e := upload(kb, kc); e != nil {
+								return e
+							}
+							if e := upload(vb, vc); e != nil {
+								return e
+							}
+							kvt := r.kvIdentityTab(t, nKeys)
+							args := func(dst Buffer) []gpu.KernelArg {
+								return []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), Arg(kvt), gpu.ArgValue(int32(g.nH)), gpu.ArgValue(int32(g.nKV)),
+									gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(sp)), gpu.ArgValue(float32(scale)), gpu.ArgValue(int32(window)),
+									gpu.ArgValue(int32(M)), Arg(dst), sinkArg}
+							}
+							cfg := LaunchConfig{GridX: uint32(g.nH), GridY: uint32((M + en.bm - 1) / en.bm), GridZ: 1, BlockX: uint32(en.bm / 16 * 32), BlockY: 1, BlockZ: 1,
+								SharedMemBytes: uint32(2 * (en.bn*(hd+attnFusedKPAD) + hd*(en.bn+attnFusedKPAD)))}
+							if e := r.launch(oldP[en.name], cfg, args(o0)...); e != nil {
+								return e
+							}
+							if e := r.launch(newP[en.name], cfg, args(o1)...); e != nil {
+								return e
+							}
+							if e := r.stream.Sync(); e != nil {
+								return e
+							}
+							a0, a1 = make([]float32, M*qDim), make([]float32, M*qDim)
+							if e := gpu.Download(o0, a0); e != nil {
+								return e
+							}
+							return gpu.Download(o1, a1)
+						})
+						if err != nil {
+							t.Fatalf("%s M%d sp%d w%d: %v", en.name, M, sp, window, err)
+						}
+						for i := range a0 {
+							if math.Float32bits(a0[i]) != math.Float32bits(a1[i]) {
+								diffs++
+								if diffs <= 5 {
+									t.Errorf("G1a: %s hd%d M%d sp%d window%d nH%d nKV%d sinks=%v: old %g new %g at %d", en.name, hd, M, sp, window, g.nH, g.nKV, g.sinks, a0[i], a1[i], i)
+								}
+								break
+							}
+						}
+						checked++
+					}
+				}
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[B2b] kv %s G1a: %d shapes, %d differ\n", kv, checked, diffs)
+	if diffs > 0 {
+		t.Fatalf("G1a FAIL: %d of %d shapes differ", diffs, checked)
+	}
+
+	// ---- G1b and G2: whole prefill on the 1.5B at K=3900, the old and new hd128 128-row kernel on one resident ----
+	if r.bAttnBM128hd128 == (Pipeline{}) {
+		t.Fatal("the resident did not load attn_fused_bm128_hd128")
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+	const n = 3900
+	embs := make([][]float32, n)
+	nv := n // the survey instrument's seed, computed at run time as it was there
+	var s uint32 = uint32(nv*2654435761 + 1)
+	for i := range embs {
+		s = s*1664525 + 1013904223
+		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+	}
+	prefill := func(old bool) (time.Duration, []float32) {
+		r.bAttnBM128hd128 = newP["attn_fused_bm128_hd128"]
+		if old {
+			r.bAttnBM128hd128 = oldP["attn_fused_bm128_hd128"]
+		}
+		t0 := time.Now()
+		lg, err := r.PrefillLast(context.Background(), embs, 0)
+		if err != nil {
+			t.Fatalf("prefill: %v", err)
+		}
+		return time.Since(t0), append([]float32(nil), lg...)
+	}
+	_, l0 := prefill(true)
+	_, l1 := prefill(false)
+	d := 0
+	for i := range l0 {
+		if math.Float32bits(l0[i]) != math.Float32bits(l1[i]) {
+			d++
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[B2b] kv %s G1b: prefill %d rows, %d of %d last-row logits differ\n", kv, n, d, len(l0))
+	if d != 0 {
+		t.Fatalf("G1b FAIL: %d logits differ", d)
+	}
+	const quads = 10
+	var ratios []float64
+	var sumO, sumN time.Duration
+	voids := 0
+	for q := 0; q < quads; q++ {
+		l1m, mem := ksb2Load1(), ksb2MemAvailMB()
+		if l1m > 8.0 {
+			voids++
+			fmt.Fprintf(os.Stderr, "[B2b] kv %s quad %d VOID: load1 %.2f > 8.0 at start (memavail %d MB); re-running\n", kv, q, l1m, mem)
+			q--
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		a1, _ := prefill(true)
+		b1, _ := prefill(false)
+		b2, _ := prefill(false)
+		a2, _ := prefill(true)
+		ra := float64(a1+a2) / float64(b1+b2)
+		ratios = append(ratios, ra)
+		sumO += a1 + a2
+		sumN += b1 + b2
+		fmt.Fprintf(os.Stderr, "[B2b] kv %s quad %d load1 %.2f memavail %d MB | old %.1f ms (%.1f, %.1f) new %.1f ms (%.1f, %.1f) | new speedup %.4f\n",
+			kv, q, l1m, mem, float64((a1+a2).Microseconds())/2000, float64(a1.Microseconds())/1000, float64(a2.Microseconds())/1000,
+			float64((b1+b2).Microseconds())/2000, float64(b1.Microseconds())/1000, float64(b2.Microseconds())/1000, ra)
+	}
+	srt := append([]float64(nil), ratios...)
+	sort.Float64s(srt)
+	above := 0
+	for _, x := range ratios {
+		if x > 1 {
+			above++
+		}
+	}
+	r.bAttnBM128hd128 = newP["attn_fused_bm128_hd128"]
+
+	// ---- no bar: attention-only, the deepest full pass's shape (rows 3072..3583, 12 heads, 2 KV heads) ----
+	attnMs := func(p Pipeline) float64 {
+		const M, sp, nH, nKV, hd, reps = 512, 3072, 12, 2, 128, 20
+		var ms float64
+		_ = r.do(func() error {
+			qb, kb, vb, ob := r.af(M*nH*hd), kvBuf((sp+M)*nKV*hd), kvBuf((sp+M)*nKV*hd), r.af(M*nH*hd)
+			kvt := r.kvIdentityTab(t, sp+M)
+			cfg := LaunchConfig{GridX: nH, GridY: (M + 127) / 128, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
+				SharedMemBytes: uint32(2 * (64*(hd+attnFusedKPAD) + hd*(64+attnFusedKPAD)))}
+			args := []gpu.KernelArg{Arg(qb), Arg(kb), Arg(vb), Arg(kvt), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)),
+				gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(sp)), gpu.ArgValue(float32(scale)), gpu.ArgValue(int32(0)),
+				gpu.ArgValue(int32(M)), Arg(ob), ArgNull()}
+			_ = r.launch(p, cfg, args...)
+			_ = r.stream.Sync()
+			t0 := time.Now()
+			for range reps {
+				_ = r.launch(p, cfg, args...)
+			}
+			_ = r.stream.Sync()
+			ms = time.Since(t0).Seconds() * 1000 / reps
+			return nil
+		})
+		return ms
+	}
+	ao1, an1 := attnMs(oldP["attn_fused_bm128_hd128"]), attnMs(newP["attn_fused_bm128_hd128"])
+	an2, ao2 := attnMs(newP["attn_fused_bm128_hd128"]), attnMs(oldP["attn_fused_bm128_hd128"])
+	if r.launchErr != nil {
+		t.Fatalf("a launch failed: %v", r.launchErr)
+	}
+	nTok := float64(quads * 2)
+	t.Logf("KS-B2b kv %s: prefill 3900 old %.1f ms, new %.1f ms; new speedup median %.4f, min %.4f, max %.4f, %d/%d quads above 1, %d void; attention only at (M 512, start 3072): old %.3f / %.3f ms, new %.3f / %.3f ms (%.3fx)",
+		kv, float64(sumO.Microseconds())/nTok/1000, float64(sumN.Microseconds())/nTok/1000, (srt[quads/2-1]+srt[quads/2])/2, srt[0], srt[quads-1], above, quads, voids,
+		ao1, ao2, an1, an2, (ao1+ao2)/(an1+an2))
+}

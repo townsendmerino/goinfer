@@ -101,6 +101,82 @@ __device__ __forceinline__ void mma_m16n8k8_f32(float &d0, float &d1, float &d2,
         : "r"(a0), "r"(a1), "r"(b0), "f"(c0), "f"(c1), "f"(c2), "f"(c3));
 }
 
+// One 16-byte K/V load: 4 f32 or 8 f16 elements.
+union kv_vec16 {
+    uint4 u;
+    float f[4];
+    __half h[8];
+};
+constexpr int KV_VW = 16 / (int)sizeof(KV_T);
+
+__device__ __forceinline__ __half kv_vec_half(const kv_vec16& v, int j) {
+#ifdef KV_F16
+    return v.h[j];
+#else
+    return __float2half_rn(v.f[j]);
+#endif
+}
+
+// stage_tile_vec stages one FULL key tile (BN keys) of K as Ksh[BN][kStride] and V as Vtsh[HD][vStride], the same halves
+// the scalar staging writes, with 16-byte loads issued a batch at a time before any of them is converted or stored. K
+// lanes run along a key row (coalesced). V lanes run along key pairs: each lane loads two rows and stores half2(key,
+// key+1) per column, so a warp's V^T stores land on distinct banks. rowOf(kk) is key kk's row in the cache.
+template <int HD, int BM, int BN, int kStride, int vStride, typename RowOf>
+__device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, const KV_T* __restrict__ vc, long colOff,
+                                               __half* Ksh, __half* Vtsh, RowOf rowOf, int kvDim) {
+    constexpr int NT = (BM / 16) * 32;
+    constexpr int DV = HD / KV_VW;          // 16-byte chunks a key row
+    constexpr int NK = BN * DV;             // K loads a tile
+    constexpr int NV = (BN / 2) * DV;       // V units (two loads each) a tile
+    constexpr int BK = (NK / NT) < 8 ? (NK / NT) : 8;
+    constexpr int BV = (NV / NT) < 4 ? (NV / NT) : 4;
+    static_assert(NK % (NT * BK) == 0 && NV % (NT * BV) == 0, "a full tile divides into whole batches");
+    const int tid = threadIdx.x;
+#pragma unroll 1
+    for (int base = 0; base < NK; base += NT * BK) {
+        kv_vec16 r[BK];
+#pragma unroll
+        for (int i = 0; i < BK; i++) {
+            const int v = base + i * NT + tid, kk = v / DV, dv = v - kk * DV;
+            r[i].u = *reinterpret_cast<const uint4*>(kc + rowOf(kk) * kvDim + colOff + dv * KV_VW);
+        }
+#pragma unroll
+        for (int i = 0; i < BK; i++) {
+            const int v = base + i * NT + tid, kk = v / DV, dv = v - kk * DV;
+            __half* dst = &Ksh[kk * kStride + dv * KV_VW];
+#ifdef KV_F16
+            *reinterpret_cast<uint4*>(dst) = r[i].u;
+#else
+            __half2 a = __floats2half2_rn(r[i].f[0], r[i].f[1]);
+            __half2 b = __floats2half2_rn(r[i].f[2], r[i].f[3]);
+            uint2 w;
+            w.x = *reinterpret_cast<unsigned int*>(&a);
+            w.y = *reinterpret_cast<unsigned int*>(&b);
+            *reinterpret_cast<uint2*>(dst) = w;
+#endif
+        }
+    }
+#pragma unroll 1
+    for (int base = 0; base < NV; base += NT * BV) {
+        kv_vec16 r0[BV], r1[BV];
+#pragma unroll
+        for (int i = 0; i < BV; i++) {
+            const int u = base + i * NT + tid, kp = u % (BN / 2), dv = u / (BN / 2);
+            r0[i].u = *reinterpret_cast<const uint4*>(vc + rowOf(2 * kp) * kvDim + colOff + dv * KV_VW);
+            r1[i].u = *reinterpret_cast<const uint4*>(vc + rowOf(2 * kp + 1) * kvDim + colOff + dv * KV_VW);
+        }
+#pragma unroll
+        for (int i = 0; i < BV; i++) {
+            const int u = base + i * NT + tid, kp = u % (BN / 2), dv = u / (BN / 2);
+#pragma unroll
+            for (int j = 0; j < KV_VW; j++) {
+                __half2 p = __halves2half2(kv_vec_half(r0[i], j), kv_vec_half(r1[i], j));
+                *reinterpret_cast<__half2*>(&Vtsh[(dv * KV_VW + j) * vStride + 2 * kp]) = p;
+            }
+        }
+    }
+}
+
 template <int HD, int BM, int BN>
 __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
                                                 const KV_T* __restrict__ kc,
@@ -183,6 +259,9 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
         blockMinWinStart = (firstRowKeys > window) ? firstRowKeys - window : 0;
     }
 
+    // A full tile stages with 16-byte loads when both caches are 16-byte aligned (a key row's offset is a multiple of HD
+    // elements, so the base pointers decide it); a partial tile, or a misaligned cache, takes the scalar loops.
+    const bool vecOK = ((reinterpret_cast<unsigned long long>(kc) | reinterpret_cast<unsigned long long>(vc)) & 15) == 0;
     for (int s0 = blockMinWinStart; s0 < blockMaxKeys; s0 += BN) {
         const int nk = (blockMaxKeys - s0 < BN) ? blockMaxKeys - s0 : BN;
         __syncthreads();
@@ -191,15 +270,20 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
         // are looked up once per tile; the second only when the tile reaches it (the table may end at s0's block).
         const int split = 64 - (s0 & 63);
         const long row0 = KV_ROW(kvt, s0), row1 = (split < nk) ? (long)kvt[(s0 >> 6) + 1] * 64 - split : 0;
-        for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
-            const int kk = idx / HD, dd = idx - kk * HD;
-            const KV_T* src = kc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
-            Ksh[kk * kStride + dd] = KV_LDH(src + dd);
-        }
-        for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
-            const int kk = idx / HD, dd = idx - kk * HD;
-            const KV_T* src = vc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
-            Vtsh[dd * vStride + kk] = KV_LDH(src + dd);
+        if (nk == BN && vecOK) {
+            stage_tile_vec<HD, BM, BN, kStride, vStride>(
+                kc, vc, (long)kvh * HD, Ksh, Vtsh, [&](int kk) { return (kk < split ? row0 : row1) + kk; }, kvDim);
+        } else {
+            for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
+                const int kk = idx / HD, dd = idx - kk * HD;
+                const KV_T* src = kc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
+                Ksh[kk * kStride + dd] = KV_LDH(src + dd);
+            }
+            for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
+                const int kk = idx / HD, dd = idx - kk * HD;
+                const KV_T* src = vc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
+                Vtsh[dd * vStride + kk] = KV_LDH(src + dd);
+            }
         }
         __syncthreads();
 
