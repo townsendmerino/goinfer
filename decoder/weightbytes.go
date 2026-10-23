@@ -211,7 +211,8 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		// copies float arrays), so there is no mmap counterpart.
 		if mla := l.mla; mla != nil {
 			dense += f32SliceBytes(mla.qAProj) + f32SliceBytes(mla.qBProj) + f32SliceBytes(mla.qProj) +
-				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj)
+				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj) +
+				wmBytes(&mla.qAQ) + wmBytes(&mla.qBQ) + wmBytes(&mla.qQ) + wmBytes(&mla.kvAQ) + wmBytes(&mla.oQ)
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
 		if mb := l.mamba; mb != nil {

@@ -839,28 +839,36 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			keepF(lc.Release)
 			rl.latCache = lc.buf
 			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(i)
+			qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(i)
+			// mlaProj uploads a projection's int8 form when the load holds one (the codes projF32 makes from the f32), else the f32.
+			mlaProj := func(q *linalg.WeightMat, f []float32, N, K int) (decodeWeight, error) {
+				if q.Rows() > 0 {
+					return projInt8(q, N, K)
+				}
+				return projF32(f, N, K)
+			}
 			if qLoRA > 0 { // q_a → norm → q_b LoRA bottleneck
-				if rl.mlaQA, e = projF32(qA, qLoRA, hidden); e != nil {
+				if rl.mlaQA, e = mlaProj(qAQ, qA, qLoRA, hidden); e != nil {
 					return fail(e)
 				}
-				if rl.mlaQB, e = projF32(qB, nH*(qkNope+qkRope), qLoRA); e != nil {
+				if rl.mlaQB, e = mlaProj(qBQ, qB, nH*(qkNope+qkRope), qLoRA); e != nil {
 					return fail(e)
 				}
 				if rl.mlaQANorm, e = up32(qANorm); e != nil {
 					return fail(e)
 				}
 			} else { // direct q_proj (V2-Lite)
-				if rl.mlaQ, e = projF32(qProj, nH*(qkNope+qkRope), hidden); e != nil {
+				if rl.mlaQ, e = mlaProj(qQ, qProj, nH*(qkNope+qkRope), hidden); e != nil {
 					return fail(e)
 				}
 			}
-			if rl.mlaKVA, e = projF32(kvA, latDim, hidden); e != nil {
+			if rl.mlaKVA, e = mlaProj(kvAQ, kvA, latDim, hidden); e != nil {
 				return fail(e)
 			}
 			if rl.mlaKVANorm, e = up32(kvANorm); e != nil {
 				return fail(e)
 			}
-			if rl.mlaO, e = projF32(oProj, hidden, nH*vHead); e != nil {
+			if rl.mlaO, e = mlaProj(oQ, oProj, hidden, nH*vHead); e != nil {
 				return fail(e)
 			}
 			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows).

@@ -42,7 +42,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
 | MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
-| MEM11-int8 | building (MLA) | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
+| MEM11-int8 | building (MLA: built, waits on D10) | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -922,6 +922,18 @@ choice in aikit and a storage choice in ken (**D4**).
 
 ## 7. Owner decisions
 
+- **D10** (MEM11-int8 MLA, asked 2026-10-22, open): **how MLA's int8 lands against the parity manifest.**
+  - **What is built:** int8 MLA projections on quantized loads, I8M-G1 to G4 PASS on the Mac (tiny 0.999887 / 31 of 32; V2-Lite
+    slice 0.997303 / 31 of 32; about 0.94 GB saved on V2-Lite).
+  - **The conflict:** `deepseek_v2`, `deepseek_v3` and `kimi_k2` are validated in `testdata/parity_manifest.json` against HF
+    bf16 at int8 residency, the load this changes. CLAUDE.md says a numeric change re-runs T3 before `-update`.
+  - **Options:**
+    - (a) hold the PR until nobara runs `TestDeepseekV2LiteReal` and the Moonlight gate at int8int8 (I8M-G5, moved before the
+      merge), then refresh the rows with the new readings;
+    - (b) set the three rows to `pending`, merge now, and re-validate later; the capability matrix and the site show DeepSeek
+      unvalidated until then;
+    - (c) gate int8 MLA off by default until (a) runs.
+  - **Recommended: (a).** The family bar was always nobara's, and the slice's 0.997 suggests it passes.
 - **D9** (MEM11-bf16, decided (a), owner, 2026-10-22): **MLA's islands.** MLA is left to MEM11-int8, its quantized bytes
   behind the family's parity bar; no bf16 island for MLA. The question as asked: DeepSeek-V2-Lite's MLA projections are Q4_K in the bench GGUF,
   so a bf16 island saves nothing there; its 1.49 GB is widened Q4_K. Options: (a) leave MLA to MEM11-int8, keeping the

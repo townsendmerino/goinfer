@@ -46,16 +46,16 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	// per head: [qk_nope | qk_rope].
 	var q []float32
 	if p.QLoRARank > 0 {
-		qa := matvec(w.qAProj, p.QLoRARank, hidden, n)
+		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
 		rmsNorm(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
-		q = matvec(w.qBProj, H*qkHead, p.QLoRARank, qa)
+		q = mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
 	} else {
-		q = matvec(w.qProj, H*qkHead, hidden, n)
+		q = mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
 	}
 
 	// 2. KV down-projection → [latent (kv_lora_rank) | rope key (qk_rope_head_dim)].
 	// The whole vector is the cached latent payload.
-	kvDown := matvec(w.kvAProj, latDim, hidden, n)
+	kvDown := mlaMatvec(w.kvAProj, &w.kvAQ, latDim, hidden, n)
 	cache.AppendLatent(layer, kvDown)
 
 	// 3. RoPE the query's rope dims (per head), gathered out of the [nope|rope] layout.
@@ -128,7 +128,7 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	}
 
 	// 6. Output projection (over the v_head_dim-wide context).
-	return matvec(w.oProj, hidden, H*vHead, ctx)
+	return mlaMatvec(w.oProj, &w.oQ, hidden, H*vHead, ctx)
 }
 
 // mlaAttentionAbsorb is the perf path: the "absorb" trick that never reconstructs
@@ -162,15 +162,15 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	// 1. Query (identical to naive): q_a→norm→q_b LoRA bottleneck, or a direct q_proj.
 	var q []float32
 	if p.QLoRARank > 0 {
-		qa := matvec(w.qAProj, p.QLoRARank, hidden, n)
+		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
 		rmsNorm(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
-		q = matvec(w.qBProj, H*qkHead, p.QLoRARank, qa)
+		q = mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
 	} else {
-		q = matvec(w.qProj, H*qkHead, hidden, n)
+		q = mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
 	}
 
 	// 2. KV down-projection → [latent | rope key]; the whole vector is cached.
-	kvDown := matvec(w.kvAProj, latDim, hidden, n)
+	kvDown := mlaMatvec(w.kvAProj, &w.kvAQ, latDim, hidden, n)
 	cache.AppendLatent(layer, kvDown)
 
 	// 3. RoPE the query's rope dims (per head), gathered from the [nope|rope] layout.
@@ -270,7 +270,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 	}
 
 	// 7. Output projection (over the v_head_dim-wide context).
-	return matvec(w.oProj, hidden, H*vHead, ctx)
+	return mlaMatvec(w.oProj, &w.oQ, hidden, H*vHead, ctx)
 }
 
 // mlaForceNaive forces the naive (reconstruct-per-key) MLA path over the absorb default.

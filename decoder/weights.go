@@ -149,6 +149,9 @@ type mlaWeights struct {
 	kvBProj      []float32 // [numHeads*(qk_nope+v_head_dim), kv_lora_rank]
 	oProj        []float32 // [hidden, numHeads*v_head_dim]
 	gProj        []float32 // [numHeads] (head_wise) or [numHeads*v_head_dim] (element_wise); nil ⇒ no gate (every DeepSeek family)
+	// qAQ, qBQ, qQ, kvAQ and oQ are those projections as per-row int8 on a quantized load (mlaProjInt8, quantizeProjections),
+	// their f32 slices then nil.
+	qAQ, qBQ, qQ, kvAQ, oQ linalg.WeightMat
 }
 
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP. Mixtral names these
@@ -915,6 +918,9 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		} else if arch.mla != nil {
 			if err = loadDeepseekAttn(st, i, l, arch, hd, tn); err != nil {
 				return err
+			}
+			if mlaProjInt8(quant) {
+				l.mla.quantizeProjections(arch)
 			}
 		} else if arch.gemma4 != nil {
 			// Gemma 4 attention has PER-LAYER widths: the global (full-attention) layers

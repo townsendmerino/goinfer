@@ -1226,14 +1226,14 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 	} else {
 		w.raw([]byte{1})
 		m := l.mla
-		w.f32(m.qAProj)
+		w.mambaProj(m.qAProj, &m.qAQ) // a quantized load's int8 projections as weight records, else f32 arrays (MEM11-int8)
 		w.f32(m.qALayernorm)
-		w.f32(m.qBProj)
-		w.f32(m.qProj)
-		w.f32(m.kvAProj)
+		w.mambaProj(m.qBProj, &m.qBQ)
+		w.mambaProj(m.qProj, &m.qQ)
+		w.mambaProj(m.kvAProj, &m.kvAQ)
 		w.f32(m.kvALayernorm)
 		w.f32(m.kvBProj)
-		w.f32(m.oProj)
+		w.mambaProj(m.oProj, &m.oQ)
 	}
 	// Mamba-2 (Granite / Nemotron): presence byte then the eight tensors. The recurrent STATE is
 	// not written and must not be — it is per-sequence, rebuilt at load; only the weights are here.
@@ -1795,14 +1795,14 @@ func (r *giwReader) v6Layer(l *LayerWeights) {
 	l.SharedExpert.DownBias = r.f32()
 	if r.u8() != 0 {
 		m := &mlaWeights{}
-		m.qAProj = r.f32()
+		m.qAProj, m.qAQ = r.mambaProj()
 		m.qALayernorm = r.f32()
-		m.qBProj = r.f32()
-		m.qProj = r.f32()
-		m.kvAProj = r.f32()
+		m.qBProj, m.qBQ = r.mambaProj()
+		m.qProj, m.qQ = r.mambaProj()
+		m.kvAProj, m.kvAQ = r.mambaProj()
 		m.kvALayernorm = r.f32()
 		m.kvBProj = r.f32()
-		m.oProj = r.f32()
+		m.oProj, m.oQ = r.mambaProj()
 		l.mla = m
 	}
 	if r.u8() != 0 {

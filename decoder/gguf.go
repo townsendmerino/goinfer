@@ -2773,6 +2773,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if err = loadDeepseekAttnGGUF(g, p, l, arch); err != nil {
 				return err
 			}
+			if mlaProjInt8(quant) {
+				l.mla.quantizeProjections(arch)
+			}
 		} else if arch.Name == "phi3" {
 			// Phi-3/Phi-4: fused attn_qkv [qDim+2*kvDim, hidden] → Q ‖ K ‖ V by output
 			// rows (NEOX rope ⇒ no permute). o_proj is unfused.
