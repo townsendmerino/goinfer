@@ -52,7 +52,7 @@
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | parked (decision) | 2026-10-23: the fused gate\|up GEMM + SwiGLU is bit-identical (D5-G1) and drops the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB (D5-G2), but the prefill is 10.4% slower (median 1.1040, 0 of 10; D5-G3 PARK). Branch `ksd5-swiglu-fused-2026-10` pushed, not merged. Next: the owner's call; a build with the tile in the staging arrays' memory may recover occupancy | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D7 | measured (KILL) | closed 2026-10-23: the half2 dequant is bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal) but the prefill is 0.9983 of the old time, 5 of 10 pairs faster (kill under 2%; run 05:03 on the owner's word). Not merged | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
@@ -744,6 +744,13 @@ rule: one pass each. Cost: seconds; D6-G2 about 2 minutes.
 merged.** D7-G1, model identity: llama-tiny and Qwen2.5-Coder-1.5B, a batched prefill's last logits byte-equal, old form against
 new. D7-G2, speed: Qwen2.5-Coder-1.5B, a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs; SHIP iff
 the median new/old is ≤ 0.98 and at least 9 of 10 pairs are below 1, otherwise the row closes as measured.
+
+**KS-D7 shipped by owner decision, 2026-10-23 (8:36 am), over the registered 2% bar.** Francis: "it seems silly to give up gains,
+any gains, if it's bit-identical and doesn't use more memory." The re-run read a median of 0.9888 with 10 of 10 pairs below 1
+(`docs/measurements/ks-night-2026-10/README.md`). His condition is a gate, registered here before it ran: **D7-G3 memory**. The
+1.5B (the Metal `.giw`), a 3,900-token prefill per arm, the half2 build against the per-weight build: the prefill scratch counter
+(`prefillScratchSeen`) and Metal's allocated size after the prefill must be equal or lower, and the logits byte-equal. If memory
+goes up, stop and tell him.
 
 **KS-D8 · Batched Mamba-2 prefill on Metal (Nemotron-H).**
 - **Waste:** `metal/model.go:resident.recurrentPrefillOK` declines Mamba, so every prompt token is a decode step.

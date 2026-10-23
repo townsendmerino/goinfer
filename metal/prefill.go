@@ -189,6 +189,9 @@ func (r *resident) ensurePrefill() {
 		compile = r.d.CompileLibraryPrecise
 	}
 	src, err := withAttnSoftcap(prefillKernels+kvI8PrefillKernels, r.attnSoftcap) // + the int8 cache's store and dequantize (kv_i8_prefill.go)
+	if r.ksd7Old {
+		src = "#define KSD7_OLD_DEQUANT 1\n" + src
+	}
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill source: %v", err))
 	}
@@ -1251,3 +1254,8 @@ func dg01Mutate(idx []uint32, wgt []float32, M, k int) {
 		}
 	}
 }
+
+// ksd7OldDequantForTest builds the prefill library with the per-weight nibble dequant in the GEMM's staging (KSD7_OLD_DEQUANT): the
+// old arm of KS-D7's A/B. The staging is in prefillKernels, so the define goes on the prefill library's source; the resident takes
+// the switch when it is built (resident.ksd7Old).
+var ksd7OldDequantForTest bool

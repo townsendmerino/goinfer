@@ -529,6 +529,10 @@ This repo's measurements are the product, so the standards are load-bearing:
   path does not resolve from any other clone, which is the trap two bullets down. Note the file is
   TRACKED in aikit, not gitignored as this line used to claim; the advice is unchanged, the reason
   was wrong).
+- **A bit-identical speed change ships even under its registered bar** when all four hold: (1) its outputs are bit-identical;
+  (2) its scratch and allocated memory are not higher; (3) it is faster on at least 9 of 10 timed pairs; (4) it replaces code
+  rather than adding a second path (a test-only switch back to the old form is not a second path). The registered bar still
+  decides any change that alters outputs. Owner's rule, 2026-10-23.
 - **Include the do-nothing arm.** "Beats every configuration" means nothing if *off* wins. A
   speculation suite was found where no verify width beat running no drafter at all — only
   visible because `off` was a competitor.
