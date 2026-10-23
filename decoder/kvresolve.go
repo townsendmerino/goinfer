@@ -123,6 +123,11 @@ func resolveCUDAKV(arch *Architecture, o Options, req string) (string, string) {
 			return kvPrecF32, why
 		}
 	}
+	if p.AutoReason != nil {
+		if why := p.AutoReason(arch.kvFacts(), o); why != "" {
+			return kvPrecF16, why
+		}
+	}
 	return kvPrecF16, "auto is f16 on CUDA for this family"
 }
 
@@ -202,15 +207,14 @@ func cudaKVF16Delivered(f KVFacts) bool {
 }
 
 // cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (the
-// owner's D7: f16 becomes the default for each family as it clears its gate). MoE and the paged-experts build are delivered on request
-// sliding-window attention, pairwise RoPE, m-RoPE, the hybrids and MLA's latent cache are delivered on request and stay f32 under auto
-// until their group's G4 passes.
+// owner's D7: f16 becomes the default for each family group as it clears its G4, docs/measurements/kv4-cuda-2026-10-21.md §2, G5). A
+// model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
 func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
-	if f.MoE || o.MoECacheExperts || f.SlidingWindow || f.PairwiseRoPE || f.MRoPE || f.Hybrid || f.MLA {
+	if f.MoE || o.MoECacheExperts || f.PairwiseRoPE || f.Hybrid || f.MLA {
 		return false
 	}
 	switch f.Family {
-	case "llama", "mistral", "qwen2", "qwen3", "phi3":
+	case "llama", "mistral", "qwen2", "qwen3", "phi3", "gemma2", "gemma3", "qwen2_5_vl", "qwen3_vl":
 		return true
 	}
 	return false
@@ -237,11 +241,21 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
 }
 
+// CUDAKVF16AutoReason is the reason `--kv auto` gives when it picks f16 on CUDA, "" for the plain one. The sliding-window group's says that
+// auto moved by the owner's decision over an AMBIGUOUS G4 cell (docs/measurements/kv4-cuda-2026-10-21.md §5, D-KV4-6).
+func CUDAKVF16AutoReason(f KVFacts, _ Options) string {
+	if f.SlidingWindow {
+		return "auto is f16 on CUDA for this family (sliding window: by the owner's decision over an AMBIGUOUS quality reading at 8,000 keys)"
+	}
+	return ""
+}
+
 // The CUDA policy ResolveKV reads when the cuda package is not linked in, as in the decoder's own tests and the generated KV matrix:
 // auto is f16 for a cleared family (the owner's decision of 2026-10-13). The cuda package registers the same table with its own auto
 // switch, which its tests pin to f32.
 func init() {
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline})
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline,
+		AutoReason: CUDAKVF16AutoReason})
 }
 
 // kvPath is the cache a generation of this model writes: the resident backend's when a runner is active, else the CPU's.

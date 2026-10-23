@@ -42,7 +42,8 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	saved := kvPolicies["cuda"]
 	defer func() { kvPolicies["cuda"] = saved }()
 	auto := true
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }, AutoDecline: CUDAKVF16AutoDecline})
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }, AutoDecline: CUDAKVF16AutoDecline,
+		AutoReason: CUDAKVF16AutoReason})
 	gemma := &Architecture{Name: "gemma3", NumLayers: 1, SlidingWindow: 1024}
 	undelivered := &Architecture{Name: "laguna", NumLayers: 1}
 	moe := &Architecture{Name: "qwen3_moe", NumLayers: 1, MoE: &MoEConfig{}}
@@ -54,13 +55,20 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	}{
 		{"", a, true, "f16"}, {"auto", a, true, "f16"}, {"f16", a, true, "f16"}, {"f32", a, true, "f32"},
 		{"", a, false, "f32"}, {"auto", a, false, "f32"}, {"f16", a, false, "f16"},
-		{"", gemma, true, "f32"}, {"f16", gemma, true, "f16"}, {"f16", undelivered, true, "f32"}, {"i8", a, true, "f32"},
+		{"", gemma, true, "f16"}, {"", gemma, false, "f32"}, {"f16", gemma, true, "f16"}, {"f16", undelivered, true, "f32"}, {"i8", a, true, "f32"},
 		{"", moe, true, "f32"}, {"auto", moe, true, "f32"}, {"f16", moe, true, "f16"}, {"f16", moe, false, "f16"},
 	} {
 		auto = c.auto
 		if got, _ := ResolveKV("cuda", c.a, Options{KVPrecision: c.kv}); got != c.want {
 			t.Errorf("auto=%v -kv %q on %s: %q, want %q", c.auto, c.kv, c.a.Name, got, c.want)
 		}
+	}
+	auto = true
+	if _, why := ResolveKV("cuda", gemma, Options{}); !strings.Contains(why, "owner's decision") {
+		t.Errorf("gemma3 auto on CUDA: reason %q does not name the owner's decision", why)
+	}
+	if _, why := ResolveKV("cuda", a, Options{}); why != "auto is f16 on CUDA for this family" {
+		t.Errorf("qwen2 auto on CUDA: reason %q, want the plain one", why)
 	}
 	if r := kvF16Decline("cuda", undelivered, Options{}); r == "" {
 		t.Error("laguna on CUDA: no decline reason")
@@ -137,10 +145,16 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, false},
 		{"qwen2 with MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, false},
 		{"qwen2 paged experts", KVFacts{Family: "qwen2"}, Options{MoECacheExperts: true}, false},
-		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, false},
-		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, false},
+		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, true},
+		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, true},
+		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, true},
+		{"gpt-oss: sliding window and MoE", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, false},
 		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, false},
-		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, false},
+		{"cohere2: sliding window and pairwise RoPE", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, false},
+		{"gemma4: sliding window and hybrid", KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, false},
+		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, true},
+		{"qwen3_vl", KVFacts{Family: "qwen3_vl", MRoPE: true}, Options{}, true},
+		{"qwen3_vl_moe", KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, false},
 		{"qwen3_5", KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}, false},
 		{"deepseek_v3", KVFacts{Family: "deepseek_v3", MLA: true}, Options{}, false},
 	} {

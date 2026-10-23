@@ -13,7 +13,7 @@ import (
 func init() { kvF16Auto.Store(false) }
 
 // TestKV16_theDefaultIsF16OnAClearedFamily loads with no -kv, and with "auto", the way serve's default and a library caller's zero Options do, with the default
-// ON as shipped: a cleared family (qwen2) must come up on the f16 cache and a family whose quality gate has not passed must stay f32, with "f32" always winning.
+// ON as shipped: a cleared family (qwen2, and gemma3 of a cleared KV4b group) must come up on the f16 cache, with "f32" always winning.
 func TestKV16_theDefaultIsF16OnAClearedFamily(t *testing.T) {
 	requireCUDADevice(t)
 	kvF16Auto.Store(true)
@@ -37,14 +37,14 @@ func TestKV16_theDefaultIsF16OnAClearedFamily(t *testing.T) {
 		}
 		m.Close()
 	}
-	// A family delivered on request whose quality gate has not passed (gemma3, KV4b's sliding-window group) stays f32 under the default and
-	// is f16 when asked (decoder.CUDAKVF16AutoDecline; docs/measurements/kv4-cuda-2026-10-21.md §2, G5). A family not delivered at all
-	// refuses an explicit f16 by name: decoder's TestKVPrecisionDelivered holds that for every family.
+	// A family whose group's quality gate has cleared (gemma3, KV4b's sliding-window group) comes up on f16 under the default, and "f32" still
+	// wins. Which delivered families auto keeps at f32 is decoder's TestCUDAKVF16AutoDecline_table; a family not delivered at all refuses an
+	// explicit f16 by name (TestKVPrecisionDelivered).
 	if g := modelPath("gemma3-1b-q4_k_m.gguf"); fileExists(g) {
 		for _, tc := range []struct {
 			kv   string
 			want bool
-		}{{"", false}, {"auto", false}, {"f16", true}} {
+		}{{"", true}, {"auto", true}, {"f16", true}, {"f32", false}} {
 			m, err := decoder.Load(g, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: tc.kv, ResidentContext: 2048})
 			if err != nil {
 				t.Fatalf("gemma3 -kv %q: %v", tc.kv, err)
