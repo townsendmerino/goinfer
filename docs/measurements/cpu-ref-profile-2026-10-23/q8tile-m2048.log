@@ -1,0 +1,20 @@
+start 2026-10-23 09:38:03 PDT
+M=2048 K=4096 N=14336 jb=16 workers=16 (A=34 MB) load=8.32 10.26 12.27 3/1379 3910960
+  base        4.59s    52.4 GFLOP/s
+  blocked     1.25s   192.5 GFLOP/s
+  blocked     1.26s   191.2 GFLOP/s
+  base        4.98s    48.3 GFLOP/s
+bit-identical: 29360128 outputs; speed-up base/blocked = 3.82x
+M=2048 K=14336 N=4096 jb=8 workers=16 (A=117 MB) load=9.97 10.55 12.34 6/1393 3911256
+  base       13.22s    18.2 GFLOP/s
+  blocked     1.86s   129.5 GFLOP/s
+  blocked     1.89s   127.5 GFLOP/s
+  base       10.76s    22.4 GFLOP/s
+bit-identical: 8388608 outputs; speed-up base/blocked = 6.41x
+M=2048 K=4096 N=4096 jb=16 workers=16 (A=34 MB) load=14.09 11.49 12.59 3/1376 3912001
+  base        1.49s    46.0 GFLOP/s
+  blocked     0.37s   184.6 GFLOP/s
+  blocked     0.38s   179.2 GFLOP/s
+  base        1.80s    38.1 GFLOP/s
+bit-identical: 8388608 outputs; speed-up base/blocked = 4.36x
+end 2026-10-23 09:38:49 PDT

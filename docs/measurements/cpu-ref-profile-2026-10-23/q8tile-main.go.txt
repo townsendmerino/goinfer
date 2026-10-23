@@ -1,0 +1,135 @@
+// Scratch microbenchmark (ref-profile 2026-10-23): aikit's amd64 weight-only int8 matmul (q8SpanColumn: column-outer,
+// every column re-streams all M activation rows) against a column-blocked order that widens Jb columns once and walks
+// each activation row against all Jb of them. Every output is still dotF32(a_i, deq_j)*s_j with aikit's own dotFMA, so
+// the two must agree bit for bit; the program checks that, then times both.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"math"
+	"math/rand"
+	"os"
+	"runtime"
+	"sync"
+	"time"
+)
+
+func dotFMA(a, b *float32, n int) float32
+
+func dotF32(a, b []float32) float32 {
+	n := len(a)
+	n4 := n / 4
+	var sum float32
+	if n4 > 0 {
+		sum = dotFMA(&a[0], &b[0], n4*4)
+	}
+	for k := n4 * 4; k < n; k++ {
+		sum += a[k] * b[k]
+	}
+	return sum
+}
+
+func widen(dst []float32, q []int8) {
+	for k, c := range q {
+		dst[k] = float32(c) * 1.0
+	}
+}
+
+// parallelCols splits [0,N) into nw contiguous spans, as aikit's parallelSpawnCols does.
+func parallelCols(N, nw int, fn func(j0, j1 int)) {
+	var wg sync.WaitGroup
+	per := (N + nw - 1) / nw
+	for j0 := 0; j0 < N; j0 += per {
+		j1 := min(N, j0+per)
+		wg.Go(func() { fn(j0, j1) })
+	}
+	wg.Wait()
+}
+
+func baseline(a []float32, bQ []int8, s, dst []float32, M, K, N, nw int) {
+	parallelCols(N, nw, func(j0, j1 int) {
+		deq := make([]float32, K)
+		for j := j0; j < j1; j++ {
+			widen(deq, bQ[j*K:j*K+K])
+			for i := range M {
+				dst[i*N+j] = dotF32(a[i*K:i*K+K], deq) * s[j]
+			}
+		}
+	})
+}
+
+func blocked(a []float32, bQ []int8, s, dst []float32, M, K, N, nw, jb int) {
+	parallelCols(N, nw, func(j0, j1 int) {
+		deq := make([]float32, jb*K)
+		for jj := j0; jj < j1; jj += jb {
+			je := min(j1, jj+jb)
+			for j := jj; j < je; j++ {
+				widen(deq[(j-jj)*K:(j-jj+1)*K], bQ[j*K:j*K+K])
+			}
+			for i := range M {
+				arow := a[i*K : i*K+K]
+				for j := jj; j < je; j++ {
+					dst[i*N+j] = dotF32(arow, deq[(j-jj)*K:(j-jj+1)*K]) * s[j]
+				}
+			}
+		}
+	})
+}
+
+func main() {
+	M := flag.Int("m", 1024, "activation rows (prompt tokens)")
+	K := flag.Int("k", 4096, "inner dim")
+	N := flag.Int("n", 14336, "output columns")
+	jb := flag.Int("jb", 16, "column block")
+	reps := flag.Int("reps", 2, "alternating repetitions (A B B A per rep pair)")
+	flag.Parse()
+	nw := runtime.GOMAXPROCS(0)
+	rng := rand.New(rand.NewSource(1))
+	a := make([]float32, *M**K)
+	for i := range a {
+		a[i] = float32(rng.NormFloat64())
+	}
+	bQ := make([]int8, *N**K)
+	for i := range bQ {
+		bQ[i] = int8(rng.Intn(255) - 127)
+	}
+	s := make([]float32, *N)
+	for i := range s {
+		s[i] = float32(rng.NormFloat64()) * 0.01
+	}
+	d0 := make([]float32, *M**N)
+	d1 := make([]float32, *M**N)
+	gflop := 2 * float64(*M) * float64(*K) * float64(*N) / 1e9
+	fmt.Printf("M=%d K=%d N=%d jb=%d workers=%d (A=%.0f MB) load=%s", *M, *K, *N, *jb, nw, float64(len(a))*4/1e6, loadavg())
+	run := func(name string, f func(dst []float32)) float64 {
+		t0 := time.Now()
+		f(map[string][]float32{"base": d0, "blocked": d1}[name])
+		sec := time.Since(t0).Seconds()
+		fmt.Printf("  %-8s %7.2fs  %6.1f GFLOP/s\n", name, sec, gflop/sec)
+		return sec
+	}
+	var tb, tk float64
+	order := []string{"base", "blocked", "blocked", "base"}
+	for r := 0; r < *reps; r++ {
+		for _, n := range order {
+			if n == "base" {
+				tb += run(n, func(d []float32) { baseline(a, bQ, s, d, *M, *K, *N, nw) })
+			} else {
+				tk += run(n, func(d []float32) { blocked(a, bQ, s, d, *M, *K, *N, nw, *jb) })
+			}
+		}
+	}
+	for i := range d0 {
+		if math.Float32bits(d0[i]) != math.Float32bits(d1[i]) {
+			fmt.Printf("MISMATCH at %d: %08x vs %08x\n", i, math.Float32bits(d0[i]), math.Float32bits(d1[i]))
+			os.Exit(1)
+		}
+	}
+	fmt.Printf("bit-identical: %d outputs; speed-up base/blocked = %.2fx\n", len(d0), tb/tk)
+}
+
+func loadavg() string {
+	b, _ := os.ReadFile("/proc/loadavg")
+	return string(b)
+}

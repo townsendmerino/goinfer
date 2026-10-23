@@ -1,0 +1,29 @@
+start 2026-10-23 09:28:41 PDT tree 94fb6649c4b315f239d7baf806133b2d0fe539b5 load: 5.43 9.68 13.66 1/1321 3905514
+Mem:           64238        6207       39737          77       19055       58030
+=== RUN   TestScratchRefProfile
+[rp] load /home/francis/models/qwen3.5-9b quant="int8" K=1024 workers=1 GOMAXPROCS=16 took 18.582s
+[rp] heartbeat elapsed=49s cpu=380s
+[rp] heartbeat elapsed=1m19s cpu=659s
+[rp] heartbeat elapsed=1m49s cpu=937s
+[rp] heartbeat elapsed=2m19s cpu=1213s
+[rp] heartbeat elapsed=2m49s cpu=1488s
+[rp] heartbeat elapsed=3m19s cpu=1763s
+[rp] heartbeat elapsed=3m49s cpu=2032s
+[rp] heartbeat elapsed=4m19s cpu=2301s
+[rp] heartbeat elapsed=4m49s cpu=2572s
+[rp] heartbeat elapsed=5m19s cpu=2839s
+[rp] heartbeat elapsed=5m49s cpu=3106s
+[rp] heartbeat elapsed=6m19s cpu=3373s
+[rp] heartbeat elapsed=6m49s cpu=3633s
+[rp] heartbeat elapsed=7m19s cpu=3891s
+[rp] heartbeat elapsed=7m49s cpu=4153s
+[rp] heartbeat elapsed=8m19s cpu=4414s
+[rp] phase prefill finished=true wall=500.7s cpu=4492.4s avgCores=8.97
+[rp] decode step 0 0.59s
+[rp] decode step 1 0.57s
+[rp] decode step 2 0.57s
+[rp] decode step 3 0.55s
+[rp] phase decode finished=true wall=2.3s cpu=19.6s avgCores=8.54
+--- PASS: TestScratchRefProfile (521.91s)
+PASS
+end 2026-10-23 09:37:23 PDT load: 11.98 11.16 12.63 1/1388 3910355

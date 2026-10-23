@@ -1,0 +1,23 @@
+start 2026-10-23 09:22:48 PDT tree 94fb6649c4b315f239d7baf806133b2d0fe539b5 load: 17.59 17.62 16.96 2/1327 3904199
+Mem:           64238        6247       31635          77       27117       57990
+=== RUN   TestScratchRefProfile
+[rp] load /home/francis/models/qwen15-moe-a27b quant="int8" K=1024 workers=1 GOMAXPROCS=16 took 26.054s
+[rp] heartbeat elapsed=56s cpu=333s
+[rp] heartbeat elapsed=1m26s cpu=495s
+[rp] heartbeat elapsed=1m56s cpu=660s
+[rp] heartbeat elapsed=2m26s cpu=825s
+[rp] heartbeat elapsed=2m56s cpu=989s
+[rp] heartbeat elapsed=3m26s cpu=1156s
+[rp] heartbeat elapsed=3m56s cpu=1323s
+[rp] heartbeat elapsed=4m26s cpu=1489s
+[rp] heartbeat elapsed=4m56s cpu=1655s
+[rp] heartbeat elapsed=5m26s cpu=1823s
+[rp] phase prefill finished=true wall=325.0s cpu=1789.7s avgCores=5.51
+[rp] decode step 0 0.51s
+[rp] decode step 1 0.44s
+[rp] decode step 2 0.48s
+[rp] decode step 3 0.45s
+[rp] phase decode finished=true wall=1.9s cpu=10.3s avgCores=5.41
+--- PASS: TestScratchRefProfile (352.94s)
+PASS
+end 2026-10-23 09:28:41 PDT load: 5.43 9.68 13.66 1/1321 3905510
