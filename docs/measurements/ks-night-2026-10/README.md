@@ -12,3 +12,18 @@ timed, so each held the timing lock shared. The 1-minute load was 3.5 to 5.4 at 
 | KS-H4 | the same test: Metal's allocated size net of the tower's build, right after the 4K forward and 10 s later | **2,622.5 MiB, and 2,622.5 MiB 10 s later**: nothing is released until `Close` | confirmed; the fix (release above a ceiling after the forward) is next, S |
 
 Logs: `~/goinfer-logs/ks-d5-2026-10-22.log`, `~/goinfer-logs/ks-d6h4-2026-10-22.log`.
+
+## KS-D7's speed read (D7-G), 2026-10-23
+
+Gates registered before the change, on a branch that was not merged (the survey doc's "KS-D7 gates" carry them here). The build
+under test: both staging sites of the prefill GEMM dequantize two nibbles per half2 operation, with `KSD7_OLD_DEQUANT` compiling
+the per-weight form back. Run 05:03 on the owner's word, 2026-10-23 (started 05:09, timing lock held exclusively, the 1-minute load
+1.35 at the start, 6.3 GB available).
+
+| gate | reading | result |
+|---|---|---|
+| D7-G1 model identity | llama-tiny at int4, a 100-token prefill: 0 of 256 logits differ; Qwen2.5-Coder-1.5B, a 3,900-token prefill: 0 of 151,936 differ. A plant (1031 for 1032) turned the tiny cell red, and the startup self-test declined the backend | **PASS** |
+| D7-G2 speed | Qwen2.5-Coder-1.5B (the Metal `.giw`), a 3,900-token `PrefillLast`, two residents in one process, A B B A over 10 pairs: per-weight 4,094–4,165 ms, half2 4,094–4,164 ms; **median new/old 0.9983, 5 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd7-g2-2026-10-23.log` | **KILL** (bar: ≤ 0.98 and 9 of 10) |
+
+The dequant is bit-identical but buys nothing measurable at this shape: the staging is not where the 3,900-token prefill spends
+its time. The change was not merged, and the row closes as measured.
