@@ -911,9 +911,10 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
 // (accumulation order, exp2): graded by the §3.2 pooled gate on set A. The fused kernel keeps every other head dim.
 #define R19_BQ 32
 #define R19_BK 16
-#define R19_HD 128
-#define R19_LD (R19_HD + 8)
 
+// KS-D2: the head dim is a template parameter (HD, with LD = HD + 8 the padded row); every other line is R19's. The K/V
+// staging walks the block's 16 x HD/4 half4 words, 128 a pass, so at HD = 128 each thread stages the same four words.
+template <ushort HD>
 kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device const half* kc[[buffer(1)]],
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
@@ -921,13 +922,14 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
     constant uint& M[[buffer(11)]],
     uint tgid[[threadgroup_position_in_grid]], ushort sgid[[simdgroup_index_in_threadgroup]],
     ushort lane[[thread_index_in_simdgroup]], ushort tid[[thread_index_in_threadgroup]]) {
-    threadgroup half Ks[R19_BK * R19_LD];
-    threadgroup half Vs[R19_BK * R19_LD];
+    constexpr ushort LD = HD + 8;
+    threadgroup half Ks[R19_BK * LD];
+    threadgroup half Vs[R19_BK * LD];
 
     const uint nRB = (M + R19_BQ - 1u) / R19_BQ;
     const uint qh = tgid / nRB, rb = tgid % nRB;
     if (qh >= nH) return;
-    const uint kvDim = nKV * R19_HD, kvh = qh / (nH / nKV), qDim = nH * R19_HD;
+    const uint kvDim = nKV * HD, kvh = qh / (nH / nKV), qDim = nH * HD;
     const uint tr0 = rb * R19_BQ;                 // the threadgroup's first query row
     const uint r0 = tr0 + uint(sgid) * 8u;        // this simdgroup's first query row
     const ushort qid = lane >> 2;
@@ -952,29 +954,28 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
     // A simdgroup whose 8 rows are all past M (the last block's tail) loads no Q (the qkv buffer is padded to 8 rows,
     // not 32) and computes nothing; it still helps stage K/V and meets every barrier.
     const bool active = r0 < M;
-    simdgroup_half8x8 qT[R19_HD / 8];
+    simdgroup_half8x8 qT[HD / 8];
     if (active) {
-        for (ushort kk = 0; kk < R19_HD / 8; kk++) {
-            simdgroup_load(qT[kk], qkv + r0 * qStride + qh * R19_HD + kk * 8u, qStride);
+        for (ushort kk = 0; kk < HD / 8; kk++) {
+            simdgroup_load(qT[kk], qkv + r0 * qStride + qh * HD + kk * 8u, qStride);
         }
     }
-    simdgroup_float8x8 oAcc[R19_HD / 8];
-    for (ushort cc = 0; cc < R19_HD / 8; cc++) oAcc[cc] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+    simdgroup_float8x8 oAcc[HD / 8];
+    for (ushort cc = 0; cc < HD / 8; cc++) oAcc[cc] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
     float mRow = -INFINITY, lRow = 0.0f;
 
     for (uint j0 = jStart; j0 < jEnd; j0 += R19_BK) {
-        // Stage K and V for keys j0 .. j0+15: 2048 halves each, four half4 per thread; keys past jEnd read as zero.
-        for (ushort i = 0; i < 4; i++) {
-            uint idx = uint(tid) + uint(i) * 128u;
-            uint key = idx >> 5, d4 = (idx & 31u) * 4u;
+        // Stage K and V for keys j0 .. j0+15: 16 x HD halves each, in half4 words; keys past jEnd read as zero.
+        for (uint idx = uint(tid); idx < R19_BK * HD / 4u; idx += 128u) {
+            uint key = idx / (HD / 4u), d4 = (idx % (HD / 4u)) * 4u;
             uint j = j0 + key;
             half4 kv4 = half4(0.0h), vv4 = half4(0.0h);
             if (j < jEnd) {
-                kv4 = *(device const half4*)(kc + j * kvDim + kvh * R19_HD + d4);
-                vv4 = *(device const half4*)(vc + j * kvDim + kvh * R19_HD + d4);
+                kv4 = *(device const half4*)(kc + j * kvDim + kvh * HD + d4);
+                vv4 = *(device const half4*)(vc + j * kvDim + kvh * HD + d4);
             }
-            *(threadgroup half4*)(Ks + key * R19_LD + d4) = kv4;
-            *(threadgroup half4*)(Vs + key * R19_LD + d4) = vv4;
+            *(threadgroup half4*)(Ks + key * LD + d4) = kv4;
+            *(threadgroup half4*)(Vs + key * LD + d4) = vv4;
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -983,9 +984,9 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
             simdgroup_float8x8 S[2];
             for (ushort sub = 0; sub < 2; sub++) {
                 S[sub] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
-                for (ushort kk = 0; kk < R19_HD / 8; kk++) {
+                for (ushort kk = 0; kk < HD / 8; kk++) {
                     simdgroup_half8x8 kTile;
-                    simdgroup_load(kTile, Ks + (sub * 8u) * R19_LD + kk * 8u, R19_LD, ulong2(0, 0), true);
+                    simdgroup_load(kTile, Ks + (sub * 8u) * LD + kk * 8u, LD, ulong2(0, 0), true);
                     simdgroup_multiply_accumulate(S[sub], qT[kk], kTile, S[sub]);
                 }
             }
@@ -1018,12 +1019,12 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
             simdgroup_half8x8 P[2];
             P[0].thread_elements()[0] = half(p[0]); P[0].thread_elements()[1] = half(p[1]);
             P[1].thread_elements()[0] = half(p[2]); P[1].thread_elements()[1] = half(p[3]);
-            for (ushort cc = 0; cc < R19_HD / 8; cc++) {
+            for (ushort cc = 0; cc < HD / 8; cc++) {
                 oAcc[cc].thread_elements()[0] *= factor;
                 oAcc[cc].thread_elements()[1] *= factor;
                 for (ushort sub = 0; sub < 2; sub++) {
                     simdgroup_half8x8 vTile;
-                    simdgroup_load(vTile, Vs + (sub * 8u) * R19_LD + cc * 8u, R19_LD);
+                    simdgroup_load(vTile, Vs + (sub * 8u) * LD + cc * 8u, LD);
                     simdgroup_multiply_accumulate(oAcc[cc], P[sub], vTile, oAcc[cc]);
                 }
             }
@@ -1033,13 +1034,17 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
 
     if (myRow < M) {
         const float inv = lRow > 0.0f ? 1.0f / lRow : 0.0f;
-        device half* o = out + myRow * qDim + qh * R19_HD + fn;
-        for (ushort cc = 0; cc < R19_HD / 8; cc++) {
+        device half* o = out + myRow * qDim + qh * HD + fn;
+        for (ushort cc = 0; cc < HD / 8; cc++) {
             o[cc * 8u] = half(oAcc[cc].thread_elements()[0] * inv);
             o[cc * 8u + 1u] = half(oAcc[cc].thread_elements()[1] * inv);
         }
     }
 }
+template [[host_name("attention_prefill_steel")]] kernel decltype(attention_prefill_steel<128>) attention_prefill_steel<128>;
+template [[host_name("attention_prefill_steel_hd64")]] kernel decltype(attention_prefill_steel<64>) attention_prefill_steel<64>;
+template [[host_name("attention_prefill_steel_hd80")]] kernel decltype(attention_prefill_steel<80>) attention_prefill_steel<80>;
+template [[host_name("attention_prefill_steel_hd96")]] kernel decltype(attention_prefill_steel<96>) attention_prefill_steel<96>;
 
 // kv_store_f16: scatter M rows' K,V (slices of the fused qkv[M×stride]) into the f16 KV cache
 // at positions[m]. grid = M*kvDim.
