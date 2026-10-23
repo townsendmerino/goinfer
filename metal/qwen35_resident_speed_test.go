@@ -41,7 +41,7 @@ func qwen35DecodeRateMetal(t *testing.T, ckpt string) {
 		t.Skipf("no fixture at %s: %v", ckpt, err)
 	}
 	const warm, iters = 8, 64
-	quant := "int8int8"
+	quant := "int4" // the precision Metal runs a Gated-DeltaNet model at; an int8 load is declined (buildDeltaNet)
 	if v := os.Getenv("GOINFER_DNET_QUANT_METAL"); v != "" {
 		quant = v
 	}
