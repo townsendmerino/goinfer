@@ -737,6 +737,13 @@ the epilogue is the shipped one. `swigluFused` admits a native int8 resident. `s
 Planted defect: the up rows read the gate rows' scale (`WS[i0 + (fr & 31)]`). D5c-G1's kernel cells go red. Stopping rule: one pass
 each, no further build on a miss. Cost: seconds; D5c-G3 about 3 minutes with the load.
 
+**Amended 2026-10-23 (10:20), before any model reading: the 0.5B replaces the 1.5B in D5c-G1's model cell, D5c-G2 and D5c-G3.** The
+fit guard refused the 1.5B at int8int8 (2.8 GB needed against a 2.1 GB budget, 3.0 GB available with the owner's apps open). The
+0.5B (`qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` at int8int8, a direct load) takes the same 64 × 64 tile at 3,900 rows with
+I = 4,864, a multiple of 32, so it exercises the same mechanism; the tier rule asks for the smallest such model. D5c-G2's bar becomes
+the 0.5B's own: the two-step pass's counted scratch less `guF` (Mpad × 2 × 4,864 halves), within 1%. The bars of D5c-G1 and D5c-G3
+are unchanged. The kernel cells (K = 1,536, I = 96 and 8,960) already ran and passed at 10:13; they stand.
+
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow`.
 - **Waste:**

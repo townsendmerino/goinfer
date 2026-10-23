@@ -38,14 +38,23 @@ func TestKSD5_guFShare(t *testing.T) {
 	for i := range prompt {
 		prompt[i] = (i*7919 + 13) % vocab
 	}
-	before := prefillScratchSeen.Load()
-	mgGen(t, m, prompt, 1)
-	seen := prefillScratchSeen.Load() - before
+	pass := func(twoStep bool) int64 { // one pass's counted scratch; the two-step arm is KS-D5c's baseline
+		prevOff := swigluFusedOffForTest
+		swigluFusedOffForTest = twoStep
+		defer func() { swigluFusedOffForTest = prevOff }()
+		before := prefillScratchSeen.Load()
+		mgGen(t, m, prompt, 1)
+		return prefillScratchSeen.Load() - before
+	}
+	seenTwo := pass(true)
+	seen := pass(false)
 	_, _, maxI := a.r.prefillWidths()
 	mpad := (n + 63) / 64 * 64
 	guF := int64(mpad * 2 * maxI * 2)
 	planned := a.PrefillScratchBytes(n)
 	const MB = 1e6
-	fmt.Fprintf(os.Stderr, "[KS-D5] Qwen2.5-Coder-1.5B, one %d-row pass: scratch counted %.1f MB, planned %.1f MB; guF %.1f MB = %.1f%% of the counted (maxI %d, Mpad %d); without it %.1f MB\n",
-		n, float64(seen)/MB, float64(planned)/MB, float64(guF)/MB, 100*float64(guF)/float64(seen), maxI, mpad, float64(seen-guF)/MB)
+	fmt.Fprintf(os.Stderr, "[KS-D5] %s (%q, w8 %v, fused %v), one %d-row pass: scratch counted %.1f MB, planned %.1f MB; guF %.1f MB = %.1f%% of the counted (maxI %d, Mpad %d); without it %.1f MB\n",
+		path, opts.Quant, a.r.w8, a.r.swigluFused(mpad), n, float64(seen)/MB, float64(planned)/MB, float64(guF)/MB, 100*float64(guF)/float64(seen), maxI, mpad, float64(seen-guF)/MB)
+	fmt.Fprintf(os.Stderr, "[KS-D5] the two-step pass counted %.1f MB; less guF %.1f MB; this pass %.1f MB\n",
+		float64(seenTwo)/MB, float64(seenTwo-guF)/MB, float64(seen)/MB)
 }

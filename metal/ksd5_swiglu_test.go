@@ -152,18 +152,19 @@ func TestKSD5c_w8FusedSwigluMatchesTwoStep(t *testing.T) {
 	}
 }
 
-// ksd5Checkpoint is the 1.5B the KS-D5 model tests load: the int4 Metal .giw, or with GOINFER_KSD5_QUANT=int8int8 the .gguf
-// at int8int8 (the native int8 lane, KS-D5c), loaded directly so nothing is written beside it.
+// ksd5Checkpoint is the real model the KS-D5 model tests load: the 1.5B's int4 Metal .giw, or with GOINFER_KSD5_QUANT=int8int8
+// the 0.5B's .gguf at int8int8 (the native int8 lane, KS-D5c; the 1.5B at int8 does not fit beside the owner's apps), loaded
+// directly so nothing is written beside it.
 func ksd5Checkpoint() (string, decoder.Options) {
 	if os.Getenv("GOINFER_KSD5_QUANT") == "int8int8" {
-		return os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
+		return os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 			decoder.Options{Backend: "metal", Quant: "int8int8", DirectLoad: true, ResidentContext: 4096}
 	}
 	return os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw"), decoder.Options{Backend: "metal", ResidentContext: 4096}
 }
 
 // TestKSD5_prefillFusedIdentity is D5-G1's and D5c-G1's model half: llama-tiny at int4 and at int8int8 (the native int8 lane)
-// and, with GOINFER_HEAVY_TESTS=1, Qwen2.5-Coder-1.5B at 3,900 rows (ksd5Checkpoint), a batched prefill's last logits with the
+// and, with GOINFER_HEAVY_TESTS=1, a real model at 3,900 rows (ksd5Checkpoint), a batched prefill's last logits with the
 // gate|up GEMM and SwiGLU fused against the two-step form, byte-equal, on one resident; the pass must have taken the fused form
 // (no guF counted), and the int8int8 loads the native int8 lane.
 func TestKSD5_prefillFusedIdentity(t *testing.T) {
@@ -233,7 +234,7 @@ func TestKSD5_prefillFusedIdentity(t *testing.T) {
 	}
 }
 
-// TestKSD5_prefillSpeed is D5-G3 (and D5c-G3 with GOINFER_KSD5_QUANT=int8int8): Qwen2.5-Coder-1.5B (ksd5Checkpoint), a 3,900-token PrefillLast, the fused gate|up GEMM against
+// TestKSD5_prefillSpeed is D5-G3 (and D5c-G3 with GOINFER_KSD5_QUANT=int8int8): a real model (ksd5Checkpoint), a 3,900-token PrefillLast, the fused gate|up GEMM against
 // the two-step form on one resident (the choice is read per pass), A B B A over 10 pairs after 2 warm runs each. A timed run:
 // hold the timing lock (GOINFER_KSD5_TIMING=1).
 func TestKSD5_prefillSpeed(t *testing.T) {
