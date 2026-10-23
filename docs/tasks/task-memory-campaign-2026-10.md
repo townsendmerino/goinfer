@@ -42,7 +42,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
 | MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
-| MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
+| MEM11-int8 | building (MLA) | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -624,6 +624,30 @@ drafter's. Each family lands only on its own G1 and G2.
 Planted defect, run once on the committed tree and reverted: the exactness check skipped, so an f32 island that is not
 bf16-exact is rounded (G1's "off" fixture red under G3's goldens). Stopping rule: one pass each. Cost: seconds, plus G0's two
 loads of the 2.6B (about a minute each; not timed, so the timing lock is held shared).
+
+**MEM11-int8 gates, MLA first, registered 2026-10-22 before the code (I8M-G), on D3 and memory D9 (a).** MLA saves the most:
+DeepSeek-V2-Lite holds 1.49 GB of f32 MLA projections on a quantized load. The drafters' bf16 islands (1.05 GB) and LFM2's (0.74
+GB) come after, each with its own registration.
+
+**The build,** B27's form for Mamba applied to MLA:
+- **What goes int8:** on an integer-quantized load (int8, int8int8, int4, q4k), five of MLA's six projections become per-row
+  int8, weight-only: q (or the q-LoRA pair), kv-A and o. They are `linalg.QuantizeInt8` of the f32, the codes and scales every GPU
+  backend makes from them today, so the backends take those codes directly.
+- **What stays f32:** kv-B, which the backends slice into W_UK and W_UV as f32 and the CPU's absorbed path reads by row. An f32,
+  bf16 or f16 load keeps all six f32.
+- **The `.giw`** carries the int8 as weight records beside f32 arrays, read by encoding byte (B27's `mambaProj`), so an older
+  bundle still loads.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| I8M-G1 holding | 0 | `deepseek-tiny` at int4 and int8int8, and at f32 | the five projections int8 on the quantized loads, kv-B f32, all six f32 at f32; `ResidentWeightBytes` falls by exactly the five's f32 bytes less their int8 bytes; the f32 load's logits byte-equal to main's (the tiny f32 golden untouched) |
+| I8M-G2 the upload | 0 | the int8 codes and row scales held, and a bundle round trip's, against `linalg.QuantizeInt8` of main's f32 projections; Metal resident at int4 on `deepseek-tiny`, logits over 32 positions against main's | codes and scales equal; the Metal logits byte-equal to main's (the device holds the same int8) |
+| I8M-G3 CPU fidelity, tiny | 0 | `deepseek-tiny` at int4, the int8-MLA CPU against the f32-MLA CPU, 32 steps of greedy lockstep (B27's instrument) | min logit cosine ≥ 0.999 from position 2 and argmax agreement ≥ 30/32 |
+| I8M-G4 CPU fidelity, real slice | 1, Mac | the first two layers of DeepSeek-V2-Lite-Chat's Q4_K_M GGUF (`~/models/deepseek-v2-lite-gguf`, the slice OP2a's tier 1 uses) at int4, the same lockstep | min logit cosine ≥ 0.99 and argmax ≥ 28/32 |
+| I8M-G5 the family gate | nobara, realckpt | `TestDeepseekV2LiteReal` at int8int8 against the HF bf16 golden (its bars unchanged: argmax, greedy continuation, cosine ≥ 0.99) | passes, after the merge; an open row until it runs |
+
+Planted defect, run once on the committed tree and reverted: kv-B quantized too (G2's Metal logits red: W_UK/W_UV sliced from
+int8). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds; G4 about a minute (two loads of the slice).
 
 ### MEM12 · The CPU heap: GC headroom and per-request churn (M)
 
