@@ -118,3 +118,10 @@ held 6,970 MiB of the card outside the lock; nothing was timed, and the run wait
 **Verdict: SHIP** at both KV types (f32 decides; f16 above 1.00). G1 held again inside both G2 runs (1,080 shapes, and the
 3,900-token prefill byte-equal). The whole-prefill gain matches the survey's 1.27–1.36× estimate at its low end, and attention's
 2.4–2.8× sits inside the 2.5–4× it estimated, a little under at f32.
+
+**CUDA device suite** (`scripts/cuda_device_suite.py`, the whole `cuda` module), 13:50–14:01 PDT at 834c37ec5, under the timing
+lock: **GREEN, 769 passed, 0 failed, 0 device skips, 236 other skips**. Among them: `TestKernelLocalMemoryCensus`,
+`TestAttnKernelDigests` (the attention output digests are unchanged), and `TestKV16_exactInputIdentity_prefillReaders` /
+`_decodeReaders` and `TestKV16_everyAttentionPathStaysCloseToF32`. Log: `~/goinfer-logs/ks-b2-2026-10/device-suite/`.
+`TestAttnFusedTile_32x64BitIdentical` reads PASS there but **did not run**: both of its arms skip without
+`GOINFER_HEAVY_TESTS=1`, and the parent passes over two skips. It runs on its own with the flag (below).
