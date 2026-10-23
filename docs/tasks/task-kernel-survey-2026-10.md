@@ -50,7 +50,7 @@
 | KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
-| KS-D5 | open (measured 2026-10-22) | next: SwiGLU fused into the gate\|up GEMM, behind a tiny-fixture byte compare. Measured: one 3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%) | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
@@ -689,6 +689,36 @@ about a minute.
   - Speed neutral to +1%.
 - **Size:** M.
 - **Risk:** fast-math may compile the inlined activation differently; a byte compare decides.
+
+**KS-D5 gates, registered 2026-10-23 (05:55) before the code (D5-G), on the owner's plan of 5:16 am.** The first measurement: one
+3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%). The build: `gemm_w4f16_swiglu`, the main 64 × 64
+int4 prefill GEMM with its feature tile split into 32 gate rows and the matching 32 up rows. It stages the same weights with the
+same dequant and MMA chain, rounds the tile to half in threadgroup memory as `guF` held it, and writes
+`glu_act_f16(g) × u` for its 32 pairs. So the output is `swiglu_f16`'s, bit for bit, and `guF` is not written. A dense layer whose
+pass takes the 64 × 64 tile uses it; the small-M tiles, the int8 and q4k lanes and the MoE expert GEMMs keep the two-step path,
+and `guF` is allocated only for a pass that takes one of them. `swigluFusedOffForTest` keeps the two-step path for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5-G1 identity | 0 | the fused GEMM against GEMM + `swiglu_f16` at random int4 weights, M = 64, 100 and 200, I = 96 and 8,960 (both activations); the Metal prefill of llama-tiny at int4 and of the 1.5B at 3,900 rows, last logits | byte-equal everywhere |
+| D5-G2 scratch | 0 | `TestKSD5_guFShare`'s counter, one 3,900-row pass on the 1.5B | at most 123 MB (261.9 counted on main; `guF`'s 139.9 gone) |
+| D5-G3 speed | timed, Mac, timing lock | the 1.5B (Metal `.giw`), a 3,900-token `PrefillLast`, fused against two-step, two residents in one process, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median fused/two-step ratio is ≤ 1.01 (the survey's "speed neutral to +1%"; the gain is the scratch); otherwise PARK and decide |
+
+Planted defect: the fused epilogue computes the activation on the f32 accumulators, before the half rounding `guF` imposed.
+D5-G1 goes red. Stopping rule: one pass each. Cost: seconds; D5-G3 about 2 minutes.
+
+**KS-D5b gates, registered 2026-10-23 (9:05 am) before the build, on the owner's "try it" (D5b-G).** D5-G3 parked the fused
+kernel at 10.4% slower. The suspected cause: its added 8 KB threadgroup tile, which takes the kernel from about 9.6 KB to 17.6 KB of
+threadgroup memory. The build: `gemm_w4f16_swiglu` places the half tile in the staging arrays' memory (one array holding `sa`, then
+`sb`, 8.7 KB; the tile needs 8 KB), after a threadgroup barrier that ends the K loop's reads of them. Nothing else changes.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D5b-G1 identity | 0 | D5-G1's instruments: the 12 kernel cells, llama-tiny, the 1.5B at 3,900 rows | byte-equal everywhere |
+| D5b-G2 scratch | 0 | D5-G2's counter | at most 123 MB |
+| D5b-G3 speed | timed, Mac, timing lock | D5-G3's instrument, the new build | SHIP iff the median fused/two-step ratio is ≤ 1.01; otherwise KS-D5 closes as parked, with both readings |
+
+Stopping rule: one pass each, no further build on a miss. Cost: seconds; D5b-G3 about 2 minutes.
 
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow`.
