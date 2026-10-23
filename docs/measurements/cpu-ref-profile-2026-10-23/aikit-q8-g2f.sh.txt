@@ -1,0 +1,16 @@
+#!/bin/bash
+# G2: column (A) vs blocked (B), A B B A per cell, one process per cell reading;
+# each reading waits for the 1-minute load average to fall below 8.0 (half of
+# nobara's 16 threads, the heavy-load line) and records it at its start.
+B=/home/francis/.claude/jobs/18708332/tmp/linalg.g2f.test
+waitidle() { while awk '{exit !($1 >= 8.0)}' /proc/loadavg; do sleep 3; done; }
+for shape in K4096_N14336 K14336_N4096 K4096_N4096; do
+  for M in 1; do
+    for form in column span span column; do
+      waitidle
+      if [ $M = 1 ]; then bt="-test.benchtime 1s -test.count 3"; else bt="-test.benchtime 3x"; fi
+      start="$(date +%T) load=$(cut -d' ' -f1 /proc/loadavg) memavail_gb=$(awk '/MemAvailable/{printf "%.1f",$2/1048576}' /proc/meminfo)"
+      "$B" -test.run '^$' -test.bench "BenchmarkQ8SpanBlock/$form/M${M}_${shape}\$" $bt | grep '^Benchmark' | sed "s/\$/  [$start]/"
+    done
+  done
+done
