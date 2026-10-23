@@ -21,6 +21,18 @@ manifest rows are pending until nobara re-runs their real-model gates at int8 (l
 
 **Plant** (kv-B quantized too): red. kv-B differs on every layer, and Metal's logits hash moves (`0x621d19fb…`).
 
+**The fit estimate, after CI's first run.** CI went red on `TestFitEstimate_f32PinnedMixersAgreeWithResident`'s Bailing case
+(estimate over accounted 1.37 at int4, band 0.85–1.25). Two causes, both fixed here, no band moved:
+- the estimators still priced MLA's q-LoRA pair and kv-A at f32; they now price them at int8 on an integer quant
+  (`mlaInt8TensorName`), and kv-B stays f32;
+- `ResidentWeightBytes` never counted a Kimi Delta Attention layer: Bailing's three KDA layers (six quantized projections, three
+  conv kernels, the f32 gates) and the MLA output gate were missing. The ratio on main was 1.16 only because that missing part
+  and the f32 MLA projections offset each other. Bailing now reads 0.96 at int4 and 0.92 at int8int8, deepseek-tiny 0.99 and 0.94.
+
+The f32 logits hash in `TestMEM11_mlaInt8Holding` is arm64's (the amd64 jobs failed on it). The CPU reference is bit-identical
+within an architecture only, so on amd64 the f32 path is held by the tiny forward golden's tolerance. The test's other checks pass
+there, and under Rosetta on the Mac.
+
 **Goldens moved, by this change only.** `TestInt4_forwardParity`'s `deepseek-tiny` and `kimi-tiny` entries are re-pinned (both
 MLA). Their argmax is unchanged (120, 73), and their logit sums move 4.247686 → 4.241313 and 2.085561 → 1.977227. Every other
 family's entry is unchanged.

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 )
 
 // mlaMainF32Hash is main's deepseek-tiny f32 CPU logits over 32 positions, hashed, before MEM11-int8 (the f32 load must not move).
+// The CPU reference is bit-identical within an architecture, not across (arm64 fuses multiply-adds), so the hash is arm64's; another
+// architecture's f32 path is held to the tiny forward golden's tolerance instead.
 const mlaMainF32Hash uint64 = 0xbd704d523f8878ff
 
 // mlaLoad loads path at quant, with MLA's f32 projections kept when keepF32 (the f32 arm, and the plant's control).
@@ -62,7 +65,7 @@ func TestMEM11_mlaInt8Holding(t *testing.T) {
 			h.Write([]byte{byte(b), byte(b >> 8), byte(b >> 16), byte(b >> 24)})
 		}
 	}
-	if got := h.Sum64(); got != mlaMainF32Hash {
+	if got := h.Sum64(); runtime.GOARCH == "arm64" && got != mlaMainF32Hash {
 		t.Errorf("the f32 load's logits hash %#x, main's %#x", got, mlaMainF32Hash)
 	}
 	for _, quant := range []string{"int4", "int8int8"} {

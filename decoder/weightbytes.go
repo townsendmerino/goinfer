@@ -212,7 +212,17 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		if mla := l.mla; mla != nil {
 			dense += f32SliceBytes(mla.qAProj) + f32SliceBytes(mla.qBProj) + f32SliceBytes(mla.qProj) +
 				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj) +
-				wmBytes(&mla.qAQ) + wmBytes(&mla.qBQ) + wmBytes(&mla.qQ) + wmBytes(&mla.kvAQ) + wmBytes(&mla.oQ)
+				wmBytes(&mla.qAQ) + wmBytes(&mla.qBQ) + wmBytes(&mla.qQ) + wmBytes(&mla.kvAQ) + wmBytes(&mla.oQ) +
+				f32SliceBytes(mla.gProj)
+		}
+		// Kimi Delta Attention (Bailing Hybrid's linear layers): six quantized projections, the three depthwise conv kernels and
+		// the small f32 gates.
+		if k := l.kda; k != nil {
+			for _, w := range []*linalg.WeightMat{&k.qProj, &k.kProj, &k.vProj, &k.fProj, &k.gProj, &k.oProj} {
+				count(w)
+			}
+			dense += f32SliceBytes(k.qConvW) + f32SliceBytes(k.kConvW) + f32SliceBytes(k.vConvW) + f32SliceBytes(k.bProj) +
+				f32SliceBytes(k.dtBias) + f32SliceBytes(k.aLog) + f32SliceBytes(k.oNormW)
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
 		if mb := l.mamba; mb != nil {
