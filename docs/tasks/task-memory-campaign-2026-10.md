@@ -42,7 +42,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
 | MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
-| MEM11-int8 | open | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
+| MEM11-int8 | open (MLA done 2026-10-22; the next families) | after the bf16 kinds: int8 per family behind its parity bar (D3, owner 2026-10-21), MLA included (D9, owner, 2026-10-22) | — |
+| MEM11-int8-MLA-T3 | open | nobara: `TestDeepseekV2LiteReal` and the Moonlight gate (`go test -tags realckpt ./decoder/ -run TestDeepseek.*Real`) at int8int8, then refresh `deepseek_v2`, `deepseek_v3` and `kimi_k2` in `testdata/parity_manifest.json` from pending to validated with the new readings (D10, owner, 2026-10-22) | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -625,6 +626,30 @@ Planted defect, run once on the committed tree and reverted: the exactness check
 bf16-exact is rounded (G1's "off" fixture red under G3's goldens). Stopping rule: one pass each. Cost: seconds, plus G0's two
 loads of the 2.6B (about a minute each; not timed, so the timing lock is held shared).
 
+**MEM11-int8 gates, MLA first, registered 2026-10-22 before the code (I8M-G), on D3 and memory D9 (a).** MLA saves the most:
+DeepSeek-V2-Lite holds 1.49 GB of f32 MLA projections on a quantized load. The drafters' bf16 islands (1.05 GB) and LFM2's (0.74
+GB) come after, each with its own registration.
+
+**The build,** B27's form for Mamba applied to MLA:
+- **What goes int8:** on an integer-quantized load (int8, int8int8, int4, q4k), five of MLA's six projections become per-row
+  int8, weight-only: q (or the q-LoRA pair), kv-A and o. They are `linalg.QuantizeInt8` of the f32, the codes and scales every GPU
+  backend makes from them today, so the backends take those codes directly.
+- **What stays f32:** kv-B, which the backends slice into W_UK and W_UV as f32 and the CPU's absorbed path reads by row. An f32,
+  bf16 or f16 load keeps all six f32.
+- **The `.giw`** carries the int8 as weight records beside f32 arrays, read by encoding byte (B27's `mambaProj`), so an older
+  bundle still loads.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| I8M-G1 holding | 0 | `deepseek-tiny` at int4 and int8int8, and at f32 | the five projections int8 on the quantized loads, kv-B f32, all six f32 at f32; `ResidentWeightBytes` falls by exactly the five's f32 bytes less their int8 bytes; the f32 load's logits byte-equal to main's (the tiny f32 golden untouched) |
+| I8M-G2 the upload | 0 | the int8 codes and row scales held, and a bundle round trip's, against `linalg.QuantizeInt8` of main's f32 projections; Metal resident at int4 on `deepseek-tiny`, logits over 32 positions against main's | codes and scales equal; the Metal logits byte-equal to main's (the device holds the same int8) |
+| I8M-G3 CPU fidelity, tiny | 0 | `deepseek-tiny` at int4, the int8-MLA CPU against the f32-MLA CPU, 32 steps of greedy lockstep (B27's instrument) | min logit cosine ≥ 0.999 from position 2 and argmax agreement ≥ 30/32 |
+| I8M-G4 CPU fidelity, real slice | 1, Mac | the first two layers of DeepSeek-V2-Lite-Chat's Q4_K_M GGUF (`~/models/deepseek-v2-lite-gguf`, the slice OP2a's tier 1 uses) at int4, the same lockstep | min logit cosine ≥ 0.99 and argmax ≥ 28/32 |
+| I8M-G5 the family gate | nobara, realckpt | `TestDeepseekV2LiteReal` at int8int8 against the HF bf16 golden (its bars unchanged: argmax, greedy continuation, cosine ≥ 0.99) | passes, after the merge; an open row until it runs |
+
+Planted defect, run once on the committed tree and reverted: kv-B quantized too (G2's Metal logits red: W_UK/W_UV sliced from
+int8). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds; G4 about a minute (two loads of the slice).
+
 ### MEM12 · The CPU heap: GC headroom and per-request churn (M)
 
 **Problem.** The CPU KV lives on the Go heap (f32 by default), and no `GOGC` or `GOMEMLIMIT` is set, so the heap may
@@ -898,6 +923,21 @@ choice in aikit and a storage choice in ken (**D4**).
 
 ## 7. Owner decisions
 
+- **D10** (MEM11-int8 MLA, decided (b), owner, 2026-10-22): **how MLA's int8 lands against the parity manifest.** The three
+  rows (`deepseek_v2`, `deepseek_v3`, `kimi_k2`) are set `pending` (the manifest's own mechanism: a pending row's hash is not
+  enforced), MLA int8 merges, and nobara re-runs the real-model gates at int8 and refreshes the rows (ledger row MEM11-int8-MLA-T3).
+  The capability matrix and the site show DeepSeek and Kimi as pending until then. The question as asked:
+  - **What is built:** int8 MLA projections on quantized loads, I8M-G1 to G4 PASS on the Mac (tiny 0.999887 / 31 of 32; V2-Lite
+    slice 0.997303 / 31 of 32; about 0.94 GB saved on V2-Lite).
+  - **The conflict:** `deepseek_v2`, `deepseek_v3` and `kimi_k2` are validated in `testdata/parity_manifest.json` against HF
+    bf16 at int8 residency, the load this changes. CLAUDE.md says a numeric change re-runs T3 before `-update`.
+  - **Options:**
+    - (a) hold the PR until nobara runs `TestDeepseekV2LiteReal` and the Moonlight gate at int8int8 (I8M-G5, moved before the
+      merge), then refresh the rows with the new readings;
+    - (b) set the three rows to `pending`, merge now, and re-validate later; the capability matrix and the site show DeepSeek
+      unvalidated until then;
+    - (c) gate int8 MLA off by default until (a) runs.
+  - **Recommended: (a).** The family bar was always nobara's, and the slice's 0.997 suggests it passes.
 - **D9** (MEM11-bf16, decided (a), owner, 2026-10-22): **MLA's islands.** MLA is left to MEM11-int8, its quantized bytes
   behind the family's parity bar; no bf16 island for MLA. The question as asked: DeepSeek-V2-Lite's MLA projections are Q4_K in the bench GGUF,
   so a bf16 island saves nothing there; its 1.49 GB is widened Q4_K. Options: (a) leave MLA to MEM11-int8, keeping the

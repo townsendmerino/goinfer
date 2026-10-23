@@ -67,30 +67,38 @@ func int8Proj(d *Device, f []float32, rows, cols int, name string, l int) (Buffe
 // buildMLALayer uploads layer l's MLA weights.
 func buildMLALayer(d *Device, m *decoder.Model, l, H int, p *mlaParams) (*mlaLayer, error) {
 	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(l)
+	qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(l)
+	// proj uploads a projection's int8 form when the load holds one (the codes int8Proj would make from the f32), else quantizes the f32.
+	proj := func(q *linalg.WeightMat, f []float32, rows, cols int, name string) (Buffer, Buffer, error) {
+		if q.Rows() > 0 {
+			return int8Buf(d, q)
+		}
+		return int8Proj(d, f, rows, cols, name, l)
+	}
 	L := &mlaLayer{}
 	var err error
 	if p.qLoRA > 0 {
-		if L.qAW, L.qAS, err = int8Proj(d, qA, p.qLoRA, H, "q_a_proj", l); err != nil {
+		if L.qAW, L.qAS, err = proj(qAQ, qA, p.qLoRA, H, "q_a_proj"); err != nil {
 			return nil, err
 		}
-		if L.qBW, L.qBS, err = int8Proj(d, qB, p.nH*p.qkHead, p.qLoRA, "q_b_proj", l); err != nil {
+		if L.qBW, L.qBS, err = proj(qBQ, qB, p.nH*p.qkHead, p.qLoRA, "q_b_proj"); err != nil {
 			return nil, err
 		}
 		if len(qANorm) != p.qLoRA {
 			return nil, fmt.Errorf("metal: layer %d: MLA q_a_layernorm has %d values, want %d", l, len(qANorm), p.qLoRA)
 		}
 		L.qANorm = NewBufferFloats(d, qANorm)
-	} else if L.qW, L.qS, err = int8Proj(d, qProj, p.nH*p.qkHead, H, "q_proj", l); err != nil {
+	} else if L.qW, L.qS, err = proj(qQ, qProj, p.nH*p.qkHead, H, "q_proj"); err != nil {
 		return nil, err
 	}
-	if L.kvAW, L.kvAS, err = int8Proj(d, kvA, p.latDim, H, "kv_a_proj", l); err != nil {
+	if L.kvAW, L.kvAS, err = proj(kvAQ, kvA, p.latDim, H, "kv_a_proj"); err != nil {
 		return nil, err
 	}
 	if len(kvANorm) != p.rank {
 		return nil, fmt.Errorf("metal: layer %d: MLA kv_a_layernorm has %d values, want %d", l, len(kvANorm), p.rank)
 	}
 	L.kvANorm = NewBufferFloats(d, kvANorm)
-	if L.oW, L.oS, err = int8Proj(d, oProj, H, p.nH*p.vHead, "o_proj", l); err != nil {
+	if L.oW, L.oS, err = proj(oQ, oProj, H, p.nH*p.vHead, "o_proj"); err != nil {
 		return nil, err
 	}
 	// kv_b is [nH*(qkNope+vHead), rank], per head its k_nope rows then its v rows: W_UK transposed to [nH, rank, qkNope] for
