@@ -53,4 +53,44 @@ copied into `cuda/` as `ks_a2_scratch_test.go` for the run and removed afterward
 
 ## Readings
 
-(not yet run)
+Run 2026-10-23 11:45–11:47 PDT at goinfer 17a22510c with aikit gpu 9b938a5 (via `go.work`), under the timing lock. Logs:
+`~/goinfer-logs/ks-a2-2026-10/g1g2-run1.log` (G1, G2) and `nobar-run2.log` (the no-bar counts).
+
+| id | reading | verdict |
+|---|---|---|
+| G1 | 0.5B: 64 positions × 151,936 logits, **0 differ**; gemma3-1b: 64 × 262,144, **0 differ** (both runs). `TestLaunchDirect_bitIdentical`: 12 positions byte-equal on `llama-tiny` and `qwen3moe-tiny`; allocations a token 139 → 104 and 227 → 164 | **PASS** |
+| G2 | 0.5B: direct speedup **median 1.4918×** (1.4620–1.6935), **10 of 10** quads above 1; 2,896.5 → 1,919.3 µs a token (345.2 → 521.0 tok/s). gemma3-1b (no bar): median 1.4647× (1.4305–1.6021), 10 of 10; 5,083.0 → 3,440.4 µs (196.7 → 290.7 tok/s). Argmax ids identical across arms | **SHIP** |
+| memory | no device buffer added. Free VRAM after load: 5,101 MiB (0.5B) and 5,839 MiB (gemma3-1b) of 7,784, one resident shared by both arms. Host allocations a token are lower (G1) | no increase |
+
+**Void quads.** Three were voided and re-run in order: 0.5B quad 0 twice (1-minute load 10.98, then 9.29) and gemma3-1b quad 0 once
+(8.30). The load was btrfs writeback from another session. Every counted quad started at 6.17–7.86, with 56–57 GB available.
+
+**The median is above the bound I registered for it, and the bound was wrong.** The pre-registration read the survey's graph
+replay (1.454×) as the most a cheaper launch could buy. But graph replay does not remove launches: the graphs capture only
+segments A, B and C, and rope_kv and attention still run live in the gap, through the executor. That comment is at
+`cuda/resident.go:cudaResident.KVSlots`. So the graph arm still made about five executor hand-offs a layer, and the direct arm
+makes none. The 0.5B's direct token, 1,919 µs, is 36 µs under the survey's graph token (1,955 µs, another session). The
+mechanism explains that, not a timing fault.
+
+**No-bar counts** (`nobar-run2.log`; its two quads a model are not part of G2):
+
+| | 0.5B executor | 0.5B direct | gemma3-1b executor | gemma3-1b direct |
+|---|---:|---:|---:|---:|
+| launches a token | 195 | 195 | 341 | 341 |
+| voluntary context switches a token | 1,197.7 | 328.8 | 1,893.7 | 339.0 |
+| host cost a 1×1 launch (20,000 launches) | 10.42 µs | 2.26 µs | 11.19 µs | 2.28 µs |
+
+**The first run's no-bar step failed in the instrument, not the build.** It launched `scale_vec`, which only Gemma 4 compiles,
+so it hit a nil pipeline (the sticky error named `gemvQ4K`, the first zero `Pipeline` field `pipeName` found). The instrument
+now launches `residual` over 0 elements. The G1 and G2 readings come before that step, and every timed token resets and
+returns the launch error. They stand, and were not re-measured.
+
+**Driver behavior found on the way.** On a queue with its own stream, the driver accepts a launch from a thread with no context
+current, and runs it in the stream's context. Only the null stream refuses one (`CUDA_ERROR_INVALID_CONTEXT`). goinfer binds its
+executor thread anyway (`Device.BindCurrentThread`), and aikit's test asserts the null-stream refusal.
+
+**CUDA device suite** (`scripts/cuda_device_suite.py`, the whole `cuda` module: the change is on the launch every resident test
+goes through), 12:03–12:13 PDT at 17a22510c with aikit gpu 2049dc7, under the timing lock: **GREEN, 772 passed, 0 failed, 0 device
+skips, 236 other skips**. `TestLaunchDirect_bitIdentical`, `TestGraphsSafeGate`, `TestCUDAKVSlots_graphs` and the four
+`TestCUDA_graph*` pass. Log: `~/goinfer-logs/ks-a2-2026-10/device-suite/`. The Gemma 4 graph bit-exact gates skip unless graphs are
+forced (`GOINFER_CUDA_GRAPHS_UNSAFE=1`), so they are run forced on their own (below).

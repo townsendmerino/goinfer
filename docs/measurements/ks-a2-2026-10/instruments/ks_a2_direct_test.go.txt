@@ -133,7 +133,10 @@ func TestKSA2_directAB(t *testing.T) {
 			}
 			run(true)
 			run(false)
-			const quads = 10
+			quads := 10
+			if os.Getenv("GOINFER_KS_A2_NOBAR_ONLY") != "" { // the timed quads already read: only the no-bar counts
+				quads = 2
+			}
 			var ratios []float64
 			var sumA, sumB time.Duration
 			same := true
@@ -195,12 +198,12 @@ func TestKSA2_directAB(t *testing.T) {
 				var us float64
 				_ = r.do(func() error {
 					for range 200 {
-						_ = r.launch(r.fScaleVec, cfg, Arg(r.x), gpu.ArgValue(float32(1.0)), gpu.ArgValue(int32(r.hidden)))
+						_ = r.launch(r.fRes, cfg, Arg(r.x), Arg(r.x), gpu.ArgValue(int32(0))) // residual over 0 elements: a no-op every model binds
 					}
 					_ = r.stream.Sync()
 					t0 := time.Now()
 					for range n {
-						_ = r.launch(r.fScaleVec, cfg, Arg(r.x), gpu.ArgValue(float32(1.0)), gpu.ArgValue(int32(r.hidden)))
+						_ = r.launch(r.fRes, cfg, Arg(r.x), Arg(r.x), gpu.ArgValue(int32(0))) // residual over 0 elements: a no-op every model binds
 					}
 					_ = r.stream.Sync()
 					us = time.Since(t0).Seconds() * 1e6 / n
