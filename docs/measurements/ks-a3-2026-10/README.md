@@ -26,4 +26,31 @@ and adversarial rows, plus the speed bar) is registered here after this read and
 
 ## Readings
 
-(not yet run: the GPU is reserved for the owner's work until the coordinator releases it)
+Phase read, 2026-10-23 at about 14:35 PDT, origin/main + this record, under the timing lock (it waited for another session's
+26B test). Logs: `~/goinfer-logs/ks-a3-2026-10/phases.log`. 20 launches a model after one warm-up. The fast path ran in every
+launch, and the stamped kernel's ids equal the shipped kernel's on the same row (the check holds; the read stands).
+
+| phase | 0.5B, k 256 | gemma3-1b, k 1,024 |
+|---|---:|---:|
+| load 2,048 samples | 1.9 µs | 1.9 µs |
+| bitonic-sort the samples | 32.1 µs | 32.1 µs |
+| pick the threshold | 0.0 µs | 0.0 µs |
+| compact (candidates found) | 15.4 µs (1,076) | 26.4 µs (1,802) |
+| bitonic-sort the candidates and write k | 58.0 µs | 57.6 µs |
+| exact slow path | not taken | not taken |
+| Z | 28.9 µs | 46.3 µs |
+| **total** | **136.1 µs** | **164.1 µs** |
+
+The totals sit above the survey's ncu medians (101.7 and 211.5 µs, with two levels at each shape and Z included). These
+are wall-clock stamps inside one launch on a live resident; they rank the phases and are not a substitute for the ncu time.
+
+**What it says for the build.** The two single-block bitonic sorts are 90 µs of the 0.5B's 136: 66 barrier stages each, over
+2,048 elements. The survey's proposal, multi-block compaction and Z, reaches the other 44 µs. So the build cuts the sorts first,
+keeping their output exact:
+- the threshold needs only the R-th largest of 2,048 samples (R ≤ 64), an exact selection, not a full sort; any exact
+  selection returns the same value;
+- the candidate sort needs only the first k of the order (logit desc, id asc), which is a total order. Selecting the k
+  first and sorting k gives the same k in the same order.
+
+Then compaction and Z spread over many blocks, Z keeping the same 1,024 serial partial sums and the same double tree.
+The build's gate is registered here before it is measured.
