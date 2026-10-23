@@ -572,6 +572,9 @@ type resident struct {
 	// pfErr latches a compile or pipeline-creation failure from ensurePrefill, so r.pf staying nil does not make
 	// every later PrefillLast retry the full MSL compile and panic again.
 	pfErr error
+	// ksd7Old is ksd7OldDequantForTest at build time: the prefill library compiles lazily (ensurePrefill), after a test's switch
+	// is back.
+	ksd7Old bool
 
 	// Gated-DeltaNet mixer (deltanet_kernels.go — own module, nothing else here is recurrent).
 	// dnet nil ⇒ dense model; every field below is loaded/allocated only when it is non-nil.
@@ -1148,9 +1151,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		attnSoftcap = 0
 	}
 	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels+kvF32Kernels+kvRowsKernels, attnSoftcap) // + MC3 S3's multi-row forms (batch_rows.go), attention_f32 (kv_f32.go) and the step's int8 and f32 KV forms (kv_rows.go), derived from allKernels
-	if ksd7OldDequantForTest {
-		libSrc = "#define KSD7_OLD_DEQUANT 1\n" + libSrc
-	}
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
@@ -1394,6 +1394,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.q4kLane && !r.q4kLaneShapeOK() {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
+	r.ksd7Old = ksd7OldDequantForTest
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
 		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
@@ -3745,7 +3746,3 @@ var (
 	g4KVSrcOffForTest          bool // (3) a shared layer reads the previous owning layer of its type, not its source
 	g4OneFFNWidthForTest       bool // (4) every dense layer at the model's one intermediate width
 )
-
-// ksd7OldDequantForTest builds the resident with the per-weight nibble dequant in the prefill GEMM's staging (KSD7_OLD_DEQUANT):
-// the old arm of KS-D7's A/B.
-var ksd7OldDequantForTest bool

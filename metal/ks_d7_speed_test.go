@@ -135,3 +135,40 @@ func TestKSD7_prefillSpeed(t *testing.T) {
 	median := (ratios[4] + ratios[5]) / 2
 	fmt.Fprintf(os.Stderr, "[D7-G2] median new/old %.4f, %d of 10 pairs below 1\n", median, below)
 }
+
+// TestKSD7_memoryUnchanged is D7-G3, the owner's condition for shipping KS-D7 (docs/tasks/task-kernel-survey-2026-10.md): on
+// Qwen2.5-Coder-1.5B (the Metal .giw), one 3,900-token prefill per build, the half2 dequant against the per-weight one: the prefill
+// scratch counter and Metal's allocated size after the prefill (net of the reading after the build) must be equal or lower, and
+// the logits byte-equal. Not timed; a real checkpoint (GOINFER_HEAVY_TESTS=1).
+func TestKSD7_memoryUnchanged(t *testing.T) {
+	requireHeavyModel(t)
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no checkpoint at %s", path)
+	}
+	probe, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	defer probe.ReleaseObjects()
+	arm := func(old bool) (scratch, alloc int64, logits []float32) {
+		m, rf, pf := ksd7Load(t, path, decoder.Options{Backend: "metal", ResidentContext: 4096}, old)
+		embs := ksd7Prompt(m, 3900)
+		rf.Reset()
+		before, base := prefillScratchSeen.Load(), int64(probe.CurrentAllocatedSize())
+		lg, err := pf.PrefillLast(context.Background(), embs, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return prefillScratchSeen.Load() - before, int64(probe.CurrentAllocatedSize()) - base, append([]float32(nil), lg...)
+	}
+	os1, oa, ol := arm(true)
+	ns, na, nl := arm(false)
+	d := ksd7Differ(ol, nl)
+	const MB = 1e6
+	fmt.Fprintf(os.Stderr, "[D7-G3] prefill scratch counted: per-weight %.3f MB, half2 %.3f MB; Metal allocated after the prefill (net of the build): per-weight %.3f MB, half2 %.3f MB; logits: %d of %d differ\n",
+		float64(os1)/MB, float64(ns)/MB, float64(oa)/MB, float64(na)/MB, d, len(ol))
+	if ns > os1 || na > oa || d != 0 {
+		t.Errorf("the half2 build uses more memory or changes the logits: scratch %d vs %d B, allocated %d vs %d B, %d logits differ", ns, os1, na, oa, d)
+	}
+}

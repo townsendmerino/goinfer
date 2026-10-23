@@ -52,7 +52,7 @@
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
 | KS-D5 | open (measured 2026-10-22) | next: SwiGLU fused into the gate\|up GEMM, behind a tiny-fixture byte compare. Measured: one 3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D7 | measured (KILL) | closed 2026-10-23: the half2 dequant is bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal) but the prefill is 0.9983 of the old time, 5 of 10 pairs faster (kill under 2%; run 05:03 on the owner's word). Not merged | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
