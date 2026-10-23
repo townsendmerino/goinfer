@@ -26,7 +26,7 @@ and adversarial rows, plus the speed bar) is registered here after this read and
 
 ## Readings
 
-Phase read, 2026-10-23 at about 14:35 PDT, origin/main + this record, under the timing lock (it waited for another session's
+Phase read, 2026-10-23 at about 14:29 PDT, origin/main + this record, under the timing lock (it waited for another session's
 26B test). Logs: `~/goinfer-logs/ks-a3-2026-10/phases.log`. 20 launches a model after one warm-up. The fast path ran in every
 launch, and the stamped kernel's ids equal the shipped kernel's on the same row (the check holds; the read stands).
 
