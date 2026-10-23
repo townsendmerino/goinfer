@@ -59,6 +59,11 @@ func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
 			n += int64(len(p4)) + 2*int64(len(sc))
 		}
 	}
+	if u, _, ok := w.Half16(); ok && len(u) > 0 {
+		if _, aliased := m.MmapByteOffset(unsafe.Slice((*byte)(unsafe.Pointer(&u[0])), 2*len(u))); aliased {
+			n += 2 * int64(len(u))
+		}
+	}
 	return n
 }
 
@@ -230,7 +235,9 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		}
 		// LFM2's gated short-convolution mixer: its projections bf16 or f32 (islandMat), its depthwise kernel f32.
 		if sc := l.shortConv; sc != nil {
-			dense += wmBytes(&sc.inProj) + f32SliceBytes(sc.convW) + wmBytes(&sc.outProj)
+			count(&sc.inProj)
+			count(&sc.outProj)
+			dense += f32SliceBytes(sc.convW)
 		}
 		// Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown alias l.GateProj/UpProj/DownProj (the gemma4Layer comment in
 		// serialize.go) and are already counted above; only routerProj and the fused experts are new tensors. The fused experts
