@@ -168,3 +168,71 @@ The brief was about 15 minutes of profiling. This session held the timing lock f
 the K=2048 and three-worker readings, two microbenchmarks, and the QMOE and Q359 profiles. The survey's KS-A5 read and kv4b-grade's
 policy tests waited behind it. A coordinator's note asked it to stop timed runs. By then the last queued run had already finished, so
 nothing was cancelled, and none was started after.
+
+## 6. Follow-up: #1 shipped in aikit v1.73.0 (aikit-q8 session, 2026-10-23, on Francis's word at 9:58 am PDT)
+
+**What shipped.** aikit #10 / v1.73.0: on !arm64, `linalg/q8span_other.go:q8Span` blocks sixteen columns once the activation
+block is past M·K = 2 Mi floats (8 MB), and keeps the column form at or below that line. Every output is the same
+`dotF32(a_i, widen(b_j))·s_j`, so it is bit-identical by construction. aikit's tests hold it raw-bit against `q8SpanColumn`
+on AVX2, `aikit_noavx2`, riscv64 (generic) and arm64 (unchanged), and a planted reassociation goes red. The gates were
+registered in the aikit PR before any timing. Two of them failed and were answered by moving the line, both recorded there:
+- G2 pass 1: blocking at every M ≥ 2 was 3–5% slower at M=64.
+- G2b: a 4 MB line was 3.1% slower at M=128, K=14336.
+
+**Microbenchmark** (`BenchmarkQ8SpanBlock`, nobara 3700X, 16 workers, A B B A per cell, each cell its own process started at
+load < 8.0; `aikit-q8-g2-pass1.log`, `aikit-q8-g2b.log`). Column → blocked:
+
+| shape | M=512 | M=2048 |
+|---|---|---|
+| K4096→N14336 (gate, up) | column kept (blocked was 1.04×) | 3.20× (66 → 210 GFLOP/s) |
+| K14336→N4096 (down) | 3.10× | 5.57× (33 → 186) |
+| K4096→N4096 (q, o) | column kept (1.05×) | 3.30× (63 → 209) |
+
+M=1 and every decoder shape up to M=128 run the column code unchanged. The width (16, not the L2-sized 4 at K=14336) came
+from a sweep: 186 vs 90 GFLOP/s at K=14336 (`aikit-q8-width-sweep.log`). An earlier pass whose cells started at the
+benchmark's own load of 12–13 is void (`aikit-q8-g2-pass0-void.log`).
+
+**Item 3 (fused int8 dot) was built and dropped.** `dotFMAI8` reproduced `dotFMA` instruction for instruction and was raw-bit
+equal on every path. At M=1, though, it gained 1.00× and 1.003× on the two 58 MB shapes: they run at 26 GB/s, which is DRAM.
+Only the cache-resident 4096→4096 shape gained (1.42×), against a registered ≥1.15× on every shape. The decode profile's
+54% `dequantI8AVX2` is where the stall on first touching the weights lands, not removable work. The patch is
+`aikit-q8-fused-dot-dropped.patch.txt`, the reading `aikit-q8-g2f-fused.log`.
+
+**End to end, CR7B K=1024.** The instrument is §1's harness with SHA-256s of the seed logits and of the decode-step
+logits added (`aikit-q8-harness-hashing_test.go.txt`, `aikit-q8-cr7b.sh.txt`). The run: prompt set B, prompt 0, one
+worker, two decode steps, on goinfer `6129031b`. The two arms were aikit v1.72.0 (old) and aikit 9fcb361 (new, through a
+`replace`; v1.73.0's matmul is the same code). It ran under the timing lock in A B B A order, each arm at load < 8.0
+(`aikit-q8-cr7b-k1024-abba.log`):
+
+| arm | prefill wall | CPU-s | avg cores | seed logits sha256 |
+|---|---|---|---|---|
+| old | 184.2 s | 2539 | 13.8 | `808106be…356c` |
+| new | 92.2 s | 1158 | 12.6 | `808106be…356c` |
+| new | 91.9 s | 1157 | 12.6 | `808106be…356c` |
+| old | 183.4 s | 2533 | 13.8 | `808106be…356c` |
+
+- **Prefill: 2.00× (183.8 → 92.05 s).** The logits are bitwise equal in all four arms, at the seed and both decode steps.
+  §1's 208.2 s was a different session.
+- **Decode is unchanged** (0.52 s per step).
+- At K=1024 the projections run M=1024 rows (32–117 MB blocks become 16–58 MB), so this is the smaller of the two depths.
+  2.07× of the matmul time (≈ 86 of 92 s, at ≈166 GFLOP/s in-model) matches the microbenchmark's 2.11× at M=1024 in §4.
+
+**Estimates for the owed G4 reference runs.** These are estimates, not measurements.
+- **CR7B K=3900, per prompt at one worker: about 7 min.** Matmul: 3900 rows at the measured ≈166 GFLOP/s in-model is
+  ≈330 s. Attention: unchanged, ≈60 s over the two passes, scaled from §2's 2.9% at K=2048. Then ≈8 s of everything else,
+  33 s of decode and ≈10 s of load. That is about 3.5× under §2's ~25 min per prompt at one worker, and about 7× under last
+  night's 48 min per prompt of three-worker throughput.
+  - p7–9 at one worker: about 22 min.
+  - §4 #2 (one worker for CR7B) should be re-checked now that the matmul is compute-bound. Three workers may no longer lose.
+- **Q359 K=3900: no change from this release.** Q359 takes the per-token path (§2), every matmul is M=1, and M=1 runs the
+  column code unchanged. p6–9 stay at §1's ~26 min per prompt of three-worker throughput: two batches (three, then one), at most about 2 h 35 min.
+- **The bump re-keys every stored reference.** `decoder/prefill_ref_cache_testhook.go:prefillRefSourceSHA256` hashes
+  `go.mod`, which pins aikit, so a tree carrying v1.73.0 finds none of the stored CR7B or Q359 references and recomputes all
+  ten prompts.
+  - CR7B, all ten on the new aikit: about 70 min. The three owed on the old aikit: about 75 min at one worker (2 h 24 min
+    at three).
+  - Q359, all ten: about 5 h 10 min, for no speed-up. So Q359's owed prompts should run on a tree without the bump unless
+    the cache policy changes.
+  - Whether a bit-identical dependency bump may carry references forward (§4 #4, for example through
+    `go run ./cmd/gate identity`) is Francis's call. This section's four-arm hash match on CR7B is the kind of evidence that
+    call would rest on, for one prompt at one depth.
