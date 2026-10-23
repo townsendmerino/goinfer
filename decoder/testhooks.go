@@ -480,6 +480,12 @@ func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, i
 	return m.gemma4EModelImageRowsSpans(ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
+// Gemma4BidirImageRowsForTest exposes the bidirectional image-row builder; a gate builds the rows, then hands them to the
+// resident's PrefillSpansLast.
+func (m *Model) Gemma4BidirImageRowsForTest(ids []int, imageEmbeds []float32, spans []ImageSpan) ([][]float32, error) {
+	return m.gemma4BidirImageRowsSpans(ids, imageEmbeds, spans)
+}
+
 // SetCaptureLayersForTest arms the batched hidden-state capture (the seam forwardn.go's layer loop fills after layer l's residual
 // add and DeepStack add) on c for the next CPU prefill: CapturedForTest then holds one [rows*hidden] float32 copy per requested
 // layer, the residual after that layer, as HF's hidden_states[l+1] is. nil disarms.
