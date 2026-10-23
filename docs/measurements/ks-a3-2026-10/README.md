@@ -112,7 +112,7 @@ used) and the 1-minute load 2.67. Log: `~/goinfer-logs/ks-a3-2026-10/gate.log`.
   - 151,936 × k 256: old 119.3 / 115.8 µs, new 101.9 / 95.4 µs;
   - k 1,024: old 200.0 / 206.3 µs, new 133.2 / 131.6 µs.
 
-  The sampled token saves 52 µs at k 256, more than the 19 µs the isolated read moves. The isolated read includes a host sync
-  and readback on every call, which the token pays once either way, so it understates the kernel's share. Not chased: the
-  token is the gate's instrument.
+  The sampled token saves 52 µs at k 256, more than the 19 µs the isolated read moves. Both arms of the isolated read pay the
+  same sync and readback, so that does not explain the gap; it is unexplained. Not chased: the token is the gate's instrument,
+  and it decided.
 - **Memory:** +36.9 KB of device scratch a resident, as registered.
