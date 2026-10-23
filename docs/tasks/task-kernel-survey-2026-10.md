@@ -55,7 +55,7 @@
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
-| KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
+| KS-D9 | open (G2) | built on branch `ksd9-moe-batch-2026-10`: the generic pager's phase 2 batched expert by expert; D9-G1 bit-identical on 7 paged cells. Next: D9-G2 on a real MoE pulled from the archive | survey, "KS-D9 read" |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
@@ -819,6 +819,14 @@ gpt-oss); `moeExpertBatchOn` keeps the per-row phase 2 for the A/B.
 
 Planted defect: the combine starting from zero instead of the residual; D9-G1 goes red. Stopping rule: one pass each. Cost: G1
 seconds; G2 a few minutes plus the model's pull.
+
+**KS-D9 read 2026-10-23, by day.** D9-G1 **PASS** (14:36): `TestMoELayerMajor_matchesSequential`'s 7 paged cells (Mixtral and
+two Qwen3-MoE shapes at 2 and 3 slots, the k=3 shape at 3, the Qwen3.5 DeltaNet MoE hybrid at 2 and 3) bit-identical to sequential
+decode in logits, K/V and 3 decode steps, the batched phase 2 taken in every cell (42–82 slot groups); `TestMoELayerMajor_generateThroughDecoder`
+PASS. The plant (the combine from zero) first tripped the startup self-test, which declined the backend so the cells skipped; with
+the self-test skipped (`TestKSD9_plantSeenByTheGate`) every cell went red. Also: `touched.py` green; the MoE and paged families
+by name 55 pass, 17 skip, 0 fail. D9-G2 waits for a real generic MoE: none is in `~/models`, and nobara's archive was under another
+session's timing lock at 14:40, so no pull. Logs: `~/goinfer-logs/ksd9-*-2026-10-23.log`.
 
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
