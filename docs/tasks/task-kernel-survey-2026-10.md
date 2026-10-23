@@ -50,9 +50,9 @@
 | KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
-| KS-D5 | open | Mac: scratch-byte counter and a tiny-fixture byte compare | — |
-| KS-D6 | open | Mac: MEM2-G1's allocated-size counters, outputs byte-equal | — |
-| KS-D7 | open | Mac: an exhaustive device check of the half2 dequant | — |
+| KS-D5 | open (measured 2026-10-22) | next: SwiGLU fused into the gate\|up GEMM, behind a tiny-fixture byte compare. Measured: one 3,900-row pass on the 1.5B counts 261.9 MB of scratch, `guF` 139.9 MB (53.4%) | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D6 | open (measured 2026-10-22) | next: allocate the unread buffers only where read, gated on MEM2-G1's fixtures. Measured: Qwen3-VL-2B at 4K, 918.7 of 2,622.5 MiB (35.0%) unread; NaN-filled, 0 of 32.9M outputs differ; `pt` 188.4 MiB | `docs/measurements/ks-night-2026-10/README.md` |
+| KS-D7 | open (measured 2026-10-22) | next, by day: time to first token at 3,900, kill under 2%. Measured: the half2 dequant equals the current one in all 1,048,576 cases (plant red) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
@@ -87,7 +87,7 @@
 | KS-H1 | open (512, G5) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. Left: G5 (Qwen3.5-9B at 20K, by day) and head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
 | KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
-| KS-H4 | open | Mac: allocated size after a 4K forward and 10 s later | — |
+| KS-H4 | open (measured 2026-10-22) | next: release the tower scratch above a ceiling after the forward. Measured: Qwen3-VL-2B holds 2,622.5 MiB after a 4K forward and still 10 s later | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
 | KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2) | — |
