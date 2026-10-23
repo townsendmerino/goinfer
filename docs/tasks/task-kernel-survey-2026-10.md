@@ -596,6 +596,25 @@ estimate's 160–165 GB/s is under 10% and KS-C3 closes as measured. Stopping ru
 (127): **47.0 MB in 0.348 ms, 135 GB/s, 75.1% of the ceiling**. Under both lines: **build**. At 160–165 GB/s the four would take
 0.285–0.294 ms, −0.054 to −0.063 ms a layer, −1.5 to −1.8 ms a token over 28 layers. Log: `~/goinfer-logs/ksc3-gemv-2026-10-23.log`.
 
+**KS-C3 gates, registered 2026-10-23 before the code (C3-G).** The build: int8 twins of R18's rows kernels, each taking its int4
+twin's arguments in the same order at the same launch shape, so a native int8 resident keeps `gemvRows` (R18's widths: 4 for qkv,
+gate|up and down, 2 for o) and swaps the handles, as the one-row int8 twins already do. `gemv_w8a8_sa_rows<R>` / `_bias_rows<R>` /
+`_resid_rows<R>` stage the activation as `uint4` words per threadgroup, and each lane reads `uint4` words of R rows;
+`gemv_w8a8_body_resid_staged<R>` does the same for down. The int32 sums are exact and the epilogue is the shipped
+`simd_broadcast_first(float(acc) · aScale · wScale)`, so the outputs are the shipped kernels' bits. Taken only where every K is a
+multiple of 16 (the `uint4` rows) and the row counts tile (`gemvRowsFor`). The batched step's int4 adjacency kernels
+(`mc3_gemv_w4a8_*_rows_adj`) never run for a native int8 resident. `w8RowsOffForTest` keeps the one-row kernels for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C3-G1 identity | 0 | each twin against its shipped one-row kernel at the 1.5B's and the 0.5B's four shapes, R = 2 and 4, random int8 weights and activations, f32 scales, in the fast-math and the precise library; llama-tiny and the 0.5B at int8int8, 32 greedy decode steps, every step's logits, rows on against off | byte-equal everywhere |
+| C3-G2 kernel | timed, Mac | `TestMetalGEMVS0`'s int8 rows at the 1.5B's shapes, the twins beside the shipped kernels | read, not gated: the body's GB/s, for the record and the direction |
+| C3-G3 speed | timed, Mac, timing lock | a whole-token in-process A/B: the 0.5B at int8int8 (the 1.5B at int8 is fit-refused beside the owner's apps), 128 greedy decode tokens after a 32-token prompt, rows on against off on one resident, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median rows/one-row per-token time is ≤ 0.98 and at least 9 of 10 pairs are faster; otherwise PARK with the reading |
+
+Planted defect: the twin's epilogue drops `simd_broadcast_first` (the shipped kernel's guard against fast-math fusing the residual
+add); if C3-G1 stays green the guard is not needed here and the plant becomes a scale off by one row (`sct[row0 + r + 1]`), which
+must go red. Stopping rule: one pass each. Cost: G1 seconds; G2 about 1 minute; G3 about 3 minutes.
+
 **KS-C4 · Fold the single-threadgroup quantizers into their neighbors (designed bit-identical).**
 - **Waste:** `swiglu_quant` and `quant_vec` are dispatched as one 256-thread threadgroup (one core of 16), and
   `swiglu_quant` makes two passes, computing `exp` twice.
