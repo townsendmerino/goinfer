@@ -242,6 +242,12 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 // × EmbedScale). The CPU forward and the resident embedding (embedResidentInto, which hands a GPU backend [h ‖ these]) both call
 // it, so the two cannot compute PLE differently.
 func (m *Model) gemma4PLEInputs(h []float32, pleTokenID int, dst []float32) {
+	m.gemma4PLEInputsScratch(h, pleTokenID, dst, nil)
+}
+
+// gemma4PLEInputsScratch is gemma4PLEInputs with its [NumLayers·pleDim] context-aware buffer taken from scratch when it is that
+// long (a prefill embedding row after row, MEM6), else allocated.
+func (m *Model) gemma4PLEInputsScratch(h []float32, pleTokenID int, dst, scratch []float32) {
 	arch := m.w.arch
 	pleDim := arch.gemma4.HiddenSizePerLayerInput
 	m.w.PerLayerTokenEmbed.Row(pleTokenID, dst)
@@ -249,7 +255,10 @@ func (m *Model) gemma4PLEInputs(h []float32, pleTokenID int, dst []float32) {
 	for i := range dst {
 		dst[i] *= tScale
 	}
-	ctxAware := make([]float32, arch.NumLayers*pleDim)
+	ctxAware := scratch
+	if len(ctxAware) != arch.NumLayers*pleDim {
+		ctxAware = make([]float32, arch.NumLayers*pleDim)
+	}
 	matmul(m.be, &m.w.PerLayerModelProj, h, ctxAware, 1)
 	cScale := float32(1.0 / math.Sqrt(float64(arch.HiddenDim)))
 	for i := range ctxAware {

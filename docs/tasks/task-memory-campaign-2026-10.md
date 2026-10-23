@@ -33,7 +33,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | open | either box: chunk the prefill of the families G40 left out; L in total | `KVCache.prefillChunkable` |
 | MEM5-ring | blocked | G43: fast attention on a sliding-window layer is not chunk-invariant | 90d4c789 |
-| MEM6 | building | nobara for the CUDA cells, the Mac for the Metal routes: embed per chunk and return the memory; its gate is registered (ede47b89); S | — |
+| MEM6 | open (CUDA) | Metal routes done 2026-10-22: the resident reads the suffix a chunk at a time (`ResidentPrefillRows`), at most 256 embedding rows held (was the whole suffix), logits byte-equal; MEM6-G1 to G3 PASS. Left: the CUDA cells and the `RssAnon` gate, on nobara | `docs/measurements/mem6-2026-10/README.md` |
 | MEM7 | done | — | branch `mem7-2026-10`; BLK-G1..G3 PASS, `docs/measurements/mem7-2026-10/README.md` |
 | MEM8(a) | moved | O3, with D5, parked (defer) | `docs/tasks/parked/task-metal-audit-followups-2026-10.md` |
 | MEM8(b) | done | — (D12 (a), owner, 2026-10-22: shipped as built; PLE-G3 read AMBIGUOUS, 94.25% top-1, KL 0.033) | branch `mem8b-ple-2026-10`; PLE-G1, G2, G4 PASS, G3 AMBIGUOUS and shipped on the owner's word, `docs/measurements/mem8b-2026-10/README.md` |

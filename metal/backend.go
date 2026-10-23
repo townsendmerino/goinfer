@@ -904,6 +904,11 @@ func (a *metalResident) moeLayerMajor() bool {
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // shorter than the fast-prefill floor or longer than the resident KV/attention cap.
 func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	return a.prefillLastSrc(ctx, sliceRows(embeddings), startPos)
+}
+
+// prefillLastSrc is PrefillLast over a row source (rows.go).
+func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, startPos int) ([]float32, error) {
 	// One check at entry: the pass is a single command buffer with no inner loop to interrupt. The decoder calls it once a
 	// block (PrefillBlockRows) or once a chunk while another conversation decodes, so a long prompt is cancelled between
 	// those calls; a resident that reports no block runs a lone prompt as one uninterruptible pass.
@@ -914,13 +919,9 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// bit-identical to the sequential loop, so neither the floor nor --exact-prefill applies to them (each behind its own switch;
 	// docs/tasks/task-m26-mac-2026-10.md). An E-model prompt at or above the floor takes the batched pass when it is on; below the
 	// floor, or on any decline, the layer-major pass below runs it.
-	if a.emodelBatched() && a.fastPrefill() && startPos+len(embeddings) >= metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")) {
-		ok := true
-		for _, e := range embeddings {
-			ok = ok && len(e) == a.embLen()
-		}
-		if ok {
-			lg, err := a.batchedPrefill(embeddings, startPos, 0, nil, nil)
+	if a.emodelBatched() && a.fastPrefill() && startPos+src.n >= metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")) {
+		if src.width == a.embLen() {
+			lg, err := a.batchedPrefillSrc(src, startPos, 0, nil, nil, nil)
 			if err == nil {
 				return lg, nil
 			}
@@ -928,14 +929,14 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 			// per distinct reason: the pass may be called several times in one generation (a block or a chunk at a time).
 			if first, tracked := decoder.NotePrefillFallback(ctx, "layer-major", err.Error()); first {
 				fmt.Fprintf(emodelFallbackOut, "metal: this request's Gemma 4 E-model prompt (%d tokens) left the batched prefill for the layer-major pass on decode's kernels, bit-identical to sequential: %v\n",
-					startPos+len(embeddings), err)
+					startPos+src.n, err)
 			} else if !tracked {
 				warnEModelFallback(err)
 			}
 		}
 	}
 	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
-		if e := a.checkCap(startPos, len(embeddings)); e != nil {
+		if e := a.checkCap(startPos, src.n); e != nil {
 			return nil, e
 		}
 		if startPos == 0 {
@@ -943,16 +944,14 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 		}
 		var lg []float32
 		if a.emodelLayerMajor() { // S9: a Gemma 4 E-model, layer by layer on decode's kernels (prefill_emodel.go)
-			for _, e := range embeddings {
-				if len(e) != a.embLen() {
-					return nil, fmt.Errorf("metal: an E-model prefill row of %d values, want %d ([h | L*P])", len(e), a.embLen())
-				}
+			if src.width != a.embLen() {
+				return nil, fmt.Errorf("metal: an E-model prefill row of %d values, want %d ([h | L*P])", src.width, a.embLen())
 			}
-			lg = a.r.prefillEModel(embeddings, startPos, true)
+			lg = a.r.prefillEModelSrc(src, startPos, true)
 		} else if a.g4LayerMajor() {
-			lg = a.r.prefillG4Paged(embeddings, startPos, true)
+			lg = a.r.prefillG4PagedSrc(src, startPos, true)
 		} else {
-			lg = a.r.prefillMoEPaged(embeddings, startPos, true)
+			lg = a.r.prefillMoEPagedSrc(src, startPos, true)
 		}
 		if err := a.r.takeExecErr(); err != nil {
 			return nil, err
@@ -966,21 +965,21 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// Below metalFastPrefillFloor the batched pass declines. A resident with the step kernels runs a prompt that ends below
 	// max(floor, metalStepPrefillCeiling) as decode rows on them: the sequential loop's bits, faster than the pass there
 	// (promptStepOK).
-	promptLen := startPos + len(embeddings)
+	promptLen := startPos + src.n
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-	if a.promptStepOK(len(embeddings), startPos, floor) {
-		if e := a.checkCap(startPos, len(embeddings)); e != nil {
+	if a.promptStepOK(src.n, startPos, floor) {
+		if e := a.checkCap(startPos, src.n); e != nil {
 			return nil, e
 		}
-		return a.prefillByStep(ctx, embeddings, startPos)
+		return a.prefillByStepSrc(ctx, src, startPos)
 	}
 	// One token whose whole prompt ends in the step's range (a repeated prompt's 1-token suffix, PrefillTailExact): the
 	// step needs two rows, and the pass would not compute the step's bits, which the cold prompt of this length ran on.
 	// The sequential path's decode does.
-	if len(embeddings) < 2 && a.inStepRange(promptLen, floor) {
+	if src.n < 2 && a.inStepRange(promptLen, floor) {
 		return nil, fmt.Errorf("metal: a 1-token suffix in the batched step's range runs on the sequential path (the step's bits)")
 	}
-	return a.batchedPrefill(embeddings, startPos, floor, nil, nil)
+	return a.batchedPrefillSrc(src, startPos, floor, nil, nil, nil)
 }
 
 // prefillUnaligned names the first reduction length the batched pass's GEMMs cannot take, or "" when every one is a multiple of
@@ -1058,10 +1057,15 @@ var (
 
 // batchedPrefillImg is batchedPrefill with optional bidirectional image blocks (nil: none).
 func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) ([]float32, error) {
+	return a.batchedPrefillSrc(sliceRows(embeddings), startPos, floor, mrope, deep, blocks)
+}
+
+// batchedPrefillSrc is batchedPrefillImg over a row source (rows.go).
+func (a *metalResident) batchedPrefillSrc(src rowSource, startPos, floor int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) ([]float32, error) {
 	if prefillDeclineForTest != nil {
 		return nil, prefillDeclineForTest
 	}
-	promptLen := startPos + len(embeddings)
+	promptLen := startPos + src.n
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
 	}
@@ -1087,14 +1091,14 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 	}
 	// startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds, silently corrupting adjacent buffers on
 	// unified memory. The decoder never passes one, but the guard is cheap.
-	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap() {
-		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, a.ctxCap())
+	if startPos < 0 || src.n == 0 || startPos+src.n > a.ctxCap() {
+		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", src.n, startPos, a.ctxCap())
 	}
 	// The exact attention kernel (no fused kernel for this head dim, or fused attention off) holds prefillExactAttnMaxKeys
 	// scores; past that the pass takes its tiled twin (exactAttnTile), which keeps at most exactAttnTiledMaxHD output dims.
-	if hd := a.r.exactAttnHeadDim(); a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys && hd > exactAttnTiledMaxHD {
+	if hd := a.r.exactAttnHeadDim(); a.r.prefillExactAttn() && startPos+src.n > prefillExactAttnMaxKeys && hd > exactAttnTiledMaxHD {
 		return nil, fmt.Errorf("metal: prompt reaches %d keys, past the exact prefill attention kernel's %d, and head dim %d is wider than its tiled form's %d",
-			startPos+len(embeddings), prefillExactAttnMaxKeys, hd, exactAttnTiledMaxHD)
+			startPos+src.n, prefillExactAttnMaxKeys, hd, exactAttnTiledMaxHD)
 	}
 	// A fresh sequence starts a Gated-DeltaNet hybrid's recurrent state from zero, as Forward(pos 0) does; a continuation keeps the
 	// conv window and state the resident holds. No-op for every other family.
@@ -1111,7 +1115,7 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 				err = fmt.Errorf("metal: batched prefill aborted: %v", p)
 			}
 		}()
-		logits = a.r.prefillLastImg(embeddings, startPos, mrope, deep, blocks)
+		logits = a.r.prefillLastImgSrc(src, startPos, mrope, deep, blocks)
 		return nil
 	}(); err != nil {
 		return nil, err

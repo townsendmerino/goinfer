@@ -66,6 +66,11 @@ func (a *metalResident) emodelLayerMajor() bool {
 // submit-and-wait per token. embs are resident rows, [h ‖ L·P] each (metalResident.embLen). Returns the last row's
 // logits, or nil when head is false.
 func (r *resident) prefillEModel(embs [][]float32, startPos int, head bool) (logits []float32) {
+	return r.prefillEModelSrc(sliceRows(embs), startPos, head)
+}
+
+// prefillEModelSrc is prefillEModel over a row source (rows.go), read one emodelChunk at a time.
+func (r *resident) prefillEModelSrc(src rowSource, startPos int, head bool) (logits []float32) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer func() {
@@ -75,9 +80,9 @@ func (r *resident) prefillEModel(embs [][]float32, startPos int, head bool) (log
 		}
 	}()
 	r.emodelLayerMajorRuns++
-	for c := 0; c < len(embs); c += emodelChunk {
-		end := min(c+emodelChunk, len(embs))
-		logits = r.emodelRows(embs[c:end], startPos+c, head && end == len(embs))
+	for c := 0; c < src.n; c += emodelChunk {
+		end := min(c+emodelChunk, src.n)
+		logits = r.emodelRows(src.rows(c, end), startPos+c, head && end == src.n)
 		if r.execErr != nil {
 			return nil
 		}
