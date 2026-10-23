@@ -94,3 +94,25 @@ keeping their output exact:
 
 Then compaction and Z spread over many blocks, Z keeping the same 1,024 serial partial sums and the same double tree.
 The build's gate is registered here before it is measured.
+
+## Readings: the build gate
+
+At 9b62b2cca (old arm: origin/main's committed `topk.ptx`), 2026-10-23 14:56 PDT, under the timing lock, the card clear (402 MiB
+used) and the 1-minute load 2.67. Log: `~/goinfer-logs/ks-a3-2026-10/gate.log`.
+
+| id | reading | verdict |
+|---|---|---|
+| G1 | **608 cases, 0 differ** in any output word (ids, logit bits, Z hi/lo) | **PASS** |
+| G2 | sampled token 2,007.5 → 1,955.4 µs; new speedup **median 1.0263×** (1.0250–1.0284), **10 of 10** quads above 1, 0 void | **SHIP** (both conditions: 9 of 10, median ≥ 1.02) |
+
+- **G1's count.** The pre-registration estimated "about 2,500" cases. Its own grid comes to 560 synthetic cases (5
+  vocabularies × 7 row kinds × 4 K × 2 temperatures × Z on and off) plus 48 real (16 rows × 3 K), so 608. The estimate was
+  wrong; the grid ran as registered.
+- **The top-K alone** (no bar; launch, sync and the 2 KB readback, 50 a reading, old/new interleaved):
+  - 151,936 × k 256: old 119.3 / 115.8 µs, new 101.9 / 95.4 µs;
+  - k 1,024: old 200.0 / 206.3 µs, new 133.2 / 131.6 µs.
+
+  The sampled token saves 52 µs at k 256, more than the 19 µs the isolated read moves. The isolated read includes a host sync
+  and readback on every call, which the token pays once either way, so it understates the kernel's share. Not chased: the
+  token is the gate's instrument.
+- **Memory:** +36.9 KB of device scratch a resident, as registered.
