@@ -66,6 +66,8 @@ copied into `cuda/` as `ks_b2_scratch_test.go` for the run and removed afterward
     share and bytes a load.
 - **Load rule:** every quad records the 1-minute load and `MemAvailable` at its start. A quad started above 8.0 is void and
   re-run in order, and the record lists it.
+- **Split, amended 2026-10-23 13:05 before any reading:** G1a and G1b may run alone (`GOINFER_KS_B2_G1_ONLY=1`), holding the
+  lock shared, since they time nothing. G2 runs afterwards with the lock exclusive, in the same instrument. Bars unchanged.
 - **Stopping rule:** one run a KV type. **Cost:**
   - two 1.5B loads (~15 s each);
   - G1a, 2,160 small launches with uploads (under a minute a KV type);

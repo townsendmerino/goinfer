@@ -228,6 +228,7 @@ func TestKSB2_oldNew(t *testing.T) {
 		t.Fatalf("G1a FAIL: %d of %d shapes differ", diffs, checked)
 	}
 
+	g1Only := os.Getenv("GOINFER_KS_B2_G1_ONLY") != "" // G1a and G1b only: no timed quads, so the run can hold the lock shared
 	// ---- G1b and G2: whole prefill on the 1.5B at K=3900, the old and new hd128 128-row kernel on one resident ----
 	if r.bAttnBM128hd128 == (Pipeline{}) {
 		t.Fatal("the resident did not load attn_fused_bm128_hd128")
@@ -264,6 +265,10 @@ func TestKSB2_oldNew(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[B2b] kv %s G1b: prefill %d rows, %d of %d last-row logits differ\n", kv, n, d, len(l0))
 	if d != 0 {
 		t.Fatalf("G1b FAIL: %d logits differ", d)
+	}
+	if g1Only {
+		t.Logf("KS-B2b kv %s: G1a %d shapes and G1b pass; G2 not run (GOINFER_KS_B2_G1_ONLY)", kv, checked)
+		return
 	}
 	const quads = 10
 	var ratios []float64
