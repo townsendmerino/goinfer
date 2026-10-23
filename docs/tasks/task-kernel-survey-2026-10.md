@@ -46,7 +46,7 @@
 | KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
-| KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
+| KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
 | KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
 | KS-D2b | open | Mac: admit steel at head dim 96 after Phi-3 (int4) passes set A (its CPU references first); 80 when a model at it is on disk | — |
@@ -672,6 +672,51 @@ efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kern
 - **Size:** L.
 - **First measurement:** a test seam that skips the attention dispatch, timed on E2B at 4,096 (about 3 minutes). Kill it
   under 50%.
+
+**KS-D1 first measurement, registered 2026-10-23 before the run, on the owner's order of 11:50.** Instrument:
+`TestKSD1_attnShare`, Gemma 4 E2B (its default Metal sidecar, `decoder.SidecarPath`), `PrefillLast` on 4,096 resident rows through
+the batched E-model pass (`emodelBatched`, the fast-prefill floor set to 0), the full pass against the same pass with the prefill
+attention dispatch skipped (`prefillAttnSkipForTest`, a new test seam; the output is then meaningless and is not read), A B B A
+over 3 pairs after one warm run each. The reading is attention's share, 1 − skip/full, the median over the pairs. Timed, Mac, the
+timing lock held exclusively, a cell started under the void rule's load or memory line re-run. **Kill under 50%**; otherwise the
+build's gates are registered next. Stopping rule: one pass. Cost: about 4 minutes.
+
+**Read 2026-10-23 (13:28–13:30, the timing lock held exclusively, the 1-minute load 1.33 at the start, 5.8 GB available; each
+pair's 1.03–2.41).** E2B's default sidecar (`…int4.ple4.metal.v17.giw`), 4,096 rows in one pass (the exact kernel's widest head dim
+512, so `PrefillBlockRows` 0): full 28.17–28.35 s, without attention 5.29 s in every pair; **attention 81.2% (median of 3), over
+the 50% line**. The build follows. Log: `~/goinfer-logs/ksd1-share-2026-10-23.log`.
+
+**KS-D1 gates, registered 2026-10-23 (13:32) before the code (D1-G).** The build: `attention_prefill_steel_split<HD>` for head dims
+256 and 512, R19's kernel with the head dim split over the threadgroup's 8 simdgroups: NS = HD/128 slices of 128, 8/NS row groups
+of 8 rows (32 query rows a threadgroup at 256, 16 at 512), K/V blocks of 16 keys at 256 and 8 at 512 staged once in padded
+threadgroup memory (17 KB). Each simdgroup forms its slice's partial Q·Kᵀ, writes it to threadgroup memory, and sums its row
+group's NS partials in slice order, so every slice of a row group holds the same scores and the same online-softmax state; it then
+accumulates its own 128 output columns. A layer whose head dim is 256 or 512 takes it where the pass would take the exact kernel
+(not an image block, not a softcap); `prefillSteelAttnOff` keeps the exact kernel for the A/B. Not bit-identical (half P, exp2, the
+order): fidelity-gated.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D1-G1 kernel | 0 | the split kernel against an f64 attention at head dims 256 and 512: random q, k, v; M = 100 and 300; start 0 and 37; window 0 and 64 (at 256); 8 query heads over 1 KV head | every output finite; max-abs error ≤ 4e-3 and mean-abs ≤ 2e-4 in every cell (about 4× D2-G2's steel readings at head dim 64) |
+| D1-G2 fidelity | 2, Mac, by day | (a) G-S9d (`TestS9EModelBatched_realE2B`) with the split kernel in the batched pass, its own rule against the layer-major reference (PASS: agreement ≥ the reference's − 2.0 points and free-run passes ≥ the reference's − 1); (b) a long cell: E2B, a 2,048-token prompt (this repository's text), the CPU int4 reference over the last prompt row and 32 teacher-forced positions, argmax agreement of the split kernel's batched pass against the exact kernel's. Tier 2 because only a reference can say which arm is closer; budget about 30 min | (a) PASS by its rule, and (b) agreement ≥ the exact kernel's − 2.0 points |
+| D1-G3 speed | timed, Mac, timing lock | E2B, `PrefillLast` on 4,096 rows through the batched pass, split kernel against exact (`prefillSteelAttnOff`), A B B A over 3 pairs after one warm run each | SHIP iff the median new/old is ≤ 0.80 (≥ 1.25×); otherwise PARK |
+
+Planted defect: the row group sums only its own slice's partial (no exchange); D1-G1 goes red. Stopping rule: one pass each; a red G1
+stops the build until understood. Cost: G1 seconds; G2 about 30 min; G3 about 4 min.
+
+**KS-D1 read 2026-10-23.** D1-G1 **PASS** (13:37): 12 cells, max-abs 0.38–1.21e-3, mean-abs 2.6–4.8e-5, all finite; not a gate, but
+recorded: every cell's 300 rows run as two passes of 150 equal the single pass byte for byte. The plant (each simdgroup's own slice
+only) read max-abs 2.0, red. D1-G3 (13:42–13:44, the lock held exclusively, the 1-minute load 3.59 at the start, 8.3 GB available):
+exact 28.24–28.30 s, split 6.13 s in every pair, **median 0.2170 (4.61×): SHIP**. D1-G2 (13:44–13:47, shared): (a) G-S9d, the batched
+pass with the split kernel 95.31% (244/256) and 8/8 free-run passes against layer-major's 96.48% (247/256) and 7/8, delta −1.17
+points: **PASS**; (b) the long cell, `CLAUDE.md` (sha256 `374fae4f…`) cut to 2,048 tokens, exact 31/32 and split 31/32: **PASS**. Logs:
+`~/goinfer-logs/ksd1-g1-2026-10-23.log`, `~/goinfer-logs/ksd1-gates-2026-10-23.log`. Also: `touched.py` green; the prefill and E-model
+families by name (`Prefill|MC5|DB01|R19|Steel|Chunk|Batched|Attention|S9|EModel|KH1|Gemma4|Gemma3|KSD1`) 60 pass, 71 skip, 0 fail.
+
+Two consequences beyond the speed. With no exact-attention layer left, E2B and E4B no longer report `exactAttnHeadDim` 512, so
+`PrefillBlockRows` now blocks their prompts like the plain pass (KS-H1's open head-dim-512 item): the two-pass byte check above is
+what makes that safe. And every model with head dim 256 or 512 and no softcap takes the kernel, Gemma 3 included; only E2B was graded
+at model level.
 
 **KS-D2 · Steel prefill attention for head dims 64, 80 and 96.**
 - **Where:** `metal/prefill.go:resident.prefillAttnKernels` takes steel only for head dim 128. Others run
