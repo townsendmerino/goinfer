@@ -133,7 +133,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99924"
   },
   {
     "name": "deepseek_v3",
@@ -157,7 +157,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "real-oracle 100.0%/0.99951"
   },
   {
     "name": "kimi_k2",
@@ -182,7 +182,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "pending"
+    "parity": "shared-path: deepseek_v3"
   },
   {
     "name": "bailing_hybrid",

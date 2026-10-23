@@ -103,6 +103,10 @@ the served path's wall clock, but its counters must not share the card); the bui
 I8M-G5's, already registered in `docs/tasks/task-memory-campaign-2026-10.md` (argmax, greedy continuation, cosine ≥ 0.99). The
 reading goes in `docs/measurements/mem11-int8-2026-10/mla.md`.
 
+**Outcome, 2026-10-23:** Moonlight failed at int8 MLA; on the owner's D14 (b) no single int8 projection or pair cleared both gates,
+so MLA is f32 on every load again (D14 (a)) and the three manifest rows are validated from that build. The record is
+`docs/measurements/mem11-int8-2026-10/mla.md`, "D14 (b): the search, read".
+
 ## Readings
 
 All at `origin/main` d6214db6b plus this record's commits (no product code), 2026-10-23. Logs are under

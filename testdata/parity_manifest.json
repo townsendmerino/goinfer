@@ -103,13 +103,17 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:39fc87966401a7e483281e60c91d67c02bdd977a630e2b059b5ae0de65e22569",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
+      "status": "validated",
+      "validated_at": "d5c5a1d53",
+      "date": "2026-10-23",
       "reference": "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)",
       "machine": "linux-amd64",
       "method": "real-model-oracle",
-      "metrics": null
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99924,
+        "cosine_mean": 0.99924
+      }
     },
     "deepseek_v3": {
       "uses": [
@@ -122,13 +126,17 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:39fc87966401a7e483281e60c91d67c02bdd977a630e2b059b5ae0de65e22569",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
+      "status": "validated",
+      "validated_at": "d5c5a1d53",
+      "date": "2026-10-23",
       "reference": "HF bf16 (Moonlight-16B-A3B; int8 resident)",
       "machine": "linux-amd64",
       "method": "real-model-oracle",
-      "metrics": null
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99951,
+        "cosine_mean": 0.99951
+      }
     },
     "gemma": {
       "uses": [
@@ -385,9 +393,9 @@
         "decoder/forward_deepseek.go"
       ],
       "deps_hash": "sha256:39fc87966401a7e483281e60c91d67c02bdd977a630e2b059b5ae0de65e22569",
-      "status": "pending",
-      "validated_at": null,
-      "date": null,
+      "status": "validated",
+      "validated_at": "d5c5a1d53",
+      "date": "2026-10-23",
       "reference": "rides deepseek_v3's real-model oracle (HF bf16 Moonlight-16B-A3B; int8 resident) \u2014 same forward_deepseek.go, same deps_hash. Kimi's config-delta (64 heads, 384 experts top-8, sigmoid noaux_tc routing default) is covered by TestKimi_descriptor / TestKimi_routingDefault / TestKimi_textParity (tiny golden, cosine 1.000000)",
       "machine": "linux-62gb",
       "method": "shared-path (via deepseek_v3)",

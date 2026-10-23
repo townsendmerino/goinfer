@@ -2,26 +2,33 @@ package decoder
 
 import "github.com/townsendmerino/aikit/linalg"
 
-// mlaProjInt8 reports whether a load at q holds MLA's q (or q-LoRA pair), kv-A and o projections as per-row int8: every integer
-// quant does, and an f32, bf16 or f16 load keeps them f32 (MEM11-int8, docs/tasks/task-memory-campaign-2026-10.md). kv-B stays
-// f32 at every quant: the backends slice it into W_UK and W_UV as f32, and the CPU's absorbed path reads it by row.
+// mlaProjInt8 reports whether a load at q holds MLA's q (or q-LoRA pair), kv-A and o projections as per-row int8. No production
+// load does: every load keeps all six f32, because the DeepSeek family's real-model gates fail with any of the three int8 (D14,
+// docs/measurements/mem11-int8-2026-10/mla.md). A GPU backend still makes its own int8 from the f32. The int8 form stays for a
+// .giw that carries it and for the tests that arm it (mlaInt8ForTest), on an integer quant only.
 func mlaProjInt8(q quantMode) bool {
 	switch q {
 	case quantInt8, quantInt8I8, quantInt4, quantInt4Mix, quantQ4K:
-		return !mlaKeepF32ForTest
+		return mlaInt8ForTest
 	}
 	return false
 }
 
-// mlaKeepF32ForTest keeps MLA's f32 projections on a quantized load: the f32 arm of MEM11-int8's fidelity bar.
-var mlaKeepF32ForTest bool
+// mlaInt8ForTest arms the int8 MLA projections on an integer-quantized load: MEM11-int8's gates and D14's search.
+var mlaInt8ForTest bool
+
+// mlaProjF32ForTest names single projections ("q", "kva", "o") an armed load keeps f32 while the rest go int8: D14's
+// per-projection search (docs/measurements/mem11-int8-2026-10/mla.md).
+var mlaProjF32ForTest map[string]bool
 
 // quantizeProjections replaces the q (or q-LoRA pair), kv-A and o projections with their int8 form: linalg.QuantizeInt8 of the
 // f32, weight-only, the codes and scales every GPU backend makes from the f32 (B27's form for Mamba).
 func (w *mlaWeights) quantizeProjections(arch *Architecture) {
 	p := arch.mla
 	H, hidden, qkHead := arch.NumHeads, arch.HiddenDim, p.QKNopeHeadDim+p.QKRopeHeadDim
-	if p.QLoRARank > 0 {
+	if mlaProjF32ForTest["q"] {
+		// q stays f32.
+	} else if p.QLoRARank > 0 {
 		w.qAQ = linalg.QuantizeInt8(w.qAProj, p.QLoRARank, hidden, false)
 		w.qBQ = linalg.QuantizeInt8(w.qBProj, H*qkHead, p.QLoRARank, false)
 		w.qAProj, w.qBProj = nil, nil
@@ -29,9 +36,14 @@ func (w *mlaWeights) quantizeProjections(arch *Architecture) {
 		w.qQ = linalg.QuantizeInt8(w.qProj, H*qkHead, hidden, false)
 		w.qProj = nil
 	}
-	w.kvAQ = linalg.QuantizeInt8(w.kvAProj, p.KVLoRARank+p.QKRopeHeadDim, hidden, false)
-	w.oQ = linalg.QuantizeInt8(w.oProj, hidden, H*p.VHeadDim, false)
-	w.kvAProj, w.oProj = nil, nil
+	if !mlaProjF32ForTest["kva"] {
+		w.kvAQ = linalg.QuantizeInt8(w.kvAProj, p.KVLoRARank+p.QKRopeHeadDim, hidden, false)
+		w.kvAProj = nil
+	}
+	if !mlaProjF32ForTest["o"] {
+		w.oQ = linalg.QuantizeInt8(w.oProj, hidden, H*p.VHeadDim, false)
+		w.oProj = nil
+	}
 }
 
 // mlaMatvec is one MLA projection of x: its int8 form q when the load holds one, else the f32 f [rows, cols].
