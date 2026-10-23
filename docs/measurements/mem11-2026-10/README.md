@@ -25,6 +25,15 @@ trip (`TestLFM2_serializeRoundTripsTheConvMixer`: `-0.008598174` read back as `-
 G3's goldens would go red did not hold: the committed fixtures are F32 on disk and never reach `islandMat`. The rule test and
 the round trip are what guard it.
 
+**A defect this build shipped, found and fixed 2026-10-22.** A direct load of a bf16 LFM2 checkpoint released the source mapping
+its islands alias. `stIsland` keeps a BF16 tensor as a view of the file, and the end-of-load release (`mmapAliasRisk`) judges by
+dtype alone, so on a checkpoint with no F32 tensor (LFM2.5-2.6B) it closed the mapping. The first read of an island then faulted
+(found writing a `.giw` from the 2.6B for MEM11-giw-bf16: SIGSEGV in the writer's CRC). B16-G0 read byte counts and the heap but
+ran no forward, and the tiny fixtures are F32, whose other tensors keep the mapping anyway. The fix: a load holding a bf16 island
+keeps the mapping (`islandsMayAliasSource`). Its test, `TestMEM11_lfm2BF16CheckpointKeepsItsMapping`, loads an all-BF16 copy of
+lfm2-tiny at int4 and f32. It is red without the fix, and its logits equal the same values stored as F32. On the real 2.6B at int4,
+the mapping is retained and four decode steps run.
+
 **Not run on the Mac:**
 - The real LFM2 gate (`TestLFM2Real_gate`, realckpt) loads the 2.6B at f32, about 10 GB, which this Mac's free memory does not
   hold; G1's bit-identity covers the change, and the heavy tier runs the gate.
