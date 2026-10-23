@@ -342,6 +342,20 @@ type ResidentImageBlocksPrefill interface {
 	PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) (logits []float32, err error)
 }
 
+// ExpertCacheStats describes a resident's device cache of MoE experts: Slots is the per-layer slot count it was granted,
+// and Hits and Misses sum every MoE layer's lookups since the resident was built. A miss is one expert copied host to device.
+type ExpertCacheStats struct {
+	Slots        int
+	Hits, Misses uint64
+}
+
+// ResidentExpertCache is an OPTIONAL ResidentForward extension, implemented by a resident that pages MoE experts through a
+// device cache. ok is false when this build keeps no cache. The counters are written by the generation in flight, so a
+// caller reads them between generations.
+type ResidentExpertCache interface {
+	ExpertCacheStats() (s ExpertCacheStats, ok bool)
+}
+
 // ResidentSpanPrefill is an OPTIONAL ResidentForward extension: the batched prefill of a Gemma 4 bidirectional
 // ("vision") prompt. spans are each image's or audio clip's [start, end), absolute, in order and disjoint, and a row
 // attends as gemma4AttendRange says: inside a span it sees the whole span, and a sliding layer's window reaches back to

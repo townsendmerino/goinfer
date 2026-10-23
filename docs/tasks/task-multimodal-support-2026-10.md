@@ -8188,6 +8188,51 @@ prefill on CUDA in batched passes.
   - the 31B (no checkpoint fits the 8 GB card);
   - the f16 or paged KV build (`PrefillSpansLast` declines on it, and Gemma 4 keeps f32 KV on CUDA today).
 
+### S20 — Gemma 4 26B-A4B image-turn decode on the 8 GB card (added 2026-10-23, on Francis's word)
+
+**Why.** Francis reads handwritten forms with the 26B on nobara, about 2 minutes a form. After S19 the image prefill is
+about 15 s, and the rest is decode at about 18 tok/s (G-S19d: 160 tokens in about 9 s after the first). The README's
+figure for this model on this card is 39.3 tok/s at ctx 2048 (`docs/benchmarks.md` §B4), and that rate is PCIe-bound:
+every expert-cache miss copies one expert over PCIe. The hypothesis under test: the served config holds 2.6 GB of VRAM
+for the vision tower and a 16384-position KV plan, so the expert cache is starved. Francis's serve log already shows it:
+`C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.4 GB free (2.6 GB of 4.0 GB total reserved …) — capping to
+8 (0.9 GB)`, against 33 slots in S19's in-process runs, which reserve nothing for a tower.
+
+**Instrument.** `docs/measurements/multimodal-support-2026-10/s20/run-s20-cells.sh`: one fresh server per cell, one
+greedy long-reply turn (`max_tokens` 1500; an image cell sends `testdata/glm_ocr/invoices/inv01.png` with a
+transcribe-and-explain prompt, a text cell sends a 1,200-word prose prompt). It reads time to first token, wall time,
+completion tokens, the decode rate ((tokens - 1) / (wall - ttft)), the plan lines, GPU memory after the load and after
+the turn, and a new per-turn serve line `expert cache: N slots/layer; this turn H hits, M misses (X% hit)` (from
+`decoder.ResidentExpertCache`, which reads the C′ cache's existing counters). Each cell records load and free memory at
+its start; a cell started with load above 8.0 is void and re-run. Everything runs under `timing_lock.py run`. Per-form time
+for a ~1,500-token reply is projected as ttft + 1499 / decode rate.
+
+**Gates, registered 2026-10-23 before any measurement.**
+- **G-S20a, where the time goes (step 1, tier 1, about 12 min).** Cells, one each: A, today's config (image, `--ctx
+  16384`); B, image at `--ctx 4096`; C, text only at `--ctx 2048` (the README's cell); C2, text only at `--ctx 16384`; D,
+  image at `--ctx 16384` with `-vision-device cpu` (the tower on the CPU, nothing held back). Reported per cell: slots,
+  hit rate, decode rate, ttft, and the VRAM split (the plan lines plus nvidia-smi). **The hypothesis is CONFIRMED** if
+  C2 is granted more slots than A, and the decode rate ranks with the hit rate across all five cells. **REFUTED** if C2's
+  slots equal A's, or a cell with a higher hit rate decodes slower by more than 10%. **The README reproduces** if C reads
+  39.3 tok/s within 10%; outside that, it is a regression question, recorded, not chased here.
+  Predictions: A 8 slots, 17 to 19 tok/s; B about 15 slots, 23 to 28; C about 40 slots, 36 to 42; D about 33 slots,
+  32 to 38 tok/s, with a slower encode.
+- **G-S20b, `--ctx 4096` (step 2a, tier 1).** A B B A against today's config, image cells. **PASS (recommend the
+  config):** the new/old decode-rate ratio is at least 1.05 in both pairs. 1.00 to 1.05: parked. Output identity is
+  reported: identical over the reply, or the first difference at a near-tie (R10: the runner-up at least half the leader).
+- **G-S20c, the block drafter (step 2b).** First a load check: does serve start with `-drafter ~/models/gemma4-26b-dflash`
+  beside `--vision` and `-moe-cache-experts`, at `--ctx 16384` and `--ctx 4096`? If it loads, A B B A against the same
+  config without it. **PASS:** at least 1.10 in both pairs and the greedy reply identical (the drafter is lossless by
+  contract, so any difference is a defect, recorded). Prediction: it declines at load, or it reads at most 1.0, because a
+  verify pass on a paged MoE copies the experts of every verified position.
+- **G-S20d, slots into freed VRAM (step 2c).** The only config that frees the tower's 2.6 GB is the tower on the CPU.
+  A B B A, today's config against `-vision-device cpu` at the better of the two contexts from G-S20b. The measure is
+  per-form time for a ~1,500-token reply, so the CPU tower's slower encode counts against it. **PASS:** at least 5% lower
+  in both pairs. `-moe-cache-slots` cannot raise the count past what free VRAM allows (`capSlots` caps it), so it is
+  read from the code, not measured.
+- Step 3's gates (releasing the tower's VRAM after an encode; sizing the cache to what is free after load) are registered
+  after G-S20a reads, before any code.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

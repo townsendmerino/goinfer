@@ -293,6 +293,15 @@ func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 // locally (see decoder.DrafterKVBytesPerPosition). 0 means the companion, if any, has no ctx-scaling K/V term.
 func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 
+// ExpertCacheStats reports the resident's MoE expert cache (ResidentExpertCache); ok is false off the resident path or when
+// the resident keeps no cache.
+func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
+	if c, ok := m.resident.(ResidentExpertCache); ok {
+		return c.ExpertCacheStats()
+	}
+	return ExpertCacheStats{}, false
+}
+
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
 // escape hatch): every "fit by default" behavior reverts to its previous default. Checked by backend packages that implement
 // a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate. See docs/tasks/task-fit-to-hardware.md.

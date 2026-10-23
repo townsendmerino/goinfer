@@ -1609,6 +1609,22 @@ func (r *cudaResident) rollbackAdmits(c *expertCache) {
 	r.pendingAdmits = r.pendingAdmits[:0]
 }
 
+// ExpertCacheStats implements decoder.ResidentExpertCache: the granted slots per layer and the C′ cache's lookups summed over
+// the MoE layers.
+func (r *cudaResident) ExpertCacheStats() (decoder.ExpertCacheStats, bool) {
+	if !r.cacheExperts {
+		return decoder.ExpertCacheStats{}, false
+	}
+	st := decoder.ExpertCacheStats{Slots: r.cacheSlots}
+	for i := range r.layers {
+		if c := r.layers[i].expCache; c != nil {
+			st.Hits += c.hits
+			st.Misses += c.misses
+		}
+	}
+	return st, true
+}
+
 // CacheProfForTest reports the C′ round-trip decomposition (stall / host / dma) and the call
 // count. Zero unless GOINFER_MOE_CACHE_PROF is set.
 func (r *cudaResident) CacheProfForTest() (stall, host, dma time.Duration, calls uint64) {

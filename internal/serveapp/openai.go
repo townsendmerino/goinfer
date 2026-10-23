@@ -1545,6 +1545,7 @@ func genErr(err error) error {
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
 func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
 		// The admin cancel must land on parent itself, not on ctx below (drive's stop-string-derived child):
@@ -1727,6 +1728,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
 func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
 		// See drive's identical block for why this must wrap parent, not the ctx derived below.
@@ -2003,6 +2005,28 @@ func (lm *loadedModel) tokenText(id int) string { return string(lm.tk.TokenText(
 
 // logKVCopy reports a generation that took KV rows from another conversation's slot, or whose copy was declined: the
 // rows and the copy's wall time are the sharing gate's copy cost (docs/measurements/kv2-2026-10-14.md, G7).
+// expertCacheNow reads the resident's MoE expert-cache counters, for logExpertCache to difference after the turn.
+func (lm *loadedModel) expertCacheNow() (decoder.ExpertCacheStats, bool) {
+	if lm.model == nil {
+		return decoder.ExpertCacheStats{}, false
+	}
+	return lm.model.ExpertCacheStats()
+}
+
+// logExpertCache logs one turn's expert-cache lookups: the slots the cache was granted and the turn's hit rate, the figure
+// that sets a paged MoE's decode rate (each miss is one expert copied over PCIe).
+func (lm *loadedModel) logExpertCache(before decoder.ExpertCacheStats, ok bool) {
+	if !ok {
+		return
+	}
+	now, _ := lm.model.ExpertCacheStats()
+	h, m := now.Hits-before.Hits, now.Misses-before.Misses
+	if h+m == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "expert cache: %d slots/layer; this turn %d hits, %d misses (%.1f%% hit)\n", now.Slots, h, m, 100*float64(h)/float64(h+m))
+}
+
 func logKVCopy(gen *decoder.Generation) {
 	if gen.PrefillShared > 0 {
 		fmt.Fprintf(os.Stderr, "kv share: copied %d rows from another conversation in %.2f ms\n", gen.PrefillShared, float64(gen.KVCopy.Microseconds())/1000)
