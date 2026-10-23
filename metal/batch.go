@@ -944,20 +944,26 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 // piece runs production's own Forward. Cancellation is checked between pieces.
 // History: docs/code-notes/metal.md#prefillByStep.
 func (a *metalResident) prefillByStep(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error) {
+	return a.prefillByStepSrc(ctx, sliceRows(embeddings), startPos)
+}
+
+// prefillByStepSrc is prefillByStep over a row source (rows.go), read one piece at a time.
+func (a *metalResident) prefillByStepSrc(ctx context.Context, src rowSource, startPos int) (logits []float32, err error) {
 	r := a.r
 	defer func() {
 		if p := recover(); p != nil {
 			logits, err = nil, fmt.Errorf("metal: step prefill aborted: %v", p)
 		}
 	}()
-	for from := 0; from < len(embeddings); {
+	for from := 0; from < src.n; {
 		if e := ctx.Err(); e != nil {
 			return nil, e
 		}
-		n := min(batchMaxSeqs, len(embeddings)-from)
-		last := from+n == len(embeddings)
+		n := min(batchMaxSeqs, src.n-from)
+		last := from+n == src.n
+		piece := src.rows(from, from+n)
 		if n == 1 {
-			lg, err := a.Forward(embeddings[from], startPos+from)
+			lg, err := a.Forward(piece[0], startPos+from)
 			if err != nil {
 				return nil, err
 			}
@@ -965,7 +971,7 @@ func (a *metalResident) prefillByStep(ctx context.Context, embeddings [][]float3
 		} else {
 			seqs := make([]batchSeq, n)
 			for i := range n {
-				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: embeddings[from+i]}
+				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: piece[i]}
 			}
 			mode := multiNoHead // R-19: a piece before the last needs only its K/V
 			if last {

@@ -36,6 +36,11 @@ type g4Row struct {
 // keeps decode's kernels and removes the per-token submit-and-wait trips and the per-token staging. Returns the last
 // row's logits, or nil without the head when head is false.
 func (r *resident) prefillG4Paged(embs [][]float32, startPos int, head bool) (logits []float32) {
+	return r.prefillG4PagedSrc(sliceRows(embs), startPos, head)
+}
+
+// prefillG4PagedSrc is prefillG4Paged over a row source (rows.go), read one g4LayerMajorChunk at a time.
+func (r *resident) prefillG4PagedSrc(src rowSource, startPos int, head bool) (logits []float32) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer func() { // the paged forward's own discipline (forwardLogitsPaged): a staging panic becomes execErr
@@ -45,9 +50,9 @@ func (r *resident) prefillG4Paged(embs [][]float32, startPos int, head bool) (lo
 		}
 	}()
 	r.g4LayerMajorRuns++
-	for c := 0; c < len(embs); c += g4LayerMajorChunk {
-		end := min(c+g4LayerMajorChunk, len(embs))
-		logits = r.g4LayerMajorRows(embs[c:end], startPos+c, head && end == len(embs))
+	for c := 0; c < src.n; c += g4LayerMajorChunk {
+		end := min(c+g4LayerMajorChunk, src.n)
+		logits = r.g4LayerMajorRows(src.rows(c, end), startPos+c, head && end == src.n)
 		if r.execErr != nil {
 			return nil
 		}
@@ -237,6 +242,11 @@ var moeLayerMajorOn = true
 // from the pool and the shared expert, into the row's residual) in runs that fit the pool. A layer with no pool runs every
 // row's whole decode layer in one buffer.
 func (r *resident) prefillMoEPaged(embs [][]float32, startPos int, head bool) (logits []float32) {
+	return r.prefillMoEPagedSrc(sliceRows(embs), startPos, head)
+}
+
+// prefillMoEPagedSrc is prefillMoEPaged over a row source (rows.go), read one g4LayerMajorChunk at a time.
+func (r *resident) prefillMoEPagedSrc(src rowSource, startPos int, head bool) (logits []float32) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer func() {
@@ -246,9 +256,9 @@ func (r *resident) prefillMoEPaged(embs [][]float32, startPos int, head bool) (l
 		}
 	}()
 	r.moeLayerMajorRuns++
-	for c := 0; c < len(embs); c += g4LayerMajorChunk {
-		end := min(c+g4LayerMajorChunk, len(embs))
-		logits = r.moeLayerMajorRows(embs[c:end], startPos+c, head && end == len(embs))
+	for c := 0; c < src.n; c += g4LayerMajorChunk {
+		end := min(c+g4LayerMajorChunk, src.n)
+		logits = r.moeLayerMajorRows(src.rows(c, end), startPos+c, head && end == src.n)
 		if r.execErr != nil {
 			return nil
 		}

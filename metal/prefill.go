@@ -447,11 +447,17 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 // attention_prefill_img, the exact kernel with the blocks, in place of the fused and steel kernels, which carry no block
 // mask. No blocks: prefillLast exactly.
 func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
+	return r.prefillLastImgSrc(sliceRows(embs), startPos, mrope, deep, blocks)
+}
+
+// prefillLastImgSrc is prefillLastImg over a row source (rows.go): its input rows are read rowChunk at a time straight into the
+// pass's device buffers.
+func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
 	// Every K/V buffer holds kvCap positions, and a pass past them writes beyond the buffer. metalResident.checkCap refuses that for
 	// the decoder; an internal caller that skipped it is a programming error, named here rather than left to corrupt memory.
-	if c := r.kvCap(); startPos < 0 || startPos+len(embs) > c {
+	if c := r.kvCap(); startPos < 0 || startPos+src.n > c {
 		panic(fmt.Sprintf("metal: internal prefill of %d rows at position %d is past the resident KV cap of %d positions "+
-			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", len(embs), startPos, c))
+			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", src.n, startPos, c))
 	}
 	r.ensurePrefill()
 	runtime.LockOSThread()
@@ -461,7 +467,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	if r.layerNorm {
 		normPipe = pf.pLN
 	}
-	M := len(embs)
+	M := src.n
 	Mpad := (M + 7) / 8 * 8
 	H, I, V := r.H, r.I, r.V
 	// Prefill runs only for uniform families (prefillOK declines Gemma's per-layer geometry), so
@@ -478,7 +484,25 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	// them, instead of into a zeroed Go slice of Mpad rows that was then copied in whole.
 	xF := prefillScratchU16(d, Mpad*H)
 	residInv := 1 / r.prefillResidScale(deep)
-	parallelEmbedsF32ToF16Scaled(xF.U16s()[:M*H], embs, H, residInv)
+	// The input rows, read rowChunk at a time from the source: each row's first H values into xF as f16, and a Gemma 4
+	// E-model's [L·P] per-layer tail straight into the device buffer the PLE gate reads (S9 step 2), so the host holds a chunk.
+	var pleInB Buffer
+	if r.pleP > 0 {
+		LP := r.nL * r.pleP
+		pleInB = d.NewBufferLen(M * LP)
+		prefillScratchSeen.Add(int64(4 * M * LP))
+	}
+	for lo := 0; lo < M; lo += rowChunk {
+		hi := min(lo+rowChunk, M)
+		rows := src.rows(lo, hi)
+		parallelEmbedsF32ToF16Scaled(xF.U16s()[lo*H:hi*H], rows, H, residInv)
+		if r.pleP > 0 {
+			LP, pv := r.nL*r.pleP, pleInB.Floats()
+			for i, row := range rows {
+				copy(pv[(lo+i)*LP:(lo+i+1)*LP], row[H:H+LP])
+			}
+		}
+	}
 	normF := prefillScratchU16(d, Mpad*H)
 	qkvF := prefillScratchU16(d, Mpad*qkvDim)
 	ctxF := prefillScratchU16(d, Mpad*qDim)
@@ -593,19 +617,16 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	}
 	// S9 step 2: a Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
 	// gate's scratch.
-	var pleInB, pleGF, uP, uLP Buffer
+	var pleGF, uP, uLP Buffer
 	if r.pleP > 0 {
 		P, LP := r.pleP, r.nL*r.pleP
-		pv := make([]float32, M*LP)
-		for m := range M {
-			src := embs[m]
-			if emodelBatchDefect == 3 { // G-S9c (3): each row's PLE inputs taken from the next row
-				src = embs[min(m+1, M-1)]
+		if emodelBatchDefect == 3 { // G-S9c (3): each row's PLE inputs taken from the next row
+			pv := pleInB.Floats()
+			for m := 0; m+1 < M; m++ {
+				copy(pv[m*LP:(m+1)*LP], pv[(m+1)*LP:(m+2)*LP])
 			}
-			copy(pv[m*LP:(m+1)*LP], src[H:H+LP])
 		}
-		pleInB, pleGF, uP, uLP = NewBufferFloats(d, pv), prefillScratchU16(d, Mpad*P), NewBufferU32(d, uint32(P)), NewBufferU32(d, uint32(LP))
-		prefillScratchSeen.Add(int64(4 * len(pv)))
+		pleGF, uP, uLP = prefillScratchU16(d, Mpad*P), NewBufferU32(d, uint32(P)), NewBufferU32(d, uint32(LP))
 		scratch = append(scratch, pleInB, pleGF, uP, uLP)
 	}
 	// D-B01: a Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V

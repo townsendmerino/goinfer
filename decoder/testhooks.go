@@ -697,3 +697,7 @@ func (m *Model) KVReadbackForTest(n int) (n32, n16, n8, nScale int64, err error)
 	r := readbackCPUKV(cache)
 	return r.n32, r.n16, r.n8, r.nScale, nil
 }
+
+// SetEmbedRowsObserverForTest sets the observer told how many rows each embedding of a resident prefill's suffix holds at once
+// (MEM6); nil clears it.
+func SetEmbedRowsObserverForTest(f func(rows int)) { embedRowsObserver = f }
