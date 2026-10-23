@@ -588,6 +588,24 @@ Every partial sum is an integer below 2^24, so `float(gi)` is the shipped intege
 (median over the 7 reps); otherwise the wiring follows, behind a whole-token in-process A/B. Timed, Mac, the timing lock held
 exclusively. Stopping rule: one pass each. Cost: about 2 and 10 minutes.
 
+**KS-C2 first measurement read 2026-10-23 (12:53–12:54, the timing lock held exclusively, load 2.23 then 2.04, 5.2 GB available).**
+Standalone, byte-equal at both shapes: the 1.5B's down `resid_mk4` 0.062 ms against production's `resid_st4` 0.089 (1.44×), the 7B's
+0.237 against 0.344 (1.45×). In sequence on the 1.5B (7 reps): `h4244m` 0 of 151,936 logits differ over 16 positions; its down work
+1.741 ms against production's 2.571 (**1.48×**), all four GEMVs 1.133× production's (bar ≥ 1.03), the full token −0.77 ms (10.55 →
+9.78). Not killed: the wiring follows. Log: `~/goinfer-logs/ksc2-2026-10-23.log`.
+
+**KS-C2 wiring gates, registered 2026-10-23 before the code (C2b-G).** The build replaces the bodies of production's
+`gemv_w4a8_resid_staged<R>` and `gemv_w4a8_coal_staged<R>` with the masked form; `KSC2_OLD_DOWN` (prepended to the decode library
+by `ksc2OldDownForTest`, read at build) compiles the per-word integer form back for the A/B, as `KSD7_OLD_DEQUANT` does.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C2b-G1 identity | 0 | `gemv_w4a8_resid_staged<2,4>` against `gemv_w4a8_resid` and `gemv_w4a8_coal_staged<2,4>` against `gemv_w4a8_coal` at the 1.5B's and the 7B's down shapes, random int4 weights, f16 scales and int8 activations, fast-math and precise libraries; the 1.5B's Metal `.giw` and qwen35-tiny (a DeltaNet layer, `coal_staged`), 32 greedy decode steps, every step's logits, the new library against `KSC2_OLD_DOWN` | byte-equal everywhere |
+| C2b-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B's Metal `.giw`: two residents in one process (old and new library), 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old per-token time is ≤ 0.98 and at least 9 of 10 pairs are faster; otherwise PARK with the reading |
+
+Planted defect: the high half-word dotted with the low half's activations (`x0` for `x1`); C2b-G1 goes red. Stopping rule: one pass
+each. Cost: G1 seconds; G2 about 4 minutes.
+
 **KS-C3 · Native int8 decode GEMVs get R18's rows and staging (bit-identical).**
 - **Waste:** `W8A8_SA_BODY` / `W8A8_COAL_BODY` run one row per simdgroup with 4-byte loads, and the down projection re-reads
   activations from device memory in every lane. The 1.5B at int8int8 decodes at 70.6 tok/s, with its int8 body near
