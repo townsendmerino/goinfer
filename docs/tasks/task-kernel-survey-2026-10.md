@@ -803,6 +803,23 @@ goes up, stop and tell him.
 - **Gain (est.):** ~1.2×.
 - **Class:** bit-identical. **Size:** M.
 
+**KS-D9 gates, registered 2026-10-23 before the code (D9-G), on the owner's word of 2:30 pm.** The build, D-P01's shape on the
+generic pager: `moeLayerMajorRows`' phase 2 runs a slot group's routed experts expert by expert through `moe_batch_gemv` (every
+pair routed to an expert in one pass over its weights), `mc3_swiglu_quant_rows` per pair, the down projection's raw sums, and a new
+`moe_batch_combine_acc` that adds each row's k experts in route order with `gemv_w4a8_moe_wacc`'s epilogue `fma(wgt·acc, asc, out)`
+starting from the row's own residual, as the per-row path's k accumulating dispatches leave it. The rows' residuals are packed into
+the batch before and copied back after (`copy_f32`). The shared expert stays per row, after the combine, as today. It applies where
+both projections fill whole threadgroups (`moeBatchR`) and the experts are int4 and unbiased (not the native int8 lane, not
+gpt-oss); `moeExpertBatchOn` keeps the per-row phase 2 for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D9-G1 identity | 0 | `TestMoELayerMajor_matchesSequential` (Mixtral, two Qwen3-MoE shapes, the Qwen3.5 DeltaNet MoE hybrid; 2 and 3 slots; 4 prompt shapes) with the batched phase 2 taken, and the same cells batched against per-row (`moeExpertBatchOn`) | byte-equal everywhere (logits, K/V, 3 decode steps), and the batched path taken on every fixture whose shapes admit it |
+| D9-G2 speed | timed, Mac, timing lock | a real generic MoE paged on the Mac, its layer-major prefill of 512 rows, batched against per-row phase 2 on one resident, A B B A over 3 pairs after one warm run each; the model named in an amendment before the run (none is on this Mac's `~/models` today; Qwen1.5-MoE-A2.7B is the survey's shape) | SHIP iff the median batched/per-row time is ≤ 0.98 with every pair faster; otherwise PARK |
+
+Planted defect: the combine starting from zero instead of the residual; D9-G1 goes red. Stopping rule: one pass each. Cost: G1
+seconds; G2 a few minutes plus the model's pull.
+
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
 - **Change:** lane-per-row or grid-stride.
