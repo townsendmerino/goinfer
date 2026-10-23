@@ -164,7 +164,7 @@ func TestPrefillRefWitness_backfill(t *testing.T) {
 		t.Fatal("a and c agree on p0 and nothing differs")
 	}
 	q.SourceSHA256 = "e"
-	if _, src, ok := PrefillRefSiblingForTest(q); !ok || src == "d" {
-		t.Fatalf("sibling lookup returned source %q, ok %v: want one of a, b, c and never another scope's", src, ok)
+	if _, src, ok := PrefillRefSiblingForTest(q); !ok || src != "a" {
+		t.Fatalf("sibling lookup returned source %q, ok %v: want a (most references in the scope, first by name), never another scope's d", src, ok)
 	}
 }

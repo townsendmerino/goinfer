@@ -134,17 +134,29 @@ func cachedRefParts() map[string]PrefillRefKeyParts {
 }
 
 // PrefillRefSiblingForTest returns a cached reference for parts' scope and prompt computed under another source, and that
-// source, preferring one a witness has shown to agree.
+// source. It prefers one a witness has shown to agree, then the source holding the most references in the scope, so the prompts
+// of one cell share a source and one witness covers them.
 func PrefillRefSiblingForTest(parts PrefillRefKeyParts) (path, source string, ok bool) {
 	scope := parts.scopeKey()
 	var bins []string
 	all := cachedRefParts()
+	held := map[string]int{} // references per source in this scope
 	for bin, q := range all {
-		if q.PromptSHA256 == parts.PromptSHA256 && q.SourceSHA256 != parts.SourceSHA256 && q.scopeKey() == scope {
+		if q.scopeKey() != scope {
+			continue
+		}
+		held[q.SourceSHA256]++
+		if q.PromptSHA256 == parts.PromptSHA256 && q.SourceSHA256 != parts.SourceSHA256 {
 			bins = append(bins, bin)
 		}
 	}
-	sort.Strings(bins)
+	sort.Slice(bins, func(i, j int) bool {
+		si, sj := all[bins[i]].SourceSHA256, all[bins[j]].SourceSHA256
+		if held[si] != held[sj] {
+			return held[si] > held[sj]
+		}
+		return si < sj
+	})
 	for _, bin := range bins {
 		if agree, _ := PrefillRefSourcesAgreeForTest(parts, all[bin].SourceSHA256); agree {
 			return bin, all[bin].SourceSHA256, true
