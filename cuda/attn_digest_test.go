@@ -214,7 +214,8 @@ func adCasesSplitKVRows() []adCase {
 }
 
 // attn_block_full (attn_block.cu): the drafter's non-causal block attention. attn_img_batched (attn_img_prefill.cu): Gemma 3's image blocks.
-// Both read an f32 cache only.
+// attn_span_batched (the same file): Gemma 4's spans, whose window reaches back to the span start; window 4 is shorter than every span.
+// All three read an f32 cache only.
 func adCasesBlockAndImage() []adCase {
 	var cs []adCase
 	for _, g := range adHeadDims {
@@ -246,6 +247,24 @@ func adCasesBlockAndImage() []adCase {
 							// block b covers [startPos+3+6b, startPos+3+6b+5): rows inside it see the whole block
 							flat := []int32{int32(startPos + 3), int32(startPos + 8), int32(startPos + 9), int32(startPos + 14)}
 							r.launch(adImg, "attn_img_batched", adCfg(nH, M, 1, 128, (nTot+128)*4), gc.Arg(q), gc.Arg(kc), gc.Arg(vc), r.kvt(nTot),
+								adI(nH), adI(nKV), adI(hd), adI(startPos), gc.ArgValue(adScale(hd)), adI(window), adI(M), gc.Arg(ctx),
+								gc.ArgDevicePtr(0), gc.Arg(r.i32(flat)), adI(nBlocks))
+							return [][]float32{r.read(ctx, M*nH*hd)}
+						}})
+				}
+			}
+			for _, window := range []int{0, 4, 64} {
+				for _, nBlocks := range []int{0, 1, 2} {
+					nH, nKV, hd, startPos, M := g.nH, g.nKV, g.hd, sm[0], sm[1]
+					cs = append(cs, adCase{"attn_span_batched", fmt.Sprintf("attn_span_batched/f32/hd%d/s%d_m%d/%s/blocks%d", hd, startPos, M, adWindowText(window), nBlocks),
+						func(r *adRig) [][]float32 {
+							nTot, kvDim := startPos+M, nKV*hd
+							q := r.f32(adRand(M*nH*hd, 54, 1))
+							kc, vc := r.f32(adRand(nTot*kvDim, 55, 1)), r.f32(adRand(nTot*kvDim, 56, 1))
+							ctx := r.zeros(M * nH * hd)
+							// span b covers [startPos+2+7b, startPos+8+7b): six rows, longer than window 4, inside the shortest prompt (16 rows)
+							flat := []int32{int32(startPos + 2), int32(startPos + 8), int32(startPos + 9), int32(startPos + 15)}
+							r.launch(adImg, "attn_span_batched", adCfg(nH, M, 1, 128, (nTot+128)*4), gc.Arg(q), gc.Arg(kc), gc.Arg(vc), r.kvt(nTot),
 								adI(nH), adI(nKV), adI(hd), adI(startPos), gc.ArgValue(adScale(hd)), adI(window), adI(M), gc.Arg(ctx),
 								gc.ArgDevicePtr(0), gc.Arg(r.i32(flat)), adI(nBlocks))
 							return [][]float32{r.read(ctx, M*nH*hd)}

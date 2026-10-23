@@ -3,10 +3,12 @@
 package cuda
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -297,4 +299,162 @@ func TestGemma4BidirSpanPrefill_real26BDecode(t *testing.T) {
 			t.Logf("%s span run %d vs CPU+upload: first difference at decode step %d", img, k+1, firstDiff(toks, ref))
 		}
 	}
+}
+
+// TestGemma4_26BDecodeLocalize localizes the CUDA resident decode defect S19 found on the real 26B: the table form's prompt
+// prefilled on the CPU and uploaded, then the CPU's own greedy tokens teacher-forced through the resident decode and the CPU
+// decode side by side. Every step logs the logit cosine and both argmaxes. Over GOINFER_S19_LOC_FROM..TO the residual after
+// every layer is captured on both sides; at the first step where the argmaxes differ, the per-layer cosine names the first
+// layer that departs.
+func TestGemma4_26BDecodeLocalize(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("GOINFER_HEAVY_TESTS unset: real 26B")
+	}
+	home, _ := os.UserHomeDir()
+	model := envOr("GOINFER_S19_MODEL", filepath.Join(home, "models", "gemma4-26b-int4.giw"))
+	visDir := envOr("GOINFER_S19_VISION", filepath.Join(home, "models", "gemma-4-26b-a4b-it-vis560"))
+	img := envOr("GOINFER_S19_IMAGE", "../testdata/glm_ocr/table.png")
+	steps, from, to := 120, 95, 110
+	fmt.Sscan(envOr("GOINFER_S19_STEPS", "120"), &steps)
+	fmt.Sscan(envOr("GOINFER_S19_LOC_FROM", "95"), &from)
+	fmt.Sscan(envOr("GOINFER_S19_LOC_TO", "110"), &to)
+	tk, err := modelload.Tokenizer(visDir)
+	if err != nil {
+		t.Skip(err)
+	}
+	enc, err := vision.LoadGemma4Encoder(visDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp, err := multimodal.LoadGemma4PreprocessConfig(visDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := decoder.Load(model, decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: 16384, ResidentWindowedKV: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r := mustResident(t, m)
+	data, err := os.ReadFile(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patches, pos, err := vision.Gemma4Preprocess(data, pp.MaxSoftTokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := multimodal.Gemma4PooledTokens(pos, enc.Cfg.PoolingKernelSize)
+	feats, err := multimodal.Gemma4TowerFeatures(enc, nil, patches, pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	softTok, _ := tk.TokenID(multimodal.Gemma4ImageSoftToken)
+	block := multimodal.Gemma4ImageBlock(n)
+	segs, _ := multimodal.SpliceImageBlocks(chat.Gemma4().RenderSegments("", []chat.Turn{{Role: "user", Content: block + "Transcribe every field of this form as key: value lines."}}), []string{block})
+	ids, _ := tk.EncodeSegments(segs, false)
+	runs := multimodal.FindImageRuns(ids, softTok)
+	spans := []decoder.ImageSpan{{Pos: runs[0][0], Len: runs[0][1]}}
+	c := m.NewCache(len(ids) + steps + 1)
+	lc, err := m.PrefillLogitsGemma4VLBidirectionalSpansForTest(context.Background(), ids, feats, spans, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ResidentUploadPrefillForTest(c); err != nil {
+		t.Fatal(err)
+	}
+	lg := append([]float32(nil), lc...)
+	firstSplit := -1
+	for i := 0; i < steps; i++ {
+		cos, _ := cosMaxAbs(lg, lc)
+		ag, ac := argmaxF(lg), argmaxF(lc)
+		t.Logf("step %3d pos %d: logits cos %.6f argmax gpu %d %q cpu %d %q", i, len(ids)+i, cos, ag, dec(tk, ag), ac, dec(tk, ac))
+		if ag != ac && firstSplit < 0 {
+			firstSplit = i
+		}
+		tok := ac // the CPU's clean trajectory, fed to both
+		capture := i >= from && i <= to
+		if capture {
+			r.layerCap, r.layerCapBuf = true, nil
+			decoder.SetGemma4HiddenCaptureForTest(true)
+		}
+		route := r.g4cap && capture // GOINFER_G4_CAPTURE=1: per-layer routing on both sides
+		if route {
+			r.g4capIdx, r.g4capLayer = nil, nil
+			decoder.SetRouterCaptureForTest(true)
+		}
+		g, err := r.Forward(m.EmbedResidentForTest(tok), len(ids)+i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lg = append([]float32(nil), g...)
+		if lc, err = m.ForwardForTest(tok, c); err != nil {
+			t.Fatal(err)
+		}
+		if route {
+			cIdx, cRn := decoder.RouterCaptureForTest()
+			cMargin := decoder.RouterMarginForTest()
+			_, cX1, cX2 := decoder.Gemma4MoECaptureForTest()
+			decoder.SetRouterCaptureForTest(false)
+			line := fmt.Sprintf("step %3d routing per MoE layer (same experts / CPU top-k margin / rn x1 x2 cos):", i)
+			for k := range min(len(r.g4capIdx), len(cIdx)) {
+				l := r.g4capLayer[k]
+				gs := map[int]bool{}
+				for _, e := range r.g4capIdx[k] {
+					gs[int(e)] = true
+				}
+				same := 0
+				for _, e := range cIdx[k] {
+					if gs[e] {
+						same++
+					}
+				}
+				crn, _ := cosMaxAbs(r.g4capRn[l], cRn[k])
+				cx1, _ := cosMaxAbs(r.g4capX1[l], cX1[k])
+				cx2, _ := cosMaxAbs(r.g4capX2[l], cX2[k])
+				mg := float32(0)
+				if k < len(cMargin) {
+					mg = cMargin[k]
+				}
+				line += fmt.Sprintf("\n    L%d %d/%d %.4f %.5f %.5f %.5f", l, same, len(cIdx[k]), mg, crn, cx1, cx2)
+			}
+			t.Log(line)
+		}
+		if capture {
+			gl, cl := r.layerCapBuf, decoder.Gemma4HiddenCaptureForTest()
+			r.layerCap, r.layerCapBuf = false, nil
+			decoder.SetGemma4HiddenCaptureForTest(false)
+			line := fmt.Sprintf("step %3d (input %q at pos %d) per-layer residual cos gpu/cpu:", i, dec(tk, tok), len(ids)+i)
+			for l := range min(len(gl), len(cl)-1) {
+				cl2, _ := cosMaxAbs(gl[l], cl[l+1])
+				line += fmt.Sprintf(" L%d %.5f", l, cl2)
+			}
+			t.Log(line)
+			if len(gl) == r.nLayers {
+				// The GPU's last residual through the CPU's final norm and head, beside both sides' own logits.
+				hc := m.LogitsFromHiddenForTest(gl[len(gl)-1])
+				t.Logf("  next-token top 5: gpu %s | cpu %s | gpu residual + cpu head %s", top5(tk, lg), top5(tk, lc), top5(tk, hc))
+				for _, id := range []int{argmaxF(lg), argmaxF(lc)} {
+					t.Logf("  token %d %q: gpu %.4f cpu %.4f gpu-residual+cpu-head %.4f", id, dec(tk, id), lg[id], lc[id], hc[id])
+				}
+			}
+		}
+	}
+	t.Logf("first step where the resident's argmax departs from the CPU's: %d", firstSplit)
+}
+
+// top5 renders the five largest logits as id "text" value.
+func top5(tk interface {
+	Decode([]int) (string, error)
+}, v []float32) string {
+	idx := make([]int, len(v))
+	for i := range idx {
+		idx[i] = i
+	}
+	slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(v[b], v[a]) })
+	out := ""
+	for _, i := range idx[:5] {
+		out += fmt.Sprintf("%d %q %.3f; ", i, dec(tk, i), v[i])
+	}
+	return out
 }

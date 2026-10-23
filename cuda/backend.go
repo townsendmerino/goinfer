@@ -1050,8 +1050,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					}
 				}
 				loadImg(&r.bAttnImg, "attn_img_batched")
-				if pl, pe := r.dev.NewComputePipeline(imod, "attn_span_batched"); pe == nil {
-					r.bAttnSpan, r.spanPrefillReady = pl, true
+				var pe error
+				if r.bAttnSpan, pe = r.dev.NewComputePipeline(imod, "attn_span_batched"); pe == nil {
+					r.spanPrefillReady = true
+				} else {
+					r.bAttnSpan = Pipeline{}
 				}
 			}
 		}

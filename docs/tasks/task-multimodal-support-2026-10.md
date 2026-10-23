@@ -8126,7 +8126,9 @@ prefill on CUDA in batched passes.
   bidirectional non-E image turn there. On the real 26B the passes are [0,5), then the whole span (520 to 540 rows,
   wider than the 512-row default), then the tail. Every pass ran without a decline or an OOM retry (traced in a debug
   build).
-- **G-S19a: tiny PASS; scaled FAIL against the registered 0.999 bar, explained by a control and not fixed.**
+- **G-S19a: tiny PASS; scaled FAIL against the registered 0.999 bar, explained by a control and not fixed.** The gate
+  test now holds 0.999 on tiny, and on scaled holds an identical argmax and bit identity across pass cuts. G-S19b counts
+  reds on tiny only, where each defect turns all four layouts red.
   (`gs19ab-run1.log`; the control came from a diagnostic run that is not kept, and the gate test now logs it.)
   - Tiny, cosine against the CPU forward: span-first 1.000000, span-middle 0.999974, span-last 1.000000, two-spans
     1.000000. Argmax is identical in all four, and one pass is bit-identical to 4-row passes in all four.
@@ -8175,6 +8177,32 @@ prefill on CUDA in batched passes.
   Which step the defect corrupts depends on the trajectory, and it hits after either prefill. It is deterministic for a
   given KV. It is not the flash-decode lane: that engages at 2048 keys, and the lane off still reads garbage at step 101.
   Not yet localized; the expert cache's size is untested past step 100. It corrupts the OCR transcriptions served today.
+- **The resident-decode divergence, localized 2026-10-23 evening** (`TestGemma4_26BDecodeLocalize`; logs
+  `decode-localize1.log` to `decode-localize4-route.log`). Francis held #196 until it is understood (option B).
+  - **Setup:** the table form, CPU prefill and upload, then the CPU's own greedy tokens fed to both the resident decode
+    and the CPU decode.
+  - **Logits:** cosine stays 0.99 to 1.00 at every step. At step 101 the resident's top token is 146 (a run of spaces,
+    -6.99) and the CPU's is "0" (+1.18).
+  - **Not the head:** the GPU's last-layer residual through the CPU's final norm and head reproduces the GPU's logits
+    exactly. The residual is what differs.
+  - **Per layer:** residual cosine is at least 0.997 through about L8 at every step. From about L9 to L20 it falls at
+    some steps only, to 0.44 (L26, step 106) and 0.67 (L28, step 100), and stays at 0.997 or better at others (102,
+    104, 105).
+  - **Not the DMA overlap:** `GOINFER_MOE_DMA_OVERLAP=0` gives bit-identical readings.
+  - **Not the expert-cache size:** g4-decode (S20) measured served replies byte-identical across 8 to 39 slots.
+  - **Not a wrong expert or kernel:**
+    - This router's top-8 margins are tiny (CPU softmax-probability margin 0.0000 to 0.0097), and GPU and CPU disagree on
+      one expert at about half the layers even at healthy steps.
+    - In the 59 cases where both chose the same 8 experts and the router input agreed to 0.998 or better, the expert
+      output (x2) agreed to 0.9956 or better (median 0.9996).
+    - The large x2 losses occur only after the inputs have drifted: router-input cosine 0.95 to 0.99 gives x2 down to
+      0.85.
+  - **Reading:** accumulated GPU-vs-CPU numeric difference, amplified layer by layer by near-tied routing, not a
+    localized defect. The likeliest systematic source: every GPU GEMV quantizes its activations to int8 per row (W4A8),
+    while the CPU's int4 path dots against float activations. No int4-weight float-activation kernel exists on CUDA.
+    No higher-precision reference of the 26B fits this box, so which side is nearer the model's own answer is shown only
+    by output quality: the CPU path read every tested form correctly; the GPU path garbles about one digit in three
+    forms.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load
   2.2 to 3.4 at every cell start, none void. Per 160-token form turn:
   - old (`9bafcc12`): 89.9 / 90.4 / 93.7 / 94.7 s, time to first token 80.9 to 85.7 s;
