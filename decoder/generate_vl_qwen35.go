@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 // prefillLogitsQwen35VL is prefillLogitsQwenVL for the Gated-DeltaNet hybrid (qwen3_5 / qwen3_5_moe): the same splice
@@ -39,21 +40,45 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 // matmul can reduce in a different order): TestQwen35VL_batchedPrefillMatchesPerToken bounds the difference, and the
 // HF-golden tests hold either path to the same bars. The caller has checked qwen35BatchNAnyPos and set cache.mropePos
 // and mropeDelta.
+//
+// The prompt runs in passes of prefillChunkRows rows (MEM5-VL), each embedding and splicing its own rows: the DeltaNet state and
+// conv windows carry in the cache, and the full-attention layers read m-RoPE at absolute positions. A capture or a speculative tree
+// keeps one pass.
 func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	hidden := m.w.arch.HiddenDim
-	h := make([]float32, len(ids)*hidden)
-	for i := range ids {
-		m.w.Embed.Row(ids[i], h[i*hidden:(i+1)*hidden])
-	}
-	spliceImageSpans(h, spans, imageFeats, hidden)
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
 		cache.scr = newDecodeScratch(m.w.arch)
 	}
-	hn, err := m.runLayersQwen35N(ctx, h, cache)
-	if err != nil {
-		return nil, err
+	n, C := len(ids), len(ids)
+	if cache.captureLayers == nil && !cache.subCapture && cache.treeRowPos == nil && cache.treeMask == nil {
+		C = prefillChunkRows
 	}
-	return m.logitsFromNormed(hn[(len(ids)-1)*hidden:], cache), nil
+	start := cache.Pos()
+	var hn []float32
+	for c0, i := 0, 0; c0 < n; i++ {
+		c1 := min(c0+C, n)
+		if i == 1 {
+			cache.reserveRows(max(start+n, cache.planRows) - cache.Pos()) // the first pass taught the cache each layer's width
+			if prefillChunkDone != nil {
+				prefillChunkDone(-1)
+			}
+		}
+		h := make([]float32, (c1-c0)*hidden) // runLayersQwen35N consumes it
+		for r, id := range ids[c0:c1] {
+			m.w.Embed.Row(id, h[r*hidden:(r+1)*hidden])
+		}
+		spliceImageSpansRange(h, spans, imageFeats, hidden, c0, c1)
+		atomic.AddInt64(&prefillPasses, 1)
+		var err error
+		if hn, err = m.runLayersQwen35N(ctx, h, cache); err != nil {
+			return nil, err
+		}
+		if prefillChunkDone != nil {
+			prefillChunkDone(i)
+		}
+		c0 = c1
+	}
+	return m.logitsFromNormed(hn[len(hn)-hidden:], cache), nil
 }
 
 // prefillQwen35VLPerToken is the original loop, kept for the families and caches qwen35BatchNAnyPos excludes (a layer pager, a
