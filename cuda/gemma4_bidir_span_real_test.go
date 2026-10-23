@@ -19,7 +19,7 @@ import (
 )
 
 // TestGemma4BidirSpanPrefill_real26B is G-S19c's logits half (docs/tasks/task-multimodal-support-2026-10.md, "S19"): the
-// real 26B-A4B loaded as serve loads it (-backend cuda -moe-cache-experts), one image prompt per form-like image, the
+// real 26B-A4B loaded with -backend cuda -moe-cache-experts at the fit-default context, one image prompt per form-like image, the
 // tower run once on the CPU, then the last-position logits from the resident span prefill against the CPU bidirectional
 // prefill on the same model and the same features. It reports cosine and argmax; the served half grades the replies.
 //
@@ -42,7 +42,7 @@ func TestGemma4BidirSpanPrefill_real26B(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := decoder.Load(model, decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: 16384})
+	m, err := decoder.Load(model, decoder.Options{Backend: "cuda", MoECacheExperts: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestGemma4BidirSpanPrefill_real26B(t *testing.T) {
 			t.Fatal(err)
 		}
 		runs := multimodal.FindImageRuns(ids, softTok)
-		if len(runs) != 1 || runs[0][1]-runs[0][0] != n {
+		if len(runs) != 1 || runs[0][1] != n { // a run is [start, length]
 			t.Fatalf("%s: image runs %v, want one of %d", img, runs, n)
 		}
 		spans := []decoder.ImageSpan{{Pos: runs[0][0], Len: n}}
