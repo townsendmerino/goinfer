@@ -1,0 +1,16 @@
+#!/bin/bash
+# CR7B K=1024, prompt-set B prompt 0, one worker, 2 decode steps: #184's harness on
+# goinfer origin/main 6129031b with aikit v1.72.0 (old) and aikit 9fcb361 (new).
+# A B B A; each arm waits for the 1-minute load average to fall below 8.0.
+set -u
+O=/home/francis/goinfer-bench/aikit-q8-ref-out
+waitidle() { while awk '{exit !($1 >= 8.0)}' /proc/loadavg; do sleep 5; done; }
+for arm in old new new old; do
+  waitidle
+  echo "== arm=$arm start $(date '+%F %T %Z') load: $(cat /proc/loadavg) memavail_mb: $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"
+  cd /home/francis/goinfer-bench/aikit-q8-ref-$arm/decoder
+  GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_PREFILL_REF_CACHE=$O/ref-cache RP_MODEL=$HOME/models/command-r7b RP_QUANT=int8 RP_K=1024 RP_STEPS=2 \
+    RP_WORKERS=1 RP_BUDGET=15m RP_OUT=$O/cr7b-k1024-$arm \
+    $O/decoder-$arm.test -test.run '^TestScratchRefProfile$' -test.v -test.timeout 20m 2>&1 | grep -v heartbeat
+  echo "== arm=$arm end $(date '+%T') load: $(cut -d' ' -f1-3 /proc/loadavg)"
+done
