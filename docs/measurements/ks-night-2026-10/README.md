@@ -59,3 +59,22 @@ release allocates again. A generation counter makes a release that fires late a 
 buffer.
 
 A 4K forward of this f32 tower is about 50 s on the M1 Pro, so H4-G3 took 12.5 minutes, not the minute registered.
+
+## KS-D5, the fused SwiGLU (D5-G), 2026-10-23: PARK
+
+Gates registered before the code (survey doc, "KS-D5 gates"). The build is `gemm_w4f16_swiglu`: the 64 × 64 int4 GEMM with its
+feature tile split into 32 gate rows and the matching 32 up rows. It rounds the tile to half in threadgroup memory as `guF` held it,
+and writes `glu_act_f16(g) × u`. A dense layer whose pass takes the 64 × 64 tile uses it, and `guF` is allocated only for a pass that
+keeps the two-step form. `PrefillBlockRows` now prices a row on a long pass and steps to the most rows that fit, since a short pass
+may keep `guF`.
+
+| gate | reading | result |
+|---|---|---|
+| D5-G1 identity | `TestKSD5_fusedSwigluMatchesTwoStep`: 12 cells (I = 96 and 8,960, M = 64, 100, 200, SiLU and GELU-tanh), 0 outputs differ; `TestKSD5_prefillFusedIdentity`: llama-tiny 0 of 256, Qwen2.5-Coder-1.5B at 3,900 rows 0 of 151,936 logits differ. Plant (the activation on the unrounded accumulators): 2,532 of 6,144 differ in the first cell | **PASS** |
+| D5-G2 scratch | `TestKSD5_guFShare`'s counter, one 3,900-row pass on the 1.5B: **121.9 MB** counted (planned 121.9), from 261.9 | **PASS** (bar ≤ 123) |
+| D5-G3 speed | `TestKSD5_prefillSpeed`, the 1.5B, a 3,900-token `PrefillLast`, fused against two-step on one resident, 08:52, timing lock held exclusively (the 1-minute load 3.37 at the start, 9.3 GB available): two-step 4,177–4,239 ms, fused 4,619–4,660 ms, **median 1.1040, 0 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd5-g3-2026-10-23.log` | **PARK** (bar ≤ 1.01): 10.4% slower |
+
+The fused kernel saves `guF`'s 139.9 MB on that pass and is bit-identical, but makes the prefill 10.4% slower. The likely cause, not
+measured: its added 8 KB threadgroup tile, which takes the kernel from about 9.6 KB to 17.6 KB of threadgroup memory and so
+cuts occupancy. The staging arrays (`sa`, `sb`) are dead once the K loop ends, so a build that places the tile in their memory would
+test that. The branch is pushed and not merged; the next step is the owner's decision.
