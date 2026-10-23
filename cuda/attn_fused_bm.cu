@@ -138,7 +138,8 @@ __device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, cons
 #pragma unroll
         for (int i = 0; i < BK; i++) {
             const int v = base + i * NT + tid, kk = v / DV, dv = v - kk * DV;
-            r[i].u = *reinterpret_cast<const uint4*>(kc + rowOf(kk) * kvDim + colOff + dv * KV_VW);
+            const KV_T* src = kc + rowOf(kk) * kvDim + colOff + dv * KV_VW;
+            r[i].u = *reinterpret_cast<const uint4*>(src);
         }
 #pragma unroll
         for (int i = 0; i < BK; i++) {
@@ -162,8 +163,10 @@ __device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, cons
 #pragma unroll
         for (int i = 0; i < BV; i++) {
             const int u = base + i * NT + tid, kp = u % (BN / 2), dv = u / (BN / 2);
-            r0[i].u = *reinterpret_cast<const uint4*>(vc + rowOf(2 * kp) * kvDim + colOff + dv * KV_VW);
-            r1[i].u = *reinterpret_cast<const uint4*>(vc + rowOf(2 * kp + 1) * kvDim + colOff + dv * KV_VW);
+            const KV_T* src0 = vc + rowOf(2 * kp) * kvDim + colOff + dv * KV_VW;
+            const KV_T* src1 = vc + rowOf(2 * kp + 1) * kvDim + colOff + dv * KV_VW;
+            r0[i].u = *reinterpret_cast<const uint4*>(src0);
+            r1[i].u = *reinterpret_cast<const uint4*>(src1);
         }
 #pragma unroll
         for (int i = 0; i < BV; i++) {
