@@ -271,6 +271,7 @@ type resident struct {
 	q4kLane                                                    bool
 	mropeAxis                                                  Buffer // S16: the m-RoPE prefill\'s per-pair axis table; empty when the model has none
 	pQ4K, pQ4KResid, pQ4KBias, pW8F32, pW8F32Resid, pW8F32Bias Pipeline
+	q4kR, w8F32R                                               int // those GEMVs' rows a simdgroup (q4kGemvRows, w8F32GemvRows)
 	pRmsF32Out, pSwF32                                         Pipeline
 	axF32, swF32                                               Buffer
 	// The lane's batched step (batch.go, forwardMultiOut): its projections' rows forms by B, and its norm and SwiGLU over
@@ -1184,6 +1185,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.decodeLaneW4F16 = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16"
 	if r.q4kLane = m.Quant() == "q4k"; r.q4kLane {
 		r.decodeLaneW4F16 = false
+		r.q4kR, r.w8F32R = q4kGemvRows, w8F32GemvRows
 		qr, wr := fmt.Sprint(q4kGemvRows), fmt.Sprint(w8F32GemvRows)
 		r.pQ4K, r.pQ4KResid, r.pQ4KBias = pipe("gemv_q4k_f32_rows"+qr), pipe("gemv_q4k_f32_resid_rows"+qr), pipe("gemv_q4k_f32_bias_rows"+qr)
 		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32_rows"+wr), pipe("gemv_w8_f32_resid_rows"+wr), pipe("gemv_w8_f32_bias_rows"+wr)
@@ -3176,7 +3178,7 @@ const q4kGemvRows, w8F32GemvRows = 8, 2
 func (r *resident) q4kGemv(e *Encoder, segs []q4kSeg, resid bool, bias, ax, out, uK Buffer) {
 	for _, sg := range segs {
 		o := out.At(sg.off * 4)
-		nq, nw := (sg.rows+q4kGemvRows-1)/q4kGemvRows*32, (sg.rows+w8F32GemvRows-1)/w8F32GemvRows*32
+		nq, nw := (sg.rows+r.q4kR-1)/r.q4kR*32, (sg.rows+r.w8F32R-1)/r.w8F32R*32
 		switch {
 		case sg.q4k && resid:
 			e.Dispatch(r.pQ4KResid, nq, 256, sg.w, ax, o, uK, sg.uN)

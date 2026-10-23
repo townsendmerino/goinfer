@@ -7,9 +7,14 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"os/exec"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // ksc1Q4KRaw is n rows of random Q4_K super-blocks over K: d and dmin small positive f16, random scales and quants.
@@ -318,4 +323,101 @@ func TestKSC1_stepMatchesDecodeKernels(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestKSC1_phi3Speed is C1-G4: Phi-3 mini 4k at --quant q4k (the registered GOINFER_PHI3_GGUF asset), one resident, its
+// q4k-lane pipelines swapped between the new rows kernels and the old one-row kernels (ksc1OldLib, at R = 1), 128 greedy decode
+// tokens after a 32-token prompt through ForwardEmb, A B B A over 10 pairs after 2 warm runs each, each pair's start load
+// printed. A fit refusal prints FIT-REFUSED. A timed run: hold the timing lock (GOINFER_KSC1_TIMING=1).
+func TestKSC1_phi3Speed(t *testing.T) {
+	if os.Getenv("GOINFER_KSC1_TIMING") == "" {
+		t.Skip("set GOINFER_KSC1_TIMING=1 (a timed run under the timing lock)")
+	}
+	phi3 := decoder.AssetPathForTest(t, "GOINFER_PHI3_GGUF")
+	mg, err := decoder.Load(phi3, decoder.Options{Quant: "q4k", ResidentContext: 256})
+	if err != nil {
+		if strings.Contains(err.Error(), "NOT loaded") {
+			fmt.Fprintf(os.Stderr, "[C1-G4] FIT-REFUSED: %v\n", err)
+		}
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	if why := residentMemoryDecline(mg); why != "" {
+		fmt.Fprintf(os.Stderr, "[C1-G4] FIT-REFUSED: %s\n", why)
+		t.Fatalf("Metal's fit guard declines Phi-3: %s", why)
+	}
+	r, err := buildResident(mg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if !r.q4kLane {
+		t.Fatal("the resident did not take the q4k lane")
+	}
+	lib, err := r.d.CompileLibrary(ksc1OldLib(), MSL3_1)
+	if err != nil {
+		t.Fatalf("compile the old kernels: %v", err)
+	}
+	pipe := func(n string) Pipeline {
+		p, e := r.d.NewComputePipeline(lib, n)
+		if e != nil {
+			t.Fatalf("%s: %v", n, e)
+		}
+		return p
+	}
+	type arm struct {
+		q, qr, qb, w, wr, wb Pipeline
+		qR, wR               int
+	}
+	nw := arm{r.pQ4K, r.pQ4KResid, r.pQ4KBias, r.pW8F32, r.pW8F32Resid, r.pW8F32Bias, r.q4kR, r.w8F32R}
+	old := arm{pipe("gemv_q4k_f32"), pipe("gemv_q4k_f32_resid"), pipe("gemv_q4k_f32_bias"), pipe("gemv_w8_f32"),
+		pipe("gemv_w8_f32_resid"), pipe("gemv_w8_f32_bias"), 1, 1}
+	use := func(a arm) {
+		r.pQ4K, r.pQ4KResid, r.pQ4KBias, r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = a.q, a.qr, a.qb, a.w, a.wr, a.wb
+		r.q4kR, r.w8F32R = a.qR, a.wR
+	}
+	defer use(nw)
+	const prompt, gen = 32, 128
+	_, _, _, _, _, _, vocab := mg.Dims()
+	run := func(a arm) float64 {
+		use(a)
+		for pos := range prompt {
+			r.ForwardEmb(mg.EmbedResidentForTest((pos*7919+13)%vocab), pos)
+		}
+		tok := 13
+		t0 := time.Now()
+		for pos := prompt; pos < prompt+gen; pos++ {
+			lg := r.ForwardEmb(mg.EmbedResidentForTest(tok), pos)
+			tok = 0
+			for i, v := range lg {
+				if v > lg[tok] {
+					tok = i
+				}
+			}
+		}
+		return time.Since(t0).Seconds() / gen
+	}
+	for range 2 {
+		run(old)
+		run(nw)
+	}
+	var ratios []float64
+	below := 0
+	for i := range 10 {
+		la, _ := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+		var o, n float64
+		if i%2 == 0 {
+			o, n = run(old), run(nw)
+		} else {
+			n, o = run(nw), run(old)
+		}
+		ratios = append(ratios, n/o)
+		if n < o {
+			below++
+		}
+		fmt.Fprintf(os.Stderr, "[C1-G4] pair %d (load %s): old %.2f ms/token (%.1f tok/s), new %.2f ms/token (%.1f tok/s), new/old %.4f\n",
+			i, la[:len(la)-1], o*1e3, 1/o, n*1e3, 1/n, n/o)
+	}
+	slices.Sort(ratios)
+	fmt.Fprintf(os.Stderr, "[C1-G4] median new/old %.4f, %d of 10 pairs below 1\n", (ratios[4]+ratios[5])/2, below)
 }
