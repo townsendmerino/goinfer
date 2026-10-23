@@ -1,0 +1,4 @@
+binary: /home/francis/goinfer-logs/g4-decode/serve-s20 (193de9f06)
+model: /home/francis/models/gemma4-26b-int4.giw  vision: /home/francis/models/gemma-4-26b-a4b-it-vis560  image: testdata/glm_ocr/invoices/inv01.png testdata/glm_ocr/invoices/inv02.png testdata/glm_ocr/invoices/inv03.png  max_tokens: 1500
+started: 2026-10-23 16:27:32 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07

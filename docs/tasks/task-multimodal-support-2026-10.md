@@ -8302,6 +8302,23 @@ back. A resize frees and reallocates each layer's slot stacks and empties the LR
   inv02, then inv03, as G-S20e(2) runs them in the same cells), under the timing lock. Per-form time for the reply, reported with the reload's own cost. **PASS:** new per-form
   time at most 0.8 of old in both pairs. **Kill:** not faster, then it does not ship. Prediction: about 0.6.
 
+**Step 3 read 2026-10-23 16:17 to 16:32 on nobara.** Old is `193de9f06`, today's served behaviour plus the per-turn cache
+line. New is `3cf6c6744`, the tower swap. A B B A, three forms per cell, load 1.4 to 3.2 at the cell starts, none void. Raw:
+`docs/measurements/multimodal-support-2026-10/s20/step3/`. The tier-0 halves passed first (`TestG4VCUDA_rebuildAfterCloseBitIdentical`;
+`TestGemma4MoE_cacheResizeBitExact_tiny`: 16 positions bit-identical to the fully resident run across 4 → 2 → 4 slots and a
+refused resize).
+- **G-S20e(2), exactness: PASS.** The replies on inv01, inv02 and inv03 are byte-identical in all four cells (1,073, 683 and
+  901 tokens).
+- **G-S20f, VRAM: PASS.** The cache grows from 8 to 33 slots/layer at load. Each of the six encodes logs the tower on CUDA
+  beside an 8-slot cache, then released, with the cache back at 33. Decode runs at 77.3 to 77.8% hit, against 27.7 to 28.7% for
+  old. An encode with the tower's upload takes 3.51 to 3.57 s, against 3.05 s with the tower resident.
+- **G-S20g, speed: PASS.** Per-form time for a 1,500-token reply (ttft + 1499 / decode rate), averaged over the three forms:
+  old 102.9 and 102.9 s, new 61.2 and 61.5 s. That is 0.595 and 0.597 in the two pairs, against the 0.8 bar, as predicted
+  (about 0.6). Decode went from 16.75 to 17.02 tok/s to 31.47 to 32.31 tok/s. Time to first token went from 13.9 to 14.0 s to 14.1 to
+  14.4 s, the tower's upload.
+- **Still open:** on-demand KV (parked; G-S20a prices it at about 5% once the swap is in); computing cold experts on the CPU
+  (step 4, an owner decision).
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
