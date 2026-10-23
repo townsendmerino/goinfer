@@ -51,6 +51,10 @@ type eg2Ops struct {
 	arena Buffer // one scalar per 256-byte slot, so no two dispatches in a command buffer share one
 	slot  int
 	eps   float32
+	w32   Pipeline // tower_gemm_w32: gemm's kernel (KS-D4)
+	// vitGemmForTest runs gemm on aikit's GEMMF32Plan kernel, which tower_gemm_w32 matches byte for byte: the old arm of
+	// KS-D4's A/B.
+	vitGemmForTest bool
 }
 
 // eg2AttnBufs are attention's inputs, scratch and output: q, k, v [T, heads, hd]; their head-major copies; a block's
@@ -68,7 +72,7 @@ func newEG2Ops(extra string, more map[string]*Pipeline) (eg2Ops, error) {
 	if err != nil {
 		return eg2Ops{}, err
 	}
-	lib, err := d.CompileLibraryPrecise(eg2MSL+extra, MSL3_1)
+	lib, err := d.CompileLibraryPrecise(eg2MSL+towerGemmMSL+extra, MSL3_1)
 	if err != nil {
 		return eg2Ops{}, fmt.Errorf("metal: compile the EmbeddingGemma 2 kernels: %w", err)
 	}
@@ -78,7 +82,8 @@ func newEG2Ops(extra string, more map[string]*Pipeline) (eg2Ops, error) {
 		dst  *Pipeline
 	}{{"eg2_gelu_mul", &o.p.geluMul}, {"eg2_gelu_mul_ple", &o.p.geluMulPLE}, {"eg2_add", &o.p.add},
 		{"eg2_add_scale", &o.p.addScale}, {"eg2_rope", &o.p.rope}, {"eg2_headmajor", &o.p.headMajor},
-		{"eg2_vt_block", &o.p.vtBlock}, {"eg2_softmax_rows", &o.p.softmax}, {"eg2_scatter_head", &o.p.scatter}} {
+		{"eg2_vt_block", &o.p.vtBlock}, {"eg2_softmax_rows", &o.p.softmax}, {"eg2_scatter_head", &o.p.scatter},
+		{"tower_gemm_w32", &o.w32}} {
 		if *b.dst, err = d.NewComputePipeline(lib, b.name); err != nil {
 			return eg2Ops{}, err
 		}
@@ -235,9 +240,15 @@ func (a *eg2Accel) grow(T int) error {
 	return nil
 }
 
+// gemm is C[M,N] = A[M,K]·Bᵀ in f32 through tower_gemm_w32 (its bias bound but unread).
 func (a *eg2Ops) gemm(e *Encoder, A, B, C Buffer, M, N, K int) {
-	p, gx, gy, tgx, tgy := a.vit.GEMMF32Plan(M, N, K)
-	e.Dispatch2D(p, gx, gy, tgx, tgy, A, B, C, a.u32(uint32(M)), a.u32(uint32(N)), a.u32(uint32(K)))
+	if a.vitGemmForTest {
+		p, gx, gy, tgx, tgy := a.vit.GEMMF32Plan(M, N, K)
+		e.Dispatch2D(p, gx, gy, tgx, tgy, A, B, C, a.u32(uint32(M)), a.u32(uint32(N)), a.u32(uint32(K)))
+		return
+	}
+	e.Dispatch2D(a.w32, (N+63)/64, (M+63)/64, 512, 1, A, B, C, B, a.u32(uint32(M)), a.u32(uint32(N)), a.u32(uint32(K)),
+		a.u32(0), a.u32(0))
 }
 
 func (a *eg2Ops) rms(e *Encoder, x, w, out Buffer, rows, dim int) {

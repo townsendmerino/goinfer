@@ -128,6 +128,11 @@ TOWER_ATTN(64)
 TOWER_ATTN(72)
 TOWER_ATTN(80)
 
+`
+
+// TowerGemmMSL is the towers' GEMM kernels. Every EmbeddingGemma 2 / Gemma 4 tower library compiles it (newEG2Ops), so the
+// grid towers' lever B and eg2Ops.gemm (tower_gemm_w32, KS-D4) share one copy.
+const TowerGemmMSL = `
 // tower_gemm_{w32,w16}: S17 lever B on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's Metal lever B"):
 // C[M,N] = A[M,K]·Wᵀ (+ bias[N]), A in f32, W [N,K] in f32 (w32) or f16 widened to f32 as it is staged (w16), f32
 // accumulation on simdgroup 8x8 tiles. One threadgroup of 16 simdgroups (512 threads) per 64x64 output tile, each
