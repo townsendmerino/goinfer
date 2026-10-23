@@ -49,7 +49,7 @@
 | KS-D1 | open | Mac: E2B at 4,096 tokens with and without the attention dispatch | — |
 | KS-D2 | open | Mac: `TestMetalPrefillDecomp` on the 0.5B at K=512 and 3900 | — |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
-| KS-D4 | open | Mac: the S17 whole-tower A/B on the Gemma 4 tower, plus its gate | — |
+| KS-D4 | done | done 2026-10-23 (w32): the EmbeddingGemma 2 encoder and the Gemma 4 vision and audio towers run their GEMMs on `tower_gemm_w32`, byte-identical to aikit's (D4-G1, G2); the E4B vision tower 1.61× faster, median 0.6192, 10 of 10 (D4-G3 SHIP). Open: w16 weights and the fused attention, each under the tower gate | survey, "KS-D4 read" |
 | KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
@@ -692,6 +692,15 @@ score and value products included) moves from aikit's `GEMMF32Plan` (`gemm_f32_s
 | D4-G3 speed | timed, Mac, timing lock | the Gemma 4 E4B vision tower (`~/models/gemma-4-E4B-qat-unq-towers`), one forward per image over the F2a images, the new GEMM against aikit's on one accelerator (a test seam), A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old forward time is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise PARK |
 
 Stopping rule: one pass each; G1 red stops the item. Cost: G1 seconds; G3 about 5 minutes.
+
+**KS-D4 read 2026-10-23.** D4-G1 **PASS**: `tower_gemm_w32` equals aikit's kernel byte for byte in all six cells, the `sg_big`
+and the `sg` paths both. D4-G2 **PASS**: `mem2Towers`' seven tiny-fixture towers × three inputs, 21 output hashes equal at the base
+(9bafcc12's merge-base) and the change; a planted `dbg = 3` in `eg2Ops.gemm` changed all 21, so the new path runs in every tower.
+D4-G3 (13:18–13:20, the lock held exclusively, the 1-minute load 2.90 at the start falling to 1.10, 4.9 GB available): the E4B
+vision tower over S3's four images at serve's cap, aikit 7,438–7,499 ms, `tower_gemm_w32` 4,581–4,673 ms, both arms' outputs equal
+in every pair; **median 0.6192 (1.61×), 10 of 10: SHIP**. Logs: `~/goinfer-logs/ksd4-g1-2026-10-23.log`,
+`~/goinfer-logs/ksd4-g3-2026-10-23.log`. Also: `touched.py` green after merging main; the tower families by name 12 pass, 17 skip,
+0 fail; staticcheck clean. Left as their own items: w16 weights and the fused attention for these towers (both change outputs).
 
 **KS-D5 · Fuse SwiGLU into the gate|up GEMM and drop `guF` (bit-identical).**
 - **Waste:** `guF` exists only to carry gate and up to `swiglu_f16`. It is 52–55% of the 1.5B's and 7B's per-row prefill
