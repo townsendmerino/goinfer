@@ -8118,6 +8118,76 @@ prefill on CUDA in batched passes.
 - **Also required:** the CUDA device tests that touch prefill stay green, and a text-only prefill is bit-identical
   before and after (`attn_img_batched` and every text path are unchanged).
 
+**S19 read 2026-10-23 on nobara (branch `g4-bidir-gpu-2026-10-23`; code `ad6bd267b`, diagnostics `79221575d`).** Raw:
+`docs/measurements/multimodal-support-2026-10/s19/`.
+
+- **Built as planned.** `attn_span_batched` sits beside `attn_img_batched` in `cuda/attn_img_prefill.cu`, and the old
+  kernel's PTX body is byte-identical. `PrefillSpansLast` cuts passes outside the spans, and `GenerateGemma4VLSpans` routes a
+  bidirectional non-E image turn there. On the real 26B the passes are [0,5), then the whole span (520 to 540 rows,
+  wider than the 512-row default), then the tail. Every pass ran without a decline or an OOM retry (traced in a debug
+  build).
+- **G-S19a: tiny PASS; scaled FAIL against the registered 0.999 bar, explained by a control and not fixed.**
+  (`gs19ab-run1.log`; the control came from a diagnostic run that is not kept, and the gate test now logs it.)
+  - Tiny, cosine against the CPU forward: span-first 1.000000, span-middle 0.999974, span-last 1.000000, two-spans
+    1.000000. Argmax is identical in all four, and one pass is bit-identical to 4-row passes in all four.
+  - Scaled: 0.997578, 0.998004, 0.980072 and 0.994742, argmax identical in all four, bit-identical across pass cuts.
+  - The control, on the same scaled fixture with no span anywhere: the shipped text prefill (`PrefillLast`) reads 0.995896
+    against the CPU int4 forward. That fixture is badly int4-conditioned (CPU int4-vs-f32 0.39 to 0.61 across the
+    layouts), so the bar cannot be met there by any resident path.
+  - Non-vacuity: spans dropped (a causal prefill) read 0.62 to 0.82 on tiny and 0.51 to 0.86 on scaled.
+- **G-S19b: PASS.** Each of the four planted defects is red on 8 of 8 layouts:
+  - the mask left causal (0.51 to 0.86);
+  - the span end one row short (0.57 to 0.94);
+  - Gemma 3's window rule, no reach-back (0.53 to 0.97);
+  - the image rows scaled by the embed scale (0.39 to 0.84).
+- **G-S19c, logits half (`gs19c-logits.log`): argmax identical on all three images.** Last-position cosine against the
+  CPU bidirectional prefill of the same features on the same load:
+  - inv01 0.996995;
+  - inv02 0.979510;
+  - table 0.993388.
+
+  The resident span prefill took 14.6 to 15.1 s per image, against 95 to 144 s for the CPU prefill (load 12 to 14
+  from another session).
+- **G-S19c, served half: FAIL as registered.** The registered setup is the CUDA tower, with the control being the same
+  binary under `GOINFER_BATCHED_PREFILL=0` (`served-cudatower/`, `grades.txt`).
+  - inv01: identical over 160 tokens.
+  - inv02: the first difference at token 10 is not a near-tie. The control's top is "4" at p 0.903; the new path writes
+    "Address" (p 0.096 under the control).
+  - table: the new path writes "1도 142.2" at token 70, where the control has "4" at p 1.000.
+- **The same comparison with the tower on the CPU** (`served-cputower/`):
+  - inv01: identical.
+  - inv02: a near-tie at token 25 ("\n\n" 0.462 against "\n" 0.446).
+  - table: the CONTROL writes "| 97.1 | 1          |" at token 101 (spaces, p 0.165), and the new path writes the correct
+    "101.6".
+- **main's own binary** (`9bafcc12`, CUDA tower, `main-cudatower/`) is identical to the control on all three forms over
+  160 tokens. It writes "| South | 97.1 | 1 sea.6 |" on the table form. So the control is today's shipped behaviour,
+  defect included.
+- **The garbage tokens are a pre-existing defect in the CUDA resident decode of the 26B, not in S19's prefill.**
+  Diagnostic `TestGemma4BidirSpanPrefill_real26BDecode`, greedy, 160 steps, `-moe-cache-experts`, windowed KV:
+  - with the CUDA tower's features (`decode-repro5-towercuda.log`):
+    - span prefill, then resident decode: garbage at step 70 ("1도");
+    - CPU prefill, then upload, then resident decode (today's path): garbage at step 101 ("1 sea.6");
+    - CPU prefill, then **CPU decode**: clean ("101.6");
+  - with the CPU tower's features (`decode-repro3-160.log`, `decode-repro4a-nofa.log`, the latter with the flash-decode
+    lane off): CPU prefill then upload then resident decode gives garbage at step 101 every time; the span prefill path
+    is clean.
+
+  Which step the defect corrupts depends on the trajectory, and it hits after either prefill. It is deterministic for a
+  given KV. It is not the flash-decode lane: that engages at 2048 keys, and the lane off still reads garbage at step 101.
+  Not yet localized; the expert cache's size is untested past step 100. It corrupts the OCR transcriptions served today.
+- **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load
+  2.2 to 3.4 at every cell start, none void. Per 160-token form turn:
+  - old (`9bafcc12`): 89.9 / 90.4 / 93.7 / 94.7 s, time to first token 80.9 to 85.7 s;
+  - new: 21.7 / 21.9 / 21.9 / 22.0 s, time to first token 12.9 to 13.3 s.
+
+  That is about 4.2x a turn and 6.4x to first token. The resident turn is faster, so the routing stays on.
+- **Not done:**
+  - the CUDA device suite and `touched.py` on this tree (the GPU was Francis's OCR window, 15:20 to 18:00);
+  - G-S19a/b re-run with the control in the gate's own log;
+  - the resident-decode defect above (its own task);
+  - the 31B (no checkpoint fits the 8 GB card);
+  - the f16 or paged KV build (`PrefillSpansLast` declines on it, and Gemma 4 keeps f32 KV on CUDA today).
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

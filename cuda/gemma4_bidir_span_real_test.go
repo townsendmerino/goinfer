@@ -153,12 +153,6 @@ func TestGemma4BidirSpanPrefill_real26BDecode(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	m, err := decoder.Load(model, decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: 16384, ResidentWindowedKV: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer m.Close()
-	r := mustResident(t, m)
 	enc, err := vision.LoadGemma4Encoder(visDir, false)
 	if err != nil {
 		t.Fatal(err)
@@ -170,12 +164,20 @@ func TestGemma4BidirSpanPrefill_real26BDecode(t *testing.T) {
 	softTok, _ := tk.TokenID(multimodal.Gemma4ImageSoftToken)
 	tmpl := chat.Gemma4()
 	ctx := context.Background()
-	var tower multimodal.Gemma4TowerAccelerator // GOINFER_S19_TOWER=cuda: serve's default tower, else aikit's CPU tower
+	// GOINFER_S19_TOWER=cuda: serve's default tower, built before the model as serve's held-back VRAM lets it be; else aikit's
+	// CPU tower.
+	var tower multimodal.Gemma4TowerAccelerator
 	if os.Getenv("GOINFER_S19_TOWER") == "cuda" {
 		if tower, err = multimodal.NewGemma4Tower("cuda", enc); err != nil {
 			t.Fatal(err)
 		}
 	}
+	m, err := decoder.Load(model, decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: 16384, ResidentWindowedKV: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r := mustResident(t, m)
 	steps := 100
 	if v := os.Getenv("GOINFER_S19_STEPS"); v != "" {
 		fmt.Sscan(v, &steps)
@@ -265,10 +267,25 @@ func TestGemma4BidirSpanPrefill_real26BDecode(t *testing.T) {
 	for i, step := range order {
 		kind, img, _ := strings.Cut(step, ":")
 		var toks []int
-		if kind == "cpu" {
+		switch kind {
+		case "cpu":
 			toks = runCPU(img)
 			cpuRef[img] = toks
-		} else {
+		case "cpuonly": // CPU prefill and CPU decode: no upload, no resident
+			p := prompts[img]
+			c := m.NewCache(len(p.ids) + steps + 1)
+			lg, err := m.PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx, p.ids, p.feats, p.spans, c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range steps {
+				next := argmaxF(lg)
+				toks = append(toks, next)
+				if lg, err = m.ForwardForTest(next, c); err != nil {
+					t.Fatal(err)
+				}
+			}
+		default:
 			toks = runSpan(img)
 		}
 		got[step] = append(got[step], toks)

@@ -1,0 +1,5 @@
+    gemma4_bidir_span_real_test.go:115: inv01.png: 548 rows (span [5,525)), tower 52.3s | resident span prefill 14.77s, CPU prefill 144.1s | last-position cosine 0.996995, argmax gpu=69572 "Invoice" cpu=69572 "Invoice"
+    gemma4_bidir_span_real_test.go:115: inv02.png: 553 rows (span [5,530)), tower 52.3s | resident span prefill 14.61s, CPU prefill 142.8s | last-position cosine 0.979510, argmax gpu=51344 "Bright" cpu=51344 "Bright"
+    gemma4_bidir_span_real_test.go:115: table.png: 568 rows (span [5,545)), tower 47.7s | resident span prefill 15.11s, CPU prefill 95.0s | last-position cosine 0.993388, argmax gpu=5010 "Table" cpu=5010 "Table"
+--- PASS: TestGemma4BidirSpanPrefill_real26B (617.35s)
+PASS
