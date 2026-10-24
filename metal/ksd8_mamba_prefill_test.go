@@ -4,7 +4,10 @@ package metal
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -362,4 +365,85 @@ func TestKSD8_9BSpeed(t *testing.T) {
 	}
 	med := (speedups[0] + speedups[1]) / 2
 	fmt.Fprintf(os.Stderr, "[D8-G4] median speedup %.2fx: %s\n", med, map[bool]string{true: "SHIP", false: "PARK"}[med >= 2])
+}
+
+// TestKSD8_writeRefIDs writes D8-G3's 8 prompts (ksd8Ids at the 9B's vocabulary) as a JSON list to GOINFER_KSD8_IDS_OUT, for the
+// CPU reference run on another box (decoder's TestKSD8_cpuReference).
+func TestKSD8_writeRefIDs(t *testing.T) {
+	out := os.Getenv("GOINFER_KSD8_IDS_OUT")
+	if out == "" {
+		t.Skip("set GOINFER_KSD8_IDS_OUT")
+	}
+	m, r := ksd8Load9B(t)
+	defer m.Close()
+	var prompts [][]int
+	for k := range 8 {
+		prompts = append(prompts, ksd8Ids(k, 512, r.V))
+	}
+	b, _ := json.Marshal(prompts)
+	if err := os.WriteFile(out, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "[D8-G3] wrote 8 prompts at V=%d to %s\n", r.V, out)
+}
+
+// TestKSD8_9BAgainstReference is D8-G3 on its reference route: the 8 prompts of GOINFER_KSD8_REF_IDS, the CPU reference's
+// last-position logits from GOINFER_KSD8_REF_BIN (decoder's TestKSD8_cpuReference, little-endian float32, 8 × V), and the 9B's
+// sequential path and batched pass on the Mac. PASS iff the pass's mean KL(ref ‖ ·) is at most the sequential path's + 0.005
+// nats and its top-1 agreement with the reference at least the sequential path's less one prompt.
+func TestKSD8_9BAgainstReference(t *testing.T) {
+	idsPath, refPath := os.Getenv("GOINFER_KSD8_REF_IDS"), os.Getenv("GOINFER_KSD8_REF_BIN")
+	if idsPath == "" || refPath == "" {
+		t.Skip("set GOINFER_KSD8_REF_IDS and GOINFER_KSD8_REF_BIN")
+	}
+	b, err := os.ReadFile(idsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompts [][]int
+	if err := json.Unmarshal(b, &prompts); err != nil {
+		t.Fatal(err)
+	}
+	refB, err := os.ReadFile(refPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, r := ksd8Load9B(t)
+	defer m.Close()
+	if len(refB) != 4*len(prompts)*r.V {
+		t.Fatalf("reference holds %d bytes, want %d prompts × %d logits", len(refB), len(prompts), r.V)
+	}
+	var klSeq, klPass float64
+	topSeq, topPass := 0, 0
+	for k, ids := range prompts {
+		ref := make([]float32, r.V)
+		for i := range ref {
+			ref[i] = math.Float32frombits(binary.LittleEndian.Uint32(refB[4*(k*r.V+i):]))
+		}
+		r.resetRecurrent()
+		var seq []float32
+		for i, id := range ids {
+			seq = r.Forward(id, i)
+		}
+		seq = slices.Clone(seq)
+		r.resetRecurrent()
+		pass := slices.Clone(r.PrefillLast(getEmbs(r, ids), 0))
+		ks, kp := klLogits(ref, seq), klLogits(ref, pass)
+		klSeq += ks / float64(len(prompts))
+		klPass += kp / float64(len(prompts))
+		if argmaxF(seq) == argmaxF(ref) {
+			topSeq++
+		}
+		if argmaxF(pass) == argmaxF(ref) {
+			topPass++
+		}
+		fmt.Fprintf(os.Stderr, "[D8-G3 ref] prompt %d: top-1 ref %d seq %d pass %d; KL(ref‖seq) %.4e, KL(ref‖pass) %.4e\n",
+			k, argmaxF(ref), argmaxF(seq), argmaxF(pass), ks, kp)
+	}
+	ok := klPass <= klSeq+0.005 && topPass >= topSeq-1
+	fmt.Fprintf(os.Stderr, "[D8-G3 ref] mean KL to the reference: sequential %.4e, pass %.4e; top-1 agreement sequential %d/%d, pass %d/%d: %s\n",
+		klSeq, klPass, topSeq, len(prompts), topPass, len(prompts), map[bool]string{true: "PASS", false: "FAIL"}[ok])
+	if !ok {
+		t.Errorf("the batched pass is further from the reference than the sequential path")
+	}
 }
