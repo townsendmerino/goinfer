@@ -8203,6 +8203,26 @@ prefill on CUDA in batched passes.
     No higher-precision reference of the 26B fits this box, so which side is nearer the model's own answer is shown only
     by output quality: the CPU path read every tested form correctly; the GPU path garbles about one digit in three
     forms.
+- **The mechanism, 2026-10-23 evening (Francis's option 1, CPU only; `TestGemma4_26BActQuantSensitivity`, logs
+  `sensitivity-actq-*.log`).**
+  - **The router was never the issue.** The 26B's CUDA router already runs in full f32 (`rmsnorm_nw`, then
+    `gemv_f32_f32`, then f32 top-k).
+  - **The CPU int4 path is W4A8 too.** It rounds activations to int8 with one scale per row, as the GPU does
+    (`ActivationQuantHazard`). The earlier "GPU W4A8 against CPU float" reading above is wrong: both quantize.
+  - **The test:** the table form decoded on the CPU twice, once on its features and once on features nudged by 1e-5
+    relative noise, the second teacher-forced on the first's tokens. Worst per-layer residual cosine at steps 95 to
+    110:
+
+    | weights | activations | cosine range | collapsed steps (below 0.9) |
+    |---|---|---|---|
+    | int4 | int8, per row | down to 0.44 and -0.58 | 6 of 16, the same steps as GPU-vs-CPU |
+    | int4 | int8, per 32 | down to 0.39 | 2 of 16 |
+    | int8 | int8, per row (`int8int8`) | down to 0.32 | 5 of 16 |
+    | int8 | f32 (weight-only `int8`) | 1.00000 at every layer and step | none |
+  - **Reading:** the 26B's int8 activation rounding, not its int4 weights and not anything GPU-specific, turns a 1e-5
+    difference into a late-layer collapse at certain tokens. GPU-vs-CPU is one such difference, so either path can land on
+    a garbage digit (the CPU did not on these forms; the GPU did on two). Float activations remove the sensitivity.
+    Untested: int4 weights with float activations (no such path exists on either side).
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load
   2.2 to 3.4 at every cell start, none void. Per 160-token form turn:
   - old (`9bafcc12`): 89.9 / 90.4 / 93.7 / 94.7 s, time to first token 80.9 to 85.7 s;

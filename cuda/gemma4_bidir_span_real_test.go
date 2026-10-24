@@ -458,3 +458,121 @@ func top5(tk interface {
 	}
 	return out
 }
+
+// TestGemma4_26BActQuantSensitivity asks, on the CPU alone, whether per-row int8 activation scales (or, with
+// GOINFER_S19_QUANT, int4 weights) are what turns a tiny difference into the 26B's garbage digits. For GOINFER_S19_ACTGROUP (0, per row, the default; or 32), the table form is
+// prefilled and greedily decoded twice: once on its features as computed and once on features nudged by 1e-5 relative noise
+// (the size of the CUDA-vs-CPU tower difference). The second run is teacher-forced on the first run's tokens, and each step
+// logs the logits cosine, both argmaxes and, over GOINFER_S19_LOC_FROM..TO, the per-layer residual cosine between the two.
+func TestGemma4_26BActQuantSensitivity(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("GOINFER_HEAVY_TESTS unset: real 26B")
+	}
+	home, _ := os.UserHomeDir()
+	model := envOr("GOINFER_S19_MODEL", filepath.Join(home, "models", "gemma4-26b-int4.giw"))
+	visDir := envOr("GOINFER_S19_VISION", filepath.Join(home, "models", "gemma-4-26b-a4b-it-vis560"))
+	img := envOr("GOINFER_S19_IMAGE", "../testdata/glm_ocr/table.png")
+	var group, steps, from, to int
+	fmt.Sscan(envOr("GOINFER_S19_ACTGROUP", "0"), &group)
+	fmt.Sscan(envOr("GOINFER_S19_STEPS", "120"), &steps)
+	fmt.Sscan(envOr("GOINFER_S19_LOC_FROM", "95"), &from)
+	fmt.Sscan(envOr("GOINFER_S19_LOC_TO", "110"), &to)
+	tk, err := modelload.Tokenizer(visDir)
+	if err != nil {
+		t.Skip(err)
+	}
+	enc, err := vision.LoadGemma4Encoder(visDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp, err := multimodal.LoadGemma4PreprocessConfig(visDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// GOINFER_S19_QUANT loads another weight precision (int8: weight-only, f32 activations), from a safetensors directory.
+	m, err := decoder.Load(model, decoder.Options{ActQuantGroup: group, Quant: os.Getenv("GOINFER_S19_QUANT")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	data, err := os.ReadFile(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patches, pos, err := vision.Gemma4Preprocess(data, pp.MaxSoftTokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := multimodal.Gemma4PooledTokens(pos, enc.Cfg.PoolingKernelSize)
+	feats, err := multimodal.Gemma4TowerFeatures(enc, nil, patches, pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nudged := append([]float32(nil), feats...)
+	var s uint32 = 12345
+	for i := range nudged {
+		s = s*1664525 + 1013904223
+		nudged[i] *= 1 + 1e-5*(float32(int32(s>>16)%2001-1000)/1000)
+	}
+	softTok, _ := tk.TokenID(multimodal.Gemma4ImageSoftToken)
+	block := multimodal.Gemma4ImageBlock(n)
+	segs, _ := multimodal.SpliceImageBlocks(chat.Gemma4().RenderSegments("", []chat.Turn{{Role: "user", Content: block + "Transcribe every field of this form as key: value lines."}}), []string{block})
+	ids, _ := tk.EncodeSegments(segs, false)
+	runs := multimodal.FindImageRuns(ids, softTok)
+	spans := []decoder.ImageSpan{{Pos: runs[0][0], Len: runs[0][1]}}
+	ctx := context.Background()
+	ca, cb := m.NewCache(len(ids)+steps+1), m.NewCache(len(ids)+steps+1)
+	la, err := m.PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx, ids, feats, spans, ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	la = append([]float32(nil), la...)
+	lb, err := m.PrefillLogitsGemma4VLBidirectionalSpansForTest(ctx, ids, nudged, spans, cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lb = append([]float32(nil), lb...)
+	var toks []int
+	split := -1
+	for i := 0; i < steps; i++ {
+		c, _ := cosMaxAbs(la, lb)
+		aa, ab := argmaxF(la), argmaxF(lb)
+		if aa != ab && split < 0 {
+			split = i
+		}
+		t.Logf("group %d step %3d: logits cos %.6f argmax base %d %q nudged %d %q", group, i, c, aa, dec(tk, aa), ab, dec(tk, ab))
+		tok := aa
+		toks = append(toks, tok)
+		capture := i >= from && i <= to
+		var ha [][]float32
+		if capture {
+			decoder.SetGemma4HiddenCaptureForTest(true)
+		}
+		if la, err = m.ForwardForTest(tok, ca); err != nil {
+			t.Fatal(err)
+		}
+		la = append([]float32(nil), la...)
+		if capture {
+			ha = append([][]float32(nil), decoder.Gemma4HiddenCaptureForTest()...)
+			decoder.SetGemma4HiddenCaptureForTest(true)
+		}
+		if lb, err = m.ForwardForTest(tok, cb); err != nil {
+			t.Fatal(err)
+		}
+		lb = append([]float32(nil), lb...)
+		if capture {
+			hb := decoder.Gemma4HiddenCaptureForTest()
+			decoder.SetGemma4HiddenCaptureForTest(false)
+			worst, at := 1.0, -1
+			for l := 1; l < min(len(ha), len(hb)); l++ {
+				if c, _ := cosMaxAbs(ha[l], hb[l]); c < worst {
+					worst, at = c, l-1
+				}
+			}
+			t.Logf("group %d step %3d: worst per-layer residual cos base/nudged %.5f at L%d", group, i, worst, at)
+		}
+	}
+	text, _ := tk.Decode(toks)
+	t.Logf("group %d: base reply %q", group, strings.ReplaceAll(text, "\n", `\n`))
+	t.Logf("group %d: first step where the nudged run's argmax departs: %d", group, split)
+}
