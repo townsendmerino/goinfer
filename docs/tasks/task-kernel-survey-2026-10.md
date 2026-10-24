@@ -652,6 +652,21 @@ Each model's load is fit-checked before G5 to G7. Stopping rule: one pass each, 
 Expected cost: G0 about 3 min; G1 to G4 seconds; G5 about 6 min; G6 about 4 min; G7 about 3 min for Phi-3 and 2 for the 1.5B.
 These are C1-G3's and C1-G4's walls, plus a second load. Planned order: G0 first; the aikit accessor only if a kind survives G0.
 
+**O1-G0 read 2026-10-24 (10:33, the lock held exclusively, load 3.48, 13.9 GB available), and one amendment to Q5_K before any
+grading gate.** The ceiling was 133.9 GB/s, lower than C1-G0's 179, so the box was busier. Ratios are read within this run. The
+prototypes were first checked against the float64 reference, worst |err|/Σ\|w·a\| 1.0e-8 (Q5_K) and 7.0e-9 (Q6_K).
+- **int8 → native, best R:** qkv 0.242 → 0.298 ms at R = 8 (Q5_K, 65 GB/s, 0.81×); down 0.174 → **0.128** at R = 4 (Q6_K, 161 GB/s,
+  1.36×); head 0.528 (`gemv_w8f32_head` 0.573) → **0.476** at R = 4 (1.11×).
+- **Summed over Phi-3:** Q5_K 1.230 of int8 at R = 8, so it **fails** the kill rule (≤ 0.95). Q6_K 0.761 at R = 4 **clears**: Q6_K is
+  built at R = 4.
+- **Log:** `~/goinfer-logs/kso1-g0-2026-10-24.log`.
+- **Why Q5_K is slow:** Q6_K runs the same lane map at 161 GB/s. Q5_K shares `q4k_scale_min` with Q4_K, which reads its scale bytes
+  one at a time on a branch that splits the simdgroup (lanes with j < 2 against j ≥ 2), twice a block.
+- **Amended (Q5_K only), before O1-G1 to G7 run:** the 12 scale bytes are read as three words and every lane's scale and min are
+  decoded with masks and shifts, with no branch. Variant (b) keeps (a)'s two dot chains. Variant (c) splits each into two halves.
+  The kill rule and R set are unchanged, and this is the last Q5_K reading. If neither variant clears, Q5_K is killed and only Q6_K is
+  built.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
