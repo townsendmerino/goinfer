@@ -8272,6 +8272,20 @@ prefill on CUDA in batched passes.
     - Logits cosine is 1.000000 at every step, the argmax never departs, and the worst per-layer residual cosine is
       1.00000 at every captured step 95 to 110. The same comparison on W4A8 read down to 0.44.
     - At step 101, where the W4A8 resident wrote a run of spaces, both write "0" (101.6).
+  - **G-S19g read 2026-10-23, 19:13 to 19:25: PASS** (`g19g/`, `grade.txt`).
+    - The 15 invoices and the table form, a fresh greedy turn each (`max_tokens` 700), Francis's serve flags. Float
+      build `c2db5b7dd`; baseline main `fa0820f1a` (W4A8).
+    - **Float: 294 of 294 values present on all 16 forms.**
+    - Main (W4A8): 292 of 294. inv11 wrote "Qty: ES" for 40, and inv15 wrote "Qty: 0" for 10: the garbage-digit class.
+  - **G-S19h read 2026-10-23, 19:25 to 19:29** (`g19h/cells.txt`). A B B A, two forms per cell, 160-token turns, load
+    1.6 to 1.75 at every cell start, none void.
+
+    | arm | turn | time to first token | decode |
+    |---|---|---|---|
+    | W4A8 (main) | 12.8 to 12.9 s | 9.1 to 9.2 s | 41.8 to 44.2 tok/s |
+    | float | 13.1 s | 9.1 to 9.2 s | 39.8 to 40.8 tok/s |
+
+    About +2% a turn and 5 to 8% slower decode, inside the registered 25%.
   - **Ships as:** the 26B's (gemma4 MoE) CUDA decode on float activations by default, once G-S19e to G-S19g pass. A
     rollback switch lives in the resident (a test seam), not an env read.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load

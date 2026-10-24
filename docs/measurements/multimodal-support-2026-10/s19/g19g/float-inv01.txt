@@ -1,0 +1,33 @@
+Invoice No: A-01778
+Date: 10/24/2026
+Due: 11/24/2026
+
+From: Harbor Light Supply Co.
+Address: 711 Ridge Park Drive, Austin, TX 78701
+
+Bill To: Thistle & Rowan Ltd
+Address: 9 Foundry Way, Bristol BS1 5TR
+
+No: 1
+Description: Binding spine strips
+Qty: 6
+Unit Price: 920.48
+Amount: 5522.88
+
+No: 2
+Description: Hardwood flooring, per m2
+Qty: 5
+Unit Price: 125.27
+Amount: 626.35
+
+No: 3
+Description: Design review
+Qty: 24
+Unit Price: 655.85
+Amount: 15740.40
+
+Subtotal: 21889.63
+Tax (8.5%): 1860.62
+Total Due: €23750.25
+
+Payment terms: net 30 days. Thank you for your business.

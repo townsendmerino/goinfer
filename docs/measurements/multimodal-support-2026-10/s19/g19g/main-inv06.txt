@@ -1,0 +1,24 @@
+Company Name: Alder Street Bakery
+Address: 9 Foundry Way - Leeds LS1 4AP
+Invoice #: A-51440
+Date: 2026-05-25
+Customer: Lumen Photography
+Customer Address: 56 Orchard Close, Boise, ID 83702
+Due date: 2026-06-25
+
+Line Item 1 No: 1
+Line Item 1 Description: Pallet wrap
+Line Item 1 Qty: 2
+Line Item 1 Unit Price: 735.74
+Line Item 1 Amount: 1471.48
+
+Line Item 2 No: 2
+Line Item 2 Description: Steel angle 40x40x3m
+Line Item 2 Qty: 40
+Line Item 2 Unit Price: 17.32
+Line Item 2 Amount: 692.80
+
+Subtotal: 2164.28
+Tax (10%): 216.43
+Total Due: £2380.71
+Payment terms: net 30 days.
