@@ -59,7 +59,7 @@
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
-| KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
+| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1); the 1.5B's WebGPU decode 24.8 → 21.9 ms a token, median 0.8821, 10 of 10 pairs (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | open | either box: `TEncode` from `TestDecodeTWE_split` on today's binding | — |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
@@ -1233,6 +1233,17 @@ built with `quantNarrowForTest` (read at `New`) compiles the 64-lane form for th
 E2-G3: none; the change allocates nothing. Planted defect, run once and reverted: the widened rmsnorm sum taken over all 256 lanes
 (today's order broken); E2-G1 goes red on the rmsnorm cells, or, if every cell stays equal, a pack loop stopping at 128 lanes
 must. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
+
+**KS-E2 read 2026-10-24 (Mac, 11:50–12:01): SHIP.**
+- **E2-G1 PASS.** (a) 63 cells: the six shaders at n = 1, 3, 255, 896, 4864, 8960 and the three row forms at n = 255, 896, 4864 ×
+  M = 1, 3, 17, 0 words differ (packed int8 and scales). The plant (rmsnorm's sum over all 256 lanes) turned the rmsnorm cells red,
+  so the guarded sum is what keeps the widened kernel exact. (b) llama-tiny 0 of 8,192 and the 1.5B 0 of 4,861,952 logits differ
+  over 32 steps, a wide against a narrow resident (each Context checked to carry its width).
+- **E2-G2 SHIP** (11:59–12:01, the lock held exclusively; the 1-minute load 3.49 at the start, each pair's 1.22–2.56; 12.6 GB
+  available by the load figure, the reclaimable one not captured): narrow 24.66–25.56 ms a token, wide 21.81–21.94, **median
+  wide/narrow 0.8821, 10 of 10 pairs faster**: the 1.5B's WebGPU decode 11.8% faster, about 2.9 ms a token (the survey's estimate
+  0.78 ms).
+Logs: `~/goinfer-logs/kse2-g1a-2026-10-24.log`, `~/goinfer-logs/kse2-g1b-2026-10-24.log`, `~/goinfer-logs/kse2-g2-2026-10-24.log`.
 
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
