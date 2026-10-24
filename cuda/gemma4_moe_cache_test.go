@@ -222,3 +222,58 @@ func TestGemma4MoE_cacheResizeBitExact_tiny(t *testing.T) {
 	}
 	t.Logf("%d positions bit-identical across 4 → 2 → 4 slots and a refused resize (%d hits, %d misses)", len(prompt), s.Hits, s.Misses)
 }
+
+// TestGemma4MoE_hostExpertsBitExact_tiny is G-S20i's second half: with the host computing some of each layer's expert misses
+// (moe_split.go), every position's logits stay bit-identical to the fully resident run. The plan is forced: every miss to the
+// host, none, one per layer, and all on alternate layers. Two slots of four experts, so most ranks miss.
+func TestGemma4MoE_hostExpertsBitExact_tiny(t *testing.T) {
+	const dir = "../testdata/gemma4-moe-tiny"
+	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 128, 9, 250, 17, 60, 200}
+	forward := func(mc *decoder.Model, rf decoder.ResidentForward) [][]float32 {
+		out := make([][]float32, len(prompt))
+		for i, tok := range prompt {
+			l, err := rf.Forward(mc.EmbedResidentForTest(tok), i)
+			if err != nil {
+				t.Fatalf("forward pos %d: %v", i, err)
+			}
+			out[i] = append([]float32(nil), l...)
+		}
+		return out
+	}
+	mc, rf := loadG4MoECache(t, dir, false)
+	ref := forward(mc, rf)
+	mc.Close()
+	t.Setenv("GOINFER_MOE_CACHE_SLOTS", "2")
+	calls := 0
+	for _, pat := range []struct {
+		name  string
+		force func(int) int
+	}{
+		{"every miss on the host", func(m int) int { return m }},
+		{"none on the host", func(int) int { return 0 }},
+		{"one per layer", func(int) int { return 1 }},
+		{"all, alternate layers", func(m int) int { calls++; return m * (calls % 2) }},
+	} {
+		mc, rf := loadG4MoECache(t, dir, true)
+		r := rf.(*cudaResident)
+		if r.split == nil {
+			mc.Close()
+			t.Fatal("the host-expert split did not engage on the tiny fixture: the comparison would cover the device path only")
+		}
+		r.split.force = pat.force
+		got := forward(mc, rf)
+		host := r.split.hostExperts
+		mc.Close()
+		for i := range ref {
+			for j := range ref[i] {
+				if got[i][j] != ref[i][j] {
+					t.Fatalf("%s: pos %d logit %d: %.9g with host experts, %.9g fully resident", pat.name, i, j, got[i][j], ref[i][j])
+				}
+			}
+		}
+		t.Logf("%s: %d positions bit-identical, %d experts computed on the host", pat.name, len(prompt), host)
+		if pat.name != "none on the host" && host == 0 {
+			t.Errorf("%s: no expert ran on the host, so the pattern tested nothing", pat.name)
+		}
+	}
+}

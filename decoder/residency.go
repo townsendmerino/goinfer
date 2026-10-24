@@ -343,10 +343,11 @@ type ResidentImageBlocksPrefill interface {
 }
 
 // ExpertCacheStats describes a resident's device cache of MoE experts: Slots is the per-layer slot count it was granted,
-// and Hits and Misses sum every MoE layer's lookups since the resident was built. A miss is one expert copied host to device.
+// and Hits and Misses sum every MoE layer's lookups since the resident was built. A miss is one expert copied host to device,
+// or computed on the host instead; Host counts those.
 type ExpertCacheStats struct {
-	Slots        int
-	Hits, Misses uint64
+	Slots              int
+	Hits, Misses, Host uint64
 }
 
 // ResidentExpertCache is an OPTIONAL ResidentForward extension, implemented by a resident that pages MoE experts through a

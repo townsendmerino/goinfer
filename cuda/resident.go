@@ -611,6 +611,8 @@ type cudaResident struct {
 
 	// cacheSlotsAsked is the slot count the load asked for, before allocSlots capped it to free VRAM: the ceiling a resize grows to.
 	cacheSlotsAsked int
+	// split is the host share of the expert misses (moe_split.go), nil when off.
+	split *moeSplit
 
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4: its output steers a
 	// DISCRETE choice, so a quantization error near a tie does not perturb the result slightly, it runs a DIFFERENT
@@ -1458,6 +1460,7 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		r.routeRecord(L.idx, r.hostIdx[:r.topK])
 	}
 	c := L.expCache
+	r.markHostRanks(c)
 	// Demand accounting (see expertCache), counted BEFORE admission on purpose: it must describe what this stage
 	// REQUESTED, not what the cache already held, or it would fall as the cache warmed. topK is ~8, so the quadratic
 	// scan is negligible next to the DMA it describes.
@@ -1480,6 +1483,13 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 	r.pendingAdmits = r.pendingAdmits[:0]
 	for j := 0; j < r.topK; j++ {
 		e := r.hostIdx[j]
+		if r.split != nil && r.split.cpu[j] {
+			// computed on the host (gemma4MoeMLPPostSplit): no slot, no copy; a miss all the same
+			c.misses++
+			r.hostSlot[j] = 0
+			r.missEv[j] = -1
+			continue
+		}
 		slot, hit := c.admit(e)
 		r.hostSlot[j] = uint32(slot)
 		if r.overlap {
@@ -1693,6 +1703,9 @@ func (r *cudaResident) ExpertCacheStats() (decoder.ExpertCacheStats, bool) {
 		return decoder.ExpertCacheStats{}, false
 	}
 	st := decoder.ExpertCacheStats{Slots: r.cacheSlots}
+	if r.split != nil {
+		st.Host = r.split.hostExperts
+	}
 	for i := range r.layers {
 		if c := r.layers[i].expCache; c != nil {
 			st.Hits += c.hits
@@ -2517,6 +2530,8 @@ func (r *cudaResident) Close() error {
 			_ = r.kvTabStage.Close()
 			r.kvTabStage = nil
 		}
+		r.split.close()
+		r.split = nil
 		// Host-mapped expert stacks are page-locked host memory too (not in the device ledger), so free them here alongside logitsPinned, before ReleaseObjects.
 		for i := range r.layers {
 			for _, m := range []*gpu.MappedHostBuffer{
@@ -3116,6 +3131,9 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 // cleared) g4x2, its post-norm, and the join — sum x1+x2, joint post-norm, add the residual h, then
 // the per-layer scalar. g4x2 was zeroed and the expert slots filled in the gap before this runs.
 func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int, x Buffer) error {
+	if r.split != nil && r.split.n > 0 {
+		return r.gemma4MoeMLPPostSplit(Ly, l, x)
+	}
 	gu := 2 * r.moeInter
 	for j := 0; j < r.topK; j++ {
 		if e := r.waitMiss(j); e != nil {
@@ -3137,6 +3155,12 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int, x Buffer) error {
 			return e
 		}
 	}
+	return r.gemma4MoeJoin(Ly, l, x)
+}
+
+// gemma4MoeJoin is what follows the expert loop once g4x2 holds the experts' sum: its post-norm, then the join with the
+// dense branch and the residual.
+func (r *cudaResident) gemma4MoeJoin(Ly *cudaLayer, l int, x Buffer) error {
 	if e := r.normF32(r.g4x2, Ly.g4postFFN2); e != nil {
 		return e
 	}

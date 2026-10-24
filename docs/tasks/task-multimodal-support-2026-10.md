@@ -8390,6 +8390,33 @@ layer that uses the CPU, the projection is about 36 to 40 tok/s (52 to 56 s a fo
   **PASS:** decode at least 1.15 of #198's in both pairs (31.6 → 36.3 tok/s), and replies byte-identical. 1.05 to 1.15:
   parked. Prediction: 36 to 40 tok/s.
 
+**Tier-0 reads, 2026-10-23 17:28 to 17:50 on nobara** (under the timing lock; logs in `~/goinfer-logs/g4-decode/`).
+- **G-S20h, the CPU kernels: PASS as amended.** The Go replica (`cuda/moe_cpu.go`) is bit-identical to `gemv_w4a8_moe`
+  and to `gemv_w4a8_moe_wacc`'s accumulate at both geometries. That covers every row of 8 random experts: 11,264 gate/up
+  values and 22,528 down values, each kernel. The AVX2 kernel (`cuda/moe_cpu_amd64.s`) is bit-identical to the replica on
+  nine row lengths, and `fmaf32` rounds once on 2,000,000 triples, 235,089 of them on a float32 midpoint.
+- **G-S20h amendment, made after the first run.** Two of the three registered planted defects, "the tail fma as a multiply
+  and an add" and "the pair's operands swapped", changed no value at either geometry. They are equivalent mutants, not
+  missed defects: a scale's 11-bit significand times a word's integer product (at most 8 × 8 × 127, 13 bits) is exact in
+  float32, so every pairing of multiplies with adds gives the same result. They are replaced with two defects that change
+  the order of float additions: the pair added unfolded, and the 64-word blocks walked in reverse. The rule also becomes
+  "red at one geometry at least", because the down rows hold a single block, where reversal is the identity.
+  - Read: unfolded pair red on 2 of 11,264 gate/up values; reversed blocks red on 2; the serial lane sum red on 6,812 and
+    3,529.
+  - Most of the arithmetic is exact. The order only matters where the shuffle tree mixes the lanes' magnitudes.
+- **G-S20i, exactness of the split: PASS.**
+  - `gemv_w4a8_moe_res` plus `moe_combine` is bit-identical to the chain of 8 `gemv_w4a8_moe_wacc` launches (2,816 rows),
+    with every product from the device, from the host, alternating, and first and last from the host.
+  - On `testdata/gemma4-moe-tiny` at 2 slots, all 16 positions' logits are bit-identical to the fully resident run with
+    every miss on the host (64 host experts), none, one per layer (32) and all on alternate layers (32).
+- **G-S20j, the sync cost and the CPU's rate: PASS the kill rule.**
+  - Round trips, per layer with 2 host experts and no host compute, 1,900 iterations: stage 27.1 µs, GLU round trip 39.6 µs,
+    return and combine 55.6 µs; 122.3 µs in all (p90s 39.5, 56.1 and 75.8).
+  - The host's rate, experts drawn from a 430 MB pool: fastest at 4 workers, 142 µs for one expert and 128 µs each for two
+    (23 to 27 GB/s). At 8 workers it is 145 to 165 µs an expert and at 12, 166 to 208, so the pool is 4 workers.
+  - Projection: with 230 µs a copied miss and about 1.7 misses a layer, splitting saves about 4.3 ms of a 31.6 ms token, about
+    14%. That is over the 10% bar, so the served gate runs. Revised prediction: about 36 to 37 tok/s, the low end of 36 to 40.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

@@ -1884,6 +1884,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return declined(fmt.Errorf("cuda: overlap: %w", e))
 		}
 	}
+	// The host share of the expert misses (moe_split.go). A build that cannot set it up runs without it.
+	if r.moeSplitEligible() {
+		if e := r.do(r.initMoESplit); e != nil {
+			fmt.Fprintf(os.Stderr, "[cuda] C′ host experts off: %v\n", e)
+		}
+	}
 	b.resident = r
 	return r, true, nil
 }

@@ -2025,7 +2025,11 @@ func (lm *loadedModel) logExpertCache(before decoder.ExpertCacheStats, ok bool) 
 	if h+m == 0 {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "expert cache: %d slots/layer; this turn %d hits, %d misses (%.1f%% hit)\n", now.Slots, h, m, 100*float64(h)/float64(h+m))
+	host := ""
+	if n := now.Host - before.Host; n > 0 {
+		host = fmt.Sprintf(", %d of the misses computed on the host", n)
+	}
+	fmt.Fprintf(os.Stderr, "expert cache: %d slots/layer; this turn %d hits, %d misses (%.1f%% hit)%s\n", now.Slots, h, m, 100*float64(h)/float64(h+m), host)
 }
 
 func logKVCopy(gen *decoder.Generation) {

@@ -112,6 +112,12 @@ var moeFoldPTX []byte
 //go:embed testdata/moe_rows.ptx
 var moeRowsPTX []byte
 
+// moeSplitPTX: gemv_w4a8_moe_res and moe_combine, the expert combine taken apart for a layer whose experts are partly computed
+// on the host (S20 step 4). See cuda/moe_split.cu.
+//
+//go:embed testdata/moe_split.ptx
+var moeSplitPTX []byte
+
 // audioEncoderPTX: audio_gelu_erf (the exact GELU, aikit's contract kernel on the device) and audio_im2col_k3 (the Whisper-style encoder's two Conv1d stems as
 // GEMMs). See cuda/audio_encoder.cu.
 //
