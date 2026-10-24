@@ -98,14 +98,10 @@ func TestKSO1a_q4kBitsUnchanged(t *testing.T) {
 			ba, bb, uK, uN := NewBufferFloats(d, a), NewBufferFloats(d, bias), NewBufferU32(d, uint32(K)), NewBufferU32(d, uint32(N))
 			cmp := func(label string, run func(arm string) []uint32) {
 				want, got := run("old"), run("new")
-				untouched := 0
 				for i, v := range got {
 					if v == math.Float32bits(init[i]) {
-						untouched++
+						t.Fatalf("precise=%v N=%d K=%d %s: output %d still holds its initial bits", precise, N, K, label, i)
 					}
-				}
-				if untouched == len(got) {
-					t.Fatalf("precise=%v N=%d K=%d %s: the kernel wrote no output", precise, N, K, label)
 				}
 				diff := 0
 				for i := range want {
@@ -161,7 +157,7 @@ func TestKSO1a_q4kBitsUnchanged(t *testing.T) {
 // TestKSO1a_phi3Speed is O1a-G3, with O1a-G2 inside it: Phi-3 mini 4k at --quant q4k (the registered GOINFER_PHI3_GGUF asset),
 // one resident, its three Q4_K pipelines swapped between the library built from the source before KS-O1a (kso1aOld) and the
 // resident's own; 128 greedy decode tokens after a 32-token prompt through ForwardEmb, A B B A over 10 pairs after 2 warm runs
-// each, each pair's start load printed. Every run's tokens and final logits must equal the first run's (O1a-G2), and at least
+// each, each pair's start load printed. Every run's tokens and final logits' bits must equal the first run's (O1a-G2), and at least
 // 9 of 10 pairs must be faster (O1a-G3, the small-gains rule); the median is reported against C1-G4's 0.98. A fit refusal
 // prints FIT-REFUSED. A timed run: hold the timing lock (GOINFER_KSO1_TIMING=1).
 func TestKSO1a_phi3Speed(t *testing.T) {
@@ -212,7 +208,7 @@ func TestKSO1a_phi3Speed(t *testing.T) {
 	const prompt, gen = 32, 128
 	_, _, _, _, _, _, vocab := mg.Dims()
 	var refToks []int
-	var refLogits []float32
+	var refLogits []uint32
 	runs := 0
 	run := func(a [3]Pipeline) float64 {
 		use(a)
@@ -235,9 +231,13 @@ func TestKSO1a_phi3Speed(t *testing.T) {
 		}
 		s := time.Since(t0).Seconds() / gen
 		runs++
+		bits := make([]uint32, len(lg))
+		for i, v := range lg {
+			bits[i] = math.Float32bits(v)
+		}
 		if refToks == nil {
-			refToks, refLogits = toks, slices.Clone(lg)
-		} else if !slices.Equal(toks, refToks) || !slices.Equal(lg, refLogits) {
+			refToks, refLogits = toks, bits
+		} else if !slices.Equal(toks, refToks) || !slices.Equal(bits, refLogits) {
 			t.Errorf("O1a-G2: run %d's tokens or final logits differ from the first run's", runs)
 		}
 		return s

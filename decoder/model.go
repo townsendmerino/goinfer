@@ -916,6 +916,7 @@ func (m *Model) Close() error {
 		_ = m.resident.Close()
 		m.resident = nil
 	}
+	m.releaseKQuantFile()
 	var err error
 	if m.be != nil {
 		err = m.be.Close()
