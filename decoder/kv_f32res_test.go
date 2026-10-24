@@ -10,7 +10,7 @@ import (
 // TestKVQuant_reservesNoF32 is F32R-G1 and RR-G1 (docs/tasks/task-memory-campaign-2026-10.md, MEM12-f32res and MEM12-ringres
 // gates): an f16 or int8 CPU cache built with a capacity hint holds no f32 K/V capacity on any layer, and a ring layer holds
 // none in any form; a global layer keeps its reservation in its own form; and the bytes the hint costs are the global layers'
-// reservation alone (within 1%).
+// reservation alone (within 1%), computed from the capacity each layer should hold, not read back from the cache.
 func TestKVQuant_reservesNoF32(t *testing.T) {
 	const hint = 512
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
@@ -51,22 +51,30 @@ func TestKVQuant_reservesNoF32(t *testing.T) {
 					if f32k != want || f32v != want {
 						t.Errorf("%s %s layer %d (ring %v): f32 capacity %d/%d, want %d", dir, arm.name, l, c.rings[l] != nil, f32k, f32v, want)
 					}
-					quantBytes += 4 * uint64(f32k+f32v)
+					quantBytes += 4 * 2 * uint64(want)
 					continue
 				case kvqF16:
 					if cap(c.keysH[l]) != want || cap(c.valsH[l]) != want {
 						t.Errorf("%s f16 layer %d (ring %v): f16 capacity %d/%d, want %d", dir, l, c.rings[l] != nil, cap(c.keysH[l]), cap(c.valsH[l]), want)
 					}
-					quantBytes += 2 * uint64(cap(c.keysH[l])+cap(c.valsH[l]))
+					quantBytes += 2 * 2 * uint64(want)
 				case kvI8:
 					if cap(c.keysQ[l]) != want || cap(c.valsQ[l]) != want {
 						t.Errorf("%s int8 layer %d (ring %v): int8 capacity %d/%d, want %d", dir, l, c.rings[l] != nil, cap(c.keysQ[l]), cap(c.valsQ[l]), want)
 					}
-					quantBytes += uint64(cap(c.keysQ[l])+cap(c.valsQ[l])) + 4*uint64(cap(c.keyScale[l])+cap(c.valScale[l]))
+					wantSc := want / c.headDim // one scale per head per position
+					if cap(c.keyScale[l]) != wantSc || cap(c.valScale[l]) != wantSc {
+						t.Errorf("%s int8 layer %d (ring %v): scale capacity %d/%d, want %d", dir, l, c.rings[l] != nil, cap(c.keyScale[l]), cap(c.valScale[l]), wantSc)
+					}
+					quantBytes += 2*uint64(want) + 4*2*uint64(wantSc)
 				}
 				if f32k != 0 || f32v != 0 {
 					t.Errorf("%s %s layer %d: f32 capacity %d/%d beside the %s arrays; want 0", dir, arm.name, l, f32k, f32v, arm.name)
 				}
+			}
+			// RR-G1 needs rings to test: gemma2-tiny alternates local and global layers, llama-tiny has no window.
+			if wantRings := dir == "gemma2-tiny"; wantRings != (rings > 0 && rings < c.numLayers) || (!wantRings && rings != 0) {
+				t.Errorf("%s %s: %d of %d layers ring", dir, arm.name, rings, c.numLayers)
 			}
 			extra := int64(grown) - int64(empty)
 			t.Logf("%s %s: NewCache(%d) allocates %d bytes over NewCache(0); the global layers' reservation %d (%d of %d layers ring)",

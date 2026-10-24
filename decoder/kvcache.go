@@ -196,24 +196,21 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int, skipLayer f
 	} // upstream (audit C-19), this guards every other caller too.
 	kvDim := numKVHeads * headDim
 	c := &KVCache{
-		numLayers: numLayers,
-		kvDim:     kvDim,
-		headDim:   headDim,
-		window:    window,
-		keys:      make([][]float32, numLayers),
-		vals:      make([][]float32, numLayers),
-		stride:    make([]int, numLayers),
+		numLayers:  numLayers,
+		kvDim:      kvDim,
+		headDim:    headDim,
+		window:     window,
+		keys:       make([][]float32, numLayers),
+		vals:       make([][]float32, numLayers),
+		stride:     make([]int, numLayers),
+		skipAppend: skipLayer,
 	}
 	for l := range numLayers {
-		lc := capHint
-		if skipLayer != nil && skipLayer(l) {
-			lc = 0
-		}
+		lc := c.appendHint(l, capHint)
 		c.keys[l] = make([]float32, 0, lc*kvDim)
 		c.vals[l] = make([]float32, 0, lc*kvDim)
 	}
 	c.rings = make([]*ring, numLayers) // all nil: append-forever until enableRings
-	c.skipAppend = skipLayer
 	return c
 }
 
