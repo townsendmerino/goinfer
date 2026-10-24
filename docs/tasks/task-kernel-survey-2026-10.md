@@ -56,7 +56,7 @@
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open (build) | baseline read 2026-10-24: Nemotron-Nano-9B-v2 sequential prefill 14.5 tok/s at K=512, batched prefill not admitted. Next: the batched Mamba-2 prefill (M–L), its gates registered first | survey, "KS-D8 baseline read" |
-| KS-D9 | done | done 2026-10-24: the generic pager's phase 2 batched expert by expert; D9-G1 bit-identical on 7 paged cells; Qwen1.5-MoE-A2.7B's 512-row paged prefill median 0.9050 of per-row, 3 of 3 pairs, 0 logits differ (D9-G2 SHIP) | survey, "KS-D9 read", "D9-G2 read" |
+| KS-D9 | done | done 2026-10-24: the generic pager's phase 2 batched expert by expert, its scratch allocated once per call and priced in the plan; D9-G1 bit-identical on 7 paged cells (against sequential and against the per-row phase 2); Qwen1.5-MoE-A2.7B's 512-row paged prefill median 0.9050 then 0.8241 of per-row, 3 of 3 pairs each, 0 logits differ (D9-G2 SHIP) | survey, "KS-D9 read", "D9-G2 read", "After the review of #224" |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
@@ -1544,6 +1544,21 @@ nobara's copy is in `~/goinfer-bench/qmoe/`.
 - **Re-runs:** D9-G1 and the new scratch test; the plant once (the combine from zero, which must be red in the child); then D9-G2
   again under the lock, since the scratch's allocation moved: the `.giw` is copied back from nobara for it and deleted after. The
   bar is unchanged; this reading decides, and 15:06's stays in the record.
+
+**Read 2026-10-24 after the review: all PASS, D9-G2 SHIP.**
+- D9-G1 (16:14–16:16, not timed): 7 paged cells PASS with the per-row arm equal to the batched one in logits, K/V and 3 decode
+  steps, the batched phase 2 taken on every prompt shape (42–82 slot groups a cell); k=3 at 2 slots skips (the pager refuses
+  under top-k). `TestMoELayerMajor_generateThroughDecoder` PASS. `TestKSD9_scratchWithinPlan` PASS (counted equals
+  `moeBatchBytes(9)`; the plan's growth equals it at 9 and at 256 for 300 rows).
+- **Plant** (the combine from zero, run once and reverted): the child-process gate red in all 7 cells; run plainly, the gate now fails
+  (it skipped before) with "startup self-test declined this backend".
+- **D9-G2** (16:22–16:24, the lock held exclusively; 13.4 GB available, 8.9 GB reclaimable at the start; the `.giw` copied back from
+  nobara, sha256 equal, and deleted after): per-row 16.18, 18.95, 17.86 s; batched 14.53, 14.78, 14.72 s; **median batched/per-row
+  0.8241, 3 of 3 pairs faster**, 0 of 151,936 last logits differ in every pair, no void pairs; every arm 2.19–3.00 busy cores and
+  6.23–6.38 GiB reclaimable. The batched arm held within 0.25 s across both sessions (14.47–14.78 s), and the per-row arm spread
+  wider this time, so the size is less settled than the direction: 0.9050 at 15:06 and 0.8241 now.
+Logs: `~/goinfer-logs/ksd9-review-g1-2026-10-24.log`, `~/goinfer-logs/ksd9-review-plant-2026-10-24.log`,
+`~/goinfer-logs/ksd9-g2-rerun-2026-10-24.log`.
 
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
