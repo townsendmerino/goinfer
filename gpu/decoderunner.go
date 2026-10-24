@@ -23,7 +23,11 @@ var ssmStopLayerForTest = -1
 // a fresh encoder — one Submit, one Poll, logits back. This is the GEMVRunner
 // pattern applied to the whole token graph.
 type DecodeRunner struct {
-	c                    *Context
+	c *Context
+	// pending is the next token's command buffer, recorded by Run after it submits (KS-E3): steps, then the logits copy.
+	// It is valid while steps and their bind groups are; dropPending releases it wherever they change (SetAdapter) or a call
+	// records a different shape (RunNoLogits), and at Close.
+	pending              *wgpu.CommandBuffer
 	steps                []runStep
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
@@ -1701,6 +1705,7 @@ func (r *DecodeRunner) recordTrunk(pass *wgpu.ComputePassEncoder) {
 // RunNoLogits executes all trunk layers and populates the KV cache for token at position pos,
 // skipping the LM head GEMV dispatch, logits staging copy, MapAsync, and readback.
 func (r *DecodeRunner) RunNoLogits(x []float32, pos, ropePos int) error {
+	r.dropPending()
 	c := r.c
 	tw := time.Now()
 	if err := r.writeInputs(x, pos, ropePos); err != nil {
@@ -1742,34 +1747,28 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	}
 	r.TWrite = time.Since(tw)
 	te := time.Now()
-	enc, err := c.device.TryCreateCommandEncoder(nil)
-	if err != nil {
-		return nil, err
-	}
-	defer enc.Release()
-	// One compute pass for the whole token: WebGPU runs the dispatches in record order and the backend inserts the minimal
-	// storage-buffer barriers between data-dependent dispatches. The KV appends are compute kernels (rope-store / kv-store),
-	// so nothing forces a pass break.
-	pass := enc.BeginComputePass(nil)
-	r.record(pass)
-	// TryEnd and the logits copy are checked, not discarded, so a validation error names its call instead of surfacing later
-	// as an opaque "DecodeRunner map failed".
-	if err := pass.TryEnd(); err != nil {
-		pass.Release()
-		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
-	}
-	pass.Release()
-	if err := enc.TryCopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4)); err != nil {
-		return nil, fmt.Errorf("gpu: copy logits→stage: %w", err)
-	}
-	cmd, err := enc.TryFinish(nil)
-	if err != nil {
-		return nil, err
+	cmd := r.pending
+	r.pending = nil
+	if cmd == nil || encodeAheadOffForTest {
+		if cmd != nil {
+			cmd.Release()
+		}
+		var err error
+		if cmd, err = r.recordToken(); err != nil {
+			return nil, err
+		}
 	}
 	defer cmd.Release()
 	r.TEncode = time.Since(te)
 	ts := time.Now()
 	c.queue.Submit(cmd)
+	// KS-E3: the next token's buffer is recorded while the GPU runs this one; the next Run writes its inputs and submits it.
+	// A recording that fails is retried in line by that Run.
+	if !encodeAheadOffForTest {
+		if next, err := r.recordToken(); err == nil {
+			r.pending = next
+		}
+	}
 	st := wgpu.MapAsyncStatus(0)
 	if err := r.stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(s wgpu.MapAsyncStatus) { st = s }); err != nil {
 		return nil, err
@@ -1871,7 +1870,48 @@ func (r *DecodeRunner) release() {
 }
 
 // Close frees the runner's scratch (not the resident model).
-func (r *DecodeRunner) Close() error { r.c.releaseOwned(r.release); return nil }
+func (r *DecodeRunner) Close() error {
+	r.dropPending()
+	r.c.releaseOwned(r.release)
+	return nil
+}
+
+// encodeAheadOffForTest makes Run record each token's command buffer in line, as before KS-E3 (the old arm of its A/B); read at
+// each Run.
+var encodeAheadOffForTest bool
+
+// recordToken records one token's command buffer: every step in one compute pass, then the logits copy to the staging buffer.
+func (r *DecodeRunner) recordToken() (*wgpu.CommandBuffer, error) {
+	enc, err := r.c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer enc.Release()
+	// One compute pass for the whole token: WebGPU runs the dispatches in record order and the backend inserts the minimal
+	// storage-buffer barriers between data-dependent dispatches. The KV appends are compute kernels (rope-store / kv-store),
+	// so nothing forces a pass break.
+	pass := enc.BeginComputePass(nil)
+	r.record(pass)
+	// TryEnd and the logits copy are checked, not discarded, so a validation error names its call instead of surfacing later
+	// as an opaque "DecodeRunner map failed".
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
+	}
+	pass.Release()
+	if err := enc.TryCopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4)); err != nil {
+		return nil, fmt.Errorf("gpu: copy logits→stage: %w", err)
+	}
+	return enc.TryFinish(nil)
+}
+
+// dropPending releases the pre-recorded next-token buffer, if any.
+func (r *DecodeRunner) dropPending() {
+	if r.pending != nil {
+		r.pending.Release()
+		r.pending = nil
+	}
+}
 
 // dnetRunParams carries the model-level Gated-DeltaNet geometry (uniform across the linear
 // layers). keyDim/valueDim/convDim are derived once here rather than at every dispatch, because

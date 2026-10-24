@@ -1240,6 +1240,11 @@ E3-G3: none (one command buffer held per runner). Planted defect, run once and r
 buffer, with a slot switch in E3-G1's sequence; or, if that stays equal, the pending buffer submitted after its runner's steps
 were rebuilt must go red. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
 
+**Amended 2026-10-24, before any E3-G run.** `UseKVSlot` calls `SetAdapter` only when an adapter is bound, and no WebGPU adapter
+fixture is at hand, so the registered plant cannot fire. The plant is instead a pending buffer recorded without the logits copy
+(substituted after each `Run`), which E3-G1 must turn red. The instruments are `TestKSE3_encodeAheadIdentity` and
+`TestKSE3_decodeSpeed`; the bars are unchanged.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
