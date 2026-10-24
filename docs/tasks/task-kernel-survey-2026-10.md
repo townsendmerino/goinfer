@@ -696,6 +696,19 @@ resident at int4 only" lines in the log come before the timed load and appear in
   in-sequence byte check.
 - **First measurement:** kill it if the two pipelines total under 0.25 ms on the 1.5B.
 
+**KS-C4 and KS-C5 first measurements, registered 2026-10-24 before the run (on the owner's order of the Mac work, 08:31).** One
+instrument answers both: `TestMetalDecodeDecomp` (tier 1, timed, the timing lock held exclusively), Qwen2.5-Coder-1.5B's Metal int4
+resident, at depths 128 and 512 (`GOINFER_METAL_DDECOMP_DEPTHS=128,512`), with its "rope, kv store, act-quant, ctx-quant" category
+split into one category per pipeline (`rope2`, `kv store`, `swiglu_quant`, `quant_vec`); a test-only change. The reading is each
+category's in-sequence work cost (full − the category no-op'd), medians as the test takes them. A cell started under the void rule's
+load or memory line is re-run.
+- **KS-C4:** kill if `swiglu_quant` + `quant_vec` total under 0.25 ms a token at depth 128; otherwise its build's gates are
+  registered next.
+- **KS-C5:** kill if the attention category at depth 128 is under 0.30 ms a token (the estimated 0.1–0.2 ms could not be half of
+  it); otherwise its build's gates are registered next. The 512-key reading is for the record.
+
+Stopping rule: one pass. Cost: about 6 minutes.
+
 **KS-C5 · Legacy decode attention below 1024 keys (bit-identical).**
 - **Waste:** at 128 keys it costs 0.67 / 0.78 ms per token, with serial 8-wide V-load batches (16 dependent round trips) and
   about 16 barriers.
