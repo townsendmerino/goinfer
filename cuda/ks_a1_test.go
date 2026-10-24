@@ -34,6 +34,7 @@ type ksA1Shape struct {
 
 var ksA1Shapes = []ksA1Shape{
 	{"phi3 qkv", "q5k", 9216, 3072, 32},
+	{"phi3 q|k|v each (as dispatched)", "q5k", 3072, 3072, 0},
 	{"phi3 ffn_down", "q6k", 3072, 8192, 16},
 	{"phi3 head", "q6k", 32064, 3072, 1},
 	{"1.5B ffn_down", "q6k", 1536, 8960, 0},

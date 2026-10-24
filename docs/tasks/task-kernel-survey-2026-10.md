@@ -329,6 +329,10 @@ owner's word of 4:37 pm ("#2 then #1": KS-A1's CUDA half, then KS-O1 on CUDA).**
 Stopping rule: one pass. A kind that fails its rule may have at most one amended variant, registered here before it runs, as O1-G0
 did on Metal; that reading is final. Expected cost: the PTX build and the correctness check seconds, the timed pass about 1 min.
 
+**A1-G0 amended before it ran (2026-10-24, 16:55):** Phi-3's hidden size (3072) is over `fusedG32MaxHidden`, so on CUDA its q, k
+and v run as three separate `doG` launches of 3072×3072, not one launch of 9216 rows. A read-only Q5_K line at 3072×3072 is added.
+The graded shape, the bars and the rule are unchanged.
+
 **KS-A5 · Load each short GEMV row in one round (output unchanged).**
 - **Where:** `fused_rms_gu` and `fused_rms_qkv` in `cuda/fused_qkv.cu`, their rows-per-warp twins, and aikit's
   `gemv_w4a8_fwd` (`gpu/gemv_quant.cu`).
