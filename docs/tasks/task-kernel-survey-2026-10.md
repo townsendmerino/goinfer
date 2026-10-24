@@ -44,7 +44,7 @@
 | KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
-| KS-C4 | open (build) | first measurement read 2026-10-24: `swiglu_quant` + `quant_vec` 0.875 ms a token on the 1.5B at depth 128, over the 0.25 ms kill line. Next: the build's gates | survey, "KS-C4 and KS-C5 first measurements" |
+| KS-C4 | parked | parked 2026-10-24: folding `swiglu_quant` into the gate\|up epilogue and the down staging is not bit-identical on real data (a rounding tie at fast math: one of 4,864 values in one layer, C4-G1 (b) red) and is 4.9% slower (median 1.0489, 1 of 10). Code on branch `ksc4-fold-parked-2026-10-24`. The quantizers are 0.875 ms a token; a multi-threadgroup quantizer is the untried shape | survey, "KS-C4 read" |
 | KS-C5 | open (build) | first measurement read 2026-10-24: legacy attention 0.643 ms a token at 128 keys and 1.677 at 512 on the 1.5B, over the 0.30 ms kill line. Next: the build, after KS-C4 | survey, "KS-C4 and KS-C5 first measurements" |
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
 | KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
@@ -759,6 +759,24 @@ folded down kernel swapped for a no-op, whose logits must differ from the fold's
 template parameter (`gemv_w4a8_resid_staged_hq<Rd, Rg>`) rather than a constant buffer, so the fold allocates nothing (C4-G3).
 The instruments are `TestKSC4_foldMatchesThreeStep`, `TestKSC4_decodeIdentity`, `TestKSC4_allocatedNotHigher` and
 `TestKSC4_decodeSpeed`; the bars are unchanged.
+
+**KS-C4 read 2026-10-24 (09:30–09:38): PARK.** The fold's code is kept on branch `ksc4-fold-parked-2026-10-24`, not merged.
+- **C4-G1 (a) PASS**: 24 kernel cells (three shapes, SiLU and GELU-tanh, R = 2 and 4, both libraries) 0 differ, and the same cells
+  through the resident's own compiled pipelines 0 differ. **C4-G1 (b) red**: llama-tiny 0 of 8,192; the 0.5B 3,494,525 and the 1.5B
+  2,582,910 of 4,861,952 logits differ over 32 steps, fold on against off; the no-op arm shows the fold taken on every model.
+  Localized on the 0.5B: steps 0–8 byte-equal, then layer 17 at position 9 differs in one of 4,864 quantized activations. There
+  h·inv is exactly −10.5: the fold rounds it to −11 (Metal's `round`, half away from zero, measured scalar and `float4`, fast and
+  precise), and `swiglu_quant` gives −10. Its second pass recomputes glu(g)·u and multiplies by inv in one expression, which fast
+  math re-associates, so a value on a rounding tie lands on the other side. The partial max and every other value matched. Passing
+  g and u through `simd_broadcast_first` did not change it. A fold cannot reproduce that without matching the compiler's choice in
+  another kernel. **C4-G3 PASS**: allocated 1,001,684,992 bytes either way.
+- **C4-G2, read for the record after G1 went red** (09:37, the lock held exclusively, load 2.08, 12.8 GB available): off 10.01–10.30 ms
+  a token, on 10.21–11.46, **median on/off 1.0489, 1 of 10 pairs faster: 4.9% slower**. Every down threadgroup re-quantizing all of h
+  (35 KB read per threadgroup, 48 threadgroups a layer) and the gate|up kernel reading rows I apart cost more than the dispatch saved.
+- So the fold fails both as a bit-identical change and on speed, and re-registering it as fidelity-gated would not help. What the
+  0.875 ms buys back, if anything, is a multi-threadgroup quantizer (partials, then a parallel quantize), the shape of KS-E2's
+  widening on WebGPU; not built. Logs: `~/goinfer-logs/ksc4-g1a-2026-10-24.log`, `~/goinfer-logs/ksc4-g1b-g3-2026-10-24.log`,
+  `~/goinfer-logs/ksc4-g2-2026-10-24.log`.
 
 **KS-C5 · Legacy decode attention below 1024 keys (bit-identical).**
 - **Waste:** at 128 keys it costs 0.67 / 0.78 ms per token, with serial 8-wide V-load batches (16 dependent round trips) and
