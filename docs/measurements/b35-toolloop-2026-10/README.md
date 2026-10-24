@@ -125,3 +125,37 @@ python3 scripts/night.py add b35-toolloop --est 15 --by "mac-kapitsa, KV8a-Q rep
 
 The record is `~/goinfer-logs/b35-toolloop-2026-10/results-<date>/` on nobara (`gate.json`, `grade.txt`, `run.log`, the server
 logs). The verdict is copied here.
+
+## Result: Q1-ONLY (2026-10-24, nobara, 16:00:59–16:07:13 PDT)
+
+`b35-toolloop2` on nobara's `night.py serve`, under the timing lock, at `b03412f3` (its product code is `main`'s at `922054f3`), driver
+595.91.07, load average 1.39 and 59,980 MiB available at the start, kwin_wayland running. The record is
+`~/goinfer-logs/b35-toolloop-2026-10/results-2026-10-24-1600/` on nobara (`gate.json`, `grade.txt`, `run.log`, the server logs).
+
+| | r1 (Q1) | r2 | r3 | **r4 (Q2)** | r5 | **r6 (Q3)** | cold control |
+|---|---|---|---|---|---|---|---|
+| prompt tokens | 4,274 | 5,800 | 7,329 | 7,329 | 8,857 | 8,870 | r6's + nonce |
+| reused | 0 | 4,274 | 5,800 | **4,096** | 7,329 | **4,096** | 0 |
+| time to first token | 16.53 s | 8.03 s | 9.43 s | **18.26 s** | 9.91 s | **28.12 s** | 44.13 s |
+
+- **I1, warm = cold:** pass. r4 and r6, restored, gave the same served reply as a cold server: 48 and 39 completion tokens,
+  with reasoning, content and tool calls identical. The tools route serves no logprobs, so this is reply identity, not logprob
+  identity.
+- **R1, B35 serves the second question:** pass. r4 reused 4,096 tokens on both servers. That is Q1's kept point (its Keep,
+  rounded down to the 512-row pass grid).
+- **R2, the kept point moves past Q1's loop:** **not met, so the verdict is Q1-ONLY.** r6 reused the same 4,096 tokens, Q1's
+  point again. Q2's own point was never kept, as `Model.kvPrefillMark` predicts: no mark is taken on a request that restored
+  a snapshot. Every question after the second re-prefills from Q1, and the cost grows with the conversation. Here r6 cost
+  0.639 of cold at its length, where r4 cost 0.502.
+- **T1:** pass. r4's ratio is 1.12 and r6's is 1.18 (bar 1.5). Each costs what its leftover prefill costs, with nothing hidden.
+- **R3:** pass. No cold request reused anything.
+- **Not graded:**
+  - The streamed and non-streamed replies differ only by the `[]` the non-streamed capture appends when no call is made (by
+    length: 201 against 203 for r6).
+  - The first run's missing space did not recur.
+  - Greedy replies differ between the first run (24 new tokens) and this one (48). Both arms of each run agree, so this is a
+    property of the request's token budget, not of the kept state. It is recorded here, not investigated.
+
+**What follows (product code; not started without Francis's yes):** let a request that restored a kept state also mark its own
+Keep, so the kept point moves to each new question. Without that, B35 helps the second question of a tool-loop session and
+no later one.

@@ -1261,6 +1261,12 @@ KV2 merges when every arm on both boxes is read.
     token for token.
   - It also asks whether the kept point moves past Q1's loop. The code reading predicts it does not, because
     `Model.kvPrefillMark` takes no mark on a request that restored a snapshot.
+- **B35-TL's result (2026-10-24 16:07, Q1-ONLY):**
+  - **What passes:** B35 serves the second question after a tool loop on nobara. It reuses Q1's kept point (4,096 of 7,329
+    tokens), and its reply equals cold.
+  - **What fails:** the kept point never moves past Q1. The third question restored the same 4,096 tokens, at 0.64 of cold
+    against the second question's 0.50.
+  - **The follow-up**, product code that waits for Francis's yes: a restoring request marks its own Keep.
 - **What B35 does not cover:** Metal and the CPU keep no recurrent snapshot, and Mamba-2 hybrids are refused on CUDA. Those
   belong to B35's follow-ups, not to KV8a-Q.
 - The text below is the section as it was added, kept for its reasoning; none of it is open work.
