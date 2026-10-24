@@ -52,12 +52,14 @@ func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat
 	if !ok || len(q8) == 0 {
 		return
 	}
+	// Record only a source KQuantReader.Rows will serve: the accessor's dims must read cleanly and match this weight's columns.
 	kind := ""
-	if _, _, ok, _ := g.Q5KRaw(name); ok {
-		kind = "q5k"
-	} else if _, _, ok, _ := g.Q6KRaw(name); ok {
-		kind = "q6k"
-	} else {
+	for k, get := range map[string]func(string) ([]int, []byte, bool, error){"q5k": g.Q5KRaw, "q6k": g.Q6KRaw} {
+		if dims, _, ok, err := get(name); err == nil && ok && len(dims) == 2 && dims[0] == in && in%256 == 0 {
+			kind = k
+		}
+	}
+	if kind == "" {
 		return
 	}
 	bb := int64(176)
