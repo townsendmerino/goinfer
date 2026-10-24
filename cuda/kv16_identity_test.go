@@ -141,8 +141,8 @@ func TestKV16_exactInputIdentity_decodeReaders(t *testing.T) {
 	}
 }
 
-// TestKV16_exactInputIdentity_prefillReaders is the same bar for the batched-prefill attention kernels: attn_batched and every fused tile that serves the
-// head dimension, over a fresh prompt and a warm cache. The fused kernels already round K/V to f16 in the f32 build, so on representable inputs
+// TestKV16_exactInputIdentity_prefillReaders is the same bar for the batched-prefill attention kernels: attn_batched, attn_img_batched (with an image
+// block inside the rows) and every fused tile that serves the head dimension, over a fresh prompt and a warm cache. The fused kernels already round K/V to f16 in the f32 build, so on representable inputs
 // the two builds' fused kernels must also agree to the bit.
 func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 	for _, model := range []string{kv16Model, "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
@@ -155,10 +155,12 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 				name     string
 				p32, p16 Pipeline
 				fused    bool
-				bm, bn   int // query-tile rows and key-tile rows; 0 for the 64x64 kernel
+				bm, bn   int  // query-tile rows and key-tile rows; 0 for the 64x64 kernel
+				img      bool // attn_img_batched: takes the image-block table after the sinks
 			}
 			var ks []kernel
-			ks = append(ks, kernel{name: "attn_batched", p32: r32.bAttn, p16: r16.bAttn})
+			ks = append(ks, kernel{name: "attn_batched", p32: r32.bAttn, p16: r16.bAttn},
+				kernel{name: "attn_img_batched", p32: r32.bAttnImg, p16: r16.bAttnImg, img: true})
 			if hd == 64 {
 				ks = append(ks, kernel{name: "attn_fused hd64", p32: r32.bAttnFused64, p16: r16.bAttnFused64, fused: true},
 					kernel{name: "attn_fused_bm32x64 hd64", p32: r32.bAttnBM32x64hd64, p16: r16.bAttnBM32x64hd64, fused: true, bm: 32, bn: 64},
@@ -204,6 +206,13 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 							args := []gpu.KernelArg{Arg(qB), Arg(r.kvK(0)), Arg(r.kvV(0)), Arg(r.kvT(0)), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)),
 								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(tc.startPos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window),
 								gpu.ArgValue(int32(tc.M)), Arg(cB), r.sinkArg(0)}
+							if k.img { // one image block over rows [startPos+10, startPos+M-20) of the M
+								bB := gpu.NewBufferLenOf[int32](r.dev, 2)
+								if e := gpu.Upload(bB, []int32{int32(tc.startPos + 10), int32(nTot - 20)}); e != nil {
+									return e
+								}
+								args = append(args, Arg(bB), gpu.ArgValue(int32(1)))
+							}
 							cfg := LaunchConfig{GridX: uint32(nH), GridY: uint32(tc.M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nTot + 128) * 4)}
 							if k.fused {
 								cfg = LaunchConfig{GridX: uint32(nH), GridY: uint32((tc.M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,

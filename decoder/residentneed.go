@@ -12,7 +12,7 @@ package decoder
 //     models the CPU ring buffer and would under-count Metal. Metal also holds a second copy of the dense weights in
 //     unified memory (the host WeightMat and the re-packed device buffer, ResidentHostCopyBytes), which Plan must count.
 //   - CUDA allocates f32 K/V, or f16 where kv16_cuda.go clears the model (the default for a cleared family, or -kv f16 for one the kernels
-//     cover); an MLA layer holds one f32 latent buffer rather than K and V (docs/measurements/memory-accounting-cuda-2026-09-25.md).
+//     cover); an MLA layer holds one latent buffer, at the same precision, rather than K and V (docs/measurements/memory-accounting-cuda-2026-09-25.md).
 //   - Other backends (webgpu, cpu) keep Plan's per-position formula.
 
 // WeightsMemFraction is the share of a memory figure the weights (and the rest of a resident build)
@@ -28,7 +28,7 @@ const metalKVPad = 8
 // it is exact to the allocation at the precision ResolveKV delivers there (f16; f32; int8 with per-head f32 scales), the full
 // padded context on every attention layer, nothing for a layer whose mixer is not
 // attention (ResidentLayerOps: DeltaNet, Mamba, or none). On "cuda" it is exact to the resident's K/V buffers (cuda/resident.go's kvBytesForCap:
-// f32 always, the full context on every attention layer, one latent buffer on an MLA layer, none on a
+// f32, or f16 where the KV policy delivers it, the full context on every attention layer, one latent buffer on an MLA layer, none on a
 // layer with no attention KV) — before the driver's per-buffer 2 MiB rounding, which the CUDA resident's
 // own fit check does not add either. On any other backend it is Plan's long-standing per-position formula
 // at the precision requested (kvF16 / kvI8), multiplied by ctx.
@@ -132,8 +132,8 @@ func (m *Model) cudaKVParts(ctx int, kvF16 bool) (slot, null int64) {
 			continue
 		}
 		if a.mla != nil {
-			perBlock += KVBlockRows * kvDim * 4 // one latent row per position (MLA keeps f32)
-			null += KVBlockRows * kvDim * 4
+			perBlock += KVBlockRows * kvDim * elem // one latent row per position
+			null += KVBlockRows * kvDim * elem
 			continue
 		}
 		null += 2 * KVBlockRows * kvDim * elem

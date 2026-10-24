@@ -8,14 +8,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// CUDA's f16 KV cache policy (docs/tasks/task-cuda-f16-kv-2026-10.md). The attention and KV-store kernels have f16 twins (kvtype.cuh, the *_kv16.ptx modules); everything
-// else that touches the cache (the windowed ring, the MLA latent, the drafter's own cache, the VL image prefill, the pairwise-RoPE store) does not, so a build that needs
-// any of those stays f32. The decision is made from the architecture's facts and the options BEFORE any pricing: the fit guard, Plan, the context cap and the slot count
-// all depend on the KV width. The table itself is decoder.CUDAKVF16Decline, where decoder.ResolveKV reads it; this registers it with CUDA's auto switch.
+// CUDA's f16 KV cache policy (docs/tasks/task-cuda-f16-kv-2026-10.md, docs/measurements/kv4-cuda-2026-10-21.md §2 G5). Every kernel that reads or writes the
+// cache has an f16 twin (kvtype.cuh, the *_kv16.ptx modules); the drafter's own cache does not, and resolveCUDAKV keeps a drafter load at f32. The decision is made
+// from the architecture's facts and the options BEFORE any pricing: the fit guard, Plan, the context cap and the slot count all depend on the KV width. The tables
+// are decoder.CUDAKVF16Decline (what f16 is delivered for) and decoder.CUDAKVF16AutoDecline (what auto keeps at f32); this registers them with CUDA's auto switch.
 func init() {
 	decoder.RegisterKVF16Policy("cuda", decoder.KVF16Policy{
-		Decline: decoder.CUDAKVF16Decline,
-		Auto:    func() bool { return kvF16Auto.Load() },
+		Decline:     decoder.CUDAKVF16Decline,
+		Auto:        func() bool { return kvF16Auto.Load() },
+		AutoDecline: decoder.CUDAKVF16AutoDecline,
+		AutoReason:  decoder.CUDAKVF16AutoReason,
 	})
 	kvF16Auto.Store(true)
 }

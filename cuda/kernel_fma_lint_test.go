@@ -59,6 +59,8 @@ func TestKernelFMALint(t *testing.T) {
 	compliant := regexp.MustCompile(`__fmaf_rn|__fmul_rn|__fadd_rn|__fma_rn|__dp4a|__shfl`)
 	arrayIndex := regexp.MustCompile(`\[[^\]]*\]`)        // strip array indices (int arithmetic) before matching
 	kvIndex := regexp.MustCompile(`\bKV_LD\w*\([^()]*\)`) // KV_LD / KV_LD4V / KV_LD2V (kvtype.cuh): the arguments are a pointer and an int index, like an array subscript
+	// KV_ST(p, v) (kvtype.cuh): its pointer argument is pointer-plus-int-index arithmetic; the value argument is kept and linted.
+	kvStore := regexp.MustCompile(`\bKV_ST\((?:[^,()]|\([^()]*\))*,`)
 	// Lines that TEXTUALLY match a MAC but are integer / pointer / index arithmetic, not a float MAC:
 	// a type/pointer declaration, a loop header, or any (long)/(int)/(unsigned) cast (int arithmetic —
 	// float MACs cast with (float) or not at all, which the compliant check already covers).
@@ -93,6 +95,7 @@ func TestKernelFMALint(t *testing.T) {
 			}
 			code = arrayIndex.ReplaceAllString(code, "[]") // remove int index arithmetic before MAC match
 			code = kvIndex.ReplaceAllString(code, "KV_LD()")
+			code = kvStore.ReplaceAllString(code, "KV_ST(p,")
 			if !macAccum.MatchString(code) && !macExpr.MatchString(code) && !macExprRev.MatchString(code) {
 				continue
 			}

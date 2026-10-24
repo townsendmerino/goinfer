@@ -154,6 +154,12 @@ MODELS = {
     # reads this file and Ollama's tag g4-26b is it (its model blob IS this file's sha256; gguf_same_weights.py: SAME
     # WEIGHTS). Its own key so cell c's M26 (the requantized Q4_K_M peer file + goinfer's .giw) keeps its history.
     "G26Q": (os.path.expanduser("~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf"), "g4-26b"),
+    # KV4b's speed check (docs/measurements/kv4-cuda-2026-10-21.md §2, G5): one checkpoint per f16 family group, goinfer against itself at
+    # -kv f16 and -kv f32 (BENCH_ENGINES=goinfer,goinfer_old). No peer row is taken for these; the tags are placeholders.
+    "qmoe":     (os.path.expanduser("~/models/qwen15-moe-a27b"), "qmoe-none"),
+    "cr7b":     (os.path.expanduser("~/models/command-r7b"), "cr7b-none"),
+    "qvl3":     (os.path.expanduser("~/models/qwen2.5-vl-3b"), "qvl3-none"),
+    "dsv2lite": (os.path.expanduser("~/models/deepseek-v2-lite"), "dsv2l-none"),
 }
 
 # MoE cells whose VRAM footprint exceeds this box's 8 GB card: goinfer needs -moe-cache-experts
@@ -166,7 +172,7 @@ MODELS = {
 # for those two, not just changed -- "cannot apply to the prequantized .giw bundle ... baked at
 # int4mix"); G20 has no such bundle and takes the harness's normal `-quant int4` unmodified (see
 # the MODELS/G20 comment above) while still needing everything else in this set.
-MOE_MODELS = {"M35", "M26", "G20", "G26Q"}
+MOE_MODELS = {"M35", "M26", "G20", "G26Q", "qmoe", "dsv2lite"}
 
 # goinfer's OWN path for the MOE_MODELS set, distinct from MODELS[key][0] above (which is the
 # Q4_K_M GGUF ollama/llama-server load). goinfer runs its native kind-4 .giw bundle instead --

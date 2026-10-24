@@ -118,6 +118,16 @@ func resolveCUDAKV(arch *Architecture, o Options, req string) (string, string) {
 	if why := p.Decline(arch.kvFacts(), o); why != "" {
 		return kvPrecF32, why
 	}
+	if p.AutoDecline != nil {
+		if why := p.AutoDecline(arch.kvFacts(), o); why != "" {
+			return kvPrecF32, why
+		}
+	}
+	if p.AutoReason != nil {
+		if why := p.AutoReason(arch.kvFacts(), o); why != "" {
+			return kvPrecF16, why
+		}
+	}
 	return kvPrecF16, "auto is f16 on CUDA for this family"
 }
 
@@ -184,38 +194,63 @@ func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
 	return &KVRefusal{Path: path, Requested: req, Delivered: got, Reason: why}
 }
 
-// cudaKVF16Cleared lists the families `--kv auto` puts on an f16 KV cache on CUDA: the dense decoders the R6 gates measured the attention
-// kernels on (docs/tasks/task-cuda-f16-kv-2026-10.md). `--kv f16` asks for f16 on any family CUDAKVF16Decline lets through, which today is
-// the same set; a family joins by passing the fidelity and overflow gates, not by compiling.
-func cudaKVF16Cleared(f KVFacts) bool {
+// cudaKVF16Delivered lists the families whose every KV-touching CUDA path has an f16 kernel: `--kv f16` is delivered for them whatever
+// the quality reads (the precision doc's contract, item 4). A family group joins with its exact-input identity and delivered-bytes gates
+// (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), never by compiling.
+func cudaKVF16Delivered(f KVFacts) bool {
 	switch f.Family {
-	case "llama", "mistral", "qwen2", "qwen3", "phi3":
+	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss", "cohere",
+		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4", "deepseek_v2", "deepseek_v3", "kimi_k2":
 		return true
 	}
 	return false
 }
 
-// CUDAKVF16Decline returns why a CUDA resident cannot hold this model's KV cache as f16, or "" when it can. Each reason names a path whose
-// kernels read or write the cache and have no f16 twin yet. It lives here so ResolveKV answers for CUDA without the cuda package; the
-// cuda package registers it as its policy.
-func CUDAKVF16Decline(f KVFacts, o Options) string {
+// cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (the
+// owner's D7: f16 becomes the default for each family group as it clears its G4, docs/measurements/kv4-cuda-2026-10-21.md §2, G5). A
+// model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
+func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
+	if f.PairwiseRoPE || f.Hybrid || f.MLA {
+		return false
+	}
+	switch f.Family {
+	case "llama", "mistral", "qwen2", "qwen3", "phi3", "gemma2", "gemma3", "qwen2_5_vl", "qwen3_vl", "qwen2_moe", "qwen3_moe", "mixtral",
+		"qwen3_vl_moe", "gpt-oss":
+		return true
+	}
+	return false
+}
+
+// CUDAKVF16Decline returns why a CUDA resident cannot hold this model's KV cache as f16, or "" when it can: a family outside
+// cudaKVF16Delivered. Every kernel that reads or writes the cache, MLA's latent included, has an f16 twin; a family joins the list
+// with its group's gates, so one whose paths were never checked stays f32. It lives here so ResolveKV answers for CUDA without the
+// cuda package; the cuda package registers it as its policy.
+func CUDAKVF16Decline(f KVFacts, _ Options) string {
+	if !cudaKVF16Delivered(f) {
+		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, " +
+			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; " +
+			f.Family + " keeps f32"
+	}
+	return ""
+}
+
+// CUDAKVF16AutoDecline returns why `--kv auto` keeps a model CUDAKVF16Decline lets through at f32 on CUDA, or "" when auto picks f16.
+// A group whose G4 read DOES NOT PASS says so, with the reading (docs/measurements/kv4-cuda-2026-10-21.md §3, "KV4b (G5), G4").
+func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 	switch {
-	case !cudaKVF16Cleared(f):
-		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3 and phi3 so far; " + f.Family + " keeps f32"
-	case f.MLA:
-		return "an MLA latent cache has no f16 form"
-	case f.MoE:
-		return "MoE models keep f32 KV so far"
-	case o.MoECacheExperts:
-		return "the paged-experts build keeps f32 KV"
-	case f.SlidingWindow:
-		return "sliding-window attention (the windowed KV ring) has no f16 form"
-	case f.PairwiseRoPE:
-		return "pairwise RoPE has no f16 store kernel"
-	case f.MRoPE:
-		return "m-RoPE image prefill has no f16 kernels"
+	case cudaKVF16AutoCleared(f, o):
+		return ""
 	case f.Hybrid:
-		return "this family's attention is not covered"
+		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)"
+	}
+	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
+}
+
+// CUDAKVF16AutoReason is the reason `--kv auto` gives when it picks f16 on CUDA, "" for the plain one. The sliding-window group's says that
+// auto moved by the owner's decision over an AMBIGUOUS G4 cell (docs/measurements/kv4-cuda-2026-10-21.md §5, D-KV4-6).
+func CUDAKVF16AutoReason(f KVFacts, _ Options) string {
+	if f.SlidingWindow {
+		return "auto is f16 on CUDA for this family (sliding window: by the owner's decision over an AMBIGUOUS quality reading at 8,000 keys)"
 	}
 	return ""
 }
@@ -224,7 +259,8 @@ func CUDAKVF16Decline(f KVFacts, o Options) string {
 // auto is f16 for a cleared family (the owner's decision of 2026-10-13). The cuda package registers the same table with its own auto
 // switch, which its tests pin to f32.
 func init() {
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }})
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline,
+		AutoReason: CUDAKVF16AutoReason})
 }
 
 // kvPath is the cache a generation of this model writes: the resident backend's when a runner is active, else the CPU's.
