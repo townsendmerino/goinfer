@@ -44,8 +44,8 @@
 | KS-C1 | done (a)+(b) | done 2026-10-24: the q4k lane's GEMVs on `gemv_q4k_f32_rows<8>` and `gemv_w8_f32_rows<2>`; the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0); G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 98.66% against the reference's 93.99% (C1-G3 PASS); Phi-3 mini q4k decode 22.3 → 33.0 tok/s, median 0.6741, 10 of 10 pairs (C1-G4 SHIP). (c) waits on KS-O1 | survey, "KS-C1 read" |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
-| KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
-| KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
+| KS-C4 | parked | parked 2026-10-24: folding `swiglu_quant` into the gate\|up epilogue and the down staging is not bit-identical on real data (a rounding tie at fast math: one of 4,864 values in one layer, C4-G1 (b) red) and is 4.9% slower (median 1.0489, 1 of 10). Code on branch `ksc4-fold-parked-2026-10-24`. The quantizers are 0.875 ms a token; a multi-threadgroup quantizer is the untried shape | survey, "KS-C4 read" |
+| KS-C5 | parked | parked 2026-10-24: 16-wide V loads and shuffle reductions in the legacy decode attention, bit-identical (C5-G1 PASS); the 1.5B at 385–512 keys median 1.0108, 4 of 10 pairs (C5-G2), with both arms swinging 10.8–12.9 ms within the run: unresolved, ceiling about 0.2 ms. Code on branch `ksc5-attn-parked-2026-10-24` | survey, "KS-C5 read" |
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
 | KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
@@ -762,6 +762,88 @@ resident at int4 only" lines in the log come before the timed load and appear in
   in-sequence byte check.
 - **First measurement:** kill it if the two pipelines total under 0.25 ms on the 1.5B.
 
+**KS-C4 and KS-C5 first measurements, registered 2026-10-24 before the run (on the owner's order of the Mac work, 08:31).** One
+instrument answers both: `TestMetalDecodeDecomp` (tier 1, timed, the timing lock held exclusively), Qwen2.5-Coder-1.5B's Metal int4
+resident, at depths 128 and 512 (`GOINFER_METAL_DDECOMP_DEPTHS=128,512`), with its "rope, kv store, act-quant, ctx-quant" category
+split into one category per pipeline (`rope2`, `kv store`, `swiglu_quant`, `quant_vec`); a test-only change. The reading is each
+category's in-sequence work cost (full − the category no-op'd), medians as the test takes them. A cell started under the void rule's
+load or memory line is re-run.
+- **KS-C4:** kill if `swiglu_quant` + `quant_vec` total under 0.25 ms a token at depth 128; otherwise its build's gates are
+  registered next.
+- **KS-C5:** kill if the attention category at depth 128 is under 0.30 ms a token (the estimated 0.1–0.2 ms could not be half of
+  it); otherwise its build's gates are registered next. The 512-key reading is for the record.
+
+Stopping rule: one pass. Cost: about 6 minutes.
+
+**Read 2026-10-24 (09:24, the timing lock held exclusively; the 1-minute load 2.58 at the start, 11.5 GB available).** The 1.5B's
+`.gguf` on its Metal int4 resident (`attention_fa` engages from 1,024 keys, so both depths ran the legacy attention); medians of 5 reps
+× 20 tokens, ms a token:
+
+| category | depth 128 | depth 512 |
+|---|---|---|
+| attention | **0.643** | 1.677 |
+| GEMV qkv / o / gate\|up / down | 0.570 / 0.407 / 3.223 / 1.864 | 0.630 / 0.659 / 3.229 / 1.823 |
+| LM head (int8) | 1.418 | 1.308 |
+| norm+quant (rms) | 0.599 | 0.459 |
+| rope (rope2) / kv store | 0.153 / 0.187 | 0.038 / 0.150 |
+| act-quant (`swiglu_quant`) | **0.644** | 0.455 |
+| ctx-quant (`quant_vec`) | **0.231** | 0.129 |
+| dispatch floor | 0.650 | 0.611 |
+| full token | 9.708 (103.0 tok/s) | 10.461 (95.6 tok/s) |
+
+- **KS-C4:** `swiglu_quant` + `quant_vec` **0.875 ms at depth 128**, over the 0.25 ms line: **build**; its gates are registered next.
+- **KS-C5:** attention **0.643 ms at depth 128**, over the 0.30 ms line: **build**, after KS-C4.
+
+Neither quantizer's work depends on depth, yet `swiglu_quant` read 0.644 and 0.455: the method's spread on a small category is about
+±0.2 ms (the paired columns agree), so the 0.875 ms sum is good to roughly a quarter. Both clear their lines at either depth. The run
+took 29 s, not the 6 minutes registered. Log: `~/goinfer-logs/ksc4c5-decomp-2026-10-24.log`.
+
+**KS-C4 gates, registered 2026-10-24 before the code (C4-G).** The build folds `swiglu_quant` into its neighbours on the dense int4
+decode path (the R18 gate|up rows kernel and the staged down kernel; not the f16 lane, LoRA, sandwich, post-only or parallel-block
+layers, the native int8 lane, MoE, the batched step or prefill, which keep the two-step form):
+- `gemv_w4a8_sa_glu_rows<R>`: `sa_rows_acc`'s body with simdgroup s taking gate rows p0 … p0 + R/2 − 1 and the matching up rows
+  I + p0 …, p0 = s·R/2. Lane 0 forms each g and u as `gemv_w4a8_sa_rows` writes them (`acc·asc`), then h = `glu_act_pinned(g)·u`,
+  `swiglu_quant`'s statement. It writes h (into the gate|up buffer's first I floats) and one max |h| partial per threadgroup.
+- `gemv_w4a8_resid_staged_hq<R>`: each threadgroup takes the max of the partials (max is exact in any order), forms sc and 1/sc as
+  `swiglu_quant` does (sc 0 → 1), stages each h quantized with `swiglu_quant`'s rounding, then runs `gemv_w4a8_resid_staged`'s body
+  with sc as the activation scale.
+- The partials live in `r.dq`'s memory, which the fold path no longer writes. `ksc4FoldOffForTest` keeps the two-step form for the
+  A/B. The ctx quantizer (`quant_vec`) is a second step (C4b), registered only if this one ships.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C4-G1 identity | 0 | (a) the folded pair against `gemv_w4a8_sa_rows<R>` → `swiglu_quant` → `gemv_w4a8_resid_staged<R>` at the 0.5B's, 1.5B's and 7B's shapes, R = 2 and 4, SiLU and GELU-tanh, random int4 weights, f16 scales and int8 activations, the fast-math and the precise library; (b) llama-tiny and the 0.5B and 1.5B Metal `.giw`s at int4, 32 greedy decode steps, every step's logits, fold on against off, and the fold taken (a dispatch counter); (c) `TestMetalSnapshotGolden` | (a) the down outputs byte-equal in every cell; (b) byte-equal and taken; (c) PASS |
+| C4-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B's Metal `.giw`: fold on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median on/off per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change (CLAUDE.md, "Measurement discipline") decides; otherwise PARK |
+| C4-G3 memory | 0 | Metal's allocated size after the 1.5B's resident is built, fold on against off | not higher |
+
+Planted defect, run once on the committed tree and reverted: the up row taken one row off (I + p0 + j + 1); C4-G1 goes red.
+Stopping rule: one pass each. Cost: G1 about a minute; G2 about 4 minutes; G3 seconds. Gain (est.): 0.3–0.5 ms a token on the 1.5B
+(`swiglu_quant` reads 0.455–0.644 ms; the fold adds a redundant quantize of h in each down threadgroup).
+
+**Amended 2026-10-24, before any C4-G run.** (1) There is no dispatch counter, so C4-G1 (b)'s "taken" is shown by a third arm: the
+folded down kernel swapped for a no-op, whose logits must differ from the fold's. (2) The down kernel takes the gate|up R as a
+template parameter (`gemv_w4a8_resid_staged_hq<Rd, Rg>`) rather than a constant buffer, so the fold allocates nothing (C4-G3).
+The instruments are `TestKSC4_foldMatchesThreeStep`, `TestKSC4_decodeIdentity`, `TestKSC4_allocatedNotHigher` and
+`TestKSC4_decodeSpeed`; the bars are unchanged.
+
+**KS-C4 read 2026-10-24 (09:30–09:38): PARK.** The fold's code is kept on branch `ksc4-fold-parked-2026-10-24`, not merged.
+- **C4-G1 (a) PASS**: 24 kernel cells (three shapes, SiLU and GELU-tanh, R = 2 and 4, both libraries) 0 differ, and the same cells
+  through the resident's own compiled pipelines 0 differ. **C4-G1 (b) red**: llama-tiny 0 of 8,192; the 0.5B 3,494,525 and the 1.5B
+  2,582,910 of 4,861,952 logits differ over 32 steps, fold on against off; the no-op arm shows the fold taken on every model.
+  Localized on the 0.5B: steps 0–8 byte-equal, then layer 17 at position 9 differs in one of 4,864 quantized activations. There
+  h·inv is exactly −10.5: the fold rounds it to −11 (Metal's `round`, half away from zero, measured scalar and `float4`, fast and
+  precise), and `swiglu_quant` gives −10. Its second pass recomputes glu(g)·u and multiplies by inv in one expression, which fast
+  math re-associates, so a value on a rounding tie lands on the other side. The partial max and every other value matched. Passing
+  g and u through `simd_broadcast_first` did not change it. A fold cannot reproduce that without matching the compiler's choice in
+  another kernel. **C4-G3 PASS**: allocated 1,001,684,992 bytes either way.
+- **C4-G2, read for the record after G1 went red** (09:37, the lock held exclusively, load 2.08, 12.8 GB available): off 10.01–10.30 ms
+  a token, on 10.21–11.46, **median on/off 1.0489, 1 of 10 pairs faster: 4.9% slower**. Every down threadgroup re-quantizing all of h
+  (35 KB read per threadgroup, 48 threadgroups a layer) and the gate|up kernel reading rows I apart cost more than the dispatch saved.
+- So the fold fails both as a bit-identical change and on speed, and re-registering it as fidelity-gated would not help. What the
+  0.875 ms buys back, if anything, is a multi-threadgroup quantizer (partials, then a parallel quantize), the shape of KS-E2's
+  widening on WebGPU; not built. Logs: `~/goinfer-logs/ksc4-g1a-2026-10-24.log`, `~/goinfer-logs/ksc4-g1b-g3-2026-10-24.log`,
+  `~/goinfer-logs/ksc4-g2-2026-10-24.log`.
+
 **KS-C5 · Legacy decode attention below 1024 keys (bit-identical).**
 - **Waste:** at 128 keys it costs 0.67 / 0.78 ms per token, with serial 8-wide V-load batches (16 dependent round trips) and
   about 16 barriers.
@@ -769,6 +851,34 @@ resident at int4 only" lines in the log come before the timed load and appear in
   `tgReduceAttn` at 128.
 - **Gain (est.):** −0.1 to −0.2 ms (1–2%); low confidence.
 - **Size:** S.
+
+**KS-C5 gates, registered 2026-10-24 before the code (C5-G).** The build changes `attention`'s single-tile path (nWin ≤ 4096; the
+tiled path is untouched): the V read issues 16 loads ahead instead of 8, the adds retired in the same sequential order (a scalar
+tail for the rest); the max and sum reductions run their levels at stride 32 and above through threadgroup memory as today, and
+the levels at stride 16 to 1 in simdgroup 0 with `simd_shuffle_down`, each level combining the same two operands in the same order,
+so 5 barriers fewer per reduction. `attention_f32`, `mc3_attention_rows` and the int8/f32 rows forms derive from this text and take
+the same change. `KSC5_OLD_ATTN` (a test-only define, `ksc5OldAttnForTest`, read at build) compiles the shipped form back.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C5-G1 identity | 0 | (a) the new `attention` against the `KSC5_OLD_ATTN` library: head dims 64 and 128, nKeys 1, 7, 8, 15, 16, 17, 31, 100, 128, 129, 512, 1000 and 4096, window 0 and 64, a sink on and off, the fast-math and the precise library; (b) llama-tiny and the 0.5B and 1.5B Metal `.giw`s at int4, 32 greedy decode steps after a 300-token prompt (keys to 332), every step's logits, a resident built with each library | byte-equal everywhere |
+| C5-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B's Metal `.giw`, two residents in one process (old and new library), 128 greedy decode tokens after a 384-token prompt (keys 385–512, where the decomposition put attention at 16% of the token), A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change decides; otherwise PARK |
+
+C5-G3: none; the change allocates nothing (threadgroup memory only). Planted defect, run once and reverted: the sum's shuffle level
+adds the lane's own value twice (`v + v`) at stride 1; C5-G1 goes red. A second plant inside the `KSC5_OLD_ATTN` branch must turn
+(b) red, so the define reaches the old arm. Stopping rule: one pass each. Cost: G1 about a minute; G2 about 5 minutes.
+
+**KS-C5 read 2026-10-24 (09:44–09:53): PARK.** The code is kept on branch `ksc5-attn-parked-2026-10-24`, not merged.
+- **C5-G1 PASS.** (a) 208 cells (both libraries, head dims 64 and 128, 13 key counts, windows 0 and 64, a sink on and off), 0 outputs
+  differ; the registered plant turned every cell red. (b) The 0.5B and the 1.5B after a 300-token prompt, 0 of 4,861,952 logits
+  differ over 32 steps; llama-tiny 0 of 8,192 after a 95-token prompt (its context is 128). A plant in the `KSC5_OLD_ATTN` branch
+  turned llama-tiny's 8,192 logits red, so the define reaches the old arm.
+- **C5-G2** (09:51–09:53, the lock held exclusively; the 1-minute load 2.46 at the start, each pair's 2.53–3.23; 12.9 GB available):
+  old 10.88–13.05 ms a token, new 10.81–13.42; **median new/old 1.0108, 4 of 10 pairs faster: PARK.** Both arms moved between about
+  10.8 and 12.9 ms within the run, a spread far larger than the 1–2% the change could give (attention is 16% of a 512-key token, so
+  0.2 ms is its ceiling). The reading does not resolve a direction; it is recorded as unresolved, not as a loss.
+Logs: `~/goinfer-logs/ksc5-g1a-2026-10-24.log`, `~/goinfer-logs/ksc5-plant-2026-10-24.log`, `~/goinfer-logs/ksc5-g1b-2026-10-24.log`,
+`~/goinfer-logs/ksc5-oldplant-2026-10-24.log`, `~/goinfer-logs/ksc5-g2-2026-10-24.log`.
 
 ## 7. Metal prefill and family kernels (KS-D)
 
