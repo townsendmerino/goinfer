@@ -223,12 +223,12 @@ func kse2Resident(t *testing.T, m *decoder.Model, narrow bool) (*residentDecoder
 	return rd, func() { rf.Close(); b.Close() }
 }
 
-// kse2Decode runs n greedy decode steps from token 13 and returns every step's logits.
-func kse2Decode(t *testing.T, m *decoder.Model, rd *residentDecoder, n int) [][]float32 {
+// kse2Decode runs n greedy decode steps from token 13 at positions start.. and returns every step's logits.
+func kse2Decode(t *testing.T, m *decoder.Model, rd *residentDecoder, start, n int) [][]float32 {
 	t.Helper()
 	var out [][]float32
 	tok := 13
-	for pos := range n {
+	for pos := start; pos < start+n; pos++ {
 		lg, err := rd.Forward(m.EmbedResidentForTest(tok), pos)
 		if err != nil {
 			t.Fatal(err)
@@ -245,7 +245,8 @@ func kse2Decode(t *testing.T, m *decoder.Model, rd *residentDecoder, n int) [][]
 }
 
 // TestKSE2_decodeIdentity is E2-G1 (b): llama-tiny (and, with GOINFER_HEAVY_TESTS=1, the 1.5B's .gguf) at int8int8 on WebGPU,
-// a narrow and a wide resident: a 64-row PrefillLast (the widened row forms) and 32 greedy decode steps, every logit byte-equal.
+// a narrow and a wide resident: a 64-row PrefillLast (the widened row forms; llama-tiny's widths reach only one stride of
+// them, the multi-stride loops are E2-G1 (a)'s) and 32 greedy decode steps attending over it, every logit byte-equal.
 func TestKSE2_decodeIdentity(t *testing.T) {
 	newOrSkipHW(t).Close()
 	paths := []string{"../testdata/llama-tiny"}
@@ -270,16 +271,19 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 			if err != nil && strings.Contains(err.Error(), "declines") {
 				// The backend declines this family's batched prefill (the 1.5B's q/k/v bias on Metal): only decode is compared.
 				fmt.Fprintf(os.Stderr, "[E2-G1] %s: prefill declined (%v); the row forms are not exercised on this model\n", p, err)
-				return nil, kse2Decode(t, m, rd, 32)
+				return nil, kse2Decode(t, m, rd, 0, 32)
 			}
 			if err != nil {
 				t.Fatalf("prefill: %v", err)
 			}
-			return slices.Clone(lg), kse2Decode(t, m, rd, 32)
+			return slices.Clone(lg), kse2Decode(t, m, rd, len(embs), 32) // decode attends over the prefill's KV
 		}
 		preN, narrow := arm(true)
 		preW, wide := arm(false)
 		m.Close()
+		if len(preN) != len(preW) || (strings.HasSuffix(p, "llama-tiny") && len(preN) == 0) {
+			t.Errorf("%s: prefill logits %d and %d long (llama-tiny's prefill must be admitted)", p, len(preN), len(preW))
+		}
 		dp := 0
 		for i := range preN {
 			if math.Float32bits(preN[i]) != math.Float32bits(preW[i]) {
@@ -305,12 +309,52 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 	}
 }
 
+// kse2Load1 is this machine's 1-minute load average; the test fails if it cannot be read.
+func kse2Load1(t *testing.T) float64 {
+	t.Helper()
+	var text string
+	switch runtime.GOOS {
+	case "darwin":
+		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+		if err != nil {
+			t.Fatalf("load average: %v", err)
+		}
+		text = strings.Trim(strings.TrimSpace(string(out)), "{} ")
+	case "linux":
+		out, err := os.ReadFile("/proc/loadavg")
+		if err != nil {
+			t.Fatalf("load average: %v", err)
+		}
+		text = string(out)
+	default:
+		t.Fatalf("no load average on %s", runtime.GOOS)
+	}
+	var l float64
+	if n, err := fmt.Sscanf(text, "%g", &l); n != 1 || err != nil {
+		t.Fatalf("load average %q: %v", text, err)
+	}
+	return l
+}
+
+// kse2Guard reads the void rule's two terms now: ok iff the 1-minute load is at most half the cores and at least 2 GiB is
+// reclaimable. The test fails if either cannot be read.
+func kse2Guard(t *testing.T) (ok bool, load float64, recl int64) {
+	t.Helper()
+	load = kse2Load1(t)
+	r, rok := hostmem.Read()
+	if !rok {
+		t.Fatal("no memory reading")
+	}
+	return load <= float64(runtime.NumCPU())/2 && r.Reclaimable >= 2<<30, load, r.Reclaimable
+}
+
 // TestKSE2_decodeSpeed is E2-G2 and its re-run's A/A control (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run" and its
 // amendments): the 1.5B's .gguf at int8int8 on WebGPU, one resident alive at a time (each run builds its arm's resident, warms
 // it twice and times 128 greedy decode tokens after a 32-token prompt), A B B A over 10 valid pairs. GOINFER_KSE2_AA=1 makes both residents narrow (the control). It refuses to run
-// outside the timing lock and under 6 GB reclaimable before its loads, records each pair's start load and reclaimable memory,
-// voids and re-runs (up to 10 times) a pair started above half the cores' load or under 2 GB reclaimable, and fails on the bar:
-// the A/B's median wide/narrow over 0.98 or fewer than 9 of 10 faster; the control's median outside 1 ± 0.02.
+// outside the timing lock and under 6 GB reclaimable before its loads. Each arm reads the void rule's terms (kse2Guard) after its
+// resident is built, just before and just after the timed run; a pair is void if any read fails (load over half the cores, or
+// under 2 GB reclaimable) and is re-run, up to 15 times. It fails on the bar: the A/B's median wide/narrow over 0.98 or fewer
+// than 9 of 10 faster; the control's median outside 1 ± 0.02.
 func TestKSE2_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE2_TIMING") == "" {
 		t.Skip("set GOINFER_KSE2_TIMING=1 (a timed run under the timing lock)")
@@ -354,54 +398,55 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		}
 		return time.Since(t0).Seconds() / gen
 	}
-	runArm := func(narrow bool) float64 {
+	// runArm builds its arm's resident, warms it twice, then times one run with the guard read just before and just after:
+	// valid is false if either read fails the void rule, so a spike or a memory drop during the timed decode voids the pair.
+	runArm := func(narrow bool) (sec float64, valid bool, note string) {
 		rd, closeRD := kse2Resident(t, m, narrow)
 		defer closeRD()
 		once(rd)
 		once(rd)
-		return once(rd)
+		ok1, l1, r1 := kse2Guard(t)
+		sec = once(rd)
+		ok2, l2, r2 := kse2Guard(t)
+		return sec, ok1 && ok2, fmt.Sprintf("load %.2f→%.2f, reclaimable %.2f→%.2f GiB", l1, l2, float64(r1)/(1<<30), float64(r2)/(1<<30))
 	}
 	aNarrow, bNarrow := true, aa
 	label := "A/B narrow, wide"
 	if aa {
 		label = "A/A narrow, narrow"
 	}
-	maxLoad := float64(runtime.NumCPU()) / 2
 	var ratios []float64
 	faster, voids := 0, 0
-	for i := 0; len(ratios) < 10; i++ {
-		var load1 [3]float64
-		la, _ := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		fmt.Sscanf(strings.Trim(strings.TrimSpace(string(la)), "{}"), "%g %g %g", &load1[0], &load1[1], &load1[2])
-		recl := int64(0)
-		if r, ok := hostmem.Read(); ok {
-			recl = r.Reclaimable
+	for len(ratios) < 10 {
+		var a, b float64
+		var va, vb bool
+		var na, nb string
+		if len(ratios)%2 == 0 {
+			a, va, na = runArm(aNarrow)
+			b, vb, nb = runArm(bNarrow)
+		} else {
+			b, vb, nb = runArm(bNarrow)
+			a, va, na = runArm(aNarrow)
 		}
-		if load1[0] > maxLoad || recl < 2<<30 { // after the loads, the 2 GB margin must still be there
+		if !va || !vb {
 			voids++
-			fmt.Fprintf(os.Stderr, "[E2-G2] VOID pair start %d (%s): load %.2f, reclaimable %.2f GiB\n", i, label, load1[0], float64(recl)/(1<<30))
-			if voids > 10 {
-				t.Fatalf("over 10 void pair starts")
+			fmt.Fprintf(os.Stderr, "[E2-G2] VOID %s pair (first: %s; second: %s)\n", label, na, nb)
+			if voids > 15 {
+				t.Fatalf("over 15 void pairs")
 			}
 			time.Sleep(30 * time.Second)
 			continue
-		}
-		var a, b float64
-		if len(ratios)%2 == 0 {
-			a, b = runArm(aNarrow), runArm(bNarrow)
-		} else {
-			b, a = runArm(bNarrow), runArm(aNarrow)
 		}
 		ratios = append(ratios, b/a)
 		if b < a {
 			faster++
 		}
-		fmt.Fprintf(os.Stderr, "[E2-G2] %s pair %d (load %.2f, reclaimable %.2f GiB): first %.3f ms/token, second %.3f ms/token, second/first %.4f\n",
-			label, len(ratios)-1, load1[0], float64(recl)/(1<<30), a*1e3, b*1e3, b/a)
+		fmt.Fprintf(os.Stderr, "[E2-G2] %s pair %d (first: %s; second: %s): first %.3f ms/token, second %.3f ms/token, second/first %.4f\n",
+			label, len(ratios)-1, na, nb, a*1e3, b*1e3, b/a)
 	}
 	slices.Sort(ratios)
 	med := (ratios[4] + ratios[5]) / 2
-	fmt.Fprintf(os.Stderr, "[E2-G2] %s: median second/first %.4f, %d of 10 pairs below 1, %d void starts\n", label, med, faster, voids)
+	fmt.Fprintf(os.Stderr, "[E2-G2] %s: median second/first %.4f, %d of 10 pairs below 1, %d void pairs\n", label, med, faster, voids)
 	if aa && (med < 0.98 || med > 1.02) {
 		t.Errorf("the A/A control reads %.4f: the two-resident setup biases the reading", med)
 	}

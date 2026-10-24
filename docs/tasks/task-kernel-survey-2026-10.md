@@ -1475,6 +1475,16 @@ started at a load of 0.64–3.43 and 3.4–7.3 GB reclaimable. The gain is the f
 the 1.5B's single-workgroup quantizers cost more than the survey's 0.78 ms, which was read on nobara's 2070. Log:
 `~/goinfer-logs/kse2-g2-rerun3-2026-10-24.log`.
 
+**After the second review of #214 (14:20), registered before a further re-run.** The guard read the void rule's terms once, before
+each pair and before its residents were built, so a spike during a timed run was not caught: the A/A's two pairs at 0.8426 and
+1.1594 sat next to a load spike to 11.7, and a pair could start at 3.4 GB and fall under 2 GB mid-run. The re-run reads the terms
+after each arm's resident is built, just before and just after its timed run, and voids the pair if any of the four reads fails;
+an unreadable load or memory reading fails the test (load from `sysctl` on macOS, `/proc/loadavg` on Linux). Otherwise as above:
+the A/A control first (PASS iff its median is within 1 ± 0.02), then the A/B (SHIP iff median ≤ 0.98 with at least 9 of 10 faster).
+The previous re-run's readings stay in the record; this one decides. Also: E2-G1's decode now starts after the 64-row prefill so
+it attends over it, and the prefill comparison asserts non-empty logits on llama-tiny (the 1.5B's WebGPU prefill declines on
+Metal). llama-tiny's widths reach only one stride of the widened loops end to end; the multi-stride loops are E2-G1 (a)'s cells.
+
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
