@@ -29,7 +29,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
 | MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
-| MEM4(a) | open | unblocked 2026-10-23: MEM0's Mac tower cell is read (`docs/measurements/mem0-2026-10/README.md` §4, Qwen3-VL-2B: 7.2 GB footprint, 2.78 GB anonymous at +10 s). Gates registered (ALS-G, §4 MEM4); the arm64 speed read (ALS-G0) runs first and stops the item if aliasing is slower (owner, 2:30 pm) | aikit's `WrapBF16` has no caller |
+| MEM4(a) | open (release) | built and gated: aikit#15 (ALS-G0 to G3 PASS: no slower on arm64, bit-identical, Qwen2.5-VL-3B tower heap 2,551.7 → 9.6 MiB). Next: aikit v1.74.0 (the coordinator's tag), then goinfer's bump and `closeEntryNatives` closing the GLM-OCR, Qwen3.5+ and Gemma 4 encoders | §4 MEM4, "ALS-G1 to G3 read" |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | done | done 2026-10-22: all four image and audio prefill routes run in chunks, byte-equal (V1 to V4 G1 to G3 PASS); tier-1 peaks run at night on the owner's word: Qwen2.5-VL-3B 1,261 → 357 MiB, Qwen3.5-0.8B 5,567 → 1,905 MiB over base (V1-G4, V3-G4 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-VL-G2T1 | open | a box with a bidirectional Gemma 4 (26B or 31B class): V2-G4, the route-2 peak with one image and about 8K tokens, `TestMEM5VL_peakTier1`'s form | `docs/measurements/mem5vl-2026-10/README.md` |
@@ -435,8 +435,30 @@ its image (every SigLIP input is 4,096 patches).
 **ALS-G0's first run (15:09–15:19) is void.** The 1-minute load was 3.94 at the start, but every pair after the first started at
 4.7–14.3, above the void line (4.0): the tower forward runs on every core and the previous run holds the average up. It read
 16-bit/f32 0.9818 (Qwen2.5-VL) and 0.9849 (SigLIP), features equal in every pair, and is recorded, not graded
-(`~/goinfer-logs/als-g0-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
+(`~/goinfer-logs/als-g0-void-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
 most, else void) and prints the load each run starts at; nothing else changes.
+
+**ALS-G0 read 2026-10-23 (17:12–17:39, goinfer's timing lock held exclusively, 6.3 GB available at the start; all 28 runs
+started at a 1-minute load under 4.0, at most 3.98): PASS, proceed.** Qwen2.5-VL-3B's tower: f32 5.82–6.46 s, 16-bit 5.66–5.99 s,
+**median 16-bit/f32 0.9666**; Gemma-3-4B's SigLIP: f32 23.81–25.06 s, 16-bit 23.45–25.38 s, **median 0.9935**; the features equal bit
+for bit in every pair. The 16-bit tower is no slower on arm64: its tile widen is paid once per weight tile across every image row,
+and the halved weight bytes offset it. Log: `~/goinfer-logs/als-g0-2026-10-23.log`.
+
+**ALS-G1 to G3 read 2026-10-23, by day; the aikit change is townsendmerino/aikit#15 (branch `mem4a-alias-2026-10`).**
+- ALS-G1 **PASS**: all eight `newQMat` tower configurations (SigLIP, SigLIP2 NaFlex, Qwen2.5-VL, Qwen3.5, Qwen3-VL with DeepStack,
+  GLM-OCR, Pixtral, Gemma 4 from goinfer's fixture), each tiny fixture and a bf16 copy of it, aliased against copied: byte-equal,
+  10–18 weights aliased per tower, and a forward after `Close` an error in every one. The plant (a bf16 weight wrapped as f16)
+  turned every bf16 cell red and left the f32 cells green, which is why the bf16 copies are there.
+- ALS-G2 **PASS**: Qwen2.5-VL-3B's tower, Go heap in use after load and GC, aliased **9.6 MiB (0.4%)** against **2,551.7 MiB**
+  copied; its projections are 2,543.1 MiB as f32. Log: `~/goinfer-logs/als-g2-2026-10-23.log`.
+- ALS-G3 **PASS**: `TestALS_G3_towerHashes` (`metal/als_g3_test.go`; `mem2Towers`' seven towers, 21 output hashes) built against
+  aikit main and against the branch, through two workspaces: identical.
+- Also: aikit's `go vet ./...`, the `vision` and `embed` tests, and `releasegate 1.74.0` clean but for the uncut `[1.74.0]`
+  CHANGELOG section. MEM4(b)'s `TestReleaseBlocks_reloadsTheSameTower` now runs copied (its heap check, unchanged) and aliased
+  (the blocks are never on the heap; the reload, forward and export checked).
+
+The goinfer half, after the aikit tag: the bump, and `internal/serveapp/liveness.go:loadedModel.closeEntryNatives` closing the GLM-OCR,
+Qwen3.5+ and Gemma 4 encoders it used to drop, since their mappings now stay until `Close`.
 
 Stopping rule: one pass each; ALS-G0 failing stops the item before any code ships. Cost: ALS-G0 about 15 min; the rest seconds
 to minutes. Release: an aikit minor (a PR, then its tag through aikit's `RELEASING.md`; the nobara half and the tag push are the
