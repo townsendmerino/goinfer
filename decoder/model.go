@@ -972,7 +972,11 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// A linear/mamba/conv mixer layer (or one of Nemotron's mlp/moe block kinds) never writes c.keys[l]/c.vals[l] either: its
 	// recurrent state (c.delta/c.mamba/c.conv/c.kda, set up below) is the whole store, so it reserves no K/V capacity.
 	// hasNoAttentionKVAt (arch.go) is the one place that knows all these cases, shared with kvDimAt's pricing.
-	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, a.hasNoAttentionKVAt)
+	// A layer enableRings makes a ring (below) never reads or grows its append-forever arrays either, so it reserves none.
+	ringAt := func(l int) bool { return a.kvRingsOK() && a.SlidingWindow > 0 && !a.isGlobalLayer(l) }
+	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
+		return a.hasNoAttentionKVAt(l) || ringAt(l)
+	})
 	c.scr = newDecodeScratch(a)
 	// Must precede enableRings so local layers inherit the mode.
 	if quant != kvqF32 {
