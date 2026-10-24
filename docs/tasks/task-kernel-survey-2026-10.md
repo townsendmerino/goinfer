@@ -1217,6 +1217,23 @@ prefill GEMMs and int8 KV attention use it.
 - **Size:** S.
 - **Prior art:** extends G35.
 
+**KS-E2 gates, registered 2026-10-24 before the code (E2-G), on the owner's order of the Mac work (the small items while KS-D8
+waits on its reference).** The build: the six quantizers (`rmsnormQuantWGSL`, `swigluQuantWGSL`, `gegluQuantWGSL`,
+`quantizeShaderWGSL`, `relu2QuantWGSL`, `gptossGluQuantWGSL`) and the prefill row forms derived from three of them compile
+widened to 256 lanes: the shared array, the workgroup size, the max loop and the pack loop at 256, the max tree from stride 128.
+`rmsnormQuantWGSL`'s sum of squares keeps lanes 0–63 in today's order (its loop guarded to them, its tree from stride 32), so its
+scale is today's bits. The source stays the 64-lane text and is widened by exact-count edits where it is compiled; a Context
+built with `quantNarrowForTest` (read at `New`) compiles the 64-lane form for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| E2-G1 identity | 0 | (a) each widened shader against its 64-lane form on random inputs at n = 1, 3, 255, 896, 4864, 8960 (the max and the pack at partial lanes), and the row forms at M = 1, 3, 17; (b) llama-tiny and the 1.5B's `.gguf` on WebGPU at int8int8, two residents (narrow and wide Contexts), 32 greedy decode steps' logits | the packed int8 and the scales byte-equal; the logits byte-equal |
+| E2-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B on WebGPU: the narrow and the wide resident in one process, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median wide/narrow per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change decides; otherwise PARK |
+
+E2-G3: none; the change allocates nothing. Planted defect, run once and reverted: the widened rmsnorm sum taken over all 256 lanes
+(today's order broken); E2-G1 goes red on the rmsnorm cells, or, if every cell stays equal, a pack loop stopping at 128 lanes
+must. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
+
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
