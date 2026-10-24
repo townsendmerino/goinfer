@@ -234,7 +234,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 				return
 			}
 			if useSteelAttn {
-				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+				e.Dispatch(pf.steelFor(g0.hd), r.nH*((M+31)/32)*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
 			} else if useFusedAttn {
 				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedSGPT*32, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
 			} else {

@@ -16,6 +16,7 @@ const (
 	gemma4MoeKernels   = kernels.Gemma4MoeKernels
 	g4vMSL             = kernels.G4vMSL
 	gvMSL              = kernels.GvMSL
+	towerGemmMSL       = kernels.TowerGemmMSL
 	gumbelMSLKernels   = kernels.GumbelMSLKernels
 	moeKernels         = kernels.MoeKernels
 	moeBatchKernels    = kernels.MoeBatchKernels

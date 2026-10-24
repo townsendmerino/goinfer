@@ -20,7 +20,7 @@ func TestTowerAttnKernel(t *testing.T) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	lib, err := d.CompileLibraryPrecise(Eg2MSL+GvMSL, MSL3_1)
+	lib, err := d.CompileLibraryPrecise(Eg2MSL+TowerGemmMSL+GvMSL, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -140,7 +140,7 @@ func testTowerGemmKernel(t *testing.T, kernel string, bar float64) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	lib, err := d.CompileLibraryPrecise(Eg2MSL+GvMSL, MSL3_1)
+	lib, err := d.CompileLibraryPrecise(Eg2MSL+TowerGemmMSL+GvMSL, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}

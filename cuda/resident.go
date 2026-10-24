@@ -601,13 +601,16 @@ type cudaResident struct {
 	hidCapOut  [][]float32 // [len(hidCapTaps)][hidden], overwritten per token
 	// The BATCHED counterpart, for the block-drafting verify: one download per tap covering
 	// all M rows, instead of the per-token seam's one per tap PER TOKEN.
-	capBTaps   []int       // layer indices, ascending; nil ⇒ off
-	capBOut    [][]float32 // [len(capBTaps)][M*hidden], overwritten per batched call
-	launchN    int         // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
-	cacheSlots int         // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
-	slotIdx    Buffer      // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
-	hostIdx    []uint32    // C′: scratch for the per-layer rIdx device→host readback
-	hostSlot   []uint32    // C′: scratch for the per-token slot ids uploaded to slotIdx
+	capBTaps []int       // layer indices, ascending; nil ⇒ off
+	capBOut  [][]float32 // [len(capBTaps)][M*hidden], overwritten per batched call
+	launchN  int         // diagnostic: per-forward dispatch count (graph-capturable-fraction bound)
+	// launchViaExecutor sends launch through gocudrv's executor thread (Queue.Launch) instead of issuing it from this
+	// thread (Queue.LaunchDirect). Same kernels and arguments either way; tests set it for the A/B between the two.
+	launchViaExecutor bool
+	cacheSlots        int      // C′ step 2: device slots per layer (≥ topK; = topK ⇒ step-1 fresh-load, no reuse)
+	slotIdx           Buffer   // C′: per-token slot ids for the routed experts, bound as the GEMV's idx
+	hostIdx           []uint32 // C′: scratch for the per-layer rIdx device→host readback
+	hostSlot          []uint32 // C′: scratch for the per-token slot ids uploaded to slotIdx
 
 	// cacheSlotsAsked is the slot count the load asked for, before allocSlots capped it to free VRAM: the ceiling a resize grows to.
 	cacheSlotsAsked int
@@ -650,7 +653,7 @@ type cudaResident struct {
 	dev                                                                                     *Device
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
-	fTopK                                                                                   Pipeline // topk_select
+	fTopKCompact, fTopKFinish, fTopKZ                                                       Pipeline // topk_compact / topk_finish / topk_z
 	kvCopy                                                                                  Pipeline // kv_store at pos 0 = an exact device copy (K=V layers copy raw k into vB instead of projecting twice)
 	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
 	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
@@ -826,9 +829,12 @@ type cudaResident struct {
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
 	aq, cq, mq, dq, argIdx                                                Buffer
 	argVal                                                                Buffer
-	topkOut                                                               Buffer   // topk_select output: ids, logit bits, Z hi/lo bits
-	gbKey, gbIdx, gbOut                                                   Buffer   // gumbel_stage1 per-block winners, and the drawn id
-	kc, vc                                                                []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
+	topkOut                                                               Buffer // topk_finish / topk_z output: ids, logit bits, Z hi/lo bits
+	// topk's global scratch (cuda/topk.cu): the fast path's candidates, their count, the row max, Z's partials and the
+	// done counter. topkCnt and topkDone start at zero and the kernels reset them.
+	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
+	gbKey, gbIdx, gbOut                                 Buffer   // gumbel_stage1 per-block winners, and the drawn id
+	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
 
 	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
 	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
@@ -2590,7 +2596,12 @@ func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) e
 		}
 	}
 	r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)
-	e := r.stream.Launch(f, cfg, args...)
+	var e error
+	if r.launchViaExecutor {
+		e = r.stream.Launch(f, cfg, args...)
+	} else {
+		e = r.stream.LaunchDirect(f, cfg, args...)
+	}
 	if e != nil {
 		e = r.describeLaunchErr(f, e)
 	}

@@ -16,6 +16,10 @@ import (
 // baseline arm of R19's §3.2 gate and of the decomposition harness's A/B.
 var prefillSteelAttnOff bool
 
+// prefillAttnSkipForTest, set only by KS-D1's share measurement (TestKSD1_attnShare), skips the batched pass's attention
+// dispatch, so a timed pass without it prices attention. The pass's output is then meaningless.
+var prefillAttnSkipForTest bool
+
 // gemmTilePolicy picks gemmTile's rule: "" the default (D-B02's padding rule below), "a01" A-P01's rule as it shipped,
 // "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only A-P01's 32-token / 32-feature rule.
 // Test-only: the arms of the grades (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
@@ -87,11 +91,12 @@ func gemmTileSize(rows, N int) (tm, tn int) {
 // swigluFusedOffForTest keeps the gate|up GEMM and swiglu_f16 as two steps with guF between them: the old arm of KS-D5's A/B.
 var swigluFusedOffForTest bool
 
-// swigluFused reports whether a pass of Mpad rows runs every dense layer's gate|up projection through gemm_w4f16_swiglu, so it
-// needs no guF: the int4 weights (not the native int8 lane), the 64 x 64 tile for every layer's width, a width that is a
-// multiple of 32, and no MoE layer (its expert GEMMs write guF). The pass and prefillScratchBytes both ask it.
+// swigluFused reports whether a pass of Mpad rows runs every dense layer's gate|up projection through the fused GEMM
+// (gemm_w4f16_swiglu, or gemm_w8f16_swiglu on the native int8 lane), so it needs no guF: the 64 x 64 tile for every layer's
+// width, a width that is a multiple of 32, and no MoE layer (its expert GEMMs write guF). The pass and prefillScratchBytes
+// both ask it.
 func (r *resident) swigluFused(Mpad int) bool {
-	if swigluFusedOffForTest || r.w8 || r.moe != nil {
+	if swigluFusedOffForTest || r.moe != nil {
 		return false
 	}
 	for l := -1; l < len(r.layers); l++ {
@@ -109,7 +114,7 @@ func (r *resident) swigluFused(Mpad int) bool {
 // prefillState holds the lazily compiled prefill pipelines (ensurePrefill); a decode-only run never builds it.
 type prefillState struct {
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
-	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu (KS-D5)
+	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu (KS-D5), gemm_w8f16_swiglu on a native int8 resident
 	pKvI8, pDeqI8                                              Pipeline // an int8 cache's store and dequantize-to-scratch (kv_i8_prefill.go)
 	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
 	pAttnImg                                                   Pipeline // S17: attention_prefill with a bidirectional image block
@@ -130,8 +135,11 @@ type prefillState struct {
 	// (docs/completed/task-prefill-gap.md §4). On by default (metalFusedAttentionEnabled, backend.go);
 	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
 	pAttnFused Pipeline
-	// R19: attention_prefill_steel, the head-dim-128 prefill attention (it replaces pAttnFused there).
-	pAttnSteel Pipeline
+	// R19: attention_prefill_steel, the prefill attention at the head dims steelHeadDim admits (it replaces pAttnFused there);
+	// pAttnSteel64 is its head-dim-64 instance (KS-D2). steelFor picks by head dim.
+	pAttnSteel, pAttnSteel64 Pipeline
+	// KS-D1: attention_prefill_steel_split at head dims 256 and 512 (splitSteelHeadDim), where the exact kernel ran.
+	pAttnSteel256, pAttnSteel512 Pipeline
 	// attention_prefill_tiled: pAttn for a pass past prefillExactAttnMaxKeys keys (exactAttnTile).
 	pAttnTiled Pipeline
 
@@ -215,7 +223,8 @@ func (r *resident) ensurePrefill() {
 		pKv: p("kv_store_f16"), pKvI8: p("kv_store_i8_prefill"), pDeqI8: p("kv_dequant_i8_f16"), pAttn: p("attention_prefill"), pAttnImg: p("attention_prefill_img"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"), pResScaled: p("residual_f16_scaled"),
-		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"), pAttnTiled: p("attention_prefill_tiled"),
+		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"), pAttnSteel64: p("attention_prefill_steel_hd64"),
+		pAttnSteel256: p("attention_prefill_steel_hd256"), pAttnSteel512: p("attention_prefill_steel_hd512"), pAttnTiled: p("attention_prefill_tiled"),
 
 		pRouterGemm:       p("router_gemm_f16"),
 		pMoeRouteBatch:    p("moe_route_batch"),
@@ -230,6 +239,9 @@ func (r *resident) ensurePrefill() {
 		r.pf.w8, r.pf.pW8 = r.w8, map[[2]int]Pipeline{}
 		for _, t := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
 			r.pf.pW8[t] = p(fmt.Sprintf("gemm_w8f16_m%dn%d", t[0], t[1]))
+		}
+		if r.w8 { // an int4mix resident's FFN is int4 and keeps gemm_w4f16_swiglu
+			r.pf.pGemmSwiglu = p("gemm_w8f16_swiglu")
 		}
 	}
 }
@@ -368,13 +380,27 @@ func (r *resident) kvI8ScratchRows() int { return (r.ctxCap + 7) / 8 * 8 }
 var prefillScratchSeen atomic.Int64
 
 // prefillAttnKernels is which attention kernel PrefillLast dispatches for this model: fused for hd%8==0 && hd<=128
-// (attention_prefill_fused's compile-time cap, ATTN_MAXHD), steel within that for hd 128 (R19: one threadgroup of 128
-// threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by prefillExactAttnMaxKeys.
+// (attention_prefill_fused's compile-time cap, ATTN_MAXHD), steel within that at the head dims steelHeadDim admits (R19:
+// one threadgroup of 128 threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by
+// prefillExactAttnMaxKeys.
 func (r *resident) prefillAttnKernels() (fused, steel bool) {
 	g0 := r.prefillGeom()
 	fused = r.prefillFusedOn() && g0.hd%8 == 0 && g0.hd <= 128
-	steel = fused && g0.hd == 128 && !prefillSteelAttnOff
+	steel = fused && steelHeadDim(g0.hd) && !prefillSteelAttnOff
 	return fused, steel
+}
+
+// steelHeadDim reports whether attention_prefill_steel runs a layer of head dim hd. The kernel is built at 64, 80, 96 and
+// 128, but a head dim is admitted only after a model at it passes set A's pooled gate (R19 for 128, KS-D2 for 64; the
+// survey's KS-D2 row has 80 and 96's state).
+func steelHeadDim(hd int) bool { return hd == 128 || hd == 64 }
+
+// steelFor is the steel pipeline for head dim hd, one of steelHeadDim's.
+func (pf *prefillState) steelFor(hd int) Pipeline {
+	if hd == 64 {
+		return pf.pAttnSteel64
+	}
+	return pf.pAttnSteel
 }
 
 // prefillFusedOn reports whether the pass may take the fused and steel attention kernels where a layer's head
@@ -389,18 +415,28 @@ func (r *resident) prefillFusedOn() bool {
 func (r *resident) prefillExactAttn() bool {
 	fusedOn := r.prefillFusedOn()
 	for l := range r.layers {
-		if g := r.layers[l].geom; g != nil && !(fusedOn && g.hd%8 == 0 && g.hd <= 128) {
+		if g := r.layers[l].geom; g != nil && exactAttnLayer(g.hd, fusedOn) {
 			return true
 		}
 	}
 	return false
 }
 
+// splitSteelHeadDim reports whether attention_prefill_steel_split serves head dim hd.
+func splitSteelHeadDim(hd int) bool { return hd == 256 || hd == 512 }
+
+// exactAttnLayer reports whether an attention layer of head dim hd runs the exact kernel: no fused kernel (head dim over 128 or
+// not a multiple of 8) and no split steel kernel, or fused attention off. prefillSteelAttnOff returns the split head dims to
+// it, as the A/B's old arm.
+func exactAttnLayer(hd int, fusedOn bool) bool {
+	return !(fusedOn && hd%8 == 0 && hd <= 128) && !(fusedOn && splitSteelHeadDim(hd) && !prefillSteelAttnOff)
+}
+
 // exactAttnHeadDim is the widest head dim among the attention layers the exact kernel serves (prefillExactAttn), or 0.
 func (r *resident) exactAttnHeadDim() int {
 	fusedOn, hd := r.prefillFusedOn(), 0
 	for l := range r.layers {
-		if g := r.layers[l].geom; g != nil && !(fusedOn && g.hd%8 == 0 && g.hd <= 128) {
+		if g := r.layers[l].geom; g != nil && exactAttnLayer(g.hd, fusedOn) {
 			hd = max(hd, g.hd)
 		}
 	}
@@ -736,7 +772,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		g                                                            *attnGeom
 		qkvDim, nHhd, kvDim                                          int
 		uQkv, uStride, uKOff, uVOff, uTotalQ, uTotalK, uBaseK, uQDim Buffer
-		fused, steel                                                 bool
+		fused, steel, split                                          bool
 	}
 	type luKey struct {
 		g      *attnGeom
@@ -759,7 +795,8 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		u := &layerU{g: g, qkvDim: q, nHhd: nh, kvDim: g.kvDim,
 			uQkv: getU32(q), uStride: getU32(q), uKOff: getU32(nh), uVOff: getU32(nh + g.kvDim),
 			uTotalQ: getU32(nh), uTotalK: getU32(g.kvDim), uBaseK: getU32(nh), uQDim: getU32(nh),
-			fused: fused, steel: fused && g.hd == 128 && !prefillSteelAttnOff}
+			fused: fused, steel: fused && steelHeadDim(g.hd) && !prefillSteelAttnOff,
+			split: fusedOn && splitSteelHeadDim(g.hd) && !prefillSteelAttnOff}
 		luCache[k] = u
 		return u
 	}
@@ -871,10 +908,18 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 				kc, vc = zeroKV, zeroKV
 			}
 			// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
-			if imgB != (Buffer{}) {
+			if prefillAttnSkipForTest {
+				// no attention: ctxF keeps what it held (KS-D1's share measurement)
+			} else if imgB != (Buffer{}) {
 				e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB, imgN)
 			} else if lu.steel {
-				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+				e.Dispatch(pf.steelFor(lu.g.hd), r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+			} else if lu.split { // KS-D1: 32 query rows a threadgroup at head dim 256, 16 at 512
+				p, bq := pf.pAttnSteel256, 32
+				if lu.g.hd == 512 {
+					p, bq = pf.pAttnSteel512, 16
+				}
+				e.Dispatch(p, r.nH*((M+bq-1)/bq)*256, 256, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
 			} else if lu.fused {
 				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
 			} else if attnTile > 0 {
