@@ -308,9 +308,9 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 // TestKSE2_decodeSpeed is E2-G2 and its re-run's A/A control (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run"): the
 // 1.5B's .gguf at int8int8 on WebGPU, two residents in one process, 128 greedy decode tokens after a 32-token prompt, A B B A
 // over 10 valid pairs after 2 warm runs each. GOINFER_KSE2_AA=1 makes both residents narrow (the control). It refuses to run
-// outside the timing lock, records each pair's start load and reclaimable memory, voids and re-runs (up to 10 times) a pair
-// started above half the cores' load or under 6 GB reclaimable, and fails on the bar: the A/B's median wide/narrow over 0.98
-// or fewer than 9 of 10 faster; the control's median outside 1 ± 0.02.
+// outside the timing lock and under 6 GB reclaimable before its loads, records each pair's start load and reclaimable memory,
+// voids and re-runs (up to 10 times) a pair started above half the cores' load or under 2 GB reclaimable, and fails on the bar:
+// the A/B's median wide/narrow over 0.98 or fewer than 9 of 10 faster; the control's median outside 1 ± 0.02.
 func TestKSE2_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE2_TIMING") == "" {
 		t.Skip("set GOINFER_KSE2_TIMING=1 (a timed run under the timing lock)")
@@ -319,6 +319,10 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
 	}
 	aa := os.Getenv("GOINFER_KSE2_AA") != ""
+	// The void rule's memory term is read before the cell's loads: about 4 GB (the host model and two residents) plus 2 GB.
+	if r, ok := hostmem.Read(); !ok || r.Reclaimable < 6<<30 {
+		t.Fatalf("reclaimable %.2f GiB before the loads, under 6 GiB: the cell would be void", float64(r.Reclaimable)/(1<<30))
+	}
 	newOrSkipHW(t).Close()
 	m, err := decoder.Load(os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), decoder.Options{Quant: "int8int8"})
 	if err != nil {
@@ -371,7 +375,7 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		if r, ok := hostmem.Read(); ok {
 			recl = r.Reclaimable
 		}
-		if load1[0] > maxLoad || recl < 6<<30 {
+		if load1[0] > maxLoad || recl < 2<<30 { // after the loads, the 2 GB margin must still be there
 			voids++
 			fmt.Fprintf(os.Stderr, "[E2-G2] VOID pair start %d (%s): load %.2f, reclaimable %.2f GiB\n", i, label, load1[0], float64(recl)/(1<<30))
 			if voids > 10 {

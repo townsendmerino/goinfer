@@ -1258,6 +1258,13 @@ The re-run, in one process under the lock, the test refusing to run without the 
   order, up to 10 re-runs.
 The first reading stays in the record; the re-run decides.
 
+**Amended 2026-10-24 (13:06), after the first re-run attempt voided every pair and before any valid timed reading.** The 6 GB
+line was applied at each pair, after the test's own loads (the host model and two residents, about 4 GB) had taken their memory, so
+it counted that memory twice and every pair start read 1.7–2.3 GB reclaimable: void. The void rule's term is the memory the cell's
+load needs plus 2 GB, read before the load. So: **reclaimable ≥ 6 GB before the loads** (the test refuses to start under it), and at
+each pair start **load ≤ 4.0 and reclaimable ≥ 2 GB** (the margin still there after the loads); a pair under either is void and
+re-run, as registered. Everything else is unchanged.
+
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
