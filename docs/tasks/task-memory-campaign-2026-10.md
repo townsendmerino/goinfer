@@ -868,6 +868,20 @@ min for the parity refresh.
 > int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
 > and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
 
+**MEM12-ringres gates, registered 2026-10-24 before the code (RR-G), on the owner's order of the Mac work.** The build:
+`enableRings` gives up every append-forever reservation of a layer it makes a ring (f32 from `NewKVCache`'s hint, f16 or
+int8 and the int8 scales from `setQuant`), leaving empty, non-nil slices as `setQuant` does for f32. A ring layer never reads
+or grows them: `Append` and the batched commit write its ring, and `reserveRows` and `regrowLayer` skip or never reach it.
+Tier 0 answers it, by the same counters as F32R-G1.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| RR-G1 bytes | 0 | F32R-G1's instrument, `TestKVQuant_reservesNoF32`, on `llama-tiny` and `gemma2-tiny` with f32, f16 and int8 KV, `NewCache(512)` | a ring layer holds 0 capacity in every form; a global layer keeps 512 × its KV width in its form (f32 capacity 0 under f16 and int8, as before); and the bytes over `NewCache(0)` are within 1% of the global layers' reservation alone (on main they also carry the ring layers') |
+| RR-G2 identity | 0 | the ring, sliding-window and KV tests by name (`Ring\|Window\|KVF16\|KVI8\|KVQuant\|Gemma2\|Session\|Prefix`), then `scripts/refresh_parity_hashes.sh` | all PASS (not skip); the parity refresh is green |
+
+Planted defect, run once on the committed tree and reverted: the reservation dropped on every layer, global ones too (G1 red).
+Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1; minutes for G2 and the parity refresh.
+
 **MEM12-scratch gates, registered 2026-10-21 before the code (SCR-G).** The build, three parts. (1) The MoE expert-major
 branch of the batched pass takes its K × hidden output, its done flags and `moeMLPBatch`'s buffers (router logits, the
 per-rank outputs, the gather, gate, up and down buffers) from `prefillPassScratch`, so a chunked prefill allocates them once;
