@@ -284,7 +284,7 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
 
 	// The q4k lane's step (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP6): its norm and SwiGLU derived as
 	// above, and its two projections for B rows, each weight read once for all rows. A rows GEMV keeps its decode
-	// kernel's per-lane loop, statement for statement, and simd_sum per row (Q4K_F32_BODY, W8_F32_BODY), so each row is
+	// kernel's per-lane loop, statement for statement, and simd_sum per row (q4k_rows_acc, w8f32_rows_acc), so each row is
 	// decode's bits. Activation row b starts at ax_rows + b*lda, output row b at out_rows + b*ldo. mode: 0 store, 1
 	// +bias, 2 +=. B <= 8.
 	b.WriteString(edit(extractKernel(allKernels, "rmsnorm_f32_out"),
@@ -319,25 +319,35 @@ kernel void mc3_gemv_q4k_f32_rows(device const uchar* wq[[buffer(0)]], device co
     constant uint& lda[[buffer(5)]], constant uint& ldo[[buffer(6)]], device const float* bias[[buffer(7)]],
     constant uint& mode[[buffer(8)]], uint tgid[[threadgroup_position_in_grid]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+#pragma clang fp reassociate(off)
     uint row = tgid*8u + sgid;
     if (row >= N) return;
-    uint NB = K >> 8u;
+    const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
     device const uchar* wr = wq + (ulong)row*(ulong)NB*144ul;
     float acc[B];
     SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] = 0.0f;
-    for (uint b=0u; b<NB; b++) {
+    for (uint b = ix; b < NB; b += 4u) {
         device const uchar* blk = wr + b*144u;
-        float d  = float(as_type<half>(ushort(uint(blk[0]) | (uint(blk[1])<<8u))));
-        float dm = float(as_type<half>(ushort(uint(blk[2]) | (uint(blk[3])<<8u))));
-        device const uchar* scs = blk + 4; device const uchar* qs = blk + 16;
-        for (uint j=0u; j<4u; j++) {
-            float sc0, m0, sc1, m1; q4k_scale_min(2u*j, scs, sc0, m0); q4k_scale_min(2u*j+1u, scs, sc1, m1);
-            uint q = uint(qs[j*32u + lane]);
-            SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
-                device const float* a = ax_rows + r*lda + b*256u;
-                float a0 = a[j*64u + lane], a1 = a[j*64u + 32u + lane];
-                acc[r] += (d*sc0*float(q & 15u) - dm*m0) * a0 + (d*sc1*float(q >> 4u) - dm*m1) * a1;
+        half2 dd = as_type<half2>(*(device const uint*)blk);
+        float sc0, m0, sc1, m1; q4k_scale_min2(j, blk + 4, sc0, m0, sc1, m1);
+        uint4 q = *(device const uint4*)(blk + 16u + j*32u + h*16u);
+        float d = float(dd.x), dm = float(dd.y);
+        SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+            device const float4* alo4 = (device const float4*)(ax_rows + r*lda + b*256u + j*64u + h*16u);
+            float4 al[4], ah[4];
+            float slo = 0.0f, shi = 0.0f;
+            for (uint i = 0u; i < 4u; i++) {
+                al[i] = alo4[i]; ah[i] = alo4[8u + i];
+                slo += (al[i].x + al[i].y) + (al[i].z + al[i].w);
+                shi += (ah[i].x + ah[i].y) + (ah[i].z + ah[i].w);
             }
+            float dlo = 0.0f, dhi = 0.0f;
+            for (uint i = 0u; i < 4u; i++) {
+                uint w = q[i];
+                dlo += dot(float4(float(w & 15u), float((w >> 8u) & 15u), float((w >> 16u) & 15u), float((w >> 24u) & 15u)), al[i]);
+                dhi += dot(float4(float((w >> 4u) & 15u), float((w >> 12u) & 15u), float((w >> 20u) & 15u), float(w >> 28u)), ah[i]);
+            }
+            acc[r] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);
         }
     }
     SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {

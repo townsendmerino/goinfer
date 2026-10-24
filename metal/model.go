@@ -271,6 +271,7 @@ type resident struct {
 	q4kLane                                                    bool
 	mropeAxis                                                  Buffer // S16: the m-RoPE prefill\'s per-pair axis table; empty when the model has none
 	pQ4K, pQ4KResid, pQ4KBias, pW8F32, pW8F32Resid, pW8F32Bias Pipeline
+	q4kR, w8F32R                                               int // those GEMVs' rows a simdgroup (q4kGemvRows, w8F32GemvRows)
 	pRmsF32Out, pSwF32                                         Pipeline
 	axF32, swF32                                               Buffer
 	// The lane's batched step (batch.go, forwardMultiOut): its projections' rows forms by B, and its norm and SwiGLU over
@@ -1153,6 +1154,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		attnSoftcap = 0
 	}
 	libSrc, err := withAttnSoftcap(allKernels+mc3RowsKernels+kvF32Kernels+kvRowsKernels, attnSoftcap) // + MC3 S3's multi-row forms (batch_rows.go), attention_f32 (kv_f32.go) and the step's int8 and f32 KV forms (kv_rows.go), derived from allKernels
+	if ksc2OldDownForTest {
+		libSrc = "#define KSC2_OLD_DOWN 1\n" + libSrc
+	}
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
@@ -1186,8 +1190,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.decodeLaneW4F16 = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16"
 	if r.q4kLane = m.Quant() == "q4k"; r.q4kLane {
 		r.decodeLaneW4F16 = false
-		r.pQ4K, r.pQ4KResid, r.pQ4KBias = pipe("gemv_q4k_f32"), pipe("gemv_q4k_f32_resid"), pipe("gemv_q4k_f32_bias")
-		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32"), pipe("gemv_w8_f32_resid"), pipe("gemv_w8_f32_bias")
+		r.q4kR, r.w8F32R = q4kGemvRows, w8F32GemvRows
+		qr, wr := fmt.Sprint(q4kGemvRows), fmt.Sprint(w8F32GemvRows)
+		r.pQ4K, r.pQ4KResid, r.pQ4KBias = pipe("gemv_q4k_f32_rows"+qr), pipe("gemv_q4k_f32_resid_rows"+qr), pipe("gemv_q4k_f32_bias_rows"+qr)
+		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32_rows"+wr), pipe("gemv_w8_f32_resid_rows"+wr), pipe("gemv_w8_f32_bias_rows"+wr)
 		r.pRmsF32Out, r.pSwF32 = pipe("rmsnorm_f32_out"), pipe("swiglu_f32")
 		r.pRmsF32OutRows, r.pSwF32Rows = pipe("mc3_rmsnorm_f32_out_rows"), pipe("mc3_swiglu_f32_rows")
 		for B := 1; B <= batchMaxSeqs; B++ {
@@ -1990,8 +1996,24 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	if r.w8 {
 		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping
-		// the handles is the whole dispatch change. The R18 rows kernels read int4 only: off.
+		// the handles is the whole dispatch change. The R18 rows kernels keep their widths through their int8 twins
+		// (KS-C3) where every K is a multiple of 16 (w8RowsOK); the batched step's int4 adjacency kernels never run here.
+		rows := r.gemvRows
 		r.gemvRows = struct{ qkv, o, gu, down int }{}
+		r.pSABiasRowsAdj, r.pSARowsAdj = Pipeline{}, Pipeline{}
+		if !w8RowsOffForTest && r.w8RowsOK() {
+			r.gemvRows = rows
+			rowsPipe := func(base string, R int) Pipeline {
+				if R == 0 {
+					return Pipeline{}
+				}
+				return pipe(fmt.Sprintf("%s%d", base, R))
+			}
+			r.pSABiasRows = rowsPipe("gemv_w8a8_sa_bias_rows", rows.qkv)
+			r.pSAResidRows = rowsPipe("gemv_w8a8_sa_resid_rows", rows.o)
+			r.pSARows = rowsPipe("gemv_w8a8_sa_rows", rows.gu)
+			r.pGemvResidStaged = rowsPipe("gemv_w8a8_body_resid_staged", rows.down)
+		}
 		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
 		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
 		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
@@ -3166,25 +3188,31 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	}
 }
 
+// q4kGemvRows and w8F32GemvRows are the q4k lane's rows a simdgroup for its Q4_K and int8 GEMVs (gemv_q4k_f32_rows<R>,
+// gemv_w8_f32_rows<R>), KS-C1's C1-G0 reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates").
+const q4kGemvRows, w8F32GemvRows = 8, 2
+
 // q4kGemv dispatches one q4k-lane projection over the f32 activation ax (K = uK), one dispatch per segment into its
-// rows of out: gemv_q4k_f32 for Q4_K super-blocks, gemv_w8_f32 for int8 rows with per-row scales. resid accumulates
-// into out; a non-empty bias is added per row (resid and bias are never both set).
+// rows of out: gemv_q4k_f32_rows for Q4_K super-blocks, gemv_w8_f32_rows for int8 rows with per-row scales, at
+// ceil(rows/R) simdgroups. resid accumulates into out; a non-empty bias is added per row (resid and bias are never both
+// set).
 func (r *resident) q4kGemv(e *Encoder, segs []q4kSeg, resid bool, bias, ax, out, uK Buffer) {
 	for _, sg := range segs {
 		o := out.At(sg.off * 4)
+		nq, nw := (sg.rows+r.q4kR-1)/r.q4kR*32, (sg.rows+r.w8F32R-1)/r.w8F32R*32
 		switch {
 		case sg.q4k && resid:
-			e.Dispatch(r.pQ4KResid, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN)
+			e.Dispatch(r.pQ4KResid, nq, 256, sg.w, ax, o, uK, sg.uN)
 		case sg.q4k && bias != (Buffer{}):
-			e.Dispatch(r.pQ4KBias, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, bias.At(sg.off*4))
+			e.Dispatch(r.pQ4KBias, nq, 256, sg.w, ax, o, uK, sg.uN, bias.At(sg.off*4))
 		case sg.q4k:
-			e.Dispatch(r.pQ4K, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN)
+			e.Dispatch(r.pQ4K, nq, 256, sg.w, ax, o, uK, sg.uN)
 		case resid:
-			e.Dispatch(r.pW8F32Resid, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN)
+			e.Dispatch(r.pW8F32Resid, nw, 256, sg.w, sg.s, ax, o, uK, sg.uN)
 		case bias != (Buffer{}):
-			e.Dispatch(r.pW8F32Bias, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN, bias.At(sg.off*4))
+			e.Dispatch(r.pW8F32Bias, nw, 256, sg.w, sg.s, ax, o, uK, sg.uN, bias.At(sg.off*4))
 		default:
-			e.Dispatch(r.pW8F32, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN)
+			e.Dispatch(r.pW8F32, nw, 256, sg.w, sg.s, ax, o, uK, sg.uN)
 		}
 	}
 }
@@ -3214,6 +3242,28 @@ func (r *resident) loadEmb(emb []float32) {
 		copy(r.pleIn.Floats(), emb[r.H:])
 	}
 }
+
+// w8RowsOffForTest keeps a native int8 resident on its one-row GEMVs (the old arm of KS-C3's A/B); read at build.
+var w8RowsOffForTest bool
+
+// w8RowsOK reports whether a native int8 resident's dense GEMVs can take the int8 rows kernels, which read their weight rows
+// and the staged activation as uint4 words: the hidden width, every attention layer's q width and every FFN width are
+// multiples of 16.
+func (r *resident) w8RowsOK() bool {
+	if r.H%16 != 0 || r.I%16 != 0 {
+		return false
+	}
+	for _, L := range r.layers {
+		if L.ffnI%16 != 0 || (L.geom != nil && (r.nH*L.geom.hd)%16 != 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// ksc2OldDownForTest builds the decode library with the staged coal kernels' per-word integer sum (KSC2_OLD_DOWN), the old
+// arm of KS-C2's A/B; read at build.
+var ksc2OldDownForTest bool
 
 // gemvRowsFor is the rows-per-simdgroup count for an R18 GEMV of `rows` outputs: the largest of want, want/2, ..., 2
 // whose threadgroups of 8·R rows (tg 256 = 8 simdgroups) tile rows exactly, or 0 (keep the shipped kernel). The rows

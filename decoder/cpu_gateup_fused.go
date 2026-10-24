@@ -81,6 +81,9 @@ func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr 
 
 // gatedMLPFusedGateUpAct is gatedMLPFusedGateUp with the activation given: the program walker's form.
 func gatedMLPFusedGateUpAct(h []float32, lw *LayerWeights, act ActKind, scr *decodeScratch) bool {
+	if int4FloatActForTest {
+		return false
+	}
 	if act != ActSiLU || !isW4A8(&lw.GateProj) || !isW4A8(&lw.UpProj) {
 		return false
 	}

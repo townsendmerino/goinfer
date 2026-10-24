@@ -1,0 +1,20 @@
+    gemv_w4f32_test.go:187: dense gate 2112x2816: max relative error 1.12e-07 (bar 1e-05)
+    gemv_w4f32_test.go:203:   planted nibble order not permuted : 1.26 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted -8 offset dropped         : 0.413 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted group scale one group off : 0.0454 (red above 1e-05: true)
+    gemv_w4f32_test.go:187: dense down 2816x2112: max relative error 9.86e-08 (bar 1e-05)
+    gemv_w4f32_test.go:203:   planted nibble order not permuted : 1.09 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted -8 offset dropped         : 0.392 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted group scale one group off : 0.0459 (red above 1e-05: true)
+    gemv_w4f32_test.go:234: expert gate|up 1408x2816 moe: max relative error 1.32e-07
+    gemv_w4f32_test.go:254: expert gate|up 1408x2816 wacc: max relative error 1.53e-07
+    gemv_w4f32_test.go:234: expert down 2816x704 moe: max relative error 1.47e-07
+    gemv_w4f32_test.go:254: expert down 2816x704 wacc: max relative error 1.18e-07
+--- PASS: TestGemvW4F32_matchesCPUFloat (0.87s)
+    gemv_w4f32_test.go:324: glu_f32 gelu-tanh: max relative error 3.02e-08
+    gemv_w4f32_test.go:324: glu_f32 silu: max relative error 2.19e-08
+--- PASS: TestGluF32_matchesReference (0.21s)
+--- PASS: TestKernelFMALint (0.03s)
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+--- PASS: TestPipelineLint_boundKernelsAreLaunched (1.40s)
+PASS

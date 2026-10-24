@@ -25,6 +25,7 @@ import (
 var gridGrids = [][][3]int{{{1, 4, 4}}, {{1, 6, 8}}, {{1, 10, 6}}, {{1, 4, 4}, {1, 6, 4}}}
 
 func gridRandomise(rng *rand.Rand, xs ...[]float32) {
+	makeWritable(xs...)
 	for _, x := range xs {
 		for i := range x {
 			x[i] = float32(1 + 0.3*rng.NormFloat64())

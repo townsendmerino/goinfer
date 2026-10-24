@@ -1,0 +1,36 @@
+cell 1 old start 14:09:53 load 2.25 mem avail 51.2 GB gpu 402 MiB
+    decode path: cuda-resident (int4)
+    prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  cell 1 old inv01.png: ttft 81.4s turn 90.4s chars 363
+  cell 1 old inv02.png: ttft 85.7s turn 94.7s chars 359
+  vision: decoded 160 tokens on the resident path (prefill cpu)
+  vision: decoded 160 tokens on the resident path (prefill cpu)
+cell 2 new start 14:13:43 load 3.38 mem avail 52.5 GB gpu 402 MiB
+    decode path: cuda-resident (int4)
+    prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  cell 2 new inv01.png: ttft 12.9s turn 21.9s chars 363
+  cell 2 new inv02.png: ttft 13.3s turn 22.0s chars 369
+  vision: decoded 160 tokens on the resident path (prefill resident)
+  vision: decoded 160 tokens on the resident path (prefill resident)
+cell 3 new start 14:15:14 load 2.54 mem avail 53.1 GB gpu 402 MiB
+    decode path: cuda-resident (int4)
+    prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  cell 3 new inv01.png: ttft 12.9s turn 21.9s chars 363
+  cell 3 new inv02.png: ttft 13.0s turn 21.7s chars 369
+  vision: decoded 160 tokens on the resident path (prefill resident)
+  vision: decoded 160 tokens on the resident path (prefill resident)
+cell 4 old start 14:16:44 load 2.44 mem avail 53.3 GB gpu 402 MiB
+    decode path: cuda-resident (int4)
+    prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  cell 4 old inv01.png: ttft 84.7s turn 93.7s chars 363
+  cell 4 old inv02.png: ttft 80.9s turn 89.9s chars 359
+  vision: decoded 160 tokens on the resident path (prefill cpu)
+  vision: decoded 160 tokens on the resident path (prefill cpu)

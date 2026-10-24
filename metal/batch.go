@@ -547,7 +547,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 			if w8AttnRows {
 				e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
-			} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 {
+			} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 && !w8Attn { // the adjacency kernels read int4
 				e.DispatchTG(r.pSABiasRowsAdj, B*nq, 256, H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH, b.uQKV, b.uCount[B])
 			} else if rowsQKV {
 				for m := range B {
@@ -622,7 +622,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
 		if w8Rows {
 			e.Dispatch(r.pW8Rows[B], 2*I*32, 32, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B], b.noBias, b.uMode[0])
-		} else if rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0 {
+		} else if rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0 && !r.w8 {
 			e.DispatchTG(r.pSARowsAdj, B*ng, 256, H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B])
 		} else if rowsGU {
 			for m := range B {

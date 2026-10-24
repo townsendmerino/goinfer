@@ -1,0 +1,15 @@
+== served-cudatower (new vs ctl)
+inv01: 160 tokens IDENTICAL
+inv02: first difference at generated token 10 after ' Logistics Ltd: TAX INVOICE\n': control '4' p=0.903, new 'Address' (control's p=0.096); near-tie: False
+table: first difference at generated token 70 after '135.9 | 1': control '4' p=1.000, new '도' (control's p=0.000); near-tie: False
+G-S19c served: FAIL
+== served-cputower (new vs ctl)
+inv01: 160 tokens IDENTICAL
+inv02: first difference at generated token 25 after ', CO 80202': control '\n\n' p=0.462, new '\n' (control's p=0.446); near-tie: True
+table: first difference at generated token 101 after ' 97.1 | 1': control '          ' p=0.165, new '0' (control's p=0.000); near-tie: False
+G-S19c served: FAIL
+== main-cudatower (main vs ctl)
+inv01: 160 tokens IDENTICAL
+inv02: 160 tokens IDENTICAL
+table: 160 tokens IDENTICAL
+G-S19c served: PASS

@@ -1,0 +1,6 @@
+old: /home/francis/goinfer-logs/g4-bidir/serve-main
+new: /home/francis/goinfer-logs/g4-bidir/serve-float (c2db5b7dd)
+model: /home/francis/models/gemma4-26b-int4.giw  vision: /home/francis/models/gemma-4-26b-a4b-it-vis560
+started: 2026-10-23 19:25:13 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+finished: 2026-10-23 19:29:51 PDT rc=0

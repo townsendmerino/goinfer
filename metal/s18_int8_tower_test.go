@@ -35,6 +35,7 @@ func s18RoundWeights(t *testing.T, enc *vision.Encoder) {
 	for _, b := range w.Blocks {
 		for _, p := range []vision.VisionProj{b.Q, b.K, b.V, b.O, b.FC1, b.FC2} {
 			q, sc := quantG32(p.W, p.Out, p.In)
+			makeWritable(p.W)
 			copy(p.W, dequantG32(q, sc, p.Out, p.In))
 		}
 	}

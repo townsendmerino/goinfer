@@ -1,18 +1,26 @@
-// Package hostmem is goinfer's one reading of this machine's available memory: what a new load can take without pushing other
-// processes into swap, with reclaimable memory (cached files) counted as available. The fit guard reads it through
-// decoder.HostRAMAvailableBytes, and the scripts' start checks (scripts/night.py, scripts/bench_peer.py, the job runners) read the
-// same number through cmd/hostmem, so no reader keeps a second formula (docs/measurements/hostmem-available-2026-10/README.md).
+// Package hostmem is goinfer's one reading of this machine's memory, in two figures for two uses, so no reader keeps a formula of
+// its own (docs/measurements/hostmem-available-2026-10/README.md). Available decides loads: the fit guard reads it through
+// decoder.HostRAMAvailableBytes. Reclaimable decides whether a timed run's machine state is valid: the start checks of
+// scripts/night.py and scripts/bench_peer.py and the void rule read it through cmd/hostmem -reclaimable.
 package hostmem
 
-// Reading is one sample, in bytes. On macOS Available is what the kernel can hand back without compressing or swapping anything: free,
-// file-backed and purgeable pages, so Free + FileBacked + Purgeable. Speculative pages are part of FileBacked, reported apart as context,
-// as are App, Wired and Compressed, Activity Monitor's terms. On Linux the macOS fields are 0 and Available is the kernel's MemAvailable.
+// Reading is one sample, in bytes. On macOS Available is the kernel's own free percentage (kern.memorystatus_level, the figure
+// memory_pressure prints, as Level) times physical memory, less PressureBuffer: it counts app memory as available, since the kernel
+// can compress it, so a load it admits may compress or swap other apps. Reclaimable is what the kernel can hand back without
+// compressing or swapping anything (Free + FileBacked + Purgeable): the figure a timed run needs, since compression under a timed run
+// changes what it measures. Speculative (part of FileBacked) and App, Wired and Compressed, Activity Monitor's terms, are context. On
+// Linux both Available and Reclaimable are the kernel's MemAvailable and the macOS fields are 0.
 type Reading struct {
 	Physical, Available                      int64
+	Level                                    int
+	Reclaimable                              int64
 	Free, Speculative, FileBacked, Purgeable int64
 	App, Wired, Compressed                   int64
 	Source                                   string
 }
+
+// PressureBuffer is held back from the macOS percentage's figure; the owner's choice (docs/measurements/noise-registry.md §8).
+const PressureBuffer = 500 << 20
 
 // TaskVM is another process's memory as task_info(TASK_VM_INFO) reports it, in bytes. Compressed is its pages in the compressor, held
 // in memory or swapped to disk: macOS keeps no separate per-process disk-swap figure.
@@ -42,7 +50,7 @@ func Available() int64 {
 // (docs/measurements/hostmem-available-2026-10/README.md, amendment A3). JetsamBefore and JetsamAfter are bytes. Fresh is true
 // when Ours was computed inside the bracket: the sysctls are not rate-limited and host_statistics64 is (see Read), so Ours is
 // read twice, with a page fault between that a fresh reply counts, and Fresh is whether the two replies differ. A sample that is not
-// Fresh may predate the bracket and cannot be graded.
+// Fresh may predate the bracket and cannot be graded. The kernel figure is compared with Ours.Reclaimable, not Ours.Available.
 type OracleSample struct {
 	Ours                      Reading
 	JetsamBefore, JetsamAfter int64

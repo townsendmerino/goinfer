@@ -46,11 +46,11 @@ class Rule(unittest.TestCase):
         self.assertEqual(bench_peer.fit_need("anything"), (3072, "BENCH_FIT_NEED_GB"))
 
     def test_free_memory_is_goinfers_reading(self):
-        # B41: the void rule reads the number cmd/hostmem prints (scripts/hostmem.py), the fit guard's own; no formula here.
+        # The void rule reads cmd/hostmem's reclaimable figure (scripts/hostmem.py), not the fit guard's available one; no formula here.
         import hostmem
-        saved = hostmem.available_mb
-        self.addCleanup(setattr, hostmem, "available_mb", saved)
-        hostmem.available_mb = lambda *a, **k: 12345
+        saved = hostmem.reclaimable_mb
+        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved)
+        hostmem.reclaimable_mb = lambda *a, **k: 12345
         self.assertEqual(bench_peer.free_mem_mb(), 12345)
 
     def test_refuses_when_every_start_is_void(self):

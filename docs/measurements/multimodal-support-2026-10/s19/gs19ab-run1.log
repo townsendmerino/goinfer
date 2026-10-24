@@ -1,0 +1,71 @@
+=== RUN   TestGemma4BidirSpanPrefill_matchesCPU
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-tiny span-first  cos 1.000000 argmax gpu=149 cpu=149
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-tiny span-middle cos 0.999974 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-tiny span-last   cos 1.000000 argmax gpu=48 cpu=48
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-tiny two-spans   cos 1.000000 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-tiny span-first  one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-tiny span-middle one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-tiny span-last   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-tiny two-spans   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-tiny span-first  causal (spans dropped): cos 0.651606 argmax gpu=100 cpu=149
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-tiny span-middle causal (spans dropped): cos 0.823157 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-tiny span-last   causal (spans dropped): cos 0.640544 argmax gpu=76 cpu=48
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-tiny two-spans   causal (spans dropped): cos 0.621540 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-scaled span-first  cos 0.997578 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:141: G-S19a FAIL ../testdata/gemma4-vl-bidir-scaled span-first: cos 0.997578 (bar 0.999), argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-scaled span-middle cos 0.998004 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:141: G-S19a FAIL ../testdata/gemma4-vl-bidir-scaled span-middle: cos 0.998004 (bar 0.999), argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-scaled span-last   cos 0.980072 argmax gpu=62 cpu=62
+    gemma4_bidir_span_prefill_test.go:141: G-S19a FAIL ../testdata/gemma4-vl-bidir-scaled span-last: cos 0.980072 (bar 0.999), argmax gpu=62 cpu=62
+    gemma4_bidir_span_prefill_test.go:139: ../testdata/gemma4-vl-bidir-scaled two-spans   cos 0.994742 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:141: G-S19a FAIL ../testdata/gemma4-vl-bidir-scaled two-spans: cos 0.994742 (bar 0.999), argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-scaled span-first  one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-scaled span-middle one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-scaled span-last   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:169: ../testdata/gemma4-vl-bidir-scaled two-spans   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-scaled span-first  causal (spans dropped): cos 0.862557 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-scaled span-middle causal (spans dropped): cos 0.684939 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-scaled span-last   causal (spans dropped): cos 0.641078 argmax gpu=62 cpu=62
+    gemma4_bidir_span_prefill_test.go:178: ../testdata/gemma4-vl-bidir-scaled two-spans   causal (spans dropped): cos 0.509619 argmax gpu=127 cpu=127
+--- FAIL: TestGemma4BidirSpanPrefill_matchesCPU (4.66s)
+=== RUN   TestGemma4BidirSpanPrefill_plantedDefects
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-tiny span-first  cos 0.651606 argmax gpu=100 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-tiny span-middle cos 0.823157 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-tiny span-last   cos 0.640544 argmax gpu=76 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.621540 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-scaled span-first  cos 0.862557 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-scaled span-middle cos 0.684939 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-scaled span-last   cos 0.641078 argmax gpu=62 cpu=62 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [mask left causal] ../testdata/gemma4-vl-bidir-scaled two-spans   cos 0.509619 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:219: G-S19b: "mask left causal" red on 8 layouts
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-tiny span-first  cos 0.868805 argmax gpu=149 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-tiny span-middle cos 0.847202 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-tiny span-last   cos 0.565339 argmax gpu=76 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.943744 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-scaled span-first  cos 0.891490 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-scaled span-middle cos 0.779772 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-scaled span-last   cos 0.744030 argmax gpu=62 cpu=62 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [span end one row short] ../testdata/gemma4-vl-bidir-scaled two-spans   cos 0.718421 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:219: G-S19b: "span end one row short" red on 8 layouts
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-tiny span-first  cos 0.923022 argmax gpu=100 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-tiny span-middle cos 0.889074 argmax gpu=16 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-tiny span-last   cos 0.564941 argmax gpu=76 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.784708 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-scaled span-first  cos 0.965552 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-scaled span-middle cos 0.875308 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-scaled span-last   cos 0.956133 argmax gpu=62 cpu=62 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [no reach-back to the span start (Gemma 3's window rule)] ../testdata/gemma4-vl-bidir-scaled two-spans   cos 0.527868 argmax gpu=69 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:219: G-S19b: "no reach-back to the span start (Gemma 3's window rule)" red on 8 layouts
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-tiny span-first  cos 0.729828 argmax gpu=100 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-tiny span-middle cos 0.786207 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-tiny span-last   cos 0.573333 argmax gpu=20 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.711753 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-scaled span-first  cos 0.837600 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-scaled span-middle cos 0.474764 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-scaled span-last   cos 0.389813 argmax gpu=87 cpu=62 pass=false
+    gemma4_bidir_span_prefill_test.go:208:   [image rows scaled by the embed scale] ../testdata/gemma4-vl-bidir-scaled two-spans   cos 0.546987 argmax gpu=127 cpu=127 pass=false
+    gemma4_bidir_span_prefill_test.go:219: G-S19b: "image rows scaled by the embed scale" red on 8 layouts
+--- PASS: TestGemma4BidirSpanPrefill_plantedDefects (2.18s)
+FAIL

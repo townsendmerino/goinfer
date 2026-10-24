@@ -99,6 +99,10 @@ type Reasoning struct {
 	// scaffold — thinking off is simply `<|turn>model\n`. Writing the scaffold there anyway makes the model answer as if it had
 	// reasoned, ending its reply with a bare `<channel|>` and no opener.
 	oldGemma4 bool
+
+	// bareOff marks a canonical Gemma 4 template whose thinking-off generation prompt is a bare `<|turn>model\n`, with no closed
+	// scaffold; its history rule and tool loop are the canonical template's.
+	bareOff bool
 }
 
 // Open and Close are the delimiters a reply uses around its reasoning, as decoded text.
@@ -157,8 +161,9 @@ func detectChatMLReasoning(tmpl string) *Reasoning {
 }
 
 // detectGemma4Reasoning: Gemma 4's template has `enable_thinking | default(false)`, a `<|think|>` marker in the system
-// turn when on, and the closed scaffold `<|channel>thought\n<channel|>` after the generation prompt when off. Recognised
-// only when all three markers are present.
+// turn when on, and the closed scaffold `<|channel>thought\n<channel|>` after the generation prompt when off. A template
+// with the first two and the canonical history rule but no scaffold (Gemma 4 E4B's current template, Nemotron 3.5 Bolt's)
+// is the canonical one with a bare thinking-off prompt (bareOff).
 func detectGemma4Reasoning(tmpl string) *Reasoning {
 	if !strings.Contains(tmpl, "<|think|>") {
 		return nil
@@ -166,11 +171,20 @@ func detectGemma4Reasoning(tmpl string) *Reasoning {
 	if r := detectOldGemma4Reasoning(tmpl); r != nil {
 		return r
 	}
-	if !strings.Contains(tmpl, "<|channel>thought\\n<channel|>") || !strings.Contains(tmpl, "enable_thinking | default(false)") {
+	if !strings.Contains(tmpl, "enable_thinking | default(false)") {
 		return nil
 	}
-	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true, hist: detectGemma4History(tmpl)}
+	hist := detectGemma4History(tmpl)
+	scaffold := strings.Contains(tmpl, "<|channel>thought\\n<channel|>")
+	if !scaffold && hist != histGemma4 {
+		return nil
+	}
+	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true, hist: hist, bareOff: !scaffold}
 }
+
+// offScaffold reports whether this Gemma 4 template writes the closed scaffold after the generation prompt when thinking is off
+// (a nil spec is the family's generic rendering, which does).
+func (r *Reasoning) offScaffold() bool { return r == nil || !r.oldGemma4 && !r.bareOff }
 
 // detectOldGemma4Reasoning recognises the earlier Gemma 4 template (the E2B GGUF's): thinking is `enable_thinking is defined and
 // enable_thinking` → a `<|think|>` line in the system turn, the generation prompt is `<|turn>model\n` in every mode (no closed
@@ -295,7 +309,7 @@ func (t *Template) renderThinking(system string, turns []Turn) []Segment {
 	r := t.reason
 	if r.gemma4 {
 		on, _ := r.effectiveOn(t.think)
-		return gemma4Segments(system, turns, on, r.hist == histGemma4 || r.oldGemma4, r.oldGemma4)
+		return gemma4Segments(system, turns, on, r.hist == histGemma4 || r.oldGemma4, r.oldGemma4, r.offScaffold())
 	}
 	segs := chatMLSegments(system, turns, r.hist)
 	return append(segs[:len(segs):len(segs)], r.suffix(t.think)...)
