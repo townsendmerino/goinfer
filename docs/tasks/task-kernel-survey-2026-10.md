@@ -1265,6 +1265,14 @@ load needs plus 2 GB, read before the load. So: **reclaimable ≥ 6 GB before th
 each pair start **load ≤ 4.0 and reclaimable ≥ 2 GB** (the margin still there after the loads); a pair under either is void and
 re-run, as registered. Everything else is unchanged.
 
+**Second attempt read 2026-10-24 (13:08–13:20), incomplete; amended before a third (13:22).** Before the loads 8.8 GB and 10.2 GB
+reclaimable; after them, 1.4–2.8 GB at the pair starts, at the 2 GB margin, so most starts were void and each run stopped at its
+10-void limit. Valid pairs, recorded and not graded: **A/A 2 pairs, 0.9910 and 1.0025; A/B 7 pairs, 0.8777–0.8911** (the first
+reading's 0.8821 again). The two residents and the host model leave too little margin on this Mac, so the third attempt keeps **one
+resident alive at a time**: each run builds a fresh narrow or wide resident, warms it twice, times it and closes it, the A B B A
+order and the bars unchanged, the 6 GB before-load and 2 GB per-pair lines unchanged. Log of the second attempt:
+`~/goinfer-logs/kse2-g2-rerun2-2026-10-24.log`; of the first: `~/goinfer-logs/kse2-g2-rerun-void-2026-10-24.log`.
+
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.

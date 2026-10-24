@@ -305,9 +305,9 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 	}
 }
 
-// TestKSE2_decodeSpeed is E2-G2 and its re-run's A/A control (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run"): the
-// 1.5B's .gguf at int8int8 on WebGPU, two residents in one process, 128 greedy decode tokens after a 32-token prompt, A B B A
-// over 10 valid pairs after 2 warm runs each. GOINFER_KSE2_AA=1 makes both residents narrow (the control). It refuses to run
+// TestKSE2_decodeSpeed is E2-G2 and its re-run's A/A control (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run" and its
+// amendments): the 1.5B's .gguf at int8int8 on WebGPU, one resident alive at a time (each run builds its arm's resident, warms
+// it twice and times 128 greedy decode tokens after a 32-token prompt), A B B A over 10 valid pairs. GOINFER_KSE2_AA=1 makes both residents narrow (the control). It refuses to run
 // outside the timing lock and under 6 GB reclaimable before its loads, records each pair's start load and reclaimable memory,
 // voids and re-runs (up to 10 times) a pair started above half the cores' load or under 2 GB reclaimable, and fails on the bar:
 // the A/B's median wide/narrow over 0.98 or fewer than 9 of 10 faster; the control's median outside 1 ± 0.02.
@@ -329,12 +329,10 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	aRD, aClose := kse2Resident(t, m, true)
-	defer aClose()
-	bRD, bClose := kse2Resident(t, m, aa)
-	defer bClose()
+	// One resident alive at a time (the two together leave under the 2 GB margin on a 16 GB Mac): each run builds a fresh
+	// resident of its arm, warms it twice, times it and closes it.
 	const prompt, gen = 32, 128
-	run := func(rd *residentDecoder) float64 {
+	once := func(rd *residentDecoder) float64 {
 		for pos := range prompt {
 			if _, err := rd.Forward(m.EmbedResidentForTest((pos*7919+13)%1000), pos); err != nil {
 				t.Fatal(err)
@@ -356,10 +354,14 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		}
 		return time.Since(t0).Seconds() / gen
 	}
-	for range 2 {
-		run(aRD)
-		run(bRD)
+	runArm := func(narrow bool) float64 {
+		rd, closeRD := kse2Resident(t, m, narrow)
+		defer closeRD()
+		once(rd)
+		once(rd)
+		return once(rd)
 	}
+	aNarrow, bNarrow := true, aa
 	label := "A/B narrow, wide"
 	if aa {
 		label = "A/A narrow, narrow"
@@ -386,9 +388,9 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		}
 		var a, b float64
 		if len(ratios)%2 == 0 {
-			a, b = run(aRD), run(bRD)
+			a, b = runArm(aNarrow), runArm(bNarrow)
 		} else {
-			b, a = run(bRD), run(aRD)
+			b, a = runArm(bNarrow), runArm(aNarrow)
 		}
 		ratios = append(ratios, b/a)
 		if b < a {
