@@ -338,7 +338,8 @@ func (r *resident) prefillWidths() (qkvDim, qDim, maxI int) {
 
 // prefillScratchBytes is the row-sized scratch one batched text pass over M rows allocates and frees: the half
 // residual, norm, q|k|v, attention-output and feed-forward buffers and the row positions, plus an MoE's routing and
-// expert buffers, an E-model's per-layer inputs and a Gated-DeltaNet hybrid's mixer buffers. It leaves out the
+// expert buffers (for a paged one, the layer-major pass's batched phase 2), an E-model's per-layer inputs and a Gated-DeltaNet
+// hybrid's mixer buffers. It leaves out the
 // pass's uniforms (a few words each) and an image turn's m-RoPE triples and DeepStack sets.
 // TestPrefillScratchBytes_matchesThePass holds it to prefillScratchSeen.
 func (r *resident) prefillScratchBytes(M int) int64 {
@@ -358,6 +359,9 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 	}
 	if r.pleP > 0 {
 		n += 4*m*int64(r.nL*r.pleP) + 2*mp*int64(r.pleP)
+	}
+	if e := r.moe; e != nil && e.paged && r.moeExpertBatchOK() { // the layer-major pass's batched phase 2, one chunk at a time
+		n += r.moeBatchBytes(min(M, g4LayerMajorChunk))
 	}
 	if r.kvI8 { // the f16 K and V scratch one layer's int8 cache is dequantized into, the padded context long (kvI8Scratch)
 		n += 4 * int64(r.kvI8ScratchRows()) * int64(r.prefillGeom().kvDim)

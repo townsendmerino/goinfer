@@ -8,23 +8,20 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"os/exec"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/hostmem"
 )
 
 // TestKSD9_layerMajorSpeed is D9-G2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D9 gates" and its model amendment): the
 // generic MoE at GOINFER_KSD9_MODEL paged on Metal (GOINFER_METAL_MOE_SLOTS slots a layer, 16 unless set), a 512-row
 // layer-major prefill (PrefillLast), the batched phase 2 against the per-row one (moeExpertBatchOn) on one resident, A B B A
-// over 3 valid pairs after one warm run each. Each arm reads the void rule's terms (ksd9Guard) just before and just after its
-// timed run, and a pair with any read over the line is void and re-run, up to 6 times. Each pair's last logits must be
-// byte-equal (the change is bit-identical); the test fails if any differ. A timed run: it refuses to run outside the timing
+// over 3 valid pairs (A B, B A, A B) after one warm run each. voidWindow brackets each timed prefill, and a pair with an arm over
+// the void rule's line is void and re-run, up to 6 times. Each arm must take the phase 2 it names, and each pair's last logits
+// must be byte-equal (the change is bit-identical); the test fails otherwise. A timed run: it refuses to run outside the timing
 // lock (GOINFER_KSD9_TIMING=1).
 func TestKSD9_layerMajorSpeed(t *testing.T) {
 	path := os.Getenv("GOINFER_KSD9_MODEL")
@@ -61,21 +58,26 @@ func TestKSD9_layerMajorSpeed(t *testing.T) {
 	defer func() { moeExpertBatchOn = prev }()
 	run := func(batched bool) (float64, []float32) {
 		moeExpertBatchOn = batched
+		groups := a.r.moeBatchGroups
 		t0 := time.Now()
 		lg, err := a.PrefillLast(context.Background(), embs, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return time.Since(t0).Seconds(), slices.Clone(lg)
+		sec := time.Since(t0).Seconds()
+		if took := a.r.moeBatchGroups > groups; took != batched {
+			t.Fatalf("batched phase 2 taken %v on the %v arm", took, map[bool]string{true: "batched", false: "per-row"}[batched])
+		}
+		return sec, slices.Clone(lg)
 	}
 	run(false)
 	run(true)
-	// timed runs one arm with the void rule's terms read just before and just after it; valid is false if either read fails.
+	// timed runs one arm inside voidWindow; valid is false if the arm crossed the void rule's line.
 	timed := func(batched bool) (sec float64, lg []float32, valid bool, note string) {
-		ok1, l1, r1 := ksd9Guard(t)
+		end := voidWindow(t)
 		sec, lg = run(batched)
-		ok2, l2, r2 := ksd9Guard(t)
-		return sec, lg, ok1 && ok2, fmt.Sprintf("load %.2f→%.2f, reclaimable %.2f→%.2f GiB", l1, l2, float64(r1)/(1<<30), float64(r2)/(1<<30))
+		valid, note = end()
+		return sec, lg, valid, note
 	}
 	var ratios []float64
 	faster, voids := 0, 0
@@ -123,23 +125,4 @@ func TestKSD9_layerMajorSpeed(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "[D9-G2] %s at %s slots: median batched/per-row %.4f, %d of 3 pairs faster, %d void pairs: %s\n",
 		path, slots, ratios[1], faster, voids, verdict)
-}
-
-// ksd9Guard reads the void rule's two terms now: ok iff the 1-minute load is at most half the cores and at least 2 GiB is
-// reclaimable. The test fails if either cannot be read.
-func ksd9Guard(t *testing.T) (ok bool, load float64, recl int64) {
-	t.Helper()
-	out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-	if err != nil {
-		t.Fatalf("load average: %v", err)
-	}
-	text := strings.Trim(strings.TrimSpace(string(out)), "{} ")
-	if n, err := fmt.Sscanf(text, "%g", &load); n != 1 || err != nil {
-		t.Fatalf("load average %q: %v", text, err)
-	}
-	r, rok := hostmem.Read()
-	if !rok {
-		t.Fatal("no memory reading")
-	}
-	return load <= float64(runtime.NumCPU())/2 && r.Reclaimable >= 2<<30, load, r.Reclaimable
 }

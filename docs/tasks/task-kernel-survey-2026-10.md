@@ -1510,7 +1510,7 @@ routed experts, top-4), so the generic pager's layer-major prefill is the path t
 512 seeded token ids, `PrefillLast`, the bar unchanged (SHIP iff the median batched/per-row is ≤ 0.98 with every pair faster;
 otherwise PARK). Each pair also counts the last logits that differ, which must be 0 (D9-G1's class).
 
-**D9-G2's instrument, amended 2026-10-24 (15:10) before the run**, to the void rule as #214 and #216's second reviews applied it:
+**D9-G2's instrument, amended 2026-10-24 (committed 15:05:22, ffbe2da4) before the run (started 15:06:56)**, to the void rule as #214 and #216's second reviews applied it:
 the test refuses to run outside the timing lock; each arm reads the 1-minute load and reclaimable memory just before and just after
 its timed run (after the load and the warm runs), and a pair with any read over the line (load above 4.0, under 2 GiB reclaimable)
 is void and re-run, up to 6 times; an unreadable load or memory reading fails the test; any differing last logit fails it. The bar
@@ -1524,6 +1524,26 @@ pairs faster**, 0 of 151,936 last logits differ in every pair. Six pairs were vo
 one batched arm, then stayed between 3.7 and 10.1 for five attempts. Every valid arm read a load of 2.09–3.72 and 6.60–6.88 GiB
 reclaimable. Log: `~/goinfer-logs/ksd9-g2-2026-10-24.log`. The `.giw` was deleted from the Mac after grading (Francis's word of 12:45);
 nobara's copy is in `~/goinfer-bench/qmoe/`.
+
+**After the review of #224 (15:45), registered before the re-runs.**
+- **The batch scratch was outside the plan and could pile up, fixed.** `moeBatchEnsure` grew the batched phase 2's buffers per slot
+  group, inside `moeLayerMajorRows`, and a later, larger group allocated new buffers while the superseded ones stayed alive until the
+  call returned; the fit plan priced none of it. Now `newMoEBatch` allocates it once per call, sized for all the call's rows (at
+  most `g4LayerMajorChunk`; a group's entries are bounded by its pairs), and `prefillScratchBytes` adds `moeBatchBytes` of
+  min(M, `g4LayerMajorChunk`) for a paged MoE the batched phase 2 admits. A group that would overflow it records an execution error
+  instead of growing. `TestKSD9_scratchWithinPlan`: one 9-row call counts exactly `moeBatchBytes(9)` (`prefillScratchSeen`), and the
+  plan's growth with the batched phase 2 on is `moeBatchBytes` at 9 and at 256 for a 300-row prompt.
+- **D9-G1's test tightened:** a declined resident fails it (only a slot count under k skips); every fixture must admit the batched
+  phase 2 and every prompt shape must take it; a third arm, layer-major with the per-row phase 2, must equal the batched one bit for
+  bit (logits, K/V, 3 decode steps), the registered batched-against-per-row comparison. The plant check re-runs the gate in a child
+  process with the self-test skipped (`GOINFER_KSD9_PLANT_CHILD=1`), so the skip no longer leaks into the rest of the test binary.
+- **D9-G2's test:** each arm must take the phase 2 it names. The void rule's load term is read directly, as for #214: `voidWindow`
+  brackets each timed prefill with `hostmem.ReadCPU` and voids the arm if the busy cores averaged over it exceed half the cores, or
+  reclaimable memory is under 2 GiB at either end. The schedule stays the registered one, A B B A over 3 pairs (A B, B A, A B): an
+  odd number of pairs cannot balance, which is why the bar asks every pair to be faster.
+- **Re-runs:** D9-G1 and the new scratch test; the plant once (the combine from zero, which must be red in the child); then D9-G2
+  again under the lock, since the scratch's allocation moved: the `.giw` is copied back from nobara for it and deleted after. The
+  bar is unchanged; this reading decides, and 15:06's stays in the record.
 
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.

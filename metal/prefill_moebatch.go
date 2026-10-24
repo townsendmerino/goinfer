@@ -2,6 +2,8 @@
 
 package metal
 
+import "fmt"
+
 // KS-D9's batched phase 2 for the generic paged MoE prefill (docs/tasks/task-kernel-survey-2026-10.md, "KS-D9"): D-P01's
 // batched expert GEMM (prefill_g4batch.go) on moeLayerMajorRows' slot groups. Bit-identical to the per-row phase 2
 // (encodeMoEExpertsPaged) by construction: moe_batch_gemv is sa_rows_acc per pair, as gemv_w4a8_moe_rows is per row;
@@ -28,44 +30,46 @@ type moeBatchRows struct {
 	use                       func(i int)
 }
 
-// moeBatch is one moeLayerMajorRows call's scratch for the batched phase 2, grown to the largest group it meets: pair-major
-// activations and scales, router weights, gate|up outputs, SwiGLU outputs, raw down sums, the rows' packed residuals and the
-// moe_batch_gemv entries.
+// moeBatch is one moeLayerMajorRows call's scratch for the batched phase 2, sized once for every row of the call (newMoEBatch):
+// pair-major activations and scales, router weights, gate|up outputs, SwiGLU outputs, raw down sums, the rows' packed residuals
+// and the moe_batch_gemv entries.
 type moeBatch struct {
-	rows, pairs, entCap                       int
+	rows                                      int
 	aq, asc, xs, wgt, gu, dq, dsc, dacc, ent  Buffer
 	uK, uN, uTilesGU, uTilesDown, uOne, uZero Buffer
 }
 
-func (r *resident) moeBatchEnsure(b *moeBatch, n, entries int, made func(Buffer) Buffer) {
+// newMoEBatch allocates a moeBatch for slot groups of up to n rows, through made (which releases them when the call returns).
+// A group's entries hold at least one pair each, so n·k entries bound them. Its bytes, uniforms aside, are moeBatchBytes(n), and
+// it counts them in prefillScratchSeen.
+func (r *resident) newMoEBatch(n int, made func(Buffer) Buffer) *moeBatch {
 	mo, d := r.moe, r.d
 	P := n * mo.k
-	if n > b.rows {
-		b.rows = n
-		b.aq, b.asc, b.xs = made(byteBuf(d, n*r.H)), made(d.NewBufferLen(n)), made(d.NewBufferLen(n*r.H))
+	b := &moeBatch{rows: n}
+	b.aq, b.asc, b.xs = made(byteBuf(d, n*r.H)), made(d.NewBufferLen(n)), made(d.NewBufferLen(n*r.H))
+	b.wgt, b.dsc = made(d.NewBufferLen(P)), made(d.NewBufferLen(P))
+	b.gu = made(d.NewBufferLen(P * 2 * mo.inter))
+	b.dq = made(byteBuf(d, P*mo.inter))
+	b.dacc = made(d.NewBufferLen(P * r.H))
+	b.ent = made(NewBufferUint32s(d, make([]uint32, P*(2+moeBatchB))))
+	for _, x := range []Buffer{b.aq, b.asc, b.xs, b.wgt, b.dsc, b.gu, b.dq, b.dacc, b.ent} {
+		prefillScratchSeen.Add(int64(x.Len()))
 	}
-	if P > b.pairs {
-		b.pairs = P
-		b.wgt, b.dsc = made(d.NewBufferLen(P)), made(d.NewBufferLen(P))
-		b.gu = made(d.NewBufferLen(P * 2 * mo.inter))
-		b.dq = made(byteBuf(d, P*mo.inter))
-		b.dacc = made(d.NewBufferLen(P * r.H))
-	}
-	if entries > b.entCap {
-		b.entCap = entries
-		b.ent = made(NewBufferUint32s(d, make([]uint32, entries*(2+moeBatchB))))
-	}
-	if b.uK == (Buffer{}) {
-		b.uK, b.uOne, b.uZero = made(NewBufferU32(d, uint32(mo.k))), made(NewBufferU32(d, 1)), made(NewBufferU32(d, 0))
-		b.uN, b.uTilesGU, b.uTilesDown = made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0))
-	}
+	b.uK, b.uOne, b.uZero = made(NewBufferU32(d, uint32(mo.k))), made(NewBufferU32(d, 1)), made(NewBufferU32(d, 0))
+	b.uN, b.uTilesGU, b.uTilesDown = made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0))
+	return b
+}
+
+// moeBatchBytes is newMoEBatch's allocation for n rows, uniforms aside: the term prefillScratchBytes adds for a paged generic MoE.
+func (r *resident) moeBatchBytes(n int) int64 {
+	N, P, H, I := int64(n), int64(n*r.moe.k), int64(r.H), int64(r.moe.inter)
+	return N*H + 4*N + 4*N*H + 8*P + 8*P*I + P*I + 4*P*H + 4*P*(2+moeBatchB)
 }
 
 // encodeMoEPhase2Batch encodes one slot group's phase 2 through the batched kernels, then each row's shared expert. The rows'
 // phase 1 is complete and their slot tables filled, so their residuals, activations, scales and router weights are packed on
 // the host; the combined residuals are copied back to each row after its shared expert.
-func (r *resident) encodeMoEPhase2Batch(e *Encoder, L *residLayer, pool *expertPool, b *moeBatch, rs moeBatchRows,
-	made func(Buffer) Buffer) {
+func (r *resident) encodeMoEPhase2Batch(e *Encoder, L *residLayer, pool *expertPool, b *moeBatch, rs moeBatchRows) {
 	mo := r.moe
 	n, k, H, I := rs.n, mo.k, r.H, mo.inter
 	slots := make([][]uint32, n)
@@ -74,8 +78,11 @@ func (r *resident) encodeMoEPhase2Batch(e *Encoder, L *residLayer, pool *expertP
 	}
 	ent := g4BatchEntries(slots, k)
 	nEnt := len(ent) / (2 + moeBatchB)
+	if n > b.rows || nEnt > n*k {
+		r.recordExecErr(fmt.Errorf("metal: a slot group of %d rows and %d entries overflows the batch scratch for %d rows", n, nEnt, b.rows))
+		return
+	}
 	r.moeBatchGroups++
-	r.moeBatchEnsure(b, n, nEnt, made)
 	aq, asc, wgt, xs := b.aq.Int8s(), b.asc.Floats(), b.wgt.Floats(), b.xs.Floats()
 	for i := range n {
 		copy(aq[i*H:(i+1)*H], rs.mq(i).Int8s()[:H])
