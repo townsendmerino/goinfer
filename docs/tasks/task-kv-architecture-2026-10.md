@@ -1,5 +1,9 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **2026-10-22: KV8a-Q added.** Kapitsa (`nace-ai/kapitsa`, Apache-2.0, read at `3f7f4c8` on 2026-10-22) keeps a second recurrent
+> checkpoint at the last user question, because a new question after a tool loop diverges before KV8a's single checkpoint.
+> KV8a-Q (§6, after KV8a) is that second copy. Added on the owner's word ("yes both please").
+
 > **Status 2026-10-21 (the close-out sweep).** KV0, KV1, KV2 and KV3 are done; KV3's tiled exact prefill kernel merged on
 > 2026-10-18 (#102), after v0.23.0. KV7's first two steps (#57, #86) and KV8a on CUDA (#115) are merged; KV8a on Metal is on
 > branch `kv8a-metal-2026-10`. KV4 has not started, and KV5, the rest of KV7, KV8, KV10 and KV11 wait on it. **Decided by
@@ -135,6 +139,7 @@ slot is gone; and every KV feature is built three or four times.
 | KV7 | tiers: host and disk, parking and resume | CUDA first, then all | M–L | KV4 |
 | KV8 | recurrent state pool and checkpoints | CUDA, Metal | L | KV4 (KV5 for Metal) |
 | KV8a | an end-of-prompt recurrent checkpoint on today's single slot (**added 2026-10-20**, pulled ahead of KV4 by KV0-H's rule) | CUDA, then Metal | S–M | KV0-H |
+| KV8a-Q | a second checkpoint: the last user question's (**added 2026-10-22**, from Kapitsa's engine) | CUDA, then Metal | S | KV8a |
 | KV9 | the CPU path onto the manager (deferred by D2: CPU joins through KV2's copies) | CPU | M–L | KV2, D2 |
 | KV10 | long context and lower-precision blocks | all | M | KV4/KV5 |
 | KV11 | one residency manager for KV blocks and MoE experts (added 2026-10-13) | CUDA, then Metal | L | KV4, KV7 |
@@ -1238,6 +1243,55 @@ KV2 merges when every arm on both boxes is read.
   Metal is a separate reading, if the owner wants it.
 - **Size:** S–M per backend (an estimate). **Needs:** KV0-H only, nothing from KV4. **Closes:** the B half of R-01 phase 2
   and of FreeToken Lead 1; KV8 keeps the rest.
+
+### KV8a-Q — Keep the last question's checkpoint beside KV8a's (added 2026-10-22)
+
+- **Why.** Qwen's chat template renders the assistant turns after the last user question with their reasoning, and the ones
+  before it without. Two cases follow:
+  - **Inside a tool loop:** the next request ends with a tool response. The earlier turns keep their reasoning, so the live
+    state matches (KV0-H's A), or KV8a's end-of-prompt checkpoint serves it (B).
+  - **A new user question after a tool loop:** the template drops the reasoning from every assistant turn since the previous
+    question. The prompt diverges right after the previous question. KV8a's single checkpoint was overwritten by the last
+    tool response's prefill, past that point, so the request falls back to KV7's prefix snapshot at the system boundary,
+    or to 0.
+- **Who hits it.** Clients that send reasoning back: Codex (reasoning items, KV0-H §2.3), Claude Code (thinking blocks), and
+  any client following Flint's card ("preserve returned `reasoning_content`"). opencode sends none back, so its turns
+  already diverge inside the last reply, where KV8a serves them.
+- **The precedent.** Kapitsa's engine (`src/engine/engine.cpp`, the checkpoint-victim comment) records the same failure:
+  with oldest-first eviction, "two tool calls evicted the query's, so the next query re-prefilled the whole
+  conversation". It keeps the newest question's checkpoint and the newest one.
+- **KV0-H did not test this.** Its `chain`, `fix` and `edit` sessions each ran one task; whether any carried a second user
+  question is not in its readings. Gate 2 checks the template claim on goinfer's own rendering before anything is built.
+- **What it is.**
+  - **Two copies, not one:** `latest`, KV8a's as today, and `question`.
+  - **Saving `question`:** a request whose last message is a user message also saves its end-of-prefill state into
+    `question`, replacing the previous one. A request ending with a tool response saves into `latest` only.
+  - **Plumbing:** the route passes the last message's role to the decoder, as it passes `chat.Template.PrefixBoundary`
+    for KV7's snapshot (`decoder/kvscope.go`).
+  - **Restore:** the deepest held point the request matches through: live state, `latest`, `question`, KV7's prefix
+    snapshot, then 0.
+  - **Interface:** `decoder/recurrent_checkpoint.go:ResidentRecurrentCheckpoint` grows an index for the copy (or a second
+    instance). `Model.residentCheckpointSave` and `Model.residentCheckpointRestore` choose the copy.
+  - **Memory:** the second copy is charged to the memory plan. When two do not fit, keep `latest` only, as today: fail
+    closed. Host memory suits `question`, since it is restored once per user question, not per tool turn. Register the
+    choice per backend, with the copy's measured time.
+- **Gates (sketch; register them first, as `CLAUDE.md` requires):**
+  1. **The template claim, on goinfer's rendering (stop point).** Render a conversation of a question, two tool calls, a
+     final answer and a new question, with reasoning sent back, through goinfer's Qwen3.5 template. Record where the last
+     request diverges from the one before. If it does not diverge right after the previous question, stop: KV8a-Q buys
+     nothing.
+  2. **Bit-exact save and restore of `question`**, conv window included, as KV8a's gate 1.
+  3. **Agreement with cold** on that fixture, under KV8a's gate 2 bar, with the restore taken from `question`.
+  4. **The cache-state grid** (`decoder/cachestate.go:cacheStateGrid`): the second copy's cells, declared; the grid stays
+     fail-closed.
+  5. **The measured win.** A KV0-H-style session with a second user question after a tool loop, on Codex (sends reasoning
+     back), with opencode as the control. Bar: the second question's time to first token falls by at least half its cold
+     time. The do-nothing arm is the same session on main.
+- **Not in KV8a-Q: the idle history prefill, a candidate only.** After a final answer, Kapitsa waits for a quiet gap,
+  renders the conversation as the next request will, and prefills it, so the next question continues from the live
+  state. It hides the cost rather than saving it. Scope it on its own if gate 5 shows the restore still costs a turn
+  noticeably.
+- **Order.** CUDA, then Metal, on KV8a. **Size:** S. **Needs:** KV8a.
 
 ### KV9 — The CPU path (deferred by D2, 2026-10-13)
 
