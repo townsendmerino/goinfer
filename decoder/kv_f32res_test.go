@@ -85,3 +85,32 @@ func TestKVQuant_reservesNoF32(t *testing.T) {
 		}
 	}
 }
+
+// TestKVQuant_setQuantHonoursSkip: setQuant gives no quantized reservation to a layer NewKVCache's skip predicate names (a
+// recurrent mixer layer, as hasNoAttentionKVAt reports, or a ring layer), in every quantized form, and the full hint to the
+// rest. No hybrid fixture admits quantized KV today (kvF16OK and kvInt8OK are false for qwen35-tiny, nemotron-tiny,
+// lfm2-tiny and nemotron3nano-tiny), so NewCache never reaches this for a mixer layer; the test pins setQuant's own rule for
+// the day one does, by building the cache the way NewCache does.
+func TestKVQuant_setQuantHonoursSkip(t *testing.T) {
+	const layers, nKV, headDim, hint = 4, 2, 8, 64
+	skip := func(l int) bool { return l%2 == 1 } // layers 1 and 3 hold no attention KV
+	for _, q := range []kvQuant{kvqF16, kvI8} {
+		c := NewKVCache(layers, nKV, headDim, 0, 0, skip)
+		c.setQuant(q, hint)
+		for l := range layers {
+			want := hint * nKV * headDim
+			if skip(l) {
+				want = 0
+			}
+			var k, v, ks, vs, wantSc int
+			if q == kvqF16 {
+				k, v = cap(c.keysH[l]), cap(c.valsH[l])
+			} else {
+				k, v, ks, vs, wantSc = cap(c.keysQ[l]), cap(c.valsQ[l]), cap(c.keyScale[l]), cap(c.valScale[l]), want/headDim
+			}
+			if k != want || v != want || ks != wantSc || vs != wantSc {
+				t.Errorf("quant %v layer %d (skipped %v): capacity %d/%d, scales %d/%d; want %d, scales %d", q, l, skip(l), k, v, ks, vs, want, wantSc)
+			}
+		}
+	}
+}
