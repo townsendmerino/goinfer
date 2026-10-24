@@ -1344,6 +1344,15 @@ type prefillPassScratch struct {
 	poolWant                                                     bool
 	poolKeys                                                     int              // the whole prefill's keys, which the attention pool is sized for
 	moe                                                          *moeBatchScratch // the MoE expert-major buffers; nil until a MoE layer runs
+	mla                                                          *mlaPassScratch  // opMLA's buffers; nil until an MLA layer runs
+}
+
+// mlaScratch returns the pass's opMLA buffers, starting them on first use.
+func (ps *prefillPassScratch) mlaScratch() *mlaPassScratch {
+	if ps.mla == nil {
+		ps.mla = &mlaPassScratch{}
+	}
+	return ps.mla
 }
 
 // moeScratch returns the pass's MoE expert-major buffers, starting them on first use so a dense pass carries none.

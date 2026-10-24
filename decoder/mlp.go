@@ -632,7 +632,7 @@ const moeExpertMajorChunk = 512
 // Measurements: docs/code-notes/decoder.md#knobSet.moeExpertMajor.
 
 // moeExpertMajorRuns counts chunks that took the expert-major path, so the bit-identity gate can prove it is not vacuous:
-// moeMLPBatch refuses for several legitimate reasons (shared expert, live pager, test seams), and a refusal makes both arms take
+// moeMLPBatch refuses for several legitimate reasons (a live pager, test seams, a non-SiLU activation), and a refusal makes both arms take
 // the identical per-row path, so the test would pass while proving nothing.
 var moeExpertMajorRuns int64
 
@@ -653,6 +653,7 @@ type moeBatchScratch struct {
 	out                                         []float32 // the pass's [K, hidden] expert-major output (ffnBatch)
 	done                                        []bool    // which of the pass's rows it holds (ffnBatch; cleared per use)
 	logits, perRank, gathered, gate, up, outBuf []float32
+	sharedGate, sharedUp, shared, sharedLogit   []float32 // the shared expert's, over every row of the chunk
 	byExpert                                    [][]moeSlot
 }
 
@@ -661,7 +662,10 @@ type moeSlot struct{ row, rank int }
 
 // moeScratchGrows counts each moeBatchScratch buffer's fresh allocations, so a gate can bar every term on its own (SCR-G1,
 // docs/tasks/task-memory-campaign-2026-10.md).
-var moeScratchGrows struct{ out, done, logits, perRank, gathered, gate, up, outBuf atomic.Int64 }
+var moeScratchGrows struct {
+	out, done, logits, perRank, gathered, gate, up, outBuf atomic.Int64
+	sharedGate, sharedUp, shared, sharedLogit              atomic.Int64
+}
 
 // moeGrow returns (*buf)[:n], growing *buf when it holds less and counting the growth in grows; the contents are not cleared.
 func moeGrow(buf *[]float32, n int, grows *atomic.Int64) []float32 {
@@ -679,11 +683,6 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 		return false, nil
 	}
 	if act != ActSiLU {
-		return false, nil
-	}
-	// The shared expert is added after the routed fold in moeMLP. Refuse up front so a fall-back costs nothing: a partial
-	// implementation that dropped it would change results, not speed.
-	if moe.SharedIntermediateDim > 0 {
 		return false, nil
 	}
 	nE, k := moe.NumExperts, moe.TopK
@@ -757,6 +756,30 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 		}
 	}
 
+	// The shared always-on expert over every row at M=n (the matmuls are M-invariant), added after the routed fold as moeMLP adds
+	// it: ungated, or scaled by the row's sigmoid(SharedGate·h).
+	var shared, sharedLogit []float32
+	if si := moe.SharedIntermediateDim; si > 0 {
+		sg := moeGrow(&s.sharedGate, n*si, &moeScratchGrows.sharedGate)
+		su := moeGrow(&s.sharedUp, n*si, &moeScratchGrows.sharedUp)
+		shared = moeGrow(&s.shared, n*hidden, &moeScratchGrows.shared)
+		sx := &lw.SharedExpert
+		matmul(be, &sx.Gate, rows[:n*hidden], sg, n)
+		matmul(be, &sx.Up, rows[:n*hidden], su, n)
+		if n*si < activationFanoutThreshold {
+			swiglu(sg, su)
+		} else {
+			parallelElementwise(n*si, func(lo, hi int) {
+				swiglu(sg[lo:hi], su[lo:hi])
+			})
+		}
+		matmul(be, &sx.Down, sg, shared, n)
+		if !moe.SharedUngated {
+			sharedLogit = moeGrow(&s.sharedLogit, n, &moeScratchGrows.sharedLogit)
+			matmul(be, &lw.SharedGate, rows[:n*hidden], sharedLogit, n)
+		}
+	}
+
 	atomic.AddInt64(&moeExpertMajorRuns, 1)
 	// Fold each row in ROUTING RANK order -- the sequence moeMLP uses, which is
 	// what makes this bit-identical rather than merely close.
@@ -767,6 +790,14 @@ func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, ac
 			w := wtss[r][j]
 			p := perRank[(r*k+j)*hidden : (r*k+j+1)*hidden]
 			addScaled(o, p, w)
+		}
+		if shared != nil {
+			sh := shared[r*hidden : (r+1)*hidden]
+			if moe.SharedUngated {
+				addResidual(o, sh)
+			} else {
+				addScaled(o, sh, float32(1.0/(1.0+math.Exp(-float64(sharedLogit[r])))))
+			}
 		}
 	}
 	return true, nil

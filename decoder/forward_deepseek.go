@@ -2,6 +2,11 @@ package decoder
 
 import (
 	"math"
+	"runtime"
+	"sync"
+	"sync/atomic"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3): Multi-head Latent Attention over a DeepSeekMoE FFN. K/V are compressed to a shared
@@ -131,58 +136,115 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	return mlaMatvec(w.oProj, &w.oQ, hidden, H*vHead, ctx)
 }
 
-// mlaAttentionAbsorb is the perf path: the "absorb" trick that never reconstructs
-// per-head K/V. kv_b_proj's per-head blocks are W_UK (the k_nope rows, [qkNope×rank])
-// and W_UV (the v rows, [vHead×rank]). Two algebraic identities remove the per-key
-// reconstruction matvec that dominates the naive path for long context:
+// mlaAttentionAbsorb is the perf path: one row's opMLA through the absorb trick (mlaAbsorbAttend), which never reconstructs
+// per-head K/V. The latent append, query projection and RoPE are identical to the naive path. mlaBatch is its batched form and must
+// compute what this does, row by row.
+func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
+	p := arch.mla
+	w := lw.mla
+	rank, qkRope := p.KVLoRARank, p.QKRopeHeadDim
+
+	// 1. Query (identical to naive): q_a→norm→q_b LoRA bottleneck, or a direct q_proj.
+	q := mlaQuery(op, p, w, arch.HiddenDim, arch.NumHeads, n)
+
+	// 2. KV down-projection → [latent | rope key]; the whole vector is cached.
+	kvDown := mlaMatvec(w.kvAProj, &w.kvAQ, rank+qkRope, arch.HiddenDim, n)
+	cache.AppendLatent(layer, kvDown)
+
+	// 3–6. Normalise and rope every cached latent, then attend in rank space.
+	lat := cache.Latent(layer)
+	nKeys := len(lat) / (rank + qkRope)
+	cn, kr := make([]float32, nKeys*rank), make([]float32, nKeys*qkRope)
+	mlaPrepLatents(op, p, w, lat, 0, nKeys, cn, kr)
+	ctx := mlaAbsorbAttend(op, p, w, arch.NumHeads, q, pos, cn, kr, nKeys, nil)
+
+	// 6.5. Bailing Hybrid's optional MLA output gate (see mlaAttentionNaive's own comment).
+	if w.gProj != nil {
+		gate := matvec(w.gProj, len(w.gProj)/arch.HiddenDim, arch.HiddenDim, n)
+		applySigmoidGateRow(gate, ctx, op.HeadWise, arch.NumHeads, p.VHeadDim)
+	}
+
+	// 7. Output projection (over the v_head_dim-wide context).
+	return mlaMatvec(w.oProj, &w.oQ, arch.HiddenDim, arch.NumHeads*p.VHeadDim, ctx)
+}
+
+// mlaQuery is opMLA's query for one row n: the q_a→norm→q_b LoRA bottleneck, or a direct q_proj. Per head: [qk_nope | qk_rope].
+func mlaQuery(op *mlaOpParams, p *mlaParams, w *mlaWeights, hidden, H int, n []float32) []float32 {
+	qkHead := p.QKNopeHeadDim + p.QKRopeHeadDim
+	if p.QLoRARank > 0 {
+		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
+		rmsNorm(qa, w.qALayernorm, 1, p.QLoRARank, op.Eps, false)
+		return mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
+	}
+	return mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
+}
+
+// mlaPrepLatents writes keys [from, to) of the cached latents lat as the absorb path reads them: cn[j] the kv_a-normalised latent
+// ([rank]) and kr[j] the rope key rotated at its own position j ([qk_rope_head_dim]). Each key's values depend on that key alone, so
+// a pass may prepare them once and share them across its rows.
+func mlaPrepLatents(op *mlaOpParams, p *mlaParams, w *mlaWeights, lat []float32, from, to int, cn, kr []float32) {
+	rank, qkRope := p.KVLoRARank, p.QKRopeHeadDim
+	latDim := rank + qkRope
+	for j := from; j < to; j++ {
+		l := lat[j*latDim : (j+1)*latDim]
+		c := cn[j*rank : (j+1)*rank]
+		copy(c, l[:rank])
+		rmsNorm(c, w.kvALayernorm, 1, rank, op.Eps, false)
+		r := kr[j*qkRope : (j+1)*qkRope]
+		copy(r, l[rank:latDim])
+		mlaRope(r, 1, qkRope, j, op.InvFreq, op.Mscale, op.Interleave)
+	}
+}
+
+// mlaAbsorbScratch holds one row's absorb buffers so a batched pass's workers reuse them; nil allocates. Every buffer is fully
+// written before it is read, except qNopeAbs, wsum and ctx, which mlaAbsorbAttend clears.
+type mlaAbsorbScratch struct {
+	qRope, qNopeAbs, scores, wsum, ctx []float32
+}
+
+func (s *mlaAbsorbScratch) take(buf *[]float32, n int) []float32 {
+	if s == nil {
+		return make([]float32, n)
+	}
+	if cap(*buf) < n {
+		*buf = make([]float32, n)
+	}
+	return (*buf)[:n]
+}
+
+// mlaAbsorbAttend is the absorb path's attention for one query q (mlaQuery's layout) at position pos over the first nKeys prepared
+// latents (mlaPrepLatents): it never reconstructs per-head K/V. kv_b_proj's per-head blocks are W_UK (the k_nope rows,
+// [qkNope×rank]) and W_UV (the v rows, [vHead×rank]); two identities remove the per-key reconstruction:
 //
 //	q_nope · (W_UK·c) = (W_UKᵀ·q_nope) · c          ← score in rank-space
 //	Σ_j p_j·(W_UV·c_j) = W_UV · (Σ_j p_j·c_j)        ← one W_UV matvec per head, post-softmax
 //
-// So q is projected through W_UK ONCE per head (→ [rank]), each cached latent is scored
-// by a rank-dim dot (no reconstruction), and V is collapsed to a rank-dim weighted sum
-// then lifted by W_UV once. Cost drops from O(nKeys·H·(qkNope+vHead)·rank) to
-// O(nKeys·H·rank) + O(H·(qkNope+vHead)·rank). Algebraically equal to the naive path
-// (cosine ~1.0; f32 reorder, not bit-exact). The latent append, query projection, and
-// RoPE are identical to the naive path.
-func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	p := arch.mla
-	w := lw.mla
-	hidden := arch.HiddenDim
-	eps := op.Eps
-	H := arch.NumHeads
+// Cost O(nKeys·H·rank) + O(H·(qkNope+vHead)·rank). Algebraically equal to the naive path (cosine ~1.0; f32 reorder, not
+// bit-exact). It returns the [H*v_head_dim] context, in s.ctx when s is non-nil. q's rope dims are not modified.
+func mlaAbsorbAttend(op *mlaOpParams, p *mlaParams, w *mlaWeights, H int, q []float32, pos int, cn, kr []float32, nKeys int, s *mlaAbsorbScratch) []float32 {
 	qkNope, qkRope, vHead := p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim
 	qkHead := qkNope + qkRope
 	rank := p.KVLoRARank
-	latDim := rank + qkRope
 	hRow := qkNope + vHead // per-head output block in kv_b_proj (k_nope rows ‖ v rows)
-	invFreq := op.InvFreq
-	ms := op.Mscale
-
-	// 1. Query (identical to naive): q_a→norm→q_b LoRA bottleneck, or a direct q_proj.
-	var q []float32
-	if p.QLoRARank > 0 {
-		qa := mlaMatvec(w.qAProj, &w.qAQ, p.QLoRARank, hidden, n)
-		rmsNorm(qa, w.qALayernorm, 1, p.QLoRARank, eps, false)
-		q = mlaMatvec(w.qBProj, &w.qBQ, H*qkHead, p.QLoRARank, qa)
-	} else {
-		q = mlaMatvec(w.qProj, &w.qQ, H*qkHead, hidden, n)
-	}
-
-	// 2. KV down-projection → [latent | rope key]; the whole vector is cached.
-	kvDown := mlaMatvec(w.kvAProj, &w.kvAQ, latDim, hidden, n)
-	cache.AppendLatent(layer, kvDown)
 
 	// 3. RoPE the query's rope dims (per head), gathered from the [nope|rope] layout.
-	qRope := make([]float32, H*qkRope)
+	var qRope, qNopeAbs, scores, wsum, ctx []float32
+	if s != nil {
+		qRope, qNopeAbs, scores = s.take(&s.qRope, H*qkRope), s.take(&s.qNopeAbs, H*rank), s.take(&s.scores, H*nKeys)
+		wsum, ctx = s.take(&s.wsum, H*rank), s.take(&s.ctx, H*vHead)
+		clear(qNopeAbs)
+		clear(wsum)
+	} else {
+		qRope, qNopeAbs, scores = make([]float32, H*qkRope), make([]float32, H*rank), make([]float32, H*nKeys)
+		wsum, ctx = make([]float32, H*rank), make([]float32, H*vHead)
+	}
 	for hh := range H {
 		copy(qRope[hh*qkRope:(hh+1)*qkRope], q[hh*qkHead+qkNope:hh*qkHead+qkHead])
 	}
-	mlaRope(qRope, H, qkRope, pos, invFreq, ms, op.Interleave)
+	mlaRope(qRope, H, qkRope, pos, op.InvFreq, op.Mscale, op.Interleave)
 
 	// 4a. Absorb W_UK into the query: qNopeAbs[h] = W_UK_hᵀ · q_nope_h  ([rank] per head).
 	// W_UK_h is the k_nope rows of head h: kv_b_proj rows [h*hRow : h*hRow+qkNope].
-	qNopeAbs := make([]float32, H*rank)
 	for hh := range H {
 		dst := qNopeAbs[hh*rank : (hh+1)*rank]
 		qn := q[hh*qkHead : hh*qkHead+qkNope]
@@ -195,41 +257,31 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 		}
 	}
 
-	// 4b. Score each cached latent in rank-space — no per-key K reconstruction. cnAll
-	// holds the normalized latents for reuse in the V collapse (step 5).
-	nKeys := len(cache.Latent(layer)) / latDim
-	scores := make([]float32, H*nKeys)
-	cnAll := make([]float32, nKeys*rank)
-	krj := make([]float32, qkRope)
+	// 4b. Score each latent in rank-space — no per-key K reconstruction.
 	for j := range nKeys {
-		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
-		cn := cnAll[j*rank : (j+1)*rank]
-		copy(cn, lat[:rank])
-		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
-		copy(krj, lat[rank:latDim])
-		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave)
+		c := cn[j*rank : (j+1)*rank]
+		krj := kr[j*qkRope : (j+1)*qkRope]
 		for hh := range H {
 			qa := qNopeAbs[hh*rank : (hh+1)*rank]
-			var s float32
-			for c := range rank {
-				s += qa[c] * cn[c]
+			var sc float32
+			for i := range rank {
+				sc += qa[i] * c[i]
 			}
 			qr := qRope[hh*qkRope : (hh+1)*qkRope]
 			for d := range qkRope {
-				s += qr[d] * krj[d]
+				sc += qr[d] * krj[d]
 			}
-			scores[hh*nKeys+j] = s * float32(op.Scale)
+			scores[hh*nKeys+j] = sc * float32(op.Scale)
 		}
 	}
 
 	// 5. Per-head softmax, then collapse V to a rank-space weighted latent sum.
-	wsum := make([]float32, H*rank)
 	for hh := range H {
 		row := scores[hh*nKeys : (hh+1)*nKeys]
 		mx := float32(math.Inf(-1))
-		for _, s := range row {
-			if s > mx {
-				mx = s
+		for _, sc := range row {
+			if sc > mx {
+				mx = sc
 			}
 		}
 		var sum float32
@@ -240,37 +292,28 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 		acc := wsum[hh*rank : (hh+1)*rank]
 		for j := range nKeys {
 			wgt := row[j] / sum
-			cn := cnAll[j*rank : (j+1)*rank]
-			for c := range rank {
-				acc[c] += wgt * cn[c]
+			c := cn[j*rank : (j+1)*rank]
+			for i := range rank {
+				acc[i] += wgt * c[i]
 			}
 		}
 	}
 
 	// 6. Absorb W_UV: ctx_h = W_UV_h · wsum_h. W_UV_h is the v rows of head h:
 	// kv_b_proj rows [h*hRow+qkNope : h*hRow+hRow].
-	ctx := make([]float32, H*vHead)
 	for hh := range H {
 		acc := wsum[hh*rank : (hh+1)*rank]
 		out := ctx[hh*vHead : (hh+1)*vHead]
 		for e := range vHead {
 			row := w.kvBProj[(hh*hRow+qkNope+e)*rank : (hh*hRow+qkNope+e)*rank+rank]
-			var s float32
-			for c := range rank {
-				s += row[c] * acc[c]
+			var sc float32
+			for i := range rank {
+				sc += row[i] * acc[i]
 			}
-			out[e] = s
+			out[e] = sc
 		}
 	}
-
-	// 6.5. Bailing Hybrid's optional MLA output gate (see mlaAttentionNaive's own comment).
-	if w.gProj != nil {
-		gate := matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
-		applySigmoidGateRow(gate, ctx, op.HeadWise, H, vHead)
-	}
-
-	// 7. Output projection (over the v_head_dim-wide context).
-	return mlaMatvec(w.oProj, &w.oQ, hidden, H*vHead, ctx)
+	return ctx
 }
 
 // mlaForceNaive forces the naive (reconstruct-per-key) MLA path over the absorb default.
@@ -301,4 +344,81 @@ func mlaRope(vec []float32, heads, ropeDim, pos int, invFreq []float64, scale fl
 		}
 	}
 	applyRoPE(vec, heads, ropeDim, pos, invFreq, scale)
+}
+
+// mlaBatchRuns counts mlaBatch calls that took the batched form, so its bit-identity gate can prove it ran.
+var mlaBatchRuns atomic.Int64
+
+// mlaPassScratch holds a batched pass's opMLA buffers across its layers (prefillPassScratch.mla).
+type mlaPassScratch struct {
+	q, qa, kv, cn, kr, ctx []float32
+	rows                   []mlaAbsorbScratch // one per attention worker
+}
+
+// mlaBatch runs opMLA over the K rows of x ([K*hidden]) at positions startPos.., appending their latents, and writes each row's
+// output to out: what mlaAttentionWith computes row by row, so a row's result is the per-token walker's (TestMLABatch_matchesSequential).
+// The projections run at M=K (linalg.MatmulBT is M-invariant), the pass's latents are prepared once, and the rows attend in
+// parallel, each over its own prefix. The naive path, an int8 projection and Bailing Hybrid's gate take the rows one at a time.
+func (m *Model) mlaBatch(op *mlaOpParams, x, out []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, startPos, K int,
+	ps *prefillPassScratch) {
+	p, w := arch.mla, lw.mla
+	hidden, H := arch.HiddenDim, arch.NumHeads
+	if mlaForceNaive || m.knobs.mlaNaive() || w.gProj != nil ||
+		w.qAQ.Rows() > 0 || w.qBQ.Rows() > 0 || w.qQ.Rows() > 0 || w.kvAQ.Rows() > 0 || w.oQ.Rows() > 0 {
+		for i := range K {
+			copy(out[i*hidden:(i+1)*hidden], m.mlaAttentionWith(op, x[i*hidden:(i+1)*hidden], lw, arch, cache, layer, startPos+i))
+		}
+		return
+	}
+	mlaBatchRuns.Add(1)
+	rank, qkRope, vHead := p.KVLoRARank, p.QKRopeHeadDim, p.VHeadDim
+	latDim, qkHead := rank+qkRope, p.QKNopeHeadDim+qkRope
+	s := ps.mlaScratch()
+
+	q := ps.take(&s.q, K*H*qkHead)
+	if r := p.QLoRARank; r > 0 {
+		qa := ps.take(&s.qa, K*r)
+		linalg.MatmulBT(x, w.qAProj, qa, K, hidden, r)
+		for i := range K {
+			rmsNorm(qa[i*r:(i+1)*r], w.qALayernorm, 1, r, op.Eps, false)
+		}
+		linalg.MatmulBT(qa, w.qBProj, q, K, r, H*qkHead)
+	} else {
+		linalg.MatmulBT(x, w.qProj, q, K, hidden, H*qkHead)
+	}
+	kv := ps.take(&s.kv, K*latDim)
+	linalg.MatmulBT(x, w.kvAProj, kv, K, hidden, latDim)
+	for i := range K {
+		cache.AppendLatent(layer, kv[i*latDim:(i+1)*latDim])
+	}
+
+	// Row i sees the latents the per-token walker would: everything stored before the pass and the pass's rows up to its own.
+	lat := cache.Latent(layer)
+	nTot := len(lat) / latDim
+	cn, kr := ps.take(&s.cn, nTot*rank), ps.take(&s.kr, nTot*qkRope)
+	mlaPrepLatents(op, p, w, lat, 0, nTot, cn, kr)
+
+	ctx := ps.take(&s.ctx, K*H*vHead)
+	workers := min(runtime.GOMAXPROCS(0), K)
+	if len(s.rows) < workers {
+		s.rows = make([]mlaAbsorbScratch, workers)
+	}
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for wi := range workers {
+		wg.Go(func() {
+			rs := &s.rows[wi]
+			for {
+				n := int(next.Add(1)) - 1
+				if n >= K {
+					return
+				}
+				i := K - 1 - n // the deepest rows first: they cost the most
+				c := mlaAbsorbAttend(op, p, w, H, q[i*H*qkHead:(i+1)*H*qkHead], startPos+i, cn, kr, nTot-K+i+1, rs)
+				copy(ctx[i*H*vHead:(i+1)*H*vHead], c)
+			}
+		})
+	}
+	wg.Wait()
+	linalg.MatmulBT(ctx, w.oProj, out, K, H*vHead, hidden)
 }

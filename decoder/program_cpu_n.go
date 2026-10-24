@@ -172,6 +172,11 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 				default:
 					attendBatchedHeadsP(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, o.attn, arch, useAcc64, attnPool)
 				}
+			case opMLA:
+				if cache.treeRowPos != nil || cache.treeMask != nil {
+					return nil, fmt.Errorf("decoder: layer %d: MLA attends no tree mask on the CPU's batched walker", l)
+				}
+				m.mlaBatch(&o.mla, reg(o.in), reg(o.out), lw, arch, cache, l, startPos, K, ps)
 			case opOutGate:
 				gRows := lw.GProj.Rows()
 				if cap(gbuf) < K*gRows {
@@ -537,9 +542,10 @@ func (p *program) multiStepEligible() error {
 }
 
 // batchEligible reports whether the batched walker runs prog: a layer program with no learned positions, the batched attention
-// kernel on every layer, and a gated or MoE FFN.
+// kernel on every layer (or MLA's own), and a gated or MoE FFN. opMLA is admitted here and not in genericKinds, which also decides
+// layer paging and the fit guard's retry, neither of which knows MLA's weights.
 func (p *program) batchEligible() bool {
-	if p.layers == nil || p.embed.LearnedPos || !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(genericKinds...) {
+	if p.layers == nil || p.embed.LearnedPos || !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(append(slices.Clip(genericKinds), opMLA)...) {
 		return false
 	}
 	for _, ops := range p.layers {
