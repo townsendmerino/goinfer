@@ -641,10 +641,22 @@ template [[host_name("mc3_gemv_w4a8_sa_bias_rows_adj4")]] kernel decltype(mc3_ge
 template [[host_name("gemv_w4a8_sa_resid_rows2")]] kernel decltype(gemv_w4a8_sa_resid_rows<2>) gemv_w4a8_sa_resid_rows<2>;
 template [[host_name("gemv_w4a8_sa_resid_rows4")]] kernel decltype(gemv_w4a8_sa_resid_rows<4>) gemv_w4a8_sa_resid_rows<4>;
 
+// KS-C2: a word's eight-nibble sum in R18b's masked form for the staged coal kernels below. x0 and x1 are the word's eight
+// int8 activations scaled by 16^-(k mod 4); each 16-bit half is masked in place (nibble k as nib*16^(k mod 4)) and dotted with
+// its four. Every partial is an integer below 2^24, so the result less 8*sum(a) is W4A8_BODY's integer gi exactly.
+// KSC2_OLD_DOWN (a test-only define, ksc2OldDownForTest) compiles the per-word integer form back.
+constant float4 W4M_P4 = float4(1.0f, 0.0625f, 0.00390625f, 0.000244140625f);
+constant float4 W4M_U4 = float4(1.0f, 16.0f, 256.0f, 4096.0f);
+inline float w4_masked_word(uint x, float4 x0, float4 x1) {
+    uint lo = x & 0xFFFFu, hi = x >> 16;
+    return dot(float4(float(lo & 0xFu), float(lo & 0xF0u), float(lo & 0xF00u), float(lo & 0xF000u)), x0)
+         + dot(float4(float(hi & 0xFu), float(hi & 0xF0u), float(hi & 0xF00u), float(hi & 0xF000u)), x1);
+}
+
 // R18: gemv_w4a8_resid (the coal down projection) with its int8 activations staged ONCE per threadgroup (K bytes of
 // threadgroup memory; the host checks it fits) and R rows per simdgroup. Lane l still owns words l, l+32, ... of each
-// row, in order, with W4A8_BODY's per-word integer sum and float(gi)*scale accumulation -> bit-identical to
-// gemv_w4a8_resid. Grid rows*32/R, tg 256, rows % (8R) == 0 (gemvRowsFor), as for gemv_w4a8_sa_rows.
+// row, in order, with W4A8_BODY's per-word integer sum (taken in w4_masked_word's form) and float(gi)*scale accumulation ->
+// bit-identical to gemv_w4a8_resid. Grid rows*32/R, tg 256, rows % (8R) == 0 (gemvRowsFor), as for gemv_w4a8_sa_rows.
 template <uint R>
 kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
@@ -661,6 +673,7 @@ kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device co
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
     threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
     for (uint wi = lane; wi < wpr; wi += 32u) {
+#ifdef KSC2_OLD_DOWN
         char4 a0 = A[wi*2u], a1 = A[wi*2u+1u];
         SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
             uint x = bq[(row0+r)*wpr + wi];
@@ -670,6 +683,13 @@ kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device co
                    + (int((x>>24)&0xF)-8)*int(a1.z) + (int((x>>28)&0xF)-8)*int(a1.w);
             acc[r] += float(gi) * float(bsc[(row0+r)*spr + (wi>>2u)]);
         }
+#else
+        float4 x0 = float4(A[wi*2u]) * W4M_P4, x1 = float4(A[wi*2u+1u]) * W4M_P4;
+        float s8 = 8.0f * (dot(x0, W4M_U4) + dot(x1, W4M_U4));
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            acc[r] += (w4_masked_word(bq[(row0+r)*wpr + wi], x0, x1) - s8) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+#endif
     }
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] += s*asc[0]; }
 }
@@ -694,6 +714,7 @@ kernel void gemv_w4a8_coal_staged(device const uint* bq[[buffer(0)]], device con
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
     threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
     for (uint wi = lane; wi < wpr; wi += 32u) {
+#ifdef KSC2_OLD_DOWN
         char4 a0 = A[wi*2u], a1 = A[wi*2u+1u];
         SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
             uint x = bq[(row0+r)*wpr + wi];
@@ -703,6 +724,13 @@ kernel void gemv_w4a8_coal_staged(device const uint* bq[[buffer(0)]], device con
                    + (int((x>>24)&0xF)-8)*int(a1.z) + (int((x>>28)&0xF)-8)*int(a1.w);
             acc[r] += float(gi) * float(bsc[(row0+r)*spr + (wi>>2u)]);
         }
+#else
+        float4 x0 = float4(A[wi*2u]) * W4M_P4, x1 = float4(A[wi*2u+1u]) * W4M_P4;
+        float s8 = 8.0f * (dot(x0, W4M_U4) + dot(x1, W4M_U4));
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            acc[r] += (w4_masked_word(bq[(row0+r)*wpr + wi], x0, x1) - s8) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+#endif
     }
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] = s*asc[0]; }
 }

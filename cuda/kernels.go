@@ -118,7 +118,7 @@ var moeRowsPTX []byte
 //go:embed testdata/audio_encoder.ptx
 var audioEncoderPTX []byte
 
-// topkPTX: topk_select, the device-side bounded top-K the sampled-decode fast path reads instead of the full logits row.
+// topkPTX: topk_compact / topk_finish / topk_z, the device-side bounded top-K the sampled-decode fast path reads instead of the full logits row.
 // Built at the ambient NVRTC (12.9.86). See cuda/topk.cu.
 //
 //go:embed testdata/topk.ptx

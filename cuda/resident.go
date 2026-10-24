@@ -650,7 +650,7 @@ type cudaResident struct {
 	dev                                                                                     *Device
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
-	fTopK                                                                                   Pipeline // topk_select
+	fTopKCompact, fTopKFinish, fTopKZ                                                       Pipeline // topk_compact / topk_finish / topk_z
 	kvCopy                                                                                  Pipeline // kv_store at pos 0 = an exact device copy (K=V layers copy raw k into vB instead of projecting twice)
 	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
 	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
@@ -742,6 +742,9 @@ type cudaResident struct {
 	prefillReady             bool     // batched kernels loaded; PrefillLast usable
 	bAttnImg                 Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
 	imgPrefillReady          bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	bAttnSpan                Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
+	spanPrefillReady         bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
+	spanPass                 bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
 	bRopeKVMRoPE             Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
 	pairwiseRoPE             bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.PairwiseRoPEResident() at build
 	mropePrefillReady        bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
@@ -823,9 +826,12 @@ type cudaResident struct {
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
 	aq, cq, mq, dq, argIdx                                                Buffer
 	argVal                                                                Buffer
-	topkOut                                                               Buffer   // topk_select output: ids, logit bits, Z hi/lo bits
-	gbKey, gbIdx, gbOut                                                   Buffer   // gumbel_stage1 per-block winners, and the drawn id
-	kc, vc                                                                []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
+	topkOut                                                               Buffer // topk_finish / topk_z output: ids, logit bits, Z hi/lo bits
+	// topk's global scratch (cuda/topk.cu): the fast path's candidates, their count, the row max, Z's partials and the
+	// done counter. topkCnt and topkDone start at zero and the kernels reset them.
+	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
+	gbKey, gbIdx, gbOut                                 Buffer   // gumbel_stage1 per-block winners, and the drawn id
+	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
 
 	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
 	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block

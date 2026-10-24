@@ -1,0 +1,7 @@
+Table 2. Quarterly unit sales by region (thousands)
+
+| Region | Q1 | Q2 | Q3 | Q4 | Total |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| North | 128.4 | 135.9 | 142.2 | 151.0 | 557.5 |
+| South | 97.1 | 1 sea.6 | 99.8 | 108.3 | 406.8 |
+| East | 210.5 | 224.0 | 231.7 | 246.9 | 91

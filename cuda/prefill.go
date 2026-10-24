@@ -205,6 +205,115 @@ func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings []
 	return outs[len(outs)-1], nil
 }
 
+var _ decoder.ResidentSpanPrefill = (*cudaResident)(nil)
+
+// PrefillSpansLast (decoder.ResidentSpanPrefill) is the batched prefill of a Gemma 4 bidirectional prompt: spans are each
+// image's [start, end), absolute, in order and disjoint, and attention is attn_span_batched's (gemma4AttendRange). The
+// passes are prefillPassRows wide and cut outside the spans, so a span longer than a pass gets a pass of its own. Every
+// pass takes attn_span_batched, with or without a span in it, so where the passes fall does not change a bit. An OOM is
+// retried narrower from the same row, as in prefillChunked; any other failure after the first pass is a
+// decoder.PrefillPartial. Declines: an E-model, an f16 KV cache (attn_span_batched reads f32), a sliding layer that would
+// need the row-batched kernels, and whatever prefillCore declines.
+func (r *cudaResident) PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) ([]float32, error) {
+	M := len(embeddings)
+	if M == 0 {
+		return nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	switch {
+	case r.eModel:
+		return nil, fmt.Errorf("cuda prefill: span prefill on a Gemma 4 E-model: %w", errPrefillDeclined)
+	case r.kvF16:
+		return nil, fmt.Errorf("cuda prefill: span prefill on an f16 KV cache (attn_span_batched reads f32): %w", errPrefillDeclined)
+	case !r.spanPrefillReady:
+		return nil, fmt.Errorf("cuda prefill: attn_span_batched unavailable: %w", errPrefillDeclined)
+	}
+	prev := startPos
+	for _, b := range spans {
+		if b[0] < prev || b[1] <= b[0] || b[1] > startPos+M {
+			return nil, fmt.Errorf("cuda prefill: spans %v invalid for %d rows at startPos %d: %w", spans, M, startPos, errPrefillDeclined)
+		}
+		prev = b[1]
+	}
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
+	if e := r.prefillStaticDecline(); e != nil {
+		return nil, e
+	}
+	chunk := r.prefillPassRows()
+	r.spanPass, r.chunkOrdinary, r.chunkPromptLen = true, true, startPos+M
+	defer func() { r.spanPass, r.chunkOrdinary, r.chunkPromptLen = false, false, 0 }()
+	for i := 0; i < M; {
+		if e := ctx.Err(); e != nil {
+			return nil, e
+		}
+		n := spanPassRows(spans, startPos+i, min(chunk, M-i))
+		last := i+n == M
+		tail := tailKVOnly
+		if last {
+			tail = tailLastLogits
+		}
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, spansIn(spans, startPos+i, startPos+i+n), nil, nil)
+		if err != nil {
+			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
+				chunk = max(chunk/2, prefillMinChunk)
+				r.prefillChunkCap.Store(int64(chunk))
+				continue // same i: the failed pass committed nothing
+			}
+			return nil, prefillPartialAt(startPos, i, err)
+		}
+		if last {
+			return outs[len(outs)-1], nil
+		}
+		i += n
+	}
+	return nil, fmt.Errorf("cuda prefill: span loop ended without heading the last row (M=%d)", M)
+}
+
+// spanPassRows is the width of a span prefill's pass that starts at absolute position from and would take want rows: cut
+// before a span the cut would split, or, when the pass starts at that span, widened to its end (the CPU path's
+// cutOutsideBlocks).
+func spanPassRows(spans [][2]int, from, want int) int {
+	end := from + want
+	for _, b := range spans {
+		if b[0] < end && end < b[1] {
+			if b[0] > from {
+				return b[0] - from
+			}
+			return b[1] - from
+		}
+	}
+	return want
+}
+
+// spansIn is the spans that lie inside the pass [lo, hi), shifted by spanDefectForTest's plants: a span prefill never cuts
+// inside a span, so each one is wholly in one pass.
+func spansIn(spans [][2]int, lo, hi int) [][2]int {
+	var out [][2]int
+	if spanDefectForTest == spanDefectCausal {
+		return nil
+	}
+	for _, b := range spans {
+		if b[0] >= lo && b[1] <= hi {
+			if spanDefectForTest == spanDefectShortEnd {
+				b[1]--
+			}
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// spanDefectForTest plants a defect for the span prefill's gate (G-S19b) to catch: the mask left causal, each span's end one
+// row short, or Gemma 3's window rule (no reach-back to the span start). Set by tests only.
+var spanDefectForTest int
+
+const (
+	spanDefectCausal = iota + 1
+	spanDefectShortEnd
+	spanDefectNoReachBack
+)
+
 // PrefillMRoPELast satisfies decoder.ResidentMRoPEPrefill: PrefillLast for Qwen2.5-VL under m-RoPE 3D positions
 // (docs/multimodal.md; decoder/rope.go's applyMRoPE/mropePositions is the CPU reference, bit for bit). embeddings carry
 // the spliced vision features. mropePos is mropePositions' output, one (t,h,w) triple per ABSOLUTE position over the
@@ -841,7 +950,10 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, nil, e
 	}
-	if len(blocks) > 0 && r.attnCap != 0 {
+	// img: this pass's attention is the image-block kernel's (attn_img_batched, or attn_span_batched in a span pass, which takes
+	// it even when no span falls in this pass).
+	img := len(blocks) > 0 || r.spanPass
+	if img && r.attnCap != 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: an image block on a model with an attention softcap; attn_img_batched has no cap")
 	}
 	if r.eModel {
@@ -876,8 +988,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	// Image-block prefill (decoder.ResidentImagePrefill); empty blocks is the "no block" case. checkPrefillShmemImgBlocks is
 	// a separate call from checkPrefillShmem above, not a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards pins
 	// prefillCore's call to checkPrefillShmem by name (see the header of cuda/attn_img_prefill.cu).
-	if len(blocks) > 0 {
-		if !r.imgPrefillReady {
+	if img {
+		if !r.imgPrefillReady || r.spanPass && !r.spanPrefillReady {
 			return nil, nil, fmt.Errorf("cuda prefill: image-block batched kernel unavailable: %w", errPrefillDeclined)
 		}
 		if e := r.checkPrefillShmemImgBlocks(startPos, M, blocks); e != nil {
@@ -932,7 +1044,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			// Inside the pass, where passPromptLen and forceExactKernels are set: the guard asks useAttnFused exactly what the launch
 			// will, so a layer the fused kernel serves is not held to the exact kernel's span bound. An image-block pass never takes it.
 			var fused func(hd int) bool
-			if len(blocks) == 0 {
+			if !img {
 				fused = func(hd int) bool { _, ok := r.useAttnFused(hd, M); return ok }
 			}
 			// The guard holds only the layers attn_batched (or its image twin) would run past its bound: with the row-batched exact
@@ -942,7 +1054,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					return e
 				}
 			}
-			if len(blocks) == 0 {
+			if !img {
 				psFused = fused
 			}
 		}
@@ -1088,14 +1200,16 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 
 		// Every image block's [start, end), uploaded once for every layer's attn_img_batched launch.
 		var imgBlk Buffer
-		if len(blocks) > 0 {
+		if img {
 			flat := make([]int32, 0, 2*len(blocks))
 			for _, b := range blocks {
 				flat = append(flat, int32(b[0]), int32(b[1]))
 			}
 			imgBlk = ai(len(flat))
-			if e := gpu.Upload(imgBlk, flat); e != nil {
-				return e
+			if len(flat) > 0 {
+				if e := gpu.Upload(imgBlk, flat); e != nil {
+					return e
+				}
 			}
 		}
 		// m-RoPE: this pass's per-row (t,h,w) rotation triples, uploaded once and reused by every layer's
@@ -1299,22 +1413,31 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					// (TestFlashDecodeRowsBitIdentical), so a verified position scores as plain lane decode scores it. Rows below laneFrom
 					// are under the attended-span floor and take the exact path, as their M=1 decode would. laneFrom == M means no lane rows
 					// (the common case); laneFrom == 0 skips the exact launch.
-					laneFrom := r.verifyLaneFrom(l, startPos, M, tail, len(blocks) > 0)
+					laneFrom := r.verifyLaneFrom(l, startPos, M, tail, img)
 					// Image block first, unconditionally, before useAttnFused is consulted: attn_fused's tile-level aggregates assume
 					// monotonic per-row nKeys across a 64-row tile, which an image block breaks, so the exact attn_img_batched is used
 					// instead. Checking the block after useAttnFused would silently route a long image prompt through the incompatible fused
 					// kernel.
 					if laneFrom == 0 {
 						// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
-					} else if len(blocks) > 0 {
+					} else if img {
 						if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
+							if r.spanPass && Ly.window > 0 {
+								// the row-batched kernels keep Gemma 3's window rule, which drops a span row's reach-back to its span start
+								return fmt.Errorf("cuda prefill: layer %d (sliding) span attention at %d keys needs the row-batched kernels: %w", l, maxNWin, errPrefillDeclined)
+							}
 							// past attn_img_batched's shared-memory bound: the row-batched kernels, with the same block table
 							attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, imgBlk, len(blocks))
 						} else {
 							imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
 								Arg(imgBlk), gpu.ArgValue(int32(len(blocks))))
-							attnErr = r.launch(r.bAttnImg, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, imgArgs...)
+							imgCfg := LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}
+							if r.spanPass && spanDefectForTest != spanDefectNoReachBack {
+								attnErr = r.launch(r.bAttnSpan, imgCfg, imgArgs...)
+							} else {
+								attnErr = r.launch(r.bAttnImg, imgCfg, imgArgs...)
+							}
 						}
 					} else if fsh, use := r.useAttnFused(hd, M); use {
 						fcfg := LaunchConfig{GridX: uint32(r.nH),
