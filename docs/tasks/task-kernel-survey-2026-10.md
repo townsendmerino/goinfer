@@ -1238,6 +1238,15 @@ minutes. Size: L (the estimate was M–L; the relu² MLP and the mixer-only laye
 Logs: `~/goinfer-logs/ksd8-g1-2026-10-24.log`, `~/goinfer-logs/ksd8-g2-2026-10-24.log`, `~/goinfer-logs/ksd8-9b-2026-10-24.log`,
 `~/goinfer-logs/ksd8-yardstick-2026-10-24.log`, `~/goinfer-logs/ksd8-g6-2026-10-24.log`.
 
+**D8-G3's reference route, registered 2026-10-24 (11:55) before the reference runs, on the owner's word of 11:46 ("KS-D8 is a
+go"; the registered PARK route).** Instrument: the same 8 prompts of 512 seeded token ids. The reference is the Hugging Face
+checkpoint on nobara's CPU (`/srv/models/nemotron-hf`; not a timed read) with its bf16 weights kept bf16 and f32 compute
+(`Quant: "bf16"`), which is the checkpoint's own arithmetic; its last-position logits are written on nobara and copied to the
+Mac, where the sequential path and the batched pass are read as in D8-G3. **D8-G3 PASS iff, against that reference, the pass is
+non-inferior to the sequential path in D8-G2's form: its mean KL(ref ‖ ·) at most the sequential path's + 0.005 nats, and its
+top-1 agreement with the reference at least the sequential path's less one prompt; otherwise FAIL.** The 9B ships on PASS, with
+D8-G4's speed; on FAIL it stays unmerged and the gap is localized per layer kind before anything else.
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
