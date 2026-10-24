@@ -59,7 +59,7 @@
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
-| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1); the 1.5B's WebGPU decode 24.6 → 21.7 ms a token, median 0.8846, 10 of 10 pairs, on the per-arm-guarded re-run with an A/A control (1.0009) (E2-G2 SHIP) | survey, "KS-E2 read" |
+| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1); the 1.5B's WebGPU decode 24.6 → 21.7 ms a token, median 0.8824, 10 of 10 pairs, with busy cores read over each timed arm and an A/A control (1.0002) in the same run (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | open | either box: `TEncode` from `TestDecodeTWE_split` on today's binding | — |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
@@ -1606,6 +1606,12 @@ reclaimable memory is under 2 GiB at either read. The 32-token prompt and the wa
 - E2-G1 (a) runs 90 cells today (the row forms at all six n); the 11:50 read ran 63.
 The bar is unchanged (SHIP iff the A/B median is ≤ 0.98 with at least 9 of 10 faster). This re-run decides; the earlier readings
 stay in the record.
+
+**E2-G2 read with the direct guard, 2026-10-24 (16:02–16:11, the lock held exclusively; 7.2 GB reclaimable at the start): A/A PASS,
+A/B SHIP.** Every arm of both phases was valid: 0.23–1.96 busy cores averaged over its timed decode (the line is 4.0) and 2.02–4.32
+GiB reclaimable at its ends; no void pairs. The A/A control: median 1.0002, pairs 0.9839–1.0112. The A/B: narrow 24.70–24.99 ms a
+token, wide 21.70–22.02; **median wide/narrow 0.8824, 10 of 10 pairs faster** (11.8% less time a token). Over the three guarded
+readings the A/B reads 0.8811, 0.8846 and 0.8824. Log: `~/goinfer-logs/kse2-g2-rerun5-2026-10-24.log`.
 
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
