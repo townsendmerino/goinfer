@@ -8417,6 +8417,29 @@ layer that uses the CPU, the projection is about 36 to 40 tok/s (52 to 56 s a fo
   - Projection: with 230 µs a copied miss and about 1.7 misses a layer, splitting saves about 4.3 ms of a 31.6 ms token, about
     14%. That is over the 10% bar, so the served gate runs. Revised prediction: about 36 to 37 tok/s, the low end of 36 to 40.
 
+**G-S20k read 2026-10-23 18:02 to 18:15 on nobara: FAIL.** Old is #198's binary (`3cf6c6744`); new is the split
+(`87757b010`). A B B A, inv01 to inv03 in each cell, load 3.0 to 3.8 at the cell starts, none void. Raw:
+`docs/measurements/multimodal-support-2026-10/s20/step4/`.
+- **Identity: held.** All nine replies are byte-identical to the old binary's.
+- **Speed: no gain.** Mean decode, old 31.70 and 31.77 tok/s, new 31.38 and 31.24. That is 0.990 and 0.983 in the two pairs,
+  under the 1.05 park line and far from the 1.15 bar. Per form, 61.6 s old and 62.3 to 62.4 s new.
+- **The split did run.** 22 experts a token were computed on the host, about 41% of the misses (23,712 of 57,592 on inv01).
+  Hit and miss counts repeat exactly between the two new cells.
+- **Why the projection missed.** At G-S20a's 0.23 ms a copied miss, moving 22 misses a token to the host should have saved
+  about 5 ms a token; the token got about 0.4 ms slower instead. So a host expert costs the critical path about what the copy
+  it replaced did. Two causes fit the numbers; neither is isolated:
+  - **Latency.** One host expert's path (wait for the input, gate/up, the GELU round trip, down, the upload) takes about
+    260 µs, roughly one expert's 3.35 MB over PCIe at 13 GB/s. The 122 µs of round trips (G-S20j) consume the CPU's
+    bandwidth edge, and most layers have one or two misses.
+  - **Shared memory bandwidth.** The PCIe copies and the CPU both read the expert stack from the same two DDR4 channels, so
+    running them at once does not add the bandwidth the plan assumed.
+- **Disposition.** Per the registration, the split does not ship. Its code (the host replica and AVX2 kernel, the split
+  kernels and the resident plumbing, with the tier-0 gates) is kept on branch `g4-decode-step4-2026-10-23`, unmerged.
+  - The tier-0 results stand: the CPU can reproduce the W4A8 expert GEMVs bit for bit.
+  - What failed is the speed premise on this box.
+  - A box with more memory channels, or a GELU the host can reproduce (which would remove one round trip), changes the
+    arithmetic; neither is in scope here.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

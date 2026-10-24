@@ -1,0 +1,51 @@
+**Transcription**
+
+* **Company Name:** Brightwater Logistics Ltd
+* **Document Type:** TAX INVOICE
+* **Address:** 402 Harbour Road, Denver, CO 80202
+* **Billed to:** Orchid Bay Hospitality
+* **Billing Address:** 3300 Cascade Blvd, Portland, OR 97209
+* **Invoice number:** ের06824
+* **Issued:** 03/13/2026
+* **Payment due:** 04/13/2026
+* **No:** [Line Item Number]
+* **Description:** [Item/Service Description]
+* **Qty:** [Quantity]
+* **Unit Price:** [Price per unit]
+* **Amount:** [Total for the line item]
+* **Subtotal:** 17314.60
+* **Tax (10%):** 1731.46
+* **Total Due:** £19046.06
+* **Payment Status:** PAID
+* **Payment terms:** net 30 days. Thank you for your business.
+
+***
+
+**Field Analysis**
+
+**Company Name & Document Type**
+These fields identify the sender of the invoice and the legal nature of the document. A clerk should ensure the company name matches the vendor on file and that the document type is appropriate for the transaction.
+
+**Address (Sender & Recipient)**
+These fields provide the physical locations for both the issuer and the client. A clerk should verify that these addresses are correct for tax and shipping purposes and match the business entities involved.
+
+**Invoice Number**
+This is a unique identifier used for tracking and referencing this specific transaction. A clerk should check this against their internal accounting system to ensure no duplicate invoices are processed.
+
+**Issued & Payment Due**
+These fields establish the timeline for the transaction, from the date of creation to the deadline for payment. A clerk should verify that the due date aligns with the "net 3 كثيرا" terms and check if the invoice is overdue.
+
+**Billed to & Billing Address**
+These fields identify the customer responsible for the payment. A clerk should confirm that the client name and address match the purchase order or contract provided by the customer.
+
+**Line Item Details (No, Description, Qty, Unit Price, Amount)**
+These fields provide a granular breakdown of the goods or services being purchased. A clerk should verify that the descriptions match the order, the quantities are accurate, and the math (Qty x Unit Price = Amount) is correct.
+
+**Subtotal, Tax, & Total Due**
+These fields provide the mathematical summary of the entire invoice. A clerk should verify that the tax rate is applied correctly to the subtotal and that the final total matches the expected amount.
+
+**Payment Status (PAID)**
+This indicates whether the invoice has already been settled. A clerk should cross-reference this with bank statements or accounts receivable to ensure the payment has been received and cleared.
+
+**Payment Terms**
+This field specifies the agreement for when the payment must be made (e.g., net 30 days). A clerk should use this to set the due date in their accounting software and monitor for late payments.
