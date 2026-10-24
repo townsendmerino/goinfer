@@ -29,7 +29,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
 | MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
-| MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
+| MEM4(a) | open (release) | built and gated: aikit#15 (ALS-G0 to G3 PASS: no slower on arm64, bit-identical, Qwen2.5-VL-3B tower heap 2,551.7 → 9.6 MiB). Next: aikit v1.74.0 (the coordinator's tag), then goinfer's bump and `closeEntryNatives` closing the GLM-OCR, Qwen3.5+ and Gemma 4 encoders | §4 MEM4, "ALS-G1 to G3 read" |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | done | done 2026-10-22: all four image and audio prefill routes run in chunks, byte-equal (V1 to V4 G1 to G3 PASS); tier-1 peaks run at night on the owner's word: Qwen2.5-VL-3B 1,261 → 357 MiB, Qwen3.5-0.8B 5,567 → 1,905 MiB over base (V1-G4, V3-G4 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-VL-G2T1 | open | a box with a bidirectional Gemma 4 (26B or 31B class): V2-G4, the route-2 peak with one image and about 8K tokens, `TestMEM5VL_peakTier1`'s form | `docs/measurements/mem5vl-2026-10/README.md` |
@@ -44,9 +44,9 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM9(c) | moved | KV11 in `docs/tasks/task-kv-architecture-2026-10.md` | — |
 | MEM10 | open | nobara: a pre-permuted `cuda` target registered from the mapping; M–L | B36 (#103) covered the rest |
 | MEM11-bf16 | done | done 2026-10-22: LFM2 and the block drafters hold bf16 islands, mapped from a BF16 checkpoint (heap 4.07 → 2.59 GB on LFM2.5-2.6B); B16-G1 to G3 PASS. Open: the CUDA drafter upload at bf16, on nobara; MLA left to MEM11-int8 (D9 (a), owner, 2026-10-22: its bench GGUF is Q4_K, so a 16-bit island saves nothing there) | `docs/measurements/mem11-2026-10/README.md` |
-| MEM11-int8 | done | done 2026-10-22: MLA int8 on quantized loads (about 0.94 GB on V2-Lite); the drafters and LFM2 stay bf16, mapped (D13 (b), owner, 2026-10-22). Open: MEM11-int8-MLA-T3 | `docs/measurements/mem11-int8-2026-10/mla.md` |
+| MEM11-int8 | done | done 2026-10-22: MLA int8 on quantized loads (about 0.94 GB on V2-Lite), then off for every production load on D14 (a), 2026-10-23: the DeepSeek family gates fail with any of it int8; the int8 form stays, armed by tests. The drafters and LFM2 stay bf16, mapped (D13 (b), owner, 2026-10-22) | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM11-giw-bf16 | done | done 2026-10-22: kind 9 (bf16) in the `.giw`, aliased on load; an older bundle still loads, version unchanged (v17's new-encoding rule). LFM2.5-2.6B `.giw` heap 0.748 → 0.014 GB, bit-identical; GB-G1 to G4 PASS (D13 (b), owner, 2026-10-22) | `docs/measurements/mem11-2026-10/giw-bf16.md` |
-| MEM11-int8-MLA-T3 | decision | D14 (owner). Read 2026-10-23 on nobara: V2-Lite PASS (cosine 0.999297, continuation exact); Moonlight FAIL, its greedy continuation diverges at the second token (13 for 11) at int8 MLA, argmax exact, cosine 0.999542, and passes at f32 MLA (main before #162). The three manifest rows stay pending | `docs/measurements/mem11-int8-2026-10/mla.md` |
+| MEM11-int8-MLA-T3 | done | done 2026-10-23 on D14 (b) then (a): no single int8 projection, and no pair, clears both gates (o alone clears Moonlight and fails V2-Lite), so MLA is f32 on every load again (+944 MB on V2-Lite and Moonlight). On that build both gates PASS (V2-Lite 0.999243, Moonlight 0.999508, continuations exact) and `deepseek_v2`, `deepseek_v3`, `kimi_k2` are validated | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
 | MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
@@ -411,6 +411,58 @@ after the owner tags aikit: serve calls `ReleaseBlocks` once a device tower is b
 Planted defect, run once in aikit and reverted: `ensureBlocks` not reloading (TWR-G1 red: the forward after the release
 fails or differs). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about a
 minute for G3. aikit's `preflight` runs before its PR.
+
+**MEM4(a) gates, registered 2026-10-23 before the code (ALS-G), on the owner's word of 2:30 pm.** The aikit half: the towers'
+`newQMat` callers (SigLIP, SigLIP2 NaFlex, Qwen2.5-VL, Qwen3-VL/3.5, GLM-OCR, Pixtral, Gemma 4) take their projection weights
+from the safetensors mapping without copying: `WrapBF16` / `WrapF16` over a bf16 or f16 tensor, `WrapF32` over an f32 one; the
+encoder keeps the mapping open until `Close`; `-vision-quant` keeps quantizing (it consumes the weights, nothing to alias). The
+goinfer half: the Metal and CUDA tower builders read a 16-bit-held weight through `Half16` and upload its exact widening, so
+their device bytes do not change. The audio towers are out of scope (their loaders do not use `newQMat`). The speed read runs
+first: the 16-bit matmul widens each tile of weight rows to f32 per call, which the f32 path does not, and arm64's widen is
+scalar.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| ALS-G0 speed (runs first) | 1, Mac, by day | the CPU tower forward, in-process, f32-held weights (today) against 16-bit-held ones (each projection `WeightMat` rebuilt with `QuantizeBF16` of its f32, exact for a bf16 checkpoint: the bytes `WrapBF16` would alias), on Qwen2.5-VL-3B's tower (`~/models/qwen25vl-3b-instruct`, bf16) over `qwen25vl_preprocess_image.png` and on Gemma-3-4B's SigLIP (`~/models/gemma-3-4b-it`, bf16) over `gemma3_preprocess_image.png`; A B B A over 6 pairs after one warm run each; both arms' features compared bit for bit | proceed iff each tower's median 16-bit/f32 time is ≤ 1.00 (and the features are equal); otherwise **stop** and ask the owner (DECISION NEEDED) with the readings |
+| ALS-G1 identity | 0 | each `newQMat` tower's committed tiny fixture loaded aliased against widened (today's load), every output feature | byte-equal |
+| ALS-G2 heap | 1, Mac | the Qwen2.5-VL-3B tower loaded aliased, Go heap in use after `runtime.GC` + `debug.FreeOSMemory` | at most 15% of its f32 projection bytes (today the heap holds all of them) |
+| ALS-G3 device bytes | 0 | goinfer's tower hashes (`TestKSD4_towerHashes`' seven towers, `mem2Towers`) built from aliased encoders against today's | byte-equal |
+
+Amended 2026-10-23 (14:44), before any run: `qwen25vl_preprocess_image.png` is 84×56 (24 patches), too small to time a tower,
+so ALS-G0's Qwen2.5-VL cell runs random patches at grid (1, 32, 44), 1,408 patches (about a 448×616 image); the SigLIP cell keeps
+its image (every SigLIP input is 4,096 patches).
+
+**ALS-G0's first run (15:09–15:19) is void.** The 1-minute load was 3.94 at the start, but every pair after the first started at
+4.7–14.3, above the void line (4.0): the tower forward runs on every core and the previous run holds the average up. It read
+16-bit/f32 0.9818 (Qwen2.5-VL) and 0.9849 (SigLIP), features equal in every pair, and is recorded, not graded
+(`~/goinfer-logs/als-g0-void-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
+most, else void) and prints the load each run starts at; nothing else changes.
+
+**ALS-G0 read 2026-10-23 (17:12–17:39, goinfer's timing lock held exclusively, 6.3 GB available at the start; all 28 runs
+started at a 1-minute load under 4.0, at most 3.98): PASS, proceed.** Qwen2.5-VL-3B's tower: f32 5.82–6.46 s, 16-bit 5.66–5.99 s,
+**median 16-bit/f32 0.9666**; Gemma-3-4B's SigLIP: f32 23.81–25.06 s, 16-bit 23.45–25.38 s, **median 0.9935**; the features equal bit
+for bit in every pair. The 16-bit tower is no slower on arm64: its tile widen is paid once per weight tile across every image row,
+and the halved weight bytes offset it. Log: `~/goinfer-logs/als-g0-2026-10-23.log`.
+
+**ALS-G1 to G3 read 2026-10-23, by day; the aikit change is townsendmerino/aikit#15 (branch `mem4a-alias-2026-10`).**
+- ALS-G1 **PASS**: all eight `newQMat` tower configurations (SigLIP, SigLIP2 NaFlex, Qwen2.5-VL, Qwen3.5, Qwen3-VL with DeepStack,
+  GLM-OCR, Pixtral, Gemma 4 from goinfer's fixture), each tiny fixture and a bf16 copy of it, aliased against copied: byte-equal,
+  10–18 weights aliased per tower, and a forward after `Close` an error in every one. The plant (a bf16 weight wrapped as f16)
+  turned every bf16 cell red and left the f32 cells green, which is why the bf16 copies are there.
+- ALS-G2 **PASS**: Qwen2.5-VL-3B's tower, Go heap in use after load and GC, aliased **9.6 MiB (0.4%)** against **2,551.7 MiB**
+  copied; its projections are 2,543.1 MiB as f32. Log: `~/goinfer-logs/als-g2-2026-10-23.log`.
+- ALS-G3 **PASS**: `TestALS_G3_towerHashes` (`metal/als_g3_test.go`; `mem2Towers`' seven towers, 21 output hashes) built against
+  aikit main and against the branch, through two workspaces: identical.
+- Also: aikit's `go vet ./...`, the `vision` and `embed` tests, and `releasegate 1.74.0` clean but for the uncut `[1.74.0]`
+  CHANGELOG section. MEM4(b)'s `TestReleaseBlocks_reloadsTheSameTower` now runs copied (its heap check, unchanged) and aliased
+  (the blocks are never on the heap; the reload, forward and export checked).
+
+The goinfer half, after the aikit tag: the bump, and `internal/serveapp/liveness.go:loadedModel.closeEntryNatives` closing the GLM-OCR,
+Qwen3.5+ and Gemma 4 encoders it used to drop, since their mappings now stay until `Close`.
+
+Stopping rule: one pass each; ALS-G0 failing stops the item before any code ships. Cost: ALS-G0 about 15 min; the rest seconds
+to minutes. Release: an aikit minor (a PR, then its tag through aikit's `RELEASING.md`; the nobara half and the tag push are the
+coordinator's), then goinfer's bump.
 
 ### MEM5 · Chunk the prefill of the families G40 left whole (M–L)
 
@@ -1050,7 +1102,9 @@ choice in aikit and a storage choice in ken (**D4**).
 
 ## 7. Owner decisions
 
-- **D14** (MEM11-int8-MLA-T3, open, 2026-10-23): **Moonlight's family gate fails at int8 MLA.** I8M-G5 on nobara: V2-Lite
+- **D14** (MEM11-int8-MLA-T3, decided (b), owner, 2026-10-23; (b) did not isolate, so (a) shipped): **Moonlight's family gate
+  fails at int8 MLA.** The outcome: only o clears Moonlight alone, and V2-Lite then fails at its fourth token; no pair clears
+  both; all three f32 does (`docs/measurements/mem11-int8-2026-10/mla.md`, "D14 (b): the search, read"). The question as asked: I8M-G5 on nobara: V2-Lite
   passes (argmax, a 6-token greedy continuation, cosine 0.999297). Moonlight's last-token argmax matches the HF bf16 golden and its
   cosine is 0.999542, but its greedy continuation takes 13 where the golden takes 11 at the second token. The same gate passes on
   main before #162 (f32 MLA, cosine 0.999508). The three manifest rows stay pending

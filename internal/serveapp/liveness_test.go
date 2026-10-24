@@ -67,16 +67,55 @@ func TestRetainRelease(t *testing.T) {
 	}
 }
 
-// TestCloseEntryNatives_dropsGemma4Enc is N-32 (docs/audit-2026-09-10.md): closeEntryNatives nils
-// venc/qwenEnc/vproj and must also drop gemma4Enc, or unloading a served Gemma 4 vision model leaves its
-// encoder (weights, no native Close of its own, same shape as vproj) referenced from the closed entry,
-// retaining that memory past unload. gemma4Enc has no Close method, so this only observes that the reference
-// is dropped.
+// TestCloseEntryNatives_dropsGemma4Enc is N-32 (docs/audit-2026-09-10.md): closeEntryNatives must drop gemma4Enc, or
+// unloading a served Gemma 4 vision model leaves its encoder referenced from the closed entry, retaining that memory past
+// unload. Closing a zero encoder must also be safe.
 func TestCloseEntryNatives_dropsGemma4Enc(t *testing.T) {
 	lm := &loadedModel{gemma4Enc: &vision.Gemma4Encoder{}}
 	lm.closeEntryNatives()
 	if lm.gemma4Enc != nil {
 		t.Error("gemma4Enc still referenced after closeEntryNatives — its weight memory is not " +
 			"eligible for GC after unload")
+	}
+}
+
+// countingG4Tower is a Gemma 4 device tower that counts its Close calls.
+type countingG4Tower struct{ closes *int }
+
+func (countingG4Tower) Name() string                                      { return "counting" }
+func (countingG4Tower) Hidden(p []float32, _ [][2]int) ([]float32, error) { return p, nil }
+func (c countingG4Tower) Close() error                                    { *c.closes++; return nil }
+
+// TestCloseEntryNatives_sharedVisionTowerClosesOnLast: the startup vision tower is the same object on every startup
+// entry (an adapter and its base, say), so unloading one entry must leave it open for the others and the last unload
+// must close it, exactly once. An entry that shares it with nobody closes it on its own unload.
+func TestCloseEntryNatives_sharedVisionTowerClosesOnLast(t *testing.T) {
+	var closes int
+	tower := countingG4Tower{&closes}
+	share := &visionShare{n: 2}
+	base := &loadedModel{gemma4Enc: &vision.Gemma4Encoder{}, gemma4Tower: tower, visionShare: share}
+	adapter := &loadedModel{gemma4Enc: base.gemma4Enc, gemma4Tower: tower, visionShare: share}
+
+	adapter.closeEntryNatives()
+	if closes != 0 {
+		t.Fatalf("unloading one of two holders closed the shared tower (%d closes)", closes)
+	}
+	if adapter.gemma4Tower != nil || adapter.gemma4Enc != nil {
+		t.Error("the unloaded entry still references the shared tower")
+	}
+	if base.gemma4Tower == nil {
+		t.Fatal("the remaining holder lost its tower")
+	}
+	base.closeEntryNatives()
+	base.closeEntryNatives() // idempotent
+	if closes != 1 {
+		t.Errorf("the last holder's unload closed the shared tower %d times, want 1", closes)
+	}
+
+	closes = 0
+	alone := &loadedModel{gemma4Tower: tower}
+	alone.closeEntryNatives()
+	if closes != 1 {
+		t.Errorf("an unshared entry's unload closed its tower %d times, want 1", closes)
 	}
 }

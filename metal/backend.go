@@ -801,7 +801,8 @@ func metalFastPrefillFloorFor(v string) int {
 // attention_prefill, docs/completed/task-prefill-gap.md §4) runs in place of the exact scalar kernel. Default on
 // (docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md §5); GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill (which
 // also covers metalFastPrefillEnabled) opts back to the exact kernel. The fused kernel needs hd%8==0 && hd<=128 (ATTN_MAXHD in
-// prefill.go); PrefillLast uses the exact kernel outside that range regardless of this flag.
+// prefill.go); head dims 256 and 512 take attention_prefill_steel_split under the same flag (exactAttnLayer), and every other
+// head dim the exact kernel regardless of it.
 //
 //	GOINFER_METAL_FUSED_ATTENTION  1 | true | on   on
 //	                               0 | false | off  off (explicit opt-out; use --exact-prefill on the server)

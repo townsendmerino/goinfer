@@ -149,8 +149,8 @@ type mlaWeights struct {
 	kvBProj      []float32 // [numHeads*(qk_nope+v_head_dim), kv_lora_rank]
 	oProj        []float32 // [hidden, numHeads*v_head_dim]
 	gProj        []float32 // [numHeads] (head_wise) or [numHeads*v_head_dim] (element_wise); nil ⇒ no gate (every DeepSeek family)
-	// qAQ, qBQ, qQ, kvAQ and oQ are those projections as per-row int8 on a quantized load (mlaProjInt8, quantizeProjections),
-	// their f32 slices then nil.
+	// qAQ, qBQ, qQ, kvAQ and oQ are those projections as per-row int8 on a load armed for it (mlaProjInt8, quantizeProjections)
+	// or read from a .giw that carries them, their f32 slices then nil.
 	qAQ, qBQ, qQ, kvAQ, oQ linalg.WeightMat
 }
 

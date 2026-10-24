@@ -1,0 +1,32 @@
+cell 1 E-drafter (image; --ctx 16384 -drafter /home/francis/models/gemma4-26b-dflash) start 16:08:51 load 2.85 mem avail 55.3 GB gpu 402 MiB
+cell 1 E-drafter: serve did not come up
+  swap guard: baseline 9.18 GB (system swap)
+  swap guard: baseline 0.00 GB (server swap)
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+  [resident] BuildResident declined (ok=false err=resident path declined: cuda: expert cache (C′) cannot fit its MINIMUM: top-8 routed experts across 30 MoE layers need 0.88 GB of slots, but only 4.09 GB is free (3.66 GB reserved for a companion attach, --drafter) — 0 slots/layer fit. Free VRAM, lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright) — continuing on the CPU/staged path
+  --drafter "/home/francis/models/gemma4-26b-dflash": this model has no resident GPU decode path that can host a block drafter. Block drafting needs a resident GPU backend (--backend cuda) and a model that actually resolved to it — check the startup banner for a residency decline
+cell 2 F-text16384-drafter (text; --ctx 16384 -drafter /home/francis/models/gemma4-26b-dflash) start 16:09:33 load 2.09 mem avail 55.0 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+  cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3904 MB free); a follow-up may now diverge 1024 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 2.8 GB free (1.1 GB of 3.9 GB total reserved for a companion attach, --drafter) — capping to 22 (2.3 GB)
+  2026/10/23 16:09:52 block drafter attached to "gemma4-26b-int4.giw": 5 layers, hidden 2816, block 16, 6 taps [1 6 11 17 22 27] — greedy requests take the speculative path, sampled ones fall back
+    decode path: cuda-resident (int4)
+    context: 16384 tokens (--ctx; model maximum 262144) · KV f32 (requested auto: the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 29.4 GB, 28.2 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384)
+    features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output · speculative: block drafter
+  gpu after load: 6747 MiB
+  cell 2 F-text16384-drafter: ttft 2.1s turn 56.3s tokens 1500 decode 27.62 tok/s chars 6483
+  gpu after turn: 6747 MiB
+  expert cache: 22 slots/layer; this turn 238664 hits, 123571 misses (65.9% hit)
+cell 3 C2-text16384 (text; --ctx 16384) start 16:11:15 load 2.56 mem avail 55.2 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+  cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3904 MB free); a follow-up may now diverge 1024 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.9 GB free — capping to 33 (3.4 GB)
+    decode path: cuda-resident (int4)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 29.8 GB, 28.5 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384)
+  gpu after load: 7321 MiB
+  cell 3 C2-text16384: ttft 2.1s turn 48.1s tokens 1500 decode 32.55 tok/s chars 6483
+  gpu after turn: 7321 MiB
+  expert cache: 33 slots/layer; this turn 284420 hits, 77815 misses (78.5% hit)

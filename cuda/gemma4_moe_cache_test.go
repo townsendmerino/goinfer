@@ -147,3 +147,78 @@ func TestGemma4MoE_cacheReuse_scaled(t *testing.T) {
 	t.Setenv("GOINFER_MOE_CACHE_SLOTS", "12")
 	cacheBitExact(t, dir)
 }
+
+// TestGemma4MoE_cacheResizeBitExact_tiny is G-S20e's resize gate: serve shrinks the C′ cache before a tower encode and grows it
+// after, between forwards of one model, so logits after each resize must stay bit-identical to the fully-resident run. The
+// tiny fixture's slot stacks each round to one 2 MiB quantum, so free VRAM cannot pick an intermediate count here: the test
+// moves the asked-for ceiling instead (4 of nE=4 → 2 = topK → 4) and checks the reserve arithmetic only by its refusal.
+func TestGemma4MoE_cacheResizeBitExact_tiny(t *testing.T) {
+	const dir = "../testdata/gemma4-moe-tiny"
+	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 128, 9, 250, 17, 60, 200}
+	ref := func() [][]float32 {
+		mc, rf := loadG4MoECache(t, dir, false)
+		defer mc.Close()
+		out := make([][]float32, len(prompt))
+		for i, tok := range prompt {
+			l, err := rf.Forward(mc.EmbedResidentForTest(tok), i)
+			if err != nil {
+				t.Fatalf("resident forward pos %d: %v", i, err)
+			}
+			out[i] = append([]float32(nil), l...)
+		}
+		return out
+	}()
+	t.Setenv("GOINFER_MOE_CACHE_SLOTS", "4")
+	mc, rf := loadG4MoECache(t, dir, true)
+	defer mc.Close()
+	r := rf.(*cudaResident)
+	if r.cacheSlots != 4 {
+		t.Fatalf("the cache was built with %d slots, want 4", r.cacheSlots)
+	}
+	resize := func(asked, want int) {
+		t.Helper()
+		before, _ := mc.ExpertCacheStats()
+		r.cacheSlotsAsked = asked
+		got, err := mc.ResizeExpertCache(0)
+		if err != nil {
+			t.Fatalf("resize to %d: %v", asked, err)
+		}
+		after, _ := mc.ExpertCacheStats()
+		if got != want || after.Slots != want {
+			t.Fatalf("resize to %d: %d slots (stats say %d), want %d", asked, got, after.Slots, want)
+		}
+		if after.Hits != before.Hits || after.Misses != before.Misses {
+			t.Fatalf("a resize changed the counters: %+v → %+v", before, after)
+		}
+	}
+	for i, tok := range prompt {
+		switch i {
+		case 5:
+			resize(2, 2)
+		case 10:
+			resize(4, 4)
+		case 13:
+			// A reserve no card holds must be refused, leaving the cache as it was.
+			if _, err := mc.ResizeExpertCache(1 << 50); err == nil {
+				t.Fatal("a resize that cannot keep top-k slots was not refused")
+			}
+			if s, _ := mc.ExpertCacheStats(); s.Slots != 4 {
+				t.Fatalf("a refused resize moved the cache to %d slots", s.Slots)
+			}
+		}
+		l, err := rf.Forward(mc.EmbedResidentForTest(tok), i)
+		if err != nil {
+			t.Fatalf("cached forward pos %d: %v", i, err)
+		}
+		for j := range l {
+			if l[j] != ref[i][j] {
+				t.Fatalf("pos %d logit %d: %.9g after resizes, %.9g fully resident", i, j, l[j], ref[i][j])
+			}
+		}
+	}
+	s, _ := mc.ExpertCacheStats()
+	if s.Misses == 0 {
+		t.Fatal("no expert was ever copied into a slot: the cache path did not run")
+	}
+	t.Logf("%d positions bit-identical across 4 → 2 → 4 slots and a refused resize (%d hits, %d misses)", len(prompt), s.Hits, s.Misses)
+}

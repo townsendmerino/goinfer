@@ -1,0 +1,39 @@
+Invoice No: 2026/7228
+Date: 4 Sep 2026
+Due: 4 Oct 2026
+
+From: Summit Peak Outfitters
+Address: 88 Quay Street, Berlin 10115
+
+Bill To: Pioneer Ridge School District
+Address: 9 Foundry Way, Denver, CO 80202
+
+No: 1
+Description: Cotton napkins, set of 12
+Qty: 6
+Unit Price: 860.68
+Amount: 5164.08
+
+No: 2
+Description: Ink cartridge, black
+Qty: 1
+Unit Price: 496.72
+Amount: 496.72
+
+No: 3
+Description: Pastry box, assorted
+Qty: 10
+Unit Price: 858.00
+Amount: 8580.00
+
+No: 4
+Description: Oak shelf bracket
+Qty: 5
+Unit Price: 476.00
+Amount: 2380.00
+
+Subtotal: 16620.80
+Tax (0%): 0.00
+Total Due: $16620.80
+
+Payment terms: net 30 days.

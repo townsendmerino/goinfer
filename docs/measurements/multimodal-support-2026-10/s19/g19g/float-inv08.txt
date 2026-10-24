@@ -1,0 +1,42 @@
+Tamarack Surveying LLC: TAX INVOICE
+Address: 56 Orchard Close, Boise, ID 83702
+Billed to: Sable Marine Services
+Billed to Address: 9 Foundry Way, Berlin 10115
+Invoice number: 66845
+Issued: 08/11/2026
+Payment due: 09/11/2026
+
+Line Item 1:
+No: 1
+Description: Steel angle 40x40x3m
+Qty: 4
+Unit Price: 784.46
+Amount: 3137.84
+
+Line Item 2:
+No: 2
+Description: Laminated menu cards
+Qty: 1
+Unit Price: 393.45
+Amount: 393.45
+
+Line Item 3:
+No: 3
+Description: Binding spine strips
+Qty: 1
+Unit Price: 72.44
+Amount: 72.44
+
+Line Item 4:
+No: 4
+Description: Courier fee
+Qty: 1
+Unit Price: 534.71
+Amount: 534.71
+
+Totals:
+Subtotal: 4138.44
+Tax (5%): 206.92
+Total Due: $4345.36
+
+Payment terms: net 30 days. Thank you for your business.

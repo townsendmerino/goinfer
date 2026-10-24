@@ -1,0 +1,22 @@
+cell 1 new (image; --ctx 16384) start 16:21:47 load 2.47 mem avail 55.2 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+  cuda: windowed KV: 256 more positions from free VRAM (100 MB of 3904 MB free); a follow-up may now diverge 704 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.4 GB free (2.6 GB of 4.0 GB total reserved for a companion attach, --drafter) — capping to 8 (0.9 GB)
+    decode path: cuda-resident (int4)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 29.8 GB, 28.5 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA, loaded for each encode and released after it) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  gpu after load: 7221 MiB
+  cell 1 new inv01.png: ttft 14.1s turn 48.0s tokens 1073 decode 31.61 tok/s chars 4368
+  cell 1 new inv02.png: ttft 14.2s turn 35.3s tokens 683 decode 32.31 tok/s chars 2836
+  cell 1 new inv03.png: ttft 14.2s turn 42.5s tokens 901 decode 31.72 tok/s chars 3531
+  gpu after turn: 7221 MiB
+  vision: encoded a 33222-byte image in 3.521s (sha256 cf797074); a resend of it will skip this
+  vision: decoded 1073 tokens on the resident path (prefill resident)
+  expert cache: 33 slots/layer; this turn 204132 hits, 58682 misses (77.7% hit)
+  vision: encoded a 45996-byte image in 3.539s (sha256 bdd2e4ef); a resend of it will skip this
+  vision: decoded 683 tokens on the resident path (prefill resident)
+  expert cache: 33 slots/layer; this turn 131707 hits, 37493 misses (77.8% hit)
+  vision: encoded a 33197-byte image in 3.565s (sha256 0fccbd62); a resend of it will skip this
+  vision: decoded 901 tokens on the resident path (prefill resident)
+  expert cache: 33 slots/layer; this turn 171320 hits, 50198 misses (77.3% hit)
