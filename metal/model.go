@@ -200,7 +200,7 @@ func (r *resident) recurrentPrefillOK() bool {
 	case r.mamba != nil:
 		// KS-D8 (prefill_mamba.go): the int8 GEMMs read K in 32-wide slabs, and mamba_conv_seq holds the window in 8 registers.
 		p := r.mamba
-		if !mambaPrefillOn || r.dnet != nil || r.postOnly || p.dConv > 8 || r.H%32 != 0 || p.dInner%32 != 0 {
+		if !mambaPrefillOn || r.dnet != nil || r.postOnly || p.dConv < 2 || p.dConv > 8 || r.H%32 != 0 || p.dInner%32 != 0 {
 			return false
 		}
 	case r.dnet == nil:
@@ -1483,9 +1483,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.mamba != nil && dnetOK {
 		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatSSM })
 	}
-	if r.nonGatedMLP && !slices.ContainsFunc(r.layers, func(L residLayer) bool { return L.downBiasSet }) {
+	if r.nonGatedMLP && !slices.ContainsFunc(m.Weights().Layers, func(lw decoder.LayerWeights) bool { return len(lw.DownBias) > 0 }) {
 		// KS-D8: the pass's non-gated MLP takes a relu² activation and no down-projection bias (another activation stays
-		// missing on its own feature).
+		// missing on its own feature). This runs before r.layers is built, so it reads the weights, not residLayer.downBiasSet.
 		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool {
 			return f == decoder.FeatNonGatedMLP || f == decoder.FeatNonGatedReLU2
 		})

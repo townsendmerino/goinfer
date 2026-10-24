@@ -1553,6 +1553,24 @@ defect in the pass. KS-D8 ships with D8-G4's 5.14×. Log: `~/goinfer-logs/ksd8-g
 After merging main at 922054f3 (KS-O1's q4k-lane GEMVs touch the same files): D8-G1, D8-G2 and D8-G5 PASS again, and D8-G6 against a
 fresh base dump of 922054f3 reads 0 logits differ on llama-tiny, qwen35-tiny and the 1.5B's Metal `.giw`.
 
+**After the review of #222 (15:15), registered before the re-runs.**
+- **The down-bias decline was a no-op, fixed.** `buildResident` read `residLayer.downBiasSet` before `r.layers` was built, so
+  the check scanned an empty slice and the non-gated MLP features were always admitted. A non-gated MLP with a down-projection bias
+  would have taken the pass, which has no down-bias epilogue. The check now reads the weights (`LayerWeights.DownBias`).
+  `TestKSD8_downBiasDeclines` builds nemotron-tiny as shipped (admitted) and again with one layer's `DownBias` set (it must decline);
+  it is run once against the unfixed check, where it must be red.
+- **Not a defect: the f16 conversion past `M·dInner`.** aikit/gpu's Metal `Encoder.Dispatch` encodes `dispatchThreads` with the
+  exact element count, so its last threadgroup is partial and `f32_to_f16` (indexed by `thread_position_in_grid`) never reads past
+  `gated` or writes `gatedH`'s pad rows. D8-G2 still gains odd lengths (17, 33, 101), where `M·dInner` is off a multiple of 256.
+- **D8-G2 gains a continuation:** after each prompt, both paths decode 4 more tokens from position M, and the last is graded
+  against the CPU reference over all M+4 tokens on the same non-inferiority bar. A wrong window, state or K/V left by the pass
+  would show there.
+- `p.dConv < 2` now declines the pass too (the conv kernel indexes `w[K-2]`).
+- `TestKSD8_9BFidelity` (the first D8-G3 instrument, batched against sequential) is retired; D8-G3's instrument is
+  `TestKSD8_9BAgainstReference`. `TestKSD8_9BSpeed` refuses to run outside the timing lock and fails under D8-G4's bar.
+- Re-runs: D8-G1, D8-G2 (extended), D8-G5, the new decline test (and its red run against the old check), and D8-G6 against
+  the 922054f3 base dump, since the admission change could touch another non-gated family.
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).

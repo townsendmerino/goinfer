@@ -141,10 +141,13 @@ func TestKSD8_seqKernelsMatchDecode(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[D8-G1] 12 cells (2 libraries × 2 shapes × M = 1, 7, 64): %d values differ in all\n", total)
 }
 
-// TestKSD8_tinyFidelity is D8-G2: nemotron-tiny at int4, prompts of 16, 48 and 100 seeded token ids (8 each), the last
-// position's logits from the sequential path (Forward per token), the batched pass (PrefillLast) and a CPU f32 reference. Per
-// prompt length, the pass is non-inferior to the sequential path against the reference: its mean KL at most the sequential
-// path's + 0.005 nats, and its top-1 agreement at least the sequential path's less one prompt. The pass must be taken.
+// TestKSD8_tinyFidelity is D8-G2: nemotron-tiny at int4, prompts of 16, 17, 33, 48, 100 and 101 seeded token ids (8 each; the
+// odd lengths leave M·dInner off a multiple of 256), the last position's logits from the sequential path (Forward per token),
+// the batched pass (PrefillLast) and a CPU f32 reference; then each path decodes 4 more tokens (Forward from position M), which
+// reads the conv window, the SSM state and the K/V the prompt left, and the last of those is read against the reference over
+// all M+4 tokens. Per prompt length, at the prompt's end and after the continuation, the pass is non-inferior to the sequential
+// path against the reference: its mean KL at most the sequential path's + 0.005 nats, and its top-1 agreement at least the
+// sequential path's less one prompt. The pass must be taken.
 func TestKSD8_tinyFidelity(t *testing.T) {
 	const path = "../testdata/nemotron-tiny"
 	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: 256})
@@ -166,45 +169,110 @@ func TestKSD8_tinyFidelity(t *testing.T) {
 	}
 	defer cpu.Close()
 	rng := rand.New(rand.NewSource(67))
-	for _, M := range []int{16, 48, 100} {
-		var klSeq, klPass float64
-		topSeq, topPass := 0, 0
+	const cont = 4
+	type tally struct {
+		klSeq, klPass   float64
+		topSeq, topPass int
+	}
+	add := func(a *tally, ref, seq, pass []float32) {
+		a.klSeq += klLogits(ref, seq) / 8
+		a.klPass += klLogits(ref, pass) / 8
+		if argmaxF(seq) == argmaxF(ref) {
+			a.topSeq++
+		}
+		if argmaxF(pass) == argmaxF(ref) {
+			a.topPass++
+		}
+	}
+	grade := func(M int, what string, a tally) {
+		ok := a.klPass <= a.klSeq+0.005 && a.topPass >= a.topSeq-1
+		fmt.Fprintf(os.Stderr, "[D8-G2] M=%d %s: mean KL to the CPU f32 reference, sequential %.4e, pass %.4e; top-1 agreement sequential %d/8, pass %d/8: %v\n",
+			M, what, a.klSeq, a.klPass, a.topSeq, a.topPass, map[bool]string{true: "PASS", false: "FAIL"}[ok])
+		if !ok {
+			t.Errorf("M=%d %s: the pass is inferior to the sequential path against the reference", M, what)
+		}
+	}
+	for _, M := range []int{16, 17, 33, 48, 100, 101} {
+		var end, after tally
 		for range 8 {
-			ids := make([]int, M)
+			ids := make([]int, M+cont)
 			for i := range ids {
 				ids[i] = rng.Intn(r.V)
 			}
 			r.resetRecurrent()
 			var seq []float32
-			for i, id := range ids {
+			for i, id := range ids[:M] {
 				seq = r.Forward(id, i)
 			}
-			seq = slices.Clone(seq)
+			seqEnd := slices.Clone(seq)
+			for i := M; i < M+cont; i++ {
+				seq = r.Forward(ids[i], i)
+			}
+			seqAfter := slices.Clone(seq)
 			r.resetRecurrent()
-			pass := r.PrefillLast(getEmbs(r, ids), 0)
+			pass := r.PrefillLast(getEmbs(r, ids[:M]), 0)
 			if pass == nil {
 				t.Fatalf("M=%d: the pass returned no logits: %v", M, r.takeExecErr())
 			}
-			pass = slices.Clone(pass)
-			ref, err := cpu.PrefillLogitsForTest(context.Background(), ids, cpu.NewCache(M))
+			passEnd := slices.Clone(pass)
+			for i := M; i < M+cont; i++ {
+				pass = r.Forward(ids[i], i)
+			}
+			passAfter := slices.Clone(pass)
+			refEnd, err := cpu.PrefillLogitsForTest(context.Background(), ids[:M], cpu.NewCache(M))
 			if err != nil {
 				t.Fatalf("cpu reference: %v", err)
 			}
-			klSeq += klLogits(ref, seq) / 8
-			klPass += klLogits(ref, pass) / 8
-			if argmaxF(seq) == argmaxF(ref) {
-				topSeq++
+			refAfter, err := cpu.PrefillLogitsForTest(context.Background(), ids, cpu.NewCache(M+cont))
+			if err != nil {
+				t.Fatalf("cpu reference: %v", err)
 			}
-			if argmaxF(pass) == argmaxF(ref) {
-				topPass++
-			}
+			add(&end, refEnd, seqEnd, passEnd)
+			add(&after, refAfter, seqAfter, passAfter)
 		}
-		ok := klPass <= klSeq+0.005 && topPass >= topSeq-1
-		fmt.Fprintf(os.Stderr, "[D8-G2] M=%d: mean KL to the CPU f32 reference, sequential %.4e, pass %.4e; top-1 agreement sequential %d/8, pass %d/8: %v\n",
-			M, klSeq, klPass, topSeq, topPass, map[bool]string{true: "PASS", false: "FAIL"}[ok])
-		if !ok {
-			t.Errorf("M=%d: the pass is inferior to the sequential path against the reference", M)
+		grade(M, "prompt end", end)
+		grade(M, fmt.Sprintf("after %d decode steps", cont), after)
+	}
+}
+
+// TestKSD8_downBiasDeclines: a non-gated MLP whose down projection carries a bias is not admitted to the batched pass, which has
+// no down-bias epilogue. nemotron-tiny is admitted as it ships; the same model with one layer's DownBias set is not. The bias is
+// set after Load and before buildResident, where the admission check runs.
+func TestKSD8_downBiasDeclines(t *testing.T) {
+	const path = "../testdata/nemotron-tiny"
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: 256})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("resident: %v", err)
+	}
+	if !r.prefillOK || !r.nonGatedMLP {
+		t.Fatalf("nemotron-tiny as shipped: prefillOK %v, nonGatedMLP %v; want both", r.prefillOK, r.nonGatedMLP)
+	}
+	r.Close()
+	set := false
+	for l := range m.Weights().Layers {
+		lw := &m.Weights().Layers[l]
+		if _, hasFFN := m.ResidentLayerOps(l); hasFFN {
+			lw.DownBias = make([]float32, lw.DownProj.Rows())
+			lw.DownBias[0] = 1
+			set = true
+			break
 		}
+	}
+	if !set {
+		t.Fatal("nemotron-tiny has no dense FFN layer to give a down bias")
+	}
+	r, err = buildResident(m)
+	if err != nil {
+		t.Fatalf("resident with a down bias: %v", err)
+	}
+	defer r.Close()
+	if r.prefillOK {
+		t.Errorf("a non-gated MLP with a down-projection bias was admitted to the batched pass")
 	}
 }
 
@@ -278,57 +346,15 @@ func ksd8Ids(k, n, V int) []int {
 	return ids
 }
 
-// TestKSD8_9BFidelity is D8-G3: the 9B, 8 prompts of 512 seeded token ids, the last position's logits from the batched pass
-// against the sequential path (no f32 reference fits this box). PASS iff top-1 agrees on at least 7 of 8 and the mean symmetric
-// KL ≤ 0.05 nats; 6 of 8 or a KL in (0.05, 0.10]: PARK; worse: FAIL. GOINFER_HEAVY_TESTS=1.
-func TestKSD8_9BFidelity(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the 9B)")
-	}
-	m, r := ksd8Load9B(t)
-	defer m.Close()
-	agree, klSum := 0, 0.0
-	for k := range 8 {
-		ids := ksd8Ids(k, 512, r.V)
-		r.resetRecurrent()
-		var seq []float32
-		for i, id := range ids {
-			seq = r.Forward(id, i)
-		}
-		seq = slices.Clone(seq)
-		r.resetRecurrent()
-		pass := r.PrefillLast(getEmbs(r, ids), 0)
-		if pass == nil {
-			t.Fatalf("prompt %d: the pass returned no logits: %v", k, r.takeExecErr())
-		}
-		pass = slices.Clone(pass)
-		kl := (klLogits(seq, pass) + klLogits(pass, seq)) / 2
-		klSum += kl
-		if argmaxF(seq) == argmaxF(pass) {
-			agree++
-		}
-		fmt.Fprintf(os.Stderr, "[D8-G3] prompt %d: top-1 sequential %d pass %d, symmetric KL %.4e, cosine %.6f\n", k, argmaxF(seq), argmaxF(pass), kl, cosF(seq, pass))
-	}
-	mean := klSum / 8
-	verdict := "FAIL"
-	switch {
-	case agree >= 7 && mean <= 0.05:
-		verdict = "PASS"
-	case agree >= 6 && mean <= 0.10:
-		verdict = "PARK"
-	}
-	fmt.Fprintf(os.Stderr, "[D8-G3] top-1 agrees on %d of 8, mean symmetric KL %.4e: %s\n", agree, mean, verdict)
-	if verdict == "FAIL" {
-		t.Errorf("the batched pass is not near the sequential path on the 9B")
-	}
-}
-
 // TestKSD8_9BSpeed is D8-G4: the 9B, a 512-token prompt's time to the first token (all positions through, logits of the
 // last), batched against sequential, A B B A over 2 pairs after one warm run of each, each run's start load printed. A timed
-// run: hold the timing lock (GOINFER_KSD8_TIMING=1).
+// run: it refuses to run outside the timing lock (GOINFER_KSD8_TIMING=1), and fails under the bar (median speedup < 2×).
 func TestKSD8_9BSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSD8_TIMING") == "" {
 		t.Skip("set GOINFER_KSD8_TIMING=1 (a timed run under the timing lock)")
+	}
+	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
+		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
 	}
 	m, r := ksd8Load9B(t)
 	defer m.Close()
@@ -365,6 +391,9 @@ func TestKSD8_9BSpeed(t *testing.T) {
 	}
 	med := (speedups[0] + speedups[1]) / 2
 	fmt.Fprintf(os.Stderr, "[D8-G4] median speedup %.2fx: %s\n", med, map[bool]string{true: "SHIP", false: "PARK"}[med >= 2])
+	if med < 2 {
+		t.Errorf("D8-G4 under its bar: median speedup %.2fx < 2x", med)
+	}
 }
 
 // TestKSD8_writeRefIDs writes D8-G3's 8 prompts (ksd8Ids at the 9B's vocabulary) as a JSON list to GOINFER_KSD8_IDS_OUT, for the
