@@ -36,6 +36,24 @@ func ReadTask(pid int) (TaskVM, bool) { return readTask(pid) }
 // that are not Apple's, and once callers system-wide pass 2 to 10 requests in a second it serves the last fresh reply.
 func Read() (r Reading, ok bool) { return read() }
 
+// CPUTicks is the machine's CPU time summed over its cores since boot, in the kernel's ticks: Busy counts user, nice and system time
+// (on Linux also irq, softirq and steal), Total adds idle (on Linux also iowait). On macOS each underlying count is 32 bits and
+// wraps.
+type CPUTicks struct{ Busy, Total uint64 }
+
+// ReadCPU samples CPUTicks now; ok is false where this platform has none or the query failed. On macOS it is
+// host_statistics64(HOST_CPU_LOAD_INFO), which reads fresh at a few samples a second.
+func ReadCPU() (CPUTicks, bool) { return readCPU() }
+
+// BusyCores is the average number of busy cores from sample a to the later sample b on a machine with cores cores; ok is false
+// when no tick passed between them or a count wrapped.
+func BusyCores(a, b CPUTicks, cores int) (float64, bool) {
+	if b.Total <= a.Total || b.Busy < a.Busy {
+		return 0, false
+	}
+	return float64(b.Busy-a.Busy) / float64(b.Total-a.Total) * float64(cores), true
+}
+
 // Available is Read's Available, or 0 when there is no reading.
 func Available() int64 {
 	r, ok := Read()

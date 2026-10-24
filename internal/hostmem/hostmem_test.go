@@ -3,6 +3,7 @@ package hostmem
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -99,6 +100,46 @@ func TestRead_live(t *testing.T) {
 		t.Fatalf("implausible reading %+v", r)
 	}
 	t.Logf("%+v", r)
+}
+
+func TestBusyCores(t *testing.T) {
+	a := CPUTicks{Busy: 100, Total: 1000}
+	if got, ok := BusyCores(a, CPUTicks{Busy: 500, Total: 1800}, 8); !ok || got != 4 {
+		t.Errorf("400 busy of 800 ticks on 8 cores: %v, %v; want 4, true", got, ok)
+	}
+	for _, b := range []CPUTicks{{Busy: 100, Total: 1000}, {Busy: 50, Total: 1800}, {Busy: 500, Total: 900}} {
+		if _, ok := BusyCores(a, b, 8); ok {
+			t.Errorf("BusyCores(%v, %v) ok; want not ok (no tick passed, or a count went back)", a, b)
+		}
+	}
+}
+
+// TestReadCPU_live spins two goroutines for 400 ms and reads at least 1.5 busy cores over them (the rest of the machine only adds).
+func TestReadCPU_live(t *testing.T) {
+	a, ok := ReadCPU()
+	if !ok {
+		t.Skip("no CPU reading on this platform")
+	}
+	stop := time.Now().Add(400 * time.Millisecond)
+	done := make(chan struct{})
+	for range 2 {
+		go func() {
+			for time.Now().Before(stop) {
+			}
+			done <- struct{}{}
+		}()
+	}
+	<-done
+	<-done
+	b, ok := ReadCPU()
+	if !ok {
+		t.Fatal("second CPU reading failed")
+	}
+	got, ok := BusyCores(a, b, runtime.NumCPU())
+	if !ok || got < 1.5 || got > float64(runtime.NumCPU())+0.01 {
+		t.Fatalf("busy cores over two spinning goroutines: %v, %v (ticks %+v → %+v)", got, ok, a, b)
+	}
+	t.Logf("%.2f busy cores", got)
 }
 
 func TestReadWithOracle_live(t *testing.T) {
