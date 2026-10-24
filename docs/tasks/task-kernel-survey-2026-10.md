@@ -49,7 +49,7 @@
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
 | KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
-| KS-D2b | open | Mac: admit steel at head dim 96 after Phi-3 (int4) passes set A (its CPU references first); 80 when a model at it is on disk | — |
+| KS-D2b | blocked | 2026-10-24: Phi-3 at int4 is not Metal-resident (its activation outliers, H2), and on Metal it runs only the q4k lane, which has no batched prefill; no other head-dim-96 model is on this Mac. Reopens with a Metal-resident model at 96 (or 80) | survey, "KS-D2b read" |
 | KS-D4 | done | done 2026-10-23 (w32): the EmbeddingGemma 2 encoder and the Gemma 4 vision and audio towers run their GEMMs on `tower_gemm_w32`, byte-identical to aikit's (D4-G1, G2); the E4B vision tower 1.61× faster, median 0.6192, 10 of 10 (D4-G3 SHIP). Open: w16 weights and the fused attention, each under the tower gate | survey, "KS-D4 read" |
 | KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
@@ -92,7 +92,8 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2). Francis, 2026-10-24: decide after KS-C4 and KS-C5 read (KS-C1 (a)+(b) shipped, 22.3 → 33.0 tok/s) | — |
+| KS-O1 | decision | Metal: O1-G7 **KILL** 2026-10-24. Phi-3 q4k 0.9809 (10 of 10, misses ≤ 0.98); the 1.5B 1.0183 (0 of 10). G1–G4 and G6 PASS: KL to the file 0.7638 of int8; Phi-3 −375 MB on the device. Code parked on `ks-o1-native-2026-10-24`, aikit#18 unmerged. Owner: park, or one registered retry with R per shape | survey, "KS-O1 read" |
+| KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
@@ -624,6 +625,176 @@ C1-G3 (08:39–08:44, the lock held exclusively; not timed): G-Q2 on the rows ke
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 
+**KS-O1 on Metal: gates, registered 2026-10-24 before any code (O1-G), on the owner's word of 10:22 am (build native Q5_K/Q6_K
+for the GPU q4k lanes, Metal first).** The build:
+- **Kernels:** `gemv_q5k_f32_rows<R>` and `gemv_q6k_f32_rows<R>` (plain, residual, bias), their batched-step twins in
+  `metal/batch_rows.go`, and a native Q6_K head (`gemv_q6kf32_head` and its block-argmax twin) beside `gemv_w8f32_head`. Q5_K
+  takes `q4k_rows_acc`'s lane map (8 lanes a super-block, 4 in flight, one `uint4` of quants a lane) plus the matching 16 bytes of
+  `qh`. Q6_K's 210-byte block is not word-aligned, so it is uploaded split into planes of the same total size (`ql`, `qh`, scales,
+  `d`). Lane k of a block takes half k/4 and elements 8·(k mod 4)…+7 of each of its four 32-element groups.
+- **Data:** the raw blocks come from the GGUF mapping when the resident is built. The CPU copy stays int8, as it is now, so the CPU
+  path is unchanged. This needs a raw Q5_K/Q6_K accessor in aikit's `embed` (only `Q4KRaw` exists), which means an aikit release.
+- **Why not bit-identical:** today these tensors run as an int8 re-quantization of the dequantized file. The native kernels compute the
+  file's own weights, so their outputs move toward the file and cannot match the old bits. The small-gains rule does not apply, and
+  the fidelity gates below decide instead.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| O1-G0 measure | timed, Mac, timing lock | C1-G0's method (`TestKSC1_gemvTiming`'s harness, SLC-defeating rotation, median of 7) on prototype kernels at Phi-3 mini's shapes. Q5_K qkv is 9216×3072 ×32 layers; Q6_K down is 3072×8192 ×16 layers; the Q6_K head is 32064×3072. Each runs beside `gemv_w8_f32_rows2` at the same shape and the streaming ceiling, with R = 1, 2, 4, 8 | read, then a kill rule per kind. A kind is built only if its best R's time, summed over Phi-3's tensors of that kind, is ≤ 0.95× the int8 rows kernel's sum. If neither kind clears, KS-O1 on Metal is killed and the record says so. R is the fastest, or the smaller one on a tie within 2% |
+| O1-G1 kernels | 0 | G-Q1's method: every new kernel and variant against a float64 reference that dequantizes the same blocks on the host. The reference is cross-checked against aikit's GGUF dequantizer on the same bytes. Shapes: one super-block, a partial threadgroup, Phi-3's qkv / down / head, random scales at the 6-bit range ends. Planted defects: (1) Q5_K's high bit dropped; (2) Q6_K's −32 offset dropped; (3) a Q6_K group read with its neighbour's scale; (4) a super-block offset of one | every row within G-Q1's bar (\|err\| ≤ 1e-5 of Σ\|w·a\|); the reference within 1e-6 of aikit's dequantization; each plant red |
+| O1-G2 step | 0 | the four `TestQ4KStep_*` tests, plus a kernel-level step-vs-decode check on the new kinds | byte-equal to decode, as today |
+| O1-G3 memory | 0 | bytes uploaded for the q4k lane's weights (the sum of the `q4kSeg` buffers) and bytes allocated on the host during the resident build (`q4k_upload_alloc_test.go`'s counter) | device bytes fall to the GGUF's raw bytes for those tensors (Phi-3: about −375 MB); host bytes not higher |
+| O1-G4 CPU unchanged | 0 | the CPU q4k forward on the 0.5B q4_k_m (its Q6_K tensors), logits bytes before and after the change | byte-equal |
+| O1-G5 fidelity | 2, Mac | G-Q2 (`TestQ4KLane_realPhi3NonInferiority`) on the native kinds | PASS by its rule (≥ the reference's agreement − 2.0 points, free-run passes ≥ the reference's − 1) |
+| O1-G6 toward the file | 1, Mac | Qwen2.5-Coder-0.5B q4_k_m (Q6_K attn_v / ffn_down in half its layers, and the head): Metal q4k last-row logits, old lane and native lane, each against the CPU at f32 on the same GGUF (the file exactly), over G3's 8 prompts, teacher-forced. Phi-3 at f32 does not fit 16 GB | mean KL(new) ≤ mean KL(old); ambiguous (parked) up to 1.10×; FAIL above |
+| O1-G7 speed | timed, Mac, timing lock | C1-G4's A/B: one Phi-3 mini q4k resident that holds both the int8 and the native buffers for the Q5_K/Q6_K tensors (a test-only build hook), swapped per run. 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each. Then the same on Qwen2.5-Coder-1.5B q4_k_m (Q6_K only) | SHIP iff Phi-3's median new/old per-token time is ≤ 0.98 with at least 9 of 10 pairs faster **and** the 1.5B's median ≤ 1.00. PARK if Phi-3 is between 0.98 and 1.00 or has fewer than 9 pairs faster. KILL if Phi-3 is above 1.00 or the 1.5B is above 1.00 |
+
+Each model's load is fit-checked before G5 to G7. Stopping rule: one pass each, and O1-G0's kill rule ends the build early.
+Expected cost: G0 about 3 min; G1 to G4 seconds; G5 about 6 min; G6 about 4 min; G7 about 3 min for Phi-3 and 2 for the 1.5B.
+These are C1-G3's and C1-G4's walls, plus a second load. Planned order: G0 first; the aikit accessor only if a kind survives G0.
+
+**O1-G0 read 2026-10-24 (10:33, the lock held exclusively, load 3.48, 13.9 GB available), and one amendment to Q5_K before any
+grading gate.** The ceiling was 133.9 GB/s, lower than C1-G0's 179, so the box was busier. Ratios are read within this run. The
+prototypes were first checked against the float64 reference, worst |err|/Σ\|w·a\| 1.0e-8 (Q5_K) and 7.0e-9 (Q6_K).
+- **int8 → native, best R:** qkv 0.242 → 0.298 ms at R = 8 (Q5_K, 65 GB/s, 0.81×); down 0.174 → **0.128** at R = 4 (Q6_K, 161 GB/s,
+  1.36×); head 0.528 (`gemv_w8f32_head` 0.573) → **0.476** at R = 4 (1.11×).
+- **Summed over Phi-3:** Q5_K 1.230 of int8 at R = 8, so it **fails** the kill rule (≤ 0.95). Q6_K 0.761 at R = 4 **clears**: Q6_K is
+  built at R = 4.
+- **Log:** `~/goinfer-logs/kso1-g0-2026-10-24.log`.
+- **Why Q5_K is slow:** Q6_K runs the same lane map at 161 GB/s. Q5_K shares `q4k_scale_min` with Q4_K, which reads its scale bytes
+  one at a time on a branch that splits the simdgroup (lanes with j < 2 against j ≥ 2), twice a block.
+- **Amended (Q5_K only), before O1-G1 to G7 run:** the 12 scale bytes are read as three words and every lane's scale and min are
+  decoded with masks and shifts, with no branch. Variant (b) keeps (a)'s two dot chains. Variant (c) splits each into two halves.
+  The kill rule and R set are unchanged, and this is the last Q5_K reading. If neither variant clears, Q5_K is killed and only Q6_K is
+  built.
+
+**O1-G0 re-read with the amended Q5_K (10:35, the lock held exclusively, load 3.31, 14.1 GB available).**
+- **Conditions:** ceiling 181.1 GB/s; the int8 qkv kernel ran 0.194 ms (146 GB/s).
+- **Q5_K variants, R = 1 / 2 / 4 / 8:**
+  - (a) 0.365 / 0.314 / 0.273 / 0.285 ms;
+  - **(b) 0.258 / 0.215 / 0.146 / 0.168** (133 GB/s at R = 4, 1.32× the int8 kernel);
+  - (c) 0.259 / 0.226 / 0.167 / 0.149.
+- **Summed over Phi-3:** (b) at R = 4 is **0.755 of int8 and clears**. (c)'s best (R = 8, 0.767) is 1.6% slower. **Q5_K is built as (b)
+  at R = 4.**
+- **Q6_K, read again:** 0.620 of int8 at R = 4 (down 1.69×, head 1.29× against `gemv_w8_f32_rows2`, and 1.22× against the shipped
+  `gemv_w8f32_head`). Still R = 4.
+- **Log:** `~/goinfer-logs/kso1-g0b-2026-10-24.log`.
+- **Both kinds pass O1-G0.** The build continues once aikit's `embed` has the raw Q5_K/Q6_K accessor.
+
+**O1 amendments during the build, 2026-10-24, before any grading gate (O1-G4 to G7) ran:**
+- **The LM head stays int8.** A native Q6_K head saves Phi-3 17.7 MB a token, about 0.1 ms by O1-G0. It needs a new launch shape at
+  six head dispatch sites and a new argmax-partial layout, in code another session is editing. It is left for a follow-up, and the
+  native head kernels are not built.
+- **Q6_K's planes span the whole segment, not each row.** The planes are ql, qh, scales and d, so every load is aligned for any
+  block count. The size stays exactly the file's.
+  - **Why:** per-row planes are NB × 210 bytes a row. The 0.5B's ffn_down (K = 4864, NB = 19) then starts odd rows 2-byte aligned,
+    and its `uint2` loads misread. This read as cosine −0.75 in `TestQ4KLaneResidentQwen`, and as 0.998 once fixed.
+  - **Test change:** O1-G1 gains a K = 4864 shape for both kinds.
+- **O1-G3 is measured through `decoder.Load` on the Metal backend,** which builds the resident inside the load. It counts the heap of
+  the whole load, a superset of the build's. The int8 arm sets `q4kNativeOffForTest` before the load, so it never opens the reader,
+  as before KS-O1.
+  - The load keeps its GGUF mapping open for its own resident build, then releases it. Re-opening the file would parse its header
+    again: 51 MB of transient heap on the 0.5B's 152k-token vocabulary.
+- **Provenance:** a weight records its source as a tensor name and a first row, plus a row table only for a permuted load, so
+  retained host memory does not grow per row.
+
+**KS-O1 read 2026-10-24, by day.** Built at 88dcfc1d against aikit 0df4c98 (townsendmerino/aikit#18, `embed.Q5KRaw`/`Q6KRaw`)
+through `go.work`.
+- **O1-G1: PASS.**
+  - Every native kernel and variant at R = 4 is within the bar. The worst |err|/Σ\|w·a\| was 1.35e-7 (Q5_K, Phi-3 qkv) and 1.34e-7
+    (Q6_K, the head shape), against 1e-5. The shapes covered one super-block, a partial threadgroup, K = 4864 and Phi-3's.
+  - All four plants are red: (1) 4.66e-1, (2) 7.94e-1, (3) 1.25, (4) 9.40e-1.
+  - The float64 reference is within 1e-6 of aikit's `RowDequantizer` on 32 Q5_K and 29 Q6_K tensors of the two real files.
+  - Tests: `TestKSO1_nativeKernels`, `TestKSO1_referenceMatchesAikit`.
+- **O1-G2: PASS.**
+  - The step's `mc3_gemv_q5k/q6k_f32_rows<B>` is byte-equal to decode at B = 1, 2, 4, 8 in all three modes (`TestKSO1_stepMatchesDecode`).
+  - The four `TestQ4KStep_*` tests pass on the 0.5B, whose Q6_K layers now run native.
+  - `TestQ4KLaneResidentQwen/0.5B` reads worst cosine 0.998474 and argmax 31/32 against the CPU, with its bar at 0.99.
+- **O1-G3: PASS** on the 0.5B through `decoder.Load` on Metal (`TestKSO1_laneBytes`).
+  - Lane device bytes: 335,239,680 → 325,831,680. The Q6_K segments hold exactly the file's 42,900,480 bytes.
+  - Load heap: 775.5 → 770.3 MB.
+- **O1-G4: PASS.** The CPU q4k fingerprint (`TestKSO1_cpuQ4KFingerprint`: 16 greedy tokens plus the last hidden state's bytes) is
+  `acab5556…50f5` both at origin/main 8cfd5fca and at KS-O1.
+- **O1-G6: PASS** (11:26–11:27, the lock held shared). On the 0.5B, against the CPU at f32 on the file, over 566 teacher-forced
+  positions: mean KL 0.00155 (int8 lane) → 0.00119 (native), **0.7638**. Native is lower on all 8 prompts and at 371 of 566
+  positions. Log: `~/goinfer-logs/kso1-g6-2026-10-24.log`.
+- **O1-G7 run:** 11:28–11:31, the lock held exclusively. At the start the 1-minute load was 1.83 (each pair 0.84–1.61), with 13.9 GB
+  available and swap 1,074 → 1,066 MB.
+- **O1-G7, Phi-3 mini q4k:**
+  - 48 projections native; lane device bytes 2,255 MB, of which Q5_K 623 MB and Q6_K 330 MB.
+  - int8 23.62–23.77 ms a token, native 23.12–23.50: **median 0.9809, 10 of 10 pairs faster** (42.3 → 43.1 tok/s). It misses the
+    ≤ 0.98 bar by 0.0009, so alone it would PARK.
+- **O1-G7, Qwen2.5-Coder-1.5B q4_k_m:**
+  - 28 projections native.
+  - int8 14.25–14.30 ms, native 14.52–14.58: **median 1.0183, 0 of 10 pairs faster**.
+- **Verdict by the registered rule: KILL** (the 1.5B is above 1.00).
+- **Log:** `~/goinfer-logs/kso1-g7-2026-10-24-1128.log`.
+- **O1-G5 (G-Q2 on Phi-3) did not run.** The stopping rule ends the build at G7's verdict.
+- **Ungraded reading after G7** (11:33, the lock held exclusively, load 0.80; `TestKSO1_smallShapeReading`). `gemv_w8_f32_rows2`
+  → `gemv_q6k_f32_rows<R>` at R = 1 / 2 / 4:
+  - the 1.5B's ffn_down (1536×8960): 0.0818 → 0.1125 / 0.0813 / 0.0917 ms;
+  - its attn_v (256×1536): 0.0124 → 0.0076 / 0.0092 / 0.0140;
+  - Phi-3's ffn_down (3072×8192): 0.1731 → 0.1873 / 0.1407 / 0.1456.
+  - O1-G0 fixed R = 4 from Phi-3's shapes alone. On the 1.5B's small-N shapes R = 4 is the slowest native choice, and even the best R
+    only ties int8 on its down projection.
+- **What the in-model reading says about O1-G0:** a token saves 0.45 ms on Phi-3, where O1-G0's summed kernel times projected about
+  3 ms.
+- **What the native lane does buy:**
+  - Phi-3's lane holds 375 MB less on the device, the file's own bytes.
+  - It moves the logits toward the file (O1-G6, 0.7638 of the int8 lane's KL).
+- **Where the code is:** parked, unmerged, on branch `ks-o1-native-2026-10-24` (88dcfc1d and after). The aikit accessor it needs is
+  townsendmerino/aikit#18, also unmerged.
+
+**Notes on O1-G0's instrument, from #212's review (2026-10-24):**
+- **Where it lives:** the prototype kernels, `TestKSO1_gemvTiming`, `TestKSO1_protoMatchesRef` and `TestKSO1_q4kSideReading` are on
+  branch `ks-o1-native-2026-10-24` only, beside the parked native lane.
+- **The prototype's Q6_K layout is valid only when NB is a multiple of 4.** It splits planes per row with a row stride of NB × 210
+  bytes, so its `uint2` loads are 8-byte aligned only then. O1-G0 read Q6_K at NB 12 and 32, where the layout holds. The production
+  kernels use planes over the whole segment instead (the amendment above).
+- **The native weights rotated over less than registered.** The copy count was sized from the int8 bytes, so the native kernels
+  rotated over 186 MiB (qkv), 217 MiB (down) and 231 MiB (head), against the ≥ 256 MiB registered. That is still far beyond the
+  system cache this rotation is meant to defeat.
+
+**KS-O1a · The q4k lane's Q4_K scale decode without a branch (bit-identical). Registered 2026-10-24 before the code, from an
+ungraded side reading beside O1-G0.**
+- **Side reading (10:42–10:47, the lock held exclusively, load 1.68 at the start):** the shipped `q4k_rows_acc`, changed only in
+  its scale decode to the amended Q5_K's form (`TestKSO1_q4kSideReading`). Shipped R = 8 → new R = 8 / R = 4:
+  - o: 0.080 → 0.055 / 0.053 ms;
+  - gate|up: 0.348 → 0.236 / 0.240;
+  - down: 0.197 → 0.136 / 0.128.
+  - Summed over Phi-3's Q4_K GEMVs: 16.85 → 11.51 / 11.43 ms a token (0.683 / 0.678).
+  - In this library, 0 of N outputs differed in bits at any shape. Log: `~/goinfer-logs/kso1-q4kside-2026-10-24.log`.
+- **The change:**
+  - `q4k_scale_min2` reads the 12 scale bytes as three words and decodes a lane's two scales and mins with masks and shifts. It
+    replaces the two `q4k_scale_min` calls in `q4k_rows_acc` and in the batched step's `mc3_gemv_q4k_f32_rows`.
+  - R stays 8: R = 4 is within 2% (0.7%), and the rule takes the smaller R only on a tie, so KS-C1's R stands unless this changes it.
+  - The scale values are the same integers, so each output's arithmetic is unchanged.
+- **Class:** bit-identical, under the small-gains rule.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| O1a-G1 bits | 0 | the full decode library before and after (the old one rebuilt from the new source by swapping the decode text back), `gemv_q4k_f32_rows<R>` plain / residual / bias at R = 1, 2, 4, 8. Shapes: a partial threadgroup and Phi-3's o, gate\|up and down. Random blocks cover all 64 values of every 6-bit scale and min. Both the fast-math and the precise library. The four `TestQ4KStep_*` tests and C1-G2's kernel-level step check | byte-equal everywhere; the step tests as they assert today |
+| O1a-G2 model bits | 1, Mac | inside O1a-G3's run: each arm's 128 greedy tokens and the final logits' bytes | identical in every run |
+| O1a-G3 speed | timed, Mac, timing lock | C1-G4's A/B (`TestKSC1_phi3Speed`'s shape): one Phi-3 mini q4k resident, its three Q4_K pipelines swapped between the old library and the new one, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff O1a-G1 and G2 pass, memory is unchanged (no buffer is added or resized) and at least 9 of 10 pairs are faster (the small-gains rule). The registered C1-G4 bar (median ≤ 0.98) is reported alongside. Fewer than 9 pairs faster: PARK |
+
+Expected cost: G1 seconds. G3 about 3 min, from C1-G4's wall, after Phi-3's fit check. Stopping rule: one pass.
+
+**KS-O1a read 2026-10-24, by day: SHIP.**
+- **O1a-G1: PASS.**
+  - The decode rows kernels at R = 1, 2, 4, 8 (every variant) and the step's `mc3_gemv_q4k_f32_rows<B>` at B = 1, 2, 4, 8 (every
+    mode) are byte-equal before and after in 192 cells, in both the fast-math and the precise library (`TestKSO1a_q4kBitsUnchanged`).
+  - The four `TestQ4KStep_*` tests and C1-G2's kernel-level step check pass.
+  - G-Q1 passes. Its plant (2) is retargeted at `q4k_scale_min2`, since the old text no longer reaches the rows kernel; it is red at
+    2.09.
+  - Log: `~/goinfer-logs/kso1a-g1-2026-10-24.log`.
+- **O1a-G3 run:** 10:53–10:55, the lock held exclusively. At the start the 1-minute load was 3.28, under the 4.0 line; each pair
+  started at 1.16–2.33; 13.9 GB available; swap 1,138 MB before and after.
+- **O1a-G3 result:** old 29.55–31.06 ms a token, new 23.75–27.17; **median new/old 0.8044, 10 of 10 pairs below 1** (33.4 → 41.7 tok/s
+  at the median pair). No buffer is added or resized. The run passes the small-gains rule and C1-G4's registered bar (≤ 0.98): **SHIP**.
+- **O1a-G2: PASS.** All 24 runs, both arms, gave the same 128 tokens and the same final logits' bytes.
+- **Log:** `~/goinfer-logs/kso1a-g3-2026-10-24-1053.log`. Binary built at f9f41aa5 from
+  `docs/measurements/ks-night-2026-10/run-kso1a-g3.sh`.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
@@ -979,6 +1150,29 @@ Mac, so each waits for its own model-level gate (Phi-3 at int4 for 96). `prefill
 
 Planted defect: the hd-64 staging takes the 128 instance's word index (`(idx & 31) × 4`); D2-G2 goes red. Stopping rule: one pass
 each; a red G1 or G2 stops the build until it is understood. Cost: G1 and G2 seconds; G3 about 40 min; G4 about 3 min.
+
+**KS-D2b gates, registered 2026-10-24 before the code (D2b-G), on the owner's order of the Mac work.** The build: `steelHeadDim`
+admits head dim 96, and `steelFor` returns the hd-96 instance (`attention_prefill_steel_hd96`, built and checked at tier 0 in
+D2-G2). The model at 96 is Phi-3 mini at int4 (`~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`). Its set-A references
+are a new cell, PH3, in `TestPrefillGateReference` (f32 CPU, K = 256, 512, 1,024 decision and 3,900 confirm), built on nobara: an
+f32 3.8B does not fit this Mac's CPU path. The cell's references are copied to the Mac's `~/goinfer-logs/prefill-ref`.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D2b-G1 kernel | 0 | D2-G2's instrument at head dim 96 on this branch | as D2-G2 |
+| D2b-G2 fidelity | 2, Mac | set A's §3.2 pooled gate (`TestPrefillGateVsReference`), cell PH3, steel as production's prefill attention; the fused kernel's run (`GOINFER_METAL_R19_BASELINE=1`) beside it, reported | PASS by the gate's own rule |
+| D2b-G3 speed | timed, Mac, timing lock | Phi-3 at int4, `PrefillLast` at K = 3,900 and 512, steel against fused on one resident, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median steel/fused is ≤ 0.80 at 3,900 and ≤ 1.02 at 512; under 1.25× at 3,900: PARK |
+
+Admitted only on D2b-G2 PASS and D2b-G3 SHIP. Stopping rule: one pass each. Cost: G1 seconds; the references about an hour on
+nobara; G2 about 40 minutes; G3 about 4 minutes.
+
+**KS-D2b read 2026-10-24 (12:21): blocked, nothing admitted.** D2b-G1 PASS (the hd-96 cells: steel/fused max-error 0.92–1.01, mean
+0.99). D2b-G3 could not run: Phi-3 mini at int4 is not Metal-resident. The resident declines it, because every resident projection
+quantizes activations to int8 and Phi-3's activation outliers round to zero (queue-engineering H2); on Metal Phi-3 runs only the
+q4k lane, which has no batched prefill pass. No other model at head dim 96 is on this Mac, so steel at 96 has no model to be graded
+on or to serve, and the admission is reverted (the branch keeps this record only; the PH3 reference cell was not built). The KS-D2
+entry's "Phi-3 at int4 (96)" as an affected model was wrong for the same reason. Reopens with a Metal-resident model at head dim 96.
+Log: `~/goinfer-logs/ksd2b-g1-2026-10-24.log`, `~/goinfer-logs/ksd2b-g3-2026-10-24.log`.
 
 **KS-D3 · DeltaNet prefill scan with the state on chip (bit-identical).**
 - **Where:** `delta_rule_seq` in `metal/kernels/deltanet_kernels_msl.go`, from
