@@ -39,7 +39,7 @@
     "bailing_hybrid": {
       "uses": [],
       "own": [],
-      "deps_hash": "sha256:11cd6527ea1653465d7ae2a67334788d61f379c7fa9f71df87298e97bc3ffa07",
+      "deps_hash": "sha256:e6e9bbc0b45250b90b8662a32d4f5d2af74244d1b93a41264fba82d64df036c1",
       "status": "experimental",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -59,7 +59,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -79,7 +79,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -102,7 +102,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:51ab5b8fa98118398db6aa52de863cc3871657b9c3197d8817aacc65ca9bb3b6",
+      "deps_hash": "sha256:c34ea0a749387e4f81869e4df8a61ca8656e0f6d6dcd98df7f85a1022bc655ed",
       "status": "validated",
       "validated_at": "d5c5a1d53",
       "date": "2026-10-23",
@@ -125,7 +125,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:51ab5b8fa98118398db6aa52de863cc3871657b9c3197d8817aacc65ca9bb3b6",
+      "deps_hash": "sha256:c34ea0a749387e4f81869e4df8a61ca8656e0f6d6dcd98df7f85a1022bc655ed",
       "status": "validated",
       "validated_at": "d5c5a1d53",
       "date": "2026-10-23",
@@ -147,7 +147,7 @@
       "own": [
         "decoder/gemma12.go"
       ],
-      "deps_hash": "sha256:adc0dfbaba075947317a8ae3a19ff28f4f748dce9bae0c116cdf5aef3adcdb35",
+      "deps_hash": "sha256:f36315a3b0bf3a3cc1fdfe3873aa022b04e9713efcb490cd4e168c9a7266128b",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -169,7 +169,7 @@
       "own": [
         "decoder/gemma12.go"
       ],
-      "deps_hash": "sha256:adc0dfbaba075947317a8ae3a19ff28f4f748dce9bae0c116cdf5aef3adcdb35",
+      "deps_hash": "sha256:f36315a3b0bf3a3cc1fdfe3873aa022b04e9713efcb490cd4e168c9a7266128b",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -189,7 +189,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -211,7 +211,7 @@
       "own": [
         "decoder/forward_gemma4.go"
       ],
-      "deps_hash": "sha256:7c27c895ad5e07fdd6cbde143bed22164063ac849cfcdeb9144bcd2d60070376",
+      "deps_hash": "sha256:590117981dd471c7a47f9849b4a5d0cb1b51da4f17ce1280f42ab5343f01ab0f",
       "status": "validated",
       "validated_at": "310a2e44",
       "date": "2026-09-28",
@@ -232,7 +232,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "experimental",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -255,7 +255,7 @@
         "decoder/glm_ocr_test.go",
         "scripts/pin_glm_ocr_tiny.py"
       ],
-      "deps_hash": "sha256:1982a96de9f2b1886f88fff7c6d3fbc7cd26b4319d8711418497cd7f586fa268",
+      "deps_hash": "sha256:4485be92c404c8c410de3434306334a80b8c4d796b724f6084d9a086e03b2a2f",
       "status": "experimental",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -281,7 +281,7 @@
         "decoder/gptoss_safetensors.go",
         "decoder/gptoss_safetensors_test.go"
       ],
-      "deps_hash": "sha256:06caad8a4659e3d2b4f48fae656030304122f28d0e15804494f993f95defea94",
+      "deps_hash": "sha256:be82ae6be7ba1275218b8a9deb33b810c267487aef336d645c497ea528dd17dd",
       "status": "validated",
       "validated_at": "25a4711",
       "date": "2026-07-27",
@@ -300,7 +300,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -321,7 +321,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -345,7 +345,7 @@
       "own": [
         "decoder/forward_granite.go"
       ],
-      "deps_hash": "sha256:cb80ca99a35543d4a03c56e27d9bd984b984e8a0bee84b3a6560d1a6bb2b0474",
+      "deps_hash": "sha256:81033a852b9dd3348c519c2b51093690544f8099af8e46e1d38c8a352258ed13",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -369,7 +369,7 @@
         "decoder/internlm2_test.go",
         "scripts/pin_internlm2_tiny.py"
       ],
-      "deps_hash": "sha256:55f734f95b4c72b5c322c89ca8617ae5eff0aee153fd83977095f4fa3943bc95",
+      "deps_hash": "sha256:92bf3f5ba92edc525dfb618ee0a121697167f88c0cd31424f251d0052d038834",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -392,7 +392,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:51ab5b8fa98118398db6aa52de863cc3871657b9c3197d8817aacc65ca9bb3b6",
+      "deps_hash": "sha256:c34ea0a749387e4f81869e4df8a61ca8656e0f6d6dcd98df7f85a1022bc655ed",
       "status": "validated",
       "validated_at": "d5c5a1d53",
       "date": "2026-10-23",
@@ -416,7 +416,7 @@
         "scripts/pin_laguna_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:150df9140d5597dd8704b0a694398c55b84cb4969a4c4a4634226813d6e0346a",
+      "deps_hash": "sha256:b2c43415e200b261b2eda0469f612477e752635d67e446e4e9576d3456edd24e",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -438,7 +438,7 @@
         "decoder/lfm2.go",
         "decoder/forward_lfm2.go"
       ],
-      "deps_hash": "sha256:1ff9b229af95059efe195a5e5e32ca42048e009a46025f16d1f32db3646ef8d6",
+      "deps_hash": "sha256:5f2c9904a58062f58bd80bf2ac141c7b4d8b8ac0718972042fd78b5b240422b2",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -458,7 +458,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -481,7 +481,7 @@
       "own": [
         "decoder/forward_llama4.go"
       ],
-      "deps_hash": "sha256:5438d51ffaf3a4bf3d267e39b0d3cb1b35f626298d5d6af187acbc08cc900c16",
+      "deps_hash": "sha256:d35ad7bcaa4aa65edfa2407573cf9e33ed5beb6315476c0d16c8f861e31dfc33",
       "status": "experimental",
       "validated_at": "3f23c96",
       "date": "2026-06-16",
@@ -505,7 +505,7 @@
         "decoder/mellum_slice_test.go",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:7f59dfc85e9e9cc97345b681ca051a44fa40c70d3f19c9f3a6061088ac3214d1",
+      "deps_hash": "sha256:f9ec9cd4b43673828d3913d07aeb166e2174a0e19d35a6794b229eebcb975284",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -525,7 +525,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -545,7 +545,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -566,7 +566,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "experimental",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -589,7 +589,7 @@
       "own": [
         "decoder/forward_nemotron.go"
       ],
-      "deps_hash": "sha256:5393a4532d25edaa836f552a6a1a1001dc9cb67dd02d22eae7240a3f0ed78ae7",
+      "deps_hash": "sha256:c64c0456a973c449576a88c13e606d3e21397ada2c7033afaf21efc576ffa98d",
       "status": "validated",
       "validated_at": "0b74e671",
       "date": "2026-09-18",
@@ -609,7 +609,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -636,7 +636,7 @@
         "scripts/pin_olmo_hybrid_real.py",
         "scripts/pin_olmo_hybrid_tiny.py"
       ],
-      "deps_hash": "sha256:e0222b123f9896b885703b5239a1b4f202cd1683fa871d41b698065a515ca0a7",
+      "deps_hash": "sha256:da8d5fd408d5495d209c4203897a99ba09965afb99fe0fe6215271e37f697a09",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -656,7 +656,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -676,7 +676,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -696,7 +696,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -717,7 +717,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -737,7 +737,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -762,7 +762,7 @@
         "decoder/qwen3_5_test.go",
         "scripts/pin_qwen3_5_forward.py"
       ],
-      "deps_hash": "sha256:a2f2e568e64eb41cd31731561c789a0602b03d26484034167873242fe24a8e2b",
+      "deps_hash": "sha256:758871026cf9aef3ff091972a4df8df8ad2499eca20b6941bcbf3c0e19045306",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -787,7 +787,7 @@
         "decoder/forward_qwen35.go",
         "decoder/gguf_qwen35.go"
       ],
-      "deps_hash": "sha256:5f95ad261ec7e2651436a15782e9cbc8dc5b96104c10c8822ab739a99a5b59cd",
+      "deps_hash": "sha256:5ac2316d560f424d1eaaff66ffaf4ea08f90e8603f672e078ae164ac98f902d3",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
@@ -807,7 +807,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "4f84f2c1",
       "date": "2026-10-08",
@@ -828,7 +828,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-06",
@@ -858,7 +858,7 @@
         "scripts/pin_qwen3next_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:9af9922177827d27f73c70a9bcc13c7b43dfd964c07429b967e6c65e43b24590",
+      "deps_hash": "sha256:f55c9ebd156ee6144a925d9d984c9be97caa4ce165b7b8b15cb734c17f7f5fba",
       "status": "validated",
       "validated_at": "426ca57d",
       "date": "2026-09-29",
@@ -878,7 +878,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7ee05f0a",
       "date": "2026-10-08",
@@ -901,7 +901,7 @@
         "decoder/qwen3vlmoe_test.go",
         "scripts/pin_qwen3vlmoe_tiny.py"
       ],
-      "deps_hash": "sha256:2255011a6dbe3b883b0984c0ba106e2ebafc79e4ded03eba42e6dcc394fb6aeb",
+      "deps_hash": "sha256:0f7bf117eae29240988c431194ffd3298a572426cd41b186edeec5b721239b72",
       "status": "experimental",
       "validated_at": "936d2f49",
       "date": "2026-10-09",
@@ -921,7 +921,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-06",
@@ -946,7 +946,7 @@
         "scripts/pin_spark2_5_tiny.py",
         "scripts/pin_spark2_5_real.py"
       ],
-      "deps_hash": "sha256:0b0f5ec4dab1b6e52a15ccc2d9aa28779fe0a8d247158719836011190b6eec86",
+      "deps_hash": "sha256:db105c8d21014ecfdc3aaf69c20357385ef6648ccbd2a5e97ff238d33826ddd6",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-06",
@@ -966,7 +966,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:86f7a4b4bbcccfa60ad155e6b0829e4bd50b54c20afdf948319101c93f8b3189",
+      "deps_hash": "sha256:02bdc013b6b80374adee8dda31e44c54790965fb88b3bc96bfd0fcee14e4fc28",
       "status": "validated",
       "validated_at": "8494de25",
       "date": "2026-10-09",
