@@ -783,6 +783,12 @@ func (a *Architecture) kvF16OK() bool {
 	return a.MoE == nil && a.attnOrder() == attnBatchedAcc64
 }
 
+// ringLayerAt reports whether NewCache stores layer i as a ring: a sliding-window (local) layer of a family kvRingsOK admits.
+// It decides both which layers enableRings makes rings and which reserve no append-forever capacity.
+func (a *Architecture) ringLayerAt(i int) bool {
+	return a.kvRingsOK() && a.SlidingWindow > 0 && !a.isGlobalLayer(i)
+}
+
 // kvRingsOK reports whether NewCache may ring-buffer this architecture's sliding-window (local) layers, keeping only the W
 // most recent positions: a family whose attention is the batched kernel (attnOrder), which reads a ring through
 // attendBatchedHeads.

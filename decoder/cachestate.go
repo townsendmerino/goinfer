@@ -268,6 +268,7 @@ var kvCacheNotState = map[string]string{
 	"planRows":        "the current request's planned size, set by every generation before its prefill; capacity only",
 	"rowCeiling":      "the context size the current request may grow to, set with planRows; capacity only",
 	"regrownBytes":    "bytes a growth dropped within the position being appended, zeroed at its last layer",
+	"skipAppend":      "geometry: the layers that reserve no append-forever capacity, fixed at NewCache",
 }
 
 // holdsState reports whether c currently holds kind s. "Holds" follows allocation, as
