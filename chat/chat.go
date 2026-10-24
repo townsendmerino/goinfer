@@ -88,6 +88,9 @@ type Template struct {
 	toolFormat  ToolFormat
 	// nativeByDefault: for this template the native form is what `auto` selects — true only where a pre-registered A/B adopted it.
 	nativeByDefault bool
+	// contentBeforeCalls: the Gemma 4 template writes an assistant message's text before its tool calls rather than after their
+	// results (detectGemma4ContentBeforeCalls); the native renderer follows it.
+	contentBeforeCalls bool
 	// lenientFenced: WithLenientToolCalls — also read ONE fenced JSON call at the end of a reply as a call (fenced_tool_calls.go). Off by default.
 	lenientFenced bool
 
@@ -187,6 +190,7 @@ func detect(meta Meta) (*Template, error) {
 			g.reason = detectGemma4Reasoning(t)
 			g.nativeTools = g.reason != nil && g.reason.hist == histGemma4 // the canonical template, whose loop the native renderer ports
 			g.nativeByDefault = g.nativeTools                              // ADOPTED: docs/measurements/gemma4-tool-text-order-2026-09-30/RESULTS.md
+			g.contentBeforeCalls = detectGemma4ContentBeforeCalls(t)
 			return g, nil
 		case strings.Contains(t, "<start_of_turn>"):
 			return Gemma3(), nil

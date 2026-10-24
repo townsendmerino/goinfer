@@ -64,7 +64,7 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 		if t.usesNativeTools() {
 			return t.renderGemma4NativeTools(system, turns, tools, t.gemma4Think())
 		}
-		return t.renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4)
+		return t.renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4, t.reason.offScaffold())
 	case "harmony": // already segment-built: the markers are special, everything a user or tool wrote is hardened content
 		return harmonySegments(t.harmonyEffort(), system, turns, tools)
 	}

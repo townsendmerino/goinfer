@@ -41,7 +41,8 @@ func gemmaSafe(s string) string {
 }
 
 // renderGemma4Tools is Gemma 4's JSON-free tool prompt as segments (the generic rendering; renderGemma4NativeTools is the canonical template's).
-func (t *Template) renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, old bool) []Segment {
+// scaffold is whether the thinking-off generation prompt carries the closed channel (Reasoning.offScaffold).
+func (t *Template) renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, old, scaffold bool) []Segment {
 	b := t.newToolBuf(gemmaToolMarks...)
 	b.lit("<bos><|turn>system\n")
 	if think {
@@ -144,7 +145,7 @@ func (t *Template) renderGemma4Tools(system string, turns []Turn, tools []Tool, 
 	// mid-turn and simply continues.
 	if !openModelTurn {
 		b.lit("<|turn>model\n")
-		if !think && !old { // thinking on leaves the channel for the model to open; the earlier template has no scaffold at all
+		if !think && scaffold { // thinking on leaves the channel for the model to open
 			b.lit("<|channel>thought\n<channel|>")
 		}
 	} else if old && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" && len(turns[len(turns)-1].ToolCalls) == 0 {
@@ -415,7 +416,8 @@ func toStr(v any) string {
 // template's (prev_message_type, prev_non_tool_role, continues_into_next) so the two can be read side by side. Three things differ
 // from goinfer's own rendering, all of them the template's:
 //
-//   - an assistant message's TEXT is written after its calls and their results, not before the calls;
+//   - an assistant message's TEXT is written after its calls and their results, not before the calls (before them where the template
+//     says so: Template.contentBeforeCalls);
 //   - the model turn is CLOSED (`<turn|>`) right after that text, when the message has results and text;
 //   - the generation prompt writes no turn header after a tool result, whether or not the turn was closed.
 //
@@ -470,6 +472,16 @@ func (t *Template) renderGemma4NativeTools(system string, turns []Turn, tools []
 			b.txt(m.Reasoning)
 			b.lit("\n<channel|>")
 		}
+		var content string // captured_content
+		if role == "model" {
+			content = stripChannels(m.Content)
+		} else {
+			content = strings.TrimSpace(m.Content)
+		}
+		contentFirst := t.contentBeforeCalls && role == "model" && len(m.ToolCalls) > 0
+		if contentFirst {
+			b.txt(content)
+		}
 		for _, c := range m.ToolCalls {
 			b.lit("<|tool_call>call:")
 			b.txt(c.Name)
@@ -499,13 +511,9 @@ func (t *Template) renderGemma4NativeTools(system string, turns []Turn, tools []
 				prevMessageType = "tool_response"
 			}
 		}
-		var content string // captured_content
-		if role == "model" {
-			content = stripChannels(m.Content)
-		} else {
-			content = strings.TrimSpace(m.Content)
+		if !contentFirst {
+			b.txt(content)
 		}
-		b.txt(content)
 		hasContent := strings.TrimSpace(content) != ""
 
 		nextRole, nextFound := "", false // the next non-tool message
@@ -529,11 +537,21 @@ func (t *Template) renderGemma4NativeTools(system string, turns []Turn, tools []
 	}
 	if prevMessageType != "tool_response" && prevMessageType != "tool_call" {
 		b.lit("<|turn>model\n")
-		if !think {
+		if !think && t.reason.offScaffold() {
 			b.lit("<|channel>thought\n<channel|>")
 		}
 	} else if prevMessageType == "tool_response" && think {
 		b.lit("<|channel>thought\n")
 	}
 	return b.segs
+}
+
+// detectGemma4ContentBeforeCalls recognises a Gemma 4 template that writes an assistant message's text before its tool calls
+// (Nemotron 3.5 Bolt's): `captured_content` is written ahead of the calls for a model message with calls, and after the results
+// only for one without. Matched with whitespace removed, so the template's indentation does not matter.
+func detectGemma4ContentBeforeCalls(tmpl string) bool {
+	flat := strings.Join(strings.Fields(tmpl), "")
+	before := strings.Index(flat, "{%-ifrole=='model'andmessage.get('tool_calls')-%}{{-captured_content-}}{%-endif-%}")
+	call := strings.Index(flat, "'<|tool_call>call:'")
+	return before >= 0 && call > before && strings.Contains(flat, "{%-ifnot(role=='model'andmessage.get('tool_calls'))-%}{{-captured_content-}}")
 }
