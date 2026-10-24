@@ -329,6 +329,10 @@ type resident struct {
 	// kernels (then flush the executor, stopExec).
 	gemvRows                                             struct{ qkv, o, gu, down int }
 	pSABiasRows, pSAResidRows, pSARows, pGemvResidStaged Pipeline
+	// KS-C4: the dense int4 FFN with swiglu_quant folded in, gemv_w4a8_sa_glu_rows<gu R> then gemv_w4a8_resid_staged_hq<down R>,
+	// their max partials in r.dq's memory (ffnFolded). Set with the rows kernels when gu and down both take them; empty keeps
+	// the three-dispatch form. The down kernel is instantiated per (down R, gate|up R): it counts the partials from both.
+	pSAGluRows, pGemvResidHQ Pipeline
 	// E-P02: the batched step's per-row qkv and gate|up GEMVs as one dispatch with each tile's B threadgroups adjacent
 	// (mc3_gemv_w4a8_sa_{bias_}rows_adj<R>, the twin of pSABiasRows / pSARows), set with them; batch.go mc3AdjRowsOn.
 	pSABiasRowsAdj, pSARowsAdj Pipeline
@@ -1972,6 +1976,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pSABiasRowsAdj = rowsPipe("mc3_gemv_w4a8_sa_bias_rows_adj", r.gemvRows.qkv)
 		r.pSARowsAdj = rowsPipe("mc3_gemv_w4a8_sa_rows_adj", r.gemvRows.gu)
 		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
+		if r.gemvRows.gu > 0 && r.gemvRows.down > 0 && !ksc4FoldOffForTest {
+			r.pSAGluRows = rowsPipe("gemv_w4a8_sa_glu_rows", r.gemvRows.gu)
+			r.pGemvResidHQ = pipe(fmt.Sprintf("gemv_w4a8_resid_staged_hq%d_%d", r.gemvRows.down, r.gemvRows.gu))
+		}
 		for _, R := range []int{2, 4} {
 			r.gemvExtCoal[R] = pipe(fmt.Sprintf("gemv_w4a8_coal_staged%d", R))
 			r.gemvExtSA[R] = pipe(fmt.Sprintf("gemv_w4a8_sa_rows%d", R))
@@ -1996,6 +2004,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		rows := r.gemvRows
 		r.gemvRows = struct{ qkv, o, gu, down int }{}
 		r.pSABiasRowsAdj, r.pSARowsAdj = Pipeline{}, Pipeline{}
+		r.pSAGluRows, r.pGemvResidHQ = Pipeline{}, Pipeline{} // KS-C4 folds the int4 kernels only
 		if !w8RowsOffForTest && r.w8RowsOK() {
 			r.gemvRows = rows
 			rowsPipe := func(base string, R int) Pipeline {
@@ -3135,43 +3144,51 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		default:
 			r.encodeNorm(e, x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		}
-		if f16Lane {
-			e.DispatchTG(r.pSAf16, (2*L.ffnI)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH) // fused gate|up
+		if !f16Lane && r.loraLayers == nil && !r.sandwich && !postOnlyHere && !r.parallelBlock && r.ffnFolded() {
+			// KS-C4: gate|up with SwiGLU and the max partials (h into r.gu, partials into r.dq), then down + residual
+			// quantizing h in its staging.
+			Rg, Rd := r.gemvRows.gu, r.gemvRows.down
+			e.DispatchTG(r.pSAGluRows, (2*L.ffnI)*32/Rg, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.dq, r.uH, L.uFFNI, r.uAct)
+			e.DispatchTG(r.pGemvResidHQ, r.H*32/Rd, 256, L.ffnI, L.dW, L.dS, r.gu, r.dq, x, L.uFFNI)
 		} else {
-			p, n := saRowsPick(r.pSA, r.pSARows, 2*L.ffnI, r.gemvRows.gu)
-			e.DispatchTG(p, n, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
-		}
-		if r.loraLayers != nil {
-			// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
-			// order exactly ("delta into gate/up before the activation", decoder/mlp.go). gq/gSc
-			// is whichever input the base gate/up projection just used (r.aq/r.aSc for
-			// parallelBlock, r.mq/r.mSc otherwise) — the same input applyLoRA takes on CPU.
-			LA := &r.loraLayers[l]
-			r.applyResidentLoRA(e, LA.gate, gq, gSc, r.gu)
-			r.applyResidentLoRA(e, LA.up, gq, gSc, r.gu.At(L.ffnI*4))
-		}
-		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(L.ffnI*4), r.dq, r.dSc, L.uFFNI, r.uAct) // gate @0, up @I
-		if r.sandwich || postOnlyHere || r.parallelBlock {
-			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, L.uFFNI) // down → scratch
-			if r.loraLayers != nil {
-				// Added BEFORE the post-MLP norm (sandwich/postOnly) or the deferred residual add
-				// (parallelBlock, which has none) — same "delta before any subsequent norm" order.
-				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.dO)
-			}
-			// parallelBlock has no post-MLP norm at all (L.postMLPNorm is never built for it — see
-			// the build loop), so it skips straight to the deferred residual add.
-			if r.sandwich || postOnlyHere {
-				e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
-			}
-			e.Dispatch(r.pRes, r.H, 256, x, r.dO)
-		} else {
-			if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup
-				e.DispatchTG(r.pGemvResidStaged, r.H*32/R, 256, L.ffnI, L.dW, L.dS, r.dq, r.dSc, x, L.uFFNI) // down + residual
+			if f16Lane {
+				e.DispatchTG(r.pSAf16, (2*L.ffnI)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH) // fused gate|up
 			} else {
-				e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, L.uFFNI) // down + residual
+				p, n := saRowsPick(r.pSA, r.pSARows, 2*L.ffnI, r.gemvRows.gu)
+				e.DispatchTG(p, n, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
 			}
 			if r.loraLayers != nil {
-				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, x)
+				// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
+				// order exactly ("delta into gate/up before the activation", decoder/mlp.go). gq/gSc
+				// is whichever input the base gate/up projection just used (r.aq/r.aSc for
+				// parallelBlock, r.mq/r.mSc otherwise) — the same input applyLoRA takes on CPU.
+				LA := &r.loraLayers[l]
+				r.applyResidentLoRA(e, LA.gate, gq, gSc, r.gu)
+				r.applyResidentLoRA(e, LA.up, gq, gSc, r.gu.At(L.ffnI*4))
+			}
+			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(L.ffnI*4), r.dq, r.dSc, L.uFFNI, r.uAct) // gate @0, up @I
+			if r.sandwich || postOnlyHere || r.parallelBlock {
+				e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, L.uFFNI) // down → scratch
+				if r.loraLayers != nil {
+					// Added BEFORE the post-MLP norm (sandwich/postOnly) or the deferred residual add
+					// (parallelBlock, which has none) — same "delta before any subsequent norm" order.
+					r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.dO)
+				}
+				// parallelBlock has no post-MLP norm at all (L.postMLPNorm is never built for it — see
+				// the build loop), so it skips straight to the deferred residual add.
+				if r.sandwich || postOnlyHere {
+					e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+				}
+				e.Dispatch(r.pRes, r.H, 256, x, r.dO)
+			} else {
+				if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup
+					e.DispatchTG(r.pGemvResidStaged, r.H*32/R, 256, L.ffnI, L.dW, L.dS, r.dq, r.dSc, x, L.uFFNI) // down + residual
+				} else {
+					e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, L.uFFNI) // down + residual
+				}
+				if r.loraLayers != nil {
+					r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, x)
+				}
 			}
 		}
 	}
@@ -3234,6 +3251,15 @@ func (r *resident) loadEmb(emb []float32) {
 
 // w8RowsOffForTest keeps a native int8 resident on its one-row GEMVs (the old arm of KS-C3's A/B); read at build.
 var w8RowsOffForTest bool
+
+// ffnFolded reports whether the dense FFN takes KS-C4's folded pair (pSAGluRows, pGemvResidHQ); encodeLayer also requires a
+// plain layer (no f16 lane, LoRA, sandwich, post-only or parallel block).
+func (r *resident) ffnFolded() bool {
+	return r.pSAGluRows != (Pipeline{}) && r.gemvRows.gu > 0 && r.gemvRows.down > 0
+}
+
+// ksc4FoldOffForTest keeps the dense FFN on gate|up, swiglu_quant and down (the old arm of KS-C4's A/B); read at build.
+var ksc4FoldOffForTest bool
 
 // w8RowsOK reports whether a native int8 resident's dense GEMVs can take the int8 rows kernels, which read their weight rows
 // and the staged activation as uint4 words: the hidden width, every attention layer's q width and every FFN width are

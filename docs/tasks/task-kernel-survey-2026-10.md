@@ -754,6 +754,12 @@ Planted defect, run once on the committed tree and reverted: the up row taken on
 Stopping rule: one pass each. Cost: G1 about a minute; G2 about 4 minutes; G3 seconds. Gain (est.): 0.3–0.5 ms a token on the 1.5B
 (`swiglu_quant` reads 0.455–0.644 ms; the fold adds a redundant quantize of h in each down threadgroup).
 
+**Amended 2026-10-24, before any C4-G run.** (1) There is no dispatch counter, so C4-G1 (b)'s "taken" is shown by a third arm: the
+folded down kernel swapped for a no-op, whose logits must differ from the fold's. (2) The down kernel takes the gate|up R as a
+template parameter (`gemv_w4a8_resid_staged_hq<Rd, Rg>`) rather than a constant buffer, so the fold allocates nothing (C4-G3).
+The instruments are `TestKSC4_foldMatchesThreeStep`, `TestKSC4_decodeIdentity`, `TestKSC4_allocatedNotHigher` and
+`TestKSC4_decodeSpeed`; the bars are unchanged.
+
 **KS-C5 · Legacy decode attention below 1024 keys (bit-identical).**
 - **Waste:** at 128 keys it costs 0.67 / 0.78 ms per token, with serial 8-wide V-load batches (16 dependent round trips) and
   about 16 barriers.

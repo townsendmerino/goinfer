@@ -2091,6 +2091,113 @@ kernel void swiglu_f32(device const float* g[[buffer(0)]], device const float* u
     uint i[[thread_position_in_grid]]) {
     if (i < I) out[i] = glu_act_pinned(g[i], act) * u[i];
 }
+// KS-C4: swiglu_quant folded into its neighbours on the dense int4 decode path. gemv_w4a8_sa_glu_rows is gemv_w4a8_sa_rows over
+// the gate|up weights with simdgroup s taking gate rows p0..p0+R/2-1 and up rows I+p0.., p0 = s*R/2, each row's sum as
+// sa_rows_acc takes it. Lane 0 forms g and u as gemv_w4a8_sa_rows writes them and h as swiglu_quant does, writes h to hout[p0+j]
+// and the threadgroup's max |h| to part[tgid]. gemv_w4a8_resid_staged_hq then reduces part (max is exact in any order), forms
+// swiglu_quant's scale, stages h quantized with its rounding and runs gemv_w4a8_resid_staged's body: each output is the
+// three-dispatch sequence's bits. Grids as their unfolded kernels'; part holds (2I)/(8·RG) floats, RG being the gate|up R.
+template <uint R>
+kernel void gemv_w4a8_sa_glu_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* hout[[buffer(4)]],
+    device float* part[[buffer(5)]], constant uint& K[[buffer(6)]], constant uint& I[[buffer(7)]],
+    constant uint& act[[buffer(8)]], threadgroup half* Ah [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    constexpr uint P = R/2u;
+    constexpr float P4[4] = {1.0f, 0.0625f, 0.00390625f, 0.000244140625f};
+    constexpr float4 U4 = float4(1.0f, 16.0f, 256.0f, 4096.0f);
+    threadgroup float tgm[32];
+    for (uint i=tid;i<K;i+=tgs) Ah[i] = half(float(aq[i]) * P4[i & 3u]);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint G = K>>5u;
+    uint p0 = (tgid*(tgs>>5u) + sgid)*P;
+    uint rows[R];
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) rows[r] = (r < P) ? p0 + r : I + p0 + (r - P);
+    float acc[R];
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    for (uint g=lane; g<G; g+=32u) {
+        float gf[R];
+        uint4 w[R];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) { gf[r] = 0.0f; w[r] = wq[rows[r]*G + g]; }
+        threadgroup const half4* a4 = reinterpret_cast<threadgroup const half4*>(Ah + g*32u);
+        float sa = 0.0f;
+        SA_ROWS_UNROLL for (uint t=0;t<8u;t++) {
+            float4 x = float4(a4[t]);
+            sa += dot(x, U4);
+            SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+                uint word = (t < 2u) ? w[r].x : (t < 4u) ? w[r].y : (t < 6u) ? w[r].z : w[r].w;
+                uint u = (t & 1u) ? (word >> 16) : (word & 0xFFFFu);
+                gf[r] += dot(float4(float(u & 0xFu), float(u & 0xF0u), float(u & 0xF00u), float(u & 0xF000u)), x);
+            }
+        }
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] += (gf[r] - 8.0f*sa) * float(sct[rows[r]*G + g]);
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] = simd_sum(acc[r]);
+    if (lane==0) {
+        float mx = 0.0f;
+        SA_ROWS_UNROLL for (uint j=0;j<P;j++) {
+            float gv = acc[j]*asc[0], uv = acc[P+j]*asc[0];
+            float sv = glu_act_pinned(gv, act) * uv;
+            hout[p0+j] = sv;
+            mx = max(mx, fabs(sv));
+        }
+        tgm[sgid] = mx;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid==0) { float v = tgm[0]; for (uint k=1; k<(tgs>>5u); k++) v = max(v, tgm[k]); part[tgid] = v; }
+}
+template [[host_name("gemv_w4a8_sa_glu_rows2")]] kernel decltype(gemv_w4a8_sa_glu_rows<2>) gemv_w4a8_sa_glu_rows<2>;
+template [[host_name("gemv_w4a8_sa_glu_rows4")]] kernel decltype(gemv_w4a8_sa_glu_rows<4>) gemv_w4a8_sa_glu_rows<4>;
+template <uint R, uint RG>
+kernel void gemv_w4a8_resid_staged_hq(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
+    device const float* h[[buffer(2)]], device const float* part[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup char* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    threadgroup float red[32];
+    uint nPart = (2u*K)/(8u*RG);
+    float mx = 0.0f;
+    for (uint i=tid;i<nPart;i+=tgs) mx = max(mx, part[i]);
+    mx = simd_max(mx);
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float sc = red[0]/127.0f; if (sc==0) sc=1; float inv = 1/sc;
+    for (uint i=tid;i<K;i+=tgs) As[i] = char(clamp(int(round(h[i]*inv)),-127,127));
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint wpr = K/8u, spr = K/32u;
+    uint row0 = (tgid*(tgs>>5u) + sgid)*R;
+    float acc[R];
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
+    for (uint wi = lane; wi < wpr; wi += 32u) {
+#ifdef KSC2_OLD_DOWN
+        char4 a0 = A[wi*2u], a1 = A[wi*2u+1u];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            uint x = bq[(row0+r)*wpr + wi];
+            int gi = (int((x)&0xF)-8)*int(a0.x) + (int((x>>4)&0xF)-8)*int(a0.y)
+                   + (int((x>>8)&0xF)-8)*int(a0.z) + (int((x>>12)&0xF)-8)*int(a0.w)
+                   + (int((x>>16)&0xF)-8)*int(a1.x) + (int((x>>20)&0xF)-8)*int(a1.y)
+                   + (int((x>>24)&0xF)-8)*int(a1.z) + (int((x>>28)&0xF)-8)*int(a1.w);
+            acc[r] += float(gi) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+#else
+        float4 x0 = float4(A[wi*2u]) * W4M_P4, x1 = float4(A[wi*2u+1u]) * W4M_P4;
+        float s8 = 8.0f * (dot(x0, W4M_U4) + dot(x1, W4M_U4));
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            acc[r] += (w4_masked_word(bq[(row0+r)*wpr + wi], x0, x1) - s8) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+#endif
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] += s*sc; }
+}
+template [[host_name("gemv_w4a8_resid_staged_hq2_2")]] kernel decltype(gemv_w4a8_resid_staged_hq<2, 2>) gemv_w4a8_resid_staged_hq<2, 2>;
+template [[host_name("gemv_w4a8_resid_staged_hq2_4")]] kernel decltype(gemv_w4a8_resid_staged_hq<2, 4>) gemv_w4a8_resid_staged_hq<2, 4>;
+template [[host_name("gemv_w4a8_resid_staged_hq4_2")]] kernel decltype(gemv_w4a8_resid_staged_hq<4, 2>) gemv_w4a8_resid_staged_hq<4, 2>;
+template [[host_name("gemv_w4a8_resid_staged_hq4_4")]] kernel decltype(gemv_w4a8_resid_staged_hq<4, 4>) gemv_w4a8_resid_staged_hq<4, 4>;
 // act_quant: FeatNonGatedMLP's fused activation+quant — up->act->down (GPT-2, Nemotron relu²),
 // no gate multiply, unlike swiglu_quant. Its activation is nongated_act: glu_act's GELU-tanh and
 // SiLU (inheriting the GELU-tanh clamp fix), plus squared ReLU. Exact-erf GELU (decoder's ActGelu,
