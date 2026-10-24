@@ -65,14 +65,14 @@ func TestQ4KLaneBuf_uploadsWithoutStaging(t *testing.T) {
 	}
 
 	var bq4, bq, bs Buffer
-	alloc := heapAllocDuring(func() { bq4, _ = q4kLaneBuf(d, q4...) })
+	alloc := heapAllocDuring(func() { bq4, _ = q4kLaneBuf(d, nil, "q4k", q4...) })
 	if got := unsafe.Slice((*byte)(unsafe.Pointer(&bq4.Int8s()[0])), len(wantQ4)); !slices.Equal(got, wantQ4) || bq4.Len() != len(wantQ4) {
 		t.Errorf("Q4_K: the buffer (%d bytes) does not hold the %d parts' bytes in order", bq4.Len(), len(q4))
 	}
 	if alloc > uint64(len(wantQ4))/8 {
 		t.Errorf("Q4_K: %d bytes of Go heap to upload %d: a staging copy", alloc, len(wantQ4))
 	}
-	alloc = heapAllocDuring(func() { bq, bs = q4kLaneBuf(d, i8...) })
+	alloc = heapAllocDuring(func() { bq, bs = q4kLaneBuf(d, nil, "int8", i8...) })
 	if !slices.Equal(bq.Int8s()[:len(wantQ)], wantQ) || !slices.Equal(bs.Floats()[:len(wantS)], wantS) || bq.Len() != len(wantQ) || bs.Len() != len(wantS) {
 		t.Error("int8: the buffers do not hold the parts' rows and scales in order")
 	}

@@ -28,6 +28,10 @@ import (
 //
 //	go test -tags 'cuda goinfer_testhooks' -run TestPrefillMoE -v ./cuda/
 func TestPrefillMoE_bitIdentical(t *testing.T) {
+	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
+	// takes by default has its own gate (TestGemma4MoE_floatParity).
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	for _, fx := range []string{"../testdata/gemma4-moe-kv-tiny", "../testdata/gemma4-moe-scaled"} {
 		t.Run(fx[len("../testdata/"):], func(t *testing.T) { prefillMoEParity(t, fx, false) })
 	}

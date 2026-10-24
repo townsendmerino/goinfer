@@ -945,13 +945,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fArgRows, e = r.dev.NewComputePipeline(amod, "argmax_rows"); e != nil {
 			return e
 		}
-		// topk_select: its own module, same isolation as argmax_reduce above.
+		// topk_compact / topk_finish / topk_z: their own module, same isolation as argmax_reduce above.
 		tmod, e2 := r.dev.CompileLibrary(topkPTX)
 		if e2 != nil {
 			return e2
 		}
-		if r.fTopK, e = r.dev.NewComputePipeline(tmod, "topk_select"); e != nil {
-			return e
+		for _, f := range []struct {
+			dst  *Pipeline
+			name string
+		}{{&r.fTopKCompact, "topk_compact"}, {&r.fTopKFinish, "topk_finish"}, {&r.fTopKZ, "topk_z"}} {
+			if *f.dst, e = r.dev.NewComputePipeline(tmod, f.name); e != nil {
+				return e
+			}
 		}
 		// gumbel_stage1/2: own module, same isolation.
 		gumod, e2 := r.dev.CompileLibrary(gumbelPTX)
@@ -1054,6 +1059,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					}
 				}
 				loadImg(&r.bAttnImg, "attn_img_batched")
+				var pe error
+				if r.bAttnSpan, pe = r.dev.NewComputePipeline(imod, "attn_span_batched"); pe == nil {
+					r.spanPrefillReady = true
+				} else {
+					r.bAttnSpan = Pipeline{}
+				}
 			}
 		}
 		// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentMRoPEPrefill): own module, prefill_batched.ptx untouched. Loaded
@@ -1741,9 +1752,38 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.gemma4Moe { // parallel dense‖MoE branch scratch
 			r.g4x1, r.g4x2, r.g4rn = r.af(H), r.af(H), r.af(H)
 		}
+		if why := r.floatActDecline(); why == "" {
+			fmod, e2 := r.dev.CompileLibrary(gemvW4F32PTX)
+			if e2 != nil {
+				return e2
+			}
+			for _, f := range []struct {
+				dst  *Pipeline
+				name string
+			}{
+				{&r.fW4F32, "gemv_w4f32"}, {&r.fMoEGemvF32, "gemv_w4f32_moe"}, {&r.fMoEWaccF32, "gemv_w4f32_moe_wacc"}, {&r.fGluF32, "glu_f32"},
+			} {
+				if *f.dst, e = r.dev.NewComputePipeline(fmod, f.name); e != nil {
+					return e
+				}
+			}
+			r.xF, r.dF, r.moeGLUF = r.af(H), r.af(max(maxI, 1)), r.af(moeInter)
+			r.floatAct = true
+			fmt.Fprintf(os.Stderr, "cuda: decode activations: f32 into every int4 projection (gemv_w4f32)\n")
+		} else if r.gemma4Moe {
+			fmt.Fprintf(os.Stderr, "cuda: decode activations: int8 (W4A8): %s\n", why)
+		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
 		r.topkOut = r.ai(2*topkMaxK + 2)      // sampled fast-path readback (~2 KB vs 594 KB)
+		r.topkCV, r.topkCI, r.topkMx, r.topkPart = r.af(topkCap), r.ai(topkCap), r.af(1), r.af(topkThreads)
+		r.topkCnt, r.topkDone = r.ai(1), r.ai(1)
+		if e := gpu.Upload(r.topkCnt, []int32{0}); e != nil {
+			return e
+		}
+		if e := gpu.Upload(r.topkDone, []int32{0}); e != nil {
+			return e
+		}
 		nGb := gumbelBlocks(vocab)
 		r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch (R7b)
 		if hb, e := gpu.NewHostBuffer[float32](r.dev, vocab); e != nil {

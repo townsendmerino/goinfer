@@ -1,0 +1,123 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// KS-A3 phase instrument (docs/measurements/ks-a3-2026-10/README.md). Kept under docs as .go.txt and copied into cuda/ as
+// ks_a3_scratch_test.go for a run; never committed under cuda/. Gated on GOINFER_KS=1. GOINFER_KS_A3_PTX names the
+// phase-stamped PTX that run-phases.sh builds from topk_phases.cu.txt.
+
+import (
+	"fmt"
+	"os"
+	"sort"
+	"testing"
+
+	gpu "github.com/townsendmerino/aikit/gpu"
+)
+
+func TestKSA3_phases(t *testing.T) {
+	if os.Getenv("GOINFER_KS") == "" {
+		t.Skip("set GOINFER_KS=1 (KS-A3 instrument)")
+	}
+	ptx, err := os.ReadFile(os.Getenv("GOINFER_KS_A3_PTX"))
+	if err != nil {
+		t.Fatalf("GOINFER_KS_A3_PTX: %v", err)
+	}
+	for _, c := range []struct {
+		model string
+		k     int
+	}{{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", 256}, {"gemma3-1b-q4_k_m.gguf", 1024}} {
+		t.Run(c.model, func(t *testing.T) {
+			mc, err := loadLikeServe(t, modelPath(c.model), "-backend", "cuda", "-quant", "int4")
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer mc.Close()
+			r := mustResident(t, mc)
+			_, _, _, _, _, _, vocab := mc.Dims()
+			for i := range 8 { // a real logits row in r.logits, as the survey's read had after 8 greedy tokens
+				if _, err := r.ForwardArgmax(mc.EmbedResidentForTest((i*2654435761+1)%(vocab-1)), i); err != nil {
+					t.Fatal(err)
+				}
+			}
+			const reps = 20
+			names := []string{"load samples", "sort samples", "pick t0", "compact", "sort candidates + write", "slow path", "Z"}
+			per := make([][]float64, len(names))
+			var total []float64
+			fast, cnt := 0, 0
+			same := true
+			err = r.do(func() error {
+				lib, e := r.dev.CompileLibrary(ptx)
+				if e != nil {
+					return e
+				}
+				p, e := r.dev.NewComputePipeline(lib, "topk_select_phases")
+				if e != nil {
+					return e
+				}
+				ph := gpu.NewBufferLenOf[uint64](r.dev, 10)
+				out := gpu.NewBufferLenOf[int32](r.dev, 2*topkMaxK+2)
+				args := []gpu.KernelArg{Arg(r.logits), gpu.ArgValue(int32(vocab)), gpu.ArgValue(int32(c.k)), gpu.ArgValue(float32(1)),
+					gpu.ArgValue(int32(1)), Arg(out), Arg(ph)}
+				host := make([]uint64, 10)
+				for rep := range reps + 1 {
+					if e := r.launch(p, onecfg(1024, 0), args...); e != nil {
+						return e
+					}
+					if e := r.stream.Sync(); e != nil {
+						return e
+					}
+					if e := gpu.Download(ph, host); e != nil {
+						return e
+					}
+					if rep == 0 {
+						continue // first launch: JIT and cache warm-up
+					}
+					fast += int(host[8])
+					cnt = int(host[9])
+					prev := host[0]
+					for i := 1; i <= 7; i++ {
+						if host[i] == 0 { // the phase did not run (fast path skipped, or slow path not taken)
+							per[i-1] = append(per[i-1], 0)
+							continue
+						}
+						per[i-1] = append(per[i-1], float64(host[i]-prev)/1000)
+						prev = host[i]
+					}
+					total = append(total, float64(prev-host[0])/1000)
+				}
+				// the instrumented kernel answers what the shipped one answers
+				ref, e := r.topkReadback(vocab, c.k, 1, true)
+				if e != nil {
+					return e
+				}
+				got := make([]int32, 2*c.k+2)
+				if e := gpu.Download(out, got); e != nil {
+					return e
+				}
+				for i := range c.k {
+					if got[i] != ref.IDs[i] {
+						same = false
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			med := func(x []float64) float64 {
+				s := append([]float64(nil), x...)
+				sort.Float64s(s)
+				return (s[len(s)/2-1] + s[len(s)/2]) / 2
+			}
+			for i, n := range names {
+				fmt.Fprintf(os.Stderr, "[A3] %s k=%d %-24s %8.1f µs (median of %d)\n", c.model, c.k, n, med(per[i]), reps)
+			}
+			t.Logf("KS-A3 %s k=%d: total %.1f µs median; fast path taken %d of %d; candidates %d; ids match the shipped kernel: %v",
+				c.model, c.k, med(total), fast, reps, cnt, same)
+			if !same {
+				t.Error("the phase-stamped kernel's ids differ from topk_select's")
+			}
+		})
+	}
+}

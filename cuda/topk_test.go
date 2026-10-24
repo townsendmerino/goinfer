@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestTopKSelect_matchesReference is the kernel gate for topk_select (R7): for every row shape a decode
+// TestTopKSelect_matchesReference is the kernel gate for the top-K (R7): for every row shape a decode
 // step could produce — and several it never would — the K ids and logits the kernel returns are EXACTLY
 // the first K of "sort by (logit desc, id asc)", which is the order decoder.topKByLogit defines and the
 // sampler's cumulative draw depends on. The shapes are chosen to break a radix select and an

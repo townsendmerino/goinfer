@@ -164,12 +164,12 @@ func TestQ4KStep_promptMatchesSequential(t *testing.T) {
 // TestQ4KStep_plantIsRed is gate (a)'s planted defect: the min term dropped from the q4k rows kernel alone (decode keeps
 // it) must make the step differ from sequential decode.
 func TestQ4KStep_plantIsRed(t *testing.T) {
-	const good = "acc[r] += (d*sc0*float(q & 15u) - dm*m0) * a0 + (d*sc1*float(q >> 4u) - dm*m1) * a1;"
+	const good = "acc[r] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);"
 	if strings.Count(mc3RowsKernels, good) != 1 {
 		t.Fatal("the plant's target is not in the q4k rows kernel")
 	}
 	prev := mc3RowsKernels
-	mc3RowsKernels = strings.Replace(prev, good, "acc[r] += (d*sc0*float(q & 15u)) * a0 + (d*sc1*float(q >> 4u)) * a1;", 1)
+	mc3RowsKernels = strings.Replace(prev, good, "acc[r] += d*sc0*dlo + d*sc1*dhi;", 1)
 	t.Cleanup(func() { mc3RowsKernels = prev })
 	a := q4kStepResident(t, 2, 1024)
 	lg, kv := q4kStepPrompt(t, a, q4kStepIDs(9004, 17), 0)

@@ -29,7 +29,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
 | MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
-| MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
+| MEM4(a) | done | done 2026-10-24: aikit#15 gated (ALS-G0 to G3 PASS: no slower on arm64, bit-identical, Qwen2.5-VL-3B tower heap 2,551.7 → 9.6 MiB); aikit v1.74.0 tagged; goinfer's bump and `closeEntryNatives` on main (8dd4e0ae, #201) | 8dd4e0ae, aikit v1.74.0 |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | done | done 2026-10-22: all four image and audio prefill routes run in chunks, byte-equal (V1 to V4 G1 to G3 PASS); tier-1 peaks run at night on the owner's word: Qwen2.5-VL-3B 1,261 → 357 MiB, Qwen3.5-0.8B 5,567 → 1,905 MiB over base (V1-G4, V3-G4 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-VL-G2T1 | open | a box with a bidirectional Gemma 4 (26B or 31B class): V2-G4, the route-2 peak with one image and about 8K tokens, `TestMEM5VL_peakTier1`'s form | `docs/measurements/mem5vl-2026-10/README.md` |
@@ -49,7 +49,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM11-int8-MLA-T3 | done | done 2026-10-23 on D14 (b) then (a): no single int8 projection, and no pair, clears both gates (o alone clears Moonlight and fails V2-Lite), so MLA is f32 on every load again (+944 MB on V2-Lite and Moonlight). On that build both gates PASS (V2-Lite 0.999243, Moonlight 0.999508, continuations exact) and `deepseek_v2`, `deepseek_v3`, `kimi_k2` are validated | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
-| MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
+| MEM12-ringres | open (1 cell) | merged 2026-10-24 (#207): a ring layer reserves no append-forever K/V in any form (gemma2-tiny's hint costs half); RR-G1 PASS; RR-G2: 107 tests on the Mac and 4 of the 5 gemma-3-270m tests on nobara PASS; `TestForward_slidingWindowParity` skipped there (the job's testdata copy lacked `gemma_window_golden.json`) and is re-queued on nobara (`mem12rr-g2-window`). Done when it reads PASS | §4 MEM12, "MEM12-ringres gates" |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
@@ -411,6 +411,58 @@ after the owner tags aikit: serve calls `ReleaseBlocks` once a device tower is b
 Planted defect, run once in aikit and reverted: `ensureBlocks` not reloading (TWR-G1 red: the forward after the release
 fails or differs). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about a
 minute for G3. aikit's `preflight` runs before its PR.
+
+**MEM4(a) gates, registered 2026-10-23 before the code (ALS-G), on the owner's word of 2:30 pm.** The aikit half: the towers'
+`newQMat` callers (SigLIP, SigLIP2 NaFlex, Qwen2.5-VL, Qwen3-VL/3.5, GLM-OCR, Pixtral, Gemma 4) take their projection weights
+from the safetensors mapping without copying: `WrapBF16` / `WrapF16` over a bf16 or f16 tensor, `WrapF32` over an f32 one; the
+encoder keeps the mapping open until `Close`; `-vision-quant` keeps quantizing (it consumes the weights, nothing to alias). The
+goinfer half: the Metal and CUDA tower builders read a 16-bit-held weight through `Half16` and upload its exact widening, so
+their device bytes do not change. The audio towers are out of scope (their loaders do not use `newQMat`). The speed read runs
+first: the 16-bit matmul widens each tile of weight rows to f32 per call, which the f32 path does not, and arm64's widen is
+scalar.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| ALS-G0 speed (runs first) | 1, Mac, by day | the CPU tower forward, in-process, f32-held weights (today) against 16-bit-held ones (each projection `WeightMat` rebuilt with `QuantizeBF16` of its f32, exact for a bf16 checkpoint: the bytes `WrapBF16` would alias), on Qwen2.5-VL-3B's tower (`~/models/qwen25vl-3b-instruct`, bf16) over `qwen25vl_preprocess_image.png` and on Gemma-3-4B's SigLIP (`~/models/gemma-3-4b-it`, bf16) over `gemma3_preprocess_image.png`; A B B A over 6 pairs after one warm run each; both arms' features compared bit for bit | proceed iff each tower's median 16-bit/f32 time is ≤ 1.00 (and the features are equal); otherwise **stop** and ask the owner (DECISION NEEDED) with the readings |
+| ALS-G1 identity | 0 | each `newQMat` tower's committed tiny fixture loaded aliased against widened (today's load), every output feature | byte-equal |
+| ALS-G2 heap | 1, Mac | the Qwen2.5-VL-3B tower loaded aliased, Go heap in use after `runtime.GC` + `debug.FreeOSMemory` | at most 15% of its f32 projection bytes (today the heap holds all of them) |
+| ALS-G3 device bytes | 0 | goinfer's tower hashes (`TestKSD4_towerHashes`' seven towers, `mem2Towers`) built from aliased encoders against today's | byte-equal |
+
+Amended 2026-10-23 (14:44), before any run: `qwen25vl_preprocess_image.png` is 84×56 (24 patches), too small to time a tower,
+so ALS-G0's Qwen2.5-VL cell runs random patches at grid (1, 32, 44), 1,408 patches (about a 448×616 image); the SigLIP cell keeps
+its image (every SigLIP input is 4,096 patches).
+
+**ALS-G0's first run (15:09–15:19) is void.** The 1-minute load was 3.94 at the start, but every pair after the first started at
+4.7–14.3, above the void line (4.0): the tower forward runs on every core and the previous run holds the average up. It read
+16-bit/f32 0.9818 (Qwen2.5-VL) and 0.9849 (SigLIP), features equal in every pair, and is recorded, not graded
+(`~/goinfer-logs/als-g0-void-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
+most, else void) and prints the load each run starts at; nothing else changes.
+
+**ALS-G0 read 2026-10-23 (17:12–17:39, goinfer's timing lock held exclusively, 6.3 GB available at the start; all 28 runs
+started at a 1-minute load under 4.0, at most 3.98): PASS, proceed.** Qwen2.5-VL-3B's tower: f32 5.82–6.46 s, 16-bit 5.66–5.99 s,
+**median 16-bit/f32 0.9666**; Gemma-3-4B's SigLIP: f32 23.81–25.06 s, 16-bit 23.45–25.38 s, **median 0.9935**; the features equal bit
+for bit in every pair. The 16-bit tower is no slower on arm64: its tile widen is paid once per weight tile across every image row,
+and the halved weight bytes offset it. Log: `~/goinfer-logs/als-g0-2026-10-23.log`.
+
+**ALS-G1 to G3 read 2026-10-23, by day; the aikit change is townsendmerino/aikit#15 (branch `mem4a-alias-2026-10`).**
+- ALS-G1 **PASS**: all eight `newQMat` tower configurations (SigLIP, SigLIP2 NaFlex, Qwen2.5-VL, Qwen3.5, Qwen3-VL with DeepStack,
+  GLM-OCR, Pixtral, Gemma 4 from goinfer's fixture), each tiny fixture and a bf16 copy of it, aliased against copied: byte-equal,
+  10–18 weights aliased per tower, and a forward after `Close` an error in every one. The plant (a bf16 weight wrapped as f16)
+  turned every bf16 cell red and left the f32 cells green, which is why the bf16 copies are there.
+- ALS-G2 **PASS**: Qwen2.5-VL-3B's tower, Go heap in use after load and GC, aliased **9.6 MiB (0.4%)** against **2,551.7 MiB**
+  copied; its projections are 2,543.1 MiB as f32. Log: `~/goinfer-logs/als-g2-2026-10-23.log`.
+- ALS-G3 **PASS**: `TestALS_G3_towerHashes` (`metal/als_g3_test.go`; `mem2Towers`' seven towers, 21 output hashes) built against
+  aikit main and against the branch, through two workspaces: identical.
+- Also: aikit's `go vet ./...`, the `vision` and `embed` tests, and `releasegate 1.74.0` clean but for the uncut `[1.74.0]`
+  CHANGELOG section. MEM4(b)'s `TestReleaseBlocks_reloadsTheSameTower` now runs copied (its heap check, unchanged) and aliased
+  (the blocks are never on the heap; the reload, forward and export checked).
+
+The goinfer half, after the aikit tag: the bump, and `internal/serveapp/liveness.go:loadedModel.closeEntryNatives` closing the GLM-OCR,
+Qwen3.5+ and Gemma 4 encoders it used to drop, since their mappings now stay until `Close`.
+
+Stopping rule: one pass each; ALS-G0 failing stops the item before any code ships. Cost: ALS-G0 about 15 min; the rest seconds
+to minutes. Release: an aikit minor (a PR, then its tag through aikit's `RELEASING.md`; the nobara half and the tag push are the
+coordinator's), then goinfer's bump.
 
 ### MEM5 · Chunk the prefill of the families G40 left whole (M–L)
 
@@ -815,6 +867,45 @@ min for the parity refresh.
 > reservation to the byte; on the tree before, an f16 cache's hint cost three times its own storage. G2's three heavy
 > int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
 > and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
+
+**MEM12-ringres gates, registered 2026-10-24 before the code (RR-G), on the owner's order of the Mac work.** The build:
+`enableRings` gives up every append-forever reservation of a layer it makes a ring (f32 from `NewKVCache`'s hint, f16 or
+int8 and the int8 scales from `setQuant`), leaving empty, non-nil slices as `setQuant` does for f32. A ring layer never reads
+or grows them: `Append` and the batched commit write its ring, and `reserveRows` and `regrowLayer` skip or never reach it.
+Tier 0 answers it, by the same counters as F32R-G1.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| RR-G1 bytes | 0 | F32R-G1's instrument, `TestKVQuant_reservesNoF32`, on `llama-tiny` and `gemma2-tiny` with f32, f16 and int8 KV, `NewCache(512)` | a ring layer holds 0 capacity in every form; a global layer keeps 512 × its KV width in its form (f32 capacity 0 under f16 and int8, as before); and the bytes over `NewCache(0)` are within 1% of the global layers' reservation alone (on main they also carry the ring layers') |
+| RR-G2 identity | 0 | the ring, sliding-window and KV tests by name (`Ring\|Window\|KVF16\|KVI8\|KVQuant\|Gemma2\|Session\|Prefix`), then `scripts/refresh_parity_hashes.sh` | all PASS (not skip); the parity refresh is green |
+
+Planted defect, run once on the committed tree and reverted: the reservation dropped on every layer, global ones too (G1 red).
+Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1; minutes for G2 and the parity refresh.
+
+> **Read 2026-10-24 (Mac).** **RR-G1 PASS**: the hint's bytes over `NewCache(0)`, main → branch: gemma2-tiny (2 of 4 layers
+> ring) f32 1,048,576 → 524,288, f16 524,288 → 262,144, int8 294,912 → 147,456, each equal to its two global layers'
+> reservation; llama-tiny (no ring) unchanged at 524,288 / 262,144 / 163,840; every ring layer 0 in every form. The plant
+> (every layer skipped) turned it red. **RR-G2: partial, not PASS** (its bar is all PASS, not skip): by name, 104 PASS, 0 FAIL; the three heavy int8 KV tests PASS on
+> `gemma-3-4b-it` (its local layers ring), with `GOINFER_HEAVY_TESTS=1`. Five tests need `testdata/gemma-3-270m`, which this
+> Mac does not have (no Hugging Face token to fetch it): `TestSession_reuseParity`, `TestSession_snapshotRoundTrip`,
+> `TestLoadSession_rejectsCorrupt`, `TestLoadSession_allocationCeilingNotBodyRatio`, `TestForward_slidingWindowParity`; owed on
+> a box that has it. The parity refresh is green (33 forward goldens pass, 0 fail; 42 `deps_hash` lines). Also: `setQuant` now
+> honours the same predicate, so a recurrent mixer layer no longer gets a quantized reservation either, as `NewKVCache` already
+> gave it no f32 one. Logs: `~/goinfer-logs/mem12rr-g2-2026-10-24.log`, `~/goinfer-logs/mem12rr-g2-heavy-2026-10-24.log`,
+> `~/goinfer-logs/mem12rr-parity-2026-10-24.log`.
+>
+> **Amended 2026-10-24, after a second-opinion review.** The build does not have `enableRings` give the reservation up, as the
+> registration above says: one predicate, `Architecture.ringLayerAt`, names the ring layers, and `NewCache` passes it both to
+> `NewKVCache` as the layers that reserve nothing and to `enableRings` as the layers it rings, so the two cannot drift apart.
+> RR-G1's test now computes the expected bytes from each layer's expected capacity rather than reading them back, checks the
+> int8 scales' capacity too, and requires gemma2-tiny to have ring layers (2 of 4) and llama-tiny none; it reads the same
+> figures, and the plant is still red.
+>
+> **RR-G2's gemma-3-270m cells, read 2026-10-24 on nobara** (job `mem12rr-g2-270m`, 12:53, a decoder test binary at main 940783a0
+> plus a test-only commit, run from a private copy of `testdata/gemma-3-270m`): `TestLoadSession_allocationCeilingNotBodyRatio`,
+> `TestSession_reuseParity`, `TestSession_snapshotRoundTrip` and `TestLoadSession_rejectsCorrupt` **PASS**;
+> `TestForward_slidingWindowParity` **SKIP**, because the job's testdata copy lacked `gemma_window_golden.json` (a setup slip, not the
+> change). It is re-queued with the golden copied (`mem12rr-g2-window`). RR-G2 stays partial until it reads PASS.
 
 **MEM12-scratch gates, registered 2026-10-21 before the code (SCR-G).** The build, three parts. (1) The MoE expert-major
 branch of the batched pass takes its K × hidden output, its done flags and `moeMLPBatch`'s buffers (router logits, the

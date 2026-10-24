@@ -1,0 +1,8 @@
+[2026-10-23 14:50:26 PDT] arm main: /home/francis/tack-runs/bin/goinfer-serve-cuda-9bafcc12 (goinfer-serve-cuda-9bafcc12) env=[]
+  gpu: 402 MiB  load: 3.58 5.53 5.70  mem avail: 56.1 GB
+    decode path: cuda-resident (int4)
+    prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 30.4 GB, 29.1 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+finished: 2026-10-23 14:56:07 PDT rc=0

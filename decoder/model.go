@@ -293,6 +293,25 @@ func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 // locally (see decoder.DrafterKVBytesPerPosition). 0 means the companion, if any, has no ctx-scaling K/V term.
 func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 
+// ExpertCacheStats reports the resident's MoE expert cache (ResidentExpertCache); ok is false off the resident path or when
+// the resident keeps no cache.
+func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
+	if c, ok := m.resident.(ResidentExpertCache); ok {
+		return c.ExpertCacheStats()
+	}
+	return ExpertCacheStats{}, false
+}
+
+// ResizeExpertCache resizes the resident's MoE expert cache (ResidentExpertCache) to leave reserve bytes of device memory
+// free, and returns its slots per layer. It errors when there is no resident or the resident keeps no cache.
+func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
+	c, ok := m.resident.(ResidentExpertCache)
+	if !ok {
+		return 0, fmt.Errorf("decoder: this model's resident keeps no expert cache")
+	}
+	return c.ResizeExpertCache(reserve)
+}
+
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
 // escape hatch): every "fit by default" behavior reverts to its previous default. Checked by backend packages that implement
 // a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate. See docs/tasks/task-fit-to-hardware.md.
@@ -897,6 +916,7 @@ func (m *Model) Close() error {
 		_ = m.resident.Close()
 		m.resident = nil
 	}
+	m.releaseKQuantFile()
 	var err error
 	if m.be != nil {
 		err = m.be.Close()
@@ -953,18 +973,20 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// A linear/mamba/conv mixer layer (or one of Nemotron's mlp/moe block kinds) never writes c.keys[l]/c.vals[l] either: its
 	// recurrent state (c.delta/c.mamba/c.conv/c.kda, set up below) is the whole store, so it reserves no K/V capacity.
 	// hasNoAttentionKVAt (arch.go) is the one place that knows all these cases, shared with kvDimAt's pricing.
-	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, a.hasNoAttentionKVAt)
+	// A ring layer (ringLayerAt, which also decides enableRings below) never reads or grows its append-forever arrays
+	// either, so it reserves none.
+	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
+		return a.hasNoAttentionKVAt(l) || a.ringLayerAt(l)
+	})
 	c.scr = newDecodeScratch(a)
 	// Must precede enableRings so local layers inherit the mode.
 	if quant != kvqF32 {
 		c.setQuant(quant, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
-	// can read. Only for families whose forward uses attendQuery/attendBatchedHeads (kvRingsOK); the others keep append-forever.
-	// See docs/completed/task-kv-ring-eviction.md.
-	if a.kvRingsOK() {
-		c.enableRings(a.SlidingWindow, a.isGlobalLayer)
-	}
+	// can read. ringLayerAt names them, the same predicate that gave them no reservation above; a family whose forward does not
+	// use attendQuery/attendBatchedHeads (kvRingsOK) has none and keeps append-forever. See docs/completed/task-kv-ring-eviction.md.
+	c.enableRings(a.SlidingWindow, func(l int) bool { return !a.ringLayerAt(l) })
 	if a.gemma4 != nil {
 		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
 	}

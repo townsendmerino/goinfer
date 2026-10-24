@@ -27,6 +27,10 @@ import (
 //     W4A8 activation rounding differs) should track it or sit ABOVE it. If CUDA drops FASTER than the
 //     fixture's own quantization curve, that's a real divergence no conditioning explains.
 func TestGemma4MoE_residentParity(t *testing.T) {
+	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
+	// takes by default has its own gate (TestGemma4MoE_floatParity).
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	t.Setenv("GOINFER_G4_CAPTURE", "1")
 	const dir = "../testdata/gemma4-moe-tiny"

@@ -42,6 +42,10 @@ import (
 //     CPU-int4 share weights and differ only in W4A8 activation rounding, so CUDA must track or sit
 //     above that baseline. Dropping BELOW it is a real divergence no conditioning explains.
 func TestGemma4MoEScaled_residentParity(t *testing.T) {
+	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
+	// takes by default has its own gate (TestGemma4MoE_floatParity).
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	dir := os.Getenv("GOINFER_MOE_SCALED_FIXTURE")
 	if dir == "" {
 		dir = "../testdata/gemma4-moe-scaled"

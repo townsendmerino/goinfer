@@ -342,6 +342,32 @@ type ResidentImageBlocksPrefill interface {
 	PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) (logits []float32, err error)
 }
 
+// ExpertCacheStats describes a resident's device cache of MoE experts: Slots is the per-layer slot count it was granted,
+// and Hits and Misses sum every MoE layer's lookups since the resident was built. A miss is one expert copied host to device.
+type ExpertCacheStats struct {
+	Slots        int
+	Hits, Misses uint64
+}
+
+// ResidentExpertCache is an OPTIONAL ResidentForward extension, implemented by a resident that pages MoE experts through a
+// device cache. ExpertCacheStats' ok is false when this build keeps no cache; its counters are written by the generation in
+// flight, so a caller reads them between generations. ResizeExpertCache sizes the cache to what free device memory holds
+// with reserve bytes left over, up to the slots the load asked for, and returns the slots it now has; the cache restarts
+// empty. It is called between generations, and an error leaves the cache as it was.
+type ResidentExpertCache interface {
+	ExpertCacheStats() (s ExpertCacheStats, ok bool)
+	ResizeExpertCache(reserve int64) (slots int, err error)
+}
+
+// ResidentSpanPrefill is an OPTIONAL ResidentForward extension: the batched prefill of a Gemma 4 bidirectional
+// ("vision") prompt. spans are each image's or audio clip's [start, end), absolute, in order and disjoint, and a row
+// attends as gemma4AttendRange says: inside a span it sees the whole span, and a sliding layer's window reaches back to
+// the span's start; elsewhere it is causal. The backend may cut passes, but never inside a span. Any error other than a
+// cancel is a decline, and GenerateGemma4VLSpans takes the CPU prefill and upload instead.
+type ResidentSpanPrefill interface {
+	PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) (logits []float32, err error)
+}
+
 // ResidentHybridMRoPEPrefill is an OPTIONAL marker for a ResidentMRoPEPrefill implementer: its batched m-RoPE prefill is correct for a
 // model with RECURRENT state (the Gated-DeltaNet hybrids, Qwen3.5+), building that state itself from the spliced embeddings. Without
 // it GenerateQwenVL keeps a recurrent family on the CPU prefill, because the CPU-prefill-then-UploadKV bridge copies only the layers
@@ -1168,6 +1194,7 @@ func (m *Model) AttnLogitSoftcapResident() float32 { return float32(m.w.arch.Att
 var attnSoftcapOffForTest atomic.Bool
 
 func (m *Model) withResidency() *Model {
+	defer m.releaseKQuantFile() // the q4k load's GGUF mapping is read by this build only (KQuantReader)
 	if attnSoftcapOffForTest.Load() {
 		m.w.arch.AttnLogitSoftcap = 0
 		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program

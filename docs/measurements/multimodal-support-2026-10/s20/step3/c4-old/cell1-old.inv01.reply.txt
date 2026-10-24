@@ -1,0 +1,71 @@
+Here is a transcription and analysis of the invoice fields:
+
+### **Transcription**
+
+* **Invoice No:** A-01778
+* **Date:** 10/24/2026
+* **Due Date:** 11/24/2026
+* **From:** Harbor Light Supply Co., 711 Ridge Park Drive, Austin, TX గా7801
+* **Bill To:** Thistle & Rowan Ltd, 9 Foundry Way, Bristol BS1 5TR
+* **No 1 Description:** Binding spine strips
+* **No 1 Qty:** 6
+* **No 1 Unit Price:** 920.48
+* **No 1 Amount:** 5522.88
+* **No 2 Description:** Hardwood flooring, per m2
+* **No 2 Qty:** 5
+* **No 2 Unit Price:** 125.27
+* **No 2 Amount:** 626.35
+* **No 3 Description:** Design review
+* **No 3 Qty:** 24
+* **No 3 Unit Price:** 655.85
+* **No 3 Amount:** 15740.40
+* **Subtotal:** 21889.63
+* **Tax (8.5%):** 1860.62
+* **Total Due:** €23750.25
+* **Payment terms:** net 30 days.
+
+***
+
+### **Field Analysis**
+
+**Invoice No**
+This field provides a unique identification number for this specific transaction. It is used for tracking the order in accounting software and cross-referencing with purchase orders. A clerk should ensure this number is unique and matches the number recorded in their internal system.
+
+**Date**
+This records the date the invoice was issued. It serves as the starting point for the payment timeline and helps track when the transaction occurred. A clerk should verify that the date is current and falls within the expected timeframe for the-goods/services provided.
+
+**Due Date**
+This field specifies the deadline by which the payment must be received. It is calculated based on the issue date and the "net 30" payment terms. A clerk should use this to prioritize payments and flag any overdue accounts.
+
+**From**
+This identifies the seller or service provider issuing the invoice. It provides the legal name and contact address of the vendor. A clerk should verify that the vendor's information matches their approved supplier list.
+
+**Bill To**
+This identifies the customer or recipient responsible for paying the invoice. It provides the legal name and billing address of the client. A clerk should ensure the "Bill To" entity matches the client who placed the order.
+
+**No (Item Number)**
+This is a sequential number used to organize the line items in the invoice. It helps in referencing specific rows during discussions or audits. A clerk should check that the numbering is logical and follows a sequence.
+
+**Description**
+This field provides a text-based explanation of the goods or services being billed. It allows the buyer to understand exactly what they are paying for. A clerk should verify that the descriptions match the items or services actually received.
+
+**Qty (Quantity)**
+This records the numerical amount of units, hours, or measurements for each line item. It is the multiplier used to calculate the total cost for that specific row. A clerk should cross-reference this quantity with delivery notes or work logs to ensure accuracy.
+
+**Unit Price**
+This indicates the cost for a single unit of the described item or service. It is the base rate before any quantities are applied. A clerk should verify that this price aligns with the agreed-upon contract or quote.
+
+**Amount**
+This is the total cost for a specific line item, calculated by multiplying the Quantity by the Unit Price. It provides the total cost for that specific entry. A clerk should perform a quick calculation to ensure the math is correct.
+
+**Subtotal**
+This is the sum of all the individual "Amount" fields before taxes or discounts are applied. It represents the raw cost of the transaction. A clerk should verify that the sum of all line items matches this figure.
+
+**Tax (8.5%)**
+This records the amount of tax applied to the subtotal based on the specified percentage. It is a mandatory addition to the cost required by law. A clerk should verify that the tax rate used is correct for the jurisdiction of the transaction.
+
+**Total Due**
+This is the final amount that the customer is required to pay, including the subtotal and taxes. It is the most critical figure for the accounts receivable department. A clerk should ensure this figure is clearly visible and matches the total of the subtotal plus tax.
+
+**Payment terms**
+This describes the conditions under which the payment must be made (e.g., "net 30 days"). It dictates the credit period allowed to the buyer. A clerk should use this to set the expected payment window in their accounting system.

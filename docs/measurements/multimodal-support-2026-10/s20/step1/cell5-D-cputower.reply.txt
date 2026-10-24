@@ -1,0 +1,69 @@
+**Transcription**
+
+* **Invoice No:** A-01778
+* **Date:** 10/24/2026
+* **Due:** 11/24/2026
+* **From:** Harbor Light Supply Co., 711 Ridge Park Drive, Austin, TX 78701
+* **Bill To:** Thistle & Rowan Ltd, 9 Foundry Way, Bristol BS1 5TR
+* **No 1 Description:** Binding spine strips
+* **No 1 Qty:** 6
+* **No 1 Unit Price:** 920.48
+* **No 1 Amount:** 5522.88
+* **No 2 Description:** Hardwood flooring, per m2
+* **No 2 Qty:** 5
+* **No 2 Unit Price:** 125.27
+* **No 2 Amount:** 626.35
+* **No 3 Description:** Design review
+* **No 3 Qty:** 24
+* **No 3 Unit Price:** 655.85
+* **No 3 Amount:** 15740.40
+* **Subtotal:** 21889.63
+* **Tax (8.5%):** 1860.62
+* **Total Due:** €23750.25
+* **Payment terms:** net 30 days.
+
+***
+
+**Field Descriptions**
+
+**Invoice No**
+This field records the unique identification number assigned to this specific transaction for tracking and filing purposes. It serves as a primary key to distinguish this document from all other invoices issued by the seller. A clerk should ensure this number is unique and matches the internal purchase order or reference number if applicable.
+
+**Date**
+This field records the specific calendar date on which the invoice was generated and issued. It serves as the starting point for the aging of the accounts receivable and the payment timeline. A clerk should verify that the date is current and logically precedes the due date.
+
+**Due**
+This field specifies the deadline by which the total amount must be paid to avoid late fees or-interest. It is calculated based on the issuance date and the agreed-제 upon payment terms. A clerk should check this date against the company's cash flow projections to ensure timely processing.
+
+**From**
+This field identifies the seller or service provider issuing the invoice, including their business name and physical address. It establishes the legal entity to whom the payment should be directed and who is providing the goods/services. A clerk should verify that the sender's contact information is correct and matches the vendor master file.
+
+**Bill To**
+This field records the name and address of the customer or entity responsible for paying the invoice. It is the legal recipient of the bill and the entity that will receive the goods or services. A clerk should ensure the billing address is correct to prevent delivery issues or billing disputes.
+
+**No (Line Item Number)**
+This field provides a sequential number for each unique line item listed in the invoice. It helps in organizing the list and cross- and referencing specific items during audits or disputes. A clerk should ensure the numbering is sequential and accounts for all items listed.
+
+**Description**
+This field provides a written explanation of the specific goods or services being billed. It allows the buyer to understand exactly what they are paying for in each line item. A clerk should verify that the descriptions are clear and match the items ordered in the original purchase agreement.
+
+**Qty (Quantity)**
+This field records the numerical amount of the specific product or service being billed. It is used to calculate the total cost for that specific line item. A clerk should cross-reference this quantity with the shipping manifests or work logs to ensure accuracy.
+
+**Unit Price**
+This field records the cost for a single unit of the product or service listed. It is the base rate used to calculate the total amount for that specific line item. A clerk should verify that the unit price matches the agreed-upon quotes or contract rates.
+
+**Amount (Line Item Total)**
+This field records the total cost for a specific line item, calculated by multiplying the quantity by the unit price. It provides a quick summary of the cost for that specific entry. A clerk should perform a quick multiplication check to ensure the math is correct for each line.
+
+**Subtotal**
+This field records the sum of all the individual line item amounts before taxes or discounts are applied. It provides a clear view of the base cost of the transaction. A clerk should verify that the sum of all "Amount" fields equals the subtotal.
+
+**Tax (8.5%)**
+This field records the amount of tax applied to the subtotal, calculated at a specific percentage. It shows the tax-rate used and the resulting tax amount. A clerk should verify that the tax percentage matches the local tax laws and that the math is correct.
+
+**Total Due**
+This field records the final, total amount that the customer is required to pay, including all taxes and fees. It is the most critical figure for the accounts receivable department. A clerk should ensure this figure is the final sum of the subtotal and the tax amount.
+
+**Payment terms**
+This field describes the conditions under which the payment must be made, such as "net 3�days." It sets the expectations for when the funds should be received. A clerk should check this against the- and- and ensure it aligns with the "Due" date provided at the top.

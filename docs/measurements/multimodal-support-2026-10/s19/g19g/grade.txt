@@ -1,0 +1,4 @@
+float: 16 forms, 294/294 values present
+  float: PASS
+main: 16 forms, 292/294 values present; inv11: missing [40.0]; inv15: missing [10.0]
+  main: FAIL

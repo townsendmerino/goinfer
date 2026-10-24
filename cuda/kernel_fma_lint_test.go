@@ -21,7 +21,7 @@ import (
 var lintedKernels = []string{
 	"fused_qkv.cu", "glue.cu", "prefill_batched.cu", "decode_splitkv.cu",
 	"gemv_w4a8_rn.cu", "gemv_w8a8_batched.cu", "gemv_fwd.cu",
-	"router_f32.cu", "argmax.cu", "attn_block.cu", "gptoss_act.cu", "deltanet.cu",
+	"router_f32.cu", "gemv_w4f32.cu", "argmax.cu", "attn_block.cu", "gptoss_act.cu", "deltanet.cu",
 	"attn_fused.cu", "attn_fused_bm.cu", "attn_fused_vit.cu", "gemm_w4a8_mma.cu", "lora.cu", "attn_img_prefill.cu", "rope_mrope_prefill.cu", "rope_pairwise.cu",
 	"layernorm_quant.cu", "gelu_quant.cu", "mla.cu", "topk.cu", "gumbel.cu", "decode_fa.cu", "fused_qkv_rows.cu", "fused_gu_rows.cu",
 	"actgroup.cu", "tower_base.cu", "moe_fold.cu", "moe_rows.cu", "audio_encoder.cu", "mamba.cu", "nongated_act.cu", "prefill_splitkv.cu",

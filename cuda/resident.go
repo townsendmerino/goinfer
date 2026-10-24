@@ -612,6 +612,9 @@ type cudaResident struct {
 	hostIdx           []uint32 // C′: scratch for the per-layer rIdx device→host readback
 	hostSlot          []uint32 // C′: scratch for the per-token slot ids uploaded to slotIdx
 
+	// cacheSlotsAsked is the slot count the load asked for, before allocSlots capped it to free VRAM: the ceiling a resize grows to.
+	cacheSlotsAsked int
+
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4: its output steers a
 	// DISCRETE choice, so a quantization error near a tie does not perturb the result slightly, it runs a DIFFERENT
 	// expert and the output is unrelated (the Granite SSM expert-flip class; docs/code-notes/cuda.md#cudaResident.moe).
@@ -650,7 +653,7 @@ type cudaResident struct {
 	dev                                                                                     *Device
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
-	fTopK                                                                                   Pipeline // topk_select
+	fTopKCompact, fTopKFinish, fTopKZ                                                       Pipeline // topk_compact / topk_finish / topk_z
 	kvCopy                                                                                  Pipeline // kv_store at pos 0 = an exact device copy (K=V layers copy raw k into vB instead of projecting twice)
 	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
 	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
@@ -742,12 +745,21 @@ type cudaResident struct {
 	prefillReady             bool     // batched kernels loaded; PrefillLast usable
 	bAttnImg                 Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
 	imgPrefillReady          bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
-	bRopeKVMRoPE             Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
-	pairwiseRoPE             bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.PairwiseRoPEResident() at build
-	mropePrefillReady        bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
-	mropeTakesMode           bool     // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
-	mropeMode                int32    // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
-	mropeSec0, mropeSec1     int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
+	// floatAct: a Gemma 4 MoE decode step reads every int4 projection's activation as f32 (gemv_w4f32.cu), not int8; set at
+	// build by floatActDecline. xF holds the normed f32 input (attention, then the dense branch, then the experts), dF the
+	// dense GLU output, moeGLUF an expert's.
+	floatAct                                  bool
+	fW4F32, fMoEGemvF32, fMoEWaccF32, fGluF32 Pipeline
+	xF, dF, moeGLUF                           Buffer
+	bAttnSpan                                 Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
+	spanPrefillReady                          bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
+	spanPass                                  bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
+	bRopeKVMRoPE                              Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
+	pairwiseRoPE                              bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.PairwiseRoPEResident() at build
+	mropePrefillReady                         bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	mropeTakesMode                            bool     // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
+	mropeMode                                 int32    // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
+	mropeSec0, mropeSec1                      int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
 	// prefillChunkCap is the LEARNED row budget shared by every batched-prefill caller that has a row-count knob to
 	// shrink: prefillChunked (retries the SAME pass smaller and stores whatever width worked) and PrefillImageLast
 	// (cannot retry a bidirectional image block smaller, since an image OOM is a function of that block's own M, but
@@ -823,9 +835,12 @@ type cudaResident struct {
 	x, aSc, qB, kB, vB, cctx, cSc, oO, mSc, gO, uO, dSc, dScr, dO, logits Buffer
 	aq, cq, mq, dq, argIdx                                                Buffer
 	argVal                                                                Buffer
-	topkOut                                                               Buffer   // topk_select output: ids, logit bits, Z hi/lo bits
-	gbKey, gbIdx, gbOut                                                   Buffer   // gumbel_stage1 per-block winners, and the drawn id
-	kc, vc                                                                []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
+	topkOut                                                               Buffer // topk_finish / topk_z output: ids, logit bits, Z hi/lo bits
+	// topk's global scratch (cuda/topk.cu): the fast path's candidates, their count, the row max, Z's partials and the
+	// done counter. topkCnt and topkDone start at zero and the kernels reset them.
+	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
+	gbKey, gbIdx, gbOut                                 Buffer   // gumbel_stage1 per-block winners, and the drawn id
+	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
 
 	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
 	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
@@ -1258,6 +1273,7 @@ func (r *cudaResident) allocSlots() error {
 		return nil
 	}
 	strides := r.slotStrides(moeLayers[0])
+	r.cacheSlotsAsked = r.cacheSlots
 	if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
 		r.dbgFreeBefore = f0 // recording only
 	}
@@ -1305,45 +1321,7 @@ func (r *cudaResident) allocSlots() error {
 			r.cacheSlots = fit
 		}
 	}
-	// probe issues each allocation; it is a pass-through.
-	probe := func(_ int, alloc func()) { alloc() }
-	// Issue LARGEST FIRST across all layers, not group by group. The total is identical (capSlots and the granularity
-	// form are untouched; only the order moves). This is a packing improvement, not a fix: the real constraint is a
-	// driver ALLOCATION FLOOR (~144 MiB that cuMemGetInfo reports free and cuMemAlloc will not hand out at any request
-	// size, TestAllocFloor), and the leftover after allocSlots must exceed it, which slotMarginBytes provides. The
-	// order is kept on its measured merit (it drains ~27 MiB further before hitting the floor), not on the refuted
-	// contiguity theory it was introduced for (docs/code-notes/cuda.md#allocSlots.order).
-	//
-	// Sort by MEASURED request size, not an assumed stride order: per-layer geometry is not guaranteed uniform (Gemma
-	// 4's KV widths differ per layer, and slotBytesPerLayer exists because layer 0 can be dense). A stable sort keeps
-	// layer order within each size class, so the sequence stays deterministic.
-	type slotReq struct {
-		w    *cudaWQ
-		n    int // element count for the allocator
-		size int // bytes, for ordering and for the probe
-		isW  bool
-	}
-	reqs := make([]slotReq, 0, 4*len(moeLayers))
-	for _, i := range moeLayers {
-		L := &r.layers[i]
-		for _, w := range []*cudaWQ{&L.expGU, &L.expDown} {
-			reqs = append(reqs,
-				slotReq{w, r.cacheSlots * w.perExpertW, r.cacheSlots * w.perExpertW * 4, true},
-				slotReq{w, r.cacheSlots * w.perExpertS, r.cacheSlots * w.perExpertS * 2, false})
-		}
-	}
-	sort.SliceStable(reqs, func(a, b int) bool { return reqs[a].size > reqs[b].size })
-	for _, q := range reqs {
-		if q.isW {
-			probe(q.size, func() { q.w.W = r.au32(q.n) })
-		} else {
-			probe(q.size, func() { q.w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, q.n) })
-		}
-		// Recording only: the REQUESTED byte size of each allocation, in issue (sorted) order, so predicted consumption
-		// can be recomputed with per-buffer 2 MiB rounding instead of a raw sum. Every gate on it reads it
-		// order-independently (counts, distinct sizes, occurrences, sum).
-		r.dbgAllocSizes = append(r.dbgAllocSizes, q.size)
-	}
+	r.allocSlotStacks(moeLayers, true)
 	for _, i := range moeLayers {
 		r.layers[i].expCache = newExpertCache(r.nE, r.cacheSlots)
 	}
@@ -1607,6 +1585,133 @@ func (r *cudaResident) rollbackAdmits(c *expertCache) {
 		c.unadmit(p.slot, p.expert)
 	}
 	r.pendingAdmits = r.pendingAdmits[:0]
+}
+
+// allocSlotStacks allocates the slot stacks of every routed layer in moeLayers, r.cacheSlots deep. record keeps each
+// request's size in dbgAllocSizes (the build's allocation; a resize is not recorded). It runs on the executor and panics on
+// an allocation failure, as every allocation helper does.
+func (r *cudaResident) allocSlotStacks(moeLayers []int, record bool) {
+	// Issue LARGEST FIRST across all layers, not group by group. The total is identical (capSlots and the granularity
+	// form are untouched; only the order moves). This is a packing improvement, not a fix: the real constraint is a
+	// driver ALLOCATION FLOOR (~144 MiB that cuMemGetInfo reports free and cuMemAlloc will not hand out at any request
+	// size, TestAllocFloor), and the leftover after allocSlots must exceed it, which slotMarginBytes provides. The
+	// order is kept on its measured merit (it drains ~27 MiB further before hitting the floor), not on the refuted
+	// contiguity theory it was introduced for (docs/code-notes/cuda.md#allocSlots.order).
+	//
+	// Sort by MEASURED request size, not an assumed stride order: per-layer geometry is not guaranteed uniform (Gemma
+	// 4's KV widths differ per layer, and slotBytesPerLayer exists because layer 0 can be dense). A stable sort keeps
+	// layer order within each size class, so the sequence stays deterministic.
+	type slotReq struct {
+		w    *cudaWQ
+		n    int // element count for the allocator
+		size int // bytes, for ordering
+		isW  bool
+	}
+	reqs := make([]slotReq, 0, 4*len(moeLayers))
+	for _, i := range moeLayers {
+		L := &r.layers[i]
+		for _, w := range []*cudaWQ{&L.expGU, &L.expDown} {
+			reqs = append(reqs,
+				slotReq{w, r.cacheSlots * w.perExpertW, r.cacheSlots * w.perExpertW * 4, true},
+				slotReq{w, r.cacheSlots * w.perExpertS, r.cacheSlots * w.perExpertS * 2, false})
+		}
+	}
+	sort.SliceStable(reqs, func(a, b int) bool { return reqs[a].size > reqs[b].size })
+	for _, q := range reqs {
+		if q.isW {
+			q.w.W = r.au32(q.n)
+		} else {
+			q.w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, q.n)
+		}
+		// Recording only: the REQUESTED byte size of each allocation, in issue (sorted) order, so predicted consumption
+		// can be recomputed with per-buffer 2 MiB rounding instead of a raw sum. Every gate on it reads it
+		// order-independently (counts, distinct sizes, occurrences, sum).
+		if record {
+			r.dbgAllocSizes = append(r.dbgAllocSizes, q.size)
+		}
+	}
+}
+
+// ResizeExpertCache implements decoder.ResidentExpertCache: it sizes the C′ cache to what fits in free VRAM with reserve
+// bytes left over for an allocation that comes after it, up to the slot count the load asked for. A resize frees and
+// reallocates every routed layer's slot stacks, so the cache restarts empty; the hit and miss counts carry over. It runs on
+// the executor between forwards. It refuses under CUDA graphs, whose captured segments hold the stacks' addresses. A fit
+// below top-k is an error, and the cache is left as it was.
+func (r *cudaResident) ResizeExpertCache(reserve int64) (slots int, err error) {
+	err = r.do(func() error {
+		if !r.cacheExperts {
+			return fmt.Errorf("cuda: this resident keeps no expert cache")
+		}
+		if r.graphs {
+			return fmt.Errorf("cuda: the expert cache cannot be resized under CUDA graphs")
+		}
+		var moeLayers []int
+		for i := range r.layers {
+			if r.layers[i].expCache != nil {
+				moeLayers = append(moeLayers, i)
+			}
+		}
+		if len(moeLayers) == 0 {
+			return fmt.Errorf("cuda: no routed layer holds an expert cache")
+		}
+		strides := r.slotStrides(moeLayers[0])
+		nL := int64(len(moeLayers))
+		free, _, e := r.dev.Context().MemInfo()
+		if e != nil {
+			return e
+		}
+		// What the stacks hold now is free once they are released: the same rounded figure capSlots priced them at.
+		budget := reservedBudget(int64(free)+slotRequirement(r.cacheSlots, nL, strides), reserve)
+		fit, decline := capSlots(budget, nL, strides, r.topK, r.cacheSlotsAsked)
+		if decline {
+			return fmt.Errorf("cuda: the expert cache cannot keep %d slots/layer beside %.2f GB reserved (%d fit)", r.topK, float64(reserve)/1e9, fit)
+		}
+		if fit == r.cacheSlots {
+			return nil
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		if r.overlap {
+			if e := r.dmaQ.Sync(); e != nil {
+				return e
+			}
+		}
+		for _, i := range moeLayers {
+			L := &r.layers[i]
+			for _, w := range []*cudaWQ{&L.expGU, &L.expDown} {
+				r.dev.ReleaseBuf(w.W)
+				r.dev.ReleaseBuf(w.ws16)
+				w.W, w.ws16 = Buffer{}, Buffer{}
+			}
+		}
+		r.cacheSlots = fit
+		r.allocSlotStacks(moeLayers, false)
+		for _, i := range moeLayers {
+			old := r.layers[i].expCache
+			c := newExpertCache(r.nE, fit)
+			c.hits, c.misses, c.stages, c.distinct = old.hits, old.misses, old.stages, old.distinct
+			r.layers[i].expCache = c
+		}
+		return nil
+	})
+	return r.cacheSlots, err
+}
+
+// ExpertCacheStats implements decoder.ResidentExpertCache: the granted slots per layer and the C′ cache's lookups summed over
+// the MoE layers.
+func (r *cudaResident) ExpertCacheStats() (decoder.ExpertCacheStats, bool) {
+	if !r.cacheExperts {
+		return decoder.ExpertCacheStats{}, false
+	}
+	st := decoder.ExpertCacheStats{Slots: r.cacheSlots}
+	for i := range r.layers {
+		if c := r.layers[i].expCache; c != nil {
+			st.Hits += c.hits
+			st.Misses += c.misses
+		}
+	}
+	return st, true
 }
 
 // CacheProfForTest reports the C′ round-trip decomposition (stall / host / dma) and the call
@@ -2994,6 +3099,21 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 	r.profMark(&r.profRouter)
 
 	// --- dense branch → g4x1 ---
+	if r.floatAct {
+		if e := r.floatActDense(Ly, x); e != nil {
+			return e
+		}
+		if e := r.normF32(r.g4x1, Ly.g4postFFN1); e != nil {
+			return e
+		}
+		r.profMark(&r.profDense)
+		// xe = preFFNNorm2(h) into xF, which the experts read after the gap.
+		if e := r.normInto(x, Ly.g4preFFN2); e != nil {
+			return e
+		}
+		r.profMark(&r.profRouter)
+		return nil
+	}
 	if e := r.rms(x, Ly.g4preFFN, r.mq, r.mSc); e != nil { // xd = preFFNNorm(h), int8
 		return e
 	}
@@ -3032,6 +3152,12 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int, x Buffer) error {
 	for j := 0; j < r.topK; j++ {
 		if e := r.waitMiss(j); e != nil {
 			return e
+		}
+		if r.floatAct {
+			if e := r.floatActExpert(Ly, j); e != nil {
+				return e
+			}
+			continue
 		}
 		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc), Arg(r.expIdx()),
@@ -3099,7 +3225,11 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 	if Ly.hasBias {
 		qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 	}
-	if r.fuseQKV {
+	if r.floatAct {
+		if e := r.floatActQKV(Ly, qb, kb, vb); e != nil {
+			return e
+		}
+	} else if r.fuseQKV {
 		// K1: rmsnorm+quant redundantly per block + this block's Q/K/V rows — one launch instead of four.
 		nrows := Ly.qDim + 2*Ly.kvDim
 		cfg := LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
@@ -3362,11 +3492,17 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			return err
 		}
 	}
-	if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
+	if r.floatAct {
+		// the attention output is already f32: no quantize, the o-projection reads it as is
+	} else if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
 		return err
 	}
 	if r.sandwich || r.postOnly || r.parallelBlock {
-		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
+		if r.floatAct {
+			if err := r.gemvF(Ly.o, r.cctx, r.oBiasArg(Ly), r.oO, 0); err != nil {
+				return err
+			}
+		} else if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
 			return err
 		}
 		// LoRA delta added into the RAW o-proj output, BEFORE the post-attn norm below, matching applyLoRA's CPU order (delta added to `out`, caller norms afterward).
@@ -3387,7 +3523,11 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			return err
 		}
 	} else {
-		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.x, 1); err != nil {
+		if r.floatAct {
+			if err := r.gemvF(Ly.o, r.cctx, r.oBiasArg(Ly), r.x, 1); err != nil {
+				return err
+			}
+		} else if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.x, 1); err != nil {
 			return err
 		}
 		if r.loraLayers != nil {

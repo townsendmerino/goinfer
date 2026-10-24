@@ -1,0 +1,62 @@
+**Transcription**
+
+* **Company Name:** Cedar & Pine Joinery
+* **Company Address:** 1204 Alder Avenue, Suite 5 - Leeds LS1 4AP
+* **Invoice #:** 84380
+* **Date:** 08/27/2026
+* **Customer:** Vega Robotics Inc.
+* **Customer Address:** 1204 Alder Avenue, Suite 5, Seattle, WA 98101
+* **Due date:** es09/27/2026
+* **No:** 1
+* **Description:** Laminated menu cards
+* **Qty:** 12
+* **Unit Price:** 713.05
+* **Amount:** 8,556.60
+* **No:** 2
+* **Description:** Ink cartridge, cyan
+* **Qty:** 3
+* **Unit Price:** 46.14
+* **Amount:** 138.42
+* **No:** 3
+* **Description:** Design review
+* **Qty:** 3
+* **Unit Price:** 352.34
+* **Amount:** 1,057.02
+* **Subtotal:** 9,752.04
+* **Tax (8.5%):** 828.92
+* **Total Due:** €10,580.96
+* **Payment terms:** net 30 days. Thank you for your business.
+
+***
+
+**Field Descriptions**
+
+**Company Name & Address**
+This field identifies the vendor issuing the invoice and provides their contact location. It establishes the legal entity responsible for the products or services listed. A clerk should ensure this matches the vendor's official business registration.
+
+**Invoice #**
+This is a unique identification number assigned to this specific billing transaction. It is used for tracking, auditing, and referencing the transaction in accounting software. A clerk should verify this number against purchase orders or internal records to prevent duplicate billing.
+
+**Date**
+This records the specific day the invoice was generated. It serves as the starting point for the payment timeline and aging reports. A clerk should check this against the "Due date" to ensure the billing cycle is correct.
+
+**Customer & Customer Address**
+This identifies the entity responsible for paying the invoice and where they are located. It links the bill to a specific client profile in the accounting system. A clerk should verify that the customer name and address match the client's current account details.
+
+**Due date**
+This indicates the deadline by which the payment must be received. It is calculated based on the "Date" and the "Payment terms" provided at the bottom. A clerk should use this to monitor for late payments and manage cash flow.
+
+**No, Description, Qty, Unit Price, & Amount**
+These fields provide a line-item breakdown of the goods or services provided, including the quantity and cost per unit. The "Amount" is the product of "Qty" and "Unit Price" for each line. A clerk should verify that the descriptions match the work performed and that the math for each line is correct.
+
+**Subtotal**
+This is the sum of all "Amount" lines before taxes or discounts are applied. It represents the core value of the goods or services provided. A clerk should cross-check this sum against the individual line item totals.
+
+**Tax (8.5%)**
+This records the amount of tax applied to the subtotal based on the specified percentage. It is a-calculated field based on the "Subtotal." A clerk should verify that the tax rate applied is correct for the customer's jurisdiction.
+
+**Total Due**
+This is the final amount the customer is required to pay, including the subtotal and tax. It is the bottom-line figure used for payment processing. A clerk should ensure this total is mathematically accurate and matches the expected payment amount.
+
+**Payment terms**
+This specifies the conditions under which the payment should be made, such as "net 30 days." It dictates the relationship between the "Date" and the "Due date." A clerk should check this to ensure the customer is billed according to their agreed-upon credit terms.

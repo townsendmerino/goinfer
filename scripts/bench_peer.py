@@ -745,10 +745,11 @@ def provenance():
     }
 
 def free_mem_mb():
-    """This box's available memory in MiB, the number goinfer's fit guard reads (scripts/hostmem.py, cmd/hostmem; B41). None when it
-    cannot be read."""
+    """This box's free memory in MiB for the void rule: the reclaimable figure cmd/hostmem prints (scripts/hostmem.py), what a cell
+    can take without macOS compressing or swapping other memory under it, not the load-decision figure. None when it cannot be
+    read."""
     import hostmem
-    return hostmem.available_mb()
+    return hostmem.reclaimable_mb()
 
 
 # THE HEAVY-LOAD VOID (owner rule 2026-10-19; CLAUDE.md "Run budget", docs/measurements/noise-registry.md §8). A cell is VOID if,

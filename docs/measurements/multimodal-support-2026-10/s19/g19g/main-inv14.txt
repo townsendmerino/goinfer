@@ -1,0 +1,50 @@
+Marlow Dental Group: TAX INVOICE
+3300 Cascade Blvd, Boise, ID 83702
+
+Billed to: Bluebird Pediatrics
+Address: 9 Foundry Way, Seattle, WA 98101
+Invoice number: 40804
+Issued: 1 Aug 2026
+Payment due: 1 Sep 2026
+
+No: 1
+Description: Cotton napkins, set of 12
+Qty: 4
+Unit Price: 675.64
+Amount: 2,702.56
+
+No: 2
+Description: Ink cartridge, cyan
+Qty: ced 5
+Unit Price: 769.93
+Amount: 3,849.65
+
+No: 3
+Description: Courier fee
+Qty: 1
+Unit Price: 107.00
+Amount: 107.00
+
+No: 4
+Description: Hardwood flooring, per m2
+Qty: 6
+Unit Price: 34.84
+Amount: 209.04
+
+No: ced 5
+Description: Ink cartridge, black
+Qty: 6
+Unit Price: 931.94
+Amount: 5,591.64
+
+No: 6
+Description: Data export licence
+Qty: 3
+Unit Price: 43.88
+Amount: 131.64
+
+Subtotal: 12,591.53
+Tax (10%): 1,259.15
+Total Due: $13,850.68
+
+Payment terms: net 30 days. Thank you for your business.

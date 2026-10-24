@@ -128,7 +128,10 @@ func TestMetalDecodeDecomp(t *testing.T) {
 		{"GEMV down (+residual)", []*Pipeline{&r.pGemvResid, &r.pGemvResidStaged}},
 		{"LM head (int8)", []*Pipeline{&r.pGemvW8}},
 		{"norm+quant (rms)", []*Pipeline{&r.pRms}},
-		{"rope, kv store, act-quant, ctx-quant", []*Pipeline{&r.pRope2, &r.pKv, &r.pSw, &r.pQv}},
+		{"rope (rope2)", []*Pipeline{&r.pRope2}},
+		{"kv store", []*Pipeline{&r.pKv}},
+		{"act-quant (swiglu_quant)", []*Pipeline{&r.pSw}},
+		{"ctx-quant (quant_vec)", []*Pipeline{&r.pQv}},
 	}
 	var all []*Pipeline
 	for _, c := range cats {

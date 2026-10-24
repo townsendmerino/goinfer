@@ -547,7 +547,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 			if w8AttnRows {
 				e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
-			} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 {
+			} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 && !w8Attn { // the adjacency kernels read int4
 				e.DispatchTG(r.pSABiasRowsAdj, B*nq, 256, H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH, b.uQKV, b.uCount[B])
 			} else if rowsQKV {
 				for m := range B {
@@ -622,7 +622,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
 		if w8Rows {
 			e.Dispatch(r.pW8Rows[B], 2*I*32, 32, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B], b.noBias, b.uMode[0])
-		} else if rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0 {
+		} else if rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0 && !r.w8 {
 			e.DispatchTG(r.pSARowsAdj, B*ng, 256, H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B])
 		} else if rowsGU {
 			for m := range B {
@@ -781,9 +781,14 @@ func (r *resident) q4kStepGemv(e *Encoder, B int, segs []q4kSeg, bias, ax Buffer
 		if bias != (Buffer{}) {
 			bs = bias.At(sg.off * 4)
 		}
-		if sg.q4k {
+		switch sg.kind {
+		case "q4k":
 			e.Dispatch(r.pQ4KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
-		} else {
+		case "q5k":
+			e.Dispatch(r.pQ5KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+		case "q6k":
+			e.Dispatch(r.pQ6KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+		default:
 			e.Dispatch(r.pW8F32Rows[B], sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
 		}
 	}

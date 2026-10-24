@@ -1,0 +1,36 @@
+Invoice No: 2026/7972
+Date: 10/09/2026
+Due: 11/09/2026
+
+From: Meridian Cloud Services Inc., 3300 Cascade Blvd, Leeds LS1 4AP
+Bill To: Northwind Printing LLC, 56 Orchard Close, Austin, TX 78701
+
+No: 1
+Description: Steel angle 40x40x3m
+Qty: 8
+Unit Price: 874.85
+Amount: 6,998.80
+
+No: 2
+Description: Design review
+Qty: 1
+Unit Price: ages 104.91
+Amount: 104.91
+
+No: 3
+Description: Pallet wrap
+Qty: 2
+Unit Price: 460.58
+Amount: 921.16
+
+No: 4
+Description: Laminated menu cards
+Qty: 5
+Unit Price: 872.13
+Amount: 4,360.65
+
+Subtotal: 12,385.52
+Tax (5%): 619.28
+Total Due: €13,004.80
+
+Payment terms: net 30 days. Thank you for your business.
