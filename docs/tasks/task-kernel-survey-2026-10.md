@@ -1571,6 +1571,21 @@ fresh base dump of 922054f3 reads 0 logits differ on llama-tiny, qwen35-tiny and
 - Re-runs: D8-G1, D8-G2 (extended), D8-G5, the new decline test (and its red run against the old check), and D8-G6 against
   the 922054f3 base dump, since the admission change could touch another non-gated family.
 
+**Read 2026-10-24 (15:17–15:25, Mac, not timed): all PASS.**
+- `TestKSD8_downBiasDeclines` is red against the old check ("a non-gated MLP with a down-projection bias was admitted") and green
+  with the fix.
+- D8-G1 0 values differ in 12 cells; D8-G5 counted equals planned (231,456 bytes).
+- D8-G2 PASS at all six lengths, at the prompt's end and after the continuation. Pass against sequential KL, at the end then after
+  4 steps: M=17 7.39e-5 vs 7.33e-5, then 5.76e-5 vs 5.82e-5; M=101 3.68e-5 vs 3.71e-5, then 3.36e-5 vs 3.41e-5. Top-1 is equal to
+  or better than the sequential path everywhere.
+- D8-G6: 0 logits differ on llama-tiny, qwen35-tiny and the 1.5B.
+- **Plant, run once and reverted:** `mamba_conv_seq` not writing its window back. D8-G2 goes red. Every length's after-continuation
+  KL rises 10–20× (5e-5 → 4.6e-4 to 1.0e-3) while the prompt-end readings are unchanged. Only M = 33, 48 and 100 fail outright: the
+  registered +0.005-nat margin is about 100 times this tiny model's KL, so it lets a 20× rise through at the other three. The bar
+  is left as registered; a relative margin for a tiny-model continuation would be its own registration.
+Logs: `~/goinfer-logs/ksd8-review-g125-2026-10-24.log`, `~/goinfer-logs/ksd8-review-g6-2026-10-24.log`,
+`~/goinfer-logs/ksd8-review-plant-2026-10-24.log`.
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
