@@ -44,8 +44,8 @@
 | KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
-| KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
-| KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
+| KS-C4 | open (build) | first measurement read 2026-10-24: `swiglu_quant` + `quant_vec` 0.875 ms a token on the 1.5B at depth 128, over the 0.25 ms kill line. Next: the build's gates | survey, "KS-C4 and KS-C5 first measurements" |
+| KS-C5 | open (build) | first measurement read 2026-10-24: legacy attention 0.643 ms a token at 128 keys and 1.677 at 512 on the 1.5B, over the 0.30 ms kill line. Next: the build, after KS-C4 | survey, "KS-C4 and KS-C5 first measurements" |
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
 | KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
@@ -708,6 +708,29 @@ load or memory line is re-run.
   it); otherwise its build's gates are registered next. The 512-key reading is for the record.
 
 Stopping rule: one pass. Cost: about 6 minutes.
+
+**Read 2026-10-24 (09:24, the timing lock held exclusively; the 1-minute load 2.58 at the start, 11.5 GB available).** The 1.5B's
+`.gguf` on its Metal int4 resident (`attention_fa` engages from 1,024 keys, so both depths ran the legacy attention); medians of 5 reps
+× 20 tokens, ms a token:
+
+| category | depth 128 | depth 512 |
+|---|---|---|
+| attention | **0.643** | 1.677 |
+| GEMV qkv / o / gate\|up / down | 0.570 / 0.407 / 3.223 / 1.864 | 0.630 / 0.659 / 3.229 / 1.823 |
+| LM head (int8) | 1.418 | 1.308 |
+| norm+quant (rms) | 0.599 | 0.459 |
+| rope (rope2) / kv store | 0.153 / 0.187 | 0.038 / 0.150 |
+| act-quant (`swiglu_quant`) | **0.644** | 0.455 |
+| ctx-quant (`quant_vec`) | **0.231** | 0.129 |
+| dispatch floor | 0.650 | 0.611 |
+| full token | 9.708 (103.0 tok/s) | 10.461 (95.6 tok/s) |
+
+- **KS-C4:** `swiglu_quant` + `quant_vec` **0.875 ms at depth 128**, over the 0.25 ms line: **build**; its gates are registered next.
+- **KS-C5:** attention **0.643 ms at depth 128**, over the 0.30 ms line: **build**, after KS-C4.
+
+Neither quantizer's work depends on depth, yet `swiglu_quant` read 0.644 and 0.455: the method's spread on a small category is about
+±0.2 ms (the paired columns agree), so the 0.875 ms sum is good to roughly a quarter. Both clear their lines at either depth. The run
+took 29 s, not the 6 minutes registered. Log: `~/goinfer-logs/ksc4c5-decomp-2026-10-24.log`.
 
 **KS-C5 · Legacy decode attention below 1024 keys (bit-identical).**
 - **Waste:** at 128 keys it costs 0.67 / 0.78 ms per token, with serial 8-wide V-load batches (16 dependent round trips) and
