@@ -1,14 +1,15 @@
-// Package hostmem is goinfer's one reading of this machine's available memory: what a new load can take without pushing other
-// processes into swap, with reclaimable memory (cached files) counted as available. The fit guard reads it through
-// decoder.HostRAMAvailableBytes, and the scripts' start checks (scripts/night.py, scripts/bench_peer.py, the job runners) read the
-// same number through cmd/hostmem, so no reader keeps a second formula (docs/measurements/hostmem-available-2026-10/README.md).
+// Package hostmem is goinfer's one reading of this machine's memory, in two figures for two uses, so no reader keeps a formula of
+// its own (docs/measurements/hostmem-available-2026-10/README.md). Available decides loads: the fit guard reads it through
+// decoder.HostRAMAvailableBytes. Reclaimable decides whether a timed run's machine state is valid: the start checks of
+// scripts/night.py and scripts/bench_peer.py and the void rule read it through cmd/hostmem -reclaimable.
 package hostmem
 
 // Reading is one sample, in bytes. On macOS Available is the kernel's own free percentage (kern.memorystatus_level, the figure
-// memory_pressure prints) times physical memory, less PressureBuffer: it counts app memory as available, since the kernel can compress
-// it. Reclaimable is what the kernel can hand back without compressing or swapping anything (Free + FileBacked + Purgeable), and Level
-// is the percentage; both are context, as are Speculative (part of FileBacked) and App, Wired and Compressed, Activity Monitor's terms.
-// On Linux the macOS fields are 0 and Available is the kernel's MemAvailable.
+// memory_pressure prints, as Level) times physical memory, less PressureBuffer: it counts app memory as available, since the kernel
+// can compress it, so a load it admits may compress or swap other apps. Reclaimable is what the kernel can hand back without
+// compressing or swapping anything (Free + FileBacked + Purgeable): the figure a timed run needs, since compression under a timed run
+// changes what it measures. Speculative (part of FileBacked) and App, Wired and Compressed, Activity Monitor's terms, are context. On
+// Linux both Available and Reclaimable are the kernel's MemAvailable and the macOS fields are 0.
 type Reading struct {
 	Physical, Available                      int64
 	Level                                    int

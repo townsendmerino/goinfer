@@ -172,8 +172,8 @@ func TestQ4KLaneKernels(t *testing.T) {
 	}
 	defects := []struct{ name, from, to string }{
 		{"(1) the min term dropped", "acc[r] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);", "acc[r] += d*sc0*dlo + d*sc1*dhi;"},
-		{"(2) the 6-bit scale and min unpack swapped", "if (j < 4u) { sc = float(q[j] & 63u); m = float(q[j+4u] & 63u); }",
-			"if (j < 4u) { m = float(q[j] & 63u); sc = float(q[j+4u] & 63u); }"},
+		{"(2) the 6-bit scale and min unpack swapped", ": (s0 & 0x3F3F3F3Fu);\n    uint mw = hi ? (((s2 >> 4u) & 0x0F0F0F0Fu) | ((s1 >> 2u) & 0x30303030u)) : (s1 & 0x3F3F3F3Fu);",
+			": (s1 & 0x3F3F3F3Fu);\n    uint mw = hi ? (((s2 >> 4u) & 0x0F0F0F0Fu) | ((s1 >> 2u) & 0x30303030u)) : (s0 & 0x3F3F3F3Fu);"},
 		{"(3) a super-block offset of one", "device const uchar* blk = wq + (ulong)(row0 + r)*(ulong)NB*144ul + b*144u;",
 			"device const uchar* blk = wq + (ulong)(row0 + r)*(ulong)NB*144ul + ((b+1u)%NB)*144u;"},
 		{"(4) the int8 row scale dropped", "acc[r] = simd_sum(acc[r]) * sc[min(row0 + r, N - 1u)];", "acc[r] = simd_sum(acc[r]);"},

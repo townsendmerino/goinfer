@@ -64,6 +64,12 @@ TOOL_CASES = {
     "ids_resolve_names":  [U("Weather and time?"), A("", "both", tc=TCID("get_weather", "c1", city="Paris") + TCID("get_time", "c2", zone="CET")), TID("c2", "21:30"), TID("c1", "18C")],
     "text_sequential":    [U("Weather?"), A("First.", "one", tc=TC("Paris")), T("18C"), A("Second.", "two", tc=TC("Rome")), T("24C")],
 }
+# Gemma 4 templates only (so re-pinning a ChatML checkpoint keeps its case count): two user queries, each answered through a tool call
+# with text beside it, the first query's turn finished and the second's loop in progress.
+GEMMA_TOOL_CASES = {
+    "two_turn_tools": [U("Weather in Paris?"), A("Let me check.", "need the weather", tc=TC("Paris")), T("18C sunny"),
+                       A("It is 18C and sunny in Paris.", "got it"), U("And Rome?"), A("Checking Rome.", "now Rome", tc=TC("Rome")), T("24C clear")],
+}
 MODES = {"unset": {}, "false": {"enable_thinking": False}, "true": {"enable_thinking": True}}
 
 def main():
@@ -72,11 +78,12 @@ def main():
     for name in CKPTS:
         tok = AutoTokenizer.from_pretrained(os.path.join(root, name))
         entry = {"checkpoint": name, "chat_template": tok.chat_template, "cases": []}
-        for cname, msgs in list(CASES.items()) + list(TOOL_CASES.items()):
-            tools = cname in TOOL_CASES
-            if cname.startswith("gemma_channel") and not name.startswith("gemma-4"):
+        gemma = name.startswith("gemma-4") or "<|channel>" in (tok.chat_template or "")  # a Gemma 4 template under another name (Nemotron 3.5 Bolt)
+        for cname, msgs in list(CASES.items()) + list(TOOL_CASES.items()) + (list(GEMMA_TOOL_CASES.items()) if gemma else []):
+            tools = cname in TOOL_CASES or cname in GEMMA_TOOL_CASES
+            if cname.startswith("gemma_channel") and not gemma:
                 continue  # Qwen's template has no notion of Gemma's channel markers
-            if cname == "reasoning_key_new" and not name.startswith("gemma-4"):
+            if cname == "reasoning_key_new" and not gemma:
                 continue  # only Gemma's template reads `reasoning`; Qwen's reads reasoning_content alone
             c = {"name": cname, "tools": tools, "messages": msgs, "prompts": {}}
             for mname, kw in MODES.items():

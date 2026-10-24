@@ -201,6 +201,13 @@ type Weights struct {
 	backing []byte                 // serialized-weights blob aliased by q8/q4 arrays (LoadSerializedWeights); keeps it reachable
 
 	schema *tensorSchema // resolved tensor-name schema (safetensors loads); used by compute-time LoRA to map projections → adapter deltas. nil for GGUF/serialized loads.
+
+	// kquant is where each int8 matmul of a q4k GGUF load came from when the file stores it as Q5_K or Q6_K, keyed by its int8
+	// rows' first element; ggufPath is that file, and kquantFile the load's own mapping of it, held until the model's resident
+	// build has run (Model.releaseKQuantFile). All are empty for any other load. KQuantReader serves them.
+	kquant     map[*int8]kquantSrc
+	ggufPath   string
+	kquantFile *embed.GGUFFile
 }
 
 // matmulWeights returns every quantizable matrix in the bundle (the projections,

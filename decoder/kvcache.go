@@ -98,6 +98,8 @@ type KVCache struct {
 	// See docs/completed/task-kv-ring-eviction.md.
 	rings    []*ring
 	localAny bool // any ring layer present (gates prefill's assembly scratch)
+	// skipAppend reports the layers that reserve no append-forever capacity (NewKVCache's skipLayer; nil: none).
+	skipAppend func(l int) bool
 
 	// int8 KV (quant == kvI8): global (append-forever) layers store K/V as int8
 	// here, parallel to keys/vals, with one symmetric scale per (position,KV-head).
@@ -182,9 +184,10 @@ type KVCache struct {
 // NewKVCache allocates an empty cache for a model with the given geometry. capHint pre-sizes the per-layer slices to avoid
 // reallocation during a known-length generation; 0 is fine (grow on demand).
 //
-// skipLayer (nil-safe: nil means none skipped) reports whether layer l never writes c.keys[l]/c.vals[l] at all (a linear, mamba or
-// conv mixer layer, or one of Nemotron's non-attention block kinds): its capHint reservation would be wasted capacity, large per
-// stream at realistic context lengths on a hybrid family and multiplied by every session the LRU keeps warm. It is independent of
+// skipLayer (nil-safe: nil means none skipped) reports whether layer l never writes its append-forever K/V at all (a linear, mamba
+// or conv mixer layer, one of Nemotron's non-attention block kinds, or a layer enableRings will make a ring): its capHint
+// reservation would be wasted capacity, large per stream at realistic context lengths and multiplied by every session the LRU
+// keeps warm. setQuant honours it too. It is independent of
 // the caller's own decision to pass capHint=0 for an MLA family: an MLA layer does hold attention-shaped KV, in c.mlaLatent,
 // which skipLayer knows nothing about.
 func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int, skipLayer func(l int) bool) *KVCache {
@@ -193,19 +196,17 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int, skipLayer f
 	} // upstream (audit C-19), this guards every other caller too.
 	kvDim := numKVHeads * headDim
 	c := &KVCache{
-		numLayers: numLayers,
-		kvDim:     kvDim,
-		headDim:   headDim,
-		window:    window,
-		keys:      make([][]float32, numLayers),
-		vals:      make([][]float32, numLayers),
-		stride:    make([]int, numLayers),
+		numLayers:  numLayers,
+		kvDim:      kvDim,
+		headDim:    headDim,
+		window:     window,
+		keys:       make([][]float32, numLayers),
+		vals:       make([][]float32, numLayers),
+		stride:     make([]int, numLayers),
+		skipAppend: skipLayer,
 	}
 	for l := range numLayers {
-		lc := capHint
-		if skipLayer != nil && skipLayer(l) {
-			lc = 0
-		}
+		lc := c.appendHint(l, capHint)
 		c.keys[l] = make([]float32, 0, lc*kvDim)
 		c.vals[l] = make([]float32, 0, lc*kvDim)
 	}
@@ -368,8 +369,9 @@ func (c *KVCache) setQuant(q kvQuant, capHint int) {
 		c.keysH = make([][]uint16, c.numLayers)
 		c.valsH = make([][]uint16, c.numLayers)
 		for l := range c.numLayers {
-			c.keysH[l] = make([]uint16, 0, capHint*c.kvDim)
-			c.valsH[l] = make([]uint16, 0, capHint*c.kvDim)
+			lc := c.appendHint(l, capHint)
+			c.keysH[l] = make([]uint16, 0, lc*c.kvDim)
+			c.valsH[l] = make([]uint16, 0, lc*c.kvDim)
 		}
 	}
 	if q == kvI8 {
@@ -381,12 +383,21 @@ func (c *KVCache) setQuant(q kvQuant, capHint int) {
 		// Pre-size the global int8 arrays so the per-token Append grows in place
 		// (reslice, no alloc) instead of churning a fresh make() each step.
 		for l := range c.numLayers {
-			c.keysQ[l] = make([]int8, 0, capHint*c.kvDim)
-			c.valsQ[l] = make([]int8, 0, capHint*c.kvDim)
-			c.keyScale[l] = make([]float32, 0, capHint*nKV)
-			c.valScale[l] = make([]float32, 0, capHint*nKV)
+			lc := c.appendHint(l, capHint)
+			c.keysQ[l] = make([]int8, 0, lc*c.kvDim)
+			c.valsQ[l] = make([]int8, 0, lc*c.kvDim)
+			c.keyScale[l] = make([]float32, 0, lc*nKV)
+			c.valScale[l] = make([]float32, 0, lc*nKV)
 		}
 	}
+}
+
+// appendHint is the rows of append-forever capacity layer l reserves for a hint of capHint: none for a layer skipAppend names.
+func (c *KVCache) appendHint(l, capHint int) int {
+	if c.skipAppend != nil && c.skipAppend(l) {
+		return 0
+	}
+	return capHint
 }
 
 // Append stores one position's K and V for the given layer. k and v must

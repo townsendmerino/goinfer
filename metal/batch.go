@@ -781,9 +781,14 @@ func (r *resident) q4kStepGemv(e *Encoder, B int, segs []q4kSeg, bias, ax Buffer
 		if bias != (Buffer{}) {
 			bs = bias.At(sg.off * 4)
 		}
-		if sg.q4k {
+		switch sg.kind {
+		case "q4k":
 			e.Dispatch(r.pQ4KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
-		} else {
+		case "q5k":
+			e.Dispatch(r.pQ5KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+		case "q6k":
+			e.Dispatch(r.pQ6KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+		default:
 			e.Dispatch(r.pW8F32Rows[B], sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
 		}
 	}

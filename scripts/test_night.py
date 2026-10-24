@@ -47,11 +47,11 @@ class Runner(night.Runner):
 
 class FreeMemoryReading(unittest.TestCase):
     def test_reads_goinfers_number(self):
-        # B41: the runner's fit-need gate reads the number cmd/hostmem prints (scripts/hostmem.py), the fit guard's own.
+        # The runner's fit-need gate reads cmd/hostmem's reclaimable figure (scripts/hostmem.py), not the fit guard's available one.
         import hostmem
-        saved = hostmem.available_mb
-        self.addCleanup(setattr, hostmem, "available_mb", saved)
-        hostmem.available_mb = lambda *a, **k: 6789
+        saved = hostmem.reclaimable_mb
+        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved)
+        hostmem.reclaimable_mb = lambda *a, **k: 6789
         self.assertEqual(night.free_mem_mb(), 6789)
 
 

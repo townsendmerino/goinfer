@@ -114,10 +114,11 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 // CUDA uploads every per-layer matrix and the LM head (the embedding table when the embeddings are tied). It gathers
 // token embeddings on the host and never uploads the learned position table or Gemma 4's per-layer embedding tables, so
 // an untied model's token-embedding table must not be priced as device memory; pricing it makes the slot-aware context
-// plan land too low. Every other backend gets ResidentDenseWeightBytes unchanged.
+// plan land too low. Metal's q4k lane uploads the file's Q5_K and Q6_K blocks for their int8 copies (metalKQuantSavings).
+// Every other backend gets ResidentDenseWeightBytes unchanged.
 // Measurement: docs/code-notes/decoder.md#Model.ResidentDenseWeightBytesFor.
 func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
-	return m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend)
+	return m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend) - m.metalKQuantSavings(backend)
 }
 
 // residentHostSideBytes is the dense-sum portion backend keeps host-side; see ResidentDenseWeightBytesFor.
