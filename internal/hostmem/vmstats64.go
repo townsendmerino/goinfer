@@ -21,7 +21,8 @@ func decodeVMStats64(b []byte) (vmStats64, bool) {
 		compressor: u(128), external: u(136), internal: u(140)}, true
 }
 
-// fromVMStats64 adds up what the kernel can reclaim without compressing or swapping: free, file-backed (external) and purgeable pages
+// fromVMStats64 adds up, as Reclaimable, what the kernel can reclaim without compressing or swapping: free, file-backed (external) and
+// purgeable pages
 // (B41, docs/measurements/hostmem-available-2026-10/README.md, amendment A5). host_statistics64's free count includes the speculative
 // (read-ahead) pages, and so does its external count, so Free is the free count less speculative (vm_stat's "Pages free") and each
 // speculative page is counted once, as file-backed. Adding these, rather than subtracting what is used from physical, leaves out the
@@ -37,10 +38,14 @@ func fromVMStats64(s vmStats64, pageSize, physical int64) Reading {
 	if free < 0 {
 		free = 0
 	}
-	return Reading{Physical: physical, Available: free + pg(s.external) + pg(s.purgeable),
+	return Reading{Physical: physical, Reclaimable: free + pg(s.external) + pg(s.purgeable),
 		Free: free, Speculative: pg(s.speculative), FileBacked: pg(s.external), Purgeable: pg(s.purgeable),
-		App: app, Wired: pg(s.wire), Compressed: pg(s.compressor),
-		Source: "macOS host_statistics64: free + file-backed (speculative included) + purgeable pages"}
+		App: app, Wired: pg(s.wire), Compressed: pg(s.compressor)}
+}
+
+// fromLevel is the macOS Available: level percent of physical, less PressureBuffer, and never below 0.
+func fromLevel(level int, physical int64) int64 {
+	return max(physical/100*int64(level)-PressureBuffer, 0)
 }
 
 // decodeTaskVM decodes the leading fields of struct task_vm_info (mach/task_info.h) that TaskVM reports.
