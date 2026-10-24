@@ -160,3 +160,67 @@ reading. Readings land below it, on this branch, for the owner's review before a
   - Qwen3.6-35B-A3B: about 25 min. 12 continuations at an assumed 5 tok/s with experts streamed is 10 min; the cost arms at 10
     repetitions are about 12 min.
   - **Total about 60 min.** The start and finish times are stated when the job is queued.
+
+## Readings (2026-10-24, nobara, 16:24:47–16:40:51 PDT; for the owner's review, not merged)
+
+`sp0-measure` on nobara's `night.py serve`, under the timing lock, at `b03412f3` (harness and job), driver 595.91.07, kwin_wayland
+running. Every cell started below 3.1 load with at least 59.6 GB available and peaked at 0 MiB swap (`raw/cells.txt`). Raw records:
+`raw/*.jsonl`. Projection: `python3 project.py dflash|ngram|validate raw/<file>`.
+
+### The harness's own gate: FAIL as registered, with the reason
+
+| bar (registered) | reading |
+|---|---|
+| ≥ 95% of rounds identical | 151 of 1,219 (0.124) |
+| total rounds within 2% | the loop 151, the simulation 1,219 |
+
+**Why it failed:**
+- **The two agree wherever both ran.** On every one of the 151 rounds the real loop ran, the simulation committed the same count: 151 of
+  151, every prompt, in order (`python3 project.py validate raw/validate-qwen3-4b.jsonl` prints each).
+- **The loop stopped early.** It stops speculating after 6–30 rounds, because `BlockSpec`'s acceptance guard
+  (`breakEvenTokensPerRound` 2.5 over `guardWindow` 6 rounds) switches it to plain decode, whose steps are not rounds.
+- **The bar was the mistake.** It assumed the loop speculates to the end.
+- **The guard likely tripped because of thinking mode.** The Qwen3-4B prompts were rendered with the template's default, which is
+  thinking on. The earlier pairing measurements (`docs/spec/08-dspark-dflash.md`) rendered thinking off, the drafter's training
+  distribution.
+
+**As registered, a FAIL voids every DFlash reading below.** They are reported, marked provisional, for the owner's decision on the
+validation (see the end).
+
+### The projections at L = 512 (the registered decision length)
+
+| family | best width | tokens per cycle | t_step | t_verify | t_draft | projected | band (cost quartiles) | registered reading |
+|---|---|---|---|---|---|---|---|---|
+| Qwen3.5-9B + DFlash (provisional) | w = 4 | 3.30 | 16.63 ms | 24.02 ms | 11.28 ms | **1.55×** | 1.55–1.56 | ≥ 1.30: on to SP2 |
+| Qwen3.6-35B-A3B + DFlash, experts streamed (provisional) | w = 3 | 2.76 | 17.57 ms | 36.37 ms | 3.35 ms | **1.22×** | 1.10–1.23 | 1.20–1.30: parked |
+| gpt-oss-20b + n-gram | K = 1 | 1.19 | 13.76 ms | 18.8 ms (w 2) | 0 | **1.07×** | 0.83–1.29 | < 1.20: not advanced |
+
+- **Qwen3.5-9B, per class:** code 1.49×, math 1.59×, math with thinking on 1.59×, all at w = 4. Its projection by width rises to
+  w = 4 and falls past it: 1.12, 1.41, 1.55, 1.41, 1.17, 0.89, 0.73.
+  - The drafter's block is a large part of the cycle: 11.3 ms at w = 4. It is 6 layers at hidden 4096, and the target's 248k-row
+    head runs over the drafted rows.
+  - `verifyN` is the batched pass with the row-batched DeltaNet recurrence. `forwardN`, the sequential loop, costs 67.1 ms at
+    w = 4.
+- **Qwen3.6-35B-A3B:** a verify pass of 8 rows costs 5.0× a step (88.4 ms against 17.6), where Kapitsa reports 1.56× on its
+  backend. That is the CUDA MoE path running its FFN row by row, as registered, with experts streamed on an 8 GB card.
+  - Acceptance is good: 5.54 tokens per cycle at w = 8. The cost is what parks it.
+- **gpt-oss-20b, n-gram:** the drafter finds a match on 22–42% of rounds (edit 0.42 at K = 1, code 0.22). Past K = 1 its projection
+  falls on every class.
+  - At L = 4096 its best is 1.28× at K = 1, but the band is 0.74–2.30. The step's own spread at 4096 is wide, so that reading
+    resolves nothing.
+
+### Missing: the DFlash targets' cost at L = 4096
+
+- **What is missing:** both DFlash cells stopped while filling the context to 4096 for the cost arms. The capture armed for the
+  drafter keeps a batched prefill from chunking, and one 4096-row pass ran out of device memory (`cuMemAlloc_v2:
+  CUDA_ERROR_OUT_OF_MEMORY`).
+- **What survived:** every acceptance record and every L = 512 cost record were already written.
+- **The fix, committed after the run:** the fill is now prefilled, and the drafter's context fused, in 512-row pieces. A
+  `MODE=cost4096` run (about 10 min) reads only those arms, reusing the teacher continuations as fill text.
+- L = 4096 is reported beside the decision, not part of it.
+
+### What these numbers are not
+
+- **Not served speed.** They are per-call timings in one process, and acceptance is greedy and teacher-forced on 6 + 6 prompts.
+- **Not SP2's whole cost.** The projection leaves out SP2's fold (registered for SP2's own gate, against R-01 phase 1's 11.0%).
+- **Not the Mac's prize.** The 35B's reading is nobara's (the owner's decision); the Mac reading stays open.

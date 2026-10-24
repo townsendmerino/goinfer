@@ -24,7 +24,7 @@ import (
 // target's verify-row cost per call. It is a measurement tool, not a check: it skips unless SP0_TARGET is set.
 //
 //	GOINFER_HEAVY_TESTS=1 SP0_TARGET=<model> SP0_KIND=dflash|ngram|validate [SP0_DRAFTER=<dflash dir>] SP0_OUT=<out.jsonl> \
-//	  [SP0_SUITES=code,math] [SP0_THINK=template|on|off] [SP0_MAXNEW=256] [SP0_COST_CTX=512,4096] [SP0_COST_REPS=20] [SP0_SKIP_COST=1] [SP0_MOE_CACHE=1] [SP0_CTX=4608] [SP0_LOADONLY=1] \
+//	  [SP0_SUITES=code,math] [SP0_THINK=template|on|off] [SP0_MAXNEW=256] [SP0_COST_CTX=512,4096] [SP0_COST_REPS=20] [SP0_SKIP_COST=1] [SP0_MOE_CACHE=1] [SP0_CTX=4608] [SP0_LOADONLY=1] [SP0_SKIP_ACCEPT=1] \
 //	  go test -tags 'cuda goinfer_testhooks' -run '^TestSP0_prize$' -v -timeout 90m ./cuda/
 //
 // validate runs the real block-spec loop (BlockSpec.Generate) beside the simulation on a dense pairing and records both, so
@@ -182,6 +182,9 @@ func TestSP0_prize(t *testing.T) {
 			widths = []int{8}
 		}
 		for i, it := range items {
+			if os.Getenv("SP0_SKIP_ACCEPT") == "1" {
+				break // a cost-only re-run: the teacher continuations above are the cost arms' fill text
+			}
 			seq := append(append([]int(nil), it.prompt...), it.cont...)
 			capt, e := sp0Capture(m, r, taps, seq)
 			if e != nil {
@@ -344,11 +347,26 @@ func sp0Cost(t *testing.T, m *decoder.Model, r *cudaResident, rd decoder.Residen
 				t.Fatal(err)
 			}
 		}
-		if _, err := r.PrefillSeedArgmax(sp0Embed(m, fill[:L]), 0); err != nil {
-			t.Fatalf("cost fill to %d: %v", L, err)
+		// In pieces of one pass: an armed capture keeps a batched prefill from chunking itself, and one M=4096 pass does not fit beside
+		// the drafter on an 8 GB card. Each piece's capture rows are joined in order.
+		const piece = 512
+		var capt [][]float32
+		for lo := 0; lo < L; lo += piece {
+			hi := min(lo+piece, L)
+			if _, err := r.PrefillSeedArgmax(sp0Embed(m, fill[lo:hi]), lo); err != nil {
+				t.Fatalf("cost fill [%d,%d) of %d: %v", lo, hi, L, err)
+			}
+			if dr != nil {
+				c := r.BatchedCapture()
+				if capt == nil {
+					capt = make([][]float32, len(c))
+				}
+				for i := range c {
+					capt[i] = append(capt[i], c[i]...)
+				}
+			}
 		}
 		if dr != nil {
-			capt := r.BatchedCapture()
 			_ = r.SetBatchedCapture(nil)
 			hidden := len(capt[0]) / L
 			cat := make([][]float32, L)
@@ -360,12 +378,14 @@ func sp0Cost(t *testing.T, m *decoder.Model, r *cudaResident, rd decoder.Residen
 				cat[i] = row
 			}
 			rd.TruncateContext(0)
-			fused, err := rd.FuseContext(cat)
-			if err == nil {
-				err = rd.ExtendContext(fused)
-			}
-			if err != nil {
-				t.Fatalf("drafter context to %d: %v", L, err)
+			for lo := 0; lo < L; lo += piece {
+				fused, err := rd.FuseContext(cat[lo:min(lo+piece, L)])
+				if err == nil {
+					err = rd.ExtendContext(fused)
+				}
+				if err != nil {
+					t.Fatalf("drafter context to %d: %v", L, err)
+				}
 			}
 		}
 		rows := sp0Embed(m, fill[L:L+maxW])
