@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
-| KS-E3 | open | either box: `TEncode` from `TestDecodeTWE_split` on today's binding | — |
+| KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode about 0.5 ms a token faster, median 0.9788, 10 of 10 pairs on the per-arm-guarded re-run (E3-G2 SHIP) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1633,6 +1633,73 @@ prefill GEMMs and int8 KV attention use it.
 - **Change:** record after the submit. Drop the pending buffer on `SetAdapter`, `UseKVSlot` or a mode switch.
 - **Gain (est.):** ~0.6 ms (~8%). Metal's version measured +4.4%.
 - **Size:** S–M.
+
+**KS-E3 gates, registered 2026-10-24 before the code (E3-G), on the owner's order of the Mac work.** The build: after `Run`
+submits token t, the runner records token t+1's command buffer (its steps, then the logits copy) while the GPU runs, and the next
+`Run` writes its inputs and submits that buffer instead of recording one. `record` replays `r.steps`, whose pipelines, bind groups
+and grids are fixed for the runner; the inputs move through buffer writes, which the queue orders before the submit. The pending
+buffer is dropped wherever the steps or the recorded shape change: `SetAdapter` (which `UseKVSlot` also calls), `RunNoLogits`
+and `Close`. `encodeAheadOffForTest`, read at each `Run`, records in line as today.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| E3-G1 identity | 0 | llama-tiny and the 1.5B's `.gguf` at int8int8 on WebGPU, encode-ahead on against off on one resident: 32 greedy `Forward` steps; then a sequence mixing `Forward`, `RunNoLogits` (through `PrefillLast`'s trunk-only rows where the backend takes it), `ForwardN` and a second KV slot (`UseKVSlot`) | every logit byte-equal |
+| E3-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B on WebGPU: encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median on/off per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change decides; otherwise PARK |
+
+E3-G3: none (one command buffer held per runner). Planted defect, run once and reverted: `SetAdapter` not dropping the pending
+buffer, with a slot switch in E3-G1's sequence; or, if that stays equal, the pending buffer submitted after its runner's steps
+were rebuilt must go red. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
+
+**Amended 2026-10-24, before any E3-G run.** `UseKVSlot` calls `SetAdapter` only when an adapter is bound, and no WebGPU adapter
+fixture is at hand, so the registered plant cannot fire. The plant is instead a pending buffer recorded without the logits copy
+(substituted after each `Run`), which E3-G1 must turn red. The instruments are `TestKSE3_encodeAheadIdentity` and
+`TestKSE3_decodeSpeed`; the bars are unchanged.
+
+**KS-E3 read 2026-10-24 (Mac, 12:05–12:13): SHIP.**
+- **E3-G1 PASS:** llama-tiny and the 1.5B at int8int8 on WebGPU with two KV slots, 24 logit rows each (8 `Forward`, a 4-row
+  `ForwardN`, 2 `ForwardNoLogits`, 4 `Forward`, 4 on slot 1, 4 back on slot 0), 0 logits differ, encode-ahead on against off. The
+  plant (a pending buffer without the logits copy) turned llama-tiny red, 4,352 logits.
+- **E3-G2 SHIP** (12:11–12:13, the lock held exclusively; the 1-minute load 2.02 at the start, each pair's 1.28–1.59; reclaimable
+  9.9 GB, available 13.1 GB): off 24.35–24.73 ms a token, on 23.81–24.21, **median on/off 0.9796, 10 of 10 pairs faster**, about
+  0.5 ms a token (the survey's estimate ~0.6). Read on main's build, without KS-E2.
+Logs: `~/goinfer-logs/kse3-g1-2026-10-24.log`, `~/goinfer-logs/kse3-g2-2026-10-24.log`.
+
+**After the second-opinion review of #216 (13:40), registered before the re-run.** The earlier amendment was wrong that no adapter
+fixture exists: `buildLlamaTinyLoRAFixtureGPU` makes one, so the registered plant now runs. Changes:
+- `Run` requests the staging map before it records the next token, and that recording is timed apart (`TEncodeAhead`) and left out
+  of `TSync`, so `TEncode`/`TSync` keep their meaning (`TestDecodeTWE_split` passes).
+- E3-G1 uses a fresh resident per arm and its own inputs on slot 1. Added: an adapter bound after a pre-recorded token
+  (`TestKSE3_setAdapterDropsPending`; the registered plant, `SetAdapter` keeping the stale buffer, turned all 1,024 logits red) and
+  each drop path's state (`TestKSE3_pendingDroppedWhereRecorded`: `RunNoLogits`, `SetAdapter`, release). The drop moved into
+  `release`, so a Context teardown frees it too. All PASS; the identity plant is still red (4,352 logits).
+- **E3-G2 re-run:** the same instrument under the lock, the test refusing to run without the lock's token or under 6 GB
+  reclaimable before its load, voiding and re-running a pair started above a load of 4.0 or under 2 GB reclaimable, and failing on
+  the bar (SHIP iff median on/off ≤ 0.98 with at least 9 of 10 faster). The first reading (0.9796) was taken with the next token
+  recorded before the staging map was requested; the re-run reads the corrected order and decides.
+
+**E3-G2 re-run read 2026-10-24 (13:42–13:45, under the lock; "== start 13:42:07 reclaimable_mb 9161"): SHIP.** off 24.46–25.95 ms a token, on
+23.75–24.88; **median on/off 0.9764, 10 of 10 pairs faster**, 2 void starts (a load spike to 6.5) re-run; each valid pair started at
+a load of 2.11–3.74 and 2.5–4.0 GB reclaimable. Log: `~/goinfer-logs/kse3-g2-rerun-2026-10-24.log`.
+
+**After the second review of #216 (14:20), registered before a further re-run.** The guard read the void rule's terms once, at each
+pair's start, so a load spike or a memory drop during a timed run was not caught. The re-run reads them just before and just after
+each arm's timed run (after the resident is built and warmed), and voids the pair if any of the four reads fails, up to 15 times; an
+unreadable load or memory reading fails the test (`sysctl` on macOS, `/proc/loadavg` on Linux). The bar is unchanged (SHIP iff the
+median on/off ≤ 0.98 with at least 9 of 10 faster); the previous readings stay in the record and this one decides. Also:
+- `kse3KeepPendingForTest` is gone from `SetAdapter`. The registered plant now lives in `TestKSE3_setAdapterDropsPending`: it
+  detaches the pending buffer before `SetAdapter` and hands it back after, which is what a `SetAdapter` that kept it would leave.
+- That test fails, not skips, on a load error once the hardware is gated; the identity test's plant runs only on
+  `GOINFER_KSE3_PLANT=1` and the adapter test's only on `=2`.
+- Added `TestKSE3_kvSlotWithAdapter`: llama-tiny with two KV slots and an adapter bound, 4 steps on slot 0, 4 on slot 1 with its own
+  inputs, 4 more on slot 0; every logit with encode-ahead on equals off.
+
+All four E3-G1 tests PASS (0 logits differ); `GOINFER_KSE3_PLANT=1` reds only the identity test (4,352 logits), `=2` only the adapter
+test (1,024 of 1,024).
+
+**E3-G2 per-arm-guarded re-run read 2026-10-24 (14:32–14:34, the lock held exclusively; "== start 14:32:16", 10.2 GB reclaimable
+before the load): SHIP.** Every read of every arm under the line: the 1-minute load 1.06–1.77, reclaimable 3.44–4.03 GiB. off
+24.68–24.95 ms a token, on 24.17–24.56; **median on/off 0.9788, 10 of 10 pairs faster**, no void pairs. The gain holds: 0.9764 and
+0.9788 on the two guarded readings. Log: `~/goinfer-logs/kse3-g2-rerun2-2026-10-24.log`.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
