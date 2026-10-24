@@ -1,0 +1,19 @@
+Brightwater Logistics Ltd: TAX INVOICE
+402 Harbour Road, Denver, CO 80202
+
+Billed to: Orchid Bay Hospitality
+Address: 3300 Cascade Blvd, Portland, OR 97209
+Invoice number: 06824
+Issued: 03/13/2026
+Payment due: 04/13/2026
+
+No: 1
+Description: A4 paper, 80gsm (ream)
+Qty: 1
+Unit Price: 914.36
+Amount: 914.36
+
+No: 2
+Description: Thermal label roll 00mm
+Qty: 1
+Unit Price

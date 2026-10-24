@@ -1,0 +1,8 @@
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3904 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.9 GB free — capping to 33 (3.4 GB)
+    gemma4_bidir_span_real_test.go:275: turn 1 cpu:table: "Table 2. Quarterly unit sales by region (thousands)\\n\\n| Region | Q1 | Q2 | Q3 | Q4 | Total |\\n| :--- | :--- | :--- | :--- | :--- | :--- |\\n| North | 128.4 | 135.9 | 142.2 | 151.0 | 557.5 |\\n| South | 97.1 | 1          | 99.8 | 108.3 | 406.8 |\\n| East | 210.5 | 224.0 | 231.7 | 246.9 | 913."
+    gemma4_bidir_span_real_test.go:275: turn 2 span:table: "Table 2. Quarterly unit sales by region (thousands)\\n\\n| Region | Q1 | Q2 | Q3 | Q4 | Total |\\n| :--- | :--- | :--- | :--- | :--- | :--- |\\n| North | 128.4 | 135.9 | 142.2 | 151.0 | 557.5 |\\n| South | 97.1 | 101.6 | 99.8 | 108.3 | 406.8 |\\n| East | 210.5 | 224.0 | 231.7 | 246.9 | 9"
+    gemma4_bidir_span_real_test.go:280: table span run 1 vs CPU+upload: first difference at decode step 101
+--- PASS: TestGemma4BidirSpanPrefill_real26BDecode (229.50s)
+PASS

@@ -92,7 +92,7 @@ func TestS17LeverB_kernelProbe(t *testing.T) {
 		t.Skip("exploratory: set GOINFER_S17_PROBE=1")
 	}
 	d, _ := CreateSystemDefaultDevice()
-	lib, err := d.CompileLibraryPrecise(eg2MSL+gvMSL+s17GemmVariants, MSL3_1)
+	lib, err := d.CompileLibraryPrecise(eg2MSL+towerGemmMSL+gvMSL+s17GemmVariants, MSL3_1)
 	if err != nil {
 		t.Fatal(err)
 	}

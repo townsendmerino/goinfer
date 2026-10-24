@@ -1,0 +1,297 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// KS-A3 build gate instrument (docs/measurements/ks-a3-2026-10/README.md). Kept under docs as .go.txt and copied into
+// cuda/ as ks_a3_scratch_test.go for a run; never committed under cuda/. Gated on GOINFER_KS=1. GOINFER_KS_A3_OLD names
+// origin/main's committed topk.ptx (the old arm: the one-block topk_select); the new arm is the resident's own
+// topkReadback.
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	gpu "github.com/townsendmerino/aikit/gpu"
+)
+
+func ksa3Load1() float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
+	return f
+}
+
+// ksa3Old runs the committed one-block kernel over r.logits[:v] into out and returns the packed words.
+func ksa3Old(r *cudaResident, p Pipeline, out Buffer, v, k int, invT float32, wantZ bool) ([]int32, error) {
+	wz := int32(0)
+	if wantZ {
+		wz = 1
+	}
+	if e := r.launch(p, onecfg(1024, 0), Arg(r.logits), gpu.ArgValue(int32(v)), gpu.ArgValue(int32(k)),
+		gpu.ArgValue(invT), gpu.ArgValue(wz), Arg(out)); e != nil {
+		return nil, e
+	}
+	if e := r.stream.Sync(); e != nil {
+		return nil, e
+	}
+	buf := make([]int32, 2*k+2)
+	return buf, gpu.Download(out, buf)
+}
+
+// ksa3New runs the build's topkReadback and returns the same packed words.
+func ksa3New(r *cudaResident, v, k int, temperature float64, wantZ bool) ([]int32, error) {
+	if _, e := r.topkReadback(v, k, temperature, wantZ); e != nil {
+		return nil, e
+	}
+	buf := make([]int32, 2*k+2)
+	return buf, gpu.Download(r.topkOut, buf)
+}
+
+func ksa3Rows(rng *rand.Rand, v int) map[string][]float32 {
+	rows := map[string][]float32{}
+	normal := make([]float32, v)
+	for i := range normal {
+		normal[i] = float32(rng.NormFloat64() * 3)
+	}
+	rows["normal"] = normal
+	coarse := make([]float32, v)
+	for i := range coarse {
+		coarse[i] = float32(rng.Intn(20))
+	}
+	rows["coarse"] = coarse
+	rows["allequal"] = make([]float32, v)
+	for i := range rows["allequal"] {
+		rows["allequal"][i] = 1.5
+	}
+	zeros := make([]float32, v)
+	for i := range zeros {
+		if rng.Intn(2) == 0 {
+			zeros[i] = float32(math.Copysign(0, -1))
+		}
+		if rng.Intn(50) == 0 {
+			zeros[i] = float32(rng.NormFloat64())
+		}
+	}
+	rows["signedzeros"] = zeros
+	asc := make([]float32, v)
+	for i := range asc {
+		asc[i] = float32(i) * 0.001
+	}
+	rows["ascending"] = asc
+	desc := make([]float32, v)
+	for i := range desc {
+		desc[i] = -float32(i) * 0.001
+	}
+	rows["descending"] = desc
+	peaked := make([]float32, v) // a confident row: a few high logits over a flat tail
+	for i := range peaked {
+		peaked[i] = float32(rng.NormFloat64()) - 10
+	}
+	for j := 0; j < 5; j++ {
+		peaked[rng.Intn(v)] = 20 + float32(j)
+	}
+	rows["peaked"] = peaked
+	return rows
+}
+
+func TestKSA3_build(t *testing.T) {
+	if os.Getenv("GOINFER_KS") == "" {
+		t.Skip("set GOINFER_KS=1 (KS-A3 instrument)")
+	}
+	oldPTX, err := os.ReadFile(os.Getenv("GOINFER_KS_A3_OLD"))
+	if err != nil {
+		t.Fatalf("GOINFER_KS_A3_OLD: %v", err)
+	}
+	mc, err := loadLikeServe(t, modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "-backend", "cuda", "-quant", "int4")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	r := mustResident(t, mc)
+	_, _, _, _, _, _, vocab := mc.Dims()
+	var oldP Pipeline
+	var oldOut Buffer
+	if err := r.do(func() error {
+		lib, e := r.dev.CompileLibrary(oldPTX)
+		if e != nil {
+			return e
+		}
+		if oldP, e = r.dev.NewComputePipeline(lib, "topk_select"); e != nil {
+			return e
+		}
+		oldOut = r.ai(2*topkMaxK + 2)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// ---- G1: old = new, every output word (ids, logit bits, Z hi/lo bits) ----
+	checked, diffs := 0, 0
+	compare := func(name string, v, k int, temp float64, wantZ bool) {
+		invT := float32(1)
+		if temp > 0 {
+			invT = float32(1 / temp)
+		}
+		var a, b []int32
+		if err := r.do(func() error {
+			var e error
+			if a, e = ksa3Old(r, oldP, oldOut, v, k, invT, wantZ); e != nil {
+				return e
+			}
+			b, e = ksa3New(r, v, k, temp, wantZ)
+			return e
+		}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		n := 2 * k
+		if wantZ {
+			n += 2
+		}
+		for i := 0; i < n; i++ {
+			if a[i] != b[i] {
+				diffs++
+				if diffs <= 5 {
+					t.Errorf("G1: %s v%d k%d T%g z=%v: word %d old %#x new %#x", name, v, k, temp, wantZ, i, a[i], b[i])
+				}
+				break
+			}
+		}
+		checked++
+	}
+	upload := func(row []float32) {
+		if err := r.do(func() error { return gpu.Upload(r.logits, row) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rng := rand.New(rand.NewSource(1))
+	for _, v := range []int{vocab, 32000, 8192, 5000, 1000} {
+		rows := ksa3Rows(rng, v)
+		names := make([]string, 0, len(rows))
+		for n := range rows {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			upload(rows[n])
+			for _, k := range []int{1, 40, 256, 1024} {
+				for _, temp := range []float64{1, 0.7} {
+					for _, wantZ := range []bool{false, true} {
+						compare(n, v, k, temp, wantZ)
+					}
+				}
+			}
+		}
+	}
+	// real rows: the 0.5B's logits after 16 greedy tokens, one row each
+	for i := range 16 {
+		if _, err := r.ForwardArgmax(mc.EmbedResidentForTest((i*2654435761+1)%(vocab-1)), i); err != nil {
+			t.Fatal(err)
+		}
+		for _, k := range []int{40, 256, 1024} {
+			compare(fmt.Sprintf("real%d", i), vocab, k, 0.7, true)
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[A3b] G1: %d cases, %d differ\n", checked, diffs)
+	if diffs > 0 {
+		t.Fatalf("G1 FAIL: %d of %d cases differ", diffs, checked)
+	}
+
+	// ---- no bar: the top-K alone on the last real row, old and new interleaved ----
+	topkUs := func(old bool, k int) float64 {
+		const reps = 50
+		var us float64
+		_ = r.do(func() error {
+			t0 := time.Now()
+			for range reps {
+				if old {
+					_, _ = ksa3Old(r, oldP, oldOut, vocab, k, 1/0.7, true)
+				} else {
+					_, _ = ksa3New(r, vocab, k, 0.7, true)
+				}
+			}
+			us = time.Since(t0).Seconds() * 1e6 / reps
+			return nil
+		})
+		return us
+	}
+	for _, k := range []int{256, 1024} {
+		o1, n1, n2, o2 := topkUs(true, k), topkUs(false, k), topkUs(false, k), topkUs(true, k)
+		fmt.Fprintf(os.Stderr, "[A3b] top-K alone, vocab %d k %d (launch, sync and 2 KB readback): old %.1f / %.1f µs, new %.1f / %.1f µs\n", vocab, k, o1, o2, n1, n2)
+	}
+
+	// ---- G2: whole sampled tokens, ForwardTopK's work (forward + top-K + readback), k 256 with Z, T 0.7, depth 128 ----
+	emb := func(i int) []float32 { return mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
+	const depth, block, k = 128, 64, 256
+	for i := range depth {
+		if _, err := r.ForwardArgmax(emb(i), i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(old bool) time.Duration {
+		t0 := time.Now()
+		for i := range block {
+			pos := depth + i
+			err := r.do(func() error {
+				if e := r.launchToken(emb(1000+i), pos, pos, true); e != nil {
+					return e
+				}
+				if old {
+					_, e := ksa3Old(r, oldP, oldOut, vocab, k, 1/0.7, true)
+					return e
+				}
+				_, e := r.topkReadback(vocab, k, 0.7, true)
+				return e
+			})
+			if err != nil {
+				t.Fatalf("token: %v", err)
+			}
+		}
+		return time.Since(t0)
+	}
+	run(true)
+	run(false)
+	const quads = 10
+	var ratios []float64
+	var sumO, sumN time.Duration
+	voids := 0
+	for q := 0; q < quads; q++ {
+		if l1 := ksa3Load1(); l1 > 8.0 {
+			voids++
+			fmt.Fprintf(os.Stderr, "[A3b] quad %d VOID: load1 %.2f > 8.0 at start; re-running\n", q, l1)
+			q--
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		l1 := ksa3Load1()
+		a1 := run(true)
+		b1 := run(false)
+		b2 := run(false)
+		a2 := run(true)
+		ra := float64(a1+a2) / float64(b1+b2)
+		ratios = append(ratios, ra)
+		sumO += a1 + a2
+		sumN += b1 + b2
+		fmt.Fprintf(os.Stderr, "[A3b] quad %d load1 %.2f | old %.1f µs/tok new %.1f µs/tok | new speedup %.4f\n",
+			q, l1, float64((a1+a2).Microseconds())/(2*block), float64((b1+b2).Microseconds())/(2*block), ra)
+	}
+	srt := append([]float64(nil), ratios...)
+	sort.Float64s(srt)
+	above := 0
+	for _, x := range ratios {
+		if x > 1 {
+			above++
+		}
+	}
+	if r.launchErr != nil {
+		t.Fatalf("a launch failed: %v", r.launchErr)
+	}
+	nTok := float64(quads * 2 * block)
+	t.Logf("KS-A3b: sampled token old %.1f µs, new %.1f µs; new speedup median %.4f, min %.4f, max %.4f, %d/%d quads above 1, %d void",
+		float64(sumO.Microseconds())/nTok, float64(sumN.Microseconds())/nTok, (srt[quads/2-1]+srt[quads/2])/2, srt[0], srt[quads-1], above, quads, voids)
+}
