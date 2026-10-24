@@ -18,6 +18,10 @@ import (
 // exactly commutative). testdata/gemma4-moe-tiny-k3 is the same pin_gemma4_moe_forward.py fixture
 // family (PIN_TOPK=3), built for this test.
 func TestMoEExpertMajorGemma4CUDA_bitIdentical(t *testing.T) {
+	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
+	// takes by default has its own gate (TestGemma4MoE_floatParity).
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	const dir = "../testdata/gemma4-moe-tiny-k3"
 	if _, err := os.Stat(dir); err != nil {
 		t.Skipf("no fixture at %s: %v", dir, err)

@@ -17,6 +17,10 @@ import (
 // expert branch (and the join, by elimination) in one run instead of a cosine that only says "wiring". It logs rn
 // and asserts cosine >= 0.9999 per decision on wgt, x1 and x2; the whole-forward gate is TestGemma4MoE_residentParity.
 func TestGemma4MoE_localize(t *testing.T) {
+	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
+	// takes by default has its own gate (TestGemma4MoE_floatParity).
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	t.Setenv("GOINFER_G4_CAPTURE", "1")
 	const dir = "../testdata/gemma4-moe-tiny"

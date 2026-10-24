@@ -1,0 +1,12 @@
+Table 2. Quarterly unit sales by region (thousands)
+
+| Region | Q1 | Q2 | Q3 | Q4 | Total |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| North | 128.4 | 135.9 | 1도 142.2 | 151.0 | 557.5 |
+| South | 97.1 | 101.6 | 99.8 | 108.3 | 406.8 |
+| East | 210.5 | 224.0 | 231.7 | 246.9 | 913.1 |
+| West | 176.2 | 181.4 | 190.6 | 203.8 | 752.0 |
+| Central | 64.9 | 70.3 | 73.5 | 79.2 | 287.9 |
+| All regions | 677.1 | 713.2 | 737.8 | 789.2 | 2917.3 |
+
+Source: internal sales ledger, FY2025. Totals may not sum due to rounding.

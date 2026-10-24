@@ -1,0 +1,36 @@
+Invoice No: 2026/4190
+Date: 02/05/2026
+Due: 03/05/2026
+
+From: Ironbridge Fabrication, 56 Orchard Close, Denver, CO 80202
+Bill To: Willow Creek Farms, 3300 Cascade Blvd, Austin, TX 78701
+
+No: 1
+Description: Oak shelf bracket
+Qty: 1
+Unit Price: 756.89
+Amount: 756.89
+
+No: 2
+Description: Cotton napkins, set of 12
+Qty: 10
+Unit Price: 635.32
+Amount: 6353.20
+
+No: 3
+Description: Site survey, per hour
+Qty: 8
+Unit Price: 816.94
+Amount: 6535.52
+
+No: 4
+Description: A4 paper, 80gsm (ream)
+Qty: 6
+Unit Price: 2.61
+Amount: 15.66
+
+Subtotal: 13661.27
+Tax (10%): 1366.13
+Total Due: €15027.40
+
+Payment terms: net 30 days. Thank you for your business.

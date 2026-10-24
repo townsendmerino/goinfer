@@ -1,0 +1,15 @@
+Cedar & Pine Joinery: 1204 Alder Avenue, Suite 5 - Leeds LS1 4AP
+Invoice #: 84380
+Date: 08/27/2026
+Customer: Vega Robotics Inc.
+Due date: 09/27/2026
+Customer Address: 1204 Alder Avenue, Suite 5, Seattle, WA 98101
+
+No 1: Description: Laminated menu cards, Qty: 12, Unit Price: 713.05, Amount: 8,556.60
+No 2: Description: Ink cartridge, cyan, Qty: 3, Unit Price: 46.14, Amount: 138.42
+No 3: Description: Design review, Qty: 3, Unit Price: 352.34, Amount: 1,057.02
+
+Subtotal: 9,752.04
+Tax (8.5%): 828.92
+Total Due: €10,580.96
+Payment terms: net 30 days. Thank you for your business.

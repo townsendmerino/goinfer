@@ -867,6 +867,10 @@ func matmulPre(be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M 
 
 // matmulPreWS is matmulPre through own, a caller-held Workspace (a batched pass's), or a pooled one when own is nil.
 func matmulPreWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
+	if int4FloatActForTest && w.IsInt4() {
+		matmulInt4Float(w, a, dst, M)
+		return
+	}
 	if p == nil || !p.set || p.M != M || p.q.K != w.Cols() || p.group != w.ActQuantGroup() || !cpuW4A8(be, w) {
 		matmulWS(be, own, w, a, dst, M)
 		return
@@ -891,6 +895,10 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 // matmulWS is matmul through own, a caller-held Workspace (a batched pass's, which a chunked prefill keeps across its
 // chunks), or a pooled one when own is nil.
 func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []float32, M int) {
+	if int4FloatActForTest && w.IsInt4() {
+		matmulInt4Float(w, a, dst, M)
+		return
+	}
 	if w.IsInt4() {
 		// Staged int4 backend consult, mirrored in matmulInto and the W8A8 branch below. Nested under Int4()'s ok (canonical
 		// bytes present), not IsInt4(): the consult hands q4/q4s to the backend on every call, so a repacked-only tensor has
@@ -978,6 +986,10 @@ func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []f
 // matmulIntoPre is matmulInto(ws, be, w, a, dst, M), using p's block when it was quantized for an input w can take (see
 // w4a8Act).
 func matmulIntoPre(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
+	if int4FloatActForTest && w.IsInt4() {
+		matmulInt4Float(w, a, dst, M)
+		return
+	}
 	if p == nil || !p.set || p.M != M || p.q.K != w.Cols() || p.group != w.ActQuantGroup() || !cpuW4A8(be, w) {
 		matmulInto(ws, be, w, a, dst, M)
 		return
@@ -996,6 +1008,10 @@ func matmulIntoPre(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, p *w4a
 // Race-freedom: ws is the per-stream Workspace on decodeScratch, and a cache is one generation stream, so the buffers are
 // never shared concurrently (decoder/scratch.go). matmul's per-call Workspace stays for callers with no scratch at all.
 func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
+	if int4FloatActForTest && w.IsInt4() {
+		matmulInt4Float(w, a, dst, M)
+		return
+	}
 	if isW8A8(w) {
 		q8, scales, _, _ := w.Int8()
 		if qb, ok := be.(QuantBackend); ok && w.ActQuantGroup() == 0 && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {

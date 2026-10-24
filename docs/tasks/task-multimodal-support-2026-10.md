@@ -8203,6 +8203,101 @@ prefill on CUDA in batched passes.
     No higher-precision reference of the 26B fits this box, so which side is nearer the model's own answer is shown only
     by output quality: the CPU path read every tested form correctly; the GPU path garbles about one digit in three
     forms.
+- **The mechanism, 2026-10-23 evening (Francis's option 1, CPU only; `TestGemma4_26BActQuantSensitivity`, logs
+  `sensitivity-actq-*.log`).**
+  - **The router was never the issue.** The 26B's CUDA router already runs in full f32 (`rmsnorm_nw`, then
+    `gemv_f32_f32`, then f32 top-k).
+  - **The CPU int4 path is W4A8 too.** It rounds activations to int8 with one scale per row, as the GPU does
+    (`ActivationQuantHazard`). The earlier "GPU W4A8 against CPU float" reading above is wrong: both quantize.
+  - **The test:** the table form decoded on the CPU twice, once on its features and once on features nudged by 1e-5
+    relative noise, the second teacher-forced on the first's tokens. Worst per-layer residual cosine at steps 95 to
+    110:
+
+    | weights | activations | cosine range | collapsed steps (below 0.9) |
+    |---|---|---|---|
+    | int4 | int8, per row | down to 0.44 and -0.58 | 6 of 16, the same steps as GPU-vs-CPU |
+    | int4 | int8, per 32 | down to 0.39 | 2 of 16 |
+    | int8 | int8, per row (`int8int8`) | down to 0.32 | 5 of 16 |
+    | int8 | f32 (weight-only `int8`) | 1.00000 at every layer and step | none |
+    | int4 | f32 (`SetInt4FloatActForTest`; 0 W4A8 calls, so every int4 projection took the float path) | 1.00000 at every layer and step | none |
+  - **Reading:** the 26B's int8 activation rounding, not its int4 weights and not anything GPU-specific, turns a 1e-5
+    difference into a late-layer collapse at certain tokens. GPU-vs-CPU is one such difference, so either path can land on
+    a garbage digit (the CPU did not on these forms; the GPU did on two). Float activations remove the sensitivity.
+    int4 weights with float activations are as stable as int8 weights with them (step 1 of Francis's option (a), 18:52),
+    and that run's table reply is correct ("101.6"). So the fix is float-input int4 GEMVs, keeping the int4 weights.
+- **S19 follow-up step 2: float-input int4 GEMVs for the 26B's CUDA decode (Francis's option (a), 18:30). Plan and
+  gates registered 2026-10-23 before any kernel code or measurement.**
+  - **What changes:** every int4 projection in a Gemma 4 decode step takes its activation as f32:
+    - attention q/k/v and o;
+    - the dense MLP gate/up and down;
+    - the experts' gate/up and down.
+
+    This needs new kernels beside the W4A8 ones, which stay: `gemv_w4f32`, `gemv_w4f32_moe`, `gemv_w4f32_moe_wacc`, and
+    a float-output GLU. The router is already f32. The expert kernels change in lockstep with g4-decode's CPU replicas
+    (S20). Prefill is unchanged.
+  - **G-S19e, kernels (tier 0):** each new kernel against a CPU f32 reference (the int4 row dequantized, dotted with
+    the f32 input) on random data at the 26B's shapes:
+    - **PASS:** max relative error at most 1e-5.
+    - **Defects that must go red:** the nibble order of a word swapped; the -8 offset dropped; the group scale read one
+      group off.
+  - **G-S19f, real 26B, teacher-forced (tier 1):** the table form, CPU prefill and upload, then the GPU float decode
+    against the CPU float decode (`SetInt4FloatActForTest`) over 120 steps.
+    - **PASS:** argmax identical at every step, and the worst per-layer residual cosine at least 0.999 at every
+      captured step (95 to 110).
+    - Reported beside it: the W4A8 GPU-vs-CPU readings above (down to 0.44).
+  - **G-S19g, every digit (tier 1, served):**
+    - **Setup:** the 15 invoices in `testdata/glm_ocr/invoices` (ground truth `labels.json`) and the table form, each
+      a fresh greedy turn with `max_tokens` 700, with Francis's serve flags.
+    - **PASS:** on every invoice, every number in its label appears in the reply, compared as numbers with thousands
+      separators removed. The numbers are the invoice number's digits, both dates, each line's quantity, unit price
+      and amount, the subtotal, tax and total. The table form's cell values must all appear too. (Amended 2026-10-23, 19:15, before any G-S19g run: the
+      table has 30 numeric cells, the five regions and an "All regions" row, not 25. Truth: `table_truth.json`, read
+      off the image. Grader: `grade_digits.py`.)
+    - Reported on the same set: the shipped W4A8 GPU path, as the baseline.
+  - **G-S19h, speed (tier 1):** decode tok/s and per-form turn time, float against W4A8, A B B A under the timing lock.
+    Reported, no bar; if float is more than 25% slower per form, the choice goes back to Francis before it ships.
+  - **G-S19e read 2026-10-23, 19:1x: PASS** (`gs19e-kernels.log`; `cuda/gemv_w4f32.cu`, FMA-linted).
+    - Max relative error against the CPU float64 reference:
+      - `gemv_w4f32`: 1.12e-7 (2112x2816) and 9.86e-8 (2816x2112, the ragged tail);
+      - `gemv_w4f32_moe` / `_wacc`: 1.32e-7 / 1.53e-7 (1408x2816) and 1.47e-7 / 1.18e-7 (2816x704);
+      - `glu_f32`: 3.0e-8 (gelu-tanh) and 2.2e-8 (SiLU).
+    - Planted defects, red at both dense shapes: nibble order 1.26 / 1.09, the -8 offset 0.413 / 0.392, the group
+      scale one off 0.045 / 0.046.
+    - The MoE kernel also differs from a wrong expert, so the routing index is read.
+    - The harness clears dst before every launch and fails on any output left at zero: without the clear, a launch after
+      the first read a previous run's values (a harness ordering effect, not the kernel's).
+  - **G-S19f read 2026-10-23, 19:12: PASS** (`gs19f-float-decode.log`).
+    - The real 26B on the float decode (the build logged `decode activations: f32 into every int4 projection`), against
+      the CPU on f32 activations, teacher-forced on the table form for 120 steps.
+    - Logits cosine is 1.000000 at every step, the argmax never departs, and the worst per-layer residual cosine is
+      1.00000 at every captured step 95 to 110. The same comparison on W4A8 read down to 0.44.
+    - At step 101, where the W4A8 resident wrote a run of spaces, both write "0" (101.6).
+  - **G-S19g read 2026-10-23, 19:13 to 19:25: PASS** (`g19g/`, `grade.txt`).
+    - The 15 invoices and the table form, a fresh greedy turn each (`max_tokens` 700), Francis's serve flags. Float
+      build `c2db5b7dd`; baseline main `fa0820f1a` (W4A8).
+    - **Float: 294 of 294 values present on all 16 forms.**
+    - Main (W4A8): 292 of 294. inv11 wrote "Qty: ES" for 40, and inv15 wrote "Qty: 0" for 10: the garbage-digit class.
+  - **G-S19h read 2026-10-23, 19:25 to 19:29** (`g19h/cells.txt`). A B B A, two forms per cell, 160-token turns, load
+    1.6 to 1.75 at every cell start, none void.
+
+    | arm | turn | time to first token | decode |
+    |---|---|---|---|
+    | W4A8 (main) | 12.8 to 12.9 s | 9.1 to 9.2 s | 41.8 to 44.2 tok/s |
+    | float | 13.1 s | 9.1 to 9.2 s | 39.8 to 40.8 tok/s |
+
+    About +2% a turn and 5 to 8% slower decode, inside the registered 25%.
+  - **Ships as:** the 26B's (gemma4 MoE) CUDA decode on float activations by default, once G-S19e to G-S19g pass. A
+    rollback switch lives in the resident (a test seam), not an env read.
+  - **A contract change, stated here:**
+    - For a Gemma 4 MoE on CUDA, decode is no longer bit-identical to the batched prefill, which stays W4A8.
+    - The tests that hold the W4A8 decode to the W4A8 CPU or prefill path now build with `floatActOffForTest`. These are
+      `TestGemma4MoE_residentParity`, `_localize`, `TestGemma4MoEScaled_residentParity`, `TestPrefillMoE_bitIdentical`
+      and both expert-major identity tests.
+    - The float decode has its own: `TestGemma4MoE_floatParity`, tiny fixture, cosine 1.0000000 and argmax equal at all
+      16 positions against the CPU float path.
+    - Nothing for this family depends on the old identity: no speculative verify, and reused KV from either path is
+      valid.
+    - Open: the prefill's own W4A8 rounding. G-S19g passed with it, so it is not built.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load
   2.2 to 3.4 at every cell start, none void. Per 160-token form turn:
   - old (`9bafcc12`): 89.9 / 90.4 / 93.7 / 94.7 s, time to first token 80.9 to 85.7 s;

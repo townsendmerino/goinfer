@@ -1752,6 +1752,27 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.gemma4Moe { // parallel dense‖MoE branch scratch
 			r.g4x1, r.g4x2, r.g4rn = r.af(H), r.af(H), r.af(H)
 		}
+		if why := r.floatActDecline(); why == "" {
+			fmod, e2 := r.dev.CompileLibrary(gemvW4F32PTX)
+			if e2 != nil {
+				return e2
+			}
+			for _, f := range []struct {
+				dst  *Pipeline
+				name string
+			}{
+				{&r.fW4F32, "gemv_w4f32"}, {&r.fMoEGemvF32, "gemv_w4f32_moe"}, {&r.fMoEWaccF32, "gemv_w4f32_moe_wacc"}, {&r.fGluF32, "glu_f32"},
+			} {
+				if *f.dst, e = r.dev.NewComputePipeline(fmod, f.name); e != nil {
+					return e
+				}
+			}
+			r.xF, r.dF, r.moeGLUF = r.af(H), r.af(max(maxI, 1)), r.af(moeInter)
+			r.floatAct = true
+			fmt.Fprintf(os.Stderr, "cuda: decode activations: f32 into every int4 projection (gemv_w4f32)\n")
+		} else if r.gemma4Moe {
+			fmt.Fprintf(os.Stderr, "cuda: decode activations: int8 (W4A8): %s\n", why)
+		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
 		r.topkOut = r.ai(2*topkMaxK + 2)      // sampled fast-path readback (~2 KB vs 594 KB)

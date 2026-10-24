@@ -1,0 +1,21 @@
+Company Name: Northgate Office Products
+Document Type: TAX INVOICE
+Address: 1204 Alder Avenue, Suite 5, Leeds LS1 4AP
+Billed to: Oakline Hotels plc
+Billed to Address: 56 Orchard Close, Seattle, WA 98101
+Invoice number: 53347
+Issued: 01/09/2026
+Payment due: 02/09/2026
+
+No 1: Description: Pallet wrap, Qty: 6, Unit Price: 342.72, Amount: 2,056.32
+No 2: Description: Hardwood flooring, per m2, Qty: 6, Unit Price: 635.39, Amount: 3,812.34
+No 3: Description: Shipping and handling, Qty: 6, Unit Price: 660.67, Amount: 3,964.02
+No 4: Description: Laminated menu cards, Qty: 5, Unit Price: 511.20, Amount: 2,556.00
+No 5: Description: Courier fee, Qty: 24, Unit Price: 28.24, Amount: 677.76
+No 6: Description: Binding spine strips, Qty: 10, Unit Price: 938.74, Amount: 9,387.40
+
+Subtotal: 22,453.84
+Tax (5%): 1,122.69
+Total Due: £23,576.53
+Payment Status: PAID
+Payment terms: net 30 days. Thank you for your business.

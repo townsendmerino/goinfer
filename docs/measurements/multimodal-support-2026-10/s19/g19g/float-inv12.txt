@@ -1,0 +1,16 @@
+Company Name: Foxglove Garden Centre
+Address: 402 Harbour Road - Denver, CO 80202
+Invoice #: A-03619
+Date: 06/23/2026
+Customer: Granite State Credit Union
+Customer Address: 3300 Cascade Blvd, Bristol BS1 5TR
+Due date: 07/23/2026
+
+No 1: Description: Dental hygiene kit, Qty: 40, Unit Price: 562.10, Amount: 22484.00
+No 2: Description: Thermal label roll 100mm, Qty: 5, Unit Price: 784.64, Amount: 3923.20
+
+Subtotal: 26407.20
+Tax (20%): 5281.44
+Total Due: €31688.64
+
+Payment terms: net 30 days.

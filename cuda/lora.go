@@ -111,6 +111,9 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	if r.actG32 && layers != nil {
 		return fmt.Errorf("cuda: compute-time LoRA reads per-vector activation scales; not implemented for a per-32 activation model")
 	}
+	if r.floatAct && layers != nil {
+		return fmt.Errorf("cuda: compute-time LoRA reads the int8-quantized activation, and this resident decodes on f32 activations (floatAct)")
+	}
 	if r.eModel && layers != nil {
 		return fmt.Errorf("cuda: compute-time LoRA is not implemented for a Gemma 4 E-model (KV-shared layers have no k/v projections to adapt, the PLE branch no hook point, and the FFN width varies by layer)")
 	}

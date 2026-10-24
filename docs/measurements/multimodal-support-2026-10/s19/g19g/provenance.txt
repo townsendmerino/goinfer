@@ -1,0 +1,15 @@
+[2026-10-23 19:13:45 PDT] arm float: /home/francis/goinfer-logs/g4-bidir/serve-float (c2db5b7dd) env=[]
+  gpu: 402 MiB  load: 2.48 5.20 4.79  mem avail: 56.0 GB
+    decode path: cuda-resident (int4)
+    prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 30.4 GB, 29.1 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA, loaded for each encode and released after it) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+[2026-10-23 19:19:33 PDT] arm main: /home/francis/goinfer-logs/g4-bidir/serve-main (fa0820f1a) env=[]
+  gpu: 402 MiB  load: 2.17 3.52 4.18  mem avail: 56.1 GB
+    decode path: cuda-resident (int4)
+    prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 30.4 GB, 29.1 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA, loaded for each encode and released after it) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+finished: 2026-10-23 19:25:13 PDT rc=0
