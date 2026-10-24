@@ -954,9 +954,9 @@ KS-A1's CUDA half, then KS-O1 on CUDA, the twin of what shipped on Metal).** Eac
   (`output.weight`; on CUDA the head is an ordinary `doG` launch, so the launch-shape cost that kept Metal's head int8 does not arise).
   A tied head (the embedding table) stays int8. `noteKQuant` also records the untied head; Metal's lane does not read that record
   (its head is uploaded outside `q4kLaneProj` and `metalKQuantSavings` counts layer projections only), so Metal is unchanged.
-- **One guardrail on scope:** the native kinds are taken only when the resident also holds at least one Q4_K projection. A Q4_K
-  projection already declines the batched prefill and step (`prefillStaticDecline`), so the native kinds take no batched path away;
-  a GGUF with no Q4_K tensor at `--quant q4k` (a Q5_K_M file, say) keeps its int8 copies and its batched prefill.
+- **One precondition on scope:** the native kinds are taken only under per-32 activations (`ActQuantGroup` 32), whose group sums
+  the kernels read. Every `--quant q4k` load gets it (`modelFromOptions`), and under it CUDA already declines the batched prefill,
+  the drafter and LoRA (`prefillStaticDecline`, `NewDrafter`, `SetAdapter`), so the native kinds take no batched path away.
 - **Fit pricing:** `ResidentDenseWeightBytesFor("cuda")` (which the CUDA build's KV plan and `Plan` both read) takes off, per weight
   the resident uploads natively and only those, its int8 bytes less the file's block bytes. The host term is unchanged. No threshold
   or margin moves: the device term is made to equal what the build allocates (#215's Gemini finding: price native blocks only where
@@ -976,7 +976,12 @@ KS-A1's CUDA half, then KS-O1 on CUDA, the twin of what shipped on Metal).** Eac
 | O1C-G7 speed | timed, nobara, timing lock | C1-G4's A/B on CUDA: one Phi-3 mini q4k resident holding both the int8 and the native buffers of every natively uploaded weight (a test hook), swapped per run; 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each; then the same on Qwen2.5-Coder-1.5B q4_k_m (Q6_K only). Load and free memory logged per cell, CLAUDE.md's void rule | **SHIP** iff Phi-3 is faster on at least 9 of 10 pairs (the small-gains rule's count; device memory falls, so its memory clause holds) **and** the 1.5B's median native/int8 is ≤ 1.00. **PARK** if Phi-3 is faster on 6–8 pairs. **KILL** if Phi-3 is faster on 5 or fewer, or the 1.5B's median is above 1.00. A KILL or PARK goes to the owner (Metal shipped under his option C with the 1.5B at 1.0127) |
 
 Fit checks: every load's plan is read from the build's own `fit:` / `KV plan:` banner first; a refused load is not started. Order:
-G1, G2, G4 (seconds), G3, then G7 (timed, under the lock), then G6 and G5. Stopping rule: one pass each; a FAIL in G1 to G4 stops
+G1, G2, G4 (seconds), G3, then G7 (timed, under the lock), then G6 and G5.
+
+**O1C amended 2026-10-24, 17:00, before any O1C gate ran:** the scope guardrail first registered here ("only when the resident also
+holds a Q4_K projection", so as not to take a batched prefill away) protected nothing. Every q4k load runs per-32 activations, under
+which CUDA has no batched prefill, drafter or LoRA, with or without a Q4_K tensor. The precondition is now per-32 activations, which
+the native kernels need for their group sums. The gates are unchanged. Stopping rule: one pass each; a FAIL in G1 to G4 stops
 the build for a fix, and the fixed build re-runs every gate from G1. Expected cost: G1–G4 a few minutes; G3 about 2 min; G7 about
 6 min (two models); G6 about 10 min (Phi-3 at f32 on the CPU); G5 about 15 min (two models, G3c's procedure).
 
