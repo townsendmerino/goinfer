@@ -1245,6 +1245,19 @@ must. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
   0.78 ms).
 Logs: `~/goinfer-logs/kse2-g1a-2026-10-24.log`, `~/goinfer-logs/kse2-g1b-2026-10-24.log`, `~/goinfer-logs/kse2-g2-2026-10-24.log`.
 
+**E2-G2 re-run, registered 2026-10-24 (13:00) before it runs, after the second-opinion review of #214.** The first reading (0.8821)
+was taken under the timing lock (its runner took it exclusively; the 1-minute load 3.49 at the start), but the test itself enforced
+neither the lock nor the void rule, the reclaimable figure was not captured, and its 2.9 ms a token is 3.7× the survey's estimate.
+The re-run, in one process under the lock, the test refusing to run without the lock's token:
+- **A/A control first:** two narrow residents, the same A B B A over 10 pairs after 2 warm runs. PASS iff the median ratio is within
+  1 ± 0.02; outside it, the two-resident setup biases the reading and E2-G2 is not graded.
+- **Then the A/B** (narrow against wide), as registered: SHIP iff the median wide/narrow is ≤ 0.98 with at least 9 of 10 pairs
+  faster.
+- **Every pair records, at its start, the 1-minute load and the reclaimable memory** (`internal/hostmem`); a pair started above a
+  load of 4.0 or under 6 GB reclaimable (the two residents and the host model, about 4 GB, plus 2 GB) is void, listed and re-run in
+  order, up to 10 re-runs.
+The first reading stays in the record; the re-run decides.
+
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
