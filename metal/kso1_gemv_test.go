@@ -13,8 +13,8 @@ import (
 
 // kso1ProtoKernels are O1-G0's prototype native Q5_K and Q6_K GEMVs at R rows a simdgroup (docs/tasks/task-kernel-survey-2026-10.md,
 // "KS-O1 on Metal: gates"), appended to allKernels. Q5_K is GGUF's 176-byte block verbatim (d, dmin, scales[12], qh[32],
-// qs[128]) on q4k_rows_acc's lane map. Q6_K is a row of NB 210-byte blocks split into planes: NB×128 bytes of ql, NB×64 of
-// qh, NB×16 of int8 scales, NB halves of d.
+// qs[128]) on q4k_rows_acc's lane map. kso1_q6k_rows<R> is the production gemv_q6k_f32_rows<R> at the R this file times, over
+// the lane's segment-wide Q6_K planes (kso1Q6KPlanes); at R = 4 it is the resident's own instance (kso1ProtoName).
 const kso1ProtoKernels = `
 template <uint R>
 inline void kso1p_q5k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
@@ -51,38 +51,6 @@ inline void kso1p_q5k_rows_acc(device const uchar* wq, device const float* ax, u
     }
     SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) acc[r] = simd_sum(acc[r]);
 }
-// kso1p_q6k_s6: four 6-bit codes (bytes 0..63) minus 32, as signed bytes, with no borrow between bytes.
-inline float4 kso1p_q6k_s6(uint t) { return float4(as_type<char4>(((t | 0x80808080u) - 0x20202020u) ^ 0x80808080u)); }
-template <uint R>
-inline void kso1p_q6k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
-    thread float* acc) {
-#pragma clang fp reassociate(off)
-    const uint NB = K >> 8u, ix = lane >> 3u, n = (lane & 7u) >> 2u, l0 = (lane & 3u)*8u, is = (lane & 3u) >> 1u;
-    SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) acc[r] = 0.0f;
-    for (uint b = ix; b < NB; b += 4u) {
-        device const float4* y4 = (device const float4*)(ax + b*256u + n*128u + l0);
-        float4 a[4][2];
-        for (uint t = 0u; t < 4u; t++) { a[t][0] = y4[8u*t]; a[t][1] = y4[8u*t + 1u]; }
-        SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) {
-            if (row0 + r >= N) break;
-            device const uchar* row = wq + (ulong)(row0 + r)*(ulong)NB*210ul;
-            uint2 qa = *(device const uint2*)(row + b*128u + n*64u + l0);
-            uint2 qb = *(device const uint2*)(row + b*128u + n*64u + 32u + l0);
-            uint2 qh = *(device const uint2*)(row + NB*128u + b*64u + n*32u + l0);
-            device const char* sc = (device const char*)(row + NB*192u + b*16u + n*8u + is);
-            float d0 = 0.0f, d1 = 0.0f, d2 = 0.0f, d3 = 0.0f;
-            for (uint w = 0u; w < 2u; w++) {
-                d0 += dot(kso1p_q6k_s6((qa[w] & 0x0F0F0F0Fu) | ((qh[w] & 0x03030303u) << 4u)), a[0][w]);
-                d1 += dot(kso1p_q6k_s6((qb[w] & 0x0F0F0F0Fu) | (((qh[w] >> 2u) & 0x03030303u) << 4u)), a[1][w]);
-                d2 += dot(kso1p_q6k_s6(((qa[w] >> 4u) & 0x0F0F0F0Fu) | (((qh[w] >> 4u) & 0x03030303u) << 4u)), a[2][w]);
-                d3 += dot(kso1p_q6k_s6(((qb[w] >> 4u) & 0x0F0F0F0Fu) | (((qh[w] >> 6u) & 0x03030303u) << 4u)), a[3][w]);
-            }
-            float d = float(*(device const half*)(row + NB*208u + b*2u));
-            acc[r] += d*((float(sc[0])*d0 + float(sc[2])*d1) + (float(sc[4])*d2 + float(sc[6])*d3));
-        }
-    }
-    SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) acc[r] = simd_sum(acc[r]);
-}
 template <uint R>
 kernel void kso1_q5k_rows(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
     device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
@@ -91,16 +59,6 @@ kernel void kso1_q5k_rows(device const uchar* wq[[buffer(0)]], device const floa
     uint row0 = (tgid*8u + sgid)*R;
     if (row0 >= N) return;
     float acc[R]; kso1p_q5k_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
-    if (lane==0) { SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) if (row0 + r < N) out[row0 + r] = acc[r]; }
-}
-template <uint R>
-kernel void kso1_q6k_rows(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
-    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
-    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
-    uint lane[[thread_index_in_simdgroup]]) {
-    uint row0 = (tgid*8u + sgid)*R;
-    if (row0 >= N) return;
-    float acc[R]; kso1p_q6k_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
     if (lane==0) { SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) if (row0 + r < N) out[row0 + r] = acc[r]; }
 }
 // kso1p_q5kb_rows_acc is O1-G0's amended Q5_K: kso1p_q5k_rows_acc with the scale bytes read as three words and each lane's two scales and
@@ -224,11 +182,18 @@ template [[host_name("kso1_q5k_rows1")]] kernel decltype(kso1_q5k_rows<1>) kso1_
 template [[host_name("kso1_q5k_rows2")]] kernel decltype(kso1_q5k_rows<2>) kso1_q5k_rows<2>;
 template [[host_name("kso1_q5k_rows4")]] kernel decltype(kso1_q5k_rows<4>) kso1_q5k_rows<4>;
 template [[host_name("kso1_q5k_rows8")]] kernel decltype(kso1_q5k_rows<8>) kso1_q5k_rows<8>;
-template [[host_name("kso1_q6k_rows1")]] kernel decltype(kso1_q6k_rows<1>) kso1_q6k_rows<1>;
-template [[host_name("kso1_q6k_rows2")]] kernel decltype(kso1_q6k_rows<2>) kso1_q6k_rows<2>;
-template [[host_name("kso1_q6k_rows4")]] kernel decltype(kso1_q6k_rows<4>) kso1_q6k_rows<4>;
-template [[host_name("kso1_q6k_rows8")]] kernel decltype(kso1_q6k_rows<8>) kso1_q6k_rows<8>;
+template [[host_name("kso1_q6k_rows1")]] kernel decltype(gemv_q6k_f32_rows<1>) gemv_q6k_f32_rows<1>;
+template [[host_name("kso1_q6k_rows2")]] kernel decltype(gemv_q6k_f32_rows<2>) gemv_q6k_f32_rows<2>;
+template [[host_name("kso1_q6k_rows8")]] kernel decltype(gemv_q6k_f32_rows<8>) gemv_q6k_f32_rows<8>;
 `
+
+// kso1ProtoName is the pipeline O1-G0's tests run for prototype v ("q5k", "q5kb", "q5kc", "q6k", "q4kb") at R.
+func kso1ProtoName(v string, R int) string {
+	if v == "q6k" && R == 4 {
+		return "gemv_q6k_f32_rows4"
+	}
+	return fmt.Sprintf("kso1_%s_rows%d", v, R)
+}
 
 // kso1Q5KRaw is n rows of random Q5_K blocks over K: d and dmin small positive f16, random scales, qh and qs.
 func kso1Q5KRaw(rng *rand.Rand, n, K int) []byte {
@@ -238,24 +203,6 @@ func kso1Q5KRaw(rng *rand.Rand, n, K int) []byte {
 		raw[b], raw[b+1], raw[b+2], raw[b+3] = byte(d), byte(d>>8), byte(dm), byte(dm>>8)
 		for i := b + 4; i < b+176; i++ {
 			raw[i] = byte(rng.Intn(256))
-		}
-	}
-	return raw
-}
-
-// kso1Q6KPlanar is n rows of random Q6_K blocks over K in the planar row layout (ql, qh, scales, d planes): random codes,
-// int8 scales, small positive f16 d.
-func kso1Q6KPlanar(rng *rand.Rand, n, K int) []byte {
-	NB := K / 256
-	raw := make([]byte, n*NB*210)
-	for r := range n {
-		row := raw[r*NB*210 : (r+1)*NB*210]
-		for i := range NB * 208 {
-			row[i] = byte(rng.Intn(256))
-		}
-		for b := range NB {
-			d := f32ToF16(float32(0.0005 + 0.002*rng.Float64()))
-			row[NB*208+2*b], row[NB*208+2*b+1] = byte(d), byte(d>>8)
 		}
 	}
 	return raw
@@ -327,12 +274,12 @@ func TestKSO1_gemvTiming(t *testing.T) {
 		if s.kind == "Q6_K" {
 			nbytes = s.N * (s.K / 256) * 210
 		}
-		copies := min(64, max(1, int(math.Ceil(float64(256<<20)/float64(w8bytes)))))
+		copies := min(64, max(1, int(math.Ceil(float64(256<<20)/float64(nbytes))))) // >= 256 MiB of native bytes, more of int8
 		var nat, w8, w8s []Buffer
 		for range copies {
 			raw := kso1Q5KRaw(rng, s.N, s.K)
 			if s.kind == "Q6_K" {
-				raw = kso1Q6KPlanar(rng, s.N, s.K)
+				raw = kso1Q6KPlanes(kso1Q6KGGUF(rng, s.N, s.K), s.N, s.K)
 			}
 			nb := d.NewBufferBytes(len(raw))
 			iv := nb.Int8s()[:len(raw)]
@@ -376,7 +323,7 @@ func TestKSO1_gemvTiming(t *testing.T) {
 		}
 		for vi, v := range vars {
 			for ri, R := range []int{1, 2, 4, 8} {
-				p := pipe(fmt.Sprintf("kso1_%s_rows%d", v, R))
+				p := pipe(kso1ProtoName(v, R))
 				ms := timeIt(per, func(e *Encoder, i int) {
 					e.Dispatch(p, (s.N+R-1)/R*32, 256, nat[i%copies], ba, out, uK, uN)
 				})
@@ -432,20 +379,6 @@ func kso1DequantQ5K(row []byte, K int) []float64 {
 		}
 	}
 	return y
-}
-
-// kso1Q6KToPlanar converts one row of GGUF Q6_K blocks (ql[128], qh[64], scales[16], d) into the planar row layout.
-func kso1Q6KToPlanar(row []byte, K int) []byte {
-	NB := K / 256
-	out := make([]byte, NB*210)
-	for b := range NB {
-		blk := row[b*210 : (b+1)*210]
-		copy(out[b*128:], blk[:128])
-		copy(out[NB*128+b*64:], blk[128:192])
-		copy(out[NB*192+b*16:], blk[192:208])
-		copy(out[NB*208+b*2:], blk[208:210])
-	}
-	return out
 }
 
 // kso1DequantQ6K is one row of GGUF Q6_K blocks over K in float64, ggml's dequantize_row_q6_K.
@@ -504,8 +437,8 @@ func TestKSO1_protoMatchesRef(t *testing.T) {
 					h := f32ToF16(float32(0.0005 + 0.002*rng.Float64()))
 					raw[r*rb+b*210+208], raw[r*rb+b*210+209] = byte(h), byte(h>>8)
 				}
-				up = append(up, kso1Q6KToPlanar(raw[r*rb:(r+1)*rb], K)...)
 			}
+			up = kso1Q6KPlanes(raw, N, K)
 			ref = kso1DequantQ6K
 		}
 		wb := d.NewBufferBytes(len(up))
@@ -515,7 +448,7 @@ func TestKSO1_protoMatchesRef(t *testing.T) {
 		}
 		ba, uK, uN := NewBufferFloats(d, a), NewBufferU32(d, K), NewBufferU32(d, N)
 		for _, R := range []int{1, 2, 4, 8} {
-			p, err := d.NewComputePipeline(lib, fmt.Sprintf("kso1_%s_rows%d", kind, R))
+			p, err := d.NewComputePipeline(lib, kso1ProtoName(kind, R))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -523,6 +456,9 @@ func TestKSO1_protoMatchesRef(t *testing.T) {
 			e := q.Begin()
 			e.Dispatch(p, (N+R-1)/R*32, 256, wb, ba, out, uK, uN)
 			e.End()
+			if err := e.Err(); err != nil {
+				t.Fatalf("%s R=%d: dispatch: %v", kind, R, err)
+			}
 			worst := 0.0
 			for r := range N {
 				w := ref(raw[r*rb:(r+1)*rb], K)
@@ -592,6 +528,9 @@ func TestKSO1_q4kSideReading(t *testing.T) {
 			e := q.Begin()
 			e.Dispatch(pipe(name), (s.N+R-1)/R*32, 256, ws[0], ba, out, uK, uN)
 			e.End()
+			if err := e.Err(); err != nil {
+				t.Fatalf("%s: dispatch: %v", name, err)
+			}
 			return append([]uint32(nil), out.U32s()[:s.N]...)
 		}
 		ref := run("gemv_q4k_f32_rows8", 8)
@@ -610,6 +549,9 @@ func TestKSO1_q4kSideReading(t *testing.T) {
 					e.Dispatch(p, (s.N+k.R-1)/k.R*32, 256, ws[i%copies], ba, out, uK, uN)
 				}
 				e.End()
+				if err := e.Err(); err != nil {
+					t.Fatalf("%s: dispatch: %v", k.name, err)
+				}
 				if r > 0 {
 					ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/float64(per))
 				}

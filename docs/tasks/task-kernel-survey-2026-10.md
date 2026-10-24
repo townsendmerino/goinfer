@@ -92,7 +92,7 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | decision | Metal: O1-G7 **KILL** 2026-10-24. Phi-3 q4k 0.9809 (10 of 10, misses ≤ 0.98); the 1.5B 1.0183 (0 of 10). G1–G4 and G6 PASS: KL to the file 0.7638 of int8; Phi-3 −375 MB on the device. Code parked on `ks-o1-native-2026-10-24`, aikit#18 unmerged. Owner: park, or one registered retry with R per shape | survey, "KS-O1 read" |
+| KS-O1 | building (Metal, owner override) | O1-G7 KILL (Phi-3 0.9809, the 1.5B 1.0183); Francis 2026-10-24 11:47 am: ship for memory and fidelity (Phi-3 −375 MB on the device, KL 0.7638), the 1.5B's 1.8% accepted. Next: O1-G5 (G-Q2 on Phi-3), then the PR; needs aikit#18 tagged | survey, "Owner override of O1-G7" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
@@ -744,6 +744,26 @@ through `go.work`.
   - It moves the logits toward the file (O1-G6, 0.7638 of the int8 lane's KL).
 - **Where the code is:** parked, unmerged, on branch `ks-o1-native-2026-10-24` (88dcfc1d and after). The aikit accessor it needs is
   townsendmerino/aikit#18, also unmerged.
+
+**Owner override of O1-G7's KILL, Francis 2026-10-24 11:47 am (relayed by the coordinator): option C, ship.**
+- **The decision:** native Q5_K/Q6_K ships on Metal for its memory and fidelity gains. On Phi-3 the device holds 375 MB less, the
+  file's own bytes. On the 0.5B, the logits' KL to the file is 0.7638 of the int8 lane's. Francis accepts the measured 1.8% slowdown
+  on Qwen2.5-Coder-1.5B q4k (median 1.0183).
+- **What it does not change:** this is his decision, not a re-grading. O1-G7 stays KILL as registered, and `TestKSO1_speed` still
+  fails on it.
+- **The condition:** O1-G5 (G-Q2 on Phi-3) runs first. If it fails, the change stops for his decision.
+- **Amendments with the override, before O1-G5 ran:**
+  - O1-G1 adds super-block counts NB = 1, 2, 6, 19 and 35 (K = 256, 512, 1536, 4864, 8960) for both kinds, beside Phi-3's 12 and 32.
+  - The step-vs-decode check runs at NB = 1, 6, 12, 19 and 35.
+  - The O1-G0 prototype's Q6_K timing now runs the production kernel over the segment-wide planes, which are aligned for every NB.
+    The row-strided prototype layout #212's review flagged is gone.
+  - Its weights rotate over ≥ 256 MiB of native bytes.
+  - Every test dispatch checks its error.
+- **Re-run at the merge of #212's fixes:**
+  - O1-G1 and the kernel half of O1-G2 PASS at every new shape: worst 1.31e-7 against 1e-5, the plants red at 9.3e-2 to 2.39,
+    and 120 of 120 step cells byte-equal.
+  - O1-G3 and `TestQ4KLaneResidentQwen` (worst cosine 0.998474) pass.
+  - Log: `~/goinfer-logs/kso1-native-tests2-2026-10-24.log`.
 
 **Notes on O1-G0's instrument, from #212's review (2026-10-24):**
 - **Where it lives:** the prototype kernels, `TestKSO1_gemvTiming`, `TestKSO1_protoMatchesRef` and `TestKSO1_q4kSideReading` are on

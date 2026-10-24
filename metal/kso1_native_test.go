@@ -97,6 +97,9 @@ func kso1NativeWorst(t *testing.T, d *Device, src, kind string, N, K int, rng *r
 		e := q.Begin()
 		e.Dispatch(p, (N+3)/4*32, 256, args...)
 		e.End()
+		if err := e.Err(); err != nil {
+			t.Fatalf("%s%s: dispatch: %v", kind, v, err)
+		}
 		got := out.Floats()[:N]
 		for r := range N {
 			x := float64(got[r])
@@ -114,8 +117,8 @@ func kso1NativeWorst(t *testing.T, d *Device, src, kind string, N, K int, rng *r
 
 // TestKSO1_nativeKernels is O1-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the q4k lane's native
 // gemv_q5k_f32 and gemv_q6k_f32 rows kernels (plain, residual, bias at R = 4) against the float64 reference that dequantizes
-// the same blocks, at one super-block, a partial threadgroup, an odd block count (K = 4864, the 0.5B's ffn_down), and Phi-3's
-// qkv (Q5_K), down and head (Q6_K) shapes; random
+// the same blocks, at a partial threadgroup over 1, 2, 6, 19 and 35 super-blocks a row and at Phi-3's qkv (Q5_K), down and
+// head (Q6_K) shapes; random
 // blocks, so the 6-bit scales and mins reach both range ends. Each row within G-Q1's bar (1e-5 of sum|w*a|), and each planted
 // defect red.
 func TestKSO1_nativeKernels(t *testing.T) {
@@ -125,7 +128,10 @@ func TestKSO1_nativeKernels(t *testing.T) {
 	}
 	src := allKernels + mc3RowsKernels
 	rng := rand.New(rand.NewSource(79))
-	shapes := map[string][][2]int{"q5k": {{1, 256}, {37, 512}, {37, 4864}, {9216, 3072}}, "q6k": {{1, 256}, {37, 512}, {37, 4864}, {3072, 8192}, {32064, 3072}}}
+	// NB = K/256 of 1, 2, 6, 19 and 35 (the 1.5B's attn_v, the 0.5B's and the 1.5B's ffn_down) besides Phi-3's 12 and 32: an odd
+	// or non-multiple-of-4 block count is where a row-strided Q6_K layout would misalign.
+	odd := [][2]int{{1, 256}, {37, 512}, {37, 1536}, {37, 4864}, {37, 8960}}
+	shapes := map[string][][2]int{"q5k": append(slices.Clone(odd), [2]int{9216, 3072}), "q6k": append(slices.Clone(odd), [2]int{3072, 8192}, [2]int{32064, 3072})}
 	for _, kind := range []string{"q5k", "q6k"} {
 		for _, sh := range shapes[kind] {
 			worst := kso1NativeWorst(t, d, src, kind, sh[0], sh[1], rng)
@@ -215,8 +221,8 @@ func TestKSO1_referenceMatchesAikit(t *testing.T) {
 }
 
 // TestKSO1_stepMatchesDecode is O1-G2's kernel half: the batched step's mc3_gemv_q5k_f32_rows<B> and mc3_gemv_q6k_f32_rows<B>
-// (B = 1, 2, 4, 8; modes 0, 1, 2) against decode's rows kernels at R = 4 on the same weights and each activation row alone, in
-// the resident's fast-math library. Byte-equal.
+// (B = 1, 2, 4, 8; modes 0, 1, 2) against decode's rows kernels at R = 4 on the same weights and each activation row alone, at
+// 1, 6, 12, 19 and 35 super-blocks a row and an odd row count, in the resident's fast-math library. Byte-equal.
 func TestKSO1_stepMatchesDecode(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -235,8 +241,12 @@ func TestKSO1_stepMatchesDecode(t *testing.T) {
 	}
 	q := d.NewCommandQueue()
 	rng := rand.New(rand.NewSource(83))
-	const N, K = 1000, 3072
-	for _, kind := range []string{"q5k", "q6k"} {
+	const N = 997
+	for _, kc := range []struct {
+		kind string
+		K    int
+	}{{"q5k", 256}, {"q5k", 1536}, {"q5k", 3072}, {"q5k", 4864}, {"q5k", 8960}, {"q6k", 256}, {"q6k", 1536}, {"q6k", 3072}, {"q6k", 4864}, {"q6k", 8960}} {
+		kind, K := kc.kind, kc.K
 		raw := kso1Q5KRaw(rng, N, K)
 		if kind == "q6k" {
 			raw = kso1Q6KPlanes(kso1Q6KGGUF(rng, N, K), N, K)
@@ -256,13 +266,16 @@ func TestKSO1_stepMatchesDecode(t *testing.T) {
 		for i := range act {
 			act[i] = float32(rng.NormFloat64())
 		}
-		bB, bA, uK, uN, uLda, uLdo := NewBufferFloats(d, bias), NewBufferFloats(d, act), NewBufferU32(d, K), NewBufferU32(d, N), NewBufferU32(d, K), NewBufferU32(d, N)
+		bB, bA, uK, uN, uLda, uLdo := NewBufferFloats(d, bias), NewBufferFloats(d, act), NewBufferU32(d, uint32(K)), NewBufferU32(d, N), NewBufferU32(d, uint32(K)), NewBufferU32(d, N)
 		for mode := range 3 {
 			for _, B := range []int{1, 2, 4, 8} {
 				step := NewBufferFloats(d, slices.Clone(init[:B*N]))
 				e := q.Begin()
 				e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_%s_f32_rows%d", kind, B)), N*32, 256, w, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
 				e.End()
+				if err := e.Err(); err != nil {
+					t.Fatalf("step %s B=%d: dispatch: %v", kind, B, err)
+				}
 				diff := 0
 				for b := range B {
 					out := NewBufferFloats(d, slices.Clone(init[b*N:(b+1)*N]))
@@ -274,15 +287,18 @@ func TestKSO1_stepMatchesDecode(t *testing.T) {
 					e := q.Begin()
 					e.Dispatch(pipe(fmt.Sprintf("gemv_%s_f32%s_rows4", kind, variant)), (N+3)/4*32, 256, args...)
 					e.End()
+					if err := e.Err(); err != nil {
+						t.Fatalf("decode %s%s: dispatch: %v", kind, variant, err)
+					}
 					for i, v := range out.U32s()[:N] {
 						if v != step.U32s()[b*N+i] {
 							diff++
 						}
 					}
 				}
-				fmt.Fprintf(os.Stderr, "[O1-G2k] %s mode %d B=%d: %d of %d differ\n", kind, mode, B, diff, B*N)
+				fmt.Fprintf(os.Stderr, "[O1-G2k] %s K=%d mode %d B=%d: %d of %d differ\n", kind, K, mode, B, diff, B*N)
 				if diff != 0 {
-					t.Errorf("%s mode %d B=%d: %d outputs differ between the step and decode", kind, mode, B, diff)
+					t.Errorf("%s K=%d mode %d B=%d: %d outputs differ between the step and decode", kind, K, mode, B, diff)
 				}
 			}
 		}
@@ -622,4 +638,7 @@ func TestKSO1_speed(t *testing.T) {
 		verdict = "SHIP"
 	}
 	fmt.Fprintf(os.Stderr, "[O1-G7] Phi-3 median %.4f (%d of 10), 1.5B median %.4f (%d of 10): %s\n", pm, pb, qm, qb, verdict)
+	if verdict != "SHIP" {
+		t.Errorf("O1-G7 %s: Phi-3 median %.4f (%d of 10 pairs faster), the 1.5B's %.4f", verdict, pm, pb, qm)
+	}
 }
