@@ -8254,6 +8254,16 @@ prefill on CUDA in batched passes.
     - Reported on the same set: the shipped W4A8 GPU path, as the baseline.
   - **G-S19h, speed (tier 1):** decode tok/s and per-form turn time, float against W4A8, A B B A under the timing lock.
     Reported, no bar; if float is more than 25% slower per form, the choice goes back to Francis before it ships.
+  - **G-S19e read 2026-10-23, 19:1x: PASS** (`gs19e-kernels.log`; `cuda/gemv_w4f32.cu`, FMA-linted).
+    - Max relative error against the CPU float64 reference:
+      - `gemv_w4f32`: 1.12e-7 (2112x2816) and 9.86e-8 (2816x2112, the ragged tail);
+      - `gemv_w4f32_moe` / `_wacc`: 1.32e-7 / 1.53e-7 (1408x2816) and 1.47e-7 / 1.18e-7 (2816x704);
+      - `glu_f32`: 3.0e-8 (gelu-tanh) and 2.2e-8 (SiLU).
+    - Planted defects, red at both dense shapes: nibble order 1.26 / 1.09, the -8 offset 0.413 / 0.392, the group
+      scale one off 0.045 / 0.046.
+    - The MoE kernel also differs from a wrong expert, so the routing index is read.
+    - The harness clears dst before every launch and fails on any output left at zero: without the clear, a launch after
+      the first read a previous run's values (a harness ordering effect, not the kernel's).
   - **Ships as:** the 26B's (gemma4 MoE) CUDA decode on float activations by default, once G-S19e to G-S19g pass. A
     rollback switch lives in the resident (a test seam), not an env read.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load

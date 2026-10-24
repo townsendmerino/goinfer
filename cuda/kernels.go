@@ -244,6 +244,12 @@ var moePTX []byte
 //go:embed testdata/router_f32.ptx
 var routerF32PTX []byte
 
+// gemvW4F32PTX: int4-weight GEMVs over f32 activations (gemv_w4f32, gemv_w4f32_moe, gemv_w4f32_moe_wacc) and glu_f32, for
+// a decode that does not round its activations to int8. See cuda/gemv_w4f32.cu.
+//
+//go:embed testdata/gemv_w4f32.ptx
+var gemvW4F32PTX []byte
+
 // fusedQKVPTX: the K1 super-kernel: rmsnorm+quant folded into the Q/K/V GEMV by redundant per-block recompute, removing
 // a GridX:1 glue kernel and 3 launches.
 //
