@@ -6,11 +6,8 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -323,51 +320,12 @@ func TestKSE3_pendingDroppedWhereRecorded(t *testing.T) {
 	}
 }
 
-// kse3Load1 is this machine's 1-minute load average; the test fails if it cannot be read.
-func kse3Load1(t *testing.T) float64 {
-	t.Helper()
-	var text string
-	switch runtime.GOOS {
-	case "darwin":
-		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		if err != nil {
-			t.Fatalf("load average: %v", err)
-		}
-		text = strings.Trim(strings.TrimSpace(string(out)), "{} ")
-	case "linux":
-		out, err := os.ReadFile("/proc/loadavg")
-		if err != nil {
-			t.Fatalf("load average: %v", err)
-		}
-		text = string(out)
-	default:
-		t.Fatalf("no load average on %s", runtime.GOOS)
-	}
-	var l float64
-	if n, err := fmt.Sscanf(text, "%g", &l); n != 1 || err != nil {
-		t.Fatalf("load average %q: %v", text, err)
-	}
-	return l
-}
-
-// kse3Guard reads the void rule's two terms now: ok iff the 1-minute load is at most half the cores and at least 2 GiB is
-// reclaimable. The test fails if either cannot be read.
-func kse3Guard(t *testing.T) (ok bool, load float64, recl int64) {
-	t.Helper()
-	load = kse3Load1(t)
-	r, rok := hostmem.Read()
-	if !rok {
-		t.Fatal("no memory reading")
-	}
-	return load <= float64(runtime.NumCPU())/2 && r.Reclaimable >= 2<<30, load, r.Reclaimable
-}
-
 // TestKSE3_decodeSpeed is E3-G2 (and its re-run, docs/tasks/task-kernel-survey-2026-10.md, "E3-G2 re-run"): the 1.5B's .gguf
 // at int8int8 on WebGPU, encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A
 // over 10 valid pairs after 2 warm runs each. It refuses to run outside the timing lock or under 6 GB reclaimable before the
-// load; each arm reads the void rule's terms (kse3Guard) just before and just after its timed run, and a pair with any read over
-// the line (load above half the cores, or under 2 GB reclaimable) is void and re-run, up to 15 times. It fails when the median
-// on/off is over 0.98 or fewer than 9 of 10 pairs are faster.
+// load; voidWindow brackets each arm's timed decode (not its prompt), and a pair with an arm over the void rule's line (busy cores
+// over half the cores averaged over the arm, or under 2 GiB reclaimable at either end) is void and re-run, up to 15 times. It fails
+// when the median on/off is over 0.98 or fewer than 9 of 10 pairs are faster.
 func TestKSE3_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE3_TIMING") == "" {
 		t.Skip("set GOINFER_KSE3_TIMING=1 (a timed run under the timing lock)")
@@ -387,13 +345,18 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 	rd, closeRD := kse3Resident(t, m)
 	defer closeRD()
 	const prompt, gen = 32, 128
-	run := func(off bool) float64 {
+	// run runs the 32-token prompt, then times the 128 decode tokens; with guard set, voidWindow brackets exactly the timed loop.
+	run := func(off, guard bool) (sec float64, valid bool, note string) {
 		encodeAheadOffForTest = off
 		defer func() { encodeAheadOffForTest = false }()
 		for pos := range prompt {
 			if _, err := rd.Forward(m.EmbedResidentForTest((pos*7919+13)%1000), pos); err != nil {
 				t.Fatal(err)
 			}
+		}
+		var end func() (bool, string)
+		if guard {
+			end = voidWindow(t)
 		}
 		tok := 13
 		t0 := time.Now()
@@ -409,19 +372,17 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 				}
 			}
 		}
-		return time.Since(t0).Seconds() / gen
+		sec = time.Since(t0).Seconds() / gen
+		if guard {
+			valid, note = end()
+		}
+		return sec, valid, note
 	}
 	for range 2 {
-		run(true)
-		run(false)
+		run(true, false)
+		run(false, false)
 	}
-	// timed runs one arm with the void rule's terms read just before and just after it; valid is false if either read fails.
-	timed := func(off bool) (sec float64, valid bool, note string) {
-		ok1, l1, r1 := kse3Guard(t)
-		sec = run(off)
-		ok2, l2, r2 := kse3Guard(t)
-		return sec, ok1 && ok2, fmt.Sprintf("load %.2f→%.2f, reclaimable %.2f→%.2f GiB", l1, l2, float64(r1)/(1<<30), float64(r2)/(1<<30))
-	}
+	timed := func(off bool) (float64, bool, string) { return run(off, true) }
 	var ratios []float64
 	below, voids := 0, 0
 	for len(ratios) < 10 {

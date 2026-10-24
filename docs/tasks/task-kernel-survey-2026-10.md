@@ -1586,6 +1586,13 @@ before the load): SHIP.** Every read of every arm under the line: the 1-minute l
 24.68–24.95 ms a token, on 24.17–24.56; **median on/off 0.9788, 10 of 10 pairs faster**, no void pairs. The gain holds: 0.9764 and
 0.9788 on the two guarded readings. Log: `~/goinfer-logs/kse3-g2-rerun2-2026-10-24.log`.
 
+**After #214's third review (15:45), registered before a further re-run.** The same defect is in E3-G2's guard: the 1-minute load
+average updates every 5 seconds as an exponential average, so the reads around a 3-second arm usually see one sample and damp a
+short spike about 12×. E3-G2 now uses #214's `voidWindow`: the machine's busy cores averaged over exactly the timed decode
+(`hostmem.ReadCPU`, Mach `HOST_CPU_LOAD_INFO` on macOS and `/proc/stat` on Linux, read just before the timer starts and just after
+it stops, the 32-token prompt outside), void over half the cores, and reclaimable memory at both ends, void under 2 GiB. The void
+cap stays 15, as registered for E3 at 14:20, and the bar is unchanged. This reading decides; the earlier ones stay in the record.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
