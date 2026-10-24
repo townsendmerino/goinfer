@@ -852,6 +852,22 @@ The instruments are `TestKSC4_foldMatchesThreeStep`, `TestKSC4_decodeIdentity`, 
 - **Gain (est.):** −0.1 to −0.2 ms (1–2%); low confidence.
 - **Size:** S.
 
+**KS-C5 gates, registered 2026-10-24 before the code (C5-G).** The build changes `attention`'s single-tile path (nWin ≤ 4096; the
+tiled path is untouched): the V read issues 16 loads ahead instead of 8, the adds retired in the same sequential order (a scalar
+tail for the rest); the max and sum reductions run their levels at stride 32 and above through threadgroup memory as today, and
+the levels at stride 16 to 1 in simdgroup 0 with `simd_shuffle_down`, each level combining the same two operands in the same order,
+so 5 barriers fewer per reduction. `attention_f32`, `mc3_attention_rows` and the int8/f32 rows forms derive from this text and take
+the same change. `KSC5_OLD_ATTN` (a test-only define, `ksc5OldAttnForTest`, read at build) compiles the shipped form back.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C5-G1 identity | 0 | (a) the new `attention` against the `KSC5_OLD_ATTN` library: head dims 64 and 128, nKeys 1, 7, 8, 15, 16, 17, 31, 100, 128, 129, 512, 1000 and 4096, window 0 and 64, a sink on and off, the fast-math and the precise library; (b) llama-tiny and the 0.5B and 1.5B Metal `.giw`s at int4, 32 greedy decode steps after a 300-token prompt (keys to 332), every step's logits, a resident built with each library | byte-equal everywhere |
+| C5-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B's Metal `.giw`, two residents in one process (old and new library), 128 greedy decode tokens after a 384-token prompt (keys 385–512, where the decomposition put attention at 16% of the token), A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change decides; otherwise PARK |
+
+C5-G3: none; the change allocates nothing (threadgroup memory only). Planted defect, run once and reverted: the sum's shuffle level
+adds the lane's own value twice (`v + v`) at stride 1; C5-G1 goes red. A second plant inside the `KSC5_OLD_ATTN` branch must turn
+(b) red, so the define reaches the old arm. Stopping rule: one pass each. Cost: G1 about a minute; G2 about 5 minutes.
+
 ## 7. Metal prefill and family kernels (KS-D)
 
 **The prefill GEMM is near its practical roof.** R16 runs 2.63–2.99 TFLOPS, 81–88% of Apple's MPS f16 GEMM on the same shapes
