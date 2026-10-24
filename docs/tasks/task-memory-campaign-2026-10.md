@@ -435,8 +435,14 @@ its image (every SigLIP input is 4,096 patches).
 **ALS-G0's first run (15:09–15:19) is void.** The 1-minute load was 3.94 at the start, but every pair after the first started at
 4.7–14.3, above the void line (4.0): the tower forward runs on every core and the previous run holds the average up. It read
 16-bit/f32 0.9818 (Qwen2.5-VL) and 0.9849 (SigLIP), features equal in every pair, and is recorded, not graded
-(`~/goinfer-logs/als-g0-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
+(`~/goinfer-logs/als-g0-void-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
 most, else void) and prints the load each run starts at; nothing else changes.
+
+**ALS-G0 read 2026-10-23 (17:12–17:39, goinfer's timing lock held exclusively, 6.3 GB available at the start; all 28 runs
+started at a 1-minute load under 4.0, at most 3.98): PASS, proceed.** Qwen2.5-VL-3B's tower: f32 5.82–6.46 s, 16-bit 5.66–5.99 s,
+**median 16-bit/f32 0.9666**; Gemma-3-4B's SigLIP: f32 23.81–25.06 s, 16-bit 23.45–25.38 s, **median 0.9935**; the features equal bit
+for bit in every pair. The 16-bit tower is no slower on arm64: its tile widen is paid once per weight tile across every image row,
+and the halved weight bytes offset it. Log: `~/goinfer-logs/als-g0-2026-10-23.log`.
 
 Stopping rule: one pass each; ALS-G0 failing stops the item before any code ships. Cost: ALS-G0 about 15 min; the rest seconds
 to minutes. Release: an aikit minor (a PR, then its tag through aikit's `RELEASING.md`; the nobara half and the tag push are the
