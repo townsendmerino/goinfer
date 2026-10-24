@@ -341,7 +341,7 @@ func kso1LaneBytes(r *resident) (total int, byKind map[string]int) {
 // mapping, with the int8 copies (q4kNativeOffForTest, set before the load, so that arm never opens the reader; the decoder still
 // records provenance in both arms) and with the native kinds, after one discarded warm-up load so neither arm reads the file
 // cold. Native must upload exactly the file's layer Q5_K and Q6_K bytes in place of their int8 rows and scales, and layer 0's
-// native segments must hold those bytes (Q5_K verbatim, Q6_K in q6kPlanarRow's planes); the fit pricing's saving
+// native segments must hold the file's bytes (kso1CheckLayer0Blocks); the fit pricing's saving
 // (metalKQuantSavings) must equal the device bytes it saves; and the whole load must allocate no more Go heap than the int8 arm
 // plus kso1HeapSlack.
 func kso1LaneBytesCheck(t *testing.T, path, label string) {
@@ -363,7 +363,7 @@ func kso1LaneBytesCheck(t *testing.T, path, label string) {
 		}
 		tot, by := kso1LaneBytes(mr.r)
 		if !off {
-			kso1CheckLayer0Blocks(t, m, mr.r, label)
+			kso1CheckLayer0Blocks(t, m, mr.r, path, label)
 		}
 		return tot, by, heap, m.KQuantDeviceSavingsForTest()
 	}
@@ -408,39 +408,124 @@ func kso1LaneBytesCheck(t *testing.T, path, label string) {
 // #215, second pass".
 const kso1HeapSlack = 1 << 20
 
-// kso1CheckLayer0Blocks compares the device bytes of layer 0's native segments with the file's blocks for their parts, read
-// through the model's KQuantReader: Q5_K rows verbatim, Q6_K rows in planes over the segment.
-func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, label string) {
-	kq, err := m.OpenKQuant()
-	if err != nil || kq == nil {
-		t.Fatalf("%s: OpenKQuant: %v", label, err)
+// kso1CheckLayer0Blocks compares the device bytes of layer 0's native segments with the file's own tensors, read straight from
+// the GGUF (not through KQuantReader or q6kPlanarRow): a group's rows come from one tensor a part (attn_q/k/v, ffn_gate/ffn_up)
+// when every part has one, else from the fused tensor (Phi-3's attn_qkv, ffn_up = gate|up), which must have the group's row
+// count exactly. Each group's segments (kind, first row, row count) must be the ones the file implies, its part
+// row counts from the tensors' dims (a fused tensor's split from the model, as the file does not record it), so a part that
+// falls back to int8 or loses rows fails here. Native segments' bytes are then compared: Q5_K rows verbatim, Q6_K through kso1Q6KPlanesRef.
+// These files store no RoPE-permuted rows. At least one segment must be checked.
+func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, path, label string) {
+	g, err := decoder.OpenGGUFMmap(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer kq.Close()
+	defer g.Close()
 	L, lw := &r.layers[0], &m.Weights().Layers[0]
 	checked := 0
-	for _, g := range []struct {
+	for _, gr := range []struct {
 		segs  []q4kSeg
 		parts []*linalg.WeightMat
-	}{{L.qkvSegs, []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}}, {L.oSegs, []*linalg.WeightMat{&lw.OProj}},
-		{L.guSegs, []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}}, {L.dSegs, []*linalg.WeightMat{&lw.DownProj}}} {
-		for _, sg := range g.segs {
+		fused string
+		names []string
+	}{{L.qkvSegs, []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}, "attn_qkv", []string{"attn_q", "attn_k", "attn_v"}},
+		{L.oSegs, []*linalg.WeightMat{&lw.OProj}, "", []string{"attn_output"}},
+		{L.guSegs, []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}, "ffn_up", []string{"ffn_gate", "ffn_up"}},
+		{L.dSegs, []*linalg.WeightMat{&lw.DownProj}, "", []string{"ffn_down"}}} {
+		// partRows are the group's parts' row counts from the file: each part tensor's own dims, or, for a fused tensor (whose
+		// split the file does not record), the model's split, which must add up to the fused tensor's rows exactly.
+		type at struct {
+			name string
+			row  int
+		}
+		var src []at
+		var partRows []int
+		separate := true // every part has its own tensor (Qwen); else the parts share the fused one (Phi-3)
+		for _, name := range gr.names[:len(gr.parts)] {
+			if !g.Has("blk.0." + name + ".weight") {
+				separate = false
+			}
+		}
+		if fd, ok := g.Dims("blk.0." + gr.fused + ".weight"); !separate && gr.fused != "" && ok {
+			total := 0
+			for _, w := range gr.parts {
+				partRows, total = append(partRows, w.Rows()), total+w.Rows()
+			}
+			if len(fd) != 2 || fd[1] != total {
+				t.Fatalf("%s: blk.0.%s.weight has dims %v, the group's parts %d rows", label, gr.fused, fd, total)
+			}
+			for r := range total {
+				src = append(src, at{"blk.0." + gr.fused + ".weight", r})
+			}
+		} else {
+			for _, name := range gr.names[:len(gr.parts)] {
+				d, ok := g.Dims("blk.0." + name + ".weight")
+				if !ok || len(d) != 2 || d[1] <= 0 {
+					t.Fatalf("%s: blk.0.%s.weight has dims %v (found %v)", label, name, d, ok)
+				}
+				partRows = append(partRows, d[1])
+				for r := range d[1] {
+					src = append(src, at{"blk.0." + name + ".weight", r})
+				}
+			}
+		}
+		// The segments the file implies: each part takes its tensor's kind (Q4_K, Q5_K, Q6_K, else the int8 copy), and runs of
+		// consecutive parts of one kind form one segment, as q4kLaneProj groups them. The loader's must be these exactly.
+		kindOf := func(name string) string {
+			for k, get := range map[string]func(string) ([]int, []byte, bool, error){"q4k": g.Q4KRaw, "q5k": g.Q5KRaw, "q6k": g.Q6KRaw} {
+				if _, _, ok, err := get(name); err == nil && ok {
+					return k
+				}
+			}
+			return "int8"
+		}
+		type segWant struct {
+			kind      string
+			off, rows int
+		}
+		var wantSegs []segWant
+		off := 0
+		for _, n := range partRows {
+			if n <= 0 {
+				t.Fatalf("%s: a %s part with %d rows", label, gr.names[0], n)
+			}
+			k := kindOf(src[off].name)
+			if last := len(wantSegs) - 1; last >= 0 && wantSegs[last].kind == k {
+				wantSegs[last].rows += n
+			} else {
+				wantSegs = append(wantSegs, segWant{k, off, n})
+			}
+			off += n
+		}
+		var gotSegs []segWant
+		for _, sg := range gr.segs {
+			gotSegs = append(gotSegs, segWant{sg.kind, sg.off, sg.rows})
+		}
+		if !slices.Equal(gotSegs, wantSegs) {
+			t.Fatalf("%s layer 0 %s group: the loader's segments %v, the file implies %v", label, gr.names[0], gotSegs, wantSegs)
+		}
+		for _, sg := range gr.segs {
 			if sg.kind != "q5k" && sg.kind != "q6k" {
 				continue
 			}
+			get, bb := g.Q5KRaw, 176
+			if sg.kind == "q6k" {
+				get, bb = g.Q6KRaw, 210
+			}
 			var raw []byte
-			row, K := 0, 0
-			for _, w := range g.parts {
-				if row >= sg.off && row < sg.off+sg.rows {
-					K = w.Cols()
-					if err := kq.Rows(w, func(_ int, b []byte) error { raw = append(raw, b...); return nil }); err != nil {
-						t.Fatal(err)
-					}
+			K := 0
+			for r := sg.off; r < sg.off+sg.rows; r++ {
+				dims, blocks, ok, err := get(src[r].name)
+				if err != nil || !ok {
+					t.Fatalf("%s: %s is not %s in the file (err %v)", label, src[r].name, sg.kind, err)
 				}
-				row += w.Rows()
+				K = dims[0]
+				rb := K / 256 * bb
+				raw = append(raw, blocks[src[r].row*rb:(src[r].row+1)*rb]...)
 			}
 			want := raw
 			if sg.kind == "q6k" {
-				want = kso1Q6KPlanes(raw, sg.rows, K)
+				want = kso1Q6KPlanesRef(raw, sg.rows, K)
 			}
 			got := sg.w.Int8s()[:sg.w.Len()]
 			if len(got) != len(want) {
@@ -454,7 +539,36 @@ func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, label st
 			checked++
 		}
 	}
+	if checked == 0 {
+		t.Fatalf("%s: layer 0 holds no native segment to check", label)
+	}
 	fmt.Fprintf(os.Stderr, "[O1-G3] %s: layer 0's %d native segments hold the file's blocks byte for byte\n", label, checked)
+}
+
+// kso1Q6KPlanesRef is the Q6_K segment layout written out byte by byte, independent of q6kPlanarRow: for block g = row*NB + b
+// of a segment of T blocks, ql[i] at g*128+i, qh[i] at T*128 + g*64+i, scale i at T*192 + g*16+i, and d's two bytes at T*208 +
+// g*2.
+func kso1Q6KPlanesRef(raw []byte, N, K int) []byte {
+	nb := K / 256
+	T := N * nb
+	out := make([]byte, len(raw))
+	for r := range N {
+		for b := range nb {
+			g := r*nb + b
+			blk := raw[g*210:]
+			for i := range 128 {
+				out[g*128+i] = blk[i]
+			}
+			for i := range 64 {
+				out[T*128+g*64+i] = blk[128+i]
+			}
+			for i := range 16 {
+				out[T*192+g*16+i] = blk[192+i]
+			}
+			out[T*208+g*2], out[T*208+g*2+1] = blk[208], blk[209]
+		}
+	}
+	return out
 }
 
 // TestKSO1_laneBytes is O1-G3 on the Qwen2.5-Coder-0.5B q4_k_m (Q6_K ffn_down layers; no Q5_K).

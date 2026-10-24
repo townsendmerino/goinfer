@@ -29,7 +29,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
 | MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
-| MEM4(a) | open (release) | built and gated: aikit#15 (ALS-G0 to G3 PASS: no slower on arm64, bit-identical, Qwen2.5-VL-3B tower heap 2,551.7 → 9.6 MiB). Next: aikit v1.74.0 (the coordinator's tag), then goinfer's bump and `closeEntryNatives` closing the GLM-OCR, Qwen3.5+ and Gemma 4 encoders | §4 MEM4, "ALS-G1 to G3 read" |
+| MEM4(a) | done | done 2026-10-24: aikit#15 gated (ALS-G0 to G3 PASS: no slower on arm64, bit-identical, Qwen2.5-VL-3B tower heap 2,551.7 → 9.6 MiB); aikit v1.74.0 tagged; goinfer's bump and `closeEntryNatives` on main (8dd4e0ae, #201) | 8dd4e0ae, aikit v1.74.0 |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | done | done 2026-10-22: all four image and audio prefill routes run in chunks, byte-equal (V1 to V4 G1 to G3 PASS); tier-1 peaks run at night on the owner's word: Qwen2.5-VL-3B 1,261 → 357 MiB, Qwen3.5-0.8B 5,567 → 1,905 MiB over base (V1-G4, V3-G4 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-VL-G2T1 | open | a box with a bidirectional Gemma 4 (26B or 31B class): V2-G4, the route-2 peak with one image and about 8K tokens, `TestMEM5VL_peakTier1`'s form | `docs/measurements/mem5vl-2026-10/README.md` |
@@ -49,7 +49,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM11-int8-MLA-T3 | done | done 2026-10-23 on D14 (b) then (a): no single int8 projection, and no pair, clears both gates (o alone clears Moonlight and fails V2-Lite), so MLA is f32 on every load again (+944 MB on V2-Lite and Moonlight). On that build both gates PASS (V2-Lite 0.999243, Moonlight 0.999508, continuations exact) and `deepseek_v2`, `deepseek_v3`, `kimi_k2` are validated | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
-| MEM12-ringres | open (5 cells) | built 2026-10-24, branch `mem12-ringres-2026-10-24`: a ring layer reserves no append-forever K/V in any form (gemma2-tiny's hint costs half); RR-G1 PASS; RR-G2 partial, 107 PASS and five owed. Left: the five `gemma-3-270m` session and sliding-window tests, on a box with that checkpoint, which RR-G2 needs before it reads PASS | §4 MEM12, "MEM12-ringres gates" |
+| MEM12-ringres | done | merged 2026-10-24 (#207): a ring layer reserves no append-forever K/V in any form (gemma2-tiny's hint costs half); RR-G1 PASS; RR-G2 PASS (107 tests on the Mac, all five gemma-3-270m tests on nobara, the last `mem12rr-g2-window` 14:50) | §4 MEM12, "MEM12-ringres gates" |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
@@ -900,6 +900,18 @@ Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for
 > RR-G1's test now computes the expected bytes from each layer's expected capacity rather than reading them back, checks the
 > int8 scales' capacity too, and requires gemma2-tiny to have ring layers (2 of 4) and llama-tiny none; it reads the same
 > figures, and the plant is still red.
+>
+> **RR-G2's gemma-3-270m cells, read 2026-10-24 on nobara** (job `mem12rr-g2-270m`, 12:53, a decoder test binary at main 940783a0
+> plus a test-only commit, run from a private copy of `testdata/gemma-3-270m`): `TestLoadSession_allocationCeilingNotBodyRatio`,
+> `TestSession_reuseParity`, `TestSession_snapshotRoundTrip` and `TestLoadSession_rejectsCorrupt` **PASS**;
+> `TestForward_slidingWindowParity` **SKIP**, because the job's testdata copy lacked `gemma_window_golden.json` (a setup slip, not the
+> change). It is re-queued with the golden copied (`mem12rr-g2-window`). RR-G2 stays partial until it reads PASS.
+>
+> **RR-G2's last cell, read 2026-10-24 on nobara** (job `mem12rr-g2-window`, 14:50, the same binary and SHA256SUMS check, the
+> golden copied in): `TestForward_slidingWindowParity` **PASS** — 748 tokens over a 512 window, argmax 562 as the golden, the
+> largest sampled-logit difference 0.00003 (bar 5e-3), top-k and sum within bar; its full-logit cosine reads NaN because the
+> gitignored full dump is absent there, which the test logs and does not grade. **RR-G2 PASS**: every named test on the Mac and
+> all five gemma-3-270m tests on nobara, and the parity refresh green. MEM12-ringres is done.
 
 **MEM12-scratch gates, registered 2026-10-21 before the code (SCR-G).** The build, three parts. (1) The MoE expert-major
 branch of the batched pass takes its K × hidden output, its done flags and `moeMLPBatch`'s buffers (router logits, the
