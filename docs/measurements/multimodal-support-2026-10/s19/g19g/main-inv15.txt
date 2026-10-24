@@ -1,0 +1,43 @@
+Company Name: Paloma Linens Co.
+Address: 1204 Alder Avenue, Suite 5 - Portland, OR 97209
+Invoice #: A-94574
+Date: 27 Mar 2026
+Customer: Atlas Freight Partners
+Due date: 27 Apr 2026
+Customer Address: 1204 Alder Avenue, Suite 5, Seattle, WA 98101
+
+No 1 Description: Ink cartridge, cyan
+No 1 Qty: 40
+No 1 Unit Price: 544.95
+No 1 Amount: 21,798.00
+
+No 2 Description: Support retainer
+No 2 Qty: 0
+No 2 Unit Price: 242.53
+No 2 Amount: 2,425.30
+
+No 3 Description: Ink cartridge, black
+No 3 Qty: 1
+No 3 Unit Price: 797.40
+No 3 Amount: 797.40
+
+No 4 Description: Laminated menu cards
+No 4 Qty: 40
+No 4 Unit Price: 948.15
+No 4 Amount: 37,926.00
+
+No 5 Description: Cloud hosting, monthly
+No 5 Qty: 1
+No 5 Unit Price: 305.13
+No 5 Amount: 305.13
+
+No 6 Description: Site survey, per hour
+No 6 Qty: 1
+No 6 Unit Price: 649.69
+No 6 Amount: 649.69
+
+Subtotal: 63,901.52
+Tax (5%): 3,195.08
+Total Due: €67,096.60
+
+Payment terms: net 30 days. Thank you for your business.

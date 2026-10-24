@@ -1,0 +1,189 @@
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+    gemma4_bidir_span_real_test.go:350: resident decode activations: float=true
+    gemma4_bidir_span_real_test.go:383: step   0 pos 568: logits cos 1.000000 argmax gpu 5010 "Table" cpu 5010 "Table"
+    gemma4_bidir_span_real_test.go:383: step   1 pos 569: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step   2 pos 570: logits cos 1.000000 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step   3 pos 571: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step   4 pos 572: logits cos 1.000000 argmax gpu 63919 " Quarterly" cpu 63919 " Quarterly"
+    gemma4_bidir_span_real_test.go:383: step   5 pos 573: logits cos 1.000000 argmax gpu 4360 " unit" cpu 4360 " unit"
+    gemma4_bidir_span_real_test.go:383: step   6 pos 574: logits cos 1.000000 argmax gpu 5886 " sales" cpu 5886 " sales"
+    gemma4_bidir_span_real_test.go:383: step   7 pos 575: logits cos 1.000000 argmax gpu 684 " by" cpu 684 " by"
+    gemma4_bidir_span_real_test.go:383: step   8 pos 576: logits cos 1.000000 argmax gpu 4128 " region" cpu 4128 " region"
+    gemma4_bidir_span_real_test.go:383: step   9 pos 577: logits cos 1.000000 argmax gpu 568 " (" cpu 568 " ("
+    gemma4_bidir_span_real_test.go:383: step  10 pos 578: logits cos 1.000000 argmax gpu 212346 "thousands" cpu 212346 "thousands"
+    gemma4_bidir_span_real_test.go:383: step  11 pos 579: logits cos 1.000000 argmax gpu 236768 ")" cpu 236768 ")"
+    gemma4_bidir_span_real_test.go:383: step  12 pos 580: logits cos 1.000000 argmax gpu 108 "\\n\\n" cpu 108 "\\n\\n"
+    gemma4_bidir_span_real_test.go:383: step  13 pos 581: logits cos 1.000000 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  14 pos 582: logits cos 1.000000 argmax gpu 19037 " Region" cpu 19037 " Region"
+    gemma4_bidir_span_real_test.go:383: step  15 pos 583: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  16 pos 584: logits cos 1.000000 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  17 pos 585: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  18 pos 586: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  19 pos 587: logits cos 1.000000 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  20 pos 588: logits cos 1.000000 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  21 pos 589: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  22 pos 590: logits cos 1.000000 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  23 pos 591: logits cos 1.000000 argmax gpu 236800 "3" cpu 236800 "3"
+    gemma4_bidir_span_real_test.go:383: step  24 pos 592: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  25 pos 593: logits cos 1.000000 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  26 pos 594: logits cos 1.000000 argmax gpu 236812 "4" cpu 236812 "4"
+    gemma4_bidir_span_real_test.go:383: step  27 pos 595: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  28 pos 596: logits cos 1.000000 argmax gpu 12613 " Total" cpu 12613 " Total"
+    gemma4_bidir_span_real_test.go:383: step  29 pos 597: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  30 pos 598: logits cos 1.000000 argmax gpu 107 "\\n" cpu 107 "\\n"
+    gemma4_bidir_span_real_test.go:383: step  31 pos 599: logits cos 1.000000 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  32 pos 600: logits cos 1.000000 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  33 pos 601: logits cos 1.000000 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  34 pos 602: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  35 pos 603: logits cos 1.000000 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  36 pos 604: logits cos 1.000000 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  37 pos 605: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  38 pos 606: logits cos 1.000000 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  39 pos 607: logits cos 1.000000 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  40 pos 608: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  41 pos 609: logits cos 1.000000 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  42 pos 610: logits cos 1.000000 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  43 pos 611: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  44 pos 612: logits cos 1.000000 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  45 pos 613: logits cos 1.000000 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  46 pos 614: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  47 pos 615: logits cos 1.000000 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  48 pos 616: logits cos 1.000000 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  49 pos 617: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  50 pos 618: logits cos 1.000000 argmax gpu 107 "\\n" cpu 107 "\\n"
+    gemma4_bidir_span_real_test.go:383: step  51 pos 619: logits cos 1.000000 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  52 pos 620: logits cos 1.000000 argmax gpu 4695 " North" cpu 4695 " North"
+    gemma4_bidir_span_real_test.go:383: step  53 pos 621: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  54 pos 622: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  55 pos 623: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  56 pos 624: logits cos 1.000000 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  57 pos 625: logits cos 1.000000 argmax gpu 236828 "8" cpu 236828 "8"
+    gemma4_bidir_span_real_test.go:383: step  58 pos 626: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  59 pos 627: logits cos 1.000000 argmax gpu 236812 "4" cpu 236812 "4"
+    gemma4_bidir_span_real_test.go:383: step  60 pos 628: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  61 pos 629: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  62 pos 630: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  63 pos 631: logits cos 1.000000 argmax gpu 236800 "3" cpu 236800 "3"
+    gemma4_bidir_span_real_test.go:383: step  64 pos 632: logits cos 1.000000 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  65 pos 633: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  66 pos 634: logits cos 1.000000 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:383: step  67 pos 635: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  68 pos 636: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  69 pos 637: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  70 pos 638: logits cos 1.000000 argmax gpu 236812 "4" cpu 236812 "4"
+    gemma4_bidir_span_real_test.go:383: step  71 pos 639: logits cos 1.000000 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  72 pos 640: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  73 pos 641: logits cos 1.000000 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  74 pos 642: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  75 pos 643: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  76 pos 644: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  77 pos 645: logits cos 1.000000 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  78 pos 646: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  79 pos 647: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  80 pos 648: logits cos 1.000000 argmax gpu 236771 "0" cpu 236771 "0"
+    gemma4_bidir_span_real_test.go:383: step  81 pos 649: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  82 pos 650: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  83 pos 651: logits cos 1.000000 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  84 pos 652: logits cos 1.000000 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  85 pos 653: logits cos 1.000000 argmax gpu 236832 "7" cpu 236832 "7"
+    gemma4_bidir_span_real_test.go:383: step  86 pos 654: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  87 pos 655: logits cos 1.000000 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  88 pos 656: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  89 pos 657: logits cos 1.000000 argmax gpu 107 "\\n" cpu 107 "\\n"
+    gemma4_bidir_span_real_test.go:383: step  90 pos 658: logits cos 1.000000 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  91 pos 659: logits cos 1.000000 argmax gpu 4257 " South" cpu 4257 " South"
+    gemma4_bidir_span_real_test.go:383: step  92 pos 660: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  93 pos 661: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  94 pos 662: logits cos 1.000000 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:383: step  95 pos 663: logits cos 1.000000 argmax gpu 236832 "7" cpu 236832 "7"
+    gemma4_bidir_span_real_test.go:446: step  95 (input "7" at pos 663) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236761 "." 25.602; 1480 "::" 4.029; 236764 "," 3.949; 236770 "1" 3.930; 569 " de" 3.420;  | cpu 236761 "." 25.602; 1480 "::" 4.029; 236764 "," 3.949; 236770 "1" 3.930; 569 " de" 3.420;  | gpu residual + cpu head 236761 "." 25.602; 1480 "::" 4.029; 236764 "," 3.949; 236770 "1" 3.930; 569 " de" 3.420; 
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 25.6015 cpu 25.6015 gpu-residual+cpu-head 25.6015
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 25.6015 cpu 25.6015 gpu-residual+cpu-head 25.6015
+    gemma4_bidir_span_real_test.go:383: step  96 pos 664: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:446: step  96 (input "." at pos 664) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236770 "1" 26.715; 236771 "0" 8.882; 759 " la" 8.116; 236812 "4" 7.697; 128458 " ၁" 7.564;  | cpu 236770 "1" 26.715; 236771 "0" 8.882; 759 " la" 8.116; 236812 "4" 7.697; 128458 " ၁" 7.564;  | gpu residual + cpu head 236770 "1" 26.715; 236771 "0" 8.882; 759 " la" 8.116; 236812 "4" 7.697; 128458 " ၁" 7.564; 
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 26.7150 cpu 26.7150 gpu-residual+cpu-head 26.7150
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 26.7150 cpu 26.7150 gpu-residual+cpu-head 26.7150
+    gemma4_bidir_span_real_test.go:383: step  97 pos 665: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:446: step  97 (input "1" at pos 665) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 1109 " |" 20.868; 236909 "|" 9.782; 138 "  " 3.090; 140 "    " 1.200; 1082 " than" 1.000;  | cpu 1109 " |" 20.868; 236909 "|" 9.782; 138 "  " 3.090; 140 "    " 1.200; 1082 " than" 1.000;  | gpu residual + cpu head 1109 " |" 20.868; 236909 "|" 9.782; 138 "  " 3.090; 140 "    " 1.200; 1082 " than" 1.000; 
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 20.8679 cpu 20.8679 gpu-residual+cpu-head 20.8679
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 20.8679 cpu 20.8679 gpu-residual+cpu-head 20.8679
+    gemma4_bidir_span_real_test.go:383: step  98 pos 666: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:446: step  98 (input " |" at pos 666) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236743 " " 24.157; 236770 "1" 8.523; 138 "  " 7.634; 237050 "な" 5.972; 642 " {" 5.234;  | cpu 236743 " " 24.157; 236770 "1" 8.523; 138 "  " 7.634; 237050 "な" 5.972; 642 " {" 5.234;  | gpu residual + cpu head 236743 " " 24.157; 236770 "1" 8.523; 138 "  " 7.634; 237050 "な" 5.972; 642 " {" 5.234; 
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 24.1565 cpu 24.1565 gpu-residual+cpu-head 24.1565
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 24.1565 cpu 24.1565 gpu-residual+cpu-head 24.1565
+    gemma4_bidir_span_real_test.go:383: step  99 pos 667: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:446: step  99 (input " " at pos 667) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236770 "1" 25.331; 236778 "2" 5.423; 236771 "0" 5.143; 236819 "9" 4.458; 236832 "7" 4.254;  | cpu 236770 "1" 25.331; 236778 "2" 5.423; 236771 "0" 5.143; 236819 "9" 4.458; 236832 "7" 4.254;  | gpu residual + cpu head 236770 "1" 25.331; 236778 "2" 5.423; 236771 "0" 5.143; 236819 "9" 4.458; 236832 "7" 4.254; 
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 25.3306 cpu 25.3306 gpu-residual+cpu-head 25.3306
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 25.3306 cpu 25.3306 gpu-residual+cpu-head 25.3306
+    gemma4_bidir_span_real_test.go:383: step 100 pos 668: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:446: step 100 (input "1" at pos 668) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236771 "0" 26.249; 236770 "1" 10.704; 236800 "3" 7.395; 236812 "4" 7.118; 236761 "." 6.912;  | cpu 236771 "0" 26.249; 236770 "1" 10.704; 236800 "3" 7.395; 236812 "4" 7.118; 236761 "." 6.912;  | gpu residual + cpu head 236771 "0" 26.249; 236770 "1" 10.704; 236800 "3" 7.395; 236812 "4" 7.118; 236761 "." 6.912; 
+    gemma4_bidir_span_real_test.go:455:   token 236771 "0": gpu 26.2490 cpu 26.2490 gpu-residual+cpu-head 26.2490
+    gemma4_bidir_span_real_test.go:455:   token 236771 "0": gpu 26.2490 cpu 26.2490 gpu-residual+cpu-head 26.2490
+    gemma4_bidir_span_real_test.go:383: step 101 pos 669: logits cos 1.000000 argmax gpu 236771 "0" cpu 236771 "0"
+    gemma4_bidir_span_real_test.go:446: step 101 (input "0" at pos 669) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236770 "1" 24.242; 236761 "." 5.801; 236743 " " 5.593; 236778 "2" 5.058; 236771 "0" 4.930;  | cpu 236770 "1" 24.242; 236761 "." 5.801; 236743 " " 5.593; 236778 "2" 5.058; 236771 "0" 4.930;  | gpu residual + cpu head 236770 "1" 24.242; 236761 "." 5.801; 236743 " " 5.593; 236778 "2" 5.058; 236771 "0" 4.930; 
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 24.2421 cpu 24.2421 gpu-residual+cpu-head 24.2421
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 24.2421 cpu 24.2421 gpu-residual+cpu-head 24.2421
+    gemma4_bidir_span_real_test.go:383: step 102 pos 670: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:446: step 102 (input "1" at pos 670) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236761 "." 24.728; 236786 "/" 2.048; 236779 "_" 1.930; 236764 "," 1.501; 783 " ." 1.237;  | cpu 236761 "." 24.728; 236786 "/" 2.048; 236779 "_" 1.930; 236764 "," 1.501; 783 " ." 1.237;  | gpu residual + cpu head 236761 "." 24.728; 236786 "/" 2.048; 236779 "_" 1.930; 236764 "," 1.501; 783 " ." 1.237; 
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 24.7282 cpu 24.7282 gpu-residual+cpu-head 24.7282
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 24.7282 cpu 24.7282 gpu-residual+cpu-head 24.7282
+    gemma4_bidir_span_real_test.go:383: step 103 pos 671: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:446: step 103 (input "." at pos 671) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236825 "6" 24.001; 236770 "1" 7.730; 236812 "4" 7.709; 236810 "5" 7.112; 236800 "3" 6.672;  | cpu 236825 "6" 24.001; 236770 "1" 7.730; 236812 "4" 7.709; 236810 "5" 7.112; 236800 "3" 6.672;  | gpu residual + cpu head 236825 "6" 24.001; 236770 "1" 7.730; 236812 "4" 7.709; 236810 "5" 7.112; 236800 "3" 6.672; 
+    gemma4_bidir_span_real_test.go:455:   token 236825 "6": gpu 24.0011 cpu 24.0011 gpu-residual+cpu-head 24.0011
+    gemma4_bidir_span_real_test.go:455:   token 236825 "6": gpu 24.0011 cpu 24.0011 gpu-residual+cpu-head 24.0011
+    gemma4_bidir_span_real_test.go:383: step 104 pos 672: logits cos 1.000000 argmax gpu 236825 "6" cpu 236825 "6"
+    gemma4_bidir_span_real_test.go:446: step 104 (input "6" at pos 672) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 1109 " |" 21.169; 236909 "|" 7.784; 1017 " :" 0.171; 138 "  " -0.030; 236764 "," -0.807;  | cpu 1109 " |" 21.169; 236909 "|" 7.784; 1017 " :" 0.171; 138 "  " -0.030; 236764 "," -0.807;  | gpu residual + cpu head 1109 " |" 21.169; 236909 "|" 7.784; 1017 " :" 0.171; 138 "  " -0.030; 236764 "," -0.807; 
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 21.1690 cpu 21.1690 gpu-residual+cpu-head 21.1690
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 21.1690 cpu 21.1690 gpu-residual+cpu-head 21.1690
+    gemma4_bidir_span_real_test.go:383: step 105 pos 673: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:446: step 105 (input " |" at pos 673) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236743 " " 26.083; 138 "  " 11.648; 642 " {" 8.477; 237050 "な" 6.070; 753 " -" 6.040;  | cpu 236743 " " 26.083; 138 "  " 11.648; 642 " {" 8.477; 237050 "な" 6.070; 753 " -" 6.040;  | gpu residual + cpu head 236743 " " 26.083; 138 "  " 11.648; 642 " {" 8.477; 237050 "な" 6.070; 753 " -" 6.040; 
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 26.0825 cpu 26.0825 gpu-residual+cpu-head 26.0825
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 26.0825 cpu 26.0825 gpu-residual+cpu-head 26.0825
+    gemma4_bidir_span_real_test.go:383: step 106 pos 674: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:446: step 106 (input " " at pos 674) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236819 "9" 25.147; 236770 "1" 13.344; 236771 "0" 10.244; 236800 "3" 7.270; 236812 "4" 7.221;  | cpu 236819 "9" 25.148; 236770 "1" 13.342; 236771 "0" 10.245; 236800 "3" 7.271; 236812 "4" 7.222;  | gpu residual + cpu head 236819 "9" 25.147; 236770 "1" 13.344; 236771 "0" 10.244; 236800 "3" 7.270; 236812 "4" 7.221; 
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.1467 cpu 25.1479 gpu-residual+cpu-head 25.1467
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.1467 cpu 25.1479 gpu-residual+cpu-head 25.1467
+    gemma4_bidir_span_real_test.go:383: step 107 pos 675: logits cos 1.000000 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:446: step 107 (input "9" at pos 675) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236819 "9" 25.495; 236828 "8" 9.230; 236761 "." 7.657; 236812 "4" 6.888; 236743 " " 6.666;  | cpu 236819 "9" 25.495; 236828 "8" 9.230; 236761 "." 7.657; 236812 "4" 6.888; 236743 " " 6.666;  | gpu residual + cpu head 236819 "9" 25.495; 236828 "8" 9.230; 236761 "." 7.657; 236812 "4" 6.888; 236743 " " 6.666; 
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.4950 cpu 25.4950 gpu-residual+cpu-head 25.4950
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.4950 cpu 25.4950 gpu-residual+cpu-head 25.4950
+    gemma4_bidir_span_real_test.go:383: step 108 pos 676: logits cos 1.000000 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:446: step 108 (input "9" at pos 676) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236761 "." 24.916; 783 " ." 1.776; 236764 "," 1.390; 236786 "/" 1.235; 2752 " never" 0.374;  | cpu 236761 "." 24.916; 783 " ." 1.776; 236764 "," 1.390; 236786 "/" 1.235; 2752 " never" 0.374;  | gpu residual + cpu head 236761 "." 24.916; 783 " ." 1.776; 236764 "," 1.390; 236786 "/" 1.235; 2752 " never" 0.374; 
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 24.9156 cpu 24.9156 gpu-residual+cpu-head 24.9156
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 24.9156 cpu 24.9156 gpu-residual+cpu-head 24.9156
+    gemma4_bidir_span_real_test.go:383: step 109 pos 677: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:446: step 109 (input "." at pos 677) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236828 "8" 23.679; 236812 "4" 6.226; 236770 "1" 5.115; 236800 "3" 4.513; 236810 "5" 4.183;  | cpu 236828 "8" 23.679; 236812 "4" 6.226; 236770 "1" 5.115; 236800 "3" 4.513; 236810 "5" 4.183;  | gpu residual + cpu head 236828 "8" 23.679; 236812 "4" 6.226; 236770 "1" 5.115; 236800 "3" 4.513; 236810 "5" 4.183; 
+    gemma4_bidir_span_real_test.go:455:   token 236828 "8": gpu 23.6787 cpu 23.6787 gpu-residual+cpu-head 23.6787
+    gemma4_bidir_span_real_test.go:455:   token 236828 "8": gpu 23.6787 cpu 23.6787 gpu-residual+cpu-head 23.6787
+    gemma4_bidir_span_real_test.go:383: step 110 pos 678: logits cos 1.000000 argmax gpu 236828 "8" cpu 236828 "8"
+    gemma4_bidir_span_real_test.go:446: step 110 (input "8" at pos 678) per-layer residual cos gpu/cpu: L0 1.00000 L1 1.00000 L2 1.00000 L3 1.00000 L4 1.00000 L5 1.00000 L6 1.00000 L7 1.00000 L8 1.00000 L9 1.00000 L10 1.00000 L11 1.00000 L12 1.00000 L13 1.00000 L14 1.00000 L15 1.00000 L16 1.00000 L17 1.00000 L18 1.00000 L19 1.00000 L20 1.00000 L21 1.00000 L22 1.00000 L23 1.00000 L24 1.00000 L25 1.00000 L26 1.00000 L27 1.00000 L28 1.00000 L29 1.00000
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 1109 " |" 18.737; 236909 "|" 6.791; 138 "  " 1.093; 578 " =" -1.354; 4916 " hands" -1.469;  | cpu 1109 " |" 18.737; 236909 "|" 6.791; 138 "  " 1.093; 578 " =" -1.354; 4916 " hands" -1.469;  | gpu residual + cpu head 1109 " |" 18.737; 236909 "|" 6.791; 138 "  " 1.093; 578 " =" -1.354; 4916 " hands" -1.469; 
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 18.7369 cpu 18.7369 gpu-residual+cpu-head 18.7369
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 18.7369 cpu 18.7369 gpu-residual+cpu-head 18.7369
+    gemma4_bidir_span_real_test.go:383: step 111 pos 679: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step 112 pos 680: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step 113 pos 681: logits cos 1.000000 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step 114 pos 682: logits cos 1.000000 argmax gpu 236771 "0" cpu 236771 "0"
+    gemma4_bidir_span_real_test.go:383: step 115 pos 683: logits cos 1.000000 argmax gpu 236828 "8" cpu 236828 "8"
+    gemma4_bidir_span_real_test.go:383: step 116 pos 684: logits cos 1.000000 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step 117 pos 685: logits cos 1.000000 argmax gpu 236800 "3" cpu 236800 "3"
+    gemma4_bidir_span_real_test.go:383: step 118 pos 686: logits cos 1.000000 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step 119 pos 687: logits cos 1.000000 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:460: first step where the resident's argmax departs from the CPU's: -1
+--- PASS: TestGemma4_26BDecodeLocalize (323.53s)
+PASS

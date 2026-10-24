@@ -82,6 +82,7 @@ var (
 // negligible share of the residual stream (the tiny tower has one windowed block, then a full one).
 
 func s3Sharpen(rng *rand.Rand, xs ...[]float32) {
+	makeWritable(xs...)
 	for _, x := range xs {
 		for i := range x {
 			x[i] = float32(0.5 * rng.NormFloat64())
@@ -90,6 +91,7 @@ func s3Sharpen(rng *rand.Rand, xs ...[]float32) {
 }
 
 func s3Scale(f float32, xs ...[]float32) {
+	makeWritable(xs...)
 	for _, x := range xs {
 		for i := range x {
 			x[i] *= f

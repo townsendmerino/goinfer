@@ -8,8 +8,14 @@ github.com/townsendmerino/aikit v1.71.0 h1:sRRQv12SqlMXlXRg9UlyzHH2CqUlQ/5/1HnUH
 github.com/townsendmerino/aikit v1.71.0/go.mod h1:HKA6IMr1YvzbCOgusf1zio9uo29Js+xCuOhB0eKtdWA=
 github.com/townsendmerino/aikit v1.72.0 h1:YEeSBYEH6So6g3IslkCr9kkWe1A6UPTdze8jgap8o5s=
 github.com/townsendmerino/aikit v1.72.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
+github.com/townsendmerino/aikit v1.73.0 h1:DFdAwUsDmjGthHpg32MmfhxhEi5Zfqplbvzb8L89P3s=
+github.com/townsendmerino/aikit v1.73.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
+github.com/townsendmerino/aikit v1.74.0 h1:MRNPVIfO9Au7jR43WygSwxcuUNVEpXhlu9DDE/yIvVY=
+github.com/townsendmerino/aikit v1.74.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
 github.com/townsendmerino/aikit/gpu v0.33.5 h1:25cPfdw0nGjtSwEV/iaRZMYrKd0o/ShsYXMrg01CCS0=
 github.com/townsendmerino/aikit/gpu v0.33.5/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
+github.com/townsendmerino/aikit/gpu v0.34.0 h1:x5d7wZLXgNGfapfMIgag68SVXi+O/t6e01LQMuHVCA4=
+github.com/townsendmerino/aikit/gpu v0.34.0/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
 github.com/townsendmerino/goinfer v0.23.0 h1:HcqBYAx7QqQptzlYdfYP8c9HalFhsRHWz1GYlxA1ezI=
 github.com/townsendmerino/goinfer v0.23.0/go.mod h1:Pk0kSX6D2trUn9EARRcns/RHMx62C1YDFUXvPUUTwHM=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

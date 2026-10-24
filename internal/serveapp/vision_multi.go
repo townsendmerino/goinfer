@@ -100,7 +100,13 @@ func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
 		n := multimodal.Gemma4PooledTokens(positionIDs, lm.gemma4Enc.Cfg.PoolingKernelSize)
 		p.n = n
 		p.features = func() ([]float32, error) {
-			feats, err := multimodal.Gemma4TowerFeatures(lm.gemma4Enc, lm.gemma4Tower, patches, positionIDs)
+			var feats []float32
+			var err error
+			if lm.gemma4Swap != nil {
+				feats, err = lm.gemma4Swap.features(patches, positionIDs)
+			} else {
+				feats, err = multimodal.Gemma4TowerFeatures(lm.gemma4Enc, lm.gemma4Tower, patches, positionIDs)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("gemma4 vision encoder: %w", err)
 			}

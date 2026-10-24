@@ -10,8 +10,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// topkMaxK is the largest K topk_select returns (TK_KMAX in topk.cu).
-const topkMaxK = 1024
+// topkMaxK is the largest K the top-K returns (TK_KMAX in topk.cu); topkCap is the fast path's candidate capacity (TK_CAP)
+// and topkThreads the block width and Z's partial count (TK_THREADS). topkCompactBlocks is topk_compact's grid.
+const (
+	topkMaxK          = 1024
+	topkCap           = 4096
+	topkThreads       = 1024
+	topkCompactBlocks = 32
+)
 
 // TopKAvailable reports whether this resident's logits are the RAW LM-head output. The top-K path
 // selects on the device's row, but step() applies a final-logit softcap and a logit scale on the HOST
@@ -61,21 +67,30 @@ func (r *cudaResident) ForwardTopK(embedding []float32, pos, k int, temperature 
 	return row, nil
 }
 
-// topkReadback launches topk_select over r.logits, syncs, and decodes the packed output. Executor
-// thread only. Shared by ForwardTopK and the test hook so the tests exercise the decode path's kernel
-// launch and unpacking exactly.
+// topkReadback runs the top-K over r.logits (topk_compact on the fast path, topk_finish, then topk_z when Z is wanted;
+// cuda/topk.cu), syncs, and decodes the packed output. Executor thread only. Shared by ForwardTopK and the test hook so
+// the tests exercise the decode path's kernel launches and unpacking exactly.
 func (r *cudaResident) topkReadback(v, k int, temperature float64, wantZ bool) (decoder.TopKRow, error) {
 	invT := float32(1)
 	if temperature > 0 {
 		invT = float32(1 / temperature)
 	}
-	wz := int32(0)
-	if wantZ {
-		wz = 1
+	if kk := min(k, v, topkMaxK); v >= 8192 && kk*8 <= v { // tk_fast in topk.cu, on the kernels' clamped K
+		if e := r.launch(r.fTopKCompact, LaunchConfig{GridX: topkCompactBlocks, GridY: 1, GridZ: 1, BlockX: topkThreads, BlockY: 1, BlockZ: 1},
+			Arg(r.logits), gpu.ArgValue(int32(v)), gpu.ArgValue(int32(k)), Arg(r.topkCV), Arg(r.topkCI), Arg(r.topkCnt)); e != nil {
+			return decoder.TopKRow{}, e
+		}
 	}
-	if e := r.launch(r.fTopK, onecfg(1024, 0), Arg(r.logits), gpu.ArgValue(int32(v)), gpu.ArgValue(int32(k)),
-		gpu.ArgValue(invT), gpu.ArgValue(wz), Arg(r.topkOut)); e != nil {
+	if e := r.launch(r.fTopKFinish, onecfg(topkThreads, 0), Arg(r.logits), gpu.ArgValue(int32(v)), gpu.ArgValue(int32(k)),
+		Arg(r.topkCV), Arg(r.topkCI), Arg(r.topkCnt), Arg(r.topkOut), Arg(r.topkMx)); e != nil {
 		return decoder.TopKRow{}, e
+	}
+	if wantZ {
+		if e := r.launch(r.fTopKZ, LaunchConfig{GridX: topkThreads / 32, GridY: 1, GridZ: 1, BlockX: 32, BlockY: 1, BlockZ: 1},
+			Arg(r.logits), gpu.ArgValue(int32(v)), gpu.ArgValue(int32(k)), gpu.ArgValue(invT), Arg(r.topkMx),
+			Arg(r.topkPart), Arg(r.topkDone), Arg(r.topkOut)); e != nil {
+			return decoder.TopKRow{}, e
+		}
 	}
 	if e := r.stream.Sync(); e != nil {
 		return decoder.TopKRow{}, e

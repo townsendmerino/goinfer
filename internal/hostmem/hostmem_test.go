@@ -38,20 +38,20 @@ func TestFromVMStats64_addsUpReclaimable(t *testing.T) {
 	}
 	r := fromVMStats64(s, 16384, 17179869184)
 	// free 10569 less speculative 6077 + file-backed 152820 + purgeable 66 = 157378 pages
-	if r.Available != 2578481152 || r.Free != 73596928 || r.App != 5151178752 || r.Wired != 2004516864 || r.Compressed != 6797361152 {
-		t.Fatalf("got %+v; want available 2578481152, free 73596928, app 5151178752, wired 2004516864, compressed 6797361152", r)
+	if r.Reclaimable != 2578481152 || r.Free != 73596928 || r.App != 5151178752 || r.Wired != 2004516864 || r.Compressed != 6797361152 {
+		t.Fatalf("got %+v; want reclaimable 2578481152, free 73596928, app 5151178752, wired 2004516864, compressed 6797361152", r)
 	}
 	// A GiB more of cached file pages is a GiB more available; a GiB more of app pages, wired or compressed pages changes nothing.
 	c := s
 	c.external += 65536
-	if got := fromVMStats64(c, 16384, 17179869184).Available - r.Available; got != 1<<30 {
+	if got := fromVMStats64(c, 16384, 17179869184).Reclaimable - r.Reclaimable; got != 1<<30 {
 		t.Errorf("1 GiB of file-backed pages raised the reading by %d", got)
 	}
 	for name, f := range map[string]func(*vmStats64){"app": func(x *vmStats64) { x.internal += 65536 }, "wired": func(x *vmStats64) { x.wire += 65536 },
 		"compressed": func(x *vmStats64) { x.compressor += 65536 }} {
 		a := s
 		f(&a)
-		if fromVMStats64(a, 16384, 17179869184).Available != r.Available {
+		if fromVMStats64(a, 16384, 17179869184).Reclaimable != r.Reclaimable {
 			t.Errorf("1 GiB of %s pages changed the reading", name)
 		}
 	}
@@ -60,8 +60,8 @@ func TestFromVMStats64_addsUpReclaimable(t *testing.T) {
 	sp := s
 	sp.speculative += 4096
 	sp.external += 4096
-	if got := fromVMStats64(sp, 16384, 17179869184).Available; got != r.Available {
-		t.Errorf("64 MiB of free pages turned speculative moved the reading by %d", got-r.Available)
+	if got := fromVMStats64(sp, 16384, 17179869184).Reclaimable; got != r.Reclaimable {
+		t.Errorf("64 MiB of free pages turned speculative moved the reading by %d", got-r.Reclaimable)
 	}
 }
 
@@ -109,7 +109,7 @@ func TestReadWithOracle_live(t *testing.T) {
 			t.Skip("no oracle on this platform")
 		}
 		d := o.JetsamAfter - o.JetsamBefore
-		t.Logf("attempt %d: ours %d, jetsam %d then %d, fresh %v (speculative %d, purgeable %d)", attempt, o.Ours.Available,
+		t.Logf("attempt %d: ours %d, jetsam %d then %d, fresh %v (speculative %d, purgeable %d)", attempt, o.Ours.Reclaimable,
 			o.JetsamBefore, o.JetsamAfter, o.Fresh, o.Ours.Speculative, o.Ours.Purgeable)
 		if o.Fresh && d >= -oracleStill && d <= oracleStill {
 			break
@@ -119,11 +119,11 @@ func TestReadWithOracle_live(t *testing.T) {
 		}
 		time.Sleep(rateLimitWindow) // a new window, so this process's next request is served fresh unless others crowd it
 	}
-	if o.JetsamBefore <= 0 || o.JetsamAfter <= 0 || o.JetsamBefore > o.Ours.Physical || o.Ours.Available <= 0 {
+	if o.JetsamBefore <= 0 || o.JetsamAfter <= 0 || o.JetsamBefore > o.Ours.Physical || o.Ours.Reclaimable <= 0 {
 		t.Fatalf("implausible sample %+v", o)
 	}
 	// Ours less purgeable is the kernel's figure (free + pageable external pages): a speculative page counted twice shows here.
-	if diff := o.Ours.Available - o.Ours.Purgeable - (o.JetsamBefore+o.JetsamAfter)/2; diff < -oracleTolerance || diff > oracleTolerance {
+	if diff := o.Ours.Reclaimable - o.Ours.Purgeable - (o.JetsamBefore+o.JetsamAfter)/2; diff < -oracleTolerance || diff > oracleTolerance {
 		t.Errorf("ours less purgeable is %d bytes from the kernel's figure (speculative %d)", diff, o.Ours.Speculative)
 	}
 }
@@ -158,3 +158,15 @@ const (
 	oracleAttempts               = 3
 	rateLimitWindow              = 1100 * time.Millisecond
 )
+
+func TestFromLevel(t *testing.T) {
+	const phys = 17179869184 // 16 GiB
+	for _, c := range []struct {
+		level int
+		want  int64
+	}{{83, phys/100*83 - 500<<20}, {100, phys/100*100 - 500<<20}, {3, 0}, {0, 0}} {
+		if got := fromLevel(c.level, phys); got != c.want {
+			t.Errorf("level %d: got %d, want %d", c.level, got, c.want)
+		}
+	}
+}

@@ -77,6 +77,9 @@ type QuantBatchBackend4 interface {
 // matmulW4A8Batch routes a shared-activation W4A8 batch through a QuantBatchBackend4 (one GPU
 // submit) when available, else the CPU batch kernel — the int4 twin of matmulW8A8Batch above.
 func matmulW4A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.W4A8Op, actGroup int) {
+	if int4FloatActForTest {
+		int4FloatActMissed.Add(1)
+	}
 	if qb, ok := be.(QuantBatchBackend4); ok && actGroup == 0 && qb.MatmulW4A8Batch(a, M, K, group, ops) {
 		return
 	}

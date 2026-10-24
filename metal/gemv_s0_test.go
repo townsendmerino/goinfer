@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -145,7 +146,7 @@ func TestMetalGEMVS0(t *testing.T) {
 
 	type shape struct {
 		model, cat string
-		fam        string // "sa" (gemv_w4a8_sa family), "coal" (gemv_w4a8_resid), "w8" (gemv_w8a8_coal)
+		fam        string // "sa" (gemv_w4a8_sa family), "coal" (gemv_w4a8_resid), "w8" (gemv_w8a8_coal); "w8sa" (gemv_w8a8_sa) and "w8body" (gemv_w8a8_body_resid), the native int8 body (KS-C3)
 		N, K       int
 	}
 	shapes := []shape{
@@ -153,6 +154,10 @@ func TestMetalGEMVS0(t *testing.T) {
 		{"1.5B", "down", "coal", 1536, 8960}, {"1.5B", "LM head", "w8", 151936, 1536},
 		{"7B", "qkv", "sa", 4608, 3584}, {"7B", "o", "sa", 3584, 3584}, {"7B", "gate/up", "sa", 37888, 3584},
 		{"7B", "down", "coal", 3584, 18944}, {"7B", "LM head", "w8", 152064, 3584},
+		{"1.5B", "qkv", "w8sa", 2048, 1536}, {"1.5B", "o", "w8sa", 1536, 1536}, {"1.5B", "gate/up", "w8sa", 17920, 1536},
+		{"1.5B", "down", "w8body", 1536, 8960},
+		{"1.5B", "qkv", "w8sa4", 2048, 1536}, {"1.5B", "o", "w8sa2", 1536, 1536}, {"1.5B", "gate/up", "w8sa4", 17920, 1536},
+		{"1.5B", "down", "w8body4", 1536, 8960},
 	}
 	type res struct {
 		s                shape
@@ -161,7 +166,8 @@ func TestMetalGEMVS0(t *testing.T) {
 	var results []res
 	for _, s := range shapes {
 		var bytes int // weight bytes read per dispatch
-		if s.fam == "w8" {
+		w8 := strings.HasPrefix(s.fam, "w8")
+		if w8 {
 			bytes = s.N*s.K + s.N*4
 		} else {
 			bytes = s.N*s.K/2 + s.N*(s.K/32)*2
@@ -178,7 +184,7 @@ func TestMetalGEMVS0(t *testing.T) {
 		uK := NewBufferU32(d, uint32(s.K))
 		var ws, ss []Buffer
 		for c := 0; c < copies; c++ {
-			if s.fam == "w8" {
+			if w8 {
 				wb := d.NewBufferBytes(s.N * s.K)
 				v := wb.U32s()[:s.N*s.K/4]
 				for i := range v {
@@ -221,6 +227,26 @@ func TestMetalGEMVS0(t *testing.T) {
 			})
 			ld = timeIt(per, func(e *Encoder, i int) {
 				e.Dispatch(lp, s.N*32, 32, ws[i%copies], ss[i%copies], aqb, asc, out, uK)
+			})
+		case "w8sa": // the activation staged as K bytes of words in threadgroup memory
+			pp := pipe("gemv_w8a8_sa")
+			prod = timeIt(per, func(e *Encoder, i int) {
+				e.DispatchTG(pp, s.N*32, 256, s.K, ws[i%copies], ss[i%copies], aqb, asc, out, uK)
+			})
+		case "w8body":
+			pp := pipe("gemv_w8a8_body_resid")
+			prod = timeIt(per, func(e *Encoder, i int) {
+				e.Dispatch(pp, s.N*32, 32, ws[i%copies], ss[i%copies], aqb, asc, out, uK)
+			})
+		case "w8sa2", "w8sa4", "w8body4": // KS-C3's rows twins at R18's widths
+			R := int(s.fam[len(s.fam)-1] - '0')
+			name := fmt.Sprintf("gemv_w8a8_sa_rows%d", R)
+			if s.fam == "w8body4" {
+				name = "gemv_w8a8_body_resid_staged4"
+			}
+			pp := pipe(name)
+			prod = timeIt(per, func(e *Encoder, i int) {
+				e.DispatchTG(pp, s.N*32/R, 256, s.K, ws[i%copies], ss[i%copies], aqb, asc, out, uK)
 			})
 		case "w8":
 			pp := pipe("gemv_w8a8_coal")

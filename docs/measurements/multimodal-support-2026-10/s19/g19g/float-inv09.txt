@@ -1,0 +1,32 @@
+Company Name: Quill & Ledger Stationers
+Company Address: 3300 Cascade Blvd - Boise, ID 83702
+Invoice #: 2026/6996
+Date: 12/24/2026
+Customer: Copperfield Motors
+Customer Address: 17 Mill Lane, Portland, OR 97209
+Due date: 01/24/2027
+
+No 1 Description: Courier fee
+No 1 Qty: 8
+No 1 Unit Price: 402.75
+No 1 Amount: 3,222.00
+
+No 2 Description: Thermal label roll 100mm
+No 2 Qty: 10
+No 2 Unit Price: 377.27
+No 2 Amount: 3,772.70
+
+No 3 Description: Cotton napkins, set of 12
+No 3 Qty: 1
+No 3 Unit Price: 787.51
+No 3 Amount: 787.51
+
+No 4 Description: Cloud hosting, monthly
+No 4 Qty: 5
+No 4 Unit Price: 21.79
+No 4 Amount: 108.95
+
+Subtotal: 7,891.16
+Tax (8.5%): 670.75
+Total Due: £8,561.91
+Payment terms: net 30 days.

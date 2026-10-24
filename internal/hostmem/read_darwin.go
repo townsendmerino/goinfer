@@ -57,7 +57,14 @@ func (h *machHost) reading(buf [vmStats64Size]byte) (Reading, bool) {
 	if !ok {
 		return Reading{}, false
 	}
-	return fromVMStats64(s, int64(ps), int64(phys)), true
+	level, err := unix.SysctlUint32("kern.memorystatus_level")
+	if err != nil || level > 100 {
+		return Reading{}, false
+	}
+	r := fromVMStats64(s, int64(ps), int64(phys))
+	r.Level, r.Available = int(level), fromLevel(int(level), int64(phys))
+	r.Source = "macOS kern.memorystatus_level × physical, less PressureBuffer"
+	return r, true
 }
 
 // taskVMInfo is TASK_VM_INFO (mach/task_info.h); taskVMInfoBytes covers struct task_vm_info through phys_footprint.
