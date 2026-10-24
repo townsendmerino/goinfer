@@ -41,7 +41,7 @@
 | KS-B13 | open | aikit: a microbenchmark at SigLIP shapes, bit-gated | — |
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
 | KS-B15 | decision | KS-O2 | — |
-| KS-C1 | open (G3, G4 tonight) | (a)+(b) built on branch `ksc1-q4k-gemv-2026-10`: the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0), G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 and the Phi-3 whole-token A/B are on the night queue (fit-refused by day). (c) waits on KS-O1 after these read | survey, "KS-C1 read" |
+| KS-C1 | done (a)+(b) | done 2026-10-24: the q4k lane's GEMVs on `gemv_q4k_f32_rows<8>` and `gemv_w8_f32_rows<2>`; the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0); G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 98.66% against the reference's 93.99% (C1-G3 PASS); Phi-3 mini q4k decode 22.3 → 33.0 tok/s, median 0.6741, 10 of 10 pairs (C1-G4 SHIP). (c) waits on KS-O1 | survey, "KS-C1 read" |
 | KS-C2 | open | Mac: a masked down-projection prototype, byte-equal at both shapes | — |
 | KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
@@ -606,6 +606,19 @@ shapes (500 of 1,000 outputs differed), so both loops carry `#pragma clang fp re
 (R = 8: 0.080 / 0.348 / 0.198 ms). C1-G3 and C1-G4: Phi-3 at q4k is fit-refused beside the owner's apps (G-Q2's own load, 14:20), so
 both are on the night queue as case (a) (`docs/measurements/ks-night-2026-10/run-ksc1-g3.sh`, `run-ksc1-g4.sh`). G-Q2's reference
 path named the unversioned `….int4.metal.giw`, which no longer exists; it now names the v17 sidecar. Logs: `~/goinfer-logs/ksc1-*-2026-10-23.log`.
+
+**C1-G3 and C1-G4 run by day 2026-10-24, on the owner's word.** Neither started on the night queue: the start check read about 6.3 GB
+free all night. Francis then changed macOS's available-memory reading to `memory_pressure`'s free percentage × RAM − 500 MB (#203).
+Each test binary was rebuilt at its registered commit with that reading applied (`internal/hostmem`, `decoder/hostram_darwin.go`;
+nothing the gates measure), from `docs/measurements/ks-night-2026-10/run-ksc1-g4-day.sh` and `run-ksc1-g3-day.sh`; the fit guard
+passed on its own, with no bypass. C1-G4 (08:37–08:39, the timing lock held exclusively; the 1-minute load 3.88 at the start, left
+over from the two builds and under the 4.0 line, each pair's 1.99–3.65; 12.6 GB available by the new reading; swap 464 MB before and
+after): old 44.89–51.65 ms a token, new 29.58–34.22, **median new/old 0.6741, 10 of 10 pairs below 1: SHIP** (22.3 → 33.0 tok/s
+after pair 0; the survey's estimate was 37–48). Log: `~/goinfer-logs/ksc1-g4-day-2026-10-24-0837.log`.
+C1-G3 (08:39–08:44, the lock held exclusively; not timed): G-Q2 on the rows kernels, Phi-3 mini q4k teacher-forced agreement
+**98.66% (367 of 372), 8 of 8 prompts** passing the free-run rule, against the reference (Qwen2.5-Coder-1.5B) 93.99%, 7 of 8: **delta
++4.66 points against the −2.0 margin: PASS**. Log: `~/goinfer-logs/ksc1-g3-day-2026-10-24-0839.log`. Both gates pass, so (a)+(b) ship;
+(c), native Q5_K/Q6_K, is KS-O1's decision.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 
