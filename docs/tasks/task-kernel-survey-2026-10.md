@@ -938,6 +938,48 @@ Expected cost: G1 seconds. G3 about 3 min, from C1-G4's wall, after Phi-3's fit 
 - **Log:** `~/goinfer-logs/kso1a-g3-2026-10-24-1053.log`. Binary built at f9f41aa5 from
   `docs/measurements/ks-night-2026-10/run-kso1a-g3.sh`.
 
+**KS-O1 on CUDA: gates, registered 2026-10-24 before any product code (O1C-G), on the owner's word of 4:37 pm ("#2 then #1":
+KS-A1's CUDA half, then KS-O1 on CUDA, the twin of what shipped on Metal).** Each kind is built only if it passed A1-G0's rule
+("KS-A1 on CUDA"); a kind A1-G0 kills stops for the owner's decision before any code for it. The build:
+- **Kernels** (`cuda/actgroup.cu`): per-row `rowQ5K` and `rowQ6K` bodies in A1-G0's chosen lane map, the per-32 int8 activations
+  and the explicit `__fmaf_rn` / `__fmul_rn` form of `rowQ4K`. `projRow` and `finishRow` gain two kinds (`WK_Q5K`, `WK_Q6K`), so the
+  fused per-32 kernels (`fused_rms_qkv_g32`, `fused_rms_gu_g32`, used at hidden sizes up to `fusedG32MaxHidden`) take them, and
+  standalone `gemv_q5k_g32` / `gemv_q6k_g32` at A1-G0's R serve `doG`. Q5_K is uploaded in the file's own 176-byte blocks (16-byte
+  aligned); Q6_K in planes over the whole weight (ql, qh, int8 scales, d in one buffer, offsets from the weight's block count), the
+  file's exact bytes, aligned for every block count (Metal's segment-wide layout, which fixed the odd-NB misread there).
+- **Data:** at `BuildResident`, from the GGUF's own blocks through `decoder.Model.OpenKQuant` / `KQuantReader`, streamed through the
+  existing staging pool (`streamW`), so the host holds one staging block, not a native copy. The CPU keeps the int8 copies; the CPU
+  path is unchanged.
+- **Scope:** every per-layer projection the CUDA resident plans (q, k, v, o, gate, up, down) and the **untied LM head**
+  (`output.weight`; on CUDA the head is an ordinary `doG` launch, so the launch-shape cost that kept Metal's head int8 does not arise).
+  A tied head (the embedding table) stays int8. `noteKQuant` also records the untied head; Metal's lane does not read that record
+  (its head is uploaded outside `q4kLaneProj` and `metalKQuantSavings` counts layer projections only), so Metal is unchanged.
+- **One guardrail on scope:** the native kinds are taken only when the resident also holds at least one Q4_K projection. A Q4_K
+  projection already declines the batched prefill and step (`prefillStaticDecline`), so the native kinds take no batched path away;
+  a GGUF with no Q4_K tensor at `--quant q4k` (a Q5_K_M file, say) keeps its int8 copies and its batched prefill.
+- **Fit pricing:** `ResidentDenseWeightBytesFor("cuda")` (which the CUDA build's KV plan and `Plan` both read) takes off, per weight
+  the resident uploads natively and only those, its int8 bytes less the file's block bytes. The host term is unchanged. No threshold
+  or margin moves: the device term is made to equal what the build allocates (#215's Gemini finding: price native blocks only where
+  they are actually uploaded).
+- **Why not bit-identical:** as on Metal, the native kernels compute the file's own weights instead of an int8 re-quantization, so
+  the small-gains rule's bit-identity clause cannot hold; the fidelity gates below decide, and the speed gate takes the small-gains
+  rule's pair count.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| O1C-G1 kernels | 0 | O1-G1's method on CUDA: every new kernel (standalone at every built R, and each kind through both fused kernels) against a float64 host reference that dequantizes the same blocks by ggml's formulas, with the same per-32 int8 activations; the reference cross-checked against aikit's GGUF dequantization on the 0.5B q4_k_m's Q6_K tensors and Phi-3's Q5_K and Q6_K tensors. Super-block counts NB = 1, 2, 6, 12, 19, 32, 35 and a partial block of rows. Plants: (1) Q5_K's high bit dropped; (2) Q6_K's −32 offset dropped; (3) a Q6_K group read with its neighbour's scale; (4) a super-block offset of one | every row within G-Q1's bar (\|err\| ≤ 1e-5 of Σ\|w·a\|); the reference within 1e-6 of aikit's dequantization; each plant red |
+| O1C-G2 untouched bits | 0 | `actgroup.ptx` at origin/main against the new one: every existing kernel (`gemv_w8a8_g32`, `gemv_w4a8_g32`, `gemv_q4k_g32`, both fused kernels with int8 / int4 / Q4_K projections at rows-per-warp 1, 2, 4) on random inputs; `TestActGroupKernels_fusedG32BitIdentical` extended with the new kinds mixed into a group; `TestQ4K_fusedG32ResidentBitIdentical` | the old kinds' outputs byte-equal old against new; fused equal to unfused, byte for byte, with the new kinds |
+| O1C-G3 memory | 1 | through `decoder.Load` on CUDA, the 0.5B q4_k_m and Phi-3 mini q4: the resident's weight bytes by kind, native arm against an int8 arm (a test hook keeping the copies); layer 0's native buffers and the head read back and compared byte for byte with the file's blocks (Q6_K through the planes); the pricing's saving; the host heap over the load | each native buffer holds exactly the file's bytes for its weight; device bytes fall by exactly the pricing's saving (Phi-3: about −375 MB, the head included); the host heap not higher than the int8 arm's plus 1 MiB |
+| O1C-G4 CPU unchanged | 1 | the CPU q4k forward on the 0.5B q4_k_m (Q6_K in half its layers): every position's logits bytes over a prompt and 16 greedy tokens, hashed, against the digest taken at origin/main on this box (amd64) | byte-equal |
+| O1C-G5 agreement | 2 (by day) | the CUDA G-Q2: `g3Run` (CUDA's G3c procedure) on Phi-3 mini at `--quant q4k`, the CUDA resident on the native lane against the CPU at q4k on the same file, with Qwen2.5-Coder-1.5B as G3c runs it as the reference in the same process. Beside it, `TestQ4K_phi3ResidentMatchesCPU` by its own bars | PASS iff agreement ≥ the reference's − 2.0 points and free-run passes ≥ the reference's − 1; 2.0–4.0 points below is ambiguous (parked); worse fails. `TestQ4K_phi3ResidentMatchesCPU` must pass both its bars; if only its CPU-agreement bar fails (the CPU keeps the int8 copies, so a lane nearer the file sits further from it), that is the owner's call, not a pass |
+| O1C-G6 toward the file | 1 | Phi-3 mini q4 (Q5_K and Q6_K) and the 0.5B q4_k_m (Q6_K): the CUDA q4k resident's last-row logits on the int8 arm and the native arm, each against the CPU at f32 on the same GGUF (the file exactly), over G3's 8 prompts teacher-forced. Phi-3 at f32 is about 15 GB on the CPU, inside this box's 62 GB, so Q5_K is covered here, unlike on Metal | for each model, mean KL(native) ≤ mean KL(int8); up to 1.10× is ambiguous (parked); above fails |
+| O1C-G7 speed | timed, nobara, timing lock | C1-G4's A/B on CUDA: one Phi-3 mini q4k resident holding both the int8 and the native buffers of every natively uploaded weight (a test hook), swapped per run; 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each; then the same on Qwen2.5-Coder-1.5B q4_k_m (Q6_K only). Load and free memory logged per cell, CLAUDE.md's void rule | **SHIP** iff Phi-3 is faster on at least 9 of 10 pairs (the small-gains rule's count; device memory falls, so its memory clause holds) **and** the 1.5B's median native/int8 is ≤ 1.00. **PARK** if Phi-3 is faster on 6–8 pairs. **KILL** if Phi-3 is faster on 5 or fewer, or the 1.5B's median is above 1.00. A KILL or PARK goes to the owner (Metal shipped under his option C with the 1.5B at 1.0127) |
+
+Fit checks: every load's plan is read from the build's own `fit:` / `KV plan:` banner first; a refused load is not started. Order:
+G1, G2, G4 (seconds), G3, then G7 (timed, under the lock), then G6 and G5. Stopping rule: one pass each; a FAIL in G1 to G4 stops
+the build for a fix, and the fixed build re-runs every gate from G1. Expected cost: G1–G4 a few minutes; G3 about 2 min; G7 about
+6 min (two models); G6 about 10 min (Phi-3 at f32 on the CPU); G5 about 15 min (two models, G3c's procedure).
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
