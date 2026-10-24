@@ -49,7 +49,7 @@
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
 | KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
-| KS-D2b | open | Mac: admit steel at head dim 96 after Phi-3 (int4) passes set A (its CPU references first); 80 when a model at it is on disk | — |
+| KS-D2b | blocked | 2026-10-24: Phi-3 at int4 is not Metal-resident (its activation outliers, H2), and on Metal it runs only the q4k lane, which has no batched prefill; no other head-dim-96 model is on this Mac. Reopens with a Metal-resident model at 96 (or 80) | survey, "KS-D2b read" |
 | KS-D4 | done | done 2026-10-23 (w32): the EmbeddingGemma 2 encoder and the Gemma 4 vision and audio towers run their GEMMs on `tower_gemm_w32`, byte-identical to aikit's (D4-G1, G2); the E4B vision tower 1.61× faster, median 0.6192, 10 of 10 (D4-G3 SHIP). Open: w16 weights and the fused attention, each under the tower gate | survey, "KS-D4 read" |
 | KS-D5 | done | done 2026-10-23 (handoff): the dense int4 prefill fuses the gate\|up GEMM with SwiGLU (`gemm_w4f16_swiglu`, its half tile in the staging arrays' memory) and drops `guF` where every layer takes the 64 × 64 tile; bit-identical; the 1.5B's 3,900-row pass scratch 261.9 → 121.9 MB; prefill median 0.9881 of two-step, 8 of 10 pairs (D5b-G1 to G3). The first build (an extra 8 KB tile) was 10.4% slower, parked, then fixed. Not covered: the small-M tiles, the int8 lane and the MoE expert GEMMs, which keep `guF`; a fused form of those is the next idea | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
@@ -994,6 +994,14 @@ f32 3.8B does not fit this Mac's CPU path. The cell's references are copied to t
 
 Admitted only on D2b-G2 PASS and D2b-G3 SHIP. Stopping rule: one pass each. Cost: G1 seconds; the references about an hour on
 nobara; G2 about 40 minutes; G3 about 4 minutes.
+
+**KS-D2b read 2026-10-24 (12:21): blocked, nothing admitted.** D2b-G1 PASS (the hd-96 cells: steel/fused max-error 0.92–1.01, mean
+0.99). D2b-G3 could not run: Phi-3 mini at int4 is not Metal-resident. The resident declines it, because every resident projection
+quantizes activations to int8 and Phi-3's activation outliers round to zero (queue-engineering H2); on Metal Phi-3 runs only the
+q4k lane, which has no batched prefill pass. No other model at head dim 96 is on this Mac, so steel at 96 has no model to be graded
+on or to serve, and the admission is reverted (the branch keeps this record only; the PH3 reference cell was not built). The KS-D2
+entry's "Phi-3 at int4 (96)" as an affected model was wrong for the same reason. Reopens with a Metal-resident model at head dim 96.
+Log: `~/goinfer-logs/ksd2b-g1-2026-10-24.log`, `~/goinfer-logs/ksd2b-g3-2026-10-24.log`.
 
 **KS-D3 · DeltaNet prefill scan with the state on chip (bit-identical).**
 - **Where:** `delta_rule_seq` in `metal/kernels/deltanet_kernels_msl.go`, from
