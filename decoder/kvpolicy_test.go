@@ -47,6 +47,7 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	gemma := &Architecture{Name: "gemma3", NumLayers: 1, SlidingWindow: 1024}
 	undelivered := &Architecture{Name: "laguna", NumLayers: 1}
 	moe := &Architecture{Name: "qwen3_moe", NumLayers: 1, MoE: &MoEConfig{}}
+	pairwise := &Architecture{Name: "cohere", NumLayers: 1, ropeInterleave: true} // a group whose G4 has not cleared it
 	for _, c := range []struct {
 		kv   string
 		a    *Architecture
@@ -56,7 +57,8 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 		{"", a, true, "f16"}, {"auto", a, true, "f16"}, {"f16", a, true, "f16"}, {"f32", a, true, "f32"},
 		{"", a, false, "f32"}, {"auto", a, false, "f32"}, {"f16", a, false, "f16"},
 		{"", gemma, true, "f16"}, {"", gemma, false, "f32"}, {"f16", gemma, true, "f16"}, {"f16", undelivered, true, "f32"}, {"i8", a, true, "f32"},
-		{"", moe, true, "f32"}, {"auto", moe, true, "f32"}, {"f16", moe, true, "f16"}, {"f16", moe, false, "f16"},
+		{"", moe, true, "f16"}, {"auto", moe, false, "f32"}, {"f16", moe, false, "f16"},
+		{"", pairwise, true, "f32"}, {"auto", pairwise, true, "f32"}, {"f16", pairwise, true, "f16"}, {"f16", pairwise, false, "f16"},
 	} {
 		auto = c.auto
 		if got, _ := ResolveKV("cuda", c.a, Options{KVPrecision: c.kv}); got != c.want {
@@ -141,20 +143,22 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 	}{
 		{"qwen2 dense", KVFacts{Family: "qwen2"}, Options{}, true},
 		{"phi3 dense", KVFacts{Family: "phi3"}, Options{}, true},
-		{"qwen3_moe", KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, false},
-		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, false},
-		{"qwen2 with MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, false},
-		{"qwen2 paged experts", KVFacts{Family: "qwen2"}, Options{MoECacheExperts: true}, false},
+		{"qwen3_moe", KVFacts{Family: "qwen3_moe", MoE: true}, Options{}, true},
+		{"qwen2_moe", KVFacts{Family: "qwen2_moe", MoE: true}, Options{}, true},
+		{"mixtral", KVFacts{Family: "mixtral", MoE: true}, Options{}, true},
+		{"qwen2 with MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, true},
+		{"qwen3_moe paged experts", KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, true},
+		{"qwen3_5_moe: hybrid and MoE", KVFacts{Family: "qwen3_5_moe", Hybrid: true, MoE: true}, Options{}, false},
 		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, true},
 		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, true},
 		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, true},
-		{"gpt-oss: sliding window and MoE", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, false},
+		{"gpt-oss: sliding window and MoE", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, true},
 		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, false},
 		{"cohere2: sliding window and pairwise RoPE", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, false},
 		{"gemma4: sliding window and hybrid", KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, false},
 		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, true},
 		{"qwen3_vl", KVFacts{Family: "qwen3_vl", MRoPE: true}, Options{}, true},
-		{"qwen3_vl_moe", KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, false},
+		{"qwen3_vl_moe", KVFacts{Family: "qwen3_vl_moe", MRoPE: true, MoE: true}, Options{}, true},
 		{"qwen3_5", KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}, false},
 		{"deepseek_v3", KVFacts{Family: "deepseek_v3", MLA: true}, Options{}, false},
 	} {

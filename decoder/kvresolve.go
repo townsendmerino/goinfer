@@ -210,11 +210,12 @@ func cudaKVF16Delivered(f KVFacts) bool {
 // owner's D7: f16 becomes the default for each family group as it clears its G4, docs/measurements/kv4-cuda-2026-10-21.md §2, G5). A
 // model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
 func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
-	if f.MoE || o.MoECacheExperts || f.PairwiseRoPE || f.Hybrid || f.MLA {
+	if f.PairwiseRoPE || f.Hybrid || f.MLA {
 		return false
 	}
 	switch f.Family {
-	case "llama", "mistral", "qwen2", "qwen3", "phi3", "gemma2", "gemma3", "qwen2_5_vl", "qwen3_vl":
+	case "llama", "mistral", "qwen2", "qwen3", "phi3", "gemma2", "gemma3", "qwen2_5_vl", "qwen3_vl", "qwen2_moe", "qwen3_moe", "mixtral",
+		"qwen3_vl_moe", "gpt-oss":
 		return true
 	}
 	return false
