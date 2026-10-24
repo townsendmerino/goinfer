@@ -37,6 +37,9 @@ func TestRead_matchesMemoryPressure(t *testing.T) {
 	t.Logf("memory_pressure %d%% then %d%%; level %d%%, available %.2f GiB, reclaimable %.2f GiB, physical %.2f GiB", before, after,
 		r.Level, g(r.Available), g(r.Reclaimable), g(r.Physical))
 	lo, hi := min(before, after)-1, max(before, after)+1
+	if r.Level < lo || r.Level > hi { // checked directly too: at a level of 3% or less the Available band below clamps to 0
+		t.Errorf("level %d%% outside memory_pressure's %d%%..%d%% (±1)", r.Level, before, after)
+	}
 	want := func(pct int) int64 { return max(r.Physical*int64(pct)/100-524288000, 0) }
 	if r.Available < want(lo) || r.Available > want(hi) {
 		t.Errorf("available %d outside [%d, %d], memory_pressure's %d%%..%d%% of physical less 500 MiB", r.Available, want(lo), want(hi), before, after)
