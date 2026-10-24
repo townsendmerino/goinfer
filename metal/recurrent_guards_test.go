@@ -16,6 +16,7 @@ import (
 // resident.recurrentModel), on a resident built by hand with one Mamba-2 layer. Where the recurrent check is what decides, a
 // control without the Mamba layer must not decline, so the guard is not passing on an earlier, unrelated exit. A guard that
 // panics counts as admitting: it went past its decline.
+// The batched prefill is not in the list: it runs Mamba-2 (prefill_mamba.go, TestKSD8_tinyFidelity).
 func TestRecurrentGuards_declineMamba(t *testing.T) {
 	mambaRes := func() *resident {
 		return &resident{V: 1024, H: 64, mamba: &mambaParams{}, layers: []residLayer{{mamba: &mambaLayer{}}},
@@ -53,7 +54,6 @@ func TestRecurrentGuards_declineMamba(t *testing.T) {
 		{"f16 FFN lane", func(r *resident) bool { return !r.canUseF16Lane(0) }, true},
 		{"native int8", func(r *resident) bool { return !w8Eligible(nil, r) }, false},
 		{"native int8 attention", func(r *resident) bool { return !w8AttnEligible(nil, r) }, false},
-		{"batched prefill", func(r *resident) bool { return !r.recurrentPrefillOK() }, true},
 		{"q4k lane", func(r *resident) bool { return !r.q4kLaneShapeOK() }, true},
 		{"E-model batched prefill", func(r *resident) bool { return !(&metalResident{r: r}).emodelBatched() }, false},
 		{"image prefill", func(r *resident) bool {

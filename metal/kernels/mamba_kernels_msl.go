@@ -79,4 +79,92 @@ kernel void mamba_gnorm(device const float* yin [[buffer(0)]], device const floa
         gated[base + i] = weight[base + i] * gated[base + i] * inv;
     }
 }
+
+// KS-D8: the batched prefill's row forms of the three kernels above, over M rows of the in_proj output held as f16 rows of
+// projDim ([z | xBC | dt], as decode's f32 buffer). Each runs its decode kernel's statements per row in row order, carrying
+// the window and the state as M decode steps would, so given the same inputs it writes decode's bits.
+kernel void mamba_conv_seq(device const half* proj [[buffer(0)]], device const float* convW [[buffer(1)]],
+    device const float* convB [[buffer(2)]], device float* win [[buffer(3)]], device float* conv [[buffer(4)]],
+    constant uint& convDim [[buffer(5)]], constant uint& K [[buffer(6)]], constant uint& xbcBase [[buffer(7)]],
+    constant uint& projDim [[buffer(8)]], constant uint& M [[buffer(9)]], uint c [[thread_position_in_grid]]) {
+    if (c >= convDim) return;
+    float w[8];
+    for (uint j = 0u; j < K - 1u; j++) { w[j] = win[j * convDim + c]; }
+    for (uint m = 0u; m < M; m++) {
+        float xc = float(proj[m * projDim + xbcBase + c]);
+        float s = convB[c] + convW[c * K + (K - 1u)] * xc;
+        for (uint j = 0u; j < K - 1u; j++) {
+            s = s + convW[c * K + j] * w[j];
+        }
+        conv[m * convDim + c] = mb_silu(s);
+        for (uint j = 0u; j + 1u < K - 1u; j++) { w[j] = w[j + 1u]; }
+        w[K - 2u] = xc;
+    }
+    for (uint j = 0u; j < K - 1u; j++) { win[j * convDim + c] = w[j]; }
+}
+
+kernel void mamba_ssm_seq(device const float* conv [[buffer(0)]], device const half* proj [[buffer(1)]],
+    device const float* headP [[buffer(2)]], device float* ssm [[buffer(3)]], device float* yout [[buffer(4)]],
+    constant uint& nHeads [[buffer(5)]], constant uint& hp [[buffer(6)]], constant uint& dn [[buffer(7)]],
+    constant uint& repeat [[buffer(8)]], constant uint& gSize [[buffer(9)]], constant uint& dInner [[buffer(10)]],
+    constant uint& dtBase [[buffer(11)]], constant uint& convDim [[buffer(12)]], constant uint& projDim [[buffer(13)]],
+    constant uint& M [[buffer(14)]], uint t [[thread_position_in_grid]]) {
+    if (t >= nHeads * hp) return;
+    uint head = t / hp, pi = t % hp, g = head / repeat;
+    float Aexp = headP[head * 3u + 0u], dtb = headP[head * 3u + 1u], Dw = headP[head * 3u + 2u];
+    uint sBase = (head * hp + pi) * dn;
+    for (uint m = 0u; m < M; m++) {
+        device const float* cr = conv + m * convDim;
+        float dth = mb_softplus(float(proj[m * projDim + dtBase + head]) + dtb);
+        float dA = exp(dth * Aexp);
+        float xv = cr[head * hp + pi];
+        float dx = dth * xv;
+        uint bBase = dInner + g * dn;
+        uint cBase = dInner + gSize + g * dn;
+        float acc = 0.0f;
+        for (uint n = 0u; n < dn; n++) {
+            float v = ssm[sBase + n] * dA + dx * cr[bBase + n];
+            ssm[sBase + n] = v;
+            acc = acc + v * cr[cBase + n];
+        }
+        yout[m * dInner + head * hp + pi] = acc + Dw * xv;
+    }
+}
+
+// mamba_gnorm_rows: mamba_gnorm with threadgroup m*groups + g serving row m's group g; z is read from row m's f16 projection.
+kernel void mamba_gnorm_rows(device const float* yin [[buffer(0)]], device const half* proj [[buffer(1)]],
+    device const float* weight [[buffer(2)]], device float* gated [[buffer(3)]], constant uint& groupSize [[buffer(4)]],
+    constant float& eps [[buffer(5)]], constant uint& zBase [[buffer(6)]], constant uint& groups [[buffer(7)]],
+    constant uint& dInner [[buffer(8)]], constant uint& projDim [[buffer(9)]],
+    uint tg [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]]) {
+    threadgroup float sh[64];
+    uint m = tg / groups, g = tg % groups;
+    device const float* yr = yin + m * dInner;
+    device const half* zr = proj + m * projDim;
+    device float* gr = gated + m * dInner;
+    uint base = g * groupSize;
+    float ss = 0.0f;
+    for (uint i = t; i < groupSize; i += 64u) {
+        float v = yr[base + i] * mb_silu(float(zr[zBase + base + i]));
+        gr[base + i] = v;
+        ss = ss + v * v;
+    }
+    sh[t] = ss;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint stride = 32u; stride > 0u; stride /= 2u) {
+        if (t < stride) { sh[t] = sh[t] + sh[t + stride]; }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float inv = 1.0f / sqrt(sh[0] / float(groupSize) + eps);
+    for (uint i = t; i < groupSize; i += 64u) {
+        gr[base + i] = weight[base + i] * gr[base + i] * inv;
+    }
+}
+
+// nongated_act_rows_f16: the batched prefill's non-gated MLP activation (act_quant's nongated_act, no quantization) on n f16
+// values in place.
+kernel void nongated_act_rows_f16(device half* x [[buffer(0)]], constant uint& n [[buffer(1)]], constant uint& act [[buffer(2)]],
+    uint i [[thread_position_in_grid]]) {
+    if (i < n) x[i] = half(nongated_act(float(x[i]), act));
+}
 `

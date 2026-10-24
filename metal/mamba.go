@@ -117,6 +117,7 @@ func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams)
 func (r *resident) buildMambaScratch(d *Device, pipe func(string) Pipeline, eps float32) {
 	p := r.mamba
 	r.pMbConv, r.pMbSSM, r.pMbGNorm = pipe("mamba_conv"), pipe("mamba_ssm"), pipe("mamba_gnorm")
+	r.pMbConvSeq, r.pMbSSMSeq, r.pMbGNormRows = pipe("mamba_conv_seq"), pipe("mamba_ssm_seq"), pipe("mamba_gnorm_rows")
 	r.mbProj, r.mbConv = d.NewBufferLen(p.projDim), d.NewBufferLen(p.convDim)
 	r.mbY, r.mbGated = d.NewBufferLen(p.dInner), d.NewBufferLen(p.dInner)
 	r.mbGq, r.mbGSc = d.NewBufferBytes(p.dInner), d.NewBufferLen(1)
@@ -125,6 +126,7 @@ func (r *resident) buildMambaScratch(d *Device, pipe func(string) Pipeline, eps 
 	r.uMbNH, r.uMbHD, r.uMbDS, r.uMbRep, r.uMbGSize = u(p.nHeads), u(p.headDim), u(p.dState), u(p.repeat), u(p.gSize)
 	r.uMbDtBase, r.uMbGroupSize, r.uMbZero = u(p.dInner+p.convDim), u(p.dInner/p.normGroups), u(0)
 	r.uMbEps = NewBufferFloats(d, []float32{eps})
+	r.uMbNormGroups = u(p.normGroups)
 }
 
 // encodeMambaMixer runs one Mamba-2 layer's mixer and folds its output into the residual x: the norm, in_proj, the conv →

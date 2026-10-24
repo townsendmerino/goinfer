@@ -157,6 +157,7 @@ type residLayer struct {
 	preNormBias, postNormBias Buffer
 	upW, upS                  Buffer
 	oBias, upBias, downBias   Buffer
+	downBiasSet               bool // the non-gated MLP's down projection has a bias of its own (the batched pass declines it)
 	// gpt-oss (FeatAttnSink, DECLARED for metal — decoder/features.go): attnSinks is the per-head learned sink logit
 	// [nH]; uHasSink is a 0/1 flag mirroring layerNormBias's pattern. Unused for every other family.
 	attnSinks, uHasSink Buffer
@@ -191,13 +192,17 @@ func (L *residLayer) recurrent() bool { return L.delta != nil || L.mamba != nil 
 // residLayer.recurrent, for the paths that decline such a model whole.
 func (r *resident) recurrentModel() bool { return r.dnet != nil || r.mamba != nil }
 
-// recurrentPrefillOK reports whether the batched prefill implements this resident's recurrent mixers: none, or DeltaNet in
-// the shape prefill_deltanet.go covers (dnetPrefillOn, pre-norm layers, no LayerNorm bias; Olmo Hybrid's postOnly stays
-// sequential). Mamba-2 has no prefill kernel, so its prompts prefill one position at a time.
+// recurrentPrefillOK reports whether the batched prefill implements this resident's recurrent mixers: none, DeltaNet in the
+// shape prefill_deltanet.go covers (dnetPrefillOn, pre-norm layers, no LayerNorm bias; Olmo Hybrid's postOnly stays
+// sequential), or Mamba-2 in the shape prefill_mamba.go covers (mambaPrefillOn, the widths below, pre-norm layers).
 func (r *resident) recurrentPrefillOK() bool {
 	switch {
 	case r.mamba != nil:
-		return false
+		// KS-D8 (prefill_mamba.go): the int8 GEMMs read K in 32-wide slabs, and mamba_conv_seq holds the window in 8 registers.
+		p := r.mamba
+		if !mambaPrefillOn || r.dnet != nil || r.postOnly || p.dConv < 2 || p.dConv > 8 || r.H%32 != 0 || p.dInner%32 != 0 {
+			return false
+		}
 	case r.dnet == nil:
 		return true
 	case !dnetPrefillOn || r.postOnly:
@@ -598,6 +603,10 @@ type resident struct {
 	// The Mamba-2 mixer (mamba.go); mamba nil ⇒ no Mamba layer, and nothing below is allocated.
 	mamba                     *mambaParams
 	pMbConv, pMbSSM, pMbGNorm Pipeline
+	// KS-D8: the batched prefill's row forms of the three (prefill_mamba.go), and the non-gated MLP's f16 activation, set
+	// for a non-gated resident.
+	pMbConvSeq, pMbSSMSeq, pMbGNormRows, pNgActRows Pipeline
+	uMbNormGroups                                   Buffer
 	// MLA (mla.go); mla nil ⇒ no MLA layer, and nothing of mlaS is allocated.
 	mla                                                        *mlaParams
 	mlaS                                                       *mlaScratch
@@ -1320,6 +1329,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.parallelBlock = m.ParallelBlockResident() // G5: Cohere/Command-R + Cohere2/Command-R7B
 	r.logitScale, _ = m.LogitScaleResident()    // ok=false ⇒ 1, already finalizeLogits's no-op value
 	r.nonGatedMLP = m.NonGatedMLPResident()
+	if r.nonGatedMLP {
+		r.pNgActRows = pipe("nongated_act_rows_f16")
+	}
 	r.outBias = m.OutBiasResident()
 	r.learnedPos = m.LearnedPosResident()
 	if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
@@ -1467,6 +1479,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	dnetOK := r.recurrentPrefillOK()
 	if r.dnet != nil && dnetOK {
 		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatDeltaNet })
+	}
+	if r.mamba != nil && dnetOK {
+		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatSSM })
+	}
+	if r.nonGatedMLP && !slices.ContainsFunc(m.Weights().Layers, func(lw decoder.LayerWeights) bool { return len(lw.DownBias) > 0 }) {
+		// KS-D8: the pass's non-gated MLP takes a relu² activation and no down-projection bias (another activation stays
+		// missing on its own feature). This runs before r.layers is built, so it reads the weights, not residLayer.downBiasSet.
+		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool {
+			return f == decoder.FeatNonGatedMLP || f == decoder.FeatNonGatedReLU2
+		})
 	}
 	if r.q4kLane && !r.q4kLaneShapeOK() {
 		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
@@ -1688,6 +1710,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.dW, L.dS = mk(&lw.DownProj)
 			L.upBias = NewBufferFloats(d, orZeros(lw.UpBias, lw.UpProj.Rows()))
 			L.downBias = NewBufferFloats(d, orZeros(lw.DownBias, lw.DownProj.Rows()))
+			L.downBiasSet = len(lw.DownBias) > 0
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
 			L.guW, L.guS = fuse(&lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
