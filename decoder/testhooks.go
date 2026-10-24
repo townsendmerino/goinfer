@@ -480,6 +480,21 @@ func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, i
 	return m.gemma4EModelImageRowsSpans(ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
+// SetInt4FloatActForTest turns int4FloatActForTest on or off; on, it also turns the fused W4A8 batches off, and off restores
+// them. Int4FloatActMissedForTest is the count of W4A8 kernel calls made while it was on.
+func SetInt4FloatActForTest(on bool) {
+	int4FloatActForTest = on
+	if on {
+		int4FloatActMissed.Store(0)
+		w4a8BatchEnabled, cpuBatchFusedW4A8 = false, false
+		return
+	}
+	w4a8BatchEnabled, cpuBatchFusedW4A8 = envBoolDefault("GOINFER_W4A8_BATCH", w4a8BatchDefault), true
+}
+
+// Int4FloatActMissedForTest reports int4FloatActMissed.
+func Int4FloatActMissedForTest() int64 { return int4FloatActMissed.Load() }
+
 // LogitsFromHiddenForTest is logitsFromHidden on a copy of h (a residual before the final norm): the CPU's final norm, LM
 // head and softcap, for a gate that runs a resident's residual through the CPU head.
 func (m *Model) LogitsFromHiddenForTest(h []float32) []float32 {

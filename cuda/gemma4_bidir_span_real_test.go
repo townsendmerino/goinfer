@@ -495,6 +495,19 @@ func TestGemma4_26BActQuantSensitivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
+	// GOINFER_S19_FLOATACT=1: the int4 weights with f32 activations (decoder.SetInt4FloatActForTest), every int4 projection
+	// on the float path, which the miss count proves.
+	if os.Getenv("GOINFER_S19_FLOATACT") == "1" {
+		decoder.SetInt4FloatActForTest(true)
+		defer decoder.SetInt4FloatActForTest(false)
+		defer func() {
+			if n := decoder.Int4FloatActMissedForTest(); n != 0 {
+				t.Errorf("%d W4A8 kernel calls ran with float activations on: the check did not cover every int4 projection", n)
+			} else {
+				t.Logf("float activations: every int4 projection took the float path (0 W4A8 calls)")
+			}
+		}()
+	}
 	data, err := os.ReadFile(img)
 	if err != nil {
 		t.Fatal(err)

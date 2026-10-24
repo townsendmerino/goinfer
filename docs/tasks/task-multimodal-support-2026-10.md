@@ -8219,10 +8219,12 @@ prefill on CUDA in batched passes.
     | int4 | int8, per 32 | down to 0.39 | 2 of 16 |
     | int8 | int8, per row (`int8int8`) | down to 0.32 | 5 of 16 |
     | int8 | f32 (weight-only `int8`) | 1.00000 at every layer and step | none |
+    | int4 | f32 (`SetInt4FloatActForTest`; 0 W4A8 calls, so every int4 projection took the float path) | 1.00000 at every layer and step | none |
   - **Reading:** the 26B's int8 activation rounding, not its int4 weights and not anything GPU-specific, turns a 1e-5
     difference into a late-layer collapse at certain tokens. GPU-vs-CPU is one such difference, so either path can land on
     a garbage digit (the CPU did not on these forms; the GPU did on two). Float activations remove the sensitivity.
-    Untested: int4 weights with float activations (no such path exists on either side).
+    int4 weights with float activations are as stable as int8 weights with them (step 1 of Francis's option (a), 18:52),
+    and that run's table reply is correct ("101.6"). So the fix is float-input int4 GEMVs, keeping the int4 weights.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load
   2.2 to 3.4 at every cell start, none void. Per 160-token form turn:
   - old (`9bafcc12`): 89.9 / 90.4 / 93.7 / 94.7 s, time to first token 80.9 to 85.7 s;
