@@ -35,8 +35,8 @@ func main() {
 		if o.Fresh {
 			fresh = 1
 		}
-		fmt.Printf("ours %d jetsam_before %d jetsam_after %d free %d speculative %d file_backed %d purgeable %d physical %d fresh %d\n",
-			r.Available, o.JetsamBefore, o.JetsamAfter, r.Free, r.Speculative, r.FileBacked, r.Purgeable, r.Physical, fresh)
+		fmt.Printf("ours %d jetsam_before %d jetsam_after %d free %d speculative %d file_backed %d purgeable %d physical %d fresh %d available %d level %d\n",
+			r.Reclaimable, o.JetsamBefore, o.JetsamAfter, r.Free, r.Speculative, r.FileBacked, r.Purgeable, r.Physical, fresh, r.Available, r.Level)
 		return
 	}
 	if *pid > 0 {
@@ -57,9 +57,9 @@ func main() {
 	switch {
 	case *v:
 		g := func(b int64) float64 { return float64(b) / (1 << 30) }
-		fmt.Printf("physical %.2f GiB, available %.2f (free %.2f, speculative %.2f, file-backed %.2f, purgeable %.2f); app %.2f, wired %.2f, "+
-			"compressed %.2f GiB (%s)\n", g(r.Physical), g(r.Available), g(r.Free), g(r.Speculative), g(r.FileBacked), g(r.Purgeable),
-			g(r.App), g(r.Wired), g(r.Compressed), r.Source)
+		fmt.Printf("physical %.2f GiB, available %.2f (level %d%%); reclaimable %.2f (free %.2f, speculative %.2f, file-backed %.2f, "+
+			"purgeable %.2f); app %.2f, wired %.2f, compressed %.2f GiB (%s)\n", g(r.Physical), g(r.Available), r.Level, g(r.Reclaimable),
+			g(r.Free), g(r.Speculative), g(r.FileBacked), g(r.Purgeable), g(r.App), g(r.Wired), g(r.Compressed), r.Source)
 	case *mb:
 		fmt.Println(r.Available >> 20)
 	default:
