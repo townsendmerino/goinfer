@@ -1194,6 +1194,7 @@ func (m *Model) AttnLogitSoftcapResident() float32 { return float32(m.w.arch.Att
 var attnSoftcapOffForTest atomic.Bool
 
 func (m *Model) withResidency() *Model {
+	defer m.releaseKQuantFile() // the q4k load's GGUF mapping is read by this build only (KQuantReader)
 	if attnSoftcapOffForTest.Load() {
 		m.w.arch.AttnLogitSoftcap = 0
 		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program

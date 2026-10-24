@@ -73,6 +73,10 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // Production code routes through Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
+// KQuantDeviceSavingsForTest is metalKQuantSavings("metal"): what Metal's fit pricing takes off for the q4k lane's native
+// Q5_K and Q6_K uploads.
+func (m *Model) KQuantDeviceSavingsForTest() int64 { return m.metalKQuantSavings("metal") }
+
 // ResidentPrefillSeedForTest is residentPrefillSeed from position 0 with no adapter: the prompt into the resident KV
 // by the route a generation takes (blocks included), returning the last token's logits.
 func (m *Model) ResidentPrefillSeedForTest(ctx context.Context, prompt []int) ([]float32, error) {
