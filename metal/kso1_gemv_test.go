@@ -17,7 +17,7 @@ import (
 // qh, NB×16 of int8 scales, NB halves of d.
 const kso1ProtoKernels = `
 template <uint R>
-inline void q5k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
+inline void kso1p_q5k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
     thread float* acc) {
 #pragma clang fp reassociate(off)
     const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
@@ -51,10 +51,10 @@ inline void q5k_rows_acc(device const uchar* wq, device const float* ax, uint K,
     }
     SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) acc[r] = simd_sum(acc[r]);
 }
-// q6k_s6: four 6-bit codes (bytes 0..63) minus 32, as signed bytes, with no borrow between bytes.
-inline float4 q6k_s6(uint t) { return float4(as_type<char4>(((t | 0x80808080u) - 0x20202020u) ^ 0x80808080u)); }
+// kso1p_q6k_s6: four 6-bit codes (bytes 0..63) minus 32, as signed bytes, with no borrow between bytes.
+inline float4 kso1p_q6k_s6(uint t) { return float4(as_type<char4>(((t | 0x80808080u) - 0x20202020u) ^ 0x80808080u)); }
 template <uint R>
-inline void q6k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
+inline void kso1p_q6k_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
     thread float* acc) {
 #pragma clang fp reassociate(off)
     const uint NB = K >> 8u, ix = lane >> 3u, n = (lane & 7u) >> 2u, l0 = (lane & 3u)*8u, is = (lane & 3u) >> 1u;
@@ -72,10 +72,10 @@ inline void q6k_rows_acc(device const uchar* wq, device const float* ax, uint K,
             device const char* sc = (device const char*)(row + NB*192u + b*16u + n*8u + is);
             float d0 = 0.0f, d1 = 0.0f, d2 = 0.0f, d3 = 0.0f;
             for (uint w = 0u; w < 2u; w++) {
-                d0 += dot(q6k_s6((qa[w] & 0x0F0F0F0Fu) | ((qh[w] & 0x03030303u) << 4u)), a[0][w]);
-                d1 += dot(q6k_s6((qb[w] & 0x0F0F0F0Fu) | (((qh[w] >> 2u) & 0x03030303u) << 4u)), a[1][w]);
-                d2 += dot(q6k_s6(((qa[w] >> 4u) & 0x0F0F0F0Fu) | (((qh[w] >> 4u) & 0x03030303u) << 4u)), a[2][w]);
-                d3 += dot(q6k_s6(((qb[w] >> 4u) & 0x0F0F0F0Fu) | (((qh[w] >> 6u) & 0x03030303u) << 4u)), a[3][w]);
+                d0 += dot(kso1p_q6k_s6((qa[w] & 0x0F0F0F0Fu) | ((qh[w] & 0x03030303u) << 4u)), a[0][w]);
+                d1 += dot(kso1p_q6k_s6((qb[w] & 0x0F0F0F0Fu) | (((qh[w] >> 2u) & 0x03030303u) << 4u)), a[1][w]);
+                d2 += dot(kso1p_q6k_s6(((qa[w] >> 4u) & 0x0F0F0F0Fu) | (((qh[w] >> 4u) & 0x03030303u) << 4u)), a[2][w]);
+                d3 += dot(kso1p_q6k_s6(((qb[w] >> 4u) & 0x0F0F0F0Fu) | (((qh[w] >> 6u) & 0x03030303u) << 4u)), a[3][w]);
             }
             float d = float(*(device const half*)(row + NB*208u + b*2u));
             acc[r] += d*((float(sc[0])*d0 + float(sc[2])*d1) + (float(sc[4])*d2 + float(sc[6])*d3));
@@ -90,7 +90,7 @@ kernel void kso1_q5k_rows(device const uchar* wq[[buffer(0)]], device const floa
     uint lane[[thread_index_in_simdgroup]]) {
     uint row0 = (tgid*8u + sgid)*R;
     if (row0 >= N) return;
-    float acc[R]; q5k_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
+    float acc[R]; kso1p_q5k_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
     if (lane==0) { SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) if (row0 + r < N) out[row0 + r] = acc[r]; }
 }
 template <uint R>
@@ -100,13 +100,13 @@ kernel void kso1_q6k_rows(device const uchar* wq[[buffer(0)]], device const floa
     uint lane[[thread_index_in_simdgroup]]) {
     uint row0 = (tgid*8u + sgid)*R;
     if (row0 >= N) return;
-    float acc[R]; q6k_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
+    float acc[R]; kso1p_q6k_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
     if (lane==0) { SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) if (row0 + r < N) out[row0 + r] = acc[r]; }
 }
-// q5kb_rows_acc is O1-G0's amended Q5_K: q5k_rows_acc with the scale bytes read as three words and each lane's two scales and
+// kso1p_q5kb_rows_acc is O1-G0's amended Q5_K: kso1p_q5k_rows_acc with the scale bytes read as three words and each lane's two scales and
 // mins decoded by masks and shifts (no branch); SPLIT splits each dot chain into two halves.
 template <uint R, bool SPLIT>
-inline void q5kb_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
+inline void kso1p_q5kb_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
     thread float* acc) {
 #pragma clang fp reassociate(off)
     const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
@@ -156,7 +156,7 @@ kernel void kso1_q5kb_rows(device const uchar* wq[[buffer(0)]], device const flo
     uint lane[[thread_index_in_simdgroup]]) {
     uint row0 = (tgid*8u + sgid)*R;
     if (row0 >= N) return;
-    float acc[R]; q5kb_rows_acc<R, SPLIT>(wq, ax, K, N, row0, lane, acc);
+    float acc[R]; kso1p_q5kb_rows_acc<R, SPLIT>(wq, ax, K, N, row0, lane, acc);
     if (lane==0) { SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) if (row0 + r < N) out[row0 + r] = acc[r]; }
 }
 template [[host_name("kso1_q5kb_rows1")]] kernel decltype(kso1_q5kb_rows<1, false>) kso1_q5kb_rows<1, false>;
@@ -167,9 +167,9 @@ template [[host_name("kso1_q5kc_rows1")]] kernel decltype(kso1_q5kb_rows<1, true
 template [[host_name("kso1_q5kc_rows2")]] kernel decltype(kso1_q5kb_rows<2, true>) kso1_q5kb_rows<2, true>;
 template [[host_name("kso1_q5kc_rows4")]] kernel decltype(kso1_q5kb_rows<4, true>) kso1_q5kb_rows<4, true>;
 template [[host_name("kso1_q5kc_rows8")]] kernel decltype(kso1_q5kb_rows<8, true>) kso1_q5kb_rows<8, true>;
-// q4kb_rows_acc is the shipped q4k_rows_acc with q5kb_rows_acc's branchless scale decode, for an ungraded side reading.
+// kso1p_q4kb_rows_acc is the shipped q4k_rows_acc with kso1p_q5kb_rows_acc's branchless scale decode, for an ungraded side reading.
 template <uint R>
-inline void q4kb_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
+inline void kso1p_q4kb_rows_acc(device const uchar* wq, device const float* ax, uint K, uint N, uint row0, uint lane,
     thread float* acc) {
 #pragma clang fp reassociate(off)
     const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
@@ -215,7 +215,7 @@ kernel void kso1_q4kb_rows(device const uchar* wq[[buffer(0)]], device const flo
     uint lane[[thread_index_in_simdgroup]]) {
     uint row0 = (tgid*8u + sgid)*R;
     if (row0 >= N) return;
-    float acc[R]; q4kb_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
+    float acc[R]; kso1p_q4kb_rows_acc<R>(wq, ax, K, N, row0, lane, acc);
     if (lane==0) { SA_ROWS_UNROLL for (uint r = 0u; r < R; r++) if (row0 + r < N) out[row0 + r] = acc[r]; }
 }
 template [[host_name("kso1_q4kb_rows4")]] kernel decltype(kso1_q4kb_rows<4>) kso1_q4kb_rows<4>;

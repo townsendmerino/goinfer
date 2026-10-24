@@ -308,6 +308,8 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
 	for B := 1; B <= 8; B++ {
 		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_q4k_f32_rows%d\")]] kernel decltype(mc3_gemv_q4k_f32_rows<%d>) mc3_gemv_q4k_f32_rows<%d>;\n", B, B, B)
 		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_w8_f32_rows%d\")]] kernel decltype(mc3_gemv_w8_f32_rows<%d>) mc3_gemv_w8_f32_rows<%d>;\n", B, B, B)
+		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_q5k_f32_rows%d\")]] kernel decltype(mc3_gemv_q5k_f32_rows<%d>) mc3_gemv_q5k_f32_rows<%d>;\n", B, B, B)
+		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_q6k_f32_rows%d\")]] kernel decltype(mc3_gemv_q6k_f32_rows<%d>) mc3_gemv_q6k_f32_rows<%d>;\n", B, B, B)
 	}
 
 	return b.String()
@@ -381,6 +383,65 @@ kernel void mc3_gemv_w8_f32_rows(device const char* wq[[buffer(0)]], device cons
             if (mode == 0u) out[row] = s * sc[row];
             else if (mode == 1u) out[row] = s * sc[row] + bias[row];
             else out[row] += s * sc[row];
+        }
+    }
+}
+template <uint B>
+kernel void mc3_gemv_q5k_f32_rows(device const uchar* wq[[buffer(0)]], device const float* ax_rows[[buffer(1)]],
+    device float* out_rows[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    constant uint& lda[[buffer(5)]], constant uint& ldo[[buffer(6)]], device const float* bias[[buffer(7)]],
+    constant uint& mode[[buffer(8)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+#pragma clang fp reassociate(off)
+    uint row = tgid*8u + sgid;
+    if (row >= N) return;
+    const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
+    device const uchar* wr = wq + (ulong)row*(ulong)NB*176ul;
+    float acc[B];
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] = 0.0f;
+    for (uint b = ix; b < NB; b += 4u) {
+        SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+            float4 al[4], ah[4]; float slo, shi;
+            q4k_lane_act(ax_rows + r*lda, b, j, h, al, ah, slo, shi);
+            acc[r] += q5k_blk(wr + b*176u, j, h, al, ah, slo, shi);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+        float s = simd_sum(acc[r]);
+        if (lane==0) {
+            device float* out = out_rows + r*ldo;
+            if (mode == 0u) out[row] = s;
+            else if (mode == 1u) out[row] = s + bias[row];
+            else out[row] += s;
+        }
+    }
+}
+template <uint B>
+kernel void mc3_gemv_q6k_f32_rows(device const uchar* wq[[buffer(0)]], device const float* ax_rows[[buffer(1)]],
+    device float* out_rows[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    constant uint& lda[[buffer(5)]], constant uint& ldo[[buffer(6)]], device const float* bias[[buffer(7)]],
+    constant uint& mode[[buffer(8)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+#pragma clang fp reassociate(off)
+    uint row = tgid*8u + sgid;
+    if (row >= N) return;
+    const uint NB = K >> 8u, ix = lane >> 3u, n = (lane & 7u) >> 2u, l0 = (lane & 3u)*8u;
+    float acc[B];
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] = 0.0f;
+    for (uint b = ix; b < NB; b += 4u) {
+        SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+            float4 a[8];
+            q6k_lane_act(ax_rows + r*lda, b, n, l0, a);
+            acc[r] += q6k_blk(wq, (ulong)N*NB, (ulong)row*NB + b, n, l0, a);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+        float s = simd_sum(acc[r]);
+        if (lane==0) {
+            device float* out = out_rows + r*ldo;
+            if (mode == 0u) out[row] = s;
+            else if (mode == 1u) out[row] = s + bias[row];
+            else out[row] += s;
         }
     }
 }

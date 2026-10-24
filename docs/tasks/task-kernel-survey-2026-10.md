@@ -681,6 +681,23 @@ prototypes were first checked against the float64 reference, worst |err|/Σ\|w·
 - **Log:** `~/goinfer-logs/kso1-g0b-2026-10-24.log`.
 - **Both kinds pass O1-G0.** The build continues once aikit's `embed` has the raw Q5_K/Q6_K accessor.
 
+**O1 amendments during the build, 2026-10-24, before any grading gate (O1-G4 to G7) ran:**
+- **The LM head stays int8.** A native Q6_K head saves Phi-3 17.7 MB a token, about 0.1 ms by O1-G0. It needs a new launch shape at
+  six head dispatch sites and a new argmax-partial layout, in code another session is editing. It is left for a follow-up, and the
+  native head kernels are not built.
+- **Q6_K's planes span the whole segment, not each row.** The planes are ql, qh, scales and d, so every load is aligned for any
+  block count. The size stays exactly the file's.
+  - **Why:** per-row planes are NB × 210 bytes a row. The 0.5B's ffn_down (K = 4864, NB = 19) then starts odd rows 2-byte aligned,
+    and its `uint2` loads misread. This read as cosine −0.75 in `TestQ4KLaneResidentQwen`, and as 0.998 once fixed.
+  - **Test change:** O1-G1 gains a K = 4864 shape for both kinds.
+- **O1-G3 is measured through `decoder.Load` on the Metal backend,** which builds the resident inside the load. It counts the heap of
+  the whole load, a superset of the build's. The int8 arm sets `q4kNativeOffForTest` before the load, so it never opens the reader,
+  as before KS-O1.
+  - The load keeps its GGUF mapping open for its own resident build, then releases it. Re-opening the file would parse its header
+    again: 51 MB of transient heap on the 0.5B's 152k-token vocabulary.
+- **Provenance:** a weight records its source as a tensor name and a first row, plus a row table only for a permuted load, so
+  retained host memory does not grow per row.
+
 **KS-O1a · The q4k lane's Q4_K scale decode without a branch (bit-identical). Registered 2026-10-24 before the code, from an
 ungraded side reading beside O1-G0.**
 - **Side reading (10:42–10:47, the lock held exclusively, load 1.68 at the start):** the shipped `q4k_rows_acc`, changed only in
