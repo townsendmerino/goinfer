@@ -1991,8 +1991,24 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	if r.w8 {
 		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping
-		// the handles is the whole dispatch change. The R18 rows kernels read int4 only: off.
+		// the handles is the whole dispatch change. The R18 rows kernels keep their widths through their int8 twins
+		// (KS-C3) where every K is a multiple of 16 (w8RowsOK); the batched step's int4 adjacency kernels never run here.
+		rows := r.gemvRows
 		r.gemvRows = struct{ qkv, o, gu, down int }{}
+		r.pSABiasRowsAdj, r.pSARowsAdj = Pipeline{}, Pipeline{}
+		if !w8RowsOffForTest && r.w8RowsOK() {
+			r.gemvRows = rows
+			rowsPipe := func(base string, R int) Pipeline {
+				if R == 0 {
+					return Pipeline{}
+				}
+				return pipe(fmt.Sprintf("%s%d", base, R))
+			}
+			r.pSABiasRows = rowsPipe("gemv_w8a8_sa_bias_rows", rows.qkv)
+			r.pSAResidRows = rowsPipe("gemv_w8a8_sa_resid_rows", rows.o)
+			r.pSARows = rowsPipe("gemv_w8a8_sa_rows", rows.gu)
+			r.pGemvResidStaged = rowsPipe("gemv_w8a8_body_resid_staged", rows.down)
+		}
 		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
 		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
 		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
@@ -3214,6 +3230,24 @@ func (r *resident) loadEmb(emb []float32) {
 	if r.pleP > 0 {
 		copy(r.pleIn.Floats(), emb[r.H:])
 	}
+}
+
+// w8RowsOffForTest keeps a native int8 resident on its one-row GEMVs (the old arm of KS-C3's A/B); read at build.
+var w8RowsOffForTest bool
+
+// w8RowsOK reports whether a native int8 resident's dense GEMVs can take the int8 rows kernels, which read their weight rows
+// and the staged activation as uint4 words: the hidden width, every attention layer's q width and every FFN width are
+// multiples of 16.
+func (r *resident) w8RowsOK() bool {
+	if r.H%16 != 0 || r.I%16 != 0 {
+		return false
+	}
+	for _, L := range r.layers {
+		if L.ffnI%16 != 0 || (L.geom != nil && (r.nH*L.geom.hd)%16 != 0) {
+			return false
+		}
+	}
+	return true
 }
 
 // ksc2OldDownForTest builds the decode library with the staged coal kernels' per-word integer sum (KSC2_OLD_DOWN), the old

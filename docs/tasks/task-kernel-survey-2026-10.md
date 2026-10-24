@@ -43,7 +43,7 @@
 | KS-B15 | decision | KS-O2 | — |
 | KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
-| KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
+| KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
@@ -626,6 +626,62 @@ clean.
   including the goinfer-chat bundles.
 - **Size:** S–M.
 - **Prior art:** `docs/tasks/task-metal-int8-2026-10.md` slice 1, "can follow", never built.
+
+**KS-C3 first measurement, registered 2026-10-23 before the run, on the owner's order of 11:50.** Instrument: `TestMetalGEMVS0`
+gains the native int8 body at the 1.5B's shapes, each the kernel decode dispatches there: qkv (`gemv_w8a8_sa`, 2,048 × 1,536), o
+(`gemv_w8a8_sa`, 1,536 × 1,536), gate|up (`gemv_w8a8_sa`, 17,920 × 1,536) and down (`gemv_w8a8_body_resid`, 1,536 × 8,960), timed
+as its other rows are (SLC-defeating rotation, GPU timestamps, median of 7), beside the run's streaming-read ceiling. Timed, Mac,
+the timing lock held exclusively. The reading is the body's bandwidth: the four categories' bytes over their summed time.
+**Build iff** that is under 145 GB/s **and** under 80% of the ceiling read in the same run; otherwise the headroom to the
+estimate's 160–165 GB/s is under 10% and KS-C3 closes as measured. Stopping rule: one pass. Cost: about 2 minutes.
+
+**Read 2026-10-23 (12:37), the timing lock held exclusively (1-minute load 1.43, 5.3 GB available):** the streaming ceiling
+179.7 GB/s; the int8 body at the 1.5B's shapes qkv 0.028 ms (113 GB/s), o 0.025 ms (93), gate|up 0.187 ms (148), down 0.108 ms
+(127): **47.0 MB in 0.348 ms, 135 GB/s, 75.1% of the ceiling**. Under both lines: **build**. At 160–165 GB/s the four would take
+0.285–0.294 ms, −0.054 to −0.063 ms a layer, −1.5 to −1.8 ms a token over 28 layers. Log: `~/goinfer-logs/ksc3-gemv-2026-10-23.log`.
+
+**KS-C3 gates, registered 2026-10-23 before the code (C3-G).** The build: int8 twins of R18's rows kernels, each taking its int4
+twin's arguments in the same order at the same launch shape, so a native int8 resident keeps `gemvRows` (R18's widths: 4 for qkv,
+gate|up and down, 2 for o) and swaps the handles, as the one-row int8 twins already do. `gemv_w8a8_sa_rows<R>` / `_bias_rows<R>` /
+`_resid_rows<R>` stage the activation as `uint4` words per threadgroup, and each lane reads `uint4` words of R rows;
+`gemv_w8a8_body_resid_staged<R>` does the same for down. The int32 sums are exact and the epilogue is the shipped
+`simd_broadcast_first(float(acc) · aScale · wScale)`, so the outputs are the shipped kernels' bits. Taken only where every K is a
+multiple of 16 (the `uint4` rows) and the row counts tile (`gemvRowsFor`). The batched step's int4 adjacency kernels
+(`mc3_gemv_w4a8_*_rows_adj`) never run for a native int8 resident. `w8RowsOffForTest` keeps the one-row kernels for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C3-G1 identity | 0 | each twin against its shipped one-row kernel at the 1.5B's and the 0.5B's four shapes, R = 2 and 4, random int8 weights and activations, f32 scales, in the fast-math and the precise library; llama-tiny and the 0.5B at int8int8, 32 greedy decode steps, every step's logits, rows on against off | byte-equal everywhere |
+| C3-G2 kernel | timed, Mac | `TestMetalGEMVS0`'s int8 rows at the 1.5B's shapes, the twins beside the shipped kernels | read, not gated: the body's GB/s, for the record and the direction |
+| C3-G3 speed | timed, Mac, timing lock | a whole-token in-process A/B: the 0.5B at int8int8 (the 1.5B at int8 is fit-refused beside the owner's apps), 128 greedy decode tokens after a 32-token prompt, rows on against off on one resident, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median rows/one-row per-token time is ≤ 0.98 and at least 9 of 10 pairs are faster; otherwise PARK with the reading |
+
+Planted defect: the twin's epilogue drops `simd_broadcast_first` (the shipped kernel's guard against fast-math fusing the residual
+add); if C3-G1 stays green the guard is not needed here and the plant becomes a scale off by one row (`sct[row0 + r + 1]`), which
+must go red. Stopping rule: one pass each. Cost: G1 seconds; G2 about 1 minute; G3 about 3 minutes.
+
+**KS-C3 read 2026-10-23 (12:41–12:49).** C3-G1 **PASS**: 32 kernel cells (both models' four shapes, R = 2 and 4, fast-math and
+precise) 0 differ; 32 decode steps at int8int8, llama-tiny 0 of 8,192 and the 0.5B 0 of 4,861,952 logits differ. The first plant
+(no `simd_broadcast_first`) turned 24 of 32 cells red, so the guard stays. C3-G2 (12:48, lock exclusive, load 1.39): the twins at the
+1.5B's shapes qkv 0.024 ms (129 GB/s, from 116), o 0.022 (106, from 109), gate|up 0.156 (176, from 148), down 0.097 (142, from 127):
+the body **157 GB/s, from 135**, the ceiling 179.0. C3-G3 (12:48–12:49, lock exclusive, load 1.36 falling to 1.03): the 0.5B at
+int8int8, **median 1.0021, 3 of 10 pairs faster: PARK** by the bar. Pairs 0–3 ran 5.8–8.4 ms a token as the GPU's clock settled;
+pairs 4–9 read 0.998–1.004 at 5.8 ms. Logs: `~/goinfer-logs/ksc3-g1-2026-10-23.log`, `~/goinfer-logs/ksc3-g2g3-2026-10-23.log`.
+
+**Amended 2026-10-23 (12:50), before any 1.5B decode reading: C3-G3b.** The 0.5B was the registered cell only because the 1.5B at
+int8 is fit-refused by day. Its int8 body is about 358 MB a token, 2.6 ms of a 5.8 ms token, so a 15% faster body is at most about
+0.4 ms there, and the reading did not resolve it. The survey's estimate is for the 1.5B (the body about 1.3 GB a token). C3-G3b is
+C3-G3's instrument on the 1.5B's `.gguf` at int8int8, at night as case (a), through
+`docs/measurements/ks-night-2026-10/run-ksc3-g3b.sh` (a test binary built at the registering commit; exit 75 on a fit refusal).
+Same bar: SHIP iff the median rows/one-row is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise KS-C3 closes as PARK with both
+readings. Stopping rule: one pass. Cost: about 5 minutes.
+
+**C3-G3b read 2026-10-23 (22:19, the night queue, case (a)).** The first attempt (22:01) was refused by the fit guard (2.9 GB
+available against 2.7 GB needed at the 70% budget) and exited 75; the retry at 22:18 loaded. The night runner held the timing lock
+exclusively; the 1-minute load was 1.81 at the start, each pair's 1.44–2.10. The 1.5B's `.gguf` at int8int8 on Metal, rows
+`{qkv:4 o:2 gu:4 down:4}`: one-row 13.821–13.836 ms a token, rows 12.525–12.610, **median rows/one-row 0.9109, 10 of 10 pairs
+below 1: SHIP** (8.9% faster, about 1.23 ms a token; the survey's estimate was 1.7–2.0 ms). The two "Gated-DeltaNet model runs
+resident at int4 only" lines in the log come before the timed load and appear in the day run's C3-G3 log too; they are not the
+1.5B's load. Log: `~/goinfer-logs/ksc3-g3b-2026-10-23-2218.log`.
 
 **KS-C4 · Fold the single-threadgroup quantizers into their neighbors (designed bit-identical).**
 - **Waste:** `swiglu_quant` and `quant_vec` are dispatched as one 256-thread threadgroup (one core of 16), and
