@@ -291,6 +291,44 @@ matches llama.cpp's (1.46 against 1.50 ms), so its gap is bytes.
   - Plan bytes per token at tier 0 (2.711 → 2.336 GB).
   - A Q5_K GEMV against `gemv_w8a8_g32` at N=9216, K=3072. It must reach ≥0.95× that kernel's GB/s.
 
+**KS-A1 on CUDA: the first measurement's gate, registered 2026-10-24 before any kernel is written or timed (A1-G0), on the
+owner's word of 4:37 pm ("#2 then #1": KS-A1's CUDA half, then KS-O1 on CUDA).**
+- **Prototype kernels** (`cuda/ks_a1_proto.cu`, test-only, a module of its own; nothing shipped loads it): one warp per output row
+  group, 8 warps a 256-thread block, the shipped per-32 int8 activations (`quantG32`'s codes, scales and group sums) and the
+  explicit `__fmaf_rn` / `__fmul_rn` form of `rowQ4K`.
+  - `gemv_q5k_g32` (Q5_K, 176-byte blocks, 16-byte aligned in the file's own layout): (A) `rowQ4K`'s lane map, lane l on pair
+    l mod 4 of block l / 4, plus the block's 32 `qh` bytes; (B) 8 lanes a block, 4 blocks in flight, lane l on 16 bytes of pair
+    (l mod 8) / 2's codes and the matching 16 `qh` bytes, the min term added once a group (the low sub-block's by the even lane,
+    the high one's by the odd lane).
+  - `gemv_q6k_g32` (Q6_K): the 210-byte block is not word-aligned, so the prototype reads segment-wide planes of the same total
+    size (`ql`, `qh`, int8 scales, `d`), O1's production layout on Metal. Lane k of a block takes half k / 4 and elements
+    8·(k mod 4)…+7 of each of the half's four 32-element groups; the two Q6_K sub-scales of a group fold in integer arithmetic,
+    then × d × the group's activation scale.
+  - Each at R = 1, 2, 4 rows a warp (the activation loads shared by the R rows).
+- **Instrument:** `TestKSA1_gemvTiming` (`cuda/ks_a1_test.go`, `-tags cuda`), the timing lock held exclusively. The shipped
+  `gemv_w8a8_g32` comes from the embedded `actgroup.ptx` itself. Per shape and kernel: CUDA-event time of 50 launches, median of 7
+  batches after 3 warm launches, the weights rotated over copies of at least 64 MiB per arm (16× the 4 MiB L2), beside a
+  streaming-read ceiling over the same bytes. GB/s is the kernel's own weight bytes (int8: N·K plus the f32 row scales; Q5_K: the
+  file's N·K/256·176; Q6_K: N·K/256·210) over its time. Load average and free memory are logged at the start, and CLAUDE.md's
+  void rule applies (load above 8.0 on nobara, or free VRAM under the run's need plus 2 GB: about 0.6 GB here).
+- **Correctness first:** every prototype, at every R and shape, against a float64 host reference that dequantizes the same blocks
+  by ggml's formulas and takes the same int8 activations: every row within G-Q1's bar (|err| ≤ 1e-5 of Σ|w·a|). A kernel that
+  misses it is not timed and the reading is void for its kind.
+- **Shapes (Phi-3 mini q4, the graded ones):** Q5_K qkv 9216×3072 (×32 layers); Q6_K `ffn_down` 3072×8192 (×16) and the head
+  32064×3072. **Read, not graded:** Qwen2.5-Coder-1.5B q4_k_m's Q6_K shapes, `ffn_down` 1536×8960 and `attn_v` 256×1536 (O1-G7's
+  KILL on Metal came from that model), and the shipped `gemv_q4k_g32` at Phi-3's gate|up 16384×3072 for context.
+- **The pick:** per kind, the fastest variant and R summed over Phi-3's tensors of that kind; the smaller R on a tie within 2%.
+
+| outcome | PASS iff | what it means |
+|---|---|---|
+| **KS-A1 GO** (the survey's bar) | the best Q5_K kernel's GB/s at 9216×3072 is ≥ 0.95× `gemv_w8a8_g32`'s at the same shape (its time then ≤ 0.724× the int8 kernel's) | the survey's speed case stands (about 1.03× llama.cpp by its arithmetic); KS-O1 on CUDA builds Q5_K |
+| **KS-A1 short of the bar** | that ratio is under 0.95, but Q5_K's summed time is ≤ 0.95× the int8 kernel's (O1-G0's kill rule on Metal) | the survey's speed estimate is withdrawn and the record says so; KS-O1 on CUDA still builds Q5_K by the rule Metal's build used, its own gates deciding |
+| **KS-A1 NO-GO** for Q5_K | Q5_K's summed time is > 0.95× the int8 kernel's | no speed case for native Q5_K on CUDA; whether to build it for memory and fidelity alone (Metal's option C) is the owner's decision, so the work stops there with DECISION NEEDED |
+| Q6_K (KS-O1's build rule, read in the same run) | the best Q6_K kernel's time summed over Phi-3's 16 `ffn_down` and the head is ≤ 0.95× the int8 kernel's sum | built in KS-O1 on CUDA; otherwise killed for speed, and the same owner decision as Q5_K's NO-GO |
+
+Stopping rule: one pass. A kind that fails its rule may have at most one amended variant, registered here before it runs, as O1-G0
+did on Metal; that reading is final. Expected cost: the PTX build and the correctness check seconds, the timed pass about 1 min.
+
 **KS-A5 · Load each short GEMV row in one round (output unchanged).**
 - **Where:** `fused_rms_gu` and `fused_rms_qkv` in `cuda/fused_qkv.cu`, their rows-per-warp twins, and aikit's
   `gemv_w4a8_fwd` (`gpu/gemv_quant.cu`).
