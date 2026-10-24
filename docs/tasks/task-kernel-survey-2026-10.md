@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
-| KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode about 0.5 ms a token faster, median 0.9788, 10 of 10 pairs on the per-arm-guarded re-run (E3-G2 SHIP) | survey, "KS-E3 read" |
+| KS-E3 | parked | parked 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1). E3-G2's deciding reading (busy cores read over each arm) is median 0.9825, 8 of 10 pairs, under its bar, after 0.9764 and 0.9788 at 10 of 10 on the load-average guard; the arms swung 25–29 ms in that session. Next: the owner's call | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1592,6 +1592,15 @@ short spike about 12×. E3-G2 now uses #214's `voidWindow`: the machine's busy c
 (`hostmem.ReadCPU`, Mach `HOST_CPU_LOAD_INFO` on macOS and `/proc/stat` on Linux, read just before the timer starts and just after
 it stops, the 32-token prompt outside), void over half the cores, and reclaimable memory at both ends, void under 2 GiB. The void
 cap stays 15, as registered for E3 at 14:20, and the bar is unchanged. This reading decides; the earlier ones stay in the record.
+
+**E3-G2 read with the direct guard, 2026-10-24 (16:11–16:13, the lock held exclusively; 9.4 GB reclaimable at the start): under its
+bar, PARK.** Every arm was valid by the void rule: 0.83–1.57 busy cores over its timed decode and 3.47–3.92 GiB reclaimable; no void
+pairs. But the arms swung far more than in any earlier reading: off 25.16–29.22 ms a token, on 24.74–28.26 (the 13:42 and 14:32
+readings held each arm within about 1.5 ms). **Median on/off 0.9825, 8 of 10 pairs faster** (pairs 0.9271–1.0726). That misses the
+bar (≤ 0.98 with 9 of 10) and the owner's rule for a bit-identical change (9 of 10 faster), so by the registration KS-E3 parks. The
+earlier guarded readings, 0.9764 and 0.9788 with 10 of 10, stay in the record and do not overturn the deciding one. The swing is
+not in the CPU figure the guard reads; its source (another app's GPU work is one candidate) is not identified. Log:
+`~/goinfer-logs/kse3-g2-rerun3-2026-10-24.log`.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
