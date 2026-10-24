@@ -223,8 +223,8 @@ func TestKSE3_setAdapterDropsPending(t *testing.T) {
 }
 
 // TestKSE3_kvSlotWithAdapter: llama-tiny at int4 on WebGPU with two KV slots and a LoRA adapter bound, a fresh resident per
-// arm: 4 Forward steps on slot 0, a switch to slot 1 (UseKVSlot moves the adapter to slot 1's runner and clears slot 0's) and 4
-// steps with slot 1's own inputs, then back to slot 0 for 4 more. Every logit with encode-ahead on equals off.
+// arm: 4 Forward steps on slot 0, a switch to slot 1 and 4 steps with slot 1's own inputs, then back to slot 0 for 4 more.
+// Every logit with encode-ahead on equals off.
 func TestKSE3_kvSlotWithAdapter(t *testing.T) {
 	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)
 	arm := func(off bool) [][]float32 {
