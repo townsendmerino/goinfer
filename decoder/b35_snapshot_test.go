@@ -159,3 +159,24 @@ func TestB35_noStateNoSnapshot(t *testing.T) {
 		t.Fatalf("a recurrent model whose snapshots do not carry its state took %d snapshots (keeps %v)", rf.taken, m.KeepsRecurrentSnapshots())
 	}
 }
+
+// A restored turn keeps its own point: turn 2 restores turn 1's state, prefills on past its own Keep and takes a snapshot there, so turn 3
+// restores turn 2's deeper point instead of turn 1's again. Without it, every turn after the second re-prefills from turn 1's point.
+func TestB35_aRestoredTurnKeepsItsOwnPoint(t *testing.T) {
+	m, rf := loadRecurrentSnapFake(t, true, 1<<40)
+	_, _, _, _, _, _, vocab := m.Dims()
+	a, keep := b35Turn1(vocab)
+	b35Run(t, m, a, keep)
+	b := append(slices.Clone(a[:keep]), snapToks(300, 15, vocab)...) // 1,496 ids: Keep 1,492 rounds down to the pass at 1,472
+	if _, reused := b35Run(t, m, b, len(b)-4); reused != 1152 || rf.taken != 2 {
+		t.Fatalf("turn 2: reused %d, %d snapshots taken; want turn 1's 1152 rows restored and a second snapshot at 1472", reused, rf.taken)
+	}
+	c := append(slices.Clone(b[:len(b)-4]), snapToks(80, 16, vocab)...)
+	got, reused := b35Run(t, m, c, len(c)-4)
+	if reused != 1472 {
+		t.Fatalf("turn 3: reused %d, want turn 2's 1472 rows (turn 1's 1152 means the restored turn kept nothing)", reused)
+	}
+	if want := b35Cold(t, c); !slices.Equal(got, want) {
+		t.Fatalf("turn 3 after the restore %v, a cold run %v", got, want)
+	}
+}
