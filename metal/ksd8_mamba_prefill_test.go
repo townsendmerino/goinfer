@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -245,4 +247,119 @@ func TestKSD8_scratchWithinPlan(t *testing.T) {
 		}
 		m.Close()
 	}
+}
+
+// ksd8Load9B loads Nemotron-Nano-9B-v2's int4 Metal .giw and builds a resident with the batched pass admitted.
+func ksd8Load9B(t *testing.T) (*decoder.Model, *resident) {
+	t.Helper()
+	path := os.ExpandEnv(fmt.Sprintf("$HOME/models/nemotron/nemotron-nano-9b-v2-int4-metal.v%d.giw", decoder.GIWFormatVersion))
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatalf("load %s: %v", path, err)
+	}
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok || !a.r.prefillOK || a.r.mamba == nil {
+		m.Close()
+		t.Fatalf("the batched pass is not admitted on the 9B")
+	}
+	return m, a.r
+}
+
+// ksd8Ids is prompt k's n seeded token ids below the vocabulary's first 32,000.
+func ksd8Ids(k, n, V int) []int {
+	rng := rand.New(rand.NewSource(int64(1000 + k)))
+	ids := make([]int, n)
+	for i := range ids {
+		ids[i] = rng.Intn(min(V, 32000))
+	}
+	return ids
+}
+
+// TestKSD8_9BFidelity is D8-G3: the 9B, 8 prompts of 512 seeded token ids, the last position's logits from the batched pass
+// against the sequential path (no f32 reference fits this box). PASS iff top-1 agrees on at least 7 of 8 and the mean symmetric
+// KL ≤ 0.05 nats; 6 of 8 or a KL in (0.05, 0.10]: PARK; worse: FAIL. GOINFER_HEAVY_TESTS=1.
+func TestKSD8_9BFidelity(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the 9B)")
+	}
+	m, r := ksd8Load9B(t)
+	defer m.Close()
+	agree, klSum := 0, 0.0
+	for k := range 8 {
+		ids := ksd8Ids(k, 512, r.V)
+		r.resetRecurrent()
+		var seq []float32
+		for i, id := range ids {
+			seq = r.Forward(id, i)
+		}
+		seq = slices.Clone(seq)
+		r.resetRecurrent()
+		pass := r.PrefillLast(getEmbs(r, ids), 0)
+		if pass == nil {
+			t.Fatalf("prompt %d: the pass returned no logits: %v", k, r.takeExecErr())
+		}
+		pass = slices.Clone(pass)
+		kl := (klLogits(seq, pass) + klLogits(pass, seq)) / 2
+		klSum += kl
+		if argmaxF(seq) == argmaxF(pass) {
+			agree++
+		}
+		fmt.Fprintf(os.Stderr, "[D8-G3] prompt %d: top-1 sequential %d pass %d, symmetric KL %.4e, cosine %.6f\n", k, argmaxF(seq), argmaxF(pass), kl, cosF(seq, pass))
+	}
+	mean := klSum / 8
+	verdict := "FAIL"
+	switch {
+	case agree >= 7 && mean <= 0.05:
+		verdict = "PASS"
+	case agree >= 6 && mean <= 0.10:
+		verdict = "PARK"
+	}
+	fmt.Fprintf(os.Stderr, "[D8-G3] top-1 agrees on %d of 8, mean symmetric KL %.4e: %s\n", agree, mean, verdict)
+	if verdict == "FAIL" {
+		t.Errorf("the batched pass is not near the sequential path on the 9B")
+	}
+}
+
+// TestKSD8_9BSpeed is D8-G4: the 9B, a 512-token prompt's time to the first token (all positions through, logits of the
+// last), batched against sequential, A B B A over 2 pairs after one warm run of each, each run's start load printed. A timed
+// run: hold the timing lock (GOINFER_KSD8_TIMING=1).
+func TestKSD8_9BSpeed(t *testing.T) {
+	if os.Getenv("GOINFER_KSD8_TIMING") == "" {
+		t.Skip("set GOINFER_KSD8_TIMING=1 (a timed run under the timing lock)")
+	}
+	m, r := ksd8Load9B(t)
+	defer m.Close()
+	ids := ksd8Ids(0, 512, r.V)
+	embs := getEmbs(r, ids)
+	run := func(batched bool) float64 {
+		r.resetRecurrent()
+		t0 := time.Now()
+		if batched {
+			if r.PrefillLast(embs, 0) == nil {
+				t.Fatalf("the pass returned no logits: %v", r.takeExecErr())
+			}
+		} else {
+			for i, id := range ids {
+				r.Forward(id, i)
+			}
+		}
+		return time.Since(t0).Seconds()
+	}
+	run(false)
+	run(true)
+	var speedups []float64
+	for i := range 2 {
+		la, _ := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+		var s, b float64
+		if i%2 == 0 {
+			s, b = run(false), run(true)
+		} else {
+			b, s = run(true), run(false)
+		}
+		speedups = append(speedups, s/b)
+		fmt.Fprintf(os.Stderr, "[D8-G4] pair %d (load %s): sequential %.2f s (%.1f tok/s), batched %.2f s (%.1f tok/s), speedup %.2fx\n",
+			i, la[:len(la)-1], s, 512/s, b, 512/b, s/b)
+	}
+	med := (speedups[0] + speedups[1]) / 2
+	fmt.Fprintf(os.Stderr, "[D8-G4] median speedup %.2fx: %s\n", med, map[bool]string{true: "SHIP", false: "PARK"}[med >= 2])
 }
