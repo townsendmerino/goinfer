@@ -29,7 +29,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM1 | done | — | branch `mem1-sidecar-2026-10`; MEM1-G0..G5 PASS, `docs/measurements/mem1-2026-10/README.md` |
 | MEM2 | done | — | branch `mem2-2026-10`; MEM2-G1..G4 PASS (G1 as amended), `docs/measurements/mem2-2026-10/README.md` |
 | MEM3 | done | — | aikit v1.71.0; 58d5dc3e, ba54d206 |
-| MEM4(a) | blocked | MEM0's Mac tower cell | aikit's `WrapBF16` has no caller |
+| MEM4(a) | open | unblocked 2026-10-23: MEM0's Mac tower cell is read (`docs/measurements/mem0-2026-10/README.md` §4, Qwen3-VL-2B: 7.2 GB footprint, 2.78 GB anonymous at +10 s). Gates registered (ALS-G, §4 MEM4); the arm64 speed read (ALS-G0) runs first and stops the item if aliasing is slower (owner, 2:30 pm) | aikit's `WrapBF16` has no caller |
 | MEM4(b) | done | — | aikit v1.72.0 (#7, `ReleaseBlocks`); branch `mem4b-2026-10`; TWR-G1..G3 PASS, `docs/measurements/mem4b-2026-10/README.md` |
 | MEM5-VL | done | done 2026-10-22: all four image and audio prefill routes run in chunks, byte-equal (V1 to V4 G1 to G3 PASS); tier-1 peaks run at night on the owner's word: Qwen2.5-VL-3B 1,261 → 357 MiB, Qwen3.5-0.8B 5,567 → 1,905 MiB over base (V1-G4, V3-G4 PASS) | `docs/measurements/mem5vl-2026-10/README.md` |
 | MEM5-VL-G2T1 | open | a box with a bidirectional Gemma 4 (26B or 31B class): V2-G4, the route-2 peak with one image and about 8K tokens, `TestMEM5VL_peakTier1`'s form | `docs/measurements/mem5vl-2026-10/README.md` |
@@ -411,6 +411,36 @@ after the owner tags aikit: serve calls `ReleaseBlocks` once a device tower is b
 Planted defect, run once in aikit and reverted: `ensureBlocks` not reloading (TWR-G1 red: the forward after the release
 fails or differs). Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1 and G2; about a
 minute for G3. aikit's `preflight` runs before its PR.
+
+**MEM4(a) gates, registered 2026-10-23 before the code (ALS-G), on the owner's word of 2:30 pm.** The aikit half: the towers'
+`newQMat` callers (SigLIP, SigLIP2 NaFlex, Qwen2.5-VL, Qwen3-VL/3.5, GLM-OCR, Pixtral, Gemma 4) take their projection weights
+from the safetensors mapping without copying: `WrapBF16` / `WrapF16` over a bf16 or f16 tensor, `WrapF32` over an f32 one; the
+encoder keeps the mapping open until `Close`; `-vision-quant` keeps quantizing (it consumes the weights, nothing to alias). The
+goinfer half: the Metal and CUDA tower builders read a 16-bit-held weight through `Half16` and upload its exact widening, so
+their device bytes do not change. The audio towers are out of scope (their loaders do not use `newQMat`). The speed read runs
+first: the 16-bit matmul widens each tile of weight rows to f32 per call, which the f32 path does not, and arm64's widen is
+scalar.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| ALS-G0 speed (runs first) | 1, Mac, by day | the CPU tower forward, in-process, f32-held weights (today) against 16-bit-held ones (each projection `WeightMat` rebuilt with `QuantizeBF16` of its f32, exact for a bf16 checkpoint: the bytes `WrapBF16` would alias), on Qwen2.5-VL-3B's tower (`~/models/qwen25vl-3b-instruct`, bf16) over `qwen25vl_preprocess_image.png` and on Gemma-3-4B's SigLIP (`~/models/gemma-3-4b-it`, bf16) over `gemma3_preprocess_image.png`; A B B A over 6 pairs after one warm run each; both arms' features compared bit for bit | proceed iff each tower's median 16-bit/f32 time is ≤ 1.00 (and the features are equal); otherwise **stop** and ask the owner (DECISION NEEDED) with the readings |
+| ALS-G1 identity | 0 | each `newQMat` tower's committed tiny fixture loaded aliased against widened (today's load), every output feature | byte-equal |
+| ALS-G2 heap | 1, Mac | the Qwen2.5-VL-3B tower loaded aliased, Go heap in use after `runtime.GC` + `debug.FreeOSMemory` | at most 15% of its f32 projection bytes (today the heap holds all of them) |
+| ALS-G3 device bytes | 0 | goinfer's tower hashes (`TestKSD4_towerHashes`' seven towers, `mem2Towers`) built from aliased encoders against today's | byte-equal |
+
+Amended 2026-10-23 (14:44), before any run: `qwen25vl_preprocess_image.png` is 84×56 (24 patches), too small to time a tower,
+so ALS-G0's Qwen2.5-VL cell runs random patches at grid (1, 32, 44), 1,408 patches (about a 448×616 image); the SigLIP cell keeps
+its image (every SigLIP input is 4,096 patches).
+
+**ALS-G0's first run (15:09–15:19) is void.** The 1-minute load was 3.94 at the start, but every pair after the first started at
+4.7–14.3, above the void line (4.0): the tower forward runs on every core and the previous run holds the average up. It read
+16-bit/f32 0.9818 (Qwen2.5-VL) and 0.9849 (SigLIP), features equal in every pair, and is recorded, not graded
+(`~/goinfer-logs/als-g0-2026-10-23.log`). The re-run waits before every run until the 1-minute load is under 4.0 (5 minutes at
+most, else void) and prints the load each run starts at; nothing else changes.
+
+Stopping rule: one pass each; ALS-G0 failing stops the item before any code ships. Cost: ALS-G0 about 15 min; the rest seconds
+to minutes. Release: an aikit minor (a PR, then its tag through aikit's `RELEASING.md`; the nobara half and the tag push are the
+coordinator's), then goinfer's bump.
 
 ### MEM5 · Chunk the prefill of the families G40 left whole (M–L)
 
