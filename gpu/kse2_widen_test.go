@@ -8,8 +8,6 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"os/exec"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -309,52 +307,13 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 	}
 }
 
-// kse2Load1 is this machine's 1-minute load average; the test fails if it cannot be read.
-func kse2Load1(t *testing.T) float64 {
-	t.Helper()
-	var text string
-	switch runtime.GOOS {
-	case "darwin":
-		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		if err != nil {
-			t.Fatalf("load average: %v", err)
-		}
-		text = strings.Trim(strings.TrimSpace(string(out)), "{} ")
-	case "linux":
-		out, err := os.ReadFile("/proc/loadavg")
-		if err != nil {
-			t.Fatalf("load average: %v", err)
-		}
-		text = string(out)
-	default:
-		t.Fatalf("no load average on %s", runtime.GOOS)
-	}
-	var l float64
-	if n, err := fmt.Sscanf(text, "%g", &l); n != 1 || err != nil {
-		t.Fatalf("load average %q: %v", text, err)
-	}
-	return l
-}
-
-// kse2Guard reads the void rule's two terms now: ok iff the 1-minute load is at most half the cores and at least 2 GiB is
-// reclaimable. The test fails if either cannot be read.
-func kse2Guard(t *testing.T) (ok bool, load float64, recl int64) {
-	t.Helper()
-	load = kse2Load1(t)
-	r, rok := hostmem.Read()
-	if !rok {
-		t.Fatal("no memory reading")
-	}
-	return load <= float64(runtime.NumCPU())/2 && r.Reclaimable >= 2<<30, load, r.Reclaimable
-}
-
-// TestKSE2_decodeSpeed is E2-G2 and its re-run's A/A control (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run" and its
-// amendments): the 1.5B's .gguf at int8int8 on WebGPU, one resident alive at a time (each run builds its arm's resident, warms
-// it twice and times 128 greedy decode tokens after a 32-token prompt), A B B A over 10 valid pairs. GOINFER_KSE2_AA=1 makes both residents narrow (the control). It refuses to run
-// outside the timing lock and under 6 GB reclaimable before its loads. Each arm reads the void rule's terms (kse2Guard) after its
-// resident is built, just before and just after the timed run; a pair is void if any read fails (load over half the cores, or
-// under 2 GB reclaimable) and is re-run, up to 15 times. It fails on the bar: the A/B's median wide/narrow over 0.98 or fewer
-// than 9 of 10 faster; the control's median outside 1 ± 0.02.
+// TestKSE2_decodeSpeed is E2-G2's re-run (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run" and its amendments): the
+// 1.5B's .gguf at int8int8 on WebGPU, one resident alive at a time (each arm builds its resident, warms it twice and times 128
+// greedy decode tokens after a 32-token prompt), A B B A over 10 valid pairs: the A/A control (narrow against narrow) first, then
+// the A/B (narrow against wide), in one process. It refuses to run outside the timing lock and under 6 GB reclaimable before its
+// loads. voidWindow brackets each timed decode; a pair with either arm over the void rule's line is void and re-run, up to 10
+// times per phase. It fails when the control's median is outside 1 ± 0.02 (and then does not run the A/B), or on the A/B's bar:
+// median wide/narrow over 0.98 or fewer than 9 of 10 faster.
 func TestKSE2_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE2_TIMING") == "" {
 		t.Skip("set GOINFER_KSE2_TIMING=1 (a timed run under the timing lock)")
@@ -362,8 +321,7 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
 		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
 	}
-	aa := os.Getenv("GOINFER_KSE2_AA") != ""
-	// The void rule's memory term is read before the cell's loads: about 4 GB (the host model and two residents) plus 2 GB.
+	// The void rule's memory term is read before the cell's loads: about 4 GB (the host model and a resident) plus 2 GB.
 	if r, ok := hostmem.Read(); !ok || r.Reclaimable < 6<<30 {
 		t.Fatalf("reclaimable %.2f GiB before the loads, under 6 GiB: the cell would be void", float64(r.Reclaimable)/(1<<30))
 	}
@@ -373,14 +331,17 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	// One resident alive at a time (the two together leave under the 2 GB margin on a 16 GB Mac): each run builds a fresh
-	// resident of its arm, warms it twice, times it and closes it.
 	const prompt, gen = 32, 128
-	once := func(rd *residentDecoder) float64 {
+	// once runs the 32-token prompt, then times the 128 decode tokens; with guard set, voidWindow brackets exactly the timed loop.
+	once := func(rd *residentDecoder, guard bool) (sec float64, valid bool, note string) {
 		for pos := range prompt {
 			if _, err := rd.Forward(m.EmbedResidentForTest((pos*7919+13)%1000), pos); err != nil {
 				t.Fatal(err)
 			}
+		}
+		var end func() (bool, string)
+		if guard {
+			end = voidWindow(t)
 		}
 		tok := 13
 		t0 := time.Now()
@@ -396,61 +357,63 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 				}
 			}
 		}
-		return time.Since(t0).Seconds() / gen
+		sec = time.Since(t0).Seconds() / gen
+		if guard {
+			valid, note = end()
+		}
+		return sec, valid, note
 	}
-	// runArm builds its arm's resident, warms it twice, then times one run with the guard read just before and just after:
-	// valid is false if either read fails the void rule, so a spike or a memory drop during the timed decode voids the pair.
-	runArm := func(narrow bool) (sec float64, valid bool, note string) {
+	// runArm builds its arm's resident (one alive at a time: two together leave under the 2 GB margin on a 16 GB Mac), warms it
+	// twice and times one guarded run.
+	runArm := func(narrow bool) (float64, bool, string) {
 		rd, closeRD := kse2Resident(t, m, narrow)
 		defer closeRD()
-		once(rd)
-		once(rd)
-		ok1, l1, r1 := kse2Guard(t)
-		sec = once(rd)
-		ok2, l2, r2 := kse2Guard(t)
-		return sec, ok1 && ok2, fmt.Sprintf("load %.2f→%.2f, reclaimable %.2f→%.2f GiB", l1, l2, float64(r1)/(1<<30), float64(r2)/(1<<30))
+		once(rd, false)
+		once(rd, false)
+		return once(rd, true)
 	}
-	aNarrow, bNarrow := true, aa
-	label := "A/B narrow, wide"
-	if aa {
-		label = "A/A narrow, narrow"
-	}
-	var ratios []float64
-	faster, voids := 0, 0
-	for len(ratios) < 10 {
-		var a, b float64
-		var va, vb bool
-		var na, nb string
-		if len(ratios)%2 == 0 {
-			a, va, na = runArm(aNarrow)
-			b, vb, nb = runArm(bNarrow)
-		} else {
-			b, vb, nb = runArm(bNarrow)
-			a, va, na = runArm(aNarrow)
-		}
-		if !va || !vb {
-			voids++
-			fmt.Fprintf(os.Stderr, "[E2-G2] VOID %s pair (first: %s; second: %s)\n", label, na, nb)
-			if voids > 15 {
-				t.Fatalf("over 15 void pairs")
+	// phase runs 10 valid A B B A pairs of arm a (narrow) against arm b and returns the median b/a and how many pairs b was faster.
+	phase := func(label, nameA, nameB string, bNarrow bool) (float64, int) {
+		var ratios []float64
+		faster, voids := 0, 0
+		for len(ratios) < 10 {
+			var a, b float64
+			var va, vb bool
+			var na, nb, order string
+			if len(ratios)%2 == 0 {
+				a, va, na = runArm(true)
+				b, vb, nb = runArm(bNarrow)
+				order = nameA + " first"
+			} else {
+				b, vb, nb = runArm(bNarrow)
+				a, va, na = runArm(true)
+				order = nameB + " first"
 			}
-			time.Sleep(30 * time.Second)
-			continue
+			if !va || !vb {
+				voids++
+				fmt.Fprintf(os.Stderr, "[E2-G2] VOID %s pair, %s (%s: %s; %s: %s)\n", label, order, nameA, na, nameB, nb)
+				if voids > 10 {
+					t.Fatalf("%s: over 10 void pairs", label)
+				}
+				time.Sleep(30 * time.Second)
+				continue
+			}
+			ratios = append(ratios, b/a)
+			if b < a {
+				faster++
+			}
+			fmt.Fprintf(os.Stderr, "[E2-G2] %s pair %d, %s (%s: %s; %s: %s): %s %.3f ms/token, %s %.3f ms/token, %s/%s %.4f\n",
+				label, len(ratios)-1, order, nameA, na, nameB, nb, nameA, a*1e3, nameB, b*1e3, nameB, nameA, b/a)
 		}
-		ratios = append(ratios, b/a)
-		if b < a {
-			faster++
-		}
-		fmt.Fprintf(os.Stderr, "[E2-G2] %s pair %d (first: %s; second: %s): first %.3f ms/token, second %.3f ms/token, second/first %.4f\n",
-			label, len(ratios)-1, na, nb, a*1e3, b*1e3, b/a)
+		slices.Sort(ratios)
+		med := (ratios[4] + ratios[5]) / 2
+		fmt.Fprintf(os.Stderr, "[E2-G2] %s: median %s/%s %.4f, %d of 10 pairs below 1, %d void pairs\n", label, nameB, nameA, med, faster, voids)
+		return med, faster
 	}
-	slices.Sort(ratios)
-	med := (ratios[4] + ratios[5]) / 2
-	fmt.Fprintf(os.Stderr, "[E2-G2] %s: median second/first %.4f, %d of 10 pairs below 1, %d void pairs\n", label, med, faster, voids)
-	if aa && (med < 0.98 || med > 1.02) {
-		t.Errorf("the A/A control reads %.4f: the two-resident setup biases the reading", med)
+	if med, _ := phase("A/A", "narrow A", "narrow B", true); med < 0.98 || med > 1.02 {
+		t.Fatalf("the A/A control reads %.4f, outside 1 ± 0.02: the setup biases the reading, so the A/B is not run", med)
 	}
-	if !aa && (med > 0.98 || faster < 9) {
+	if med, faster := phase("A/B", "narrow", "wide", false); med > 0.98 || faster < 9 {
 		t.Errorf("E2-G2 below its bar: median %.4f, %d of 10 faster", med, faster)
 	}
 }

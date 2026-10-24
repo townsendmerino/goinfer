@@ -1592,6 +1592,21 @@ load near 4 throughout). The A/A (narrow against narrow): median 1.0009, pairs 0
 read) re-run. The A/B: narrow 24.30–24.67 ms a token, widened 21.41–21.85; **median 0.8846, 10 of 10 pairs faster**, no void pairs.
 The gain holds: 0.8811 and 0.8846 on the two guarded readings. Log: `~/goinfer-logs/kse2-g2-rerun4-2026-10-24.log`.
 
+**After the third review of #214 (15:45), registered before a further re-run.** The 1-minute load average is the wrong instrument
+for a 3-second arm: the kernel updates it every 5 seconds as an exponential average, so the reads before and after an arm usually
+see one sample, and a short spike reaches it damped about 12×. The guard now measures the void rule's load term directly:
+`voidWindow` reads the machine's CPU ticks (`hostmem.ReadCPU`: Mach `HOST_CPU_LOAD_INFO` on macOS, measured fresh at four samples a
+second, and `/proc/stat` on Linux) just before the timed decode starts and just after it stops. The arm is void if the busy cores
+averaged over exactly that window exceed half the cores (4.0 here; the test's own process counts, as it does in a load average), or
+reclaimable memory is under 2 GiB at either read. The 32-token prompt and the warm runs are outside the window. Also:
+- The void cap is 10 pairs per phase, as first registered; the 15 in the last re-run was not amended, and is withdrawn.
+- One `GOINFER_KSE2_TIMING=1` run does the A/A control (narrow against narrow; PASS iff its median is within 1 ± 0.02) and then the
+  A/B in the same process. A failed control stops the run before the A/B. `GOINFER_KSE2_AA` is gone.
+- Log lines name the arm that ran first in each pair.
+- E2-G1 (a) runs 90 cells today (the row forms at all six n); the 11:50 read ran 63.
+The bar is unchanged (SHIP iff the A/B median is ≤ 0.98 with at least 9 of 10 faster). This re-run decides; the earlier readings
+stay in the record.
+
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
