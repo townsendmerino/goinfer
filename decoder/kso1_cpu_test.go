@@ -12,8 +12,8 @@ import (
 	"testing"
 )
 
-// kso1CPUFingerprint is O1-G4's digest at origin/main 8cfd5fca, before KS-O1 (arm64: the CPU reference is bit-identical within an
-// arch, not across).
+// kso1CPUFingerprint is O1-G4's digest taken before KS-O1 (docs/tasks/task-kernel-survey-2026-10.md, "Review fixes for #215").
+// It is arm64's: the CPU reference is bit-identical within an arch, not across.
 const kso1CPUFingerprint = "e662bdd6c6cb108e89cda98e7aa3b9554ff17df556668dc05138d1477da0bfbe"
 
 // TestKSO1_cpuQ4KFingerprint is O1-G4 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the CPU at --quant q4k on
