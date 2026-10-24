@@ -41,7 +41,7 @@
 | KS-B13 | open | aikit: a microbenchmark at SigLIP shapes, bit-gated | — |
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
 | KS-B15 | decision | KS-O2 | — |
-| KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
+| KS-C1 | done (a)+(b) | done 2026-10-24: the q4k lane's GEMVs on `gemv_q4k_f32_rows<8>` and `gemv_w8_f32_rows<2>`; the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0); G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 98.66% against the reference's 93.99% (C1-G3 PASS); Phi-3 mini q4k decode 22.3 → 33.0 tok/s, median 0.6741, 10 of 10 pairs (C1-G4 SHIP). (c) waits on KS-O1 | survey, "KS-C1 read" |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
 | KS-C4 | parked | parked 2026-10-24: folding `swiglu_quant` into the gate\|up epilogue and the down staging is not bit-identical on real data (a rounding tie at fast math: one of 4,864 values in one layer, C4-G1 (b) red) and is 4.9% slower (median 1.0489, 1 of 10). Code on branch `ksc4-fold-parked-2026-10-24`. The quantizers are 0.875 ms a token; a multi-threadgroup quantizer is the untried shape | survey, "KS-C4 read" |
@@ -55,7 +55,7 @@
 | KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
+| KS-D8 | open (build) | baseline read 2026-10-24: Nemotron-Nano-9B-v2 sequential prefill 14.5 tok/s at K=512, batched prefill not admitted. Next: the batched Mamba-2 prefill (M–L), its gates registered first | survey, "KS-D8 baseline read" |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
@@ -86,13 +86,13 @@
 | KS-G8 | open | aikit: a cold-cache HNSW query benchmark | — |
 | KS-G9 | open | aikit: time the final loop in `BenchmarkFlatBinaryQuery` | — |
 | KS-G10 | open | aikit: an offline block-max simulation counting documents scored | — |
-| KS-H1 | open (512, G5) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. Left: G5 (Qwen3.5-9B at 20K, by day) and head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
+| KS-H1 | open (512) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. G5 read 2026-10-24: Qwen3.5-9B at 20K, transient prefill scratch 4.86 → 0.58 GiB, peak footprint −70%. Left: head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
 | KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2) | — |
+| KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2). Francis, 2026-10-24: decide after KS-C4 and KS-C5 read (KS-C1 (a)+(b) shipped, 22.3 → 33.0 tok/s) | — |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
@@ -555,6 +555,72 @@ tiling reproduces").**
 - **Class:** fidelity-gated by the existing G-Q1 (`TestQ4KLaneKernels`) and G-Q2 (`TestQ4KLane_realPhi3NonInferiority`).
   `q4kRowsSrc` is regenerated from the same body.
 - **Size:** M for (a)+(b), L for (c).
+
+**KS-C1 (a)+(b) gates, registered 2026-10-23 before the code (C1-G), on the owner's word of 1:55 pm (KS-O1 option A: build (a)+(b),
+decide O1 once they read).** The build:
+- (b) `gemv_w8_f32_rows<R>` (plain, residual, bias): R int8 rows a simdgroup sharing each lane's activation loads, every row's lane
+  loop, `simd_sum` and epilogue statement for statement `W8_F32_BODY`'s, so each output is `gemv_w8_f32`'s bits.
+- (a) `gemv_q4k_f32_rows<R>` (plain, residual, bias): all 32 lanes on one super-block, lane l on byte group l mod 8 of 64-weight
+  chunk l / 8 (one `uint` of quants a row), its two `float4` activations loaded once for R rows; d·sc·dot(q, a) per sub-block half
+  and the min term as dmin·m·Σa. A new order of the same products: not bit-identical, graded by G-Q1's bar and G-Q2.
+- `q4kGemv` launches them at ceil(rows / R) simdgroups; the batched step's `mc3_gemv_q4k_f32_rows<B>` takes (a)'s per-lane loop, so
+  the step stays decode's bits. R is chosen by C1-G0.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C1-G0 measure | timed, Mac | the survey's first measurement: `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3's shapes (o, gate\|up, down Q4_K; qkv, down's Q6_K layers int8), beside the streaming ceiling and the new kernels at R = 1, 2, 4, SLC-defeating rotation, median of 7 | read, not gated; R per family is the fastest, the smaller R on a tie within 2% |
+| C1-G1 kernels | 0 | G-Q1 (`TestQ4KLaneKernels`) on the new Q4_K kernels, its bar (per row within 1e-5 of Σ\|w·a\|) and its planted defects; the new int8 kernels against `gemv_w8_f32` at G-Q1's int8 shapes, every variant | (a) every row within the bar and every plant red; (b) byte-equal |
+| C1-G2 step | 0 | `TestQ4KStep_verifyRowsMatchDecode`, `_promptMatchesSequential`, `_twoSequencesMatchAlone` and `_plantIsRed` | as they assert today (byte-equal to decode) |
+| C1-G3 fidelity | 2, Mac | G-Q2 (`TestQ4KLane_realPhi3NonInferiority`) with the new kernels | PASS by its rule |
+| C1-G4 speed | timed, Mac, timing lock | a whole-token in-process A/B on Phi-3 mini at `--quant q4k`: one resident, its q4k-lane pipelines swapped between the new kernels and the old ones (a test-only library), 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median new/old per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise PARK |
+
+Phi-3's load is fit-checked first; refused by day, G3 and G4 go to the night queue as case (a). Planted defect for (a): the min term
+dropped from the high half (`m1·Σa_hi` omitted); C1-G1 goes red. Stopping rule: one pass each. Cost: G0 about 2 min; G1, G2 seconds;
+G3 about 20 min; G4 about 4 min.
+
+**C1-G0 read 2026-10-23 (13:56, the lock held exclusively, load 3.50, 3.4 GB available), and an amendment to (a) before any grading
+gate.** Ceiling 178.6 GB/s. The first Q4_K layout (one `uint` of quants a lane, 8 weights) read old → R = 1: o 0.139 → 0.103 ms (38 →
+52 GB/s), gate|up 0.708 → 0.517 (40 → 55), down 0.365 → 0.266 (39 → 53), R = 2 and 4 no better; the int8 kernels qkv 0.170 → 0.160 at
+R = 2 (166 → 177 GB/s), the Q6_K down layers 0.175 → 0.158 at R = 4 (144 → 160). Log: `~/goinfer-logs/ksc1-g0-2026-10-23.log`. The
+Q4_K kernel stays under a third of the ceiling because every lane decodes two sub-blocks' scales, d and dmin for 8 weights.
+**Amended (a), before C1-G1 to G4 ran:** each lane takes 32 weights of one super-block, 8 lanes a super-block and 4 super-blocks in
+flight (lane l: super-blocks l/8, l/8 + 4, …; within one, chunk (l mod 8)/2 and half l mod 2, one `uint4` of quants, 16 low and 16
+high nibbles against 8 `float4` activations), so the scale decode, d·dmin and the min-term sums are paid once per 32 weights. Its
+own C1-G0 reading picks R; the gates and bars are unchanged.
+
+**C1-G0 re-read with the amended layout (14:09, load 3.99, 3.1 GB available), and R = 8 added before any grading gate.** Ceiling
+179.3 GB/s. Q4_K old → R = 1 / 2 / 4: o 0.140 → 0.101 / 0.090 / **0.082 ms (1.70×, 64 GB/s)**; gate|up 0.708 → 0.514 / 0.423 / **0.364
+(1.94×, 78 GB/s)**; down 0.365 → 0.248 / 0.225 / **0.201 (1.81×, 70 GB/s)**. Int8 as before: qkv best at R = 2 (1.06×), the Q6_K down
+layers at R = 4 (1.09×). Still improving at R = 4, so the Q4_K R set gains 8 (one more C1-G0 pass); the rule stays the fastest R.
+Log: `~/goinfer-logs/ksc1-g0b-2026-10-23.log`.
+
+**C1-G0 with R = 8 (14:11, load 3.25, 3.4 GB available):** Q4_K R = 4 / 8: o 0.083 / **0.080 ms (1.75×)**, gate|up 0.365 / **0.351
+(2.02×, 81 GB/s)**, down 0.202 / **0.198 (1.84×)**; summed, R = 8 is 3.3% under R = 4, outside the 2% tie: **Q4_K R = 8**. Int8 summed
+over its two shapes: R = 2 0.336 ms against R = 1 0.346 and R = 4 0.338: **int8 R = 2**. Log: `~/goinfer-logs/ksc1-g0c-2026-10-23.log`.
+
+**KS-C1 read 2026-10-23, by day.** C1-G1 **PASS**: G-Q1 on the rows kernels at every built R, worst |err|/Σ|w·a| 1.65e-7 (Q4_K) and
+1.26e-7 (int8) against 1e-5; all five plants red, the registered one (the high half's min term) at 2.98e-2. The int8 rows kernels
+equal `gemv_w8_f32` and its variants byte for byte in 72 cells (both libraries), once the old kernels compile where they stood:
+appended elsewhere, the precise library contracted their residual and bias epilogues differently (`ksc1OldLib`). C1-G2 **PASS**: the
+four `TestQ4KStep_*` tests (the plant retargeted at the new step text, red at 151,936 logits) and a kernel-level step-vs-decode check.
+Getting there took one fix: under fast math the compiler reassociated the Q4_K sum differently in decode's and the step's code
+shapes (500 of 1,000 outputs differed), so both loops carry `#pragma clang fp reassociate(off)`, which C1-G0 re-read at no cost
+(R = 8: 0.080 / 0.348 / 0.198 ms). C1-G3 and C1-G4: Phi-3 at q4k is fit-refused beside the owner's apps (G-Q2's own load, 14:20), so
+both are on the night queue as case (a) (`docs/measurements/ks-night-2026-10/run-ksc1-g3.sh`, `run-ksc1-g4.sh`). G-Q2's reference
+path named the unversioned `….int4.metal.giw`, which no longer exists; it now names the v17 sidecar. Logs: `~/goinfer-logs/ksc1-*-2026-10-23.log`.
+
+**C1-G3 and C1-G4 run by day 2026-10-24, on the owner's word.** Neither started on the night queue: the start check read about 6.3 GB
+free all night. Francis then changed macOS's available-memory reading to `memory_pressure`'s free percentage × RAM − 500 MB (#203).
+Each test binary was rebuilt at its registered commit with that reading applied (`internal/hostmem`, `decoder/hostram_darwin.go`;
+nothing the gates measure), from `docs/measurements/ks-night-2026-10/run-ksc1-g4-day.sh` and `run-ksc1-g3-day.sh`; the fit guard
+passed on its own, with no bypass. C1-G4 (08:37–08:39, the timing lock held exclusively; the 1-minute load 3.88 at the start, left
+over from the two builds and under the 4.0 line, each pair's 1.99–3.65; 12.6 GB available by the new reading; swap 464 MB before and
+after): old 44.89–51.65 ms a token, new 29.58–34.22, **median new/old 0.6741, 10 of 10 pairs below 1: SHIP** (22.3 → 33.0 tok/s
+after pair 0; the survey's estimate was 37–48). Log: `~/goinfer-logs/ksc1-g4-day-2026-10-24-0837.log`.
+C1-G3 (08:39–08:44, the lock held exclusively; not timed): G-Q2 on the rows kernels, Phi-3 mini q4k teacher-forced agreement
+**98.66% (367 of 372), 8 of 8 prompts** passing the free-run rule, against the reference (Qwen2.5-Coder-1.5B) 93.99%, 7 of 8: **delta
++4.66 points against the −2.0 margin: PASS**. Log: `~/goinfer-logs/ksc1-g3-day-2026-10-24-0839.log`. Both gates pass, so (a)+(b) ship;
+(c), native Q5_K/Q6_K, is KS-O1's decision.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
 
@@ -1065,6 +1131,23 @@ goes up, stop and tell him.
 - **Class:** fidelity-gated, like D-B01.
 - **Size:** M–L. Pairs with KS-B12.
 
+**KS-D8 baseline, registered 2026-10-23 before the run, on the owner's order of 11:50 (the night queue, case (a)).** Instrument:
+`TestKSD8_sequentialPrefillBaseline`, NVIDIA-Nemotron-Nano-9B-v2's int4 Metal `.giw` resident on Metal (`ResidentContext` 1024),
+one warm 512-token greedy generation of one token, then three timed ones on prompts that differ in their first token; the reading
+is 512 / time to the first token, each run's start load recorded. The test also prints whether the resident admits the batched
+prefill, which must read false (`recurrentPrefillOK` declines Mamba). Read, not gated: it is the denominator for KS-D8's estimated
+5–8× and KS-B12's CUDA baseline. Through `docs/measurements/ks-night-2026-10/run-ksd8-baseline.sh` (a test binary built at the
+registering commit; exits 75 on a fit refusal). Stopping rule: one pass. Cost: about 5 minutes.
+
+**KS-D8 baseline read 2026-10-24 (08:53–08:56, by day on the owner's word; the timing lock held exclusively).** It never started on
+the night queue (its start check read about 6.3 GB free). It ran from `run-ksd8-baseline-day.sh`: the test binary rebuilt at
+0140adf1 with #203's memory reading applied (`memory_pressure`'s free % × RAM − 500 MiB), so the fit guard passed with no bypass; 11.95 GB
+available, swap 464 MB before and after. Each run's start load 1.92–2.68. Nemotron-Nano-9B-v2's int4 Metal `.giw` loaded in 14.9 s,
+**batched prefill admitted: false** (as required); a 512-token prompt to the first token in 35.30 / 35.27 / 35.16 s: **14.5 tok/s**.
+That is the denominator for KS-D8's estimated 5–8× and for KS-B12. Also seen: the resident keeps no recurrent checkpoint here
+(138.8 MiB beside the load's 10.49 GB is over its 6.55 GB budget), so a reply rendered back differently re-prefills the whole
+prompt. Log: `~/goinfer-logs/ksd8-baseline-day-2026-10-24-0853.log`.
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
@@ -1383,6 +1466,26 @@ each pass's own end (`exactAttnTile(startPos+M)`), and such a resident is still 
 
 Planted defect, run once on the committed tree and reverted: an exact-attention block pass attending from position 0 instead of its
 start (`uStartPos` 0; G1 red). Stopping rule: one pass each. Cost: G1–G4 seconds; G5 about 10 minutes.
+
+**KH1-G5 amended 2026-10-23 (owner's order of 11:50: the night queue, case (a)).** The branch merged (a570f8df), so "main against
+the branch" is `serve` built at 421a4347 (main just before the merge) against `serve` at a570f8df, one cold cell each in that order,
+`mem0_darwin.py`'s new `metal:qwen35-9b` cell (the Metal `.giw`, `-ctx 32768`, the same 20K preamble). Its by-day fit check refuses
+beside the owner's apps (the 9B's 5.96 GB mapping), so it runs at night through `docs/measurements/ks-night-2026-10/run-kh1-g5.sh`,
+which exits 75 on a refusal. Still read, not gated: each cell's peak footprint and RSS during the request against its footprint
+after load, the survey's estimate 4.8 → about 0.5 GiB of transient prefill scratch. A cell the server could not come up for is void.
+
+**KH1-G5 read 2026-10-24 (08:56–09:20, by day on the owner's word; the timing lock held exclusively; not timed).** It ran from
+`run-kh1-g5-day.sh`: both `serve` builds rebuilt at their commits with #203's memory reading applied, so the fit guard passed with
+no bypass. Qwen3.5-9B's Metal `.giw`, one cold 20,443-token prompt per fresh server:
+
+| build | footprint after load | peak | end | transient (peak − end) | request |
+|---|---|---|---|---|---|
+| 421a4347 (main before KS-H1) | 242 MiB | 6,245 MiB | 1,268 MiB | **4,977 MiB** | 714.6 s |
+| a570f8df (KS-H1 merged) | 242 MiB | 1,866 MiB | 1,275 MiB | **591 MiB** | 695.4 s |
+
+**4.86 → 0.58 GiB of transient prefill scratch; peak footprint −70%**, as the survey estimated (4.8 → about 0.5). System swap rose
+464 → 1,826 MB during the first cell and was 1,666 MB after the second; the request times are context, not a timed comparison.
+Logs: `~/goinfer-logs/kh1-g5-day-2026-10-24-0856/`.
 
 **KS-H2 · CUDA: suballocate weights, KV pools and expert slots from arenas (bit-identical).**
 - **Where:** one `cuMemAlloc` per weight buffer (`cuda/resident.go:cudaResident.upW`, `cuda/pack_stream.go`), per layer's
