@@ -1550,6 +1550,8 @@ every prompt**: mean KL(ref ‖ ·) **0.0463 for the pass against 0.1024 for the
 0.281 → 0.111, 0.027 → 0.017, 0.023 → 0.016, 0.055 → 0.028, 0.099 → 0.081; the pass misses top-1 only on prompt 7, the sequential
 path on prompts 2, 4, 5 and 6. So D8-G3's first FAIL measured the sequential path's own distance from the checkpoint, not a
 defect in the pass. KS-D8 ships with D8-G4's 5.14×. Log: `~/goinfer-logs/ksd8-g3-ref-2026-10-24.log`.
+After merging main at 922054f3 (KS-O1's q4k-lane GEMVs touch the same files): D8-G1, D8-G2 and D8-G5 PASS again, and D8-G6 against a
+fresh base dump of 922054f3 reads 0 logits differ on llama-tiny, qwen35-tiny and the 1.5B's Metal `.giw`.
 
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
