@@ -45,16 +45,16 @@ type moeBatch struct {
 func (r *resident) newMoEBatch(n int, made func(Buffer) Buffer) *moeBatch {
 	mo, d := r.moe, r.d
 	P := n * mo.k
+	floats := func(c int) Buffer { prefillScratchSeen.Add(int64(4 * c)); return made(d.NewBufferLen(c)) }
+	bytes := func(c int) Buffer { prefillScratchSeen.Add(int64(c)); return made(byteBuf(d, c)) }
 	b := &moeBatch{rows: n}
-	b.aq, b.asc, b.xs = made(byteBuf(d, n*r.H)), made(d.NewBufferLen(n)), made(d.NewBufferLen(n*r.H))
-	b.wgt, b.dsc = made(d.NewBufferLen(P)), made(d.NewBufferLen(P))
-	b.gu = made(d.NewBufferLen(P * 2 * mo.inter))
-	b.dq = made(byteBuf(d, P*mo.inter))
-	b.dacc = made(d.NewBufferLen(P * r.H))
+	b.aq, b.asc, b.xs = bytes(n*r.H), floats(n), floats(n*r.H)
+	b.wgt, b.dsc = floats(P), floats(P)
+	b.gu = floats(P * 2 * mo.inter)
+	b.dq = bytes(P * mo.inter)
+	b.dacc = floats(P * r.H)
+	prefillScratchSeen.Add(int64(4 * P * (2 + moeBatchB)))
 	b.ent = made(NewBufferUint32s(d, make([]uint32, P*(2+moeBatchB))))
-	for _, x := range []Buffer{b.aq, b.asc, b.xs, b.wgt, b.dsc, b.gu, b.dq, b.dacc, b.ent} {
-		prefillScratchSeen.Add(int64(x.Len()))
-	}
 	b.uK, b.uOne, b.uZero = made(NewBufferU32(d, uint32(mo.k))), made(NewBufferU32(d, 1)), made(NewBufferU32(d, 0))
 	b.uN, b.uTilesGU, b.uTilesDown = made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0))
 	return b
