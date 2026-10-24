@@ -163,66 +163,77 @@ func TestKSO1_nativeKernels(t *testing.T) {
 	}
 }
 
-// TestKSO1_referenceMatchesAikit is O1-G1's reference check: the float64 Q5_K and Q6_K dequantization the kernels are graded
-// against, on real GGUF blocks (Phi-3 mini q4's Q5_K attn_qkv and Q6_K ffn_down / output, the 0.5B q4_k_m's Q6_K), within 1e-6
-// of each row's largest weight of aikit's RowDequantizer, on three rows of every such tensor. Skips with no file.
-func TestKSO1_referenceMatchesAikit(t *testing.T) {
-	home, _ := os.UserHomeDir()
+// kso1ReferenceCheck is O1-G1's reference check on one GGUF: the float64 Q5_K and Q6_K dequantization the kernels are graded
+// against, on the file's real blocks, within 1e-6 of each row's largest weight of aikit's RowDequantizer, on three rows of every
+// such tensor. It returns how many tensors of each kind it checked.
+func kso1ReferenceCheck(t *testing.T, path string) map[string]int {
 	checked := map[string]int{}
-	for _, path := range []string{filepath.Join(home, "models", "phi3-mini-4k-gguf", "Phi-3-mini-4k-instruct-q4.gguf"),
-		filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")} {
-		if _, err := os.Stat(path); err != nil {
-			continue
-		}
-		g, err := decoder.OpenGGUFMmap(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, name := range g.Names() {
-			for _, k := range []struct {
-				kind string
-				bb   int
-				get  func(string) ([]int, []byte, bool, error)
-				ref  func([]byte, int) []float64
-			}{{"q5k", 176, g.Q5KRaw, kso1DequantQ5K}, {"q6k", 210, g.Q6KRaw, kso1DequantQ6K}} {
-				dims, raw, ok, err := k.get(name)
-				if err != nil {
-					t.Fatalf("%s %s: %v", filepath.Base(path), name, err)
-				}
-				if !ok {
-					continue
-				}
-				in, out := dims[0], dims[1]
-				_, into, err := g.RowDequantizer(name)
-				if err != nil {
+	g, err := decoder.OpenGGUFMmap(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	for _, name := range g.Names() {
+		for _, k := range []struct {
+			kind string
+			bb   int
+			get  func(string) ([]int, []byte, bool, error)
+			ref  func([]byte, int) []float64
+		}{{"q5k", 176, g.Q5KRaw, kso1DequantQ5K}, {"q6k", 210, g.Q6KRaw, kso1DequantQ6K}} {
+			dims, raw, ok, err := k.get(name)
+			if err != nil {
+				t.Fatalf("%s %s: %v", filepath.Base(path), name, err)
+			}
+			if !ok {
+				continue
+			}
+			in, out := dims[0], dims[1]
+			_, into, err := g.RowDequantizer(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := make([]float32, in)
+			rb := in / 256 * k.bb
+			for _, r := range []int{0, out / 2, out - 1} {
+				if err := into(r*in, want); err != nil {
 					t.Fatal(err)
 				}
-				want := make([]float32, in)
-				rb := in / 256 * k.bb
-				for _, r := range []int{0, out / 2, out - 1} {
-					if err := into(r*in, want); err != nil {
-						t.Fatal(err)
-					}
-					got := k.ref(raw[r*rb:(r+1)*rb], in)
-					big := 0.0
-					for _, v := range want {
-						big = max(big, math.Abs(float64(v)))
-					}
-					for i := range want {
-						if math.Abs(got[i]-float64(want[i])) > 1e-6*big {
-							t.Fatalf("%s %s row %d [%d]: reference %v, aikit %v", filepath.Base(path), name, r, i, got[i], want[i])
-						}
+				got := k.ref(raw[r*rb:(r+1)*rb], in)
+				big := 0.0
+				for _, v := range want {
+					big = max(big, math.Abs(float64(v)))
+				}
+				for i := range want {
+					if math.Abs(got[i]-float64(want[i])) > 1e-6*big {
+						t.Fatalf("%s %s row %d [%d]: reference %v, aikit %v", filepath.Base(path), name, r, i, got[i], want[i])
 					}
 				}
-				checked[k.kind]++
 			}
+			checked[k.kind]++
 		}
-		g.Close()
 	}
-	if checked["q5k"] == 0 || checked["q6k"] == 0 {
-		t.Skipf("no Q5_K or Q6_K tensor found (%v)", checked)
+	fmt.Fprintf(os.Stderr, "[O1-G1] %s: reference within 1e-6 of aikit's dequantizer on %d Q5_K and %d Q6_K tensors\n", filepath.Base(path), checked["q5k"], checked["q6k"])
+	return checked
+}
+
+// TestKSO1_referenceMatchesAikit is kso1ReferenceCheck on Qwen2.5-Coder-0.5B q4_k_m, which must hold Q6_K tensors.
+func TestKSO1_referenceMatchesAikit(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no GGUF at %s", path)
 	}
-	fmt.Fprintf(os.Stderr, "[O1-G1] reference within 1e-6 of aikit's dequantizer on %d Q5_K and %d Q6_K tensors\n", checked["q5k"], checked["q6k"])
+	if c := kso1ReferenceCheck(t, path); c["q6k"] == 0 {
+		t.Fatalf("no Q6_K tensor in %s", path)
+	}
+}
+
+// TestKSO1_referenceMatchesAikitPhi3 is kso1ReferenceCheck on Phi-3 mini (the registered GOINFER_PHI3_GGUF asset), which must
+// hold both kinds.
+func TestKSO1_referenceMatchesAikitPhi3(t *testing.T) {
+	if c := kso1ReferenceCheck(t, decoder.AssetPathForTest(t, "GOINFER_PHI3_GGUF")); c["q5k"] == 0 || c["q6k"] == 0 {
+		t.Fatalf("Phi-3 holds %v, want both kinds", c)
+	}
 }
 
 // TestKSO1_stepMatchesDecode is O1-G2's kernel half: the batched step's mc3_gemv_q5k_f32_rows<B> and mc3_gemv_q6k_f32_rows<B>
@@ -327,10 +338,12 @@ func kso1LaneBytes(r *resident) (total int, byKind map[string]int) {
 }
 
 // kso1LaneBytesCheck is O1-G3 on one q4k GGUF: decoder.Load on the Metal backend, which builds the resident from the load's own
-// mapping, with the int8 copies (q4kNativeOffForTest, set before the load, so that arm never opens the reader, as before
-// KS-O1) and with the native kinds, after one discarded warm-up load so neither arm reads the file cold. Native must upload
-// exactly the file's layer Q5_K and Q6_K bytes in place of their int8 rows and scales; the fit pricing's saving
-// (metalKQuantSavings) must equal the device bytes it saves; and the whole load must allocate no more Go heap.
+// mapping, with the int8 copies (q4kNativeOffForTest, set before the load, so that arm never opens the reader; the decoder still
+// records provenance in both arms) and with the native kinds, after one discarded warm-up load so neither arm reads the file
+// cold. Native must upload exactly the file's layer Q5_K and Q6_K bytes in place of their int8 rows and scales, and layer 0's
+// native segments must hold those bytes (Q5_K verbatim, Q6_K in q6kPlanarRow's planes); the fit pricing's saving
+// (metalKQuantSavings) must equal the device bytes it saves; and the whole load must allocate no more Go heap than the int8 arm
+// plus kso1HeapSlack.
 func kso1LaneBytesCheck(t *testing.T, path, label string) {
 	build := func(off bool) (int, map[string]int, uint64, int64) {
 		q4kNativeOffForTest = off
@@ -349,6 +362,9 @@ func kso1LaneBytesCheck(t *testing.T, path, label string) {
 			t.Fatalf("%s: the load did not build a q4k-lane Metal resident (%T)", label, m.ResidentForwardForTest())
 		}
 		tot, by := kso1LaneBytes(mr.r)
+		if !off {
+			kso1CheckLayer0Blocks(t, m, mr.r, label)
+		}
 		return tot, by, heap, m.KQuantDeviceSavingsForTest()
 	}
 	build(false)
@@ -382,9 +398,63 @@ func kso1LaneBytesCheck(t *testing.T, path, label string) {
 	if saved != int64(oldTot-newTot) {
 		t.Errorf("%s: the fit pricing saves %d bytes, the device %d", label, saved, oldTot-newTot)
 	}
-	if newHeap > oldHeap {
-		t.Errorf("%s: the native load allocated %d heap bytes against %d", label, newHeap, oldHeap)
+	if newHeap > oldHeap+kso1HeapSlack {
+		t.Errorf("%s: the native load allocated %d heap bytes against %d (+%d slack)", label, newHeap, oldHeap, kso1HeapSlack)
 	}
+}
+
+// kso1HeapSlack is O1-G3's allowance for the Go runtime's own allocations during a load (GC is off while heapAllocDuring
+// counts, but background goroutines still allocate), registered in docs/tasks/task-kernel-survey-2026-10.md, "Review fixes for
+// #215, second pass".
+const kso1HeapSlack = 1 << 20
+
+// kso1CheckLayer0Blocks compares the device bytes of layer 0's native segments with the file's blocks for their parts, read
+// through the model's KQuantReader: Q5_K rows verbatim, Q6_K rows in planes over the segment.
+func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, label string) {
+	kq, err := m.OpenKQuant()
+	if err != nil || kq == nil {
+		t.Fatalf("%s: OpenKQuant: %v", label, err)
+	}
+	defer kq.Close()
+	L, lw := &r.layers[0], &m.Weights().Layers[0]
+	checked := 0
+	for _, g := range []struct {
+		segs  []q4kSeg
+		parts []*linalg.WeightMat
+	}{{L.qkvSegs, []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}}, {L.oSegs, []*linalg.WeightMat{&lw.OProj}},
+		{L.guSegs, []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}}, {L.dSegs, []*linalg.WeightMat{&lw.DownProj}}} {
+		for _, sg := range g.segs {
+			if sg.kind != "q5k" && sg.kind != "q6k" {
+				continue
+			}
+			var raw []byte
+			row, K := 0, 0
+			for _, w := range g.parts {
+				if row >= sg.off && row < sg.off+sg.rows {
+					K = w.Cols()
+					if err := kq.Rows(w, func(_ int, b []byte) error { raw = append(raw, b...); return nil }); err != nil {
+						t.Fatal(err)
+					}
+				}
+				row += w.Rows()
+			}
+			want := raw
+			if sg.kind == "q6k" {
+				want = kso1Q6KPlanes(raw, sg.rows, K)
+			}
+			got := sg.w.Int8s()[:sg.w.Len()]
+			if len(got) != len(want) {
+				t.Fatalf("%s layer 0 %s segment at row %d: %d bytes on the device, %d in the file", label, sg.kind, sg.off, len(got), len(want))
+			}
+			for i, v := range got {
+				if byte(v) != want[i] {
+					t.Fatalf("%s layer 0 %s segment at row %d: byte %d is %d, the file's %d", label, sg.kind, sg.off, i, byte(v), want[i])
+				}
+			}
+			checked++
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[O1-G3] %s: layer 0's %d native segments hold the file's blocks byte for byte\n", label, checked)
 }
 
 // TestKSO1_laneBytes is O1-G3 on the Qwen2.5-Coder-0.5B q4_k_m (Q6_K ffn_down layers; no Q5_K).
