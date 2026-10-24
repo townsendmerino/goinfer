@@ -43,7 +43,7 @@
 | KS-B15 | decision | KS-O2 | — |
 | KS-C1 | open | Mac: time `gemv_q4k_f32` and `gemv_w8_f32` at Phi-3 shapes (tier 0) | — |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
-| KS-C3 | open | Mac: the int8 GEMVs in `TestMetalGEMVS0` at the 1.5B shapes | — |
+| KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
 | KS-C4 | open | Mac: P33's decomposition split by pipeline | — |
 | KS-C5 | open | Mac: the decomposition's attention arm at 128 and 512 keys | — |
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
@@ -674,6 +674,14 @@ C3-G3's instrument on the 1.5B's `.gguf` at int8int8, at night as case (a), thro
 `docs/measurements/ks-night-2026-10/run-ksc3-g3b.sh` (a test binary built at the registering commit; exit 75 on a fit refusal).
 Same bar: SHIP iff the median rows/one-row is ≤ 0.98 with at least 9 of 10 pairs faster; otherwise KS-C3 closes as PARK with both
 readings. Stopping rule: one pass. Cost: about 5 minutes.
+
+**C3-G3b read 2026-10-23 (22:19, the night queue, case (a)).** The first attempt (22:01) was refused by the fit guard (2.9 GB
+available against 2.7 GB needed at the 70% budget) and exited 75; the retry at 22:18 loaded. The night runner held the timing lock
+exclusively; the 1-minute load was 1.81 at the start, each pair's 1.44–2.10. The 1.5B's `.gguf` at int8int8 on Metal, rows
+`{qkv:4 o:2 gu:4 down:4}`: one-row 13.821–13.836 ms a token, rows 12.525–12.610, **median rows/one-row 0.9109, 10 of 10 pairs
+below 1: SHIP** (8.9% faster, about 1.23 ms a token; the survey's estimate was 1.7–2.0 ms). The two "Gated-DeltaNet model runs
+resident at int4 only" lines in the log come before the timed load and appear in the day run's C3-G3 log too; they are not the
+1.5B's load. Log: `~/goinfer-logs/ksc3-g3b-2026-10-23-2218.log`.
 
 **KS-C4 · Fold the single-threadgroup quantizers into their neighbors (designed bit-identical).**
 - **Waste:** `swiglu_quant` and `quant_vec` are dispatched as one 256-thread threadgroup (one core of 16), and
