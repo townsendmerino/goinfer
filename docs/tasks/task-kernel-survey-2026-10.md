@@ -980,6 +980,21 @@ Mac, so each waits for its own model-level gate (Phi-3 at int4 for 96). `prefill
 Planted defect: the hd-64 staging takes the 128 instance's word index (`(idx & 31) × 4`); D2-G2 goes red. Stopping rule: one pass
 each; a red G1 or G2 stops the build until it is understood. Cost: G1 and G2 seconds; G3 about 40 min; G4 about 3 min.
 
+**KS-D2b gates, registered 2026-10-24 before the code (D2b-G), on the owner's order of the Mac work.** The build: `steelHeadDim`
+admits head dim 96, and `steelFor` returns the hd-96 instance (`attention_prefill_steel_hd96`, built and checked at tier 0 in
+D2-G2). The model at 96 is Phi-3 mini at int4 (`~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`). Its set-A references
+are a new cell, PH3, in `TestPrefillGateReference` (f32 CPU, K = 256, 512, 1,024 decision and 3,900 confirm), built on nobara: an
+f32 3.8B does not fit this Mac's CPU path. The cell's references are copied to the Mac's `~/goinfer-logs/prefill-ref`.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D2b-G1 kernel | 0 | D2-G2's instrument at head dim 96 on this branch | as D2-G2 |
+| D2b-G2 fidelity | 2, Mac | set A's §3.2 pooled gate (`TestPrefillGateVsReference`), cell PH3, steel as production's prefill attention; the fused kernel's run (`GOINFER_METAL_R19_BASELINE=1`) beside it, reported | PASS by the gate's own rule |
+| D2b-G3 speed | timed, Mac, timing lock | Phi-3 at int4, `PrefillLast` at K = 3,900 and 512, steel against fused on one resident, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median steel/fused is ≤ 0.80 at 3,900 and ≤ 1.02 at 512; under 1.25× at 3,900: PARK |
+
+Admitted only on D2b-G2 PASS and D2b-G3 SHIP. Stopping rule: one pass each. Cost: G1 seconds; the references about an hour on
+nobara; G2 about 40 minutes; G3 about 4 minutes.
+
 **KS-D3 · DeltaNet prefill scan with the state on chip (bit-identical).**
 - **Where:** `delta_rule_seq` in `metal/kernels/deltanet_kernels_msl.go`, from
   `metal/prefill_deltanet.go:resident.encodePrefillDeltaMixer`.
