@@ -1224,6 +1224,22 @@ prefill GEMMs and int8 KV attention use it.
 - **Gain (est.):** ~0.6 ms (~8%). Metal's version measured +4.4%.
 - **Size:** S–M.
 
+**KS-E3 gates, registered 2026-10-24 before the code (E3-G), on the owner's order of the Mac work.** The build: after `Run`
+submits token t, the runner records token t+1's command buffer (its steps, then the logits copy) while the GPU runs, and the next
+`Run` writes its inputs and submits that buffer instead of recording one. `record` replays `r.steps`, whose pipelines, bind groups
+and grids are fixed for the runner; the inputs move through buffer writes, which the queue orders before the submit. The pending
+buffer is dropped wherever the steps or the recorded shape change: `SetAdapter` (which `UseKVSlot` also calls), `RunNoLogits`
+and `Close`. `encodeAheadOffForTest`, read at each `Run`, records in line as today.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| E3-G1 identity | 0 | llama-tiny and the 1.5B's `.gguf` at int8int8 on WebGPU, encode-ahead on against off on one resident: 32 greedy `Forward` steps; then a sequence mixing `Forward`, `RunNoLogits` (through `PrefillLast`'s trunk-only rows where the backend takes it), `ForwardN` and a second KV slot (`UseKVSlot`) | every logit byte-equal |
+| E3-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B on WebGPU: encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median on/off per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change decides; otherwise PARK |
+
+E3-G3: none (one command buffer held per runner). Planted defect, run once and reverted: `SetAdapter` not dropping the pending
+buffer, with a slot switch in E3-G1's sequence; or, if that stays equal, the pending buffer submitted after its runner's steps
+were rebuilt must go red. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
