@@ -943,6 +943,19 @@ inline void q4k_scale_min(uint j, device const uchar* q, thread float& sc, threa
     if (j < 4u) { sc = float(q[j] & 63u); m = float(q[j+4u] & 63u); }
     else { sc = float((q[j+4u] & 15u) | ((q[j-4u] >> 6u) << 4u)); m = float((q[j+4u] >> 4u) | ((q[j] >> 6u) << 4u)); }
 }
+// q4k_scale_min2: q4k_scale_min for sub-blocks 2j and 2j+1 (j < 4), from the 12 bytes read as three words and decoded with
+// masks and shifts. It has no branch on j, so lanes holding different j do not split the simdgroup; the values are
+// q4k_scale_min's. q must be 4-byte aligned (a super-block's scales are at offset 4).
+inline void q4k_scale_min2(uint j, device const uchar* q, thread float& sc0, thread float& m0, thread float& sc1,
+    thread float& m1) {
+    device const uint* w = (device const uint*)q;
+    uint s0 = w[0], s1 = w[1], s2 = w[2], sh = ((2u*j) & 3u)*8u;
+    bool hi = j >= 2u;
+    uint scw = hi ? ((s2 & 0x0F0F0F0Fu) | ((s0 >> 2u) & 0x30303030u)) : (s0 & 0x3F3F3F3Fu);
+    uint mw = hi ? (((s2 >> 4u) & 0x0F0F0F0Fu) | ((s1 >> 2u) & 0x30303030u)) : (s1 & 0x3F3F3F3Fu);
+    sc0 = float((scw >> sh) & 0xFFu); sc1 = float((scw >> (sh + 8u)) & 0xFFu);
+    m0 = float((mw >> sh) & 0xFFu); m1 = float((mw >> (sh + 8u)) & 0xFFu);
+}
 // Per 256 weights (144 bytes): d (f16), dmin (f16), scales[12], qs[128]; w = d*sc*q - dmin*m per 32-weight sub-block;
 // byte qs[32j+l] holds element 64j+l (low nibble) and 64j+32+l (high).
 // KS-C1: the q4k lane's GEMVs at R rows a simdgroup (grid ceil(N/R)*32, tg 256; rows past N are skipped).
@@ -971,7 +984,7 @@ inline void q4k_rows_acc(device const uchar* wq, device const float* ax, uint K,
             if (row0 + r >= N) break;
             device const uchar* blk = wq + (ulong)(row0 + r)*(ulong)NB*144ul + b*144u;
             half2 dd = as_type<half2>(*(device const uint*)blk);
-            float sc0, m0, sc1, m1; q4k_scale_min(2u*j, blk + 4, sc0, m0); q4k_scale_min(2u*j + 1u, blk + 4, sc1, m1);
+            float sc0, m0, sc1, m1; q4k_scale_min2(j, blk + 4, sc0, m0, sc1, m1);
             uint4 q = *(device const uint4*)(blk + 16u + j*32u + h*16u);
             float dlo = 0.0f, dhi = 0.0f;
             for (uint i = 0u; i < 4u; i++) {
