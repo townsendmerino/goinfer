@@ -92,7 +92,7 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | building (Metal, owner override) | O1-G7 KILL (Phi-3 0.9809, the 1.5B 1.0183); Francis 2026-10-24 11:47 am: ship for memory and fidelity (Phi-3 −375 MB on the device, KL 0.7638), the 1.5B's 1.8% accepted. Next: O1-G5 (G-Q2 on Phi-3), then the PR; needs aikit#18 tagged | survey, "Owner override of O1-G7" |
+| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −375 MB on the device); O1-G7 KILL (Phi-3 0.9809, the 1.5B 1.0183), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
@@ -764,6 +764,15 @@ through `go.work`.
     and 120 of 120 step cells byte-equal.
   - O1-G3 and `TestQ4KLaneResidentQwen` (worst cosine 0.998474) pass.
   - Log: `~/goinfer-logs/kso1-native-tests2-2026-10-24.log`.
+
+- **O1-G5: PASS** (11:53–11:58, the lock held shared, not timed; load 2.19, 13.6 GB available).
+  - G-Q2 on the native lane, Phi-3 mini q4k: lane weights 2,255 MB on the device (Q5_K 623, Q6_K 330, Q4_K 1,302).
+  - Teacher-forced agreement against the CPU at q4k **98.39%, 8 of 8 prompts** passing the free-run rule, against the reference
+    (Qwen2.5-Coder-1.5B) 93.99%, 7 of 8. **Delta +4.39 points** against the −2.0 margin.
+  - On the int8 copies C1-G3 read 98.66%. The CPU reference keeps the int8 copies, so a lane closer to the file sits slightly further
+    from it.
+  - Log: `~/goinfer-logs/kso1-g5-2026-10-24.log`.
+- **With O1-G5 passed, KS-O1 ships on Metal under the override.**
 
 **Notes on O1-G0's instrument, from #212's review (2026-10-24):**
 - **Where it lives:** the prototype kernels, `TestKSO1_gemvTiming`, `TestKSO1_protoMatchesRef` and `TestKSO1_q4kSideReading` are on
