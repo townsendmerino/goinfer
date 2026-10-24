@@ -93,6 +93,7 @@
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
 | KS-O1 | building (Metal) | approved by Francis 2026-10-24 10:22 am, Metal first; O1-G registered; O1-G0 (prototype kernels at Phi-3's shapes) is next | survey, "KS-O1 on Metal: gates" |
+| KS-O1a | building | bit-identical Q4_K scale decode on the q4k lane, from O1-G0's side reading (0.678 of the shipped Q4_K GEMV time over Phi-3); O1a-G registered | survey, "KS-O1a" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
@@ -666,6 +667,30 @@ prototypes were first checked against the float64 reference, worst |err|/Σ\|w·
   decoded with masks and shifts, with no branch. Variant (b) keeps (a)'s two dot chains. Variant (c) splits each into two halves.
   The kill rule and R set are unchanged, and this is the last Q5_K reading. If neither variant clears, Q5_K is killed and only Q6_K is
   built.
+
+**KS-O1a · The q4k lane's Q4_K scale decode without a branch (bit-identical). Registered 2026-10-24 before the code, from an
+ungraded side reading beside O1-G0.**
+- **Side reading (10:42–10:47, the lock held exclusively, load 1.68 at the start):** the shipped `q4k_rows_acc`, changed only in
+  its scale decode to the amended Q5_K's form (`TestKSO1_q4kSideReading`). Shipped R = 8 → new R = 8 / R = 4:
+  - o: 0.080 → 0.055 / 0.053 ms;
+  - gate|up: 0.348 → 0.236 / 0.240;
+  - down: 0.197 → 0.136 / 0.128.
+  - Summed over Phi-3's Q4_K GEMVs: 16.85 → 11.51 / 11.43 ms a token (0.683 / 0.678).
+  - In this library, 0 of N outputs differed in bits at any shape. Log: `~/goinfer-logs/kso1-q4kside-2026-10-24.log`.
+- **The change:**
+  - `q4k_scale_min2` reads the 12 scale bytes as three words and decodes a lane's two scales and mins with masks and shifts. It
+    replaces the two `q4k_scale_min` calls in `q4k_rows_acc` and in the batched step's `mc3_gemv_q4k_f32_rows`.
+  - R stays 8: R = 4 is within 2% (0.7%), and the rule takes the smaller R only on a tie, so KS-C1's R stands unless this changes it.
+  - The scale values are the same integers, so each output's arithmetic is unchanged.
+- **Class:** bit-identical, under the small-gains rule.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| O1a-G1 bits | 0 | the full decode library before and after (the old one rebuilt from the new source by swapping the decode text back), `gemv_q4k_f32_rows<R>` plain / residual / bias at R = 1, 2, 4, 8. Shapes: a partial threadgroup and Phi-3's o, gate\|up and down. Random blocks cover all 64 values of every 6-bit scale and min. Both the fast-math and the precise library. The four `TestQ4KStep_*` tests and C1-G2's kernel-level step check | byte-equal everywhere; the step tests as they assert today |
+| O1a-G2 model bits | 1, Mac | inside O1a-G3's run: each arm's 128 greedy tokens and the final logits' bytes | identical in every run |
+| O1a-G3 speed | timed, Mac, timing lock | C1-G4's A/B (`TestKSC1_phi3Speed`'s shape): one Phi-3 mini q4k resident, its three Q4_K pipelines swapped between the old library and the new one, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff O1a-G1 and G2 pass, memory is unchanged (no buffer is added or resized) and at least 9 of 10 pairs are faster (the small-gains rule). The registered C1-G4 bar (median ≤ 0.98) is reported alongside. Fewer than 9 pairs faster: PARK |
+
+Expected cost: G1 seconds. G3 about 3 min, from C1-G4's wall, after Phi-3's fit check. Stopping rule: one pass.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
