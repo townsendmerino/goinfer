@@ -480,6 +480,33 @@ func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, i
 	return m.gemma4EModelImageRowsSpans(ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
+// SetInt4FloatActForTest turns int4FloatActForTest on or off; on, it also turns the fused W4A8 batches off, and off restores
+// them. Int4FloatActMissedForTest is the count of W4A8 kernel calls made while it was on.
+func SetInt4FloatActForTest(on bool) {
+	int4FloatActForTest = on
+	if on {
+		int4FloatActMissed.Store(0)
+		w4a8BatchEnabled, cpuBatchFusedW4A8 = false, false
+		return
+	}
+	w4a8BatchEnabled, cpuBatchFusedW4A8 = envBoolDefault("GOINFER_W4A8_BATCH", w4a8BatchDefault), true
+}
+
+// Int4FloatActMissedForTest reports int4FloatActMissed.
+func Int4FloatActMissedForTest() int64 { return int4FloatActMissed.Load() }
+
+// LogitsFromHiddenForTest is logitsFromHidden on a copy of h (a residual before the final norm): the CPU's final norm, LM
+// head and softcap, for a gate that runs a resident's residual through the CPU head.
+func (m *Model) LogitsFromHiddenForTest(h []float32) []float32 {
+	return append([]float32(nil), m.logitsFromHidden(append([]float32(nil), h...), m.NewCache(1))...)
+}
+
+// Gemma4BidirImageRowsForTest exposes the bidirectional image-row builder; a gate builds the rows, then hands them to the
+// resident's PrefillSpansLast.
+func (m *Model) Gemma4BidirImageRowsForTest(ids []int, imageEmbeds []float32, spans []ImageSpan) ([][]float32, error) {
+	return m.gemma4BidirImageRowsSpans(ids, imageEmbeds, spans)
+}
+
 // SetCaptureLayersForTest arms the batched hidden-state capture (the seam forwardn.go's layer loop fills after layer l's residual
 // add and DeepStack add) on c for the next CPU prefill: CapturedForTest then holds one [rows*hidden] float32 copy per requested
 // layer, the residual after that layer, as HF's hidden_states[l+1] is. nil disarms.

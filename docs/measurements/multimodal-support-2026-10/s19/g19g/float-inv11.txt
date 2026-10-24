@@ -1,0 +1,25 @@
+Lantern Row Printing: TAX INVOICE
+9 Foundry Way, Portland, OR 97209
+Billed to: Juniper Legal LLP
+402 Harbour Road, Portland, OR 97209
+Invoice number: 19378
+Issued: 08/06/2026
+Payment due: 09/06/2026
+
+No: 1
+Description: Design review
+Qty: 5
+Unit Price: 632.81
+Amount: 3,164.05
+
+No: 2
+Description: Shipping and handling
+Qty: 40
+Unit Price: 737.04
+Amount: 29,481.60
+
+Subtotal: 32,645.65
+Tax (0%): 0.00
+Total Due: €32,645.65
+
+Payment terms: net 30 days. Thank you for your business.

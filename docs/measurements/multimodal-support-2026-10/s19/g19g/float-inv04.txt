@@ -1,0 +1,24 @@
+Invoice No: A-51943
+Date: 2026-07-04
+Due: 2026-08-04
+
+From: Kestrel Analytics GmbH, 9 Foundry Way, Portland, OR 97209
+Bill To: Redcliff Estates, 56 Orchard Close, Denver, CO 80202
+
+No: 1
+Description: Hardwood flooring, per m2
+Qty: 2
+Unit Price: 330.13
+Amount: 660.26
+
+No: 2
+Description: Ink cartridge, cyan
+Qty: 1
+Unit Price: 671.59
+Amount: 671.59
+
+Subtotal: 1,331.85
+Tax (0%): 0.00
+Total Due: £1,331.85
+
+Payment terms: net 30 days. Thank you for your business.

@@ -32,7 +32,7 @@ import (
 //
 // A prototype arm (GOINFER_METAL_R18_CANDS) is "<F><qkvR><oR><guR><downR>": F is i (step 0, integer math), f (step 1,
 // shift-free f32) or h (R18b: masked, half-staged); each digit is rows per simdgroup for that GEMV, and downR 0 keeps the shipped coal down projection
-// (else gemv_w4a8_resid_st<R>). "i1110" is the harness control: the prototype template at the shipped grid, which must
+// (else gemv_w4a8_resid_st<R>, or KS-C2's masked gemv_w4a8_resid_mk<R> with a trailing m). "i1110" is the harness control: the prototype template at the shipped grid, which must
 // time like the shipped arm. The graded candidate was "i2244", which is what production now runs.
 //
 //	GOINFER_METAL_R18_SEQ=1 go test -tags goinfer_testhooks -count=1 -timeout 60m -v -run '^TestR18InSequence$' ./metal/
@@ -40,6 +40,15 @@ import (
 // Env: GOINFER_METAL_R18_MODEL (default the 1.5B q4_k_m), _DEPTHS (default 128), _CANDS (prototype arms, default none),
 // _REPS (default 5), _TOKENS (decode steps per measurement, default 20), _IDTOKENS (identity sequence length, default
 // 16), _IDLE (after-idle samples per arm, default 3; 0 skips).
+// r18DownKernel is a candidate arm's down projection: gemv_w4a8_resid_st<downR>, or with a trailing m KS-C2's masked
+// gemv_w4a8_resid_mk<downR>.
+func r18DownKernel(c string) string {
+	if len(c) == 6 && c[5] == 'm' {
+		return "gemv_w4a8_resid_mk" + c[4:5]
+	}
+	return "gemv_w4a8_resid_st" + c[4:5]
+}
+
 func TestR18InSequence(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_R18_SEQ") != "1" {
 		t.Skip("set GOINFER_METAL_R18_SEQ=1 (loads a real checkpoint; minutes of GPU time)")
@@ -139,8 +148,8 @@ func TestR18InSequence(t *testing.T) {
 		}
 		noop = get("r18_noop")
 		for _, c := range candSpecs {
-			if len(c) != 5 || (c[0] != 'i' && c[0] != 'f' && c[0] != 'h') {
-				t.Fatalf("candidate %q: want <i|f|h><qkvR><oR><guR><downR>", c)
+			if (len(c) != 5 && (len(c) != 6 || c[5] != 'm')) || (c[0] != 'i' && c[0] != 'f' && c[0] != 'h') {
+				t.Fatalf("candidate %q: want <i|f|h><qkvR><oR><guR><downR>[m]", c)
 			}
 			for _, tag := range []string{c[0:1] + c[1:2], c[0:1] + c[2:3], c[0:1] + c[3:4]} {
 				get("r18_sa_" + tag)
@@ -148,7 +157,7 @@ func TestR18InSequence(t *testing.T) {
 				get("r18_sa_resid_" + tag)
 			}
 			if c[4] != '0' {
-				get("gemv_w4a8_resid_st" + c[4:5])
+				get(r18DownKernel(c))
 			}
 		}
 	}()
@@ -169,7 +178,7 @@ func TestR18InSequence(t *testing.T) {
 			gu: pipes["r18_sa_"+c[0:1]+c[3:4]]}
 		a.rows.qkv, a.rows.o, a.rows.gu, a.rows.down = d(1), d(2), d(3), d(4)
 		if a.rows.down > 0 {
-			a.down = pipes["gemv_w4a8_resid_st"+c[4:5]]
+			a.down = pipes[r18DownKernel(c)]
 		}
 		// TG 256 = 8 simdgroups x R rows: every GEMV's row count must divide (the prototypes carry no bounds guard)
 		for _, chk := range []struct{ rows, R int }{{qkvRows, a.rows.qkv}, {r.H, a.rows.o}, {2 * r.I, a.rows.gu}, {r.H, a.rows.down}} {

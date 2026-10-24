@@ -641,10 +641,94 @@ template [[host_name("mc3_gemv_w4a8_sa_bias_rows_adj4")]] kernel decltype(mc3_ge
 template [[host_name("gemv_w4a8_sa_resid_rows2")]] kernel decltype(gemv_w4a8_sa_resid_rows<2>) gemv_w4a8_sa_resid_rows<2>;
 template [[host_name("gemv_w4a8_sa_resid_rows4")]] kernel decltype(gemv_w4a8_sa_resid_rows<4>) gemv_w4a8_sa_resid_rows<4>;
 
+// KS-C3: the native int8 twins of R18's rows kernels, each taking its int4 twin's arguments in the same order at the same
+// launch shape (grid rows*32/R, tg 256, full threadgroups only; gemvRowsFor). The activation is staged as uint4 words and
+// each lane reads uint4 words of R rows, so K must be a multiple of 16. The int32 dot is exact in any order and the epilogue
+// is W8A8_SA_BODY's (simd_broadcast_first included), so each output is the shipped one-row kernel's bits.
+template <uint R>
+inline void w8_rows_acc(device const uint4* wq, device const float* sct, device const char* aq, device const float* asc,
+    uint K, threadgroup uint4* As, uint tgid, uint tid, uint tgs, uint sgid, uint lane, thread float* y, thread uint& row0) {
+    device const uint4* a4 = reinterpret_cast<device const uint4*>(aq);
+    uint G = K >> 4u;
+    for (uint i = tid; i < G; i += tgs) As[i] = a4[i];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    row0 = (tgid*(tgs>>5u) + sgid)*R;
+    int acc[R];
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0;
+    for (uint g = lane; g < G; g += 32u) {
+        uint4 a = As[g];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            uint4 w = wq[(row0+r)*G + g];
+            acc[r] += DOT4I8(a.x, w.x) + DOT4I8(a.y, w.y) + DOT4I8(a.z, w.z) + DOT4I8(a.w, w.w);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) y[r] = simd_broadcast_first(float(simd_sum(acc[r])) * asc[0] * sct[row0+r]);
+}
+template <uint R>
+kernel void gemv_w8a8_sa_rows(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup uint4* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(wq, sct, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = y[r]; }
+}
+template <uint R>
+kernel void gemv_w8a8_sa_bias_rows(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup uint4* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(wq, sct, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = y[r] + bias[row0+r]; }
+}
+template <uint R>
+kernel void gemv_w8a8_sa_resid_rows(device const uint4* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup uint4* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(wq, sct, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += y[r]; }
+}
+// The down projection's twin of gemv_w4a8_resid_staged: gemv_w8a8_body_resid's output, the same rows kernel.
+template <uint R>
+kernel void gemv_w8a8_body_resid_staged(device const uint4* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup uint4* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float y[R]; uint row0;
+    w8_rows_acc<R>(bq, bsc, aq, asc, K, As, tgid, tid, tgs, sgid, lane, y, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += y[r]; }
+}
+template [[host_name("gemv_w8a8_sa_rows2")]] kernel decltype(gemv_w8a8_sa_rows<2>) gemv_w8a8_sa_rows<2>;
+template [[host_name("gemv_w8a8_sa_rows4")]] kernel decltype(gemv_w8a8_sa_rows<4>) gemv_w8a8_sa_rows<4>;
+template [[host_name("gemv_w8a8_sa_bias_rows2")]] kernel decltype(gemv_w8a8_sa_bias_rows<2>) gemv_w8a8_sa_bias_rows<2>;
+template [[host_name("gemv_w8a8_sa_bias_rows4")]] kernel decltype(gemv_w8a8_sa_bias_rows<4>) gemv_w8a8_sa_bias_rows<4>;
+template [[host_name("gemv_w8a8_sa_resid_rows2")]] kernel decltype(gemv_w8a8_sa_resid_rows<2>) gemv_w8a8_sa_resid_rows<2>;
+template [[host_name("gemv_w8a8_sa_resid_rows4")]] kernel decltype(gemv_w8a8_sa_resid_rows<4>) gemv_w8a8_sa_resid_rows<4>;
+template [[host_name("gemv_w8a8_body_resid_staged2")]] kernel decltype(gemv_w8a8_body_resid_staged<2>) gemv_w8a8_body_resid_staged<2>;
+template [[host_name("gemv_w8a8_body_resid_staged4")]] kernel decltype(gemv_w8a8_body_resid_staged<4>) gemv_w8a8_body_resid_staged<4>;
+// KS-C2: a word's eight-nibble sum in R18b's masked form for the staged coal kernels below. x0 and x1 are the word's eight
+// int8 activations scaled by 16^-(k mod 4); each 16-bit half is masked in place (nibble k as nib*16^(k mod 4)) and dotted with
+// its four. Every partial is an integer below 2^24, so the result less 8*sum(a) is W4A8_BODY's integer gi exactly.
+// KSC2_OLD_DOWN (a test-only define, ksc2OldDownForTest) compiles the per-word integer form back.
+constant float4 W4M_P4 = float4(1.0f, 0.0625f, 0.00390625f, 0.000244140625f);
+constant float4 W4M_U4 = float4(1.0f, 16.0f, 256.0f, 4096.0f);
+inline float w4_masked_word(uint x, float4 x0, float4 x1) {
+    uint lo = x & 0xFFFFu, hi = x >> 16;
+    return dot(float4(float(lo & 0xFu), float(lo & 0xF0u), float(lo & 0xF00u), float(lo & 0xF000u)), x0)
+         + dot(float4(float(hi & 0xFu), float(hi & 0xF0u), float(hi & 0xF00u), float(hi & 0xF000u)), x1);
+}
+
 // R18: gemv_w4a8_resid (the coal down projection) with its int8 activations staged ONCE per threadgroup (K bytes of
 // threadgroup memory; the host checks it fits) and R rows per simdgroup. Lane l still owns words l, l+32, ... of each
-// row, in order, with W4A8_BODY's per-word integer sum and float(gi)*scale accumulation -> bit-identical to
-// gemv_w4a8_resid. Grid rows*32/R, tg 256, rows % (8R) == 0 (gemvRowsFor), as for gemv_w4a8_sa_rows.
+// row, in order, with W4A8_BODY's per-word integer sum (taken in w4_masked_word's form) and float(gi)*scale accumulation ->
+// bit-identical to gemv_w4a8_resid. Grid rows*32/R, tg 256, rows % (8R) == 0 (gemvRowsFor), as for gemv_w4a8_sa_rows.
 template <uint R>
 kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
@@ -661,6 +745,7 @@ kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device co
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
     threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
     for (uint wi = lane; wi < wpr; wi += 32u) {
+#ifdef KSC2_OLD_DOWN
         char4 a0 = A[wi*2u], a1 = A[wi*2u+1u];
         SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
             uint x = bq[(row0+r)*wpr + wi];
@@ -670,6 +755,13 @@ kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device co
                    + (int((x>>24)&0xF)-8)*int(a1.z) + (int((x>>28)&0xF)-8)*int(a1.w);
             acc[r] += float(gi) * float(bsc[(row0+r)*spr + (wi>>2u)]);
         }
+#else
+        float4 x0 = float4(A[wi*2u]) * W4M_P4, x1 = float4(A[wi*2u+1u]) * W4M_P4;
+        float s8 = 8.0f * (dot(x0, W4M_U4) + dot(x1, W4M_U4));
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            acc[r] += (w4_masked_word(bq[(row0+r)*wpr + wi], x0, x1) - s8) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+#endif
     }
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] += s*asc[0]; }
 }
@@ -694,6 +786,7 @@ kernel void gemv_w4a8_coal_staged(device const uint* bq[[buffer(0)]], device con
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
     threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
     for (uint wi = lane; wi < wpr; wi += 32u) {
+#ifdef KSC2_OLD_DOWN
         char4 a0 = A[wi*2u], a1 = A[wi*2u+1u];
         SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
             uint x = bq[(row0+r)*wpr + wi];
@@ -703,6 +796,13 @@ kernel void gemv_w4a8_coal_staged(device const uint* bq[[buffer(0)]], device con
                    + (int((x>>24)&0xF)-8)*int(a1.z) + (int((x>>28)&0xF)-8)*int(a1.w);
             acc[r] += float(gi) * float(bsc[(row0+r)*spr + (wi>>2u)]);
         }
+#else
+        float4 x0 = float4(A[wi*2u]) * W4M_P4, x1 = float4(A[wi*2u+1u]) * W4M_P4;
+        float s8 = 8.0f * (dot(x0, W4M_U4) + dot(x1, W4M_U4));
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            acc[r] += (w4_masked_word(bq[(row0+r)*wpr + wi], x0, x1) - s8) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+#endif
     }
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] = s*asc[0]; }
 }

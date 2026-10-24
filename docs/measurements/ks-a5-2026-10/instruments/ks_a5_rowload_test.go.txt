@@ -1,0 +1,169 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// KS-A5 build gate instrument (docs/measurements/ks-a5-2026-10/README.md). Kept under docs as .go.txt and copied into
+// cuda/ as ks_a5_scratch_test.go for a run; never committed under cuda/. Gated on GOINFER_KS=1. GOINFER_KS_A5_OLD names
+// origin/main's committed fused_qkv.ptx (the old arm); the new arm is the resident's own fused_rms_qkv / fused_rms_gu.
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func ksa5Load1() float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
+	return f
+}
+
+func TestKSA5_build(t *testing.T) {
+	if os.Getenv("GOINFER_KS") == "" {
+		t.Skip("set GOINFER_KS=1 (KS-A5 instrument)")
+	}
+	oldPTX, err := os.ReadFile(os.Getenv("GOINFER_KS_A5_OLD"))
+	if err != nil {
+		t.Fatalf("GOINFER_KS_A5_OLD: %v", err)
+	}
+	for _, name := range []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "gemma3-1b-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
+		t.Run(name, func(t *testing.T) {
+			mc, err := loadLikeServe(t, modelPath(name), "-backend", "cuda", "-quant", "int4")
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer mc.Close()
+			r := mustResident(t, mc)
+			newQKV, newGU := r.fQKV, r.fGU
+			var oldQKV, oldGU Pipeline
+			if err := r.do(func() error {
+				lib, e := r.dev.CompileLibrary(oldPTX)
+				if e != nil {
+					return e
+				}
+				if oldQKV, e = r.dev.NewComputePipeline(lib, "fused_rms_qkv"); e != nil {
+					return e
+				}
+				oldGU, e = r.dev.NewComputePipeline(lib, "fused_rms_gu")
+				return e
+			}); err != nil {
+				t.Fatal(err)
+			}
+			use := func(old bool) {
+				r.fQKV, r.fGU = newQKV, newGU
+				if old {
+					r.fQKV, r.fGU = oldQKV, oldGU
+				}
+			}
+			// Which kernels this model dispatches: the build changes fused_rms_qkv and fused_rms_gu only.
+			ffnI := r.inter
+			gsh := (r.hidden + 256 + r.hidden/4) * 4
+			guRPW := r.waveRowsPerWarp(2*ffnI, gsh)
+			if guRPW == 0 {
+				guRPW = fusedGURowsPerWarp(r.hidden, ffnI)
+			}
+			fmt.Fprintf(os.Stderr, "[A5b] %s hidden %d inter %d: gate/up rows-per-warp %d (%s); Kwords %d\n", name, r.hidden, ffnI, guRPW,
+				map[bool]string{true: "fused_rms_gu, changed", false: "fused_rms_gu_rows, unchanged"}[guRPW == 8 || r.fGURows == (Pipeline{})], r.hidden/8)
+			r.launchN = 0
+			_, _, _, _, _, _, vocab := mc.Dims()
+			emb := func(i int) []float32 { return mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
+
+			// ---- G1: full logits over 32 positions, old arm then new arm over the same positions ----
+			const n = 32
+			logits := func(old bool) [][]float32 {
+				use(old)
+				out := make([][]float32, n)
+				for i := range n {
+					lg, err := r.Forward(emb(i), i)
+					if err != nil {
+						t.Fatalf("forward: %v", err)
+					}
+					out[i] = append([]float32(nil), lg...)
+				}
+				return out
+			}
+			la, lb := logits(true), logits(false)
+			diff := 0
+			for i := range la {
+				for j := range la[i] {
+					if math.Float32bits(la[i][j]) != math.Float32bits(lb[i][j]) {
+						diff++
+					}
+				}
+			}
+			fmt.Fprintf(os.Stderr, "[A5b] %s G1: %d positions x %d logits, %d differ\n", name, n, len(la[0]), diff)
+			if diff != 0 {
+				t.Fatalf("G1 FAIL: %d logits differ", diff)
+			}
+			if !strings.HasPrefix(name, "qwen2.5-coder-0.5b") {
+				return // G2 decides on the 0.5B only
+			}
+
+			// ---- G2: greedy decode at depth 128, 10 ABBA quads of 64 tokens ----
+			const depth, block = 128, 64
+			use(false)
+			for i := range depth {
+				if _, err := r.ForwardArgmax(emb(i), i); err != nil {
+					t.Fatal(err)
+				}
+			}
+			run := func(old bool) time.Duration {
+				use(old)
+				t0 := time.Now()
+				for i := range block {
+					if _, err := r.ForwardArgmax(emb(1000+i), depth+i); err != nil {
+						t.Fatalf("decode: %v", err)
+					}
+				}
+				return time.Since(t0)
+			}
+			run(true)
+			run(false)
+			const quads = 10
+			var ratios []float64
+			var sumO, sumN time.Duration
+			voids := 0
+			for q := 0; q < quads; q++ {
+				l1 := ksa5Load1()
+				if l1 > 8.0 {
+					voids++
+					fmt.Fprintf(os.Stderr, "[A5b] quad %d VOID: load1 %.2f > 8.0 at start; re-running\n", q, l1)
+					q--
+					time.Sleep(10 * time.Second)
+					continue
+				}
+				a1 := run(true)
+				b1 := run(false)
+				b2 := run(false)
+				a2 := run(true)
+				ra := float64(a1+a2) / float64(b1+b2)
+				ratios = append(ratios, ra)
+				sumO += a1 + a2
+				sumN += b1 + b2
+				fmt.Fprintf(os.Stderr, "[A5b] quad %d load1 %.2f | old %.1f µs/tok new %.1f µs/tok | new speedup %.4f\n",
+					q, l1, float64((a1+a2).Microseconds())/(2*block), float64((b1+b2).Microseconds())/(2*block), ra)
+			}
+			use(false)
+			srt := append([]float64(nil), ratios...)
+			sort.Float64s(srt)
+			above := 0
+			for _, x := range ratios {
+				if x > 1 {
+					above++
+				}
+			}
+			if r.launchErr != nil {
+				t.Fatalf("a launch failed: %v", r.launchErr)
+			}
+			nTok := float64(quads * 2 * block)
+			t.Logf("KS-A5b %s: greedy token old %.1f µs (%.1f tok/s), new %.1f µs (%.1f tok/s); new speedup median %.4f, min %.4f, max %.4f, %d/%d quads above 1, %d void",
+				name, float64(sumO.Microseconds())/nTok, nTok/sumO.Seconds(), float64(sumN.Microseconds())/nTok, nTok/sumN.Seconds(),
+				(srt[quads/2-1]+srt[quads/2])/2, srt[0], srt[quads-1], above, quads, voids)
+		})
+	}
+}

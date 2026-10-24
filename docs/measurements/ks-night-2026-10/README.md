@@ -120,3 +120,42 @@ loop. So the kernel needs no more threadgroup memory than `gemm_w4f16_store`.
 The first build's 10.4% loss (median 1.1040) was the added 8 KB of threadgroup memory. With the tile in the staging arrays'
 memory, the fused pass is 1.2% faster than the two-step one and drops `guF`'s 139.9 MB from a 3,900-row pass on the 1.5B. That also
 means 2.1× the rows per prefill block: `PrefillBlockRows` prices the cheaper row.
+
+## KS-D5c, the fused SwiGLU on the native int8 lane (D5c-G), 2026-10-23: shipped
+
+Gates registered before the code (survey doc, "KS-D5c gates", 10:12), amended before any model reading (10:15) to the 0.5B because the
+fit guard refused the 1.5B at int8int8 beside the owner's apps (2.8 GB needed, a 2.1 GB budget). The build: `gemm_w4f16_swiglu`
+becomes a template on `W8`; its `W8` instance, `gemm_w8f16_swiglu`, stages int8 codes with one f32 scale a row as
+`gemm_w4f16_tile<64, 64, true>` does, and `swigluFused` admits a native int8 resident.
+
+| gate | reading | result |
+|---|---|---|
+| D5c-G1 identity | `TestKSD5c_w8FusedSwigluMatchesTwoStep`: D5-G1's 12 cells against `gemm_w8f16_m64n64` + `swiglu_f16`, in the fast-math and the precise library, 0 of every cell differ; D5-G1's int4 cells still 0. `TestKSD5_prefillFusedIdentity`: llama-tiny at int8int8 (native int8) 0 of 256; Qwen2.5-Coder-0.5B at int8int8 (the `.gguf`, a direct load), 3,900 rows, 0 of 151,936 logits differ. Plant (the up rows read the gate rows' scale): 5,897 of 6,144 differ in the first cell. Log: `~/goinfer-logs/ksd5c-g1g2-2026-10-23.log` | **PASS** |
+| D5c-G2 scratch | `TestKSD5_guFShare`, the 0.5B at int8int8, one 3,900-row pass: two-step **143.9 MB**, fused **68.0 MB** counted (68.0 planned), the two-step less `guF`'s 76.0 MB exactly. Log: `~/goinfer-logs/ksd5c-g2-2026-10-23.log` | **PASS** |
+| D5c-G3 speed | `TestKSD5_prefillSpeed`, the 0.5B at int8int8, a 3,900-token `PrefillLast`, fused against two-step on one resident, A B B A over 10 pairs after 2 warm runs each, the timing lock held exclusively, 11:51–11:53. At the start: the 1-minute load 3.94, 4.32 GB available (the void line: about 1.2 GB fit need plus 2 GB); at the end 7.54 (macOS's photo analyzer). Two-step 3,650–3,755 ms, fused 3,603–3,754 ms, **median 0.9931, 7 of 10 pairs below 1**. Log: `~/goinfer-logs/ksd5c-g3-2026-10-23.log` | **SHIP** (bar ≤ 1.01) |
+
+A first wait for the void line (10:17–11:47) never saw the load under 4.0 and 3.5 GB available together; 3.5 GB was an
+over-estimate of the line, corrected to 3.2 GB before the second wait (`~/goinfer-logs/ksd5c-g3-wait1-2026-10-23.log`). The fused
+int8 pass is bit-identical, drops `guF` (52.8% of the 0.5B's long-pass scratch) and is not slower. The lanes that still keep `guF`
+are the small-M tiles (at most 128 rows) and the MoE expert GEMMs, whose tile follows each expert's row count.
+
+## KS-D2, steel prefill attention at head dim 64 (D2-G), 2026-10-23
+
+The first measurement (`TestMetalPrefillDecomp`, the 0.5B, 11:59): attention 69.5% of the 3,900-row pass, 29.4% at 512 (survey,
+"KS-D2 first measurement"). Gates registered before the code (survey, "KS-D2 gates", 12:02). The build: `attention_prefill_steel`
+templated on the head dim (64, 80, 96, 128); head dim 64 admitted beside 128; 80 and 96 built, checked at tier 0, not admitted.
+
+| gate | reading | result |
+|---|---|---|
+| D2-G1 128 unchanged | `TestKSD2_steel128Logits`, the 1.5B `.giw`, a test binary at the base (6129031b) and one at the change: last-logits SHA-256 `041603c7…` at K=512 and `ac6daeb1…` at K=3,900 from both. Log: `~/goinfer-logs/ksd2-g1-2026-10-23.log` | **PASS** |
+| D2-G2 kernel | `TestKSD2_steelHeadDims`, 24 cells (head dim 64/80/96 × M 100/300 × start 0/37 × window 0/64), both kernels against an f64 attention: steel/fused max-abs error 0.92–1.12 (bar ≤ 2), mean-abs 0.99 in every cell (bar ≤ 1.25), all finite. Plant (the 128 instance's word index at 64): steel NaN, red. Log: `~/goinfer-logs/ksd2-g2-2026-10-23.log` | **PASS** |
+| D2-G3 fidelity | `TestPrefillGateReference`'s Q05 cell built set A's f32 CPU references at K = 256, 512, 1,024 and 3,900 (12:10–12:17); `TestPrefillGateVsReference` on Q05, steel as production (12:18–12:27), then the fused kernel (`GOINFER_METAL_R19_BASELINE=1`, 12:27–12:37). Pooled over K = 256/512/1,024 (1,920 positions): hard flips exact 104, **steel 99**, fused 108; agreement exact 89.32%, **steel 89.64%**, fused 89.22%; mean KL per cell, steel / fused: 0.2527 / 0.2550 (256), 0.1592 / 0.1626 (512), 0.1956 / 0.1932 (1,024), 0.1365 / 0.1363 (the 3,900 confirm). Steel: **SHIPS** (critA, critB, critC true); the fused kernel also ships on the same set. Not timed, so the load (23.8 at the steel arm's start) does not void it. Logs: `~/goinfer-logs/ksd2-q05-refs-2026-10-23.log`, `~/goinfer-logs/ksd2-g3-steel-2026-10-23.log`, `~/goinfer-logs/ksd2-g3-fused-2026-10-23.log` | **PASS** |
+| D2-G4 speed | `TestKSD2_prefillSpeed`, the 0.5B (`.gguf`, int4), 12:07–12:08, the timing lock held exclusively (the 1-minute load 2.91 at the start, 4.27 GB available; 2.25 and 3.99 GB at the end): K=3,900 fused 3,579–3,583 ms, steel about 1,244 ms, **median 0.3473 (2.88×), 10 of 10**; K=512 fused 194.3–194.9 ms, steel 146.2–147.0 ms, **median 0.7528 (1.33×), 10 of 10**. Log: `~/goinfer-logs/ksd2-g4-2026-10-23.log` | **SHIP** (bars ≤ 0.80 and ≤ 1.02) |
+
+Also: `touched.py` green; the Metal prefill families by name (`Prefill|MC5|DB01|R19|Steel|Chunk|Batched|Attention`) 52 pass, 38
+skip, 0 fail; staticcheck clean on `metal` (canary red).
+
+Steel at head dim 64 is at least as close to the CPU reference as the fused kernel it replaces, and makes the 0.5B's 3,900-row
+prefill 2.88× faster (3.58 → 1.24 s) and its 512-row prefill 1.33× faster. Head dims 80 and 96 are built and pass the tier-0
+check; each is admitted after a model at that head dim passes set A (Phi-3 at int4 for 96).
+

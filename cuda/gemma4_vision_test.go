@@ -210,6 +210,37 @@ func TestG4VCUDA_plantedDefects(t *testing.T) {
 	a.defect = g4Defect{}
 }
 
+// G-S20e(1): serve's towerSwap closes the tower after every encode and builds it again from the same encoder for the next
+// image, so a rebuilt tower must give bit-identical hidden states to the first one on the same grid.
+func TestG4VCUDA_rebuildAfterCloseBitIdentical(t *testing.T) {
+	enc := g4TinyTower(t)
+	g := g4Grids[3]
+	p, pos := g4Case(enc, g.gw, g.gh, g.shuffle, 61)
+	var first []float32
+	for build := range 3 {
+		a, err := newG4Tower(enc)
+		if err != nil {
+			t.Skipf("no CUDA device: %v", err)
+		}
+		h, err := a.Hidden(p, pos)
+		if cerr := a.Close(); cerr != nil {
+			t.Fatal(cerr)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if build == 0 {
+			first = h
+			continue
+		}
+		for i := range h {
+			if h[i] != first[i] {
+				t.Fatalf("build %d differs from the first at %d: %v vs %v", build, i, h[i], first[i])
+			}
+		}
+	}
+}
+
 // Close releases everything the device holds, and an unusable request returns an error (never a panic).
 func TestG4VCUDA_closeAndErrors(t *testing.T) {
 	enc := g4TinyTower(t)
