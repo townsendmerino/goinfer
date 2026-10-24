@@ -1390,7 +1390,15 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
         threadgroup_barrier(mem_flags::mem_threadgroup);
         float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
         red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
+#ifdef KSC5_OLD_ATTN
         for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+#else
+        // KS-C5: the tree's levels above 16 through threadgroup memory, the rest in simdgroup 0 by shuffle; each level takes
+        // max(red[tid], red[tid+st]) of the same two values as the barrier form.
+        for (uint st=tgs/2; st>16u; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+        if (tid < 32u) { float v=red[tid]; for (uint st=16u; st>0u; st>>=1) v=max(v, simd_shuffle_down(v, st)); if (tid==0u) red[0]=v; }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+#endif
         float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
         float sink=0.0f; bool hasS = hasSink != 0u;
         if (hasS) { sink = sinks[qh]; mx = max(mx, sink); }
@@ -1400,7 +1408,13 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
         // WIDTH). tgs is pinned to tgReduceAttn (128, model.go); do NOT parameterize/sweep it, and any
         // alternate attention kernel MUST reduce at the same width or it diverges byte-exactly (past
         // nKeys>width). No existing gate catches this. See ollama-chase §A2-Metal.
+#ifdef KSC5_OLD_ATTN
         for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+#else
+        for (uint st=tgs/2; st>16u; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+        if (tid < 32u) { float v=red[tid]; for (uint st=16u; st>0u; st>>=1) v = v + simd_shuffle_down(v, st); if (tid==0u) red[0]=v; }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+#endif
         float sum=red[0];
         if (hasS) sum += exp(sink-mx); // sink joins the denominator only — no value vector, numerator untouched
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -1412,7 +1426,18 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
         // multiple of 8. Measured (2026-08-21, git-stash A/B, tight-alternated, 2048 ctx): ~26.6%
         // faster than scalar; width-4 also won (~17-18%) but 8 measured further ahead of it.
         for (uint d=tid; d<hd; d+=tgs){
-            float a=0; uint s=winStart; uint nMain = winStart + (nWin & ~7u);
+            float a=0; uint s=winStart;
+#ifndef KSC5_OLD_ATTN
+            // KS-C5: 16 loads in flight, the adds retired in the same order.
+            uint n16 = winStart + (nWin & ~15u);
+            for (; s<n16; s+=16u) {
+                uint sc_idx = s - winStart;
+                float w[16];
+                for (uint j=0u; j<16u; j++) w[j]=float(vb[(s+j)*kvDim+d]);
+                for (uint j=0u; j<16u; j++) a += sc[sc_idx+j]*w[j];
+            }
+#endif
+            uint nMain = winStart + (nWin & ~7u);
             for (; s<nMain; s+=8u) {
                 uint sc_idx = s - winStart;
                 float v0=float(vb[(s+0u)*kvDim+d]);

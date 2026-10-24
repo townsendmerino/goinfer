@@ -1155,6 +1155,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if ksc2OldDownForTest {
 		libSrc = "#define KSC2_OLD_DOWN 1\n" + libSrc
 	}
+	if ksc5OldAttnForTest {
+		libSrc = "#define KSC5_OLD_ATTN 1\n" + libSrc
+	}
 	if p := mambaSrcPlantForTest; err == nil && p[0] != "" {
 		libSrc = strings.Replace(libSrc, p[0], p[1], 1)
 	}
@@ -3262,6 +3265,10 @@ func (r *resident) w8RowsOK() bool {
 // ksc2OldDownForTest builds the decode library with the staged coal kernels' per-word integer sum (KSC2_OLD_DOWN), the old
 // arm of KS-C2's A/B; read at build.
 var ksc2OldDownForTest bool
+
+// ksc5OldAttnForTest builds the decode library with attention's 8-wide V loads and barrier-only reductions (KSC5_OLD_ATTN), the
+// old arm of KS-C5's A/B; read at build.
+var ksc5OldAttnForTest bool
 
 // gemvRowsFor is the rows-per-simdgroup count for an R18 GEMV of `rows` outputs: the largest of want, want/2, ..., 2
 // whose threadgroups of 8·R rows (tg 256 = 8 simdgroups) tile rows exactly, or 0 (keep the shipped kernel). The rows
