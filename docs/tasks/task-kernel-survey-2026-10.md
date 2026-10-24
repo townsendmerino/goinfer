@@ -1176,6 +1176,42 @@ That is the denominator for KS-D8's estimated 5–8× and for KS-B12. Also seen:
 (138.8 MiB beside the load's 10.49 GB is over its 6.55 GB budget), so a reply rendered back differently re-prefills the whole
 prompt. Log: `~/goinfer-logs/ksd8-baseline-day-2026-10-24-0853.log`.
 
+**KS-D8 design and gates, registered 2026-10-24 before the code (D8-G), on the owner's word of 10:22 (start KS-D8 now; design
+and gates first).** What the pass lacks for Nemotron-H, read off `MissingResidentFeatures(prefillFeatures)` on `nemotron-tiny`
+(layers Mamba, attention, MLP, Mamba, attention) and on the 9B's three-layer slice (Mamba, MLP, attention; dInner 10,240, dState
+128, in_proj 22,656 × 4,480): `ssm`, `non-gated-mlp` and `non-gated-relu2`. Its attention layers are already in the pass. The build:
+- **The layer loop takes decode's shape:** the mixer by kind (DeltaNet, Mamba-2, attention, or none for an MLP-only layer), then
+  the FFN only where the layer has one (`L.ffn`), as `encodeLayerResidualWith` does.
+- **The Mamba-2 mixer over M rows** (`encodePrefillMambaMixer`, a new `metal/prefill_mamba.go`, after D-B01's DeltaNet form):
+  the pre-norm into the pass's f16 norm scratch; in_proj as an int8 prefill GEMM (`gemm_w8f16_*`, which takes the int8 codes and
+  per-row f32 scales the layer already holds; the W8 tiles compile for a Mamba resident too); then three row kernels over the M
+  rows, `mamba_conv_seq` (a thread per channel, the window in registers), `mamba_ssm_seq` (a thread per head and channel, the state
+  in the layer's buffer as decode keeps it) and `mamba_gnorm_rows` (a threadgroup per row and group). Each is its decode kernel's
+  body with a token loop, so given the same inputs it writes decode's bits, window and state included. Then the gated rows to f16
+  and out_proj as an int8 GEMM accumulating into the f16 residual (mode 2). The window and state continue from what the resident
+  holds, as M decode steps would.
+- **The non-gated relu² MLP:** norm, the up projection (int4 GEMM, its bias by mode 1), `nongated_act_rows_f16` (decode's
+  `nongated_act` per element), the down projection accumulating into the residual (mode 2). Admitted only where the down projection
+  has no bias (Nemotron-H); a biased one (GPT-2) stays sequential, so the shared GEMM kernel is not touched.
+- **Admission:** `recurrentPrefillOK` admits a Mamba resident when `mambaPrefillOn` (a test switch, on) and dConv ≤ 8; the three
+  features leave the missing list as DeltaNet's does. The new kernels live in `metal/kernels/mamba_kernels_msl.go`.
+- **Class: fidelity-gated.** What leaves decode's arithmetic is what every batched layer changes: f16 activations into the
+  projections and f16 projection outputs, where decode runs W8A8 with f32 outputs.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D8-G1 kernels | 0 | each row kernel against M steps of its decode kernel at `nemotron-tiny`'s and the 9B's mixer shapes, M = 1, 7, 64: random inputs representable in f16 (the row kernels read the f16 projection rows, decode the f32), a non-zero starting window and state | outputs, window and state byte-equal |
+| D8-G2 fidelity, tiny | 0 | `nemotron-tiny`: a CPU f32 reference, the Metal int4 sequential path and the Metal int4 batched pass, prompts of 16, 48 and 100 tokens (8 prompts each, seeded ids), last-position logits | the batched pass is non-inferior to the sequential one against the reference: its mean KL to the reference at most the sequential path's + 0.005 nats, and its top-1 agreement with the reference at least the sequential path's − 1 prompt |
+| D8-G3 fidelity, 9B | 1, Mac | Nemotron-Nano-9B-v2's int4 Metal `.giw`, 8 prompts of 512 seeded token ids, last-position logits, batched against sequential (no f32 reference fits this box) | top-1 agrees on at least 7 of 8 and the mean symmetric KL ≤ 0.05 nats: PASS; 6 of 8 or KL in (0.05, 0.10]: PARK for a CPU f32 reference on nobara; worse: FAIL |
+| D8-G4 speed | timed, Mac, timing lock | the 9B, a 512-token prompt's time to the first token, batched against sequential, interleaved A B B A over 2 pairs after one warm run each (the sequential arm is 35 s; its baseline read 14.5 tok/s) | SHIP iff the median speedup is ≥ 2× |
+| D8-G5 memory | 0 and 1 | the pass's scratch counter (`prefillScratchSeen`) against `PrefillScratchBytes` on `nemotron-tiny` and the 9B at 512 rows; the 9B's 512-token prompt admitted by the fit guard with the pass priced | counted ≤ planned; admitted |
+| D8-G6 unchanged | 0 | `touched.py`; the prefill, DeltaNet, MEM6/MEM7 and attention-prefill tests by name; `llama-tiny`, `qwen35-tiny` and the 1.5B batched-prefill logits against a resident built at `origin/main` (their paths call no new code) | all PASS; byte-equal |
+
+Planted defects, run once on the committed tree and reverted: `mamba_ssm_seq` restarting the state at each row (D8-G1 red), and the
+batched pass skipping the conv window's write-back (D8-G1 red on the window). Stopping rule: one pass each; a FAIL is diagnosed,
+not re-run. Cost: G1, G2, G5 and G6 minutes; G3 about 10 minutes (16 prompt passes, 8 of them sequential at 35 s); G4 about 3
+minutes. Size: L (the estimate was M–L; the relu² MLP and the mixer-only layers were not in it).
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
