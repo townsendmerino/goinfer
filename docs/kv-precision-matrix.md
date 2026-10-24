@@ -14,7 +14,7 @@ Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (ho
 | dense (phi3) (`phi3-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
 | MoE (`qwen3moe-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
 | sliding window (`gemma2-tiny`) | f16 (auto is f16 on CUDA for this family (sliding window: by the owner's decision over an AMBIGUOUS quality reading at 8,000 keys)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| pairwise RoPE (`cohere-tiny`) | f32 (f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
+| pairwise RoPE (`cohere-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (2 hard flips against f32's 0)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
 | m-RoPE (VL) (`qwen25vl-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
 | MLA (`deepseek-tiny`) | f32 (f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
 | Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |

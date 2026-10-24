@@ -242,6 +242,8 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 		return ""
 	case f.Hybrid:
 		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)"
+	case f.PairwiseRoPE:
+		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (2 hard flips against f32's 0)"
 	}
 	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
 }

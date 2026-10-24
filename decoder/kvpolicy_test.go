@@ -166,7 +166,9 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 			t.Errorf("%s: auto decline %q, want auto f16 %v", c.name, got, c.auto)
 		}
 	}
-	if got := CUDAKVF16AutoDecline(KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}); !strings.Contains(got, "did not pass") {
-		t.Errorf("qwen3_5: auto decline %q does not publish the hybrids' failed gate", got)
+	for _, f := range []KVFacts{{Family: "qwen3_5", Hybrid: true}, {Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}} {
+		if got := CUDAKVF16AutoDecline(f, Options{}); !strings.Contains(got, "did not pass") {
+			t.Errorf("%s: auto decline %q does not publish its group's failed gate", f.Family, got)
+		}
 	}
 }
