@@ -18,7 +18,7 @@ type Reading struct {
 	Source                                   string
 }
 
-// PressureBuffer is held back from the macOS percentage's figure (owner's decision, 2026-10-24).
+// PressureBuffer is held back from the macOS percentage's figure; the owner's choice (docs/measurements/noise-registry.md §8).
 const PressureBuffer = 500 << 20
 
 // TaskVM is another process's memory as task_info(TASK_VM_INFO) reports it, in bytes. Compressed is its pages in the compressor, held
