@@ -130,7 +130,7 @@ func (r *cudaResident) LoraCacheStatsForTest() (uploads, hits uint64) {
 	return uploads, hits
 }
 
-// TopKForTest runs the resident's on-device topk_select over caller-supplied logits (len ≤ r.vocab) and
+// TopKForTest runs the resident's on-device top-K over caller-supplied logits (len ≤ r.vocab) and
 // returns the decoded row — the seam the kernel gates use to feed exact-tie, ±0 and short-vocab rows a
 // real forward would (almost) never produce. It goes through topkReadback, the same launch-and-unpack
 // ForwardTopK runs.
@@ -147,7 +147,7 @@ func (r *cudaResident) TopKForTest(logits []float32, k int, temperature float64,
 	return row, err
 }
 
-// TopKLaunchForTest runs topk_select over whatever r.logits currently holds (no upload) and decodes the
+// TopKLaunchForTest runs the top-K over whatever r.logits currently holds (no upload) and decodes the
 // row: the per-token cost the decode loop actually pays after a forward, without the H2D the other hook
 // adds. Timing instrument only.
 func (r *cudaResident) TopKLaunchForTest(v, k int, temperature float64, wantZ bool) error {

@@ -20,14 +20,14 @@
 |---|---|---|---|
 | KS-A1 | decision | KS-O1, then nobara: a Q5_K GEMV against `gemv_w8a8_g32`. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 (+284.3 Q5_K qkv, +72.6 Q6_K down, +17.8 Q6_K head, all int8 copies) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A2 | done | done 2026-10-23 (#191, aikit `gpu/v0.34.0`): the CUDA resident launches from its own executor thread (aikit `Queue.LaunchDirect`), byte-identical. The 0.5B at depth 128 **1.492×** median, 10 of 10 ABBA quads (345 → 521 tok/s); gemma3-1b 1.465× (197 → 291); 10.4 → 2.3 µs a launch. Unblocks KS-A5 (decode now GPU-bound) | `docs/measurements/ks-a2-2026-10/README.md` |
-| KS-A3 | decision | owner: build the multi-block `topk_select` (S–M)? Measured 2026-10-23: one block, **101.7 µs** at (152k, 256), **211.5 µs** at (262k, 1024) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A3 | done | done 2026-10-23 (#195): the top-K as `topk_compact` (32 blocks) + `topk_finish` (select K, sort K) + `topk_z` (32 blocks, same partials); every output word equal to the one-block kernel on 608 cases; a sampled 0.5B token **1.0263×** median, 10 of 10 ABBA quads (2,007.5 → 1,955.4 µs); +36.9 KB device scratch | `docs/measurements/ks-a3-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
 | KS-A5 | decision | owner: build the one-round row loads (S–M), after KS-A2's launch path, since the gain needs decode GPU-bound? Measured 2026-10-23: `fused_rms_gu` at (896, 4864) runs at **55.2%** of DRAM peak (kill was ≥ 80%) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-A6 | open | nobara: host timestamps around upload, readback and hand-off | — |
 | KS-A7 | open | nobara: launch counter, then an A/B on phi3-mini | — |
 | KS-A8 | open | nobara: an A/B after A2 reads | — |
 | KS-B1 | open | nobara: ncu on the gate and k launches at M=512; the int-to-float swap alone, bit-gated | — |
-| KS-B2 | building | gated 2026-10-23, merge pending: 16-byte staging loads in the six `attn_fused_bm*` entry points, byte-identical (1,080 shapes a KV type old = new; the 456-shape sweep; 3,900-token prefill logits). The 1.5B's 3,900-token prefill **1.263×** at f32 (937 → 742 ms) and **1.275×** at f16, 10 of 10 ABBA quads each; attention 2.44× / 2.79× | `docs/measurements/ks-b2-2026-10/README.md` |
+| KS-B2 | done | done 2026-10-23 (#192): 16-byte staging loads in the six `attn_fused_bm*` entry points, byte-identical (1,080 shapes a KV type old = new; the 456-shape sweep; 3,900-token prefill logits). The 1.5B's 3,900-token prefill **1.263×** at f32 (937 → 742 ms) and **1.275×** at f16, 10 of 10 ABBA quads each; attention 2.44× / 2.79× | `docs/measurements/ks-b2-2026-10/README.md` |
 | KS-B3 | open | nobara: MoE category and launch count on M26 at M=512 | — |
 | KS-B4 | open | nobara: attention/GEMV/recurrence split on Qwen3.5-9B at 8k and 16k | — |
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |
