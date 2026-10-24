@@ -271,12 +271,14 @@ type resident struct {
 	q4kLane                                                    bool
 	mropeAxis                                                  Buffer // S16: the m-RoPE prefill\'s per-pair axis table; empty when the model has none
 	pQ4K, pQ4KResid, pQ4KBias, pW8F32, pW8F32Resid, pW8F32Bias Pipeline
-	q4kR, w8F32R                                               int // those GEMVs' rows a simdgroup (q4kGemvRows, w8F32GemvRows)
+	pQ5K, pQ6K                                                 [3]Pipeline // native Q5_K and Q6_K GEMVs: plain, residual, bias
+	q4kR, w8F32R                                               int         // those GEMVs' rows a simdgroup (q4kGemvRows, w8F32GemvRows)
 	pRmsF32Out, pSwF32                                         Pipeline
 	axF32, swF32                                               Buffer
 	// The lane's batched step (batch.go, forwardMultiOut): its projections' rows forms by B, and its norm and SwiGLU over
 	// all rows (batch_rows.go).
 	pQ4KRows, pW8F32Rows       [batchMaxSeqs + 1]Pipeline
+	pQ5KRows, pQ6KRows         [batchMaxSeqs + 1]Pipeline
 	pRmsF32OutRows, pSwF32Rows Pipeline
 	pArgFinish                 Pipeline // fused block-argmax lm head reduce
 	pArgRowsPart               Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
@@ -631,31 +633,47 @@ func byteBuf(d *Device, n int) Buffer {
 	return d.NewBufferBytes(n)
 }
 
-// q4kSeg is one run of a q4k-lane projection's output rows that share a weight kind: Q4_K super-blocks (s unused) or
-// int8 rows with per-row scales s, written at row off of the projection's output (uN holds rows).
+// q4kSeg is one run of a q4k-lane projection's output rows that share a weight kind, written at row off of the projection's
+// output (uN holds rows): Q4_K or Q5_K super-blocks as the GGUF stores them, Q6_K split into planes over the segment
+// (q6kPlanarRow; s unused for all three), or int8 rows with per-row scales s.
 type q4kSeg struct {
-	q4k       bool
+	kind      string // "q4k", "q5k", "q6k" or "int8"
 	w, s, uN  Buffer
 	rows, off int
 }
 
+// q4kNativeOffForTest keeps a q4k resident on the int8 copies of its Q5_K and Q6_K tensors (KS-O1's old arm); read at build.
+var q4kNativeOffForTest bool
+
+// q4kPartKind is the kind a q4k-lane part uploads as: its own kind for Q4_K, the file's Q5_K or Q6_K when kq serves it (the
+// part is then an int8 copy of it), else int8.
+func q4kPartKind(kq *decoder.KQuantReader, w *linalg.WeightMat) string {
+	if w.Kind() == "q4k" {
+		return "q4k"
+	}
+	if k := kq.Kind(w); k != "" && !q4kNativeOffForTest {
+		return k
+	}
+	return "int8"
+}
+
 // q4kLaneProj uploads a projection, or a fused group with its parts' rows in order, as runs of consecutive parts of one
-// kind: a GGUF q4_k_m file mixes them inside a group (Qwen2.5's attn_v is Q6_K, so int8, in half the layers, beside
-// Q4_K attn_q/attn_k).
-func q4kLaneProj(d *Device, wms ...*linalg.WeightMat) []q4kSeg {
+// kind: a GGUF q4_k_m file mixes them inside a group (Qwen2.5's attn_v is Q6_K in half the layers, beside Q4_K
+// attn_q/attn_k). kq serves the file's Q5_K and Q6_K blocks; nil keeps those parts on their int8 copies.
+func q4kLaneProj(d *Device, kq *decoder.KQuantReader, wms ...*linalg.WeightMat) []q4kSeg {
 	var segs []q4kSeg
 	off := 0
 	for i := 0; i < len(wms); {
-		j, q4k := i+1, wms[i].Kind() == "q4k"
-		for j < len(wms) && (wms[j].Kind() == "q4k") == q4k {
+		j, kind := i+1, q4kPartKind(kq, wms[i])
+		for j < len(wms) && q4kPartKind(kq, wms[j]) == kind {
 			j++
 		}
 		rows := 0
 		for _, w := range wms[i:j] {
 			rows += w.Rows()
 		}
-		w, s := q4kLaneBuf(d, wms[i:j]...)
-		segs = append(segs, q4kSeg{q4k: q4k, w: w, s: s, uN: NewBufferU32(d, uint32(rows)), rows: rows, off: off})
+		w, s := q4kLaneBuf(d, kq, kind, wms[i:j]...)
+		segs = append(segs, q4kSeg{kind: kind, w: w, s: s, uN: NewBufferU32(d, uint32(rows)), rows: rows, off: off})
 		off += rows
 		i = j
 	}
@@ -663,12 +681,14 @@ func q4kLaneProj(d *Device, wms ...*linalg.WeightMat) []q4kSeg {
 }
 
 // q4kLaneBuf uploads parts of one kind for the q4k lane (docs/tasks/task-metal-q4k-2026-10.md): GGUF Q4_K super-blocks
-// verbatim when every part is Q4_K (the scale buffer unused), else int8 rows with their per-row scales. Any other
-// kind, or a mix, panics; buildResident recovers that into a decline. Each part is copied straight into the device buffer
-// at its offset, with no host-side concatenation: a staging slice per projection is garbage the build does not collect,
-// and on a 16 GB Mac it pushed phi3's load into swap (docs/tasks/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
-func q4kLaneBuf(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
-	if _, ok := wms[0].Q4K(); ok {
+// verbatim; the file's Q5_K blocks verbatim and its Q6_K blocks in planes over the segment (q6kPlanarRow), read through kq;
+// else int8 rows with their per-row scales (the scale buffer is unused for the block kinds). A part of another kind panics;
+// buildResident recovers that into a decline. Each part is copied straight into the device buffer at its offset, with no
+// host-side concatenation: a staging slice per projection is garbage the build does not collect, and on a 16 GB Mac it
+// pushed phi3's load into swap (docs/tasks/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
+func q4kLaneBuf(d *Device, kq *decoder.KQuantReader, kind string, wms ...*linalg.WeightMat) (Buffer, Buffer) {
+	switch kind {
+	case "q4k":
 		n := 0
 		for _, w := range wms {
 			raw, ok := w.Q4K()
@@ -683,6 +703,32 @@ func q4kLaneBuf(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 			raw, _ := w.Q4K()
 			mustUpload(buf.At(off), raw)
 			off += len(raw)
+		}
+		return buf, Buffer{}
+	case "q5k", "q6k":
+		bb := map[string]int{"q5k": 176, "q6k": 210}[kind]
+		n := 0
+		for _, w := range wms {
+			n += w.Rows() * (w.Cols() / 256) * bb
+		}
+		buf := gpu.NewBufferLenOf[int8](d, n)
+		iv := buf.Int8s() // the shared contents, fetched once: Upload per row costs an objc call and heap each time
+		dst := unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(iv))), len(iv))
+		row0 := 0 // the part's first row in the segment
+		for _, w := range wms {
+			rb := w.Cols() / 256 * bb
+			err := kq.Rows(w, func(r int, raw []byte) error {
+				if kind == "q6k" {
+					q6kPlanarRow(dst, n/210, (row0+r)*(w.Cols()/256), raw)
+				} else {
+					copy(dst[(row0+r)*rb:], raw)
+				}
+				return nil
+			})
+			if err != nil {
+				panic(err)
+			}
+			row0 += w.Rows()
 		}
 		return buf, Buffer{}
 	}
@@ -703,6 +749,19 @@ func q4kLaneBuf(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 		offQ, offS = offQ+len(q8), offS+len(s8)
 	}
 	return q, sc
+}
+
+// q6kPlanarRow writes one row of GGUF Q6_K blocks (ql[128], qh[64], scales[16], d; 210 bytes each, not word-aligned) into a
+// segment of T blocks laid out as the q4k lane's Q6_K kernels read it: T*128 bytes of ql, T*64 of qh, T*16 of scales, then T
+// halves of d. g0 is the row's first block in the segment (row * blocks a row).
+func q6kPlanarRow(dst []byte, T, g0 int, src []byte) {
+	for b := range len(src) / 210 {
+		blk, g := src[b*210:(b+1)*210], g0+b
+		copy(dst[g*128:], blk[:128])
+		copy(dst[T*128+g*64:], blk[128:192])
+		copy(dst[T*192+g*16:], blk[192:208])
+		copy(dst[T*208+g*2:], blk[208:210])
+	}
 }
 
 // mustUpload copies src into b at b's offset, panicking on an overrun as a short buffer is a build bug (buildResident
@@ -1194,8 +1253,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32_rows"+wr), pipe("gemv_w8_f32_resid_rows"+wr), pipe("gemv_w8_f32_bias_rows"+wr)
 		r.pRmsF32Out, r.pSwF32 = pipe("rmsnorm_f32_out"), pipe("swiglu_f32")
 		r.pRmsF32OutRows, r.pSwF32Rows = pipe("mc3_rmsnorm_f32_out_rows"), pipe("mc3_swiglu_f32_rows")
+		for k, p := range map[string]*[3]Pipeline{"q5k": &r.pQ5K, "q6k": &r.pQ6K} {
+			R := map[string]int{"q5k": q5kGemvRows, "q6k": q6kGemvRows}[k]
+			*p = [3]Pipeline{pipe(fmt.Sprintf("gemv_%s_f32_rows%d", k, R)), pipe(fmt.Sprintf("gemv_%s_f32_resid_rows%d", k, R)), pipe(fmt.Sprintf("gemv_%s_f32_bias_rows%d", k, R))}
+		}
 		for B := 1; B <= batchMaxSeqs; B++ {
 			r.pQ4KRows[B], r.pW8F32Rows[B] = pipe(fmt.Sprintf("mc3_gemv_q4k_f32_rows%d", B)), pipe(fmt.Sprintf("mc3_gemv_w8_f32_rows%d", B))
+			r.pQ5KRows[B], r.pQ6KRows[B] = pipe(fmt.Sprintf("mc3_gemv_q5k_f32_rows%d", B)), pipe(fmt.Sprintf("mc3_gemv_q6k_f32_rows%d", B))
 		}
 	}
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
@@ -1356,8 +1420,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.moe.kSlots = false // D-P03's k-slot kernels read int4
 	}
 	r.w8Attn = !r.w8 && w8AttnEligible(m, r)
+	var kq *decoder.KQuantReader // the file's Q5_K and Q6_K blocks for the q4k lane (q4kLaneProj); nil uploads their int8 copies
 	if r.q4kLane {
 		r.w8, r.w8Attn = false, false
+		if !q4kNativeOffForTest {
+			if kq, err = m.OpenKQuant(); err != nil {
+				return nil, err
+			}
+			defer kq.Close()
+		}
 	}
 	if r.w8Attn {
 		r.decodeLaneW4F16 = false // the f16 lane reads int4 attention weights
@@ -1628,9 +1699,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if !isAttn || !hasFFN || L.moe != nil || L.g4moe != nil || L.qGate || L.kvShared || kEqV || r.nonGatedMLP {
 				return nil, fmt.Errorf("metal: --quant q4k runs on Metal for dense attention+SwiGLU layers only (layer %d is not)", l)
 			}
-			L.qkvSegs = q4kLaneProj(d, &lw.QProj, &lw.KProj, &lw.VProj)
-			L.oSegs, L.dSegs = q4kLaneProj(d, &lw.OProj), q4kLaneProj(d, &lw.DownProj)
-			L.guSegs = q4kLaneProj(d, &lw.GateProj, &lw.UpProj)
+			L.qkvSegs = q4kLaneProj(d, kq, &lw.QProj, &lw.KProj, &lw.VProj)
+			L.oSegs, L.dSegs = q4kLaneProj(d, kq, &lw.OProj), q4kLaneProj(d, kq, &lw.DownProj)
+			L.guSegs = q4kLaneProj(d, kq, &lw.GateProj, &lw.UpProj)
 		}
 		// postOnly (Olmo 3, Olmo Hybrid) is a model-level flag, but Olmo Hybrid's DeltaNet layers reach NormPre2
 		// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is already resolved above,
@@ -3190,6 +3261,25 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 // gemv_w8_f32_rows<R>), KS-C1's C1-G0 reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates").
 const q4kGemvRows, w8F32GemvRows = 8, 2
 
+// q5kGemvRows and q6kGemvRows are the rows a simdgroup of the q4k lane's native Q5_K and Q6_K GEMVs (gemv_q5k_f32_rows<R>,
+// gemv_q6k_f32_rows<R>), KS-O1's O1-G0 reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"). Only
+// these R are instantiated.
+const q5kGemvRows, q6kGemvRows = 4, 4
+
+// q4kBlockPipes is the plain, residual and bias GEMV of a block-kind segment ("q4k", "q5k", "q6k") and its rows a simdgroup;
+// ok is false for int8.
+func (r *resident) q4kBlockPipes(kind string) ([3]Pipeline, int, bool) {
+	switch kind {
+	case "q4k":
+		return [3]Pipeline{r.pQ4K, r.pQ4KResid, r.pQ4KBias}, r.q4kR, true
+	case "q5k":
+		return r.pQ5K, q5kGemvRows, true
+	case "q6k":
+		return r.pQ6K, q6kGemvRows, true
+	}
+	return [3]Pipeline{}, 0, false
+}
+
 // q4kGemv dispatches one q4k-lane projection over the f32 activation ax (K = uK), one dispatch per segment into its
 // rows of out: gemv_q4k_f32_rows for Q4_K super-blocks, gemv_w8_f32_rows for int8 rows with per-row scales, at
 // ceil(rows/R) simdgroups. resid accumulates into out; a non-empty bias is added per row (resid and bias are never both
@@ -3197,14 +3287,20 @@ const q4kGemvRows, w8F32GemvRows = 8, 2
 func (r *resident) q4kGemv(e *Encoder, segs []q4kSeg, resid bool, bias, ax, out, uK Buffer) {
 	for _, sg := range segs {
 		o := out.At(sg.off * 4)
-		nq, nw := (sg.rows+r.q4kR-1)/r.q4kR*32, (sg.rows+r.w8F32R-1)/r.w8F32R*32
+		nw := (sg.rows + r.w8F32R - 1) / r.w8F32R * 32
+		if p, R, ok := r.q4kBlockPipes(sg.kind); ok {
+			n := (sg.rows + R - 1) / R * 32
+			switch {
+			case resid:
+				e.Dispatch(p[1], n, 256, sg.w, ax, o, uK, sg.uN)
+			case bias != (Buffer{}):
+				e.Dispatch(p[2], n, 256, sg.w, ax, o, uK, sg.uN, bias.At(sg.off*4))
+			default:
+				e.Dispatch(p[0], n, 256, sg.w, ax, o, uK, sg.uN)
+			}
+			continue
+		}
 		switch {
-		case sg.q4k && resid:
-			e.Dispatch(r.pQ4KResid, nq, 256, sg.w, ax, o, uK, sg.uN)
-		case sg.q4k && bias != (Buffer{}):
-			e.Dispatch(r.pQ4KBias, nq, 256, sg.w, ax, o, uK, sg.uN, bias.At(sg.off*4))
-		case sg.q4k:
-			e.Dispatch(r.pQ4K, nq, 256, sg.w, ax, o, uK, sg.uN)
 		case resid:
 			e.Dispatch(r.pW8F32Resid, nw, 256, sg.w, sg.s, ax, o, uK, sg.uN)
 		case bias != (Buffer{}):

@@ -110,6 +110,8 @@ func g3ModelQ4K(t *testing.T, gguf, label string, twoLoads bool, logf func(strin
 	if !r.q4kLane {
 		t.Fatalf("%s: the resident did not take the q4k lane", label)
 	}
+	tot, byKind := kso1LaneBytes(r)
+	logf("%s: q4k lane weights %d bytes on the device, by kind %v", label, tot, byKind)
 	mc := mg
 	if twoLoads {
 		if mc, err = decoder.Load(gguf, opts); err != nil {

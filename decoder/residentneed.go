@@ -81,7 +81,7 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 // the weights, on Metal the host copy of them (ResidentHostCopyBytes — 0 for weights aliased from a
 // .giw mapping), and the KV cache. Plan's NeedBytes and Metal's resident guard are this number.
 func (m *Model) ResidentNeedBytes(backend string, slots, ctx int, kvF16, kvI8 bool) int64 {
-	need := m.ResidentWeightBytesPaged(slots) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8)
+	need := m.ResidentWeightBytesPaged(slots) - m.metalKQuantSavings(backend) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8)
 	if backend == "metal" {
 		need += m.ResidentHostCopyBytes(slots)
 	}
