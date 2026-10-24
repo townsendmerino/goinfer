@@ -813,6 +813,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
+		// launch issues kernels from this thread (Queue.LaunchDirect), which needs the context current here.
+		if e := r.dev.BindCurrentThread(); e != nil {
+			return e
+		}
 		// checkWeightsFit runs first, right after the device exists and before the kernel compiles and uploads, and before this
 		// backend's other declines, so a model whose fixed (non-expert) weights exceed free VRAM gets a clean decline naming
 		// that rather than whichever raw driver error the first oversized allocation produced.
@@ -941,13 +945,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fArgRows, e = r.dev.NewComputePipeline(amod, "argmax_rows"); e != nil {
 			return e
 		}
-		// topk_select: its own module, same isolation as argmax_reduce above.
+		// topk_compact / topk_finish / topk_z: their own module, same isolation as argmax_reduce above.
 		tmod, e2 := r.dev.CompileLibrary(topkPTX)
 		if e2 != nil {
 			return e2
 		}
-		if r.fTopK, e = r.dev.NewComputePipeline(tmod, "topk_select"); e != nil {
-			return e
+		for _, f := range []struct {
+			dst  *Pipeline
+			name string
+		}{{&r.fTopKCompact, "topk_compact"}, {&r.fTopKFinish, "topk_finish"}, {&r.fTopKZ, "topk_z"}} {
+			if *f.dst, e = r.dev.NewComputePipeline(tmod, f.name); e != nil {
+				return e
+			}
 		}
 		// gumbel_stage1/2: own module, same isolation.
 		gumod, e2 := r.dev.CompileLibrary(gumbelPTX)
@@ -1746,6 +1755,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
 		r.topkOut = r.ai(2*topkMaxK + 2)      // sampled fast-path readback (~2 KB vs 594 KB)
+		r.topkCV, r.topkCI, r.topkMx, r.topkPart = r.af(topkCap), r.ai(topkCap), r.af(1), r.af(topkThreads)
+		r.topkCnt, r.topkDone = r.ai(1), r.ai(1)
+		if e := gpu.Upload(r.topkCnt, []int32{0}); e != nil {
+			return e
+		}
+		if e := gpu.Upload(r.topkDone, []int32{0}); e != nil {
+			return e
+		}
 		nGb := gumbelBlocks(vocab)
 		r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch (R7b)
 		if hb, e := gpu.NewHostBuffer[float32](r.dev, vocab); e != nil {

@@ -8269,6 +8269,230 @@ prefill on CUDA in batched passes.
   - the 31B (no checkpoint fits the 8 GB card);
   - the f16 or paged KV build (`PrefillSpansLast` declines on it, and Gemma 4 keeps f32 KV on CUDA today).
 
+### S20 — Gemma 4 26B-A4B image-turn decode on the 8 GB card (added 2026-10-23, on Francis's word)
+
+**Why.** Francis reads handwritten forms with the 26B on nobara, about 2 minutes a form. After S19 the image prefill is
+about 15 s, and the rest is decode at about 18 tok/s (G-S19d: 160 tokens in about 9 s after the first). The README's
+figure for this model on this card is 39.3 tok/s at ctx 2048 (`docs/benchmarks.md` §B4), and that rate is PCIe-bound:
+every expert-cache miss copies one expert over PCIe. The hypothesis under test: the served config holds 2.6 GB of VRAM
+for the vision tower and a 16384-position KV plan, so the expert cache is starved. Francis's serve log already shows it:
+`C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.4 GB free (2.6 GB of 4.0 GB total reserved …) — capping to
+8 (0.9 GB)`, against 33 slots in S19's in-process runs, which reserve nothing for a tower.
+
+**Instrument.** `docs/measurements/multimodal-support-2026-10/s20/run-s20-cells.sh`: one fresh server per cell, one
+greedy long-reply turn (`max_tokens` 1500; an image cell sends `testdata/glm_ocr/invoices/inv01.png` with a
+transcribe-and-explain prompt, a text cell sends a 1,200-word prose prompt). It reads time to first token, wall time,
+completion tokens, the decode rate ((tokens - 1) / (wall - ttft)), the plan lines, GPU memory after the load and after
+the turn, and a new per-turn serve line `expert cache: N slots/layer; this turn H hits, M misses (X% hit)` (from
+`decoder.ResidentExpertCache`, which reads the C′ cache's existing counters). Each cell records load and free memory at
+its start; a cell started with load above 8.0 is void and re-run. Everything runs under `timing_lock.py run`. Per-form time
+for a ~1,500-token reply is projected as ttft + 1499 / decode rate.
+
+**Gates, registered 2026-10-23 before any measurement.**
+- **G-S20a, where the time goes (step 1, tier 1, about 12 min).** Cells, one each: A, today's config (image, `--ctx
+  16384`); B, image at `--ctx 4096`; C, text only at `--ctx 2048` (the README's cell); C2, text only at `--ctx 16384`; D,
+  image at `--ctx 16384` with `-vision-device cpu` (the tower on the CPU, nothing held back). Reported per cell: slots,
+  hit rate, decode rate, ttft, and the VRAM split (the plan lines plus nvidia-smi). **The hypothesis is CONFIRMED** if
+  C2 is granted more slots than A, and the decode rate ranks with the hit rate across all five cells. **REFUTED** if C2's
+  slots equal A's, or a cell with a higher hit rate decodes slower by more than 10%. **The README reproduces** if C reads
+  39.3 tok/s within 10%; outside that, it is a regression question, recorded, not chased here.
+  Predictions: A 8 slots, 17 to 19 tok/s; B about 15 slots, 23 to 28; C about 40 slots, 36 to 42; D about 33 slots,
+  32 to 38 tok/s, with a slower encode.
+- **G-S20b, `--ctx 4096` (step 2a): withdrawn as a config, kept as a diagnostic.** Francis (2026-10-23 15:45, relayed):
+  16K context stays the target for general use and nothing ships at 4K. Cell B of G-S20a runs once, only to learn whether
+  VRAM headroom limits decode; there is no A B B A at 4K. If it does limit decode, the fixes must free VRAM while keeping 16K.
+- **G-S20c, the block drafter (step 2b).** First a load check: does serve start with `-drafter ~/models/gemma4-26b-dflash`
+  beside `--vision` and `-moe-cache-experts` at `--ctx 16384`? If it loads, A B B A against the same
+  config without it. **PASS:** at least 1.10 in both pairs and the greedy reply identical (the drafter is lossless by
+  contract, so any difference is a defect, recorded). Prediction: it declines at load, or it reads at most 1.0, because a
+  verify pass on a paged MoE copies the experts of every verified position.
+- **G-S20d, slots into freed VRAM (step 2c).** The only config that frees the tower's 2.6 GB is the tower on the CPU.
+  A B B A, today's config against `-vision-device cpu`, both at `--ctx 16384`. The measure is
+  per-form time for a ~1,500-token reply, so the CPU tower's slower encode counts against it. **PASS:** at least 5% lower
+  in both pairs. `-moe-cache-slots` cannot raise the count past what free VRAM allows (`capSlots` caps it), so it is
+  read from the code, not measured.
+- Step 3's candidates, gates registered after G-S20a reads and before any code: release the tower's VRAM between images
+  (reload it on the next image) so the expert cache can grow into it; size the expert cache to what is free after load;
+  and (Francis, 2026-10-23 15:45) grow the KV cache on demand instead of reserving all 16K positions at load.
+
+**G-S20a read 2026-10-23 15:48 to 15:57 on nobara** (binary `193de9f06`, S19's tree plus the per-turn cache line; driver
+595.91.07; one cell each, load 2.6 to 5.3 at the cell starts, none void; raw: `docs/measurements/multimodal-support-2026-10/s20/step1/`):
+
+| cell | config | slots/layer | hit rate | misses/token | decode tok/s | ttft | per-form, 1,500 tokens |
+|---|---|---|---|---|---|---|---|
+| A | image, `--ctx 16384` (today's) | 8 | 28.4% | 175 | 16.66 | 14.5 s | 104.5 s |
+| B | image, `--ctx 4096` (diagnostic) | 12 | 43.8% | 138 | 20.00 | 14.1 s | 89.0 s |
+| C | text, `--ctx 2048` (the README's cell) | 39 | 83.4% | 40 | 34.73 | 2.1 s | — |
+| C2 | text, `--ctx 16384` | 33 | 78.5% | 52 | 33.12 | 2.0 s | — |
+| D | image, `--ctx 16384`, `-vision-device cpu` | 33 | 78.1% | 54 | 31.31 | 41.6 s | 89.5 s |
+
+- **The hypothesis is CONFIRMED.** C2 is granted 33 slots and A 8, at the same context; the only difference is the 2.6 GB
+  held back for the tower. The decode rate ranks with the hit rate across all five cells.
+- **Where the time goes.** A least-squares line through the five cells puts a token at about 19 ms plus 0.23 ms for each
+  expert miss (one miss copies 3.35 MB, all of a layer's slot buffers for one expert). In A, 175 misses are about 40 of the
+  60 ms a token takes; at 33 slots, 52 misses are about 12 of 30.
+- **The VRAM split, A against C2** (nvidia-smi after load, 402 MiB used before either; a card of 8192 MiB): C2 holds 7321 MiB
+  with a 3.4 GB cache, so the core weights, the CUDA context and the 16K KV come to about 4.1 GB; A holds 7155 MiB with a 0.9 GB
+  cache, so the loaded tower holds about 2.2 GB, and the rest of the 2.6 GB reserve is its encode scratch, idle between images.
+  The 16K plan costs only 0.4 GB more than 4K (free before the cache: 4.0 against 4.4 GB, B against A), because windowed KV
+  already holds the sliding layers at 1,536 positions.
+- **The README does not reproduce within 10%:** C reads 34.73 tok/s against 39.3, 11.6% low, on a different prompt and reply
+  length from the peer sweep's. Recorded as a regression question, not chased here.
+- **Output identity.** A and B wrote byte-identical replies (1,073 tokens, 8 against 12 slots), and so did C and C2 (1,500 tokens,
+  39 against 33 slots): the slot count does not change the output. D's reply differs (1,169 tokens), because the CPU tower's
+  features are not the CUDA tower's.
+- **Predictions scored.** Slots: A 8, C about 40 (39) and D about 33 held; B about 15 missed (12). Rates: all four ranges missed
+  low (A 16.66 against 17 to 19, B 20.00 against 23 to 28, C 34.73 against 36 to 42, D 31.31 against 32 to 38).
+
+**Step 2 read 2026-10-23 16:00 to 16:13 on nobara** (the same binary; load 2.1 to 5.5 at the cell starts, none void; raw:
+`docs/measurements/multimodal-support-2026-10/s20/step2-cputower/` and `step2-drafter/`):
+- **G-S20d, the tower on the CPU: PASS.** Per-form time for a 1,500-token reply, A B B A:
+  - today's config: 103.3 s and 103.0 s (16.80 and 16.81 tok/s, ttft 14.1 and 13.8 s);
+  - `-vision-device cpu`: 89.9 s and 89.2 s (31.25 and 31.48 tok/s, ttft 41.9 and 41.6 s; the encode is about 31 s instead of 3).
+
+  That is 0.87 of today's in both pairs. It is a fallback that needs no build, but its replies differ from today's
+  (1,169 tokens against 1,073 on inv01) because the CPU tower's features are not the CUDA tower's. Today's config repeated
+  step 1's reply byte for byte, and the same hit and miss counts.
+- **G-S20c, the drafter: FAIL at load, as predicted.** Beside the tower at `--ctx 16384` the resident declines, because
+  the 3.66 GB held back for the tower and the drafter leaves no room for the 0.88 GB 8-slot minimum (`expert cache (C′)
+  cannot fit its MINIMUM`), and serve then refuses `--drafter`. Not registered, a text-only screen at `--ctx 16384`: with
+  the drafter the cache gets 22 slots (1.1 GB held for it) and decodes at 27.62 tok/s, against 32.55 without it in the same
+  session; that is 0.85, with byte-identical replies. A verify pass looks up 241 experts a token, as plain decode does
+  (top-8 on 30 layers), so speculation does not reduce what a paged MoE copies.
+
+**Step 3 gates, registered 2026-10-23 after G-S20a's read and before any code.** The read ranks the three candidates:
+- **Releasing the tower between images is the lever.** It moves the cache from 8 slots to about 33 at 16K: by the line above,
+  about 60 → 31 ms a token, and a 1,500-token form from about 104 s to about 64 s.
+- **Sizing the cache to what is free after load buys at most 1 to 2 slots.** Free VRAM at steady state is 1037 MiB in A against
+  871 MiB in C2, so about 166 MiB idles. Dropped by this read.
+- **On-demand KV buys about 4 slots** (B against A). After the release that is 33 → about 37, which C against C2 prices at
+  about 5%. Parked unless the release falls short of its bar.
+
+The design: the cache is sized at load as if no tower were resident. Before an image is encoded, the cache shrinks to the
+slots that fit beside the tower and the tower loads. After the encode the tower's device memory is freed and the cache grows
+back. A resize frees and reallocates each layer's slot stacks and empties the LRU.
+- **G-S20e, exactness (tier 0 and 1).** (1) Tier 0, the tower: features from a tower rebuilt after a Close are bit-identical
+  to the first build's, on the same image. (2) Tier 1, the real 26B, served: the greedy reply under release is byte-identical
+  to today's binary on inv01, then inv02, then inv03, over up to 1,500 tokens each (the second and third exercise a
+  reload). Amended before any step 3 run: the registration first named inv01 again as the third, but serve's feature cache
+  answers a resent image without an encode, so it would not exercise a reload. A difference is a defect, not a near-tie question, since the cache is exact (G-S20a).
+- **G-S20f, VRAM (tier 1).** At `--ctx 16384` with `--vision`, decode runs with at least 30 slots/layer. Every image's encode
+  logs the tower on CUDA (no CPU fallback, no `CUDA_ERROR_OUT_OF_MEMORY`). The per-turn cache line shows the slots after
+  each grow.
+- **G-S20g, speed (tier 1).** A B B A, today's binary (`193de9f06`) against the new one, two forms per cell (inv01, then
+  inv02, then inv03, as G-S20e(2) runs them in the same cells), under the timing lock. Per-form time for the reply, reported with the reload's own cost. **PASS:** new per-form
+  time at most 0.8 of old in both pairs. **Kill:** not faster, then it does not ship. Prediction: about 0.6.
+
+**Step 3 read 2026-10-23 16:17 to 16:32 on nobara.** Old is `193de9f06`, today's served behaviour plus the per-turn cache
+line. New is `3cf6c6744`, the tower swap. A B B A, three forms per cell, load 1.4 to 3.2 at the cell starts, none void. Raw:
+`docs/measurements/multimodal-support-2026-10/s20/step3/`. The tier-0 halves passed first (`TestG4VCUDA_rebuildAfterCloseBitIdentical`;
+`TestGemma4MoE_cacheResizeBitExact_tiny`: 16 positions bit-identical to the fully resident run across 4 → 2 → 4 slots and a
+refused resize).
+- **G-S20e(2), exactness: PASS.** The replies on inv01, inv02 and inv03 are byte-identical in all four cells (1,073, 683 and
+  901 tokens).
+- **G-S20f, VRAM: PASS.** The cache grows from 8 to 33 slots/layer at load. Each of the six encodes logs the tower on CUDA
+  beside an 8-slot cache, then released, with the cache back at 33. Decode runs at 77.3 to 77.8% hit, against 27.7 to 28.7% for
+  old. An encode with the tower's upload takes 3.51 to 3.57 s, against 3.05 s with the tower resident.
+- **G-S20g, speed: PASS.** Per-form time for a 1,500-token reply (ttft + 1499 / decode rate), averaged over the three forms:
+  old 102.9 and 102.9 s, new 61.2 and 61.5 s. That is 0.595 and 0.597 in the two pairs, against the 0.8 bar, as predicted
+  (about 0.6). Decode went from 16.75 to 17.02 tok/s to 31.47 to 32.31 tok/s. Time to first token went from 13.9 to 14.0 s to 14.1 to
+  14.4 s, the tower's upload.
+- **Still open:** on-demand KV (parked; G-S20a prices it at about 5% once the swap is in); computing cold experts on the CPU
+  (step 4, an owner decision).
+
+**Step 4, cold experts computed on the CPU (Francis, 2026-10-23 16:45, relayed: build it outright; gates bit-identical
+against the GPU path, the per-layer sync cost, and decode tok/s against #198's 31.6).**
+
+*What the GPU computes, read from `cuda/moe.cu`, `cuda/glue.cu` and their committed PTX (`cuda/testdata/moe.ptx`,
+`glue.ptx`).* Each routed expert runs three kernels in order:
+- `gemv_w4a8_moe` (gate and up). Integer `dp4a` products, per lane `facc = facc + fma(s0, p0, round(s1·p1))` over the word
+  pairs, one `fma` for a ragged tail, a fixed shuffle tree, then `× aScale`. All of it is IEEE-exact and reproducible on a
+  CPU.
+- `glu_quant` (GELU and requantization to int8). Its `tanhf` compiles to `ex2.approx` and `rcp.approx`, hardware
+  approximations a CPU cannot reproduce bit for bit, so this kernel stays on the GPU.
+- `gemv_w4a8_moe_wacc` (down, weighted into `g4x2` in expert order). Reproducible, like the first.
+
+*Design.* For each MoE layer, the misses split between the PCIe copy (today's path) and the CPU:
+- **Round trip 1.** The existing router readback, plus the layer's int8 activation. The CPU computes the gate/up products
+  for its share of the misses and uploads them.
+- **Round trip 2.** The GPU runs `glu_quant` on them, the CPU reads back the int8 result, computes the down products, and
+  uploads them.
+- **Order.** The weighted accumulation into `g4x2` stays in expert order. Hit experts write their down product to scratch,
+  and one combine kernel replays the accumulate epilogue for every expert in order, so the GPU's own experts do not wait
+  behind a CPU one.
+- **Cache.** CPU-computed misses are not admitted to the slot cache; the copied ones are, as today.
+
+*Estimate, revised from the 16:3x report.* The activation has to round-trip through the GPU, and each layer's output
+feeds the next, so the CPU's time does not hide behind GPU work; the gain is splitting a layer's misses between PCIe and
+the CPU at once. With 0.23 ms per copied miss (G-S20a), an assumed 0.1 ms per CPU expert and 0.08 ms of round trips per
+layer that uses the CPU, the projection is about 36 to 40 tok/s (52 to 56 s a form), not 38 to 45.
+
+*Gates, registered 2026-10-23 before any code.*
+- **G-S20h, the CPU kernels (tier 0).** A Go replica of `gemv_w4a8_moe` and of the down product's pre-accumulate result:
+  bit-identical to the GPU kernels on random int4 weights, f16 scales and int8 activations at the 26B's geometry (2816 →
+  1408 gate/up, 704 → 2816 down), every row of 8 random experts. Planted defects, each of which must turn it red: the tail
+  `fma` written as a multiply and an add, the pair sum's operands swapped, and the shuffle tree's order reversed.
+- **G-S20i, exactness of the split (tier 0).** Two parts:
+  - The reordered GPU-only path (scratch plus in-order combine) is bit-identical to today's chain.
+  - On `testdata/gemma4-moe-tiny`, with forced patterns (every miss to the CPU, none, alternating), every position's
+    logits are bit-identical to the fully resident run.
+- **G-S20j, the per-layer sync cost and the CPU's rate (tier 1, real 26B, in process).** Reported: the two round trips' cost
+  per layer with no CPU work, and the CPU's time per expert (gate/up and down) at the worker count used. **Kill rule:** if
+  the gain these two numbers project, by the S20 line, is under 10% of decode time, stop and report before the served gate.
+- **G-S20k, served speed and identity (tier 1).** A B B A, #198's binary against the new one, inv01 to inv03, as G-S20g.
+  **PASS:** decode at least 1.15 of #198's in both pairs (31.6 → 36.3 tok/s), and replies byte-identical. 1.05 to 1.15:
+  parked. Prediction: 36 to 40 tok/s.
+
+**Tier-0 reads, 2026-10-23 17:28 to 17:50 on nobara** (under the timing lock; logs in `~/goinfer-logs/g4-decode/`).
+- **G-S20h, the CPU kernels: PASS as amended.** The Go replica (on branch `g4-decode-step4-2026-10-23`) is bit-identical to `gemv_w4a8_moe`
+  and to `gemv_w4a8_moe_wacc`'s accumulate at both geometries. That covers every row of 8 random experts: 11,264 gate/up
+  values and 22,528 down values, each kernel. The AVX2 kernel on the same branch is bit-identical to the replica on
+  nine row lengths, and `fmaf32` rounds once on 2,000,000 triples, 235,089 of them on a float32 midpoint.
+- **G-S20h amendment, made after the first run.** Two of the three registered planted defects, "the tail fma as a multiply
+  and an add" and "the pair's operands swapped", changed no value at either geometry. They are equivalent mutants, not
+  missed defects: a scale's 11-bit significand times a word's integer product (at most 8 × 8 × 127, 13 bits) is exact in
+  float32, so every pairing of multiplies with adds gives the same result. They are replaced with two defects that change
+  the order of float additions: the pair added unfolded, and the 64-word blocks walked in reverse. The rule also becomes
+  "red at one geometry at least", because the down rows hold a single block, where reversal is the identity.
+  - Read: unfolded pair red on 2 of 11,264 gate/up values; reversed blocks red on 2; the serial lane sum red on 6,812 and
+    3,529.
+  - Most of the arithmetic is exact. The order only matters where the shuffle tree mixes the lanes' magnitudes.
+- **G-S20i, exactness of the split: PASS.**
+  - `gemv_w4a8_moe_res` plus `moe_combine` is bit-identical to the chain of 8 `gemv_w4a8_moe_wacc` launches (2,816 rows),
+    with every product from the device, from the host, alternating, and first and last from the host.
+  - On `testdata/gemma4-moe-tiny` at 2 slots, all 16 positions' logits are bit-identical to the fully resident run with
+    every miss on the host (64 host experts), none, one per layer (32) and all on alternate layers (32).
+- **G-S20j, the sync cost and the CPU's rate: PASS the kill rule.**
+  - Round trips, per layer with 2 host experts and no host compute, 1,900 iterations: stage 27.1 µs, GLU round trip 39.6 µs,
+    return and combine 55.6 µs; 122.3 µs in all (p90s 39.5, 56.1 and 75.8).
+  - The host's rate, experts drawn from a 430 MB pool: fastest at 4 workers, 142 µs for one expert and 128 µs each for two
+    (23 to 27 GB/s). At 8 workers it is 145 to 165 µs an expert and at 12, 166 to 208, so the pool is 4 workers.
+  - Projection: with 230 µs a copied miss and about 1.7 misses a layer, splitting saves about 4.3 ms of a 31.6 ms token, about
+    14%. That is over the 10% bar, so the served gate runs. Revised prediction: about 36 to 37 tok/s, the low end of 36 to 40.
+
+**G-S20k read 2026-10-23 18:02 to 18:15 on nobara: FAIL.** Old is #198's binary (`3cf6c6744`); new is the split, built
+from branch `g4-decode-step4-2026-10-23`. A B B A, inv01 to inv03 in each cell, load 3.0 to 3.8 at the cell starts, none void. Raw:
+`docs/measurements/multimodal-support-2026-10/s20/step4/`.
+- **Identity: held.** All nine replies are byte-identical to the old binary's.
+- **Speed: no gain.** Mean decode, old 31.70 and 31.77 tok/s, new 31.38 and 31.24. That is 0.990 and 0.983 in the two pairs,
+  under the 1.05 park line and far from the 1.15 bar. Per form, 61.6 s old and 62.3 to 62.4 s new.
+- **The split did run.** 22 experts a token were computed on the host, about 41% of the misses (23,712 of 57,592 on inv01).
+  Hit and miss counts repeat exactly between the two new cells.
+- **Why the projection missed.** At G-S20a's 0.23 ms a copied miss, moving 22 misses a token to the host should have saved
+  about 5 ms a token; the token got about 0.4 ms slower instead. So a host expert costs the critical path about what the copy
+  it replaced did. Two causes fit the numbers; neither is isolated:
+  - **Latency.** One host expert's path (wait for the input, gate/up, the GELU round trip, down, the upload) takes about
+    260 µs, roughly one expert's 3.35 MB over PCIe at 13 GB/s. The 122 µs of round trips (G-S20j) consume the CPU's
+    bandwidth edge, and most layers have one or two misses.
+  - **Shared memory bandwidth.** The PCIe copies and the CPU both read the expert stack from the same two DDR4 channels, so
+    running them at once does not add the bandwidth the plan assumed.
+- **Disposition.** Per the registration, the split does not ship. Its code (the host replica and AVX2 kernel, the split
+  kernels and the resident plumbing, with the tier-0 gates) is kept on branch `g4-decode-step4-2026-10-23`, unmerged.
+  - The tier-0 results stand: the CPU can reproduce the W4A8 expert GEMVs bit for bit.
+  - What failed is the speed premise on this box.
+  - A box with more memory channels, or a GELU the host can reproduce (which would remove one round trip), changes the
+    arithmetic; neither is in scope here.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

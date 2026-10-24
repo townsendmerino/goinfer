@@ -1444,11 +1444,15 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 	if err != nil {
 		return err
 	}
-	if tower != nil {
+	swap := gemma4TowerSwap(s.models, enc, tower, backend, dir)
+	if swap != nil {
+		tower = nil
+		where += ", loaded for each encode and released after it"
+	} else if tower != nil {
 		releaseTowerBlocks("Gemma 4", enc)
 	}
 	for _, lm := range s.models {
-		lm.gemma4Enc, lm.gemma4Tower = enc, tower
+		lm.gemma4Enc, lm.gemma4Tower, lm.gemma4Swap = enc, tower, swap
 		lm.gemma4MaxSoft = pp.MaxSoftTokens
 		lm.gemma4ImgTok = -1
 		if id, ok := lm.tk.TokenID(multimodal.Gemma4ImageSoftToken); ok {
@@ -1513,6 +1517,38 @@ func hasAudioConfig(dir string) bool {
 		Audio json.RawMessage `json:"audio_config"`
 	}
 	return json.Unmarshal(raw, &c) == nil && len(c.Audio) > 0 && string(c.Audio) != "null"
+}
+
+// gemma4TowerSwap decides whether the device tower holds its memory only while it encodes: a CUDA tower serving one model
+// whose expert cache can grow into that memory between images. Then it closes the tower, grows the cache, and returns the
+// towerSwap that encodes from here on; otherwise it returns nil and the tower stays resident. The reserve is towerReserve's
+// figure, which the model's load already held back, so for an encode the cache shrinks to the size it was built at.
+func gemma4TowerSwap(models map[string]*loadedModel, enc *vision.Gemma4Encoder, tower multimodal.Gemma4TowerAccelerator, backend, dir string) *towerSwap {
+	if tower == nil || backend != "cuda" || len(models) != 1 {
+		return nil
+	}
+	var m *decoder.Model
+	for _, lm := range models {
+		m = lm.model
+	}
+	if m == nil {
+		return nil
+	}
+	before, ok := m.ExpertCacheStats()
+	if !ok {
+		return nil
+	}
+	d, ok := readTowerDims(dir)
+	if !ok {
+		return nil
+	}
+	_ = tower.Close()
+	if after, err := m.ResizeExpertCache(0); err != nil {
+		fmt.Fprintf(os.Stderr, "vision: the expert cache stays at %d slots/layer between images: %v\n", before.Slots, err)
+	} else {
+		fmt.Fprintf(os.Stderr, "vision: the expert cache grows from %d to %d slots/layer between images; the Gemma 4 tower loads for each encode\n", before.Slots, after)
+	}
+	return &towerSwap{enc: enc, backend: backend, model: m, reserve: towerVRAMEstimate("gemma4", d, 0)}
 }
 
 // chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal or CUDA and this binary registers

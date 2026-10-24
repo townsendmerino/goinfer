@@ -1,0 +1,64 @@
+cell 1 A-today (image; --ctx 16384) start 15:48:24 load 5.31 mem avail 55.3 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+  cuda: windowed KV: 256 more positions from free VRAM (100 MB of 3904 MB free); a follow-up may now diverge 704 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.4 GB free (2.6 GB of 4.0 GB total reserved for a companion attach, --drafter) — capping to 8 (0.9 GB)
+    decode path: cuda-resident (int4)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 29.6 GB, 28.4 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  gpu after load: 7155 MiB
+  cell 1 A-today: ttft 14.5s turn 78.9s tokens 1073 decode 16.66 tok/s chars 4368
+  gpu after turn: 7155 MiB
+  vision: encoded a 33222-byte image in 3.053s (sha256 cf797074); a resend of it will skip this
+  vision: decoded 1073 tokens on the resident path (prefill resident)
+  expert cache: 8 slots/layer; this turn 74666 hits, 188148 misses (28.4% hit)
+cell 2 B-ctx4096 (image; --ctx 4096) start 15:50:26 load 2.72 mem avail 55.3 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+  cuda: windowed KV: 576 more positions from free VRAM (225 MB of 4386 MB free); a follow-up may now diverge 1024 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.8 GB free (2.6 GB of 4.4 GB total reserved for a companion attach, --drafter) — capping to 12 (1.3 GB)
+    decode path: cuda-resident (int4)
+    fit: 4096-token cap needs 0.8 GB KV (weights 13.6 GB, budget 29.8 GB, 29.0 GB left for a request's own prefill)
+    KV plan: 1 conversation x 4096 positions (4 asked for; --ctx 4096; 2.6 GB held back for the vision tower)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CUDA) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  gpu after load: 7223 MiB
+  cell 2 B-ctx4096: ttft 14.1s turn 67.7s tokens 1073 decode 20.00 tok/s chars 4368
+  gpu after turn: 7223 MiB
+  vision: encoded a 33222-byte image in 3.035s (sha256 cf797074); a resend of it will skip this
+  vision: decoded 1073 tokens on the resident path (prefill resident)
+  expert cache: 12 slots/layer; this turn 115202 hits, 147612 misses (43.8% hit)
+cell 3 C-text2048 (text; --ctx 2048) start 15:52:18 load 2.67 mem avail 55.3 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 2048
+  cuda: windowed KV: 448 more positions from free VRAM (175 MB of 4466 MB free); a follow-up may now diverge 896 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 4.5 GB free — capping to 39 (4.0 GB)
+    decode path: cuda-resident (int4)
+    fit: 2048-token cap needs 0.7 GB KV (weights 13.6 GB, budget 29.8 GB, 29.1 GB left for a request's own prefill)
+    KV plan: 1 conversation x 2048 positions (4 asked for; --ctx 2048)
+  gpu after load: 7359 MiB
+  cell 3 C-text2048: ttft 2.1s turn 45.2s tokens 1500 decode 34.73 tok/s chars 6483
+  gpu after turn: 7359 MiB
+  expert cache: 39 slots/layer; this turn 302143 hits, 60092 misses (83.4% hit)
+cell 4 C2-text16384 (text; --ctx 16384) start 15:53:46 load 2.60 mem avail 55.3 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+  cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3904 MB free); a follow-up may now diverge 1024 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.9 GB free — capping to 33 (3.4 GB)
+    decode path: cuda-resident (int4)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 29.8 GB, 28.5 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384)
+  gpu after load: 7321 MiB
+  cell 4 C2-text16384: ttft 2.0s turn 47.3s tokens 1500 decode 33.12 tok/s chars 6483
+  gpu after turn: 7321 MiB
+  expert cache: 33 slots/layer; this turn 284420 hits, 77815 misses (78.5% hit)
+cell 5 D-cputower (image; --ctx 16384 -vision-device cpu) start 15:55:16 load 2.69 mem avail 55.3 GB gpu 402 MiB
+  cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+  cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3904 MB free); a follow-up may now diverge 1024 before the newest
+  [cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.9 GB free — capping to 33 (3.4 GB)
+    decode path: cuda-resident (int4)
+    fit: 16384-token cap needs 1.3 GB KV (weights 13.6 GB, budget 29.8 GB, 28.6 GB left for a request's own prefill)
+    KV plan: 1 conversation x 16384 positions (4 asked for; --ctx 16384)
+  loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 560 soft tokens/image, soft-token id 258880, tower on CPU) from /home/francis/models/gemma-4-26b-a4b-it-vis560
+  gpu after load: 7321 MiB
+  cell 5 D-cputower: ttft 41.6s turn 78.9s tokens 1169 decode 31.31 tok/s chars 4926
+  gpu after turn: 7321 MiB
+  vision: encoded a 33222-byte image in 30.797s (sha256 cf797074); a resend of it will skip this
+  vision: decoded 1169 tokens on the resident path (prefill resident)
+  expert cache: 33 slots/layer; this turn 223302 hits, 62585 misses (78.1% hit)
