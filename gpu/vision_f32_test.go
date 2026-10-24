@@ -44,11 +44,13 @@ func siglipTinySharpened(t *testing.T) (*vision.Encoder, vision.SiglipWeights, [
 	}
 	rng := rand.New(rand.NewSource(11))
 	scale := func(x []float32) {
+		makeWritable(x)
 		for i := range x {
 			x[i] *= 0.5 + rng.Float32()
 		}
 	}
 	shift := func(x []float32, by float32) {
+		makeWritable(x)
 		for i := range x {
 			x[i] += by * float32(rng.NormFloat64())
 		}
