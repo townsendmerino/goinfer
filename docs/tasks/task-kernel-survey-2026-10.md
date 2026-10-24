@@ -732,6 +732,28 @@ Neither quantizer's work depends on depth, yet `swiglu_quant` read 0.644 and 0.4
 ±0.2 ms (the paired columns agree), so the 0.875 ms sum is good to roughly a quarter. Both clear their lines at either depth. The run
 took 29 s, not the 6 minutes registered. Log: `~/goinfer-logs/ksc4c5-decomp-2026-10-24.log`.
 
+**KS-C4 gates, registered 2026-10-24 before the code (C4-G).** The build folds `swiglu_quant` into its neighbours on the dense int4
+decode path (the R18 gate|up rows kernel and the staged down kernel; not the f16 lane, LoRA, sandwich, post-only or parallel-block
+layers, the native int8 lane, MoE, the batched step or prefill, which keep the two-step form):
+- `gemv_w4a8_sa_glu_rows<R>`: `sa_rows_acc`'s body with simdgroup s taking gate rows p0 … p0 + R/2 − 1 and the matching up rows
+  I + p0 …, p0 = s·R/2. Lane 0 forms each g and u as `gemv_w4a8_sa_rows` writes them (`acc·asc`), then h = `glu_act_pinned(g)·u`,
+  `swiglu_quant`'s statement. It writes h (into the gate|up buffer's first I floats) and one max |h| partial per threadgroup.
+- `gemv_w4a8_resid_staged_hq<R>`: each threadgroup takes the max of the partials (max is exact in any order), forms sc and 1/sc as
+  `swiglu_quant` does (sc 0 → 1), stages each h quantized with `swiglu_quant`'s rounding, then runs `gemv_w4a8_resid_staged`'s body
+  with sc as the activation scale.
+- The partials live in `r.dq`'s memory, which the fold path no longer writes. `ksc4FoldOffForTest` keeps the two-step form for the
+  A/B. The ctx quantizer (`quant_vec`) is a second step (C4b), registered only if this one ships.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| C4-G1 identity | 0 | (a) the folded pair against `gemv_w4a8_sa_rows<R>` → `swiglu_quant` → `gemv_w4a8_resid_staged<R>` at the 0.5B's, 1.5B's and 7B's shapes, R = 2 and 4, SiLU and GELU-tanh, random int4 weights, f16 scales and int8 activations, the fast-math and the precise library; (b) llama-tiny and the 0.5B and 1.5B Metal `.giw`s at int4, 32 greedy decode steps, every step's logits, fold on against off, and the fold taken (a dispatch counter); (c) `TestMetalSnapshotGolden` | (a) the down outputs byte-equal in every cell; (b) byte-equal and taken; (c) PASS |
+| C4-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B's Metal `.giw`: fold on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median on/off per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change (CLAUDE.md, "Measurement discipline") decides; otherwise PARK |
+| C4-G3 memory | 0 | Metal's allocated size after the 1.5B's resident is built, fold on against off | not higher |
+
+Planted defect, run once on the committed tree and reverted: the up row taken one row off (I + p0 + j + 1); C4-G1 goes red.
+Stopping rule: one pass each. Cost: G1 about a minute; G2 about 4 minutes; G3 seconds. Gain (est.): 0.3–0.5 ms a token on the 1.5B
+(`swiglu_quant` reads 0.455–0.644 ms; the fold adds a redundant quantize of h in each down threadgroup).
+
 **KS-C5 · Legacy decode attention below 1024 keys (bit-identical).**
 - **Waste:** at 128 keys it costs 0.67 / 0.78 ms per token, with serial 8-wide V-load batches (16 dependent round trips) and
   about 16 barriers.
