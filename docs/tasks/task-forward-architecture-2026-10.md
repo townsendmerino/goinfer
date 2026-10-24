@@ -1,5 +1,9 @@
 # Task: one forward architecture — models as operation lists, one ragged forward pass (OP0–OP6, RF0–RF6, HL) — 2026-10
 
+> **2026-10-22: track SP added (§6a): speculation on windowed and recurrent models**, from Kapitsa (`nace-ai/kapitsa`, Apache-2.0, read at `3f7f4c8` on 2026-10-22).
+> Every speculative path in goinfer refuses both kinds of model today (`decoder/forwardn.go:Model.specRollbackSafe`).
+> Added on the owner's word ("yes both please").
+
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; the two batched twins and OP3z part 2 remain (§4.8, "Left in OP3").** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
@@ -73,6 +77,10 @@
 | RF4 | the same on Metal | Metal | L | KV5, RF3 |
 | RF5 | retire the old entry points and interfaces; images and hidden outputs as row attributes | all resident | M | RF4 |
 | RF6 | speculation inside a batch | CUDA, Metal | M | RF3 |
+| SP0 | the prize per family: drafter acceptance by teacher forcing, verify-row cost, a projected speedup | — | S | — |
+| SP1 | exact rollback for windowed models: rings sized window + verify rows | CUDA, Metal (staged path first) | M | SP0 |
+| SP2 | speculation on recurrent hybrids: verify never writes the committed state; accepted updates fold in | CUDA, Metal | L | SP0 |
+| SP3 | a tree of the drafter's candidates in the same verify rows, sized by measured row cost | CUDA, Metal | M | SP2 |
 | HL | run-ahead under a gated logit processor (Metal); a run-ahead chain on CUDA | Metal, CUDA | S–M | — |
 
 ## 1. Where a query's time goes
@@ -2480,10 +2488,82 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
     chain gave plain turns.
 - **Size:** S–M.
 
+## 6a. Track SP — speculation on windowed and recurrent models (added 2026-10-22)
+
+### Why
+
+- **Every speculative path refuses these models.** `decoder/forwardn.go:Model.specRollbackSafe` is false for every family
+  with recurrent state and for every model with a sliding window. Block speculation (`decoder/blockspec.go`), n-gram
+  (`decoder/spec_ngram.go`), grammar speculation (`decoder/spec_grammar.go`), the drafter loop (`decoder/speculative.go`) and
+  `decoder/spec_optfwd.go` all check it.
+- **The families affected:** every Qwen since 3.5, Qwen3-Next, Nemotron-H, Granite-4.0-H, OLMo Hybrid, gpt-oss, Mellum,
+  Gemma, Cohere2, and Flint (`docs/tasks/task-flint-2026-10.md`). These are the most-used local models today.
+- **Why it refuses.** Recurrent layers: `KVCache.TruncateTo` does not roll back in-place state. Windowed layers: once a ring
+  wraps, a rollback of more than one position cannot restore what the verify rows evicted. The comment's own condition
+  for re-enabling windows is "consuming an exact-rollback bool at each rollback site".
+- **What was tried before.** A checkpoint per verify round was priced at 11.0% of a decode step and closed (R-01 phase 1,
+  `docs/tasks/task-kv-architecture-2026-10.md` §5.7).
+- **What goinfer already has.** A DFlash drafter (`decoder/dflash.go`), block speculation, and tree masks in the KV cache
+  (`KVCache.treeMask`, `treeRowPos`). All of it runs only on models without recurrent state or a window.
+- **What Kapitsa shows.** It speculates on exactly these models, with no checkpoint per round (`docs/kflash.md`):
+  - Each verify row runs its recurrent layers from its parent row's state. Mamba-2 keeps the 8 rows' states in registers;
+    Gated DeltaNet rebuilds a parent's state from the committed state by replaying the ancestors' updates. The short
+    convolutions read each row's ancestors.
+  - The committed state is not written during the pass. The accepted path's updates fold into it at the start of the next.
+  - Flint's sliding layers keep a ring of 528 positions: the 513-token window plus room for a verify pass's rows
+    (`docs/architecture.md`). A rejected row never evicts a position the window still needs.
+  - Its claim, self-reported: 161 tok/s decode on Qwen3.6-35B-A3B at 4-bit on an M4 Pro, against Ollama's 89.
+
+### Phases
+
+- **SP0 — the prize per family (S; no product code).** For each target, record:
+  - **Targets:** Qwen3.5-9B on nobara, Qwen3.6-35B-A3B on the Mac, one windowed model with a drafter or n-gram use
+    (gpt-oss or Mellum), and Flint once its F3 lands.
+  - **Drafters:** which exist (z-lab's DFlash and DFlash2 for the Qwen line; n-gram for all).
+  - **Acceptance by teacher forcing:** run the drafter against the target's own greedy continuation offline. This needs no
+    rollback in the target.
+  - **Cost:** a verify pass of k rows against a one-row step, measured with `ForwardN`. Cost needs no correct rollback.
+    MoE rows cost more, since each row brings its own experts (Kapitsa: 1.56× for 8 rows against 1 on the 35B).
+  - **Projected decode speedup** = tokens per cycle over cycle cost.
+  - **Rule, registered first:** a family goes on to SP1 or SP2 only if its projected speedup is at least 1.3× on its box.
+- **SP1 — exact rollback for windowed models (M).**
+  - **Rings:** sized to the window plus the most rows a verify pass writes, so rollback within a pass is exact.
+  - **Rollback sites:** every one (`KVCache.TruncateTo` on the staged path; the resident windowed KV, which compacts in
+    64-token steps on CUDA) consumes an exact-rollback bool. `specRollbackSafe` admits a windowed model only where every
+    site reports exact.
+  - **Gates:**
+    - identity: greedy speculative output equals plain decode token for token, on prompts past the window, with the ring
+      wrapped;
+    - the ring's added bytes, stated;
+    - speed against plain decode at SP0's registered bar.
+  - It turns on n-gram speculation for Flint, which has no drafter.
+- **SP2 — speculation on recurrent hybrids (L).** Verify never writes the committed recurrent state.
+  - **During the pass:** each row's scan starts from its parent's state, held per row where it fits (Mamba-2) and replayed
+    from the committed state where it does not (DeltaNet). The conv windows read each row's ancestors.
+  - **After acceptance:** the accepted rows' updates fold into the committed state, k rank-1 updates per layer with no
+    full-state copy.
+  - **Gates:**
+    - identity as SP1, conv window included (spec/09: skipping it gives wrong logits with no error);
+    - the fold's cost per cycle, against R-01 phase 1's 11.0%;
+    - speed with DFlash on Qwen3.5-9B (nobara) and Qwen3.6-35B-A3B (Mac), at SP0's bar.
+  - **What it must agree with:** KV8a's checkpoint is taken before decode and is unaffected. The committed sequence after a
+    speculative turn must be what kvmgr scores (R-03, `docs/tasks/task-recompute-audit.md`).
+- **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
+  - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
+    masks.
+  - **Size:** each box sizes the tree from its measured verify-row cost, so MoE models use fewer rows.
+  - **Hybrids:** branch states come from SP2.
+  - **Gates:** identity; tokens per pass against the chain; speed.
+
+### Order
+
+SP0 → SP1 → SP2 → SP3. Nothing here waits on KV4 or RF2. RF6 (speculation inside a batch) later builds on what SP lands.
+
 ## 7. Order, and what each step is worth alone
 
 - **Now, independent of everything:** OP0, OP1 (Gemma 2 on every GPU), RF0, HL, and OP6's Metal default (E5).
 - **With the KV track:** RF1 any time; RF2 after KV4; RF4 after KV5; RF3 and RF6 after RF2.
+- **Track SP** (added 2026-10-22) waits on nothing in KV or RF: SP0 first, SP1 next (it unblocks Flint, gpt-oss, Mellum and Gemma), then SP2.
 - **The structural work** comes after OP1 and OP2 have shown the operation boundary holds: OP3, then OP4, then OP5.
 - **Every phase is bit-identical where it says so, and ships alone.** A track that stops early leaves the tree consistent,
   because the adapters keep the old paths working.
@@ -2717,6 +2797,19 @@ INFERRED:
 - **The cost E1 asks about shows on the exact feature OP1 adds.** A framework-owned attention kernel without a softcap parameter leaves two choices: compose attention from primitives and
   lose the fused kernel (mlx-lm), or drop the feature (MLC).
 - **MLC is the opposite of RF:** it compiles one function per call shape, which is the seam RF removes.
+
+### Kapitsa (read 2026-10-22, `nace-ai/kapitsa` at `3f7f4c8`, Apache-2.0)
+
+- **We take:**
+  - verify rows that run recurrent layers from the parent row's state, never writing the committed state (SP2);
+  - rings sized to the window plus a verify pass's rows (SP1);
+  - trees sized by each box's measured row cost (SP3);
+  - the second checkpoint at the last user question (KV8a-Q in the KV doc).
+- **Candidate only:** prefilling the next turn's history while idle (recorded under KV8a-Q).
+- **We leave:**
+  - Neural Engine prefill (Apple's private APIs; no cgo);
+  - Metal 4 matrix units, which help only on M5;
+  - its C++ and Metal code, which we read for ideas only, unless a piece is adapted with its notice.
 
 ### What the OP0 reading corrected in §10 (applied above)
 

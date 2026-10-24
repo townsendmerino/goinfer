@@ -55,7 +55,7 @@
 | KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D8 | open (build) | baseline read 2026-10-24: Nemotron-Nano-9B-v2 sequential prefill 14.5 tok/s at K=512, batched prefill not admitted. Next: the batched Mamba-2 prefill (M–L), its gates registered first | survey, "KS-D8 baseline read" |
+| KS-D8 | done | done 2026-10-24: batched Mamba-2 prefill, the relu² MLP and mixer-only layers on Metal; the 9B's 512-token prefill 5.14× (D8-G4 SHIP); G1, G2, G5, G6 PASS; D8-G3 PASS on its reference route (against a CPU bf16 reference the pass reads mean KL 0.046 and top-1 7 of 8, the sequential path 0.102 and 4 of 8) | survey, "KS-D8 read", "D8-G3 reference-route read" |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
@@ -1470,6 +1470,121 @@ available, swap 464 MB before and after. Each run's start load 1.92–2.68. Nemo
 That is the denominator for KS-D8's estimated 5–8× and for KS-B12. Also seen: the resident keeps no recurrent checkpoint here
 (138.8 MiB beside the load's 10.49 GB is over its 6.55 GB budget), so a reply rendered back differently re-prefills the whole
 prompt. Log: `~/goinfer-logs/ksd8-baseline-day-2026-10-24-0853.log`.
+
+**KS-D8 design and gates, registered 2026-10-24 before the code (D8-G), on the owner's word of 10:22 (start KS-D8 now; design
+and gates first).** What the pass lacks for Nemotron-H, read off `MissingResidentFeatures(prefillFeatures)` on `nemotron-tiny`
+(layers Mamba, attention, MLP, Mamba, attention) and on the 9B's three-layer slice (Mamba, MLP, attention; dInner 10,240, dState
+128, in_proj 22,656 × 4,480): `ssm`, `non-gated-mlp` and `non-gated-relu2`. Its attention layers are already in the pass. The build:
+- **The layer loop takes decode's shape:** the mixer by kind (DeltaNet, Mamba-2, attention, or none for an MLP-only layer), then
+  the FFN only where the layer has one (`L.ffn`), as `encodeLayerResidualWith` does.
+- **The Mamba-2 mixer over M rows** (`encodePrefillMambaMixer`, a new `metal/prefill_mamba.go`, after D-B01's DeltaNet form):
+  the pre-norm into the pass's f16 norm scratch; in_proj as an int8 prefill GEMM (`gemm_w8f16_*`, which takes the int8 codes and
+  per-row f32 scales the layer already holds; the W8 tiles compile for a Mamba resident too); then three row kernels over the M
+  rows, `mamba_conv_seq` (a thread per channel, the window in registers), `mamba_ssm_seq` (a thread per head and channel, the state
+  in the layer's buffer as decode keeps it) and `mamba_gnorm_rows` (a threadgroup per row and group). Each is its decode kernel's
+  body with a token loop, so given the same inputs it writes decode's bits, window and state included. Then the gated rows to f16
+  and out_proj as an int8 GEMM accumulating into the f16 residual (mode 2). The window and state continue from what the resident
+  holds, as M decode steps would.
+- **The non-gated relu² MLP:** norm, the up projection (int4 GEMM, its bias by mode 1), `nongated_act_rows_f16` (decode's
+  `nongated_act` per element), the down projection accumulating into the residual (mode 2). Admitted only where the down projection
+  has no bias (Nemotron-H); a biased one (GPT-2) stays sequential, so the shared GEMM kernel is not touched.
+- **Admission:** `recurrentPrefillOK` admits a Mamba resident when `mambaPrefillOn` (a test switch, on) and dConv ≤ 8; the three
+  features leave the missing list as DeltaNet's does. The new kernels live in `metal/kernels/mamba_kernels_msl.go`.
+- **Class: fidelity-gated.** What leaves decode's arithmetic is what every batched layer changes: f16 activations into the
+  projections and f16 projection outputs, where decode runs W8A8 with f32 outputs.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D8-G1 kernels | 0 | each row kernel against M steps of its decode kernel at `nemotron-tiny`'s and the 9B's mixer shapes, M = 1, 7, 64: random inputs representable in f16 (the row kernels read the f16 projection rows, decode the f32), a non-zero starting window and state | outputs, window and state byte-equal |
+| D8-G2 fidelity, tiny | 0 | `nemotron-tiny`: a CPU f32 reference, the Metal int4 sequential path and the Metal int4 batched pass, prompts of 16, 48 and 100 tokens (8 prompts each, seeded ids), last-position logits | the batched pass is non-inferior to the sequential one against the reference: its mean KL to the reference at most the sequential path's + 0.005 nats, and its top-1 agreement with the reference at least the sequential path's − 1 prompt |
+| D8-G3 fidelity, 9B | 1, Mac | Nemotron-Nano-9B-v2's int4 Metal `.giw`, 8 prompts of 512 seeded token ids, last-position logits, batched against sequential (no f32 reference fits this box) | top-1 agrees on at least 7 of 8 and the mean symmetric KL ≤ 0.05 nats: PASS; 6 of 8 or KL in (0.05, 0.10]: PARK for a CPU f32 reference on nobara; worse: FAIL |
+| D8-G4 speed | timed, Mac, timing lock | the 9B, a 512-token prompt's time to the first token, batched against sequential, interleaved A B B A over 2 pairs after one warm run each (the sequential arm is 35 s; its baseline read 14.5 tok/s) | SHIP iff the median speedup is ≥ 2× |
+| D8-G5 memory | 0 and 1 | the pass's scratch counter (`prefillScratchSeen`) against `PrefillScratchBytes` on `nemotron-tiny` and the 9B at 512 rows; the 9B's 512-token prompt admitted by the fit guard with the pass priced | counted ≤ planned; admitted |
+| D8-G6 unchanged | 0 | `touched.py`; the prefill, DeltaNet, MEM6/MEM7 and attention-prefill tests by name; `llama-tiny`, `qwen35-tiny` and the 1.5B batched-prefill logits against a resident built at `origin/main` (their paths call no new code) | all PASS; byte-equal |
+
+Planted defects, run once on the committed tree and reverted: `mamba_ssm_seq` restarting the state at each row (D8-G1 red), and the
+batched pass skipping the conv window's write-back (D8-G1 red on the window). Stopping rule: one pass each; a FAIL is diagnosed,
+not re-run. Cost: G1, G2, G5 and G6 minutes; G3 about 10 minutes (16 prompt passes, 8 of them sequential at 35 s); G4 about 3
+minutes. Size: L (the estimate was M–L; the relu² MLP and the mixer-only layers were not in it).
+
+**KS-D8 read 2026-10-24 (Mac, 10:30–11:15): D8-G3 FAIL by its registered bar; every other gate passes; not merged.**
+- **D8-G1 PASS:** 12 cells (fast-math and precise, nemotron-tiny's and the 9B's shapes, M = 1, 7, 64), 0 values differ in the
+  outputs, the window and the state. Both plants are red: the scan restarting its state (8,090,871 values differ) and the window
+  left unwritten (every window value).
+- **D8-G2 PASS** (nemotron-tiny against the CPU f32 reference, mean KL; top-1 of 8): M = 16 sequential 5.54e-5, pass 5.28e-5,
+  8 and 8; M = 48 4.85e-5 and 4.63e-5, 8 and 8; M = 100 3.07e-5 and 3.15e-5, 6 and 6. Graded per prompt length, the stricter of
+  the registration's two readings.
+- **D8-G3 FAIL:** the 9B, batched against sequential, top-1 agrees on **3 of 8**, mean symmetric KL **0.0504** (per prompt
+  0.025–0.124), cosine 0.994–0.997 on every prompt. The top-1 flips are between neighbours (43085 and 7612 swap between prompts
+  4 and 5).
+- **Diagnostic, after the FAIL (not a gate):** the same instrument on two families whose batched pass ships. Qwen3.5-9B (D-B01)
+  agrees on **6 of 8**, mean KL **0.0384**, cosine 0.987–0.998; Qwen2.5-Coder-1.5B on 7 of 8, KL 0.0192. So the bar was
+  miscalibrated for random-token prompts (a shipped 9B hybrid reads PARK on it), and the 9B Nemotron still reads worse than that
+  yardstick: KL about 30% higher and top-1 3 of 8 against 6 of 8, at the same cosines. Which path is nearer the true output needs
+  a CPU f32 reference this box cannot hold (the registered PARK route, on nobara).
+- **D8-G4 SHIP** (11:05–11:08, the lock held exclusively, load 0.70–0.97, 12.9 GB available): a 512-token prompt sequential
+  39.10 and 40.74 s (13.1 and 12.6 tok/s), batched 7.93 and 7.61 s (64.6 and 67.3 tok/s): **median speedup 5.14×** (the survey's
+  estimate 5–8×).
+- **D8-G5 PASS:** scratch counted equals the plan, nemotron-tiny 231,456 bytes at 100 rows, the 9B 138,610,688 at 512; the 9B
+  loads under the fit guard.
+- **D8-G6 PASS:** llama-tiny, qwen35-tiny and the 1.5B, batched-prefill logits 0 differ against a build at the base commit;
+  `touched.py`'s one red was `TestRecurrentGuards_declineMamba`, which asserted the decline this item removes (updated); the
+  other reds were fixtures absent from a new worktree, green once cloned in, and `TestI8_exactKernelModelIsSplit`, red on main too.
+Logs: `~/goinfer-logs/ksd8-g1-2026-10-24.log`, `~/goinfer-logs/ksd8-g2-2026-10-24.log`, `~/goinfer-logs/ksd8-9b-2026-10-24.log`,
+`~/goinfer-logs/ksd8-yardstick-2026-10-24.log`, `~/goinfer-logs/ksd8-g6-2026-10-24.log`.
+
+**D8-G3's reference route, registered 2026-10-24 (11:55) before the reference runs, on the owner's word of 11:46 ("KS-D8 is a
+go"; the registered PARK route).** Instrument: the same 8 prompts of 512 seeded token ids. The reference is the Hugging Face
+checkpoint on nobara's CPU (`/srv/models/nemotron-hf`; not a timed read) with its bf16 weights kept bf16 and f32 compute
+(`Quant: "bf16"`), which is the checkpoint's own arithmetic; its last-position logits are written on nobara and copied to the
+Mac, where the sequential path and the batched pass are read as in D8-G3. **D8-G3 PASS iff, against that reference, the pass is
+non-inferior to the sequential path in D8-G2's form: its mean KL(ref ‖ ·) at most the sequential path's + 0.005 nats, and its
+top-1 agreement with the reference at least the sequential path's less one prompt; otherwise FAIL.** The 9B ships on PASS, with
+D8-G4's speed; on FAIL it stays unmerged and the gap is localized per layer kind before anything else.
+
+**D8-G3 reference-route read 2026-10-24: PASS.** The reference ran on nobara's CPU 12:54–14:42 (`ksd8-g3-cpu-ref`, all 8 prompts,
+`ref.bin` sha256 `d46c44ce…`, 8 × 131,072 float32); the Mac read the sequential path and the batched pass against it 14:46–14:54
+(not timed; shared lock; 13.7 GB available at the start). Against the reference, **the pass is closer than the sequential path on
+every prompt**: mean KL(ref ‖ ·) **0.0463 for the pass against 0.1024 for the sequential path** (bar: ≤ 0.1074), top-1 agreement
+**7 of 8 against 4 of 8** (bar: ≥ 3). Per prompt, KL(ref ‖ seq) → KL(ref ‖ pass): 0.081 → 0.040, 0.028 → 0.022, 0.225 → 0.056,
+0.281 → 0.111, 0.027 → 0.017, 0.023 → 0.016, 0.055 → 0.028, 0.099 → 0.081; the pass misses top-1 only on prompt 7, the sequential
+path on prompts 2, 4, 5 and 6. So D8-G3's first FAIL measured the sequential path's own distance from the checkpoint, not a
+defect in the pass. KS-D8 ships with D8-G4's 5.14×. Log: `~/goinfer-logs/ksd8-g3-ref-2026-10-24.log`.
+After merging main at 922054f3 (KS-O1's q4k-lane GEMVs touch the same files): D8-G1, D8-G2 and D8-G5 PASS again, and D8-G6 against a
+fresh base dump of 922054f3 reads 0 logits differ on llama-tiny, qwen35-tiny and the 1.5B's Metal `.giw`.
+
+**After the review of #222 (15:15), registered before the re-runs.**
+- **The down-bias decline was a no-op, fixed.** `buildResident` read `residLayer.downBiasSet` before `r.layers` was built, so
+  the check scanned an empty slice and the non-gated MLP features were always admitted. A non-gated MLP with a down-projection bias
+  would have taken the pass, which has no down-bias epilogue. The check now reads the weights (`LayerWeights.DownBias`).
+  `TestKSD8_downBiasDeclines` builds nemotron-tiny as shipped (admitted) and again with one layer's `DownBias` set (it must decline);
+  it is run once against the unfixed check, where it must be red.
+- **Not a defect: the f16 conversion past `M·dInner`.** aikit/gpu's Metal `Encoder.Dispatch` encodes `dispatchThreads` with the
+  exact element count, so its last threadgroup is partial and `f32_to_f16` (indexed by `thread_position_in_grid`) never reads past
+  `gated` or writes `gatedH`'s pad rows. D8-G2 still gains odd lengths (17, 33, 101), where `M·dInner` is off a multiple of 256.
+- **D8-G2 gains a continuation:** after each prompt, both paths decode 4 more tokens from position M, and the last is graded
+  against the CPU reference over all M+4 tokens on the same non-inferiority bar. A wrong window, state or K/V left by the pass
+  would show there.
+- `p.dConv < 2` now declines the pass too (the conv kernel indexes `w[K-2]`).
+- `TestKSD8_9BFidelity` (the first D8-G3 instrument, batched against sequential) is retired; D8-G3's instrument is
+  `TestKSD8_9BAgainstReference`. `TestKSD8_9BSpeed` refuses to run outside the timing lock and fails under D8-G4's bar.
+- Re-runs: D8-G1, D8-G2 (extended), D8-G5, the new decline test (and its red run against the old check), and D8-G6 against
+  the 922054f3 base dump, since the admission change could touch another non-gated family.
+
+**Read 2026-10-24 (15:17–15:25, Mac, not timed): all PASS.**
+- `TestKSD8_downBiasDeclines` is red against the old check ("a non-gated MLP with a down-projection bias was admitted") and green
+  with the fix.
+- D8-G1 0 values differ in 12 cells; D8-G5 counted equals planned (231,456 bytes).
+- D8-G2 PASS at all six lengths, at the prompt's end and after the continuation. Pass against sequential KL, at the end then after
+  4 steps: M=17 7.39e-5 vs 7.33e-5, then 5.76e-5 vs 5.82e-5; M=101 3.68e-5 vs 3.71e-5, then 3.36e-5 vs 3.41e-5. Top-1 is equal to
+  or better than the sequential path everywhere.
+- D8-G6: 0 logits differ on llama-tiny, qwen35-tiny and the 1.5B.
+- **Plant, run once and reverted:** `mamba_conv_seq` not writing its window back. D8-G2 goes red. Every length's after-continuation
+  KL rises 10–20× (5e-5 → 4.6e-4 to 1.0e-3) while the prompt-end readings are unchanged. Only M = 33, 48 and 100 fail outright: the
+  registered +0.005-nat margin is about 100 times this tiny model's KL, so it lets a 20× rise through at the other three. The bar
+  is left as registered; a relative margin for a tiny-model continuation would be its own registration.
+Logs: `~/goinfer-logs/ksd8-review-g125-2026-10-24.log`, `~/goinfer-logs/ksd8-review-g6-2026-10-24.log`,
+`~/goinfer-logs/ksd8-review-plant-2026-10-24.log`.
 
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
