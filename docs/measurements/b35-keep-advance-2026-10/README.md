@@ -18,9 +18,15 @@ reusing more than Q2, restored still equal to cold, plus B35's own gate re-run. 
 - **What changes:** for a model with recurrent state, `kvPrefillMark` no longer declines because the request restored a
   snapshot. It still declines when the planned point is at or before where the prefill starts (`q <= from`), when the passes
   do not end on it, and when a held snapshot covers it.
-- **Admission is unchanged** (`Model.residentSnapshotRows`): a point more than a rollback past the restored snapshot's end
-  replaces that snapshot.
-- **Unchanged for attention models:** the decline on a restore stays, so their snapshot behaviour is bit-identical.
+- **Amended while building, before G1–G3; G0 is what exposed it.** Two more places held a restored request's point as already
+  served, and for a recurrent model both are wrong, because a recurrent snapshot serves only its own end:
+  - **`kvPrefillMark`'s covering check** counted the restored, shorter snapshot as holding the new point. For a recurrent model
+    it now declines only when the held snapshot reaches the point.
+  - **`Model.residentSnapshotRows`'s admission** required a restored request's point to be more than `kvmgr.RollbackFloor`
+    (448 rows) past the snapshot it restored from. That margin exists for windowed attention rings. For a recurrent model the
+    margin is 0, and the new point replaces the restored snapshot.
+  - Before this change, no recurrent request reached either branch, so neither alters anything that runs today.
+- **Unchanged for attention models:** all three conditions keep their old form, so their snapshot behaviour is bit-identical.
 - **Unchanged for every cold prefill:** the change acts only on a request that restored a snapshot.
 
 ## Gates (registered before the code)

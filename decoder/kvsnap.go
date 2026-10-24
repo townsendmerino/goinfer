@@ -529,19 +529,24 @@ func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q i
 
 // kvPrefillMark returns the mark a cold prefill of prompt from position from should carry: the boundary position and the function that takes the
 // snapshot there. nil when no boundary snapshot applies, when from does not start on a pass boundary the mark could meet, or when a held snapshot
-// already serves the prefix (this request restored it, or another one covers it).
+// already serves the prefix (this request restored it, or another one covers it). A recurrent model's restored request still marks its own
+// Keep past the restored point, so the kept state moves to each new question instead of staying at the first one
+// (docs/measurements/b35-keep-advance-2026-10/README.md); admission then replaces the snapshot it restored from (residentSnapshotRows).
 func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntime, sc KVScope, acq *kvAcquired) *prefillMark {
 	q, ok := m.kvBoundaryPlan(prompt, sc, lora)
-	if !ok || acq.snapRows > 0 || q <= from {
+	if !ok || (acq.snapRows > 0 && !m.hasRecurrentState()) || q <= from {
 		return nil
 	}
 	mp := m.resident.(ResidentPrefillMarked)
 	if (q-from)%mp.PrefillMarkAlign() != 0 {
 		return nil // the passes of this prefill do not end at q
 	}
-	if st := m.kvSnaps; st != nil && st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, m.kvSnapSlack()) != nil {
-		st.decline("held")
-		return nil
+	if st := m.kvSnaps; st != nil {
+		// A recurrent snapshot serves only its own end, so a shorter held one does not hold q: the mark replaces it, as residentSnapshotRows does.
+		if c := st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, m.kvSnapSlack()); c != nil && (!m.hasRecurrentState() || c.h.Rows() >= q) {
+			st.decline("held")
+			return nil
+		}
 	}
 	return &prefillMark{q: q, at: func(pos int) {
 		acq.markFired = true
@@ -587,8 +592,12 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 	}
 	root := m.kvRootIn(nil, sc.Namespace)
 	var replaced *kvSnap
+	past := kvmgr.RollbackFloor
+	if m.hasRecurrentState() {
+		past = 0 // a recurrent snapshot serves only its own end, so any later point is one x cannot serve
+	}
 	switch x := acq.snapFrom; {
-	case x != nil && b <= x.h.Rows()+kvmgr.RollbackFloor:
+	case x != nil && b <= x.h.Rows()+past:
 		// This request restored its prefix from x, so the family is held: a snapshot of this prompt would hold the same prefix again,
 		// for the rows only this prompt has. Only a prompt that runs on past x's rows by more than a rollback replaces it.
 		st.decline("held")
