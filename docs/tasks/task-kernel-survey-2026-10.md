@@ -92,7 +92,7 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2). Francis, 2026-10-24: decide after KS-C4 and KS-C5 read (KS-C1 (a)+(b) shipped, 22.3 → 33.0 tok/s) | — |
+| KS-O1 | building (Metal) | approved by Francis 2026-10-24 10:22 am, Metal first; O1-G registered; O1-G0 (prototype kernels at Phi-3's shapes) is next | survey, "KS-O1 on Metal: gates" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
@@ -623,6 +623,34 @@ C1-G3 (08:39–08:44, the lock held exclusively; not timed): G-Q2 on the rows ke
 (c), native Q5_K/Q6_K, is KS-O1's decision.
 - **First measurement:** time the shipped kernels at the real Phi-3 shapes with `TestMetalGEMVS0`'s method. Kill (a) if
   Q4_K already reads ≥100 GB/s.
+
+**KS-O1 on Metal: gates, registered 2026-10-24 before any code (O1-G), on the owner's word of 10:22 am (build native Q5_K/Q6_K
+for the GPU q4k lanes, Metal first).** The build:
+- **Kernels:** `gemv_q5k_f32_rows<R>` and `gemv_q6k_f32_rows<R>` (plain, residual, bias), their batched-step twins in
+  `metal/batch_rows.go`, and a native Q6_K head (`gemv_q6kf32_head` and its block-argmax twin) beside `gemv_w8f32_head`. Q5_K
+  takes `q4k_rows_acc`'s lane map (8 lanes a super-block, 4 in flight, one `uint4` of quants a lane) plus the matching 16 bytes of
+  `qh`. Q6_K's 210-byte block is not word-aligned, so it is uploaded split into planes of the same total size (`ql`, `qh`, scales,
+  `d`). Lane k of a block takes half k/4 and elements 8·(k mod 4)…+7 of each of its four 32-element groups.
+- **Data:** the raw blocks come from the GGUF mapping when the resident is built. The CPU copy stays int8, as it is now, so the CPU
+  path is unchanged. This needs a raw Q5_K/Q6_K accessor in aikit's `embed` (only `Q4KRaw` exists), which means an aikit release.
+- **Why not bit-identical:** today these tensors run as an int8 re-quantization of the dequantized file. The native kernels compute the
+  file's own weights, so their outputs move toward the file and cannot match the old bits. The small-gains rule does not apply, and
+  the fidelity gates below decide instead.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| O1-G0 measure | timed, Mac, timing lock | C1-G0's method (`TestKSC1_gemvTiming`'s harness, SLC-defeating rotation, median of 7) on prototype kernels at Phi-3 mini's shapes. Q5_K qkv is 9216×3072 ×32 layers; Q6_K down is 3072×8192 ×16 layers; the Q6_K head is 32064×3072. Each runs beside `gemv_w8_f32_rows2` at the same shape and the streaming ceiling, with R = 1, 2, 4, 8 | read, then a kill rule per kind. A kind is built only if its best R's time, summed over Phi-3's tensors of that kind, is ≤ 0.95× the int8 rows kernel's sum. If neither kind clears, KS-O1 on Metal is killed and the record says so. R is the fastest, or the smaller one on a tie within 2% |
+| O1-G1 kernels | 0 | G-Q1's method: every new kernel and variant against a float64 reference that dequantizes the same blocks on the host. The reference is cross-checked against aikit's GGUF dequantizer on the same bytes. Shapes: one super-block, a partial threadgroup, Phi-3's qkv / down / head, random scales at the 6-bit range ends. Planted defects: (1) Q5_K's high bit dropped; (2) Q6_K's −32 offset dropped; (3) a Q6_K group read with its neighbour's scale; (4) a super-block offset of one | every row within G-Q1's bar (\|err\| ≤ 1e-5 of Σ\|w·a\|); the reference within 1e-6 of aikit's dequantization; each plant red |
+| O1-G2 step | 0 | the four `TestQ4KStep_*` tests, plus a kernel-level step-vs-decode check on the new kinds | byte-equal to decode, as today |
+| O1-G3 memory | 0 | bytes uploaded for the q4k lane's weights (the sum of the `q4kSeg` buffers) and bytes allocated on the host during the resident build (`q4k_upload_alloc_test.go`'s counter) | device bytes fall to the GGUF's raw bytes for those tensors (Phi-3: about −375 MB); host bytes not higher |
+| O1-G4 CPU unchanged | 0 | the CPU q4k forward on the 0.5B q4_k_m (its Q6_K tensors), logits bytes before and after the change | byte-equal |
+| O1-G5 fidelity | 2, Mac | G-Q2 (`TestQ4KLane_realPhi3NonInferiority`) on the native kinds | PASS by its rule (≥ the reference's agreement − 2.0 points, free-run passes ≥ the reference's − 1) |
+| O1-G6 toward the file | 1, Mac | Qwen2.5-Coder-0.5B q4_k_m (Q6_K attn_v / ffn_down in half its layers, and the head): Metal q4k last-row logits, old lane and native lane, each against the CPU at f32 on the same GGUF (the file exactly), over G3's 8 prompts, teacher-forced. Phi-3 at f32 does not fit 16 GB | mean KL(new) ≤ mean KL(old); ambiguous (parked) up to 1.10×; FAIL above |
+| O1-G7 speed | timed, Mac, timing lock | C1-G4's A/B: one Phi-3 mini q4k resident that holds both the int8 and the native buffers for the Q5_K/Q6_K tensors (a test-only build hook), swapped per run. 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each. Then the same on Qwen2.5-Coder-1.5B q4_k_m (Q6_K only) | SHIP iff Phi-3's median new/old per-token time is ≤ 0.98 with at least 9 of 10 pairs faster **and** the 1.5B's median ≤ 1.00. PARK if Phi-3 is between 0.98 and 1.00 or has fewer than 9 pairs faster. KILL if Phi-3 is above 1.00 or the 1.5B is above 1.00 |
+
+Each model's load is fit-checked before G5 to G7. Stopping rule: one pass each, and O1-G0's kill rule ends the build early.
+Expected cost: G0 about 3 min; G1 to G4 seconds; G5 about 6 min; G6 about 4 min; G7 about 3 min for Phi-3 and 2 for the 1.5B.
+These are C1-G3's and C1-G4's walls, plus a second load. Planned order: G0 first; the aikit accessor only if a kind survives G0.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
