@@ -59,7 +59,7 @@
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
-| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1); the 1.5B's WebGPU decode 24.8 → 21.9 ms a token, median 0.8821, 10 of 10 pairs (E2-G2 SHIP) | survey, "KS-E2 read" |
+| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1); the 1.5B's WebGPU decode 24.6 → 21.7 ms a token, median 0.8811, 10 of 10 pairs, re-run with an A/A control (0.9998) under the void rule (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | open | either box: `TEncode` from `TestDecodeTWE_split` on today's binding | — |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
@@ -1272,6 +1272,14 @@ reading's 0.8821 again). The two residents and the host model leave too little m
 resident alive at a time**: each run builds a fresh narrow or wide resident, warms it twice, times it and closes it, the A B B A
 order and the bars unchanged, the 6 GB before-load and 2 GB per-pair lines unchanged. Log of the second attempt:
 `~/goinfer-logs/kse2-g2-rerun2-2026-10-24.log`; of the first: `~/goinfer-logs/kse2-g2-rerun-void-2026-10-24.log`.
+
+**E2-G2 re-run read 2026-10-24 (13:21–13:34, one resident at a time, under the lock): SHIP stands.** Before the loads 9.2 and 9.0
+GB reclaimable. **A/A control PASS: median 0.9998**, 5 of 10 pairs below 1, 4 void starts (the 1-minute load rose to 11.7 for a
+minute mid-run; the starts above 4.0 were re-run); two valid pairs near that spike read 0.8426 and 1.1594. **A/B SHIP: narrow
+24.36–28.11 ms a token, wide 21.53–24.66; median wide/narrow 0.8811, 10 of 10 pairs faster**, 3 void starts. Each valid pair
+started at a load of 0.64–3.43 and 3.4–7.3 GB reclaimable. The gain is the first reading's (0.8821) again; on this Mac's WebGPU
+the 1.5B's single-workgroup quantizers cost more than the survey's 0.78 ms, which was read on nobara's 2070. Log:
+`~/goinfer-logs/kse2-g2-rerun3-2026-10-24.log`.
 
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
