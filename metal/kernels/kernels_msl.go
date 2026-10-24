@@ -2134,10 +2134,14 @@ kernel void gemv_w4a8_sa_glu_rows(device const uint4* wq[[buffer(0)]], device co
         SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] += (gf[r] - 8.0f*sa) * float(sct[rows[r]*G + g]);
     }
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] = simd_sum(acc[r]);
+    // g and u pass through simd_broadcast_first so fast math cannot fold acc*asc into the activation's arithmetic:
+    // swiglu_quant reads them from memory, rounded.
+    float gb[P], ub[P];
+    SA_ROWS_UNROLL for (uint j=0;j<P;j++) { gb[j] = simd_broadcast_first(acc[j]*asc[0]); ub[j] = simd_broadcast_first(acc[P+j]*asc[0]); }
     if (lane==0) {
         float mx = 0.0f;
         SA_ROWS_UNROLL for (uint j=0;j<P;j++) {
-            float gv = acc[j]*asc[0], uv = acc[P+j]*asc[0];
+            float gv = gb[j], uv = ub[j];
             float sv = glu_act_pinned(gv, act) * uv;
             hout[p0+j] = sv;
             mx = max(mx, fabs(sv));
