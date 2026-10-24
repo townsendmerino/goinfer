@@ -17,7 +17,7 @@ func read() (Reading, bool) {
 	if avail <= 0 {
 		return Reading{}, false
 	}
-	return Reading{Physical: total * 1024, Available: avail * 1024, Source: "Linux /proc/meminfo MemAvailable"}, true
+	return Reading{Physical: total * 1024, Available: avail * 1024, Reclaimable: avail * 1024, Source: "Linux /proc/meminfo MemAvailable"}, true
 }
 
 // meminfoKB is a /proc/meminfo field's value in kB, or 0 when it is missing.

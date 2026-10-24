@@ -1,8 +1,10 @@
-// Command hostmem prints this machine's available memory as goinfer's fit guard reads it (internal/hostmem), for the start checks
-// of scripts/night.py, scripts/bench_peer.py and the job runners, so every reader uses one number.
+// Command hostmem prints this machine's memory as internal/hostmem reads it, so every reader uses one number: the available
+// figure the fit guard decides loads by, or with -reclaimable the figure the timed runs' start checks (scripts/night.py,
+// scripts/bench_peer.py) and the void rule decide validity by.
 //
 //	hostmem          available bytes
 //	hostmem -mb      available MiB, rounded down
+//	hostmem -reclaimable [-mb]  reclaimable bytes (MiB), what can be taken without compressing or swapping
 //	hostmem -v       the breakdown and the formula
 //	hostmem -pid N   process N's resident, internal, compressed and footprint bytes (task_info TASK_VM_INFO), one line
 //	hostmem -oracle  the reading bracketed by the kernel's jetsam figure read before and after it, one line (B41 gate 1a)
@@ -21,6 +23,7 @@ import (
 func main() {
 	mb := flag.Bool("mb", false, "print MiB instead of bytes")
 	v := flag.Bool("v", false, "print the breakdown")
+	recl := flag.Bool("reclaimable", false, "print the reclaimable figure (timed runs' validity) instead of the available one")
 	pid := flag.Int("pid", 0, "print this process's memory instead")
 	oracle := flag.Bool("oracle", false, "print the reading with the kernel's jetsam figure before and after it")
 	flag.Parse()
@@ -60,6 +63,10 @@ func main() {
 		fmt.Printf("physical %.2f GiB, available %.2f (level %d%%); reclaimable %.2f (free %.2f, speculative %.2f, file-backed %.2f, "+
 			"purgeable %.2f); app %.2f, wired %.2f, compressed %.2f GiB (%s)\n", g(r.Physical), g(r.Available), r.Level, g(r.Reclaimable),
 			g(r.Free), g(r.Speculative), g(r.FileBacked), g(r.Purgeable), g(r.App), g(r.Wired), g(r.Compressed), r.Source)
+	case *recl && *mb:
+		fmt.Println(r.Reclaimable >> 20)
+	case *recl:
+		fmt.Println(r.Reclaimable)
 	case *mb:
 		fmt.Println(r.Available >> 20)
 	default:

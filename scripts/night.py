@@ -980,10 +980,11 @@ def fcntl_flock(fd):
 
 
 def free_mem_mb():
-    """This box's available memory in MiB, the number goinfer's fit guard reads (scripts/hostmem.py, cmd/hostmem). None when
-    unreadable."""
+    """This box's free memory in MiB for a job's start check (fit need + 2 GB): the reclaimable figure cmd/hostmem prints
+    (scripts/hostmem.py), what a timed job can take without macOS compressing or swapping other memory under it, not the
+    load-decision figure. None when unreadable."""
     import hostmem
-    return hostmem.available_mb()
+    return hostmem.reclaimable_mb()
 
 
 def night_start(hhmm, added, deadline=DEFAULT_DEADLINE):

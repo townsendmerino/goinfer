@@ -41,7 +41,7 @@ func TestFromVMStats64_addsUpReclaimable(t *testing.T) {
 	if r.Reclaimable != 2578481152 || r.Free != 73596928 || r.App != 5151178752 || r.Wired != 2004516864 || r.Compressed != 6797361152 {
 		t.Fatalf("got %+v; want reclaimable 2578481152, free 73596928, app 5151178752, wired 2004516864, compressed 6797361152", r)
 	}
-	// A GiB more of cached file pages is a GiB more available; a GiB more of app pages, wired or compressed pages changes nothing.
+	// A GiB more of cached file pages is a GiB more reclaimable; a GiB more of app pages, wired or compressed pages changes nothing.
 	c := s
 	c.external += 65536
 	if got := fromVMStats64(c, 16384, 17179869184).Reclaimable - r.Reclaimable; got != 1<<30 {
@@ -119,7 +119,7 @@ func TestReadWithOracle_live(t *testing.T) {
 		}
 		time.Sleep(rateLimitWindow) // a new window, so this process's next request is served fresh unless others crowd it
 	}
-	if o.JetsamBefore <= 0 || o.JetsamAfter <= 0 || o.JetsamBefore > o.Ours.Physical || o.Ours.Reclaimable <= 0 {
+	if o.JetsamBefore <= 0 || o.JetsamAfter <= 0 || o.JetsamBefore > o.Ours.Physical || o.Ours.Reclaimable <= 0 || o.Ours.Available <= 0 {
 		t.Fatalf("implausible sample %+v", o)
 	}
 	// Ours less purgeable is the kernel's figure (free + pageable external pages): a speculative page counted twice shows here.
@@ -164,7 +164,7 @@ func TestFromLevel(t *testing.T) {
 	for _, c := range []struct {
 		level int
 		want  int64
-	}{{83, phys/100*83 - 500<<20}, {100, phys/100*100 - 500<<20}, {3, 0}, {0, 0}} {
+	}{{83, 13735003422}, {100, 16655581184}, {3, 0}, {0, 0}} { // 16 GiB × level / 100, less 524,288,000 bytes
 		if got := fromLevel(c.level, phys); got != c.want {
 			t.Errorf("level %d: got %d, want %d", c.level, got, c.want)
 		}
