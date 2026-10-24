@@ -24,7 +24,7 @@ import (
 // target's verify-row cost per call. It is a measurement tool, not a check: it skips unless SP0_TARGET is set.
 //
 //	GOINFER_HEAVY_TESTS=1 SP0_TARGET=<model> SP0_KIND=dflash|ngram|validate [SP0_DRAFTER=<dflash dir>] SP0_OUT=<out.jsonl> \
-//	  [SP0_SUITES=code,math] [SP0_THINK=template|on|off] [SP0_MAXNEW=256] [SP0_COST_CTX=512,4096] [SP0_COST_REPS=20] [SP0_SKIP_COST=1] [SP0_MOE_CACHE=1] [SP0_LOADONLY=1] \
+//	  [SP0_SUITES=code,math] [SP0_THINK=template|on|off] [SP0_MAXNEW=256] [SP0_COST_CTX=512,4096] [SP0_COST_REPS=20] [SP0_SKIP_COST=1] [SP0_MOE_CACHE=1] [SP0_CTX=4608] [SP0_LOADONLY=1] \
 //	  go test -tags 'cuda goinfer_testhooks' -run '^TestSP0_prize$' -v -timeout 90m ./cuda/
 //
 // validate runs the real block-spec loop (BlockSpec.Generate) beside the simulation on a dense pairing and records both, so
@@ -57,7 +57,7 @@ func TestSP0_prize(t *testing.T) {
 
 	var dr *decoder.DFlashDrafter
 	// f32 KV: the CUDA drafter attends with this resident's pipelines and refuses an f16 cache (cudaResident.AttachDrafter).
-	opts := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 8192, KVPrecision: "f32", MoECacheExperts: os.Getenv("SP0_MOE_CACHE") == "1"}
+	opts := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: sp0EnvInt(t, "SP0_CTX", 4608), KVPrecision: "f32", MoECacheExperts: os.Getenv("SP0_MOE_CACHE") == "1"}
 	if kind != "ngram" {
 		dr, err = decoder.LoadDFlashDrafter(os.Getenv("SP0_DRAFTER"))
 		if err != nil {

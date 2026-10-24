@@ -5,7 +5,7 @@
 #   MODE=fitcheck: download and verify the Qwen3.5-9B drafter, then make every load the measurement makes, load only. Any
 #                  refusal exits 75 before anything is timed.
 #   MODE=measure:  the validation pairing, then Qwen3.5-9B with DFlash (template thinking, then math with thinking on), then
-#                  gpt-oss-20b with n-gram.
+#                  gpt-oss-20b with n-gram, then Qwen3.6-35B-A3B with DFlash (experts streamed).
 #
 # The runner's checkout may predate this script, so the queued command reads it from REV:
 #   python3 scripts/night.py add sp0-fitcheck --est 10 --by "mac-kapitsa, SP0" --doc docs/measurements/sp0-2026-10/README.md -- \
@@ -70,7 +70,7 @@ cell() {
 	echo "   $name: exit $r, VmHWM $((hwm/1024)) MiB, peak VmSwap $((swap/1024)) MiB, end $(date '+%T')" | tee -a "$LOG/cells.txt"
 	grep -E '^sp0 |^--- |^(PASS|FAIL)' "$LOG/$name.log" | tail -3
 	if [ $r != 0 ] || ! grep -q -- '--- PASS: TestSP0_prize' "$LOG/$name.log"; then
-		if [ "$MODE" = fitcheck ] && grep -q -E 'load .*: ' "$LOG/$name.log"; then
+		if [ "$MODE" = fitcheck ] && grep -q -E 'load .*: |is not CUDA-resident|AttachBlockDrafter: ' "$LOG/$name.log"; then
 			echo "FIT REFUSED: $name (see $LOG/$name.log)"; tail -5 "$LOG/$name.log"; exit 75
 		fi
 		echo "FAILED: $name (see $LOG/$name.log)"; rc=1
@@ -79,18 +79,21 @@ cell() {
 
 V4=(SP0_TARGET=$M/qwen3-4b SP0_KIND=validate SP0_DRAFTER=$M/qwen3-4b-dflash-f32 SP0_SUITES=code,math)
 Q9=(SP0_TARGET=$M/Qwen3.5-9B-Q4_K_M.gguf SP0_KIND=dflash SP0_DRAFTER=$DRAFTER9)
+Q35=(SP0_TARGET=$M/qwen3.6-35b-a3b-q4_k_m.gguf SP0_KIND=dflash SP0_DRAFTER=$M/qwen36-35b-dflash SP0_MOE_CACHE=1 SP0_COST_REPS=10)
 G20=(SP0_TARGET=$M/gpt-oss-20b-MXFP4.gguf SP0_KIND=ngram SP0_MOE_CACHE=1) # 11 GB of int4 against 8 GB: experts streamed, as TestGptOssResidentParityCUDA loads it
 case $MODE in
 fitcheck)
 	cell fit-qwen3-4b "${V4[@]}" SP0_LOADONLY=1
 	cell fit-qwen35-9b "${Q9[@]}" SP0_LOADONLY=1
 	cell fit-gptoss-20b "${G20[@]}" SP0_LOADONLY=1
+	cell fit-qwen36-35b "${Q35[@]}" SP0_LOADONLY=1
 	;;
 measure)
 	cell validate-qwen3-4b "${V4[@]}"
 	cell dflash-qwen35-9b "${Q9[@]}" SP0_SUITES=code,math
 	cell dflash-qwen35-9b-think "${Q9[@]}" SP0_SUITES=math SP0_THINK=on SP0_SKIP_COST=1
 	cell ngram-gptoss-20b "${G20[@]}" SP0_SUITES=code,math,edit
+	cell dflash-qwen36-35b "${Q35[@]}" SP0_SUITES=code,math
 	;;
 *)
 	echo "FATAL: MODE $MODE"; exit 2

@@ -28,7 +28,7 @@ reading. Readings land below it, on this branch, for the owner's review before a
 |---|---|---|---|---|
 | Qwen3.5 (recurrent: Gated DeltaNet) | `Qwen3.5-9B-Q4_K_M.gguf` (its `.int4.e4h.cuda.v17.giw` sidecar) | `z-lab/Qwen3.5-9B-DFlash` @ `5fc3b3d474760f18c516db87d84c37edbfd3ede6` (apache-2.0, 2.58 GB) | DFlash | nobara (CUDA) |
 | gpt-oss (windowed: sliding window 128 on half the layers; MoE) | `gpt-oss-20b-MXFP4.gguf` (its `.int4.e4h.cuda.v17.giw`), experts streamed | n-gram (`decoder.NgramDrafter`, defaults: MinMatch 2, MaxMatch 16) | n-gram | nobara (CUDA) |
-| Qwen3.6-35B-A3B (recurrent; MoE) | — | `z-lab/Qwen3.6-35B-A3B-DFlash` (on nobara as `qwen36-35b-dflash`) | DFlash | **the Mac, per §6a: blocked, owner's decision pending** (the checkpoint does not fit the Mac's free disk, and Metal hosts no block drafter: `metal/` implements no `AttachBlockDrafter`) |
+| Qwen3.6-35B-A3B (recurrent; MoE) | `qwen3.6-35b-a3b-q4_k_m.gguf` (its `.int4.e4h.cuda.v17.giw`), experts streamed | `z-lab/Qwen3.6-35B-A3B-DFlash` (on nobara as `qwen36-35b-dflash`) | DFlash | **nobara (CUDA), by the owner's decision** (below) |
 | harness validation (dense) | `qwen3-4b` (HF directory) | `qwen3-4b-dflash-f32` (on nobara) | DFlash | nobara (CUDA) |
 
 - **Not targets here:**
@@ -42,6 +42,17 @@ reading. Readings land below it, on this branch, for the owner's review before a
 - **The drafter download** is the first step of the nobara job (`hf download`, pinned revision, into
   `~/models/qwen35-9b-dflash`). The job checks the downloaded `model.safetensors` against the Hugging Face LFS sha256.
   Pushing it to the archive (`models-push`) is a later step.
+
+- **The 35B on nobara, not the Mac (Francis, 2026-10-24 3:33 pm, relayed by the coordinator: "measure it on nobara as one more SP0
+  cell").** §6a put it on the Mac. Two things block that: the checkpoint (19 GB as a `.giw`, 21 GB as a `.gguf`) does not fit
+  the Mac's free disk above the 5 GB floor, and Metal hosts no block drafter (`metal/` implements no `AttachBlockDrafter`).
+  - **What the reading means:** the 35B's prize on nobara's expert-streaming path.
+  - **What it does not mean:** the Mac's prize. That reading stays open until Metal can host the drafter and the Mac has the
+    disk.
+  - **The cost arms:** 10 repetitions after the 3 warm-ups, not 20, because each call streams experts.
+- **Resident context 4608 positions, not 8192 (fixed before any data).** The fit check refused the 9B at 8192: 0.54 GB of KV
+  plus the drafter's 1.70 GB reserve, against 2.56 GB free beside the weights. The cost arms need at most 4096 + 16 positions.
+  The fit-check record is `~/goinfer-logs/sp0-2026-10/fitcheck-2026-10-24-1521/` on nobara.
 
 ## Acceptance by teacher forcing (needs no rollback in the target)
 
@@ -119,7 +130,8 @@ reading. Readings land below it, on this branch, for the owner's review before a
   the drafter download):
   - every load the measurement makes, load only, drafter attached: Qwen3-4B with its drafter, Qwen3.5-9B with the drafter
     reserve, and gpt-oss-20b with experts streamed (`MoECacheExperts`);
-  - all at `ResidentContext` 8192 and f32 KV (the CUDA drafter refuses an f16 cache, `cudaResident.AttachDrafter`);
+  - Qwen3.6-35B-A3B with its drafter, experts streamed;
+  - all at `ResidentContext` 4608 and f32 KV (the CUDA drafter refuses an f16 cache, `cudaResident.AttachDrafter`);
   - a refusal exits 75;
   - the measurement job is queued only after every load fits.
   - Desktop compositor state is recorded.
@@ -141,4 +153,6 @@ reading. Readings land below it, on this branch, for the owner's review before a
     simulation widths, 3 min; cost, 2 × 23 repetitions × 5 widths, 2 min).
   - gpt-oss-20b: about 15 min. Expert streaming on 8 GB is the unknown: 18 × 256 tokens at an assumed 15–25 tok/s is 3–5 min.
     The cost arms are slower per call.
-  - **Total about 35 min.** The start and finish times are stated when the job is queued.
+  - Qwen3.6-35B-A3B: about 25 min. 12 continuations at an assumed 5 tok/s with experts streamed is 10 min; the cost arms at 10
+    repetitions are about 12 min.
+  - **Total about 60 min.** The start and finish times are stated when the job is queued.
