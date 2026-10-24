@@ -1386,6 +1386,13 @@ routed experts, top-4), so the generic pager's layer-major prefill is the path t
 512 seeded token ids, `PrefillLast`, the bar unchanged (SHIP iff the median batched/per-row is ≤ 0.98 with every pair faster;
 otherwise PARK). Each pair also counts the last logits that differ, which must be 0 (D9-G1's class).
 
+**D9-G2's instrument, amended 2026-10-24 (15:10) before the run**, to the void rule as #214 and #216's second reviews applied it:
+the test refuses to run outside the timing lock; each arm reads the 1-minute load and reclaimable memory just before and just after
+its timed run (after the load and the warm runs), and a pair with any read over the line (load above 4.0, under 2 GiB reclaimable)
+is void and re-run, up to 6 times; an unreadable load or memory reading fails the test; any differing last logit fails it. The bar
+is unchanged. The `.giw` sits in `~/goinfer-bench/qmoe/` on the Mac's internal SSD (the session's brief keeps it out of
+`~/models`; the same disk, not an archive path).
+
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
 - **Change:** lane-per-row or grid-stride.
