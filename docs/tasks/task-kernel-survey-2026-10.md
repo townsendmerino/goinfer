@@ -1465,6 +1465,18 @@ fixture exists: `buildLlamaTinyLoRAFixtureGPU` makes one, so the registered plan
 23.75–24.88; **median on/off 0.9764, 10 of 10 pairs faster**, 2 void starts (a load spike to 6.5) re-run; each valid pair started at
 a load of 2.11–3.74 and 2.5–4.0 GB reclaimable. Log: `~/goinfer-logs/kse3-g2-rerun-2026-10-24.log`.
 
+**After the second review of #216 (14:20), registered before a further re-run.** The guard read the void rule's terms once, at each
+pair's start, so a load spike or a memory drop during a timed run was not caught. The re-run reads them just before and just after
+each arm's timed run (after the resident is built and warmed), and voids the pair if any of the four reads fails, up to 15 times; an
+unreadable load or memory reading fails the test (`sysctl` on macOS, `/proc/loadavg` on Linux). The bar is unchanged (SHIP iff the
+median on/off ≤ 0.98 with at least 9 of 10 faster); the previous readings stay in the record and this one decides. Also:
+- `kse3KeepPendingForTest` is gone from `SetAdapter`. The registered plant now lives in `TestKSE3_setAdapterDropsPending`: it
+  detaches the pending buffer before `SetAdapter` and hands it back after, which is what a `SetAdapter` that kept it would leave.
+- That test fails, not skips, on a load error once the hardware is gated; the identity test's plant runs only on
+  `GOINFER_KSE3_PLANT=1` and the adapter test's only on `=2`.
+- Added `TestKSE3_kvSlotWithAdapter`: llama-tiny with two KV slots and an adapter bound, 4 steps on slot 0, 4 on slot 1 with its own
+  inputs, 4 more on slot 0; every logit with encode-ahead on equals off.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.

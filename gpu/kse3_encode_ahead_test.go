@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -127,7 +128,7 @@ func TestKSE3_encodeAheadIdentity(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "" {
 		paths = append(paths, os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"))
 	}
-	plant := os.Getenv("GOINFER_KSE3_PLANT") != ""
+	plant := os.Getenv("GOINFER_KSE3_PLANT") == "1"
 	for _, p := range paths {
 		m, err := decoder.Load(p, decoder.Options{Quant: "int8int8", ResidentKVSlots: 2})
 		if err != nil {
@@ -158,20 +159,20 @@ func TestKSE3_encodeAheadIdentity(t *testing.T) {
 
 // TestKSE3_setAdapterDropsPending: llama-tiny at int4 on WebGPU, a fresh resident per arm, 4 Forward steps without an adapter
 // (the last one pre-records the next token's buffer against the base steps), then SetAdapter binds a LoRA adapter and 4 more
-// Forward steps run. The adapter steps' logits with encode-ahead on equal off. GOINFER_KSE3_PLANT=2 makes SetAdapter keep the
-// stale buffer (kse3KeepPendingForTest) and expects red.
+// Forward steps run. The adapter steps' logits with encode-ahead on equal off. GOINFER_KSE3_PLANT=2 hands the stale buffer back
+// to the runner after SetAdapter (as if SetAdapter kept it) and expects red.
 func TestKSE3_setAdapterDropsPending(t *testing.T) {
 	newOrSkipHW(t).Close()
 	const ckpt = "../testdata/llama-tiny"
 	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)
 	plant := os.Getenv("GOINFER_KSE3_PLANT") == "2"
 	arm := func(off bool) [][]float32 {
-		prevOff, prevKeep := encodeAheadOffForTest, kse3KeepPendingForTest
-		encodeAheadOffForTest, kse3KeepPendingForTest = off, plant && !off
-		defer func() { encodeAheadOffForTest, kse3KeepPendingForTest = prevOff, prevKeep }()
+		prevOff := encodeAheadOffForTest
+		encodeAheadOffForTest = off
+		defer func() { encodeAheadOffForTest = prevOff }()
 		m, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: "int4"})
 		if err != nil {
-			t.Skipf("no webgpu device: %v", err)
+			t.Fatalf("load: %v", err) // the hardware is gated above
 		}
 		defer m.Close()
 		if err := m.LoadAdapter("a", adapterDir); err != nil {
@@ -185,8 +186,15 @@ func TestKSE3_setAdapterDropsPending(t *testing.T) {
 		var out [][]float32
 		for pos := range 8 {
 			if pos == 4 {
+				stale := rd.runner.pending
+				if plant && !off {
+					rd.runner.pending = nil // detach it so SetAdapter cannot drop it, then hand it back
+				}
 				if err := rd.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil {
 					t.Fatal(err)
+				}
+				if plant && !off {
+					rd.runner.pending = stale
 				}
 			}
 			lg, err := rd.Forward(m.EmbedResidentForTest((pos*47+5)%V), pos)
@@ -211,6 +219,67 @@ func TestKSE3_setAdapterDropsPending(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[E3-G1] adapter bound after a pre-recorded token (plant %v): %d of %d logits differ, on against off\n", plant, d, 4*len(off[0]))
 	if d != 0 {
 		t.Errorf("%d logits differ after SetAdapter", d)
+	}
+}
+
+// TestKSE3_kvSlotWithAdapter: llama-tiny at int4 on WebGPU with two KV slots and a LoRA adapter bound, a fresh resident per
+// arm: 4 Forward steps on slot 0, a switch to slot 1 (UseKVSlot moves the adapter to slot 1's runner and clears slot 0's) and 4
+// steps with slot 1's own inputs, then back to slot 0 for 4 more. Every logit with encode-ahead on equals off.
+func TestKSE3_kvSlotWithAdapter(t *testing.T) {
+	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)
+	arm := func(off bool) [][]float32 {
+		prevOff := encodeAheadOffForTest
+		encodeAheadOffForTest = off
+		defer func() { encodeAheadOffForTest = prevOff }()
+		m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 2)
+		defer m.Close()
+		if rd.KVSlots() != 2 {
+			t.Fatalf("%d KV slots, want 2", rd.KVSlots())
+		}
+		if err := m.LoadAdapter("a", adapterDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := rd.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil {
+			t.Fatal(err)
+		}
+		_, _, _, _, _, _, V := m.Dims()
+		var out [][]float32
+		step := func(tok, pos int) {
+			lg, err := rd.Forward(m.EmbedResidentForTest(tok%V), pos)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, slices.Clone(lg))
+		}
+		for pos := range 4 {
+			step(pos*47+5, pos)
+		}
+		if err := rd.UseKVSlot(1); err != nil {
+			t.Fatal(err)
+		}
+		for pos := range 4 {
+			step(pos*31+200, pos)
+		}
+		if err := rd.UseKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		for pos := 4; pos < 8; pos++ {
+			step(pos*47+5, pos)
+		}
+		return out
+	}
+	off, on := arm(true), arm(false)
+	d := 0
+	for s := range off {
+		for i := range off[s] {
+			if math.Float32bits(off[s][i]) != math.Float32bits(on[s][i]) {
+				d++
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[E3-G1] two KV slots with an adapter bound: %d of %d logits differ, on against off\n", d, len(off)*len(off[0]))
+	if d != 0 {
+		t.Errorf("%d logits differ across a slot switch with an adapter bound", d)
 	}
 }
 
@@ -254,11 +323,51 @@ func TestKSE3_pendingDroppedWhereRecorded(t *testing.T) {
 	}
 }
 
+// kse3Load1 is this machine's 1-minute load average; the test fails if it cannot be read.
+func kse3Load1(t *testing.T) float64 {
+	t.Helper()
+	var text string
+	switch runtime.GOOS {
+	case "darwin":
+		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+		if err != nil {
+			t.Fatalf("load average: %v", err)
+		}
+		text = strings.Trim(strings.TrimSpace(string(out)), "{} ")
+	case "linux":
+		out, err := os.ReadFile("/proc/loadavg")
+		if err != nil {
+			t.Fatalf("load average: %v", err)
+		}
+		text = string(out)
+	default:
+		t.Fatalf("no load average on %s", runtime.GOOS)
+	}
+	var l float64
+	if n, err := fmt.Sscanf(text, "%g", &l); n != 1 || err != nil {
+		t.Fatalf("load average %q: %v", text, err)
+	}
+	return l
+}
+
+// kse3Guard reads the void rule's two terms now: ok iff the 1-minute load is at most half the cores and at least 2 GiB is
+// reclaimable. The test fails if either cannot be read.
+func kse3Guard(t *testing.T) (ok bool, load float64, recl int64) {
+	t.Helper()
+	load = kse3Load1(t)
+	r, rok := hostmem.Read()
+	if !rok {
+		t.Fatal("no memory reading")
+	}
+	return load <= float64(runtime.NumCPU())/2 && r.Reclaimable >= 2<<30, load, r.Reclaimable
+}
+
 // TestKSE3_decodeSpeed is E3-G2 (and its re-run, docs/tasks/task-kernel-survey-2026-10.md, "E3-G2 re-run"): the 1.5B's .gguf
 // at int8int8 on WebGPU, encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A
 // over 10 valid pairs after 2 warm runs each. It refuses to run outside the timing lock or under 6 GB reclaimable before the
-// load, voids and re-runs (up to 10 times) a pair started above half the cores' load or under 2 GB reclaimable, and fails
-// when the median on/off is over 0.98 or fewer than 9 of 10 pairs are faster.
+// load; each arm reads the void rule's terms (kse3Guard) just before and just after its timed run, and a pair with any read over
+// the line (load above half the cores, or under 2 GB reclaimable) is void and re-run, up to 15 times. It fails when the median
+// on/off is over 0.98 or fewer than 9 of 10 pairs are faster.
 func TestKSE3_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE3_TIMING") == "" {
 		t.Skip("set GOINFER_KSE3_TIMING=1 (a timed run under the timing lock)")
@@ -306,42 +415,45 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 		run(true)
 		run(false)
 	}
-	maxLoad := float64(runtime.NumCPU()) / 2
+	// timed runs one arm with the void rule's terms read just before and just after it; valid is false if either read fails.
+	timed := func(off bool) (sec float64, valid bool, note string) {
+		ok1, l1, r1 := kse3Guard(t)
+		sec = run(off)
+		ok2, l2, r2 := kse3Guard(t)
+		return sec, ok1 && ok2, fmt.Sprintf("load %.2f→%.2f, reclaimable %.2f→%.2f GiB", l1, l2, float64(r1)/(1<<30), float64(r2)/(1<<30))
+	}
 	var ratios []float64
 	below, voids := 0, 0
-	for i := 0; len(ratios) < 10; i++ {
-		var load1 [3]float64
-		la, _ := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		fmt.Sscanf(strings.Trim(strings.TrimSpace(string(la)), "{}"), "%g %g %g", &load1[0], &load1[1], &load1[2])
-		recl := int64(0)
-		if r, ok := hostmem.Read(); ok {
-			recl = r.Reclaimable
+	for len(ratios) < 10 {
+		var off, on float64
+		var vOff, vOn bool
+		var nOff, nOn string
+		if len(ratios)%2 == 0 {
+			off, vOff, nOff = timed(true)
+			on, vOn, nOn = timed(false)
+		} else {
+			on, vOn, nOn = timed(false)
+			off, vOff, nOff = timed(true)
 		}
-		if load1[0] > maxLoad || recl < 2<<30 {
+		if !vOff || !vOn {
 			voids++
-			fmt.Fprintf(os.Stderr, "[E3-G2] VOID pair start %d: load %.2f, reclaimable %.2f GiB\n", i, load1[0], float64(recl)/(1<<30))
-			if voids > 10 {
-				t.Fatalf("over 10 void pair starts")
+			fmt.Fprintf(os.Stderr, "[E3-G2] VOID pair (off: %s; on: %s)\n", nOff, nOn)
+			if voids > 15 {
+				t.Fatalf("over 15 void pairs")
 			}
 			time.Sleep(30 * time.Second)
 			continue
-		}
-		var off, on float64
-		if len(ratios)%2 == 0 {
-			off, on = run(true), run(false)
-		} else {
-			on, off = run(false), run(true)
 		}
 		ratios = append(ratios, on/off)
 		if on < off {
 			below++
 		}
-		fmt.Fprintf(os.Stderr, "[E3-G2] pair %d (load %.2f, reclaimable %.2f GiB): off %.3f ms/token, on %.3f ms/token, on/off %.4f\n",
-			len(ratios)-1, load1[0], float64(recl)/(1<<30), off*1e3, on*1e3, on/off)
+		fmt.Fprintf(os.Stderr, "[E3-G2] pair %d (off: %s; on: %s): off %.3f ms/token, on %.3f ms/token, on/off %.4f\n",
+			len(ratios)-1, nOff, nOn, off*1e3, on*1e3, on/off)
 	}
 	slices.Sort(ratios)
 	med := (ratios[4] + ratios[5]) / 2
-	fmt.Fprintf(os.Stderr, "[E3-G2] median on/off %.4f, %d of 10 pairs below 1, %d void starts\n", med, below, voids)
+	fmt.Fprintf(os.Stderr, "[E3-G2] median on/off %.4f, %d of 10 pairs below 1, %d void pairs\n", med, below, voids)
 	if med > 0.98 || below < 9 {
 		t.Errorf("E3-G2 below its bar: median %.4f, %d of 10 faster", med, below)
 	}

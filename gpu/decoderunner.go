@@ -1886,9 +1886,6 @@ func (r *DecodeRunner) Close() error {
 // each Run.
 var encodeAheadOffForTest bool
 
-// kse3KeepPendingForTest makes SetAdapter keep a pending buffer recorded against the old steps (KS-E3's planted defect).
-var kse3KeepPendingForTest bool
-
 // recordToken records one token's command buffer: every step in one compute pass, then the logits copy to the staging buffer.
 func (r *DecodeRunner) recordToken() (*wgpu.CommandBuffer, error) {
 	enc, err := r.c.device.TryCreateCommandEncoder(nil)
