@@ -8264,6 +8264,12 @@ prefill on CUDA in batched passes.
     - The MoE kernel also differs from a wrong expert, so the routing index is read.
     - The harness clears dst before every launch and fails on any output left at zero: without the clear, a launch after
       the first read a previous run's values (a harness ordering effect, not the kernel's).
+  - **G-S19f read 2026-10-23, 19:12: PASS** (`gs19f-float-decode.log`).
+    - The real 26B on the float decode (the build logged `decode activations: f32 into every int4 projection`), against
+      the CPU on f32 activations, teacher-forced on the table form for 120 steps.
+    - Logits cosine is 1.000000 at every step, the argmax never departs, and the worst per-layer residual cosine is
+      1.00000 at every captured step 95 to 110. The same comparison on W4A8 read down to 0.44.
+    - At step 101, where the W4A8 resident wrote a run of spaces, both write "0" (101.6).
   - **Ships as:** the 26B's (gemma4 MoE) CUDA decode on float activations by default, once G-S19e to G-S19g pass. A
     rollback switch lives in the resident (a test seam), not an env read.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load

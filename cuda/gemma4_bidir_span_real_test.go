@@ -336,6 +336,18 @@ func TestGemma4_26BDecodeLocalize(t *testing.T) {
 	}
 	defer m.Close()
 	r := mustResident(t, m)
+	// GOINFER_S19_CPUFLOAT=1 is G-S19f: the CPU side (prefill and decode) on f32 activations, the resident on its float decode,
+	// and the registered bars enforced: argmax identical at every step, the worst per-layer cosine at least 0.999 at every
+	// captured step.
+	gate := os.Getenv("GOINFER_S19_CPUFLOAT") == "1"
+	if gate {
+		if !r.floatAct {
+			t.Fatalf("G-S19f: the resident did not take the float-activation decode (%s)", r.floatActDecline())
+		}
+		decoder.SetInt4FloatActForTest(true)
+		defer decoder.SetInt4FloatActForTest(false)
+	}
+	t.Logf("resident decode activations: float=%v", r.floatAct)
 	data, err := os.ReadFile(img)
 	if err != nil {
 		t.Fatal(err)
@@ -425,11 +437,16 @@ func TestGemma4_26BDecodeLocalize(t *testing.T) {
 			r.layerCap, r.layerCapBuf = false, nil
 			decoder.SetGemma4HiddenCaptureForTest(false)
 			line := fmt.Sprintf("step %3d (input %q at pos %d) per-layer residual cos gpu/cpu:", i, dec(tk, tok), len(ids)+i)
+			worst := 1.0
 			for l := range min(len(gl), len(cl)-1) {
 				cl2, _ := cosMaxAbs(gl[l], cl[l+1])
 				line += fmt.Sprintf(" L%d %.5f", l, cl2)
+				worst = min(worst, cl2)
 			}
 			t.Log(line)
+			if gate && worst < 0.999 {
+				t.Errorf("G-S19f FAIL step %d: worst per-layer residual cosine %.5f under 0.999", i, worst)
+			}
 			if len(gl) == r.nLayers {
 				// The GPU's last residual through the CPU's final norm and head, beside both sides' own logits.
 				hc := m.LogitsFromHiddenForTest(gl[len(gl)-1])
@@ -441,6 +458,9 @@ func TestGemma4_26BDecodeLocalize(t *testing.T) {
 		}
 	}
 	t.Logf("first step where the resident's argmax departs from the CPU's: %d", firstSplit)
+	if gate && firstSplit >= 0 {
+		t.Errorf("G-S19f FAIL: the resident's argmax departs from the CPU's at step %d", firstSplit)
+	}
 }
 
 // top5 renders the five largest logits as id "text" value.

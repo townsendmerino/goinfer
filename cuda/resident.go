@@ -745,15 +745,21 @@ type cudaResident struct {
 	prefillReady             bool     // batched kernels loaded; PrefillLast usable
 	bAttnImg                 Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
 	imgPrefillReady          bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
-	bAttnSpan                Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
-	spanPrefillReady         bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
-	spanPass                 bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
-	bRopeKVMRoPE             Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
-	pairwiseRoPE             bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.PairwiseRoPEResident() at build
-	mropePrefillReady        bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
-	mropeTakesMode           bool     // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
-	mropeMode                int32    // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
-	mropeSec0, mropeSec1     int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
+	// floatAct: a Gemma 4 MoE decode step reads every int4 projection's activation as f32 (gemv_w4f32.cu), not int8; set at
+	// build by floatActDecline. xF holds the normed f32 input (attention, then the dense branch, then the experts), dF the
+	// dense GLU output, moeGLUF an expert's.
+	floatAct                                  bool
+	fW4F32, fMoEGemvF32, fMoEWaccF32, fGluF32 Pipeline
+	xF, dF, moeGLUF                           Buffer
+	bAttnSpan                                 Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
+	spanPrefillReady                          bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
+	spanPass                                  bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
+	bRopeKVMRoPE                              Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
+	pairwiseRoPE                              bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.PairwiseRoPEResident() at build
+	mropePrefillReady                         bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	mropeTakesMode                            bool     // the bound bRopeKVMRoPE is rope_kv_mrope_batched (takes the layout mode as a final argument), not the pairwise twin (no such argument)
+	mropeMode                                 int32    // rope_kv_mrope_batched's layout: 0 contiguous sections (Qwen2.5-VL), 1 interleaved per index (Qwen3-VL, Qwen3.5+); mropeSec0/1 mean what rope_mrope_prefill.cu's mrope_pos says for that mode
+	mropeSec0, mropeSec1                      int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
 	// prefillChunkCap is the LEARNED row budget shared by every batched-prefill caller that has a row-count knob to
 	// shrink: prefillChunked (retries the SAME pass smaller and stores whatever width worked) and PrefillImageLast
 	// (cannot retry a bidirectional image block smaller, since an image OOM is a function of that block's own M, but
@@ -3093,6 +3099,21 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 	r.profMark(&r.profRouter)
 
 	// --- dense branch → g4x1 ---
+	if r.floatAct {
+		if e := r.floatActDense(Ly, x); e != nil {
+			return e
+		}
+		if e := r.normF32(r.g4x1, Ly.g4postFFN1); e != nil {
+			return e
+		}
+		r.profMark(&r.profDense)
+		// xe = preFFNNorm2(h) into xF, which the experts read after the gap.
+		if e := r.normInto(x, Ly.g4preFFN2); e != nil {
+			return e
+		}
+		r.profMark(&r.profRouter)
+		return nil
+	}
 	if e := r.rms(x, Ly.g4preFFN, r.mq, r.mSc); e != nil { // xd = preFFNNorm(h), int8
 		return e
 	}
@@ -3131,6 +3152,12 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int, x Buffer) error {
 	for j := 0; j < r.topK; j++ {
 		if e := r.waitMiss(j); e != nil {
 			return e
+		}
+		if r.floatAct {
+			if e := r.floatActExpert(Ly, j); e != nil {
+				return e
+			}
+			continue
 		}
 		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc), Arg(r.expIdx()),
@@ -3198,7 +3225,11 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 	if Ly.hasBias {
 		qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 	}
-	if r.fuseQKV {
+	if r.floatAct {
+		if e := r.floatActQKV(Ly, qb, kb, vb); e != nil {
+			return e
+		}
+	} else if r.fuseQKV {
 		// K1: rmsnorm+quant redundantly per block + this block's Q/K/V rows — one launch instead of four.
 		nrows := Ly.qDim + 2*Ly.kvDim
 		cfg := LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
@@ -3461,11 +3492,17 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			return err
 		}
 	}
-	if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
+	if r.floatAct {
+		// the attention output is already f32: no quantize, the o-projection reads it as is
+	} else if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
 		return err
 	}
 	if r.sandwich || r.postOnly || r.parallelBlock {
-		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
+		if r.floatAct {
+			if err := r.gemvF(Ly.o, r.cctx, r.oBiasArg(Ly), r.oO, 0); err != nil {
+				return err
+			}
+		} else if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
 			return err
 		}
 		// LoRA delta added into the RAW o-proj output, BEFORE the post-attn norm below, matching applyLoRA's CPU order (delta added to `out`, caller norms afterward).
@@ -3486,7 +3523,11 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			return err
 		}
 	} else {
-		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.x, 1); err != nil {
+		if r.floatAct {
+			if err := r.gemvF(Ly.o, r.cctx, r.oBiasArg(Ly), r.x, 1); err != nil {
+				return err
+			}
+		} else if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.x, 1); err != nil {
 			return err
 		}
 		if r.loraLayers != nil {
