@@ -92,7 +92,7 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (Phi-3 0.9809, the 1.5B 1.0183), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
+| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
@@ -811,13 +811,40 @@ through `go.work`.
   - It loads on the CPU backend, so only one resident is built.
   - It checks that the int8 arm's copies fit before allocating them: available memory, the 2 GB margin, and the GPU working set.
   - It swaps every projection group holding a native segment (qkv, o, gate|up, down).
-  - It is not re-run: the O1-G7 reading above stands.
+  - It was re-run on the fixed harness: see the second pass below.
 - **Also applied:**
   - O1-G1 adds NB = 32 for Q5_K.
   - `TestKSO1_referenceMatchesAikit` fails on an accessor error.
   - `TestKSO1_smallShapeReading` checks its pipelines and dispatches, and rotates ≥ 256 MiB.
   - #212's follow-ups: both run scripts fail when their result line is missing, O1a-G2 compares logits' bits, and the untouched
     guard fails on any element still holding its initial bits.
+
+**Review fixes for #215, second pass, 2026-10-24:**
+- **O1-G7 re-run on the fixed harness** (CPU-backend load, every native projection group swapped, the int8 arm fit-checked first;
+  binary built at 6eb384d1 on aikit v1.75.0). 13:38–13:40, the lock held exclusively. At the start the 1-minute load was 3.16, under
+  the 4.0 line (pairs 1.63–3.04); 13.4 GB available; swap 1,377 → 1,345 MB.
+  - **Phi-3 mini:** 48 projection groups native. int8 23.81–24.83 ms a token, native 23.14–23.75: **median 0.9743, 10 of 10 pairs
+    faster**.
+  - **Qwen2.5-Coder-1.5B:** int8 14.27–14.84, native 14.42–14.57: **median 1.0127, 1 of 10**.
+  - **Verdict by the registered rule: still KILL**, because the 1.5B is above 1.00. Phi-3 alone now clears its ≤ 0.98 bar.
+  - The pre-fix reading (0.9809 / 1.0183) stays in the record above as what it was. Francis's override stands either way.
+  - Log: `~/goinfer-logs/kso1-g7-2026-10-24-1335.log`.
+- **The fit saving counts only what the lane uploads natively.** `metalKQuantSavings` sums, on a q4k load for Metal only, the
+  recorded weights among each layer's q, k, v, o, gate, up and down projections: exactly the groups `buildResident` hands
+  `q4kLaneProj`. A record anywhere else, another backend, or a load that is not q4k (the lane off) prices nothing.
+  `TestKSO1_metalSavingsCountsOnlyTheLane` pins all three cases.
+- **The permuted-row mapping is tested.** `kquantRows` keeps a run as its start and a permutation row by row. `TestKSO1_kquantRows`
+  checks a plain load, a fused split's offset and a permutation; neither real file exercises the permuted branch.
+- **O1-G3 checks contents, not only counts.**
+  - Layer 0's native segments are compared byte for byte with the file's blocks read through `KQuantReader` (Q5_K verbatim, Q6_K
+    through the segment planes): 1 segment on the 0.5B, 2 on Phi-3. **PASS**.
+  - The heap comparison allows `kso1HeapSlack`, 1 MiB, for the runtime's own allocations, registered here before this run.
+    Measured: the 0.5B 770,301,944 → 770,270,960 bytes, Phi-3 2,848,838,368 → 2,848,522,472.
+  - Both arms record provenance (the decoder does not know the Metal test hook). Its cost is a map entry a weight with no row table
+    on these files, and the comparison against main is O1-G4's.
+  - Log: `~/goinfer-logs/kso1-g3c-2026-10-24.log`.
+- **The reference check runs per file:** the 0.5B (12 Q6_K tensors) always, and Phi-3 through the asset registry (32 Q5_K,
+  17 Q6_K). **PASS**.
 
 **Notes on O1-G0's instrument, from #212's review (2026-10-24):**
 - **Where it lives:** the prototype kernels, `TestKSO1_gemvTiming`, `TestKSO1_protoMatchesRef` and `TestKSO1_q4kSideReading` are on
