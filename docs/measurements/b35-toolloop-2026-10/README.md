@@ -34,7 +34,7 @@ Written and committed before the run. The rules below do not move after the data
   - Q2, one tool call and its result, and an answer;
   - Q3.
   - The six requests a client sends are r1–r6. r4 (Q2) and r6 (Q3) are graded. The assistant turns are the client's history,
-    scripted. Greedy, 24 new tokens.
+    scripted. Greedy, 48 new tokens.
 - **Arms:**
   - **A:** one server, streamed. r1–r6 in order: time to first token, `usage.prompt_tokens`, `usage.prefill_reused_tokens`.
     Then a cold control of r6's length (a nonce first in the system prompt).
@@ -47,8 +47,8 @@ Written and committed before the run. The rules below do not move after the data
 
 | check | rule | on failure |
 |---|---|---|
-| R3 | every cold request (the control, the cold arm) reused 0 tokens, and A's replies equal B's | VOID |
-| I1 | B's r4 and r6 (restored) equal the cold arm's, every token and logprob | FAIL |
+| R3 | every cold request (the control, the cold arm) reused 0 tokens | VOID |
+| I1 | B's r4 and r6 (restored) equal the cold arm's: the whole served reply (reasoning, content and the tool calls' JSON), the completion token count, and every logprob where the route serves them (the tools route serves none) | FAIL |
 | R1 | r4 (Q2) reused > 0 tokens on A and on B. Neither the live state nor KV8a's end-of-prompt checkpoint lies at or before r4's divergence, so only a kept state can serve it | FAIL |
 | R2 | r6 (Q3) reused more tokens than r4 did, on A and on B: the kept point moved past Q1's loop | Q1-ONLY |
 | T1 | B35's rule: a graded request's time to first token ≤ 1.5 × (the cold control's time × rows still prefilled ÷ the control's prompt) + 0.25 s | 1.5–2.5×: PARKED for Francis; past 2.5×: FAIL |
@@ -61,6 +61,34 @@ Written and committed before the run. The rules below do not move after the data
   depends on the fixture's proportions.
 - **After a Q1-ONLY verdict,** the follow-up is to let a restoring request mark its own Keep. It is product code and is not
   started without Francis's yes.
+
+## Amendment after the first run, which was VOID (registered before the re-run)
+
+- **The first run:** 2026-10-24, 15:42–15:49 PDT, at `3d2f7849`, 24 new tokens. Record:
+  `~/goinfer-logs/b35-toolloop-2026-10/results-2026-10-24-1542/` on nobara. Its own R3 rule made it VOID, and two defects in the
+  instrument showed:
+  - **No logprobs:** the tools route serves no logprobs, so I1 compared two empty lists.
+  - **A whitespace difference:** the streamed r6 reply differed from the non-streamed one by a space inside the reasoning
+    (`codeand` against `code and`). The history is scripted, so A's replies never feed a later request, and the A-equals-B
+    half of R3 guarded nothing.
+- **What changed, and nothing else did:**
+  - I1 compares the whole served reply and the completion token count, plus the logprobs wherever any are served.
+  - The new token count is 48, so the reply is a longer comparison.
+  - The A-equals-B comparison is printed as a note and does not grade.
+  - Every bar and every other rule is as first registered.
+- **The VOID run's readings, recorded and not graded:**
+
+  | | r1 | r2 | r3 | **r4 (Q2)** | r5 | **r6 (Q3)** | cold control (r6's length) |
+  |---|---|---|---|---|---|---|---|
+  | prompt tokens | — | 5,800 | 7,329 | 7,329 | 8,857 | 8,870 | 8,870+ |
+  | reused | 0 | 4,274 | 5,800 | **4,096** | 7,329 | **4,096** | 0 |
+  | time to first token | — | 8.03 s | 9.42 s | 18.27 s | 9.88 s | 28.05 s | 44.08 s |
+
+  - r4 and r6 reused 4,096 tokens on both servers: Q1's kept point, rounded to the pass grid.
+  - Their warm replies equal the cold ones as text.
+  - As predicted, Q3 restored Q1's point again, not Q2's.
+- **The whitespace difference is a separate finding,** reported to the owner. It may be a streaming reasoning-splitter bug.
+  It does not bear on the kept state.
 
 ## Pre-registration (`docs/measurements/noise-registry.md` §8)
 
@@ -85,7 +113,7 @@ Written and committed before the run. The rules below do not move after the data
   - Cold prefills: r1 (about 4.1k tokens), the cold control and cold r6 (about 9k tokens each), cold r4 (about 7.6k), at about
     4 s per 1k tokens.
   - A and B's warm requests.
-  - About 6 minutes, plus a 2-minute build. Queued at 15 minutes, timeout 40.
+  - About 6 minutes, plus a 2-minute build: the first run took 6 min 7 s. Queued at 15 minutes, timeout 40.
 
 ## How it runs
 

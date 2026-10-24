@@ -32,15 +32,22 @@ def main():
     cold = {r["r"]: r for r in rec["cold"]}
     reused = lambda r: (A[r]["reused"] or 0, B[r]["usage"].get("prefill_reused_tokens") or 0)
 
-    # R3: the instrument. Every cold request reused nothing, and the streamed and logprob runs are one conversation.
+    # R3: the instrument. Every cold request reused nothing.
     colds = [("control", ctrl["reused"] or 0)] + [(f"cold r{r}", cold[r]["usage"].get("prefill_reused_tokens") or 0) for r in cold]
     check(all(v == 0 for _, v in colds), "void", "R3 cold requests reused nothing", ", ".join(f"{k} {v}" for k, v in colds))
+    # Reported, not graded: the history is scripted, so a streamed reply that differs from the non-streamed one changes no later request.
     for r in A:
-        check(A[r]["reply"] == B[r]["reply"], "void", f"R3 r{r} streamed reply = logprob reply", repr(A[r]["reply"][:40]))
-    # I1: a restored question equals a cold prefill of the same request, token for token and logprob for logprob.
+        same = A[r]["reply"] == B[r]["reply"]
+        lines.append(f"{'note' if not same else 'ok  '} r{r} streamed reply {'=' if same else '!='} non-streamed reply"
+                     + ("" if same else f" (first difference at character {first_diff(A[r]['reply'], B[r]['reply'])})"))
+    # I1: a restored question equals a cold prefill of the same request: the whole served reply (reasoning, content and the calls' JSON) and
+    # the same number of completion tokens, and every logprob where the route serves them (the tools route serves none).
     for r in (4, 6):
-        check(B[r]["tokens"] == cold[r]["tokens"] and bool(B[r]["tokens"]), "fail", f"I1 r{r} warm = cold",
-              f"{len(B[r]['tokens'])} tokens, first difference at {first_diff(B[r]['tokens'], cold[r]['tokens'])}")
+        w, c = B[r], cold[r]
+        ok = (w["reply"] == c["reply"] and bool(w["reply"]) and w["tokens"] == c["tokens"]
+              and w["usage"].get("completion_tokens") == c["usage"].get("completion_tokens"))
+        check(ok, "fail", f"I1 r{r} warm = cold", f"{w['usage'].get('completion_tokens')} completion tokens, {len(w['tokens'])} logprobs; "
+              f"reply first difference at {first_diff(w['reply'], c['reply'])}")
     # R1: the second question reuses a kept state on both servers (no other held point is at or before its divergence).
     ra, rb = reused(4)
     check(ra > 0 and rb > 0, "fail", "R1 r4 (Q2) reused a kept state", f"streamed {ra} of {A[4]['prompt_tokens']}, logprob {rb}")

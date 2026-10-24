@@ -28,7 +28,7 @@ reading. Readings land below it, on this branch, for the owner's review before a
 |---|---|---|---|---|
 | Qwen3.5 (recurrent: Gated DeltaNet) | `Qwen3.5-9B-Q4_K_M.gguf` (its `.int4.e4h.cuda.v17.giw` sidecar) | `z-lab/Qwen3.5-9B-DFlash` @ `5fc3b3d474760f18c516db87d84c37edbfd3ede6` (apache-2.0, 2.58 GB) | DFlash | nobara (CUDA) |
 | gpt-oss (windowed: sliding window 128 on half the layers; MoE) | `gpt-oss-20b-MXFP4.gguf` (its `.int4.e4h.cuda.v17.giw`), experts streamed | n-gram (`decoder.NgramDrafter`, defaults: MinMatch 2, MaxMatch 16) | n-gram | nobara (CUDA) |
-| Qwen3.6-35B-A3B (recurrent; MoE) | `qwen3.6-35b-a3b-q4_k_m.gguf` (its `.int4.e4h.cuda.v17.giw`), experts streamed | `z-lab/Qwen3.6-35B-A3B-DFlash` (on nobara as `qwen36-35b-dflash`) | DFlash | **nobara (CUDA), by the owner's decision** (below) |
+| Qwen3.6-35B-A3B (recurrent; MoE) | `qwen3.6-35b-a3b-q4_k_m.int4.e4h.cuda.v17.giw` loaded directly (mmap), experts streamed | `z-lab/Qwen3.6-35B-A3B-DFlash` (on nobara as `qwen36-35b-dflash`) | DFlash | **nobara (CUDA), by the owner's decision** (below) |
 | harness validation (dense) | `qwen3-4b` (HF directory) | `qwen3-4b-dflash-f32` (on nobara) | DFlash | nobara (CUDA) |
 
 - **Not targets here:**
@@ -53,6 +53,10 @@ reading. Readings land below it, on this branch, for the owner's review before a
 - **Resident context 4608 positions, not 8192 (fixed before any data).** The fit check refused the 9B at 8192: 0.54 GB of KV
   plus the drafter's 1.70 GB reserve, against 2.56 GB free beside the weights. The cost arms need at most 4096 + 16 positions.
   The fit-check record is `~/goinfer-logs/sp0-2026-10/fitcheck-2026-10-24-1521/` on nobara.
+- **The 35B is loaded from its `.giw`, not its `.gguf` (fixed before any data).** The second fit check
+  (`fitcheck-2026-10-24-1540/`) passed the other three loads. It refused the 35B's `.gguf` on the host fit guard: a test binary
+  loads a `.gguf` directly into memory, and the guard found that would page to swap. The `.giw` is mapped instead, as the B13
+  expert-paging gate loads it on this box.
 
 ## Acceptance by teacher forcing (needs no rollback in the target)
 

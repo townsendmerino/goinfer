@@ -20,7 +20,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 SYS = "You are a careful assistant in a long-running coding session. Use the tools when they help. Answer in one short sentence."
 WORDS = ("the build queue drains while a cache warms and the scheduler picks the next task from a list of pending jobs, each with its own "
          "deadline and a note about which files it reads before it writes anything back to the shared tree").split()
-MAX_TOKENS = 24
+MAX_TOKENS = 48
 THINK = {"chat_template_kwargs": {"enable_thinking": True}}
 TOOLS = [{"type": "function", "function": {"name": n, "description": d, "parameters": {
     "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}}
@@ -99,13 +99,15 @@ def streamed(messages):
 
 
 def with_logprobs(messages):
-    """The reply, its tokens with their logprobs exactly as served (the JSON text of each number), and the usage."""
+    """The reply (reasoning, content and the tool calls' JSON), its tokens with their logprobs exactly as served (the JSON text of each
+    number; the tools route serves none, so the list is empty there), and the usage."""
     raw = urllib.request.urlopen(urllib.request.Request(BASE + "/v1/chat/completions", data=json.dumps(body(messages, logprobs=True)).encode(),
                                  headers={"Content-Type": "application/json"}), timeout=900).read().decode()
     d = json.loads(raw, parse_float=str)  # keep each logprob's exact text: bit for bit means the same digits
     ch = d["choices"][0]
     toks = [[t["token"], t["logprob"]] for t in (ch.get("logprobs") or {}).get("content") or []]
-    return (ch["message"].get("reasoning_content") or "") + (ch["message"].get("content") or ""), toks, d.get("usage", {})
+    msg = ch["message"]
+    return (msg.get("reasoning_content") or "") + (msg.get("content") or "") + json.dumps(msg.get("tool_calls") or []), toks, d.get("usage", {})
 
 
 def requests(sysmsg, result_chars):

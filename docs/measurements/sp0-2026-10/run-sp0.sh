@@ -79,7 +79,7 @@ cell() {
 
 V4=(SP0_TARGET=$M/qwen3-4b SP0_KIND=validate SP0_DRAFTER=$M/qwen3-4b-dflash-f32 SP0_SUITES=code,math)
 Q9=(SP0_TARGET=$M/Qwen3.5-9B-Q4_K_M.gguf SP0_KIND=dflash SP0_DRAFTER=$DRAFTER9)
-Q35=(SP0_TARGET=$M/qwen3.6-35b-a3b-q4_k_m.gguf SP0_KIND=dflash SP0_DRAFTER=$M/qwen36-35b-dflash SP0_MOE_CACHE=1 SP0_COST_REPS=10)
+Q35=(SP0_TARGET=$M/qwen3.6-35b-a3b-q4_k_m.int4.e4h.cuda.v17.giw SP0_KIND=dflash SP0_DRAFTER=$M/qwen36-35b-dflash SP0_MOE_CACHE=1 SP0_COST_REPS=10)
 G20=(SP0_TARGET=$M/gpt-oss-20b-MXFP4.gguf SP0_KIND=ngram SP0_MOE_CACHE=1) # 11 GB of int4 against 8 GB: experts streamed, as TestGptOssResidentParityCUDA loads it
 case $MODE in
 fitcheck)
