@@ -55,7 +55,7 @@
 | KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D8 | open | Mac: sequential prefill tok/s on Nemotron-Nano-9B-v2 at K=512 | — |
+| KS-D8 | open (build) | baseline read 2026-10-24: Nemotron-Nano-9B-v2 sequential prefill 14.5 tok/s at K=512, batched prefill not admitted. Next: the batched Mamba-2 prefill (M–L), its gates registered first | survey, "KS-D8 baseline read" |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
@@ -86,13 +86,13 @@
 | KS-G8 | open | aikit: a cold-cache HNSW query benchmark | — |
 | KS-G9 | open | aikit: time the final loop in `BenchmarkFlatBinaryQuery` | — |
 | KS-G10 | open | aikit: an offline block-max simulation counting documents scored | — |
-| KS-H1 | open (512, G5) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. Left: G5 (Qwen3.5-9B at 20K, by day) and head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
+| KS-H1 | open (512) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. G5 read 2026-10-24: Qwen3.5-9B at 20K, transient prefill scratch 4.86 → 0.58 GiB, peak footprint −70%. Left: head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
 | KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2) | — |
+| KS-O1 | decision | owner: native Q5_K/Q6_K on the GPU q4k lanes (§2). Francis, 2026-10-24: decide after KS-C4 and KS-C5 read (KS-C1 (a)+(b) shipped, 22.3 → 33.0 tok/s) | — |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
@@ -1057,6 +1057,15 @@ prefill, which must read false (`recurrentPrefillOK` declines Mamba). Read, not 
 5–8× and KS-B12's CUDA baseline. Through `docs/measurements/ks-night-2026-10/run-ksd8-baseline.sh` (a test binary built at the
 registering commit; exits 75 on a fit refusal). Stopping rule: one pass. Cost: about 5 minutes.
 
+**KS-D8 baseline read 2026-10-24 (08:53–08:56, by day on the owner's word; the timing lock held exclusively).** It never started on
+the night queue (its start check read about 6.3 GB free). It ran from `run-ksd8-baseline-day.sh`: the test binary rebuilt at
+0140adf1 with #203's memory reading applied (`memory_pressure`'s free % × RAM − 500 MiB), so the fit guard passed with no bypass; 11.95 GB
+available, swap 464 MB before and after. Each run's start load 1.92–2.68. Nemotron-Nano-9B-v2's int4 Metal `.giw` loaded in 14.9 s,
+**batched prefill admitted: false** (as required); a 512-token prompt to the first token in 35.30 / 35.27 / 35.16 s: **14.5 tok/s**.
+That is the denominator for KS-D8's estimated 5–8× and for KS-B12. Also seen: the resident keeps no recurrent checkpoint here
+(138.8 MiB beside the load's 10.49 GB is over its 6.55 GB budget), so a reply rendered back differently re-prefills the whole
+prompt. Log: `~/goinfer-logs/ksd8-baseline-day-2026-10-24-0853.log`.
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
@@ -1382,6 +1391,19 @@ the branch" is `serve` built at 421a4347 (main just before the merge) against `s
 beside the owner's apps (the 9B's 5.96 GB mapping), so it runs at night through `docs/measurements/ks-night-2026-10/run-kh1-g5.sh`,
 which exits 75 on a refusal. Still read, not gated: each cell's peak footprint and RSS during the request against its footprint
 after load, the survey's estimate 4.8 → about 0.5 GiB of transient prefill scratch. A cell the server could not come up for is void.
+
+**KH1-G5 read 2026-10-24 (08:56–09:20, by day on the owner's word; the timing lock held exclusively; not timed).** It ran from
+`run-kh1-g5-day.sh`: both `serve` builds rebuilt at their commits with #203's memory reading applied, so the fit guard passed with
+no bypass. Qwen3.5-9B's Metal `.giw`, one cold 20,443-token prompt per fresh server:
+
+| build | footprint after load | peak | end | transient (peak − end) | request |
+|---|---|---|---|---|---|
+| 421a4347 (main before KS-H1) | 242 MiB | 6,245 MiB | 1,268 MiB | **4,977 MiB** | 714.6 s |
+| a570f8df (KS-H1 merged) | 242 MiB | 1,866 MiB | 1,275 MiB | **591 MiB** | 695.4 s |
+
+**4.86 → 0.58 GiB of transient prefill scratch; peak footprint −70%**, as the survey estimated (4.8 → about 0.5). System swap rose
+464 → 1,826 MB during the first cell and was 1,666 MB after the second; the request times are context, not a timed comparison.
+Logs: `~/goinfer-logs/kh1-g5-day-2026-10-24-0856/`.
 
 **KS-H2 · CUDA: suballocate weights, KV pools and expert slots from arenas (bit-identical).**
 - **Where:** one `cuMemAlloc` per weight buffer (`cuda/resident.go:cudaResident.upW`, `cuda/pack_stream.go`), per layer's
