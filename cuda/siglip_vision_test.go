@@ -28,6 +28,7 @@ import (
 var sigImages = []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"}
 
 func sigSharpen(rng *rand.Rand, xs ...[]float32) {
+	makeWritable(xs...)
 	for _, x := range xs {
 		for i := range x {
 			x[i] = float32(0.5 * rng.NormFloat64())
@@ -36,6 +37,7 @@ func sigSharpen(rng *rand.Rand, xs ...[]float32) {
 }
 
 func sigScale(f float32, xs ...[]float32) {
+	makeWritable(xs...)
 	for _, x := range xs {
 		for i := range x {
 			x[i] *= f
@@ -112,6 +114,7 @@ func TestSiglipCUDA_tiny(t *testing.T) {
 	cw, _ := cpu.Weights()
 	for i, b := range w.Blocks { // copy the sharpened weights across (the slices alias each encoder's own)
 		cb := cw.Blocks[i]
+		makeWritable(cb.LN1W, cb.LN1B, cb.LN2W, cb.LN2B, cb.Q.W, cb.Q.B, cb.K.W, cb.K.B)
 		copy(cb.LN1W, b.LN1W)
 		copy(cb.LN1B, b.LN1B)
 		copy(cb.LN2W, b.LN2W)
@@ -121,6 +124,7 @@ func TestSiglipCUDA_tiny(t *testing.T) {
 		copy(cb.K.W, b.K.W)
 		copy(cb.K.B, b.K.B)
 	}
+	makeWritable(cw.PatchB)
 	copy(cw.PatchB, w.PatchB)
 	want, err := cpu.Forward(px)
 	if err != nil {

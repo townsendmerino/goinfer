@@ -131,6 +131,10 @@ type loadedModel struct {
 	// every Qwen3.5 checkpoint carries one, so eager loading would tax every text-only user's startup and memory.
 	qwen3 *qwen3Tower
 
+	// visionShare counts the entries holding this entry's startup vision tower (nil: none shares it); the last to unload
+	// closes it.
+	visionShare *visionShare
+
 	// GLM-OCR vision tower (nil: not GLM-OCR, or no tower). It shares qwenPP/qwenMerge/qwenImgTok and the
 	// GenerateQwenVL route with the two Qwen paths above, but its tower, prompt block and template are GLM's
 	// (glm_ocr_vision.go). Loaded lazily.

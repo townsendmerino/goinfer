@@ -1080,6 +1080,10 @@ func newServer(cfg config) (*server, error) {
 	if err := s.loadVisionTower(cfg); err != nil {
 		return nil, err
 	}
+	share := &visionShare{n: len(s.models)} // loadVisionTower gives every startup entry the same tower
+	for _, lm := range s.models {
+		lm.visionShare = share
+	}
 	// Decided last, once adapters and vision towers are attached: a vision model runs one generation at a time.
 	for _, lm := range s.models {
 		if line := lm.setConcurrency(cfg); line != "" {
