@@ -499,7 +499,7 @@ func New() (*Context, error) {
 		pipeline:    pipeline,
 		layout:      pipeline.GetBindGroupLayout(0),
 		hasDP4A:     probeDP4A(device),
-		quantNarrow: quantNarrowForTest,
+		quantNarrow: quantNarrowForTest.Load(),
 		gemmTile:    gemmTileDefault(),
 	}, nil
 }

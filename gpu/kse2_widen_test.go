@@ -3,11 +3,13 @@
 package gpu
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/hostmem"
 )
 
 // kse2Run compiles code and dispatches it over wg workgroups with the bindings in order: ins (read storage, as words), then
@@ -167,7 +170,7 @@ func TestKSE2_widenedMatchesNarrow(t *testing.T) {
 				"for (var i: u32 = t; i < p.h; i = i + 256u) { let v = src[rb + i]; ss = ss + v*v; }")
 			wideSrc = replaceOnceT(t, wideSrc, "    var stride: u32 = 32u;", "    var stride: u32 = 128u;")
 		}
-		for _, n := range []int{255, 896, 4864} {
+		for _, n := range []int{1, 3, 255, 896, 4864, 8960} {
 			for _, M := range []int{1, 3, 17} {
 				np := (n + 3) / 4 * 4
 				var ins [][]uint32
@@ -199,9 +202,9 @@ func replaceOnceT(t *testing.T, s, old, new string) string {
 // close releases both.
 func kse2Resident(t *testing.T, m *decoder.Model, narrow bool) (*residentDecoder, func()) {
 	t.Helper()
-	prev := quantNarrowForTest
-	quantNarrowForTest = narrow
-	defer func() { quantNarrowForTest = prev }()
+	prev := quantNarrowForTest.Load()
+	quantNarrowForTest.Store(narrow)
+	defer quantNarrowForTest.Store(prev)
 	b, err := newWebGPUBackend("kse2")
 	if err != nil {
 		t.Skipf("no webgpu: %v", err)
@@ -242,7 +245,7 @@ func kse2Decode(t *testing.T, m *decoder.Model, rd *residentDecoder, n int) [][]
 }
 
 // TestKSE2_decodeIdentity is E2-G1 (b): llama-tiny (and, with GOINFER_HEAVY_TESTS=1, the 1.5B's .gguf) at int8int8 on WebGPU,
-// a narrow and a wide resident, 32 greedy decode steps, every step's logits byte-equal.
+// a narrow and a wide resident: a 64-row PrefillLast (the widened row forms) and 32 greedy decode steps, every logit byte-equal.
 func TestKSE2_decodeIdentity(t *testing.T) {
 	newOrSkipHW(t).Close()
 	paths := []string{"../testdata/llama-tiny"}
@@ -254,13 +257,39 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %s: %v", p, err)
 		}
-		nRD, nClose := kse2Resident(t, m, true)
-		narrow := kse2Decode(t, m, nRD, 32)
-		nClose()
-		wRD, wClose := kse2Resident(t, m, false)
-		wide := kse2Decode(t, m, wRD, 32)
-		wClose()
+		// A 64-row prefill first (the widened row forms), then 32 decode steps after it.
+		_, _, _, _, _, _, V := m.Dims()
+		embs := make([][]float32, 64)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest((i*7919 + 13) % min(V, 1000))
+		}
+		arm := func(narrow bool) (pre []float32, dec [][]float32) {
+			rd, closeRD := kse2Resident(t, m, narrow)
+			defer closeRD()
+			lg, err := rd.PrefillLast(context.Background(), embs, 0)
+			if err != nil && strings.Contains(err.Error(), "declines") {
+				// The backend declines this family's batched prefill (the 1.5B's q/k/v bias on Metal): only decode is compared.
+				fmt.Fprintf(os.Stderr, "[E2-G1] %s: prefill declined (%v); the row forms are not exercised on this model\n", p, err)
+				return nil, kse2Decode(t, m, rd, 32)
+			}
+			if err != nil {
+				t.Fatalf("prefill: %v", err)
+			}
+			return slices.Clone(lg), kse2Decode(t, m, rd, 32)
+		}
+		preN, narrow := arm(true)
+		preW, wide := arm(false)
 		m.Close()
+		dp := 0
+		for i := range preN {
+			if math.Float32bits(preN[i]) != math.Float32bits(preW[i]) {
+				dp++
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[E2-G1] %s: 64-row prefill, %d of %d last logits differ, wide against narrow\n", p, dp, len(preN))
+		if dp != 0 {
+			t.Errorf("%s: %d prefill logits differ", p, dp)
+		}
 		d := 0
 		for s := range narrow {
 			for i := range narrow[s] {
@@ -276,23 +305,30 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 	}
 }
 
-// TestKSE2_decodeSpeed is E2-G2: the 1.5B's .gguf at int8int8 on WebGPU, a narrow and a wide resident in one process, 128
-// greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each, each pair's start load printed.
-// A timed run: hold the timing lock (GOINFER_KSE2_TIMING=1).
+// TestKSE2_decodeSpeed is E2-G2 and its re-run's A/A control (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run"): the
+// 1.5B's .gguf at int8int8 on WebGPU, two residents in one process, 128 greedy decode tokens after a 32-token prompt, A B B A
+// over 10 valid pairs after 2 warm runs each. GOINFER_KSE2_AA=1 makes both residents narrow (the control). It refuses to run
+// outside the timing lock, records each pair's start load and reclaimable memory, voids and re-runs (up to 10 times) a pair
+// started above half the cores' load or under 6 GB reclaimable, and fails on the bar: the A/B's median wide/narrow over 0.98
+// or fewer than 9 of 10 faster; the control's median outside 1 ± 0.02.
 func TestKSE2_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE2_TIMING") == "" {
 		t.Skip("set GOINFER_KSE2_TIMING=1 (a timed run under the timing lock)")
 	}
+	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
+		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
+	}
+	aa := os.Getenv("GOINFER_KSE2_AA") != ""
 	newOrSkipHW(t).Close()
 	m, err := decoder.Load(os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), decoder.Options{Quant: "int8int8"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	nRD, nClose := kse2Resident(t, m, true)
-	defer nClose()
-	wRD, wClose := kse2Resident(t, m, false)
-	defer wClose()
+	aRD, aClose := kse2Resident(t, m, true)
+	defer aClose()
+	bRD, bClose := kse2Resident(t, m, aa)
+	defer bClose()
 	const prompt, gen = 32, 128
 	run := func(rd *residentDecoder) float64 {
 		for pos := range prompt {
@@ -317,25 +353,53 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		return time.Since(t0).Seconds() / gen
 	}
 	for range 2 {
-		run(nRD)
-		run(wRD)
+		run(aRD)
+		run(bRD)
 	}
+	label := "A/B narrow, wide"
+	if aa {
+		label = "A/A narrow, narrow"
+	}
+	maxLoad := float64(runtime.NumCPU()) / 2
 	var ratios []float64
-	below := 0
-	for i := range 10 {
+	faster, voids := 0, 0
+	for i := 0; len(ratios) < 10; i++ {
+		var load1 [3]float64
 		la, _ := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		var n, w float64
-		if i%2 == 0 {
-			n, w = run(nRD), run(wRD)
+		fmt.Sscanf(strings.Trim(strings.TrimSpace(string(la)), "{}"), "%g %g %g", &load1[0], &load1[1], &load1[2])
+		recl := int64(0)
+		if r, ok := hostmem.Read(); ok {
+			recl = r.Reclaimable
+		}
+		if load1[0] > maxLoad || recl < 6<<30 {
+			voids++
+			fmt.Fprintf(os.Stderr, "[E2-G2] VOID pair start %d (%s): load %.2f, reclaimable %.2f GiB\n", i, label, load1[0], float64(recl)/(1<<30))
+			if voids > 10 {
+				t.Fatalf("over 10 void pair starts")
+			}
+			time.Sleep(30 * time.Second)
+			continue
+		}
+		var a, b float64
+		if len(ratios)%2 == 0 {
+			a, b = run(aRD), run(bRD)
 		} else {
-			w, n = run(wRD), run(nRD)
+			b, a = run(bRD), run(aRD)
 		}
-		ratios = append(ratios, w/n)
-		if w < n {
-			below++
+		ratios = append(ratios, b/a)
+		if b < a {
+			faster++
 		}
-		fmt.Fprintf(os.Stderr, "[E2-G2] pair %d (load %s): narrow %.3f ms/token, wide %.3f ms/token, wide/narrow %.4f\n", i, strings.TrimSpace(string(la)), n*1e3, w*1e3, w/n)
+		fmt.Fprintf(os.Stderr, "[E2-G2] %s pair %d (load %.2f, reclaimable %.2f GiB): first %.3f ms/token, second %.3f ms/token, second/first %.4f\n",
+			label, len(ratios)-1, load1[0], float64(recl)/(1<<30), a*1e3, b*1e3, b/a)
 	}
 	slices.Sort(ratios)
-	fmt.Fprintf(os.Stderr, "[E2-G2] median wide/narrow %.4f, %d of 10 pairs below 1\n", (ratios[4]+ratios[5])/2, below)
+	med := (ratios[4] + ratios[5]) / 2
+	fmt.Fprintf(os.Stderr, "[E2-G2] %s: median second/first %.4f, %d of 10 pairs below 1, %d void starts\n", label, med, faster, voids)
+	if aa && (med < 0.98 || med > 1.02) {
+		t.Errorf("the A/A control reads %.4f: the two-resident setup biases the reading", med)
+	}
+	if !aa && (med > 0.98 || faster < 9) {
+		t.Errorf("E2-G2 below its bar: median %.4f, %d of 10 faster", med, faster)
+	}
 }

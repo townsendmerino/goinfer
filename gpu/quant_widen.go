@@ -2,11 +2,14 @@
 
 package gpu
 
-import "strings"
+import (
+	"strings"
+	"sync/atomic"
+)
 
 // quantNarrowForTest makes New's Context compile the single-workgroup quantizers at 64 lanes, as their source is written (the
 // old arm of KS-E2's A/B); read at New.
-var quantNarrowForTest bool
+var quantNarrowForTest atomic.Bool
 
 // quantSrc is a single-workgroup quantizer's source as this Context compiles it: widened to 256 lanes (widenQuant), or the
 // 64-lane source on a quantNarrow Context.
