@@ -92,8 +92,8 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | building (Metal) | approved by Francis 2026-10-24 10:22 am, Metal first; O1-G registered; O1-G0 (prototype kernels at Phi-3's shapes) is next | survey, "KS-O1 on Metal: gates" |
-| KS-O1a | building | bit-identical Q4_K scale decode on the q4k lane, from O1-G0's side reading (0.678 of the shipped Q4_K GEMV time over Phi-3); O1a-G registered | survey, "KS-O1a" |
+| KS-O1 | building (Metal) | O1-G0 read: Q6_K clears (0.620 of int8 at R = 4), Q5_K clears after its one amendment (0.755 at R = 4). Next: aikit's raw Q5_K/Q6_K accessor, then O1-G1 to G7 | survey, "KS-O1 on Metal: gates" |
+| KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
 | KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
@@ -668,6 +668,19 @@ prototypes were first checked against the float64 reference, worst |err|/Σ\|w·
   The kill rule and R set are unchanged, and this is the last Q5_K reading. If neither variant clears, Q5_K is killed and only Q6_K is
   built.
 
+**O1-G0 re-read with the amended Q5_K (10:35, the lock held exclusively, load 3.31, 14.1 GB available).**
+- **Conditions:** ceiling 181.1 GB/s; the int8 qkv kernel ran 0.194 ms (146 GB/s).
+- **Q5_K variants, R = 1 / 2 / 4 / 8:**
+  - (a) 0.365 / 0.314 / 0.273 / 0.285 ms;
+  - **(b) 0.258 / 0.215 / 0.146 / 0.168** (133 GB/s at R = 4, 1.32× the int8 kernel);
+  - (c) 0.259 / 0.226 / 0.167 / 0.149.
+- **Summed over Phi-3:** (b) at R = 4 is **0.755 of int8 and clears**. (c)'s best (R = 8, 0.767) is 1.6% slower. **Q5_K is built as (b)
+  at R = 4.**
+- **Q6_K, read again:** 0.620 of int8 at R = 4 (down 1.69×, head 1.29× against `gemv_w8_f32_rows2`, and 1.22× against the shipped
+  `gemv_w8f32_head`). Still R = 4.
+- **Log:** `~/goinfer-logs/kso1-g0b-2026-10-24.log`.
+- **Both kinds pass O1-G0.** The build continues once aikit's `embed` has the raw Q5_K/Q6_K accessor.
+
 **KS-O1a · The q4k lane's Q4_K scale decode without a branch (bit-identical). Registered 2026-10-24 before the code, from an
 ungraded side reading beside O1-G0.**
 - **Side reading (10:42–10:47, the lock held exclusively, load 1.68 at the start):** the shipped `q4k_rows_acc`, changed only in
@@ -691,6 +704,22 @@ ungraded side reading beside O1-G0.**
 | O1a-G3 speed | timed, Mac, timing lock | C1-G4's A/B (`TestKSC1_phi3Speed`'s shape): one Phi-3 mini q4k resident, its three Q4_K pipelines swapped between the old library and the new one, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff O1a-G1 and G2 pass, memory is unchanged (no buffer is added or resized) and at least 9 of 10 pairs are faster (the small-gains rule). The registered C1-G4 bar (median ≤ 0.98) is reported alongside. Fewer than 9 pairs faster: PARK |
 
 Expected cost: G1 seconds. G3 about 3 min, from C1-G4's wall, after Phi-3's fit check. Stopping rule: one pass.
+
+**KS-O1a read 2026-10-24, by day: SHIP.**
+- **O1a-G1: PASS.**
+  - The decode rows kernels at R = 1, 2, 4, 8 (every variant) and the step's `mc3_gemv_q4k_f32_rows<B>` at B = 1, 2, 4, 8 (every
+    mode) are byte-equal before and after in 192 cells, in both the fast-math and the precise library (`TestKSO1a_q4kBitsUnchanged`).
+  - The four `TestQ4KStep_*` tests and C1-G2's kernel-level step check pass.
+  - G-Q1 passes. Its plant (2) is retargeted at `q4k_scale_min2`, since the old text no longer reaches the rows kernel; it is red at
+    2.09.
+  - Log: `~/goinfer-logs/kso1a-g1-2026-10-24.log`.
+- **O1a-G3 run:** 10:53–10:55, the lock held exclusively. At the start the 1-minute load was 3.28, under the 4.0 line; each pair
+  started at 1.16–2.33; 13.9 GB available; swap 1,138 MB before and after.
+- **O1a-G3 result:** old 29.55–31.06 ms a token, new 23.75–27.17; **median new/old 0.8044, 10 of 10 pairs below 1** (33.4 → 41.7 tok/s
+  at the median pair). No buffer is added or resized. The run passes the small-gains rule and C1-G4's registered bar (≤ 0.98): **SHIP**.
+- **O1a-G2: PASS.** All 24 runs, both arms, gave the same 128 tokens and the same final logits' bytes.
+- **Log:** `~/goinfer-logs/kso1a-g3-2026-10-24-1053.log`. Binary built at f9f41aa5 from
+  `docs/measurements/ks-night-2026-10/run-kso1a-g3.sh`.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
