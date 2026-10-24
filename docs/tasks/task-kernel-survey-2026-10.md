@@ -1379,6 +1379,13 @@ the self-test skipped (`TestKSD9_plantSeenByTheGate`) every cell went red. Also:
 by name 55 pass, 17 skip, 0 fail. D9-G2 waits for a real generic MoE: none is in `~/models`, and nobara's archive was under another
 session's timing lock at 14:40, so no pull. Logs: `~/goinfer-logs/ksd9-*-2026-10-23.log`.
 
+**D9-G2's model, amended 2026-10-24 before the run (the registration asked for it; Francis's word of 12:45).** The model is
+Qwen1.5-MoE-A2.7B, its int4 Metal `.giw` transcoded on nobara from the archive copy (`cmd/prequant -quant int4 -target metal`,
+built at origin/main) and copied to the Mac, then deleted once graded. It is paged with `GOINFER_METAL_MOE_SLOTS=16` (of its 60
+routed experts, top-4), so the generic pager's layer-major prefill is the path timed. Instrument `TestKSD9_layerMajorSpeed`:
+512 seeded token ids, `PrefillLast`, the bar unchanged (SHIP iff the median batched/per-row is ≤ 0.98 with every pair faster;
+otherwise PARK). Each pair also counts the last logits that differ, which must be 0 (D9-G1's class).
+
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
 - **Change:** lane-per-row or grid-stride.
