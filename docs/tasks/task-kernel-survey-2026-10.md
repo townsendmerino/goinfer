@@ -55,7 +55,7 @@
 | KS-D5c | done | done 2026-10-23: the native int8 lane's dense prefill fuses SwiGLU into the gate\|up GEMM too (`gemm_w8f16_swiglu`); bit-identical (D5c-G1); the 0.5B's 3,900-row int8 pass scratch 143.9 → 68.0 MB (D5c-G2); median 0.9931, 7 of 10 pairs (D5c-G3 SHIP). Still keeping `guF`: the small-M tiles and the MoE expert GEMMs, neither worth a build (registration) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
-| KS-D8 | open (G3) | built 2026-10-24, branch `ksd8-mamba-prefill-2026-10-24`, not merged: batched Mamba-2 prefill, the relu² MLP and mixer-only layers on Metal; the 9B's 512-token prefill 5.14× (D8-G4 SHIP); G1, G2, G5, G6 PASS; D8-G3 FAIL by its bar (top-1 3 of 8, KL 0.050; a shipped Qwen3.5-9B reads 6 of 8, 0.038 on the same instrument). Next: the owner's call on G3 | survey, "KS-D8 read" |
+| KS-D8 | done | done 2026-10-24: batched Mamba-2 prefill, the relu² MLP and mixer-only layers on Metal; the 9B's 512-token prefill 5.14× (D8-G4 SHIP); G1, G2, G5, G6 PASS; D8-G3 PASS on its reference route (against a CPU bf16 reference the pass reads mean KL 0.046 and top-1 7 of 8, the sequential path 0.102 and 4 of 8) | survey, "KS-D8 read", "D8-G3 reference-route read" |
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
@@ -1246,6 +1246,15 @@ Mac, where the sequential path and the batched pass are read as in D8-G3. **D8-G
 non-inferior to the sequential path in D8-G2's form: its mean KL(ref ‖ ·) at most the sequential path's + 0.005 nats, and its
 top-1 agreement with the reference at least the sequential path's less one prompt; otherwise FAIL.** The 9B ships on PASS, with
 D8-G4's speed; on FAIL it stays unmerged and the gap is localized per layer kind before anything else.
+
+**D8-G3 reference-route read 2026-10-24: PASS.** The reference ran on nobara's CPU 12:54–14:42 (`ksd8-g3-cpu-ref`, all 8 prompts,
+`ref.bin` sha256 `d46c44ce…`, 8 × 131,072 float32); the Mac read the sequential path and the batched pass against it 14:46–14:54
+(not timed; shared lock; 13.7 GB available at the start). Against the reference, **the pass is closer than the sequential path on
+every prompt**: mean KL(ref ‖ ·) **0.0463 for the pass against 0.1024 for the sequential path** (bar: ≤ 0.1074), top-1 agreement
+**7 of 8 against 4 of 8** (bar: ≥ 3). Per prompt, KL(ref ‖ seq) → KL(ref ‖ pass): 0.081 → 0.040, 0.028 → 0.022, 0.225 → 0.056,
+0.281 → 0.111, 0.027 → 0.017, 0.023 → 0.016, 0.055 → 0.028, 0.099 → 0.081; the pass misses top-1 only on prompt 7, the sequential
+path on prompts 2, 4, 5 and 6. So D8-G3's first FAIL measured the sequential path's own distance from the checkpoint, not a
+defect in the pass. KS-D8 ships with D8-G4's 5.14×. Log: `~/goinfer-logs/ksd8-g3-ref-2026-10-24.log`.
 
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
