@@ -202,3 +202,47 @@ func TestKSD8_tinyFidelity(t *testing.T) {
 		}
 	}
 }
+
+// TestKSD8_scratchWithinPlan is D8-G5's counter half: one batched pass over nemotron-tiny's 100 rows (and, with
+// GOINFER_HEAVY_TESTS=1, the 9B's 512) counts at most the bytes prefillScratchBytes plans for it, and the pass ran (it counted
+// something). The 9B's load passing the fit guard is the admission half.
+func TestKSD8_scratchWithinPlan(t *testing.T) {
+	cells := []struct {
+		path string
+		M    int
+	}{{"../testdata/nemotron-tiny", 100}}
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "" {
+		cells = append(cells, struct {
+			path string
+			M    int
+		}{os.ExpandEnv(fmt.Sprintf("$HOME/models/nemotron/nemotron-nano-9b-v2-int4-metal.v%d.giw", decoder.GIWFormatVersion)), 512})
+	}
+	for _, c := range cells {
+		m, err := decoder.Load(c.path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+		if err != nil {
+			t.Fatalf("load %s: %v", c.path, err)
+		}
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok || !a.r.prefillOK {
+			m.Close()
+			t.Fatalf("%s: the batched pass is not admitted", c.path)
+		}
+		rng := rand.New(rand.NewSource(71))
+		ids := make([]int, c.M)
+		for i := range ids {
+			ids[i] = rng.Intn(min(a.r.V, 1000))
+		}
+		a.r.resetRecurrent()
+		before := prefillScratchSeen.Load()
+		if _, err := a.PrefillLast(context.Background(), getEmbs(a.r, ids), 0); err != nil {
+			m.Close()
+			t.Fatalf("%s: prefill: %v", c.path, err)
+		}
+		counted, planned := prefillScratchSeen.Load()-before, a.r.prefillScratchBytes(c.M)
+		fmt.Fprintf(os.Stderr, "[D8-G5] %s, %d rows: counted %d bytes, planned %d\n", c.path, c.M, counted, planned)
+		if counted <= 0 || counted > planned {
+			t.Errorf("%s: counted %d bytes against a plan of %d", c.path, counted, planned)
+		}
+		m.Close()
+	}
+}
