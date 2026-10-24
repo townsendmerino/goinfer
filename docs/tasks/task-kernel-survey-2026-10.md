@@ -1254,6 +1254,19 @@ fixture is at hand, so the registered plant cannot fire. The plant is instead a 
   0.5 ms a token (the survey's estimate ~0.6). Read on main's build, without KS-E2.
 Logs: `~/goinfer-logs/kse3-g1-2026-10-24.log`, `~/goinfer-logs/kse3-g2-2026-10-24.log`.
 
+**After the second-opinion review of #216 (13:40), registered before the re-run.** The earlier amendment was wrong that no adapter
+fixture exists: `buildLlamaTinyLoRAFixtureGPU` makes one, so the registered plant now runs. Changes:
+- `Run` requests the staging map before it records the next token, and that recording is timed apart (`TEncodeAhead`) and left out
+  of `TSync`, so `TEncode`/`TSync` keep their meaning (`TestDecodeTWE_split` passes).
+- E3-G1 uses a fresh resident per arm and its own inputs on slot 1. Added: an adapter bound after a pre-recorded token
+  (`TestKSE3_setAdapterDropsPending`; the registered plant, `SetAdapter` keeping the stale buffer, turned all 1,024 logits red) and
+  each drop path's state (`TestKSE3_pendingDroppedWhereRecorded`: `RunNoLogits`, `SetAdapter`, release). The drop moved into
+  `release`, so a Context teardown frees it too. All PASS; the identity plant is still red (4,352 logits).
+- **E3-G2 re-run:** the same instrument under the lock, the test refusing to run without the lock's token or under 6 GB
+  reclaimable before its load, voiding and re-running a pair started above a load of 4.0 or under 2 GB reclaimable, and failing on
+  the bar (SHIP iff median on/off ≤ 0.98 with at least 9 of 10 faster). The first reading (0.9796) was taken with the next token
+  recorded before the staging map was requested; the re-run reads the corrected order and decides.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.

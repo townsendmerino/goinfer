@@ -26,7 +26,7 @@ type DecodeRunner struct {
 	c *Context
 	// pending is the next token's command buffer, recorded by Run after it submits (KS-E3): steps, then the logits copy.
 	// It is valid while steps and their bind groups are; dropPending releases it wherever they change (SetAdapter) or a call
-	// records a different shape (RunNoLogits), and at Close.
+	// records a different shape (RunNoLogits), and in release.
 	pending              *wgpu.CommandBuffer
 	steps                []runStep
 	posUnis              []posUni
@@ -51,6 +51,9 @@ type DecodeRunner struct {
 	// §5 instrumentation: wall time of each Run phase, overwritten per call.
 	// Zero overhead when ignored; the decomposition test reads them.
 	TWrite, TEncode, TSync time.Duration
+	// TEncodeAhead is the last Run's recording of the next token's buffer (KS-E3), done while the GPU runs and left out of
+	// TSync; TEncode is then the in-line recording, 0 when Run submitted a pending buffer.
+	TEncodeAhead time.Duration
 
 	// Debug capture of the FIRST mamba layer's intermediate buffers (in_proj output,
 	// conv output, SSM output y, mixer output gated), recorded at build. ReadMambaCap
@@ -1762,19 +1765,22 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	r.TEncode = time.Since(te)
 	ts := time.Now()
 	c.queue.Submit(cmd)
-	// KS-E3: the next token's buffer is recorded while the GPU runs this one; the next Run writes its inputs and submits it.
-	// A recording that fails is retried in line by that Run.
-	if !encodeAheadOffForTest {
-		if next, err := r.recordToken(); err == nil {
-			r.pending = next
-		}
-	}
 	st := wgpu.MapAsyncStatus(0)
 	if err := r.stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(s wgpu.MapAsyncStatus) { st = s }); err != nil {
 		return nil, err
 	}
+	// KS-E3: the next token's buffer is recorded while the GPU runs this one, after the staging map is requested; the next
+	// Run writes its inputs and submits it. A recording that fails is retried in line by that Run.
+	r.TEncodeAhead = 0
+	if !encodeAheadOffForTest {
+		ta := time.Now()
+		if next, err := r.recordToken(); err == nil {
+			r.pending = next
+		}
+		r.TEncodeAhead = time.Since(ta)
+	}
 	c.device.Poll(true, nil)
-	r.TSync = time.Since(ts)
+	r.TSync = time.Since(ts) - r.TEncodeAhead
 	if st != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: DecodeRunner map failed: %v", st)
 	}
@@ -1863,6 +1869,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 }
 
 func (r *DecodeRunner) release() {
+	r.dropPending()
 	for _, f := range r.keep {
 		f()
 	}
@@ -1871,7 +1878,6 @@ func (r *DecodeRunner) release() {
 
 // Close frees the runner's scratch (not the resident model).
 func (r *DecodeRunner) Close() error {
-	r.dropPending()
 	r.c.releaseOwned(r.release)
 	return nil
 }
@@ -1879,6 +1885,9 @@ func (r *DecodeRunner) Close() error {
 // encodeAheadOffForTest makes Run record each token's command buffer in line, as before KS-E3 (the old arm of its A/B); read at
 // each Run.
 var encodeAheadOffForTest bool
+
+// kse3KeepPendingForTest makes SetAdapter keep a pending buffer recorded against the old steps (KS-E3's planted defect).
+var kse3KeepPendingForTest bool
 
 // recordToken records one token's command buffer: every step in one compute pass, then the logits copy to the staging buffer.
 func (r *DecodeRunner) recordToken() (*wgpu.CommandBuffer, error) {

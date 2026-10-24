@@ -104,7 +104,9 @@ func releaseLoraLayers(layers []loraRunLayer) {
 // spliced in at the hook points r.loraHooks recorded during construction, not a per-token
 // decision the way Metal's re-encoded-every-token trunk can make with a plain `if`.
 func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
-	r.dropPending() // the steps are rebuilt below
+	if !kse3KeepPendingForTest {
+		r.dropPending() // the steps are rebuilt below
+	}
 	releaseLoraLayers(r.loraLayers)
 	r.loraLayers = nil
 	if layers == nil {
