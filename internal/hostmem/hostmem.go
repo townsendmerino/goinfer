@@ -4,15 +4,22 @@
 // same number through cmd/hostmem, so no reader keeps a second formula (docs/measurements/hostmem-available-2026-10/README.md).
 package hostmem
 
-// Reading is one sample, in bytes. On macOS Available is what the kernel can hand back without compressing or swapping anything: free,
-// file-backed and purgeable pages, so Free + FileBacked + Purgeable. Speculative pages are part of FileBacked, reported apart as context,
-// as are App, Wired and Compressed, Activity Monitor's terms. On Linux the macOS fields are 0 and Available is the kernel's MemAvailable.
+// Reading is one sample, in bytes. On macOS Available is the kernel's own free percentage (kern.memorystatus_level, the figure
+// memory_pressure prints) times physical memory, less PressureBuffer: it counts app memory as available, since the kernel can compress
+// it. Reclaimable is what the kernel can hand back without compressing or swapping anything (Free + FileBacked + Purgeable), and Level
+// is the percentage; both are context, as are Speculative (part of FileBacked) and App, Wired and Compressed, Activity Monitor's terms.
+// On Linux the macOS fields are 0 and Available is the kernel's MemAvailable.
 type Reading struct {
 	Physical, Available                      int64
+	Level                                    int
+	Reclaimable                              int64
 	Free, Speculative, FileBacked, Purgeable int64
 	App, Wired, Compressed                   int64
 	Source                                   string
 }
+
+// PressureBuffer is held back from the macOS percentage's figure (owner's decision, 2026-10-24).
+const PressureBuffer = 500 << 20
 
 // TaskVM is another process's memory as task_info(TASK_VM_INFO) reports it, in bytes. Compressed is its pages in the compressor, held
 // in memory or swapped to disk: macOS keeps no separate per-process disk-swap figure.
@@ -42,7 +49,7 @@ func Available() int64 {
 // (docs/measurements/hostmem-available-2026-10/README.md, amendment A3). JetsamBefore and JetsamAfter are bytes. Fresh is true
 // when Ours was computed inside the bracket: the sysctls are not rate-limited and host_statistics64 is (see Read), so Ours is
 // read twice, with a page fault between that a fresh reply counts, and Fresh is whether the two replies differ. A sample that is not
-// Fresh may predate the bracket and cannot be graded.
+// Fresh may predate the bracket and cannot be graded. The kernel figure is compared with Ours.Reclaimable, not Ours.Available.
 type OracleSample struct {
 	Ours                      Reading
 	JetsamBefore, JetsamAfter int64
