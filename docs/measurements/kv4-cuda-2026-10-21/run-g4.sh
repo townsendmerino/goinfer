@@ -4,7 +4,9 @@
 # overflow survey, G5, runs inside the f32 arm and prints before any score). K=3900 reads all ten prompts, by day; K=8000 reads the
 # first four, on the night queue.
 #
-#   env CELL=<QMOE|G34B|...> DEPTH=<3900|8000> PHASE=<ref|gate|both> [W=<worktree>] [WORKERS=n] [LONG_ANYWAY=1] bash <this script>
+#   env CELL=<QMOE|G34B|...> DEPTH=<3900|8000> PHASE=<ref|gate|both> [W=<worktree>] [WORKERS=n] [N=n] [LONG_ANYWAY=1] bash <this script>
+#
+# N is the registered prompt count when a cell's registration differs from its depth's (DeepSeek-V2-Lite's K=3900 reads four).
 #
 # Short first: a K=8000 cell runs only after the cell's K=3900 gate read PASSES (its latest gate log here); LONG_ANYWAY=1 runs it
 # regardless. WORKERS defaults to 1 at K=8000 and 2 at K=3900: concurrent prompts at depth contend for memory bandwidth and finish
@@ -18,7 +20,8 @@ CELL=${CELL:?name the cell}
 DEPTH=${DEPTH:?3900 or 8000}
 PHASE=${PHASE:-both}
 W=${W:-$(cd "$(dirname "$0")/../../.." && pwd)}
-case $DEPTH in 3900) N=10 DEFW=2 ;; 8000) N=4 DEFW=1 ;; *) echo "DEPTH must be 3900 or 8000"; exit 2 ;; esac
+case $DEPTH in 3900) DEFN=10 DEFW=2 ;; 8000) DEFN=4 DEFW=1 ;; *) echo "DEPTH must be 3900 or 8000"; exit 2 ;; esac
+N=${N:-$DEFN}
 WORKERS=${WORKERS:-$DEFW}
 OUT=$HOME/goinfer-bench/kv4-g4
 mkdir -p "$OUT"
