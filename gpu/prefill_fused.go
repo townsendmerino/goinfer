@@ -43,7 +43,7 @@ const (
 
 // fusedRowsSource derives kind's shader from decode's single-row kernel: every row-indexed read and write gains the
 // row's offset, and nothing else changes. Dispatched with one workgroup a row, grid (M, 1).
-func fusedRowsSource(kind fusedRowsKind) (code, label string, err error) {
+func (c *Context) fusedRowsSource(kind fusedRowsKind) (code, label string, err error) {
 	const oldMain = "fn main(@builtin(local_invocation_id) lid: vec3<u32>) {\n    let t = lid.x;"
 	out := []srcEdit{
 		{"scales[0] = s;", "scales[wid.x] = s;", 1},
@@ -51,7 +51,11 @@ func fusedRowsSource(kind fusedRowsKind) (code, label string, err error) {
 	}
 	if kind == fusedRowsRMS {
 		label = "rmsnormQuantRows"
-		code, err = editSource(label, rmsnormQuantWGSL, append([]srcEdit{
+		src, err := c.quantSrc(label, rmsnormQuantWGSL)
+		if err != nil {
+			return "", label, err
+		}
+		code, err = editSource(label, src, append([]srcEdit{
 			{oldMain, fusedRowsMain + "p.h;", 1},
 			{"let v = src[i];", "let v = src[rb + i];", 1},
 			{"abs(src[i] * inv * w)", "abs(src[rb + i] * inv * w)", 1},
@@ -62,6 +66,9 @@ func fusedRowsSource(kind fusedRowsKind) (code, label string, err error) {
 	src, label := swigluQuantWGSL, "swigluQuantRows"
 	if kind == fusedRowsGeGLU {
 		src, label = gegluQuantWGSL, "gegluQuantRows"
+	}
+	if src, err = c.quantSrc(label, src); err != nil {
+		return "", label, err
 	}
 	code, err = editSource(label, src, append([]srcEdit{
 		{oldMain, fusedRowsMain + "p.n;", 1},
@@ -77,7 +84,7 @@ func (c *Context) ensureFusedRows() error {
 		if c.fusedRows[kind].pl != nil {
 			continue
 		}
-		code, label, err := fusedRowsSource(fusedRowsKind(kind))
+		code, label, err := c.fusedRowsSource(fusedRowsKind(kind))
 		if err != nil {
 			return err
 		}

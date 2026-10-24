@@ -514,8 +514,12 @@ func (c *Context) ensureGptOssGluQuant() error {
 	if c.gptossGluQuantPipeline != nil {
 		return nil
 	}
+	code, err := c.quantSrc("gptossGluQuant", gptossGluQuantWGSL)
+	if err != nil {
+		return err
+	}
 	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "gptossGluQuant", WGSLSource: &wgpu.ShaderSourceWGSL{Code: gptossGluQuantWGSL},
+		Label: "gptossGluQuant", WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile gptossGluQuant: %w", err)

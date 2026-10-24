@@ -98,9 +98,13 @@ func (c *Context) ensureQuantize() error {
 	if c.quantizePipeline != nil {
 		return nil
 	}
+	code, err := c.quantSrc("quantizeRowsInt8", quantizeShaderWGSL)
+	if err != nil {
+		return err
+	}
 	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:      "quantizeRowsInt8",
-		WGSLSource: &wgpu.ShaderSourceWGSL{Code: quantizeShaderWGSL},
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile quantize shader: %w", err)
