@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"slices"
 	"testing"
 	"unsafe"
@@ -52,6 +53,40 @@ func TestKSO1_kquantRows(t *testing.T) {
 		}
 		if !slices.Equal(got, c.src) {
 			t.Errorf("%s: rows %v, want %v", c.name, got, c.src)
+		}
+	}
+}
+
+// TestKSO1_kquantServesRejects: kquantServes, the check noteKQuant records by and KQuantReader.Rows serves by, accepts a plain
+// load, a fused split's offset and an in-range permutation, and rejects each way a source could fail Rows: an accessor error, a
+// tensor of another kind, dims that are not two, a column mismatch, columns not a multiple of 256, too few rows (plain or
+// offset), and a permuted row past the end.
+func TestKSO1_kquantServesRejects(t *testing.T) {
+	plain, off, perm, permOut := kquantSrc{start: 0}, kquantSrc{start: 6}, kquantSrc{perm: []int32{3, 0, 2, 1}}, kquantSrc{perm: []int32{3, 0, 4, 1}}
+	for _, c := range []struct {
+		name string
+		dims []int
+		ok   bool
+		err  error
+		in   int
+		src  kquantSrc
+		rows int
+		want bool
+	}{
+		{"plain", []int{512, 4}, true, nil, 512, plain, 4, true},
+		{"fused offset", []int{512, 10}, true, nil, 512, off, 4, true},
+		{"permutation", []int{512, 4}, true, nil, 512, perm, 4, true},
+		{"accessor error", []int{512, 4}, true, errors.New("bad"), 512, plain, 4, false},
+		{"another kind", nil, false, nil, 512, plain, 4, false},
+		{"three dims", []int{512, 4, 1}, true, nil, 512, plain, 4, false},
+		{"column mismatch", []int{768, 4}, true, nil, 512, plain, 4, false},
+		{"columns not a multiple of 256", []int{300, 4}, true, nil, 300, plain, 4, false},
+		{"too few rows", []int{512, 3}, true, nil, 512, plain, 4, false},
+		{"offset past the end", []int{512, 9}, true, nil, 512, off, 4, false},
+		{"permuted row past the end", []int{512, 4}, true, nil, 512, permOut, 4, false},
+	} {
+		if got := kquantServes(c.dims, c.ok, c.err, c.in, c.src, c.rows); got != c.want {
+			t.Errorf("%s: kquantServes %v, want %v", c.name, got, c.want)
 		}
 	}
 }

@@ -410,9 +410,10 @@ const kso1HeapSlack = 1 << 20
 
 // kso1CheckLayer0Blocks compares the device bytes of layer 0's native segments with the file's own tensors, read straight from
 // the GGUF (not through KQuantReader or q6kPlanarRow): a group's rows come from its fused tensor when that tensor has the group's
-// row count (Phi-3's attn_qkv, ffn_up = gate|up), else from one tensor a part (attn_q/k/v, ffn_gate/ffn_up), in order. Q5_K rows
-// are compared verbatim, Q6_K through kso1Q6KPlanesRef. These files store no RoPE-permuted rows. At least one segment must be
-// checked.
+// row count (Phi-3's attn_qkv, ffn_up = gate|up), else from one tensor a part (attn_q/k/v, ffn_gate/ffn_up), in order. Each
+// group's segments (kind, first row, row count) must be the ones the file's tensor types imply, so a part that falls back to
+// int8 or loses rows fails here. Native segments' bytes are then compared: Q5_K rows verbatim, Q6_K through kso1Q6KPlanesRef.
+// These files store no RoPE-permuted rows. At least one segment must be checked.
 func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, path, label string) {
 	g, err := decoder.OpenGGUFMmap(path)
 	if err != nil {
@@ -450,6 +451,38 @@ func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, path, la
 					src = append(src, at{"blk.0." + gr.names[pi] + ".weight", r})
 				}
 			}
+		}
+		// The segments the file implies: each part takes its tensor's kind (Q4_K, Q5_K, Q6_K, else the int8 copy), and runs of
+		// consecutive parts of one kind form one segment, as q4kLaneProj groups them. The loader's must be these exactly.
+		kindOf := func(name string) string {
+			for k, get := range map[string]func(string) ([]int, []byte, bool, error){"q4k": g.Q4KRaw, "q5k": g.Q5KRaw, "q6k": g.Q6KRaw} {
+				if _, _, ok, err := get(name); err == nil && ok {
+					return k
+				}
+			}
+			return "int8"
+		}
+		type segWant struct {
+			kind      string
+			off, rows int
+		}
+		var wantSegs []segWant
+		off := 0
+		for _, w := range gr.parts {
+			k := kindOf(src[off].name)
+			if n := len(wantSegs); n > 0 && wantSegs[n-1].kind == k {
+				wantSegs[n-1].rows += w.Rows()
+			} else {
+				wantSegs = append(wantSegs, segWant{k, off, w.Rows()})
+			}
+			off += w.Rows()
+		}
+		var gotSegs []segWant
+		for _, sg := range gr.segs {
+			gotSegs = append(gotSegs, segWant{sg.kind, sg.off, sg.rows})
+		}
+		if !slices.Equal(gotSegs, wantSegs) {
+			t.Fatalf("%s layer 0 %s group: the loader's segments %v, the file implies %v", label, gr.names[0], gotSegs, wantSegs)
 		}
 		for _, sg := range gr.segs {
 			if sg.kind != "q5k" && sg.kind != "q6k" {
