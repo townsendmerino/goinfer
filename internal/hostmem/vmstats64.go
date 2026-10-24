@@ -45,7 +45,7 @@ func fromVMStats64(s vmStats64, pageSize, physical int64) Reading {
 
 // fromLevel is the macOS Available: level percent of physical, less PressureBuffer, and never below 0.
 func fromLevel(level int, physical int64) int64 {
-	return max(physical/100*int64(level)-PressureBuffer, 0)
+	return max(physical*int64(level)/100-PressureBuffer, 0)
 }
 
 // decodeTaskVM decodes the leading fields of struct task_vm_info (mach/task_info.h) that TaskVM reports.
