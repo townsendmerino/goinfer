@@ -45,7 +45,7 @@
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
 | KS-C4 | parked | parked 2026-10-24: folding `swiglu_quant` into the gate\|up epilogue and the down staging is not bit-identical on real data (a rounding tie at fast math: one of 4,864 values in one layer, C4-G1 (b) red) and is 4.9% slower (median 1.0489, 1 of 10). Code on branch `ksc4-fold-parked-2026-10-24`. The quantizers are 0.875 ms a token; a multi-threadgroup quantizer is the untried shape | survey, "KS-C4 read" |
-| KS-C5 | open (build) | first measurement read 2026-10-24: legacy attention 0.643 ms a token at 128 keys and 1.677 at 512 on the 1.5B, over the 0.30 ms kill line. Next: the build, after KS-C4 | survey, "KS-C4 and KS-C5 first measurements" |
+| KS-C5 | parked | parked 2026-10-24: 16-wide V loads and shuffle reductions in the legacy decode attention, bit-identical (C5-G1 PASS); the 1.5B at 385–512 keys median 1.0108, 4 of 10 pairs (C5-G2), with both arms swinging 10.8–12.9 ms within the run: unresolved, ceiling about 0.2 ms. Code on branch `ksc5-attn-parked-2026-10-24` | survey, "KS-C5 read" |
 | KS-D1 | done | done 2026-10-23: `attention_prefill_steel_split` (head dim split over simdgroups) at 256 and 512; E2B's 4,096-row prefill 28.3 → 6.13 s (4.61×, D1-G3 SHIP); G-S9d and a 2,048-token cell PASS (D1-G2); kernel error at the hd-64 steel's size (G1). Follow-ups: a model-level check on Gemma 3 (head dim 256, ungraded); KS-H1's 512 blocking now applies to E2B and E4B; a scratch re-read of their blocked pass is owed | survey, "KS-D1 read" |
 | KS-D2 | done | done 2026-10-23: `attention_prefill_steel` templated on the head dim and admitted at 64; the 0.5B's prefill 2.88× at 3,900 rows and 1.33× at 512 (D2-G4 SHIP); the 128 instance byte-identical (G1); kernel error equal to the fused kernel's at 64/80/96 (G2); set A on Q05 SHIPS, closer to the reference than fused (G3). Left as its own row: 80 and 96, each after a model-level gate | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D3 | done | done 2026-10-22: bit-identical (D3-G1, G2 PASS); `delta_rule_seq` at M=512 27.2 → 19.7 ms GPU, median 0.7245, 10 of 10 pairs (D3-G3 SHIP, run at night on the owner's word); `delta_conv_seq` 0.53 of its time | `docs/measurements/ksd3-2026-10/README.md` |
@@ -867,6 +867,18 @@ the same change. `KSC5_OLD_ATTN` (a test-only define, `ksc5OldAttnForTest`, read
 C5-G3: none; the change allocates nothing (threadgroup memory only). Planted defect, run once and reverted: the sum's shuffle level
 adds the lane's own value twice (`v + v`) at stride 1; C5-G1 goes red. A second plant inside the `KSC5_OLD_ATTN` branch must turn
 (b) red, so the define reaches the old arm. Stopping rule: one pass each. Cost: G1 about a minute; G2 about 5 minutes.
+
+**KS-C5 read 2026-10-24 (09:44–09:53): PARK.** The code is kept on branch `ksc5-attn-parked-2026-10-24`, not merged.
+- **C5-G1 PASS.** (a) 208 cells (both libraries, head dims 64 and 128, 13 key counts, windows 0 and 64, a sink on and off), 0 outputs
+  differ; the registered plant turned every cell red. (b) The 0.5B and the 1.5B after a 300-token prompt, 0 of 4,861,952 logits
+  differ over 32 steps; llama-tiny 0 of 8,192 after a 95-token prompt (its context is 128). A plant in the `KSC5_OLD_ATTN` branch
+  turned llama-tiny's 8,192 logits red, so the define reaches the old arm.
+- **C5-G2** (09:51–09:53, the lock held exclusively; the 1-minute load 2.46 at the start, each pair's 2.53–3.23; 12.9 GB available):
+  old 10.88–13.05 ms a token, new 10.81–13.42; **median new/old 1.0108, 4 of 10 pairs faster: PARK.** Both arms moved between about
+  10.8 and 12.9 ms within the run, a spread far larger than the 1–2% the change could give (attention is 16% of a 512-key token, so
+  0.2 ms is its ceiling). The reading does not resolve a direction; it is recorded as unresolved, not as a loss.
+Logs: `~/goinfer-logs/ksc5-g1a-2026-10-24.log`, `~/goinfer-logs/ksc5-plant-2026-10-24.log`, `~/goinfer-logs/ksc5-g1b-2026-10-24.log`,
+`~/goinfer-logs/ksc5-oldplant-2026-10-24.log`, `~/goinfer-logs/ksc5-g2-2026-10-24.log`.
 
 ## 7. Metal prefill and family kernels (KS-D)
 
