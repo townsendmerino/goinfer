@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/oliverbestmann/webgpu v1.36.0
-	github.com/townsendmerino/aikit v1.74.1-0.20261024180951-0df4c98b97f2
+	github.com/townsendmerino/aikit v1.75.0
 	github.com/townsendmerino/goinfer v0.23.0
 )
 
