@@ -89,9 +89,6 @@ func TestPrefillGateReference(t *testing.T) {
 		// Q35, Qwen3.5-0.8B (a Gated-DeltaNet hybrid, safetensors): references for D-B01's fidelity gate, f32 like S. Built
 		// only when GOINFER_CPU_REF_MODELS names it.
 		{"Q35", "GOINFER_CPU_MODEL_Q35", "$HOME/models/qwen3.5-0.8b", "", refKs([]int{256, 512, 1024})},
-		// PH3, Phi-3 mini at int4 (head dim 96): references for KS-D2b's grade of the steel kernel at 96, f32 like S. Built only
-		// when GOINFER_CPU_REF_MODELS names it.
-		{"PH3", "GOINFER_CPU_MODEL_PH3", "$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "", refKs([]int{256, 512, 1024, 3900})},
 	}
 	// GOINFER_CPU_REF_MODELS (comma-separated cell names) narrows the run; unset builds S and D7, as before Q05.
 	want := map[string]bool{"S": true, "D7": true}

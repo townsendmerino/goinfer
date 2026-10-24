@@ -52,16 +52,12 @@ func TestKSD2_steel128Logits(t *testing.T) {
 
 // TestKSD2_prefillSpeed is D2-G4: Qwen2.5-Coder-0.5B (head dim 64, the .gguf at int4), PrefillLast at K=3,900 and at K=512,
 // attention_prefill_steel against attention_prefill_fused (prefillSteelAttnOff) on one resident, A B B A over 10 pairs after 2
-// warm runs each. A timed run: hold the timing lock (GOINFER_KSD2_TIMING=1). GOINFER_KSD2_MODEL names another checkpoint
-// (KS-D2b's D2b-G3: Phi-3 mini at int4, head dim 96).
+// warm runs each. A timed run: hold the timing lock (GOINFER_KSD2_TIMING=1).
 func TestKSD2_prefillSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSD2_TIMING") == "" {
 		t.Skip("set GOINFER_KSD2_TIMING=1 (a timed run under the timing lock)")
 	}
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
-	if p := os.Getenv("GOINFER_KSD2_MODEL"); p != "" {
-		path = p
-	}
 	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", DirectLoad: true, ResidentContext: 4096})
 	if err != nil {
 		t.Fatal(err)

@@ -136,8 +136,8 @@ type prefillState struct {
 	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
 	pAttnFused Pipeline
 	// R19: attention_prefill_steel, the prefill attention at the head dims steelHeadDim admits (it replaces pAttnFused there);
-	// pAttnSteel64 and pAttnSteel96 are its head-dim-64 and -96 instances (KS-D2, KS-D2b). steelFor picks by head dim.
-	pAttnSteel, pAttnSteel64, pAttnSteel96 Pipeline
+	// pAttnSteel64 is its head-dim-64 instance (KS-D2). steelFor picks by head dim.
+	pAttnSteel, pAttnSteel64 Pipeline
 	// KS-D1: attention_prefill_steel_split at head dims 256 and 512 (splitSteelHeadDim), where the exact kernel ran.
 	pAttnSteel256, pAttnSteel512 Pipeline
 	// attention_prefill_tiled: pAttn for a pass past prefillExactAttnMaxKeys keys (exactAttnTile).
@@ -223,7 +223,7 @@ func (r *resident) ensurePrefill() {
 		pKv: p("kv_store_f16"), pKvI8: p("kv_store_i8_prefill"), pDeqI8: p("kv_dequant_i8_f16"), pAttn: p("attention_prefill"), pAttnImg: p("attention_prefill_img"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"), pResScaled: p("residual_f16_scaled"),
-		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"), pAttnSteel64: p("attention_prefill_steel_hd64"), pAttnSteel96: p("attention_prefill_steel_hd96"),
+		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"), pAttnSteel64: p("attention_prefill_steel_hd64"),
 		pAttnSteel256: p("attention_prefill_steel_hd256"), pAttnSteel512: p("attention_prefill_steel_hd512"), pAttnTiled: p("attention_prefill_tiled"),
 
 		pRouterGemm:       p("router_gemm_f16"),
@@ -391,17 +391,14 @@ func (r *resident) prefillAttnKernels() (fused, steel bool) {
 }
 
 // steelHeadDim reports whether attention_prefill_steel runs a layer of head dim hd. The kernel is built at 64, 80, 96 and
-// 128, but a head dim is admitted only after a model at it passes set A's pooled gate (R19 for 128, KS-D2 for 64, KS-D2b for
-// 96; the survey's KS-D2 row has 80's state).
-func steelHeadDim(hd int) bool { return hd == 128 || hd == 64 || hd == 96 }
+// 128, but a head dim is admitted only after a model at it passes set A's pooled gate (R19 for 128, KS-D2 for 64; the
+// survey's KS-D2 row has 80 and 96's state).
+func steelHeadDim(hd int) bool { return hd == 128 || hd == 64 }
 
 // steelFor is the steel pipeline for head dim hd, one of steelHeadDim's.
 func (pf *prefillState) steelFor(hd int) Pipeline {
-	switch hd {
-	case 64:
+	if hd == 64 {
 		return pf.pAttnSteel64
-	case 96:
-		return pf.pAttnSteel96
 	}
 	return pf.pAttnSteel
 }

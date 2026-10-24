@@ -133,9 +133,6 @@ func TestPrefillGateVsReference(t *testing.T) {
 		// Q05, Qwen2.5-Coder-0.5B (head dim 64): KS-D2's grade of the steel kernel at head dim 64, run only when
 		// GOINFER_METAL_GATE_MODELS names it; its references are TestPrefillGateReference's Q05 cell.
 		{"Q05", "GOINFER_METAL_MODEL_Q05", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"},
-		// PH3, Phi-3 mini at int4 (head dim 96): KS-D2b's grade of the steel kernel at 96, run only when GOINFER_METAL_GATE_MODELS
-		// names it; its references are TestPrefillGateReference's PH3 cell.
-		{"PH3", "GOINFER_METAL_MODEL_PH3", "$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"},
 	}
 	// GOINFER_METAL_GATE_MODELS (comma-separated cell names) picks the models; unset runs S and D7, as before Q35.
 	gateModels := map[string]bool{"S": true, "D7": true}
@@ -146,7 +143,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 		}
 	}
 	decisionKs := metalGateDecisionKs([]int{256, 512, 1024})
-	confirmKsByModel := map[string][]int{"S": {3900}, "Q05": {3900}, "PH3": {3900}}
+	confirmKsByModel := map[string][]int{"S": {3900}, "Q05": {3900}}
 	// GOINFER_METAL_GATE_CONFIRM=0 drops the confirmation cells, which never gate: a run deciding a short-K floor (A-P02)
 	// pools several candidate sets, one invocation each, and K = 3900's cell would cost minutes in every one of them.
 	if os.Getenv("GOINFER_METAL_GATE_CONFIRM") == "0" {
