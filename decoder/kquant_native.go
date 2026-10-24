@@ -15,6 +15,9 @@ type kquantSrc struct {
 	kind   string
 	start  int
 	perm   []int32
+	// int8Bytes and nativeBytes are the weight's int8 copy (rows and per-row scales) and the file's blocks for it: what a lane
+	// that uploads the blocks saves on the device (metalKQuantSavings).
+	int8Bytes, nativeBytes int64
 }
 
 // src is destination row r's source row.
@@ -41,7 +44,13 @@ func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat
 	} else {
 		return
 	}
-	src := kquantSrc{tensor: name, kind: kind, start: rowSrc(0) / in}
+	bb := int64(176)
+	if kind == "q6k" {
+		bb = 210
+	}
+	q8s, sc, _, _ := wm.Int8()
+	src := kquantSrc{tensor: name, kind: kind, start: rowSrc(0) / in, int8Bytes: int64(len(q8s)) + 4*int64(len(sc)),
+		nativeBytes: int64(wm.Rows()) * int64(in/256) * bb}
 	for r := range wm.Rows() {
 		if rowSrc(r)/in != src.start+r {
 			src.perm = make([]int32, wm.Rows())
@@ -55,6 +64,21 @@ func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat
 		w.kquant = map[*int8]kquantSrc{}
 	}
 	w.kquant[unsafe.SliceData(q8)] = src
+}
+
+// metalKQuantSavings is the device bytes Metal's q4k lane does not allocate because it uploads the file's Q5_K and Q6_K
+// blocks (KQuantReader) in place of their int8 copies: the sum over the recorded weights of int8 less native bytes. The
+// host copy keeps the int8 copies, so only the device term of Metal's need takes it (ResidentNeedBytes,
+// ResidentDenseWeightBytesFor).
+func (m *Model) metalKQuantSavings(backend string) int64 {
+	if backend != "metal" || m == nil || m.w == nil {
+		return 0
+	}
+	var n int64
+	for _, s := range m.w.kquant {
+		n += s.int8Bytes - s.nativeBytes
+	}
+	return n
 }
 
 // KQuantReader serves the GGUF's own Q5_K and Q6_K blocks for the int8 matmuls of a q4k load that the file stores that way,

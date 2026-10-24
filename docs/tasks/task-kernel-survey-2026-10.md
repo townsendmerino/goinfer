@@ -92,7 +92,7 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −375 MB on the device); O1-G7 KILL (Phi-3 0.9809, the 1.5B 1.0183), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
+| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (Phi-3 0.9809, the 1.5B 1.0183), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
@@ -711,10 +711,12 @@ through `go.work`.
   - The four `TestQ4KStep_*` tests pass on the 0.5B, whose Q6_K layers now run native.
   - `TestQ4KLaneResidentQwen/0.5B` reads worst cosine 0.998474 and argmax 31/32 against the CPU, with its bar at 0.99.
 - **O1-G3: PASS** on the 0.5B through `decoder.Load` on Metal (`TestKSO1_laneBytes`).
-  - Lane device bytes: 335,239,680 → 325,831,680. The Q6_K segments hold exactly the file's 42,900,480 bytes.
+  - Lane device bytes: 335,239,680 → 325,831,680. The Q6_K segments hold exactly the file's 42,900,480 bytes. These undercount the
+    int8 scales; the corrected figures are in "Review fixes for #215".
   - Load heap: 775.5 → 770.3 MB.
 - **O1-G4: PASS.** The CPU q4k fingerprint (`TestKSO1_cpuQ4KFingerprint`: 16 greedy tokens plus the last hidden state's bytes) is
-  `acab5556…50f5` both at origin/main 8cfd5fca and at KS-O1.
+  `acab5556…50f5` both at origin/main 8cfd5fca and at KS-O1. This hashed tokens and the hidden state; the registered
+  logits-bytes digest is in "Review fixes for #215".
 - **O1-G6: PASS** (11:26–11:27, the lock held shared). On the 0.5B, against the CPU at f32 on the file, over 566 teacher-forced
   positions: mean KL 0.00155 (int8 lane) → 0.00119 (native), **0.7638**. Native is lower on all 8 prompts and at 371 of 566
   positions. Log: `~/goinfer-logs/kso1-g6-2026-10-24.log`.
@@ -740,13 +742,14 @@ through `go.work`.
 - **What the in-model reading says about O1-G0:** a token saves 0.45 ms on Phi-3, where O1-G0's summed kernel times projected about
   3 ms.
 - **What the native lane does buy:**
-  - Phi-3's lane holds 375 MB less on the device, the file's own bytes.
+  - Phi-3's lane holds 357 MB less on the device, the file's own bytes. The head stays int8, so its 17.7 MB of the survey's
+    375 MB is not saved.
   - It moves the logits toward the file (O1-G6, 0.7638 of the int8 lane's KL).
 - **Where the code is:** parked, unmerged, on branch `ks-o1-native-2026-10-24` (88dcfc1d and after). The aikit accessor it needs is
   townsendmerino/aikit#18, also unmerged.
 
 **Owner override of O1-G7's KILL, Francis 2026-10-24 11:47 am (relayed by the coordinator): option C, ship.**
-- **The decision:** native Q5_K/Q6_K ships on Metal for its memory and fidelity gains. On Phi-3 the device holds 375 MB less, the
+- **The decision:** native Q5_K/Q6_K ships on Metal for its memory and fidelity gains. On Phi-3 the device holds 357 MB less, the
   file's own bytes. On the 0.5B, the logits' KL to the file is 0.7638 of the int8 lane's. Francis accepts the measured 1.8% slowdown
   on Qwen2.5-Coder-1.5B q4k (median 1.0183).
 - **What it does not change:** this is his decision, not a re-grading. O1-G7 stays KILL as registered, and `TestKSO1_speed` still
@@ -773,6 +776,48 @@ through `go.work`.
     from it.
   - Log: `~/goinfer-logs/kso1-g5-2026-10-24.log`.
 - **With O1-G5 passed, KS-O1 ships on Metal under the override.**
+
+**Review fixes for #215, 2026-10-24 (the second-opinion review; no output-changing code):**
+- **Metal's fit pricing now prices the native lane.**
+  - `ResidentNeedBytes("metal")` and `ResidentDenseWeightBytesFor("metal")` take off `metalKQuantSavings`: the int8 bytes less the
+    file's block bytes of every weight the lane uploads natively. The host copy stays int8 and is still priced so.
+  - No guard threshold or margin changes; only the device term now matches what the build allocates. It follows from Francis's
+    option C, relayed by the coordinator as a guard change. Francis can veto it separately.
+  - O1-G3 asserts the pricing's saving equals the device bytes saved, exactly, on both models.
+- **The mapping's lifetime.** Only `Load` reaches a q4k GGUF load, and every exit after `loadWeights` goes through `withResidency`
+  (which releases it) or `Close`. No path holds it past the load.
+  - A CPU-backend load releases it at `withResidency` by design: keeping it would retain the parsed header (51 MB on the 0.5B) for a
+    model that never builds a Metal resident.
+  - A resident built later in a test maps the file again, and pays that parse.
+- **O1-G3 corrected and extended.**
+  - The first counter read each scale buffer's `Len()`, an element count, as bytes; it now counts 4 bytes a scale. One discarded
+    warm-up load runs before the two arms.
+  - **The 0.5B:** 336,119,808 → 326,679,552 bytes; Q6_K exactly the file's 42,900,480; the pricing saves 9,440,256, the device drop.
+    Load heap 770.3 → 770.3 MB.
+  - **Phi-3 mini, new (`TestKSO1_laneBytesPhi3`), covering Q5_K:** 2,612,330,496 → 2,255,486,976 bytes (**−356.8 MB**). Q5_K is
+    exactly the file's 622,854,144 and Q6_K its 330,301,440. The pricing saves 356,843,520, the device drop. Load heap 2,848.8 →
+    2,848.5 MB.
+  - **PASS on both.** Log: `~/goinfer-logs/kso1-g3b-2026-10-24.log`.
+  - The saving is 357 MB, not 375: the head stays int8.
+- **O1-G4 on its registered quantity.** `TestKSO1_cpuQ4KFingerprint` now hashes every position's logits bytes, over the prompt and
+  16 greedy tokens. It checks errors and the token count, and asserts the digest taken at origin/main 8cfd5fca, `e662bdd6…0bfbe`.
+  The tests are tagged `darwin && arm64 && goinfer_testhooks`, because the CPU reference is bit-identical only within an arch.
+  **PASS.**
+- **O1-G6 does not cover Q5_K.** No model on the Mac stores Q5_K and also fits at f32 for the reference: Phi-3 at f32 is about
+  15 GB on a 16 GB machine. Q5_K's fidelity rests on O1-G1 (kernels), O1-G5 (G-Q2 on Phi-3) and O1-G3 (its bytes are the file's).
+- **O1-G0 was not re-timed** after the prototype fixes (aligned Q6_K planes, ≥ 256 MiB rotation, dispatch checks). Its readings
+  stand as recorded, with the notes above. The kernels themselves were re-graded by O1-G1, G2 and G3.
+- **`TestKSO1_speed` changes:**
+  - It loads on the CPU backend, so only one resident is built.
+  - It checks that the int8 arm's copies fit before allocating them: available memory, the 2 GB margin, and the GPU working set.
+  - It swaps every projection group holding a native segment (qkv, o, gate|up, down).
+  - It is not re-run: the O1-G7 reading above stands.
+- **Also applied:**
+  - O1-G1 adds NB = 32 for Q5_K.
+  - `TestKSO1_referenceMatchesAikit` fails on an accessor error.
+  - `TestKSO1_smallShapeReading` checks its pipelines and dispatches, and rotates ≥ 256 MiB.
+  - #212's follow-ups: both run scripts fail when their result line is missing, O1a-G2 compares logits' bits, and the untouched
+    guard fails on any element still holding its initial bits.
 
 **Notes on O1-G0's instrument, from #212's review (2026-10-24):**
 - **Where it lives:** the prototype kernels, `TestKSO1_gemvTiming`, `TestKSO1_protoMatchesRef` and `TestKSO1_q4kSideReading` are on

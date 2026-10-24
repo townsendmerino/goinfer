@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"sort"
@@ -11,8 +12,8 @@ import (
 )
 
 // TestKSO1_smallShapeReading is an ungraded reading after O1-G7: gemv_q6k_f32_rows<R> at R = 1, 2, 4 against gemv_w8_f32_rows2 at
-// Qwen2.5-Coder-1.5B's Q6_K shapes (ffn_down, attn_v) and Phi-3's ffn_down, back-to-back dispatches over 32 rotated copies,
-// median of 7. A timed run: hold the timing lock (GOINFER_KSO1_TIMING=1).
+// Qwen2.5-Coder-1.5B's Q6_K shapes (ffn_down, attn_v) and Phi-3's ffn_down, back-to-back dispatches over copies rotating
+// >= 256 MiB of native bytes, median of 7. A timed run: hold the timing lock (GOINFER_KSO1_TIMING=1).
 func TestKSO1_smallShapeReading(t *testing.T) {
 	if os.Getenv("GOINFER_KSO1_TIMING") == "" {
 		t.Skip("set GOINFER_KSO1_TIMING=1 (a timed run under the timing lock)")
@@ -29,14 +30,20 @@ func TestKSO1_smallShapeReading(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pipe := func(n string) Pipeline { p, _ := d.NewComputePipeline(lib, n); return p }
+	pipe := func(n string) Pipeline {
+		p, err := d.NewComputePipeline(lib, n)
+		if err != nil {
+			t.Fatalf("%s: %v", n, err)
+		}
+		return p
+	}
 	q := d.NewCommandQueue()
 	rng := rand.New(rand.NewSource(5))
 	for _, s := range []struct {
 		name string
 		N, K int
 	}{{"1.5B down", 1536, 8960}, {"1.5B v", 256, 1536}, {"phi3 down", 3072, 8192}} {
-		copies := 32
+		copies := min(1024, int(math.Ceil(float64(256<<20)/float64(s.N*(s.K/256)*210)))) // >= 256 MiB of native bytes, more of int8
 		var nat, w8, w8s []Buffer
 		for range copies {
 			raw := kso1Q6KPlanes(kso1Q6KGGUF(rng, s.N, s.K), s.N, s.K)
@@ -55,12 +62,15 @@ func TestKSO1_smallShapeReading(t *testing.T) {
 			var ms []float64
 			for r := range 8 {
 				e := q.Begin()
-				for i := range 64 {
+				for i := range max(64, 2*copies) {
 					f(e, i)
 				}
 				e.End()
+				if err := e.Err(); err != nil {
+					t.Fatalf("dispatch: %v", err)
+				}
 				if r > 0 {
-					ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/64)
+					ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/float64(max(64, 2*copies)))
 				}
 			}
 			sort.Float64s(ms)

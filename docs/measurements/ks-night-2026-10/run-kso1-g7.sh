@@ -3,7 +3,7 @@
 # $HOME/goinfer-bench/kso1-bin/SHA256SUMS, under the timing lock held exclusively. It waits up to 10 minutes for the 1-minute
 # load to fall under 3.5, then takes the lock and checks the load again against the void line (4.0, half the Mac's 8 cores), and
 # records load, available memory and swap at the start. Exits 75 when the load never falls or is over the line under the lock,
-# and on a fit refusal.
+# and on a fit refusal; fails when the log has no "[O1-G7] Phi-3 median" line (a skipped or empty run).
 set -u
 B=$HOME/goinfer-bench/kso1-bin
 LOG=$HOME/goinfer-logs/kso1-g7-$(date +%Y-%m-%d-%H%M).log
@@ -31,4 +31,6 @@ python3 ../scripts/timing_lock.py run --wait 3600 --label kso1-g7 -- bash -c '
   exit $rc' 2>&1 | tee "$LOG"
 rc=${PIPESTATUS[0]}
 grep -q 'FIT-REFUSED\|was NOT loaded' "$LOG" && { echo "FIT REFUSED (exit 75)"; exit 75; }
+[ "$rc" = 75 ] && exit 75
+grep -qF '[O1-G7] Phi-3 median' "$LOG" || { echo "FAILED: no '[O1-G7] Phi-3 median' line in $LOG (the test skipped or never ran)"; exit 1; }
 exit $rc

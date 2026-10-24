@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/hostmem"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -117,8 +119,8 @@ func kso1NativeWorst(t *testing.T, d *Device, src, kind string, N, K int, rng *r
 
 // TestKSO1_nativeKernels is O1-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the q4k lane's native
 // gemv_q5k_f32 and gemv_q6k_f32 rows kernels (plain, residual, bias at R = 4) against the float64 reference that dequantizes
-// the same blocks, at a partial threadgroup over 1, 2, 6, 19 and 35 super-blocks a row and at Phi-3's qkv (Q5_K), down and
-// head (Q6_K) shapes; random
+// the same blocks, at a partial threadgroup over 1, 2, 6, 19 and 35 super-blocks a row and at Phi-3's shapes (qkv, 12, and
+// down, 32, for both kinds; the head for Q6_K); random
 // blocks, so the 6-bit scales and mins reach both range ends. Each row within G-Q1's bar (1e-5 of sum|w*a|), and each planted
 // defect red.
 func TestKSO1_nativeKernels(t *testing.T) {
@@ -131,7 +133,7 @@ func TestKSO1_nativeKernels(t *testing.T) {
 	// NB = K/256 of 1, 2, 6, 19 and 35 (the 1.5B's attn_v, the 0.5B's and the 1.5B's ffn_down) besides Phi-3's 12 and 32: an odd
 	// or non-multiple-of-4 block count is where a row-strided Q6_K layout would misalign.
 	odd := [][2]int{{1, 256}, {37, 512}, {37, 1536}, {37, 4864}, {37, 8960}}
-	shapes := map[string][][2]int{"q5k": append(slices.Clone(odd), [2]int{9216, 3072}), "q6k": append(slices.Clone(odd), [2]int{3072, 8192}, [2]int{32064, 3072})}
+	shapes := map[string][][2]int{"q5k": append(slices.Clone(odd), [2]int{9216, 3072}, [2]int{3072, 8192}), "q6k": append(slices.Clone(odd), [2]int{3072, 8192}, [2]int{32064, 3072})}
 	for _, kind := range []string{"q5k", "q6k"} {
 		for _, sh := range shapes[kind] {
 			worst := kso1NativeWorst(t, d, src, kind, sh[0], sh[1], rng)
@@ -184,7 +186,10 @@ func TestKSO1_referenceMatchesAikit(t *testing.T) {
 				ref  func([]byte, int) []float64
 			}{{"q5k", 176, g.Q5KRaw, kso1DequantQ5K}, {"q6k", 210, g.Q6KRaw, kso1DequantQ6K}} {
 				dims, raw, ok, err := k.get(name)
-				if err != nil || !ok {
+				if err != nil {
+					t.Fatalf("%s %s: %v", filepath.Base(path), name, err)
+				}
+				if !ok {
 					continue
 				}
 				in, out := dims[0], dims[1]
@@ -305,13 +310,14 @@ func TestKSO1_stepMatchesDecode(t *testing.T) {
 	}
 }
 
-// kso1LaneBytes is the device bytes of a resident's q4k-lane weight segments (each segment's weight and scale buffers).
+// kso1LaneBytes is the device bytes of a resident's q4k-lane weight segments (each segment's int8 or block weight buffer and,
+// for int8, its float32 scales).
 func kso1LaneBytes(r *resident) (total int, byKind map[string]int) {
 	byKind = map[string]int{}
 	for _, L := range r.layers {
 		for _, segs := range [][]q4kSeg{L.qkvSegs, L.oSegs, L.guSegs, L.dSegs} {
 			for _, sg := range segs {
-				n := sg.w.Len() + sg.s.Len()
+				n := sg.w.Len() + 4*sg.s.Len() // Len counts elements: int8 weights, float32 scales
 				total += n
 				byKind[sg.kind] += n
 			}
@@ -320,18 +326,13 @@ func kso1LaneBytes(r *resident) (total int, byKind map[string]int) {
 	return total, byKind
 }
 
-// TestKSO1_laneBytes is O1-G3 on the Qwen2.5-Coder-0.5B q4_k_m (its Q6_K ffn_down layers): decoder.Load on the Metal backend,
-// which builds the resident from the load's own mapping, with the native kinds and with the int8 copies (q4kNativeOffForTest,
-// set before the load, so that arm never opens the reader, as before KS-O1). It compares the device bytes of the q4k lane's
-// weight segments and the Go heap the whole load allocates. Native must upload exactly the file's Q6_K bytes in place of
-// their int8 rows and scales, and allocate no more heap.
-func TestKSO1_laneBytes(t *testing.T) {
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no GGUF at %s", path)
-	}
-	build := func(off bool) (int, map[string]int, uint64) {
+// kso1LaneBytesCheck is O1-G3 on one q4k GGUF: decoder.Load on the Metal backend, which builds the resident from the load's own
+// mapping, with the int8 copies (q4kNativeOffForTest, set before the load, so that arm never opens the reader, as before
+// KS-O1) and with the native kinds, after one discarded warm-up load so neither arm reads the file cold. Native must upload
+// exactly the file's layer Q5_K and Q6_K bytes in place of their int8 rows and scales; the fit pricing's saving
+// (metalKQuantSavings) must equal the device bytes it saves; and the whole load must allocate no more Go heap.
+func kso1LaneBytesCheck(t *testing.T, path, label string) {
+	build := func(off bool) (int, map[string]int, uint64, int64) {
 		q4kNativeOffForTest = off
 		defer func() { q4kNativeOffForTest = false }()
 		var m *decoder.Model
@@ -345,35 +346,65 @@ func TestKSO1_laneBytes(t *testing.T) {
 		defer m.Close()
 		mr, ok := m.ResidentForwardForTest().(*metalResident)
 		if !ok || !mr.r.q4kLane {
-			t.Fatalf("the load did not build a q4k-lane Metal resident (%T)", m.ResidentForwardForTest())
+			t.Fatalf("%s: the load did not build a q4k-lane Metal resident (%T)", label, m.ResidentForwardForTest())
 		}
 		tot, by := kso1LaneBytes(mr.r)
-		return tot, by, heap
+		return tot, by, heap, m.KQuantDeviceSavingsForTest()
 	}
-	oldTot, oldBy, oldHeap := build(true)
-	newTot, newBy, newHeap := build(false)
+	build(false)
+	oldTot, oldBy, oldHeap, _ := build(true)
+	newTot, newBy, newHeap, saved := build(false)
 	g, err := decoder.OpenGGUFMmap(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer g.Close()
-	fileQ6K := 0
+	file := map[string]int{}
 	for _, name := range g.Names() {
 		if !strings.HasPrefix(name, "blk.") {
 			continue
 		}
-		if _, raw, ok, _ := g.Q6KRaw(name); ok {
-			fileQ6K += len(raw)
+		for kind, get := range map[string]func(string) ([]int, []byte, bool, error){"q5k": g.Q5KRaw, "q6k": g.Q6KRaw} {
+			_, raw, ok, err := get(name)
+			if err != nil {
+				t.Fatalf("%s %s: %v", label, name, err)
+			}
+			if ok {
+				file[kind] += len(raw)
+			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "[O1-G3] 0.5B q4k lane device bytes: int8 copies %d (%v), native %d (%v), the file's layer Q6_K %d; load heap %d -> %d bytes\n",
-		oldTot, oldBy, newTot, newBy, fileQ6K, oldHeap, newHeap)
-	if newBy["q6k"] != fileQ6K || newBy["q4k"] != oldBy["q4k"] || newTot >= oldTot {
-		t.Errorf("native q6k %d bytes against the file's %d, q4k %d against %d, total %d against %d", newBy["q6k"], fileQ6K, newBy["q4k"], oldBy["q4k"], newTot, oldTot)
+	fmt.Fprintf(os.Stderr, "[O1-G3] %s lane device bytes: int8 copies %d (%v), native %d (%v), the file's layer blocks %v; fit pricing saves %d; load heap %d -> %d bytes\n",
+		label, oldTot, oldBy, newTot, newBy, file, saved, oldHeap, newHeap)
+	if newBy["q5k"] != file["q5k"] || newBy["q6k"] != file["q6k"] || newBy["q4k"] != oldBy["q4k"] || newTot >= oldTot {
+		t.Errorf("%s: native q5k %d / q6k %d bytes against the file's %v, q4k %d against %d, total %d against %d", label, newBy["q5k"], newBy["q6k"], file, newBy["q4k"], oldBy["q4k"], newTot, oldTot)
+	}
+	if saved != int64(oldTot-newTot) {
+		t.Errorf("%s: the fit pricing saves %d bytes, the device %d", label, saved, oldTot-newTot)
 	}
 	if newHeap > oldHeap {
-		t.Errorf("the native load allocated %d heap bytes against %d", newHeap, oldHeap)
+		t.Errorf("%s: the native load allocated %d heap bytes against %d", label, newHeap, oldHeap)
 	}
+}
+
+// TestKSO1_laneBytes is O1-G3 on the Qwen2.5-Coder-0.5B q4_k_m (Q6_K ffn_down layers; no Q5_K).
+func TestKSO1_laneBytes(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no GGUF at %s", path)
+	}
+	kso1LaneBytesCheck(t, path, "0.5B")
+}
+
+// TestKSO1_laneBytesPhi3 is O1-G3 on Phi-3 mini (the registered GOINFER_PHI3_GGUF asset), whose Q5_K attn_qkv the 0.5B lacks.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -run '^TestKSO1_laneBytesPhi3$' -v ./metal/
+func TestKSO1_laneBytesPhi3(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	kso1LaneBytesCheck(t, decoder.AssetPathForTest(t, "GOINFER_PHI3_GGUF"), "Phi-3 mini")
 }
 
 // kso1KL is KL(p || q) in nats for the softmaxes of logits p and q, in float64.
@@ -491,13 +522,15 @@ func TestKSO1_towardTheFile(t *testing.T) {
 	}
 }
 
-// kso1Speed is O1-G7's A/B on one q4k GGUF. It builds one resident on the native lane, plus int8 copies of every projection
-// that holds a Q5_K or Q6_K segment (q4kLaneProj with no reader), and swaps each layer's segments between the two per run. Each
-// run is 128 greedy decode tokens after a 32-token prompt through ForwardEmb, A B B A over 10 pairs after 2 warm runs each, with
-// each pair's start load printed. A fit refusal prints FIT-REFUSED. It returns the median native/int8 per-token time and how many
-// pairs native was faster.
+// kso1Speed is O1-G7's A/B on one q4k GGUF. It builds one resident on the native lane (from a CPU-backend load, so only one
+// resident exists), plus int8 copies of every projection group (qkv, o, gate|up, down) that holds a Q5_K or Q6_K segment
+// (q4kLaneProj with no reader), after checking the copies fit: available memory must cover them plus the 2 GB margin, and the
+// GPU's working set must hold them beside the resident. Each run swaps every layer's groups between the two and decodes 128
+// greedy tokens after a 32-token prompt through ForwardEmb, A B B A over 10 pairs after 2 warm runs each, with each pair's start
+// load printed. A fit refusal prints FIT-REFUSED. It returns the median native/int8 per-token time and how many pairs native was
+// faster.
 func kso1Speed(t *testing.T, path, label string) (float64, int) {
-	mg, err := decoder.Load(path, decoder.Options{Quant: "q4k", ResidentContext: 256})
+	mg, err := decoder.Load(path, decoder.Options{Backend: "cpu", Quant: "q4k", ResidentContext: 256})
 	if err != nil {
 		if strings.Contains(err.Error(), "NOT loaded") {
 			fmt.Fprintf(os.Stderr, "[O1-G7] %s FIT-REFUSED: %v\n", label, err)
@@ -517,8 +550,6 @@ func kso1Speed(t *testing.T, path, label string) (float64, int) {
 	if !r.q4kLane {
 		t.Fatal("the resident did not take the q4k lane")
 	}
-	type segs struct{ qkv, d []q4kSeg }
-	native, int8s := make([]segs, len(r.layers)), make([]segs, len(r.layers))
 	hasNative := func(ss []q4kSeg) bool {
 		for _, s := range ss {
 			if s.kind == "q5k" || s.kind == "q6k" {
@@ -527,27 +558,55 @@ func kso1Speed(t *testing.T, path, label string) (float64, int) {
 		}
 		return false
 	}
-	nNative := 0
+	partBytes := func(w *linalg.WeightMat) int64 {
+		if raw, ok := w.Q4K(); ok {
+			return int64(len(raw))
+		}
+		q8, sc, _, _ := w.Int8()
+		return int64(len(q8)) + 4*int64(len(sc))
+	}
+	type group struct {
+		segs  *[]q4kSeg
+		parts []*linalg.WeightMat
+	}
+	var rebuild []group
+	var extra int64
 	for l := range r.layers {
 		L, lw := &r.layers[l], &mg.Weights().Layers[l]
-		native[l], int8s[l] = segs{L.qkvSegs, L.dSegs}, segs{L.qkvSegs, L.dSegs}
-		if hasNative(L.qkvSegs) {
-			int8s[l].qkv = q4kLaneProj(r.d, nil, &lw.QProj, &lw.KProj, &lw.VProj)
-			nNative++
-		}
-		if hasNative(L.dSegs) {
-			int8s[l].d = q4kLaneProj(r.d, nil, &lw.DownProj)
-			nNative++
+		for _, g := range []group{{&L.qkvSegs, []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}}, {&L.oSegs, []*linalg.WeightMat{&lw.OProj}},
+			{&L.guSegs, []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}}, {&L.dSegs, []*linalg.WeightMat{&lw.DownProj}}} {
+			if hasNative(*g.segs) {
+				rebuild = append(rebuild, g)
+				for _, w := range g.parts {
+					extra += partBytes(w)
+				}
+			}
 		}
 	}
-	if nNative == 0 {
+	if len(rebuild) == 0 {
 		t.Fatalf("%s: no projection took a native kind", label)
 	}
+	const margin = 2 << 30
+	avail := hostmem.Available()
+	devNow := residentNeedBytes(mg) - mg.ResidentHostCopyBytes(metalMoESlotsFromEnv(mg))
+	switch wsCap := metalWorkingSetCap(); {
+	case avail > 0 && extra+margin > avail:
+		fmt.Fprintf(os.Stderr, "[O1-G7] %s FIT-REFUSED: the int8 arm's copies need %d bytes + the 2 GB margin, %d available\n", label, extra, avail)
+		t.Fatalf("%s: the int8 arm's %d bytes do not fit %d available", label, extra, avail)
+	case wsCap > 0 && devNow+extra > wsCap:
+		fmt.Fprintf(os.Stderr, "[O1-G7] %s FIT-REFUSED: resident %d + int8 copies %d bytes over the GPU working set %d\n", label, devNow, extra, wsCap)
+		t.Fatalf("%s: the int8 arm does not fit the GPU working set", label)
+	}
+	native, int8s := make([][]q4kSeg, len(rebuild)), make([][]q4kSeg, len(rebuild))
+	for i, g := range rebuild {
+		native[i], int8s[i] = *g.segs, q4kLaneProj(r.d, nil, g.parts...)
+	}
+	fmt.Fprintf(os.Stderr, "[O1-G7] %s: %d projection groups native; the int8 arm adds %d bytes (%d available)\n", label, len(rebuild), extra, avail)
 	nb, ob := kso1LaneBytes(r)
-	fmt.Fprintf(os.Stderr, "[O1-G7] %s: %d projections native; lane device bytes %d (%v)\n", label, nNative, nb, ob)
-	use := func(a []segs) {
-		for l := range r.layers {
-			r.layers[l].qkvSegs, r.layers[l].dSegs = a[l].qkv, a[l].d
+	fmt.Fprintf(os.Stderr, "[O1-G7] %s: lane device bytes %d (%v)\n", label, nb, ob)
+	use := func(a [][]q4kSeg) {
+		for i, g := range rebuild {
+			*g.segs = a[i]
 		}
 	}
 	defer use(native)
