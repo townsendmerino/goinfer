@@ -24,6 +24,7 @@ class Flags(unittest.TestCase):
     def test_available_passes_mb_only(self):
         mb, cmd = self.run_with(hostmem.available_mb)
         self.assertEqual((mb, cmd[-1:]), (42, ["-mb"]))
+        self.assertNotIn("-reclaimable", cmd)
 
     def test_reclaimable_passes_reclaimable(self):
         mb, cmd = self.run_with(hostmem.reclaimable_mb)

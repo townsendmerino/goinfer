@@ -49,7 +49,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM11-int8-MLA-T3 | done | done 2026-10-23 on D14 (b) then (a): no single int8 projection, and no pair, clears both gates (o alone clears Moonlight and fails V2-Lite), so MLA is f32 on every load again (+944 MB on V2-Lite and Moonlight). On that build both gates PASS (V2-Lite 0.999243, Moonlight 0.999508, continuations exact) and `deepseek_v2`, `deepseek_v3`, `kimi_k2` are validated | `docs/measurements/mem11-int8-2026-10/mla.md` |
 | MEM12-scratch | done | — | branch `mem12-scratch-2026-10`; SCR-G1 PASS per buffer (amended 2026-10-22), G3, G4 PASS, G2 PASS as amended, `docs/measurements/mem12-scratch-2026-10/README.md` |
 | MEM12-f32res | done | — | branch `mem12-f32res-2026-10`; F32R-G1, G2 PASS, `docs/measurements/mem12-f32res-2026-10/README.md` |
-| MEM12-ringres | open | either box: a ring layer's unused append-forever reservation (f32 from `NewKVCache`, f16/int8 from `setQuant`); S | `docs/measurements/mem12-f32res-2026-10/README.md` |
+| MEM12-ringres | open (5 cells) | built 2026-10-24, branch `mem12-ringres-2026-10-24`: a ring layer reserves no append-forever K/V in any form (gemma2-tiny's hint costs half); RR-G1 PASS; RR-G2 partial, 107 PASS and five owed. Left: the five `gemma-3-270m` session and sliding-window tests, on a box with that checkpoint, which RR-G2 needs before it reads PASS | §4 MEM12, "MEM12-ringres gates" |
 | MEM12-arena | killed | it waited on KV9, which closed 2026-10-21; reopen with KV9 | — |
 | MEM13-jobs, MEM13-adapters | done | — | b1402a9f; #94 (cacaa8ec) |
 | MEM13-tokenizer | done | — | branch `mem13-tokenizer-2026-10`; TK-G1..G3 PASS, `docs/measurements/mem13-tokenizer-2026-10/README.md` |
@@ -867,6 +867,39 @@ min for the parity refresh.
 > reservation to the byte; on the tree before, an f16 cache's hint cost three times its own storage. G2's three heavy
 > int8 tests could not load `gemma-3-4b-it` past the fit guard by evening; on the 0.5B they read the same on the branch
 > and on main. Found on the way: ring layers carry an unused append-forever reservation (MEM12-ringres).
+
+**MEM12-ringres gates, registered 2026-10-24 before the code (RR-G), on the owner's order of the Mac work.** The build:
+`enableRings` gives up every append-forever reservation of a layer it makes a ring (f32 from `NewKVCache`'s hint, f16 or
+int8 and the int8 scales from `setQuant`), leaving empty, non-nil slices as `setQuant` does for f32. A ring layer never reads
+or grows them: `Append` and the batched commit write its ring, and `reserveRows` and `regrowLayer` skip or never reach it.
+Tier 0 answers it, by the same counters as F32R-G1.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| RR-G1 bytes | 0 | F32R-G1's instrument, `TestKVQuant_reservesNoF32`, on `llama-tiny` and `gemma2-tiny` with f32, f16 and int8 KV, `NewCache(512)` | a ring layer holds 0 capacity in every form; a global layer keeps 512 × its KV width in its form (f32 capacity 0 under f16 and int8, as before); and the bytes over `NewCache(0)` are within 1% of the global layers' reservation alone (on main they also carry the ring layers') |
+| RR-G2 identity | 0 | the ring, sliding-window and KV tests by name (`Ring\|Window\|KVF16\|KVI8\|KVQuant\|Gemma2\|Session\|Prefix`), then `scripts/refresh_parity_hashes.sh` | all PASS (not skip); the parity refresh is green |
+
+Planted defect, run once on the committed tree and reverted: the reservation dropped on every layer, global ones too (G1 red).
+Stopping rule: one pass each; a FAIL is diagnosed, not re-run. Cost: seconds for G1; minutes for G2 and the parity refresh.
+
+> **Read 2026-10-24 (Mac).** **RR-G1 PASS**: the hint's bytes over `NewCache(0)`, main → branch: gemma2-tiny (2 of 4 layers
+> ring) f32 1,048,576 → 524,288, f16 524,288 → 262,144, int8 294,912 → 147,456, each equal to its two global layers'
+> reservation; llama-tiny (no ring) unchanged at 524,288 / 262,144 / 163,840; every ring layer 0 in every form. The plant
+> (every layer skipped) turned it red. **RR-G2: partial, not PASS** (its bar is all PASS, not skip): by name, 104 PASS, 0 FAIL; the three heavy int8 KV tests PASS on
+> `gemma-3-4b-it` (its local layers ring), with `GOINFER_HEAVY_TESTS=1`. Five tests need `testdata/gemma-3-270m`, which this
+> Mac does not have (no Hugging Face token to fetch it): `TestSession_reuseParity`, `TestSession_snapshotRoundTrip`,
+> `TestLoadSession_rejectsCorrupt`, `TestLoadSession_allocationCeilingNotBodyRatio`, `TestForward_slidingWindowParity`; owed on
+> a box that has it. The parity refresh is green (33 forward goldens pass, 0 fail; 42 `deps_hash` lines). Also: `setQuant` now
+> honours the same predicate, so a recurrent mixer layer no longer gets a quantized reservation either, as `NewKVCache` already
+> gave it no f32 one. Logs: `~/goinfer-logs/mem12rr-g2-2026-10-24.log`, `~/goinfer-logs/mem12rr-g2-heavy-2026-10-24.log`,
+> `~/goinfer-logs/mem12rr-parity-2026-10-24.log`.
+>
+> **Amended 2026-10-24, after a second-opinion review.** The build does not have `enableRings` give the reservation up, as the
+> registration above says: one predicate, `Architecture.ringLayerAt`, names the ring layers, and `NewCache` passes it both to
+> `NewKVCache` as the layers that reserve nothing and to `enableRings` as the layers it rings, so the two cannot drift apart.
+> RR-G1's test now computes the expected bytes from each layer's expected capacity rather than reading them back, checks the
+> int8 scales' capacity too, and requires gemma2-tiny to have ring layers (2 of 4) and llama-tiny none; it reads the same
+> figures, and the plant is still red.
 
 **MEM12-scratch gates, registered 2026-10-21 before the code (SCR-G).** The build, three parts. (1) The MoE expert-major
 branch of the batched pass takes its K × hidden output, its done flags and `moeMLPBatch`'s buffers (router logits, the
