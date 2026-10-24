@@ -8347,6 +8347,99 @@ refused resize).
 - **Still open:** on-demand KV (parked; G-S20a prices it at about 5% once the swap is in); computing cold experts on the CPU
   (step 4, an owner decision).
 
+**Step 4, cold experts computed on the CPU (Francis, 2026-10-23 16:45, relayed: build it outright; gates bit-identical
+against the GPU path, the per-layer sync cost, and decode tok/s against #198's 31.6).**
+
+*What the GPU computes, read from `cuda/moe.cu`, `cuda/glue.cu` and their committed PTX (`cuda/testdata/moe.ptx`,
+`glue.ptx`).* Each routed expert runs three kernels in order:
+- `gemv_w4a8_moe` (gate and up). Integer `dp4a` products, per lane `facc = facc + fma(s0, p0, round(s1·p1))` over the word
+  pairs, one `fma` for a ragged tail, a fixed shuffle tree, then `× aScale`. All of it is IEEE-exact and reproducible on a
+  CPU.
+- `glu_quant` (GELU and requantization to int8). Its `tanhf` compiles to `ex2.approx` and `rcp.approx`, hardware
+  approximations a CPU cannot reproduce bit for bit, so this kernel stays on the GPU.
+- `gemv_w4a8_moe_wacc` (down, weighted into `g4x2` in expert order). Reproducible, like the first.
+
+*Design.* For each MoE layer, the misses split between the PCIe copy (today's path) and the CPU:
+- **Round trip 1.** The existing router readback, plus the layer's int8 activation. The CPU computes the gate/up products
+  for its share of the misses and uploads them.
+- **Round trip 2.** The GPU runs `glu_quant` on them, the CPU reads back the int8 result, computes the down products, and
+  uploads them.
+- **Order.** The weighted accumulation into `g4x2` stays in expert order. Hit experts write their down product to scratch,
+  and one combine kernel replays the accumulate epilogue for every expert in order, so the GPU's own experts do not wait
+  behind a CPU one.
+- **Cache.** CPU-computed misses are not admitted to the slot cache; the copied ones are, as today.
+
+*Estimate, revised from the 16:3x report.* The activation has to round-trip through the GPU, and each layer's output
+feeds the next, so the CPU's time does not hide behind GPU work; the gain is splitting a layer's misses between PCIe and
+the CPU at once. With 0.23 ms per copied miss (G-S20a), an assumed 0.1 ms per CPU expert and 0.08 ms of round trips per
+layer that uses the CPU, the projection is about 36 to 40 tok/s (52 to 56 s a form), not 38 to 45.
+
+*Gates, registered 2026-10-23 before any code.*
+- **G-S20h, the CPU kernels (tier 0).** A Go replica of `gemv_w4a8_moe` and of the down product's pre-accumulate result:
+  bit-identical to the GPU kernels on random int4 weights, f16 scales and int8 activations at the 26B's geometry (2816 →
+  1408 gate/up, 704 → 2816 down), every row of 8 random experts. Planted defects, each of which must turn it red: the tail
+  `fma` written as a multiply and an add, the pair sum's operands swapped, and the shuffle tree's order reversed.
+- **G-S20i, exactness of the split (tier 0).** Two parts:
+  - The reordered GPU-only path (scratch plus in-order combine) is bit-identical to today's chain.
+  - On `testdata/gemma4-moe-tiny`, with forced patterns (every miss to the CPU, none, alternating), every position's
+    logits are bit-identical to the fully resident run.
+- **G-S20j, the per-layer sync cost and the CPU's rate (tier 1, real 26B, in process).** Reported: the two round trips' cost
+  per layer with no CPU work, and the CPU's time per expert (gate/up and down) at the worker count used. **Kill rule:** if
+  the gain these two numbers project, by the S20 line, is under 10% of decode time, stop and report before the served gate.
+- **G-S20k, served speed and identity (tier 1).** A B B A, #198's binary against the new one, inv01 to inv03, as G-S20g.
+  **PASS:** decode at least 1.15 of #198's in both pairs (31.6 → 36.3 tok/s), and replies byte-identical. 1.05 to 1.15:
+  parked. Prediction: 36 to 40 tok/s.
+
+**Tier-0 reads, 2026-10-23 17:28 to 17:50 on nobara** (under the timing lock; logs in `~/goinfer-logs/g4-decode/`).
+- **G-S20h, the CPU kernels: PASS as amended.** The Go replica (on branch `g4-decode-step4-2026-10-23`) is bit-identical to `gemv_w4a8_moe`
+  and to `gemv_w4a8_moe_wacc`'s accumulate at both geometries. That covers every row of 8 random experts: 11,264 gate/up
+  values and 22,528 down values, each kernel. The AVX2 kernel on the same branch is bit-identical to the replica on
+  nine row lengths, and `fmaf32` rounds once on 2,000,000 triples, 235,089 of them on a float32 midpoint.
+- **G-S20h amendment, made after the first run.** Two of the three registered planted defects, "the tail fma as a multiply
+  and an add" and "the pair's operands swapped", changed no value at either geometry. They are equivalent mutants, not
+  missed defects: a scale's 11-bit significand times a word's integer product (at most 8 × 8 × 127, 13 bits) is exact in
+  float32, so every pairing of multiplies with adds gives the same result. They are replaced with two defects that change
+  the order of float additions: the pair added unfolded, and the 64-word blocks walked in reverse. The rule also becomes
+  "red at one geometry at least", because the down rows hold a single block, where reversal is the identity.
+  - Read: unfolded pair red on 2 of 11,264 gate/up values; reversed blocks red on 2; the serial lane sum red on 6,812 and
+    3,529.
+  - Most of the arithmetic is exact. The order only matters where the shuffle tree mixes the lanes' magnitudes.
+- **G-S20i, exactness of the split: PASS.**
+  - `gemv_w4a8_moe_res` plus `moe_combine` is bit-identical to the chain of 8 `gemv_w4a8_moe_wacc` launches (2,816 rows),
+    with every product from the device, from the host, alternating, and first and last from the host.
+  - On `testdata/gemma4-moe-tiny` at 2 slots, all 16 positions' logits are bit-identical to the fully resident run with
+    every miss on the host (64 host experts), none, one per layer (32) and all on alternate layers (32).
+- **G-S20j, the sync cost and the CPU's rate: PASS the kill rule.**
+  - Round trips, per layer with 2 host experts and no host compute, 1,900 iterations: stage 27.1 µs, GLU round trip 39.6 µs,
+    return and combine 55.6 µs; 122.3 µs in all (p90s 39.5, 56.1 and 75.8).
+  - The host's rate, experts drawn from a 430 MB pool: fastest at 4 workers, 142 µs for one expert and 128 µs each for two
+    (23 to 27 GB/s). At 8 workers it is 145 to 165 µs an expert and at 12, 166 to 208, so the pool is 4 workers.
+  - Projection: with 230 µs a copied miss and about 1.7 misses a layer, splitting saves about 4.3 ms of a 31.6 ms token, about
+    14%. That is over the 10% bar, so the served gate runs. Revised prediction: about 36 to 37 tok/s, the low end of 36 to 40.
+
+**G-S20k read 2026-10-23 18:02 to 18:15 on nobara: FAIL.** Old is #198's binary (`3cf6c6744`); new is the split, built
+from branch `g4-decode-step4-2026-10-23`. A B B A, inv01 to inv03 in each cell, load 3.0 to 3.8 at the cell starts, none void. Raw:
+`docs/measurements/multimodal-support-2026-10/s20/step4/`.
+- **Identity: held.** All nine replies are byte-identical to the old binary's.
+- **Speed: no gain.** Mean decode, old 31.70 and 31.77 tok/s, new 31.38 and 31.24. That is 0.990 and 0.983 in the two pairs,
+  under the 1.05 park line and far from the 1.15 bar. Per form, 61.6 s old and 62.3 to 62.4 s new.
+- **The split did run.** 22 experts a token were computed on the host, about 41% of the misses (23,712 of 57,592 on inv01).
+  Hit and miss counts repeat exactly between the two new cells.
+- **Why the projection missed.** At G-S20a's 0.23 ms a copied miss, moving 22 misses a token to the host should have saved
+  about 5 ms a token; the token got about 0.4 ms slower instead. So a host expert costs the critical path about what the copy
+  it replaced did. Two causes fit the numbers; neither is isolated:
+  - **Latency.** One host expert's path (wait for the input, gate/up, the GELU round trip, down, the upload) takes about
+    260 µs, roughly one expert's 3.35 MB over PCIe at 13 GB/s. The 122 µs of round trips (G-S20j) consume the CPU's
+    bandwidth edge, and most layers have one or two misses.
+  - **Shared memory bandwidth.** The PCIe copies and the CPU both read the expert stack from the same two DDR4 channels, so
+    running them at once does not add the bandwidth the plan assumed.
+- **Disposition.** Per the registration, the split does not ship. Its code (the host replica and AVX2 kernel, the split
+  kernels and the resident plumbing, with the tier-0 gates) is kept on branch `g4-decode-step4-2026-10-23`, unmerged.
+  - The tier-0 results stand: the CPU can reproduce the W4A8 expert GEMVs bit for bit.
+  - What failed is the speed premise on this box.
+  - A box with more memory channels, or a GELU the host can reproduce (which would remove one round trip), changes the
+    arithmetic; neither is in scope here.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
