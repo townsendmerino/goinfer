@@ -61,6 +61,10 @@ func emResidualRows(t *testing.T, dir string, on bool, slots string) [][]float32
 // through an int8 requantization that hides a last-bit difference in it (TestMoEExpertMajorCUDA_bitIdentical compares
 // logits and passed while the residuals differed). It also holds C' to the fully resident build's residuals.
 func TestMoEExpertMajorCUDA_residualIdentical(t *testing.T) {
+	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
+	// takes by default has its own gate (TestGemma4MoE_floatParity).
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}

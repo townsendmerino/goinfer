@@ -8288,6 +8288,16 @@ prefill on CUDA in batched passes.
     About +2% a turn and 5 to 8% slower decode, inside the registered 25%.
   - **Ships as:** the 26B's (gemma4 MoE) CUDA decode on float activations by default, once G-S19e to G-S19g pass. A
     rollback switch lives in the resident (a test seam), not an env read.
+  - **A contract change, stated here:**
+    - For a Gemma 4 MoE on CUDA, decode is no longer bit-identical to the batched prefill, which stays W4A8.
+    - The tests that hold the W4A8 decode to the W4A8 CPU or prefill path now build with `floatActOffForTest`. These are
+      `TestGemma4MoE_residentParity`, `_localize`, `TestGemma4MoEScaled_residentParity`, `TestPrefillMoE_bitIdentical`
+      and both expert-major identity tests.
+    - The float decode has its own: `TestGemma4MoE_floatParity`, tiny fixture, cosine 1.0000000 and argmax equal at all
+      16 positions against the CPU float path.
+    - Nothing for this family depends on the old identity: no speculative verify, and reused KV from either path is
+      valid.
+    - Open: the prefill's own W4A8 rounding. G-S19g passed with it, so it is not built.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load
   2.2 to 3.4 at every cell start, none void. Per 160-token form turn:
   - old (`9bafcc12`): 89.9 / 90.4 / 93.7 / 94.7 s, time to first token 80.9 to 85.7 s;
