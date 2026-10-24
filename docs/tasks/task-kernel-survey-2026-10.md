@@ -56,7 +56,7 @@
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | open (build) | baseline read 2026-10-24: Nemotron-Nano-9B-v2 sequential prefill 14.5 tok/s at K=512, batched prefill not admitted. Next: the batched Mamba-2 prefill (M–L), its gates registered first | survey, "KS-D8 baseline read" |
-| KS-D9 | open (G2) | built on branch `ksd9-moe-batch-2026-10`: the generic pager's phase 2 batched expert by expert; D9-G1 bit-identical on 7 paged cells. Next: D9-G2 on a real MoE pulled from the archive | survey, "KS-D9 read" |
+| KS-D9 | done | done 2026-10-24: the generic pager's phase 2 batched expert by expert; D9-G1 bit-identical on 7 paged cells; Qwen1.5-MoE-A2.7B's 512-row paged prefill median 0.9050 of per-row, 3 of 3 pairs, 0 logits differ (D9-G2 SHIP) | survey, "KS-D9 read", "D9-G2 read" |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
@@ -1392,6 +1392,14 @@ its timed run (after the load and the warm runs), and a pair with any read over 
 is void and re-run, up to 6 times; an unreadable load or memory reading fails the test; any differing last logit fails it. The bar
 is unchanged. The `.giw` sits in `~/goinfer-bench/qmoe/` on the Mac's internal SSD (the session's brief keeps it out of
 `~/models`; the same disk, not an archive path).
+
+**D9-G2 read 2026-10-24 (15:06–15:15, the lock held exclusively; 13.9 GB available and 8.1 GB reclaimable at the start): SHIP.**
+Qwen1.5-MoE-A2.7B's int4 Metal `.giw` (sha256 `da920a0d…`, equal on both boxes) paged at 16 slots, a 512-row layer-major
+`PrefillLast`. Per-row phase 2 16.08, 15.98 and 16.08 s; batched 14.55, 14.47 and 15.60 s; **median batched/per-row 0.9050, 3 of 3
+pairs faster**, 0 of 151,936 last logits differ in every pair. Six pairs were void and re-run: the load rose to 10.9 during
+one batched arm, then stayed between 3.7 and 10.1 for five attempts. Every valid arm read a load of 2.09–3.72 and 6.60–6.88 GiB
+reclaimable. Log: `~/goinfer-logs/ksd9-g2-2026-10-24.log`. The `.giw` was deleted from the Mac after grading (Francis's word of 12:45);
+nobara's copy is in `~/goinfer-bench/qmoe/`.
 
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
