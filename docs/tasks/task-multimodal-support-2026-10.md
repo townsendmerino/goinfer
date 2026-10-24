@@ -8250,7 +8250,9 @@ prefill on CUDA in batched passes.
       a fresh greedy turn with `max_tokens` 700, with Francis's serve flags.
     - **PASS:** on every invoice, every number in its label appears in the reply, compared as numbers with thousands
       separators removed. The numbers are the invoice number's digits, both dates, each line's quantity, unit price
-      and amount, the subtotal, tax and total. The table form's 25 cell values must all appear too.
+      and amount, the subtotal, tax and total. The table form's cell values must all appear too. (Amended 2026-10-23, 19:15, before any G-S19g run: the
+      table has 30 numeric cells, the five regions and an "All regions" row, not 25. Truth: `table_truth.json`, read
+      off the image. Grader: `grade_digits.py`.)
     - Reported on the same set: the shipped W4A8 GPU path, as the baseline.
   - **G-S19h, speed (tier 1):** decode tok/s and per-form turn time, float against W4A8, A B B A under the timing lock.
     Reported, no bar; if float is more than 25% slower per form, the choice goes back to Francis before it ships.
