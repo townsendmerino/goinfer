@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
-| KS-E3 | open | either box: `TEncode` from `TestDecodeTWE_split` on today's binding | — |
+| KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode 24.4 → 23.9 ms a token, median 0.9796, 10 of 10 pairs (E3-G2 SHIP) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1244,6 +1244,15 @@ were rebuilt must go red. Stopping rule: one pass each. Cost: G1 a minute; G2 ab
 fixture is at hand, so the registered plant cannot fire. The plant is instead a pending buffer recorded without the logits copy
 (substituted after each `Run`), which E3-G1 must turn red. The instruments are `TestKSE3_encodeAheadIdentity` and
 `TestKSE3_decodeSpeed`; the bars are unchanged.
+
+**KS-E3 read 2026-10-24 (Mac, 12:05–12:13): SHIP.**
+- **E3-G1 PASS:** llama-tiny and the 1.5B at int8int8 on WebGPU with two KV slots, 24 logit rows each (8 `Forward`, a 4-row
+  `ForwardN`, 2 `ForwardNoLogits`, 4 `Forward`, 4 on slot 1, 4 back on slot 0), 0 logits differ, encode-ahead on against off. The
+  plant (a pending buffer without the logits copy) turned llama-tiny red, 4,352 logits.
+- **E3-G2 SHIP** (12:11–12:13, the lock held exclusively; the 1-minute load 2.02 at the start, each pair's 1.28–1.59; reclaimable
+  9.9 GB, available 13.1 GB): off 24.35–24.73 ms a token, on 23.81–24.21, **median on/off 0.9796, 10 of 10 pairs faster**, about
+  0.5 ms a token (the survey's estimate ~0.6). Read on main's build, without KS-E2.
+Logs: `~/goinfer-logs/kse3-g1-2026-10-24.log`, `~/goinfer-logs/kse3-g2-2026-10-24.log`.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
