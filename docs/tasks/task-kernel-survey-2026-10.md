@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
-| KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode 24.4 → 23.9 ms a token, median 0.9796, 10 of 10 pairs (E3-G2 SHIP) | survey, "KS-E3 read" |
+| KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode about 0.6 ms a token faster, median 0.9764, 10 of 10 pairs on the review's re-run (E3-G2 SHIP) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1266,6 +1266,10 @@ fixture exists: `buildLlamaTinyLoRAFixtureGPU` makes one, so the registered plan
   reclaimable before its load, voiding and re-running a pair started above a load of 4.0 or under 2 GB reclaimable, and failing on
   the bar (SHIP iff median on/off ≤ 0.98 with at least 9 of 10 faster). The first reading (0.9796) was taken with the next token
   recorded before the staging map was requested; the re-run reads the corrected order and decides.
+
+**E3-G2 re-run read 2026-10-24 (13:42–13:45, under the lock; "== start 13:42:07 reclaimable_mb 9161"): SHIP.** off 24.46–25.95 ms a token, on
+23.75–24.88; **median on/off 0.9764, 10 of 10 pairs faster**, 2 void starts (a load spike to 6.5) re-run; each valid pair started at
+a load of 2.11–3.74 and 2.5–4.0 GB reclaimable. Log: `~/goinfer-logs/kse3-g2-rerun-2026-10-24.log`.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
