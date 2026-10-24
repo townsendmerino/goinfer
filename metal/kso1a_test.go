@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -97,6 +98,15 @@ func TestKSO1a_q4kBitsUnchanged(t *testing.T) {
 			ba, bb, uK, uN := NewBufferFloats(d, a), NewBufferFloats(d, bias), NewBufferU32(d, uint32(K)), NewBufferU32(d, uint32(N))
 			cmp := func(label string, run func(arm string) []uint32) {
 				want, got := run("old"), run("new")
+				untouched := 0
+				for i, v := range got {
+					if v == math.Float32bits(init[i]) {
+						untouched++
+					}
+				}
+				if untouched == len(got) {
+					t.Fatalf("precise=%v N=%d K=%d %s: the kernel wrote no output", precise, N, K, label)
+				}
 				diff := 0
 				for i := range want {
 					if want[i] != got[i] {
@@ -120,6 +130,9 @@ func TestKSO1a_q4kBitsUnchanged(t *testing.T) {
 						e := q.Begin()
 						e.Dispatch(pipe(arm, name), (N+R-1)/R*32, 256, args...)
 						e.End()
+						if err := e.Err(); err != nil {
+							t.Fatalf("%s %s: dispatch: %v", arm, name, err)
+						}
 						return slices.Clone(out.U32s()[:N])
 					})
 				}
@@ -133,6 +146,9 @@ func TestKSO1a_q4kBitsUnchanged(t *testing.T) {
 						e := q.Begin()
 						e.Dispatch(pipe(arm, name), N*32, 256, w, ba, out, uK, uN, uLda, uLdo, bb, NewBufferU32(d, uint32(mode)))
 						e.End()
+						if err := e.Err(); err != nil {
+							t.Fatalf("%s %s: dispatch: %v", arm, name, err)
+						}
 						return slices.Clone(out.U32s()[:Bs*N])
 					})
 				}
@@ -145,8 +161,9 @@ func TestKSO1a_q4kBitsUnchanged(t *testing.T) {
 // TestKSO1a_phi3Speed is O1a-G3, with O1a-G2 inside it: Phi-3 mini 4k at --quant q4k (the registered GOINFER_PHI3_GGUF asset),
 // one resident, its three Q4_K pipelines swapped between the library built from the source before KS-O1a (kso1aOld) and the
 // resident's own; 128 greedy decode tokens after a 32-token prompt through ForwardEmb, A B B A over 10 pairs after 2 warm runs
-// each, each pair's start load printed. Every run's tokens and final logits must equal the first run's (O1a-G2). A fit
-// refusal prints FIT-REFUSED. A timed run: hold the timing lock (GOINFER_KSO1_TIMING=1).
+// each, each pair's start load printed. Every run's tokens and final logits must equal the first run's (O1a-G2), and at least
+// 9 of 10 pairs must be faster (O1a-G3, the small-gains rule); the median is reported against C1-G4's 0.98. A fit refusal
+// prints FIT-REFUSED. A timed run: hold the timing lock (GOINFER_KSO1_TIMING=1).
 func TestKSO1a_phi3Speed(t *testing.T) {
 	if os.Getenv("GOINFER_KSO1_TIMING") == "" {
 		t.Skip("set GOINFER_KSO1_TIMING=1 (a timed run under the timing lock)")
@@ -247,6 +264,10 @@ func TestKSO1a_phi3Speed(t *testing.T) {
 			i, la[:len(la)-1], o*1e3, 1/o, n*1e3, 1/n, n/o)
 	}
 	slices.Sort(ratios)
+	med := (ratios[4] + ratios[5]) / 2
 	fmt.Fprintf(os.Stderr, "[O1a-G3] median new/old %.4f, %d of 10 pairs below 1; O1a-G2: %d runs, tokens and final logits identical: %v\n",
-		(ratios[4]+ratios[5])/2, below, runs, !t.Failed())
+		med, below, runs, !t.Failed())
+	if below < 9 {
+		t.Errorf("O1a-G3 PARK: %d of 10 pairs faster, the small-gains rule needs 9 (median %.4f)", below, med)
+	}
 }

@@ -745,6 +745,16 @@ through `go.work`.
 - **Where the code is:** parked, unmerged, on branch `ks-o1-native-2026-10-24` (88dcfc1d and after). The aikit accessor it needs is
   townsendmerino/aikit#18, also unmerged.
 
+**Notes on O1-G0's instrument, from #212's review (2026-10-24):**
+- **Where it lives:** the prototype kernels, `TestKSO1_gemvTiming`, `TestKSO1_protoMatchesRef` and `TestKSO1_q4kSideReading` are on
+  branch `ks-o1-native-2026-10-24` only, beside the parked native lane.
+- **The prototype's Q6_K layout is valid only when NB is a multiple of 4.** It splits planes per row with a row stride of NB × 210
+  bytes, so its `uint2` loads are 8-byte aligned only then. O1-G0 read Q6_K at NB 12 and 32, where the layout holds. The production
+  kernels use planes over the whole segment instead (the amendment above).
+- **The native weights rotated over less than registered.** The copy count was sized from the int8 bytes, so the native kernels
+  rotated over 186 MiB (qkv), 217 MiB (down) and 231 MiB (head), against the ≥ 256 MiB registered. That is still far beyond the
+  system cache this rotation is meant to defeat.
+
 **KS-O1a · The q4k lane's Q4_K scale decode without a branch (bit-identical). Registered 2026-10-24 before the code, from an
 ungraded side reading beside O1-G0.**
 - **Side reading (10:42–10:47, the lock held exclusively, load 1.68 at the start):** the shipped `q4k_rows_acc`, changed only in
