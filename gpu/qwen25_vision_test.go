@@ -33,6 +33,7 @@ func q25Tiny(t *testing.T) *vision.QwenVisionEncoder {
 	gvRandomise(rng, gw.MergerLNw)
 	H := gw.Hidden
 	scale := func(f float32, xs ...[]float32) {
+		makeWritable(xs...)
 		for _, x := range xs {
 			for i := range x {
 				x[i] *= f
@@ -41,6 +42,7 @@ func q25Tiny(t *testing.T) *vision.QwenVisionEncoder {
 	}
 	for _, b := range gw.Blocks {
 		gvRandomise(rng, b.Norm1w, b.Norm2w)
+		makeWritable(b.QKVb)
 		for i := range b.QKVb[:2*H] {
 			b.QKVb[i] = float32(0.5 * rng.NormFloat64())
 		}

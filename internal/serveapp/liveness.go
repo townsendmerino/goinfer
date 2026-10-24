@@ -112,35 +112,18 @@ func (s *server) withModelAnthropic(w http.ResponseWriter, name string, fn func(
 	fn(lm)
 }
 
-// closeEntryNatives releases this entry's PRIVATE native resources — the vision and audio towers — which are not
-// shared with any other registry entry (adapters do not copy them) and would otherwise leak on
-// unload just like the model's weights. Idempotent (nils each). The shared *decoder.Model is NOT
-// closed here; that is refs-gated in the unload path.
+// closeEntryNatives releases this entry's native resources — the vision and audio towers — which would otherwise leak on
+// unload just like the model's weights. Idempotent (nils each). The audio encoders load per entry and are always closed;
+// the startup vision tower is shared by every startup entry, adapters included, so it is closed only by the last holder
+// (visionShare). The shared *decoder.Model is NOT closed here; that is refs-gated in the unload path.
 func (lm *loadedModel) closeEntryNatives() {
-	if lm.venc != nil {
-		lm.venc.Close()
-		lm.venc = nil
+	last := lm.visionShare.release()
+	lm.visionShare = nil
+	if last {
+		lm.closeVisionTowers()
 	}
-	if lm.qwenEnc != nil {
-		lm.qwenEnc.Close()
-		lm.qwenEnc = nil
-	}
-	// A device tower holds its weights and scratch on its own device ledger, which only its Close frees. The GLM-OCR and
-	// Qwen3.5+ encoders and the Gemma 4 encoders are plain host weights: dropping the reference frees them.
-	if lm.glm != nil && lm.glm.acc != nil {
-		_ = lm.glm.acc.Close()
-	}
-	lm.glm = nil
-	if lm.qwen3 != nil && lm.qwen3.acc != nil {
-		_ = lm.qwen3.acc.Close()
-	}
-	lm.qwen3 = nil
-	lm.vproj = nil // no native Close (weights); drop the reference
-	if lm.gemma4Tower != nil {
-		_ = lm.gemma4Tower.Close()
-		lm.gemma4Tower = nil
-	}
-	lm.gemma4Enc = nil
+	lm.venc, lm.vproj, lm.qwenEnc, lm.glm, lm.qwen3 = nil, nil, nil, nil, nil
+	lm.gemma4Enc, lm.gemma4Tower, lm.gemma4Swap, lm.pixtral, lm.lfm2vl = nil, nil, nil, nil, nil
 	if lm.gemma4AudioAcc != nil {
 		_ = lm.gemma4AudioAcc.Close()
 		lm.gemma4AudioAcc = nil
@@ -165,6 +148,65 @@ func (lm *loadedModel) closeEntryNatives() {
 // closeAudioEncoder closes one of an entry's lazily loaded audio encoders at unload. A variable so a test can count the
 // calls.
 var closeAudioEncoder = func(field string, enc interface{ Close() error }) error { return enc.Close() }
+
+// closeVisionTowers closes the entry's vision tower; the caller nils the fields. A device tower holds its weights and
+// scratch on its own device ledger, which only its Close frees. The CPU encoders' weights alias their checkpoint's
+// mappings (aikit vision aliasQMat), which only the encoder's Close releases, so each is closed after the device tower
+// built from it.
+func (lm *loadedModel) closeVisionTowers() {
+	if lm.venc != nil {
+		lm.venc.Close()
+	}
+	if lm.qwenEnc != nil {
+		lm.qwenEnc.Close()
+	}
+	if lm.glm != nil {
+		if lm.glm.acc != nil {
+			_ = lm.glm.acc.Close()
+		}
+		if lm.glm.enc != nil {
+			lm.glm.enc.Close()
+		}
+	}
+	if lm.qwen3 != nil {
+		if lm.qwen3.acc != nil {
+			_ = lm.qwen3.acc.Close()
+		}
+		if lm.qwen3.enc != nil {
+			lm.qwen3.enc.Close()
+		}
+	}
+	if lm.gemma4Tower != nil {
+		_ = lm.gemma4Tower.Close()
+	}
+	if lm.gemma4Enc != nil {
+		lm.gemma4Enc.Close()
+	}
+	if lm.pixtral != nil && lm.pixtral.enc != nil {
+		lm.pixtral.enc.Close()
+	}
+	if lm.lfm2vl != nil && lm.lfm2vl.enc != nil {
+		lm.lfm2vl.enc.Close()
+	}
+}
+
+// visionShare counts the registry entries holding one startup vision tower. release reports whether the caller was the
+// last holder; each holder's unload drains it first, so the last release runs with no encode in flight on any of them.
+// A nil *visionShare is an entry nobody shares a tower with: its release is always the last.
+type visionShare struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (v *visionShare) release() bool {
+	if v == nil {
+		return true
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.n--
+	return v.n <= 0
+}
 
 // startDrain runs the DETACHED phase of unload. The entry is already unpublished (Phase 1). On a bare
 // goroutine — NOT tied to the admin request's context or the shutdown path, so a client disconnect
