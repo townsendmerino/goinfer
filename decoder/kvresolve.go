@@ -234,9 +234,13 @@ func CUDAKVF16Decline(f KVFacts, _ Options) string {
 }
 
 // CUDAKVF16AutoDecline returns why `--kv auto` keeps a model CUDAKVF16Decline lets through at f32 on CUDA, or "" when auto picks f16.
+// A group whose G4 read DOES NOT PASS says so, with the reading (docs/measurements/kv4-cuda-2026-10-21.md §3, "KV4b (G5), G4").
 func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
-	if cudaKVF16AutoCleared(f, o) {
+	switch {
+	case cudaKVF16AutoCleared(f, o):
 		return ""
+	case f.Hybrid:
+		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)"
 	}
 	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
 }
