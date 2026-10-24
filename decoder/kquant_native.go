@@ -50,22 +50,23 @@ func kquantRows(rows, in int, rowSrc func(r int) int) (start int, perm []int32) 
 // record is metadata only; nothing is copied.
 func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat, in int, rowSrc func(r int) int) {
 	q8, sc, _, ok := wm.Int8()
-	if !ok || len(q8) == 0 {
+	if !ok || len(q8) == 0 || wm.Cols() != in {
 		return
 	}
-	start, perm := kquantRows(wm.Rows(), in, rowSrc)
-	src := kquantSrc{tensor: name, start: start, perm: perm}
+	kind, bb := "", int64(0)
+	var dims []int
 	for k, get := range map[string]func(string) ([]int, []byte, bool, error){"q5k": g.Q5KRaw, "q6k": g.Q6KRaw} {
-		if dims, _, ok, err := get(name); kquantServes(dims, ok, err, in, src, wm.Rows()) {
-			src.kind = k
+		if d, _, ok, err := get(name); err == nil && ok {
+			kind, dims, bb = k, d, map[string]int64{"q5k": 176, "q6k": 210}[k]
 		}
 	}
-	if src.kind == "" {
-		return
+	if kind == "" {
+		return // another type: no row map is built for it
 	}
-	bb := int64(176)
-	if src.kind == "q6k" {
-		bb = 210
+	start, perm := kquantRows(wm.Rows(), in, rowSrc)
+	src := kquantSrc{tensor: name, kind: kind, start: start, perm: perm}
+	if !kquantServes(dims, true, nil, wm.Cols(), src, wm.Rows()) {
+		return
 	}
 	src.int8Bytes, src.nativeBytes = int64(len(q8))+4*int64(len(sc)), int64(wm.Rows())*int64(in/256)*bb
 	if w.kquant == nil {
@@ -76,14 +77,18 @@ func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat
 
 // kquantServes reports whether a raw accessor's answer (dims, ok, err) for a weight of rows destination rows over in columns,
 // mapped by src, is one KQuantReader.Rows will serve: read without error, stored as the kind asked, two dims whose columns
-// are in (a multiple of 256), and every source row inside the tensor. noteKQuant records only such a source and Rows checks
-// the same, so a recorded weight is one the lane uploads natively.
+// are in (a multiple of 256), and every source row inside the tensor (a run, or a permutation of exactly rows entries).
+// noteKQuant records only such a source and Rows checks the same, both with the weight's own columns and rows, so a recorded
+// weight is one the lane uploads natively.
 func kquantServes(dims []int, ok bool, err error, in int, src kquantSrc, rows int) bool {
 	if err != nil || !ok || len(dims) != 2 || dims[0] != in || in%256 != 0 || rows <= 0 {
 		return false
 	}
 	if src.perm == nil {
 		return src.start >= 0 && src.start+rows <= dims[1]
+	}
+	if len(src.perm) != rows {
+		return false
 	}
 	for _, r := range src.perm {
 		if r < 0 || int(r) >= dims[1] {

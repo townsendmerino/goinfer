@@ -409,10 +409,11 @@ func kso1LaneBytesCheck(t *testing.T, path, label string) {
 const kso1HeapSlack = 1 << 20
 
 // kso1CheckLayer0Blocks compares the device bytes of layer 0's native segments with the file's own tensors, read straight from
-// the GGUF (not through KQuantReader or q6kPlanarRow): a group's rows come from its fused tensor when that tensor has the group's
-// row count (Phi-3's attn_qkv, ffn_up = gate|up), else from one tensor a part (attn_q/k/v, ffn_gate/ffn_up), in order. Each
-// group's segments (kind, first row, row count) must be the ones the file's tensor types imply, so a part that falls back to
-// int8 or loses rows fails here. Native segments' bytes are then compared: Q5_K rows verbatim, Q6_K through kso1Q6KPlanesRef.
+// the GGUF (not through KQuantReader or q6kPlanarRow): a group's rows come from one tensor a part (attn_q/k/v, ffn_gate/ffn_up)
+// when every part has one, else from the fused tensor (Phi-3's attn_qkv, ffn_up = gate|up), which must have the group's row
+// count exactly. Each group's segments (kind, first row, row count) must be the ones the file implies, its part
+// row counts from the tensors' dims (a fused tensor's split from the model, as the file does not record it), so a part that
+// falls back to int8 or loses rows fails here. Native segments' bytes are then compared: Q5_K rows verbatim, Q6_K through kso1Q6KPlanesRef.
 // These files store no RoPE-permuted rows. At least one segment must be checked.
 func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, path, label string) {
 	g, err := decoder.OpenGGUFMmap(path)
@@ -431,24 +432,40 @@ func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, path, la
 		{L.oSegs, []*linalg.WeightMat{&lw.OProj}, "", []string{"attn_output"}},
 		{L.guSegs, []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}, "ffn_up", []string{"ffn_gate", "ffn_up"}},
 		{L.dSegs, []*linalg.WeightMat{&lw.DownProj}, "", []string{"ffn_down"}}} {
-		rows := 0
-		for _, w := range gr.parts {
-			rows += w.Rows()
-		}
-		// src[r] is the group's row r as (tensor, row in it).
+		// partRows are the group's parts' row counts from the file: each part tensor's own dims, or, for a fused tensor (whose
+		// split the file does not record), the model's split, which must add up to the fused tensor's rows exactly.
 		type at struct {
 			name string
 			row  int
 		}
 		var src []at
-		if dims, ok := g.Dims("blk.0." + gr.fused + ".weight"); gr.fused != "" && ok && len(dims) == 2 && dims[1] == rows {
-			for r := range rows {
+		var partRows []int
+		separate := true // every part has its own tensor (Qwen); else the parts share the fused one (Phi-3)
+		for _, name := range gr.names[:len(gr.parts)] {
+			if !g.Has("blk.0." + name + ".weight") {
+				separate = false
+			}
+		}
+		if fd, ok := g.Dims("blk.0." + gr.fused + ".weight"); !separate && gr.fused != "" && ok {
+			total := 0
+			for _, w := range gr.parts {
+				partRows, total = append(partRows, w.Rows()), total+w.Rows()
+			}
+			if len(fd) != 2 || fd[1] != total {
+				t.Fatalf("%s: blk.0.%s.weight has dims %v, the group's parts %d rows", label, gr.fused, fd, total)
+			}
+			for r := range total {
 				src = append(src, at{"blk.0." + gr.fused + ".weight", r})
 			}
 		} else {
-			for pi, w := range gr.parts {
-				for r := range w.Rows() {
-					src = append(src, at{"blk.0." + gr.names[pi] + ".weight", r})
+			for _, name := range gr.names[:len(gr.parts)] {
+				d, ok := g.Dims("blk.0." + name + ".weight")
+				if !ok || len(d) != 2 || d[1] <= 0 {
+					t.Fatalf("%s: blk.0.%s.weight has dims %v (found %v)", label, name, d, ok)
+				}
+				partRows = append(partRows, d[1])
+				for r := range d[1] {
+					src = append(src, at{"blk.0." + name + ".weight", r})
 				}
 			}
 		}
@@ -468,14 +485,17 @@ func kso1CheckLayer0Blocks(t *testing.T, m *decoder.Model, r *resident, path, la
 		}
 		var wantSegs []segWant
 		off := 0
-		for _, w := range gr.parts {
-			k := kindOf(src[off].name)
-			if n := len(wantSegs); n > 0 && wantSegs[n-1].kind == k {
-				wantSegs[n-1].rows += w.Rows()
-			} else {
-				wantSegs = append(wantSegs, segWant{k, off, w.Rows()})
+		for _, n := range partRows {
+			if n <= 0 {
+				t.Fatalf("%s: a %s part with %d rows", label, gr.names[0], n)
 			}
-			off += w.Rows()
+			k := kindOf(src[off].name)
+			if last := len(wantSegs) - 1; last >= 0 && wantSegs[last].kind == k {
+				wantSegs[last].rows += n
+			} else {
+				wantSegs = append(wantSegs, segWant{k, off, n})
+			}
+			off += n
 		}
 		var gotSegs []segWant
 		for _, sg := range gr.segs {
