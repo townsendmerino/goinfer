@@ -329,7 +329,7 @@ kernel void mc3_gemv_q4k_f32_rows(device const uchar* wq[[buffer(0)]], device co
     for (uint b = ix; b < NB; b += 4u) {
         device const uchar* blk = wr + b*144u;
         half2 dd = as_type<half2>(*(device const uint*)blk);
-        float sc0, m0, sc1, m1; q4k_scale_min(2u*j, blk + 4, sc0, m0); q4k_scale_min(2u*j + 1u, blk + 4, sc1, m1);
+        float sc0, m0, sc1, m1; q4k_scale_min2(j, blk + 4, sc0, m0, sc1, m1);
         uint4 q = *(device const uint4*)(blk + 16u + j*32u + h*16u);
         float d = float(dd.x), dm = float(dd.y);
         SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
