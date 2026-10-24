@@ -63,13 +63,19 @@ func main() {
 		fmt.Printf("physical %.2f GiB, available %.2f (level %d%%); reclaimable %.2f (free %.2f, speculative %.2f, file-backed %.2f, "+
 			"purgeable %.2f); app %.2f, wired %.2f, compressed %.2f GiB (%s)\n", g(r.Physical), g(r.Available), r.Level, g(r.Reclaimable),
 			g(r.Free), g(r.Speculative), g(r.FileBacked), g(r.Purgeable), g(r.App), g(r.Wired), g(r.Compressed), r.Source)
-	case *recl && *mb:
-		fmt.Println(r.Reclaimable >> 20)
-	case *recl:
-		fmt.Println(r.Reclaimable)
-	case *mb:
-		fmt.Println(r.Available >> 20)
 	default:
-		fmt.Println(r.Available)
+		fmt.Println(figure(r, *recl, *mb))
 	}
+}
+
+// figure is the one number hostmem prints without -v: Reclaimable with -reclaimable, else Available; in MiB, rounded down, with -mb.
+func figure(r hostmem.Reading, reclaimable, mb bool) int64 {
+	v := r.Available
+	if reclaimable {
+		v = r.Reclaimable
+	}
+	if mb {
+		return v >> 20
+	}
+	return v
 }

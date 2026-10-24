@@ -34,8 +34,16 @@ def reclaimable_mb(repo=REPO, timeout=120):
     return _mb(["-reclaimable"], repo, timeout)
 
 
-if __name__ == "__main__":
-    mb = reclaimable_mb() if "--reclaimable" in sys.argv[1:] else available_mb()
+def main(argv):
+    """Prints available MiB, or reclaimable MiB with --reclaimable (or cmd/hostmem's -reclaimable); any other argument is an error."""
+    flags = set(argv)
+    if flags - {"--reclaimable", "-reclaimable"}:
+        sys.exit("usage: hostmem.py [--reclaimable]; unknown: " + " ".join(sorted(flags - {"--reclaimable", "-reclaimable"})))
+    mb = reclaimable_mb() if flags else available_mb()
     if mb is None:
         sys.exit("hostmem: no reading")
     print(mb)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
