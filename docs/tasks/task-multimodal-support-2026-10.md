@@ -8225,6 +8225,37 @@ prefill on CUDA in batched passes.
     a garbage digit (the CPU did not on these forms; the GPU did on two). Float activations remove the sensitivity.
     int4 weights with float activations are as stable as int8 weights with them (step 1 of Francis's option (a), 18:52),
     and that run's table reply is correct ("101.6"). So the fix is float-input int4 GEMVs, keeping the int4 weights.
+- **S19 follow-up step 2: float-input int4 GEMVs for the 26B's CUDA decode (Francis's option (a), 18:30). Plan and
+  gates registered 2026-10-23 before any kernel code or measurement.**
+  - **What changes:** every int4 projection in a Gemma 4 decode step takes its activation as f32:
+    - attention q/k/v and o;
+    - the dense MLP gate/up and down;
+    - the experts' gate/up and down.
+
+    This needs new kernels beside the W4A8 ones, which stay: `gemv_w4f32`, `gemv_w4f32_moe`, `gemv_w4f32_moe_wacc`, and
+    a float-output GLU. The router is already f32. The expert kernels change in lockstep with g4-decode's CPU replicas
+    (S20). Prefill is unchanged.
+  - **G-S19e, kernels (tier 0):** each new kernel against a CPU f32 reference (the int4 row dequantized, dotted with
+    the f32 input) on random data at the 26B's shapes:
+    - **PASS:** max relative error at most 1e-5.
+    - **Defects that must go red:** the nibble order of a word swapped; the -8 offset dropped; the group scale read one
+      group off.
+  - **G-S19f, real 26B, teacher-forced (tier 1):** the table form, CPU prefill and upload, then the GPU float decode
+    against the CPU float decode (`SetInt4FloatActForTest`) over 120 steps.
+    - **PASS:** argmax identical at every step, and the worst per-layer residual cosine at least 0.999 at every
+      captured step (95 to 110).
+    - Reported beside it: the W4A8 GPU-vs-CPU readings above (down to 0.44).
+  - **G-S19g, every digit (tier 1, served):**
+    - **Setup:** the 15 invoices in `testdata/glm_ocr/invoices` (ground truth `labels.json`) and the table form, each
+      a fresh greedy turn with `max_tokens` 700, with Francis's serve flags.
+    - **PASS:** on every invoice, every number in its label appears in the reply, compared as numbers with thousands
+      separators removed. The numbers are the invoice number's digits, both dates, each line's quantity, unit price
+      and amount, the subtotal, tax and total. The table form's 25 cell values must all appear too.
+    - Reported on the same set: the shipped W4A8 GPU path, as the baseline.
+  - **G-S19h, speed (tier 1):** decode tok/s and per-form turn time, float against W4A8, A B B A under the timing lock.
+    Reported, no bar; if float is more than 25% slower per form, the choice goes back to Francis before it ships.
+  - **Ships as:** the 26B's (gemma4 MoE) CUDA decode on float activations by default, once G-S19e to G-S19g pass. A
+    rollback switch lives in the resident (a test seam), not an env read.
 - **G-S19d, speed: PASS the kill rule** (`g4/cells.txt`). A B B A, one fresh server per cell, two forms per cell, load
   2.2 to 3.4 at every cell start, none void. Per 160-token form turn:
   - old (`9bafcc12`): 89.9 / 90.4 / 93.7 / 94.7 s, time to first token 80.9 to 85.7 s;
