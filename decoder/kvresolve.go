@@ -210,12 +210,12 @@ func cudaKVF16Delivered(f KVFacts) bool {
 // owner's D7: f16 becomes the default for each family group as it clears its G4, docs/measurements/kv4-cuda-2026-10-21.md §2, G5). A
 // model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
 func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
-	if f.PairwiseRoPE || f.Hybrid || f.MLA {
+	if f.Hybrid || f.MLA {
 		return false
 	}
 	switch f.Family {
 	case "llama", "mistral", "qwen2", "qwen3", "phi3", "gemma2", "gemma3", "qwen2_5_vl", "qwen3_vl", "qwen2_moe", "qwen3_moe", "mixtral",
-		"qwen3_vl_moe", "gpt-oss":
+		"qwen3_vl_moe", "gpt-oss", "cohere", "cohere2":
 		return true
 	}
 	return false
@@ -242,15 +242,17 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 		return ""
 	case f.Hybrid:
 		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)"
-	case f.PairwiseRoPE:
-		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (2 hard flips against f32's 0)"
 	}
 	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
 }
 
-// CUDAKVF16AutoReason is the reason `--kv auto` gives when it picks f16 on CUDA, "" for the plain one. The sliding-window group's says that
-// auto moved by the owner's decision over an AMBIGUOUS G4 cell (docs/measurements/kv4-cuda-2026-10-21.md §5, D-KV4-6).
+// CUDAKVF16AutoReason is the reason `--kv auto` gives when it picks f16 on CUDA, "" for the plain one. The pairwise-RoPE and
+// sliding-window groups' say that auto moved by the owner's decision over a G4 cell that did not pass (docs/measurements/kv4-cuda-2026-10-21.md
+// §5, D-KV4-8 and D-KV4-6); a model with both traits gives the pairwise one.
 func CUDAKVF16AutoReason(f KVFacts, _ Options) string {
+	if f.PairwiseRoPE {
+		return "auto is f16 on CUDA for this family (pairwise RoPE: by the owner's decision over a quality reading at 8,000 keys that failed on 2 hard flips against f32's 0)"
+	}
 	if f.SlidingWindow {
 		return "auto is f16 on CUDA for this family (sliding window: by the owner's decision over an AMBIGUOUS quality reading at 8,000 keys)"
 	}
