@@ -1759,6 +1759,17 @@ Log: `~/goinfer-logs/kse3-g2-gpuguard-2026-10-24.log`.
 stays on main as shipped in #216, on the owner's bit-identical rule: 10 of 10 pairs faster, bit-identical, no memory allocated, one
 path. The median (0.9807) is 0.0007 over the median bar.
 
+**After the review of #227 (18:10), registered before a re-read.** Three defects in the GPU term, all fixed:
+- The reading counted as taken whenever ioreg ran, so a parse that matched nothing read 0.00% and passed. It now requires this
+  process's own GPU client in the listing (a test with a device open owns one).
+- It summed GPU time per process, so a client closing inside an arm could cancel another client's time and under-read contention.
+  It now keys each client by its registry entry ID; a closed client counts nothing and cancels nothing.
+- The ioreg call ran inside the arm's CPU window. The GPU reading is now taken outside it, before the CPU window opens and after it
+  closes.
+`TestParseAGXClients` checks the first two on synthetic ioreg text (dropping the own-client check turns it red). The 17:26 run
+cannot show whether the per-process sum hid contention in a pair it counted valid, so E3-G2 is read once more on the fixed guard.
+KS-E3 stays on main whatever it reads (Francis's decision); the reading goes in the record.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
