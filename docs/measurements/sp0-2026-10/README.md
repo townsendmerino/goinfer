@@ -209,15 +209,27 @@ validation (see the end).
   - At L = 4096 its best is 1.28× at K = 1, but the band is 0.74–2.30. The step's own spread at 4096 is wide, so that reading
     resolves nothing.
 
-### Missing: the DFlash targets' cost at L = 4096
+### At L = 4096 (reported beside the decision, not part of it)
 
-- **What is missing:** both DFlash cells stopped while filling the context to 4096 for the cost arms. The capture armed for the
-  drafter keeps a batched prefill from chunking, and one 4096-row pass ran out of device memory (`cuMemAlloc_v2:
-  CUDA_ERROR_OUT_OF_MEMORY`).
-- **What survived:** every acceptance record and every L = 512 cost record were already written.
-- **The fix, committed after the run:** the fill is now prefilled, and the drafter's context fused, in 512-row pieces. A
-  `MODE=cost4096` run (about 10 min) reads only those arms, reusing the teacher continuations as fill text.
-- L = 4096 is reported beside the decision, not part of it.
+- **The first run stopped short of these arms.** Both DFlash cells stopped filling the context to 4096. The capture armed for the
+  drafter keeps a batched prefill from chunking, and one 4096-row pass ran out of device memory (`CUDA_ERROR_OUT_OF_MEMORY`).
+- **The fix:** the fill is prefilled, and the drafter's context fused, in 512-row pieces.
+- **The re-run:** `MODE=cost4096`, 2026-10-24, 17:06:37–17:12:08 PDT, at `48e1b806`, under the timing lock, at load 1.94 or below,
+  with 0 MiB swap (`raw/cells-cost4096.txt`, `raw/cost4096-*.jsonl`). It read only those arms, against the acceptance records
+  above.
+
+| family | best width | t_step | t_verify | t_draft | projected | band | at L = 512 |
+|---|---|---|---|---|---|---|---|
+| Qwen3.5-9B + DFlash | w = 4 | 18.05 ms | 30.45 ms | 15.80 ms | **1.29×** | 1.28–1.29 | 1.55× |
+| Qwen3.6-35B-A3B + DFlash | w = 4 | 18.80 ms | 55.21 ms | 8.14 ms | **1.05×** | 1.02–1.09 | 1.22× |
+| gpt-oss-20b + n-gram | K = 1 | 31.50 ms | 24.5 ms (w 2) | 0 | 1.28× | 0.74–2.30 | 1.07× |
+
+- **What drives the drop:** context costs the drafted cycle more than the plain step.
+  - For the 9B at w = 4, the step rises 9% (16.6 to 18.1 ms), the verify pass 27% (24.0 to 30.5), and the drafter's block 40%
+    (11.3 to 15.8). The drafter attends over its whole context.
+  - The 35B's verify pass rises 52% at w = 4.
+- **How to read it with the decision:** the 9B's 1.30× clears at 512 and falls just inside the parked band at 4096. Its prize is
+  largest at short context, and an agent session's context is long.
 
 ### What these numbers are not
 
