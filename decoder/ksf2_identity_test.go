@@ -1,9 +1,12 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
@@ -311,5 +314,44 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 			t.Fatalf("%+v: no step fanned the heads out", sh)
 		}
 		t.Logf("%+v: %d steps on one scratch (growing, then shorter), gpt-oss's attention fanned out in %d, every word equal", sh, steps, fanned)
+	}
+}
+
+// TestKSF2_familiesTakeTheFannedSchedule: each attendQueryP family (Qwen3.5/3.6, Granite-4.0-H, LFM2, Nemotron-H, Llama 4) takes
+// the fanned schedule through its own forward. Its tiny fixture, on the CPU, decodes past a prompt long enough that a layer's
+// heads × span × head size crosses scalarHeadWorkers' threshold, and attendQueryPFanned must rise. A fixture that is absent here
+// (granite-tiny is gitignored) skips. Bit-identity is TestKSF2_queryPFannedBitIdentical's, and each family's full logits are
+// gate identity's.
+func TestKSF2_familiesTakeTheFannedSchedule(t *testing.T) {
+	for _, fx := range []string{"qwen35-tiny", "granite-tiny", "lfm2-tiny", "nemotron-tiny", "llama4-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			dir := filepath.Join("..", "testdata", fx)
+			if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
+				t.Skipf("no fixture: %v", err)
+			}
+			m, err := Load(dir, Options{Backend: "cpu"})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer m.Close()
+			_, _, nH, _, hd, _, vocab := m.Dims()
+			n := (1<<15)/(nH*hd) + 64 // keys enough for one layer to cross the threshold
+			prompt := make([]int, n)
+			for i := range prompt {
+				prompt[i] = 3 + (i*131)%(vocab-3)
+			}
+			before := attendQueryPFanned.Load()
+			ch, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})
+			for range ch {
+			}
+			if err := g.Err(); err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			fanned := attendQueryPFanned.Load() - before
+			if fanned == 0 {
+				t.Fatalf("%d-token prompt (heads %d × head size %d): attendQueryP never fanned out", n, nH, hd)
+			}
+			t.Logf("%d-token prompt: attendQueryP fanned out %d times", n, fanned)
+		})
 	}
 }

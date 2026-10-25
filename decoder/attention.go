@@ -241,6 +241,9 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 	attendQueryP(arch.attnParamsQueryFor(cache, layer, global), q, ctx, scores, cache, layer, pos, arch)
 }
 
+// attendQueryPFanned counts attendQueryP calls that fanned their heads out, so a test can tell the schedule was taken.
+var attendQueryPFanned atomic.Int64
+
 // attendQueryP is attendQuery over an f32 cache with the window, chunk, scale and softcap given: the program walker's form. Heads fan out
 // over the attention workers (scalarHeadWorkers), each with its own score buffer from the cache's scratch; scores is the buffer the
 // single-worker path uses. Every head's arithmetic is the one-key-at-a-time loop's, so the result does not depend on the fan-out.
@@ -322,6 +325,7 @@ func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, l
 		}
 		return
 	}
+	attendQueryPFanned.Add(1)
 	pool := cache.scr.headScoresPool(workers, nKeys)
 	runSplitAligned(len(pool), nH, 1, func(w, lo, hi int) {
 		sc := pool[w].scores[:nKeys]
@@ -522,7 +526,7 @@ func (st *attnScoreStats) observe(s float64) {
 	}
 }
 
-// scalarHeadWorkers is how many workers gpt-oss's per-head scalar attention (attendSinksToken) fans its heads over: one
+// scalarHeadWorkers is how many workers the per-head scalar attention (attendSinksToken, attendQueryP) fans its heads over: one
 // below about 32k multiply-adds a layer, where the fan-out costs more than it saves, else one per head up to maxAttnWorkers. It
 // changes no number: each head's arithmetic is the same on any worker.
 func scalarHeadWorkers(nH, span, hd int) int {
