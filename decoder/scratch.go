@@ -315,6 +315,23 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 	return s.headPool[:n]
 }
 
+// headScoresPool is headWorkerPool for the per-head scalar attention (attendSinksToken, attendQueryP): n slots (capped at
+// maxAttnWorkers) whose scores hold at least nKeys. It grows nothing else, so the score buffers are all it adds.
+func (s *decodeScratch) headScoresPool(n, nKeys int) []headWorkerScratch {
+	n = min(max(n, 1), maxAttnWorkers)
+	if len(s.headPool) < n {
+		grown := make([]headWorkerScratch, n)
+		copy(grown, s.headPool)
+		s.headPool = grown
+	}
+	for i := range s.headPool[:n] {
+		if p := &s.headPool[i]; cap(p.scores) < nKeys {
+			p.scores = make([]float32, growCap(cap(p.scores), nKeys))
+		}
+	}
+	return s.headPool[:n]
+}
+
 // newHeadWorkerPool builds n (capped at maxAttnWorkers) fresh headWorkerScratch entries sized for one call's K/nKeys/hd: the
 // batched (M=K>1) forward's one-shot sibling of decodeScratch.headWorkerPool. That path has no cache.scr to grow and reuse across
 // calls, so it allocates per call rather than growing once.
