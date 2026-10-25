@@ -1,0 +1,74 @@
+tree a579f7a30; driver 595.91.07; start 2026-10-25 14:28:47 PDT; load 1.29 1.20 1.19
+== card before H2-R1:
+1709249, /usr/bin/kwin_wayland, 17 MiB
+1292809, /home/francis/goinfer-logs/sp2-2026-10/serve-cuda-a6e9b8c7, 6890 MiB
+--- FAIL: TestKSH2_buildVRAM (3.83s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	4.123s
+FAIL
+== card before H2-R2:
+1709249, /usr/bin/kwin_wayland, 17 MiB
+1292809, /home/francis/goinfer-logs/sp2-2026-10/serve-cuda-a6e9b8c7, 6688 MiB
+--- FAIL: TestKSH2_buildVRAM (13.22s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	13.352s
+FAIL
+== card before H3:
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestKernelLocalMemoryCensus
+    kernel_local_memory_test.go:78: device: 40 SMs x 1024 max threads/SM = 40960 resident threads
+    kernel_local_memory_test.go:125: module                 kernel                        local/thr   SMs*maxT*local
+    kernel_local_memory_test.go:132: gptoss_act.ptx         route_gptoss                       4608        188743680  (180.0 MiB)
+    kernel_local_memory_test.go:132: moe.ptx                moe_route                          4416        180879360  (172.5 MiB)
+    kernel_local_memory_test.go:132: deltanet.ptx           delta_rule_rows_128                  96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:132: deltanet.ptx           delta_rule_rows_128_spec             96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:132: mamba.ptx              mamba_conv                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla.ptx                mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_kv16_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_kv16.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: gemv_fwd_kv16.ptx      rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla_kv16.ptx           mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla_kv16.ptx           mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla.ptx                mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_mrope_prefill.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched.ptx    rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: gemv_fwd.ptx           rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise_kv16.ptx rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise_kv16.ptx rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise_kv16.ptx rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_mrope_prefill_kv16.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:135: 272 entry points across 56 modules; 23 declare per-thread local memory
+    kernel_local_memory_test.go:145: EXAMINED: 56 module(s) — gemv_fwd.ptx gemv_w8a8_batched.ptx prefill_batched.ptx decode_splitkv.ptx prefill_splitkv.ptx deltanet.ptx gptoss_act.ptx actgroup.ptx gemv_w4a8_rn.ptx glue.ptx argmax.ptx moe_fold.ptx moe_rows.ptx audio_encoder.ptx topk.ptx gumbel.ptx decode_fa.ptx lora.ptx attn_block.ptx attn_img_prefill.ptx attn_img_prefill_kv16.ptx rope_mrope_prefill.ptx rope_mrope_prefill_kv16.ptx rope_pairwise.ptx rope_pairwise_kv16.ptx layernorm_quant.ptx gelu_quant.ptx attn_fused.ptx attn_fused_bm.ptx attn_fused_vit.ptx tower_base.ptx gemm_w4a8_mma.ptx moe.ptx router_f32.ptx gemv_w4f32.ptx fused_qkv.ptx fused_qkv_rows.ptx fused_gu_rows.ptx mla.ptx mla_kv16.ptx gemv_fwd_kv16.ptx glue_kv16.ptx prefill_batched_kv16.ptx decode_splitkv_kv16.ptx prefill_splitkv_kv16.ptx decode_fa_kv16.ptx attn_fused_kv16.ptx attn_fused_bm_kv16.ptx glue_cap.ptx glue_kv16_cap.ptx prefill_batched_cap.ptx prefill_batched_kv16_cap.ptx decode_splitkv_cap.ptx decode_splitkv_kv16_cap.ptx mamba.ptx nongated_act.ptx. Derived straight from kernels.go's //go:embed list, so this line names exactly what that list currently contains.
+    kernel_local_memory_test.go:153: SUM of per-kernel backing stores at full occupancy: 402391040 B (383.8 MiB) — an UPPER BOUND on the deferred cost, not a prediction: the driver may share or reuse a backing store across kernels, and nothing here shows that it allocates them all simultaneously
+    kernel_local_memory_test.go:263: moe_route: local 4416 B/thread, naive form predicts 180879360 B, MEASURED 138412032 B (ratio 0.7652)
+    kernel_local_memory_test.go:266:   => the naive multiplier does NOT reproduce the measurement. The occupancy factor is not SMs x maxThreadsPerSM (40 x 1024); proportionality in local-bytes is therefore UNVERIFIED, and any 'halving MOE_MAX_E halves the cost' claim must be measured by building at 256 rather than derived from this form.
+--- PASS: TestKernelLocalMemoryCensus (0.29s)
+=== RUN   TestMoERouteFirstLaunchReservation
+    moe_route_reservation_test.go:39: CUDA_MODULE_LOADING="" (empty = driver default LAZY)
+    moe_route_reservation_test.go:46:     nvidia-smi @ start                      113246208 B (108 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after CompileLibrary       113246208 B (108 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after NewComputePipeline     113246208 B (108 MiB)
+    moe_route_reservation_test.go:73:   free at start                    7624261632 B
+    moe_route_reservation_test.go:74:   free after CompileLibrary        7624261632 B   (cost 0 B)
+    moe_route_reservation_test.go:75:   free after 5 NewComputePipeline 7624261632 B   (cost 0 B)
+    moe_route_reservation_test.go:77:   moePTX source size 81735 B
+    moe_route_reservation_test.go:80:   TOTAL moePTX device cost                  0 B  (0.0 MiB)
+    moe_route_reservation_test.go:94:   => moePTX's MODULE memory is 0 B up to this point. Not yet a verdict: it is consistent with a deferred cost and with there being no cost. The launches below separate them.
+    moe_route_reservation_test.go:46:     nvidia-smi @ before first launch        115343360 B (110 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after first launch         115343360 B (110 MiB)
+    moe_route_reservation_test.go:120:   free before first moePTX launch  7622164480 B
+    moe_route_reservation_test.go:121:   free after  first moePTX launch  7622164480 B   (cost 0 B)
+    moe_route_reservation_test.go:46:     nvidia-smi @ before moe_route           115343360 B (110 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after moe_route            253755392 B (242 MiB)
+    moe_route_reservation_test.go:157:   launch config nE=8 k=2
+    moe_route_reservation_test.go:158:   free before first moe_route      7622164480 B
+    moe_route_reservation_test.go:159:   free after  first moe_route      7483752448 B   (cost 138412032 B = 132.0 MiB)
+    moe_route_reservation_test.go:164:   local-memory reservation predicted as 4096 B/thread x maxThreads/SM x SMs; at 1024x40 that is 167772160 B (160 MiB)
+--- PASS: TestMoERouteFirstLaunchReservation (0.12s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	0.526s
+end 2026-10-25 14:29:12 PDT
