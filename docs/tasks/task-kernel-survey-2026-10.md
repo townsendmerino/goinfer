@@ -1167,6 +1167,9 @@ only for the instruction region's median.
     measured.
   - **Its single-position minimum on `README.md` is lower:** 0.9597 against int8's 0.9821.
 - **Open item:** KS-O1-F in the ledger.
+- **The gate's first run: PASS** (e3a66d6d9, 06:13–06:33, the shared lock, not timed). On `README.md`, mean KL to f32 past position
+  256 is 0.00173 int8 against 0.00068 native, **0.3899**. On `docs/benchmarks.md` it is 0.00175 against 0.00081, **0.4623**. These are
+  LQ3's numbers to the digit. Log: `docs/measurements/ks-a1-2026-10/longctx-gate-2026-10-25.log`.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
