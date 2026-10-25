@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -231,8 +232,8 @@ func TestMoELayerMajor_generateThroughDecoder(t *testing.T) {
 
 // TestKSD9_plantSeenByTheGate is KS-D9's planted-defect check: with a defect planted in the batched phase 2 by hand, the startup
 // self-test declines the backend first, so it re-runs TestMoELayerMajor_matchesSequential in a child process with the self-test
-// skipped (GOINFER_KSD9_PLANT_CHILD=1, which skips it for that process only) and passes iff the child fails. Armed by
-// GOINFER_KSD9_PLANT=1 only; unarmed, it skips.
+// skipped (GOINFER_KSD9_PLANT_CHILD=1, which skips it for that process only) and passes iff the child fails on a logit or K/V
+// mismatch. Armed by GOINFER_KSD9_PLANT=1 only; unarmed, it skips.
 func TestKSD9_plantSeenByTheGate(t *testing.T) {
 	if os.Getenv("GOINFER_KSD9_PLANT") != "1" || os.Getenv("GOINFER_KSD9_PLANT_CHILD") == "1" {
 		t.Skip("set GOINFER_KSD9_PLANT=1 with a defect planted in the batched phase 2")
@@ -243,7 +244,11 @@ func TestKSD9_plantSeenByTheGate(t *testing.T) {
 	if err == nil {
 		t.Fatalf("the gate passed with the plant in place:\n%s", out)
 	}
-	t.Logf("the gate failed with the plant in place, as it must:\n%s", out)
+	// It must fail on what the plant breaks (a logit or K/V mismatch), not on a load, a decline or a crash.
+	if !regexp.MustCompile(`last-row logit|decode step \d+ logit|K/V differ|batched against per-row phase 2`).Match(out) {
+		t.Fatalf("the gate failed, but not on a logit or K/V mismatch:\n%s", out)
+	}
+	t.Logf("the gate failed on a mismatch with the plant in place, as it must:\n%s", out)
 }
 
 // TestKSD9_scratchWithinPlan: the batched phase 2's scratch is allocated once per layer-major call, sized for its rows, and
