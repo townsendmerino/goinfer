@@ -1239,7 +1239,9 @@ does not stop.
   the GPU; (5) `gemv_w8a8_g32` on the int8 copies and that activation, on the GPU.
 - **Read per position, over each of q, k and v separately:** e(i) = ‖(i) − (1)‖ / ‖(1)‖. Reported: the median and the p90 over
   positions of each e, of ‖(4) − (2)‖/‖(2)‖ and ‖(5) − (3)‖/‖(3)‖ (kernel arithmetic), and the same at positions 7 and 114–122.
-  Sanity, before any reading counts: the int8 copies' rows match the file's within 1% relative L2 (or the row mapping is wrong).
+  Sanity, before any reading counts: the int8 copies' rows match the file's within 10% relative L2 (a wrong row mapping reads
+  about 1.4). Amended 16:28, before any D2 figure was read: the first run stopped at this check at 1% with 1.73% on layer 2's q,
+  which is per-row int8 rounding of these rows, not a mapping error; 1% was set without that arithmetic.
 - **Attribution, at the projection:** the native gap is e(4) − e(5). Kernel arithmetic explains it if ‖(4) − (2)‖/‖(2)‖ is at least
   0.8× the gap; activation quantization with the file's weights explains it if e(2) − e(3) is within 20% of it. If e(4) ≤ e(5) (the
   native projection is no worse than int8's on the same input), no per-projection factor explains the gap: that is the finding,
