@@ -499,6 +499,40 @@ in ms (GB/s):
 - **First measurement:** `TestPrefillDecomp` with the pass width at 512/1024/2048 and K=2048/3900.
 - **Prior art:** reopens the `cuda/prefill.go:prefillDefaultChunk` note, which was measured on the old grid.
 
+**KS-B8 build: gates, registered 2026-10-25 before any code (B8-G), on the owner's word of 6:33–6:36 am (option A: 2,048-row CUDA
+prefill passes by default where the scratch allows, admission pricing the scratch, falling back to narrower passes otherwise).**
+- **The change:** at the end of `BuildResident`, after every standing allocation (weights, KV, the recurrent checkpoint, the
+  expert slots), the build reads free VRAM once and sets the default pass width. It is the widest of 2,048, 1,024 and 512 rows whose
+  pass fits: `PrefillScratchBytes(w)` plus `PrefillSpanScratchBytes(w, context)` must be at most the free VRAM less
+  `ctxCapMarginBytes` and the bytes still to attach (`extraBytes`).
+  - When none fits, the width stays 512, today's default, which already lives inside that margin.
+  - `GOINFER_PREFILL_CHUNK`, the learned out-of-memory cap (`prefillChunkCap`) and a windowed model's slack bound all lower or
+    override it as they do today.
+  - `PrefillChunkRows` reports the chosen width, so the decoder's per-request admission (`residentChunkedScratch`) prices that pass.
+  - The image prefill keeps its own budget.
+  - The two runtime reserves that price two 512-row passes (`kvGrantRollback`, `allocRecurrentCheckpoint`) are unchanged. The
+    width is chosen after them, from what they leave.
+- **Class:** bit-identical. A pass's rows attend the keys the earlier passes committed at the same absolute positions, with the
+  same per-row kernels (`TestPrefillChunked_bitIdentical`). No guard threshold or margin changes.
+- **Merge rule:** this changes a default, so it needs the gain judged against the memory and the owner's call, which option A gives
+  under these gates. The speed bar is the merge rule's (owner, 2026-10-25), not an investment bar.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B8-G1 the chooser | 0 | the width rule as a function of the free bytes, the margin, the bytes to attach and a scratch function, on a table: room for 2,048; room for 1,024 only; for 512 only; for less than 512's; `extraBytes` taking the 2,048's room; the knob over the chosen width; the learned cap under it. Planted defect: the chooser without the margin | every row picks the registered width; the plant goes red |
+| B8-G2 bits | 1 | Qwen2.5-Coder-1.5B q4_k_m on CUDA: `PrefillLast` over a 4,100-row prompt at passes of 512, 1,024, 2,048 and the build's chosen default, against one unchunked pass, then 8 greedy decode steps from each (`TestPrefillChunked_bitIdentical`'s method) | the seed logits byte-equal across all five, and the 8 decode ids equal |
+| B8-G3 the build prices it | 1 | the same model loaded three times: with nothing attached; with `Options.ExtraResidentBytes` leaving room for 1,024 rows but not 2,048; and with it leaving room for less than 1,024. Each load's chosen width, `PrefillChunkRows`, the free VRAM at the choice, and `PrefillScratchBytes` at that width against the bytes a pass of that width actually asks for (`prefillScratchSeenForTest`) | the three widths are 2,048, 1,024 and 512; the reported rows equal them; the priced bytes equal the pass's own |
+| B8-G4 speed | timed, nobara, timing lock | one 1.5B resident; a 3,900-token prompt's `PrefillLast` with the width at 512 (the knob) against the build's default (2,048), A B B A over 10 pairs after 2 warm runs each; load and free memory per cell, CLAUDE.md's void rule | **SHIP** iff the median 512/default wall ratio is ≥ 1.05× with at least 9 of 10 pairs faster (the merge rule). **PARK** under 1.05× with 6–8 pairs faster. **KILL** if the median is ≤ 1.00 |
+
+- **Memory, stated:**
+  - **Device:** at most one pass's scratch at the chosen width, in VRAM that is free beyond the margin after the build. On the 1.5B
+    that is 138 or 276 MiB at 1,024 or 2,048 rows, against about 70 MiB at 512. G3 records the exact figures.
+  - **Host:** unchanged.
+  - **The longest context that fits:** unchanged. The KV plan runs before the choice and the width never shrinks it, so a load with
+    no room left keeps 512.
+- **Stopping rule:** one pass each. **Cost:** G1 seconds; G2 about 2 min; G3 about 2 min (three loads); G4 about 4 min (two warm
+  runs, then 20 prefills of about 0.75–0.93 s each).
+
 **KS-B3 · Gemma 4 26B (M26) expert-major prefill never got option A (bit-identical).**
 - **Where:** `cuda/moe_expert_major_gemma4.go:cudaResident.prefillGemma4ExpertMajorRun`; it has no reference to the grouped
   kernels that `cuda/moe_expert_major.go` uses.
