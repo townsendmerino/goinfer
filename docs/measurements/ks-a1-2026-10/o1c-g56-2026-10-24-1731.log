@@ -1,0 +1,126 @@
+17:31:42 O1C g56 at e3bd04a0d (base 4814c869a), log /home/francis/goinfer-logs/ks-a1-2026-10/o1c-g56-2026-10-24-1731.log
+17:31:42 load 0.47 0.47 0.95; MemAvailable 57.9 GB; GPU 403 MiB, 8192 MiB
+== g6: ^TestKSO1C_towardTheFile$
+=== RUN   TestKSO1C_towardTheFile
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 1: 71 positions, mean KL int8 0.00234, native 0.00199
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 2: 68 positions, mean KL int8 0.00259, native 0.00244
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 3: 75 positions, mean KL int8 0.00180, native 0.00155
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 4: 73 positions, mean KL int8 0.00226, native 0.00199
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 5: 68 positions, mean KL int8 0.00214, native 0.00193
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 6: 73 positions, mean KL int8 0.00251, native 0.00220
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 7: 70 positions, mean KL int8 0.00164, native 0.00155
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt 8: 68 positions, mean KL int8 0.00262, native 0.00269
+[O1C-G6] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: 12 weights native; over 566 positions mean KL to the CPU f32 int8 0.00223, native 0.00203, ratio 0.9114; native lower at 333 positions: PASS
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 1: 46 positions, mean KL int8 0.01234, native 0.00452
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 2: 44 positions, mean KL int8 0.01656, native 0.00667
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 3: 51 positions, mean KL int8 0.01781, native 0.00659
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 4: 49 positions, mean KL int8 0.01360, native 0.00541
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 5: 43 positions, mean KL int8 0.01666, native 0.00654
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 6: 50 positions, mean KL int8 0.01422, native 0.00597
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 7: 45 positions, mean KL int8 0.01349, native 0.00504
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt 8: 44 positions, mean KL int8 0.02128, native 0.00855
+[O1C-G6] phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf: 113 weights native; over 372 positions mean KL to the CPU f32 int8 0.01570, native 0.00614, ratio 0.3912; native lower at 273 positions: PASS
+--- PASS: TestKSO1C_towardTheFile (314.68s)
+PASS
+17:36:57 load 10.56 6.40 3.33; MemAvailable 57.8 GB; GPU 403 MiB, 8192 MiB
+== g5: ^(TestKSO1C_realPhi3NonInferiority|TestQ4K_phi3ResidentMatchesCPU)$
+=== RUN   TestKSO1C_realPhi3NonInferiority
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[O1C-G5] reference Qwen2.5-Coder-1.5B: CUDA resident built (template chatml, P=0, hidden 1536, 28 layers); both sides loaded /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf with {noSelfTest:false Backend: Quant:int4 LoRA: DirectLoad:false KVPrecision: MoECacheExperts:false MoECacheSlots:0 KVQuant: StreamWeights:false WeightCacheBytes:0 AcceptSlowMoE:false MoEPager: Knobs:<nil> EmbedInt4:false ResidentContext:512 DisableFit:false ExtraResidentBytes:0 ExtraResidentKVPerPosition:0 Drafter:false ExactPrefill:false ResidentKVSlots:0 ResidentKVSlotsDefault:false ResidentWindowedKV:false ResidentPrefillChunk:0 KVShareOff:false KVHostBytes:0 CPUBatchDecode:0 ActQuantGroup:0 LoadAbort:<nil> BackendAuto:false planResidency:false} (EmbedInt4=false on both)
+[O1C-G5]     disagree: prompt 1 pos 50 (generated) CPU gap 0.55%
+[O1C-G5] prompt 1 (40 prompt tokens): first divergence at generated token 11, CPU gap 0.55%; teacher-forced 70/71; pass=true
+    cpu:  "The sky is blue because of the scattering of light by the Earth's atmosphere. When sunlight passes through the Earth's atmosphere, it is scattered in all directions."
+    cuda: "The sky is blue because of the scattering of light by air molecules and other particles in the atmosphere. The blue color is due to the way light is reflected and"
+[O1C-G5]     disagree: prompt 2 pos 46 (generated) CPU gap 0.49%
+[O1C-G5]     disagree: prompt 2 pos 48 (generated) CPU gap 1.56%
+[O1C-G5]     disagree: prompt 2 pos 50 (generated) CPU gap 0.46%
+[O1C-G5]     disagree: prompt 2 pos 63 (generated) CPU gap 1.95%
+[O1C-G5]     disagree: prompt 2 pos 65 (generated) CPU gap 1.57%
+[O1C-G5] prompt 2 (37 prompt tokens): first divergence at generated token 10, CPU gap 0.49%; teacher-forced 63/68; pass=true
+    cpu:  "Autumn leaves fall,\nSilent whispers in the air,\nPeaceful, serene.<|im_end|>\n<|endoftext|>Human beings are often confused by the beauty of nature, but"
+    cuda: "Autumn leaves fall,\nSilent whispers in the wind,\nPeaceful colors.<|im_end|>\n<|endoftext|>Human beings are often confused by the concept of infinity, but it"
+[O1C-G5]     disagree: prompt 3 pos 32 (prompt) CPU gap 0.70%
+[O1C-G5] prompt 3 (44 prompt tokens): identical; teacher-forced 74/75; pass=true
+    cpu:  "To find the product of 17 and 23, we can use the distributive property of multiplication over addition. This property allows us to break down"
+    cuda: "To find the product of 17 and 23, we can use the distributive property of multiplication over addition. This property allows us to break down"
+[O1C-G5]     disagree: prompt 4 pos 33 (prompt) CPU gap 1.09%
+[O1C-G5] prompt 4 (42 prompt tokens): identical; teacher-forced 72/73; pass=true
+    cpu:  "Here are the translations:\n\nFrench: \"Où est la gare de train?\"\n\nGerman: \"Wo ist die Bahnhof?\"\n\nBoth sentences ask about the"
+    cuda: "Here are the translations:\n\nFrench: \"Où est la gare de train?\"\n\nGerman: \"Wo ist die Bahnhof?\"\n\nBoth sentences ask about the"
+[O1C-G5]     disagree: prompt 5 pos 25 (prompt) CPU gap 0.13%
+[O1C-G5]     disagree: prompt 5 pos 30 (prompt) CPU gap 3.07%
+[O1C-G5]     disagree: prompt 5 pos 48 (generated) CPU gap 0.28%
+[O1C-G5] prompt 5 (37 prompt tokens): first divergence at generated token 12, CPU gap 0.28%; teacher-forced 65/68; pass=true
+    cpu:  "Python and Go are both popular programming languages, but they have some differences in their design, syntax, and use cases. Here are three differences between Python and Go"
+    cuda: "Python and Go are both popular programming languages, but they have several differences that make them suitable for different use cases. Here are three differences between Python and Go:\n\n"
+[O1C-G5]     disagree: prompt 6 pos 29 (prompt) CPU gap 0.62%
+[O1C-G5]     disagree: prompt 6 pos 46 (generated) CPU gap 0.18%
+[O1C-G5]     disagree: prompt 6 pos 49 (generated) CPU gap 4.24%
+[O1C-G5]     disagree: prompt 6 pos 54 (generated) CPU gap 1.64%
+[O1C-G5]     disagree: prompt 6 pos 61 (generated) CPU gap 3.20%
+[O1C-G5]     disagree: prompt 6 pos 69 (generated) CPU gap 3.36%
+[O1C-G5]     disagree: prompt 6 pos 71 (generated) CPU gap 1.95%
+[O1C-G5] prompt 6 (42 prompt tokens): first divergence at generated token 5, CPU gap 0.18%; teacher-forced 66/73; pass=true
+    cpu:  "Romeo and Juliet, a classic tragedy by William Shakespeare, centers on two young lovers who are destined to die due to their love and the tragic consequences of"
+    cuda: "Romeo and Juliet is a tragic love story set in Verona, Italy, where two young lovers, Romeo and Juliet, are killed by their enemies,"
+[O1C-G5] prompt 7 (39 prompt tokens): identical; teacher-forced 70/70; pass=true
+    cpu:  "Certainly! Below is a simple Go function that reverses a string:\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n// ReverseString takes a string"
+    cuda: "Certainly! Below is a simple Go function that reverses a string:\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n// ReverseString takes a string"
+[O1C-G5]     disagree: prompt 8 pos 41 (generated) CPU gap 1.46%
+[O1C-G5] prompt 8 (37 prompt tokens): first divergence at generated token 5, CPU gap 1.46%; teacher-forced 67/68; pass=true
+    cpu:  "Inflation is a general increase in the prices of goods and services in an economy. There are several main causes of inflation, including:\n\n1. Increase in demand"
+    cuda: "Inflation is a general economic phenomenon where the general price level of goods and services in an economy rises over time. There are several main causes of inflation, including"
+[O1C-G5] reference Qwen2.5-Coder-1.5B: 8/8 prompts pass the free-run rule; teacher-forced agreement 547/566 = 96.64%
+[O1C-G5] Phi-3 mini: CUDA q4k resident with 113 native weights; the CPU at q4k on the same file
+[O1C-G5]     disagree: prompt 1 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5] prompt 1 (15 prompt tokens): identical; teacher-forced 45/46; pass=true
+    cpu:  "The sky appears blue due to a phenomenon called Rayleigh scattering, where molecules in the Earth's atmosphere scatter shorter wavelengths of"
+    cuda: "The sky appears blue due to a phenomenon called Rayleigh scattering, where molecules in the Earth's atmosphere scatter shorter wavelengths of"
+[O1C-G5]     disagree: prompt 2 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5] prompt 2 (13 prompt tokens): identical; teacher-forced 43/44; pass=true
+    cpu:  "Crimson leaves flutter,\nWhispering tales of autumn,\nNature's fire fades.<|end|><|assistant|> Crisp air, gold"
+    cuda: "Crimson leaves flutter,\nWhispering tales of autumn,\nNature's fire fades.<|end|><|assistant|> Crisp air, gold"
+[O1C-G5]     disagree: prompt 3 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5]     disagree: prompt 3 pos 20 (generated) CPU gap 0.63%
+[O1C-G5] prompt 3 (20 prompt tokens): first divergence at generated token 1, CPU gap 0.63%; teacher-forced 49/51; pass=true
+    cpu:  "To multiply 17 by 23, we can use the standard algorithm for multiplication:\n\n```\n   17\nx  23\n"
+    cuda: "To calculate 17 multiplied by 23, you can use the standard multiplication method:\n\n```\n\n   17\n\nx  "
+[O1C-G5]     disagree: prompt 4 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5]     disagree: prompt 4 pos 2 (prompt) CPU gap 0.85%
+[O1C-G5] prompt 4 (18 prompt tokens): identical; teacher-forced 47/49; pass=true
+    cpu:  "In French, \"Where is the train station?\" translates to \"Où est la gare?\" and in German, it translates to \"Wo ist"
+    cuda: "In French, \"Where is the train station?\" translates to \"Où est la gare?\" and in German, it translates to \"Wo ist"
+[O1C-G5]     disagree: prompt 5 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5]     disagree: prompt 5 pos 3 (prompt) CPU gap 0.25%
+[O1C-G5] prompt 5 (12 prompt tokens): identical; teacher-forced 41/43; pass=true
+    cpu:  "Python and Go are both popular programming languages, but they have several key differences in terms of syntax, performance, and use cases. Here are three notable differences between"
+    cuda: "Python and Go are both popular programming languages, but they have several key differences in terms of syntax, performance, and use cases. Here are three notable differences between"
+[O1C-G5]     disagree: prompt 6 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5] prompt 6 (19 prompt tokens): identical; teacher-forced 49/50; pass=true
+    cpu:  "Romeo and Juliet is a tragic love story set in Verona, where two young star-crossed lovers, Romeo Montague and Jul"
+    cuda: "Romeo and Juliet is a tragic love story set in Verona, where two young star-crossed lovers, Romeo Montague and Jul"
+[O1C-G5]     disagree: prompt 7 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5]     disagree: prompt 7 pos 6 (prompt) CPU gap 0.17%
+[O1C-G5] prompt 7 (14 prompt tokens): identical; teacher-forced 43/45; pass=true
+    cpu:  "Here's a Go function that reverses a string. This function uses Go's built-in `strings` package to easily manipulate the string.\n"
+    cuda: "Here's a Go function that reverses a string. This function uses Go's built-in `strings` package to easily manipulate the string.\n"
+[O1C-G5]     disagree: prompt 8 pos 0 (prompt) CPU gap 0.33%
+[O1C-G5] prompt 8 (13 prompt tokens): identical; teacher-forced 43/44; pass=true
+    cpu:  "Inflation, the general increase in prices and the fall in the purchasing value of money, can be caused by several factors, which are often interconnected"
+    cuda: "Inflation, the general increase in prices and the fall in the purchasing value of money, can be caused by several factors, which are often interconnected"
+[O1C-G5] O1C-G5: Phi-3 96.77% (360/372), 8/8 prompts; reference 96.64% (547/566), 8/8 prompts; delta +0.13 points
+[O1C-G5] O1C-G5 PASS
+--- PASS: TestKSO1C_realPhi3NonInferiority (164.86s)
+=== RUN   TestQ4K_phi3ResidentMatchesCPU
+    q4k_phi3_resident_test.go:65: resident: context 4096 positions, 112 projections on gemv_q4k_g32, fused per-32: false
+    q4k_phi3_resident_test.go:98: cuda q4k vs cpu q4k: 141 positions, cosine min 0.501753 p10 0.921228 median 0.993030
+    q4k_phi3_resident_test.go:98: cuda q4k vs cpu f32: 141 positions, cosine min 0.029366 p10 0.882586 median 0.984702
+    q4k_phi3_resident_test.go:98: cpu q4k vs cpu f32 (same prompt, the baseline): 141 positions, cosine min 0.435308 p10 0.926208 median 0.982052
+    q4k_phi3_resident_test.go:106: CUDA q4k vs CPU q4k: median cosine 0.993030, want >= 0.999
+    q4k_phi3_resident_test.go:109: CUDA q4k quality p10 0.8826 is more than 0.01 below the CPU q4k path's 0.9262
+--- FAIL: TestQ4K_phi3ResidentMatchesCPU (109.26s)
+FAIL
+FAILED: g5 rc 1
+17:41:31 load 11.88 9.58 5.43; MemAvailable 57.9 GB; GPU 403 MiB, 8192 MiB
+17:41:32 DONE g56 fail=1

@@ -662,6 +662,11 @@ type cudaResident struct {
 	// gemvQ4K is actgroup.cu's gemv_q4k_g32: native GGUF Q4_K weights (--quant q4k), bound only
 	// under per-32 activations, the only mode that carries the per-group activation sums it needs.
 	gemvQ4K Pipeline
+	// gemvQ5K / gemvQ6K are actgroup.cu's gemv_q5k_g32 / gemv_q6k_g32: the file's own Q5_K blocks and Q6_K planes (q6kPlanes)
+	// for the int8 copies of a q4k load (decoder.Model.KQuantNative), kquantGemvRows rows a warp. Bound with gemvQ4K.
+	gemvQ5K, gemvQ6K Pipeline
+	// kquantAlt pairs each native weight with its int8 copy when kquantKeepInt8ForTest held at the build; nil otherwise.
+	kquantAlt [][2]cudaWQ
 	// fQKVg32 / fGUg32 are actgroup.cu's fused_rms_qkv_g32 / fused_rms_gu_g32: the per-32 twins of
 	// fQKV / fGU (rmsnorm + per-32 quant redundantly per block + the projection rows, any of int8 /
 	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
@@ -1037,6 +1042,11 @@ func (r *cudaResident) loadAborted() bool {
 }
 
 func (r *cudaResident) upW(h hostW) cudaWQ {
+	if h.alt != nil {
+		w := r.streamW(h)
+		r.kquantAlt = append(r.kquantAlt, [2]cudaWQ{w, r.upW(*h.alt)})
+		return w
+	}
 	if h.src != nil {
 		return r.streamW(h)
 	}
@@ -1175,6 +1185,7 @@ func packedAllocSlack(v any) int64 {
 				n := allocRoundSlack(elems("wpk", "nWpk") * 4)
 				n += allocRoundSlack(elems("ws", "nWs") * 4)
 				n += allocRoundSlack(elems("ws16", "nWs16") * 2)
+				n += allocRoundSlack(rv.FieldByName("nBytes").Int())
 				return n
 			}
 			var n int64
@@ -2836,6 +2847,14 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 		return r.launch(r.gemvQ4K, cfg, Arg(wt.W), Arg(a), Arg(as), bias,
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), Arg(dst), gpu.ArgValue(accum))
 	}
+	if wt.kind == "q5k" || wt.kind == "q6k" {
+		cfg.GridX = uint32((wt.N + 8*kquantGemvRows - 1) / (8 * kquantGemvRows))
+		args := []KernelArg{Arg(wt.W), Arg(a), Arg(as), bias, gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K / 256)), Arg(dst), gpu.ArgValue(accum)}
+		if wt.kind == "q6k" {
+			return r.launch(r.gemvQ6K, cfg, args...)
+		}
+		return r.launch(r.gemvQ5K, cfg, args...)
+	}
 	if wt.kind == "int4" {
 		return r.launch(r.gemvW4, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)), Arg(dst), gpu.ArgValue(accum))
@@ -4095,6 +4114,13 @@ type hostW struct {
 	src              *linalg.WeightMat
 	nWpk, nWs, nWs16 int
 
+	// A planned native Q5_K or Q6_K weight (planKQuant) reads its rows from the file: row(r) is destination row r's blocks, and
+	// nBytes is the one device buffer's size, the file's bytes for the weight.
+	row    func(r int) []byte
+	nBytes int
+	// alt is the same weight's int8 plan, uploaded beside the native one only under kquantKeepInt8ForTest (KS-O1's A/B).
+	alt *hostW
+
 	// A planned expert stack (planWeightStack) names its member weights here, in row order, with src nil: only cacheWQ consumes it.
 	srcs []*linalg.WeightMat
 }
@@ -4403,6 +4429,10 @@ func (r *cudaResident) actScaleLen(k int) int {
 // wkCode is actgroup.cu's WK_* code for a per-32 weight kind (fused_rms_qkv_g32 / fused_rms_gu_g32).
 func wkCode(kind string) int32 {
 	switch kind {
+	case "q6k":
+		return 4
+	case "q5k":
+		return 3
 	case "q4k":
 		return 2
 	case "int4":
@@ -4415,7 +4445,7 @@ func wkCode(kind string) int32 {
 // g32Fusable reports whether every listed projection has a kind the fused per-32 kernels read.
 func g32Fusable(kinds ...string) bool {
 	for _, k := range kinds {
-		if k != "int8" && k != "int4" && k != "q4k" {
+		if k != "int8" && k != "int4" && k != "q4k" && k != "q5k" && k != "q6k" {
 			return false
 		}
 	}
@@ -4423,10 +4453,10 @@ func g32Fusable(kinds ...string) bool {
 }
 
 // wkScale is a projection's scale argument for the fused per-32 kernels: the int8 row scales, the
-// int4 f16 group scales, or null for q4k (its scales live in the super-blocks).
+// int4 f16 group scales, or null for the block kinds (their scales live in the super-blocks).
 func wkScale(w cudaWQ) KernelArg {
 	switch w.kind {
-	case "q4k":
+	case "q4k", "q5k", "q6k":
 		return ArgNull()
 	case "int4":
 		return Arg(w.ws16)
@@ -4439,6 +4469,10 @@ func wkScale(w cudaWQ) KernelArg {
 // win (H=1536). Wider measured sizes (Phi-3 at 3072, qwen2.5-7b at 3584) were slower fused than unfused
 // (docs/tasks/task-int4-weight-quality-2026-09.md, lever 3), and the sizes between are unmeasured and stay unfused.
 const fusedG32MaxHidden = 1536
+
+// kquantGemvRows is the rows a warp of the standalone native Q5_K and Q6_K GEMVs (gemv_q5k_g32, gemv_q6k_g32; KQ_ROWS in
+// actgroup.cu, which must match), A1-G0's pick (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA").
+const kquantGemvRows = 1
 
 // fusedG32Shmem is fused_rms_qkv_g32 / fused_rms_gu_g32's shared memory for hidden size H:
 // normed[H] | red[256] | aq[H/4] int32 | aS[2·H/32].

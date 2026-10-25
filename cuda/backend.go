@@ -71,6 +71,10 @@ func layerFusable(qkvInt4, moe, guInt4 bool) bool {
 // LockOSThread-pinned CUDA executor, and uploads weights and KV scratch once, returning a *cudaResident. It declines
 // (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
 // uses the staged/CPU path.
+// kquantKeepInt8ForTest makes BuildResident upload every native Q5_K / Q6_K weight's int8 copy beside it (cudaResident.kquantAlt),
+// so one resident can run both arms of KS-O1's A/B. Set only by a test, before the load.
+var kquantKeepInt8ForTest bool
+
 func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
@@ -94,6 +98,35 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	w := m.Weights()
 	if w == nil || len(w.Layers) == 0 {
 		return declined(fmt.Errorf("the model has no loaded layer weights"))
+	}
+	// planProj plans a projection or the head: the file's own Q5_K or Q6_K blocks where the q4k lane uploads them natively
+	// (decoder.Model.KQuantNative, which the fit pricing also reads), else planWeight. kq reads the file until the build returns.
+	var kq *decoder.KQuantReader
+	defer func() { _ = kq.Close() }()
+	planProj := func(src *linalg.WeightMat) (hostW, error) {
+		kind := m.KQuantNative("cuda", src)
+		if kind == "" {
+			return planWeight(src)
+		}
+		if kq == nil {
+			var e error
+			if kq, e = m.OpenKQuant(); e != nil || kq == nil {
+				return hostW{}, fmt.Errorf("cuda: the file's %s blocks are unreadable: %v", kind, e)
+			}
+		}
+		row, e := kq.RowSource(src)
+		if e != nil {
+			return hostW{}, e
+		}
+		h, e := planKQuant(src, kind, row)
+		if e == nil && kquantKeepInt8ForTest {
+			alt, e2 := planWeight(src)
+			if e2 != nil {
+				return hostW{}, e2
+			}
+			h.alt = &alt
+		}
+		return h, e
 	}
 
 	// Admission: DecodeRunnerEligible was scoped to the richer WebGPU runner, so it is too permissive for this backend. A
@@ -452,7 +485,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hl.postPLENorm = lw.PostPLENorm
 		}
 		for _, p := range proj {
-			hw, e := planWeight(p.src) // validated now, packed into the device buffer at upload
+			hw, e := planProj(p.src) // validated now, packed into the device buffer at upload
 			if e != nil {
 				return declined(e)
 			}
@@ -670,7 +703,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if w.LMHead.Rows() == 0 {
 		lmSrc = &w.Embed // tied embeddings
 	}
-	hlm, e := planWeight(lmSrc)
+	hlm, e := planProj(lmSrc)
 	if e != nil {
 		return declined(e)
 	}
@@ -924,6 +957,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}{
 				{&r.fRms, "rmsnorm_quant_g32"}, {&r.fQ, "quant_vec_g32"}, {&r.fSw, "glu_quant_g32"},
 				{&r.gemvW4, "gemv_w4a8_g32"}, {&r.gemvW8, "gemv_w8a8_g32"}, {&r.gemvQ4K, "gemv_q4k_g32"},
+				{&r.gemvQ5K, "gemv_q5k_g32"}, {&r.gemvQ6K, "gemv_q6k_g32"},
 				{&r.fQKVg32, "fused_rms_qkv_g32"}, {&r.fGUg32, "fused_rms_gu_g32"},
 			} {
 				if *f.dst, e = r.dev.NewComputePipeline(agmod, f.name); e != nil {
@@ -1072,16 +1106,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// unconditionally). A load failure or a non-m-RoPE model is not fatal: PrefillMRoPELast declines to the
 		// CPU-prefill-then-UploadKV bridge.
 		if r.prefillReady {
-			if sec := m.MRopeSectionResident(); len(sec) == 3 {
+			// GLM-OCR's pairwise m-RoPE kernel writes f32 rows, so an f16 cache never compiles or loads it, whatever the policy says: the
+			// batched m-RoPE prefill stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
+			if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
 				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
 				if r.pairwiseRoPE { // GLM-OCR, which keeps f32 KV (decoder.CUDAKVF16Decline), so the f32 module's kernel
 					mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
 				}
-				// That kernel writes f32 rows, so an f16 cache never loads it, whatever the policy says: the batched m-RoPE prefill
-				// stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
-				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil && !(r.pairwiseRoPE && r.kvF16) {
+				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
 					loadMRope := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(mmod, name); pe == nil {
 							*dst = pl
