@@ -32,8 +32,9 @@ The exp-and-sum loop and the AV loop keep key order.
 
 - **Memory, stated and not gated** (corrected after Gemini's review of #239, below):
   - **Removed:** gpt-oss's per-call score allocation, nKeys × 4 bytes per layer per token.
-  - **Added:** a score buffer per worker slot, held in `decodeScratch`: at most `maxAttnWorkers` (6) × nKeys × 4 bytes per cache, grown with
-    the context (0.79 MB at 32k).
+  - **Added:** a score buffer per worker slot, held in `decodeScratch`, grown with the context. Each slot holds at most 2 × nKeys floats,
+    because `growCap` at least doubles, so the bound is `maxAttnWorkers` (6) × 2 × nKeys × 4 bytes per gpt-oss cache: **1.57 MB at 32k**.
+    First registered as 0.79 MB, which left out the doubling.
 - **The KS-F2 survey estimate,** for comparison and not a bar: 1.12× at depth 128 on gpt-oss, about 1.5× at 2k.
 
 **Amended before any G2 data (2026-10-25), by Francis's standing merge rule of 8:46–8:48 am (relayed by the coordinator):**
@@ -44,9 +45,10 @@ The exp-and-sum loop and the AV loop keep key order.
 - **How G2 is graded:** against both bars.
   - The registered small-gains reading (SHIP, PARK or FAIL above) is kept as recorded.
   - The merge bar's reading is "met" iff every cell has median ≥ 1.05× and at least 9 of 10 pairs faster (`grade_g2.py`).
-- **Memory, for the PR:** host bytes only (the CPU path). It adds at most 6 × the key count × 4 bytes of score buffers per cache (0.79 MB at
-  32k) and removes gpt-oss's per-call score allocation. Its effect on the longest context that fits is not measured
-  here; at 0.79 MB per cache at 32k it is reported as an upper bound, not as zero.
+- **Memory, for the PR:** host bytes only (the CPU path).
+  - **Added:** at most 6 × 2 × the key count × 4 bytes of score buffers per gpt-oss cache, 1.57 MB at 32k.
+  - **Removed:** gpt-oss's per-call score allocation.
+  - **The longest context that fits:** the effect is not measured here; 1.57 MB per cache at 32k is the upper bound, not zero.
 
 ## Pre-registration (`docs/measurements/noise-registry.md` §8)
 
@@ -97,7 +99,16 @@ Gemini found the product code bit-identical and race-free.
     the peak at exit through GNU `time -v`, and keeps the grader's exit code (`PIPESTATUS`).
   - The recorded depth-128 cell passes those rules: no run started above load 6.56, none swapped, and available memory never fell below
     59.5 GB against a peak of 23.4 GB. Its reading is unchanged.
-- **Nit 3, the memory bound:** `growCap` at least doubles a buffer, so a slot can hold up to about twice the key count. The added bound is
+- **Gemini's round 2 (the measurement scripts):**
+- **Swap sampling:** under `time -v` the sampled child was the wrapper, so swap read 0. Now the binary is sampled. The 08:32 run predates
+  `time -v`; `env` exec'd the binary directly then, so its swap readings are the binary's.
+- **The headroom rule on the committed cell:** its lines predate `need_mib`. The grader now checks them against the cell's largest
+  measured peak, 23,385 MiB. Every arm has at least 34 GB over need + 2 GB, with the smallest available reading 59,505 MiB, so the reading
+  is unchanged.
+- **The need file:** written only after a clean fit run, and keyed by cell, not by model.
+- **The reuse test:** gains a shrinking step and a wide window (above).
+
+**Nit 3, the memory bound:** `growCap` at least doubles a buffer, so a slot can hold up to about twice the key count. The added bound is
   6 slots × 2 × the key count × 4 bytes, **1.57 MB per cache at 32k**, not the 0.79 MB first stated.
   - When one worker serves, gpt-oss now scores into the cache's existing `scoresBuf` instead of a per-call allocation, the same buffer
     `attendQueryP`'s callers already pass.
@@ -113,16 +124,18 @@ Gemini found the product code bit-identical and race-free.
 **Francis, 2026-10-25 10:16 (relayed by the coordinator):** "KS-F2 default ON for gpt-oss: bit-identical, 1.025× at depth 128 on 10 of 10
 pairs, at most 0.79 MB per cache at 32k. Ship it as a default change once the granitemoehybrid identity cell passes on nobara. The PR goes
 to Gemini review before merge."
-- **The cell he made it conditional on** (granitemoehybrid, which reads through `attendQueryP`) passed at 10:04. The PR ships both
-  functions' schedule.
-- **What it means for the `attendQueryP` families** (Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2, Llama 4): bit-identical by G0, G1a and
-  G1b, with their speed not measured.
+- **The cell he made it conditional on** (granitemoehybrid, which reads through `attendQueryP`) passed at 10:04.
+- **Narrowed at 10:35** (see "Scope: gpt-oss only"): the PR ships gpt-oss's schedule only, and `attendQueryP` keeps `main`'s code.
+- **His 0.79 MB** is the first-stated bound; the corrected one is 1.57 MB per gpt-oss cache at 32k.
 
 ## Results so far
 
 | gate | where | result |
 |---|---|---|
-| G0 | the Mac, arm64 and amd64 (Rosetta), GOMAXPROCS 1 and 8 | **PASS.** `TestKSF2_sinksBitIdentical`: 256 cells, 48 with the heads fanned out. `TestKSF2_queryPBitIdentical`: 768 cells, 132 fanned out. Every ctx word and KV row equal on both arches. That is 90 distinct cells fanned out, each at GOMAXPROCS 1 and 8; the counts first printed as 48 and 132 counted both. A planted defect (two of the eight key rows swapped in `dotsF64x8`) turned both tests red. After the review, `TestKSF2_scratchReuseAcrossSteps` (300 steps on one scratch) is also equal on both arches |
+| G0 | the Mac, arm64 and amd64 (Rosetta), GOMAXPROCS 1 and 8 | **PASS.** `TestKSF2_sinksBitIdentical`: 256 cells, 48 with the heads fanned out. `TestKSF2_queryPBitIdentical`: 768 cells, 132 fanned out. Every ctx word and KV row equal on both arches. That is 90 distinct cells fanned out, each at GOMAXPROCS 1 and 8; the counts first printed as 48 and 132 counted both. A planted defect (two of the eight key rows swapped in `dotsF64x8`) turned both tests red. After the reviews: `TestKSF2_queryPKeepsTheOldPath` (the queryP cells, renamed when `attendQueryP` went back to `main`'s code: equal, and
+no head worker slot grown, red under a planted fan-out), and `TestKSF2_scratchReuseAcrossSteps`. The latter is 660 steps on one scratch:
+two 300-step runs, a window narrower and a window wider than the span, then a shorter 60-step cache on the same scratch. Fan-out is
+counted on the windowed span. Both are equal on both arches |
 | G1a | the Mac (Darwin/arm64), CPU | **PASS** (2026-10-25 06:55, `origin/main` `8135a0c3` against `f8a1eda2`, 64 steps): 33 families IDENTICAL, 0 within tolerance, 0 different, 10 not run (fixtures absent or not tiny). gpt-oss, `granitemoehybrid`, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are all IDENTICAL |
 | G1b | nobara CPU (amd64) | **PASS.** The 2026-10-25 08:32 run (`ks-f2-nobara`) found 32 IDENTICAL, 0 within tolerance, 0 different. gpt-oss, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are IDENTICAL. `granitemoehybrid`, not run then for want of its fixture, was re-run alone at 10:04 (`ks-f2-g1b-granite`, at `998f36f8`): IDENTICAL |
 | G2 | nobara CPU | **one of three cells read** (below). Francis, 2026-10-25 09:58: "KS-F2 A — decide on the readings so far; no deeper cell" |

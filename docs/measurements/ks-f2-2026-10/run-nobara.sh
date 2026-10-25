@@ -54,7 +54,7 @@ one() {
 		echo "VOID: $cell $tag $arm started at load $load (> 8.0)" | tee -a "$LOG/void.txt"; return 1
 	fi
 	local need
-	need=$(cat "$LOG/need-$(basename "$model").mib" 2>/dev/null || echo 0)
+	need=$(cat "$LOG/need-${cell#fit-}.mib" 2>/dev/null || echo 0) # the fit run of this cell, at its own depth
 	if [ "$need" -gt 0 ] && [ "$avail" -lt $((need + 2048)) ]; then
 		echo "VOID: $cell $tag $arm started with ${avail} MiB available, under the fit need ${need} + 2048" | tee -a "$LOG/void.txt"; return 1
 	fi
@@ -66,8 +66,10 @@ one() {
 		/usr/bin/time -v -o "$LOG/g2-$cell-$tag-$arm.time" "$bin" -test.run '^TestKSF2_cpuDecodeSpeed$' -test.v -test.count=1 -test.timeout "$TEST_TIMEOUT" > "$LOG/g2-$cell-$tag-$arm.log" 2>&1 </dev/null) &
 	local pid=$! hwm=0 swap=0 h s
 	while kill -0 $pid 2>/dev/null; do
-		local child
-		child=$(pgrep -P $pid | head -1) # env execs the binary, so the subshell's one child is it
+		local tpid child
+		# env execs /usr/bin/time, the subshell's one child, and time forks the binary: sample the binary (time's child), not the wrapper.
+		tpid=$(pgrep -P $pid | head -1)
+		child=$([ -n "$tpid" ] && pgrep -P "$tpid" | head -1)
 		if [ -n "$child" ]; then
 			h=$(awk '/VmHWM/ {print $2}' /proc/$child/status 2>/dev/null)
 			s=$(awk '/VmSwap/ {print $2}' /proc/$child/status 2>/dev/null)
@@ -80,13 +82,14 @@ one() {
 	local maxrss
 	maxrss=$(awk -F': ' '/Maximum resident set size/ {print $2}' "$LOG/g2-$cell-$tag-$arm.time" 2>/dev/null)
 	[ -n "$maxrss" ] && [ "$maxrss" -gt "$hwm" ] && hwm=$maxrss
-	if [ "$tag" = fit ]; then echo $((hwm / 1024)) > "$LOG/need-$(basename "$model").mib"; fi
 	if [ "$swap" -gt 0 ]; then
 		echo "VOID: $cell $tag $arm swapped (peak VmSwap $((swap / 1024)) MiB)" | tee -a "$LOG/void.txt"; return 1
 	fi
 	if [ $r != 0 ] || ! grep -q -- '--- PASS' "$LOG/g2-$cell-$tag-$arm.log"; then
 		echo "FAILED: $cell $tag $arm (see $LOG/g2-$cell-$tag-$arm.log)"; tail -3 "$LOG/g2-$cell-$tag-$arm.log"; return 2
 	fi
+	# Only a clean fit run (it passed, it did not swap) records its peak as the cell's need.
+	if [ "$tag" = fit ]; then echo $((hwm / 1024)) > "$LOG/need-${cell#fit-}.mib"; fi
 	# Tag the line the harness wrote with this run's place in the order and the box's state at its start.
 	python3 -c "import json,sys; l=json.loads(open(sys.argv[1]).read().splitlines()[-1]); l.update(tag=sys.argv[2], load=float(sys.argv[3]), avail_mib=int(sys.argv[4]), vmhwm_mib=int(sys.argv[5])//1024, vmswap_peak_mib=int(sys.argv[6])//1024, need_mib=int(sys.argv[7])); print(json.dumps(l))" \
 		"$LOG/g2-$cell.jsonl.part" "$tag" "$load" "$avail" "$hwm" "$swap" "$need" >> "$LOG/g2-$cell.jsonl"
@@ -112,7 +115,7 @@ TEST_TIMEOUT=${TEST_TIMEOUT:-20m}
 echo "== fit: each cell's model at the cell's own depth, one token, its peak kept as the cell's need ($(date '+%T'))"
 for c in "${cells[@]}"; do
 	IFS='|' read -r cell m depth <<< "$c"
-	[ -e "$LOG/need-$(basename "$m").mib" ] && continue
+	[ -e "$LOG/need-$cell.mib" ] && continue
 	run "fit-$cell" B "$m" "$depth" 1 fit || { grep -q -i -E 'refus|fit guard|would page' "$LOG"/g2-fit-*.log && { echo "FIT REFUSED: $m"; exit 75; }; echo "VOID: the fit load of $m failed"; exit 2; }
 done
 

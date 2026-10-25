@@ -267,41 +267,49 @@ func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache
 	}
 }
 
-// The two functions over many decode steps on one cache and one scratch, the key count growing a row a step from 1 to 300: the fanned
-// path reuses decodeScratch.headScoresPool's buffers across steps (and grows them), and every step's ctx must still equal the reference's.
-// A reused buffer that carried a stale score into a shorter step, or a slot grown short, would show here and not in the one-call cells.
+// Many decode steps sharing one scratch: the fanned path reuses decodeScratch.headScoresPool's buffers across steps, grows them, and
+// meets shorter steps after longer ones. Each window (narrower than the span, and wider than it) runs on its own cache, growing a row a
+// step to 300 keys; then a second, shorter cache on the same scratch runs 1 to 60 keys, so a slot sized and written for 300 keys serves
+// steps that read far fewer. Every step's ctx must equal the reference's: a stale score carried into a shorter step, or a slot grown
+// short, shows here and not in the one-call cells. attendQueryP shares the scratch, as a cache's layers do, and must stay on its path.
 func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
-	const steps = 300
 	for _, sh := range []ksf2Shape{{64, 8, 64}, {16, 2, 128}} {
 		r := rand.New(rand.NewSource(int64(sh.nH)))
 		arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 		kvDim := sh.nKV * sh.hd
 		lw := &LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
-		p := attentionParams{Window: 40, Scale: 1 / math.Sqrt(float64(sh.hd)), Softcap: 30}
-		a, b := NewKVCache(1, sh.nKV, sh.hd, p.Window, steps, nil), NewKVCache(1, sh.nKV, sh.hd, p.Window, steps, nil)
-		a.scr = newDecodeScratch(arch)
-		qa, qb := NewKVCache(1, sh.nKV, sh.hd, 0, steps, nil), NewKVCache(1, sh.nKV, sh.hd, 0, steps, nil)
-		qa.scr = a.scr // one scratch serves both functions, as a cache's does across its layers
-		fanned := 0
-		for pos := range steps {
-			q, k, v := ksf2Floats(r, sh.nH*sh.hd, 2), ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
-			got, want := make([]float32, sh.nH*sh.hd), make([]float32, sh.nH*sh.hd)
-			attendSinksToken(p, q, k, v, got, a, arch, lw, 0, pos)
-			attendSinksTokenRef(p, q, k, v, want, b, arch, lw, 0, pos)
-			ksf2SameBits(t, fmt.Sprintf("%+v sinks step %d: ctx", sh, pos), got, want)
-			qa.Append(0, k, v)
-			qb.Append(0, k, v)
-			pq := attentionParams{Scale: p.Scale, Softcap: p.Softcap}
-			attendQueryP(pq, q, got, make([]float32, pos+1), qa, 0, pos, arch)
-			attendQueryPRef(pq, q, want, make([]float32, pos+1), qb, 0, pos, arch)
-			ksf2SameBits(t, fmt.Sprintf("%+v queryP step %d: ctx", sh, pos), got, want)
-			if scalarHeadWorkers(sh.nH, pos+1, sh.hd) > 1 {
-				fanned++
+		scr := newDecodeScratch(arch)
+		fanned, steps := 0, 0
+		run := func(name string, window, n int) {
+			p := attentionParams{Window: window, Scale: 1 / math.Sqrt(float64(sh.hd)), Softcap: 30}
+			a, b := NewKVCache(1, sh.nKV, sh.hd, window, n, nil), NewKVCache(1, sh.nKV, sh.hd, window, n, nil)
+			a.scr = scr
+			qa, qb := NewKVCache(1, sh.nKV, sh.hd, 0, n, nil), NewKVCache(1, sh.nKV, sh.hd, 0, n, nil)
+			qa.scr = scr
+			for pos := range n {
+				q, k, v := ksf2Floats(r, sh.nH*sh.hd, 2), ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
+				got, want := make([]float32, sh.nH*sh.hd), make([]float32, sh.nH*sh.hd)
+				attendSinksToken(p, q, k, v, got, a, arch, lw, 0, pos)
+				attendSinksTokenRef(p, q, k, v, want, b, arch, lw, 0, pos)
+				ksf2SameBits(t, fmt.Sprintf("%+v %s sinks step %d: ctx", sh, name, pos), got, want)
+				qa.Append(0, k, v)
+				qb.Append(0, k, v)
+				pq := attentionParams{Window: window, Scale: p.Scale, Softcap: p.Softcap}
+				attendQueryP(pq, q, got, make([]float32, pos+1), qa, 0, pos, arch)
+				attendQueryPRef(pq, q, want, make([]float32, pos+1), qb, 0, pos, arch)
+				ksf2SameBits(t, fmt.Sprintf("%+v %s queryP step %d: ctx", sh, name, pos), got, want)
+				if scalarHeadWorkers(sh.nH, pos+1-p.start(pos), sh.hd) > 1 { // the span the step reads, as attendSinksToken counts it
+					fanned++
+				}
+				steps++
 			}
 		}
+		run("window 40 (narrower than the span)", 40, 300)
+		run("window 400 (wider than the span)", 400, 300)
+		run("shorter, after the long ones", 400, 60)
 		if fanned == 0 {
 			t.Fatalf("%+v: no step fanned the heads out", sh)
 		}
-		t.Logf("%+v: %d steps on one scratch, gpt-oss's attention fanned out in %d, every word equal", sh, steps, fanned)
+		t.Logf("%+v: %d steps on one scratch (growing, then shorter), gpt-oss's attention fanned out in %d, every word equal", sh, steps, fanned)
 	}
 }
