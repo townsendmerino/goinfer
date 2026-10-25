@@ -1204,6 +1204,11 @@ Tier 1, the shared timing lock, not timed; about 5 minutes a run.
   the first layer at which the native arm's minimum falls below the int8 arm's by more than 0.05, and at which positions.
 - **D3, the KV path.** D1's native and int8 arms rerun with `--kv f32` (explicit). The KV path is implicated if the native arm's
   final-layer minimum moves by more than half its gap to the int8 arm's.
+- **D3 amended (14:34, D1 running, none of its output read).** The figures this diagnostic explains were read on the f32 cache: the
+  CUDA test suite's default is f32 KV (`cuda/kv16_default_test.go`), and every LQ log reads `layer 0 KV half false`. KV precision is
+  therefore excluded by construction, and D3 as registered is D1's own configuration: it runs as an A/A repeat of D1 and is reported
+  as that (each layer's minimum must repeat to within 0.001, or D1's readings are not deterministic enough to locate anything). The
+  rest of the KV path, cached K and V that differ because each arm's own projections wrote them, is inside D1's per-layer reading.
 - **D2, which numerics, registered after D1 and before it runs.** At D1's first divergent layer, the suspect projection's output on
   the same input computed four ways (f32 file weights × f32 activations; file weights × per-32 int8 activations; the int8 lane's
   weights × per-32 int8 activations; the native kernel itself), to split activation quantization, weight representation and
