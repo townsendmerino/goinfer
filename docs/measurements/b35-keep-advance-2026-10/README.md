@@ -18,22 +18,35 @@ reusing more than Q2, restored still equal to cold, plus B35's own gate re-run. 
 - **What changes:** for a model with recurrent state, `kvPrefillMark` no longer declines because the request restored a
   snapshot. It still declines when the planned point is at or before where the prefill starts (`q <= from`), when the passes
   do not end on it, and when a held snapshot covers it.
-- **Amended while building, before G1–G3; G0 is what exposed it.** Two more places held a restored request's point as already
+- **Amended while building, before G1–G3; G0 is what exposed it.** Two more places counted a restored request's point as already
   served, and for a recurrent model both are wrong, because a recurrent snapshot serves only its own end:
-  - **`kvPrefillMark`'s covering check** counted the restored, shorter snapshot as holding the new point. For a recurrent model
-    it now declines only when the held snapshot reaches the point.
-  - **`Model.residentSnapshotRows`'s admission** required a restored request's point to be more than `kvmgr.RollbackFloor`
-    (448 rows) past the snapshot it restored from. That margin exists for windowed attention rings. For a recurrent model the
-    margin is 0, and the new point replaces the restored snapshot.
-  - Before this change, no recurrent request reached either branch, so neither alters anything that runs today.
-- **Unchanged for attention models:** all three conditions keep their old form, so their snapshot behaviour is bit-identical.
-- **Unchanged for every cold prefill:** the change acts only on a request that restored a snapshot.
+  - `kvPrefillMark`'s covering check;
+  - `Model.residentSnapshotRows`'s admission margin, `kvmgr.RollbackFloor`, past the snapshot the request restored from.
+- **Amended after Gemini's review of #228, before the gates re-ran.** The two functions now share one rule, `Model.kvSnapHolds`: a
+  recurrent snapshot holds a point only when it ends exactly there.
+  - A shorter one is replaced.
+  - A longer one is a different point, kept beside the new one.
+  - A recurrent covering search allows no rollback (`Model.kvSnapCoverSlack`).
+- **Unchanged for attention models:** every condition keeps its old form whenever the model has no recurrent state, so their
+  snapshot behaviour is bit-identical.
+- **What changes for recurrent models, and what does not** (corrected after the review: the PR first said no recurrent request
+  reached these branches, which was true of only one of them):
+  - **`kvPrefillMark`'s covering check was reached on `main`** by every cold recurrent prefill with a planned point. Its outcome
+    changes only when a held snapshot of the same prefix lies near the point:
+    - one that ends below the point declined the mark before, and now the mark is taken and replaces it;
+    - one that ends above the point declined it before, and now it is kept beside the new one.
+
+    On CUDA the second case could not arise, because `cudaKVSnapshot.Serves` answers only its own end for a DeltaNet state, so the
+    covering search never returned a longer one. The decoder no longer relies on that.
+  - **`residentSnapshotRows` was not reached for a recurrent model on `main`.** `residentSnapshotPrompt` returns at once for one,
+    and `kvPrefillMark`, its only other caller, declined every restored request and every covered cold one.
+  - **A cold prefill with no held snapshot near its point is unchanged.**
 
 ## Gates (registered before the code)
 
 | gate | tier | what | bar |
 |---|---|---|---|
-| G0 | 0, the Mac | `decoder/b35_snapshot_test.go:TestB35_aRestoredTurnKeepsItsOwnPoint` on the hash fake: turn 2 restores turn 1's point and takes its own; turn 3 restores turn 2's, deeper; turn 3's reply equals a cold run | passes on the change, and **fails on `main`** (run before the change is applied: the plant is `main` itself) |
+| G0 | 0, the Mac | `decoder/b35_snapshot_test.go:TestB35_aRestoredTurnKeepsItsOwnPoint` (and, after the review, `TestB35_aColdTurnNearAHeldPointTakesItsOwn` and `TestB35_aLongerHeldPointIsKeptBeside`) on the hash fake: turn 2 restores turn 1's point and takes its own; turn 3 restores turn 2's, deeper; turn 3's reply equals a cold run | passes on the change, and **fails on `main`** (run before the change is applied: the plant is `main` itself) |
 | G0b | 0, the Mac | every other test in `decoder/b35_snapshot_test.go` and `decoder/kvsnap*_test.go`, through `scripts/touched.py` | all pass |
 | G1 | 0, nobara (CUDA device) | `cuda/b35_snapshot_test.go` at the change | all pass |
 | G2 | 1, nobara | B35-TL re-run at the change (`run-b35-toolloop.sh`, the same conversation and rules) | verdict **PASS**: R2 met (Q3 reuses more than Q2, on both servers), I1 (restored equals cold), R1, R3 and T1 green |
@@ -93,3 +106,20 @@ completion tokens, identical).
 - **What it bought:** its time to first token is 0.28 s, 0.018 of cold. B35's own pass had 2.48 s, 0.157.
 
 Cold output is unchanged against `main` (I2, every turn, both sizes).
+
+## The review round (Gemini on #228), and the gates re-run
+
+- **Finding 1, a [bug]: right in part.**
+  - **A longer recurrent snapshot was counted as holding a shorter point** (`c.h.Rows() >= q`). That was a real bug, though not
+    reachable on CUDA, whose recurrent `Serves` is exact-end. `TestB35_aLongerHeldPointIsKeptBeside` fails on the reviewed commit
+    `e6673f9d` and passes now.
+  - **The claimed mismatch did not hold.** The review said a non-restoring request would get a mark that admission then declines.
+    Admission replaces a shorter held snapshot rather than declining it. `TestB35_aColdTurnNearAHeldPointTakesItsOwn` passes on
+    `e6673f9d` as well as now.
+  - **The two functions now share `kvSnapHolds`,** so their agreement is one rule, not two conditions that happen to match.
+- **Finding 2, a [risk]: the claim was overstated.** It is corrected above.
+- **Finding 3, [test]:** the advance test now checks turn 2's reply against a cold run, and that turn 2's snapshot replaces turn 1's
+  (`b35Held`).
+- **Plants:** the three new tests fail with `kvsnap.go` at `main` (`4814c869`), all three. With `kvsnap.go` at `e6673f9d`, only
+  the longer-snapshot test fails.
+- **The gates re-run on the fixed commit:** G0b and G1–G3, below.
