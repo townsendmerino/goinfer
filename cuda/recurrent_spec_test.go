@@ -595,3 +595,41 @@ func TestRecurrentSpec_seedChunksKeepTheCapture(t *testing.T) {
 		}
 	}
 }
+
+// TestRecurrentSpec_earlyExitLeavesNothingToFold: a speculative turn stopped by its consumer right after a round's FoldVerified, then
+// a second speculative turn on the same resident, must emit plain greedy's tokens and end on plain greedy's state: the stopped turn's
+// marked rows must never fold into the new sequence.
+func TestRecurrentSpec_earlyExitLeavesNothingToFold(t *testing.T) {
+	for _, m := range specModels() {
+		t.Run(m.name, func(t *testing.T) {
+			mc, r := loadSpecModel(t, m)
+			_, _, _, _, _, _, vocab := mc.Dims()
+			const maxNew = 24
+			prompt := idsFor(14, 41, vocab)
+			want, _ := plainGreedy(t, mc, r, prompt, maxNew)
+			wantState := dnSnapshot(t, r)
+			for _, w := range []int{4, 8} {
+				d := &scriptedDrafter{oracle: want, promptLen: len(prompt), vocab: vocab, width: w}
+				s, err := mc.NewBlockSpecForTest(d, scriptedWeights{}, []int{0})
+				if err != nil {
+					t.Fatal(err)
+				}
+				// The seed's token is emit 1, the first round's burst emit 2: the consumer stops there, after FoldVerified.
+				if _, err := s.GenerateStopAfterForTest(prompt, decoder.BlockSpecOptions{VerifyWidth: w, MaxTokens: maxNew}, 2); err != nil {
+					t.Fatalf("w=%d: stopped turn: %v", w, err)
+				}
+				d.ctx, d.round = 0, 0
+				got, _, err := s.Generate(prompt, decoder.BlockSpecOptions{VerifyWidth: w, MaxTokens: maxNew})
+				if err != nil {
+					t.Fatalf("w=%d: second turn: %v", w, err)
+				}
+				if at := sp2Diverge(got, want); at >= 0 {
+					t.Errorf("w=%d: after a stopped turn, the next turn diverges from plain greedy at token %d", w, at)
+				}
+				if dd := snapDiff(wantState, dnSnapshot(t, r)); dd != "" {
+					t.Errorf("w=%d: after a stopped turn, the next turn's state differs from plain greedy's: %s", w, dd)
+				}
+			}
+		})
+	}
+}

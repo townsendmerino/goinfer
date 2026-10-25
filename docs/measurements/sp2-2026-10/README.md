@@ -13,14 +13,20 @@ nobara" (commit `7d5a96cf`, pushed before the first line of SP2 code). This page
 ## The kernels: what changed in `deltanet.ptx`
 
 Rebuilt with `cuda/build_ptx.sh deltanet` (NVRTC 12.9.86; the committed PTX first rebuilt byte-identically at main `d9a1cb4d`,
-so the toolchain reproduces it). Every pre-existing kernel's floating-point instruction sequence is unchanged; the PTX of the
-row-batched kernels differs only in labels, symbol names and address arithmetic order. Each of two verify twins shares one
-function body with its committing kernel, and its floating-point operations come in the same order (`delta_conv_rows_spec` and
-`delta_conv_rows`, `delta_rule_rows_128_spec` and `delta_rule_rows_128`). Their PTX is not otherwise identical: the conv twin
-loads each tap from the window or from the pass's earlier rows and has no window stores, and the scan twin has no state store. The generic twin, `delta_rule_rows_spec`, is a separate body:
-it holds the state row in a predicated 128-float register array where `delta_rule_rows` walks it in global memory, with the same
-ascending-kd FMA chains; G1a shows it bit-identical on the two tiny fixtures that take it. None of the three declares local memory in its PTX; at the driver's JIT the 128-wide twin spills 80
-B/thread, under the 96 B its committing kernel already spills (below).
+so the toolchain reproduces it). As merged, `cuda/deltanet.cu` gains only additions: every committing kernel's source is main's,
+and its PTX is main's apart from label numbers. The three verify twins are standalone kernels:
+- `delta_conv_rows_spec` folds the previous verify's committed rows into the window (the slide alone), then computes each row from
+  the window and the pass's earlier rows with `delta_conv_rows`'s FMA chain, in the same floating-point order, and slides nothing
+  for its own rows;
+- `delta_rule_rows_128_spec` runs one loop over the folded rows and its own with `delta_rule_rows_128`'s row arithmetic, stores the
+  state once after the folded rows, and writes output for its own rows only;
+- `delta_rule_rows_spec`, the generic twin, holds the state row in a predicated 128-float register array where `delta_rule_rows`
+  walks it in global memory, with the same ascending-kd FMA chains.
+
+G1a shows each bit-identical to a prefill of the same rows on the models that take it. None declares local memory in its PTX; at
+the driver's JIT the 128-wide twin spills 96 B/thread, the committing kernel's own figure (`TestKernelLocalMemoryCensus` pins
+both). Earlier forms of the twins (templated with the committing kernels, before the fold moved into the scan) are described where
+their readings are recorded below.
 
 ## Readings
 

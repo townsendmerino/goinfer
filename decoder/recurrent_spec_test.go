@@ -15,6 +15,7 @@ func (s recurrentSpecStub) RecurrentSpecRows() int                          { re
 func (recurrentSpecStub) VerifyLastNArgmax([][]float32, int) ([]int, error) { panic("not reached") }
 func (recurrentSpecStub) FoldVerified(int) error                            { panic("not reached") }
 func (recurrentSpecStub) FlushFold() error                                  { panic("not reached") }
+func (recurrentSpecStub) DropFold()                                         { panic("not reached") }
 
 func deltaNetArch(layers int) *Architecture {
 	return &Architecture{NumLayers: layers, HiddenDim: 64,
@@ -162,7 +163,15 @@ type foldHost struct {
 	folds   []int
 	verify  []int
 	flushes int // FlushFold calls that found rows marked
+	drops   int // DropFold calls that found rows marked
 	marked  bool
+}
+
+func (h *foldHost) DropFold() {
+	if h.marked {
+		h.drops++
+		h.marked = false
+	}
 }
 
 func (h *foldHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
@@ -337,5 +346,34 @@ func TestBlockSpecGenerate_fusesALongSeedInPieces(t *testing.T) {
 		if p != i {
 			t.Fatalf("context position %d holds row %d: the pieces were joined out of order", i, p)
 		}
+	}
+}
+
+// TestBlockSpecGenerate_earlyExitDropsTheMarkedRows: a turn whose consumer stops after a round's FoldVerified commits nothing, so it
+// must leave nothing marked for the next turn's first verify to fold into a sequence it never belonged to.
+func TestBlockSpecGenerate_earlyExitDropsTheMarkedRows(t *testing.T) {
+	m, _ := loadWithFakeResident(t)
+	if !m.ResidentActive() {
+		t.Skip("fixture is not resident-eligible")
+	}
+	a := *m.w.arch
+	a.qwen35 = &qwen35Params{ConvKernel: 4, KeyHeadDim: 16, ValueHeadDim: 16, NumKeyHeads: 2, NumValueHeads: 4}
+	a.layerIsLinear = func(i int) bool { return i == 0 }
+	m.w.arch = &a
+	host := &foldHost{script: []int{5, 6, 9, 8}}
+	s := &BlockSpec{m: m, host: host, rd: scriptDrafter{ids: []int{5, 6, 4}}, dw: blockspecCommitStubWeights{blockspecStubWeights{blockSize: 8}}}
+	n := 0
+	out, _, err := s.generate([]int{1, 2, 3}, BlockSpecOptions{VerifyWidth: 4, MaxTokens: 32}, func([]int) bool { n++; return n < 2 })
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if len(host.folds) != 1 {
+		t.Fatalf("folds %v: the stop should come right after the first round's FoldVerified", host.folds)
+	}
+	if host.marked || host.drops != 1 || host.flushes != 0 {
+		t.Errorf("after the early exit: marked %v, %d drops, %d flushes; want nothing marked, 1 drop, 0 flushes", host.marked, host.drops, host.flushes)
+	}
+	if m.resIDs != nil {
+		t.Errorf("resIDs = %v after an early exit (out %v); want nil, so the next turn goes cold", m.resIDs, out)
 	}
 }
