@@ -1,7 +1,7 @@
 // Command zzgateidentity is `gate identity`'s logit dumper (TE6(b), docs/tasks/task-test-efficiency-2026-09.md).
 // cmd/gate writes this file into a TEMPORARY worktree of each revision it compares and builds it there, so
 // the same source compiles against both revisions' decoder. It therefore uses the PUBLIC decoder API only
-// (Load, Options{Quant, Backend}, Generate with a LogitProcessor, DecodePath) — anything newer would stop
+// (Load, Options{Quant, Backend, DirectLoad}, Generate with a LogitProcessor, DecodePath) — anything newer would stop
 // it building at an older revision.
 //
 // It reads a JSON spec (cells: a checkpoint, a quant, prompts as token ids), and for each cell dumps the
@@ -30,10 +30,11 @@ import (
 var _ = strings.Contains // the injected test hooks may use it
 
 type cellSpec struct {
-	ID      string  `json:"id"`
-	Path    string  `json:"path"`
-	Quant   string  `json:"quant"`
-	Prompts [][]int `json:"prompts"`
+	ID         string  `json:"id"`
+	Path       string  `json:"path"`
+	Quant      string  `json:"quant"`
+	Prompts    [][]int `json:"prompts"`
+	DirectLoad bool    `json:"direct_load,omitempty"`
 }
 
 type spec struct {
@@ -104,7 +105,7 @@ func runCell(s spec, c cellSpec) (m cellMeta) {
 	}
 	defer f.Close()
 	t0 := time.Now()
-	model, err := decoder.Load(c.Path, decoder.Options{Quant: c.Quant, Backend: s.Backend})
+	model, err := decoder.Load(c.Path, decoder.Options{Quant: c.Quant, Backend: s.Backend, DirectLoad: c.DirectLoad})
 	m.LoadMS = time.Since(t0).Milliseconds()
 	if err != nil {
 		m.Err = "load: " + err.Error()
