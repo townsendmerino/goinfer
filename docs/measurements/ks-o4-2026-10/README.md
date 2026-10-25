@@ -75,7 +75,28 @@ registration, committed before any code. A separate PR from KS-F2's.
 | G-MEM | 0, nobara | the KV bytes per position, and the fit guard's plan for gpt-oss-20b at 32k, before and after Step 2 | the window layers' KV is stated before and after, from the plan's own pricing; the bar is that it falls by the window layers' share less the ring's fixed bytes |
 | G-SPEED | timed, nobara CPU, the timing lock, by day | KS-F2's harness (`TestKSF2_cpuDecodeSpeed`), A B B A over 10 pairs, with today's build against Step 1 + 2, gpt-oss-20b at depth 128 and 2048 | reported. **FAIL** if a cell has at most 1 of 10 pairs faster (a slowdown beyond doubt); otherwise it passes with the ratio stated. Not a speed claim: KS-O4's purpose is what it unblocks |
 
-**Amended before any data (2026-10-25): G-FID's cell lengths and cost.** gpt-oss's CPU prefill runs token by token: its FFN form is not
+**Amended before any data (2026-10-25 10:20, Francis: "KS-O4 A"): G-FID's budget.**
+
+KS-F2's first nobara run measured gpt-oss-20b's CPU path there at about 0.58 s a token (prefill and decode), not the 0.13–0.15 s assumed
+below, so the gate as registered would run past 5 hours.
+
+| | was | now |
+|---|---|---|
+| short cell | about 150 tokens | **about 100:** the first two sentences of a passage, with an instruction |
+| long cell | about 600 tokens | **about 300:** two passages, still more than twice the 128-key window |
+| scored positions | 32 a prompt | **16:** the one after the prompt and after each of the reference's first 15 greedy tokens |
+| N a cell | 10–24 from power.py | **at most 12** |
+| run | by day | **one nobara night job,** `--not-before 22:00`, at most 3 hours |
+
+- **How N is set:** the smallest of 12, power.py's ask (at least 10 a cell), and the number of gate prompts a cell that the 3 hours admit,
+  using the pilot's own measured wall per prompt.
+- **If even 10 a cell does not fit** the budget, the gate stops as "cannot resolve within the budget" (exit 3) before the gate set runs.
+- **If power.py asks for more than 12,** the gate runs at 12, and the record states what power.py asked for.
+- **Unchanged:** the criteria, the bands and what each outcome means.
+- **Still owed before merge:** the real-checkpoint gpt-oss parity run.
+- **Measured lengths:** the job prints the prompts' token lengths, and they go in the record.
+
+**Superseded by the amendment above:** G-FID's cell lengths and cost. gpt-oss's CPU prefill runs token by token: its FFN form is not
 batch-eligible (`program.batchEligible`). At about 0.13–0.15 s a token on nobara, a 1,500-token cell costs about 4 min a pass, so three
 passes over 24 prompts run past 2 hours. The cells move to about 150 and 600 tokens, and the cost is restated below. No reading existed.
 
