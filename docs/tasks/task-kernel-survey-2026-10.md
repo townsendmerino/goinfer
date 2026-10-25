@@ -1730,6 +1730,14 @@ it alone. The CPU and memory terms (`voidWindow`) and the void cap (15) are unch
   seen.
 - **The bar is unchanged:** SHIP iff the median on/off is ≤ 0.98 with at least 9 of 10 pairs faster. On SHIP, KS-E3 stays on main.
   Under it, KS-E3 parks and its revert from main is put to Francis. This reading decides; the four earlier ones stay in the record.
+- **Amended 17:05, before the run, after the review of #214, #224 and #227:**  `hostmem.ReadCPU` read `host_statistics64(HOST_CPU_LOAD_INFO)`,
+which XNU rate-limits for non-Apple binaries: after a few calls in a second it serves the last reply again, so an arm's end sample
+could be up to a second stale (three calls in 0.4 s returned the same sample). It now reads `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`,
+per core, which is not rate-limited. Each state's count is differenced on its own, modulo 2^32 on macOS and clamped at 0 on Linux
+(NOHZ can step idle back a tick), so busy never exceeds total. A sample pair spanning no interval now voids the arm instead of
+failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
+stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
+this run reads the new one, alongside the GPU term.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
