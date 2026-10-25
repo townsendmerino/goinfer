@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // H0, the hardware census: a census, deliberately not a verdict, in the shape of decoder/dispatch_census_test.go.
@@ -208,13 +209,26 @@ func pinned(t *testing.T, root, mod string, gomods ...string) []string {
 // a census that could not read aikit would report every aikit predicate missing from the source, or worse, pass.
 func moduleDir(t *testing.T, root, mod, ver string) string {
 	t.Helper()
-	cmd := exec.Command("go", "mod", "download", "-json", mod+"@"+ver)
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
+	// A module the cache lacks is fetched from the proxy here, so a transient network error is retried; a failure that
+	// persists still fails. go mod download -json reports its error in the JSON on stdout, so both streams are kept.
 	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("CANNOT SEARCH %s@%s (go mod download: %v %s): the census needs the pinned source; fix with `go mod download`, never by skipping", mod, ver, err, errb.String())
+	var err error
+	for attempt, wait := range []time.Duration{0, 2 * time.Second, 8 * time.Second} {
+		time.Sleep(wait)
+		cmd := exec.Command("go", "mod", "download", "-json", mod+"@"+ver)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
+		out.Reset()
+		errb.Reset()
+		cmd.Stdout, cmd.Stderr = &out, &errb
+		if err = cmd.Run(); err == nil {
+			break
+		}
+		t.Logf("go mod download %s@%s, attempt %d: %v\nstdout: %s\nstderr: %s", mod, ver, attempt+1, err, out.String(), errb.String())
+	}
+	if err != nil {
+		t.Fatalf("CANNOT SEARCH %s@%s (go mod download: %v; stdout %s; stderr %s): the census needs the pinned source; fix with `go mod download`, never by skipping",
+			mod, ver, err, out.String(), errb.String())
 	}
 	var j struct{ Dir string }
 	if err := json.Unmarshal(out.Bytes(), &j); err != nil || j.Dir == "" {

@@ -58,12 +58,12 @@
 | KS-D8 | done | done 2026-10-24: batched Mamba-2 prefill, the relu² MLP and mixer-only layers on Metal; the 9B's 512-token prefill 5.14× (D8-G4 SHIP); G1, G2, G5, G6 PASS; D8-G3 PASS on its reference route (against a CPU bf16 reference the pass reads mean KL 0.046 and top-1 7 of 8, the sequential path 0.102 and 4 of 8) | survey, "KS-D8 read", "D8-G3 reference-route read" |
 | KS-D9 | done | done 2026-10-24: the generic pager's phase 2 batched expert by expert, its scratch allocated once per call and priced in the plan; D9-G1 bit-identical on 7 paged cells (against sequential and against the per-row phase 2); Qwen1.5-MoE-A2.7B's 512-row paged prefill median 0.9050, 0.8241 and 0.9131 of per-row, 3 of 3 pairs each, 0 logits differ (D9-G2 SHIP) | survey, "KS-D9 read", "D9-G2 read", "After the review of #224" |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
-| KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
+| KS-E1 | open (measured) | Mac 2026-10-25: the int4 decode GEMV moves 53.7 GB/s (144 µs for 8960×1536), slower per matrix than the production int8 GEMV (~113–145 GB/s from the decode profile): compute-bound. Next: a same-kernel A/B with the change built | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1, and every Context builder wired through quantSrc); the 1.5B's WebGPU decode 24.7 → 21.8 ms a token, median 0.8810, 10 of 10 pairs, with an A/A control (1.0041) in the same run and busy cores read per arm (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); E3-G2 on its full guard (busy cores, GPU contention, vanished clients) passes, median 0.9166, 10 of 10 pairs; the size varies with the machine's state (a quiet earlier session read 0.9916, also 10 of 10) | survey, "KS-E3 read" |
-| KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
-| KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
-| KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
+| KS-E4 | open (measured) | Mac 2026-10-25, Qwen3-VL-2B int4 on WebGPU: projections are 84% / 80% / 54% of the batched pass at 256 / 1,024 / 4,096 rows | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
+| KS-E5 | open (measured) | Mac 2026-10-25, the 1.5B on WebGPU: decode attention is 62% / 87% / 93% of a token at 2k / 8k / 16k positions, about 15 µs a position | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
+| KS-E6 | open (measured) | Mac 2026-10-25: prefill attention is 43% of a 4,096-row pass (5% at 256, 16% at 1,024) | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E7 | open | either box: KV bytes per slot and KV equality past the window | — |
 | KS-E8 | open | either box: a WebGPU twin of `cuda/lora_cost_measure_test.go` | — |
 | KS-E9 | open | either box: `TestSpike_capabilities` | — |
@@ -71,7 +71,7 @@
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
 | KS-F1 | open | either box: a fork/join counter and bit-identity on the tiny MoE fixtures | — |
 | KS-F2 | active | #239: gpt-oss's attendSinksToken fans its heads out and scores eight keys at once, bit-identical, default on for gpt-oss (Francis, 2026-10-25 10:16; limited to gpt-oss at 10:35). gpt-oss-20b at depth 128 10 of 10 pairs faster, 1.025×; then KS-O4 | `docs/measurements/ks-f2-2026-10/README.md` |
-| KS-F2b | open | time attendQueryP's new schedule (heads fanned out, eight keys at once) on Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4 before it ships for them: not run, by Francis's call of 2026-10-25 10:35 (#239 keeps their old path). The code is in #239's history | `docs/measurements/ks-f2-2026-10/README.md` |
+| KS-F2b | done | default on 2026-10-25 by Francis's call (14:01, option (c)) for every attendQueryP family: Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4. Bit-identical (768 function-level runs, 132 fanned; gate identity IDENTICAL for all five at 640 steps). Qwen3.5-0.8B on the Mac CPU 1.113× at depth 128 and 1.833× at 1,024, 10 of 10 each; the other four ship untimed by his call. LFM2.5-2.6B's confirming run is queued on the Mac's night runner | `docs/measurements/ks-f2b-2026-10-25/README.md` |
 | KS-F3 | open | either box: `GOINFER_DELTANET_TIMING=1` with M35 (tier 1, minutes) | — |
 | KS-F4 | open | nobara: per-fan-out timestamps inside a real 0.5B token | — |
 | KS-F5 | open | either box: `AllocsPerRun` and trig calls per token on `deepseek-tiny` | — |
