@@ -294,12 +294,9 @@ func TestSP2_identity(t *testing.T) {
 		"state_diff": stateDiff, "warm_cold_diverge_at": sp2Diverge(warmB, coldB), "pass": ok})
 }
 
-// sp2HostNeed is the host memory this load needs, for the void rule: the identity run's peak resident memory for the same
-// load and drafter (docs/measurements/sp2-2026-10/README.md, "G1c, the re-run"), larger than the fit guard's own estimate.
-const sp2HostNeed = int64(15_331_852) << 10
-
 // sp2Cell reads the box at a cell's start and returns the record and, when the registered rule voids the cell, why: the
-// 1-minute load average above 8.0 (half nobara's 16 cores), or available memory under sp2HostNeed plus 2 GB.
+// 1-minute load average above 8.0 (half nobara's 16 cores), or available memory under the fit need plus 2 GB. Every cell starts
+// with the load already resident in this process, so what it still needs is 0 and the term is the 2 GB margin alone.
 func sp2Cell() (map[string]any, string) {
 	b, _ := os.ReadFile("/proc/loadavg")
 	la, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
@@ -308,8 +305,8 @@ func sp2Cell() (map[string]any, string) {
 	switch {
 	case la > 8.0:
 		return cell, fmt.Sprintf("load %.2f > 8.0", la)
-	case avail < sp2HostNeed+2<<30:
-		return cell, fmt.Sprintf("available %d B < need %d B + 2 GB", avail, sp2HostNeed)
+	case avail < 2<<30:
+		return cell, fmt.Sprintf("available %d B < 2 GB with the load resident", avail)
 	}
 	return cell, ""
 }
@@ -446,11 +443,20 @@ func TestSP2_foldCost(t *testing.T) {
 // B A pairs per context over SP0's 12 code and math prompts, decode timed from the first token to the end. Both arms' windows
 // hold the same work outside decode: each starts when the prompt's first token is out (BlockSpec has folded the prompt into its
 // drafter's context by then) and ends after the last token is forwarded and the turn committed, which plain decode also does
-// before its channel closes. A pair started under heavy load is void and re-run in order (sp2ValidCell).
+// before its channel closes. The plain arm runs under the exact-attention scope BlockSpec holds, the plain greedy G1 compares
+// with, and every prompt's tokens must be equal in the two arms of a pair, so the rates compare the same generations. A pair
+// started under heavy load is void and re-run in order (sp2ValidCell).
+//
+// SP2_SMOKE=1 runs one pair over two prompts per context into SP2_OUT, to prove the harness before the registered run; its
+// readings are not G4's.
 func TestSP2_speed(t *testing.T) {
 	g := newSP2Rig(t)
 	const maxNew = 256
-	preamble := sp2LongText(t, g.tk, filepath.Join("..", "docs", "architecture.md"), 3800)
+	pairs, perCtx := 10, 0
+	if os.Getenv("SP2_SMOKE") == "1" {
+		pairs, perCtx = 1, 2
+	}
+	preamble := sp2LongText(t, g.tk, filepath.Join("..", "docs", "benchmarks.md"), 3800)
 	type ctxSet struct {
 		name    string
 		prompts [][]int
@@ -467,10 +473,13 @@ func TestSP2_speed(t *testing.T) {
 				cs.prompts = append(cs.prompts, ids)
 			}
 		}
+		if perCtx > 0 {
+			cs.prompts = cs.prompts[:perCtx]
+		}
 		sets = append(sets, cs)
 	}
-	// One arm's pass over every prompt: decode tokens and decode seconds, summed.
-	pass := func(prompts [][]int, spec bool) (toks int, secs float64) {
+	// One arm's pass over every prompt: decode tokens and decode seconds, summed, and each prompt's tokens.
+	pass := func(prompts [][]int, spec bool) (toks int, secs float64, outs [][]int) {
 		for _, ids := range prompts {
 			g.mc.ForgetResidentForTest() // every generation prefills cold, in both arms
 			var n int
@@ -481,38 +490,54 @@ func TestSP2_speed(t *testing.T) {
 					t.Fatal(err)
 				}
 				n, first, end = len(out), f, time.Now()
+				outs = append(outs, out)
 			} else {
+				leave := g.r.EnterExactAttention()
 				ch, gen := g.mc.Generate(context.Background(), ids, maxNew, decoder.SamplingParams{})
-				for range ch {
+				var out []int
+				for id := range ch {
 					if n == 0 {
 						first = time.Now()
 					}
 					n++
+					out = append(out, id)
 				}
 				end = time.Now()
+				leave()
 				if e := gen.Err(); e != nil {
 					t.Fatal(e)
 				}
+				outs = append(outs, out)
 			}
 			toks += n - 1
 			secs += end.Sub(first).Seconds()
 		}
-		return toks, secs
+		return toks, secs, outs
 	}
 	for _, cs := range sets {
 		pass(cs.prompts[:2], false) // warm-up, discarded
 		pass(cs.prompts[:2], true)
+		g.record(t, map[string]any{"kind": "g4-mode", "context": cs.name, "fa_verify": g.r.faVerify,
+			"note": "fa_verify true: the multi-row flash-decode lane serves verify rows and the exact-attention scope is a no-op"})
 		var ratios []float64
-		for i := range 10 {
+		for i := range pairs {
 			cell := g.sp2ValidCell(t, fmt.Sprintf("G4 %s pair %d", cs.name, i))
 			var pt, st int
 			var ps, ss float64
+			var po, so [][]int
 			if i%2 == 0 {
-				pt, ps = pass(cs.prompts, false)
-				st, ss = pass(cs.prompts, true)
+				pt, ps, po = pass(cs.prompts, false)
+				st, ss, so = pass(cs.prompts, true)
 			} else {
-				st, ss = pass(cs.prompts, true)
-				pt, ps = pass(cs.prompts, false)
+				st, ss, so = pass(cs.prompts, true)
+				pt, ps, po = pass(cs.prompts, false)
+			}
+			for k := range po {
+				if at := sp2Diverge(so[k], po[k]); at >= 0 {
+					t.Errorf("%s pair %d prompt %d: the arms' tokens differ at %d (spec %d, plain %d tokens): G1's equality does not hold here",
+						cs.name, i, k, at, len(so[k]), len(po[k]))
+					g.record(t, map[string]any{"kind": "g4-diverge", "context": cs.name, "pair": i, "prompt": k, "at": at})
+				}
 			}
 			ratio := (float64(st) / ss) / (float64(pt) / ps)
 			ratios = append(ratios, ratio)
@@ -527,7 +552,7 @@ func TestSP2_speed(t *testing.T) {
 			}
 		}
 		g.record(t, map[string]any{"kind": "g4-summary", "context": cs.name, "median": sp2Median(ratios), "pairs_above_1": above})
-		t.Logf("%s: median %.3fx, %d of 10 pairs above 1", cs.name, sp2Median(ratios), above)
+		t.Logf("%s: median %.3fx, %d of %d pairs above 1", cs.name, sp2Median(ratios), above, pairs)
 	}
 }
 

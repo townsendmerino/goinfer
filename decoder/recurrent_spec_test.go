@@ -88,38 +88,60 @@ func TestRecurrentSpecArenaBytes_formula(t *testing.T) {
 	}
 }
 
-// prepHost is a drafter host with a fold capability whose attach must not be reached: prepareRecurrentSpec runs before it.
+// prepHost is a drafter host with a fold capability whose attach must not be reached: prepareRecurrentSpec runs before it. It
+// counts the preparations asked of it.
 type prepHost struct {
 	recurrentSpecStub
 	*blockspecWriteHost
+	prepared *int
+}
+
+func (h prepHost) PrepareRecurrentSpec(rows int) error {
+	*h.prepared++
+	return h.recurrentSpecStub.PrepareRecurrentSpec(rows)
 }
 
 // TestPrepareRecurrentSpec_refusesBeforeAttach: NewBlockSpec readies the fold path before the drafter's weights go to the
 // device, so a recurrent model the path refuses has nothing uploaded. The refusals: no fold capability, the resident declining
-// to prepare, no rows kept, and a recurrent kind the path does not serve.
+// to prepare, no rows kept, and an architecture the path does not serve (Mamba-2, a sliding window, heads past 128), which is
+// refused before the resident is asked to allocate anything.
 func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
 	mk := func(a *Architecture) *Model { return &Model{w: &Weights{arch: a}} }
 	dw := blockspecStubWeights{blockSize: 16}
 	dn := deltaNetArch(8)
 	mamba := &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}
-	host := func(rows int, err error) ResidentDrafterHost {
-		return prepHost{recurrentSpecStub{rows: rows, prepErr: err}, &blockspecWriteHost{}}
-	}
+	windowed := deltaNetArch(8)
+	windowed.SlidingWindow = 4096
+	wide := deltaNetArch(8)
+	wide.qwen35.ValueHeadDim = 256
 	for _, c := range []struct {
-		name string
-		arch *Architecture
-		host ResidentDrafterHost
-		ok   bool
+		name      string
+		arch      *Architecture
+		rows      int
+		prepErr   error
+		noFold    bool
+		ok        bool
+		wantPreps int
 	}{
-		{"no fold capability", dn, &blockspecWriteHost{}, false},
-		{"the resident declines to prepare", dn, host(16, errBlockSpecUnsupported), false},
-		{"no rows kept", dn, host(0, nil), false},
-		{"Mamba-2", mamba, host(16, nil), false},
-		{"DeltaNet with a prepared path", dn, host(16, nil), true},
-		{"dense: nothing to prepare", &Architecture{}, &blockspecWriteHost{}, true},
+		{"no fold capability", dn, 0, nil, true, false, 0},
+		{"the resident declines to prepare", dn, 16, errBlockSpecUnsupported, false, false, 1},
+		{"no rows kept", dn, 0, nil, false, false, 1},
+		{"Mamba-2", mamba, 16, nil, false, false, 0},
+		{"DeltaNet with a sliding window", windowed, 16, nil, false, false, 0},
+		{"DeltaNet with value heads of 256", wide, 16, nil, false, false, 0},
+		{"DeltaNet with a prepared path", dn, 16, nil, false, true, 1},
+		{"dense: nothing to prepare", &Architecture{}, 16, nil, false, true, 0},
 	} {
-		if err := mk(c.arch).prepareRecurrentSpec(c.host, dw); (err == nil) != c.ok {
+		preps := 0
+		var host ResidentDrafterHost = prepHost{recurrentSpecStub{rows: c.rows, prepErr: c.prepErr}, &blockspecWriteHost{}, &preps}
+		if c.noFold {
+			host = &blockspecWriteHost{}
+		}
+		if err := mk(c.arch).prepareRecurrentSpec(host, dw); (err == nil) != c.ok {
 			t.Errorf("%s: err = %v, want ok %v", c.name, err, c.ok)
+		}
+		if preps != c.wantPreps {
+			t.Errorf("%s: the resident was asked to prepare %d times, want %d", c.name, preps, c.wantPreps)
 		}
 	}
 }

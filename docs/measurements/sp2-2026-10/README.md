@@ -113,3 +113,23 @@ acceptance on this pairing falls with context; G4's long cell reads what that co
 **G1c re-run on the fixed tree: PASS** (2026-10-25, 00:57–01:05 PDT, at `2df07347`, the arena now prepared before the drafter's
 weights): 40 of 40 cells token- and state-identical, the guard's fallback 4 of 4, P1 and P2 each caught on 12 of 12 prompts, G5
 passing; the same 1.15 GB free with everything attached; peak resident 15.3 GB, peak swap 0. Raw: `raw/identity-2026-10-25-0057.jsonl`.
+
+### Second review's fixes, and a G4 smoke run (2026-10-25, 01:30–02:10 PDT)
+
+- **No arena for a refused architecture.** The admission check (`RecurrentSpecArenaBytes`, 0 for every model the path refuses)
+  now runs before the resident is asked to prepare, so a Gated-DeltaNet model with a sliding window or wide heads allocates
+  nothing. `TestPrepareRecurrentSpec_refusesBeforeAttach` counts the preparations asked for: 0 for Mamba-2, a sliding window and
+  value heads of 256. Mutation-checked: moving the check after the preparation fails those three cases.
+- **G4's plain arm runs under the exact-attention scope** BlockSpec holds (the plain greedy G1 compares with), and every
+  prompt's tokens are compared between the arms of each pair; a difference fails the test. The long cell's prompts (behind a
+  3,800-token preamble) are not in G1c's set, so this is their identity check. The load record notes whether the multi-row
+  flash-decode lane serves verify rows (then the scope is a no-op in both arms).
+- **The void rule's memory term** is the 2 GB margin alone: every cell starts with the load already resident in the process.
+- **A third pre-existing BlockSpec limit, found by the smoke run:** the seed's capture went to the drafter in one `FuseContext`
+  call, whose device scratch grows with the rows, so a 3,900-token prompt went out of device memory. The loop now fuses in
+  512-row pieces; the fusion is per row and `ExtendContext` appends, so the context is the same.
+- **The G4 smoke run** (`SP2_SMOKE=1`, one pair over two prompts per context; not G4's reading) ran both contexts to the end with
+  tokens equal in both arms.
+- **Checks on the fixed tree:** tier 0 on all three models, `touched.py` and the scan-table test green; the dense pairing's
+  gates on Qwen3-4B pass (`TestDFlashLoop_lossless`, `TestGenerateBlockSpec_production`: 96 tokens identical, 5.65 tokens a
+  round, 1.49×; `TestBlockSpecStream`).

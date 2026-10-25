@@ -181,6 +181,10 @@ type BlockSpecOptions struct {
 	scope KVScope
 }
 
+// blockSpecFuseRows is the most rows one FuseContext call takes. A drafter's fusion scratch grows with the rows of one call, so a
+// long prompt's seed in one call can exhaust the device beside the target.
+const blockSpecFuseRows = 512
+
 // defaultVerifyWidth is 8, the one number that serves both measured pairings (the optimum for math, within 2% of code's optimum of 7).
 // Per-traffic-class tuning is worth a few percent and needs a router; docs/code-notes/decoder.md#defaultVerifyWidth has the figures.
 const defaultVerifyWidth = 8
@@ -244,11 +248,15 @@ func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWe
 	if !ok {
 		return fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it (no ResidentRecurrentSpec)")
 	}
+	// The architecture first, so a model the path refuses has no arena allocated either; the arena's price is 0 exactly there.
+	if RecurrentSpecArenaBytes(m.w.arch, 1) == 0 {
+		return fmt.Errorf("decoder: the fold path does not serve this model (a recurrent layer that is not Gated DeltaNet, heads past 128, or a sliding window)")
+	}
 	if err := rs.PrepareRecurrentSpec(min(dw.BlockSize(), RecurrentSpecMaxRows)); err != nil {
 		return fmt.Errorf("decoder: this model has recurrent state and its resident's fold path declined: %w", err)
 	}
 	if !m.specRollbackSafeVia(rs, 2) {
-		return fmt.Errorf("decoder: this model's recurrent layers are not all Gated DeltaNet, or it has a sliding window: the fold path does not serve it")
+		return fmt.Errorf("decoder: the resident's fold path kept no rows for this model")
 	}
 	return nil
 }
@@ -367,22 +375,29 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 
 	hidden := m.w.arch.HiddenDim
 	eos := blockSpecStopSet(m, opt)
-	// fuse folds a batched capture into the drafter's context: the taps for n rows become n
-	// concatenated rows, projected and appended.
+	// fuse folds a batched capture into the drafter's context: the taps for n rows become n concatenated rows, projected and
+	// appended, blockSpecFuseRows at a time. The fusion is per row and ExtendContext appends, so the pieces give the context one
+	// call would.
 	fuse := func(capt [][]float32, n int) error {
-		cat := make([][]float32, n)
-		for i := range n {
-			row := make([]float32, 0, len(capt)*hidden)
-			for _, tp := range capt {
-				row = append(row, tp[i*hidden:(i+1)*hidden]...)
+		for lo := 0; lo < n; lo += blockSpecFuseRows {
+			hi := min(lo+blockSpecFuseRows, n)
+			cat := make([][]float32, 0, hi-lo)
+			for i := lo; i < hi; i++ {
+				row := make([]float32, 0, len(capt)*hidden)
+				for _, tp := range capt {
+					row = append(row, tp[i*hidden:(i+1)*hidden]...)
+				}
+				cat = append(cat, row)
 			}
-			cat[i] = row
+			fused, e := rd.FuseContext(cat)
+			if e != nil {
+				return e
+			}
+			if e := rd.ExtendContext(fused); e != nil {
+				return e
+			}
 		}
-		fused, e := rd.FuseContext(cat)
-		if e != nil {
-			return e
-		}
-		return rd.ExtendContext(fused)
+		return nil
 	}
 
 	suffix := prompt[reuseFrom:]
