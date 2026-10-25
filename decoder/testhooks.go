@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
@@ -737,4 +738,41 @@ func SetEmbedRowsObserverForTest(f func(rows int)) { embedRowsObserver = f }
 // whether the resident splits or chunks its prefill (KS-H1).
 func (m *Model) ResidentPrefillScratchForTest(promptTokens int) (int64, bool) {
 	return m.residentPrefillScratch(promptTokens)
+}
+
+// NewBlockSpecForTest is NewBlockSpec around rd, a test's own drafter, in place of the weights' attach: SP2's scripted-drafter
+// gates drive the real loop with a drafter whose proposals they choose. dw stands for the drafter's weights; the loop reads
+// only its BlockSize and MaskTokenID. The recurrent refusal is NewBlockSpec's.
+func (m *Model) NewBlockSpecForTest(rd ResidentBlockDrafter, dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
+	host, ok := m.resident.(ResidentDrafterHost)
+	if !ok {
+		return nil, errBlockSpecUnsupported
+	}
+	s := &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}
+	if m.hasRecurrentState() && s.recurrentFold(2) == nil {
+		return nil, fmt.Errorf("decoder: recurrent model without the resident's fold path")
+	}
+	return s, nil
+}
+
+// TripBlockSpecGuardForTest makes every BlockSpec generation's acceptance guard stop speculating after its window, whatever
+// the acceptance, so a test reaches the plain-step fallback after folded rounds. Returns the restore.
+func TripBlockSpecGuardForTest() (restore func()) {
+	blockSpecGuardTripForTest = true
+	return func() { blockSpecGuardTripForTest = false }
+}
+
+// ForgetResidentForTest clears the resident's record of committed ids, so the next generation prefills cold.
+func (m *Model) ForgetResidentForTest() { m.residentForgetIDs() }
+
+// GenerateFirstTokenForTest is BlockSpec.Generate that also returns when its first token was emitted, so a speed gate can time
+// decode apart from the prompt's prefill.
+func (s *BlockSpec) GenerateFirstTokenForTest(prompt []int, opt BlockSpecOptions) (out []int, rounds int, first time.Time, err error) {
+	out, rounds, err = s.generate(prompt, opt, func([]int) bool {
+		if first.IsZero() {
+			first = time.Now()
+		}
+		return true
+	})
+	return out, rounds, first, err
 }

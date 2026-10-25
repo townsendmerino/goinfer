@@ -1257,7 +1257,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				// Gated-DeltaNet mixer (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): replaces segA + rope +
 				// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
 				// the recurrence row by row in order. The FFN below is the shared one.
-				if e := r.prefillDeltaNetRows(Ly, xB, aqB, aScB, M, dnB); e != nil { // profiles its own categories
+				if e := r.prefillDeltaNetRows(Ly, xB, aqB, aScB, M, r.specBufs(l, dnB)); e != nil { // profiles its own categories
 					return e
 				}
 			} else {

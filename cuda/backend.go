@@ -1348,6 +1348,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			loadD(&r.dnRuleRows, "delta_rule_rows")
 			loadD(&r.dnRuleRows128, "delta_rule_rows_128")
 			loadD(&r.dnGNormRows, "delta_gnorm_rows")
+			// SP2's verify twins (recurrent_spec.go).
+			loadD(&r.dnConvRowsSpec, "delta_conv_rows_spec")
+			loadD(&r.dnRuleRowsSpec, "delta_rule_rows_spec")
+			loadD(&r.dnRuleRows128Spec, "delta_rule_rows_128_spec")
 			loadD(&r.dnQSplit, "delta_qsplit")
 			loadD(&r.dnAttnGate, "delta_attn_gate")
 			if lerr != nil {

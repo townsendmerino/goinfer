@@ -44,7 +44,13 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 	t = r.profTic()
 	// The recurrence, five launches for all M rows. The conv ring and the delta rule walk the rows in order inside
 	// each thread; the gates and both norms are row-independent. Bit-identical to five launches per row.
-	if e := r.launch(r.dnConvRows, g1cfg(dp.convDim, 256),
+	// A speculative verify (SP2, recurrent_spec.go) takes the twins that never store: the conv reads its window and the pass's
+	// earlier rows, the scan starts from the committed state and leaves it there.
+	convRows, rule128, rule := r.dnConvRows, r.dnRuleRows128, r.dnRuleRows
+	if r.dnSpecOn {
+		convRows, rule128, rule = r.dnConvRowsSpec, r.dnRuleRows128Spec, r.dnRuleRowsSpec
+	}
+	if e := r.launch(convRows, g1cfg(dp.convDim, 256),
 		Arg(b.mix), Arg(Ly.dnConvW), Arg(Ly.dnWin), Arg(b.conv),
 		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(dp.convK)), gpu.ArgValue(int32(M))); e != nil {
 		return e
@@ -61,20 +67,9 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(dp.qScale)); e != nil {
 		return e
 	}
-	if dp.hk == 128 && dp.hv == 128 {
-		// Every released model's geometry: the state row stays in registers across the rows (the measured cost of the generic
-		// scan: docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
-		if e := r.launch(r.dnRuleRows128, LaunchConfig{GridX: uint32(dp.nv), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1},
-			Arg(b.qn), Arg(b.kn), Arg(b.conv), Arg(b.headP), Arg(Ly.dnState), Arg(b.core),
-			gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2*dp.keyDim)),
-			gpu.ArgValue(int32(dp.keyDim)), gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(M))); e != nil {
-			return e
-		}
-	} else if e := r.launch(r.dnRuleRows, g1cfg(dp.valueDim, 128),
-		Arg(b.qn), Arg(b.kn), Arg(b.conv), Arg(b.headP), Arg(Ly.dnState), Arg(b.core),
-		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hk)), gpu.ArgValue(int32(dp.hv)),
-		gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2*dp.keyDim)), gpu.ArgValue(int32(dp.keyDim)),
-		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(M))); e != nil {
+	// For hk == hv == 128 (every released model) the scan holds each state row in registers across the rows (the measured cost
+	// of the generic scan: docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
+	if e := r.launchRuleRows(rule128, rule, b.qn, b.kn, b.conv, b.headP, Ly.dnState, b.core, M); e != nil {
 		return e
 	}
 	if e := r.launch(r.dnGNormRows, LaunchConfig{GridX: uint32(dp.nv), GridY: uint32(M), GridZ: 1,

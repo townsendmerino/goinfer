@@ -724,8 +724,13 @@ type cudaResident struct {
 	// Row-batched twins of the five, for prompt prefill (prefillDeltaNetRows): one launch per layer covers M rows.
 	dnConvRows, dnGatesRows, dnNormRows, dnRuleRows, dnGNormRows Pipeline
 	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
-	dnQSplit, dnAttnGate                                         Pipeline // the family's fused double-width q_proj + output gate
-	dnet                                                         *dnetParams
+	// SP2's verify twins of dnConvRows, dnRuleRows and dnRuleRows128, which never store the window or the state, and the arena
+	// a verify pass keeps its rows in (recurrent_spec.go). dnSpecOn is set for the duration of one VerifyLastNArgmax.
+	dnConvRowsSpec, dnRuleRowsSpec, dnRuleRows128Spec Pipeline
+	dnSpec                                            *dnSpecArena
+	dnSpecOn                                          bool
+	dnQSplit, dnAttnGate                              Pipeline // the family's fused double-width q_proj + output gate
+	dnet                                              *dnetParams
 	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
 	mamba                                     *mambaParams
 	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline

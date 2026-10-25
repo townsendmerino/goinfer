@@ -83,6 +83,63 @@ type ResidentSeedArgmax interface {
 	PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error)
 }
 
+// ResidentRecurrentSpec is the OPTIONAL capability that lets a resident with recurrent state verify speculatively (SP2,
+// docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
+// because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
+type ResidentRecurrentSpec interface {
+	// RecurrentSpecRows is the widest verify the path holds: 0 when this load cannot take it (a recurrent layer it does not
+	// serve, or no room for its rows).
+	RecurrentSpecRows() int
+	// VerifyLastNArgmax is PrefillLastNArgmax that leaves every recurrent layer's committed state and conv window untouched.
+	// Each row starts from the row above it, so the rows are a chain. The rows wait for FoldVerified; another verify replaces
+	// them.
+	VerifyLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
+	// FoldVerified folds the last verify's first n rows into the committed state, leaving it as a prefill of those rows would.
+	FoldVerified(n int) error
+}
+
+// RecurrentSpecMaxRows is the widest verify a ResidentRecurrentSpec arena is sized for: a DFlash block.
+const RecurrentSpecMaxRows = 16
+
+// RecurrentSpecArenaBytes is the device memory a ResidentRecurrentSpec resident keeps for verify passes of up to rows rows on a model of
+// arch a: per Gated-DeltaNet layer and row, the conv input and output, the normed q and k and two gates per value head, plus the fold's
+// recurrence output once, f32, rounded up to the 2 MiB cuMemAlloc gives a buffer that size. 0 for a model with no recurrent state or with
+// a recurrent kind the path does not serve.
+func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
+	if a == nil || a.qwen35 == nil || rows < 1 {
+		return 0
+	}
+	nDN := 0
+	for l := range a.NumLayers {
+		for _, o := range a.layerOps(l, false) {
+			switch {
+			case o.kind == opDeltaNet:
+				nDN++
+			case o.kind.recurrent():
+				return 0
+			}
+		}
+	}
+	if nDN == 0 {
+		return 0
+	}
+	g := a.qwen35
+	keyDim, valueDim := g.NumKeyHeads*g.KeyHeadDim, g.NumValueHeads*g.ValueHeadDim
+	convDim := 2*keyDim + valueDim
+	floats := int64(nDN)*int64(rows)*int64(2*convDim+2*keyDim+2*g.NumValueHeads) + int64(rows)*int64(valueDim)
+	const align = 2 << 20
+	return (floats*4 + align - 1) / align * align
+}
+
+// recurrentSpecReserve is what a block drafter's attach adds to the companion reserve on top of its own bytes: the fold path's arena on
+// a recurrent target (RecurrentSpecArenaBytes), 0 on any other.
+func recurrentSpecReserve(a *Architecture, drafter bool) int64 {
+	if !drafter {
+		return 0
+	}
+	return RecurrentSpecArenaBytes(a, RecurrentSpecMaxRows)
+}
+
 // BlockSpecCapable reports whether this model can run block-drafting speculation: a resident
 // target that implements ResidentDrafterHost. Checked before a drafter is loaded, so a caller
 // can decline early rather than paying a load it cannot use.
@@ -166,7 +223,38 @@ func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 	if err != nil {
 		return nil, err
 	}
-	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+	s := &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}
+	if m.hasRecurrentState() && s.recurrentFold(2) == nil {
+		return nil, fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it " +
+			"(no ResidentRecurrentSpec path for every recurrent layer); block drafting would decode from over-advanced state")
+	}
+	return s, nil
+}
+
+// recurrentFold is the resident's fold path for verifies of width rows on a recurrent model, or nil: on a model with no
+// recurrent state (its verifies need none), and on one whose resident cannot take that width (specRollbackSafeVia).
+func (s *BlockSpec) recurrentFold(width int) ResidentRecurrentSpec {
+	if !s.m.hasRecurrentState() {
+		return nil
+	}
+	rs, _ := s.host.(ResidentRecurrentSpec)
+	if rs == nil || !s.m.specRollbackSafeVia(rs, width) {
+		return nil
+	}
+	return rs
+}
+
+// verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, or defaultVerifyWidth, clamped to the
+// drafter's block.
+func (s *BlockSpec) verifyWidth(opt BlockSpecOptions) int {
+	width := opt.VerifyWidth
+	if width <= 0 {
+		width = defaultVerifyWidth
+	}
+	if bs := s.dw.BlockSize(); width > bs {
+		width = bs // never ask the target to verify positions the drafter did not draft
+	}
+	return width
 }
 
 // Generate runs greedy generation with the attached drafter, returning the emitted token ids and
@@ -194,15 +282,15 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// so with the multi-row verify lane off its verify rows are exact whether or not this scope is held. It is here so a future edit that
 	// adds an M=1 step cannot silently mix attention trees. Counted, so GenerateStream's hold nests.
 	defer m.enterExactAttention()()
-	width := opt.VerifyWidth
-	if width <= 0 {
-		width = defaultVerifyWidth
-	}
-	if bs := dw.BlockSize(); width > bs {
-		width = bs // never ask the target to verify positions the drafter did not draft
-	}
+	width := s.verifyWidth(opt)
 	if width < 2 {
 		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d is too narrow", width)
+	}
+	// A recurrent target verifies through the fold path, which never writes the committed state; without it a verify would
+	// advance the state by every row, rejected or not.
+	fold := s.recurrentFold(width)
+	if m.hasRecurrentState() && fold == nil {
+		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d on a recurrent model needs the resident's fold path (ResidentRecurrentSpec)", width)
 	}
 	// Claim the single shared resident KV before any device write: this path drives the same positional cache as Model.Generate and the
 	// n-gram/speculative paths. A loser returns before touching state, so the caller's fallback to plain Generate is exact. Gated on
@@ -363,7 +451,12 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		for _, id := range drafted {
 			vin = append(vin, m.embedResident(id))
 		}
-		tgt, e := host.PrefillLastNArgmax(vin, pos)
+		var tgt []int
+		if fold != nil {
+			tgt, e = fold.VerifyLastNArgmax(vin, pos)
+		} else {
+			tgt, e = host.PrefillLastNArgmax(vin, pos)
+		}
 		if e != nil {
 			return out, rounds, e
 		}
@@ -391,12 +484,21 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 				break
 			}
 		}
+		// The rows this round commits: the anchor and the drafts it emits. A stop inside the burst emits fewer than accepted, and
+		// the position, the drafter's context and a recurrent state must all end at the last emitted token, which is what the
+		// commit below records.
+		rows := 1 + min(accepted, len(burst))
+		if fold != nil {
+			if e := fold.FoldVerified(rows); e != nil {
+				return out, rounds, e
+			}
+		}
 		out = append(out, burst...)
 		if emit != nil && !stop && !emit(burst) {
 			return out, rounds, nil
 		}
-		pos += 1 + accepted
-		if e := fuse(capt, 1+accepted); e != nil {
+		pos += rows
+		if e := fuse(capt, rows); e != nil {
 			return out, rounds, e
 		}
 		if stop {
@@ -501,8 +603,8 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 	if sp.HistoryDependent() {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
-	if !s.m.specRollbackSafe() {
-		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family or staged sliding-window unsupported (rollback cannot restore)")
+	if !s.m.specRollbackSafeVia(s.recurrentFold(s.verifyWidth(BlockSpecOptions{})), s.verifyWidth(BlockSpecOptions{})) {
+		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family without the resident's fold path, or staged sliding-window, unsupported (rollback cannot restore)")
 	}
 	if len(prompt) == 0 {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: empty prompt")
@@ -574,6 +676,9 @@ const breakEvenTokensPerRound = 2.5
 // attempt.
 const guardWindow = 6
 
+// blockSpecGuardTripForTest makes the guard stop every generation at its window (TripBlockSpecGuardForTest). Set by tests only.
+var blockSpecGuardTripForTest bool
+
 // acceptanceGuard disables a drafter that is not paying for itself, per generation.
 //
 // It exists because the failure it catches is silent: a mis-paired drafter, a target in a mode the drafter was not trained for, or an
@@ -596,7 +701,7 @@ func (g *acceptanceGuard) observe(committed int) bool {
 	// running average trips a workload as soon as its evidence says so, while a slow-starting profitable one recovers as later rounds pull
 	// the average up instead of being judged on a snapshot.
 	if g.rounds >= guardWindow {
-		if float64(g.tokens)/float64(g.rounds) < breakEvenTokensPerRound {
+		if blockSpecGuardTripForTest || float64(g.tokens)/float64(g.rounds) < breakEvenTokensPerRound {
 			g.stopped = true
 			return false
 		}
