@@ -286,6 +286,17 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	if width < 2 {
 		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d is too narrow", width)
 	}
+	// The token budget is plain decode's (generateInto): at most the context left after the prompt. Unclamped, a turn that reaches
+	// the cap emits one more token than plain decode (a round's own last token, which has no room to be forwarded), and the guard's
+	// fallback steps past the cap and fails where plain decode finishes.
+	if ctxCap := m.ResidentContextCap(); ctxCap > 0 {
+		switch left := ctxCap - len(prompt); {
+		case left == 0:
+			return nil, 0, nil // the prompt fills the context: plain decode emits nothing either
+		case left > 0 && (opt.MaxTokens <= 0 || opt.MaxTokens > left):
+			opt.MaxTokens = left
+		}
+	}
 	// A recurrent target verifies through the fold path, which never writes the committed state; without it a verify would
 	// advance the state by every row, rejected or not.
 	fold := s.recurrentFold(width)
