@@ -246,3 +246,20 @@ are graded against the rule here:
 - **The longest context that fits:** with a drafter attached, an auto-sized context shrinks by about 567 positions (65,011,712 B
   over a position's 65,536 B of f32 target K/V plus 49,152 B of drafter K/V, from the fit guard's own prices; computed, not
   measured). The 4,608-position context SP0 and these gates pinned still fits, with 1.11 GB free.
+
+### Fifth review's fix: an early exit leaves nothing to fold (2026-10-25, 09:49–09:59 PDT, at `145913f2`)
+
+- **The defect:** a speculative turn that stopped after a round's `FoldVerified` (a cancelled stream, a device or drafter error) left
+  its rows marked, and the next speculative turn's first verify folded them into the new sequence.
+- **The fix:** `BlockSpec.generate` drops marked rows on every exit that commits nothing (`DropFold`, deferred), and the resident
+  clears them whenever it resets its recurrent state (a prefill from position 0). The verify width also clamps to the fold path's
+  16 rows on a recurrent target, so a drafter with a wider block cannot attach and then fail at its first verify.
+- **The reproduction:** `TestRecurrentSpec_earlyExitLeavesNothingToFold` stops a turn right after the first round's fold, then
+  runs a second speculative turn and checks it against plain greedy, tokens and state bytes. It passes on all three small models
+  with the fix. With both halves of the fix removed it fails on all three (divergence at token 3 or 4, the conv window's bytes
+  differ), so it sees the defect. `TestBlockSpecGenerate_earlyExitDropsTheMarkedRows` pins the drop at tier 0, mutation-checked.
+- **G1c on the fixed path: PASS.** 40 of 40 cells token- and state-identical, the guard's fallback 4 of 4, P1 and P2 each caught
+  on 12 of 12 prompts, G5 passing; peak resident 15.5 GB, swap 0. Raw: `raw/identity-2026-10-25-0950.jsonl`.
+- **G2 and G4 stand as read.** The fix acts only on an exit that commits nothing and on a reset with rows pending; every G4
+  generation ran to the end and flushed, G2 drives the resident directly, and the width clamp starts above 16 rows (G4 ran at
+  4). So both readings came from the code path the fix leaves unchanged, and neither is re-run.
