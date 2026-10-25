@@ -109,3 +109,7 @@ acceptance on this pairing falls with context; G4's long cell reads what that co
   GB (the identity run's peak resident memory for this load) plus 2 GB, is recorded as void and re-run in order.
 - **Plants and the guard trip** are armed through helpers that disarm them with `defer`, so a failing helper cannot leave a later
   test planted.
+
+**G1c re-run on the fixed tree: PASS** (2026-10-25, 00:57–01:05 PDT, at `2df07347`, the arena now prepared before the drafter's
+weights): 40 of 40 cells token- and state-identical, the guard's fallback 4 of 4, P1 and P2 each caught on 12 of 12 prompts, G5
+passing; the same 1.15 GB free with everything attached; peak resident 15.3 GB, peak swap 0. Raw: `raw/identity-2026-10-25-0057.jsonl`.
