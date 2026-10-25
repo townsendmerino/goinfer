@@ -20,7 +20,7 @@ import (
 //	ctx      = Σ_s (exp(scores_s − m)/denom)·v_s
 //
 // Scores and the denominator accumulate in float64. It reads the layer's f32 rows as appended, so the cache keeps no ring for it
-// (Architecture.kvRingsOK). Heads fan out over the attention workers as attendQueryP's do, each with its own score buffer from the
+// (Architecture.kvRingsOK). Heads fan out over the attention workers, each with its own score buffer from the
 // cache's scratch, and each head's arithmetic is the one-key-at-a-time loop's, so the result does not depend on the fan-out.
 func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, arch *Architecture, lw *LayerWeights, l, pos int) {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim

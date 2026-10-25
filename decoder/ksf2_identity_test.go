@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// KS-F2's G0 (docs/measurements/ks-f2-2026-10/README.md): attendSinksToken and attendQueryP against the code they replaced, kept below
+// KS-F2's G0 (docs/measurements/ks-f2-2026-10/README.md): attendSinksToken against the code it replaced and attendQueryP against its own, kept below
 // verbatim as the references. Every ctx word and every KV row is compared by its bits, over shapes that cover the eight-key chains'
 // edges (key counts not a multiple of 8), GQA groups, windows, a wrapped ring and softcap, with the cache's scratch present (heads fan
 // out) and absent (one worker), at GOMAXPROCS 1 and 8.
@@ -84,7 +84,10 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 	}
 }
 
-func TestKSF2_queryPBitIdentical(t *testing.T) {
+// The attendQueryP families (Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2, Llama 4) keep today's schedule until they are timed (the
+// owner's call on #239): attendQueryP is bit-identical to its reference and never fans its heads out, so its cache's head worker pool
+// stays empty.
+func TestKSF2_queryPKeepsTheOldPath(t *testing.T) {
 	cells, fanned := 0, 0
 	for _, procs := range []int{1, 8} {
 		old := runtime.GOMAXPROCS(procs)
@@ -129,8 +132,13 @@ func TestKSF2_queryPBitIdentical(t *testing.T) {
 							attendQueryPRef(p, q, want, make([]float32, nKeys), b, 0, nKeys-1, arch)
 							ksf2SameBits(t, name+": ctx", got, want)
 							cells++
-							if withScr && scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1 {
-								fanned++
+							if withScr {
+								if len(a.scr.headPool) != 0 {
+									t.Fatalf("%s: attendQueryP grew %d head worker slots; it must keep the one-goroutine path", name, len(a.scr.headPool))
+								}
+								if scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1 {
+									fanned++ // a cell gpt-oss's rule would have fanned out
+								}
 							}
 						}
 					}
@@ -139,13 +147,14 @@ func TestKSF2_queryPBitIdentical(t *testing.T) {
 		}
 		runtime.GOMAXPROCS(old)
 	}
-	t.Logf("%d runs (each cell at GOMAXPROCS 1 and 8), %d of them with the heads fanned out (%d distinct cells), every word equal", cells, fanned, fanned/2)
+	t.Logf("%d runs, every word equal and no head worker slot grown, %d of them in cells gpt-oss's rule would fan out", cells, fanned)
 	if fanned == 0 {
-		t.Fatal("no cell fanned the heads out: the parallel path went untested")
+		t.Fatal("no cell is one gpt-oss's rule would fan out: the check that attendQueryP does not proves nothing")
 	}
 }
 
 // attendSinksTokenRef and attendQueryPRef are the two functions as they were before KS-F2, verbatim: the references G0 compares against.
+// attendQueryP keeps exactly that code, so its reference also pins it against an unreviewed change.
 
 func attendSinksTokenRef(p attentionParams, q, k, v, ctx []float32, cache *KVCache, arch *Architecture, lw *LayerWeights, l, pos int) {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
@@ -293,6 +302,6 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 		if fanned == 0 {
 			t.Fatalf("%+v: no step fanned the heads out", sh)
 		}
-		t.Logf("%+v: %d steps on one scratch, %d of them fanned out, every word equal", sh, steps, fanned)
+		t.Logf("%+v: %d steps on one scratch, gpt-oss's attention fanned out in %d, every word equal", sh, steps, fanned)
 	}
 }
