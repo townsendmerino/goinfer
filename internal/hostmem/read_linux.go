@@ -31,6 +31,26 @@ func meminfoKB(meminfo, key string) int64 {
 	return 0
 }
 
+// readCPU reads /proc/stat's aggregate cpu line: user, nice, system, idle, iowait, irq, softirq, steal (guest time is inside user).
+func readCPU() (CPUTicks, bool) {
+	b, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return CPUTicks{}, false
+	}
+	line, _, _ := strings.Cut(string(b), "\n")
+	f := strings.Fields(line)
+	if len(f) < 9 || f[0] != "cpu" {
+		return CPUTicks{}, false
+	}
+	var v [8]uint64
+	for i := range v {
+		if v[i], err = strconv.ParseUint(f[i+1], 10, 64); err != nil {
+			return CPUTicks{}, false
+		}
+	}
+	return CPUTicks{busy: []uint64{v[0], v[1], v[2], v[5], v[6], v[7]}, idle: []uint64{v[3], v[4]}}, true
+}
+
 func readTask(int) (TaskVM, bool) { return TaskVM{}, false }
 
 func readWithOracle() (OracleSample, bool) { return OracleSample{}, false }

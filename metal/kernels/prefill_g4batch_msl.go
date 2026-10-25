@@ -87,4 +87,20 @@ kernel void moe_batch_combine(device const float* dacc[[buffer(0)]], device cons
     }
     out[i] = o;
 }
+
+// moe_batch_combine_acc (KS-D9): moe_batch_combine for the generic pager, whose per-row phase 2 accumulates each routed
+// expert straight into the row's residual: out holds the rows' residuals [n x H] on entry, and each takes its k experts in route
+// order with gemv_w4a8_moe_wacc's epilogue fma(wgt*acc, asc, out).
+kernel void moe_batch_combine_acc(device const float* dacc[[buffer(0)]], device const float* wgt[[buffer(1)]],
+    device const float* dsc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& H[[buffer(4)]],
+    constant uint& k[[buffer(5)]], constant uint& n[[buffer(6)]], uint i[[thread_position_in_grid]]) {
+    if (i >= n*H) return;
+    uint row = i / H, h = i % H;
+    float o = out[i];
+    for (uint j=0;j<k;j++) {
+        uint p = row*k + j;
+        o = fma(wgt[p]*dacc[p*H + h], dsc[p], o);
+    }
+    out[i] = o;
+}
 `

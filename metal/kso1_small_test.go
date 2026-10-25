@@ -53,10 +53,20 @@ func TestKSO1_smallShapeReading(t *testing.T) {
 				iv[i] = int8(c)
 			}
 			wb := d.NewBufferBytes(s.N * s.K)
+			wv := wb.U32s()[:s.N*s.K/4]
+			for i := range wv {
+				wv[i] = rng.Uint32()
+			}
 			sc := make([]float32, s.N)
+			for i := range sc {
+				sc[i] = 0.001
+			}
 			nat, w8, w8s = append(nat, nb), append(w8, wb), append(w8s, NewBufferFloats(d, sc))
 		}
 		a := make([]float32, s.K)
+		for i := range a {
+			a[i] = float32(rng.NormFloat64())
+		}
 		ba, out, uK, uN := NewBufferFloats(d, a), d.NewBufferLen(s.N), NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N))
 		tm := func(f func(e *Encoder, i int)) float64 {
 			var ms []float64

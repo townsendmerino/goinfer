@@ -529,19 +529,23 @@ func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q i
 
 // kvPrefillMark returns the mark a cold prefill of prompt from position from should carry: the boundary position and the function that takes the
 // snapshot there. nil when no boundary snapshot applies, when from does not start on a pass boundary the mark could meet, or when a held snapshot
-// already serves the prefix (this request restored it, or another one covers it).
+// already serves the prefix (this request restored it, or another one covers it). A recurrent model's restored request still marks its own
+// Keep past the restored point, so the kept state moves to each new question instead of staying at the first one
+// (docs/measurements/b35-keep-advance-2026-10/README.md); admission then replaces the snapshot it restored from (residentSnapshotRows).
 func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntime, sc KVScope, acq *kvAcquired) *prefillMark {
 	q, ok := m.kvBoundaryPlan(prompt, sc, lora)
-	if !ok || acq.snapRows > 0 || q <= from {
+	if !ok || (acq.snapRows > 0 && !m.hasRecurrentState()) || q <= from {
 		return nil
 	}
 	mp := m.resident.(ResidentPrefillMarked)
 	if (q-from)%mp.PrefillMarkAlign() != 0 {
 		return nil // the passes of this prefill do not end at q
 	}
-	if st := m.kvSnaps; st != nil && st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, m.kvSnapSlack()) != nil {
-		st.decline("held")
-		return nil
+	if st := m.kvSnaps; st != nil {
+		if c := st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, m.kvSnapCoverSlack(m.kvSnapSlack())); c != nil && (!m.hasRecurrentState() || m.kvSnapHolds(c, q)) {
+			st.decline("held")
+			return nil
+		}
 	}
 	return &prefillMark{q: q, at: func(pos int) {
 		acq.markFired = true
@@ -553,6 +557,25 @@ func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntim
 type prefillMark struct {
 	q  int
 	at func(pos int)
+}
+
+// kvSnapHolds reports whether held snapshot c already serves a snapshot of the first b rows, the rule kvPrefillMark and
+// residentSnapshotRows share. Attention KV: c reaches b. A recurrent snapshot serves only its own end, so it holds b only when it ends
+// exactly there; a shorter one is replaced and a longer one is a different point, kept beside the new one.
+func (m *Model) kvSnapHolds(c *kvSnap, b int) bool {
+	if m.hasRecurrentState() {
+		return c.h.Rows() == b
+	}
+	return c.h.Rows() >= b
+}
+
+// kvSnapCoverSlack is the rollback a covering search allows: slack for attention KV, 0 for a recurrent model, whose snapshot shares
+// nothing with a prompt that leaves its prefix before its end.
+func (m *Model) kvSnapCoverSlack(slack int) int {
+	if m.hasRecurrentState() {
+		return 0
+	}
+	return slack
 }
 
 // residentSnapshotRows takes a snapshot of prompt's first b rows from slot, which holds them: at the end of the prefill (b the full blocks of the
@@ -587,21 +610,29 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 	}
 	root := m.kvRootIn(nil, sc.Namespace)
 	var replaced *kvSnap
+	recurrent := m.hasRecurrentState()
 	switch x := acq.snapFrom; {
-	case x != nil && b <= x.h.Rows()+kvmgr.RollbackFloor:
+	case x != nil && !recurrent && b <= x.h.Rows()+kvmgr.RollbackFloor:
 		// This request restored its prefix from x, so the family is held: a snapshot of this prompt would hold the same prefix again,
 		// for the rows only this prompt has. Only a prompt that runs on past x's rows by more than a rollback replaces it.
 		st.decline("held")
 		return
-	case x != nil:
+	case x != nil && recurrent && m.kvSnapHolds(x, b):
+		st.decline("held")
+		return
+	case x != nil && x.h.Rows() < b:
 		replaced = x
+	case x != nil:
+		// A recurrent snapshot longer than b: a different point, kept beside the new one.
 	default:
-		if c := st.covering(root, prompt, b, slack); c != nil {
-			if c.h.Rows() >= b {
+		if c := st.covering(root, prompt, b, m.kvSnapCoverSlack(slack)); c != nil {
+			if m.kvSnapHolds(c, b) {
 				st.decline("held")
 				return
 			}
-			replaced = c // a longer prompt of the same prefix: take it, then drop the shorter
+			if c.h.Rows() < b {
+				replaced = c // a longer prompt of the same prefix: take it, then drop the shorter
+			}
 		}
 	}
 	need := sn.KVSnapshotBytes(b)

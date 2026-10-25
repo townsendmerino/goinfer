@@ -235,7 +235,7 @@ func (r *resident) ensurePrefill() {
 
 		pQGateSplit: p("qgate_split_f16"), pCopyCols: p("copy_cols_f16"), pAttnGate: p("attn_gate_f16"),
 	}
-	if r.w8 || r.w8Attn {
+	if r.w8 || r.w8Attn || r.mamba != nil { // KS-D8: a Mamba layer's in_proj and out_proj are int8
 		r.pf.w8, r.pf.pW8 = r.w8, map[[2]int]Pipeline{}
 		for _, t := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
 			r.pf.pW8[t] = p(fmt.Sprintf("gemm_w8f16_m%dn%d", t[0], t[1]))
@@ -338,7 +338,8 @@ func (r *resident) prefillWidths() (qkvDim, qDim, maxI int) {
 
 // prefillScratchBytes is the row-sized scratch one batched text pass over M rows allocates and frees: the half
 // residual, norm, q|k|v, attention-output and feed-forward buffers and the row positions, plus an MoE's routing and
-// expert buffers, an E-model's per-layer inputs and a Gated-DeltaNet hybrid's mixer buffers. It leaves out the
+// expert buffers (for a paged one, the layer-major pass's batched phase 2), an E-model's per-layer inputs and a Gated-DeltaNet
+// or Mamba-2 hybrid's mixer buffers. It leaves out the
 // pass's uniforms (a few words each) and an image turn's m-RoPE triples and DeepStack sets.
 // TestPrefillScratchBytes_matchesThePass holds it to prefillScratchSeen.
 func (r *resident) prefillScratchBytes(M int) int64 {
@@ -359,6 +360,9 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 	if r.pleP > 0 {
 		n += 4*m*int64(r.nL*r.pleP) + 2*mp*int64(r.pleP)
 	}
+	if e := r.moe; e != nil && e.paged && r.moeExpertBatchOK() { // the layer-major pass's batched phase 2, one chunk at a time
+		n += r.moeBatchBytes(min(M, g4LayerMajorChunk))
+	}
 	if r.kvI8 { // the f16 K and V scratch one layer's int8 cache is dequantized into, the padded context long (kvI8Scratch)
 		n += 4 * int64(r.kvI8ScratchRows()) * int64(r.prefillGeom().kvDim)
 	}
@@ -367,6 +371,9 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 		nHhd, kvDim := int64(r.nH*g0.hd), int64(g0.kvDim)
 		n += 2*mp*int64(dp.convDim+2*dp.valueDim) + 4*m*int64(4*dp.nv+dp.convDim+2*dp.keyDim+2*dp.valueDim)
 		n += 2*mp*(2*nHhd+2*kvDim) + 2*m*nHhd
+	}
+	if r.mamba != nil {
+		n += r.prefillMambaBytes(m, mp)
 	}
 	return n
 }
@@ -717,6 +724,11 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		u2NHhd, u2KvDim, uGateN = NewBufferU32(d, uint32(2*nHhd)), NewBufferU32(d, uint32(2*kvDim)), NewBufferU32(d, uint32(M*nHhd))
 		scratch = append(append(scratch, dn.bufs...), qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN)
 	}
+	var mb *prefillMamba // KS-D8: a Mamba-2 hybrid's mixer scratch
+	if r.mamba != nil {
+		mb = r.newPrefillMamba(M, Mpad)
+		scratch = append(scratch, mb.bufs...)
+	}
 	var imgB, imgN Buffer // the bidirectional image blocks and their count, when there are any (attention_prefill_img)
 	if len(blocks) > 0 {
 		flat := make([]uint32, 0, 2*len(blocks))
@@ -754,6 +766,11 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	// gemmAttn is gemm for the attention projections (qkv, o), whose weights are int8 on an int4mix resident too.
 	gemmAttn := func(e *Encoder, rows, N int, bufs ...Buffer) {
 		p, tm, tn := pf.gemmTileFor(rows, N, r.w8 || r.w8Attn)
+		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
+	}
+	// gemmW8 is gemm on the int8 tiles: a Mamba layer's in_proj and out_proj (KS-D8).
+	gemmW8 := func(e *Encoder, rows, N int, bufs ...Buffer) {
+		p, tm, tn := pf.gemmTileFor(rows, N, true)
 		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
 	}
 	// L2-Metal: attention_prefill_fused's grid — nH×ceil(M/8) simdgroups (ATTN_SGPT=4/threadgroup,
@@ -832,9 +849,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			addDeep(l - 1)
 		}
 		L := &r.layers[l]
-		if L.delta != nil {
+		switch {
+		case L.delta != nil:
 			r.encodePrefillDeltaMixer(e, L, xF, normF, dn, M, Mpad, gemm, uM, m0, m2, dummyBias)
-		} else {
+		case L.mamba != nil:
+			r.encodePrefillMambaMixer(e, L, xF, normF, mb, M, Mpad, gemmW8, uM, m0, m2, dummyBias)
+		case L.geom == nil:
+			// no mixer: a feed-forward-only layer (Nemotron-H's MLP blocks)
+		default:
 			lu := layerUFor(L)
 			// pre-attn norm — addOne (Gemma's 1+w) matters even for a plain non-sandwich family's
 			// GEMV-input norm, so it is always passed (0 for every family without RMSAddOne).
@@ -946,6 +968,9 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			} else {
 				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, lu.uQDim, dummyBias, m2)
 			}
+		}
+		if !L.ffn {
+			continue // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
 		}
 		if L.moe != nil {
 			if r.knobValue("GOINFER_MOE_EXPERT_MAJOR") == "0" {
@@ -1121,6 +1146,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			inFFN = xF
 		default:
 			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
+		}
+		if r.nonGatedMLP {
+			// KS-D8: the non-gated MLP (Nemotron-H's relu²; a down projection with a bias never reaches the pass): up with its
+			// bias, the activation in place, down accumulated into the residual.
+			gemm(e, Mpad, I, inFFN, L.upW, L.upS, dqF, uM, uI, uH, L.upBias, m1)
+			e.Dispatch(r.pNgActRows, M*I, 256, dqF, getU32(M*I), r.uAct)
+			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
+			continue
 		}
 		// S9 step 2: this layer's FFN width (a Gemma 4 E-model's KV-shared layers are double-wide; every other family's
 		// layers are the model's I).
