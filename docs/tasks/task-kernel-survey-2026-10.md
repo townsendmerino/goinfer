@@ -18,7 +18,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| KS-A1 | decision | KS-O1, then nobara: a Q5_K GEMV against `gemv_w8a8_g32`. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 (+284.3 Q5_K qkv, +72.6 Q6_K down, +17.8 Q6_K head, all int8 copies) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A1 | done (GO) | done 2026-10-24 (A1-G0): a prototype Q5_K GEMV reaches **0.985×** `gemv_w8a8_g32`'s GB/s at 9216×3072 on the 2070 SUPER (bar 0.95), 0.697× its time summed over Phi-3; Q6_K 0.832×. The build is KS-O1 on CUDA. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 | survey, "A1-G0 read" |
 | KS-A2 | done | done 2026-10-23 (#191, aikit `gpu/v0.34.0`): the CUDA resident launches from its own executor thread (aikit `Queue.LaunchDirect`), byte-identical. The 0.5B at depth 128 **1.492×** median, 10 of 10 ABBA quads (345 → 521 tok/s); gemma3-1b 1.465× (197 → 291); 10.4 → 2.3 µs a launch. Unblocks KS-A5 (decode now GPU-bound) | `docs/measurements/ks-a2-2026-10/README.md` |
 | KS-A3 | done | done 2026-10-23 (#195): the top-K as `topk_compact` (32 blocks) + `topk_finish` (select K, sort K) + `topk_z` (32 blocks, same partials); every output word equal to the one-block kernel on 608 cases; a sampled 0.5B token **1.0263×** median, 10 of 10 ABBA quads (2,007.5 → 1,955.4 µs); +36.9 KB device scratch | `docs/measurements/ks-a3-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
@@ -92,7 +92,7 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
+| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA: in progress (O1C registered; A1-G0 GO for both kinds) | survey, "Owner override of O1-G7" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
@@ -329,9 +329,37 @@ owner's word of 4:37 pm ("#2 then #1": KS-A1's CUDA half, then KS-O1 on CUDA).**
 Stopping rule: one pass. A kind that fails its rule may have at most one amended variant, registered here before it runs, as O1-G0
 did on Metal; that reading is final. Expected cost: the PTX build and the correctness check seconds, the timed pass about 1 min.
 
-**A1-G0 amended before it ran (2026-10-24, 16:55):** Phi-3's hidden size (3072) is over `fusedG32MaxHidden`, so on CUDA its q, k
+**A1-G0 amended before it ran (2026-10-24, 16:49):** Phi-3's hidden size (3072) is over `fusedG32MaxHidden`, so on CUDA its q, k
 and v run as three separate `doG` launches of 3072×3072, not one launch of 9216 rows. A read-only Q5_K line at 3072×3072 is added.
 The graded shape, the bars and the rule are unchanged.
+
+**A1-G0 read 2026-10-24, by day: KS-A1 GO; Q6_K built.** Run 17:05 on nobara by `night.py serve` (the timing lock held
+exclusively) at b21a1f950, NVIDIA driver 595.91.07. At the start: 1-minute load 0.86 (the void line is 8.0), 57.9 GB available,
+7,277 MiB of VRAM free, only the desktop compositor's context on the card. Every prototype passed the correctness check first: worst
+|err|/Σ|w·a| 1.2e-7 to 2.4e-7 against the 1e-5 bar. The streaming ceiling read 416–419 GB/s. Medians of 7 batches of 50 launches,
+in ms (GB/s):
+
+| shape | `gemv_w8a8_g32` | best native | native / int8 time | native / int8 GB/s |
+|---|---:|---:|---:|---:|
+| Phi-3 qkv 9216×3072, Q5_K (graded) | 0.0705 (401.9) | B, R = 1: 0.0492 (396.0) | 0.697 | **0.985** |
+| Phi-3 q, k or v 3072×3072, Q5_K (read only, as dispatched) | 0.0250 (378.4) | B, R = 1: 0.0180 (360.8) | 0.720 | 0.954 |
+| Phi-3 `ffn_down` 3072×8192, Q6_K | 0.0626 (402.0) | R = 1: 0.0523 (394.9) | 0.835 | 0.982 |
+| Phi-3 head 32064×3072, Q6_K | 0.2374 (415.4) | R = 1: 0.1950 (414.3) | 0.821 | 0.997 |
+| 1.5B `ffn_down` 1536×8960, Q6_K (read only) | 0.0361 (381.9) | R = 2: 0.0300 (375.9); R = 1: 0.0319 | 0.833 / 0.886 | 0.984 / 0.925 |
+| 1.5B `attn_v` 256×1536, Q6_K (read only) | 0.0057 (69.7) | R = 2: 0.0058; R = 1: 0.0069 | 1.020 / 1.217 | 0.802 / 0.672 |
+| Phi-3 gate\|up 16384×3072, shipped `gemv_q4k_g32` (context) | 0.1223 (412.0) | 0.0722 (392.2) | 0.590 | 0.952 |
+
+- **KS-A1: GO.** The best Q5_K kernel reaches 0.985× the int8 kernel's GB/s at the graded shape (bar 0.95), so the survey's speed case
+  stands by its own arithmetic. Every variant and R cleared it (0.969–0.985).
+- **Summed over Phi-3 (ms a token):** Q5_K, 32 qkv launches: 2.257 int8 → 1.573 native (B, R = 1), **0.697**. Q6_K, 16 `ffn_down`
+  and the head: 1.240 → 1.032 (R = 1), **0.832**. Both are under O1-G0's 0.95, so KS-O1 on CUDA builds both.
+- **The pick:** every Q5_K variant and R is within 2% of the fastest, and the smaller R wins a tie. At R = 1, B (0.6970) is 0.9% faster
+  than A (0.7030), so B is built at R = 1. Q6_K: R = 1 (R = 4 is within 2%; the smaller R wins). `kquantGemvRows` is 1.
+- **What it does not show:** a kernel-only reading gives direction, not size (CLAUDE.md: its served effect ranged 0.05–1.72× of it).
+  The Phi-3 whole-token saving O1C-G7 can expect is at most about 0.9 ms (0.68 + 0.21) of the projections' time. On the 1.5B, the
+  tiny `attn_v` is slower native at R = 1 (1.22×), but on CUDA it runs inside `fused_rms_qkv_g32` at that hidden size, not standalone;
+  its `ffn_down` is 0.886× at R = 1. O1C-G7 reads the 1.5B as a whole token.
+- **Log:** `docs/measurements/ks-a1-2026-10/a1-g0-2026-10-24-1704.log` (from `~/goinfer-logs/ks-a1-2026-10/`).
 
 **KS-A5 · Load each short GEMV row in one round (output unchanged).**
 - **Where:** `fused_rms_gu` and `fused_rms_qkv` in `cuda/fused_qkv.cu`, their rows-per-warp twins, and aikit's
@@ -978,7 +1006,7 @@ KS-A1's CUDA half, then KS-O1 on CUDA, the twin of what shipped on Metal).** Eac
 Fit checks: every load's plan is read from the build's own `fit:` / `KV plan:` banner first; a refused load is not started. Order:
 G1, G2, G4 (seconds), G3, then G7 (timed, under the lock), then G6 and G5.
 
-**O1C amended 2026-10-24, 17:00, before any O1C gate ran:** the scope guardrail first registered here ("only when the resident also
+**O1C amended 2026-10-24, 16:58, before any O1C gate ran:** the scope guardrail first registered here ("only when the resident also
 holds a Q4_K projection", so as not to take a batched prefill away) protected nothing. Every q4k load runs per-32 activations, under
 which CUDA has no batched prefill, drafter or LoRA, with or without a Q4_K tensor. The precondition is now per-32 activations, which
 the native kernels need for their group sums. The gates are unchanged. Stopping rule: one pass each; a FAIL in G1 to G4 stops
