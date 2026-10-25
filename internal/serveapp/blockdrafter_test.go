@@ -44,8 +44,10 @@ func TestDrafterWidth_validate(t *testing.T) {
 		{"", 0, true}, {"", 4, false}, {"", -1, false},
 		{"d", 0, true}, {"d", 4, true}, {"d", 1, false}, {"d", -1, false},
 	} {
-		if err := (config{drafter: c.drafter, drafterWidth: c.width}).validate(); (err == nil) != c.ok {
-			t.Errorf("-drafter %q -drafter-width %d: err %v, want ok %v", c.drafter, c.width, err, c.ok)
+		// A bare config fails other required flags; only whether a -drafter-width refusal appears is this test's.
+		err := (config{drafter: c.drafter, drafterWidth: c.width}).validate()
+		if refused := err != nil && strings.Contains(err.Error(), "-drafter-width"); refused == c.ok {
+			t.Errorf("-drafter %q -drafter-width %d: err %v, want a -drafter-width refusal %v", c.drafter, c.width, err, !c.ok)
 		}
 	}
 }
