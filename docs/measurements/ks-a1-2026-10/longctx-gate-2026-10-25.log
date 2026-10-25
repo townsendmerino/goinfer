@@ -1,0 +1,6 @@
+=== RUN   TestKSO1C_longContextQuality
+[long-context] ../README.md, first 900 tokens: 912 positions, 113 weights native; mean KL to f32 past position 256 int8 0.00173, native 0.00068, ratio 0.3899 (bar 1.05)
+[long-context] ../docs/benchmarks.md, first 900 tokens: 912 positions, 113 weights native; mean KL to f32 past position 256 int8 0.00175, native 0.00081, ratio 0.4623 (bar 1.05)
+--- PASS: TestKSO1C_longContextQuality (1196.03s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	1196.699s
