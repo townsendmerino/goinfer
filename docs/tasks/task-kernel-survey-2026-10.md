@@ -1675,6 +1675,15 @@ nobara's copy is in `~/goinfer-bench/qmoe/`.
 Logs: `~/goinfer-logs/ksd9-review-g1-2026-10-24.log`, `~/goinfer-logs/ksd9-review-plant-2026-10-24.log`,
 `~/goinfer-logs/ksd9-g2-rerun-2026-10-24.log`.
 
+**The guard's CPU reading fixed, 2026-10-24 (17:05), registered before a re-run.** `hostmem.ReadCPU` read `host_statistics64(HOST_CPU_LOAD_INFO)`,
+which XNU rate-limits for non-Apple binaries: after a few calls in a second it serves the last reply again, so an arm's end sample
+could be up to a second stale (three calls in 0.4 s returned the same sample). It now reads `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`,
+per core, which is not rate-limited. Each state's count is differenced on its own, modulo 2^32 on macOS and clamped at 0 on Linux
+(NOHZ can step idle back a tick), so busy never exceeds total. A sample pair spanning no interval now voids the arm instead of
+failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
+stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
+the gate is re-run on the new one; that run decides, and the bar and the cap are unchanged.
+
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
 - **Change:** lane-per-row or grid-stride.
