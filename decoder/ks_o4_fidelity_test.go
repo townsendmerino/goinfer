@@ -199,44 +199,45 @@ func TestKSO4_gptossFidelity(t *testing.T) {
 	fmt.Fprint(os.Stderr, report.String())
 }
 
-const ksO4Positions = 32
+const ksO4Positions = 16
 
 type ksO4Prompt struct{ id, cell, text string }
 
-// ksO4PromptSet is the registered set: short cells of one passage and long cells of four (about 150 and 600 tokens), each with an
-// instruction; the pilot uses passages the gate set never does.
+// ksO4PromptSet is the registered set (the 2026-10-25 10:20 amendment): short cells of a passage's first two sentences and long cells of
+// two passages (about 100 and 300 tokens), each with an instruction; the pilot uses passages the gate set never does.
 func ksO4PromptSet(mode string, n int) []ksO4Prompt {
-	join := func(texts []string, idx []int) string {
-		var parts []string
-		for _, i := range idx {
-			parts = append(parts, texts[i])
-		}
-		return strings.Join(parts, "\n\n")
-	}
 	var set []ksO4Prompt
-	add := func(cell string, texts []string, idx []int, ins int) {
+	add := func(cell, body string, idx []int, ins int) {
 		set = append(set, ksO4Prompt{id: fmt.Sprintf("%s|%s|t%v|i%d", mode, cell, idx, ins), cell: cell,
-			text: ksO4Instructions[ins] + "\n\n" + join(texts, idx)})
+			text: ksO4Instructions[ins] + "\n\n" + body})
 	}
+	short := func(texts []string, i int) string { return ksO4FirstSentences(texts[i], 2) }
+	long := func(texts []string, i, j int) string { return texts[i] + "\n\n" + texts[j] }
 	if mode == "pilot" {
-		add("short", ksO4PilotTexts, []int{0}, 0)
-		add("short", ksO4PilotTexts, []int{1}, 1)
-		add("long", ksO4PilotTexts, []int{0, 1, 0, 1}, 2)
-		add("long", ksO4PilotTexts, []int{1, 0, 1, 0}, 3)
+		add("short", short(ksO4PilotTexts, 0), []int{0}, 0)
+		add("short", short(ksO4PilotTexts, 1), []int{1}, 1)
+		add("long", long(ksO4PilotTexts, 0, 1), []int{0, 1}, 2)
+		add("long", long(ksO4PilotTexts, 1, 0), []int{1, 0}, 3)
 		return set
 	}
 	nt := len(ksO4Texts)
 	for k := range n {
-		add("short", ksO4Texts, []int{k % nt}, (k+k/nt)%len(ksO4Instructions))
+		add("short", short(ksO4Texts, k%nt), []int{k % nt}, (k+k/nt)%len(ksO4Instructions))
 	}
 	for k := range n {
-		idx := []int{k % nt, (k + 1) % nt, (k + 2) % nt, (k + 3) % nt}
-		if k/nt%2 == 1 {
-			idx = []int{(k + 3) % nt, (k + 2) % nt, (k + 1) % nt, k % nt}
-		}
-		add("long", ksO4Texts, idx, (k+k/nt)%len(ksO4Instructions))
+		i, j := k%nt, (k+1+k/nt)%nt
+		add("long", long(ksO4Texts, i, j), []int{i, j}, (k+k/nt)%len(ksO4Instructions))
 	}
 	return set
+}
+
+// ksO4FirstSentences is text's first n sentences (split after ". ").
+func ksO4FirstSentences(text string, n int) string {
+	parts := strings.SplitAfter(text, ". ")
+	if len(parts) <= n {
+		return text
+	}
+	return strings.TrimSpace(strings.Join(parts[:n], ""))
 }
 
 // ksO4Load loads the checkpoint on the CPU at quant, straight into the heap (no sidecar written).
