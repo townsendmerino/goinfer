@@ -1216,6 +1216,37 @@ Tier 1, the shared timing lock, not timed; about 5 minutes a run.
 - **Stopping rule:** stop when one factor reproduces the native arm's gap at the first divergent layer to within 20%; the rest are
   reported as not run. Any fix is a numerics change and gets its own registered fidelity gate and a Gemini review.
 
+**KS-O1-F D1 and D3 read (14:32–14:35, the shared lock, not timed).** Log: `docs/measurements/ks-o1-f-2026-10-25/d1.log`, `d3.log`.
+- **The figures reproduce:** at the logits, native p10 0.8826, min 0.0294; int8 0.9401, 0.4543 (LQ2's to the digit).
+- **D3, the A/A repeat:** every printed figure equal to D1's (largest difference 0), so the per-layer readings are deterministic.
+- **The registered metric names layer 31:** the first layer where the native minimum is below int8's by more than 0.05 (0.1528 at
+  position 122 against 0.5559; positions 7 and 114–122). Below layer 31 the minimum is a different thing: from layer 4 on, both
+  arms' minimum is position 8 (a massive-activation position, relative L2 above 1 in both arms) and the native arm's is the higher.
+- **The p10 tells where the gap opens:** native against int8, p10 cosine 0.9962 against 0.9979 at layer 2, 0.9824 against 0.9952 at
+  layer 4, 0.8939 against 0.9772 at layer 8, then flat (0.87–0.90 against 0.95–0.97) to layer 30. Each one-group arm (only the Q5_K
+  qkv native, only the Q6_K ffn_down native) carries about half of it at every layer from 4 on (layer 8: 0.9192 and 0.9191).
+- **What this rules out:** one tensor kind. Both kinds open about half the gap, starting at the same layers; Q6_K has no minimum term,
+  so the Q5_K minimum term is not the cause.
+
+**D2, registered 2026-10-25 after D1's read and before it runs.** D1 places the gap's opening at layers 2–8 in both native kinds, so
+D2 runs there as well as at the registered layer 31. D2a is the Q5_K qkv projection; D2b (ffn_down, Q6_K) is registered only if D2a
+does not stop.
+- **Input:** the native arm's own residual after layer L−1 at every one of the 141 positions (`SetHiddenCapture`), RMS-normed in
+  float64 with layer L's `attn_norm` weight and the GGUF's epsilon, then rounded to float32: the qkv input x. Layers L = 2, 4, 8, 31.
+- **Five outputs per row and position:** (1) the file's weights (GGUF `attn_qkv`, dequantized in float64) × x, the truth; (2) the
+  file's weights × the per-32 int8 activation (`quantG32Go`'s codes × scales), in float64; (3) the int8 lane's weights (the resident's
+  own int8 copies, downloaded) × the same activation, in float64; (4) `gemv_q5k_g32` on the file's blocks and that activation, on
+  the GPU; (5) `gemv_w8a8_g32` on the int8 copies and that activation, on the GPU.
+- **Read per position, over each of q, k and v separately:** e(i) = ‖(i) − (1)‖ / ‖(1)‖. Reported: the median and the p90 over
+  positions of each e, of ‖(4) − (2)‖/‖(2)‖ and ‖(5) − (3)‖/‖(3)‖ (kernel arithmetic), and the same at positions 7 and 114–122.
+  Sanity, before any reading counts: the int8 copies' rows match the file's within 1% relative L2 (or the row mapping is wrong).
+- **Attribution, at the projection:** the native gap is e(4) − e(5). Kernel arithmetic explains it if ‖(4) − (2)‖/‖(2)‖ is at least
+  0.8× the gap; activation quantization with the file's weights explains it if e(2) − e(3) is within 20% of it. If e(4) ≤ e(5) (the
+  native projection is no worse than int8's on the same input), no per-projection factor explains the gap: that is the finding,
+  and the next step is a question for Francis, not a fourth run.
+- **Cost:** one resident load with both arms, one GPU pass of 141 tokens, about 30 s of float64 a layer: about 5 minutes. The shared
+  lock, not timed.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
