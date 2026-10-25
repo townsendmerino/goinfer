@@ -146,8 +146,10 @@ func TestKSD8_seqKernelsMatchDecode(t *testing.T) {
 // the batched pass (PrefillLast) and a CPU f32 reference; then each path decodes 4 more tokens (Forward from position M), which
 // reads the conv window, the SSM state and the K/V the prompt left, and the last of those is read against the reference over
 // all M+4 tokens. Per prompt length, at the prompt's end and after the continuation, the pass is non-inferior to the sequential
-// path against the reference: its mean KL at most the sequential path's + 0.005 nats, and its top-1 agreement at least the
-// sequential path's less one prompt. The pass must be taken.
+// path against the reference: its mean KL at most the sequential path's + δ, and its top-1 agreement at least the sequential
+// path's less one prompt. δ is half the sequential path's KL, at least 1e-5 and at most the registered 0.005 nats: on this model
+// both KLs are about 5e-5, where a flat 0.005 could not fail (docs/tasks/task-kernel-survey-2026-10.md, "D8-G2's margin scaled").
+// The pass must be taken.
 func TestKSD8_tinyFidelity(t *testing.T) {
 	const path = "../testdata/nemotron-tiny"
 	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: 256})
@@ -185,9 +187,11 @@ func TestKSD8_tinyFidelity(t *testing.T) {
 		}
 	}
 	grade := func(M int, what string, a tally) {
-		ok := a.klPass <= a.klSeq+0.005 && a.topPass >= a.topSeq-1
-		fmt.Fprintf(os.Stderr, "[D8-G2] M=%d %s: mean KL to the CPU f32 reference, sequential %.4e, pass %.4e; top-1 agreement sequential %d/8, pass %d/8: %v\n",
-			M, what, a.klSeq, a.klPass, a.topSeq, a.topPass, map[bool]string{true: "PASS", false: "FAIL"}[ok])
+		delta := min(0.005, max(0.5*a.klSeq, 1e-5))
+		klOK, topOK := a.klPass <= a.klSeq+delta, a.topPass >= a.topSeq-1
+		ok := klOK && topOK
+		fmt.Fprintf(os.Stderr, "[D8-G2] M=%d %s: mean KL to the CPU f32 reference, sequential %.4e, pass %.4e (pass/sequential %.3f, KL clause %v); top-1 agreement sequential %d/8, pass %d/8 (clause %v): %v\n",
+			M, what, a.klSeq, a.klPass, a.klPass/a.klSeq, klOK, a.topSeq, a.topPass, topOK, map[bool]string{true: "PASS", false: "FAIL"}[ok])
 		if !ok {
 			t.Errorf("M=%d %s: the pass is inferior to the sequential path against the reference", M, what)
 		}
@@ -232,6 +236,60 @@ func TestKSD8_tinyFidelity(t *testing.T) {
 		}
 		grade(M, "prompt end", end)
 		grade(M, fmt.Sprintf("after %d decode steps", cont), after)
+	}
+}
+
+// TestKSD8_mambaShapeDeclines: recurrentPrefillOK admits nemotron-tiny as shipped and declines it when any one of the batched
+// Mamba-2 pass's shape conditions fails: the pass switched off, a Gated-DeltaNet layer beside the Mamba ones (a hybrid the pass
+// does not cover), no pre-norm (postOnly), a conv width outside 2..8, or a hidden or inner width off a multiple of 32. Each
+// condition is set alone on the built resident and restored. Through the caller: built with the pass switched off, the resident's
+// prefillOK is false.
+func TestKSD8_mambaShapeDeclines(t *testing.T) {
+	const path = "../testdata/nemotron-tiny"
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: 256})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("resident: %v", err)
+	}
+	defer r.Close()
+	if r.mamba == nil || !r.recurrentPrefillOK() {
+		t.Fatalf("nemotron-tiny as shipped: mamba %v, recurrentPrefillOK %v; want both", r.mamba != nil, r.recurrentPrefillOK())
+	}
+	p := r.mamba
+	for _, c := range []struct {
+		name string
+		set  func() (undo func())
+	}{
+		{"pass off", func() func() { mambaPrefillOn = false; return func() { mambaPrefillOn = true } }},
+		{"a DeltaNet layer too", func() func() { r.dnet = &dnetParams{}; return func() { r.dnet = nil } }},
+		{"no pre-norm (postOnly)", func() func() { r.postOnly = true; return func() { r.postOnly = false } }},
+		{"conv width 1", func() func() { k := p.dConv; p.dConv = 1; return func() { p.dConv = k } }},
+		{"conv width 9", func() func() { k := p.dConv; p.dConv = 9; return func() { p.dConv = k } }},
+		{"hidden width off 32", func() func() { h := r.H; r.H += 16; return func() { r.H = h } }},
+		{"inner width off 32", func() func() { d := p.dInner; p.dInner += 16; return func() { p.dInner = d } }},
+	} {
+		undo := c.set()
+		if r.recurrentPrefillOK() {
+			t.Errorf("%s: recurrentPrefillOK admits it", c.name)
+		}
+		undo()
+		if !r.recurrentPrefillOK() {
+			t.Fatalf("%s: not restored", c.name)
+		}
+	}
+	mambaPrefillOn = false
+	off, err := buildResident(m)
+	mambaPrefillOn = true
+	if err != nil {
+		t.Fatalf("resident with the pass off: %v", err)
+	}
+	defer off.Close()
+	if off.prefillOK {
+		t.Error("built with the Mamba-2 pass off, the resident still admits the batched prefill")
 	}
 }
 
