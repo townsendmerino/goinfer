@@ -2211,7 +2211,15 @@ def main():
             sys.exit(f"REFUSED after this cell: goinfer loaded a quant the peers do not share: {unmatched}. The cell is "
                      f"recorded with quant_matched false; match the quants, or set BENCH_UNMATCHED=1.")
 
+def _term_exits(signum, frame):
+    """SIGTERM as SystemExit, so the running cell's `finally` stops its server's process group and waits for it to exit before the
+    timing lock is released. The default action ends the process at once, and the server, in its own session (os.setsid), would
+    keep the GPU while the next timed run takes the lock."""
+    raise SystemExit(128 + signum)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _term_exits)
     # TE9 (docs/tasks/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and
     # taken before preflight(), so a second timed run refuses, naming this one; BENCH_LOCK_WAIT=<seconds> waits for a
     # holder instead. Under a night.py job or a `timing_lock.py run` wrapper the lock is inherited, not re-taken.
