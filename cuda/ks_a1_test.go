@@ -198,11 +198,18 @@ func TestKSA1_gemvTiming(t *testing.T) {
 	}
 	ctx := dev.Context()
 	bg := context.Background()
-	if la, err := os.ReadFile("/proc/loadavg"); err == nil {
-		fmt.Fprintf(os.Stderr, "A1-G0 start %s load %s", time.Now().Format(time.RFC3339), la)
+	// CLAUDE.md's void rule as A1-G0 registers it: the 1-minute load above 8.0 (half nobara's 16 cores), or free VRAM under the
+	// run's need (about 0.6 GB, its largest shape's arms) plus 2 GB.
+	const needVRAM = 0.6 + 2.0 // GB
+	la := kso1cLoad1()
+	free, total, err := ctx.MemInfo()
+	if err != nil {
+		t.Fatalf("cuMemGetInfo: %v", err)
 	}
-	if free, total, err := ctx.MemInfo(); err == nil {
-		fmt.Fprintf(os.Stderr, "A1-G0 VRAM free %.0f MiB of %.0f\n", float64(free)/(1<<20), float64(total)/(1<<20))
+	fmt.Fprintf(os.Stderr, "A1-G0 start %s load %.2f; VRAM free %.0f MiB of %.0f\n", time.Now().Format(time.RFC3339), la,
+		float64(free)/(1<<20), float64(total)/(1<<20))
+	if la > 8.0 || float64(free)/1e9 < needVRAM {
+		t.Fatalf("A1-G0 VOID: load %.2f (line 8.0), %.2f GB of VRAM free (floor %.1f GB); re-run", la, float64(free)/1e9, needVRAM)
 	}
 	proto, err := ctx.LoadModule(ksA1ProtoPTX)
 	if err != nil {

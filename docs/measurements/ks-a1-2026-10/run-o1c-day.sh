@@ -4,7 +4,8 @@
 #   t0   O1C-G1 and G2 (kernels, reference, untouched bits, fused = unfused), the PTX lints, O1C-G4 (CPU unchanged: the digest at
 #        <base>, then at <rev>) and O1C-G3 (memory)
 #   g7   O1C-G7 (the timed A/B)
-#   g56  O1C-G6 (KL toward the file) and O1C-G5 (the CUDA G-Q2), with TestQ4K_phi3ResidentMatchesCPU beside it
+#   g56  O1C-G6 (KL toward the file), the native lane's long-context gate (TestKSO1C_longContextQuality) and O1C-G5 (the CUDA
+#        G-Q2), with TestQ4K_phi3ResidentMatchesCPU (the int8 lane) beside it
 # Exits non-zero on any failure; a skip counts as a failure for the gates it runs.
 set -u
 REV=${1:?usage: run-o1c-day.sh <rev> <base> <phase>}
@@ -63,6 +64,7 @@ g7)
 	;;
 g56)
 	gate g6 '^TestKSO1C_towardTheFile$' GOINFER_HEAVY_TESTS=1
+	gate longctx '^TestKSO1C_longContextQuality$' GOINFER_HEAVY_TESTS=1
 	gate g5 '^(TestKSO1C_realPhi3NonInferiority|TestQ4K_phi3ResidentMatchesCPU)$' GOINFER_HEAVY_TESTS=1 GOINFER_PHI3_MINI_GGUF="$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"
 	;;
 *) echo "unknown phase $PHASE"; exit 2 ;;

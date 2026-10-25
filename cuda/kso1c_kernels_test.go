@@ -381,6 +381,41 @@ func TestKSO1C_untouchedKernelsBitIdentical(t *testing.T) {
 	}
 	same("rmsnorm_quant_g32 scales", download(t, s["old"], 2*H/32), download(t, s["new"], 2*H/32))
 	cells++
+	// quant_vec_g32 and glu_quant_g32 (SiLU and GELU-tanh), each module's codes and scales.
+	{
+		const I = 1536
+		gv, uv := outlierVec(rng, I), outlierVec(rng, I)
+		dg, du := upload(t, ctx, gv), upload(t, ctx, uv)
+		plain := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		type quantOut struct {
+			q []int32
+			s []float32
+		}
+		runQ := func(m, fn string, act int32) quantOut {
+			dq, ds := mustAlloc[int32](t, ctx, I/4), mustAlloc[float32](t, ctx, 2*I/32)
+			if fn == "quant_vec_g32" {
+				run(m, fn, plain, gc.Arg(dg), gc.ArgValue(int32(I)), gc.Arg(dq), gc.Arg(ds))
+			} else {
+				scr := mustAlloc[float32](t, ctx, I)
+				run(m, fn, plain, gc.Arg(dg), gc.Arg(du), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)),
+					gc.ArgValue(act), gc.Arg(dq), gc.Arg(ds), gc.Arg(scr))
+			}
+			return quantOut{download(t, dq, I/4), download(t, ds, 2*I/32)}
+		}
+		for _, c := range []struct {
+			fn  string
+			act int32
+		}{{"quant_vec_g32", 0}, {"glu_quant_g32", 1}, {"glu_quant_g32", 0}} {
+			o, n := runQ("old", c.fn, c.act), runQ("new", c.fn, c.act)
+			for i := range o.q {
+				if o.q[i] != n.q[i] {
+					t.Fatalf("%s act %d code word %d: old %#x, new %#x", c.fn, c.act, i, o.q[i], n.q[i])
+				}
+			}
+			same(fmt.Sprintf("%s act %d scales", c.fn, c.act), o.s, n.s)
+			cells++
+		}
+	}
 	dq, das := q["old"], s["old"]
 	cfg8 := func(N int) gc.LaunchConfig {
 		return gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
