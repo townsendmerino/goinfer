@@ -61,3 +61,35 @@ reusing more than Q2, restored still equal to cold, plus B35's own gate re-run. 
 - **Ambiguous band:** T1's 1.5–2.5×, in both end-to-end gates, parked for Francis.
 - **Cost:** G0, G0b and G1 take seconds. G2 is about 6 min and G3 about 12 min, plus builds. Queued on nobara after
   `sp0-measure`.
+
+## Results: every gate PASS (2026-10-24)
+
+| gate | where | result |
+|---|---|---|
+| G0 | the Mac | `TestB35_aRestoredTurnKeepsItsOwnPoint` failed on `main` (turn 2 restored 1,152 rows and took no snapshot) and passes at the change |
+| G0b | the Mac | `scripts/touched.py` green; the 17 other snapshot and B35 tests pass, none skipped; `go vet -tags realckpt`; the pinned `staticcheck` (its canary red); the parity refresh found 0 lines to refresh |
+| G1 | nobara, 16:46 PDT | `cuda/b35_snapshot_test.go`: 3 of 3 pass |
+| G2 | nobara, 16:47–16:52 | B35-TL at the change: **PASS** (R1, R2, R3, I1, T1 all green) |
+| G3 | nobara, 16:52–17:03 | B35's end-to-end gate, the change against `main` `4814c869`: **PASS**, every row at 4k and 8k |
+
+The `b35ka-gates` job ran under nobara's timing lock at `e6673f9d`, driver 595.91.07, starting at load 0.08 with 59,163 MiB
+available. Records on nobara: `~/goinfer-logs/b35-keep-advance-2026-10/gates-2026-10-24-1646/` (G1 to G3) and
+`~/goinfer-bench/b35-e2e/results-2026-10-24-1652/` (G3's own).
+
+**G2, the tool loop, against the same conversation on `main`** (`docs/measurements/b35-toolloop-2026-10/README.md`, Q1-ONLY):
+
+| | `main` | the change |
+|---|---|---|
+| Q2 (r4) reused | 4,096 of 7,329 | 4,096 of 7,329 |
+| Q2 time to first token, of cold at its length | 0.502 | 0.514 |
+| **Q3 (r6) reused** | **4,096** of 8,870 | **7,168** of 8,870 |
+| **Q3 time to first token** | **28.12 s, 0.639 of cold** | **11.45 s, 0.260 of cold** |
+
+Q2 restores Q1's point, as before, and now keeps its own. Q3 restores Q2's point. Restored replies equal cold (I1: 48 and 39
+completion tokens, identical).
+
+**G3, plain chat turns:** every row green, as on B35's own pass. One reading moved:
+- **What moved:** at 4k, turn 3 now restores the state turn 2 kept, 4,096 rows instead of 3,584.
+- **What it bought:** its time to first token is 0.28 s, 0.018 of cold. B35's own pass had 2.48 s, 0.157.
+
+Cold output is unchanged against `main` (I2, every turn, both sizes).
