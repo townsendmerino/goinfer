@@ -122,13 +122,14 @@ Both arms built at the registered commits. One B run per model, depth 128, 2 tok
   for Granite's two cells and 1 h 30 min for Nemotron's. Each goes on nobara's night queue as its own job (`run-nobara.sh <family>`)
   at priority 60. That is ahead of ks-o4-gfid (90), and both end before mac-tack's 22:30 screen if they start by about 18:00.
 - **Need, for the void rule:** 13 GiB (Granite) and 17 GiB (Nemotron).
-- **Qwen3.6 and Llama 4 are not timed:** see "Not covered on nobara" below.
+- **Qwen3.6 and Llama 4 are not timed:** see "Untimed, by Francis's decision" below.
 
-**Not covered on nobara:**
-- **Qwen3.6-35B-A3B:**
-  - At about 2 s a prefill token, one depth-1,024 run is about 34 minutes, so the cell is about 13 hours. The depth-128 cell is about
-    1 h 45 min.
-  - The harness's random-id prompt also draws a stop token at once, so a timed run needs the harness to ignore it, an instrument
-    change in both arms.
-  - Either way is a choice for Francis.
-- **Llama 4 (Scout, 109B):** refused by the fit guard on the 62 GB box. It is uncovered on both machines.
+**Untimed, by Francis's decision (2026-10-25, 16:29, option b):** Qwen3.6-35B-A3B and Llama-4-Scout are not timed on either
+machine. The default stays on. The record for the qwen3_5 attention path is the Mac's Qwen3.5-0.8B reading above (1.113× and 1.833×,
+10 of 10).
+- **Qwen3.6-35B-A3B, why:**
+  - Its CPU prefill on nobara is about 2 s a token, so one depth-1,024 run is about 34 minutes and the cell about 13 hours. The
+    depth-128 cell alone would be about 1 h 45 min.
+  - The harness's random-id prompt also draws a stop token at once, so timing it at all would need an instrument change in both
+    arms (ignore the stop token).
+- **Llama 4 (Scout, 109B), why:** the fit guard refuses it on nobara's 62 GB, and no checkpoint small enough exists for the Mac.
