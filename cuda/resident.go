@@ -202,7 +202,7 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 			elem = 2
 		}
 		if layers[i].isMLA() {
-			perBlock += kvBlock * int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
+			perBlock += kvBlock * int64(layers[i].kvDim) * elem // MLA caches 1 latent row per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer maps window+slack positions however long the context (kvWindowBlocks)
 			held := int64(kvWindowBlocks(cap, int(layers[i].window)+kvWindowSlack))
@@ -959,9 +959,22 @@ func (r *cudaResident) af(n int) Buffer {
 func (r *cudaResident) akv(l, n int) Buffer {
 	if r.layers[l].kvHalf {
 		allocSeen(n * 2)
+		kvAllocSeen(r, n*2)
 		return gpu.NewBufferLenOf[uint16](r.dev, n)
 	}
+	kvAllocSeen(r, n*4)
 	return r.af(n)
+}
+
+// kvAllocSeenForTest, when set, is told the resident and the bytes of every K/V cache buffer akv allocates, from the branch that
+// picks the element type. A test seam, nil in production; a delivered-bytes gate sums it for the resident a load returns, so another
+// build during that load (a first load's probe) does not count.
+var kvAllocSeenForTest func(r *cudaResident, bytes int)
+
+func kvAllocSeen(r *cudaResident, bytes int) {
+	if kvAllocSeenForTest != nil {
+		kvAllocSeenForTest(r, bytes)
+	}
 }
 func (r *cudaResident) ai(n int) Buffer {
 	allocSeen(n * 4)

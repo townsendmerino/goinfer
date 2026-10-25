@@ -39,12 +39,13 @@
 // Regenerate with:  ./build_ptx.sh attn_img_prefill
 
 #include "attnscore.cuh"
+#include "kvtype.cuh"
 #include "kvpage.cuh"
 
 extern "C" {
 
-__global__ void attn_img_batched(const float* __restrict__ q, const float* __restrict__ kc,
-                             const float* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
+__global__ void attn_img_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
+                             const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
                              const float* __restrict__ sinks, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -75,20 +76,19 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
     for (int s = winStart + t; s < nKeys; s += nt) {
         const long row = rowNext;
         if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
-        const float* ks = kc + row * kvDim + kvh * hd;
+        const KV_T* ks = kc + row * kvDim + kvh * hd;
         float dot = 0.f;
         // float4 the K read — see attn_batched's identical comment for the rationale.
         int d4 = hd >> 2;
         const float4* q4 = (const float4*)qh;
-        const float4* k4 = (const float4*)ks;
         for (int i = 0; i < d4; i++) {
-            float4 qq = q4[i], kk = k4[i];
+            float4 qq = q4[i], kk = KV_LD4V(ks, i);
             dot = __fmaf_rn(qq.x, kk.x, dot);
             dot = __fmaf_rn(qq.y, kk.y, dot);
             dot = __fmaf_rn(qq.z, kk.z, dot);
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
-        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
+        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
         dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -106,8 +106,8 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
         float acc = 0.f;
         for (int s = winStart; s < nKeys;) {
             const int e = KV_RUN_END(s, nKeys);
-            const float* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
-            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], *vp, acc);
+            const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
         }
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }
@@ -118,8 +118,8 @@ __global__ void attn_img_batched(const float* __restrict__ q, const float* __res
 // gemma4AttendRange): a row inside a span sees its whole span and, on a sliding layer, its window reaches back to the
 // span's start as well. The two kernels differ only when a span is longer than the window. A separate function so
 // attn_img_batched, Gemma 3's validated kernel, compiles to the same PTX.
-__global__ void attn_span_batched(const float* __restrict__ q, const float* __restrict__ kc,
-                             const float* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
+__global__ void attn_span_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
+                             const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
                              const float* __restrict__ sinks, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;
@@ -151,20 +151,19 @@ __global__ void attn_span_batched(const float* __restrict__ q, const float* __re
     for (int s = winStart + t; s < nKeys; s += nt) {
         const long row = rowNext;
         if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
-        const float* ks = kc + row * kvDim + kvh * hd;
+        const KV_T* ks = kc + row * kvDim + kvh * hd;
         float dot = 0.f;
         // float4 the K read — see attn_batched's identical comment for the rationale.
         int d4 = hd >> 2;
         const float4* q4 = (const float4*)qh;
-        const float4* k4 = (const float4*)ks;
         for (int i = 0; i < d4; i++) {
-            float4 qq = q4[i], kk = k4[i];
+            float4 qq = q4[i], kk = KV_LD4V(ks, i);
             dot = __fmaf_rn(qq.x, kk.x, dot);
             dot = __fmaf_rn(qq.y, kk.y, dot);
             dot = __fmaf_rn(qq.z, kk.z, dot);
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
-        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
+        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
         dot = attn_score(dot, scale); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -182,8 +181,8 @@ __global__ void attn_span_batched(const float* __restrict__ q, const float* __re
         float acc = 0.f;
         for (int s = winStart; s < nKeys;) {
             const int e = KV_RUN_END(s, nKeys);
-            const float* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
-            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], *vp, acc);
+            const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
         }
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }

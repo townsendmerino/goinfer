@@ -103,7 +103,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			}
 			asF16 := slices.Clone(r.layers)
 			for i := range asF16 {
-				asF16[i].kvHalf = !asF16[i].isMLA() && !asF16[i].noKV() && !asF16[i].kvShared
+				asF16[i].kvHalf = !asF16[i].noKV() && !asF16[i].kvShared
 			}
 			one := forCap + null
 			f32Bytes := kvBytesForCap(r.kvShareCtx, asF32) + kvPoolNullBytes(asF32)
