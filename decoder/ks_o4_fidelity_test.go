@@ -203,7 +203,7 @@ const ksO4Positions = 16
 
 type ksO4Prompt struct{ id, cell, text string }
 
-// ksO4PromptSet is the registered set (the 2026-10-25 10:20 amendment): short cells of a passage's first two sentences and long cells of
+// ksO4PromptSet is the registered set (its amended budget): short cells of a passage's first two sentences and long cells of
 // two passages (about 100 and 300 tokens), each with an instruction; the pilot uses passages the gate set never does.
 func ksO4PromptSet(mode string, n int) []ksO4Prompt {
 	var set []ksO4Prompt
