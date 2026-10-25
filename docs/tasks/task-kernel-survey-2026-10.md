@@ -2738,6 +2738,35 @@ red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 a
 - The margins can be rebuilt from measured parts after KS-H2 and KS-H3.
 - **First measurement:** minimum free VRAM over a 20k prompt on Qwen3-8B at 16k and on the 26B.
 
+**KS-H6 reading, registered 2026-10-25 before it runs (H6-R).** A reading for the owner's decision, not a gate: no guard or
+margin changes in this work, and it stops with the numbers.
+- **What each margin must cover:**
+  - `ctxCapMarginBytes` is left free beside the weights and KV at the load-time fit check. It must absorb what the build allocates
+    after the KV pools, the allocation floor, the one prefill pass that is not priced beyond it, and decode's transients.
+  - `slotMarginBytes` is left free when the 26B's expert cache is sized, after everything else. It must absorb the floor and the
+    transients that come after the slots.
+- **The parts and where each comes from:**
+  - **The allocation floor:** cited, not re-measured. `TestAllocFloor` drains the device, and it skips while the desktop compositor
+    holds a context. Its record (`docs/code-notes/cuda.md`, "TestAllocFloor") puts the refusals at 148–155 MiB free at any request
+    size.
+  - **The build after the pools:** kv4b-grade's KS-H2 readings (#251): 70 allocations, about 130 MiB, on the 7B and on Qwen3-8B at
+    16k.
+  - **The moe_route reservation:** KS-H3's baseline, 132.0 MiB retained after its first launch. The 26B's build forces it before it
+    reads free VRAM for the slots.
+  - **The prefill pass inside the margin:** `PrefillScratchBytes(512)` plus `PrefillSpanScratchBytes(512, context)` per model. Under
+    KS-B8 (#250) a wider pass is taken only from VRAM beyond the margin.
+  - **The run's transients (new, `TestKSH6_marginParts`):** each model loaded as serve loads it (`--kv auto`, f16 where cleared;
+    the 26B at int4 with its expert cache). The test records the free VRAM after the load. It then prefills a long prompt and
+    decodes 64 tokens while a child `nvidia-smi --query-gpu=memory.used -lms 20` samples the card. The prompts are 15,000 tokens on
+    Qwen3-8B at context 16,384, and on the 26B its context less 512. The reading is the minimum free VRAM over the run, its drop
+    below free-after-load, and the pass width the run used, including any learned narrowing.
+- **The derivation:** for each margin, the sum of its parts against 384 MiB, per model. The owner gets the measured headroom left at
+  the run's minimum: free VRAM above the floor, or a refusal.
+- **Out:** DECISION NEEDED with the numbers and the options (keep 384; a different constant; a margin computed from the parts at
+  load). Nothing is changed here.
+- **Cost:** two loads. Qwen3-8B about 2 min (a 15,000-token prefill and 64 tokens). The 26B about 5 min (its load from
+  safetensors and the prompt). By day, with the timing lock shared: memory, not time, is read.
+
 ## 12. Already covered (not re-proposed)
 
 **CUDA**
