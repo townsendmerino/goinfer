@@ -95,20 +95,24 @@ type ResidentRecurrentSpec interface {
 	// RecurrentSpecRows is the widest verify the path holds: 0 when this load cannot take it (a recurrent layer it does not
 	// serve, or no room for its rows).
 	RecurrentSpecRows() int
-	// VerifyLastNArgmax is PrefillLastNArgmax that leaves every recurrent layer's committed state and conv window untouched.
-	// Each row starts from the row above it, so the rows are a chain. The rows wait for FoldVerified; another verify replaces
-	// them.
+	// VerifyLastNArgmax is PrefillLastNArgmax that writes none of its own rows into any recurrent layer's committed state or conv
+	// window. It first folds the rows the previous verify had marked (FoldVerified). Each row starts from the row above it, so the
+	// rows are a chain.
 	VerifyLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-	// FoldVerified folds the last verify's first n rows into the committed state, leaving it as a prefill of those rows would.
+	// FoldVerified marks the last verify's first n rows committed. They fold into the state, leaving it as a prefill of those
+	// rows would, at the next VerifyLastNArgmax or FlushFold, whichever comes first.
 	FoldVerified(n int) error
+	// FlushFold folds the marked rows now. Called before anything other than a verify reads or advances the state.
+	FlushFold() error
 }
 
 // RecurrentSpecMaxRows is the widest verify a ResidentRecurrentSpec arena is sized for: a DFlash block.
 const RecurrentSpecMaxRows = 16
 
 // RecurrentSpecArenaBytes is the device memory a ResidentRecurrentSpec resident keeps for verify passes of up to rows rows on a model of
-// arch a: per Gated-DeltaNet layer and row, the conv input and output, the normed q and k and two gates per value head, plus the fold's
-// recurrence output once, f32, rounded up to the 2 MiB cuMemAlloc gives a buffer that size. 0 for a model the path refuses: no recurrent
+// arch a: two banks (a verify writes one while the previous verify's committed rows fold from the other) of, per Gated-DeltaNet layer and
+// row, the conv input and output, the normed q and k and two gates per value head, plus one fold output, f32, rounded up to the 2 MiB
+// cuMemAlloc gives a buffer that size. 0 for a model the path refuses: no recurrent
 // state, a recurrent kind other than Gated DeltaNet, heads wider than the scan twins' 128, or a sliding window.
 func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
 	if a == nil || a.qwen35 == nil || rows < 1 || a.SlidingWindow > 0 || a.qwen35.KeyHeadDim > 128 || a.qwen35.ValueHeadDim > 128 {
@@ -131,7 +135,7 @@ func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
 	g := a.qwen35
 	keyDim, valueDim := g.NumKeyHeads*g.KeyHeadDim, g.NumValueHeads*g.ValueHeadDim
 	convDim := 2*keyDim + valueDim
-	floats := int64(nDN)*int64(rows)*int64(2*convDim+2*keyDim+2*g.NumValueHeads) + int64(rows)*int64(valueDim)
+	floats := 2*int64(nDN)*int64(rows)*int64(2*convDim+2*keyDim+2*g.NumValueHeads) + int64(rows)*int64(valueDim)
 	const align = 2 << 20
 	return (floats*4 + align - 1) / align * align
 }
@@ -447,6 +451,11 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			// The drafter is not paying for itself on this generation: finish with plain resident decoding. Disarm the capture seam first: left
 			// armed, every fallback token pays tap downloads for hidden states nothing will read, and the guard then costs more than it saves.
 			if !seamOff {
+				if fold != nil {
+					if e := fold.FlushFold(); e != nil { // the plain steps read the committed state
+						return out, rounds, e
+					}
+				}
 				if e := host.SetBatchedCapture(nil); e != nil {
 					return out, rounds, e
 				}
@@ -541,7 +550,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		// the position, the drafter's context and a recurrent state must all end at the last emitted token, which is what the
 		// commit below records.
 		rows := 1 + min(accepted, len(burst))
-		if fold != nil {
+		if fold != nil { // they fold at the next verify, or at a flush below
 			if e := fold.FoldVerified(rows); e != nil {
 				return out, rounds, e
 			}
@@ -567,6 +576,12 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			opt.OnRound(width, 1+accepted)
 		}
 		guard.observe(1 + accepted)
+	}
+	// The rows the last round marked fold before the trailing forward and the commit read the state.
+	if fold != nil {
+		if err := fold.FlushFold(); err != nil {
+			return out, rounds, err
+		}
 	}
 	// The only exit that commits, mirroring generateInto's rule that a generation which ran to completion is the only place the resident
 	// cache's contents are recorded (model.go). Every early return above (a device error, or the caller's emit stopping consumption) leaves

@@ -345,7 +345,9 @@ func sp2Quartiles(xs []float64) (q1, q3 float64) {
 }
 
 // TestSP2_foldCost is G2: in one process, interleaved and rotated A B B A over 3 warm-ups and 20 repetitions, a plain step, a
-// w = 4 verify on the fold path and on today's path, and the fold of 1 to 4 rows, at L = 512 and 4096.
+// w = 4 verify on the fold path and on today's path, the fold of 1 to 4 rows on its own (FlushFold), and a w = 4 verify folding
+// 1 to 4 rows the previous verify marked (the fold inside the next pass's scan, the registered response to a flagged G2), at
+// L = 512 and 4096. The in-scan fold's cost is that verify less a verify with nothing to fold.
 func TestSP2_foldCost(t *testing.T) {
 	g := newSP2Rig(t)
 	text := sp2LongText(t, g.tk, filepath.Join("..", "decoder", "model.go"), 4200)
@@ -369,7 +371,7 @@ func TestSP2_foldCost(t *testing.T) {
 		}
 		cell := g.sp2ValidCell(t, fmt.Sprintf("G2 L=%d", L))
 		embs := embsOf(g.mc, rows)
-		arms := []string{"step", "verify_fold", "verify_today", "fold1", "fold2", "fold3", "fold4"}
+		arms := []string{"step", "verify_fold", "verify_today", "fold1", "fold2", "fold3", "fold4", "vpend1", "vpend2", "vpend3", "vpend4"}
 		times := map[string][]float64{}
 		run := func(arm string) float64 {
 			var t0 time.Time
@@ -393,13 +395,20 @@ func TestSP2_foldCost(t *testing.T) {
 					t.Fatal(err)
 				}
 			default:
-				n := int(arm[4] - '0')
+				n := int(arm[len(arm)-1] - '0')
 				if _, err := g.r.VerifyLastNArgmax(embs, L); err != nil {
+					t.Fatal(err)
+				}
+				if err := g.r.FoldVerified(n); err != nil {
 					t.Fatal(err)
 				}
 				sync()
 				t0 = time.Now()
-				if err := g.r.FoldVerified(n); err != nil {
+				if strings.HasPrefix(arm, "fold") {
+					if err := g.r.FlushFold(); err != nil {
+						t.Fatal(err)
+					}
+				} else if _, err := g.r.VerifyLastNArgmax(embs, L); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -430,14 +439,18 @@ func TestSP2_foldCost(t *testing.T) {
 			rec[a] = map[string]float64{"median_ms": med[a], "q1_ms": q1, "q3_ms": q3}
 		}
 		fold330 := med["fold3"] + 0.30*(med["fold4"]-med["fold3"])
+		inScan330 := med["vpend3"] + 0.30*(med["vpend4"]-med["vpend3"]) - med["verify_fold"]
 		rec["fold_at_3.30_ms"] = fold330
 		rec["fold_over_step"] = fold330 / med["step"]
+		rec["inscan_fold_at_3.30_ms"] = inScan330
+		rec["inscan_fold_over_step"] = inScan330 / med["step"]
 		rec["verify_fold_over_today"] = med["verify_fold"] / med["verify_today"]
 		g.record(t, rec)
-		t.Logf("L=%d: step %.3f ms, fold at 3.30 rows %.3f ms = %.1f%% of a step; verify fold/today %.3f",
-			L, med["step"], fold330, 100*fold330/med["step"], med["verify_fold"]/med["verify_today"])
-		// The registered bands: under 5.0% passes; 5.0-11.0% passes the comparison, flagged; 11.0% or more fails.
-		switch r := fold330 / med["step"]; {
+		t.Logf("L=%d: step %.3f ms; the fold at 3.30 rows on its own %.3f ms = %.1f%% of a step, inside the next scan %.3f ms = %.1f%%; verify fold/today %.3f",
+			L, med["step"], fold330, 100*fold330/med["step"], inScan330, 100*inScan330/med["step"], med["verify_fold"]/med["verify_today"])
+		// The registered bands, on the fold as the loop runs it (inside the next pass's scan): under 5.0% passes; 5.0-11.0% passes
+		// the comparison, flagged; 11.0% or more fails.
+		switch r := inScan330 / med["step"]; {
 		case r < 0.05:
 			t.Logf("VERDICT G2 L=%d: PASS (%.1f%% of a step, under 5.0%%)", L, 100*r)
 		case r < 0.11:

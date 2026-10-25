@@ -185,9 +185,10 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		// registers (launch_bounds(128, 1) gives the same 96 B). That is 3.8 MiB at full occupancy, accepted
 		// for the speed over the no-spill generic scan.
 		"delta_rule_rows_128": 96,
-		// Its verify twin, which never stores the state row (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on
-		// nobara"), spills less; the backing store is sized by the largest kernel launched, which stays the scan above.
-		"delta_rule_rows_128_spec": 80,
+		// Its verify twin (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara") runs the same row body over
+		// the folded rows and its own, and spills the same 96 B: the backing store, sized by the largest kernel launched, does
+		// not grow.
+		"delta_rule_rows_128_spec": 96,
 	}
 	got := map[string]int{}
 	for _, r := range rows {

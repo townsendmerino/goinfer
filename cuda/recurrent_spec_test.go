@@ -175,8 +175,9 @@ func embsOf(mc *decoder.Model, ids []int) [][]float32 {
 	return e
 }
 
-// verifyFoldFailures runs G1a's cases on one model and returns every failure: verify leaves the state, a fold of n equals a
-// prefill of n, and each verified row's argmax equals that prefill's.
+// verifyFoldFailures runs G1a's cases on one model and returns every failure: verify leaves the state; the n rows FoldVerified marks
+// fold to what a prefill of them leaves, both at FlushFold and inside the next verify's own scan; each verified row's argmax equals
+// the prefill's, including the next verify's rows, which scan from the folded state.
 func verifyFoldFailures(t *testing.T, mc *decoder.Model, r *cudaResident) []string {
 	t.Helper()
 	_, _, _, _, _, _, vocab := mc.Dims()
@@ -186,34 +187,61 @@ func verifyFoldFailures(t *testing.T, mc *decoder.Model, r *cudaResident) []stri
 	}
 	base := dnSnapshot(t, r)
 	pos := len(prompt)
+	next := idsFor(4, 99, vocab) // the next verify's rows
 	var fails []string
 	for _, w := range []int{2, 4, 8, 16} {
 		rows := idsFor(w, w, vocab)
 		for n := 1; n <= w; n++ {
-			dnRestore(t, r, base)
-			got, err := r.VerifyLastNArgmax(embsOf(mc, rows), pos)
-			if err != nil {
-				t.Fatalf("w=%d: verify: %v", w, err)
-			}
-			if d := snapDiff(base, dnSnapshot(t, r)); d != "" {
-				fails = append(fails, fmt.Sprintf("w=%d n=%d: the verify wrote the committed state: %s", w, n, d))
-			}
-			if err := r.FoldVerified(n); err != nil {
-				t.Fatalf("w=%d n=%d: fold: %v", w, n, err)
-			}
-			folded := dnSnapshot(t, r)
+			// The reference: a prefill of the n committed rows, then of those rows and the next verify's.
 			dnRestore(t, r, base)
 			want, err := r.PrefillLastNArgmax(embsOf(mc, rows[:n]), pos)
 			if err != nil {
 				t.Fatalf("w=%d n=%d: reference prefill: %v", w, n, err)
 			}
-			if d := snapDiff(dnSnapshot(t, r), folded); d != "" {
-				fails = append(fails, fmt.Sprintf("w=%d n=%d: fold differs from a prefill of the same rows: %s", w, n, d))
+			wantState := dnSnapshot(t, r)
+			dnRestore(t, r, base)
+			wantNext, err := r.PrefillLastNArgmax(embsOf(mc, append(append([]int(nil), rows[:n]...), next...)), pos)
+			if err != nil {
+				t.Fatalf("w=%d n=%d: reference prefill with the next rows: %v", w, n, err)
 			}
-			for i := range n {
-				if got[i] != want[i] {
-					fails = append(fails, fmt.Sprintf("w=%d n=%d: row %d argmax %d, prefill %d", w, n, i, got[i], want[i]))
-					break
+			for _, fused := range []bool{false, true} {
+				how := "at FlushFold"
+				if fused {
+					how = "in the next verify"
+				}
+				dnRestore(t, r, base)
+				got, err := r.VerifyLastNArgmax(embsOf(mc, rows), pos)
+				if err != nil {
+					t.Fatalf("w=%d: verify: %v", w, err)
+				}
+				if d := snapDiff(base, dnSnapshot(t, r)); d != "" {
+					fails = append(fails, fmt.Sprintf("w=%d n=%d: the verify wrote the committed state: %s", w, n, d))
+				}
+				for i := range n {
+					if got[i] != want[i] {
+						fails = append(fails, fmt.Sprintf("w=%d n=%d: row %d argmax %d, prefill %d", w, n, i, got[i], want[i]))
+						break
+					}
+				}
+				if err := r.FoldVerified(n); err != nil {
+					t.Fatalf("w=%d n=%d: fold: %v", w, n, err)
+				}
+				if fused {
+					gotNext, err := r.VerifyLastNArgmax(embsOf(mc, next), pos+n)
+					if err != nil {
+						t.Fatalf("w=%d n=%d: next verify: %v", w, n, err)
+					}
+					for i := range next {
+						if gotNext[i] != wantNext[n+i] {
+							fails = append(fails, fmt.Sprintf("w=%d n=%d: next verify row %d argmax %d, prefill %d", w, n, i, gotNext[i], wantNext[n+i]))
+							break
+						}
+					}
+				} else if err := r.FlushFold(); err != nil {
+					t.Fatalf("w=%d n=%d: flush: %v", w, n, err)
+				}
+				if d := snapDiff(wantState, dnSnapshot(t, r)); d != "" {
+					fails = append(fails, fmt.Sprintf("w=%d n=%d: the fold %s differs from a prefill of the same rows: %s", w, n, how, d))
 				}
 			}
 		}
@@ -504,7 +532,7 @@ func TestRecurrentSpec_arenaPriced(t *testing.T) {
 				}
 			}
 			rows := decoder.RecurrentSpecMaxRows
-			raw := int64(nDN*rows*(2*dp.convDim+2*dp.keyDim+2*dp.nv)+rows*dp.valueDim) * 4
+			raw := int64(2*nDN*rows*(2*dp.convDim+2*dp.keyDim+2*dp.nv)+rows*dp.valueDim) * 4 // two banks
 			want := (raw + (2<<20 - 1)) / (2 << 20) * (2 << 20)
 			if priced != want {
 				t.Errorf("the reserve grew by %d with a drafter, want %d (%d raw bytes, %d DeltaNet layers)", priced, want, raw, nDN)

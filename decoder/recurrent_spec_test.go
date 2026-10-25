@@ -14,6 +14,7 @@ func (s recurrentSpecStub) PrepareRecurrentSpec(int) error                  { re
 func (s recurrentSpecStub) RecurrentSpecRows() int                          { return s.rows }
 func (recurrentSpecStub) VerifyLastNArgmax([][]float32, int) ([]int, error) { panic("not reached") }
 func (recurrentSpecStub) FoldVerified(int) error                            { panic("not reached") }
+func (recurrentSpecStub) FlushFold() error                                  { panic("not reached") }
 
 func deltaNetArch(layers int) *Architecture {
 	return &Architecture{NumLayers: layers, HiddenDim: 64,
@@ -55,14 +56,15 @@ func TestSpecRollbackSafeVia_admitsOnlyTheFoldPath(t *testing.T) {
 }
 
 // TestRecurrentSpecArenaBytes_formula pins G3's price on Qwen3.5-9B's geometry: 24 DeltaNet layers of 32, 16 key and 32 value heads
-// of 128, 16 rows, rounded up to 2 MiB.
+// of 128, 16 rows in two banks, rounded up to 2 MiB.
 func TestRecurrentSpecArenaBytes_formula(t *testing.T) {
 	a := deltaNetArch(32)
 	// per row and layer: conv in and out 8,192 each, q and k 2,048 each, two gates per value head; plus the fold's output once.
-	floats := int64(24*16*(2*8192+2*2048+2*32) + 16*4096)
+	// Two banks: a verify writes one while the previous verify's committed rows fold from the other.
+	floats := int64(2*24*16*(2*8192+2*2048+2*32) + 16*4096)
 	want := (floats*4 + (2<<20 - 1)) / (2 << 20) * (2 << 20)
-	if got := RecurrentSpecArenaBytes(a, 16); got != want || want != 32<<20 {
-		t.Errorf("RecurrentSpecArenaBytes = %d, want %d (32 MiB)", got, want)
+	if got := RecurrentSpecArenaBytes(a, 16); got != want || want != 62<<20 {
+		t.Errorf("RecurrentSpecArenaBytes = %d, want %d (62 MiB)", got, want)
 	}
 	if got := recurrentSpecReserve(a, false); got != 0 {
 		t.Errorf("no drafter: reserve %d, want 0", got)
@@ -156,9 +158,11 @@ func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
 // foldHost is a drafter host with the fold path: the seed answers 7, every verify answers script, and it records each verify's
 // rows and each fold.
 type foldHost struct {
-	script []int
-	folds  []int
-	verify []int
+	script  []int
+	folds   []int
+	verify  []int
+	flushes int // FlushFold calls that found rows marked
+	marked  bool
 }
 
 func (h *foldHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
@@ -175,9 +179,21 @@ func (h *foldHost) RecurrentSpecRows() int         { return 16 }
 func (h *foldHost) PrepareRecurrentSpec(int) error { return nil }
 func (h *foldHost) VerifyLastNArgmax(embs [][]float32, startPos int) ([]int, error) {
 	h.verify = append(h.verify, len(embs))
+	h.marked = false // a verify folds what was marked
 	return h.script[:len(embs)], nil
 }
-func (h *foldHost) FoldVerified(n int) error { h.folds = append(h.folds, n); return nil }
+func (h *foldHost) FoldVerified(n int) error {
+	h.folds = append(h.folds, n)
+	h.marked = true
+	return nil
+}
+func (h *foldHost) FlushFold() error {
+	if h.marked {
+		h.flushes++
+		h.marked = false
+	}
+	return nil
+}
 
 // scriptDrafter drafts the same ids every round.
 type scriptDrafter struct{ ids []int }
@@ -238,6 +254,9 @@ func TestBlockSpecGenerate_foldsTheEmittedRows(t *testing.T) {
 		}
 		if want := []int{1, 2, 3, 7, 5}; !equalIntSlices(m.resIDs, want) {
 			t.Errorf("resIDs = %v, want %v", m.resIDs, want)
+		}
+		if host.flushes != 1 {
+			t.Errorf("%d flushes of marked rows, want 1: the marked rows must fold before the commit reads the state", host.flushes)
 		}
 	})
 }
