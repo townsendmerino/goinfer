@@ -84,11 +84,10 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 	}
 }
 
-// The attendQueryP families (Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2, Llama 4) keep today's schedule until they are timed (the
-// owner's call on #239): attendQueryP is bit-identical to its reference and never fans its heads out, so its cache's head worker pool
-// stays empty.
-func TestKSF2_queryPKeepsTheOldPath(t *testing.T) {
-	cells, fanned := 0, 0
+// KS-F2b: attendQueryP with the heads fanned out and eight keys scored at once is bit-identical to its reference in every cell, and
+// fans out where gpt-oss's rule would (its cache's head worker pool grows there).
+func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
+	cells, fanned, grown := 0, 0, 0
 	for _, procs := range []int{1, 8} {
 		old := runtime.GOMAXPROCS(procs)
 		for _, sh := range ksf2Shapes {
@@ -133,11 +132,11 @@ func TestKSF2_queryPKeepsTheOldPath(t *testing.T) {
 							ksf2SameBits(t, name+": ctx", got, want)
 							cells++
 							if withScr {
-								if len(a.scr.headPool) != 0 {
-									t.Fatalf("%s: attendQueryP grew %d head worker slots; it must keep the one-goroutine path", name, len(a.scr.headPool))
-								}
 								if scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1 {
-									fanned++ // a cell gpt-oss's rule would have fanned out
+									fanned++ // a cell the fan-out rule takes
+									if len(a.scr.headPool) > 0 {
+										grown++
+									}
 								}
 							}
 						}
@@ -147,9 +146,9 @@ func TestKSF2_queryPKeepsTheOldPath(t *testing.T) {
 		}
 		runtime.GOMAXPROCS(old)
 	}
-	t.Logf("%d runs, every word equal and no head worker slot grown, %d of them in cells gpt-oss's rule would fan out", cells, fanned)
-	if fanned == 0 {
-		t.Fatal("no cell is one gpt-oss's rule would fan out: the check that attendQueryP does not proves nothing")
+	t.Logf("%d runs, every word equal; %d in cells the fan-out rule takes, %d of them fanned out", cells, fanned, grown)
+	if fanned == 0 || grown == 0 {
+		t.Fatalf("fan-out cells %d, fanned %d: the fanned schedule was not exercised", fanned, grown)
 	}
 }
 
