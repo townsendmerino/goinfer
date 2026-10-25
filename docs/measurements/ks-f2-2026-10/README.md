@@ -75,6 +75,17 @@ The exp-and-sum loop and the AV loop keep key order.
 - **First loads:** the first CPU int4 load of each model writes its CPU sidecar `.giw` beside the `.gguf` in nobara's `~/models`
   (about 11 GB for gpt-oss-20b and 5 GB for the 9B; 87 GB free). The fit step absorbs it, before any timed run.
 
+## Scope: gpt-oss only (Francis, 2026-10-25 10:35)
+
+"#239 risk 1, option A. Limit #239's default change to gpt-oss. attendQueryP keeps today's schedule for Qwen3.5/3.6, Granite-4.0-H,
+Nemotron-H, LFM2 and Llama 4 until they're timed."
+- **`decoder/attention.go:attendQueryP` is `main`'s code again,** unchanged. `TestKSF2_queryPKeepsTheOldPath` holds it there: bit-identical
+  to its reference, and it never grows a head worker slot. A planted fan-out turned that test red.
+- **Shipped:** `attendSinksToken`'s new schedule, for gpt-oss alone.
+- **Later, not run now:** timing the new schedule for the other families is KS-F2b in the survey's ledger. Their schedule's code is in this
+  branch's history (`f8a1eda2`), and its bit-identity readings above (G0's 66 `attendQueryP` cells, G1a and G1b) stand as a record of it.
+- **Memory:** only gpt-oss's caches gain the score slots.
+
 ## Gemini's review of #239, and what changed
 
 Gemini found the product code bit-identical and race-free.
