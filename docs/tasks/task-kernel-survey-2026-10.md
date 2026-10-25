@@ -1759,7 +1759,7 @@ Log: `~/goinfer-logs/kse3-g2-gpuguard-2026-10-24.log`.
 stays on main as shipped in #216, on the owner's bit-identical rule: 10 of 10 pairs faster, bit-identical, no memory allocated, one
 path. The median (0.9807) is 0.0007 over the median bar.
 
-**After the review of #227 (18:10), registered before a re-read.** Three defects in the GPU term, all fixed:
+**After the review of #227 (registered 22:25, before a re-read).** Three defects in the GPU term, all fixed:
 - The reading counted as taken whenever ioreg ran, so a parse that matched nothing read 0.00% and passed. It now requires this
   process's own GPU client in the listing (a test with a device open owns one).
 - It summed GPU time per process, so a client closing inside an arm could cancel another client's time and under-read contention.
