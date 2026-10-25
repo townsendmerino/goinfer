@@ -2550,6 +2550,9 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
     speculative turn must be what kvmgr scores (R-03, `docs/tasks/task-recompute-audit.md`).
   - **Registered on nobara, 2026-10-24:** the design and the gates are in "SP2 on nobara" below. SP0 parked the 35B (its MoE
     verify rows cost about 5× a step on CUDA), so its speed gate is out of SP2's scope; the Mac reading stays open.
+  - **Status, 2026-10-25:** built (PR #232). G1 (identity, both plants caught) and G5 pass on Qwen3.5-9B with DFlash and on three
+    small models; G3's price agrees with the allocation. G2 (the fold's cost) and G4 (speed) are timed, by day, not yet read
+    (`docs/measurements/sp2-2026-10/README.md`).
 - **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
   - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
     masks.
