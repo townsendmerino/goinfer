@@ -398,3 +398,27 @@ Attaching the drafter leaves the expert cache at 64 slots per layer at this cont
 reserve does not slow the 35B's plain decode here, so it does not sink a speedup measured against it. Real decode runs 23.6 ms a
 token, where SP0's step arm read 17.6 ms on a repeated token at one position (the same experts every time), so SP0's 35B projection
 needs a real measurement of its verify cost too.
+
+### The served A/B on code and math, read (2026-10-25, 13:06–14:28 PDT): stopped on the owner's call, deemed successful
+
+The owner stopped it at 14:27 (Francis: "I deem this successful without finishing"), with the short depth complete and the long
+depth at 4 of its 10 pairs. Cells as run (`raw/served-ab-codemath-2026-10-25-cells.json`; serve logs on nobara under
+`~/goinfer-logs/sp2-2026-10/served-codemath/`). Every cell started at load 1.0 or below; no error.
+
+| depth | prompts | plain decode | `--drafter -drafter-width 4` | median of the pairs | pairs faster | spread | wall of 16 completions, plain / drafter | prefill + TTFT a request, plain / drafter | peak RSS, plain / drafter |
+|---|---|---|---|---|---|---|---|---|---|
+| 32 | SP0's 12 as they are (23–36 tokens) | 65.6 tok/s | 98.5 tok/s | **1.501×** | 10 of 10 | 1.477–1.505 | 60.4 / 41.8 s | 0.11 / 0.13 s | 4.7 / 12.8 GB |
+| 3840 | the same behind G4's preamble (3,816–3,829) | 62.6 tok/s | 79.1 tok/s | 1.264× (4 pairs) | 4 of 4 | 1.263–1.265 | 80.2 / 323.4 s | 1.13 / 17.06 s | 5.1 / 13.9 GB |
+
+- **Short depth: the served path delivers G4's speedup on G4's prompts.** 1.501× against G4's in-process 1.462×, faster in all 10
+  pairs; under the merge rule it delivers. End to end it is faster too (0.69 of plain's wall).
+- **Long depth: incomplete.** 4 of 10 pairs, so the registered rule cannot be applied to it; the pairs it has are all faster in decode
+  (1.26×). End to end it is 4.0× slower, the missing prefix reuse again (17.06 s a request against plain's 1.13 s; SP2b).
+- **The owner's verdict: successful.** The record keeps the long depth as partial.
+- **Memory term of the void rule:** not recorded here either (Go was not on the harness's `PATH`, as in the essay run); this box's
+  `MemAvailable` stayed about 60 GB against a 14 GB peak, so no cell neared the 2 GB floor.
+- **An overlap at the stop, recorded:** the drafter arm's last `serve` (6.9 GB of VRAM) was still exiting at 14:28:47 when another
+  session's timed job (`ks-h2-h3-readings`) took the lock; it was gone a few seconds later.
+- **Summary across the served A/Bs:** on code and math `--drafter` delivers about 1.5× in decode at short context and about 1.26×
+  behind a long preamble; on essay prose about 1.0× (the guard caps the loss); and on any prompt it cannot reuse, the cold prefill
+  with the capture costs wall time that SP2b addresses.
