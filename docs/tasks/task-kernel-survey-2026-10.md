@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1, and every Context builder wired through quantSrc); the 1.5B's WebGPU decode 24.7 → 21.8 ms a token, median 0.8810, 10 of 10 pairs, with an A/A control (1.0041) in the same run and busy cores read per arm (E2-G2 SHIP) | survey, "KS-E2 read" |
-| KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode about 0.5 ms a token faster, median 0.9788, 10 of 10 pairs on the per-arm-guarded re-run (E3-G2 SHIP) | survey, "KS-E3 read" |
+| KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); E3-G2 on its full guard (busy cores, GPU contention, vanished clients) passes, median 0.9166, 10 of 10 pairs; the size varies with the machine's state (a quiet earlier session read 0.9916, also 10 of 10) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1932,6 +1932,133 @@ test (1,024 of 1,024).
 before the load): SHIP.** Every read of every arm under the line: the 1-minute load 1.06–1.77, reclaimable 3.44–4.03 GiB. off
 24.68–24.95 ms a token, on 24.17–24.56; **median on/off 0.9788, 10 of 10 pairs faster**, no void pairs. The gain holds: 0.9764 and
 0.9788 on the two guarded readings. Log: `~/goinfer-logs/kse3-g2-rerun2-2026-10-24.log`.
+
+**After #214's third review (15:45), registered before a further re-run.** The same defect is in E3-G2's guard: the 1-minute load
+average updates every 5 seconds as an exponential average, so the reads around a 3-second arm usually see one sample and damp a
+short spike about 12×. E3-G2 now uses #214's `voidWindow`: the machine's busy cores averaged over exactly the timed decode
+(`hostmem.ReadCPU`, Mach `HOST_CPU_LOAD_INFO` on macOS and `/proc/stat` on Linux, read just before the timer starts and just after
+it stops, the 32-token prompt outside), void over half the cores, and reclaimable memory at both ends, void under 2 GiB. The void
+cap stays 15, as registered for E3 at 14:20, and the bar is unchanged. This reading decides; the earlier ones stay in the record.
+
+**E3-G2 read with the direct guard, 2026-10-24 (16:11–16:13, the lock held exclusively; 9.4 GB reclaimable at the start): under its
+bar, PARK.** Every arm was valid by the void rule: 0.83–1.57 busy cores over its timed decode and 3.47–3.92 GiB reclaimable; no void
+pairs. But the arms swung far more than in any earlier reading: off 25.16–29.22 ms a token, on 24.74–28.26 (the 13:42 and 14:32
+readings held each arm within about 1.5 ms). **Median on/off 0.9825, 8 of 10 pairs faster** (pairs 0.9271–1.0726). That misses the
+bar (≤ 0.98 with 9 of 10) and the owner's rule for a bit-identical change (9 of 10 faster), so by the registration KS-E3 parks. The
+earlier guarded readings, 0.9764 and 0.9788 with 10 of 10, stay in the record and do not overturn the deciding one. The swing is
+not in the CPU figure the guard reads; its source (another app's GPU work is one candidate) is not identified. Log:
+`~/goinfer-logs/kse3-g2-rerun3-2026-10-24.log`.
+
+**E3-G2 with a GPU-contention term, registered 2026-10-24 (16:50) before the run, on Francis's choice (c) of the three put to him
+(revert, keep, or re-run with a GPU-contention check).** `otherGPUWindow` (`gpu/gpuothers_test.go`) reads, at both ends of each
+arm's timed decode, the GPU time every other process has accumulated: on macOS the IORegistry's `AGXDeviceUserClient` entries,
+`AppUsage` `accumulatedGPUTime` in nanoseconds, the figure Activity Monitor's GPU column reads. **An arm is void if other
+processes' GPU time exceeds 2% of its wall time**: the size of the effect under test, so contention of that size could produce
+it alone. The CPU and memory terms (`voidWindow`) and the void cap (15) are unchanged, and the term is required on macOS.
+- **The instrument is checked.** `TestOtherGPUWindow_seesAnotherProcess`: a child process decoding llama-tiny on WebGPU reads
+  58.5% of a 3-second window. With nothing of ours running, 3-second windows read at most 0.4% (WindowServer).
+- **Its limit:** a process that starts and exits inside one arm takes its registry entry, and its GPU time, with it, so a GPU job
+  shorter than an arm can pass unseen. A contender running across the arm, such as another session's test or a system service, is
+  seen.
+- **The bar is unchanged:** SHIP iff the median on/off is ≤ 0.98 with at least 9 of 10 pairs faster. On SHIP, KS-E3 stays on main.
+  Under it, KS-E3 parks and its revert from main is put to Francis. This reading decides; the four earlier ones stay in the record.
+- **Amended 17:05, before the run, after the review of #214, #224 and #227:**  `hostmem.ReadCPU` read `host_statistics64(HOST_CPU_LOAD_INFO)`,
+which XNU rate-limits for non-Apple binaries: after a few calls in a second it serves the last reply again, so an arm's end sample
+could be up to a second stale (three calls in 0.4 s returned the same sample). It now reads `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`,
+per core, which is not rate-limited. Each state's count is differenced on its own, modulo 2^32 on macOS and clamped at 0 on Linux
+(NOHZ can step idle back a tick), so busy never exceeds total. A sample pair spanning no interval now voids the arm instead of
+failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
+stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
+this run reads the new one, alongside the GPU term.
+
+**E3-G2 read with the GPU-contention term and the fixed CPU reading, 2026-10-24 (17:26–17:28, the lock held exclusively; 6.6 GB
+reclaimable at the start).** Every arm was valid: other processes' GPU time 0.00–0.98% of each arm (the line is 2%), 0.17–1.41
+busy cores, 2.81–4.33 GiB reclaimable; no void pairs. The arms held steady this time: off 24.59–24.89 ms a token, on 23.95–24.50.
+**Median on/off 0.9807, 10 of 10 pairs faster** (0.9738–0.9899): 0.0007 over the median bar.
+- **E3-G2's registered bar (above):** under the median bar, the owner's rule for a bit-identical change decides. Its terms are met:
+  - bit-identical: E3-G1;
+  - no memory is allocated (one encoded command buffer is held per runner);
+  - faster on 10 of 10 pairs;
+  - it changes the one decode path rather than adding a selectable second one (the off switch is a test hook).
+  By that clause it ships.
+- **The 16:50 registration** restated the bar as "under it, KS-E3 parks and its revert is put to Francis" and left the clause out.
+  The two registrations conflict on exactly this case, so the call is Francis's.
+- **Readings so far:** 0.9796, 0.9764 and 0.9788 at 10 of 10 (the load-average guard); 0.9825 at 8 of 10 (16:11, busy-core guard;
+  the arms swung 25–29 ms); 0.9807 at 10 of 10 (this run, GPU term, steady arms).
+Log: `~/goinfer-logs/kse3-g2-gpuguard-2026-10-24.log`.
+
+**Decided 2026-10-24 by Francis: keep.** Asked to keep KS-E3 on main or revert it after the 17:26 reading, he answered "Keep". KS-E3
+stays on main as shipped in #216, on the owner's bit-identical rule: 10 of 10 pairs faster, bit-identical, no memory allocated, one
+path. The median (0.9807) is 0.0007 over the median bar.
+
+**After the review of #227 (registered 22:25, before a re-read).** Three defects in the GPU term, all fixed:
+- The reading counted as taken whenever ioreg ran, so a parse that matched nothing read 0.00% and passed. It now requires this
+  process's own GPU client in the listing (a test with a device open owns one).
+- It summed GPU time per process, so a client closing inside an arm could cancel another client's time and under-read contention.
+  It now keys each client by its registry entry ID; a closed client counts nothing and cancels nothing.
+- The ioreg call ran inside the arm's CPU window. The GPU reading is now taken outside it, before the CPU window opens and after it
+  closes.
+`TestParseAGXClients` checks the first two on synthetic ioreg text (dropping the own-client check turns it red). The 17:26 run
+cannot show whether the per-process sum hid contention in a pair it counted valid, so E3-G2 is read once more on the fixed guard.
+KS-E3 stays on main whatever it reads (Francis's decision); the reading goes in the record.
+The first attempt (22:25) refused before loading: 4.4 GB reclaimable, under the test's 6 GB pre-load line, with the owner's apps
+open. It is queued on the Mac's night runner (`kse3-g2-gpuguard`, the pinned binary in `~/goinfer-bench/kse3-night/`, re-queued
+while under 6.5 GB reclaimable until 06:00); its reading is added here when it lands.
+
+**E3-G2 read on the fixed GPU guard, 2026-10-24.**
+- **First night attempt (22:31–22:41): no reading.** All 16 pairs were void: reclaimable memory fell from 3.6 to 1.8 GiB, and other
+  processes held about 5% of the GPU in every arm. A sample at 23:31 put 5.0% on a Claude app helper process.
+- **Second attempt, queued on Francis's word of 23:30 with only the Claude app open (23:32–23:34, the night runner holding the
+  lock; 8.4 GB reclaimable at the start).** Every arm was valid, the quietest of any E3-G2 run: 0.20–0.34 busy cores, other
+  processes' GPU 0.44–0.59% (the line is 2%), 3.85–4.01 GiB reclaimable; no void pairs. off 25.97–26.13 ms a token, on
+  25.71–25.85. **Median on/off 0.9916, 10 of 10 pairs faster** (0.9846–0.9939).
+- **Verdict.** It misses the median bar (≤ 0.98). The owner's bit-identical rule's terms are met again: 10 of 10 faster,
+  bit-identical, no memory allocated, one path. KS-E3 stays on main by Francis's decision either way.
+- **On a quiet machine the gain is about 0.2 ms a token (0.8%)**, smaller than the 0.5–0.6 ms the noisier readings showed.
+Log: `~/goinfer-logs/night/runs/2026-10-24/kse3-g2-gpuguard-2.log` (the first attempt's beside it, `kse3-g2-gpuguard.log`).
+
+**After #227's re-review (2026-10-25, 00:10): the GPU term's parse hardened; no re-run.**
+- The own-client check accepted this process's client even when no GPU time parsed from it, so a renamed key or a changed format
+  would have read every client as 0 ns, a silent pass. It now needs this process's client with a GPU time that parses.
+  `TestParseAGXClients` adds both cases (no GPU time, a changed format); without the check it is red.
+- The instrument check now attributes GPU time by process. The child's own clients must reach 5% of the window: they read 38.3%,
+  so another app's load cannot pass it. It also waits for the child's GPU work to show before the window opens, keeps the parent's
+  client open, and kills the child at cleanup.
+- The window's wall time now includes the end sample.
+The 23:32 reading stands: this process's client had GPU time throughout (the run had decoded before every window), and every other
+client's time parsed (0.44–0.59%, not 0).
+- `TestKSE3_decodeSpeed` still fails on the registered median bar (≤ 0.98), which the accepted quiet reading (0.9916) misses. The
+  registration hands that case to the owner's rule, and the test does not encode it. Changing what the test asserts is a bar change
+  and Francis's call.
+
+**After #227's fourth review (registered 2026-10-25, committed 00:43:42, before the re-read started at 00:44:51).** A GPU client present at an arm's start and gone at
+its end took its accumulated time with it. A contender that saturated the GPU for most of an arm and closed its device before the
+end sample read as 0 ns.
+- **The fix.** `otherGPUDelta` now reports such clients, and the arm is void: what it did is unknown. In 20 three-second windows
+  sampled on the Mac at 00:41, no client vanished, so the void costs little. `TestParseAGXClients` covers it, and is red without
+  the check.
+- **What can still pass unseen:** a GPU client opened and closed entirely between an arm's two samples. Every client present at
+  either sample is accounted for: its time if it is present at both, all of its time if it is new at the end, and the arm is void if
+  it is gone at the end.
+- **The instrument check** now reads through `otherGPUWindow` itself, decides its virtualised-GPU skip with its own GPU work
+  running, and its child runs until it is killed.
+- **Re-read registered.** The 23:32 reading was taken without the vanished-client check, so whether a client closed inside one of
+  its arms is not known. E3-G2 is read again on the night runner with the same bar. KS-E3 stays on main either way (Francis's
+  decision); the reading goes in the record.
+
+**E3-G2 re-read with the vanished-client void, 2026-10-25 (00:44–00:46, the night runner holding the lock; 8.96 GB reclaimable at
+the start; only the Claude app open): PASS, 10 of 10.**
+- **Every arm valid:** 0.43–0.83 busy cores, other processes' GPU 0.00–0.71%, no client vanished, 3.97–4.21 GiB reclaimable; no
+  void pairs.
+- **Arms:** off 29.90–31.53 ms a token, on 27.51–28.69. **Median on/off 0.9166, 10 of 10 pairs faster** (0.8899–0.9456). That is
+  under the median bar (≤ 0.98), so E3-G2 passes on its registered bar.
+- **The size is not settled.** Both arms ran about 15% slower than at 23:32 (off 26.0, on 25.8 ms), with no thermal or low-power
+  flag recorded, and the ratio moved with them, 0.9916 then and 0.9166 now. A ratio across sessions is not a ratio
+  (`docs/measurements/noise-registry.md`), so each reading stands for its own session. The direction holds in every reading,
+  faster on 10 of 10 in all but the swinging 16:11 one, and the size runs from about 0.8% to about 8% depending on the machine's
+  state.
+- KS-E3 stays on main (Francis's decision).
+Log: `~/goinfer-logs/night/runs/2026-10-25/kse3-g2-gpuguard-3.log`.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
