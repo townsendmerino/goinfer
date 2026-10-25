@@ -1,0 +1,21 @@
+== 2026-10-25 16:11:51 PDT build; load 1.36 1.30 1.26
+A 21245f4f4, B 0058f0be9
+== 16:12:04 fit granite/granite-4.0-h-tiny-Q8_0.gguf
+[16:12:39] fit B 235.09 ms/token prefill 29.4 s load 2.55 avail 58.19 GiB VmHWM 12635 MiB swap 0 KiB ok
+   rc 0
+== 16:12:39 fit nemotron-h-4b-instruct-128k
+[16:13:07] fit B 161.93 ms/token prefill 18.8 s load 3.0 avail 58.25 GiB VmHWM 16352 MiB swap 0 KiB ok
+   rc 0
+== 16:13:07 fit qwen3.6-35b-a3b-q4_k_m.gguf
+    ksf2_speed_test.go:66: generated 1 tokens, want 3 (a stop token cut the run short)
+--- FAIL: TestKSF2_cpuDecodeSpeed (256.27s)
+FAIL
+
+   rc 1
+== 16:17:25 fit llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestKSF2_cpuDecodeSpeed (0.26s)
+FAIL
+
+   rc 1
+== end 2026-10-25 16:17:26 PDT

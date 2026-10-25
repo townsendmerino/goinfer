@@ -105,3 +105,30 @@ default from #247, untimed on these four, so this run is their confirming record
   queue as its own job of 3 hours or less.
 - **Memory cost of B:** as on the Mac: score buffers per cache, at most `maxAttnWorkers` (6, a constant, so the same on nobara's 16
   threads) × 2 × the key count × 4 bytes; nothing else.
+
+### Fit check (2026-10-25, 16:11–16:17, the exclusive lock; `nobara/fit.log`, `nobara/fit.jsonl`)
+
+Both arms built at the registered commits. One B run per model, depth 128, 2 tokens:
+
+| model | peak resident (VmHWM) | swap | prefill of 128 | outcome |
+|---|---|---|---|---|
+| Granite-4.0-H tiny Q8_0 | 12,635 MiB | 0 | 29.4 s (0.23 s a token) | fits |
+| Nemotron-H 4B | 16,352 MiB | 0 | 18.8 s (0.15 s a token) | fits |
+| Qwen3.6-35B-A3B q4_k_m | — | — | about 250 s (about 2 s a token) | ran, then stopped on a stop token after 1 of 3 tokens: the harness's run fails |
+| Llama-4-Scout Q2_K | — | — | — | refused by the fit guard |
+
+- **Granite-4.0-H and Nemotron-H:** CPU prefill is token by token here, so a depth-1,024 run is mostly prefill. Per run, about 250 s
+  (Granite) and 160 s (Nemotron) at 1,024, and 42 s and 29 s at 128. Over 24 runs a cell (4 warm, 20 timed), that is about 2 h 10 min
+  for Granite's two cells and 1 h 30 min for Nemotron's. Each goes on nobara's night queue as its own job (`run-nobara.sh <family>`)
+  at priority 60. That is ahead of ks-o4-gfid (90), and both end before mac-tack's 22:30 screen if they start by about 18:00.
+- **Need, for the void rule:** 13 GiB (Granite) and 17 GiB (Nemotron).
+- **Qwen3.6 and Llama 4 are not timed:** see "Not covered on nobara" below.
+
+**Not covered on nobara:**
+- **Qwen3.6-35B-A3B:**
+  - At about 2 s a prefill token, one depth-1,024 run is about 34 minutes, so the cell is about 13 hours. The depth-128 cell is about
+    1 h 45 min.
+  - The harness's random-id prompt also draws a stop token at once, so a timed run needs the harness to ignore it, an instrument
+    change in both arms.
+  - Either way is a choice for Francis.
+- **Llama 4 (Scout, 109B):** refused by the fit guard on the 62 GB box. It is uncovered on both machines.

@@ -66,7 +66,7 @@ with open(out, "a") as o:
         o.write(json.dumps(rec) + "\n")
         o.flush()
         print(f"[{rec['t']}] {tag} {rec['arm']} {rec['decode_ms_per_token']:.2f} ms/token prefill {rec['prefill_s']:.1f} s load {rec['load1']} "
-              f"avail {rec['avail_gib']} GiB VmHWM {rec['vmhwm_mib']} MiB swap {rec['vmswap_peak_kib']} KiB {'ok' if rec['valid'] else 'VOID'}", flush=True)
+              f"avail {rec['avail_gib']} GiB VmHWM {rec['vmhwm_mib']} MiB swap {rec['vmswap_peak_kib']} KiB {'ok' if rec['valid'] else 'void, re-run [expected]'}", flush=True)
     if fit:
         log(run("B", tokens=2), "fit")
         sys.exit(0)
@@ -95,3 +95,5 @@ with open(out, "a") as o:
                 faster=faster, voids=voids, grade=grade, slower_than_old=slower)
     o.write(json.dumps(summ) + "\n")
     print(json.dumps(summ), flush=True)
+    if slower:
+        print(f"DECISION NEEDED: {model} at depth {depth} reads slower than the old schedule (median {med:.4f}, {faster} of 10 faster)", flush=True)
