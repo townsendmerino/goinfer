@@ -64,10 +64,18 @@ registration, committed before any code. A separate PR from KS-F2's.
 | gate | tier | what | bar |
 |---|---|---|---|
 | G-ID | 0, the Mac and nobara CPU | `go run ./cmd/gate identity origin/main <branch> -backend cpu -assets tiny -steps 64` | every family except gpt-oss IDENTICAL; gpt-oss is expected to differ (Step 1 changes its output) and is graded by G-FID |
-| G-SINK | 0, the Mac | a unit test: the batched path with a sink against `attendSinksToken` with float64 AV substituted (the reference form of Step 1's arithmetic), over the shapes of KS-F2's G0 | every word equal |
+| G-SINK | 0, the Mac | `decoder/ks_o4_sink_test.go`, over the shapes of KS-F2's G0: (a) the batched path with every sink at −∞ against the same path with no sinks; (b) with finite sinks, the batched path against `attendSinksToken` | (a) every word equal: the sink term adds only to the max and the denominator. (b) max \|diff\| at most 1e-5 of the context's largest magnitude, every cell: the two differ only in AV's accumulation and the score's rounding |
 | G-RING | 0, the Mac | Step 2 against Step 1 on the tiny gpt-oss fixture, at a context past its window: full logits over 64 greedy steps, and the window rows read | byte-identical |
 | G-MEM | 0, nobara | the KV bytes per position, and the fit guard's plan for gpt-oss-20b at 32k, before and after Step 2 | the window layers' KV is stated before and after, from the plan's own pricing; the bar is that it falls by the window layers' share less the ring's fixed bytes |
 | G-SPEED | timed, nobara CPU, the timing lock, by day | KS-F2's harness (`TestKSF2_cpuDecodeSpeed`), A B B A over 10 pairs, with today's build against Step 1 + 2, gpt-oss-20b at depth 128 and 2048 | reported. **FAIL** if a cell has at most 1 of 10 pairs faster (a slowdown beyond doubt); otherwise it passes with the ratio stated. Not a speed claim: KS-O4's purpose is what it unblocks |
+
+**Amended before any code (2026-10-25): G-SINK.** As first written it compared the batched path, word for word, with a hand-written
+reference of its arithmetic. That reference would have to reproduce aikit's `MatmulQKAcc64` and `MatmulAVAcc64` contraction exactly,
+which a test cannot promise. The amended G-SINK checks the two things it can:
+- (a) the sink plumbing, by identity;
+- (b) the closeness to today's path, at float32 rounding.
+
+The fidelity gate, G-FID, is unchanged.
 
 ## Pre-registration (`docs/measurements/noise-registry.md` §8)
 
