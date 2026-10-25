@@ -217,3 +217,33 @@ long context.**
 **The owner's decision on the parked cell (Francis, 2026-10-25, "A"):** #232 merges on these readings: lossless, PASS at short
 context, and faster than plain decode in every long-context pair. The follow-up is a small PR adding a `serve` option for the verify
 width (serve verifies at width 8, where SP0 projects 1.17×), and a served A/B, registered before it runs.
+
+## The served A/B of `--drafter` (registered 2026-10-25, before the run)
+
+The follow-up the owner's decision named. `serve -drafter-width` (this branch) sets the width `BlockSpec.GenerateStream` verifies at;
+before it, `serve` verified at 8, where SP0 projects 1.17×.
+
+- **The question:** does the served path, a user's `serve --drafter`, deliver what G4 read in process?
+- **Instrument:** `scripts/bench_peer.py`, two goinfer arms on one CUDA `serve` binary built at this branch's commit:
+  - `goinfer` is plain `serve` with its own defaults (the KV precision a user gets without a drafter, recorded from the log);
+  - `goinfer_old` is the same binary with `BENCH_GOINFER_OLD_ARGS="-drafter ~/models/qwen35-9b-dflash -drafter-width 4"` (f32 KV,
+    which a drafter forces).
+  - `BENCH_MODELS=Q9` (Qwen3.5-9B Q4_K_M; serve loads its `.giw` sidecar), `BENCH_BACKENDS=cuda`, `BENCH_DEPTHS=512,4096`,
+    `BENCH_NGEN=256`, `BENCH_CTX=4608` (G1c's context), `BENCH_ABBA=5`: 5 mirrored quads per depth, 10 pairs, each cell a
+    restarted server, the harness's warm-up, then 2 runs of 8 completions.
+  - **Prompts:** the harness's essay-v2 prompts, token-calibrated for Q9 at 512 and 4,096 with `scripts/bench_prompts_calibrate.py`
+    and committed to `scripts/prompts.json` before the run. Prose, where SP0's prompts were code and math.
+  - Greedy (temperature 0), so every request takes the speculative path.
+- **The reading, per depth:** each pair's drafter tok/s over plain tok/s; the median, the count of pairs above 1, and the pairs'
+  spread.
+- **Bands, per depth (SP0's):** a median of 1.30× or more with at least 9 of 10 pairs above 1 → the served path confirms G4 at that
+  depth; 1.20–1.30× → parked, to the owner; under 1.20× → the served path does not deliver it at that depth.
+- **What each outcome means:** a confirmation is the claim a user can rely on. A shortfall where G4 passed (short context) is a
+  served-path gap to explain, from the KV precision (plain f16 against the drafter's f32), the HTTP stream or the prose prompts,
+  before any default changes; it does not revisit G4. This does not change `serve`'s default width (8); a default change waits
+  on this reading and is the owner's.
+- **Void cells:** the harness's own gates (the 1-minute load cap and its memory and swap voids) and the registered rule (load
+  above 8.0 at a cell's start, or available memory under 2 GB with the model loaded) void a cell, re-run in order.
+- **Cost:** about 100 s a cell (load and attach 40 s; 16 completions of 256 tokens), 4 cells a quad, 5 quads, 2 depths: about 70
+  minutes, plus the 4,096 prefills. Through the timing lock, by day.
+- **Tier:** 2 (a number that will be quoted). Tiers 0 and 1 cannot answer it: it is the served end to end.

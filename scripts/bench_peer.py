@@ -129,6 +129,9 @@ MODELS = {
     # itself does NOT load this GGUF -- it runs its own kind-4 .giw bundle (the shipped-default path
     # for these two MoE models), so the GGUF here is the PEER-ONLY artifact.
     "M35": (os.path.expanduser("~/models/qwen3.6-35b-a3b-q4_k_m.gguf"), "m35q4km"),
+    # Q9 (Qwen3.5-9B, a Gated-DeltaNet hybrid) added 2026-10-25 for SP2's served A/B of --drafter (docs/measurements/sp2-2026-10/
+    # README.md): goinfer arms only, no peer tag.
+    "Q9": (os.path.expanduser("~/models/Qwen3.5-9B-Q4_K_M.gguf"), "q9-none"),
     "M26": (os.path.expanduser("~/models/gemma4-26b-q4_k_m.gguf"), "m26q4km"),
     # G20 added 2026-09-05 (docs/tasks/task-peer-benchmarks.md §2/§5, tier 2: "fits the Mac, not the
     # card: a resident cell on one box and an offload cell on the other"). gpt-oss-20b's OWN
