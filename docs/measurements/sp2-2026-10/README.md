@@ -58,8 +58,9 @@ Run on nobara under the timing lock (shared), driver 595.91.07: `go test -tags '
   on a long prompt no longer needs one 3k-row pass beside the drafter.
 
 **The source-scan gates:** `touched.py` green at `f3d4b1b2` (gofmt, build and vet of both modules, the cuda kernel lints, the
-gate's heavy partition, which now classifies Qwen3.5-9B). The local-memory census pins the new `delta_rule_rows_128_spec` at 80
-B/thread, under the 96 B of the scan it twins. staticcheck (CI's v0.8.1 build, its unused-field canary red first) is clean on
+gate's heavy partition, which now classifies Qwen3.5-9B). The local-memory census pinned the twin as it stood then,
+`delta_rule_rows_128_spec`, at 80 B/thread; the final twin (the fold in the scan, below) spills 96 B, the committing scan's own
+figure, and is pinned at 96. staticcheck (CI's v0.8.1 build, its unused-field canary red first) is clean on
 `./decoder/` and on `./cuda/` under `cuda goinfer_testhooks`.
 
 ### G1c, first run (2026-10-24, 23:41–23:45 PDT): stopped by an out-of-memory in the seed, not a divergence
