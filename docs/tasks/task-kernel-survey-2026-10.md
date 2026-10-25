@@ -1600,6 +1600,13 @@ batched Mamba-2 pass's shape guards in `recurrentPrefillOK` (pass off, a DeltaNe
 outside 2..8, hidden or inner width off a multiple of 32), each set alone on a built nemotron-tiny resident, plus one through
 `buildResident` (pass off → `prefillOK` false).
 
+**Read 2026-10-24 (23:20–23:30, Mac, not timed).**
+- D8-G2 PASS at all six lengths on the scaled margin: pass/sequential 0.91–1.01 at the prompt's end and after the continuation.
+- The window plant, run once and reverted, is now red on the **KL clause at all six lengths**: after the continuation the pass reads
+  13.0–28.0× the sequential path's KL. The top-1 clause still catches three of them.
+- `TestKSD8_mambaShapeDeclines` PASS; the plant (the `dConv < 2` decline dropped) is red: "conv width 1: recurrentPrefillOK admits it".
+Logs: `~/goinfer-logs/ksd8-g2-scaled-2026-10-24.log`, `~/goinfer-logs/ksd8-g2-scaled-plant-2026-10-24.log`.
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
