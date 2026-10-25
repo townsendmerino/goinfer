@@ -75,17 +75,21 @@ func TestKSH6_marginParts(t *testing.T) {
 	defer kvF16Auto.Store(false)
 	for _, c := range []struct {
 		name, path string
-		ctx        int // 0: the build's own default (the 26B's expert-cache plan)
-		prompt     int // 0: the context less 512
+		ctx        int  // 0: the build's own default (the 26B's expert-cache plan)
+		prompt     int  // 0: the context less 512
+		moeCache   bool // serve's -moe-cache-experts, which the 26B needs on this card
 	}{
-		{"Qwen3-8B q4_k_m", modelPath("qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf"), 16384, 15000},
-		{"Gemma 4 26B-A4B", modelPath("gemma-4-26b-a4b-it"), 0, 0},
+		{"Qwen3-8B q4_k_m", modelPath("qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf"), 16384, 15000, false},
+		{"Gemma 4 26B-A4B", modelPath("gemma-4-26b-a4b-it"), 0, 0, true},
 	} {
+		if only := os.Getenv("GOINFER_KSH6_ONLY"); only != "" && !strings.Contains(c.name, only) {
+			continue
+		}
 		if _, err := os.Stat(c.path); err != nil {
 			t.Skipf("no model %s: %v", c.path, err)
 		}
 		used0 := ksh6UsedMiB(t)
-		m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: c.ctx})
+		m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: c.ctx, MoECacheExperts: c.moeCache})
 		if err != nil {
 			t.Fatalf("%s: load: %v", c.name, err)
 		}
