@@ -2,7 +2,7 @@
 
 package gpu
 
-import ()
+import "github.com/oliverbestmann/webgpu/wgpu"
 
 // §2 fused decode kernels. Decode is glue-serialization-bound: the per-token cost is a deep RAW dependency chain of small
 // dispatches, each forcing a barrier the GPU can't hide, so the lever is critical-PATH length. Every standalone glue op that
@@ -187,7 +187,13 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 func (c *Context) ensureFuse() error {
 	// Per-pipeline guards: a mid-build failure must not leave the first-field guard satisfied with a later pipeline nil.
 	// Shared tracked constructor (gpu.go) registers for release.
-	mk := c.mkPipeline
+	mk := func(label, src string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
+		code, err := c.quantSrc(label, src)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return c.mkPipeline(label, code)
+	}
 	var err error
 	if c.rmsQuantPipeline == nil {
 		if c.rmsQuantShader, c.rmsQuantPipeline, c.rmsQuantLayout, err = mk("rmsnormQuant", rmsnormQuantWGSL); err != nil {

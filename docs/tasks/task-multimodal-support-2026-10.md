@@ -4717,7 +4717,7 @@ against the row-by-row walk on the same resident
   - **This is older than S12.4b.** The shipped int8 pass read the same way on the same model: bit-identical to
     the walk at 2, 8 and 20 rows, cosine 0.9993 at 64.
   - **Fixed:** the pass now runs those three kernels' own source, one row a workgroup
-    (`gpu/prefill_fused.go:fusedRowsSource` derives each from the single-row source and refuses if that source
+    (`gpu/prefill_fused.go:Context.fusedRowsSource` derives each from the single-row source and refuses if that source
     changes). With it the row-shaped kernel's pass equals the walk in every layer's K/V at 8, 64 and 300 rows.
   - **Not re-examined:** the note beside the int8 bias gate in `gpu/residency.go` says the int8 bias epilogue
     "diverges on Metal past nKeys~15 (cosine ~0.998)". That figure is the size this mechanism produces, so the bias
