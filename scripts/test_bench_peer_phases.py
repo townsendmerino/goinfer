@@ -34,5 +34,96 @@ class PlanPhases(unittest.TestCase):
             bench_peer.plan_phases()
 
 
+class FreeMemCheck(unittest.TestCase):
+    def setUp(self):
+        self.saved_env = os.environ.pop("BENCH_ALLOW_NO_FREE_MEM", None)
+        self.saved_fn = bench_peer.free_mem_mb
+
+    def tearDown(self):
+        bench_peer.free_mem_mb = self.saved_fn
+        os.environ.pop("BENCH_ALLOW_NO_FREE_MEM", None)
+        if self.saved_env is not None:
+            os.environ["BENCH_ALLOW_NO_FREE_MEM"] = self.saved_env
+
+    def test_no_reading_refuses_without_the_override(self):
+        bench_peer.free_mem_mb = lambda: None
+        with self.assertRaises(SystemExit):
+            bench_peer.check_free_mem()
+
+    def test_the_override_runs_and_says_so(self):
+        bench_peer.free_mem_mb = lambda: None
+        os.environ["BENCH_ALLOW_NO_FREE_MEM"] = "1"
+        self.assertTrue(bench_peer.check_free_mem())
+
+    def test_a_reading_passes(self):
+        bench_peer.free_mem_mb = lambda: 60000
+        self.assertFalse(bench_peer.check_free_mem())
+
+
+class TermExits(unittest.TestCase):
+    def test_sigterm_becomes_systemexit_so_the_cells_finally_runs(self):
+        import signal
+        saved = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                bench_peer._term_exits(signal.SIGTERM, None)
+            self.assertEqual(cm.exception.code, 128 + signal.SIGTERM)
+            # a second signal during the teardown must not interrupt the finally that stops the server
+            self.assertEqual(signal.getsignal(signal.SIGTERM), signal.SIG_IGN)
+            self.assertEqual(signal.getsignal(signal.SIGINT), signal.SIG_IGN)
+        finally:
+            signal.signal(signal.SIGTERM, saved[0])
+            signal.signal(signal.SIGINT, saved[1])
+
+
+class DepthBackend(unittest.TestCase):
+    KEYS = ("BENCH_PHASES", "BENCH_DEPTH_BACKEND", "BENCH_BACKENDS")
+
+    def setUp(self):
+        self.saved = {k: os.environ.pop(k, None) for k in self.KEYS}
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+    def test_phase_a_only_never_reads_it(self):
+        os.environ["BENCH_PHASES"] = "A"
+        os.environ["BENCH_DEPTH_BACKEND"] = "no-such-backend"
+        self.assertIsNone(bench_peer.depth_backend())
+
+    def test_phase_b_refuses_an_unknown_backend(self):
+        os.environ["BENCH_PHASES"] = "B"
+        os.environ["BENCH_DEPTH_BACKEND"] = "no-such-backend"
+        with self.assertRaises(SystemExit):
+            bench_peer.depth_backend()
+
+    def test_phase_b_refuses_a_backend_phase_a_did_not_select(self):
+        os.environ["BENCH_PHASES"] = "B"
+        os.environ["BENCH_BACKENDS"] = "cpu"
+        with self.assertRaises(SystemExit):
+            bench_peer.depth_backend()
+
+    def test_phase_b_default_is_cuda(self):
+        os.environ["BENCH_PHASES"] = "B"
+        os.environ["BENCH_BACKENDS"] = "cuda"
+        self.assertEqual(bench_peer.depth_backend(), "cuda")
+
+
+class MissingPrompts(unittest.TestCase):
+    def test_a_cell_without_a_prompt_refuses_and_a_full_plan_passes(self):
+        saved = dict(bench_peer._PROMPTS)
+        try:
+            bench_peer._PROMPTS["X:512"] = {"text": "a", "tokens": 1}
+            bench_peer.missing_prompts([("B", "goinfer", "cuda", "X", 512, "greedy")])
+            with self.assertRaises(SystemExit):
+                bench_peer.missing_prompts([("A", "goinfer", "cuda", "X", 128, "greedy")])
+            bench_peer.missing_prompts([("E", "goinfer", "vision", "vision", 0, "greedy")])  # phases D and E take no prompt
+        finally:
+            bench_peer._PROMPTS.clear()
+            bench_peer._PROMPTS.update(saved)
+
+
 if __name__ == "__main__":
     unittest.main()

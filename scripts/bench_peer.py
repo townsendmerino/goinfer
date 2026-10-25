@@ -717,6 +717,7 @@ def provenance():
     return {
         "kind": "provenance",
         "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "free_mem_override": os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1",  # the run went ahead without a free-memory reading
         "host": socket.gethostname(),
         "uname": _sh(["uname", "-srm"]),
         "distro": _sh(["sh", "-c", ". /etc/os-release 2>/dev/null && echo \"$NAME $VERSION_ID\""]),
@@ -864,10 +865,22 @@ def preflight():
     if len(apps) > 1:
         sys.exit("REFUSED: %d compute processes already hold the GPU (1 = the compositor, expected):\n  %s"
                  % (len(apps), "\n  ".join(apps)))
+    check_free_mem()
     print(f"# preflight OK: gate {IDLE_GATE} · loadavg {la} · gpu {_gpu_state()} · compute apps {apps}", flush=True)
-    if free_mem_mb() is None:
-        print("# WARNING: no free-memory reading (scripts/hostmem.py runs `go run ./cmd/hostmem`: is go on PATH?). The heavy-load void's "
-              "memory term cannot be applied, and every cell records free_mem_mb null.", flush=True)
+
+
+def check_free_mem():
+    """Refuses a run that cannot read this box's free memory, since the heavy-load void's memory term would then never apply and
+    every cell would record free_mem_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did. Returns
+    whether the override was used."""
+    if free_mem_mb() is not None:
+        return False
+    if os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1":
+        print("# WARNING: no free-memory reading; BENCH_ALLOW_NO_FREE_MEM=1, so the heavy-load void's memory term is off for this run",
+              flush=True)
+        return True
+    sys.exit("REFUSED: no free-memory reading (scripts/hostmem.py runs `go run ./cmd/hostmem`: is go on PATH?), so the heavy-load "
+             "void's memory term cannot apply. Put go on PATH, or set BENCH_ALLOW_NO_FREE_MEM=1 to run without it (recorded).")
 
 def wait_port(port, timeout=180):
     t0 = time.time()
@@ -1861,6 +1874,20 @@ def plan_depths():
     return [int(d) for d in raw.split(",") if d.strip()]
 
 
+def depth_backend():
+    """Phase B's backend (BENCH_DEPTH_BACKEND, default cuda), or None when the plan runs no phase B. Refuses an unknown backend, and
+    one BENCH_BACKENDS did not select while depths are planned, only when phase B runs: a phase-A-only plan never reads it."""
+    if "B" not in plan_phases():
+        return None
+    depth_be = os.environ.get("BENCH_DEPTH_BACKEND", "cuda").strip()
+    if depth_be not in SERVE:
+        sys.exit(f"BENCH_DEPTH_BACKEND: unknown backend {depth_be!r}; known: {sorted(SERVE)}")
+    if plan_depths() and depth_be not in plan_backends():
+        sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
+                 "-- phase A and B would test different backends silently")
+    return depth_be
+
+
 def plan_phases():
     """Which of phases A (the backend table at depth 128) and B (the depth curve) run. BENCH_PHASES narrows them (e.g. "B" for a
     depth-only A/B whose model has no depth-128 prompt); default is both, unchanged. Phases C-E keep their own switches."""
@@ -2074,14 +2101,9 @@ def main():
     # backend=="cpu" is the only special case either payload builder makes). Must be one of the
     # backends BENCH_BACKENDS also selected, or Phase A and B would silently disagree about which
     # GPU is under test.
-    depth_be = os.environ.get("BENCH_DEPTH_BACKEND", "cuda").strip()
-    if depth_be not in SERVE:
-        sys.exit(f"BENCH_DEPTH_BACKEND: unknown backend {depth_be!r}; known: {sorted(SERVE)}")
-    if plan_depths() and depth_be not in plan_backends():
-        sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
-                  "-- phase A and B would test different backends silently")
+    depth_be = depth_backend()
     for mk in plan_models():
-        for d in (plan_depths() if "B" in plan_phases() else []):
+        for d in (plan_depths() if depth_be else []):
             for eng in plan_engines():
                 plan.append(("B", eng, depth_be, mk, d, "greedy"))
 
@@ -2214,7 +2236,10 @@ def main():
 def _term_exits(signum, frame):
     """SIGTERM as SystemExit, so the running cell's `finally` stops its server's process group and waits for it to exit before the
     timing lock is released. The default action ends the process at once, and the server, in its own session (os.setsid), would
-    keep the GPU while the next timed run takes the lock."""
+    keep the GPU while the next timed run takes the lock. A second SIGTERM or SIGINT during that teardown is ignored, so it cannot
+    interrupt the `finally` that stops the server."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     raise SystemExit(128 + signum)
 
 

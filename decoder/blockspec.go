@@ -207,23 +207,25 @@ type BlockSpec struct {
 	rd    ResidentBlockDrafter
 	dw    BlockDrafterWeights
 	taps  []int
-	width int // GenerateStream's verify width (SetVerifyWidth); 0 is defaultVerifyWidth
+	width int // the verify width SetVerifyWidth set; 0 is defaultVerifyWidth
 }
 
-// VerifyWidthInUse is the verify width GenerateStream runs at: SetVerifyWidth's value after the default and the caps apply.
+// VerifyWidthInUse is the verify width GenerateStream, and Generate without its own VerifyWidth, run at: SetVerifyWidth's value
+// after the default and the caps apply.
 func (s *BlockSpec) VerifyWidthInUse() int {
-	return s.verifyWidth(BlockSpecOptions{VerifyWidth: s.width})
+	return s.verifyWidth(BlockSpecOptions{})
 }
 
-// SetVerifyWidth sets the verify width GenerateStream runs at (BlockSpecOptions.VerifyWidth's meaning: 0 is the default, and the
-// drafter's block caps it). It refuses a width under 2, and on a recurrent target a width its resident's fold path cannot verify.
+// SetVerifyWidth sets the verify width GenerateStream, and Generate without its own VerifyWidth, run at (BlockSpecOptions.VerifyWidth's
+// meaning: 0 is the default, and the drafter's block caps it). It refuses a width under 2 and a width GenerateStream would refuse
+// (specRollbackSafeVia): on a recurrent target, one its resident's fold path cannot verify.
 // Set it once, before the BlockSpec serves; it is not safe beside a running generation.
 func (s *BlockSpec) SetVerifyWidth(w int) error {
 	if w != 0 && w < 2 {
 		return fmt.Errorf("decoder: block-spec verify width %d: want 0 (the default) or at least 2", w)
 	}
-	if width := s.verifyWidth(BlockSpecOptions{VerifyWidth: w}); s.m.hasRecurrentState() && s.recurrentFold(width) == nil {
-		return fmt.Errorf("decoder: block-spec verify width %d is past what the resident's fold path verifies on this recurrent model", width)
+	if width := s.verifyWidth(BlockSpecOptions{VerifyWidth: w}); !s.m.specRollbackSafeVia(s.recurrentFold(width), width) {
+		return fmt.Errorf("decoder: block-spec verify width %d cannot roll back on this model (a recurrent model past its resident's fold rows, or a staged sliding window)", width)
 	}
 	s.width = w
 	return nil
@@ -305,10 +307,13 @@ func (s *BlockSpec) recurrentFold(width int) ResidentRecurrentSpec {
 	return rs
 }
 
-// verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, or defaultVerifyWidth, clamped to the
-// drafter's block and, on a recurrent target, to the rows the fold path is prepared for.
+// verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, else SetVerifyWidth's, else defaultVerifyWidth,
+// clamped to the drafter's block and, on a recurrent target, to the rows the fold path is prepared for.
 func (s *BlockSpec) verifyWidth(opt BlockSpecOptions) int {
 	width := opt.VerifyWidth
+	if width <= 0 {
+		width = s.width // SetVerifyWidth's, for Generate as for GenerateStream
+	}
 	if width <= 0 {
 		width = defaultVerifyWidth
 	}
@@ -701,7 +706,7 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 	if sp.HistoryDependent() {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
-	if w := s.verifyWidth(BlockSpecOptions{VerifyWidth: s.width}); !s.m.specRollbackSafeVia(s.recurrentFold(w), w) {
+	if w := s.verifyWidth(BlockSpecOptions{}); !s.m.specRollbackSafeVia(s.recurrentFold(w), w) {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family without the resident's fold path, or staged sliding-window, unsupported (rollback cannot restore)")
 	}
 	if len(prompt) == 0 {
@@ -729,10 +734,9 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 		// len(toks) would assume every round ran at the configured width.
 		var drafted, evaluated int
 		opt := BlockSpecOptions{
-			VerifyWidth: s.width,
-			MaxTokens:   maxTokens,
-			StopIDs:     sp.StopIDs,
-			scope:       kvScopeOf(ctx),
+			MaxTokens: maxTokens,
+			StopIDs:   sp.StopIDs,
+			scope:     kvScopeOf(ctx),
 			OnRound: func(width, committed int) {
 				drafted += width - 1 // the anchor is the target's own token, not a draft
 				evaluated += committed
