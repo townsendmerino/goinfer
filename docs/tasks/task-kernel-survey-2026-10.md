@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
-| KS-E3 | parked | parked 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1). E3-G2's deciding reading (busy cores read over each arm) is median 0.9825, 8 of 10 pairs, under its bar, after 0.9764 and 0.9788 at 10 of 10 on the load-average guard; the arms swung 25–29 ms in that session. Next: the owner's call | survey, "KS-E3 read" |
+| KS-E3 | open (owner's call) | on main since 2026-10-24 (#216): the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1). E3-G2 with the GPU-contention term: median 0.9807, 10 of 10 pairs, 0.0007 over the median bar; the owner's bit-identical rule's terms met, but the 16:50 registration said park, so the call is Francis's | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1738,6 +1738,22 @@ per core, which is not rate-limited. Each state's count is differenced on its ow
 failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
 stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
 this run reads the new one, alongside the GPU term.
+
+**E3-G2 read with the GPU-contention term and the fixed CPU reading, 2026-10-24 (17:26–17:28, the lock held exclusively; 6.6 GB
+reclaimable at the start).** Every arm was valid: other processes' GPU time 0.00–0.98% of each arm (the line is 2%), 0.17–1.41
+busy cores, 2.81–4.33 GiB reclaimable; no void pairs. The arms held steady this time: off 24.59–24.89 ms a token, on 23.95–24.50.
+**Median on/off 0.9807, 10 of 10 pairs faster** (0.9738–0.9899): 0.0007 over the median bar.
+- **E3-G2's registered bar (above):** under the median bar, the owner's rule for a bit-identical change decides. Its terms are met:
+  - bit-identical: E3-G1;
+  - no memory is allocated (one encoded command buffer is held per runner);
+  - faster on 10 of 10 pairs;
+  - it changes the one decode path rather than adding a selectable second one (the off switch is a test hook).
+  By that clause it ships.
+- **The 16:50 registration** restated the bar as "under it, KS-E3 parks and its revert is put to Francis" and left the clause out.
+  The two registrations conflict on exactly this case, so the call is Francis's.
+- **Readings so far:** 0.9796, 0.9764 and 0.9788 at 10 of 10 (the load-average guard); 0.9825 at 8 of 10 (16:11, busy-core guard;
+  the arms swung 25–29 ms); 0.9807 at 10 of 10 (this run, GPU term, steady arms).
+Log: `~/goinfer-logs/kse3-g2-gpuguard-2026-10-24.log`.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
