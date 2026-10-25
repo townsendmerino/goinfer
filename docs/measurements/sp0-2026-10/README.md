@@ -227,7 +227,7 @@ validation (see the end).
 - **What drives the drop:** context costs the drafted cycle more than the plain step.
   - For the 9B at w = 4, the step rises 9% (16.6 to 18.1 ms), the verify pass 27% (24.0 to 30.5), and the drafter's block 40%
     (11.3 to 15.8). The drafter attends over its whole context.
-  - The 35B's verify pass rises 52% at w = 4.
+  - The 35B's verify pass rises 12% at w = 4 (49.2 to 55.2 ms) and its drafter's block 117% (3.75 to 8.14 ms).
 - **How to read it with the decision:** the 9B's 1.30× clears at 512 and falls just inside the parked band at 4096. Its prize is
   largest at short context, and an agent session's context is long.
 
