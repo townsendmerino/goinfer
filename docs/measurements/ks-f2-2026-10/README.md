@@ -60,3 +60,21 @@ The exp-and-sum loop and the AV loop keep key order.
   - Qwen3.5-9B depth 2048: about 35 s.
   - 24 runs per cell (10 pairs and 4 warm-ups), so about 7 + 18 + 14 min.
   - **About 40 min**, plus two builds. The start and expected finish are stated when it is queued.
+- **First loads:** the first CPU int4 load of each model writes its CPU sidecar `.giw` beside the `.gguf` in nobara's `~/models`
+  (about 11 GB for gpt-oss-20b and 5 GB for the 9B; 87 GB free). The fit step absorbs it, before any timed run.
+
+## Results so far
+
+| gate | where | result |
+|---|---|---|
+| G0 | the Mac, arm64 and amd64 (Rosetta), GOMAXPROCS 1 and 8 | **PASS.** `TestKSF2_sinksBitIdentical`: 256 cells, 48 with the heads fanned out. `TestKSF2_queryPBitIdentical`: 768 cells, 132 fanned out. Every ctx word and KV row equal on both arches. A planted defect (two of the eight key rows swapped in `dotsF64x8`) turned both tests red |
+| G1a | the Mac (Darwin/arm64), CPU | **PASS** (2026-10-25 06:55, `origin/main` `8135a0c3` against `f8a1eda2`, 64 steps): 33 families IDENTICAL, 0 within tolerance, 0 different, 10 not run (fixtures absent or not tiny). gpt-oss, `granitemoehybrid`, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are all IDENTICAL |
+| G1b | nobara CPU (amd64) | queued |
+| G2 | nobara CPU | queued |
+
+**What G1a needed first.** The identity gate had never run gpt-oss, on any revision.
+- **The cause:** its tiny GGUF has no embedded tokenizer, so `decoder.Load`'s default sidecar refused it.
+- **The fix:** the asset now carries `DirectLoad` through the dumper's cell spec (`cmd/gate/identity_assets.go:identityAsset`). It is
+  the only asset that sets it.
+- **The Granite fixture:** `granitemoehybrid`'s `testdata/granite-tiny` is gitignored. It was cloned into the worktree from the main
+  checkout.
