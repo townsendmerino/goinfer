@@ -212,7 +212,8 @@ var _ decoder.ResidentSpanPrefill = (*cudaResident)(nil)
 // passes are prefillPassRows wide and cut outside the spans, so a span longer than a pass gets a pass of its own. Every
 // pass takes attn_span_batched, with or without a span in it, so where the passes fall does not change a bit. An OOM is
 // retried narrower from the same row, as in prefillChunked; any other failure after the first pass is a
-// decoder.PrefillPartial. Declines: an E-model, an f16 KV cache (attn_span_batched reads f32), a sliding layer that would
+// decoder.PrefillPartial. Declines: an E-model, an f16 KV cache (attn_span_batched's f16 twin passes exact-input identity, but no
+// end-to-end f16 span gate has run, so f16 keeps the CPU prefill and upload), a sliding layer that would
 // need the row-batched kernels, and whatever prefillCore declines.
 func (r *cudaResident) PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) ([]float32, error) {
 	M := len(embeddings)
@@ -223,7 +224,7 @@ func (r *cudaResident) PrefillSpansLast(ctx context.Context, embeddings [][]floa
 	case r.eModel:
 		return nil, fmt.Errorf("cuda prefill: span prefill on a Gemma 4 E-model: %w", errPrefillDeclined)
 	case r.kvF16:
-		return nil, fmt.Errorf("cuda prefill: span prefill on an f16 KV cache (attn_span_batched reads f32): %w", errPrefillDeclined)
+		return nil, fmt.Errorf("cuda prefill: span prefill on an f16 KV cache is not gated end to end yet: %w", errPrefillDeclined)
 	case !r.spanPrefillReady:
 		return nil, fmt.Errorf("cuda prefill: attn_span_batched unavailable: %w", errPrefillDeclined)
 	}

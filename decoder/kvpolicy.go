@@ -21,6 +21,9 @@ type KVF16Policy struct {
 	Decline func(f KVFacts, o Options) string
 	// Auto reports whether "auto" (and the zero KVPrecision) means f16 for a model Decline lets through.
 	Auto func() bool
+	// AutoDecline, when set, returns why "auto" keeps a model Decline lets through at f32 (its quality gate has not passed), "" when auto
+	// may pick f16. An explicit f16 request does not read it.
+	AutoDecline func(f KVFacts, o Options) string
 }
 
 var kvPolicies = map[string]KVF16Policy{}
