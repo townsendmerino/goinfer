@@ -29,5 +29,18 @@ class PlanPhases(unittest.TestCase):
             bench_peer.plan_phases()
 
 
+class PromptSets(unittest.TestCase):
+    def test_a_set_is_its_texts_and_a_single_entry_one_text(self):
+        saved = dict(bench_peer._PROMPTS)
+        try:
+            bench_peer._PROMPTS["X:1"] = {"texts": ["a", "b"], "tokens": [1, 2]}
+            bench_peer._PROMPTS["X:2"] = {"text": "c", "tokens": 1}
+            self.assertEqual(bench_peer.prompt_texts(1, "X"), ["a", "b"])
+            self.assertEqual(bench_peer.prompt_texts(2, "X"), ["c"])
+        finally:
+            bench_peer._PROMPTS.clear()
+            bench_peer._PROMPTS.update(saved)
+
+
 if __name__ == "__main__":
     unittest.main()

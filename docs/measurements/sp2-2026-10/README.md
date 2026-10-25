@@ -354,3 +354,47 @@ mirrored quads per depth, 10 pairs; every cell started at load 0.98 or below; no
   workload, not a served-path gap. It does not revisit G4, and `serve`'s default width stays 8.
 - **What would answer G4's own condition served:** the same A/B on code and math prompts (SP0's suites, calibrated to depth). That is
   a separate run; it is proposed, not run.
+
+## The served A/B on code and math, under G4's conditions (registered 2026-10-25, before the run)
+
+On the owner's decision (Francis, 2026-10-25 13:01, option C): #238 merges on its own, and this follow-up record asks the question
+the essay A/B could not: does the served path deliver G4's speedup on G4's prompts?
+
+- **Instrument:** `scripts/bench_peer.py` as in the essay A/B, one CUDA `serve` binary (built at `a6e9b8c7`), two arms: `goinfer`
+  plain, `goinfer_old` with `-drafter ~/models/qwen35-9b-dflash -drafter-width 4`; `BENCH_GOINFER_ARGS="-thinking off"` (G4 rendered
+  thinking off; this GGUF's template default is off already); `BENCH_MODELS=Q9`, `BENCH_BACKENDS=cuda`, `BENCH_PHASES=B`,
+  `BENCH_NGEN=256`, `BENCH_CTX=4608`, `BENCH_ABBA=5` (5 mirrored quads per depth, 10 pairs).
+- **Prompts: G4's own,** `BENCH_PROMPTS=scripts/prompts-sp2-codemath.json`. Two prompt sets of SP0's 12 code and math prompts:
+  - `Q9:32`: the prompts as they are, rendered 23–36 tokens;
+  - `Q9:3840`: the same behind G4's preamble (the leading lines of `docs/benchmarks.md` at `721cce5e`, G4's commit, about 3,800
+    tokens), rendered 3,816–3,829 tokens.
+  - The depth keys are bucket labels. Each cell cycles through its set, one prompt per completion (a harness addition on this
+    branch: an entry's `"texts"`); the warm-up takes the first prompt and the 16 timed completions start again from the first, so
+    every cell of both arms sends the same sequence, prompts 1–4 twice.
+- **Bands, per depth: the owner's merge rule.** A median of 1.05× or more with at least 9 of 10 pairs faster → the served path
+  delivers G4's speedup on G4's prompts at that depth; anything less → it does not.
+- **What each outcome means:** delivering backs the record's claim, "about 1.0× on prose, up to 1.46× on code and math", on the served
+  path. Not delivering on these prompts would be a served-path gap to find, since the essay A/B showed the served and in-process paths
+  agree on prose. Nothing changes `serve`'s default width.
+- **Void cells:** the harness's gates (its load cap, memory and swap voids) and the registered rule (load above 8.0 at a cell's start,
+  or available memory under 2 GB with the model loaded); a void cell is re-run in order.
+- **Cost:** the essay A/B took 2 h 22 min, mostly its 4,096-token cells; the long set here is a little shorter, so about 2 h. By day
+  under the timing lock, after the 35B fairness check (done, below); the night queue if the day is taken.
+- **A correction to G4's record:** it described the short context as "about 100–250 tokens". SP0's prompts render to 23–36 tokens.
+  G4's readings are unchanged; only that description was wrong.
+
+### The 35B expert-cache fairness check (2026-10-25, 13:03 PDT; a check, not a gate)
+
+Qwen3.6-35B-A3B (`.int4.e4h.cuda.v17.giw`, experts streamed), resident context 4,608, f32 KV, in one process under the exclusive
+timing lock: loaded once without and once with its DFlash drafter attached, plain greedy decode of 128 tokens on SP0's first code
+prompt, 3 timed runs after a warm-up.
+
+| load | expert cache | free VRAM after load | plain decode, median of 3 |
+|---|---|---|---|
+| no drafter | 64 slots per layer | 1.41 GB | 42.36 tok/s |
+| drafter attached (arena 79,151,104 B) | 64 slots per layer | 0.94 GB | 42.29 tok/s |
+
+Attaching the drafter leaves the expert cache at 64 slots per layer at this context, and plain decode moves 0.2%: the drafter's
+reserve does not slow the 35B's plain decode here, so it does not sink a speedup measured against it. Real decode runs 23.6 ms a
+token, where SP0's step arm read 17.6 ms on a repeated token at one position (the same experts every time), so SP0's 35B projection
+needs a real measurement of its verify cost too.
