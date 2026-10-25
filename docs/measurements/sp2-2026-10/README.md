@@ -218,6 +218,29 @@ long context.**
 context, and faster than plain decode in every long-context pair. The follow-up is a small PR adding a `serve` option for the verify
 width (serve verifies at width 8, where SP0 projects 1.17×), and a served A/B, registered before it runs.
 
+### G4 graded against the owner's merge rule (Francis, 2026-10-25, 8:46–8:48 am)
+
+The rule, set after this gate was registered: a lossless, opt-in feature merges when it is consistently faster, a median of 1.05× or
+more with at least 9 of 10 pairs faster, and its PR states the memory cost. SP0's 1.30× is an investment bar and is not a merge bar.
+G4 registered SP0's 1.30× for an opt-in (`--drafter`), lossless (token-identical) change; the readings above stay as recorded, and
+are graded against the rule here:
+
+| context | median | pairs faster | the merge rule |
+|---|---|---|---|
+| short | 1.462× | 10 of 10 | **merges** |
+| long | 1.207× | 10 of 10 | **merges** (the owner: "1.21x gain there!!!") |
+
+**The memory cost:**
+- **Device:** the arena, on a Gated-DeltaNet target with a drafter attached: 63,373,312 B allocated on Qwen3.5-9B, priced in the
+  fit guard's companion reserve at 65,011,712 B (62 MiB). Nothing on any other model (its price is 0), and nothing without
+  `--drafter`. The drafter's own weights and K/V are `--drafter`'s existing cost, unchanged.
+- **Host:** nothing persistent. A long seed's captured rows are joined on the host across passes (rows × taps × hidden × 4 B, about
+  511 MB for a 3,900-token prompt on the 9B), the same bytes the single pass downloaded before; the drafter's device scratch for
+  them is now bounded by 512-row pieces.
+- **The longest context that fits:** with a drafter attached, an auto-sized context shrinks by about 567 positions (65,011,712 B
+  over a position's 65,536 B of f32 target K/V plus 49,152 B of drafter K/V, from the fit guard's own prices; computed, not
+  measured). The 4,608-position context SP0 and these gates pinned still fits, with 1.11 GB free.
+
 ## The served A/B of `--drafter` (registered 2026-10-25, before the run)
 
 The follow-up the owner's decision named. `serve -drafter-width` (this branch) sets the width `BlockSpec.GenerateStream` verifies at;
@@ -236,12 +259,14 @@ before it, `serve` verified at 8, where SP0 projects 1.17×.
   - Greedy (temperature 0), so every request takes the speculative path.
 - **The reading, per depth:** each pair's drafter tok/s over plain tok/s; the median, the count of pairs above 1, and the pairs'
   spread.
-- **Bands, per depth (SP0's):** a median of 1.30× or more with at least 9 of 10 pairs above 1 → the served path confirms G4 at that
-  depth; 1.20–1.30× → parked, to the owner; under 1.20× → the served path does not deliver it at that depth.
-- **What each outcome means:** a confirmation is the claim a user can rely on. A shortfall where G4 passed (short context) is a
-  served-path gap to explain, from the KV precision (plain f16 against the drafter's f32), the HTTP stream or the prose prompts,
-  before any default changes; it does not revisit G4. This does not change `serve`'s default width (8); a default change waits
-  on this reading and is the owner's.
+- **Bands, per depth: the owner's merge rule** (Francis, 2026-10-25, 8:46 am; amended here before the run, which had not started;
+  first written with SP0's 1.30×, an investment bar that a merge gate must not inherit): `--drafter` is opt-in and lossless, so a
+  median of 1.05× or more with at least 9 of 10 pairs faster → the served path delivers the speedup at that depth; anything less →
+  it does not, at that depth.
+- **What each outcome means:** delivering is the claim a user can rely on, stated with the memory cost (the arena and the drafter,
+  and the drafter arm's f32 KV against the plain arm's default). A shortfall where G4 passed is a served-path gap to explain, from
+  the KV precision, the HTTP stream or the prose prompts; it does not revisit G4. Nothing here changes `serve`'s default width (8):
+  a default change needs the gain judged against its memory trade-off, and the owner's call.
 - **Void cells:** the harness's own gates (the 1-minute load cap and its memory and swap voids) and the registered rule (load
   above 8.0 at a cell's start, or available memory under 2 GB with the model loaded) void a cell, re-run in order.
 - **Cost:** about 100 s a cell (load and attach 40 s; 16 completions of 256 tokens), 4 cells a quad, 5 quads, 2 depths: about 70
