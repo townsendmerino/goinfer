@@ -274,3 +274,82 @@ func TestKV4b_mlaAttnExactInputIdentity(t *testing.T) {
 		}
 	}
 }
+
+// TestKV4b_mropePrefillStoreIsTheRoundedF32Store is G1's store half for the m-RoPE group's 3D prefill (rope_kv_mrope_batched, which only
+// PrefillMRoPELast launches): with distinct (t, h, w) positions, the f16 build's stored K/V is the f32 build's rounded to f16, bit for bit.
+// The f32 build's store is also checked to differ from the 1D PrefillLast's over the same rows, so the 3D rotation is what was compared.
+func TestKV4b_mropePrefillStoreIsTheRoundedF32Store(t *testing.T) {
+	requireCUDADevice(t)
+	for _, fx := range []string{"qwen25vl-tiny", "qwen3vl-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			_, m16, r32, r16 := kv4bPair(t, fx, decoder.Options{}, false)
+			for _, r := range []*cudaResident{r32, r16} {
+				if !r.mropePrefillReady {
+					t.Fatalf("%s: the m-RoPE batched prefill is not loaded (f16 arm %v)", fx, r.kvF16)
+				}
+			}
+			_, _, _, _, _, _, vocab := m16.Dims()
+			nPos := min(64, r16.ctxCap/2)
+			embs := make([][]float32, nPos)
+			pos := make([][3]int, nPos)
+			for i := range embs {
+				embs[i] = m16.EmbedResidentForTest(3 + (37*i)%(vocab-3))
+				pos[i] = [3]int{i, i/3 + 2*(i%5), i/2 + i%7} // an image-like grid: t, h and w all differ
+			}
+			ctx := context.Background()
+			kvDim := r32.layers[0].kvDim
+			rows := func(r *cudaResident) (k, v []float32) {
+				if err := r.do(func() error {
+					if e := r.stream.Sync(); e != nil {
+						return e
+					}
+					var e error
+					k, v, e = r.kvRowsForTest(r.kvSlot, 0, 0, nPos)
+					return e
+				}); err != nil {
+					t.Fatal(err)
+				}
+				return k, v
+			}
+			if _, err := r32.PrefillLast(ctx, embs, 0); err != nil {
+				t.Fatalf("1D prefill: %v", err)
+			}
+			k1, _ := rows(r32)
+			for _, r := range []*cudaResident{r32, r16} {
+				if _, err := r.PrefillMRoPELast(ctx, embs, 0, pos); err != nil {
+					t.Fatalf("m-RoPE prefill (f16 arm %v): %v", r.kvF16, err)
+				}
+			}
+			k32, v32 := rows(r32)
+			k16, v16 := rows(r16)
+			n := nPos * kvDim
+			moved := 0
+			for i := range n {
+				if k1[i] != k32[i] {
+					moved++
+				}
+			}
+			if moved < n/4 {
+				t.Fatalf("the 3D positions moved only %d of %d K elements from the 1D store: the m-RoPE kernel's rotation was not what ran", moved, n)
+			}
+			for _, c := range []struct {
+				name string
+				f    []float32
+				h    []uint16
+			}{{"K", k32, kvWordsToHalves(k16)}, {"V", v32, kvWordsToHalves(v16)}} {
+				bad := 0
+				for i := range n {
+					if want := f32ToF16RNE(c.f[i]); c.h[i] != want {
+						if bad < 3 {
+							t.Errorf("layer 0 %s[%d]: f16 cache %#04x, f32 %g rounds to %#04x", c.name, i, c.h[i], c.f[i], want)
+						}
+						bad++
+					}
+				}
+				if bad > 0 {
+					t.Errorf("layer 0 %s: %d of %d elements differ from the rounded f32 store", c.name, bad, n)
+				}
+			}
+		})
+	}
+}
