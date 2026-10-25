@@ -56,10 +56,10 @@
 | KS-D6 | done | done 2026-10-23: the grid towers allocate the unfused attention's scratch and `f2` only where read, and stage `pt` in `f1`; Qwen3-VL-2B at 4K holds 2,622.5 → 1,515.4 MiB; outputs byte-equal on MEM2-G1's seven towers (D6-G1, G2 PASS) | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D7 | done | done 2026-10-23, shipped by owner decision over the 2% bar: the prefill GEMM stages two nibbles per half2 operation; bit-identical (all 1,048,576 cases; the 1.5B's 3,900-token prefill byte-equal); 1.1% faster on that prefill (median 0.9888, 10 of 10 pairs); scratch and allocated memory not higher (D7-G3). The first read (0.9983) was an A/A, withdrawn | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-D8 | done | done 2026-10-24: batched Mamba-2 prefill, the relu² MLP and mixer-only layers on Metal; the 9B's 512-token prefill 5.14× (D8-G4 SHIP); G1, G2, G5, G6 PASS; D8-G3 PASS on its reference route (against a CPU bf16 reference the pass reads mean KL 0.046 and top-1 7 of 8, the sequential path 0.102 and 4 of 8) | survey, "KS-D8 read", "D8-G3 reference-route read" |
-| KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
+| KS-D9 | done | done 2026-10-24: the generic pager's phase 2 batched expert by expert, its scratch allocated once per call and priced in the plan; D9-G1 bit-identical on 7 paged cells (against sequential and against the per-row phase 2); Qwen1.5-MoE-A2.7B's 512-row paged prefill median 0.9050, 0.8241 and 0.9131 of per-row, 3 of 3 pairs each, 0 logits differ (D9-G2 SHIP) | survey, "KS-D9 read", "D9-G2 read", "After the review of #224" |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
-| KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
+| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1, and every Context builder wired through quantSrc); the 1.5B's WebGPU decode 24.7 → 21.8 ms a token, median 0.8810, 10 of 10 pairs, with an A/A control (1.0041) in the same run and busy cores read per arm (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode about 0.5 ms a token faster, median 0.9788, 10 of 10 pairs on the per-arm-guarded re-run (E3-G2 SHIP) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
@@ -1593,6 +1593,102 @@ Logs: `~/goinfer-logs/ksd8-review-g125-2026-10-24.log`, `~/goinfer-logs/ksd8-rev
 - **Gain (est.):** ~1.2×.
 - **Class:** bit-identical. **Size:** M.
 
+**KS-D9 gates, registered 2026-10-23 before the code (D9-G), on the owner's word of 2:30 pm.** The build, D-P01's shape on the
+generic pager: `moeLayerMajorRows`' phase 2 runs a slot group's routed experts expert by expert through `moe_batch_gemv` (every
+pair routed to an expert in one pass over its weights), `mc3_swiglu_quant_rows` per pair, the down projection's raw sums, and a new
+`moe_batch_combine_acc` that adds each row's k experts in route order with `gemv_w4a8_moe_wacc`'s epilogue `fma(wgt·acc, asc, out)`
+starting from the row's own residual, as the per-row path's k accumulating dispatches leave it. The rows' residuals are packed into
+the batch before and copied back after (`copy_f32`). The shared expert stays per row, after the combine, as today. It applies where
+both projections fill whole threadgroups (`moeBatchR`) and the experts are int4 and unbiased (not the native int8 lane, not
+gpt-oss); `moeExpertBatchOn` keeps the per-row phase 2 for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| D9-G1 identity | 0 | `TestMoELayerMajor_matchesSequential` (Mixtral, two Qwen3-MoE shapes, the Qwen3.5 DeltaNet MoE hybrid; 2 and 3 slots; 4 prompt shapes) with the batched phase 2 taken, and the same cells batched against per-row (`moeExpertBatchOn`) | byte-equal everywhere (logits, K/V, 3 decode steps), and the batched path taken on every fixture whose shapes admit it |
+| D9-G2 speed | timed, Mac, timing lock | a real generic MoE paged on the Mac, its layer-major prefill of 512 rows, batched against per-row phase 2 on one resident, A B B A over 3 pairs after one warm run each; the model named in an amendment before the run (none is on this Mac's `~/models` today; Qwen1.5-MoE-A2.7B is the survey's shape) | SHIP iff the median batched/per-row time is ≤ 0.98 with every pair faster; otherwise PARK |
+
+Planted defect: the combine starting from zero instead of the residual; D9-G1 goes red. Stopping rule: one pass each. Cost: G1
+seconds; G2 a few minutes plus the model's pull.
+
+**KS-D9 read 2026-10-23, by day.** D9-G1 **PASS** (14:36): `TestMoELayerMajor_matchesSequential`'s 7 paged cells (Mixtral and
+two Qwen3-MoE shapes at 2 and 3 slots, the k=3 shape at 3, the Qwen3.5 DeltaNet MoE hybrid at 2 and 3) bit-identical to sequential
+decode in logits, K/V and 3 decode steps, the batched phase 2 taken in every cell (42–82 slot groups); `TestMoELayerMajor_generateThroughDecoder`
+PASS. The plant (the combine from zero) first tripped the startup self-test, which declined the backend so the cells skipped; with
+the self-test skipped (`TestKSD9_plantSeenByTheGate`) every cell went red. Also: `touched.py` green; the MoE and paged families
+by name 55 pass, 17 skip, 0 fail. D9-G2 waits for a real generic MoE: none is in `~/models`, and nobara's archive was under another
+session's timing lock at 14:40, so no pull. Logs: `~/goinfer-logs/ksd9-*-2026-10-23.log`.
+
+**D9-G2's model, amended 2026-10-24 before the run (the registration asked for it; Francis's word of 12:45).** The model is
+Qwen1.5-MoE-A2.7B, its int4 Metal `.giw` transcoded on nobara from the archive copy (`cmd/prequant -quant int4 -target metal`,
+built at origin/main) and copied to the Mac, then deleted once graded. It is paged with `GOINFER_METAL_MOE_SLOTS=16` (of its 60
+routed experts, top-4), so the generic pager's layer-major prefill is the path timed. Instrument `TestKSD9_layerMajorSpeed`:
+512 seeded token ids, `PrefillLast`, the bar unchanged (SHIP iff the median batched/per-row is ≤ 0.98 with every pair faster;
+otherwise PARK). Each pair also counts the last logits that differ, which must be 0 (D9-G1's class).
+
+**D9-G2's instrument, amended 2026-10-24 (committed 15:05:22, ffbe2da4) before the run (started 15:06:56)**, to the void rule as #214 and #216's second reviews applied it:
+the test refuses to run outside the timing lock; each arm reads the 1-minute load and reclaimable memory just before and just after
+its timed run (after the load and the warm runs), and a pair with any read over the line (load above 4.0, under 2 GiB reclaimable)
+is void and re-run, up to 6 times; an unreadable load or memory reading fails the test; any differing last logit fails it. The bar
+is unchanged. The `.giw` sits in `~/goinfer-bench/qmoe/` on the Mac's internal SSD (the session's brief keeps it out of
+`~/models`; the same disk, not an archive path).
+
+**D9-G2 read 2026-10-24 (15:06–15:15, the lock held exclusively; 13.9 GB available and 8.1 GB reclaimable at the start): SHIP.**
+Qwen1.5-MoE-A2.7B's int4 Metal `.giw` (sha256 `da920a0d…`, equal on both boxes) paged at 16 slots, a 512-row layer-major
+`PrefillLast`. Per-row phase 2 16.08, 15.98 and 16.08 s; batched 14.55, 14.47 and 15.60 s; **median batched/per-row 0.9050, 3 of 3
+pairs faster**, 0 of 151,936 last logits differ in every pair. Six pairs were void and re-run: the load rose to 10.9 during
+one batched arm, then stayed between 3.7 and 10.1 for five attempts. Every valid arm read a load of 2.09–3.72 and 6.60–6.88 GiB
+reclaimable. Log: `~/goinfer-logs/ksd9-g2-2026-10-24.log`. The `.giw` was deleted from the Mac after grading (Francis's word of 12:45);
+nobara's copy is in `~/goinfer-bench/qmoe/`.
+
+**After the review of #224 (15:45), registered before the re-runs.**
+- **The batch scratch was outside the plan and could pile up, fixed.** `moeBatchEnsure` grew the batched phase 2's buffers per slot
+  group, inside `moeLayerMajorRows`, and a later, larger group allocated new buffers while the superseded ones stayed alive until the
+  call returned; the fit plan priced none of it. Now `newMoEBatch` allocates it once per call, sized for all the call's rows (at
+  most `g4LayerMajorChunk`; a group's entries are bounded by its pairs), and `prefillScratchBytes` adds `moeBatchBytes` of
+  min(M, `g4LayerMajorChunk`) for a paged MoE the batched phase 2 admits. A group that would overflow it records an execution error
+  instead of growing. `TestKSD9_scratchWithinPlan`: one 9-row call counts exactly `moeBatchBytes(9)` (`prefillScratchSeen`), and the
+  plan's growth with the batched phase 2 on is `moeBatchBytes` at 9 and at 256 for a 300-row prompt.
+- **D9-G1's test tightened:** a declined resident fails it (only a slot count under k skips); every fixture must admit the batched
+  phase 2 and every prompt shape must take it; a third arm, layer-major with the per-row phase 2, must equal the batched one bit for
+  bit (logits, K/V, 3 decode steps), the registered batched-against-per-row comparison. The plant check re-runs the gate in a child
+  process with the self-test skipped (`GOINFER_KSD9_PLANT_CHILD=1`), so the skip no longer leaks into the rest of the test binary.
+- **D9-G2's test:** each arm must take the phase 2 it names. The void rule's load term is read directly, as for #214: `voidWindow`
+  brackets each timed prefill with `hostmem.ReadCPU` and voids the arm if the busy cores averaged over it exceed half the cores, or
+  reclaimable memory is under 2 GiB at either end. The schedule stays the registered one, A B B A over 3 pairs (A B, B A, A B): an
+  odd number of pairs cannot balance, which is why the bar asks every pair to be faster.
+- **Re-runs:** D9-G1 and the new scratch test; the plant once (the combine from zero, which must be red in the child); then D9-G2
+  again under the lock, since the scratch's allocation moved: the `.giw` is copied back from nobara for it and deleted after. The
+  bar is unchanged; this reading decides, and 15:06's stays in the record.
+
+**Read 2026-10-24 after the review: all PASS, D9-G2 SHIP.**
+- D9-G1 (16:14–16:16, not timed): 7 paged cells PASS with the per-row arm equal to the batched one in logits, K/V and 3 decode
+  steps, the batched phase 2 taken on every prompt shape (42–82 slot groups a cell); k=3 at 2 slots skips (the pager refuses
+  under top-k). `TestMoELayerMajor_generateThroughDecoder` PASS. `TestKSD9_scratchWithinPlan` PASS (counted equals
+  `moeBatchBytes(9)`; the plan's growth equals it at 9 and at 256 for 300 rows).
+- **Plant** (the combine from zero, run once and reverted): the child-process gate red in all 7 cells; run plainly, the gate now fails
+  (it skipped before) with "startup self-test declined this backend".
+- **D9-G2** (16:22–16:24, the lock held exclusively; 13.4 GB available, 8.9 GB reclaimable at the start; the `.giw` copied back from
+  nobara, sha256 equal, and deleted after): per-row 16.18, 18.95, 17.86 s; batched 14.53, 14.78, 14.72 s; **median batched/per-row
+  0.8241, 3 of 3 pairs faster**, 0 of 151,936 last logits differ in every pair, no void pairs; every arm 2.19–3.00 busy cores and
+  6.23–6.38 GiB reclaimable. The batched arm held within 0.25 s across both sessions (14.47–14.78 s), and the per-row arm spread
+  wider this time, so the size is less settled than the direction: 0.9050 at 15:06 and 0.8241 now.
+Logs: `~/goinfer-logs/ksd9-review-g1-2026-10-24.log`, `~/goinfer-logs/ksd9-review-plant-2026-10-24.log`,
+`~/goinfer-logs/ksd9-g2-rerun-2026-10-24.log`.
+
+**The guard's CPU reading fixed, 2026-10-24 (17:05), registered before a re-run.** `hostmem.ReadCPU` read `host_statistics64(HOST_CPU_LOAD_INFO)`,
+which XNU rate-limits for non-Apple binaries: after a few calls in a second it serves the last reply again, so an arm's end sample
+could be up to a second stale (three calls in 0.4 s returned the same sample). It now reads `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`,
+per core, which is not rate-limited. Each state's count is differenced on its own, modulo 2^32 on macOS and clamped at 0 on Linux
+(NOHZ can step idle back a tick), so busy never exceeds total. A sample pair spanning no interval now voids the arm instead of
+failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
+stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
+the gate is re-run on the new one; that run decides, and the bar and the cap are unchanged.
+
+**D9-G2 read on the fixed guard, 2026-10-24 (17:40–17:42, the lock held exclusively; 10.0 GB reclaimable at the start; the `.giw`
+copied again, sha256 `da920a0d…`, and deleted after): SHIP.** Every arm valid (2.10–2.51 busy cores, 6.41–6.57 GiB reclaimable); no
+void pairs; each arm took its phase 2 and every pair's last logits were equal. **Median batched/per-row 0.9131, 3 of 3 pairs
+faster.** The three readings: 0.9050, 0.8241, 0.9131. Log: `~/goinfer-logs/ksd9-g2-fixedguard-2026-10-24.log`.
+
 **KS-D10 · aikit annmetal kernels are overhead-bound.**
 - **Waste:** single query 0.12× the CPU at N=100k; batch about 7% of the int ALU roof.
 - **Change:** lane-per-row or grid-stride.
@@ -1626,6 +1722,121 @@ prefill GEMMs and int8 KV attention use it.
 - **Gain (est.):** about 0.78 ms of the 7.25 ms token on the 1.5B (G35's measured per-class costs), 1.7 ms on the 7B.
 - **Size:** S.
 - **Prior art:** extends G35.
+
+**KS-E2 gates, registered 2026-10-24 before the code (E2-G), on the owner's order of the Mac work (the small items while KS-D8
+waits on its reference).** The build: the six quantizers (`rmsnormQuantWGSL`, `swigluQuantWGSL`, `gegluQuantWGSL`,
+`quantizeShaderWGSL`, `relu2QuantWGSL`, `gptossGluQuantWGSL`) and the prefill row forms derived from three of them compile
+widened to 256 lanes: the shared array, the workgroup size, the max loop and the pack loop at 256, the max tree from stride 128.
+`rmsnormQuantWGSL`'s sum of squares keeps lanes 0–63 in today's order (its loop guarded to them, its tree from stride 32), so its
+scale is today's bits. The source stays the 64-lane text and is widened by exact-count edits where it is compiled; a Context
+built with `quantNarrowForTest` (read at `New`) compiles the 64-lane form for the A/B.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| E2-G1 identity | 0 | (a) each widened shader against its 64-lane form on random inputs at n = 1, 3, 255, 896, 4864, 8960 (the max and the pack at partial lanes), and the row forms at M = 1, 3, 17; (b) llama-tiny and the 1.5B's `.gguf` on WebGPU at int8int8, two residents (narrow and wide Contexts), 32 greedy decode steps' logits | the packed int8 and the scales byte-equal; the logits byte-equal |
+| E2-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B on WebGPU: the narrow and the wide resident in one process, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median wide/narrow per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change decides; otherwise PARK |
+
+E2-G3: none; the change allocates nothing. Planted defect, run once and reverted: the widened rmsnorm sum taken over all 256 lanes
+(today's order broken); E2-G1 goes red on the rmsnorm cells, or, if every cell stays equal, a pack loop stopping at 128 lanes
+must. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
+
+**KS-E2 read 2026-10-24 (Mac, 11:50–12:01): SHIP.**
+- **E2-G1 PASS.** (a) 63 cells: the six shaders at n = 1, 3, 255, 896, 4864, 8960 and the three row forms at n = 255, 896, 4864 ×
+  M = 1, 3, 17, 0 words differ (packed int8 and scales). The plant (rmsnorm's sum over all 256 lanes) turned the rmsnorm cells red,
+  so the guarded sum is what keeps the widened kernel exact. (b) llama-tiny 0 of 8,192 and the 1.5B 0 of 4,861,952 logits differ
+  over 32 steps, a wide against a narrow resident (each Context checked to carry its width).
+- **E2-G2 SHIP** (11:59–12:01, the lock held exclusively; the 1-minute load 3.49 at the start, each pair's 1.22–2.56; 12.6 GB
+  available by the load figure, the reclaimable one not captured): narrow 24.66–25.56 ms a token, wide 21.81–21.94, **median
+  wide/narrow 0.8821, 10 of 10 pairs faster**: the 1.5B's WebGPU decode 11.8% faster, about 2.9 ms a token (the survey's estimate
+  0.78 ms).
+Logs: `~/goinfer-logs/kse2-g1a-2026-10-24.log`, `~/goinfer-logs/kse2-g1b-2026-10-24.log`, `~/goinfer-logs/kse2-g2-2026-10-24.log`.
+
+**E2-G2 re-run, registered 2026-10-24 (13:00) before it runs, after the second-opinion review of #214.** The first reading (0.8821)
+was taken under the timing lock (its runner took it exclusively; the 1-minute load 3.49 at the start), but the test itself enforced
+neither the lock nor the void rule, the reclaimable figure was not captured, and its 2.9 ms a token is 3.7× the survey's estimate.
+The re-run, in one process under the lock, the test refusing to run without the lock's token:
+- **A/A control first:** two narrow residents, the same A B B A over 10 pairs after 2 warm runs. PASS iff the median ratio is within
+  1 ± 0.02; outside it, the two-resident setup biases the reading and E2-G2 is not graded.
+- **Then the A/B** (narrow against wide), as registered: SHIP iff the median wide/narrow is ≤ 0.98 with at least 9 of 10 pairs
+  faster.
+- **Every pair records, at its start, the 1-minute load and the reclaimable memory** (`internal/hostmem`); a pair started above a
+  load of 4.0 or under 6 GB reclaimable (the two residents and the host model, about 4 GB, plus 2 GB) is void, listed and re-run in
+  order, up to 10 re-runs.
+The first reading stays in the record; the re-run decides.
+
+**Amended 2026-10-24 (13:06), after the first re-run attempt voided every pair and before any valid timed reading.** The 6 GB
+line was applied at each pair, after the test's own loads (the host model and two residents, about 4 GB) had taken their memory, so
+it counted that memory twice and every pair start read 1.7–2.3 GB reclaimable: void. The void rule's term is the memory the cell's
+load needs plus 2 GB, read before the load. So: **reclaimable ≥ 6 GB before the loads** (the test refuses to start under it), and at
+each pair start **load ≤ 4.0 and reclaimable ≥ 2 GB** (the margin still there after the loads); a pair under either is void and
+re-run, as registered. Everything else is unchanged.
+
+**Second attempt read 2026-10-24 (13:08–13:20), incomplete; amended before a third (13:22).** Before the loads 8.8 GB and 10.2 GB
+reclaimable; after them, 1.4–2.8 GB at the pair starts, at the 2 GB margin, so most starts were void and each run stopped at its
+10-void limit. Valid pairs, recorded and not graded: **A/A 2 pairs, 0.9910 and 1.0025; A/B 7 pairs, 0.8777–0.8911** (the first
+reading's 0.8821 again). The two residents and the host model leave too little margin on this Mac, so the third attempt keeps **one
+resident alive at a time**: each run builds a fresh narrow or wide resident, warms it twice, times it and closes it, the A B B A
+order and the bars unchanged, the 6 GB before-load and 2 GB per-pair lines unchanged. Log of the second attempt:
+`~/goinfer-logs/kse2-g2-rerun2-2026-10-24.log`; of the first: `~/goinfer-logs/kse2-g2-rerun-void-2026-10-24.log`.
+
+**E2-G2 re-run read 2026-10-24 (13:21–13:34, one resident at a time, under the lock): SHIP stands.** Before the loads 9.2 and 9.0
+GB reclaimable. **A/A control PASS: median 0.9998**, 5 of 10 pairs below 1, 4 void starts (the 1-minute load rose to 11.7 for a
+minute mid-run; the starts above 4.0 were re-run); two valid pairs near that spike read 0.8426 and 1.1594. **A/B SHIP: narrow
+24.36–28.11 ms a token, wide 21.53–24.66; median wide/narrow 0.8811, 10 of 10 pairs faster**, 3 void starts. Each valid pair
+started at a load of 0.64–3.43 and 3.4–7.3 GB reclaimable. The gain is the first reading's (0.8821) again; on this Mac's WebGPU
+the 1.5B's single-workgroup quantizers cost more than the survey's 0.78 ms, which was read on nobara's 2070. Log:
+`~/goinfer-logs/kse2-g2-rerun3-2026-10-24.log`.
+
+**After the second review of #214 (14:20), registered before a further re-run.** The guard read the void rule's terms once, before
+each pair and before its residents were built, so a spike during a timed run was not caught: the A/A's two pairs at 0.8426 and
+1.1594 sat next to a load spike to 11.7, and a pair could start at 3.4 GB and fall under 2 GB mid-run. The re-run reads the terms
+after each arm's resident is built, just before and just after its timed run, and voids the pair if any of the four reads fails;
+an unreadable load or memory reading fails the test (load from `sysctl` on macOS, `/proc/loadavg` on Linux). Otherwise as above:
+the A/A control first (PASS iff its median is within 1 ± 0.02), then the A/B (SHIP iff median ≤ 0.98 with at least 9 of 10 faster).
+The previous re-run's readings stay in the record; this one decides. Also: E2-G1's decode now starts after the 64-row prefill so
+it attends over it, and the prefill comparison asserts non-empty logits on llama-tiny (the 1.5B's WebGPU prefill declines on
+Metal). llama-tiny's widths reach only one stride of the widened loops end to end; the multi-stride loops are E2-G1 (a)'s cells.
+
+**E2-G2 per-arm-guarded re-run read 2026-10-24 (14:15–14:26, the lock held exclusively): A/A PASS, A/B SHIP.** Every read of every
+valid arm was under the line: the 1-minute load 2.65–3.84, reclaimable 3.46–4.55 GiB (Spotlight and `ANECompilerService` held the
+load near 4 throughout). The A/A (narrow against narrow): median 1.0009, pairs 0.9972–1.0205, 2 void pairs (the load 4.02–5.39 at a
+read) re-run. The A/B: narrow 24.30–24.67 ms a token, widened 21.41–21.85; **median 0.8846, 10 of 10 pairs faster**, no void pairs.
+The gain holds: 0.8811 and 0.8846 on the two guarded readings. Log: `~/goinfer-logs/kse2-g2-rerun4-2026-10-24.log`.
+
+**After the third review of #214 (15:45), registered before a further re-run.** The 1-minute load average is the wrong instrument
+for a 3-second arm: the kernel updates it every 5 seconds as an exponential average, so the reads before and after an arm usually
+see one sample, and a short spike reaches it damped about 12×. The guard now measures the void rule's load term directly:
+`voidWindow` reads the machine's CPU ticks (`hostmem.ReadCPU`: Mach `HOST_CPU_LOAD_INFO` on macOS, measured fresh at four samples a
+second, and `/proc/stat` on Linux) just before the timed decode starts and just after it stops. The arm is void if the busy cores
+averaged over exactly that window exceed half the cores (4.0 here; the test's own process counts, as it does in a load average), or
+reclaimable memory is under 2 GiB at either read. The 32-token prompt and the warm runs are outside the window. Also:
+- The void cap is 10 pairs per phase, as first registered; the 15 in the last re-run was not amended, and is withdrawn.
+- One `GOINFER_KSE2_TIMING=1` run does the A/A control (narrow against narrow; PASS iff its median is within 1 ± 0.02) and then the
+  A/B in the same process. A failed control stops the run before the A/B. `GOINFER_KSE2_AA` is gone.
+- Log lines name the arm that ran first in each pair.
+- E2-G1 (a) runs 90 cells today (the row forms at all six n); the 11:50 read ran 63.
+The bar is unchanged (SHIP iff the A/B median is ≤ 0.98 with at least 9 of 10 faster). This re-run decides; the earlier readings
+stay in the record.
+
+**E2-G2 read with the direct guard, 2026-10-24 (16:02–16:11, the lock held exclusively; 7.2 GB reclaimable at the start): A/A PASS,
+A/B SHIP.** Every arm of both phases was valid: 0.23–1.96 busy cores averaged over its timed decode (the line is 4.0) and 2.02–4.32
+GiB reclaimable at its ends; no void pairs. The A/A control: median 1.0002, pairs 0.9839–1.0112. The A/B: narrow 24.70–24.99 ms a
+token, wide 21.70–22.02; **median wide/narrow 0.8824, 10 of 10 pairs faster** (11.8% less time a token). Over the three guarded
+readings the A/B reads 0.8811, 0.8846 and 0.8824. Log: `~/goinfer-logs/kse2-g2-rerun5-2026-10-24.log`.
+
+**The guard's CPU reading fixed, 2026-10-24 (17:05), registered before a re-run.** `hostmem.ReadCPU` read `host_statistics64(HOST_CPU_LOAD_INFO)`,
+which XNU rate-limits for non-Apple binaries: after a few calls in a second it serves the last reply again, so an arm's end sample
+could be up to a second stale (three calls in 0.4 s returned the same sample). It now reads `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`,
+per core, which is not rate-limited. Each state's count is differenced on its own, modulo 2^32 on macOS and clamped at 0 on Linux
+(NOHZ can step idle back a tick), so busy never exceeds total. A sample pair spanning no interval now voids the arm instead of
+failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
+stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
+the gate is re-run on the new one; that run decides, and the bar and the cap are unchanged.
+
+**E2-G2 read on the fixed guard, 2026-10-24 (17:28–17:36, the lock held exclusively; 10.3 GB reclaimable at the start): A/A PASS,
+A/B SHIP.** Every arm valid (0.15–2.41 busy cores, 2.75–4.77 GiB reclaimable); no void pairs. A/A median 1.0041; A/B **median
+wide/narrow 0.8810, 10 of 10 pairs faster**. The four guarded A/B readings: 0.8811, 0.8846, 0.8824, 0.8810. Log:
+`~/goinfer-logs/kse2-g2-fixedguard-2026-10-24.log`.
 
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.

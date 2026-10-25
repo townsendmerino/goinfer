@@ -57,7 +57,11 @@ func (c *Context) ensureRelu2() error {
 	if c.relu2Pipeline != nil {
 		return nil
 	}
-	sh, pl, lay, err := c.buildCompute("relu2Quant", relu2QuantWGSL)
+	code, err := c.quantSrc("relu2Quant", relu2QuantWGSL)
+	if err != nil {
+		return err
+	}
+	sh, pl, lay, err := c.buildCompute("relu2Quant", code)
 	if err != nil {
 		return err
 	}
