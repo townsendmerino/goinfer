@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,7 +26,8 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CUDA_FLASH_DECODE=16 \
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestKV16GateVsReference -v -timeout 3h
 //
-// Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV16_GATE_CELLS="D7:8000,S:3900" overrides.
+// Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV16_GATE_CELLS="D7:8000,S:3900" overrides. A cell may name how
+// many of the set's prompts it reads, "NAME:K:n" (the first n). KV4b's per-group cells are TestKV4bGate_* (kv4b_gate_test.go).
 func TestKV16GateVsReference(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)")
@@ -46,17 +48,26 @@ func TestKV16GateVsReference(t *testing.T) {
 	models := map[string]struct {
 		env, def string
 		decision bool
+		opts     decoder.Options // what the group's build needs beyond the cell's own Backend, Quant, KVPrecision and ResidentContext
 	}{
-		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true},
-		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false},
+		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true, decoder.Options{}},
+		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false, decoder.Options{}},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
-		if len(parts) != 2 {
+		if len(parts) != 2 && len(parts) != 3 {
 			t.Fatalf("bad cell %q", cell)
 		}
 		name := parts[0]
 		K, _ := strconv.Atoi(parts[1])
+		files := promptFiles
+		if len(parts) == 3 {
+			n, _ := strconv.Atoi(parts[2])
+			if n < 2 || n > len(promptFiles) {
+				t.Fatalf("bad cell %q: n must be 2 to %d", cell, len(promptFiles))
+			}
+			files = promptFiles[:n]
+		}
 		mc, ok := models[name]
 		if !ok || K < 1 {
 			t.Fatalf("bad cell %q", cell)
@@ -74,12 +85,12 @@ func TestKV16GateVsReference(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Skipf("no fixture at %s", path)
 			}
-			for pi := range promptFiles {
+			for pi := range files {
 				if _, err := os.Stat(filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", name, K, pi))); err != nil {
 					t.Skipf("%s K=%d: reference missing for prompt %d — run Phase A first", name, K, pi)
 				}
 			}
-			runKV16GateCell(t, path, name, K, promptFiles, refDir, mc.decision)
+			runKV16GateCell(t, path, name, K, files, refDir, mc.decision, mc.opts)
 		})
 	}
 }
@@ -87,17 +98,25 @@ func TestKV16GateVsReference(t *testing.T) {
 // kv16ArmResult is one arm's teacher-forced rows for every prompt, plus what its resident said about itself.
 type kv16ArmResult struct {
 	rows       [][][]float32 // [prompt][row][vocab]
-	kvBytes    int           // layer-0 K pool bytes
+	allocated  int64         // the K/V cache bytes the load allocated (kvAllocSeenForTest)
+	kvPool     int64         // the KV pools' and null blocks' bytes, from the layers that size them
 	faLaunches int
 	f16        bool
 	aa         [][]float32 // a second run of prompt 0 (the f16 arm only), for the A/A precondition
 	maxK, maxV []float32   // per layer, over every prompt (the f32 arm only)
 	layers     int
+	faLayers   int  // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
+	mlaOnly    bool // every layer that keeps K/V is MLA's latent, which the flash-decode lane never reads
 }
 
-func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string) kv16ArmResult {
+func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
 	t.Helper()
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: kv, ResidentContext: K + 128})
+	opts.Backend, opts.Quant, opts.KVPrecision, opts.ResidentContext = "cuda", "int4", kv, K+128
+	var mu sync.Mutex
+	seen := map[*cudaResident]int64{}
+	kvAllocSeenForTest = func(r *cudaResident, b int) { mu.Lock(); seen[r] += int64(b); mu.Unlock() }
+	m, err := decoder.Load(path, opts)
+	kvAllocSeenForTest = nil
 	if err != nil {
 		t.Fatalf("load (-kv %s): %v", kv, err)
 	}
@@ -109,7 +128,16 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	if rf.faSplit < 1 || rf.faCombine == (Pipeline{}) {
 		t.Fatalf("-kv %s: the flash-decode lane is not loaded (faSplit=%d)", kv, rf.faSplit)
 	}
-	res := kv16ArmResult{f16: rf.kvF16, kvBytes: rf.kc[0].Len() * map[bool]int{true: 2, false: 4}[rf.layers[0].kvHalf], layers: len(rf.layers)}
+	res := kv16ArmResult{f16: rf.kvF16, allocated: seen[rf], kvPool: kvBytesForCap(rf.ctxCap, rf.layers) + kvPoolNullBytes(rf.layers), layers: len(rf.layers)}
+	res.mlaOnly = true
+	for l := range rf.layers {
+		if !rf.layers[l].noKV() && !rf.layers[l].isMLA() {
+			res.mlaOnly = false
+		}
+		if w := int(rf.layers[l].window); !rf.layers[l].noKV() && !rf.layers[l].isMLA() && rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
+			res.faLayers++
+		}
+	}
 	res.maxK, res.maxV = make([]float32, len(rf.layers)), make([]float32, len(rf.layers))
 	ctx := context.Background()
 	t0 := time.Now()
@@ -125,6 +153,9 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 		}
 		if doSurvey {
 			for l := range rf.layers {
+				if rf.layers[l].noKV() || rf.layers[l].kvShared { // a recurrent layer keeps no rows; a shared one reads another layer's
+					continue
+				}
 				var kb, vb []float32
 				if e := rf.do(func() error {
 					if e := rf.stream.Sync(); e != nil {
@@ -169,9 +200,16 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	return res
 }
 
-func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []string, refDir string, decision bool) {
+func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []string, refDir string, decision bool, opts decoder.Options) {
 	t.Helper()
-	tk, err := tokenizer.LoadGGUF(path)
+	// A checkpoint directory carries tokenizer.json, as the CPU reference read it (decoder's loadRefTokenizer); a GGUF carries its own.
+	var tk *tokenizer.Tokenizer
+	var err error
+	if st, e := os.Stat(path); e == nil && st.IsDir() {
+		tk, err = tokenizer.Load(filepath.Join(path, "tokenizer.json"))
+	} else {
+		tk, err = tokenizer.LoadGGUF(path)
+	}
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}
@@ -180,7 +218,11 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	refLogits := make([][][]float32, len(promptFiles))
 	for pi, f := range promptFiles {
 		prompts[pi] = decoder.PrefillGateProseIDsForTest(t, tk, f, K)
-		_, rt, rl, err := decoder.ReadPrefillReferenceForTest(filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi)))
+		ref := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi))
+		if err := decoder.PrefillRefCurrentForTest(ref, path, prompts[pi][:K]); err != nil { // the arms read the first K, as the generator keyed them
+			t.Fatalf("reference %d: %v", pi, err)
+		}
+		_, rt, rl, err := decoder.ReadPrefillReferenceForTest(ref)
 		if err != nil {
 			t.Fatalf("read reference %d: %v", pi, err)
 		}
@@ -188,8 +230,8 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	}
 	contN := len(refTokens[0])
 
-	e := kv16RunArm(t, path, "f32", K, prompts, refTokens, true, false, model)
-	f := kv16RunArm(t, path, "f16", K, prompts, refTokens, false, true, model)
+	e := kv16RunArm(t, path, "f32", K, prompts, refTokens, true, false, model, opts)
+	f := kv16RunArm(t, path, "f16", K, prompts, refTokens, false, true, model, opts)
 
 	// PRECONDITION 4: the overflow survey, printed before any score.
 	worst := float32(0)
@@ -205,10 +247,16 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	if !f.f16 || e.f16 {
 		t.Fatalf("PRECONDITION 1: arms are not f32/f16 (f32 arm kvF16=%v, f16 arm kvF16=%v)", e.f16, f.f16)
 	}
-	if f.kvBytes*2 != e.kvBytes {
-		t.Fatalf("PRECONDITION 1: the f16 arm's K buffer is %d B against the f32 arm's %d B, not half", f.kvBytes, e.kvBytes)
+	if f.allocated <= 0 || e.allocated != 2*f.allocated || e.allocated-f.allocated != e.kvPool-f.kvPool {
+		t.Fatalf("PRECONDITION 1: K/V cache allocations f32 %d B, f16 %d B, priced difference %d B: the f16 pools are not what was allocated",
+			e.allocated, f.allocated, e.kvPool-f.kvPool)
 	}
-	if want := e.layers * (contN - 1) * len(prompts); f.faLaunches < want {
+	// An MLA model has no layer the lane takes, so its vacuity rests on the rows below differing; any other model with none would
+	// decode its f16 cache through no lane at all, and the gate would grade nothing of it.
+	switch want := f.faLayers * (contN - 1) * len(prompts); {
+	case f.faLayers == 0 && !f.mlaOnly:
+		t.Fatalf("PRECONDITION 1 (vacuity): no layer takes the flash-decode lane at K=%d, so the f16 arm reads its cache through no lane", K)
+	case f.faLaunches < want:
 		t.Fatalf("PRECONDITION 1 (vacuity): the f16 arm launched fa_partial %d times, expected >= %d", f.faLaunches, want)
 	}
 	// PRECONDITION 2: A/A.

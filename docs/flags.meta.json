@@ -152,7 +152,7 @@
   {
    "name": "kv",
    "group": "Backend, precision and context",
-   "summary": "KV cache precision. `auto` (the default) is f16 on CUDA for the dense llama, mistral, qwen2, qwen3 and phi3 families and on Metal, f32 elsewhere; `f32` is bit-exact; `f16` and `i8` are lossy and smaller (`f16` applies to GPU-resident models only, and a CUDA model outside those families stays f32 with the reason in the banner).",
+   "summary": "KV cache precision. `auto` (the default) is f16 on Metal, and on CUDA for each family group whose quality gate cleared it (the rest stay f32 with the reason in the banner; the KV precision matrix names which), f32 elsewhere; `f32` is bit-exact; `f16` and `i8` are lossy and smaller (`f16` applies to GPU-resident models only).",
    "type": "auto | f32 | f16 | i8"
   },
   {

@@ -31,6 +31,7 @@
 //
 // Regenerate with (NVRTC 12.6.85, see cuda/testdata/REGEN.md):  ./build_ptx.sh rope_pairwise
 
+#include "kvtype.cuh"
 #include "kvpage.cuh"
 
 extern "C" {
@@ -39,7 +40,7 @@ extern "C" {
 // of K (which also stores K/V to the cache), then per un-rotated tail element.
 __global__ void rope_kv_pw(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
-    const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
+    const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
     const int* __restrict__ kvt,
     int nH, int nKV, int hd, int pos, int ropePos, int rhalf, float mscale, float qTempScale)
 {
@@ -66,16 +67,16 @@ __global__ void rope_kv_pw(
         base[2 * d] = r0;
         base[2 * d + 1] = r1;
         long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
-        kc[o + 2 * d] = r0;
-        kc[o + 2 * d + 1] = r1;
-        vc[o + 2 * d] = v[h * hd + 2 * d];
-        vc[o + 2 * d + 1] = v[h * hd + 2 * d + 1];
+        KV_ST(kc + (o + 2 * d), r0);
+        KV_ST(kc + (o + 2 * d + 1), r1);
+        KV_ST(vc + (o + 2 * d), v[h * hd + 2 * d]);
+        KV_ST(vc + (o + 2 * d + 1), v[h * hd + 2 * d + 1]);
     } else if (idx < qn + kn + tn) {
         int j = idx - qn - kn;
         int h = j / tail, t = 2 * rhalf + (j % tail);
         long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
-        kc[o + t] = k[h * hd + t]; // un-rotated: pass through, but it MUST still be cached
-        vc[o + t] = v[h * hd + t];
+        KV_ST(kc + (o + t), k[h * hd + t]); // un-rotated: pass through, but it MUST still be cached
+        KV_ST(vc + (o + t), v[h * hd + t]);
     }
 }
 
@@ -83,7 +84,7 @@ __global__ void rope_kv_pw(
 // token m at absolute position startPos+m.
 __global__ void rope_kv_batched_pw(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
-    const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
+    const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
     const int* __restrict__ kvt,
     int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
     const float* __restrict__ qTempRows)
@@ -113,12 +114,12 @@ __global__ void rope_kv_batched_pw(
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[2 * d] = r0; base[2 * d + 1] = r1;
         long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
-        kc[o + 2 * d] = r0; kc[o + 2 * d + 1] = r1;
-        vc[o + 2 * d] = vm[h * hd + 2 * d]; vc[o + 2 * d + 1] = vm[h * hd + 2 * d + 1];
+        KV_ST(kc + (o + 2 * d), r0); KV_ST(kc + (o + 2 * d + 1), r1);
+        KV_ST(vc + (o + 2 * d), vm[h * hd + 2 * d]); KV_ST(vc + (o + 2 * d + 1), vm[h * hd + 2 * d + 1]);
     } else if (idx < qn + kn + tn) {
         int j = idx - qn - kn; int h = j / tail, t = 2 * rhalf + (j % tail);
         long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
-        kc[o + t] = km[h * hd + t]; vc[o + t] = vm[h * hd + t];
+        KV_ST(kc + (o + t), km[h * hd + t]); KV_ST(vc + (o + t), vm[h * hd + t]);
     }
 }
 
@@ -129,7 +130,7 @@ __global__ void rope_kv_batched_pw(
 // to rope_kv_batched_pw at that position.
 __global__ void rope_kv_mrope_batched_pw(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
-    const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
+    const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
     const int* __restrict__ kvt,
     int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
     const int* __restrict__ posT, const int* __restrict__ posH, const int* __restrict__ posW,
@@ -161,12 +162,12 @@ __global__ void rope_kv_mrope_batched_pw(
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));
         base[2 * d] = r0; base[2 * d + 1] = r1;
         long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
-        kc[o + 2 * d] = r0; kc[o + 2 * d + 1] = r1;
-        vc[o + 2 * d] = vm[h * hd + 2 * d]; vc[o + 2 * d + 1] = vm[h * hd + 2 * d + 1];
+        KV_ST(kc + (o + 2 * d), r0); KV_ST(kc + (o + 2 * d + 1), r1);
+        KV_ST(vc + (o + 2 * d), vm[h * hd + 2 * d]); KV_ST(vc + (o + 2 * d + 1), vm[h * hd + 2 * d + 1]);
     } else if (idx < qn + kn + tn) {
         int j = idx - qn - kn; int h = j / tail, t = 2 * rhalf + (j % tail);
         long o = KV_ROW(kvt, pos) * kvDim + (long)h * hd;
-        kc[o + t] = km[h * hd + t]; vc[o + t] = vm[h * hd + t];
+        KV_ST(kc + (o + t), km[h * hd + t]); KV_ST(vc + (o + t), vm[h * hd + t]);
     }
 }
 

@@ -89,6 +89,19 @@ func TestPrefillGateReference(t *testing.T) {
 		// Q35, Qwen3.5-0.8B (a Gated-DeltaNet hybrid, safetensors): references for D-B01's fidelity gate, f32 like S. Built
 		// only when GOINFER_CPU_REF_MODELS names it.
 		{"Q35", "GOINFER_CPU_MODEL_Q35", "$HOME/models/qwen3.5-0.8b", "", refKs([]int{256, 512, 1024})},
+		// QMOE, Qwen1.5-MoE-A2.7B: KV4b group 1's G4 (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), weight-only int8 like D7 (f32
+		// weights are 57 GB). Built only when GOINFER_CPU_REF_MODELS names it.
+		{"QMOE", "GOINFER_CPU_MODEL_QMOE", "$HOME/models/qwen15-moe-a27b", "int8", refKs([]int{3900, 8000})},
+		// G34B, Gemma-3-4B: group 2's (sliding window), f32 like S.
+		{"G34B", "GOINFER_CPU_MODEL_G34B", "$HOME/models/gemma-3-4b-it", "", refKs([]int{3900, 8000})},
+		// CR7B, Command-R7B: group 3's (pairwise RoPE), weight-only int8 like D7 (f32 weights are 32 GB).
+		{"CR7B", "GOINFER_CPU_MODEL_CR7B", "$HOME/models/command-r7b", "int8", refKs([]int{3900, 8000})},
+		// QVL3, Qwen2.5-VL-3B: group 4's (m-RoPE), text cells, f32 like S.
+		{"QVL3", "GOINFER_CPU_MODEL_QVL3", "$HOME/models/qwen2.5-vl-3b", "", refKs([]int{3900, 8000})},
+		// Q359, Qwen3.5-9B: group 5's (the hybrids), weight-only int8 like D7.
+		{"Q359", "GOINFER_CPU_MODEL_Q359", "$HOME/models/qwen3.5-9b", "int8", refKs([]int{3900, 8000})},
+		// DSV2L, DeepSeek-V2-Lite: group 6's (MLA), weight-only int8 like D7.
+		{"DSV2L", "GOINFER_CPU_MODEL_DSV2L", "$HOME/models/deepseek-v2-lite", "int8", refKs([]int{3900, 8000})},
 	}
 	// GOINFER_CPU_REF_MODELS (comma-separated cell names) narrows the run; unset builds S and D7, as before Q05.
 	want := map[string]bool{"S": true, "D7": true}
@@ -143,7 +156,7 @@ func TestPrefillGateReference(t *testing.T) {
 			preflightConcurrencySafety(t, m, prompts[0], workers)
 
 			for _, K := range mc.ks {
-				runPrefillReferenceKConcurrent(t, m, mc.name, path, mc.quant, K, prompts, outDir, continuationN, workers)
+				runPrefillReferenceKConcurrent(t, m, mc.name, path, mc.quant, K, prompts[:refPromptsAt(K, len(prompts))], outDir, continuationN, workers)
 			}
 		})
 	}
@@ -167,6 +180,20 @@ func refKs(def []int) []int {
 		return def
 	}
 	return out
+}
+
+// refPromptsAt is how many of the set's prompts (the first n) a run builds at depth K, via GOINFER_CPU_REF_PROMPTS_AT ("8000:4,...");
+// every prompt by default. KV4b's K=8000 references read four (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), so each fits a night job.
+func refPromptsAt(K, all int) int {
+	for f := range strings.SplitSeq(os.Getenv("GOINFER_CPU_REF_PROMPTS_AT"), ",") {
+		k, n, ok := strings.Cut(strings.TrimSpace(f), ":")
+		if kk, err := strconv.Atoi(k); ok && err == nil && kk == K {
+			if nn, err := strconv.Atoi(n); err == nil && nn >= 1 && nn < all {
+				return nn
+			}
+		}
+	}
+	return all
 }
 
 // refWorkers lets a run cap how many prompts are prefilled CONCURRENTLY, via GOINFER_CPU_REF_WORKERS. The default (8) is
@@ -255,7 +282,10 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 // looked up in prefill_ref_cache_testhook.go's cache by checkpoint sha256 + the prompt's ids + the reference path's
 // source + arch/quant/continuation. A hit is linked into outDir and skipped; a miss is computed, stored atomically, then
 // linked. So a rerun after an interruption computes only the prompts not yet stored, and a reference for different
-// text, weights or code can never be picked up by accident.
+// text, weights or code can never be picked up by accident: a source change recomputes every prompt.
+//
+// A prompt is not started when the slowest prompt this cell has finished says it would end past the test's deadline: the
+// test then fails naming how many were left, every finished prompt stays stored, and a rerun resumes.
 func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpointPath, quant string, K int, prompts [][]int, outDir string, continuationN, workers int) {
 	t.Helper()
 	type job struct {
@@ -263,6 +293,7 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 		ids   []int
 		parts PrefillRefKeyParts
 	}
+	outPathOf := func(pi int) string { return filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, pi)) }
 	jobs := make(chan job, len(prompts))
 	cached := 0
 	for pi, ids := range prompts {
@@ -273,10 +304,9 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 		if err != nil {
 			t.Fatalf("prompt %d: reference key: %v", pi, err)
 		}
-		outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, pi))
 		if cp, ok := LookupPrefillRefForTest(parts); ok {
-			if err := LinkPrefillRefForTest(cp, outPath, parts); err != nil {
-				t.Fatalf("link cached reference %s -> %s: %v", cp, outPath, err)
+			if err := LinkPrefillRefForTest(cp, outPathOf(pi), parts); err != nil {
+				t.Fatalf("link cached reference %s -> %s: %v", cp, outPathOf(pi), err)
 			}
 			cached++
 			continue
@@ -291,38 +321,50 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 		mu       sync.Mutex
 		firstErr error
 		done     int
+		slowest  time.Duration
+		left     int
 		wg       sync.WaitGroup
 	)
+	deadline, hasDeadline := t.Deadline()
 	t0 := time.Now()
+	fail := func(err error) {
+		mu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		mu.Unlock()
+	}
 	for range workers {
 		wg.Go(func() {
 			for j := range jobs {
-				seedLogits, refTokens, refLogits, err := prefillReferenceCell(m, j.ids, continuationN, K)
-				if err != nil {
-					mu.Lock()
-					if firstErr == nil {
-						firstErr = fmt.Errorf("prompt %d: %w", j.pi, err)
-					}
-					mu.Unlock()
+				mu.Lock()
+				late := hasDeadline && slowest > 0 && time.Now().Add(slowest).After(deadline.Add(-time.Minute))
+				if late {
+					left++
+				}
+				mu.Unlock()
+				if late {
 					continue
 				}
-				outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, j.pi))
+				start := time.Now()
+				seedLogits, refTokens, refLogits, err := prefillReferenceCell(m, j.ids, continuationN, K)
+				if err != nil {
+					fail(fmt.Errorf("prompt %d: %w", j.pi, err))
+					continue
+				}
 				cp, err := StorePrefillRefForTest(j.parts, seedLogits, refTokens, refLogits)
 				if err == nil {
-					err = LinkPrefillRefForTest(cp, outPath, j.parts)
+					err = LinkPrefillRefForTest(cp, outPathOf(j.pi), j.parts)
 				}
 				if err != nil {
-					mu.Lock()
-					if firstErr == nil {
-						firstErr = fmt.Errorf("store %s: %w", outPath, err)
-					}
-					mu.Unlock()
+					fail(fmt.Errorf("store %s: %w", outPathOf(j.pi), err))
 					continue
 				}
 				mu.Lock()
 				done++
-				fmt.Printf("[ref] %s K=%d prompt %2d done (%d/%d computed) -> %s elapsed=%s\n",
-					modelName, K, j.pi+1, done, len(prompts)-cached, outPath, time.Since(t0).Round(time.Second))
+				slowest = max(slowest, time.Since(start))
+				fmt.Printf("[ref] %s K=%d prompt %2d done (%d/%d computed) -> %s took=%s elapsed=%s\n",
+					modelName, K, j.pi+1, done, len(prompts)-cached, outPathOf(j.pi), time.Since(start).Round(time.Second), time.Since(t0).Round(time.Second))
 				mu.Unlock()
 			}
 		})
@@ -330,6 +372,10 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 	wg.Wait()
 	if firstErr != nil {
 		t.Fatalf("%s K=%d: %v", modelName, K, firstErr)
+	}
+	if left > 0 {
+		t.Fatalf("%s K=%d: %d prompts not started: the slowest finished prompt took %s, so they would end past the test deadline (%s); "+
+			"the %d finished are stored, and a rerun resumes", modelName, K, left, slowest.Round(time.Second), deadline.Format(time.Kitchen), done)
 	}
 }
 

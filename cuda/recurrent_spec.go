@@ -209,6 +209,13 @@ func (r *cudaResident) FoldVerified(n int) error {
 	return nil
 }
 
+// DropFold (decoder.ResidentRecurrentSpec) forgets the marked rows and the last verify's rows without folding them.
+func (r *cudaResident) DropFold() {
+	if a := r.dnSpec; a != nil {
+		a.avail, a.pend = 0, 0
+	}
+}
+
 // FlushFold (decoder.ResidentRecurrentSpec) folds the marked rows now, through delta_conv_rows and the scan prefill runs: n rank-1
 // updates per value head per layer, in place. Nothing marked is a no-op.
 func (r *cudaResident) FlushFold() error {

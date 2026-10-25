@@ -104,6 +104,8 @@ type ResidentRecurrentSpec interface {
 	FoldVerified(n int) error
 	// FlushFold folds the marked rows now. Called before anything other than a verify reads or advances the state.
 	FlushFold() error
+	// DropFold forgets the marked rows without folding them: an exit that commits nothing leaves no rows for a later turn to fold.
+	DropFold()
 }
 
 // RecurrentSpecMaxRows is the widest verify a ResidentRecurrentSpec arena is sized for: a DFlash block.
@@ -299,7 +301,7 @@ func (s *BlockSpec) recurrentFold(width int) ResidentRecurrentSpec {
 }
 
 // verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, or defaultVerifyWidth, clamped to the
-// drafter's block.
+// drafter's block and, on a recurrent target, to the rows the fold path is prepared for.
 func (s *BlockSpec) verifyWidth(opt BlockSpecOptions) int {
 	width := opt.VerifyWidth
 	if width <= 0 {
@@ -307,6 +309,9 @@ func (s *BlockSpec) verifyWidth(opt BlockSpecOptions) int {
 	}
 	if bs := s.dw.BlockSize(); width > bs {
 		width = bs // never ask the target to verify positions the drafter did not draft
+	}
+	if s.m.hasRecurrentState() && width > RecurrentSpecMaxRows {
+		width = RecurrentSpecMaxRows // the fold path's arena is prepared for at most this many rows (prepareRecurrentSpec)
 	}
 	return width
 }
@@ -356,6 +361,11 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	fold := s.recurrentFold(width)
 	if m.hasRecurrentState() && fold == nil {
 		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d on a recurrent model needs the resident's fold path (ResidentRecurrentSpec)", width)
+	}
+	if fold != nil {
+		// Every exit leaves nothing marked: the committing one flushes below, and an early one (a stopped stream, a device or
+		// drafter error) drops what it marked, so the next turn cannot fold rows from a sequence that was never committed.
+		defer fold.DropFold()
 	}
 	// Claim the single shared resident KV before any device write: this path drives the same positional cache as Model.Generate and the
 	// n-gram/speculative paths. A loser returns before touching state, so the caller's fallback to plain Generate is exact. Gated on

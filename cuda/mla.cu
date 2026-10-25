@@ -11,12 +11,13 @@
 
 #include <cuda_runtime.h>
 #include "attnscore.cuh"
+#include "kvtype.cuh"
 #include "kvpage.cuh"
 
 extern "C" __global__ void mla_latent_store(const float* __restrict__ kvDown,
                                             const float* __restrict__ normW,
                                             const float* __restrict__ invFreq,
-                                            float* __restrict__ latCache,
+                                            KV_T* __restrict__ latCache,
                                             const int* __restrict__ kvt,
                                             int rank, int qkRope, int pos,
                                             float eps, int spos, float ropeScale,
@@ -40,7 +41,7 @@ extern "C" __global__ void mla_latent_store(const float* __restrict__ kvDown,
     float inv = rsqrtf(__fadd_rn(__fmul_rn(sh[0], 1.0f / (float)rank), eps));
     __syncthreads();
     for (int i = t; i < rank; i += 64) {
-        latCache[base + i] = __fmul_rn(__fmul_rn(kvDown[i], inv), normW[i]);
+        KV_ST(latCache + (base + i), __fmul_rn(__fmul_rn(kvDown[i], inv), normW[i]));
     }
     // Decoupled RoPE the qkRope key -> krj, written directly after the rank block
     int half = qkRope / 2;
@@ -56,8 +57,8 @@ extern "C" __global__ void mla_latent_store(const float* __restrict__ kvDown,
             a = kvDown[rank + i];
             b = kvDown[rank + half + i];
         }
-        latCache[base + rank + i]        = __fmaf_rn(a, c, -__fmul_rn(b, s));
-        latCache[base + rank + half + i] = __fmaf_rn(b, c, __fmul_rn(a, s));
+        KV_ST(latCache + (base + rank + i), __fmaf_rn(a, c, -__fmul_rn(b, s)));
+        KV_ST(latCache + (base + rank + half + i), __fmaf_rn(b, c, __fmul_rn(a, s)));
     }
 }
 
@@ -118,7 +119,7 @@ extern "C" __global__ void mla_q_rope(const float* __restrict__ q,
 }
 
 extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
-                                    const float* __restrict__ latCache,
+                                    const KV_T* __restrict__ latCache,
                                     const int* __restrict__ kvt,
                                     float* __restrict__ wsum,
                                     int nH, int latDim, int rank,
@@ -143,18 +144,17 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
     for (int s = winStart + t; s < nKeys; s += nt) {
         const long row = rowNext;
         if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
-        const float* ks = latCache + row * latDim;
+        const KV_T* ks = latCache + row * latDim;
         float dot = 0.0f;
-        const float4* k4 = (const float4*)ks;
         for (int i = 0; i < d4; i++) {
-            float4 qq = q4[i], kk = k4[i];
+            float4 qq = q4[i], kk = KV_LD4V(ks, i);
             dot = __fmaf_rn(qq.x, kk.x, dot);
             dot = __fmaf_rn(qq.y, kk.y, dot);
             dot = __fmaf_rn(qq.z, kk.z, dot);
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
         for (int d = d4 << 2; d < latDim; d++) {
-            dot = __fmaf_rn(qh[d], ks[d], dot);
+            dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
         }
         dot = attn_score_rn(dot, scale);
         sc[s - winStart] = dot;
@@ -186,9 +186,9 @@ extern "C" __global__ void mla_attn(const float* __restrict__ qAbs,
         float acc = 0.0f;
         for (int s = winStart; s < nKeys;) {
             const int e = KV_RUN_END(s, nKeys);
-            const float* vp = latCache + KV_ROW(kvt, s) * latDim + d;
+            const KV_T* vp = latCache + KV_ROW(kvt, s) * latDim + d;
             for (; s < e; s++, vp += latDim) {
-                acc = __fmaf_rn(sc[s - winStart], *vp, acc);
+                acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
             }
         }
         wsum[(long)m * (nH * rank) + h * rank + d] = __fmul_rn(acc, inv);

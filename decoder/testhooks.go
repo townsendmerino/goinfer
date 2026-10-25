@@ -775,3 +775,11 @@ func (s *BlockSpec) GenerateFirstTokenForTest(prompt []int, opt BlockSpecOptions
 	})
 	return out, rounds, first, err
 }
+
+// GenerateStopAfterForTest is BlockSpec.Generate whose consumer stops taking tokens after its emits-th emit, as a cancelled stream
+// does: the loop returns early, committing nothing.
+func (s *BlockSpec) GenerateStopAfterForTest(prompt []int, opt BlockSpecOptions, emits int) ([]int, error) {
+	n := 0
+	out, _, err := s.generate(prompt, opt, func([]int) bool { n++; return n < emits })
+	return out, err
+}

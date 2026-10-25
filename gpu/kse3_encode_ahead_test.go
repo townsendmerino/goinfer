@@ -321,13 +321,14 @@ func TestKSE3_pendingDroppedWhereRecorded(t *testing.T) {
 	}
 }
 
-// TestKSE3_decodeSpeed is E3-G2 (and its re-run, docs/tasks/task-kernel-survey-2026-10.md, "E3-G2 re-run"): the 1.5B's .gguf
+// TestKSE3_decodeSpeed is E3-G2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-E3 gates" and its amendments): the 1.5B's .gguf
 // at int8int8 on WebGPU, encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A
 // over 10 valid pairs after 2 warm runs each. It refuses to run outside the timing lock or under 6 GB reclaimable before the
 // load; voidWindow and otherGPUWindow bracket each arm's timed decode (not its prompt), and a pair with an arm over either line
-// (busy cores over half the cores averaged over the arm, under 2 GiB reclaimable at either end, other processes' GPU time over 2% of
-// the arm's wall time, or another process's GPU client closed inside the arm) is void and re-run, up to 15 times. The GPU term is required on macOS. It fails when the median
-// on/off is over 0.98 or fewer than 9 of 10 pairs are faster.
+// (busy cores over half the cores averaged over the arm, under 2 GiB reclaimable at either end, other processes' GPU time over 2%
+// of the arm's wall time, or another process's GPU client closed inside the arm) is void and re-run, up to 15 times. The GPU
+// term is required on macOS. It fails when fewer than 9 of 10 pairs are faster, the owner's rule for a bit-identical change; the
+// median on/off is printed on every run as information, so a shrinking gain stays visible.
 func TestKSE3_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE3_TIMING") == "" {
 		t.Skip("set GOINFER_KSE3_TIMING=1 (a timed run under the timing lock)")
@@ -429,8 +430,8 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 	}
 	slices.Sort(ratios)
 	med := (ratios[4] + ratios[5]) / 2
-	fmt.Fprintf(os.Stderr, "[E3-G2] median on/off %.4f, %d of 10 pairs below 1, %d void pairs\n", med, below, voids)
-	if med > 0.98 || below < 9 {
-		t.Errorf("E3-G2 below its bar: median %.4f, %d of 10 faster", med, below)
+	fmt.Fprintf(os.Stderr, "[E3-G2] median on/off %.4f (information: the size of the gain), %d of 10 pairs below 1, %d void pairs\n", med, below, voids)
+	if below < 9 {
+		t.Errorf("E3-G2 below its bar: %d of 10 pairs faster, want at least 9 (median %.4f)", below, med)
 	}
 }
