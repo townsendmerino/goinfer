@@ -30,8 +30,16 @@ for m in ${MODELS:-qmoe gemma3-4b cr7b qvl3 E2B}; do
   idle || { echo "VOID: $m not started (box busy)"; rc=1; continue; }
   BENCH_SERVE_LOG_DIR="$OUT/serve-logs/$m" BENCH_MODELS=$m BENCH_DEPTHS=128,2048 python3 scripts/bench_peer.py "$OUT/decode-$m.json" 2>&1 | tee "$OUT/decode-$m.log"
   hrc=${PIPESTATUS[0]}
-  if [ "$BENCH_REQUIRE_BACKEND" = 0 ] && ! grep -rqs "decode path: cuda-resident" "$OUT/serve-logs/$m"; then
-    echo "VOID: $m (BENCH_REQUIRE_BACKEND=0 and no serve log says decode ran on the CUDA resident)"; rc=1
+  if [ "$BENCH_REQUIRE_BACKEND" = 0 ]; then
+    # Both servers (-kv f16 and -kv f32) must have decoded on the CUDA resident: every log, not any one.
+    nlog=0 ncuda=0
+    while IFS= read -r f; do
+      nlog=$((nlog + 1))
+      grep -qs "decode path: cuda-resident" "$f" && ncuda=$((ncuda + 1))
+    done < <(find "$OUT/serve-logs/$m" -type f 2>/dev/null)
+    if [ "$nlog" -lt 2 ] || [ "$ncuda" != "$nlog" ]; then
+      echo "VOID: $m (BENCH_REQUIRE_BACKEND=0 and $ncuda of $nlog serve logs say decode ran on the CUDA resident; both servers must)"; rc=1
+    fi
   fi
   # bench_peer writes its results file before the cells run, so a crash leaves one behind: its exit code and log decide, not the file.
   if [ "$hrc" != 0 ] || [ ! -s "$OUT/decode-$m.json" ] || grep -qE "^Traceback|REFUSED" "$OUT/decode-$m.log"; then

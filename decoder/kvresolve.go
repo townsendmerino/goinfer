@@ -204,7 +204,7 @@ func cudaKVF16Delivered(f KVFacts) bool {
 // cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (the
 // owner's D7: f16 becomes the default for each family group as it clears its G4, docs/measurements/kv4-cuda-2026-10-21.md §2, G5). A
 // model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
-func cudaKVF16AutoCleared(f KVFacts, o Options) bool {
+func cudaKVF16AutoCleared(f KVFacts) bool {
 	if f.SlidingWindow || f.PairwiseRoPE || f.Hybrid || f.MLA {
 		return false
 	}
@@ -232,7 +232,7 @@ func CUDAKVF16Decline(f KVFacts, _ Options) string {
 // A group whose G4 read DOES NOT PASS says so, with the reading (docs/measurements/kv4-cuda-2026-10-21.md §3, "KV4b (G5), G4").
 func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 	switch {
-	case cudaKVF16AutoCleared(f, o):
+	case cudaKVF16AutoCleared(f):
 		return ""
 	case f.Hybrid:
 		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)"

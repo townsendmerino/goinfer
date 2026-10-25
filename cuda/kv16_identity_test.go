@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -155,13 +156,17 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 				name     string
 				p32, p16 Pipeline
 				fused    bool
-				bm, bn   int  // query-tile rows and key-tile rows; 0 for the 64x64 kernel
-				img      bool // attn_img_batched and attn_span_batched: take the image-block table after the sinks
+				bm, bn   int   // query-tile rows and key-tile rows; 0 for the 64x64 kernel
+				img      bool  // attn_img_batched and attn_span_batched: take the image-block table after the sinks
+				window   int32 // a sliding window to pass instead of the layer's, so a span reaches back past it; 0 keeps the layer's
 			}
 			var ks []kernel
 			ks = append(ks, kernel{name: "attn_batched", p32: r32.bAttn, p16: r16.bAttn},
 				kernel{name: "attn_img_batched", p32: r32.bAttnImg, p16: r16.bAttnImg, img: true},
-				kernel{name: "attn_span_batched", p32: r32.bAttnSpan, p16: r16.bAttnSpan, img: true})
+				kernel{name: "attn_span_batched", p32: r32.bAttnSpan, p16: r16.bAttnSpan, img: true},
+				// A 32-key window, shorter than every span below, so a span row's window reaches back to its span start: the branch
+				// attn_span_batched has and attn_img_batched does not.
+				kernel{name: "attn_span_batched window 32", p32: r32.bAttnSpan, p16: r16.bAttnSpan, img: true, window: 32})
 			if hd == 64 {
 				ks = append(ks, kernel{name: "attn_fused hd64", p32: r32.bAttnFused64, p16: r16.bAttnFused64, fused: true},
 					kernel{name: "attn_fused_bm32x64 hd64", p32: r32.bAttnBM32x64hd64, p16: r16.bAttnBM32x64hd64, fused: true, bm: 32, bn: 64},
@@ -190,6 +195,7 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+				f32Out := map[string][]float32{} // each kernel's f32 output, so the windowed span case can be shown to differ from the plain one
 				for _, k := range ks {
 					var out [2][]float32
 					for i, r := range []*cudaResident{r32, r16} {
@@ -204,8 +210,12 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 							if e := gpu.Upload(qB, q); e != nil {
 								return e
 							}
+							win := Ly.window
+							if k.window != 0 {
+								win = k.window
+							}
 							args := []gpu.KernelArg{Arg(qB), Arg(r.kvK(0)), Arg(r.kvV(0)), Arg(r.kvT(0)), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)),
-								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(tc.startPos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window),
+								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(tc.startPos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(win),
 								gpu.ArgValue(int32(tc.M)), Arg(cB), r.sinkArg(0)}
 							if k.img { // one image block over rows [startPos+10, startPos+M-20) of the M
 								bB := gpu.NewBufferLenOf[int32](r.dev, 2)
@@ -250,6 +260,11 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 					if diff != 0 {
 						t.Errorf("%s startPos=%d M=%d hd=%d: %d/%d elements differ between the f16 reader and the f32 original", k.name, tc.startPos, tc.M, hd, diff, len(out[0]))
 					}
+					f32Out[k.name] = out[0]
+				}
+				// The window must change what the span kernel computes, or its case repeats the plain one.
+				if a, b := f32Out["attn_span_batched"], f32Out["attn_span_batched window 32"]; len(a) > 0 && slices.Equal(a, b) {
+					t.Errorf("startPos=%d M=%d: attn_span_batched gives the same output with a 32-key window as with none: the window case is vacuous", tc.startPos, tc.M)
 				}
 			}
 		})
