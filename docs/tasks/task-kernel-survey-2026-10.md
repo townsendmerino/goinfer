@@ -33,14 +33,14 @@
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |
 | KS-B6 | open | nobara: served TTFT for phi3-mini at q4k against Ollama | — |
 | KS-B7 | open | nobara: a prototype against `gemv_w4a8_rn` at the 1.5B gate shape | — |
-| KS-B8 | decision | owner: a 2,048-row default pass where scratch allows (admission prices it)? Measured 2026-10-23 on the 1.5B at K=3,900: attention **1.556×** at 2,048 rows (1.231× at 1,024), whole prefill **1.247×** (933 → 748 ms) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-B8 | open | nobara-ks-cuda, after #230 merges: 2,048-row CUDA prefill passes by default where scratch allows, priced by admission (decided A, Francis, 2026-10-25). Measured 2026-10-23 on the 1.5B at K=3,900: attention **1.556×** at 2,048 rows (1.231× at 1,024), whole prefill **1.247×** (933 → 748 ms) | `docs/measurements/kernel-survey-2026-10/README.md` |
 | KS-B9 | open | nobara: launch and grid counters, then the GEMV-category A/B | — |
 | KS-B10 | open | nobara: sync and launch counters in the generic expert-major Phase 1 | — |
 | KS-B11 | open | nobara: `PrefillScratchBytes` delta, then a glue+GEMM A/B | — |
 | KS-B12 | open | nobara: per-token TTFT on Nemotron-H as the baseline | — |
 | KS-B13 | open | aikit: a microbenchmark at SigLIP shapes, bit-gated | — |
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
-| KS-B15 | decision | KS-O2 | — |
+| KS-B15 | open | nobara-ks-cuda, after #230 merges: pass the 64 KB shared-memory opt-in through aikit and set it on the exact attention kernels (bound 12,160 → 16,256 keys); prompts in that band stay on the exact GEMM (bit-identical); measure the gain (KS-O2 decided A, Francis, 2026-10-25; the fast GEMM is not approved) | — |
 | KS-C1 | done (a)+(b) | done 2026-10-24: the q4k lane's GEMVs on `gemv_q4k_f32_rows<8>` and `gemv_w8_f32_rows<2>`; the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0); G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 98.66% against the reference's 93.99% (C1-G3 PASS); Phi-3 mini q4k decode 22.3 → 33.0 tok/s, median 0.6741, 10 of 10 pairs (C1-G4 SHIP). (c) done on Metal as KS-O1 (#215; the head stays int8); its CUDA half is KS-A1 | survey, "KS-C1 read" |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
@@ -70,7 +70,7 @@
 | KS-E10 | open | either box: dispatch count, then an A/B | — |
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
 | KS-F1 | open | either box: a fork/join counter and bit-identity on the tiny MoE fixtures | — |
-| KS-F2 | open | either box: bit-identity on the tiny gpt-oss/qwen35/granite/lfm2 fixtures and KV rows held | — |
+| KS-F2 | active | mac-kapitsa: the bit-identical step first, gates registered before the code (bit-identity on the tiny gpt-oss/qwen35/granite/lfm2 fixtures with KV rows held; speed by the small-gains rule); then KS-O4 | — |
 | KS-F3 | open | either box: `GOINFER_DELTANET_TIMING=1` with M35 (tier 1, minutes) | — |
 | KS-F4 | open | nobara: per-fan-out timestamps inside a real 0.5B token | — |
 | KS-F5 | open | either box: `AllocsPerRun` and trig calls per token on `deepseek-tiny` | — |
@@ -91,12 +91,12 @@
 | KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
-| KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
+| KS-H6 | blocked | nobara-ks-cuda, after KS-H2 and KS-H3 read: re-derive both margins from measured parts, the 2,048-row pass's scratch included, and bring the numbers to Francis before changing either guard (KS-O3 decided A, Francis, 2026-10-25) | — |
 | KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
-| KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
-| KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
-| KS-O4 | decision | owner: gpt-oss onto the batched attention kernel with a sink term (§2) | — |
+| KS-O2 | moved | KS-B15: decided A (Francis, 2026-10-25): the opt-in on the exact attention kernels, band prompts on the exact GEMM; the fast-GEMM option is not approved (it would need its own fidelity gate and a new decision) | §2 |
+| KS-O3 | moved | KS-H6: decided A (Francis, 2026-10-25): re-derive the margins after KS-H2 and KS-H3, numbers to Francis before either guard changes | §2 |
+| KS-O4 | moved | KS-F2 (mac-kapitsa): decided B, approved gated (Francis, 2026-10-25): a fidelity gate (KL and agreement against today's gpt-oss path, what each outcome means) registered before any code | §2 |
 | KS-DOC | done | — | notes 1–3, 5 and 7–10 corrected in their docs, 2026-10-22, in the commit that closed this row |
 | KS-DOC-code | open | the next change to `cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 done 2026-10-22 with KS-H1 (`PrefillBlockRows`' comment) | — |
 
@@ -172,6 +172,20 @@ By expected value for the effort, per box. Sizes: S up to a day, M a few days, L
   - MLA.
 
 ## 2. Decisions for the owner
+
+**Decided 2026-10-25 (Francis, 6:33–6:38 am, relayed by the coordinator).**
+- **KS-B8: A.** 2,048-row CUDA prefill passes by default where scratch allows, priced by admission.
+- **KS-O2 / KS-B15: A.** The 64 KB opt-in goes through aikit onto the exact attention kernels (bound 12,160 → 16,256 keys).
+  - Prompts in that band stay on the exact GEMM, which is bit-identical. The gain is measured.
+  - The fast-GEMM option is not approved; it would need its own fidelity gate and a new decision.
+- **KS-O3 / KS-H6: A.** After KS-H2 and KS-H3 read, the two 384 MiB margins (`cuda/resident.go:ctxCapMarginBytes`,
+  `cuda/resident.go:slotMarginBytes`) are re-derived from measured parts, the wider (2,048-row) pass's scratch included.
+  - The numbers come to Francis before either guard changes.
+- **KS-O4: B, approved gated.** gpt-oss moves onto the batched acc64 attention with a sink term.
+  - A fidelity gate (KL and agreement against today's gpt-oss path, and what each outcome means) is registered before any code.
+- **Who:** the three CUDA items (KS-B8, KS-B15, KS-H6) go to nobara-ks-cuda after #230 merges; KS-F2 and KS-O4 go to mac-kapitsa.
+
+The options as they were put to the owner:
 
 - **KS-O1, native Q5_K/Q6_K on the GPU q4k lanes (KS-A1, KS-C1 option c).**
   - Lever 2 (native Q6_K) was parked on 2026-09-27, on qwen 1.5B/7B at depth, where attention binds
@@ -404,6 +418,8 @@ matches llama.cpp's (1.46 against 1.50 ms), so its gap is bytes.
 - **Prior art:** extends P24 and R5.
 
 **KS-B8 · Wider prefill passes on few-head models (bit-identical, no code to measure).**
+- **Decided (Francis, 2026-10-25): A.** 2,048-row passes by default where scratch allows, priced by admission. nobara-ks-cuda,
+  after #230.
 - **Waste:** a 512-row pass gives the 1.5B 48 blocks of fused attention on 40 SMs at one block per SM. That is 60–64%
   efficiency by simulation at K=2048–8000.
 - **Change:** 1024- or 2048-row passes where scratch allows (138 / 276 MiB on the 1.5B; admission prices them).
@@ -509,6 +525,8 @@ tiling reproduces").**
 - **Class:** bit-identical. **Size:** S + M.
 
 **KS-B15 · The 64 KB shared-memory opt-in (needs KS-O2).**
+- **Decided (Francis, 2026-10-25, KS-O2): A.** The band prompts stay on the exact GEMM, and the fast GEMM is not approved.
+  nobara-ks-cuda, after #230.
 - **Waste:** the needed call exists in the pinned gocudrv, but aikit does not pass it through.
 - **Change:** pass the attribute through aikit and set it on the exact attention kernels: bound 12,160 → 16,256 keys.
 - **Class:** bit-identical attention; the decision is about the GEMM that comes with it. **Size:** S.
@@ -2130,6 +2148,9 @@ Log: `~/goinfer-logs/night/runs/2026-10-25/kse3-g2-gpuguard-3.log`.
 - **Size:** M.
 
 **KS-F2 · gpt-oss and `attendQueryP` attention: one thread, one scalar chain per key.**
+- **Decided (Francis, 2026-10-25):** the bit-identical step goes ahead, its gates registered first.
+  - KS-O4 is approved gated: its fidelity gate is registered before any code, and Step 2 (memory) follows it.
+  - mac-kapitsa; one PR for the bit-identical step, another for KS-O4.
 - **Where:** `decoder/forward_gptoss.go:attendSinksToken` (`scores := make(...)` per call, `for qh := range nH`, one f64 dot
   chain per key) and `decoder/attention.go:attendQueryP` (Qwen3.5/3.6 attention layers, Granite-4.0-H, Nemotron-H, LFM2,
   Llama 4).
@@ -2419,6 +2440,10 @@ red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 a
 - **Size:** S.
 
 **KS-H6 · Re-derive the two CUDA 384 MiB margins (needs KS-O3).**
+- **Decided (Francis, 2026-10-25, KS-O3): A.** After KS-H2 and KS-H3 read, the two margins are re-derived from measured parts,
+  the 2,048-row pass's scratch included.
+  - The numbers come to Francis before either guard changes.
+  - nobara-ks-cuda.
 - The margins can be rebuilt from measured parts after KS-H2 and KS-H3.
 - **First measurement:** minimum free VRAM over a 20k prompt on Qwen3-8B at 16k and on the 26B.
 
