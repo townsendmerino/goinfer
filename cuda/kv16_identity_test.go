@@ -141,7 +141,7 @@ func TestKV16_exactInputIdentity_decodeReaders(t *testing.T) {
 	}
 }
 
-// TestKV16_exactInputIdentity_prefillReaders is the same bar for the batched-prefill attention kernels: attn_batched, attn_img_batched (with an image
+// TestKV16_exactInputIdentity_prefillReaders is the same bar for the batched-prefill attention kernels: attn_batched, attn_img_batched and attn_span_batched (with an image
 // block inside the rows) and every fused tile that serves the head dimension, over a fresh prompt and a warm cache. The fused kernels already round K/V to f16 in the f32 build, so on representable inputs
 // the two builds' fused kernels must also agree to the bit.
 func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
@@ -156,11 +156,12 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 				p32, p16 Pipeline
 				fused    bool
 				bm, bn   int  // query-tile rows and key-tile rows; 0 for the 64x64 kernel
-				img      bool // attn_img_batched: takes the image-block table after the sinks
+				img      bool // attn_img_batched and attn_span_batched: take the image-block table after the sinks
 			}
 			var ks []kernel
 			ks = append(ks, kernel{name: "attn_batched", p32: r32.bAttn, p16: r16.bAttn},
-				kernel{name: "attn_img_batched", p32: r32.bAttnImg, p16: r16.bAttnImg, img: true})
+				kernel{name: "attn_img_batched", p32: r32.bAttnImg, p16: r16.bAttnImg, img: true},
+				kernel{name: "attn_span_batched", p32: r32.bAttnSpan, p16: r16.bAttnSpan, img: true})
 			if hd == 64 {
 				ks = append(ks, kernel{name: "attn_fused hd64", p32: r32.bAttnFused64, p16: r16.bAttnFused64, fused: true},
 					kernel{name: "attn_fused_bm32x64 hd64", p32: r32.bAttnBM32x64hd64, p16: r16.bAttnBM32x64hd64, fused: true, bm: 32, bn: 64},
