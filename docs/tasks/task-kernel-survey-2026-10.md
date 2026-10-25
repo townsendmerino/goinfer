@@ -59,7 +59,7 @@
 | KS-D9 | open | Mac: `TestG4LayerMajor_M26AB` driving the generic pager | — |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
-| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1); the 1.5B's WebGPU decode 24.6 → 21.7 ms a token, median 0.8824, 10 of 10 pairs, with busy cores read over each timed arm and an A/A control (1.0002) in the same run (E2-G2 SHIP) | survey, "KS-E2 read" |
+| KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1, and every Context builder wired through quantSrc); the 1.5B's WebGPU decode 24.7 → 21.8 ms a token, median 0.8810, 10 of 10 pairs, with an A/A control (1.0041) in the same run and busy cores read per arm (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | done | done 2026-10-24: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); the 1.5B's WebGPU decode about 0.5 ms a token faster, median 0.9788, 10 of 10 pairs on the per-arm-guarded re-run (E3-G2 SHIP) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
@@ -1736,6 +1736,11 @@ per core, which is not rate-limited. Each state's count is differenced on its ow
 failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
 stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
 the gate is re-run on the new one; that run decides, and the bar and the cap are unchanged.
+
+**E2-G2 read on the fixed guard, 2026-10-24 (17:28–17:36, the lock held exclusively; 10.3 GB reclaimable at the start): A/A PASS,
+A/B SHIP.** Every arm valid (0.15–2.41 busy cores, 2.75–4.77 GiB reclaimable); no void pairs. A/A median 1.0041; A/B **median
+wide/narrow 0.8810, 10 of 10 pairs faster**. The four guarded A/B readings: 0.8811, 0.8846, 0.8824, 0.8810. Log:
+`~/goinfer-logs/kse2-g2-fixedguard-2026-10-24.log`.
 
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
