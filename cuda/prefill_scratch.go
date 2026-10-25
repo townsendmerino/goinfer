@@ -2,14 +2,70 @@
 
 package cuda
 
-// prefillPassRows is the most rows one batched pass takes now: GOINFER_PREFILL_CHUNK or the default (512, a multiple of the block
-// size 64), lowered to the width a previous prompt learned the card can hold, and to a windowed model's slack. prefillChunked cuts
-// by it; PrefillChunkRows reports it to admission.
-func (r *cudaResident) prefillPassRows() int {
-	chunk := prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK"))
+import (
+	"fmt"
+	"os"
+	"strconv"
+)
+
+// prefillWidths are the default pass widths the build chooses among (prefillWidthFor), widest first; each a multiple of the block
+// size 64. The last is prefillDefaultChunk.
+var prefillWidths = []int{2048, 1024, prefillDefaultChunk}
+
+// prefillWidthFor is the build's default pass width: the widest of prefillWidths whose pass (pass(rows), its device scratch) fits in
+// free less margin less attach, the VRAM left after the build beyond ctxCapMarginBytes and what is still to attach. When none of
+// the wider ones fits it is prefillDefaultChunk, whose pass has always lived inside the margin. Measurement and gates:
+// docs/tasks/task-kernel-survey-2026-10.md, "KS-B8 build".
+func prefillWidthFor(free, margin, attach int64, pass func(rows int) int64) int {
+	room := free - margin - attach
+	for _, w := range prefillWidths[:len(prefillWidths)-1] {
+		if pass(w) <= room {
+			return w
+		}
+	}
+	return prefillDefaultChunk
+}
+
+// choosePrefillWidth sets prefillWidth from the free VRAM after the build (the executor thread, the build's last step): the pass is
+// priced as admission prices it, its scratch plus the attention span scratch at the full context. An unreadable figure keeps
+// prefillDefaultChunk, and so does a windowed model: its slack bounds a pass (prefillPassRows), and a wider default would move its
+// passes off the 512-row width that slack was sized for.
+func (r *cudaResident) choosePrefillWidth() {
+	r.prefillWidth = prefillDefaultChunk
+	if r.kvWin {
+		return
+	}
+	free, err := cudaFreeVRAM(r)
+	if err != nil {
+		return
+	}
+	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
+	r.prefillWidth = prefillWidthFor(int64(free), ctxCapMarginBytes, r.extraBytes, pass)
+	fmt.Fprintf(os.Stderr, "cuda: prefill passes of up to %d rows (%.0f MiB of scratch; %.0f MiB free beside the %d MiB margin)\n",
+		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-r.extraBytes)/(1<<20), ctxCapMarginBytes>>20)
+}
+
+// prefillBaseRows is a pass's width before the per-prompt bounds: GOINFER_PREFILL_CHUNK when it parses to a positive integer, else
+// the build's choice, lowered to the width a previous prompt learned the card can hold. An unusable knob value is ignored, not an
+// error: a typo must not take a model off the fast path.
+func (r *cudaResident) prefillBaseRows() int {
+	chunk := prefillDefaultChunk
+	if r.prefillWidth > 0 {
+		chunk = r.prefillWidth
+	}
+	if n, err := strconv.Atoi(r.knobValue("GOINFER_PREFILL_CHUNK")); err == nil && n > 0 {
+		chunk = n
+	}
 	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
 		chunk = learned // a previous prompt already found the default too wide for this card
 	}
+	return chunk
+}
+
+// prefillPassRows is the most rows one batched pass takes now: prefillBaseRows, lowered to a windowed model's slack.
+// prefillChunked cuts by it; PrefillChunkRows reports it to admission.
+func (r *cudaResident) prefillPassRows() int {
+	chunk := r.prefillBaseRows()
 	if r.kvWin {
 		chunk = min(chunk, kvWindowSlack+1) // a windowed layer's slack bounds the rows one pass can add (kvRoomFor)
 	}

@@ -408,16 +408,6 @@ func (r *cudaResident) HybridMRoPEPrefill() bool {
 	return delta
 }
 
-// prefillChunkRows is prefillDefaultChunk unless GOINFER_PREFILL_CHUNK parses to a positive integer. An unusable value
-// is ignored, not an error: this is a tuning knob on a path with a correct fallback, and a typo must not take a model
-// off the fast path.
-func prefillChunkRows(v string) int {
-	if n, err := strconv.Atoi(v); err == nil && n > 0 {
-		return n
-	}
-	return prefillDefaultChunk
-}
-
 // HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for embedding requests: same chunking, same K/V,
 // bit-identical per-row math, but the final tail returns the last row's post-final-norm hidden state and never
 // dispatches the LM head, which an embedder does not need (decoder/embed.go's HiddenLast). startPos is taken so it
@@ -439,10 +429,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	chunk := prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK"))
-	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
-		chunk = learned
-	}
+	chunk := r.prefillBaseRows()
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, e
 	}
@@ -473,7 +460,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 	return all, nil
 }
 
-// prefillChunked runs the prompt through the batched path in passes of at most prefillChunkRows() rows and returns the
+// prefillChunked runs the prompt through the batched path in passes of at most prefillPassRows() rows and returns the
 // last row's tail output: logits for tailLastLogits, the post-final-norm hidden state for tailHiddenLast. mropePos is
 // nil except for PrefillMRoPELast; otherwise a row's rotation position equals its KV position. Each pass writes K/V at
 // absolute positions startPos+i and attention reads the cache, so the result is bit-identical to one unchunked pass
@@ -848,7 +835,7 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 		// Say rows per pass, not "one pass": the report is read as a promise about how a long prompt is ingested, and a prompt
 		// past the chunk width is several weight-stationary passes (TestPrefillChunked_bitIdentical).
 		return true, fmt.Sprintf("batched (weight-stationary CUDA passes of up to %d rows)%s",
-			prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK")), r.fusedAttnNote())
+			r.prefillPassRows(), r.fusedAttnNote())
 	}
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")

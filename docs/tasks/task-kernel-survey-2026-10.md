@@ -506,6 +506,8 @@ prefill passes by default where the scratch allows, admission pricing the scratc
   pass fits: `PrefillScratchBytes(w)` plus `PrefillSpanScratchBytes(w, context)` must be at most the free VRAM less
   `ctxCapMarginBytes` and the bytes still to attach (`extraBytes`).
   - When none fits, the width stays 512, today's default, which already lives inside that margin.
+  - A windowed model keeps 512. Its slack (512) bounds a pass at 513 rows, and a wider default would move its passes off the
+    512-row width the slack was sized for. (Added before any gate ran, on reading `prefillPassRows`.)
   - `GOINFER_PREFILL_CHUNK`, the learned out-of-memory cap (`prefillChunkCap`) and a windowed model's slack bound all lower or
     override it as they do today.
   - `PrefillChunkRows` reports the chosen width, so the decoder's per-request admission (`residentChunkedScratch`) prices that pass.
