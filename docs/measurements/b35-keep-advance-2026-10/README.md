@@ -123,3 +123,13 @@ Cold output is unchanged against `main` (I2, every turn, both sizes).
 - **Plants:** the three new tests fail with `kvsnap.go` at `main` (`4814c869`), all three. With `kvsnap.go` at `e6673f9d`, only
   the longer-snapshot test fails.
 - **The gates re-run on the fixed commit:** G0b and G1–G3, below.
+
+**The re-run at `945c674e`: every gate PASS** (nobara, 23:20:29–23:37:26 PDT, against `main` `d9a1cb4d`, load 1.46 at the start, 59,481
+MiB available; the job waited from 22:45 under the heavy-load gate while another session's work held the load above 8.0). Record:
+`~/goinfer-logs/b35-keep-advance-2026-10/gates-2026-10-24-2320/`.
+
+| gate | result |
+|---|---|
+| G1 | `cuda/b35_snapshot_test.go` passes |
+| G2, B35-TL | PASS: Q3 reuses 7,168 of 8,870 tokens at 0.260 of cold, Q2 4,096 at 0.513; restored replies equal cold |
+| G3, B35's own gate | PASS, every row at 4k and 8k; turn 3 at 4k 0.018 of cold, as at `e6673f9d` |
