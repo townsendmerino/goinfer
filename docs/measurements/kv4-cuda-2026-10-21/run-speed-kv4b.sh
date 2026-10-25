@@ -35,7 +35,7 @@ for m in ${MODELS:-qmoe gemma3-4b cr7b qvl3 E2B}; do
     nlog=0 ncuda=0
     while IFS= read -r f; do
       nlog=$((nlog + 1))
-      grep -qs "decode path: cuda-resident" "$f" && ncuda=$((ncuda + 1))
+      if grep -qs "decode path: cuda-resident" "$f"; then ncuda=$((ncuda + 1)); fi
     done < <(find "$OUT/serve-logs/$m" -type f 2>/dev/null)
     if [ "$nlog" -lt 2 ] || [ "$ncuda" != "$nlog" ]; then
       echo "VOID: $m (BENCH_REQUIRE_BACKEND=0 and $ncuda of $nlog serve logs say decode ran on the CUDA resident; both servers must)"; rc=1
