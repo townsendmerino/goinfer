@@ -19,6 +19,10 @@ import (
 // resident test's 141-token filler prompt. The registered bars are relative:
 //   - agreement: per-position logit cosine against CPU q4k, median ≥ 0.999;
 //   - quality: p10 against f32 no more than 0.01 below CPU q4k's own on the same prompt.
+//
+// It runs the int8 lane (decoder.SetKQuantNativeOffForTest): the CPU q4k reference keeps the int8 copies of the Q5_K and Q6_K
+// tensors, so only that lane can meet the agreement bar. The native lane's fidelity gates are KS-O1's G-Q2 and KL-to-the-file
+// gates (TestKSO1C_realPhi3NonInferiority, TestKSO1C_towardTheFile; docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA read").
 func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 	path := os.Getenv("GOINFER_PHI3_MINI_GGUF")
 	if path == "" {
@@ -38,7 +42,9 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	decoder.SetKQuantNativeOffForTest(true)
 	gm, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k"})
+	decoder.SetKQuantNativeOffForTest(false)
 	if err != nil {
 		t.Fatalf("cuda load: %v", err)
 	}
@@ -57,7 +63,13 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 			if w.kind == "q4k" {
 				nQ4K++
 			}
+			if w.kind == "q5k" || w.kind == "q6k" {
+				t.Fatalf("a %s weight is bound: the test must run the int8 lane", w.kind)
+			}
 		}
+	}
+	if r.lmW.kind == "q5k" || r.lmW.kind == "q6k" {
+		t.Fatalf("the head is %s: the test must run the int8 lane", r.lmW.kind)
 	}
 	if nQ4K == 0 {
 		t.Fatal("no projection is on the q4k kernel: the test would measure int8 only")

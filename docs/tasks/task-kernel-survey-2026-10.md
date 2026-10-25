@@ -92,7 +92,7 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
-| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA: in progress (O1C registered; A1-G0 GO for both kinds) | survey, "Owner override of O1-G7" |
+| KS-O1 | done (Metal and CUDA, owner overrides) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. **CUDA: done 2026-10-24** (owner's option A on O1C-G5): Phi-3 mini q4k 114.9 → 127.3 tok/s (0.9025, 10 of 10), the 1.5B 0.9786 (10 of 10); −374.7 MB on the device, head included; KL to the file 0.39× (Phi-3), 0.91× (0.5B); G-Q2 +0.13 points. Also fixes main's concurrent `noteKQuant` map write | survey, "Owner override of O1-G7" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
@@ -1098,6 +1098,14 @@ the native kernels need for their group sums. The gates are unchanged.
   - **The CPU-agreement bar** cannot hold for a lane nearer the file: the CPU q4k reference keeps the int8 copies, which is the case
     this registration named as the owner's call.
   - Logs: `docs/measurements/ks-a1-2026-10/o1c-filler-diag-*.log`.
+
+**Owner decision on O1C-G5, Francis 2026-10-24 (option A): accept, and ship KS-O1 on CUDA.**
+- **The decision:** native Q5_K/Q6_K ships on the CUDA q4k lane on G7's SHIP, G6's KL and G-Q2's +0.13 points. This is his decision,
+  not a re-grading: O1C-G5 stays FAIL as registered.
+- **`TestQ4K_phi3ResidentMatchesCPU` now runs the int8 lane** (`decoder.SetKQuantNativeOffForTest` around its load, and an assertion
+  that no weight is native), so its two bars keep guarding that lane. On this branch it reads main's numbers exactly: median 0.999804,
+  p10 0.940085, **PASS**. Log: `docs/measurements/ks-a1-2026-10/o1c-phi3-int8lane-branch.log`. The native lane's fidelity gates are
+  `TestKSO1C_realPhi3NonInferiority` and `TestKSO1C_towardTheFile`.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
