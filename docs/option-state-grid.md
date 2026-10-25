@@ -145,7 +145,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - DeltaNet state × full reset: resetRecurrent (audit C-01, C-03)
 - DeltaNet state × snapshot: the snapshot format does not carry recurrent state
 - DeltaNet state × session prefix reuse: follows the rewind; rewindForReuse goes cold
-- DeltaNet state × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- DeltaNet state × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - DeltaNet state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
 - DeltaNet state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - DeltaNet state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
@@ -155,7 +155,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - short-conv window × full reset: resetRecurrent (audit C-01, C-03)
 - short-conv window × snapshot: the snapshot format does not carry recurrent state
 - short-conv window × session prefix reuse: follows the rewind; rewindForReuse goes cold
-- short-conv window × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- short-conv window × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - short-conv window × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
 - short-conv window × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - short-conv window × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
@@ -165,7 +165,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - Mamba-2 state × full reset: resetRecurrent (audit C-01, C-03)
 - Mamba-2 state × snapshot: the snapshot format does not carry recurrent state
 - Mamba-2 state × session prefix reuse: follows the rewind; rewindForReuse goes cold
-- Mamba-2 state × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- Mamba-2 state × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - Mamba-2 state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
 - Mamba-2 state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - Mamba-2 state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
@@ -175,7 +175,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - KDA state × full reset: resetRecurrent (audit C-01, C-03)
 - KDA state × snapshot: the snapshot format does not carry recurrent state
 - KDA state × session prefix reuse: follows the rewind; rewindForReuse goes cold
-- KDA state × speculative rollback: specRollbackSafe refuses every model with recurrent state
+- KDA state × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - KDA state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
 - KDA state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - KDA state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
