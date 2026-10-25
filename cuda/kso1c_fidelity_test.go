@@ -206,6 +206,104 @@ func TestKSO1C_realPhi3NonInferiority(t *testing.T) {
 	}
 }
 
+// kso1cDocPrompt is the user turn of a long-context reading: doc's first n tokens inside "Summarize this document:", and a label.
+func kso1cDocPrompt(t *testing.T, tk *tokenizer.Tokenizer, doc string, n int) (text, label string) {
+	t.Helper()
+	b, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := tk.Encode(string(b), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n = min(len(ids), n)
+	body, err := tk.Decode(ids[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "Summarize this document:\n\n" + body, fmt.Sprintf("%s, first %d tokens", doc, n)
+}
+
+// TestKSO1C_longContextQuality is the native lane's long-context quality gate (docs/tasks/task-kernel-survey-2026-10.md, "Owner
+// decision on #230's long-context bar"): on Phi-3 mini q4, README.md and docs/benchmarks.md each cut to their first 900 tokens
+// inside "Summarize this document:", teacher-forced through both arms of one CUDA q4k resident and through the CPU at f32 on the
+// file. PASS iff on each document the native arm's mean KL to f32 over positions 256 and later is at most 1.05× the int8 arm's.
+// The bar is relative (both arms see the same text), so it holds as the documents change; a document under 256 tokens fails.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 60m -tags 'cuda goinfer_testhooks' -run '^TestKSO1C_longContextQuality$' -v ./cuda/
+func TestKSO1C_longContextQuality(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	const from, tokens, bar = 256, 900, 1.05
+	path := modelPath("phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mg, err := kso1cLoadBothArms(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, ok := mg.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
+	}
+	use, nNative := kso1cArms(t, r, "Phi-3")
+	defer use(true)
+	mf, err := decoder.Load(path, decoder.Options{Backend: "cpu", Quant: "f32"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mf.Close()
+	for _, doc := range []string{"../README.md", "../docs/benchmarks.md"} {
+		text, label := kso1cDocPrompt(t, tk, doc, tokens)
+		ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ids) <= from || len(ids)+1 > r.ctxCap {
+			t.Fatalf("%s: %d positions, want more than %d and at most the context %d", label, len(ids), from, r.ctxCap-1)
+		}
+		c := mf.NewCache(len(ids) + 1)
+		ref := make([][]float32, len(ids))
+		for p, id := range ids {
+			l, err := mf.ForwardForTest(id, c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref[p] = append([]float32(nil), l...)
+		}
+		var kl [2]float64 // int8, native
+		for a, native := range []bool{false, true} {
+			use(native)
+			r.Reset()
+			for p, id := range ids {
+				l, err := r.Forward(mg.EmbedResidentForTest(id), p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if p >= from {
+					kl[a] += kso1cKL(ref[p], l)
+				}
+			}
+			kl[a] /= float64(len(ids) - from)
+		}
+		ratio := kl[1] / kl[0]
+		fmt.Fprintf(os.Stderr, "[long-context] %s: %d positions, %d weights native; mean KL to f32 past position %d int8 %.5f, native %.5f, ratio %.4f (bar %.2f)\n",
+			label, len(ids), nNative, from, kl[0], kl[1], ratio, bar)
+		if !(ratio <= bar) {
+			t.Errorf("%s: the native lane's mean KL to f32 past position %d is %.4f× the int8 lane's, over %.2f", label, from, ratio, bar)
+		}
+	}
+}
+
 // TestKSO1C_fillerDiagnostic is LQ2 and LQ3 (docs/tasks/task-kernel-survey-2026-10.md, "#230's review, item 1"), a reading, not a
 // gate: one Phi-3 resident holding both arms (kso1cLoadBothArms) and the CPU at q4k, each against the CPU at f32, over one prompt.
 // The prompt is TestQ4K_phi3ResidentMatchesCPU's filler at GOINFER_KSO1C_DIAG_REPS repeats (110 by default), or, with
@@ -235,20 +333,7 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 	text := strings.Repeat("the ", reps) + "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
 	label = fmt.Sprintf("filler %d repeats", reps)
 	if doc := os.Getenv("GOINFER_KSO1C_DIAG_DOC"); doc != "" {
-		b, err := os.ReadFile(doc)
-		if err != nil {
-			t.Fatal(err)
-		}
-		dids, err := tk.Encode(string(b), false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		n := min(len(dids), envInt("GOINFER_KSO1C_DIAG_TOKENS", 900))
-		body, err := tk.Decode(dids[:n])
-		if err != nil {
-			t.Fatal(err)
-		}
-		text, label = "Summarize this document:\n\n"+body, fmt.Sprintf("%s, first %d tokens", doc, n)
+		text, label = kso1cDocPrompt(t, tk, doc, envInt("GOINFER_KSO1C_DIAG_TOKENS", 900))
 	}
 	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
 	if err != nil {
