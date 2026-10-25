@@ -1072,16 +1072,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// unconditionally). A load failure or a non-m-RoPE model is not fatal: PrefillMRoPELast declines to the
 		// CPU-prefill-then-UploadKV bridge.
 		if r.prefillReady {
-			if sec := m.MRopeSectionResident(); len(sec) == 3 {
+			// GLM-OCR's pairwise m-RoPE kernel writes f32 rows, so an f16 cache never compiles or loads it, whatever the policy says: the
+			// batched m-RoPE prefill stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
+			if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
 				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
 				if r.pairwiseRoPE { // GLM-OCR, which keeps f32 KV (decoder.CUDAKVF16Decline), so the f32 module's kernel
 					mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
 				}
-				// That kernel writes f32 rows, so an f16 cache never loads it, whatever the policy says: the batched m-RoPE prefill
-				// stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
-				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil && !(r.pairwiseRoPE && r.kvF16) {
+				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
 					loadMRope := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(mmod, name); pe == nil {
 							*dst = pl

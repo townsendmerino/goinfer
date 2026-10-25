@@ -322,7 +322,11 @@ func TestKV16_pairwiseMRoPENeverF16(t *testing.T) {
 	if r16.mropePrefillReady || r16.bRopeKVMRoPE != (Pipeline{}) {
 		t.Fatal("an f16 cache loaded the f32-only pairwise m-RoPE kernel")
 	}
-	if _, err := r16.PrefillMRoPELast(context.Background(), [][]float32{make([]float32, r16.hidden)}, 0, [][3]int{{0, 0, 0}}); !errors.Is(err, errPrefillDeclined) {
+	row := [][]float32{make([]float32, r16.hidden)}
+	if _, err := r32.PrefillMRoPELast(context.Background(), row, 0, [][3]int{{0, 0, 0}}); err != nil { // the same call runs on the f32 cache
+		t.Fatalf("PrefillMRoPELast on the f32 control: %v", err)
+	}
+	if _, err := r16.PrefillMRoPELast(context.Background(), row, 0, [][3]int{{0, 0, 0}}); !errors.Is(err, errPrefillDeclined) {
 		t.Fatalf("PrefillMRoPELast on the f16 cache: %v, want it declined", err)
 	}
 }
