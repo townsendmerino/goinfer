@@ -213,3 +213,7 @@ was off for verify on this load). Raw: `raw/speed-2026-10-25-0658.jsonl`.
 
 **Verdict: G1, G3 and G5 pass; G2 passes, flagged, with its registered response done; G4 passes at short context and is parked at
 long context.**
+
+**The owner's decision on the parked cell (Francis, 2026-10-25, "A"):** #232 merges on these readings: lossless, PASS at short
+context, and faster than plain decode in every long-context pair. The follow-up is a small PR adding a `serve` option for the verify
+width (serve verifies at width 8, where SP0 projects 1.17×), and a served A/B, registered before it runs.

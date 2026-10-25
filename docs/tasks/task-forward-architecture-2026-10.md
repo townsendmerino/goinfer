@@ -2553,7 +2553,8 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   - **Status, 2026-10-25:** built (PR #232). G1 (identity, both plants caught), G3 and G5 pass on Qwen3.5-9B with DFlash and on
     three small models. G2 read 10.2% / 9.4% of a step, flagged, so the fold moved into the next pass's scan as registered (two
     arena banks, 62 MiB priced): 6.4% / 5.9%, still flagged, under 11.0%. G4: 1.46× at short context (PASS), 1.21× behind a
-    3,800-token preamble (PARKED, to the owner) (`docs/measurements/sp2-2026-10/README.md`).
+    3,800-token preamble (PARKED, to the owner) (`docs/measurements/sp2-2026-10/README.md`). The owner's decision (Francis, 2026-10-25):
+    merge on these readings; next, a `serve` verify-width option and a served A/B.
 - **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
   - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
     masks.
