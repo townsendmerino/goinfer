@@ -1858,6 +1858,18 @@ def plan_depths():
     return [int(d) for d in raw.split(",") if d.strip()]
 
 
+def plan_phases():
+    """Which of phases A (the backend table at depth 128) and B (the depth curve) run. BENCH_PHASES narrows them (e.g. "B" for a
+    depth-only A/B whose model has no depth-128 prompt); default is both, unchanged. Phases C-E keep their own switches."""
+    raw = os.environ.get("BENCH_PHASES", "").strip()
+    if not raw:
+        return {"A", "B"}
+    got = {p.strip().upper() for p in raw.split(",") if p.strip()}
+    if not got <= {"A", "B"}:
+        sys.exit(f"BENCH_PHASES: unknown phase(s) {sorted(got - {'A', 'B'})}; known: A, B")
+    return got
+
+
 def plan_engines():
     """Engines to run. BENCH_ENGINES narrows them; default is both.
 
@@ -2038,7 +2050,7 @@ def main():
                         # other row here being inert unless its backend/engine is selected.
                         ("goinfer_old","cpu"), ("goinfer_old","cuda"), ("goinfer_old","webgpu"),
                         ("goinfer_old","metal")]:
-            if be in bes and eng in engs:
+            if be in bes and eng in engs and "A" in plan_phases():
                 plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, one GPU backend, all engines. Defaults to CUDA, unchanged from before
     # (V-08): every engine's launch maps it to a real GPU-offload flag (goinfer -backend cuda,
@@ -2055,7 +2067,7 @@ def main():
         sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
                   "-- phase A and B would test different backends silently")
     for mk in plan_models():
-        for d in plan_depths():
+        for d in (plan_depths() if "B" in plan_phases() else []):
             for eng in plan_engines():
                 plan.append(("B", eng, depth_be, mk, d, "greedy"))
 

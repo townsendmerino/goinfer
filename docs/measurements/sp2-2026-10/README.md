@@ -276,7 +276,8 @@ before it, `serve` verified at 8, where SP0 projects 1.17×.
     which a drafter forces).
   - `BENCH_MODELS=Q9` (Qwen3.5-9B Q4_K_M; serve loads its `.giw` sidecar), `BENCH_BACKENDS=cuda`, `BENCH_DEPTHS=512,4096`,
     `BENCH_NGEN=256`, `BENCH_CTX=4608` (G1c's context), `BENCH_ABBA=5`: 5 mirrored quads per depth, 10 pairs, each cell a
-    restarted server, the harness's warm-up, then 2 runs of 8 completions.
+    restarted server, the harness's warm-up, then 2 runs of 8 completions. `BENCH_PHASES=B` (added to the harness on this branch,
+    before the run): the depth cells only, without the backend table's depth-128 cell, which this model has no prompt for.
   - **Prompts:** the harness's essay-v2 prompts, token-calibrated for Q9 at 512 and 4,096 with `scripts/bench_prompts_calibrate.py`
     and committed to `scripts/prompts.json` before the run. Prose, where SP0's prompts were code and math.
   - Greedy (temperature 0), so every request takes the speculative path.
