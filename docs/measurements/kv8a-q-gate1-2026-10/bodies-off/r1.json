@@ -1,0 +1,4 @@
+{
+ "path": "/v1/chat/completions",
+ "body": "{\"model\": \"qwen3.5\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a helpful assistant.\"}, {\"role\": \"user\", \"content\": \"Is it warmer in Paris or in Lyon right now?\"}], \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Current weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}}, {\"type\": \"function\", \"function\": {\"name\": \"get_wind\", \"description\": \"Current wind speed for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}}], \"stream\": false, \"chat_template_kwargs\": {\"enable_thinking\": false}}"
+}
