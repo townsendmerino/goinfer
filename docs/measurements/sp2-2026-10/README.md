@@ -14,9 +14,10 @@ nobara" (commit `7d5a96cf`, pushed before the first line of SP2 code). This page
 
 Rebuilt with `cuda/build_ptx.sh deltanet` (NVRTC 12.9.86; the committed PTX first rebuilt byte-identically at main `d9a1cb4d`,
 so the toolchain reproduces it). Every pre-existing kernel's floating-point instruction sequence is unchanged; the PTX of the
-row-batched kernels differs only in labels, symbol names and address arithmetic order. Each verify twin's floating-point
-sequence equals its committing kernel's (`delta_conv_rows_spec` = `delta_conv_rows`, `delta_rule_rows_128_spec` =
-`delta_rule_rows_128`), and each shares one function body with it. The generic twin, `delta_rule_rows_spec`, is a separate body:
+row-batched kernels differs only in labels, symbol names and address arithmetic order. Each of two verify twins shares one
+function body with its committing kernel, and its floating-point operations come in the same order (`delta_conv_rows_spec` and
+`delta_conv_rows`, `delta_rule_rows_128_spec` and `delta_rule_rows_128`). Their PTX is not otherwise identical: the conv twin
+loads each tap from the window or from the pass's earlier rows and has no window stores, and the scan twin has no state store. The generic twin, `delta_rule_rows_spec`, is a separate body:
 it holds the state row in a predicated 128-float register array where `delta_rule_rows` walks it in global memory, with the same
 ascending-kd FMA chains; G1a shows it bit-identical on the two tiny fixtures that take it. None of the three declares local memory in its PTX; at the driver's JIT the 128-wide twin spills 80
 B/thread, under the 96 B its committing kernel already spills (below).

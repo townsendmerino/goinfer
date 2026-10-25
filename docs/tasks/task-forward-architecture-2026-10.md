@@ -2689,7 +2689,7 @@ DFlash projects 1.55× at L = 512 (w = 4) and 1.29× at L = 4096 (w = 4).
 
 **Cost (estimated).** G1a and G1b tiny: seconds. G1a, G1b, G5 on 0.8B: about 3 min. G1c and its plants: load 1 min; 20
 prompts × (one plain turn about 5 s + two speculative turns about 7 s), about 5 min; plants about 3 min each; about 15
-min. G2: 2 contexts × 23 repetitions × 6 arms, about 3 min plus load. G4: 2 contexts × 20 runs of 12 prompts × 256
+min. G2: 2 contexts × 23 repetitions × 7 arms, about 3 min plus load. G4: 2 contexts × 20 runs of 12 prompts × 256
 tokens; about 4.5 s plain and 3 s speculative per prompt at 512, more at 4,096: about 40 min, plus the preamble's
 prefills. Each timed run states its start and finish when it starts.
 
