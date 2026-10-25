@@ -1107,6 +1107,26 @@ the native kernels need for their group sums. The gates are unchanged.
   p10 0.940085, **PASS**. Log: `docs/measurements/ks-a1-2026-10/o1c-phi3-int8lane-branch.log`. The native lane's fidelity gates are
   `TestKSO1C_realPhi3NonInferiority` and `TestKSO1C_towardTheFile`.
 
+**#230's review, item 1 (Gemini, relayed by the coordinator, 2026-10-24 22:40): a long-context f32 quality bar for the native lane.
+Registered 2026-10-24 before any of it ran.** The review is right that the record overstated the diagnosis. The committed logs show
+the native lane's p10 cosine to f32 below the int8 lane's at all four filler lengths (60, 90, 110, 130). They also show its mean KL
+to f32 worse at 60 and 110 repeats, and "only Q5_K qkv native" worse on KL at all four. The PR text's "60/90/130 do not show it" held
+only for the instruction region's median.
+- **LQ1, the old bar on the native lane (tier 1, Phi-3, the shared lock):** `TestQ4K_phi3ResidentMatchesCPU` runs both lanes. The
+  int8 lane keeps both its bars. The native lane takes the f32 quality bar unchanged: p10 cosine to f32 no more than 0.01 below the CPU
+  q4k path's own on the same prompt. The CPU-agreement bar does not apply to it (the CPU keeps the int8 copies).
+- **LQ2, the filler table (tier 1, `TestKSO1C_fillerDiagnostic` at 60, 90, 110, 130 repeats):** for the int8 arm, the native arm and
+  the CPU q4k path, each against the CPU at f32: p10 and min cosine, and mean KL. The old bar is applied at every length.
+- **LQ3, natural long context (tier 1, the same diagnostic on a document):** two in-repo English documents, `README.md` and
+  `docs/benchmarks.md`, each cut to its first 900 tokens inside "Summarize this document:" under Phi-3's chat template (about 920
+  positions each, context 1024). Per document: mean KL to f32 over all positions and over positions 256 and later; p10 and min
+  cosine over the same.
+- **The reading, fixed now:** the native lane is **worse than int8 at long context** if, on either document, its mean KL to f32 over
+  positions 256 and later is above the int8 arm's by more than 5%. Otherwise the gap is the filler's alone. Either way the
+  work stops for the owner, with these numbers and the options. Shipping is not re-decided by this reading.
+- **Cost:** LQ1 about 4 min (two Phi-3 loads, three CPU passes over 141 tokens). LQ2 about 1.5 min a length. LQ3 about 8 min a
+  document: the CPU at f32 runs at about 0.5 s a position.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
