@@ -264,6 +264,13 @@ func LookupPrefillRefForTest(parts PrefillRefKeyParts) (string, bool) {
 	if _, err := os.Stat(p + ".key.json"); err != nil {
 		return "", false // a .bin without its parts record is an interrupted store, not a hit
 	}
+	// An adopted entry stands only while a witness still shows its source pair to agree; a pruned or contradicted pair makes it a
+	// miss, which the generator recomputes (prefill_ref_witness_testhook.go).
+	if from, adopted := refAdoptedFrom(p, parts); adopted {
+		if agree, _ := PrefillRefSourcesAgreeForTest(parts, from); !agree {
+			return "", false
+		}
+	}
 	return p, true
 }
 
@@ -286,6 +293,9 @@ func StorePrefillRefForTest(parts PrefillRefKeyParts, seedLogits []float32, refT
 	}
 	b, _ := json.MarshalIndent(parts, "", " ")
 	if err := writeFileAtomic(p+".key.json", b); err != nil {
+		return "", err
+	}
+	if err := os.Remove(p + ".adopted"); err != nil && !errors.Is(err, fs.ErrNotExist) { // a native store replaces an adoption
 		return "", err
 	}
 	return p, nil

@@ -234,3 +234,57 @@ func TestPrefillRefWitness_adoptedIsNeverAWitness(t *testing.T) {
 		}
 	}
 }
+
+// A source a witness has shown to disagree is never offered as a sibling, even when it holds the most references in the scope; and an
+// adopted entry is a cache hit only while its source pair agrees: a later differing witness makes it a miss, and a native store over
+// it clears its marker.
+func TestPrefillRefWitness_disagreeingSourcesAndStaleAdoptions(t *testing.T) {
+	t.Setenv("GOINFER_PREFILL_REF_CACHE", t.TempDir())
+	base := PrefillRefKeyParts{Version: 1, Checkpoint: "ck", PromptTokens: 4, Arch: "amd64", ContinuationN: 2}
+	at := func(src, prompt string) PrefillRefKeyParts {
+		p := base
+		p.SourceSHA256, p.PromptSHA256 = src, prompt
+		return p
+	}
+	store := func(p PrefillRefKeyParts, last float32) string {
+		cp, err := StorePrefillRefForTest(p, []float32{1, 2}, []int{3}, [][]float32{{4, last}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cp
+	}
+	for _, pr := range []string{"p0", "p1", "p2"} {
+		store(at("x", pr), 5) // x holds the most of the scope, and disagrees with c
+	}
+	store(at("e", "p0"), 5) // e is untested against c
+	if err := recordRefWitness(at("c", "p1"), "x", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, src, ok := PrefillRefSiblingForTest(at("c", "p0")); !ok || src != "e" {
+		t.Fatalf("c's sibling for p0 is %q (ok %v): x is known to disagree, so e must be offered", src, ok)
+	}
+
+	a1 := store(at("a", "p5"), 5)
+	if err := recordRefWitness(at("b", "p4"), "a", true); err != nil { // a witness on another prompt says a and b agree
+		t.Fatal(err)
+	}
+	if _, err := AdoptPrefillRefForTest(a1, at("b", "p5"), "a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := LookupPrefillRefForTest(at("b", "p5")); !ok {
+		t.Fatal("b's adopted p5 is a miss while a and b agree")
+	}
+	if err := recordRefWitness(at("b", "p6"), "a", false); err != nil { // a later witness: they differ after all
+		t.Fatal(err)
+	}
+	if _, ok := LookupPrefillRefForTest(at("b", "p5")); ok {
+		t.Fatal("b's adopted p5 is still a hit after a witness showed a and b to differ")
+	}
+	cp := store(at("b", "p5"), 6) // b computes p5 itself
+	if _, err := os.Stat(cp + ".adopted"); err == nil {
+		t.Fatal("a native store left the .adopted marker behind")
+	}
+	if _, ok := LookupPrefillRefForTest(at("b", "p5")); !ok {
+		t.Fatal("b's native p5 is a miss")
+	}
+}

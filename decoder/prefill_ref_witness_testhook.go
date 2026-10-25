@@ -239,15 +239,49 @@ func PrefillRefSiblingForTest(parts PrefillRefKeyParts) (path, source string, ok
 		}
 		return si < sj
 	})
+	untested := ""
 	for _, bin := range bins {
-		if agree, _ := PrefillRefSourcesAgreeForTest(parts, all[bin].SourceSHA256); agree {
+		switch agree, known := PrefillRefSourcesAgreeForTest(parts, all[bin].SourceSHA256); {
+		case agree:
 			return bin, all[bin].SourceSHA256, true
+		case !known && untested == "":
+			untested = bin // a source a witness has shown to disagree is never offered
 		}
 	}
-	if len(bins) == 0 {
+	if untested == "" {
 		return "", "", false
 	}
-	return bins[0], all[bins[0]].SourceSHA256, true
+	return untested, all[untested].SourceSHA256, true
+}
+
+// refAdoptedFrom reports whether the cache entry bin (whose parts are parts) is an adoption, and the source it was adopted from:
+// its .adopted marker's, or for an adoption from before the marker, the source of the entry it shares its file with.
+func refAdoptedFrom(bin string, parts PrefillRefKeyParts) (string, bool) {
+	if b, err := os.ReadFile(bin + ".adopted"); err == nil {
+		var m struct {
+			From string `json:"adopted_from_source"`
+		}
+		if json.Unmarshal(b, &m) == nil && m.From != "" {
+			return m.From, true
+		}
+	}
+	e, ok := refEntries()[bin]
+	if !ok || !e.adopted {
+		return "", false
+	}
+	fi, err := os.Stat(bin)
+	if err != nil {
+		return "", false
+	}
+	for other, o := range refEntries() {
+		if other == bin || o.parts.SourceSHA256 == parts.SourceSHA256 || o.parts.PromptSHA256 != parts.PromptSHA256 || o.parts.scopeKey() != parts.scopeKey() {
+			continue
+		}
+		if fo, err := os.Stat(other); err == nil && os.SameFile(fi, fo) {
+			return o.parts.SourceSHA256, true
+		}
+	}
+	return "", false
 }
 
 // WitnessPrefillRefForTest compares the reference just stored at computed (under parts) with sibling (the same prompt under
