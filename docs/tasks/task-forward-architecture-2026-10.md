@@ -2548,12 +2548,150 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
     - speed with DFlash on Qwen3.5-9B (nobara) and Qwen3.6-35B-A3B (Mac), at SP0's bar.
   - **What it must agree with:** KV8a's checkpoint is taken before decode and is unaffected. The committed sequence after a
     speculative turn must be what kvmgr scores (R-03, `docs/tasks/task-recompute-audit.md`).
+  - **Registered on nobara, 2026-10-24:** the design and the gates are in "SP2 on nobara" below. SP0 parked the 35B (its MoE
+    verify rows cost about 5× a step on CUDA), so its speed gate is out of SP2's scope; the Mac reading stays open.
 - **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
   - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
     masks.
   - **Size:** each box sizes the tree from its measured verify-row cost, so MoE models use fewer rows.
   - **Hybrids:** branch states come from SP2.
   - **Gates:** identity; tokens per pass against the chain; speed.
+
+### SP2 on nobara: design and registered gates (2026-10-24, before any SP2 code)
+
+Registered by nobara-sp2 on the owner's word (Francis, 2026-10-24 11:01 pm: "go on SP2"). Read at main `d9a1cb4d`. SP0's
+record (branch `sp0-2026-10`, `docs/measurements/sp0-2026-10/README.md`, not yet merged) is the input: Qwen3.5-9B with z-lab's
+DFlash projects 1.55× at L = 512 (w = 4) and 1.29× at L = 4096 (w = 4).
+
+**Scope.**
+- **Target:** Qwen3.5-9B Q4_K_M (its `.int4.e4h.cuda.v17.giw` sidecar), resident on CUDA, f32 KV (the CUDA drafter refuses
+  f16), with `z-lab/Qwen3.5-9B-DFlash` at `5fc3b3d4` (block 16, `~/models/qwen35-9b-dflash`). Geometry: 24 Gated-DeltaNet
+  layers of 32; 16 key heads and 32 value heads of 128; conv kernel 4; conv width 8,192.
+- **One loop:** `BlockSpec` (DFlash), a chain of `[anchor, drafts]`. The n-gram, draft-model, grammar and `spec_optfwd`
+  loops roll back through `KVCache.TruncateTo` or the sequential `ForwardN`, and keep refusing every recurrent model.
+- **One backend and one recurrent kind:** the CUDA resident's Gated-DeltaNet layers. Mamba-2 (Nemotron-H, Granite-4.0-H),
+  the short conv (LFM2) and KDA stay refused: `specRollbackSafe` admits a recurrent model only when the resident says its
+  path serves every recurrent layer. Metal is not built here.
+- **Out of scope:** the 35B (parked by SP0, above); trees (SP3).
+
+**Design.**
+- **Verify writes no committed state.** A speculative verify is `PrefillLastNArgmax`'s pass with two row-batched DeltaNet
+  kernels swapped for twins that never store:
+  - the conv twin reads the committed window and does not slide it: row m's taps come from the window and from the pass's
+    rows before m (its ancestors in a chain);
+  - the scan twin loads the committed state, scans the pass's rows in order and never writes it back. In a chain each row's
+    parent is the row above it, so the running state in registers is the parent's state, and no per-row state is stored.
+  - Each twin shares its arithmetic with the kernel it replaces (one function body), so a verify row's output is the bits a
+    prefill row's would be.
+- **The pass keeps each row's inputs.** In verify mode the DeltaNet projections and the conv, norm and gate outputs are
+  written into per-layer slices of one device arena instead of the pass's shared scratch: per row and layer, the conv input
+  (8,192 floats), the conv output (8,192), the normed q and k (2,048 each) and the gates (64). That is 82,176 B per row
+  and layer; 1.88 MiB per row over 24 layers; 30.1 MiB for 16 rows, one allocation of 32 MiB.
+- **The fold.** Once the loop knows how many rows it commits (n = 1 + accepted drafts, fewer when a stop token lands
+  inside the burst), each DeltaNet layer replays those n rows on the committed buffers, in place, through the existing
+  `delta_conv_rows` (the window) and `delta_rule_rows_128` / `delta_rule_rows` (the state). That is n rank-1 updates per
+  value head per layer, and no copy of the state. They are prefill's own kernels, so the committed state after a fold is
+  the bits a prefill of those n rows leaves. The fold runs right after acceptance, so the fallback step, the trailing
+  forward and the commit all see a consistent state. Folding at the start of the next pass instead (Kapitsa's place) saves
+  one read and one write of the state per cycle, and is the follow-up if G2 asks for it.
+- **Held per row, or replayed:** replayed, for this family. Holding each row's state would cost 50.25 MiB per row (48 MiB of
+  state and 2.25 MiB of conv window over 24 layers): 201 MiB at w = 4 and 804 MiB at 16, plus a full-state copy on every
+  commit, which §6a rules out. The arena keeps the rows' inputs at 1.88 MiB per row instead. The record states both, and
+  free VRAM with the drafter attached.
+- **Admission.** `specRollbackSafe` takes the verify path a loop uses. A recurrent model is admitted only on the fold path,
+  only on a resident whose capability reports it serves every recurrent layer, and only at widths up to the arena's 16
+  rows. `BlockSpec.generate` itself refuses a recurrent target when the fold path is not active (today it would verify on
+  a path that advances the state by every row).
+- **Off is unchanged.** With no speculation the prefill and decode launches are exactly today's; the only change on those
+  paths is a nil check in the DeltaNet layer of the batched pass.
+- **The stop inside a burst.** The loop advances its position by the rows it emits, not by 1 + accepted, so a turn that
+  stops mid-burst folds and commits exactly the emitted tokens. For a positional cache this changes nothing observable; for
+  a recurrent one, the old accounting would leave the state past the committed ids.
+- **Not a departure from §6a.** §6a's per-row replay from the committed state is what a tree needs (SP3), where a row's
+  parent is not the row above it. A chain's parent is the row above, which the scan already holds.
+
+**The gates.** Tier and instrument per `CLAUDE.md` (TE11). Every gate's test and its log path go into
+`docs/measurements/sp2-2026-10/README.md`, with the outcome against the rule below.
+
+- **G1 — identity (correctness; the PR opens when G1 passes).**
+  - **G1a, tier 0, the mechanism, CUDA, seconds** (`qwen35-tiny` and `qwen3next-tiny`, the generic scan; `qwen3.5-0.8b`, the
+    128-wide scan):
+    - a verify of w rows leaves every DeltaNet layer's state and conv window byte-equal to before;
+    - a verify of w rows followed by a fold of n leaves them byte-equal to a prefill of the first n of those rows from the
+      same start, for every n in 1..w and w in {2, 4, 8, 16};
+    - each verify row's argmax equals that prefill's.
+  - **G1b, tier 0/1, the loop with a scripted drafter** (the same three models; 0.8B at tier 1): a test drafter proposes the
+    target's own greedy continuation with one token corrupted on a fixed schedule, so the rounds accept every count from 0
+    to w − 1 and also all w − 1; widths {2, 4, 8, 16}; random-id and chat prompts, 128 new tokens. Bar: the speculative
+    tokens equal plain greedy token for token, and the state after the turn is byte-equal to plain's.
+  - **G1c, tier 1, the real pairing:** Qwen3.5-9B + DFlash, at w = 4 (SP0's best) and w = 16 (the block, the widest fold).
+    Prompts: SP0's 12 code and math prompts (thinking off), its 6 math prompts with thinking on (more rejections, so more
+    partial folds), and 2 long prompts of about 3,000 tokens (a source file and a question), 256 new tokens each.
+    - **Bar:** every prompt's speculative tokens equal plain greedy's token for token, to the end, and every DeltaNet
+      layer's state and window after the turn are byte-equal to plain's.
+    - **"Plain greedy"** is `Model.Generate` at temperature 0 on the same resident, under the same exact-attention scope
+      `BlockSpec` holds (`Model.enterExactAttention`): the contract the dense lossless gate holds (`TestDFlashLoop_lossless`).
+      The served default's plain decode, without that scope, is compared too and recorded, with no bar. A difference there
+      is the flash-decode lane's, and is not SP2's.
+    - **The guard's fallback:** one run with the acceptance guard tripped after its window (a test seam), so the turn ends
+      on plain steps after folds. Same bar.
+  - **Planted defects, registered to go red:** (P1) the fold replays the scan but not the conv window, spec/09's defect;
+    (P2) verify writes the committed state, today's behavior. Each runs G1a, G1b, and G1c at w = 4 on the 12 thinking-off
+    prompts. **Expected:** each plant fails G1a and G1b, and diverges on at least one G1c prompt. A plant that passes G1c
+    makes G1c too weak: the prompts are lengthened, and G1c re-registered before it is read again.
+  - **Outcomes:** all pass → the path is correct, and the PR opens. Any real-run divergence → a defect in SP2; the row and
+    layer of the first divergence are named, and nothing merges. A plant that stays green → the gate is weak (above).
+- **G2 — the fold's cost per cycle (tier 1, by day, timing lock).**
+  - **Instrument:** in one process on the 9B, interleaved and rotated A B B A over 3 warm-ups and 20 repetitions: a plain
+    step (`ForwardArgmax`), a w = 4 verify on the fold path, the same verify on today's path, and the fold of n = 1..4 rows.
+    Each arm is timed from a stream sync to a stream sync. L ∈ {512, 4096}, SP0's lengths.
+  - **The reading:** the fold at SP0's mean committed rows per cycle at w = 4 (3.30: interpolated between n = 3 and 4), over
+    the median step. Also recorded: the fold-path verify over today's verify (it writes the arena where today's writes
+    scratch, so it should be about 1.0).
+  - **Bands:** under 5.0% of a step → passes (spec/09's own bar for the snapshot was 5%); 5.0–11.0% → passes the
+    comparison but is flagged, and the fold moves into the next pass's scan before G4 is read; 11.0% or more → fails: it
+    costs what the closed checkpoint cost, and SP2 stops with a decision for the owner.
+- **G3 — device memory, stated and priced (tier 0, plus the real load).**
+  - The resident states the arena at attach on stderr: bytes, rows, layers.
+  - The fit guard prices it: the companion reserve a drafter brings (`Options.ExtraResidentBytes`) grows by the arena on a
+    recurrent target. A tier-0 test pins the formula (layers × rows × (2 × conv width + 2 × key width + 2 × value heads) ×
+    4 B, rounded up to 2 MiB as `cuMemAlloc` rounds) and that the CUDA plan's reserve grows by exactly that.
+  - On the real load: the `fit:` and `KV plan:` banners with and without SP2, and free VRAM before and after attach.
+  - **Bar:** the stated, priced and allocated bytes agree, and the 9B with its drafter still plans the 4,608-position
+    context SP0 ran. A plan that drops below 4,608 is recorded with its new figure, and G4 runs at what fits.
+- **G4 — speed with DFlash against plain decode (tier 2, by day, timing lock).**
+  - **Instrument:** the whole-generation in-process A/B (TE5(b)), through the public API on one resident: plain greedy
+    (`Model.Generate`) against `BlockSpec.Generate` at w = 4. The served path verifies at width 8, where SP0 projects
+    1.17×, and `serve` has no width option, so a served reading waits on that option. It is a follow-up, below.
+  - **Cells:** two contexts, read separately: SP0's 12 code and math prompts as they are (about 100–250 tokens), and the
+    same prompts behind a fixed 3,800-token preamble of real text, so decode starts near 4,096. 256 new tokens.
+  - **Pairs:** 10 A B B A pairs per context; a pair is one pass of each arm over all 12 prompts, and its reading is the
+    plain time over the speculative time, tokens equal by G1. Each pair records load and `MemAvailable` at its start; a pair
+    started above 8.0 load or under the fit need plus 2 GB is void and re-run in order.
+  - **Bar, per context:** SP0's rule. The median pair ≥ 1.30× and at least 9 of 10 pairs above 1.0 → passes at that
+    context. 1.20–1.30× → parked, to the owner. Under 1.20× → not advanced at that context. The verdict names each
+    context's outcome; SP0's 4,096 projection was 1.29×, so a parked reading there would be the expected one.
+  - **The small-gains rule does not decide this.** The tokens are identical, but SP2 adds device memory (the arena and the
+    drafter) and keeps two paths, so the registered bar decides.
+- **G5 — agreement with KV8a and kvmgr (R-03; tier 0/1).**
+  - **KV8a:** the recurrent checkpoint's buffers are byte-equal before and after a speculative turn's rounds: verify and fold
+    never write them. Whatever checkpoint record the turn leaves is either none or the end of its prompt.
+  - **kvmgr:** after a speculative turn A, a turn B whose prompt is A's prompt, A's output and a suffix:
+    - kvmgr scores B as the strict extension (reuse = A's prompt plus output);
+    - B's tokens, decoded speculatively and plainly, equal a cold plain decode of B's prompt;
+    - the live state after A is byte-equal to a cold prefill of A's prompt plus output.
+  - Run with the scripted drafter on the three small models (tier 0/1), and once on the 9B with DFlash.
+  - **Bar:** all hold. A failure means the commit records a sequence the state does not hold, R-00's class of error; it
+    blocks the merge.
+
+**Cost (estimated).** G1a and G1b tiny: seconds. G1a, G1b, G5 on 0.8B: about 3 min. G1c and its plants: load 1 min; 20
+prompts × (one plain turn about 5 s + two speculative turns about 7 s), about 5 min; plants about 3 min each; about 15
+min. G2: 2 contexts × 23 repetitions × 6 arms, about 3 min plus load. G4: 2 contexts × 20 runs of 12 prompts × 256
+tokens; about 4.5 s plain and 3 s speculative per prompt at 512, more at 4,096: about 40 min, plus the preamble's
+prefills. Each timed run states its start and finish when it starts.
+
+**Follow-ups, not gated here:** a `serve` option for the verify width, then a served A/B (two `serve` arms, plain on its
+default KV); the fold fused into the next pass, if G2 flags it; Mamba-2 per-row states; trees (SP3).
 
 ### Order
 
