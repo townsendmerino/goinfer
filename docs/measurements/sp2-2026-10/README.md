@@ -391,6 +391,7 @@ cell (`raw/served-ab-2026-10-25.json`, `counts.phases` and `counts.rss_peak_kb`)
 - **The void rule's memory term was not applied** in either served A/B: `free_mem_mb` is null in every cell because the harness
   reads it through `go run ./cmd/hostmem` and my run scripts did not put Go on `PATH`. Reconstructed, not recorded: this box's
   `MemAvailable` reads about 60 GB with a served 9B up, against a 14 GB peak for the drafter's process, so no cell came near the 2 GB
-  floor. The harness now warns at preflight when it has no reading, and later runs set `PATH`.
+  floor. The harness now refuses at preflight when it has no reading (`BENCH_ALLOW_NO_FREE_MEM=1` runs anyway, with a warning, and the
+  provenance records it), and later runs set `PATH`.
 - **The 3.4 MB of swap-in in a depth-4096 cell** is the system's counter over a 6-minute cell, with zero swap growth; the
   registered rule has no swap term (the harness's swap voids are off unless set), so it voids nothing.

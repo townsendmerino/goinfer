@@ -224,7 +224,11 @@ func (s *BlockSpec) SetVerifyWidth(w int) error {
 	if w != 0 && w < 2 {
 		return fmt.Errorf("decoder: block-spec verify width %d: want 0 (the default) or at least 2", w)
 	}
-	if width := s.verifyWidth(BlockSpecOptions{VerifyWidth: w}); !s.m.specRollbackSafeVia(s.recurrentFold(width), width) {
+	v := w
+	if v == 0 {
+		v = defaultVerifyWidth // the width 0 selects, not the one set before (verifyWidth falls back to s.width)
+	}
+	if width := s.verifyWidth(BlockSpecOptions{VerifyWidth: v}); !s.m.specRollbackSafeVia(s.recurrentFold(width), width) {
 		return fmt.Errorf("decoder: block-spec verify width %d cannot roll back on this model (a recurrent model past its resident's fold rows, or a staged sliding window)", width)
 	}
 	s.width = w

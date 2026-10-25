@@ -78,8 +78,24 @@ func TestBlockSpec_setVerifyWidthRefuses(t *testing.T) {
 	if err := rec.SetVerifyWidth(16); err == nil {
 		t.Error("recurrent, width 16 past the fold's 8 rows: accepted")
 	}
-	if err := rec.SetVerifyWidth(0); err != nil { // the default, 8, fits the 8 rows
+	// after 4, a 0 must validate the default, 8, not the 4 set before
+	if err := rec.SetVerifyWidth(0); err != nil {
 		t.Errorf("recurrent, the default width: %v", err)
+	}
+	if got := rec.VerifyWidthInUse(); got != 8 {
+		t.Errorf("recurrent, the default width: VerifyWidthInUse %d, want 8", got)
+	}
+	// a fold of 4 rows refuses the default, 8, even with 4 set before
+	rec4 := &BlockSpec{m: &Model{w: &Weights{arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: 4}, &blockspecWriteHost{}, new(int)},
+		dw: blockspecStubWeights{blockSize: 16}}
+	if err := rec4.SetVerifyWidth(4); err != nil {
+		t.Errorf("recurrent, width 4 of the fold's 4 rows: %v", err)
+	}
+	if err := rec4.SetVerifyWidth(0); err == nil {
+		t.Error("recurrent, the default width 8 past the fold's 4 rows: accepted")
+	}
+	if got := rec4.VerifyWidthInUse(); got != 4 {
+		t.Errorf("recurrent, after a refused width: VerifyWidthInUse %d, want the 4 set before", got)
 	}
 }
 

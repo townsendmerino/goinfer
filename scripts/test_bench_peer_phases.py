@@ -45,6 +45,16 @@ class FreeMemCheck(unittest.TestCase):
         if self.saved_env is not None:
             os.environ["BENCH_ALLOW_NO_FREE_MEM"] = self.saved_env
 
+    def test_provenance_records_the_override_only_when_used(self):
+        os.environ["BENCH_ALLOW_NO_FREE_MEM"] = "1"
+        bench_peer.free_mem_mb = lambda: 60000  # set, but a reading is there
+        bench_peer.check_free_mem()
+        self.assertFalse(bench_peer._FREE_MEM_OVERRIDE_USED)
+        bench_peer.free_mem_mb = lambda: None
+        bench_peer.check_free_mem()
+        self.assertTrue(bench_peer._FREE_MEM_OVERRIDE_USED)
+        bench_peer._FREE_MEM_OVERRIDE_USED = False
+
     def test_no_reading_refuses_without_the_override(self):
         bench_peer.free_mem_mb = lambda: None
         with self.assertRaises(SystemExit):
@@ -71,9 +81,20 @@ class TermExits(unittest.TestCase):
             # a second signal during the teardown must not interrupt the finally that stops the server
             self.assertEqual(signal.getsignal(signal.SIGTERM), signal.SIG_IGN)
             self.assertEqual(signal.getsignal(signal.SIGINT), signal.SIG_IGN)
+            with self.assertRaises(SystemExit) as cm:  # Ctrl-C takes the same path
+                bench_peer._term_exits(signal.SIGINT, None)
+            self.assertEqual(cm.exception.code, 128 + signal.SIGINT)
         finally:
             signal.signal(signal.SIGTERM, saved[0])
             signal.signal(signal.SIGINT, saved[1])
+
+
+class SignalInstall(unittest.TestCase):
+    def test_main_installs_the_handler_for_sigterm_and_sigint(self):
+        src = open(bench_peer.__file__).read()
+        main = src[src.index('if __name__ == "__main__":'):]
+        for sig in ("SIGTERM", "SIGINT"):
+            self.assertIn(f"signal.signal(signal.{sig}, _term_exits)", main)
 
 
 class DepthBackend(unittest.TestCase):

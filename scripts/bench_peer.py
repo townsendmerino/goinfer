@@ -717,7 +717,7 @@ def provenance():
     return {
         "kind": "provenance",
         "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "free_mem_override": os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1",  # the run went ahead without a free-memory reading
+        "free_mem_override": _FREE_MEM_OVERRIDE_USED,  # the run went ahead without a free-memory reading (check_free_mem)
         "host": socket.gethostname(),
         "uname": _sh(["uname", "-srm"]),
         "distro": _sh(["sh", "-c", ". /etc/os-release 2>/dev/null && echo \"$NAME $VERSION_ID\""]),
@@ -869,13 +869,19 @@ def preflight():
     print(f"# preflight OK: gate {IDLE_GATE} · loadavg {la} · gpu {_gpu_state()} · compute apps {apps}", flush=True)
 
 
+_FREE_MEM_OVERRIDE_USED = False  # set by check_free_mem when BENCH_ALLOW_NO_FREE_MEM=1 let a run go ahead without a reading
+
+
 def check_free_mem():
     """Refuses a run that cannot read this box's free memory, since the heavy-load void's memory term would then never apply and
-    every cell would record free_mem_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did. Returns
-    whether the override was used."""
+    every cell would record free_mem_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did, and only
+    when it did (a set override with a reading present is not recorded). Returns whether the override was used."""
+    global _FREE_MEM_OVERRIDE_USED
+    _FREE_MEM_OVERRIDE_USED = False
     if free_mem_mb() is not None:
         return False
     if os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1":
+        _FREE_MEM_OVERRIDE_USED = True
         print("# WARNING: no free-memory reading; BENCH_ALLOW_NO_FREE_MEM=1, so the heavy-load void's memory term is off for this run",
               flush=True)
         return True
@@ -2234,7 +2240,7 @@ def main():
                      f"recorded with quant_matched false; match the quants, or set BENCH_UNMATCHED=1.")
 
 def _term_exits(signum, frame):
-    """SIGTERM as SystemExit, so the running cell's `finally` stops its server's process group and waits for it to exit before the
+    """SIGTERM (and SIGINT) as SystemExit, so the running cell's `finally` stops its server's process group and waits for it to exit before the
     timing lock is released. The default action ends the process at once, and the server, in its own session (os.setsid), would
     keep the GPU while the next timed run takes the lock. A second SIGTERM or SIGINT during that teardown is ignored, so it cannot
     interrupt the `finally` that stops the server."""
@@ -2245,6 +2251,7 @@ def _term_exits(signum, frame):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _term_exits)
+    signal.signal(signal.SIGINT, _term_exits)  # Ctrl-C takes the same masked teardown, not a KeyboardInterrupt a second one can cut short
     # TE9 (docs/tasks/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and
     # taken before preflight(), so a second timed run refuses, naming this one; BENCH_LOCK_WAIT=<seconds> waits for a
     # holder instead. Under a night.py job or a `timing_lock.py run` wrapper the lock is inherited, not re-taken.
