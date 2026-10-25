@@ -2829,13 +2829,12 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), Arg(dst), gpu.ArgValue(accum))
 	}
 	if wt.kind == "q5k" || wt.kind == "q6k" {
-		p := r.gemvQ5K
-		if wt.kind == "q6k" {
-			p = r.gemvQ6K
-		}
 		cfg.GridX = uint32((wt.N + 8*kquantGemvRows - 1) / (8 * kquantGemvRows))
-		return r.launch(p, cfg, Arg(wt.W), Arg(a), Arg(as), bias,
-			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), Arg(dst), gpu.ArgValue(accum))
+		args := []KernelArg{Arg(wt.W), Arg(a), Arg(as), bias, gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K / 256)), Arg(dst), gpu.ArgValue(accum)}
+		if wt.kind == "q6k" {
+			return r.launch(r.gemvQ6K, cfg, args...)
+		}
+		return r.launch(r.gemvQ5K, cfg, args...)
 	}
 	if wt.kind == "int4" {
 		return r.launch(r.gemvW4, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
