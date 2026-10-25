@@ -2,7 +2,8 @@
 
 > **2026-10-22: KV8a-Q added.** Kapitsa (`nace-ai/kapitsa`, Apache-2.0, read at `3f7f4c8` on 2026-10-22) keeps a second recurrent
 > checkpoint at the last user question, because a new question after a tool loop diverges before KV8a's single checkpoint.
-> KV8a-Q (§6, after KV8a) is that second copy. Added on the owner's word ("yes both please").
+> KV8a-Q (§6, after KV8a) is that second copy. Added on the owner's word ("yes both please"). **Closed 2026-10-24 (Francis):** B35
+> already keeps the state there on CUDA; the check B35-TL (`docs/measurements/b35-toolloop-2026-10/README.md`) replaces it.
 
 > **Status 2026-10-21 (the close-out sweep).** KV0, KV1, KV2 and KV3 are done; KV3's tiled exact prefill kernel merged on
 > 2026-10-18 (#102), after v0.23.0. KV7's first two steps (#57, #86) and KV8a on CUDA (#115) are merged; KV8a on Metal is on
@@ -139,7 +140,7 @@ slot is gone; and every KV feature is built three or four times.
 | KV7 | tiers: host and disk, parking and resume | CUDA first, then all | M–L | KV4 |
 | KV8 | recurrent state pool and checkpoints | CUDA, Metal | L | KV4 (KV5 for Metal) |
 | KV8a | an end-of-prompt recurrent checkpoint on today's single slot (**added 2026-10-20**, pulled ahead of KV4 by KV0-H's rule) | CUDA, then Metal | S–M | KV0-H |
-| KV8a-Q | a second checkpoint: the last user question's (**added 2026-10-22**, from Kapitsa's engine) | CUDA, then Metal | S | KV8a |
+| KV8a-Q | ~~a second checkpoint: the last user question's~~ **CLOSED 2026-10-24** (Francis): B35's kept state already sits there on CUDA; replaced by the check B35-TL | CUDA | — | B35 |
 | KV9 | the CPU path onto the manager (deferred by D2: CPU joins through KV2's copies) | CPU | M–L | KV2, D2 |
 | KV10 | long context and lower-precision blocks | all | M | KV4/KV5 |
 | KV11 | one residency manager for KV blocks and MoE experts (added 2026-10-13) | CUDA, then Metal | L | KV4, KV7 |
@@ -1244,7 +1245,31 @@ KV2 merges when every arm on both boxes is read.
 - **Size:** S–M per backend (an estimate). **Needs:** KV0-H only, nothing from KV4. **Closes:** the B half of R-01 phase 2
   and of FreeToken Lead 1; KV8 keeps the rest.
 
-### KV8a-Q — Keep the last question's checkpoint beside KV8a's (added 2026-10-22)
+### KV8a-Q — Keep the last question's checkpoint beside KV8a's (added 2026-10-22; CLOSED 2026-10-24)
+
+- **Closed as written, by Francis's decision (2026-10-24, 3:33 pm, relayed by the coordinator: "close KV8a-Q as written, and
+  replace it with one check that B35's snapshot restores a question after a tool loop").**
+  - **What gate 1 found** (`docs/measurements/kv8a-q-gate1-2026-10/README.md`): the template claim holds. A new question's
+    request diverges right after the previous question's `<|im_start|>assistant\n`, in every thinking mode.
+  - **Why that closes it:** serve's `KVScope.Keep` (`loadedModel.recurrentKeep`) is that same point for every request of the
+    previous question's tool loop. B35 (`docs/queue-engineering.md` § B35, on `main`) already keeps the recurrent state there
+    on CUDA, rounded down to the 512-row pass grid (`Model.kvBoundaryPlan`). So the `question` copy below would duplicate B35.
+  - **Its save point was also wrong:** the end of prefill is 2–4 ids past the divergence, so a copy saved there could never
+    be restored.
+- **The replacement:** the check B35-TL, registered in `docs/measurements/b35-toolloop-2026-10/README.md` before it runs.
+  - It asks whether B35's kept state serves Q2 and Q3 after a tool loop, on Qwen3.5-9B on nobara, equal to a cold prefill
+    token for token.
+  - It also asks whether the kept point moves past Q1's loop. The code reading predicts it does not, because
+    `Model.kvPrefillMark` takes no mark on a request that restored a snapshot.
+- **B35-TL's result (2026-10-24 16:07, Q1-ONLY):**
+  - **What passes:** B35 serves the second question after a tool loop on nobara. It reuses Q1's kept point (4,096 of 7,329
+    tokens), and its reply equals cold.
+  - **What fails:** the kept point never moves past Q1. The third question restored the same 4,096 tokens, at 0.64 of cold
+    against the second question's 0.50.
+  - **The follow-up**, product code that waits for Francis's yes: a restoring request marks its own Keep.
+- **What B35 does not cover:** Metal and the CPU keep no recurrent snapshot, and Mamba-2 hybrids are refused on CUDA. Those
+  belong to B35's follow-ups, not to KV8a-Q.
+- The text below is the section as it was added, kept for its reasoning; none of it is open work.
 
 - **Why.** Qwen's chat template renders the assistant turns after the last user question with their reasoning, and the ones
   before it without. Two cases follow:
