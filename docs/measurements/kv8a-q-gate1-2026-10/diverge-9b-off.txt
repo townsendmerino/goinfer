@@ -1,0 +1,37 @@
+r1: 203 ids, keep 199 (tail past it "<think>\n\n</think>\n\n"), boundary 181
+r2: 255 ids, keep 199 (tail past it "<think>\n\n</think>\n\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n{\"city\": \"Paris\", \"temp_c\": 14}\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"), boundary 181
+r3: 309 ids, keep 199 (tail past it "<think>\n\n</think>\n\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n{\"city\": \"Paris\", \"temp_c\": 14}\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Lyon\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n{\"city\": \"Lyon\", \"temp_c\": 17}\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"), boundary 181
+r4: 334 ids, keep 330 (tail past it "<think>\n\n</think>\n\n"), boundary 181
+r5: 388 ids, keep 330 (tail past it "<think>\n\n</think>\n\n<tool_call>\n{\"name\": \"get_wind\", \"arguments\": {\"city\": \"Lyon\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n{\"city\": \"Lyon\", \"wind_kmh\": 9}\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"), boundary 181
+r6: 412 ids, keep 408 (tail past it "<think>\n\n</think>\n\n"), boundary 181
+
+r2 vs r1: first difference at id 203 of 203 (the whole previous prompt is a prefix)
+   shared up to: " in Lyon right now?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+   r1 goes on: ""
+   r2 goes on: "<tool_call>\n{\"name\": \"get_weather"
+   candidates: live/latest of r1 at 203, keep of r1 at 199, boundary of r2 at 181
+   deepest that serves: live/latest of r1 at 203; re-prefill 52 of 255 ids
+r3 vs r2: first difference at id 255 of 255 (the whole previous prompt is a prefix)
+   shared up to: "14}\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+   r2 goes on: ""
+   r3 goes on: "<tool_call>\n{\"name\": \"get_weather"
+   candidates: live/latest of r2 at 255, keep of r1 at 199, keep of r2 at 199, boundary of r3 at 181
+   deepest that serves: live/latest of r2 at 255; re-prefill 54 of 309 ids
+r4 vs r3: first difference at id 199 of 309 (110 of r3's ids not shared)
+   shared up to: " warmer in Paris or in Lyon right now?<|im_end|>\n<|im_start|>assistant\n"
+   r3 goes on: "<think>\n\n</think>\n\n<tool_call>\n{\"name"
+   r4 goes on: "<tool_call>\n{\"name\": \"get_weather"
+   candidates: live/latest of r3 at 309 (past d), keep of r1 at 199, keep of r2 at 199, keep of r3 at 199, boundary of r4 at 181
+   deepest that serves: keep of r3 at 199; re-prefill 135 of 334 ids
+r5 vs r4: first difference at id 334 of 334 (the whole previous prompt is a prefix)
+   shared up to: " it windy in Lyon?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+   r4 goes on: ""
+   r5 goes on: "<tool_call>\n{\"name\": \"get_wind"
+   candidates: live/latest of r4 at 334, keep of r1 at 199, keep of r2 at 199, keep of r3 at 199, keep of r4 at 330, boundary of r5 at 181
+   deepest that serves: live/latest of r4 at 334; re-prefill 54 of 388 ids
+r6 vs r5: first difference at id 330 of 388 (58 of r5's ids not shared)
+   shared up to: "<|im_start|>user\nIs it windy in Lyon?<|im_end|>\n<|im_start|>assistant\n"
+   r5 goes on: "<think>\n\n</think>\n\n<tool_call>\n{\"name"
+   r6 goes on: "<tool_call>\n{\"name\": \"get_wind"
+   candidates: live/latest of r5 at 388 (past d), keep of r1 at 199, keep of r2 at 199, keep of r3 at 199, keep of r4 at 330, keep of r5 at 330, boundary of r6 at 181
+   deepest that serves: keep of r5 at 330; re-prefill 82 of 412 ids
