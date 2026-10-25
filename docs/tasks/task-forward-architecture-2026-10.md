@@ -2556,6 +2556,17 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
     3,800-token preamble (PARKED, to the owner) (`docs/measurements/sp2-2026-10/README.md`). The owner's decision (Francis, 2026-10-25):
     merge on these readings; under his merge rule of the same morning (lossless and opt-in: median ≥ 1.05×, 9 of 10 pairs faster)
     both contexts merge. Next, a `serve` verify-width option and a served A/B.
+- **SP2b — the drafter's context in prefix snapshots (M; queued after the 35B + DFlash work).** On the owner's decision
+  (Francis, 2026-10-25 13:38, option A). `BlockSpec` reuses a prefix only when a prompt extends its own last turn: the host prefix
+  snapshots plain `serve` restores carry the target's rows and recurrent state, not the drafter's context, so `--drafter`
+  re-prefills a repeated or re-sent prompt cold, with the capture on top (on the essay A/B at depth 4096: 18.65 s a request against
+  plain's 0.21 s, wall 0.19×; `docs/measurements/sp2-2026-10/README.md`, "The essay A/B end to end").
+  - **The change:** snapshots carry the drafter's context rows for their prefix, and `BlockSpec` takes the same prefix plain `serve`
+    takes.
+  - **Gates, registered before any code:** identity (a reused turn equals a cold one, tokens and state); the snapshot's added host
+    bytes, stated and priced; and an end-to-end served A/B, wall time and TTFT beside decode tok/s, on repeated and on agent-style
+    prompts, graded at the merge rule (median ≥ 1.05×, at least 9 of 10 pairs faster).
+  - Not blocking #238.
 - **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
   - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
     masks.
