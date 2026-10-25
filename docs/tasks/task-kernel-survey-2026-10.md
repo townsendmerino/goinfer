@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1, and every Context builder wired through quantSrc); the 1.5B's WebGPU decode 24.7 → 21.8 ms a token, median 0.8810, 10 of 10 pairs, with an A/A control (1.0041) in the same run and busy cores read per arm (E2-G2 SHIP) | survey, "KS-E2 read" |
-| KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); on the fixed GPU-contention guard, a quiet machine reads median 0.9916, 10 of 10 pairs (about 0.2 ms a token), under the owner's bit-identical rule, not the median bar | survey, "KS-E3 read" |
+| KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); E3-G2 on its full guard (busy cores, GPU contention, vanished clients) passes, median 0.9166, 10 of 10 pairs; the size varies with the machine's state (a quiet earlier session read 0.9916, also 10 of 10) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -2031,11 +2031,11 @@ client's time parsed (0.44–0.59%, not 0).
   registration hands that case to the owner's rule, and the test does not encode it. Changing what the test asserts is a bar change
   and Francis's call.
 
-**After #227's fourth review (registered 2026-10-25, 00:55, before a re-read).** A GPU client present at an arm's start and gone at
+**After #227's fourth review (registered 2026-10-25, committed 00:43:42, before the re-read started at 00:44:51).** A GPU client present at an arm's start and gone at
 its end took its accumulated time with it. A contender that saturated the GPU for most of an arm and closed its device before the
 end sample read as 0 ns.
 - **The fix.** `otherGPUDelta` now reports such clients, and the arm is void: what it did is unknown. In 20 three-second windows
-  sampled on the Mac at 00:50, no client vanished, so the void costs little. `TestParseAGXClients` covers it, and is red without
+  sampled on the Mac at 00:41, no client vanished, so the void costs little. `TestParseAGXClients` covers it, and is red without
   the check.
 - **What can still pass unseen:** a GPU client opened and closed entirely between an arm's two samples. Every client present at
   either sample is accounted for: its time if it is present at both, all of its time if it is new at the end, and the arm is void if
@@ -2045,6 +2045,20 @@ end sample read as 0 ns.
 - **Re-read registered.** The 23:32 reading was taken without the vanished-client check, so whether a client closed inside one of
   its arms is not known. E3-G2 is read again on the night runner with the same bar. KS-E3 stays on main either way (Francis's
   decision); the reading goes in the record.
+
+**E3-G2 re-read with the vanished-client void, 2026-10-25 (00:44–00:46, the night runner holding the lock; 8.96 GB reclaimable at
+the start; only the Claude app open): PASS, 10 of 10.**
+- **Every arm valid:** 0.43–0.83 busy cores, other processes' GPU 0.00–0.71%, no client vanished, 3.97–4.21 GiB reclaimable; no
+  void pairs.
+- **Arms:** off 29.90–31.53 ms a token, on 27.51–28.69. **Median on/off 0.9166, 10 of 10 pairs faster** (0.8899–0.9456). That is
+  under the median bar (≤ 0.98), so E3-G2 passes on its registered bar.
+- **The size is not settled.** Both arms ran about 15% slower than at 23:32 (off 26.0, on 25.8 ms), with no thermal or low-power
+  flag recorded, and the ratio moved with them, 0.9916 then and 0.9166 now. A ratio across sessions is not a ratio
+  (`docs/measurements/noise-registry.md`), so each reading stands for its own session. The direction holds in every reading,
+  faster on 10 of 10 in all but the swinging 16:11 one, and the size runs from about 0.8% to about 8% depending on the machine's
+  state.
+- KS-E3 stays on main (Francis's decision).
+Log: `~/goinfer-logs/night/runs/2026-10-25/kse3-g2-gpuguard-3.log`.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
