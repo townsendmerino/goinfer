@@ -1,0 +1,84 @@
+22:44:46 LQ start at d0b69c56a; load 0.04 0.12 0.16
+== LQ1 22:44:51
+=== RUN   TestQ4K_phi3ResidentMatchesCPU
+    q4k_phi3_resident_test.go:67: cpu q4k vs cpu f32 (same prompt, the baseline): 141 positions, cosine min 0.435308 p10 0.926208 median 0.982052
+=== RUN   TestQ4K_phi3ResidentMatchesCPU/int8_lane
+    q4k_phi3_resident_test.go:113: resident: context 4096 positions, 112 projections on gemv_q4k_g32, 0 native, fused per-32: false
+    q4k_phi3_resident_test.go:67: cuda q4k vs cpu q4k: 141 positions, cosine min 0.975412 p10 0.998561 median 0.999804
+    q4k_phi3_resident_test.go:67: cuda q4k vs cpu f32: 141 positions, cosine min 0.454347 p10 0.940085 median 0.982710
+=== RUN   TestQ4K_phi3ResidentMatchesCPU/native_lane
+    q4k_phi3_resident_test.go:113: resident: context 4096 positions, 112 projections on gemv_q4k_g32, 113 native, fused per-32: false
+    q4k_phi3_resident_test.go:67: cuda q4k vs cpu q4k: 141 positions, cosine min 0.501753 p10 0.921228 median 0.993030
+    q4k_phi3_resident_test.go:67: cuda q4k vs cpu f32: 141 positions, cosine min 0.029366 p10 0.882586 median 0.984702
+    q4k_phi3_resident_test.go:128: CUDA q4k quality p10 0.8826 is more than 0.01 below the CPU q4k path's 0.9262
+--- FAIL: TestQ4K_phi3ResidentMatchesCPU (113.55s)
+    --- PASS: TestQ4K_phi3ResidentMatchesCPU/int8_lane (3.97s)
+    --- FAIL: TestQ4K_phi3ResidentMatchesCPU/native_lane (3.04s)
+FAIL
+== LQ2 reps 60 22:46:44
+[diag] filler 60 repeats: 91 positions; resident context 512, layer 0 KV half false
+[diag] filler 60 repeats | cpu q4k                    positions    0-  90: cosine min 0.787750 p10 0.969063 median 0.982086; mean KL to f32 0.28390
+[diag] filler 60 repeats | int8 arm                   positions    0-  90: cosine min 0.797576 p10 0.970674 median 0.983195; mean KL to f32 0.27463
+[diag] filler 60 repeats | native arm                 positions    0-  90: cosine min 0.280650 p10 0.962651 median 0.985172; mean KL to f32 0.29568
+[diag] filler 60 repeats | only Q5_K qkv native       positions    0-  90: cosine min 0.301950 p10 0.951604 median 0.974610; mean KL to f32 0.33774
+[diag] filler 60 repeats | only Q6_K ffn_down native  positions    0-  90: cosine min 0.805299 p10 0.976343 median 0.986426; mean KL to f32 0.32379
+[diag] filler 60 repeats | only the Q6_K head native  positions    0-  90: cosine min 0.797591 p10 0.970673 median 0.983196; mean KL to f32 0.27723
+--- PASS: TestKSO1C_fillerDiagnostic (75.97s)
+== LQ2 reps 90 22:48:01
+[diag] filler 90 repeats: 121 positions; resident context 512, layer 0 KV half false
+[diag] filler 90 repeats | cpu q4k                    positions    0- 120: cosine min 0.787750 p10 0.966308 median 0.982396; mean KL to f32 0.32681
+[diag] filler 90 repeats | int8 arm                   positions    0- 120: cosine min 0.797576 p10 0.970412 median 0.983565; mean KL to f32 0.32131
+[diag] filler 90 repeats | native arm                 positions    0- 120: cosine min 0.280650 p10 0.959322 median 0.986530; mean KL to f32 0.30971
+[diag] filler 90 repeats | only Q5_K qkv native       positions    0- 120: cosine min 0.301950 p10 0.951604 median 0.976411; mean KL to f32 0.36869
+[diag] filler 90 repeats | only Q6_K ffn_down native  positions    0- 120: cosine min 0.805299 p10 0.974986 median 0.986724; mean KL to f32 0.31885
+[diag] filler 90 repeats | only the Q6_K head native  positions    0- 120: cosine min 0.797591 p10 0.970409 median 0.983564; mean KL to f32 0.32369
+--- PASS: TestKSO1C_fillerDiagnostic (101.10s)
+== LQ2 reps 110 22:49:43
+[diag] filler 110 repeats: 141 positions; resident context 512, layer 0 KV half false
+[diag] filler 110 repeats | cpu q4k                    positions    0- 140: cosine min 0.435308 p10 0.926208 median 0.982052; mean KL to f32 0.44932
+[diag] filler 110 repeats | int8 arm                   positions    0- 140: cosine min 0.454347 p10 0.940085 median 0.982710; mean KL to f32 0.42710
+[diag] filler 110 repeats | native arm                 positions    0- 140: cosine min 0.029366 p10 0.882586 median 0.984702; mean KL to f32 0.50969
+[diag] filler 110 repeats | only Q5_K qkv native       positions    0- 140: cosine min 0.057949 p10 0.907902 median 0.975204; mean KL to f32 0.54465
+[diag] filler 110 repeats | only Q6_K ffn_down native  positions    0- 140: cosine min 0.084644 p10 0.906411 median 0.985573; mean KL to f32 0.50884
+[diag] filler 110 repeats | only the Q6_K head native  positions    0- 140: cosine min 0.454358 p10 0.940103 median 0.982709; mean KL to f32 0.42911
+--- PASS: TestKSO1C_fillerDiagnostic (116.00s)
+== LQ2 reps 130 22:51:39
+[diag] filler 130 repeats: 161 positions; resident context 512, layer 0 KV half false
+[diag] filler 130 repeats | cpu q4k                    positions    0- 160: cosine min 0.787750 p10 0.975436 median 0.983790; mean KL to f32 0.33651
+[diag] filler 130 repeats | int8 arm                   positions    0- 160: cosine min 0.797576 p10 0.976489 median 0.984194; mean KL to f32 0.32961
+[diag] filler 130 repeats | native arm                 positions    0- 160: cosine min 0.280650 p10 0.966609 median 0.988311; mean KL to f32 0.31402
+[diag] filler 130 repeats | only Q5_K qkv native       positions    0- 160: cosine min 0.301950 p10 0.954504 median 0.978545; mean KL to f32 0.39462
+[diag] filler 130 repeats | only Q6_K ffn_down native  positions    0- 160: cosine min 0.805299 p10 0.978790 median 0.988617; mean KL to f32 0.30680
+[diag] filler 130 repeats | only the Q6_K head native  positions    0- 160: cosine min 0.797591 p10 0.976490 median 0.984193; mean KL to f32 0.33188
+--- PASS: TestKSO1C_fillerDiagnostic (131.06s)
+== LQ3 README.md 22:53:51
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens: 912 positions; resident context 1024, layer 0 KV half false
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | cpu q4k                    positions    0- 911: cosine min 0.954730 p10 0.998957 median 0.999824; mean KL to f32 0.00304
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | cpu q4k                    positions  256- 911: cosine min 0.987759 p10 0.999409 median 0.999847; mean KL to f32 0.00187
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | int8 arm                   positions    0- 911: cosine min 0.956722 p10 0.999000 median 0.999828; mean KL to f32 0.00296
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | int8 arm                   positions  256- 911: cosine min 0.982065 p10 0.999409 median 0.999848; mean KL to f32 0.00173
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | native arm                 positions    0- 911: cosine min 0.959674 p10 0.999389 median 0.999924; mean KL to f32 0.00148
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | native arm                 positions  256- 911: cosine min 0.959674 p10 0.999732 median 0.999932; mean KL to f32 0.00068
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | only Q5_K qkv native       positions    0- 911: cosine min 0.958710 p10 0.999337 median 0.999899; mean KL to f32 0.00190
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | only Q5_K qkv native       positions  256- 911: cosine min 0.982456 p10 0.999650 median 0.999909; mean KL to f32 0.00089
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | only Q6_K ffn_down native  positions    0- 911: cosine min 0.971983 p10 0.999036 median 0.999850; mean KL to f32 0.00231
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | only Q6_K ffn_down native  positions  256- 911: cosine min 0.971983 p10 0.999458 median 0.999867; mean KL to f32 0.00167
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | only the Q6_K head native  positions    0- 911: cosine min 0.956727 p10 0.999015 median 0.999836; mean KL to f32 0.00289
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/README.md, first 900 tokens | only the Q6_K head native  positions  256- 911: cosine min 0.982080 p10 0.999429 median 0.999856; mean KL to f32 0.00166
+--- PASS: TestKSO1C_fillerDiagnostic (756.23s)
+== LQ3 docs/benchmarks.md 23:06:28
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens: 912 positions; resident context 1024, layer 0 KV half false
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | cpu q4k                    positions    0- 911: cosine min 0.954730 p10 0.999430 median 0.999917; mean KL to f32 0.00243
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | cpu q4k                    positions  256- 911: cosine min 0.991320 p10 0.999470 median 0.999918; mean KL to f32 0.00168
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | int8 arm                   positions    0- 911: cosine min 0.956722 p10 0.999332 median 0.999915; mean KL to f32 0.00247
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | int8 arm                   positions  256- 911: cosine min 0.993143 p10 0.999356 median 0.999916; mean KL to f32 0.00175
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | native arm                 positions    0- 911: cosine min 0.991654 p10 0.999684 median 0.999960; mean KL to f32 0.00105
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | native arm                 positions  256- 911: cosine min 0.991654 p10 0.999684 median 0.999960; mean KL to f32 0.00081
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | only Q5_K qkv native       positions    0- 911: cosine min 0.958710 p10 0.999614 median 0.999948; mean KL to f32 0.00153
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | only Q5_K qkv native       positions  256- 911: cosine min 0.996066 p10 0.999619 median 0.999948; mean KL to f32 0.00096
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | only Q6_K ffn_down native  positions    0- 911: cosine min 0.991831 p10 0.999428 median 0.999926; mean KL to f32 0.00194
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | only Q6_K ffn_down native  positions  256- 911: cosine min 0.991831 p10 0.999410 median 0.999926; mean KL to f32 0.00158
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | only the Q6_K head native  positions    0- 911: cosine min 0.956727 p10 0.999346 median 0.999919; mean KL to f32 0.00240
+[diag] /home/francis/goinfer-bench/ks-a1-cuda/docs/benchmarks.md, first 900 tokens | only the Q6_K head native  positions  256- 911: cosine min 0.993151 p10 0.999381 median 0.999920; mean KL to f32 0.00168
+--- PASS: TestKSO1C_fillerDiagnostic (744.93s)
+23:18:53 LQ DONE

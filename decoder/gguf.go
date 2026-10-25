@@ -1787,6 +1787,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if err = embMat(&w.LMHead, "output.weight", cfg.VocabSize, hidden); err != nil {
 			return nil, err
 		}
+		if quant == quantQ4K && sink == nil {
+			w.noteKQuant(g, "output.weight", w.LMHead, hidden, func(r int) int { return r * hidden })
+		}
 		arch.TiedLMHead = false
 	}
 
