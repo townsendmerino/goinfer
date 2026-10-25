@@ -359,7 +359,7 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 		var end func() (bool, string)
 		var endGPU func() (float64, bool)
 		if guard {
-			end, endGPU = voidWindow(t), otherGPUWindow(t)
+			endGPU, end = otherGPUWindow(t), voidWindow(t) // the GPU read (an ioreg call) outside the CPU window
 		}
 		tok := 13
 		t0 := time.Now()
