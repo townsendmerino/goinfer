@@ -145,3 +145,71 @@ passing; the same 1.15 GB free with everything attached; peak resident 15.3 GB, 
   one when a later drafter asks for more rows (`TestRecurrentSpec_arenaPriced` asks for 4 rows, then 16).
 - **G2 and G4 print their verdict** against the registered bands (`VERDICT G2 L=…`, `VERDICT G4 <context>: …`) and fail the
   run on G2's FAIL band and on G4's not-advanced band; a parked G4 context is reported, not failed.
+
+### G2 (2026-10-25, 06:29–06:36 PDT, at `cdbe6459`): PASS, FLAGGED at both lengths → the fold moved into the next pass's scan
+
+`MODE=cost`, the exclusive timing lock, started on the owner's word (Francis, 2026-10-25 6:18 am: "start your G2 and G4 timed runs
+now"). Cell starts at load 7.55 and 6.08; no void cell; peak swap 0. Raw: `raw/cost-2026-10-25-0629.jsonl`.
+
+| L | median step | fold of n = 1 / 2 / 3 / 4 rows | at 3.30 rows | of a step | band |
+|---|---|---|---|---|---|
+| 512 | 15.61 ms | 1.498 / 1.533 / 1.582 / 1.627 ms | 1.595 ms | 10.2% | 5.0–11.0%: passes, flagged |
+| 4096 | 16.94 ms | 1.496 / 1.536 / 1.583 / 1.628 ms | 1.597 ms | 9.4% | 5.0–11.0%: passes, flagged |
+
+The fold costs about 1.5 ms whatever its rows: 48 launches and a load and store of the 48 MiB state, the fixed part. The registered
+response to a flagged G2 is that the fold moves into the next pass's scan before G4 is read, so G4, which had started, was stopped
+in its warm-up (no pair timed; `speed-2026-10-25-0636.log` on nobara) and the fold was moved:
+
+- The verify twins fold the rows the previous verify marked into the window and state, store them once, and then scan their own
+  rows without writing them. `FoldVerified` marks rows; `FlushFold` folds them eagerly through prefill's kernels where something
+  other than a verify comes next (the guard's plain steps, the trailing forward, the commit).
+- The arena keeps two banks, since a verify overwrites the bank it writes while the previous verify's rows fold from the other:
+  63,373,312 B allocated on the 9B, priced at 65,011,712 B (62 MiB). This doubles the 30.1 MiB the registration stated, a
+  consequence of the registered response.
+- Every committing kernel's source is main's, unchanged (`cuda/deltanet.cu` gains only additions), and their PTX matches main's
+  apart from label numbers. The 128-wide twin is one loop over the folded rows and its own, and spills 96 B/thread, the committing
+  kernel's own figure.
+- G1a's new case checks the in-scan fold byte for byte against a prefill, and the next verify's argmax against the prefill's, on
+  all three small models; both plants are caught there too.
+
+### G1c on the in-scan fold (06:48–06:57 PDT, at `721cce5e`): PASS
+
+40 of 40 cells token- and state-identical to plain greedy, the guard's fallback 4 of 4, P1 and P2 each caught on 12 of 12 prompts,
+G5 passing. Free VRAM with everything attached 1.11 GB; resident context 4,608 kept; peak resident 15.3 GB, swap 0. Raw:
+`raw/identity-2026-10-25-0648.jsonl`.
+
+### G2 on the in-scan fold (06:57–06:58 PDT, at `721cce5e`): PASS, FLAGGED
+
+Cell starts at load 1.34 and 1.29; no void cell; peak swap 0. Raw: `raw/cost-2026-10-25-0657.jsonl`. The in-scan fold's cost is a
+verify that folds n marked rows less a verify with none (median of 20 interleaved repetitions each).
+
+| L | step | verify, nothing to fold | verify folding 1 / 2 / 3 / 4 rows | fold at 3.30 rows | of a step | band | the separate fold, same run |
+|---|---|---|---|---|---|---|---|
+| 512 | 15.58 ms | 21.35 ms | 22.27 / 22.29 / 22.35 / 22.32 ms | 0.996 ms | **6.4%** | passes, flagged | 1.596 ms, 10.2% |
+| 4096 | 16.93 ms | 27.69 ms | 28.57 / 28.62 / 28.67 / 28.71 ms | 0.994 ms | **5.9%** | passes, flagged | 1.595 ms, 9.4% |
+
+- **Verdict: G2 passes the comparison with R-01 phase 1's 11.0% at both lengths, flagged (5.0–11.0%).** The registered response to
+  the flag is done.
+- What is left is the one store of the committed state per cycle: a verify that folds costs what today's verify costs (22.2 ms at
+  512, which stores the state too). That store is the commit itself, so there is no further copy to remove.
+
+### G4, speed with DFlash against plain decode (06:58–08:30 PDT, at `721cce5e`): short PASS, long PARKED
+
+`MODE=speed`, the exclusive timing lock. 10 A B B A pairs per context, each pair one pass of each arm over SP0's 12 code and math
+prompts, 256 new tokens, decode timed from the first token to the end of the turn. Every pair started at load 2.0 or below with
+51 GB or more available: no void pair. Peak resident 14.1 GB, swap 0. The tokens were equal in every pair, prompt for prompt (2,917
+decode tokens in each arm short, 2,853 long). The exact-attention scope was in force in both arms (the multi-row flash-decode lane
+was off for verify on this load). Raw: `raw/speed-2026-10-25-0658.jsonl`.
+
+| context | plain | DFlash, w = 4 | median speedup | pairs above 1 | spread of the pairs | registered verdict |
+|---|---|---|---|---|---|---|
+| short (SP0's prompts, about 100–250 tokens) | 65.3 tok/s | 95.5 tok/s | **1.462×** | 10 of 10 | 1.453–1.462 | **PASS** (≥ 1.30×, ≥ 9 of 10) |
+| long (the same behind a 3,800-token preamble) | 58.7 tok/s | 70.9 tok/s | **1.207×** | 10 of 10 | 1.206–1.208 | **PARKED** (1.20–1.30×, to the owner) |
+
+- **Against SP0's projection:** 1.55× at 512 and 1.29× at 4,096 projected; 1.46× and 1.21× read. The read numbers carry the fold
+  (5.9–6.4% of a step) that the projection left out, and the long cell's acceptance falls with context (the observation under G1c).
+- **What the parked reading means:** at long context SP2 is still faster than plain decode in every pair (1.21×), and lossless,
+  but under SP0's 1.30× bar; the registration sends it to the owner.
+
+**Verdict: G1, G3 and G5 pass; G2 passes, flagged, with its registered response done; G4 passes at short context and is parked at
+long context.**
