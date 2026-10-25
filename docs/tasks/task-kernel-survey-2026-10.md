@@ -1049,6 +1049,18 @@ the native kernels need for their group sums. The gates are unchanged.
     included. Each native buffer holds exactly the file's bytes for its weight; layer 0's native buffers and the head read back equal
     to the file's blocks (1 on the 0.5B, whose head is tied and stays int8; 5 on Phi-3). The heap rose by 0.04 and 0.46 MB, inside
     the 1 MiB slack.
+- **O1C-G7: SHIP** (e3bd04a0d, 17:29–17:30, the lock held exclusively; load 0.34 at the start and 0.56–1.11 at each pair, 54.6–56.4 GB
+  available, no void pair; the desktop compositor's context on the card). Log: `docs/measurements/ks-a1-2026-10/o1c-g7-2026-10-24-1729.log`.
+
+  | model | weights native | int8 arm | native arm | median native/int8 | pairs faster |
+  |---|---:|---:|---:|---:|---:|
+  | Phi-3 mini q4 | 113 (q, k, v ×32, 16 `ffn_down`, the head) | 8.696–8.716 ms (114.9 tok/s) | 7.847–7.861 ms (127.3 tok/s) | **0.9025** | **10 of 10** |
+  | Qwen2.5-Coder-1.5B q4_k_m | 29 | 4.952–5.004 ms (200.2 tok/s) | 4.870–4.896 ms (204.6 tok/s) | **0.9786** | 10 of 10 |
+
+  - Phi-3 saves 0.85 ms a token, against A1-G0's kernel-sum bound of about 0.9 ms. On Metal the same change saved 0.45 ms against a
+    kernel-sum projection of about 3 ms, and the 1.5B was slower (1.0127); on CUDA the 1.5B is faster.
+  - Each arm's 128 greedy tokens were the same in every run. The two arms agree for the first 40 tokens on Phi-3 and all 128 on the
+    1.5B: different weights (the file's own against an int8 copy), so a divergence is expected; G5 and G6 grade it.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
