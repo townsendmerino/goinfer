@@ -9,10 +9,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// hostVMInfo64 is HOST_VM_INFO64 and hostCPULoadInfo HOST_CPU_LOAD_INFO (mach/host_info.h).
+// hostVMInfo64 is HOST_VM_INFO64 (mach/host_info.h) and processorCPULoadInfo PROCESSOR_CPU_LOAD_INFO (mach/processor_info.h).
 const (
-	hostVMInfo64    = 4
-	hostCPULoadInfo = 3
+	hostVMInfo64         = 4
+	processorCPULoadInfo = 2
 )
 
 // machHost is the libSystem calls hostmem makes (libsystem_darwin.go) and this task's host and task ports, asked for once:
@@ -40,16 +40,28 @@ func read() (Reading, bool) {
 	return h.reading(buf)
 }
 
-// readCPU decodes host_cpu_load_info: user, system, idle and nice ticks, in that order.
+// readCPU reads host_processor_info(PROCESSOR_CPU_LOAD_INFO): per core, user, system, idle and nice ticks, in that order. It is
+// not host_statistics64(HOST_CPU_LOAD_INFO), which XNU rate-limits like the memory reading: a few calls in one second get the
+// last reply again. The kernel's array is vm_deallocate'd once copied.
 func readCPU() (CPUTicks, bool) {
 	h := machOnce()
-	var t [4]uint32
-	n := uint32(len(t))
-	if h.statistics(h.port, hostCPULoadInfo, unsafe.Pointer(&t[0]), &n) != 0 || n != uint32(len(t)) {
+	var ncpu, cnt uint32
+	var info *uint32
+	if hostProcessorInfo(h.port, processorCPULoadInfo, &ncpu, &info, &cnt) != 0 || info == nil {
 		return CPUTicks{}, false
 	}
-	busy := uint64(t[0]) + uint64(t[1]) + uint64(t[3])
-	return CPUTicks{Busy: busy, Total: busy + uint64(t[2])}, true
+	defer vmDeallocate(h.taskSelf, uintptr(unsafe.Pointer(info)), uintptr(cnt)*4)
+	if ncpu == 0 || cnt != 4*ncpu {
+		return CPUTicks{}, false
+	}
+	raw := unsafe.Slice(info, cnt)
+	c := CPUTicks{busy: make([]uint64, 0, 3*ncpu), idle: make([]uint64, 0, ncpu), wrap32: true}
+	for p := range int(ncpu) {
+		t := raw[4*p : 4*p+4]
+		c.busy = append(c.busy, uint64(t[0]), uint64(t[1]), uint64(t[3]))
+		c.idle = append(c.idle, uint64(t[2]))
+	}
+	return c, true
 }
 
 // vmStats is one host_statistics64(HOST_VM_INFO64) reply, undecoded.
