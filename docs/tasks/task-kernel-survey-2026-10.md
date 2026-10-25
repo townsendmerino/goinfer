@@ -71,7 +71,7 @@
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
 | KS-F1 | open | either box: a fork/join counter and bit-identity on the tiny MoE fixtures | — |
 | KS-F2 | active | #239: gpt-oss's attendSinksToken fans its heads out and scores eight keys at once, bit-identical, default on for gpt-oss (Francis, 2026-10-25 10:16; limited to gpt-oss at 10:35). gpt-oss-20b at depth 128 10 of 10 pairs faster, 1.025×; then KS-O4 | `docs/measurements/ks-f2-2026-10/README.md` |
-| KS-F2b | open | time attendQueryP's new schedule (heads fanned out, eight keys at once) on Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4 before it ships for them: not run, by Francis's call of 2026-10-25 10:35 (#239 keeps their old path). The code is in #239's history | `docs/measurements/ks-f2-2026-10/README.md` |
+| KS-F2b | done | default on 2026-10-25 by Francis's call (14:01, option (c)) for every attendQueryP family: Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4. Bit-identical (768 function-level runs, 132 fanned; gate identity IDENTICAL for all five at 640 steps). Qwen3.5-0.8B on the Mac CPU 1.113× at depth 128 and 1.833× at 1,024, 10 of 10 each; the other four ship untimed by his call. LFM2.5-2.6B's confirming run is queued on the Mac's night runner | `docs/measurements/ks-f2b-2026-10-25/README.md` |
 | KS-F3 | open | either box: `GOINFER_DELTANET_TIMING=1` with M35 (tier 1, minutes) | — |
 | KS-F4 | open | nobara: per-fan-out timestamps inside a real 0.5B token | — |
 | KS-F5 | open | either box: `AllocsPerRun` and trig calls per token on `deepseek-tiny` | — |

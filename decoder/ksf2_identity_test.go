@@ -1,9 +1,12 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
@@ -84,11 +87,10 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 	}
 }
 
-// The attendQueryP families (Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2, Llama 4) keep today's schedule until they are timed (the
-// owner's call on #239): attendQueryP is bit-identical to its reference and never fans its heads out, so its cache's head worker pool
-// stays empty.
-func TestKSF2_queryPKeepsTheOldPath(t *testing.T) {
-	cells, fanned := 0, 0
+// KS-F2b: attendQueryP with the heads fanned out and eight keys scored at once is bit-identical to its reference in every cell, and
+// fans out where gpt-oss's rule would (its cache's head worker pool grows there).
+func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
+	cells, fanned, grown := 0, 0, 0
 	for _, procs := range []int{1, 8} {
 		old := runtime.GOMAXPROCS(procs)
 		for _, sh := range ksf2Shapes {
@@ -133,11 +135,11 @@ func TestKSF2_queryPKeepsTheOldPath(t *testing.T) {
 							ksf2SameBits(t, name+": ctx", got, want)
 							cells++
 							if withScr {
-								if len(a.scr.headPool) != 0 {
-									t.Fatalf("%s: attendQueryP grew %d head worker slots; it must keep the one-goroutine path", name, len(a.scr.headPool))
-								}
 								if scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1 {
-									fanned++ // a cell gpt-oss's rule would have fanned out
+									fanned++ // a cell the fan-out rule takes
+									if len(a.scr.headPool) > 0 {
+										grown++
+									}
 								}
 							}
 						}
@@ -147,9 +149,9 @@ func TestKSF2_queryPKeepsTheOldPath(t *testing.T) {
 		}
 		runtime.GOMAXPROCS(old)
 	}
-	t.Logf("%d runs, every word equal and no head worker slot grown, %d of them in cells gpt-oss's rule would fan out", cells, fanned)
-	if fanned == 0 {
-		t.Fatal("no cell is one gpt-oss's rule would fan out: the check that attendQueryP does not proves nothing")
+	t.Logf("%d runs, every word equal; %d in cells the fan-out rule takes, %d of them fanned out", cells, fanned, grown)
+	if fanned == 0 || grown == 0 {
+		t.Fatalf("fan-out cells %d, fanned %d: the fanned schedule was not exercised", fanned, grown)
 	}
 }
 
@@ -312,5 +314,44 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 			t.Fatalf("%+v: no step fanned the heads out", sh)
 		}
 		t.Logf("%+v: %d steps on one scratch (growing, then shorter), gpt-oss's attention fanned out in %d, every word equal", sh, steps, fanned)
+	}
+}
+
+// TestKSF2_familiesTakeTheFannedSchedule: each attendQueryP family (Qwen3.5/3.6, Granite-4.0-H, LFM2, Nemotron-H, Llama 4) takes
+// the fanned schedule through its own forward. Its tiny fixture, on the CPU, decodes past a prompt long enough that a layer's
+// heads × span × head size crosses scalarHeadWorkers' threshold, and attendQueryPFanned must rise. A fixture that is absent here
+// (granite-tiny is gitignored) skips. Bit-identity is TestKSF2_queryPFannedBitIdentical's, and each family's full logits are
+// gate identity's.
+func TestKSF2_familiesTakeTheFannedSchedule(t *testing.T) {
+	for _, fx := range []string{"qwen35-tiny", "granite-tiny", "lfm2-tiny", "nemotron-tiny", "llama4-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			dir := filepath.Join("..", "testdata", fx)
+			if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
+				t.Skipf("no fixture: %v", err)
+			}
+			m, err := Load(dir, Options{Backend: "cpu"})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer m.Close()
+			_, _, nH, _, hd, _, vocab := m.Dims()
+			n := (1<<15)/(nH*hd) + 64 // keys enough for one layer to cross the threshold
+			prompt := make([]int, n)
+			for i := range prompt {
+				prompt[i] = 3 + (i*131)%(vocab-3)
+			}
+			before := attendQueryPFanned.Load()
+			ch, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})
+			for range ch {
+			}
+			if err := g.Err(); err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			fanned := attendQueryPFanned.Load() - before
+			if fanned == 0 {
+				t.Fatalf("%d-token prompt (heads %d × head size %d): attendQueryP never fanned out", n, nH, hd)
+			}
+			t.Logf("%d-token prompt: attendQueryP fanned out %d times", n, fanned)
+		})
 	}
 }
