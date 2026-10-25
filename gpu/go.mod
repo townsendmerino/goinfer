@@ -3,7 +3,7 @@ module github.com/townsendmerino/goinfer/gpu
 go 1.27.0
 
 require (
-	github.com/oliverbestmann/webgpu v1.36.0
+	github.com/oliverbestmann/webgpu v1.37.1
 	github.com/townsendmerino/aikit v1.75.0
 	github.com/townsendmerino/goinfer v0.23.0
 )
