@@ -316,7 +316,7 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 }
 
 // headScoresPool is headWorkerPool for gpt-oss's per-head scalar attention (attendSinksToken): n slots (capped at
-// maxAttnWorkers) whose scores hold at least nKeys. It grows nothing else, so the score buffers are all it adds.
+// maxAttnWorkers) whose scores are nKeys long. It grows nothing else, so the score buffers are all it adds.
 func (s *decodeScratch) headScoresPool(n, nKeys int) []headWorkerScratch {
 	n = min(max(n, 1), maxAttnWorkers)
 	if len(s.headPool) < n {
@@ -325,9 +325,11 @@ func (s *decodeScratch) headScoresPool(n, nKeys int) []headWorkerScratch {
 		s.headPool = grown
 	}
 	for i := range s.headPool[:n] {
-		if p := &s.headPool[i]; cap(p.scores) < nKeys {
+		p := &s.headPool[i]
+		if cap(p.scores) < nKeys {
 			p.scores = make([]float32, growCap(cap(p.scores), nKeys))
 		}
+		p.scores = p.scores[:nKeys]
 	}
 	return s.headPool[:n]
 }

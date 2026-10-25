@@ -108,6 +108,15 @@ Gemini found the product code bit-identical and race-free.
 - **The need file:** written only after a clean fit run, and keyed by cell, not by model.
 - **The reuse test:** gains a shrinking step and a wide window (above).
 
+**Gemini's round 3:**
+- **A need of 0 or less is missing, not small.**
+  - `run-nobara.sh` voids such a run instead of skipping the memory check.
+  - A fit run whose peak was never read fails instead of recording 0.
+  - `grade_g2.py` treats `need_mib` ≤ 0 as absent and falls back to the cell's measured peak. With no positive peak either, the arm is void.
+  - `test_grade_g2.py` pins all of this, including `need_mib` 0.
+- **The reuse test:** `attendQueryP` now shares the scratch's `scoresBuf` with gpt-oss's single-worker path (above).
+- **`decodeScratch.headScoresPool`:** reslices each slot to the key count.
+
 **Nit 3, the memory bound:** `growCap` at least doubles a buffer, so a slot can hold up to about twice the key count. The added bound is
   6 slots × 2 × the key count × 4 bytes, **1.57 MB per cache at 32k**, not the 0.79 MB first stated.
   - When one worker serves, gpt-oss now scores into the cache's existing `scoresBuf` instead of a per-call allocation, the same buffer
@@ -116,8 +125,10 @@ Gemini found the product code bit-identical and race-free.
 - **Test 4, G0's counts:**
   - "180 cells fanned out" counted each cell at GOMAXPROCS 1 and at 8. It is **90 distinct cells** (24 gpt-oss, 66 `attendQueryP`), each
     run at both.
-  - G0 now also runs `TestKSF2_scratchReuseAcrossSteps`: 300 decode steps on one cache and one scratch, the key count growing a row a step,
-    so the pool's reuse and growth are exercised. Every word is equal on arm64 and amd64, with 285–293 steps fanned out.
+  - G0 now also runs `TestKSF2_scratchReuseAcrossSteps`. After rounds 2 and 3 it is 660 steps on one scratch: 300 with a window narrower
+    than the span, 300 with one wider, then 60 on a shorter cache. `attendQueryP` scores into the scratch's `scoresBuf`, the buffer gpt-oss
+    uses when one worker serves. Every word is equal on arm64 and amd64, with the heads fanned out in 639 steps (64 heads) and 615 (16
+    heads), counted on the windowed span.
 
 ## Decision
 
@@ -150,7 +161,7 @@ counted on the windowed span. Both are equal on both arches |
 
 | cell | pairs faster | median ratio (B/A) | speedup | registered small-gains reading | merge bar (≥ 1.05×, 9 of 10) |
 |---|---|---|---|---|---|
-| gpt-oss-20b, depth 128 | **10 of 10** | 0.9759 | **1.025×** | met for this cell | **not met** |
+| gpt-oss-20b, depth 128 | **10 of 10** | 0.9759 | **1.025×** | met for this cell, the only one run (the depth-2048 cells were dropped for cost) | **not met** |
 | gpt-oss-20b, depth 2048 | — | — | — | not run (cost) | — |
 | Qwen3.5-9B, depth 2048 | — | — | — | not run | — |
 

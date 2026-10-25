@@ -271,7 +271,8 @@ func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache
 // meets shorter steps after longer ones. Each window (narrower than the span, and wider than it) runs on its own cache, growing a row a
 // step to 300 keys; then a second, shorter cache on the same scratch runs 1 to 60 keys, so a slot sized and written for 300 keys serves
 // steps that read far fewer. Every step's ctx must equal the reference's: a stale score carried into a shorter step, or a slot grown
-// short, shows here and not in the one-call cells. attendQueryP shares the scratch, as a cache's layers do, and must stay on its path.
+// short, shows here and not in the one-call cells. attendQueryP shares the scratch, as a cache's layers do: it scores into the scratch's
+// scoresBuf, the buffer attendSinksToken also uses when one worker serves, and must stay on its path.
 func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 	for _, sh := range []ksf2Shape{{64, 8, 64}, {16, 2, 128}} {
 		r := rand.New(rand.NewSource(int64(sh.nH)))
@@ -295,7 +296,7 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 				qa.Append(0, k, v)
 				qb.Append(0, k, v)
 				pq := attentionParams{Window: window, Scale: p.Scale, Softcap: p.Softcap}
-				attendQueryP(pq, q, got, make([]float32, pos+1), qa, 0, pos, arch)
+				attendQueryP(pq, q, got, scr.scoresBuf(pos+1), qa, 0, pos, arch) // the cache scratch's buffer, as the walker passes it
 				attendQueryPRef(pq, q, want, make([]float32, pos+1), qb, 0, pos, arch)
 				ksf2SameBits(t, fmt.Sprintf("%+v %s queryP step %d: ctx", sh, name, pos), got, want)
 				if scalarHeadWorkers(sh.nH, pos+1-p.start(pos), sh.hd) > 1 { // the span the step reads, as attendSinksToken counts it

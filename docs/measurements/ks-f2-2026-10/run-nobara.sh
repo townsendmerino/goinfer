@@ -55,8 +55,14 @@ one() {
 	fi
 	local need
 	need=$(cat "$LOG/need-${cell#fit-}.mib" 2>/dev/null || echo 0) # the fit run of this cell, at its own depth
-	if [ "$need" -gt 0 ] && [ "$avail" -lt $((need + 2048)) ]; then
-		echo "VOID: $cell $tag $arm started with ${avail} MiB available, under the fit need ${need} + 2048" | tee -a "$LOG/void.txt"; return 1
+	if [ "$tag" != fit ]; then
+		# A need of 0 or less (no clean fit, or a fit peak that was never read) is missing, not small: the run cannot be checked, so it is void.
+		if [ "$need" -le 0 ]; then
+			echo "VOID: $cell $tag $arm has no fit need recorded (${need}); it cannot be checked against the memory rule" | tee -a "$LOG/void.txt"; return 3
+		fi
+		if [ "$avail" -lt $((need + 2048)) ]; then
+			echo "VOID: $cell $tag $arm started with ${avail} MiB available, under the fit need ${need} + 2048" | tee -a "$LOG/void.txt"; return 1
+		fi
 	fi
 	local bin=$B/ksf2-new.test
 	[ "$arm" = A ] && bin=$B/ksf2-old.test
@@ -88,8 +94,11 @@ one() {
 	if [ $r != 0 ] || ! grep -q -- '--- PASS' "$LOG/g2-$cell-$tag-$arm.log"; then
 		echo "FAILED: $cell $tag $arm (see $LOG/g2-$cell-$tag-$arm.log)"; tail -3 "$LOG/g2-$cell-$tag-$arm.log"; return 2
 	fi
-	# Only a clean fit run (it passed, it did not swap) records its peak as the cell's need.
-	if [ "$tag" = fit ]; then echo $((hwm / 1024)) > "$LOG/need-${cell#fit-}.mib"; fi
+	# Only a clean fit run (it passed, it did not swap, its peak was read) records its peak as the cell's need.
+	if [ "$tag" = fit ]; then
+		[ "$hwm" -gt 0 ] || { echo "FAILED: $cell fit: no peak was read (neither /proc nor time -v)"; return 2; }
+		echo $((hwm / 1024)) > "$LOG/need-${cell#fit-}.mib"
+	fi
 	# Tag the line the harness wrote with this run's place in the order and the box's state at its start.
 	python3 -c "import json,sys; l=json.loads(open(sys.argv[1]).read().splitlines()[-1]); l.update(tag=sys.argv[2], load=float(sys.argv[3]), avail_mib=int(sys.argv[4]), vmhwm_mib=int(sys.argv[5])//1024, vmswap_peak_mib=int(sys.argv[6])//1024, need_mib=int(sys.argv[7])); print(json.dumps(l))" \
 		"$LOG/g2-$cell.jsonl.part" "$tag" "$load" "$avail" "$hwm" "$swap" "$need" >> "$LOG/g2-$cell.jsonl"
@@ -101,7 +110,7 @@ run() {
 	local tries=0 r
 	while :; do
 		one "$@"; r=$?
-		[ $r = 1 ] || return $r
+		[ $r = 1 ] || return $r # 3 (no fit need) and 2 (failed) are not retried
 		tries=$((tries + 1))
 		[ $tries -ge 10 ] && { echo "VOID: $1 $6 $2 stayed void after 10 tries"; return 1; }
 		sleep 60

@@ -15,25 +15,29 @@ are graded in the record, not here. Usage: grade_g2.py <cell.jsonl> ...
 """
 import json, os, statistics, sys
 
-counts = []
-for path in sys.argv[1:]:
+
+def cell_pairs(path):
+    """One cell's valid pair ratios (B over A), with every void run reported and dropped."""
     cell = os.path.basename(path).removeprefix("g2-").removesuffix(".jsonl")
-    runs = {}
     lines = [json.loads(line) for line in open(path)]
-    fallback = max(r.get("vmhwm_mib", 0) for r in lines)
-    if any("need_mib" not in r for r in lines):
-        print(f"{cell}: need_mib absent from some lines; their need is the cell's largest measured peak, {fallback} MiB")
+    fallback = max((r.get("vmhwm_mib", 0) for r in lines), default=0)
+    if any(r.get("need_mib", 0) <= 0 for r in lines):
+        print(f"{cell}: need_mib absent or not positive on some lines; their need is the cell's largest measured peak, {fallback} MiB")
+    runs = {}
     for r in lines:
         if not r["tag"].startswith("pair"):
             continue
-        need = r.get("need_mib", fallback)
+        # A need of 0 or less is missing, not small. With no positive fallback either, the arm cannot be checked, so it is void.
+        need = r["need_mib"] if r.get("need_mib", 0) > 0 else fallback
         why = []
+        if need <= 0:
+            why.append("no need recorded and no measured peak to stand in for it")
         if r.get("load", 0) > 8.0:
             why.append(f"load {r['load']} > 8.0")
         if r.get("vmswap_peak_mib", 0) > 0:
             why.append(f"swap peak {r['vmswap_peak_mib']} MiB")
         if r.get("avail_mib", 0) < need + 2048:
-            why.append(f"available {r['avail_mib']} MiB < need {need} + 2048")
+            why.append(f"available {r.get('avail_mib', 0)} MiB < need {need} + 2048")
         if why:
             print(f"{cell} {r['tag']} {r['arm']}: VOID ({'; '.join(why)})")
             continue
@@ -48,23 +52,33 @@ for path in sys.argv[1:]:
         ratios.append(ratio)
         print(f"{cell} {tag}: A {a['decode_ms_per_token']:.2f} ms, B {b['decode_ms_per_token']:.2f} ms, ratio {ratio:.4f}"
               f" (loads {a['load']}, {b['load']}; swap peaks {a['vmswap_peak_mib']}, {b['vmswap_peak_mib']} MiB)")
-    faster = sum(1 for x in ratios if x < 1)
-    med = statistics.median(ratios) if ratios else float("nan")
-    print(f"== {cell}: {faster} of {len(ratios)} pairs faster, median ratio {med:.4f} ({1 / med:.3f}x)\n")
-    counts.append((cell, faster, len(ratios), med))
+    return cell, ratios
 
-# Francis's standing merge rule (2026-10-25): median >= 1.05x (ratio <= 1/1.05) and at least 9 of 10 pairs faster, in every cell.
-merge = all(f >= 9 and m <= 1 / 1.05 for _, f, _, m in counts)
-print(f"merge bar (median >= 1.05x and >= 9 of 10 pairs faster, every cell): {'met' if merge else 'not met'}")
-counts = [c[:3] for c in counts]
-if any(n != 10 for _, _, n in counts):
-    print("VERDICT INCOMPLETE: a cell has fewer than 10 complete pairs")
-    sys.exit(1)
-if all(f >= 9 for _, f, _ in counts):
-    print("VERDICT SHIP (the small-gains rule: at least 9 of 10 pairs faster in every cell)")
-elif any(f <= 1 for _, f, _ in counts):
-    print("VERDICT FAIL (a cell has at most 1 of 10 pairs faster)")
-    sys.exit(1)
-else:
+
+def grade(paths):
+    """Grades the cells in paths, printing as it goes; returns the exit code (0 SHIP, 1 FAIL or INCOMPLETE, 3 PARK)."""
+    counts = []
+    for path in paths:
+        cell, ratios = cell_pairs(path)
+        faster = sum(1 for x in ratios if x < 1)
+        med = statistics.median(ratios) if ratios else float("nan")
+        print(f"== {cell}: {faster} of {len(ratios)} pairs faster, median ratio {med:.4f} ({1 / med:.3f}x)\n")
+        counts.append((cell, faster, len(ratios), med))
+    # Francis's standing merge rule: median >= 1.05x (ratio <= 1/1.05) and at least 9 of 10 pairs faster, in every cell.
+    merge = all(f >= 9 and m <= 1 / 1.05 for _, f, _, m in counts)
+    print(f"merge bar (median >= 1.05x and >= 9 of 10 pairs faster, every cell): {'met' if merge else 'not met'}")
+    if any(n != 10 for _, _, n, _ in counts):
+        print("VERDICT INCOMPLETE: a cell has fewer than 10 complete pairs")
+        return 1
+    if all(f >= 9 for _, f, _, _ in counts):
+        print("VERDICT SHIP (the small-gains rule: at least 9 of 10 pairs faster in every cell)")
+        return 0
+    if any(f <= 1 for _, f, _, _ in counts):
+        print("VERDICT FAIL (a cell has at most 1 of 10 pairs faster)")
+        return 1
     print("VERDICT PARK (some cell has 2 to 8 of 10 pairs faster: the owner decides)")
-    sys.exit(3)
+    return 3
+
+
+if __name__ == "__main__":
+    sys.exit(grade(sys.argv[1:]))
