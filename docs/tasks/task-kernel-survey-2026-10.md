@@ -1881,6 +1881,20 @@ while under 6.5 GB reclaimable until 06:00); its reading is added here when it l
 - **On a quiet machine the gain is about 0.2 ms a token (0.8%)**, smaller than the 0.5–0.6 ms the noisier readings showed.
 Log: `~/goinfer-logs/night/runs/2026-10-24/kse3-g2-gpuguard-2.log` (the first attempt's beside it, `kse3-g2-gpuguard.log`).
 
+**After #227's re-review (2026-10-25, 00:10): the GPU term's parse hardened; no re-run.**
+- The own-client check accepted this process's client even when no GPU time parsed from it, so a renamed key or a changed format
+  would have read every client as 0 ns, a silent pass. It now needs this process's client with a GPU time that parses.
+  `TestParseAGXClients` adds both cases (no GPU time, a changed format); without the check it is red.
+- The instrument check now attributes GPU time by process. The child's own clients must reach 5% of the window: they read 38.3%,
+  so another app's load cannot pass it. It also waits for the child's GPU work to show before the window opens, keeps the parent's
+  client open, and kills the child at cleanup.
+- The window's wall time now includes the end sample.
+The 23:32 reading stands: this process's client had GPU time throughout (the run had decoded before every window), and every other
+client's time parsed (0.44–0.59%, not 0).
+- `TestKSE3_decodeSpeed` still fails on the registered median bar (≤ 0.98), which the accepted quiet reading (0.9916) misses. The
+  registration hands that case to the owner's rule, and the test does not encode it. Changing what the test asserts is a bar change
+  and Francis's call.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
