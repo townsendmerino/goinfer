@@ -264,13 +264,6 @@ func LookupPrefillRefForTest(parts PrefillRefKeyParts) (string, bool) {
 	if _, err := os.Stat(p + ".key.json"); err != nil {
 		return "", false // a .bin without its parts record is an interrupted store, not a hit
 	}
-	// An adopted entry stands only while a witness still shows its source pair to agree; a pruned or contradicted pair makes it a
-	// miss, which the generator recomputes (prefill_ref_witness_testhook.go).
-	if from, adopted := refAdoptedFrom(p, parts); adopted {
-		if agree, _ := PrefillRefSourcesAgreeForTest(parts, from); !agree {
-			return "", false
-		}
-	}
 	return p, true
 }
 
@@ -293,9 +286,6 @@ func StorePrefillRefForTest(parts PrefillRefKeyParts, seedLogits []float32, refT
 	}
 	b, _ := json.MarshalIndent(parts, "", " ")
 	if err := writeFileAtomic(p+".key.json", b); err != nil {
-		return "", err
-	}
-	if err := os.Remove(p + ".adopted"); err != nil && !errors.Is(err, fs.ErrNotExist) { // a native store replaces an adoption
 		return "", err
 	}
 	return p, nil
@@ -345,6 +335,31 @@ func PrefillRefIdentityForTest(refPath string, ids []int) (PrefillRefIdentity, s
 			"the gate is scoring %d tokens %s…", parts.PromptTokens, parts.PromptSHA256[:12], len(ids), PromptIDsSHA256(ids)[:12])
 	}
 	return RefIdentityVerified, "prompt verified by sidecar hash"
+}
+
+// PrefillRefCurrentForTest checks refPath's sidecar against what this tree's generator would key it with: the prompt's ids and the
+// reference path's source. A reference with no sidecar, for other ids, or built under other code is refused, whatever its bytes: a
+// gate scores only a reference this tree would have computed.
+func PrefillRefCurrentForTest(refPath string, ids []int) error {
+	if id, why := PrefillRefIdentityForTest(refPath, ids); id != RefIdentityVerified {
+		return fmt.Errorf("%s: %s", refPath, why)
+	}
+	b, err := os.ReadFile(refPath + ".key.json")
+	if err != nil {
+		return err
+	}
+	var parts PrefillRefKeyParts
+	if err := json.Unmarshal(b, &parts); err != nil {
+		return err
+	}
+	src, err := prefillRefSourceSHA256()
+	if err != nil {
+		return err
+	}
+	if parts.SourceSHA256 != src {
+		return fmt.Errorf("%s: built under reference source %s…, this tree's is %s…: stale, rebuild it on this tree", refPath, parts.SourceSHA256[:12], src[:12])
+	}
+	return nil
 }
 
 func writeFileAtomic(path string, b []byte) error {
