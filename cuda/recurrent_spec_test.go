@@ -506,3 +506,45 @@ func TestRecurrentSpec_arenaPriced(t *testing.T) {
 		})
 	}
 }
+
+// TestRecurrentSpec_seedChunksKeepTheCapture: a block-spec seed longer than one pass is prefilled in PrefillLast's passes with the
+// capture armed, and the capture holds every row of the prompt, bit-equal to one pass's (the exact kernels a recurrent model's
+// prefill takes are chunk-invariant), with the same seed token.
+func TestRecurrentSpec_seedChunksKeepTheCapture(t *testing.T) {
+	mc, r := loadSpecModel(t, specModels()[1]) // qwen3next-tiny
+	_, _, _, _, _, _, vocab := mc.Dims()
+	prompt := embsOf(mc, idsFor(40, 3, vocab))
+	taps := []int{0, 2}
+	if err := r.SetBatchedCapture(taps); err != nil {
+		t.Fatal(err)
+	}
+	defer r.SetBatchedCapture(nil)
+	oneTok, err := r.PrefillSeedArgmax(prompt, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var one [][]float32 // a copy: the next call's passes write the resident's slice in place
+	for _, rows := range r.BatchedCapture() {
+		one = append(one, append([]float32(nil), rows...))
+	}
+	r.prefillChunkCap.Store(8) // passes of 8 rows from here on
+	defer r.prefillChunkCap.Store(0)
+	tok, err := r.PrefillSeedArgmax(prompt, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := r.BatchedCapture()
+	if tok != oneTok {
+		t.Errorf("seed token %d in passes of 8, %d in one pass", tok, oneTok)
+	}
+	for i := range taps {
+		if len(got[i]) != len(one[i]) {
+			t.Fatalf("tap %d: %d floats captured in passes of 8, %d in one pass", taps[i], len(got[i]), len(one[i]))
+		}
+		for j := range one[i] {
+			if math.Float32bits(got[i][j]) != math.Float32bits(one[i][j]) {
+				t.Fatalf("tap %d element %d: %g in passes of 8, %g in one pass", taps[i], j, got[i][j], one[i][j])
+			}
+		}
+	}
+}
