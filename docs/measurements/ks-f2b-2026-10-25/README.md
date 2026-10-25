@@ -64,3 +64,44 @@ Qwen3.5 meets the merge rule at both depths, and the gain grows with depth: atte
 **LFM2.5-2.6B:** queued on the Mac's night runner (`ksf2b-lfm25`, not before 22:00, gated on its 8.7 GB need); readings follow.
 
 **Not covered on the Mac:** Granite-4.0-H, Nemotron-H, Qwen3.6 and Llama 4 (see the registration).
+
+## nobara: the four families the Mac's CPU cannot load
+
+Francis's order of 14:01 (relayed): time the schedule on nobara for Granite-4.0-H, Nemotron-H, Qwen3.6 and Llama 4. It ships on by
+default from #247, untimed on these four, so this run is their confirming record. A family that reads slower than the old schedule
+(median below 1.0, or fewer than 9 of 10 pairs faster) is a DECISION NEEDED for Francis, since the default is already on.
+
+### Registration (2026-10-25, before any timed reading)
+
+- **Arms, two builds, one harness:**
+  - **A:** `21245f4f4`, main before #247: the old `attendQueryP` for these families.
+  - **B:** `0058f0be9`, main after #247: the fanned schedule. Between the two, `decoder/` differs in `attendQueryP`'s body (the fan-out
+    and `dotsF64x8`), its counter `attendQueryPFanned`, one line of `decoder/scratch.go`, and tests.
+  - **Harness:** `decoder/ksf2_speed_test.go:TestKSF2_cpuDecodeSpeed` (unchanged between the two), built once per arm with
+    `go test -c` and run one process a run. CPU, `--quant int4`, a prompt of `depth` pseudo-random ids, 32 greedy tokens timed first to
+    last (ms a token).
+- **Bit-identity, before timing:** `TestKSF2_queryPFannedBitIdentical` and `TestKSF2_familiesTakeTheFannedSchedule` on B, on nobara
+  (amd64). mac-kapitsa's `gate identity` on nobara at f8a1eda2 (night job `ks-f2-nobara` and its granite re-run `ks-f2-g1b-granite`,
+  2026-10-25) is the family-level record; it is cited, not re-run.
+- **Cells:** depths 128 and 1,024 for each model:
+  - **Granite-4.0-H:** `~/models/granite/granite-4.0-h-tiny-Q8_0.gguf`.
+  - **Nemotron-H:** `~/models/nemotron-h-4b-instruct-128k`.
+  - **Qwen3.6:** `~/models/qwen3.6-35b-a3b-q4_k_m.gguf`.
+  - **Llama 4:** `~/models/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf`. Expected NOT to fit: int4 of 109B parameters is
+    about 60 GB, on a 62 GB box. The fit check decides; a refusal leaves Llama 4 uncovered on both machines, and that goes to Francis.
+- **Fit check, before any timed run:** one B run per model at depth 128 and 2 tokens, under `systemd-run --scope` with `MemoryMax=52G`
+  and no swap, so a load that does not fit is killed rather than swapping the box. It gives each model's peak resident memory (the
+  cell's need) and its prefill rate, from which the cells' wall time is stated before they start.
+- **Instrument:** `run_ksf2b_linux.py` beside this file: `run_ksf2b.py`'s design on Linux, under the timing lock (exclusive). Per cell:
+  2 warm runs of each arm, then 10 valid pairs, A B then B A alternately.
+- **The void rule:** a run is void when the 1-minute load at its start is over 8.0 (half nobara's 16 threads, as CLAUDE.md's), when
+  MemAvailable at its start is under the cell's need plus 2 GiB, or when the test process swaps (its own VmSwap peak, sampled every
+  0.5 s, above 0). The system's swap-in and swap-out page count over the run is recorded as context only: nobara carries swap that
+  no run owns. A void pair is re-run, up to 6 a cell.
+- **Grade per cell:** median A ÷ B and how many of the 10 pairs B is faster. **Meets the merge rule** iff the median is at least 1.05×
+  with at least 9 of 10 faster. **Slower than the old schedule** (DECISION NEEDED) iff the median is below 1.0 or fewer than 9 of 10
+  pairs are faster. Between the two (median 1.0–1.05 with 9 or 10 faster): neither, reported as such.
+- **Where it runs:** by day when a family's two cells together come in under about 2 hours; a family over that goes on nobara's night
+  queue as its own job of 3 hours or less.
+- **Memory cost of B:** as on the Mac: score buffers per cache, at most `maxAttnWorkers` (6, a constant, so the same on nobara's 16
+  threads) × 2 × the key count × 4 bytes; nothing else.
