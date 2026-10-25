@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,7 +98,8 @@ func TestKV16GateVsReference(t *testing.T) {
 // kv16ArmResult is one arm's teacher-forced rows for every prompt, plus what its resident said about itself.
 type kv16ArmResult struct {
 	rows       [][][]float32 // [prompt][row][vocab]
-	kvBytes    int           // layer-0 K pool bytes
+	allocated  int64         // the K/V cache bytes the load allocated (kvAllocSeenForTest)
+	kvPool     int64         // the KV pools' and null blocks' bytes, from the layers that size them
 	faLaunches int
 	f16        bool
 	aa         [][]float32 // a second run of prompt 0 (the f16 arm only), for the A/A precondition
@@ -110,7 +112,11 @@ type kv16ArmResult struct {
 func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
 	t.Helper()
 	opts.Backend, opts.Quant, opts.KVPrecision, opts.ResidentContext = "cuda", "int4", kv, K+128
+	var mu sync.Mutex
+	seen := map[*cudaResident]int64{}
+	kvAllocSeenForTest = func(r *cudaResident, b int) { mu.Lock(); seen[r] += int64(b); mu.Unlock() }
 	m, err := decoder.Load(path, opts)
+	kvAllocSeenForTest = nil
 	if err != nil {
 		t.Fatalf("load (-kv %s): %v", kv, err)
 	}
@@ -126,7 +132,7 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	for kl < len(rf.layers)-1 && (rf.layers[kl].noKV() || rf.layers[kl].kvShared) {
 		kl++
 	}
-	res := kv16ArmResult{f16: rf.kvF16, kvBytes: rf.kc[kl].Len() * map[bool]int{true: 2, false: 4}[rf.layers[kl].kvHalf], layers: len(rf.layers)}
+	res := kv16ArmResult{f16: rf.kvF16, allocated: seen[rf], kvPool: kvBytesForCap(rf.ctxCap, rf.layers) + kvPoolNullBytes(rf.layers), layers: len(rf.layers)}
 	res.mlaOnly = true
 	for l := range rf.layers {
 		if !rf.layers[l].noKV() && !rf.layers[l].isMLA() {
@@ -216,7 +222,11 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	refLogits := make([][][]float32, len(promptFiles))
 	for pi, f := range promptFiles {
 		prompts[pi] = decoder.PrefillGateProseIDsForTest(t, tk, f, K)
-		_, rt, rl, err := decoder.ReadPrefillReferenceForTest(filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi)))
+		ref := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi))
+		if err := decoder.PrefillRefCurrentForTest(ref, prompts[pi][:K]); err != nil { // the arms read the first K, as the generator keyed them
+			t.Fatalf("reference %d: %v", pi, err)
+		}
+		_, rt, rl, err := decoder.ReadPrefillReferenceForTest(ref)
 		if err != nil {
 			t.Fatalf("read reference %d: %v", pi, err)
 		}
@@ -241,8 +251,9 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	if !f.f16 || e.f16 {
 		t.Fatalf("PRECONDITION 1: arms are not f32/f16 (f32 arm kvF16=%v, f16 arm kvF16=%v)", e.f16, f.f16)
 	}
-	if f.kvBytes*2 != e.kvBytes {
-		t.Fatalf("PRECONDITION 1: the f16 arm's K buffer is %d B against the f32 arm's %d B, not half", f.kvBytes, e.kvBytes)
+	if f.allocated <= 0 || e.allocated != 2*f.allocated || e.allocated-f.allocated != e.kvPool-f.kvPool {
+		t.Fatalf("PRECONDITION 1: K/V cache allocations f32 %d B, f16 %d B, priced difference %d B: the f16 pools are not what was allocated",
+			e.allocated, f.allocated, e.kvPool-f.kvPool)
 	}
 	// An MLA model has no layer the lane takes, so its vacuity rests on the rows below differing; any other model with none would
 	// decode its f16 cache through no lane at all, and the gate would grade nothing of it.

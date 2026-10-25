@@ -76,7 +76,7 @@ func kv4bGate(t *testing.T, name, def string, opts decoder.Options) {
 	refDir := filepath.Join(home, "goinfer-logs", "prefill-ref-b")
 	for pi := range files {
 		if _, err := os.Stat(filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", name, K, pi))); err != nil {
-			t.Skipf("%s K=%d: reference missing for prompt %d — run the CPU reference first", name, K, pi)
+			t.Fatalf("%s K=%d: reference missing for prompt %d: run run-g4.sh's reference phase on this tree first", name, K, pi)
 		}
 	}
 	runKV16GateCell(t, path, name, K, files, refDir, true, opts)

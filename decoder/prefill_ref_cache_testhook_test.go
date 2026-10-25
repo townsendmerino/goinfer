@@ -169,3 +169,42 @@ func TestPrefillReference_resumesFromCache(t *testing.T) {
 		t.Fatal("the consumer path must now hold the new prompt's reference")
 	}
 }
+
+// A gate scores only a reference this tree would have computed: the sidecar must name the gate's prompt and this tree's reference
+// source. A reference built under other code, for other ids, or with no sidecar is refused.
+func TestPrefillRefCurrent_refusesStaleReferences(t *testing.T) {
+	t.Setenv("GOINFER_PREFILL_REF_CACHE", t.TempDir())
+	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
+	ck := fakeCheckpoint(t, "weights")
+	ids := []int{1, 2, 3, 4}
+	parts, err := PrefillRefKeyForTest(ck, "", ids, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := StorePrefillRefForTest(parts, []float32{1, 2}, []int{3}, [][]float32{{4, 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrefillRefCurrentForTest(cp, ids); err != nil {
+		t.Fatalf("this tree's own reference refused: %v", err)
+	}
+	if err := PrefillRefCurrentForTest(cp, []int{1, 2, 3, 5}); err == nil {
+		t.Fatal("a reference for other ids was accepted")
+	}
+	old := parts
+	old.SourceSHA256 = "an-older-tree"
+	stale, err := StorePrefillRefForTest(old, []float32{1, 2}, []int{3}, [][]float32{{4, 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrefillRefCurrentForTest(stale, ids); err == nil {
+		t.Fatal("a reference built under another source was accepted")
+	}
+	bare := filepath.Join(t.TempDir(), "bare.bin")
+	if err := os.WriteFile(bare, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := PrefillRefCurrentForTest(bare, ids); err == nil {
+		t.Fatal("a reference with no sidecar was accepted")
+	}
+}
