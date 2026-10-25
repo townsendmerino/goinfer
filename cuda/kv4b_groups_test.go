@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -53,7 +54,11 @@ func kv4bPair(t *testing.T, fx string, opts decoder.Options, windowed bool) (m32
 	load := func(kv string) (*decoder.Model, *cudaResident) {
 		o := opts
 		o.Backend, o.Quant, o.KVPrecision, o.ResidentKVSlots = "cuda", "int4", kv, 1
+		var mu sync.Mutex
+		seen := map[*cudaResident]int64{}
+		kvAllocSeenForTest = func(r *cudaResident, b int) { mu.Lock(); seen[r] += int64(b); mu.Unlock() }
 		m, err := decoder.Load(path, o)
+		kvAllocSeenForTest = nil
 		if err != nil {
 			t.Fatalf("load %s (-kv %s): %v", fx, kv, err)
 		}
@@ -65,6 +70,7 @@ func kv4bPair(t *testing.T, fx string, opts decoder.Options, windowed bool) (m32
 		if windowed && !r.kvWin {
 			t.Fatalf("%s: windowed KV did not engage", fx)
 		}
+		kv4bAllocated[r] = seen[r]
 		return m, r
 	}
 	m32, r32 = load("f32")
@@ -75,8 +81,13 @@ func kv4bPair(t *testing.T, fx string, opts decoder.Options, windowed bool) (m32
 	return m32, m16, r32, r16
 }
 
+// kv4bAllocated is the K/V cache bytes each resident kv4bPair loaded allocated (kvAllocSeenForTest): read from the allocations
+// themselves rather than from the layer flags that price them.
+var kv4bAllocated = map[*cudaResident]int64{}
+
 // TestKV4b_deliveredBytes is G3 for every delivered group: at -kv f16 each layer that keeps K/V holds it as f16, its pools hold the
-// same number of elements as the f32 arm's (so half the bytes), and decoder.ResidentKVBytes prices exactly what the build allocates.
+// same number of elements as the f32 arm's, the f16 build ALLOCATES exactly half the f32 build's K/V cache bytes, and that difference
+// is the priced one, and decoder.ResidentKVBytes prices exactly what the build allocates.
 func TestKV4b_deliveredBytes(t *testing.T) {
 	requireCUDADevice(t)
 	for _, g := range kv4bGroups {
@@ -108,6 +119,11 @@ func TestKV4b_deliveredBytes(t *testing.T) {
 				tabs := int64(kvGroups * 4 * kvBlocksFor(r16.ctxCap)) // int32 at either precision
 				if (b16-tabs)*2 != b32-tabs || n16*2 != n32 {
 					t.Errorf("the f16 build holds %d block bytes and %d null bytes, the f32 build %d and %d: not exactly half", b16-tabs, n16, b32-tabs, n32)
+				}
+				a32, a16 := kv4bAllocated[r32], kv4bAllocated[r16]
+				if a16 <= 0 || a32 != 2*a16 || a32-a16 != (b32+n32)-(b16+n16) {
+					t.Errorf("K/V cache allocations: f32 load %d bytes, f16 load %d; priced difference %d: the f16 pools are not what was allocated",
+						a32, a16, (b32+n32)-(b16+n16))
 				}
 				if g.windowed {
 					// withWindowedKV's test slack sizes the window group below production's, which decoder.ResidentKVBytes prices; the
