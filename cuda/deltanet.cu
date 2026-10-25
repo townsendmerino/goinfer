@@ -270,6 +270,35 @@ extern "C" __global__ void delta_conv_rows(const float* __restrict__ mixed,  // 
     }
 }
 
+// delta_conv_rows_spec: delta_conv_rows that never slides the window for the pass's own rows (SP2). It first folds the previous
+// verify's pM committed rows (pmixed) into the window, the slide alone as delta_conv_rows slides it, with no conv output (that row's
+// was the previous pass's). Row m's taps then come from the window followed by the pass's rows before m, the history the slide
+// would have built, with delta_conv_rows's FMA chain.
+extern "C" __global__ void delta_conv_rows_spec(const float* __restrict__ mixed,  // [M*convDim]
+                                                const float* __restrict__ convW,  // [convDim*K]
+                                                float* __restrict__ win,          // [(K-1)*convDim], slid by the pM rows only
+                                                float* __restrict__ conv,         // [M*convDim]
+                                                int convDim, int K, int M,
+                                                const float* __restrict__ pmixed, // [pM*convDim], the previous verify's conv inputs
+                                                int pM) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= convDim) return;
+    for (int p = 0; p < pM; p++) {
+        for (int j = 0; j + 1 < K - 1; j++) win[j * convDim + c] = win[(j + 1) * convDim + c];
+        win[(K - 2) * convDim + c] = pmixed[(size_t)p * convDim + c];
+    }
+    for (int m = 0; m < M; m++) {
+        float xc = mixed[(size_t)m * convDim + c];
+        float s = __fmul_rn(convW[c * K + (K - 1)], xc);
+        for (int j = 0; j < K - 1; j++) {
+            int v = m + j; // index into window ++ mixed
+            float tap = v < K - 1 ? win[v * convDim + c] : mixed[(size_t)(v - (K - 1)) * convDim + c];
+            s = __fmaf_rn(convW[c * K + j], tap, s);
+        }
+        conv[(size_t)m * convDim + c] = dn_silu(s);
+    }
+}
+
 // delta_gates_rows: delta_gates for M rows. One thread per (row, value head).
 extern "C" __global__ void delta_gates_rows(const float* __restrict__ bt,      // [M*nv]
                                             const float* __restrict__ at,      // [M*nv]
@@ -357,6 +386,84 @@ extern "C" __global__ void delta_rule_rows(const float* __restrict__ qnAll,    /
     }
 }
 
+// delta_rule_rows_spec: delta_rule_rows that never writes its own rows into the state, for any hk and hv up to 128; it first folds
+// pM committed rows of the previous verify and stores the state, as delta_rule_rows_128_spec does. Each thread's state row is
+// copied into registers (indices fixed at compile time, predicated on hk, so TestKernelLocalMemoryCensus sees no spill) and
+// scanned there; the FMA chains are delta_rule_rows's, in ascending kd, so every output is bit-identical to it (SP2).
+extern "C" __global__ void delta_rule_rows_spec(const float* __restrict__ qnAll,    // [M*nk*hk]
+                                                const float* __restrict__ knAll,    // [M*nk*hk]
+                                                const float* __restrict__ vAll,     // [M*convDim], v at vBase in each row
+                                                const float* __restrict__ headPAll, // [M*nv*2]
+                                                float* __restrict__ state,          // [nv*hv*hk], written by the pM rows only
+                                                float* __restrict__ youtAll,        // [M*nv*hv]
+                                                int nv, int hk, int hv, int rep, int vBase, int keyDim, int convDim, int M,
+                                                const float* __restrict__ pknAll, const float* __restrict__ pvAll,
+                                                const float* __restrict__ pheadPAll, int pM) {
+    int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= nv * hv) return;
+    int headV = t / hv;
+    int vd = t % hv;
+    int headK = headV / rep;
+    float* S = state + (size_t)(headV * hv + vd) * hk;
+    float Sr[128];
+#pragma unroll
+    for (int kd = 0; kd < 128; kd++) Sr[kd] = kd < hk ? S[kd] : 0.f;
+    // First the previous verify's pM committed rows, folded and stored, as in delta_rule_rows_128_spec.
+    if (pM > 0) {
+        for (int m = 0; m < pM; m++) {
+            const float* headP = pheadPAll + (size_t)m * nv * 2;
+            float beta = headP[headV * 2 + 0];
+            float gt = headP[headV * 2 + 1];
+            const float* k = pknAll + (size_t)m * keyDim + headK * hk;
+            float kvdot = 0.f;
+#pragma unroll
+            for (int kd = 0; kd < 128; kd++) {
+                if (kd < hk) {
+                    float s = __fmul_rn(Sr[kd], gt);
+                    Sr[kd] = s;
+                    kvdot = __fmaf_rn(s, k[kd], kvdot);
+                }
+            }
+            float delta = __fmul_rn(__fadd_rn(pvAll[(size_t)m * convDim + vBase + headV * hv + vd], -kvdot), beta);
+#pragma unroll
+            for (int kd = 0; kd < 128; kd++) {
+                if (kd < hk) Sr[kd] = __fmaf_rn(k[kd], delta, Sr[kd]);
+            }
+        }
+#pragma unroll
+        for (int kd = 0; kd < 128; kd++) {
+            if (kd < hk) S[kd] = Sr[kd];
+        }
+    }
+    for (int m = 0; m < M; m++) {
+        const float* headP = headPAll + (size_t)m * nv * 2;
+        float beta = headP[headV * 2 + 0];
+        float gt = headP[headV * 2 + 1];
+        const float* k = knAll + (size_t)m * keyDim + headK * hk;
+        const float* q = qnAll + (size_t)m * keyDim + headK * hk;
+        float kvdot = 0.f;
+#pragma unroll
+        for (int kd = 0; kd < 128; kd++) {
+            if (kd < hk) {
+                float s = __fmul_rn(Sr[kd], gt);
+                Sr[kd] = s;
+                kvdot = __fmaf_rn(s, k[kd], kvdot);
+            }
+        }
+        float delta = __fmul_rn(__fadd_rn(vAll[(size_t)m * convDim + vBase + headV * hv + vd], -kvdot), beta);
+        float o = 0.f;
+#pragma unroll
+        for (int kd = 0; kd < 128; kd++) {
+            if (kd < hk) {
+                float s = __fmaf_rn(k[kd], delta, Sr[kd]);
+                Sr[kd] = s;
+                o = __fmaf_rn(s, q[kd], o);
+            }
+        }
+        youtAll[(size_t)m * nv * hv + headV * hv + vd] = o;
+    }
+}
+
 // delta_gnorm_rows: delta_gnorm for M rows. Grid (nv, M); the same block reduction per (row, value head).
 extern "C" __global__ void delta_gnorm_rows(const float* __restrict__ coreAll,  // [M*nv*hv]
                                             const float* __restrict__ zAll,     // [M*nv*hv] pre-silu gate
@@ -434,4 +541,56 @@ extern "C" __global__ void __launch_bounds__(128) delta_rule_rows_128(
     }
 #pragma unroll
     for (int kd = 0; kd < 128; kd++) S[kd] = Sr[kd];
+}
+
+// delta_rule_rows_128_spec: delta_rule_rows_128 that never writes its own rows into the state (SP2). One loop runs the previous
+// verify's pM committed rows (pknAll, pvAll, pheadPAll) and then the pass's M rows through delta_rule_rows_128's row arithmetic,
+// and stores the state once, after the committed rows: the pass's rows scan from it in registers, each from the row above it,
+// its parent in a chain, and only they write output. One row body for both keeps the register footprint of the committing
+// kernel (TestKernelLocalMemoryCensus pins it).
+extern "C" __global__ void __launch_bounds__(128) delta_rule_rows_128_spec(
+        const float* __restrict__ qnAll, const float* __restrict__ knAll, const float* __restrict__ vAll,
+        const float* __restrict__ headPAll, float* __restrict__ state, float* __restrict__ youtAll,
+        int nv, int rep, int vBase, int keyDim, int convDim, int M,
+        const float* __restrict__ pknAll, const float* __restrict__ pvAll, const float* __restrict__ pheadPAll, int pM) {
+    __shared__ float ks[128], qs[128];
+    int headV = blockIdx.x, vd = threadIdx.x;
+    if (headV >= nv) return;
+    int headK = headV / rep;
+    float* S = state + (size_t)(headV * 128 + vd) * 128;
+    float Sr[128];
+#pragma unroll
+    for (int kd = 0; kd < 128; kd++) Sr[kd] = S[kd];
+    for (int r = 0; r < pM + M; r++) {
+        bool pend = r < pM;
+        int m = pend ? r : r - pM;
+        const float* kA = pend ? pknAll : knAll;
+        ks[vd] = kA[(size_t)m * keyDim + headK * 128 + vd];
+        qs[vd] = pend ? ks[vd] : qnAll[(size_t)m * keyDim + headK * 128 + vd]; // a committed row's output is never read
+        __syncthreads();
+        const float* headP = (pend ? pheadPAll : headPAll) + (size_t)m * nv * 2;
+        float beta = headP[headV * 2 + 0];
+        float gt = headP[headV * 2 + 1];
+        float kvdot = 0.f;
+#pragma unroll
+        for (int kd = 0; kd < 128; kd++) {
+            float s = __fmul_rn(Sr[kd], gt);
+            Sr[kd] = s;
+            kvdot = __fmaf_rn(s, ks[kd], kvdot);
+        }
+        float delta = __fmul_rn(__fadd_rn((pend ? pvAll : vAll)[(size_t)m * convDim + vBase + headV * 128 + vd], -kvdot), beta);
+        float o = 0.f;
+#pragma unroll
+        for (int kd = 0; kd < 128; kd++) {
+            float s = __fmaf_rn(ks[kd], delta, Sr[kd]);
+            Sr[kd] = s;
+            o = __fmaf_rn(s, qs[kd], o);
+        }
+        if (!pend) youtAll[(size_t)m * nv * 128 + headV * 128 + vd] = o;
+        __syncthreads(); // every thread done with ks/qs before the next row overwrites them
+        if (pend && r == pM - 1) {
+#pragma unroll
+            for (int kd = 0; kd < 128; kd++) S[kd] = Sr[kd];
+        }
+    }
 }

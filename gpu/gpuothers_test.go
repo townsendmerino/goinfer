@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -52,16 +53,22 @@ func parseAGXClients(out string, self int) (map[string]agxClient, bool) {
 		if e == nil || c == nil {
 			continue
 		}
-		pid, _ := strconv.Atoi(c[1])
+		pid, err := strconv.Atoi(c[1])
+		if err != nil {
+			return nil, false // a value that does not parse makes the whole reading unknown, not 0
+		}
+		cl := agxClient{pid: pid}
 		times := acc.FindAllStringSubmatch(entry, -1)
+		for _, a := range times {
+			v, err := strconv.ParseInt(a[1], 10, 64)
+			if err != nil {
+				return nil, false
+			}
+			cl.ns += v
+		}
 		if pid == self {
 			own = own || len(times) > 0
 			continue
-		}
-		cl := agxClient{pid: pid}
-		for _, a := range times {
-			v, _ := strconv.ParseInt(a[1], 10, 64)
-			cl.ns += v
 		}
 		clients[e[1]] = cl
 	}
@@ -120,7 +127,8 @@ func otherGPUWindow(t *testing.T) (end func() (arm gpuArm, ok bool)) {
 }
 
 // TestParseAGXClients: the parse keys GPU time by client, skips this process's clients and requires one of them with a GPU time
-// that parses; a client that closes between two samples does not cancel another client of the same process.
+// that parses; a value that does not parse (an overflowing time) makes the whole reading unknown; a client that closes between two
+// samples does not cancel another client of the same process.
 func TestParseAGXClients(t *testing.T) {
 	entryAs := func(id string, pid int, usage string) string {
 		return fmt.Sprintf("+-o AGXDeviceUserClient  <class AGXDeviceUserClient, id %s, !registered, active>\n"+
@@ -139,6 +147,8 @@ func TestParseAGXClients(t *testing.T) {
 		{"empty listing", ""},
 		{"this process's client with no GPU time", entry("0x1", 7, 100) + entry("0x3", self)},
 		{"the GPU-time format changed", entryAs("0x1", 7, `{"accumulatedGPUTime" = 100}`) + entryAs("0x3", self, `{"accumulatedGPUTime" = 5}`)},
+		{"another client's GPU time overflows int64", entryAs("0x1", 7, `{"accumulatedGPUTime"=99999999999999999999}`) + entry("0x3", self, 5)},
+		{"this process's GPU time overflows int64", entry("0x1", 7, 100) + entryAs("0x3", self, `{"accumulatedGPUTime"=99999999999999999999}`)},
 	} {
 		if _, ok := parseAGXClients(c.out, self); ok {
 			t.Errorf("%s: ok, want not ok", c.name)
@@ -165,7 +175,8 @@ func TestParseAGXClients(t *testing.T) {
 // TestOtherGPUWindow_seesAnotherProcess: otherGPUWindow sees a second process's GPU work. This process opens its own GPU client
 // with GPU time first, then starts a child (this binary under GOINFER_GPUOTHERS_CHILD=1) that decodes llama-tiny on WebGPU until
 // it is killed at cleanup, waits until the child's client shows GPU time, and reads a 3-second otherGPUWindow: the child's own
-// clients must account for at least 5% of its wall time, so another process's load cannot satisfy it, and no client may vanish.
+// clients must account for at least 5% of its wall time, so another process's load cannot satisfy it, and the child's clients must
+// still be listed at the end (another process closing a client is not this test's concern).
 // It skips only where, with this process's own GPU work running, the registry lists no Apple GPU client (a virtualised GPU). macOS
 // only.
 func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
@@ -212,8 +223,8 @@ func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 		t.Fatal("no GPU-time reading")
 	}
 	childFrac := float64(arm.byPid[child]) / float64(arm.wall.Nanoseconds())
-	if childFrac < 0.05 || len(arm.vanished) != 0 {
-		t.Fatalf("the child decoded on the GPU through the window: its clients read %.4f of the wall time (all others %.4f), vanished %v; want at least 0.05 and none vanished",
+	if childFrac < 0.05 || slices.Contains(arm.vanished, child) {
+		t.Fatalf("the child decoded on the GPU through the window: its clients read %.4f of the wall time (all others %.4f), vanished %v; want at least 0.05 and the child's clients still listed",
 			childFrac, arm.frac, arm.vanished)
 	}
 	t.Logf("the child's GPU time over the window: %.1f%% of its wall time (all other processes %.1f%%)", 100*childFrac, 100*arm.frac)

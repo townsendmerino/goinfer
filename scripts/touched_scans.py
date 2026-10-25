@@ -173,6 +173,7 @@ EXCLUDED = {
     "TestSpecResidentPrefillRegression": "prompt corpus, env-gated",
     "TestSuffixProbe_step1": "prompt corpus, env-gated",
     "TestKV3_admissionPricesTheChunk": "prompt corpus (kv0TextTokens)",
+    "TestSP2_foldCost": "prompt corpus, heavy- and env-gated measurement",
     "TestKV3_batchedPrefillPastTheSpanBound_real1p5B": "prompt corpus, heavy-gated",
     "TestKV3Tiled_forcedRouteOnGemma3": "prompt corpus (kv0TextTokens), real-checkpoint gated",
     "TestKV3Tiled_batchedEqualsPerToken_real": "prompt corpus (kv0TextTokens), real-checkpoint gated",

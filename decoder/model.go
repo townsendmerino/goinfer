@@ -540,7 +540,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		loadAbort:  opts.LoadAbort,
-		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
+		extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest,
 		planResidency: opts.planResidency}
 }

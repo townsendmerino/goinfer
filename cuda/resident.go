@@ -202,7 +202,7 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 			elem = 2
 		}
 		if layers[i].isMLA() {
-			perBlock += kvBlock * int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
+			perBlock += kvBlock * int64(layers[i].kvDim) * elem // MLA caches 1 latent row per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer maps window+slack positions however long the context (kvWindowBlocks)
 			held := int64(kvWindowBlocks(cap, int(layers[i].window)+kvWindowSlack))
@@ -729,8 +729,13 @@ type cudaResident struct {
 	// Row-batched twins of the five, for prompt prefill (prefillDeltaNetRows): one launch per layer covers M rows.
 	dnConvRows, dnGatesRows, dnNormRows, dnRuleRows, dnGNormRows Pipeline
 	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
-	dnQSplit, dnAttnGate                                         Pipeline // the family's fused double-width q_proj + output gate
-	dnet                                                         *dnetParams
+	// SP2's verify twins of dnConvRows, dnRuleRows and dnRuleRows128, which never store the window or the state, and the arena
+	// a verify pass keeps its rows in (recurrent_spec.go). dnSpecOn is set for the duration of one VerifyLastNArgmax.
+	dnConvRowsSpec, dnRuleRowsSpec, dnRuleRows128Spec Pipeline
+	dnSpec                                            *dnSpecArena
+	dnSpecOn                                          bool
+	dnQSplit, dnAttnGate                              Pipeline // the family's fused double-width q_proj + output gate
+	dnet                                              *dnetParams
 	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
 	mamba                                     *mambaParams
 	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
@@ -964,9 +969,22 @@ func (r *cudaResident) af(n int) Buffer {
 func (r *cudaResident) akv(l, n int) Buffer {
 	if r.layers[l].kvHalf {
 		allocSeen(n * 2)
+		kvAllocSeen(r, n*2)
 		return gpu.NewBufferLenOf[uint16](r.dev, n)
 	}
+	kvAllocSeen(r, n*4)
 	return r.af(n)
+}
+
+// kvAllocSeenForTest, when set, is told the resident and the bytes of every K/V cache buffer akv allocates, from the branch that
+// picks the element type. A test seam, nil in production; a delivered-bytes gate sums it for the resident a load returns, so another
+// build during that load (a first load's probe) does not count.
+var kvAllocSeenForTest func(r *cudaResident, bytes int)
+
+func kvAllocSeen(r *cudaResident, bytes int) {
+	if kvAllocSeenForTest != nil {
+		kvAllocSeenForTest(r, bytes)
+	}
 }
 func (r *cudaResident) ai(n int) Buffer {
 	allocSeen(n * 4)
@@ -2485,6 +2503,7 @@ func (r *cudaResident) resetState() error {
 	if e := r.resetMambaState(); e != nil {
 		return e
 	}
+	r.DropFold() // rows marked against the state being zeroed must never fold into the new sequence
 	if r.dnet == nil {
 		return nil
 	}

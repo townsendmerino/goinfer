@@ -227,7 +227,7 @@ var recurrentCells = map[lifecyclePath]stateCell{
 	lcReset:        {hCleared, "resetRecurrent (audit C-01, C-03)"},
 	lcSnapshot:     {hRefused, "the snapshot format does not carry recurrent state"},
 	lcReuse:        {hInexact, "follows the rewind; rewindForReuse goes cold"},
-	lcSpecRollback: {hRefused, "specRollbackSafe refuses every model with recurrent state"},
+	lcSpecRollback: {hRefused, "specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in"},
 	lcPublish:      {hKept, "the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)"},
 	lcShare:        {hInexact, "a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold"},
 	lcEvict:        {hCleared, "the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it"},

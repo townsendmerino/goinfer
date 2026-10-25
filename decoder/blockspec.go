@@ -83,6 +83,74 @@ type ResidentSeedArgmax interface {
 	PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error)
 }
 
+// ResidentRecurrentSpec is the OPTIONAL capability that lets a resident with recurrent state verify speculatively (SP2,
+// docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
+// because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
+type ResidentRecurrentSpec interface {
+	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a later call for no more
+	// rows is a no-op.
+	// It returns why when this load cannot take the path (a recurrent layer it does not serve, no room for the rows), and
+	// RecurrentSpecRows then stays 0.
+	PrepareRecurrentSpec(rows int) error
+	// RecurrentSpecRows is the widest verify the path holds: 0 when this load cannot take it (a recurrent layer it does not
+	// serve, or no room for its rows).
+	RecurrentSpecRows() int
+	// VerifyLastNArgmax is PrefillLastNArgmax that writes none of its own rows into any recurrent layer's committed state or conv
+	// window. It first folds the rows the previous verify had marked (FoldVerified). Each row starts from the row above it, so the
+	// rows are a chain.
+	VerifyLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
+	// FoldVerified marks the last verify's first n rows committed. They fold into the state, leaving it as a prefill of those
+	// rows would, at the next VerifyLastNArgmax or FlushFold, whichever comes first.
+	FoldVerified(n int) error
+	// FlushFold folds the marked rows now. Called before anything other than a verify reads or advances the state.
+	FlushFold() error
+	// DropFold forgets the marked rows without folding them: an exit that commits nothing leaves no rows for a later turn to fold.
+	DropFold()
+}
+
+// RecurrentSpecMaxRows is the widest verify a ResidentRecurrentSpec arena is sized for: a DFlash block.
+const RecurrentSpecMaxRows = 16
+
+// RecurrentSpecArenaBytes is the device memory a ResidentRecurrentSpec resident keeps for verify passes of up to rows rows on a model of
+// arch a: two banks (a verify writes one while the previous verify's committed rows fold from the other) of, per Gated-DeltaNet layer and
+// row, the conv input and output, the normed q and k and two gates per value head, plus one fold output, f32, rounded up to the 2 MiB
+// cuMemAlloc gives a buffer that size. 0 for a model the path refuses: no recurrent
+// state, a recurrent kind other than Gated DeltaNet, heads wider than the scan twins' 128, or a sliding window.
+func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
+	if a == nil || a.qwen35 == nil || rows < 1 || a.SlidingWindow > 0 || a.qwen35.KeyHeadDim > 128 || a.qwen35.ValueHeadDim > 128 {
+		return 0
+	}
+	nDN := 0
+	for l := range a.NumLayers {
+		for _, o := range a.layerOps(l, false) {
+			switch {
+			case o.kind == opDeltaNet:
+				nDN++
+			case o.kind.recurrent():
+				return 0
+			}
+		}
+	}
+	if nDN == 0 {
+		return 0
+	}
+	g := a.qwen35
+	keyDim, valueDim := g.NumKeyHeads*g.KeyHeadDim, g.NumValueHeads*g.ValueHeadDim
+	convDim := 2*keyDim + valueDim
+	floats := 2*int64(nDN)*int64(rows)*int64(2*convDim+2*keyDim+2*g.NumValueHeads) + int64(rows)*int64(valueDim)
+	const align = 2 << 20
+	return (floats*4 + align - 1) / align * align
+}
+
+// recurrentSpecReserve is what a block drafter's attach adds to the companion reserve on top of its own bytes: the fold path's arena on
+// a recurrent target (RecurrentSpecArenaBytes), 0 on any other.
+func recurrentSpecReserve(a *Architecture, drafter bool) int64 {
+	if !drafter {
+		return 0
+	}
+	return RecurrentSpecArenaBytes(a, RecurrentSpecMaxRows)
+}
+
 // BlockSpecCapable reports whether this model can run block-drafting speculation: a resident
 // target that implements ResidentDrafterHost. Checked before a drafter is loaded, so a caller
 // can decline early rather than paying a load it cannot use.
@@ -119,6 +187,10 @@ type BlockSpecOptions struct {
 	// scope is the request's KV sharing scope (KVScope), from GenerateStream's ctx; the zero value is the local one.
 	scope KVScope
 }
+
+// blockSpecFuseRows is the most rows one FuseContext call takes. A drafter's fusion scratch grows with the rows of one call, so a
+// long prompt's seed in one call can exhaust the device beside the target.
+const blockSpecFuseRows = 512
 
 // defaultVerifyWidth is 8, the one number that serves both measured pairings (the optimum for math, within 2% of code's optimum of 7).
 // Per-traffic-class tuning is worth a few percent and needs a router; docs/code-notes/decoder.md#defaultVerifyWidth has the figures.
@@ -162,11 +234,71 @@ func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 	if !ok {
 		return nil, errBlockSpecUnsupported
 	}
+	// Before the attach, so a refused model has no drafter uploaded to its device.
+	if err := m.prepareRecurrentSpec(host, dw); err != nil {
+		return nil, err
+	}
 	rd, err := host.AttachBlockDrafter(dw)
 	if err != nil {
 		return nil, err
 	}
 	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+}
+
+// prepareRecurrentSpec readies a recurrent target's fold path for dw's block, or says why block drafting would decode from
+// over-advanced state; nil for a model with no recurrent state.
+func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWeights) error {
+	if !m.hasRecurrentState() {
+		return nil
+	}
+	rs, ok := host.(ResidentRecurrentSpec)
+	if !ok {
+		return fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it (no ResidentRecurrentSpec)")
+	}
+	// The architecture first, so a model the path refuses has no arena allocated either; the arena's price is 0 exactly there.
+	if RecurrentSpecArenaBytes(m.w.arch, 1) == 0 {
+		return fmt.Errorf("decoder: the fold path does not serve this model (a recurrent layer that is not Gated DeltaNet, heads past 128, or a sliding window)")
+	}
+	rows := min(dw.BlockSize(), RecurrentSpecMaxRows) // the widest verify this drafter's loop asks the fold path for
+	if rows < 2 {
+		return fmt.Errorf("decoder: a drafter block of %d positions verifies no draft", dw.BlockSize())
+	}
+	if err := rs.PrepareRecurrentSpec(rows); err != nil {
+		return fmt.Errorf("decoder: this model has recurrent state and its resident's fold path declined: %w", err)
+	}
+	if !m.specRollbackSafeVia(rs, rows) {
+		return fmt.Errorf("decoder: the resident's fold path holds %d rows, and this drafter verifies up to %d", rs.RecurrentSpecRows(), rows)
+	}
+	return nil
+}
+
+// recurrentFold is the resident's fold path for verifies of width rows on a recurrent model, or nil: on a model with no
+// recurrent state (its verifies need none), and on one whose resident cannot take that width (specRollbackSafeVia).
+func (s *BlockSpec) recurrentFold(width int) ResidentRecurrentSpec {
+	if !s.m.hasRecurrentState() {
+		return nil
+	}
+	rs, _ := s.host.(ResidentRecurrentSpec)
+	if rs == nil || !s.m.specRollbackSafeVia(rs, width) {
+		return nil
+	}
+	return rs
+}
+
+// verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, or defaultVerifyWidth, clamped to the
+// drafter's block and, on a recurrent target, to the rows the fold path is prepared for.
+func (s *BlockSpec) verifyWidth(opt BlockSpecOptions) int {
+	width := opt.VerifyWidth
+	if width <= 0 {
+		width = defaultVerifyWidth
+	}
+	if bs := s.dw.BlockSize(); width > bs {
+		width = bs // never ask the target to verify positions the drafter did not draft
+	}
+	if s.m.hasRecurrentState() && width > RecurrentSpecMaxRows {
+		width = RecurrentSpecMaxRows // the fold path's arena is prepared for at most this many rows (prepareRecurrentSpec)
+	}
+	return width
 }
 
 // Generate runs greedy generation with the attached drafter, returning the emitted token ids and
@@ -194,15 +326,31 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// so with the multi-row verify lane off its verify rows are exact whether or not this scope is held. It is here so a future edit that
 	// adds an M=1 step cannot silently mix attention trees. Counted, so GenerateStream's hold nests.
 	defer m.enterExactAttention()()
-	width := opt.VerifyWidth
-	if width <= 0 {
-		width = defaultVerifyWidth
-	}
-	if bs := dw.BlockSize(); width > bs {
-		width = bs // never ask the target to verify positions the drafter did not draft
-	}
+	width := s.verifyWidth(opt)
 	if width < 2 {
 		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d is too narrow", width)
+	}
+	// The token budget is plain decode's (generateInto): at most the context left after the prompt. Unclamped, a turn that reaches
+	// the cap emits one more token than plain decode (a round's own last token, which has no room to be forwarded), and the guard's
+	// fallback steps past the cap and fails where plain decode finishes.
+	if ctxCap := m.ResidentContextCap(); ctxCap > 0 {
+		switch left := ctxCap - len(prompt); {
+		case left == 0:
+			return nil, 0, nil // the prompt fills the context: plain decode emits nothing either
+		case left > 0 && (opt.MaxTokens <= 0 || opt.MaxTokens > left):
+			opt.MaxTokens = left
+		}
+	}
+	// A recurrent target verifies through the fold path, which never writes the committed state; without it a verify would
+	// advance the state by every row, rejected or not.
+	fold := s.recurrentFold(width)
+	if m.hasRecurrentState() && fold == nil {
+		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d on a recurrent model needs the resident's fold path (ResidentRecurrentSpec)", width)
+	}
+	if fold != nil {
+		// Every exit leaves nothing marked: the committing one flushes below, and an early one (a stopped stream, a device or
+		// drafter error) drops what it marked, so the next turn cannot fold rows from a sequence that was never committed.
+		defer fold.DropFold()
 	}
 	// Claim the single shared resident KV before any device write: this path drives the same positional cache as Model.Generate and the
 	// n-gram/speculative paths. A loser returns before touching state, so the caller's fallback to plain Generate is exact. Gated on
@@ -246,22 +394,29 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 
 	hidden := m.w.arch.HiddenDim
 	eos := blockSpecStopSet(m, opt)
-	// fuse folds a batched capture into the drafter's context: the taps for n rows become n
-	// concatenated rows, projected and appended.
+	// fuse folds a batched capture into the drafter's context: the taps for n rows become n concatenated rows, projected and
+	// appended, blockSpecFuseRows at a time. The fusion is per row and ExtendContext appends, so the pieces give the context one
+	// call would.
 	fuse := func(capt [][]float32, n int) error {
-		cat := make([][]float32, n)
-		for i := range n {
-			row := make([]float32, 0, len(capt)*hidden)
-			for _, tp := range capt {
-				row = append(row, tp[i*hidden:(i+1)*hidden]...)
+		for lo := 0; lo < n; lo += blockSpecFuseRows {
+			hi := min(lo+blockSpecFuseRows, n)
+			cat := make([][]float32, 0, hi-lo)
+			for i := lo; i < hi; i++ {
+				row := make([]float32, 0, len(capt)*hidden)
+				for _, tp := range capt {
+					row = append(row, tp[i*hidden:(i+1)*hidden]...)
+				}
+				cat = append(cat, row)
 			}
-			cat[i] = row
+			fused, e := rd.FuseContext(cat)
+			if e != nil {
+				return e
+			}
+			if e := rd.ExtendContext(fused); e != nil {
+				return e
+			}
 		}
-		fused, e := rd.FuseContext(cat)
-		if e != nil {
-			return e
-		}
-		return rd.ExtendContext(fused)
+		return nil
 	}
 
 	suffix := prompt[reuseFrom:]
@@ -306,6 +461,11 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			// The drafter is not paying for itself on this generation: finish with plain resident decoding. Disarm the capture seam first: left
 			// armed, every fallback token pays tap downloads for hidden states nothing will read, and the guard then costs more than it saves.
 			if !seamOff {
+				if fold != nil {
+					if e := fold.FlushFold(); e != nil { // the plain steps read the committed state
+						return out, rounds, e
+					}
+				}
 				if e := host.SetBatchedCapture(nil); e != nil {
 					return out, rounds, e
 				}
@@ -363,7 +523,12 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		for _, id := range drafted {
 			vin = append(vin, m.embedResident(id))
 		}
-		tgt, e := host.PrefillLastNArgmax(vin, pos)
+		var tgt []int
+		if fold != nil {
+			tgt, e = fold.VerifyLastNArgmax(vin, pos)
+		} else {
+			tgt, e = host.PrefillLastNArgmax(vin, pos)
+		}
 		if e != nil {
 			return out, rounds, e
 		}
@@ -391,12 +556,21 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 				break
 			}
 		}
+		// The rows this round commits: the anchor and the drafts it emits. A stop inside the burst emits fewer than accepted, and
+		// the position, the drafter's context and a recurrent state must all end at the last emitted token, which is what the
+		// commit below records.
+		rows := 1 + min(accepted, len(burst))
+		if fold != nil { // they fold at the next verify, or at a flush below
+			if e := fold.FoldVerified(rows); e != nil {
+				return out, rounds, e
+			}
+		}
 		out = append(out, burst...)
 		if emit != nil && !stop && !emit(burst) {
 			return out, rounds, nil
 		}
-		pos += 1 + accepted
-		if e := fuse(capt, 1+accepted); e != nil {
+		pos += rows
+		if e := fuse(capt, rows); e != nil {
 			return out, rounds, e
 		}
 		if stop {
@@ -412,6 +586,12 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			opt.OnRound(width, 1+accepted)
 		}
 		guard.observe(1 + accepted)
+	}
+	// The rows the last round marked fold before the trailing forward and the commit read the state.
+	if fold != nil {
+		if err := fold.FlushFold(); err != nil {
+			return out, rounds, err
+		}
 	}
 	// The only exit that commits, mirroring generateInto's rule that a generation which ran to completion is the only place the resident
 	// cache's contents are recorded (model.go). Every early return above (a device error, or the caller's emit stopping consumption) leaves
@@ -501,8 +681,8 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 	if sp.HistoryDependent() {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
-	if !s.m.specRollbackSafe() {
-		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family or staged sliding-window unsupported (rollback cannot restore)")
+	if !s.m.specRollbackSafeVia(s.recurrentFold(s.verifyWidth(BlockSpecOptions{})), s.verifyWidth(BlockSpecOptions{})) {
+		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family without the resident's fold path, or staged sliding-window, unsupported (rollback cannot restore)")
 	}
 	if len(prompt) == 0 {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: empty prompt")
@@ -574,6 +754,9 @@ const breakEvenTokensPerRound = 2.5
 // attempt.
 const guardWindow = 6
 
+// blockSpecGuardTripForTest makes the guard stop every generation at its window (TripBlockSpecGuardForTest). Set by tests only.
+var blockSpecGuardTripForTest bool
+
 // acceptanceGuard disables a drafter that is not paying for itself, per generation.
 //
 // It exists because the failure it catches is silent: a mis-paired drafter, a target in a mode the drafter was not trained for, or an
@@ -596,7 +779,7 @@ func (g *acceptanceGuard) observe(committed int) bool {
 	// running average trips a workload as soon as its evidence says so, while a slow-starting profitable one recovers as later rounds pull
 	// the average up instead of being judged on a snapshot.
 	if g.rounds >= guardWindow {
-		if float64(g.tokens)/float64(g.rounds) < breakEvenTokensPerRound {
+		if blockSpecGuardTripForTest || float64(g.tokens)/float64(g.rounds) < breakEvenTokensPerRound {
 			g.stopped = true
 			return false
 		}

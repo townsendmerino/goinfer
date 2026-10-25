@@ -165,6 +165,12 @@ var attnBlockPTX []byte
 //go:embed testdata/attn_img_prefill.ptx
 var attnImgPrefillPTX []byte
 
+// attnImgPrefillKV16PTX: attn_img_prefill.cu built with the KV cache as f16, bound by kvPTX for an f16 cache. The vision tower binds the
+// f32 module: its K and V are its own f32 activations, not the cache.
+//
+//go:embed testdata/attn_img_prefill_kv16.ptx
+var attnImgPrefillKV16PTX []byte
+
 // ropeMRopePrefillPTX: rope_kv_mrope_batched, Qwen2.5-VL's m-RoPE batched-prefill rotation (decoder.ResidentMRoPEPrefill
 // / cuda.PrefillMRoPELast). A copy of rope_kv_batched whose rotation angle is a per-row, per-frequency-section lookup:
 // frequency index d rotates by pos[comp(d)]*invFreq[d], where comp(d) picks temporal/height/width from the model's
@@ -178,6 +184,11 @@ var attnImgPrefillPTX []byte
 //go:embed testdata/rope_mrope_prefill.ptx
 var ropeMRopePrefillPTX []byte
 
+// ropeMRopePrefillKV16PTX: rope_mrope_prefill.cu built with the KV cache as f16, bound by kvPTX for an f16 cache.
+//
+//go:embed testdata/rope_mrope_prefill_kv16.ptx
+var ropeMRopePrefillKV16PTX []byte
+
 // ropePairwisePTX: rope_kv_pw / rope_kv_batched_pw / rope_kv_mrope_batched_pw, the GPT-J pairwise (dims 2d, 2d+1) twins
 // of rope_kv / rope_kv_batched / rope_kv_mrope_batched, with the same argument lists and launch geometry, bound in their
 // place when decoder.Model.PairwiseRoPEResident() says so. The NeoX kernels rotate (d, d+half), so a pairwise family run
@@ -186,6 +197,11 @@ var ropeMRopePrefillPTX []byte
 //
 //go:embed testdata/rope_pairwise.ptx
 var ropePairwisePTX []byte
+
+// ropePairwiseKV16PTX: rope_pairwise.cu built with the KV cache as f16 (kvtype.cuh), bound in ropePairwisePTX's place by kvPTX.
+//
+//go:embed testdata/rope_pairwise_kv16.ptx
+var ropePairwiseKV16PTX []byte
 
 // layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched, LayerNorm (mean and variance, weight and bias) for
 // the resident SigLIP vision tower (docs/multimodal.md) and for LayerNorm text families; the primitive next to the
@@ -273,6 +289,11 @@ var fusedGURowsPTX []byte
 //
 //go:embed testdata/mla.ptx
 var mlaPTX []byte
+
+// mlaKV16PTX: mla.cu built with the latent cache as f16 (kvtype.cuh), bound by kvPTX for an f16 cache.
+//
+//go:embed testdata/mla_kv16.ptx
+var mlaKV16PTX []byte
 
 // nibblePosFast maps a weight's index within an 8-weight word (0..7) to its nibble slot,
 // so the coalesced GEMV's even/odd byte split (word&0x0F0F0F0F / (word>>4)&0x0F0F0F0F)
