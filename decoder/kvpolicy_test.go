@@ -42,8 +42,7 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	saved := kvPolicies["cuda"]
 	defer func() { kvPolicies["cuda"] = saved }()
 	auto := true
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }, AutoDecline: CUDAKVF16AutoDecline,
-		AutoReason: CUDAKVF16AutoReason})
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return auto }, AutoDecline: CUDAKVF16AutoDecline})
 	gemma := &Architecture{Name: "gemma3", NumLayers: 1, SlidingWindow: 1024}
 	undelivered := &Architecture{Name: "laguna", NumLayers: 1}
 	moe := &Architecture{Name: "qwen3_moe", NumLayers: 1, MoE: &MoEConfig{}}
@@ -57,9 +56,9 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 	}{
 		{"", a, true, "f16"}, {"auto", a, true, "f16"}, {"f16", a, true, "f16"}, {"f32", a, true, "f32"},
 		{"", a, false, "f32"}, {"auto", a, false, "f32"}, {"f16", a, false, "f16"},
-		{"", gemma, true, "f16"}, {"", gemma, false, "f32"}, {"f16", gemma, true, "f16"}, {"f16", undelivered, true, "f32"}, {"i8", a, true, "f32"},
+		{"", gemma, true, "f32"}, {"auto", gemma, true, "f32"}, {"f16", gemma, true, "f16"}, {"f16", undelivered, true, "f32"}, {"i8", a, true, "f32"},
 		{"", moe, true, "f16"}, {"auto", moe, false, "f32"}, {"f16", moe, false, "f16"},
-		{"", pairwise, true, "f16"}, {"auto", pairwise, false, "f32"},
+		{"", pairwise, true, "f32"}, {"auto", pairwise, true, "f32"}, {"f16", pairwise, true, "f16"},
 		{"", hybrid, true, "f32"}, {"auto", hybrid, true, "f32"}, {"f16", hybrid, true, "f16"}, {"f16", hybrid, false, "f16"},
 	} {
 		auto = c.auto
@@ -68,9 +67,6 @@ func TestResolveKV_f16Resolution(t *testing.T) {
 		}
 	}
 	auto = true
-	if _, why := ResolveKV("cuda", gemma, Options{}); !strings.Contains(why, "owner's decision") {
-		t.Errorf("gemma3 auto on CUDA: reason %q does not name the owner's decision", why)
-	}
 	if _, why := ResolveKV("cuda", a, Options{}); why != "auto is f16 on CUDA for this family" {
 		t.Errorf("qwen2 auto on CUDA: reason %q, want the plain one", why)
 	}
@@ -151,12 +147,12 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 		{"qwen2 with MoE", KVFacts{Family: "qwen2", MoE: true}, Options{}, true},
 		{"qwen3_moe paged experts", KVFacts{Family: "qwen3_moe", MoE: true}, Options{MoECacheExperts: true}, true},
 		{"qwen3_5_moe: hybrid and MoE", KVFacts{Family: "qwen3_5_moe", Hybrid: true, MoE: true}, Options{}, false},
-		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, true},
-		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, true},
-		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, true},
-		{"gpt-oss: sliding window and MoE", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, true},
-		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, true},
-		{"cohere2: sliding window and pairwise RoPE", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, true},
+		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, false},
+		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, false},
+		{"mistral with a window", KVFacts{Family: "mistral", SlidingWindow: true}, Options{}, false},
+		{"gpt-oss: sliding window and MoE", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, false},
+		{"cohere", KVFacts{Family: "cohere", PairwiseRoPE: true}, Options{}, false},
+		{"cohere2: sliding window and pairwise RoPE", KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, Options{}, false},
 		{"gemma4: sliding window and hybrid", KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, false},
 		{"qwen2_5_vl", KVFacts{Family: "qwen2_5_vl", MRoPE: true}, Options{}, true},
 		{"qwen3_vl", KVFacts{Family: "qwen3_vl", MRoPE: true}, Options{}, true},
@@ -171,9 +167,17 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 	if got := CUDAKVF16AutoDecline(KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}); !strings.Contains(got, "did not pass") {
 		t.Errorf("qwen3_5: auto decline %q does not publish the hybrids' failed gate", got)
 	}
-	for _, f := range []KVFacts{{Family: "cohere", PairwiseRoPE: true}, {Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}} {
-		if got := CUDAKVF16AutoReason(f, Options{}); !strings.Contains(got, "pairwise RoPE: by the owner's decision") {
-			t.Errorf("%s: auto reason %q does not name the owner's override", f.Family, got)
+	// The three the owner narrowed auto away from (D-KV4-10) keep f32 under auto, each naming what would clear it.
+	for _, c := range []struct {
+		f    KVFacts
+		want string
+	}{
+		{KVFacts{Family: "gemma3", SlidingWindow: true}, "passing K=8,000 cell"},
+		{KVFacts{Family: "cohere2", PairwiseRoPE: true, SlidingWindow: true}, "passing K=8,000 cell"},
+		{KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, "sinks G4 cell"},
+	} {
+		if got := CUDAKVF16AutoDecline(c.f, Options{}); !strings.Contains(got, c.want) {
+			t.Errorf("%s: auto decline %q, want it to name %q", c.f.Family, got, c.want)
 		}
 	}
 }
