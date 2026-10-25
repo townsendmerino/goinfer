@@ -163,6 +163,14 @@ reading. Readings land below it, on this branch, for the owner's review before a
 
 ## Readings (2026-10-24, nobara, 16:24:47–16:40:51 PDT; for the owner's review, not merged)
 
+**Verdicts against the registered rule** (projected ≥ 1.30× at L = 512, its box; 1.20–1.30× parked):
+
+| family | at L = 512 (the decision) | at L = 4096 (beside it) | verdict |
+|---|---|---|---|
+| Qwen3.5 (recurrent): 9B + DFlash | 1.55× (w = 4) | 1.29× | **on to SP2** at 512; at 4096 it sits just under the bar |
+| Qwen3.6-35B-A3B (recurrent, MoE): + DFlash, experts streamed, on nobara | 1.22× (w = 3) | 1.05× | **parked** (the owner decides) |
+| gpt-oss (windowed, MoE): 20b + n-gram | 1.07× (K = 1) | 1.28×, band 0.74–2.30 | **not advanced** (SP1 not started on its account) |
+
 `sp0-measure` on nobara's `night.py serve`, under the timing lock, at `b03412f3` (harness and job), driver 595.91.07, kwin_wayland
 running. Every cell started below 3.1 load with at least 59.6 GB available and peaked at 0 MiB swap (`raw/cells.txt`). Raw records:
 `raw/*.jsonl`. Projection: `python3 project.py dflash|ngram|validate raw/<file>`.
@@ -196,15 +204,23 @@ it runs:**
 - **`project.py validate` implements this.** On the first run's data it grades all 12 prompts on the rounds they ran (151 of 151
   identical), finds no untripped prompt, and prints VOID.
 
-**As registered, a FAIL voids every DFlash reading below.** They are reported, marked provisional, for the owner's decision on the
+**The re-run's result: HARNESS VALID** (2026-10-24, 22:21:29–22:22:28 PDT, at `88f7cfd0`, load 0.20 at its start, 0 MiB swap;
+`raw/validate-qwen3-4b-off.jsonl`, `raw/cells-validate-off.txt`).
+- **Did the loop run to the end?** Yes. The guard stopped no prompt, and the real loop speculated to the end of all 12.
+- **Rounds identical:** 477 of 487 (0.979; bar 0.95).
+- **Total rounds:** the loop 489, the simulation 486, 0.61% apart (bar 2%).
+- **The rounds that differ** are mostly a prompt's last round. Near the end of the continuation, the real loop narrows its width to
+  the tokens left (`blockSpecRoundWidth`), where the simulation keeps w = 8 and is cut at the continuation's end.
+
+**So the DFlash readings below are graded, no longer provisional.** The first validation's FAIL is kept above as recorded. They are reported, marked provisional, for the owner's decision on the
 validation (see the end).
 
 ### The projections at L = 512 (the registered decision length)
 
 | family | best width | tokens per cycle | t_step | t_verify | t_draft | projected | band (cost quartiles) | registered reading |
 |---|---|---|---|---|---|---|---|---|
-| Qwen3.5-9B + DFlash (provisional) | w = 4 | 3.30 | 16.63 ms | 24.02 ms | 11.28 ms | **1.55×** | 1.55–1.56 | ≥ 1.30: on to SP2 |
-| Qwen3.6-35B-A3B + DFlash, experts streamed (provisional) | w = 3 | 2.76 | 17.57 ms | 36.37 ms | 3.35 ms | **1.22×** | 1.10–1.23 | 1.20–1.30: parked |
+| Qwen3.5-9B + DFlash | w = 4 | 3.30 | 16.63 ms | 24.02 ms | 11.28 ms | **1.55×** | 1.55–1.56 | ≥ 1.30: on to SP2 |
+| Qwen3.6-35B-A3B + DFlash, experts streamed | w = 3 | 2.76 | 17.57 ms | 36.37 ms | 3.35 ms | **1.22×** | 1.10–1.23 | 1.20–1.30: parked |
 | gpt-oss-20b + n-gram | K = 1 | 1.19 | 13.76 ms | 18.8 ms (w 2) | 0 | **1.07×** | 0.83–1.29 | < 1.20: not advanced |
 
 - **Qwen3.5-9B, per class:** code 1.49×, math 1.59×, math with thinking on 1.59×, all at w = 4. Its projection by width rises to
