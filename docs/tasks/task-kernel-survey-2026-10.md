@@ -2060,6 +2060,13 @@ the start; only the Claude app open): PASS, 10 of 10.**
 - KS-E3 stays on main (Francis's decision).
 Log: `~/goinfer-logs/night/runs/2026-10-25/kse3-g2-gpuguard-3.log`.
 
+**After #227's fifth review (2026-10-25), test-only.** The GPU-time parse ignored `strconv` errors, so an overflowing time read as
+MaxInt64 and an unparsable pid as 0. A value that does not parse now makes the whole reading unknown: the arm cannot be judged, and
+E3-G2 fails on macOS rather than reading it as quiet. `TestParseAGXClients` adds overflow cases, and is red without the check. The
+instrument check (`TestOtherGPUWindow_seesAnotherProcess`) also no longer fails when an unrelated process closes a GPU client in its
+window: it requires only the child's own clients to stay listed. E3-G2's own rule, voiding an arm with any vanished client, is
+unchanged. The 00:44 reading stands: its log shows every client parsed (other processes 0.00–0.71%) and none vanished.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
