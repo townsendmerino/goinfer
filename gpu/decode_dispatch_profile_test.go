@@ -7,7 +7,10 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +51,19 @@ func TestDecode_dispatchProfile(t *testing.T) {
 
 	// Load CPU-side, then build residency through the backend directly: the profiler
 	// needs the *DecodeRunner itself, which decoder.Load's internal wiring does not expose.
-	m, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
+	// GOINFER_DECODE_POS lists the depths profiled (default 64,512); the resident context is sized to the deepest.
+	positions := []int{64, 512}
+	if v := os.Getenv("GOINFER_DECODE_POS"); v != "" {
+		positions = nil
+		for _, f := range strings.Split(v, ",") {
+			n, err := strconv.Atoi(f)
+			if err != nil || n < 1 {
+				t.Fatalf("GOINFER_DECODE_POS %q: %v", v, err)
+			}
+			positions = append(positions, n)
+		}
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "int8int8", ResidentContext: slices.Max(positions) + 64})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -114,13 +129,6 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	for i := range x {
 		x[i] = float32(rng.NormFloat64()) * 0.02
 	}
-	fillTo := func(pos int) {
-		for p := 0; p <= pos; p++ {
-			if _, err := r.Run(x, p, p); err != nil {
-				t.Fatalf("warm Run(pos=%d): %v", p, err)
-			}
-		}
-	}
 
 	// timePlan records the plan R times into one pass (one Submit, one blocking Poll),
 	// optionally omitting every dispatch of class skip. Min over reps trims scheduler noise.
@@ -162,8 +170,14 @@ func TestDecode_dispatchProfile(t *testing.T) {
 		return best
 	}
 
-	for _, pos := range []int{64, 512} {
-		fillTo(pos)
+	filled := -1
+	for _, pos := range positions {
+		for p := filled + 1; p <= pos; p++ {
+			if _, err := r.Run(x, p, p); err != nil {
+				t.Fatalf("warm Run(pos=%d): %v", p, err)
+			}
+		}
+		filled = pos
 		full := timePlan(nil)
 		perTok := full / R
 		t.Logf("")
