@@ -69,8 +69,9 @@ func parseAGXClients(out string, self int) (map[string]agxClient, bool) {
 }
 
 // otherGPUDelta is the GPU time the clients in b accumulated since a, in total and by process, per client: one new in b counts
-// in full, one gone from b counts nothing (and cancels nothing).
-func otherGPUDelta(a, b map[string]agxClient) (total int64, byPid map[int]int64) {
+// in full. A client in a and gone from b took its time with it, so what it did between the samples is unknown; vanished lists
+// those clients' processes, and a caller must not read the interval as quiet when it is not empty.
+func otherGPUDelta(a, b map[string]agxClient) (total int64, byPid map[int]int64, vanished []int) {
 	byPid = map[int]int64{}
 	for id, cl := range b {
 		if d := cl.ns - a[id].ns; d > 0 {
@@ -78,28 +79,43 @@ func otherGPUDelta(a, b map[string]agxClient) (total int64, byPid map[int]int64)
 			byPid[cl.pid] += d
 		}
 	}
-	return total, byPid
+	for id, cl := range a {
+		if _, ok := b[id]; !ok {
+			vanished = append(vanished, cl.pid)
+		}
+	}
+	return total, byPid, vanished
 }
 
-// otherGPUWindow brackets one timed arm with otherGPUTimes: end returns the GPU time other processes' clients accumulated during
-// the arm as a fraction of the wall time between the two samples. A client opened inside the arm counts in full; one closed
-// inside it is not seen. ok is false where there is no reading; the test fails if the reading worked at the start and not at the
-// end. Open it before the CPU window and close it after, so the ioreg call's own CPU stays outside the arm's busy-core reading.
-func otherGPUWindow(t *testing.T) (end func() (frac float64, ok bool)) {
+// gpuArm is one otherGPUWindow reading: other processes' GPU time as a fraction of the window's wall time, by process, and the
+// processes whose clients closed inside it (their time is unknown).
+type gpuArm struct {
+	frac     float64
+	byPid    map[int]int64
+	wall     time.Duration
+	vanished []int
+}
+
+// otherGPUWindow brackets one timed arm with otherGPUTimes; end returns its gpuArm. A client opened inside the arm counts in full;
+// one present at the start and closed before the end is reported in vanished, and the caller voids the arm. What still passes
+// unseen is a client opened and closed between the two samples. ok is false where there is no reading; the test fails if the
+// reading worked at the start and not at the end. Open it before the CPU window and close it after, so the ioreg call's own CPU
+// stays outside the arm's busy-core reading.
+func otherGPUWindow(t *testing.T) (end func() (arm gpuArm, ok bool)) {
 	t.Helper()
 	a, ok := otherGPUTimes()
 	t0 := time.Now()
-	return func() (float64, bool) {
+	return func() (gpuArm, bool) {
 		if !ok {
-			return 0, false
+			return gpuArm{}, false
 		}
 		b, ok2 := otherGPUTimes()
 		wall := time.Since(t0)
 		if !ok2 {
 			t.Fatal("the GPU-time reading failed at the end of an arm")
 		}
-		total, _ := otherGPUDelta(a, b)
-		return float64(total) / float64(wall.Nanoseconds()), true
+		total, byPid, vanished := otherGPUDelta(a, b)
+		return gpuArm{frac: float64(total) / float64(wall.Nanoseconds()), byPid: byPid, wall: wall, vanished: vanished}, true
 	}
 }
 
@@ -134,34 +150,41 @@ func TestParseAGXClients(t *testing.T) {
 	}
 	// Client 0x2 closes; 0x1 runs 400 ns; a new client 0x4 of another process runs 30 ns.
 	b, _ := parseAGXClients(entry("0x1", 7, 500, 50)+entry("0x4", 8, 30)+entry("0x3", self, 900), self)
-	if total, by := otherGPUDelta(a, b); total != 430 || by[7] != 400 || by[8] != 30 {
+	total, by, vanished := otherGPUDelta(a, b)
+	if total != 430 || by[7] != 400 || by[8] != 30 {
 		t.Errorf("delta %d ns (%v), want 430: 400 for pid 7 and 30 for the new pid 8; the closed 0x2 cancels nothing", total, by)
+	}
+	if len(vanished) != 1 || vanished[0] != 7 {
+		t.Errorf("vanished %v, want [7]: client 0x2 closed between the samples, and what it ran is unknown", vanished)
+	}
+	if _, _, v := otherGPUDelta(a, a); len(v) != 0 {
+		t.Errorf("the same sample twice: vanished %v, want none", v)
 	}
 }
 
-// TestOtherGPUWindow_seesAnotherProcess: the GPU-time reading sees a second process's GPU work. This process runs GPU work first
-// (so its own client lists a GPU time), then starts a child (this binary under GOINFER_GPUOTHERS_CHILD=1) that decodes llama-tiny
-// on WebGPU for 12 seconds, waits until the child's client shows GPU time, and reads a 3-second window: the child's own clients
-// must account for at least 5% of its wall time, so another process's load cannot satisfy it. The child is killed at cleanup. It
-// skips where the registry lists no Apple GPU client at all (a virtualised GPU); with clients listed, a reading that fails fails
-// it. macOS only.
+// TestOtherGPUWindow_seesAnotherProcess: otherGPUWindow sees a second process's GPU work. This process opens its own GPU client
+// with GPU time first, then starts a child (this binary under GOINFER_GPUOTHERS_CHILD=1) that decodes llama-tiny on WebGPU until
+// it is killed at cleanup, waits until the child's client shows GPU time, and reads a 3-second otherGPUWindow: the child's own
+// clients must account for at least 5% of its wall time, so another process's load cannot satisfy it, and no client may vanish.
+// It skips only where, with this process's own GPU work running, the registry lists no Apple GPU client (a virtualised GPU). macOS
+// only.
 func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	if os.Getenv("GOINFER_GPUOTHERS_CHILD") == "1" {
 		run, done := gpuOthersLoad(t)
 		defer done()
-		run(12 * time.Second)
+		run(2 * time.Minute) // until the parent kills it
 		return
 	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("no per-process GPU time on this platform")
 	}
 	newOrSkipHW(t).Close()
-	if out, err := exec.Command("ioreg", "-r", "-c", "AGXDeviceUserClient").Output(); err != nil || !strings.Contains(string(out), "AGXDeviceUserClient") {
-		t.Skipf("no AGXDeviceUserClient entries (a virtualised GPU, as on CI's macOS runners): %v", err)
-	}
 	run, done := gpuOthersLoad(t) // this process's own client, with a GPU time, kept open through the test
 	defer done()
 	run(300 * time.Millisecond)
+	if out, err := exec.Command("ioreg", "-r", "-c", "AGXDeviceUserClient").Output(); err != nil || !strings.Contains(string(out), "AGXDeviceUserClient") {
+		t.Skipf("no AGXDeviceUserClient entries with this process's GPU work running (a virtualised GPU, as on CI's macOS runners): %v", err)
+	}
 	if _, ok := otherGPUTimes(); !ok {
 		t.Fatal("the GPU-time reading fails with this process's own GPU work listed")
 	}
@@ -173,31 +196,27 @@ func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	child := cmd.Process.Pid
 	for deadline := time.Now().Add(15 * time.Second); ; {
-		a, _ := otherGPUTimes()
+		end := otherGPUWindow(t)
 		time.Sleep(200 * time.Millisecond)
-		b, _ := otherGPUTimes()
-		if _, by := otherGPUDelta(a, b); by[child] > 0 {
+		if arm, _ := end(); arm.byPid[child] > 0 {
 			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("the child's GPU work never showed in the registry")
 		}
 	}
-	a, _ := otherGPUTimes()
-	t0 := time.Now()
+	end := otherGPUWindow(t)
 	time.Sleep(3 * time.Second)
-	b, ok := otherGPUTimes()
-	wall := time.Since(t0)
+	arm, ok := end()
 	if !ok {
-		t.Fatal("the GPU-time reading failed at the window's end")
+		t.Fatal("no GPU-time reading")
 	}
-	total, by := otherGPUDelta(a, b)
-	if frac := float64(by[child]) / float64(wall.Nanoseconds()); frac < 0.05 {
-		t.Fatalf("the child decoded on the GPU through the window and its clients read %.4f of the wall time (all others %.4f); want at least 0.05",
-			frac, float64(total)/float64(wall.Nanoseconds()))
+	childFrac := float64(arm.byPid[child]) / float64(arm.wall.Nanoseconds())
+	if childFrac < 0.05 || len(arm.vanished) != 0 {
+		t.Fatalf("the child decoded on the GPU through the window: its clients read %.4f of the wall time (all others %.4f), vanished %v; want at least 0.05 and none vanished",
+			childFrac, arm.frac, arm.vanished)
 	}
-	t.Logf("the child's GPU time over the window: %.1f%% of its wall time (all other processes %.1f%%)",
-		100*float64(by[child])/float64(wall.Nanoseconds()), 100*float64(total)/float64(wall.Nanoseconds()))
+	t.Logf("the child's GPU time over the window: %.1f%% of its wall time (all other processes %.1f%%)", 100*childFrac, 100*arm.frac)
 }
 
 // gpuOthersLoad loads llama-tiny's WebGPU resident; run decodes on it for d, and done closes it.

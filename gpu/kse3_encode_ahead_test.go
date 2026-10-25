@@ -325,8 +325,8 @@ func TestKSE3_pendingDroppedWhereRecorded(t *testing.T) {
 // at int8int8 on WebGPU, encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A
 // over 10 valid pairs after 2 warm runs each. It refuses to run outside the timing lock or under 6 GB reclaimable before the
 // load; voidWindow and otherGPUWindow bracket each arm's timed decode (not its prompt), and a pair with an arm over either line
-// (busy cores over half the cores averaged over the arm, under 2 GiB reclaimable at either end, or other processes' GPU time over
-// 2% of the arm's wall time) is void and re-run, up to 15 times. The GPU term is required on macOS. It fails when the median
+// (busy cores over half the cores averaged over the arm, under 2 GiB reclaimable at either end, other processes' GPU time over 2% of
+// the arm's wall time, or another process's GPU client closed inside the arm) is void and re-run, up to 15 times. The GPU term is required on macOS. It fails when the median
 // on/off is over 0.98 or fewer than 9 of 10 pairs are faster.
 func TestKSE3_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_KSE3_TIMING") == "" {
@@ -357,7 +357,7 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 			}
 		}
 		var end func() (bool, string)
-		var endGPU func() (float64, bool)
+		var endGPU func() (gpuArm, bool)
 		if guard {
 			endGPU, end = otherGPUWindow(t), voidWindow(t) // the GPU read (an ioreg call) outside the CPU window
 		}
@@ -378,10 +378,13 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 		sec = time.Since(t0).Seconds() / gen
 		if guard {
 			valid, note = end()
-			switch gpu, ok := endGPU(); {
+			switch arm, ok := endGPU(); {
 			case ok:
-				valid = valid && gpu <= 0.02
-				note += fmt.Sprintf(", other processes' GPU %.2f%%", 100*gpu)
+				valid = valid && arm.frac <= 0.02 && len(arm.vanished) == 0
+				note += fmt.Sprintf(", other processes' GPU %.2f%%", 100*arm.frac)
+				if len(arm.vanished) > 0 {
+					note += fmt.Sprintf(" (GPU clients of pids %v closed inside the arm: unknown)", arm.vanished)
+				}
 			case runtime.GOOS == "darwin":
 				t.Fatal("no per-process GPU time on macOS")
 			default:
