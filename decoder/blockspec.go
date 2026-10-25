@@ -210,6 +210,11 @@ type BlockSpec struct {
 	width int // GenerateStream's verify width (SetVerifyWidth); 0 is defaultVerifyWidth
 }
 
+// VerifyWidthInUse is the verify width GenerateStream runs at: SetVerifyWidth's value after the default and the caps apply.
+func (s *BlockSpec) VerifyWidthInUse() int {
+	return s.verifyWidth(BlockSpecOptions{VerifyWidth: s.width})
+}
+
 // SetVerifyWidth sets the verify width GenerateStream runs at (BlockSpecOptions.VerifyWidth's meaning: 0 is the default, and the
 // drafter's block caps it). It refuses a width under 2, and on a recurrent target a width its resident's fold path cannot verify.
 // Set it once, before the BlockSpec serves; it is not safe beside a running generation.

@@ -32,3 +32,20 @@ func TestAttachBlockDrafter_declinesWithoutResident(t *testing.T) {
 func TestWarnThinkingTemplate_noTokenizer(t *testing.T) {
 	warnThinkingTemplate(&loadedModel{name: "x"}) // nil tokenizer must not panic
 }
+
+// TestDrafterWidth_validate: -drafter-width without -drafter is a startup error, not silently ignored, and so are 1 and negative
+// widths; 0 and widths of 2 or more pass validation (the attach checks a width against the drafter and the target).
+func TestDrafterWidth_validate(t *testing.T) {
+	for _, c := range []struct {
+		drafter string
+		width   int
+		ok      bool
+	}{
+		{"", 0, true}, {"", 4, false}, {"", -1, false},
+		{"d", 0, true}, {"d", 4, true}, {"d", 1, false}, {"d", -1, false},
+	} {
+		if err := (config{drafter: c.drafter, drafterWidth: c.width}).validate(); (err == nil) != c.ok {
+			t.Errorf("-drafter %q -drafter-width %d: err %v, want ok %v", c.drafter, c.width, err, c.ok)
+		}
+	}
+}

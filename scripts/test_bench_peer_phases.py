@@ -23,6 +23,11 @@ class PlanPhases(unittest.TestCase):
         os.environ["BENCH_PHASES"] = "b"
         self.assertEqual(bench_peer.plan_phases(), {"B"})
 
+    def test_no_phase_refuses(self):
+        os.environ["BENCH_PHASES"] = ","
+        with self.assertRaises(SystemExit):
+            bench_peer.plan_phases()
+
     def test_unknown_phase_refuses(self):
         os.environ["BENCH_PHASES"] = "B,Z"
         with self.assertRaises(SystemExit):

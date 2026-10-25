@@ -37,13 +37,9 @@ func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter, width int) e
 	}
 	lm.blockSpec = spec
 	geo := dw.DrafterGeometry()
-	shown := "the default"
-	if width > 0 {
-		shown = fmt.Sprint(min(width, dw.BlockSize()))
-	}
-	log.Printf("block drafter attached to %q: %d layers, hidden %d, block %d, verify width %s, %d taps %v — "+
+	log.Printf("block drafter attached to %q: %d layers, hidden %d, block %d, verify width %d, %d taps %v — "+
 		"greedy requests take the speculative path, sampled ones fall back",
-		lm.name, geo.Layers, geo.Hidden, dw.BlockSize(), shown, len(dw.TargetLayerIDs()), dw.TargetLayerIDs())
+		lm.name, geo.Layers, geo.Hidden, dw.BlockSize(), spec.VerifyWidthInUse(), len(dw.TargetLayerIDs()), dw.TargetLayerIDs())
 	warnThinkingTemplate(lm)
 	return nil
 }

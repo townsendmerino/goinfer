@@ -130,7 +130,7 @@ MODELS = {
     # for these two MoE models), so the GGUF here is the PEER-ONLY artifact.
     "M35": (os.path.expanduser("~/models/qwen3.6-35b-a3b-q4_k_m.gguf"), "m35q4km"),
     # Q9 (Qwen3.5-9B, a Gated-DeltaNet hybrid) added 2026-10-25 for SP2's served A/B of --drafter (docs/measurements/sp2-2026-10/
-    # README.md): goinfer arms only, no peer tag.
+    # README.md): goinfer arms only, no peer tag, and prompts at depths 512 and 4096 only (no phase-A depth 128: BENCH_PHASES=B).
     "Q9": (os.path.expanduser("~/models/Qwen3.5-9B-Q4_K_M.gguf"), "q9-none"),
     "M26": (os.path.expanduser("~/models/gemma4-26b-q4_k_m.gguf"), "m26q4km"),
     # G20 added 2026-09-05 (docs/tasks/task-peer-benchmarks.md §2/§5, tier 2: "fits the Mac, not the
@@ -865,6 +865,9 @@ def preflight():
         sys.exit("REFUSED: %d compute processes already hold the GPU (1 = the compositor, expected):\n  %s"
                  % (len(apps), "\n  ".join(apps)))
     print(f"# preflight OK: gate {IDLE_GATE} · loadavg {la} · gpu {_gpu_state()} · compute apps {apps}", flush=True)
+    if free_mem_mb() is None:
+        print("# WARNING: no free-memory reading (scripts/hostmem.py runs `go run ./cmd/hostmem`: is go on PATH?). The heavy-load void's "
+              "memory term cannot be applied, and every cell records free_mem_mb null.", flush=True)
 
 def wait_port(port, timeout=180):
     t0 = time.time()
@@ -1865,6 +1868,8 @@ def plan_phases():
     if not raw:
         return {"A", "B"}
     got = {p.strip().upper() for p in raw.split(",") if p.strip()}
+    if not got:
+        sys.exit(f"BENCH_PHASES={raw!r} names no phase; want A, B or both")
     if not got <= {"A", "B"}:
         sys.exit(f"BENCH_PHASES: unknown phase(s) {sorted(got - {'A', 'B'})}; known: A, B")
     return got
@@ -1949,6 +1954,15 @@ def plan_vision():
     """Vision TTFT phase (run_vision_cell). Off by default (BENCH_VISION=1 opts in) -- one image,
     one model pair, no axis to sweep, so this is a bool rather than a list like the phases above."""
     return os.environ.get("BENCH_VISION", "").strip() == "1"
+
+
+def missing_prompts(plan):
+    """Refuses, before any server starts, a plan whose phase A, B or C cell has no prompt for its model and depth (e.g. Q9 has no
+    depth-128 prompt, which phase A needs: run it with BENCH_PHASES=B, or calibrate one)."""
+    gone = sorted({f"{p[3]}:{p[4]}" for p in plan if p[0] in ("A", "B", "C") and f"{p[3]}:{p[4]}" not in _PROMPTS})
+    if gone:
+        sys.exit(f"no prompt for {', '.join(gone)} in {os.environ.get('BENCH_PROMPTS', 'scripts/prompts.json')}: calibrate them "
+                 "(scripts/bench_prompts_calibrate.py) or narrow the plan (BENCH_PHASES, BENCH_DEPTHS)")
 
 
 def abba_plan(plan, quads):
@@ -2114,6 +2128,7 @@ def main():
             if eng in ("goinfer", "ollama"):
                 plan.append(("E", eng, "vision", "vision", 0, "greedy"))
 
+    missing_prompts(plan)
     quads = int(os.environ.get("BENCH_ABBA", "0") or 0)
     plan = abba_plan(plan, quads)
     if quads:

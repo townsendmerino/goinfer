@@ -545,6 +545,12 @@ func (cfg config) validate() error {
 	if cfg.kvIdleDemote > 0 && (cfg.sessionDir == "" || cfg.kvSessions <= 0) {
 		return errors.New("-kv-idle-demote needs -session-dir and -kv-sessions > 0")
 	}
+	if cfg.drafterWidth != 0 && cfg.drafter == "" {
+		return fmt.Errorf("-drafter-width %d without -drafter: the width applies only to a block drafter's verify", cfg.drafterWidth)
+	}
+	if cfg.drafterWidth < 0 || cfg.drafterWidth == 1 {
+		return fmt.Errorf("-drafter-width %d: want 0 (the default) or at least 2", cfg.drafterWidth)
+	}
 	if _, ok := chat.ParseThinkMode(cfg.thinking); !ok {
 		return fmt.Errorf("-thinking %q: want asis, template, on or off", cfg.thinking)
 	}
