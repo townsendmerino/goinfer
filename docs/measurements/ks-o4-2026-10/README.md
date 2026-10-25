@@ -87,6 +87,16 @@ which a test cannot promise. The amended G-SINK checks the two things it can:
 
 The fidelity gate, G-FID, is unchanged.
 
+**Amended before any data (2026-10-25), by Francis's standing merge rule of 8:46–8:48 am (relayed by the coordinator):**
+- **Order of decision:** G-FID decides first, because KS-O4 changes output. A change inside a registered fidelity gate is lossless under
+  the rule.
+- **Why it needs more:** KS-O4 changes gpt-oss's default path, so it is a default change, which needs the gain judged against its memory
+  trade-off, and Francis's call.
+- **How G-SPEED is graded:** also against the merge bar (median ≥ 1.05× and at least 9 of 10 pairs faster, every cell). Its registered
+  reading is kept as recorded.
+- **Memory, for the PR:** G-MEM's bytes per position before and after, device and host (this is the CPU path, so host), and the longest
+  context the fit plan admits before and after.
+
 ## Pre-registration (`docs/measurements/noise-registry.md` §8)
 
 - **Tier:** day.
