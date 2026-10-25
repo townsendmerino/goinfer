@@ -329,3 +329,28 @@ the chat package's bare default mode (`asis`: nothing written after `assistant\n
 
 What the 1.02× does come from is open. The likeliest cause is the prompt class (essay prose here, code and math in G4); an
 in-process run of the same prompts in `serve`'s rendering will say, after this A/B finishes.
+
+### The served A/B, read (2026-10-25, 10:26–12:48 PDT; binary `a6e9b8c7`, scripts at `300e73c6`): does not deliver on these prompts
+
+`bench_peer.py` as registered and amended (both arms `-thinking off`), the timing lock held by the harness for the whole run. 5
+mirrored quads per depth, 10 pairs; every cell started at load 0.98 or below; no void cell, no error. Raw:
+`raw/served-ab-2026-10-25.json` (per-cell runs, machine state, serve logs on nobara under `~/goinfer-logs/sp2-2026-10/served/`).
+
+| depth | plain `serve` | `serve --drafter -drafter-width 4` | median of the pairs | pairs faster | spread | the merge rule |
+|---|---|---|---|---|---|---|
+| 512 | 63.6 tok/s | 64.6 tok/s | **1.016×** | 10 of 10 | 1.011–1.017 | **does not deliver** (median under 1.05×) |
+| 4096 | 62.1 tok/s | 61.4 tok/s | **0.989×** | 0 of 10 | 0.987–0.990 | **does not deliver** (slower) |
+
+- **An overlap, recorded:** at 10:34:50–10:35:10 I ran `go test ./cmd/gate/` (about 18 s of CPU) without taking the timing lock,
+  inside the plain arm's depth-512 cell of block 1. That cell read 63.5 and 63.6 tok/s, as every plain cell at that depth did; the
+  median and the count are the same with that pair dropped (1.016×, 9 of 9).
+- **Why, from a diagnostic in process** (not a gate; the same essay prompts rendered as `serve` renders them, thinking off;
+  `BlockSpec.GenerateStream` at width 4, the call `serve` makes): 1.021× at 512 and 0.894× at 4096, so the served path behaves as
+  the in-process path does. The drafter accepted 2.43 tokens a round over 21 rounds at 512 and 2.27 over 26 at 4096, under the
+  acceptance guard's 2.5, so the guard switched each turn to plain decode partway. At 4096 the long seed's capture and the slower
+  long-context verify cost more than the few accepted drafts saved.
+- **What it means:** the served path delivers what the drafter's acceptance allows. On essay prose this drafter accepts too little to
+  pay; on SP0's code and math it accepted 3.3 and more per round, and G4 read 1.46× in process. So the reading here is about the
+  workload, not a served-path gap. It does not revisit G4, and `serve`'s default width stays 8.
+- **What would answer G4's own condition served:** the same A/B on code and math prompts (SP0's suites, calibrated to depth). That is
+  a separate run; it is proposed, not run.
