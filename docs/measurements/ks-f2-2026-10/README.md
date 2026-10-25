@@ -81,8 +81,8 @@ The exp-and-sum loop and the AV loop keep key order.
 |---|---|---|
 | G0 | the Mac, arm64 and amd64 (Rosetta), GOMAXPROCS 1 and 8 | **PASS.** `TestKSF2_sinksBitIdentical`: 256 cells, 48 with the heads fanned out. `TestKSF2_queryPBitIdentical`: 768 cells, 132 fanned out. Every ctx word and KV row equal on both arches. A planted defect (two of the eight key rows swapped in `dotsF64x8`) turned both tests red |
 | G1a | the Mac (Darwin/arm64), CPU | **PASS** (2026-10-25 06:55, `origin/main` `8135a0c3` against `f8a1eda2`, 64 steps): 33 families IDENTICAL, 0 within tolerance, 0 different, 10 not run (fixtures absent or not tiny). gpt-oss, `granitemoehybrid`, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are all IDENTICAL |
-| G1b | nobara CPU (amd64) | **incomplete.** 2026-10-25 08:32, `ks-f2-nobara`: 32 IDENTICAL, 0 within tolerance, 0 different. gpt-oss, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are IDENTICAL. `granitemoehybrid` did NOT RUN, because its gitignored fixture is absent on nobara, which the registered bar counts as a failure. G0 under Rosetta already checks amd64 for the function Granite-4.0-H uses; the cell re-runs once the fixture is supplied |
-| G2 | nobara CPU | **one of three cells read; the job was stopped** (below) |
+| G1b | nobara CPU (amd64) | **PASS.** The 2026-10-25 08:32 run (`ks-f2-nobara`) found 32 IDENTICAL, 0 within tolerance, 0 different. gpt-oss, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are IDENTICAL. `granitemoehybrid`, not run then for want of its fixture, was re-run alone at 10:04 (`ks-f2-g1b-granite`, at `998f36f8`): IDENTICAL |
+| G2 | nobara CPU | **one of three cells read** (below). Francis, 2026-10-25 09:58: "KS-F2 A — decide on the readings so far; no deeper cell" |
 
 **G2's first run (2026-10-25 08:32–09:46 PDT, `ks-f2-nobara`, stopped):**
 - **Why it was stopped:** it held nobara's timing lock past its estimate, blocking two other sessions, and its depth-2048 cell could not
