@@ -2031,6 +2031,21 @@ client's time parsed (0.44–0.59%, not 0).
   registration hands that case to the owner's rule, and the test does not encode it. Changing what the test asserts is a bar change
   and Francis's call.
 
+**After #227's fourth review (registered 2026-10-25, 00:55, before a re-read).** A GPU client present at an arm's start and gone at
+its end took its accumulated time with it. A contender that saturated the GPU for most of an arm and closed its device before the
+end sample read as 0 ns.
+- **The fix.** `otherGPUDelta` now reports such clients, and the arm is void: what it did is unknown. In 20 three-second windows
+  sampled on the Mac at 00:50, no client vanished, so the void costs little. `TestParseAGXClients` covers it, and is red without
+  the check.
+- **What can still pass unseen:** a GPU client opened and closed entirely between an arm's two samples. Every client present at
+  either sample is accounted for: its time if it is present at both, all of its time if it is new at the end, and the arm is void if
+  it is gone at the end.
+- **The instrument check** now reads through `otherGPUWindow` itself, decides its virtualised-GPU skip with its own GPU work
+  running, and its child runs until it is killed.
+- **Re-read registered.** The 23:32 reading was taken without the vanished-client check, so whether a client closed inside one of
+  its arms is not known. E3-G2 is read again on the night runner with the same bar. KS-E3 stays on main either way (Francis's
+  decision); the reading goes in the record.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
