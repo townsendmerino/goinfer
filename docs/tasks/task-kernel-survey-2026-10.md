@@ -1190,6 +1190,27 @@ only for the instruction region's median.
   256 is 0.00173 int8 against 0.00068 native, **0.3899**. On `docs/benchmarks.md` it is 0.00175 against 0.00081, **0.4623**. These are
   LQ3's numbers to the digit. Log: `docs/measurements/ks-a1-2026-10/longctx-gate-2026-10-25.log`.
 
+**KS-O1-F diagnostic, registered 2026-10-25 before any data (owner, 1:52 pm).** The question: why the CUDA native lane's logits are
+further from f32 than the int8 lane's on highly repetitive input (Phi-3 mini q4, 110 × "the ": p10 0.8826, min 0.029, against
+int8's 0.9401 and 0.454), while about 2× closer on natural text (LQ3). Phi-3 mini q4 `Phi-3-mini-4k-instruct-q4.gguf`, the CUDA
+resident at `--quant q4k` holding both arms (`kso1cLoadBothArms`), against the CPU at f32 on the same GGUF. Instrument: a scratch
+harness beside `cuda/kso1c_fidelity_test.go:TestKSO1C_fillerDiagnostic`, kept as text in `docs/measurements/ks-o1-f-2026-10-25/`.
+Tier 1, the shared timing lock, not timed; about 5 minutes a run.
+- **D1, where they diverge.** The same prompt (TestQ4K_phi3ResidentMatchesCPU's filler at 110 repeats under Phi-3's chat template),
+  token by token through `cudaResident.Forward` with every layer's output captured (`cudaResident.SetHiddenCapture`), for four
+  arms: int8, native, only Q5_K qkv native, only Q6_K ffn_down native. The CPU at f32 over the same ids with every layer captured
+  (`decoder.KVCache.SetCaptureLayersForTest` on its batched prefill, bit-identical to its per-token walk). Per layer and arm: the
+  minimum and p10 over positions of the layer output's cosine to f32, its relative L2, and the position of the minimum. Reported:
+  the first layer at which the native arm's minimum falls below the int8 arm's by more than 0.05, and at which positions.
+- **D3, the KV path.** D1's native and int8 arms rerun with `--kv f32` (explicit). The KV path is implicated if the native arm's
+  final-layer minimum moves by more than half its gap to the int8 arm's.
+- **D2, which numerics, registered after D1 and before it runs.** At D1's first divergent layer, the suspect projection's output on
+  the same input computed four ways (f32 file weights × f32 activations; file weights × per-32 int8 activations; the int8 lane's
+  weights × per-32 int8 activations; the native kernel itself), to split activation quantization, weight representation and
+  accumulation.
+- **Stopping rule:** stop when one factor reproduces the native arm's gap at the first divergent layer to within 20%; the rest are
+  reported as not run. Any fix is a numerics change and gets its own registered fidelity gate and a Gemini review.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
