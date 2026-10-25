@@ -3,6 +3,8 @@ package hostmem
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"os"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -99,6 +101,95 @@ func TestRead_live(t *testing.T) {
 		t.Fatalf("implausible reading %+v", r)
 	}
 	t.Logf("%+v", r)
+}
+
+func TestBusyCores(t *testing.T) {
+	lin := func(busy, idle uint64) CPUTicks { return CPUTicks{busy: []uint64{busy, 0}, idle: []uint64{idle, 0}} }
+	mac := func(busy, idle uint64) CPUTicks {
+		return CPUTicks{busy: []uint64{busy}, idle: []uint64{idle}, wrap32: true}
+	}
+	for _, c := range []struct {
+		name string
+		a, b CPUTicks
+		want float64
+		ok   bool
+	}{
+		{"half busy", lin(100, 900), lin(500, 1300), 4, true},
+		{"no tick", lin(100, 900), lin(100, 900), 0, false},
+		{"idle steps back a tick (NOHZ): clamped", lin(100, 900), lin(500, 899), 8, true},
+		{"busy count wraps at 2^32", mac(1<<32-100, 900), mac(300, 1300), 4, true},
+		{"idle count wraps at 2^32", mac(100, 1<<32-200), mac(500, 200), 4, true},
+		{"mismatched samples", lin(1, 1), mac(2, 2), 0, false},
+	} {
+		got, ok := BusyCores(c.a, c.b, 8)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("%s: %v, %v; want %v, %v", c.name, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestReadCPU_live reads two CPU samples 200 ms apart: both readings work and give between 0 and NumCPU busy cores. It holds on a
+// busy machine, so it runs everywhere; TestReadCPU_seesASpin is the sensitivity check.
+func TestReadCPU_live(t *testing.T) {
+	a, ok := ReadCPU()
+	if !ok {
+		t.Skip("no CPU reading on this platform")
+	}
+	time.Sleep(200 * time.Millisecond)
+	b, ok := ReadCPU()
+	if !ok {
+		t.Fatal("second CPU reading failed")
+	}
+	got, ok := BusyCores(a, b, runtime.NumCPU())
+	if !ok || got < 0 || got > float64(runtime.NumCPU()) {
+		t.Fatalf("busy cores over 200 ms: %v, %v; want a reading in [0, %d]", got, ok, runtime.NumCPU())
+	}
+	t.Logf("%.2f busy cores", got)
+}
+
+// TestReadCPU_seesASpin: two goroutines spinning for 400 ms read at least 1.0 busy cores more than the 400 ms windows on either
+// side of them. A machine-wide reading cannot hold that margin where other work shares the box (a CI runner running other
+// packages' tests read 3.3-4.6 busy cores before the spin), so it runs only with GOINFER_HOSTMEM_LIVE=1, on a quiet machine of at
+// least 4 cores.
+func TestReadCPU_seesASpin(t *testing.T) {
+	if os.Getenv("GOINFER_HOSTMEM_LIVE") != "1" {
+		t.Skip("set GOINFER_HOSTMEM_LIVE=1 on a quiet machine")
+	}
+	if runtime.NumCPU() < 4 || runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs at least 4 CPUs and two Ps")
+	}
+	if _, ok := ReadCPU(); !ok {
+		t.Skip("no CPU reading on this platform")
+	}
+	window := func(spin bool) float64 {
+		a, _ := ReadCPU()
+		stop := time.Now().Add(400 * time.Millisecond)
+		done := make(chan struct{}, 2)
+		if spin {
+			for range 2 {
+				go func() {
+					for time.Now().Before(stop) {
+					}
+					done <- struct{}{}
+				}()
+			}
+			<-done
+			<-done
+		} else {
+			time.Sleep(time.Until(stop))
+		}
+		b, ok := ReadCPU()
+		got, bok := BusyCores(a, b, runtime.NumCPU())
+		if !ok || !bok {
+			t.Fatalf("CPU reading failed: %v, %v", ok, bok)
+		}
+		return got
+	}
+	before, spun, after := window(false), window(true), window(false)
+	if spun < max(before, after)+1.0 {
+		t.Fatalf("busy cores: %.2f before, %.2f with two spinning goroutines, %.2f after; want the spin at least 1.0 above both", before, spun, after)
+	}
+	t.Logf("busy cores: %.2f before, %.2f spinning, %.2f after", before, spun, after)
 }
 
 func TestReadWithOracle_live(t *testing.T) {

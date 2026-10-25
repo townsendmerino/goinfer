@@ -82,6 +82,8 @@ type Context struct {
 	// it to pick the DP4A kernel over the scalar-unpack fallback every backend accepts.
 	// History: docs/code-notes/gpu.md#Context.hasDP4A.
 	hasDP4A bool
+	// quantNarrow keeps the single-workgroup quantizers at 64 lanes (quantNarrowForTest, read at New); quantSrc.
+	quantNarrow bool
 
 	// W8A8 (int8×int8) pipeline, compiled lazily by ensureQuant (quant.go).
 	quantShader   *wgpu.ShaderModule
@@ -486,18 +488,19 @@ func New() (*Context, error) {
 	liveContexts.Add(1)
 	gpuEverAvailable.Store(true)
 	return &Context{
-		liveBase: liveBufferBytes.Load(),
-		allocSeq: allocSeqNow(),
-		instance: inst,
-		adapter:  adapter,
-		info:     adapter.GetInfo(),
-		device:   device,
-		queue:    device.GetQueue(),
-		shader:   shader,
-		pipeline: pipeline,
-		layout:   pipeline.GetBindGroupLayout(0),
-		hasDP4A:  probeDP4A(device),
-		gemmTile: gemmTileDefault(),
+		liveBase:    liveBufferBytes.Load(),
+		allocSeq:    allocSeqNow(),
+		instance:    inst,
+		adapter:     adapter,
+		info:        adapter.GetInfo(),
+		device:      device,
+		queue:       device.GetQueue(),
+		shader:      shader,
+		pipeline:    pipeline,
+		layout:      pipeline.GetBindGroupLayout(0),
+		hasDP4A:     probeDP4A(device),
+		quantNarrow: quantNarrowForTest.Load(),
+		gemmTile:    gemmTileDefault(),
 	}, nil
 }
 
