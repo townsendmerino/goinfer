@@ -296,3 +296,17 @@ before it, `serve` verified at 8, where SP0 projects 1.17×.
 - **Cost:** about 100 s a cell (load and attach 40 s; 16 completions of 256 tokens), 4 cells a quad, 5 quads, 2 depths: about 70
   minutes, plus the 4,096 prefills. Through the timing lock, by day.
 - **Tier:** 2 (a number that will be quoted). Tiers 0 and 1 cannot answer it: it is the served end to end.
+
+### The served A/B's first start (2026-10-25, 10:08–10:13 PDT): stopped by me after 2 cells, not graded
+
+- Two cells ran at depth 512: plain 63.6 tok/s, the drafter arm 64.6 tok/s (1.02×). The drafter arm's record showed `"sent": {}`, and
+  I stopped the run believing its requests went out without `temperature: 0`. They did not: `goinfer_payload` sends goinfer's
+  sampling for both goinfer arms, so the run was valid and only the record was wrong (fixed: a `goinfer_old` cell now records what
+  it sent). The two cells and the serve logs are kept on nobara (`~/goinfer-logs/sp2-2026-10/served-void-1008/`).
+- **Why 1.02×** (a diagnostic in process, not a gate, on the same essay prompts): Qwen3.5-9B's template renders thinking on by
+  default (`serve -h`: "Qwen3.5-9B: on"), and both replies open with `<think>`. DFlash is trained on non-thinking output. At 512 the
+  drafter accepted 3.1 tokens a round (4.81 s against plain's 5.47 s, prefill included); at 4,096 it accepted 1, 1, 1, 1, 4, 1, the
+  guard switched to plain decode after its 6 rounds, and the turn ended slower than plain (23.0 s against 20.0 s), the long seed's
+  capture being the extra.
+- So the A/B as registered (the template's default) measures thinking-mode replies, which G4 did not (G4 rendered thinking off).
+  How to proceed is the owner's decision; nothing is re-run until it is made.
