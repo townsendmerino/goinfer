@@ -226,6 +226,7 @@ func TestKSA1_gemvTiming(t *testing.T) {
 
 	sums := map[string]map[string]float64{} // kind → kernel → Σ count·ms over graded shapes
 	var report []string
+	bestQ5KGBs := 0.0 // the best Q5_K kernel's GB/s over gemv_w8a8_g32's at the graded qkv shape (KS-A1's bar)
 
 	for si, sh := range ksA1Shapes {
 		N, K, nSB := sh.N, sh.K, sh.K/256
@@ -431,6 +432,9 @@ func TestKSA1_gemvTiming(t *testing.T) {
 				arm.name, ms, gbps, ms/int8ms, gbps/(float64(arms[0].bytes)/(int8ms*1e-3)/1e9), float64(arm.bytes)/1e6, len(arm.args))
 			fmt.Fprintln(os.Stderr, line)
 			report = append(report, sh.name+" "+line)
+			if sh.name == "phi3 qkv" && strings.HasPrefix(arm.name, "gemv_q5k") {
+				bestQ5KGBs = max(bestQ5KGBs, gbps/(float64(arms[0].bytes)/(int8ms*1e-3)/1e9))
+			}
 			if sh.count > 0 && arm.name != "stream_read ceiling" {
 				k := sh.kind
 				if arm.name == arms[0].name {
@@ -451,9 +455,18 @@ func TestKSA1_gemvTiming(t *testing.T) {
 			names = append(names, n)
 		}
 		sort.Strings(names)
+		best := math.Inf(1)
 		for _, n := range names {
 			fmt.Fprintf(os.Stderr, "  %s %-16s %.4f ms  /int8 %.4f (int8 %.4f)\n", kind, n, sums[kind][n], sums[kind][n]/base, base)
+			best = min(best, sums[kind][n]/base)
+		}
+		if !(best <= 0.95) {
+			t.Errorf("A1-G0: the best %s kernel's summed time is %.4f of the int8 kernel's, over the build rule's 0.95", kind, best)
 		}
 	}
+	if !(bestQ5KGBs >= 0.95) {
+		t.Errorf("A1-G0: KS-A1 NO-GO by the survey's bar: the best Q5_K kernel reaches %.4f of gemv_w8a8_g32's GB/s, under 0.95", bestQ5KGBs)
+	}
+	fmt.Fprintf(os.Stderr, "A1-G0 KS-A1: the best Q5_K kernel at 9216x3072 reaches %.4f of gemv_w8a8_g32's GB/s (bar 0.95)\n", bestQ5KGBs)
 	t.Log(strings.Join(report, "\n"))
 }

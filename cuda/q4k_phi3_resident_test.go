@@ -20,9 +20,9 @@ import (
 //   - agreement: per-position logit cosine against CPU q4k, median ≥ 0.999;
 //   - quality: p10 against f32 no more than 0.01 below CPU q4k's own on the same prompt.
 //
-// It runs the int8 lane (decoder.SetKQuantNativeOffForTest): the CPU q4k reference keeps the int8 copies of the Q5_K and Q6_K
-// tensors, so only that lane can meet the agreement bar. The native lane's fidelity gates are KS-O1's G-Q2 and KL-to-the-file
-// gates (TestKSO1C_realPhi3NonInferiority, TestKSO1C_towardTheFile; docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA read").
+// It runs both lanes. The int8 lane (decoder.SetKQuantNativeOffForTest) takes both bars. The native lane (the file's Q5_K and
+// Q6_K blocks, what ships) takes the quality bar only: the CPU q4k reference keeps the int8 copies, so no lane nearer the file can
+// meet the agreement bar (docs/tasks/task-kernel-survey-2026-10.md, "#230's review, item 1", LQ1).
 func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 	path := os.Getenv("GOINFER_PHI3_MINI_GGUF")
 	if path == "" {
@@ -41,49 +41,6 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	decoder.SetKQuantNativeOffForTest(true)
-	gm, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k"})
-	decoder.SetKQuantNativeOffForTest(false)
-	if err != nil {
-		t.Fatalf("cuda load: %v", err)
-	}
-	defer gm.Close()
-	rf := gm.ResidentForwardForTest()
-	if rf == nil {
-		t.Fatalf("q4k did not build resident at the default context: %s", gm.ResidentDecline())
-	}
-	r, ok := rf.(*cudaResident)
-	if !ok || !r.actG32 || r.gemvQ4K == (Pipeline{}) {
-		t.Fatal("resident engaged without per-32 activations and gemv_q4k_g32")
-	}
-	nQ4K := 0
-	for _, Ly := range r.layers {
-		for _, w := range []cudaWQ{Ly.q, Ly.k, Ly.v, Ly.o, Ly.g, Ly.u, Ly.d} {
-			if w.kind == "q4k" {
-				nQ4K++
-			}
-			if w.kind == "q5k" || w.kind == "q6k" {
-				t.Fatalf("a %s weight is bound: the test must run the int8 lane", w.kind)
-			}
-		}
-	}
-	if r.lmW.kind == "q5k" || r.lmW.kind == "q6k" {
-		t.Fatalf("the head is %s: the test must run the int8 lane", r.lmW.kind)
-	}
-	if nQ4K == 0 {
-		t.Fatal("no projection is on the q4k kernel: the test would measure int8 only")
-	}
-	t.Logf("resident: context %d positions, %d projections on gemv_q4k_g32, fused per-32: %v", r.ctxCap, nQ4K, r.fuseG32)
-	var gl [][]float32
-	for p, id := range ids {
-		lg, err := rf.Forward(gm.EmbedResidentForTest(id), p)
-		if err != nil {
-			t.Fatalf("resident forward pos %d: %v", p, err)
-		}
-		gl = append(gl, append([]float32(nil), lg...))
-	}
-
 	cpuLogits := func(opts decoder.Options) [][]float32 {
 		m, err := decoder.Load(path, opts)
 		if err != nil {
@@ -101,7 +58,7 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 		}
 		return out
 	}
-	stats := func(name string, a, ref [][]float32) (p10, median float64) {
+	stats := func(t *testing.T, name string, a, ref [][]float32) (p10, median float64) {
 		cs := make([]float64, len(ids))
 		for p := range ids {
 			cs[p] = cosine64(a[p], ref[p])
@@ -111,13 +68,65 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 		return cs[len(cs)/10], cs[len(cs)/2]
 	}
 	cpuQ4K, f32 := cpuLogits(decoder.Options{Quant: "q4k"}), cpuLogits(decoder.Options{})
-	_, agree := stats("cuda q4k vs cpu q4k", gl, cpuQ4K)
-	cudaQ, _ := stats("cuda q4k vs cpu f32", gl, f32)
-	cpuQ, _ := stats("cpu q4k vs cpu f32 (same prompt, the baseline)", cpuQ4K, f32)
-	if agree < 0.999 {
-		t.Errorf("CUDA q4k vs CPU q4k: median cosine %.6f, want >= 0.999", agree)
-	}
-	if cudaQ < cpuQ-0.01 {
-		t.Errorf("CUDA q4k quality p10 %.4f is more than 0.01 below the CPU q4k path's %.4f", cudaQ, cpuQ)
+	cpuQ, _ := stats(t, "cpu q4k vs cpu f32 (same prompt, the baseline)", cpuQ4K, f32)
+
+	for _, native := range []bool{false, true} {
+		lane := map[bool]string{false: "int8 lane", true: "native lane"}[native]
+		t.Run(lane, func(t *testing.T) {
+			gm, err := func() (*decoder.Model, error) {
+				decoder.SetKQuantNativeOffForTest(!native)
+				defer decoder.SetKQuantNativeOffForTest(false)
+				return decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k"})
+			}()
+			if err != nil {
+				t.Fatalf("cuda load: %v", err)
+			}
+			defer gm.Close()
+			rf := gm.ResidentForwardForTest()
+			if rf == nil {
+				t.Fatalf("q4k did not build resident at the default context: %s", gm.ResidentDecline())
+			}
+			r, ok := rf.(*cudaResident)
+			if !ok || !r.actG32 || r.gemvQ4K == (Pipeline{}) {
+				t.Fatal("resident engaged without per-32 activations and gemv_q4k_g32")
+			}
+			nQ4K, nNative := 0, 0
+			for _, Ly := range r.layers {
+				for _, w := range []cudaWQ{Ly.q, Ly.k, Ly.v, Ly.o, Ly.g, Ly.u, Ly.d} {
+					if w.kind == "q4k" {
+						nQ4K++
+					}
+					if w.kind == "q5k" || w.kind == "q6k" {
+						nNative++
+					}
+				}
+			}
+			if r.lmW.kind == "q5k" || r.lmW.kind == "q6k" {
+				nNative++
+			}
+			if nQ4K == 0 {
+				t.Fatal("no projection is on the q4k kernel: the test would measure int8 only")
+			}
+			if (nNative > 0) != native {
+				t.Fatalf("%d native weights bound on the %s", nNative, lane)
+			}
+			t.Logf("resident: context %d positions, %d projections on gemv_q4k_g32, %d native, fused per-32: %v", r.ctxCap, nQ4K, nNative, r.fuseG32)
+			var gl [][]float32
+			for p, id := range ids {
+				lg, err := rf.Forward(gm.EmbedResidentForTest(id), p)
+				if err != nil {
+					t.Fatalf("resident forward pos %d: %v", p, err)
+				}
+				gl = append(gl, append([]float32(nil), lg...))
+			}
+			_, agree := stats(t, "cuda q4k vs cpu q4k", gl, cpuQ4K)
+			cudaQ, _ := stats(t, "cuda q4k vs cpu f32", gl, f32)
+			if !native && agree < 0.999 {
+				t.Errorf("CUDA q4k vs CPU q4k: median cosine %.6f, want >= 0.999", agree)
+			}
+			if cudaQ < cpuQ-0.01 {
+				t.Errorf("CUDA q4k quality p10 %.4f is more than 0.01 below the CPU q4k path's %.4f", cudaQ, cpuQ)
+			}
+		})
 	}
 }

@@ -233,20 +233,23 @@ func TestKSO1C_fusedEqualsUnfused(t *testing.T) {
 	}
 	shmem := uint32((H + 256 + H/4 + 2*(H/32)) * 4)
 	null := gc.ArgDevicePtr(0)
-	q, k, v := mk("q6k", qDim), mk("q5k", kvDim), mk("q4k", kvDim)
-	wq, wk, wv := gemv(q, gc.Arg(q.bias)), gemv(k, gc.Arg(k.bias)), gemv(v, gc.Arg(v.bias))
-	for _, rpw := range []int{1, 2, 4} {
-		nrows := qDim + 2*kvDim
-		cfg := gc.LaunchConfig{GridX: uint32((nrows + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
-		oq, ok, ov := mustAlloc[float32](t, ctx, qDim), mustAlloc[float32](t, ctx, kvDim), mustAlloc[float32](t, ctx, kvDim)
-		launch("fused_rms_qkv_g32", cfg, gc.Arg(dx), gc.Arg(dnw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)),
-			q.W, null, gc.Arg(q.bias), gc.ArgValue(code[q.kind]),
-			k.W, null, gc.Arg(k.bias), gc.ArgValue(code[k.kind]),
-			v.W, null, gc.Arg(v.bias), gc.ArgValue(code[v.kind]),
-			gc.ArgValue(int32(qDim)), gc.ArgValue(int32(kvDim)), gc.ArgValue(int32(rpw)), gc.Arg(oq), gc.Arg(ok), gc.Arg(ov))
-		same("q (q6k)", download(t, oq, qDim), wq)
-		same("k (q5k)", download(t, ok, kvDim), wk)
-		same("v (q4k)", download(t, ov, kvDim), wv)
+	// Q6_K in each slot, so its whole-weight plane offsets are taken from both qDim and kvDim (projRow's N).
+	for _, kinds := range [][3]string{{"q6k", "q5k", "q4k"}, {"q5k", "q6k", "q6k"}} {
+		q, k, v := mk(kinds[0], qDim), mk(kinds[1], kvDim), mk(kinds[2], kvDim)
+		wq, wk, wv := gemv(q, gc.Arg(q.bias)), gemv(k, gc.Arg(k.bias)), gemv(v, gc.Arg(v.bias))
+		for _, rpw := range []int{1, 2, 4} {
+			nrows := qDim + 2*kvDim
+			cfg := gc.LaunchConfig{GridX: uint32((nrows + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
+			oq, ok, ov := mustAlloc[float32](t, ctx, qDim), mustAlloc[float32](t, ctx, kvDim), mustAlloc[float32](t, ctx, kvDim)
+			launch("fused_rms_qkv_g32", cfg, gc.Arg(dx), gc.Arg(dnw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)),
+				q.W, null, gc.Arg(q.bias), gc.ArgValue(code[q.kind]),
+				k.W, null, gc.Arg(k.bias), gc.ArgValue(code[k.kind]),
+				v.W, null, gc.Arg(v.bias), gc.ArgValue(code[v.kind]),
+				gc.ArgValue(int32(qDim)), gc.ArgValue(int32(kvDim)), gc.ArgValue(int32(rpw)), gc.Arg(oq), gc.Arg(ok), gc.Arg(ov))
+			same("q ("+kinds[0]+")", download(t, oq, qDim), wq)
+			same("k ("+kinds[1]+")", download(t, ok, kvDim), wk)
+			same("v ("+kinds[2]+")", download(t, ov, kvDim), wv)
+		}
 	}
 	g, u := mk("q5k", I), mk("q6k", I)
 	wg, wu := gemv(g, null), gemv(u, null)

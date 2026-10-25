@@ -205,7 +205,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 	N, K := h.N, h.K
 	rowsFor := func(wordsPerRow int) int { return max(1, stagePackWords/max(wordsPerRow, 1)) }
 	if h.row != nil {
-		return r.streamKQuant(h, rowsFor)
+		return r.streamKQuant(h)
 	}
 	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: r.au32(h.nWpk)}
 	putWords := func(st *packStage, r0, wpr int) { r.recordUpload(gpu.Upload(w.W.At(r0*wpr*4), st.outW)) }
@@ -290,16 +290,20 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 	return w
 }
 
+// kquantStageRows is the rows of rowBytes each that one staging block holds: a block of them fits packStage.bytes inside one stage's
+// scratch (stagePackWords). A Q6_K row of an odd block count is not a whole number of words, so the row is counted rounded up.
+func kquantStageRows(rowBytes int) int { return max(1, stagePackWords/((rowBytes+3)/4)) }
+
 // streamKQuant is streamW for a native Q5_K or Q6_K weight (planKQuant): one byte buffer of the file's size, filled from the file's
 // rows in staging blocks. Q5_K rows are copied verbatim; Q6_K blocks are split into q6kPlanes, a block of rows landing in four
 // contiguous runs, one per plane.
-func (r *cudaResident) streamKQuant(h hostW, rowsFor func(int) int) cudaWQ {
+func (r *cudaResident) streamKQuant(h hostW) cudaWQ {
 	allocSeen(h.nBytes)
 	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: gpu.NewBufferLenOf[uint8](r.dev, h.nBytes)}
 	nSB := h.K / 256
 	if h.kind == "q5k" {
 		rb := nSB * 176
-		r.streamBlocks(h.N, rowsFor(rb/4), func(st *packStage, r0, rows int) {
+		r.streamBlocks(h.N, kquantStageRows(rb), func(st *packStage, r0, rows int) {
 			b := st.bytes(rows * rb)
 			for i := range rows {
 				copy(b[i*rb:(i+1)*rb], h.row(r0+i))
@@ -310,7 +314,7 @@ func (r *cudaResident) streamKQuant(h hostW, rowsFor func(int) int) cudaWQ {
 	}
 	off := q6kPlaneOffsets(h.N * nSB)
 	width := [4]int{128, 64, 16, 2}
-	r.streamBlocks(h.N, rowsFor(nSB*210/4), func(st *packStage, r0, rows int) {
+	r.streamBlocks(h.N, kquantStageRows(nSB*210), func(st *packStage, r0, rows int) {
 		nb := rows * nSB
 		b := st.bytes(nb * 210)
 		for i := range rows {

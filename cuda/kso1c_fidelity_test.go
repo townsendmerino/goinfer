@@ -58,9 +58,7 @@ func TestKSO1C_towardTheFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		kquantKeepInt8ForTest = true
-		mg, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 512})
-		kquantKeepInt8ForTest = false
+		mg, err := kso1cLoadBothArms(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 512})
 		if err != nil {
 			t.Fatalf("%s: cuda load: %v", name, err)
 		}
@@ -208,9 +206,12 @@ func TestKSO1C_realPhi3NonInferiority(t *testing.T) {
 	}
 }
 
-// TestKSO1C_fillerDiagnostic is not a gate: TestQ4K_phi3ResidentMatchesCPU's 141-token filler prompt through both arms of one
-// Phi-3 resident (kquantKeepInt8ForTest) against the CPU at f32, every position's cosine and KL printed, so the arms can be
-// compared where that test's bars read them (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA read").
+// TestKSO1C_fillerDiagnostic is LQ2 and LQ3 (docs/tasks/task-kernel-survey-2026-10.md, "#230's review, item 1"), a reading, not a
+// gate: one Phi-3 resident holding both arms (kso1cLoadBothArms) and the CPU at q4k, each against the CPU at f32, over one prompt.
+// The prompt is TestQ4K_phi3ResidentMatchesCPU's filler at GOINFER_KSO1C_DIAG_REPS repeats (110 by default), or, with
+// GOINFER_KSO1C_DIAG_DOC set, that file's first GOINFER_KSO1C_DIAG_TOKENS tokens (900) inside "Summarize this document:". Per arm
+// it prints p10 and min cosine and mean KL over all positions and over positions 256 and later; the int8 and native arms also run
+// with one group native at a time (Q5_K qkv, Q6_K ffn_down, the head). It asserts only that every arm ran.
 func TestKSO1C_fillerDiagnostic(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
@@ -224,22 +225,40 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reps := 110
-	if v, err := strconv.Atoi(os.Getenv("GOINFER_KSO1C_DIAG_REPS")); err == nil {
-		reps = v
+	envInt := func(name string, def int) int {
+		if v, err := strconv.Atoi(os.Getenv(name)); err == nil {
+			return v
+		}
+		return def
 	}
+	reps, label := envInt("GOINFER_KSO1C_DIAG_REPS", 110), ""
 	text := strings.Repeat("the ", reps) + "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+	label = fmt.Sprintf("filler %d repeats", reps)
+	if doc := os.Getenv("GOINFER_KSO1C_DIAG_DOC"); doc != "" {
+		b, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dids, err := tk.Encode(string(b), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := min(len(dids), envInt("GOINFER_KSO1C_DIAG_TOKENS", 900))
+		body, err := tk.Decode(dids[:n])
+		if err != nil {
+			t.Fatal(err)
+		}
+		text, label = "Summarize this document:\n\n"+body, fmt.Sprintf("%s, first %d tokens", doc, n)
+	}
 	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kquantKeepInt8ForTest = true
-	ctx := 512
-	if v, err := strconv.Atoi(os.Getenv("GOINFER_KSO1C_DIAG_CTX")); err == nil {
-		ctx = v
+	ctx := envInt("GOINFER_KSO1C_DIAG_CTX", 512)
+	for ctx < len(ids)+1 {
+		ctx *= 2
 	}
-	mg, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: ctx})
-	kquantKeepInt8ForTest = false
+	mg, err := kso1cLoadBothArms(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: ctx})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,22 +267,26 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 	if !ok {
 		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
 	}
-	fmt.Fprintf(os.Stderr, "[filler] %d repeats, %d tokens; resident context %d, layer 0 KV half %v\n", reps, len(ids), r.ctxCap, r.layers[0].kvHalf)
+	fmt.Fprintf(os.Stderr, "[diag] %s: %d positions; resident context %d, layer 0 KV half %v\n", label, len(ids), r.ctxCap, r.layers[0].kvHalf)
 	use, _ := kso1cArms(t, r, "Phi-3")
-	mf, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer mf.Close()
-	c := mf.NewCache(len(ids) + 1)
-	var ref [][]float32
-	for _, id := range ids {
-		l, err := mf.ForwardForTest(id, c)
+	cpu := func(opts decoder.Options) [][]float32 {
+		m, err := decoder.Load(path, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ref = append(ref, append([]float32(nil), l...))
+		defer m.Close()
+		c := m.NewCache(len(ids) + 1)
+		var out [][]float32
+		for _, id := range ids {
+			l, err := m.ForwardForTest(id, c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), l...))
+		}
+		return out
 	}
+	ref := cpu(decoder.Options{Backend: "cpu"})
 	cos := func(a, b []float32) float64 {
 		var d, na, nb float64
 		for i := range a {
@@ -273,19 +296,44 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 		}
 		return d / math.Sqrt(na*nb)
 	}
-	var cs [5][]float64
-	var kl [5]float64
-	vocabRows := r.lmW.N
-	// arms: int8, all native, then one group native at a time (Q5_K qkv, Q6_K ffn_down, the Q6_K head).
-	only := func(pick func(w cudaWQ) bool) {
-		use(false)
-		slots := []*cudaWQ{&r.lmW}
-		for l := range r.layers {
-			Ly := &r.layers[l]
-			slots = append(slots, &Ly.q, &Ly.k, &Ly.v, &Ly.o, &Ly.g, &Ly.u, &Ly.d)
+	report := func(name string, rows [][]float32) {
+		for _, from := range []int{0, 256} {
+			if from >= len(ids) {
+				continue
+			}
+			var cs []float64
+			kl := 0.0
+			for p := from; p < len(ids); p++ {
+				cs = append(cs, cos(rows[p], ref[p]))
+				kl += kso1cKL(ref[p], rows[p])
+			}
+			sort.Float64s(cs)
+			fmt.Fprintf(os.Stderr, "[diag] %s | %-26s positions %4d-%4d: cosine min %.6f p10 %.6f median %.6f; mean KL to f32 %.5f\n",
+				label, name, from, len(ids)-1, cs[0], cs[len(cs)/10], cs[len(cs)/2], kl/float64(len(cs)))
 		}
+	}
+	report("cpu q4k", cpu(decoder.Options{Backend: "cpu", Quant: "q4k"}))
+	vocabRows := r.lmW.N
+	arms := []struct {
+		name string
+		pick func(w cudaWQ) bool // which native weights are bound; nil binds none
+	}{
+		{"int8 arm", nil},
+		{"native arm", func(cudaWQ) bool { return true }},
+		{"only Q5_K qkv native", func(w cudaWQ) bool { return w.kind == "q5k" }},
+		{"only Q6_K ffn_down native", func(w cudaWQ) bool { return w.kind == "q6k" && w.N != vocabRows }},
+		{"only the Q6_K head native", func(w cudaWQ) bool { return w.kind == "q6k" && w.N == vocabRows }},
+	}
+	slots := []*cudaWQ{&r.lmW}
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		slots = append(slots, &Ly.q, &Ly.k, &Ly.v, &Ly.o, &Ly.g, &Ly.u, &Ly.d)
+	}
+	ran := 0
+	for _, a := range arms {
+		use(false)
 		for _, p := range r.kquantAlt {
-			if !pick(p[0]) {
+			if a.pick == nil || !a.pick(p[0]) {
 				continue
 			}
 			for _, s := range slots {
@@ -294,41 +342,20 @@ func TestKSO1C_fillerDiagnostic(t *testing.T) {
 				}
 			}
 		}
-	}
-	names := []string{"int8", "native", "only Q5_K qkv native", "only Q6_K ffn_down native", "only the Q6_K head native"}
-	for a := range names {
-		switch a {
-		case 0:
-			use(false)
-		case 1:
-			use(true)
-		case 2:
-			only(func(w cudaWQ) bool { return w.kind == "q5k" })
-		case 3:
-			only(func(w cudaWQ) bool { return w.kind == "q6k" && w.N != vocabRows })
-		case 4:
-			only(func(w cudaWQ) bool { return w.kind == "q6k" && w.N == vocabRows })
-		}
 		r.Reset()
+		var rows [][]float32
 		for p, id := range ids {
 			l, err := r.Forward(mg.EmbedResidentForTest(id), p)
 			if err != nil {
 				t.Fatal(err)
 			}
-			cs[a] = append(cs[a], cos(l, ref[p]))
-			kl[a] += kso1cKL(ref[p], l)
+			rows = append(rows, append([]float32(nil), l...))
 		}
+		report(a.name, rows)
+		ran++
 	}
 	use(true)
-	for p := range ids {
-		fmt.Fprintf(os.Stderr, "[filler] pos %3d tok %6d: cosine to f32 int8 %.6f native %.6f\n", p, ids[p], cs[0][p], cs[1][p])
-	}
-	for a, name := range names {
-		s := append([]float64(nil), cs[a]...)
-		sort.Float64s(s)
-		tail := append([]float64(nil), cs[a][len(ids)-29:]...)
-		sort.Float64s(tail)
-		fmt.Fprintf(os.Stderr, "[filler] %s arm: %d positions, cosine min %.6f p10 %.6f median %.6f; mean KL to f32 %.5f; the last 29 positions' median %.6f\n",
-			name, len(s), s[0], s[len(s)/10], s[len(s)/2], kl[a]/float64(len(s)), tail[len(tail)/2])
+	if ran != len(arms) {
+		t.Fatalf("%d of %d arms ran", ran, len(arms))
 	}
 }

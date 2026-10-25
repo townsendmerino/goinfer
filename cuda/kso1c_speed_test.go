@@ -33,6 +33,14 @@ func kso1cMemAvailGB() float64 {
 	return 0
 }
 
+// kso1cLoadBothArms loads path with kquantKeepInt8ForTest held for the load only, so every native weight's int8 copy is on the
+// device beside it (kso1cArms switches between them).
+func kso1cLoadBothArms(path string, opts decoder.Options) (*decoder.Model, error) {
+	kquantKeepInt8ForTest = true
+	defer func() { kquantKeepInt8ForTest = false }()
+	return decoder.Load(path, opts)
+}
+
 // kso1cArms returns a switch between a resident's two arms, built under kquantKeepInt8ForTest: use(true) binds every native weight,
 // use(false) its int8 copy (cudaResident.kquantAlt). It checks the round trip lands every native weight back, and returns their count.
 func kso1cArms(t *testing.T, r *cudaResident, label string) (use func(native bool), nNative int) {
@@ -78,9 +86,7 @@ func kso1cArms(t *testing.T, r *cudaResident, label string) (use func(native boo
 // after 2 warm runs each. A pair whose cell starts with the 1-minute load above 8.0 (half nobara's 16 cores) is void and re-run in
 // the same order (CLAUDE.md, "Run budget"). It returns the median native/int8 per-token time and the pairs faster.
 func kso1cSpeed(t *testing.T, path, label string) (float64, int) {
-	kquantKeepInt8ForTest = true
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 512})
-	kquantKeepInt8ForTest = false
+	m, err := kso1cLoadBothArms(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 512})
 	if err != nil {
 		t.Fatalf("%s: %v", label, err)
 	}
