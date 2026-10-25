@@ -39,8 +39,9 @@ registration, committed before any code. A separate PR from KS-F2's.
   - Each position records top-1 agreement with the reference, a hard flip (outside the near-tie band, `decoder.NearTieArgmaxForTest`),
     and KL(reference ‖ arm).
 - **Cells:**
-  - **short:** prompts of about 200 tokens.
-  - **long:** prompts of about 1,500 tokens, past the 128-key window, so the window layers' sliding read is exercised.
+  - **short:** prompts of about 150 tokens.
+  - **long:** prompts of about 600 tokens, more than four times the 128-key window, so the window layers' sliding read and the ring are
+    exercised.
 - **Prompts:** passages and instructions in the shape of `gpu/attn_fidelity_test.go`, with a pilot set that shares no passage with the gate
   set. `fidelity.PromptSetHash` is recorded.
   - **N, per cell:** from the pilot (2 prompts a cell): `python3 scripts/power.py fidelity --from-positions <the pilot's positions log>`.
@@ -68,6 +69,10 @@ registration, committed before any code. A separate PR from KS-F2's.
 | G-RING | 0, the Mac | Step 2 against Step 1 on the tiny gpt-oss fixture, at a context past its window: full logits over 64 greedy steps, and the window rows read | byte-identical |
 | G-MEM | 0, nobara | the KV bytes per position, and the fit guard's plan for gpt-oss-20b at 32k, before and after Step 2 | the window layers' KV is stated before and after, from the plan's own pricing; the bar is that it falls by the window layers' share less the ring's fixed bytes |
 | G-SPEED | timed, nobara CPU, the timing lock, by day | KS-F2's harness (`TestKSF2_cpuDecodeSpeed`), A B B A over 10 pairs, with today's build against Step 1 + 2, gpt-oss-20b at depth 128 and 2048 | reported. **FAIL** if a cell has at most 1 of 10 pairs faster (a slowdown beyond doubt); otherwise it passes with the ratio stated. Not a speed claim: KS-O4's purpose is what it unblocks |
+
+**Amended before any data (2026-10-25): G-FID's cell lengths and cost.** gpt-oss's CPU prefill runs token by token: its FFN form is not
+batch-eligible (`program.batchEligible`). At about 0.13–0.15 s a token on nobara, a 1,500-token cell costs about 4 min a pass, so three
+passes over 24 prompts run past 2 hours. The cells move to about 150 and 600 tokens, and the cost is restated below. No reading existed.
 
 **Amended before any code (2026-10-25): G-SINK.** As first written it compared the batched path, word for word, with a hand-written
 reference of its arithmetic. That reference would have to reproduce aikit's `MatmulQKAcc64` and `MatmulAVAcc64` contraction exactly,
@@ -98,8 +103,11 @@ The fidelity gate, G-FID, is unchanged.
 - **power.py N:** from the pilot, as above.
 - **Stopping rule:** fixed N. No early stop.
 - **Ambiguous band:** as tabled. The owner decides.
-- **Cost (G-FID, estimated):**
-  - The reference int8 load is about 21 GB, about 1 min.
-  - A short prompt is about 10 s per arm, a long one about 45 s, on CPU.
-  - Three passes a prompt (the reference, then two arms), with N = 12 a cell plus the pilot's 4 prompts: about 40–50 min.
-  - The start and expected finish are stated when it is queued.
+- **Cost (G-FID, estimated, restated before any data):**
+  - **Loads:** the reference int8 load is about 21 GB, held in the heap (`DirectLoad`, so no sidecar is written); the int4 load is about
+    11 GB. About 1 min each.
+  - **A pass** is the prompt prefilled token by token, then 31 forced steps, at about 0.13–0.15 s a token (the reference somewhat slower).
+    A short prompt is about 25 s, a long one about 90 s.
+  - **Three passes a prompt.** The pilot (2 + 2 prompts) is about 12 min. The gate at N = 12 a cell is about 14 min short and 55 min
+    long.
+  - **Total:** about 1.5–2 hours, run by day. The start and expected finish are stated when it is queued.
