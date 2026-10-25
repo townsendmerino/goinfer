@@ -281,6 +281,11 @@ before it, `serve` verified at 8, where SP0 projects 1.17×.
   - **Prompts:** the harness's essay-v2 prompts, token-calibrated for Q9 at 512 and 4,096 with `scripts/bench_prompts_calibrate.py`
     and committed to `scripts/prompts.json` before the run. Prose, where SP0's prompts were code and math.
   - Greedy (temperature 0), so every request takes the speculative path.
+  - **Amended 2026-10-25, 10:24, on the owner's decision (Francis: option A), after seeing data:** both arms run with thinking off,
+    `BENCH_GOINFER_ARGS="-thinking off"`; everything else as registered. The amendment came after the first start's 2 cells at depth
+    512 (1.02×) and the in-process diagnostic recorded below: Qwen3.5-9B's template renders thinking on by default, and DFlash is
+    trained on non-thinking output. G4 rendered its prompts with thinking off, so this is what makes the A/B measure what G4
+    measured. What `serve --drafter` gives on this model's default template is recorded by that diagnostic, not by this gate.
 - **The reading, per depth:** each pair's drafter tok/s over plain tok/s; the median, the count of pairs above 1, and the pairs'
   spread.
 - **Bands, per depth: the owner's merge rule** (Francis, 2026-10-25, 8:46 am; amended here before the run, which had not started;
