@@ -45,8 +45,8 @@ The exp-and-sum loop and the AV loop keep key order.
   - The registered small-gains reading (SHIP, PARK or FAIL above) is kept as recorded.
   - The merge bar's reading is "met" iff every cell has median ≥ 1.05× and at least 9 of 10 pairs faster (`grade_g2.py`).
 - **Memory, for the PR:** host bytes only (the CPU path). It adds at most 6 × the key count × 4 bytes of score buffers per cache (0.79 MB at
-  32k) and removes gpt-oss's per-call score allocation. No effect on the longest context that fits: the fit plan does not price decode
-  scratch of this size.
+  32k) and removes gpt-oss's per-call score allocation. Its effect on the longest context that fits is not measured
+  here; at 0.79 MB per cache at 32k it is reported as an upper bound, not as zero.
 
 ## Pre-registration (`docs/measurements/noise-registry.md` §8)
 
