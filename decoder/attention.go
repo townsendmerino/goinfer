@@ -489,3 +489,35 @@ func (st *attnScoreStats) observe(s float64) {
 		}
 	}
 }
+
+// scalarHeadWorkers is how many workers gpt-oss's per-head scalar attention (attendSinksToken) fans its heads over: one
+// below about 32k multiply-adds a layer, where the fan-out costs more than it saves, else one per head up to maxAttnWorkers. It
+// changes no number: each head's arithmetic is the same on any worker.
+func scalarHeadWorkers(nH, span, hd int) int {
+	if nH*span*hd < 1<<15 {
+		return 1
+	}
+	return min(nH, maxAttnWorkers)
+}
+
+// dotsF64x8 sets out[j] to the float64 dot of q with the key row at keys[base[j]:base[j]+len(q)], for 8 keys at once. The eight
+// chains are independent and each sums d in order, in the one-key loop's expression form (acc += float64(q[d]) * float64(k[d])),
+// so each arch contracts every chain exactly as it contracts that loop: the result is bit-identical to scoring the keys one by one.
+func dotsF64x8(q, keys []float32, base *[8]int, out *[8]float64) {
+	hd := len(q)
+	k0, k1, k2, k3 := keys[base[0]:base[0]+hd], keys[base[1]:base[1]+hd], keys[base[2]:base[2]+hd], keys[base[3]:base[3]+hd]
+	k4, k5, k6, k7 := keys[base[4]:base[4]+hd], keys[base[5]:base[5]+hd], keys[base[6]:base[6]+hd], keys[base[7]:base[7]+hd]
+	var a0, a1, a2, a3, a4, a5, a6, a7 float64
+	for d, qv := range q {
+		qd := float64(qv)
+		a0 += qd * float64(k0[d])
+		a1 += qd * float64(k1[d])
+		a2 += qd * float64(k2[d])
+		a3 += qd * float64(k3[d])
+		a4 += qd * float64(k4[d])
+		a5 += qd * float64(k5[d])
+		a6 += qd * float64(k6[d])
+		a7 += qd * float64(k7[d])
+	}
+	*out = [8]float64{a0, a1, a2, a3, a4, a5, a6, a7}
+}

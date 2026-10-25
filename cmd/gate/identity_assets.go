@@ -32,6 +32,9 @@ type identityAsset struct {
 	Tok    string // real: tokenizer source relative to the models dir (.gguf, or a dir with tokenizer.json)
 	// Backends limits a backend-specific file (a .giw sidecar is built for one backend); nil = any.
 	Backends []string
+	// DirectLoad loads the file straight into the heap (decoder.Options.DirectLoad): a .gguf with no embedded tokenizer cannot take the
+	// sidecar .giw that Load defaults to.
+	DirectLoad bool
 	// Skip, when set, is why this asset is never run by default (reported NOT RUN with the reason).
 	Skip string
 }
@@ -51,7 +54,7 @@ var identityTiny = []identityAsset{
 	{Family: "glm4_moe", Name: "tiny", Path: "testdata/glm-tiny", Golden: "testdata/glm_tiny_text_golden.json"},
 	{Family: "glm4_moe", Name: "tiny-bias", Path: "testdata/glm-tiny-bias", Golden: "testdata/glm_tiny_bias_text_golden.json"},
 	{Family: "glm_ocr", Name: "tiny", Path: "testdata/glm-ocr-tiny", Golden: "testdata/glm_ocr_tiny_golden.json"},
-	{Family: "gpt-oss", Name: "tiny-gguf", Path: "decoder/testdata/gptoss_tiny.gguf", Golden: "decoder/testdata/gptoss_tiny_golden.json"},
+	{Family: "gpt-oss", Name: "tiny-gguf", Path: "decoder/testdata/gptoss_tiny.gguf", Golden: "decoder/testdata/gptoss_tiny_golden.json", DirectLoad: true},
 	{Family: "gpt2", Name: "124m", Path: "testdata/gpt2", Golden: "testdata/gpt2_forward_golden.json"},
 	{Family: "granite", Name: "dense-tiny", Path: "testdata/granite-dense-tiny", Golden: "testdata/granite_dense_forward_golden.json"},
 	{Family: "granitemoehybrid", Name: "tiny", Path: "testdata/granite-tiny", Golden: "testdata/granite_tiny_text_golden.json"},
@@ -276,6 +279,8 @@ type identityCell struct {
 	Quant   string
 	Prompts [][]int
 	NotRun  string // set: not run, and why
+	// DirectLoad is the asset's: the dumper loads the file straight into the heap.
+	DirectLoad bool
 }
 
 // planIdentityCells builds the cells for the selected families. Families not in the manifest are an
@@ -321,7 +326,7 @@ func planIdentityCells(o *identityOpts, fams map[string]manifestFamily) ([]*iden
 			continue
 		}
 		has[a.Family] = true
-		base := &identityCell{Family: a.Family, Asset: a.Name}
+		base := &identityCell{Family: a.Family, Asset: a.Name, DirectLoad: a.DirectLoad}
 		var ids [][]int
 		switch {
 		case a.Skip != "":

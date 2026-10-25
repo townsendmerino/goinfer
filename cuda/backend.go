@@ -1076,10 +1076,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
 				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
-				if r.pairwiseRoPE {
-					mropePTX, mropeName = r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX), "rope_kv_mrope_batched_pw"
+				if r.pairwiseRoPE { // GLM-OCR, which keeps f32 KV (decoder.CUDAKVF16Decline), so the f32 module's kernel
+					mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
 				}
-				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
+				// That kernel writes f32 rows, so an f16 cache never loads it, whatever the policy says: the batched m-RoPE prefill
+				// stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
+				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil && !(r.pairwiseRoPE && r.kvF16) {
 					loadMRope := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(mmod, name); pe == nil {
 							*dst = pl

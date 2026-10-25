@@ -70,7 +70,8 @@
 | KS-E10 | open | either box: dispatch count, then an A/B | — |
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
 | KS-F1 | open | either box: a fork/join counter and bit-identity on the tiny MoE fixtures | — |
-| KS-F2 | active | mac-kapitsa: the bit-identical step first, gates registered before the code (bit-identity on the tiny gpt-oss/qwen35/granite/lfm2 fixtures with KV rows held; speed by the small-gains rule); then KS-O4 | — |
+| KS-F2 | active | #239: gpt-oss's attendSinksToken fans its heads out and scores eight keys at once, bit-identical, default on for gpt-oss (Francis, 2026-10-25 10:16; limited to gpt-oss at 10:35). gpt-oss-20b at depth 128 10 of 10 pairs faster, 1.025×; then KS-O4 | `docs/measurements/ks-f2-2026-10/README.md` |
+| KS-F2b | open | time attendQueryP's new schedule (heads fanned out, eight keys at once) on Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4 before it ships for them: not run, by Francis's call of 2026-10-25 10:35 (#239 keeps their old path). The code is in #239's history | `docs/measurements/ks-f2-2026-10/README.md` |
 | KS-F3 | open | either box: `GOINFER_DELTANET_TIMING=1` with M35 (tier 1, minutes) | — |
 | KS-F4 | open | nobara: per-fan-out timestamps inside a real 0.5B token | — |
 | KS-F5 | open | either box: `AllocsPerRun` and trig calls per token on `deepseek-tiny` | — |
@@ -2163,6 +2164,7 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 
 **KS-F2 · gpt-oss and `attendQueryP` attention: one thread, one scalar chain per key.**
 - **Decided (Francis, 2026-10-25):** the bit-identical step goes ahead, its gates registered first.
+  - **Scope (10:35):** default on for gpt-oss only. `attendQueryP` keeps today's schedule for its families until they are timed (KS-F2b).
   - KS-O4 is approved gated: its fidelity gate is registered before any code, and Step 2 (memory) follows it.
   - mac-kapitsa; one PR for the bit-identical step, another for KS-O4.
 - **Where:** `decoder/forward_gptoss.go:attendSinksToken` (`scores := make(...)` per call, `for qh := range nH`, one f64 dot
