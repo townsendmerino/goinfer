@@ -337,6 +337,44 @@ func PrefillRefIdentityForTest(refPath string, ids []int) (PrefillRefIdentity, s
 	return RefIdentityVerified, "prompt verified by sidecar hash"
 }
 
+// PrefillRefCurrentForTest checks refPath's sidecar against what this tree's generator would key it with for checkpointPath and ids:
+// the prompt, the reference path's source, the checkpoint's content, the arch and the exact attention. A reference with no sidecar or
+// any of those different is refused, whatever its bytes: a gate scores only a reference this tree would have computed. The weight
+// quant and the continuation length are the generator's per-cell choices, which the gate does not know, so they are not checked.
+func PrefillRefCurrentForTest(refPath, checkpointPath string, ids []int) error {
+	if id, why := PrefillRefIdentityForTest(refPath, ids); id != RefIdentityVerified {
+		return fmt.Errorf("%s: %s", refPath, why)
+	}
+	b, err := os.ReadFile(refPath + ".key.json")
+	if err != nil {
+		return err
+	}
+	var parts PrefillRefKeyParts
+	if err := json.Unmarshal(b, &parts); err != nil {
+		return err
+	}
+	src, err := prefillRefSourceSHA256()
+	if err != nil {
+		return err
+	}
+	ck, err := checkpointSHA256(checkpointPath)
+	if err != nil {
+		return fmt.Errorf("checkpoint hash: %w", err)
+	}
+	short := func(h string) string { return h[:min(12, len(h))] }
+	switch {
+	case parts.SourceSHA256 != src:
+		return fmt.Errorf("%s: built under reference source %q, this tree's is %s…: stale, rebuild it on this tree", refPath, short(parts.SourceSHA256), short(src))
+	case parts.Checkpoint != ck:
+		return fmt.Errorf("%s: built from checkpoint %q, %s is %s…", refPath, short(parts.Checkpoint), checkpointPath, short(ck))
+	case parts.Arch != runtime.GOARCH:
+		return fmt.Errorf("%s: built on %q, this is %s", refPath, parts.Arch, runtime.GOARCH)
+	case !parts.ExactAttn:
+		return fmt.Errorf("%s: built with the fast attention, not the exact reference attention", refPath)
+	}
+	return nil
+}
+
 func writeFileAtomic(path string, b []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {

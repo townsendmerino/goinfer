@@ -854,7 +854,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// no fallback.
 		r.pairwiseRoPE = m.PairwiseRoPEResident()
 		if r.pairwiseRoPE {
-			pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX)
+			pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
 			if pe != nil {
 				return fmt.Errorf("pairwise rope: compile rope_pairwise.ptx: %w", pe)
 			}
@@ -1010,7 +1010,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
 				if r.pairwiseRoPE {
 					// GPT-J pairwise twin of rope_kv_batched (same signature); see the decode bind above.
-					if pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX); pe == nil {
+					if pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
 						load(&r.bRopeKV, pwmod, "rope_kv_batched_pw")
 					} else {
 						ok = false
@@ -1048,7 +1048,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
 		// It depends on r.prefillReady, as L2 does.
 		if r.prefillReady {
-			if imod, e8 := r.dev.CompileLibrary(attnImgPrefillPTX); e8 == nil {
+			if imod, e8 := r.dev.CompileLibrary(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
 				// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
 				// static scan recognizes `&r.<field>` or a direct NewComputePipeline RHS as a bind
 				// site, matching the loadF/loadG idiom L2/L3 already use below.
@@ -1075,9 +1075,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if sec := m.MRopeSectionResident(); len(sec) == 3 {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
-				mropePTX, mropeName := ropeMRopePrefillPTX, "rope_kv_mrope_batched"
+				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
 				if r.pairwiseRoPE {
-					mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
+					mropePTX, mropeName = r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX), "rope_kv_mrope_batched_pw"
 				}
 				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
 					loadMRope := func(dst *Pipeline, name string) {
@@ -1373,7 +1373,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		if r.isMLA {
-			mlamod, me := r.dev.CompileLibrary(mlaPTX)
+			mlamod, me := r.dev.CompileLibrary(r.kvPTX(mlaPTX, mlaKV16PTX))
 			if me != nil {
 				return fmt.Errorf("cuda: JIT mla.ptx: %w", me)
 			}
@@ -1654,7 +1654,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.layers {
-			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA() && !r.layers[l].noKV() && !r.layers[l].kvShared
+			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].noKV() && !r.layers[l].kvShared
 		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
