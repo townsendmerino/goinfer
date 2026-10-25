@@ -212,8 +212,7 @@ it runs:**
 - **The rounds that differ** are mostly a prompt's last round. Near the end of the continuation, the real loop narrows its width to
   the tokens left (`blockSpecRoundWidth`), where the simulation keeps w = 8 and is cut at the continuation's end.
 
-**So the DFlash readings below are graded, no longer provisional.** The first validation's FAIL is kept above as recorded. They are reported, marked provisional, for the owner's decision on the
-validation (see the end).
+**So the DFlash readings below are graded, no longer provisional.** The first validation's FAIL is kept above as recorded.
 
 ### The projections at L = 512 (the registered decision length)
 
