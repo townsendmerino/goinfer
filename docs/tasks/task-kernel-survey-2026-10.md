@@ -1769,6 +1769,9 @@ path. The median (0.9807) is 0.0007 over the median bar.
 `TestParseAGXClients` checks the first two on synthetic ioreg text (dropping the own-client check turns it red). The 17:26 run
 cannot show whether the per-process sum hid contention in a pair it counted valid, so E3-G2 is read once more on the fixed guard.
 KS-E3 stays on main whatever it reads (Francis's decision); the reading goes in the record.
+The first attempt (22:25) refused before loading: 4.4 GB reclaimable, under the test's 6 GB pre-load line, with the owner's apps
+open. It is queued on the Mac's night runner (`kse3-g2-gpuguard`, the pinned binary in `~/goinfer-bench/kse3-night/`, re-queued
+while under 6.5 GB reclaimable until 06:00); its reading is added here when it lands.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
