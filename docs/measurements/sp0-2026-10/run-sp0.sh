@@ -4,6 +4,7 @@
 #
 #   MODE=fitcheck: download and verify the Qwen3.5-9B drafter, then make every load the measurement makes, load only. Any
 #                  refusal exits 75 before anything is timed.
+#   MODE=validate-off: the validation pairing rendered thinking off (the owner's decision after the first validation's guard trip).
 #   MODE=cost4096: the two DFlash targets' cost arms at 4096 only, the fill prefilled in passes (the measure run ran out of
 #                  device memory filling 4096 in one armed pass).
 #   MODE=measure:  the validation pairing, then Qwen3.5-9B with DFlash (template thinking, then math with thinking on), then
@@ -96,6 +97,9 @@ measure)
 	cell dflash-qwen35-9b-think "${Q9[@]}" SP0_SUITES=math SP0_THINK=on SP0_SKIP_COST=1
 	cell ngram-gptoss-20b "${G20[@]}" SP0_SUITES=code,math,edit
 	cell dflash-qwen36-35b "${Q35[@]}" SP0_SUITES=code,math
+	;;
+validate-off)
+	cell validate-qwen3-4b-off "${V4[@]}" SP0_THINK=off
 	;;
 cost4096)
 	cell cost4096-qwen35-9b "${Q9[@]}" SP0_SUITES=code,math SP0_SKIP_ACCEPT=1 SP0_COST_CTX=4096

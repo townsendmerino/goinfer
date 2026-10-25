@@ -40,18 +40,30 @@ def verdict(x):
 
 
 def validate(rows):
+    """The harness's own gate. A prompt on which BlockSpec's acceptance guard stopped the loop before the end of the continuation (its
+    committed tokens fall more than one block short) is graded on the rounds the loop ran, and named; every other prompt on all of
+    its rounds, with its round total counted toward the 2% bar."""
     loops = {(r["suite"], r["idx"]): r for r in rows if r["kind"] == "teacher"}
     sims = {(r["suite"], r["idx"]): r for r in rows if r["kind"] == "accept_dflash" and r["w"] == 8}
     same = total = rl = rs = 0
+    tripped = []
     for k, lp in sorted(loops.items()):
         a, b = lp["loop_commits"], sims[k]["commits"]
-        n = max(len(a), len(b))
-        s = sum(1 for i in range(min(len(a), len(b))) if a[i] == b[i])
-        same, total, rl, rs = same + s, total + n, rl + lp["loop_rounds"], rs + len(b)
-        print(f"{k[0]}/{k[1]}: loop {lp['loop_rounds']} rounds (lossless {lp['loop_equals_greedy']}), simulation {len(b)}; {s}/{n} rounds identical")
-    frac, drift = same / total, abs(rs - rl) / rl
-    ok = frac >= 0.95 and drift <= 0.02
-    print(f"\nrounds identical {same}/{total} = {frac:.3f} (bar 0.95); total rounds loop {rl} vs simulation {rs}, {drift*100:.2f}% (bar 2%)")
+        trip = sum(a) + 8 < sims[k]["tokens"]
+        n = len(a) if trip else max(len(a), len(b))
+        s = sum(1 for i in range(min(len(a), len(b), n)) if a[i] == b[i])
+        same, total = same + s, total + n
+        if trip:
+            tripped.append(f"{k[0]}/{k[1]}")
+        else:
+            rl, rs = rl + lp["loop_rounds"], rs + len(b)
+        print(f"{k[0]}/{k[1]}: loop {lp['loop_rounds']} rounds (lossless {lp['loop_equals_greedy']}), simulation {len(b)}; "
+              f"{s}/{n} rounds identical" + (" (the guard stopped the loop: graded on the rounds it ran)" if trip else ""))
+    frac = same / total
+    drift = abs(rs - rl) / rl if rl else 0.0
+    ok = frac >= 0.95 and drift <= 0.02 and rl > 0
+    print(f"\nrounds identical {same}/{total} = {frac:.3f} (bar 0.95); untripped prompts' total rounds loop {rl} vs simulation {rs}, "
+          f"{drift*100:.2f}% (bar 2%); guard tripped on {len(tripped)} of {len(loops)}: {', '.join(tripped) or 'none'}")
     print("HARNESS VALID" if ok else "HARNESS VOID: every DFlash reading is void")
 
 

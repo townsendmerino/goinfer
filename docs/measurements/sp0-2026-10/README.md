@@ -184,6 +184,18 @@ running. Every cell started below 3.1 load with at least 59.6 GB available and p
   thinking on. The earlier pairing measurements (`docs/spec/08-dspark-dflash.md`) rendered thinking off, the drafter's training
   distribution.
 
+**The re-run, by the owner's decision (Francis, 2026-10-24 10:18 pm, relayed by the coordinator: "option A"), registered before
+it runs:**
+- **What runs:** the same 12 prompts, rendered thinking off (`MODE=validate-off`, `SP0_THINK=off`), so the loop speculates to the
+  end.
+- **A prompt on which the guard still stops the loop** (its committed tokens fall more than one block short of the continuation)
+  is graded on the rounds the loop ran, and named in the record.
+- **Every other prompt** is graded on all its rounds, and its round total counts toward the 2% bar.
+- **The bars are as first registered:** at least 95% of compared rounds identical, and total rounds within 2% over the prompts
+  that ran to the end. With no such prompt the 2% bar has nothing to test, and the harness stays VOID.
+- **`project.py validate` implements this.** On the first run's data it grades all 12 prompts on the rounds they ran (151 of 151
+  identical), finds no untripped prompt, and prints VOID.
+
 **As registered, a FAIL voids every DFlash reading below.** They are reported, marked provisional, for the owner's decision on the
 validation (see the end).
 
