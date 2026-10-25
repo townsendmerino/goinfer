@@ -55,11 +55,27 @@ func loadSpecModel(t *testing.T, m specModel) (*decoder.Model, *cudaResident) {
 	}
 	t.Cleanup(func() { mc.Close() })
 	r := mustResident(t, mc)
-	r.allocRecurrentSpec(decoder.RecurrentSpecMaxRows)
+	if err := r.PrepareRecurrentSpec(decoder.RecurrentSpecMaxRows); err != nil {
+		t.Fatalf("PrepareRecurrentSpec: %v", err)
+	}
 	if r.RecurrentSpecRows() != decoder.RecurrentSpecMaxRows {
 		t.Fatalf("no arena: RecurrentSpecRows() = %d", r.RecurrentSpecRows())
 	}
 	return mc, r
+}
+
+// withSpecPlant runs fn with a fold-path plant armed, and disarms it however fn ends (t.Fatalf included), so no later test runs
+// planted.
+func withSpecPlant(plant int, fn func()) {
+	dnSpecPlantForTest = plant
+	defer func() { dnSpecPlantForTest = 0 }()
+	fn()
+}
+
+// withGuardTripped runs fn with every BlockSpec acceptance guard stopping at its window, restored however fn ends.
+func withGuardTripped(fn func()) {
+	defer decoder.TripBlockSpecGuardForTest()()
+	fn()
 }
 
 func hasWeights(dir string) bool {
@@ -217,9 +233,8 @@ func TestRecurrentSpec_verifyFoldMatchesPrefill(t *testing.T) {
 				name  string
 				plant int
 			}{{"P1-fold-skips-conv", dnSpecPlantFoldSkipsConv}, {"P2-verify-writes-state", dnSpecPlantVerifyWritesState}} {
-				dnSpecPlantForTest = p.plant
-				fails := verifyFoldFailures(t, mc, r)
-				dnSpecPlantForTest = 0
+				var fails []string
+				withSpecPlant(p.plant, func() { fails = verifyFoldFailures(t, mc, r) })
 				if len(fails) == 0 {
 					t.Errorf("plant %s passed G1a: the gate cannot see it", p.name)
 				} else {
@@ -340,9 +355,8 @@ func TestRecurrentSpec_scriptedLoop(t *testing.T) {
 			if fails := scriptedLoopFailures(t, mc, r, maxNew); len(fails) > 0 {
 				t.Fatalf("%d failures; first: %s", len(fails), fails[0])
 			}
-			restore := decoder.TripBlockSpecGuardForTest()
-			fails := scriptedLoopFailures(t, mc, r, maxNew)
-			restore()
+			var fails []string
+			withGuardTripped(func() { fails = scriptedLoopFailures(t, mc, r, maxNew) })
 			if len(fails) > 0 {
 				t.Fatalf("guard tripped: %d failures; first: %s", len(fails), fails[0])
 			}
@@ -350,9 +364,8 @@ func TestRecurrentSpec_scriptedLoop(t *testing.T) {
 				name  string
 				plant int
 			}{{"P1-fold-skips-conv", dnSpecPlantFoldSkipsConv}, {"P2-verify-writes-state", dnSpecPlantVerifyWritesState}} {
-				dnSpecPlantForTest = p.plant
-				fails := scriptedLoopFailures(t, mc, r, maxNew)
-				dnSpecPlantForTest = 0
+				var fails []string
+				withSpecPlant(p.plant, func() { fails = scriptedLoopFailures(t, mc, r, maxNew) })
 				if len(fails) == 0 {
 					t.Errorf("plant %s passed G1b: the gate cannot see it", p.name)
 				} else {
@@ -499,7 +512,9 @@ func TestRecurrentSpec_arenaPriced(t *testing.T) {
 			if r.extraBytes < priced {
 				t.Errorf("the resident's reserve %d does not hold the arena's %d", r.extraBytes, priced)
 			}
-			r.allocRecurrentSpec(rows)
+			if err := r.PrepareRecurrentSpec(rows); err != nil {
+				t.Fatal(err)
+			}
 			if got := r.RecurrentSpecBytes(); got != raw {
 				t.Errorf("allocated %d bytes, priced %d raw", got, raw)
 			}

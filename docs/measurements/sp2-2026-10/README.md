@@ -16,7 +16,9 @@ Rebuilt with `cuda/build_ptx.sh deltanet` (NVRTC 12.9.86; the committed PTX firs
 so the toolchain reproduces it). Every pre-existing kernel's floating-point instruction sequence is unchanged; the PTX of the
 row-batched kernels differs only in labels, symbol names and address arithmetic order. Each verify twin's floating-point
 sequence equals its committing kernel's (`delta_conv_rows_spec` = `delta_conv_rows`, `delta_rule_rows_128_spec` =
-`delta_rule_rows_128`). None of the three declares local memory in its PTX; at the driver's JIT the 128-wide twin spills 80
+`delta_rule_rows_128`), and each shares one function body with it. The generic twin, `delta_rule_rows_spec`, is a separate body:
+it holds the state row in a predicated 128-float register array where `delta_rule_rows` walks it in global memory, with the same
+ascending-kd FMA chains; G1a shows it bit-identical on the two tiny fixtures that take it. None of the three declares local memory in its PTX; at the driver's JIT the 128-wide twin spills 80
 B/thread, under the 96 B its committing kernel already spills (below).
 
 ## Readings
@@ -37,7 +39,7 @@ Run on nobara under the timing lock (shared), driver 595.91.07: `go test -tags '
 | G1b with the guard tripped (plain steps after folds) | PASS | PASS | PASS |
 | G1b under P1 / P2 | caught, 8 of 8 / 8 of 8 | caught, 8 / 8 | caught, 8 / 8 |
 | G5: checkpoint untouched; kvmgr reuses all of A; state after A = cold prefill; B warm = cold, plain and speculative | PASS | PASS | PASS |
-| G3: reserve grows by the arena, priced = allocated (rounded to 2 MiB) | PASS | PASS | PASS |
+| G3: the reserve grows by the arena's price, which is the allocated bytes rounded up to 2 MiB | PASS | PASS | PASS |
 | a seed longer than one pass keeps every captured row, bit-equal to one pass | — | PASS | — |
 
 **Two defects that predate SP2, found by these gates and fixed on this branch:**
@@ -65,8 +67,9 @@ prefill, the defect above. The run is kept as recorded (`raw/identity-2026-10-24
 available. Peak resident 15.3 GB (`VmHWM`), peak swap 0. Raw: `raw/identity-2026-10-24-2353.jsonl`.
 
 - **The load:** Qwen3.5-9B's `.giw`, resident context 4,608 (SP0's, held with the arena priced in), f32 KV, the drafter
-  attached through `NewBlockSpec`. The arena: 31,817,728 B (30.3 MiB), 16 rows × 24 DeltaNet layers, the registered formula. The
-  companion reserve: 1,326,350,336 B. Free VRAM with everything attached: 1.15 GB of 8.16.
+  attached through `NewBlockSpec`. The arena allocates 31,817,728 B (30.3 MiB: 16 rows × 24 DeltaNet layers, the registered
+  formula), and the fit guard prices it at 33,554,432 B (32 MiB, rounded up to 2 MiB as `cuMemAlloc` rounds it). The companion
+  reserve: 1,326,350,336 B. Free VRAM with everything attached: 1.15 GB of 8.16.
 
 | cell | prompts | w = 4 | w = 16 |
 |---|---|---|---|
@@ -91,3 +94,18 @@ turns finished on plain steps, and identically). A diagnostic on two prompts of 
 showed the same, and rules out the chunked seed: seeding in 512-row and in 256-row passes gave the same rounds and tokens. The
 drafter accepted 1–4 tokens a round behind 1,000 tokens of code (mean about 2) against about 4 on the bare question. So DFlash's
 acceptance on this pairing falls with context; G4's long cell reads what that costs.
+
+### Review fixes before G2 and G4 (2026-10-25, from the PR's second-opinion review)
+
+- **The fold path is prepared before the drafter attaches.** `NewBlockSpec` now asks the resident to prepare the arena
+  (`PrepareRecurrentSpec`) and checks admission before `AttachBlockDrafter`, so a recurrent model the path refuses (Mamba-2,
+  heads past 128, a sliding window, an arena that does not fit) gets no drafter weights on its device. The arena's price
+  (`RecurrentSpecArenaBytes`) is 0 for each model the path refuses, so the fit guard reserves nothing for them.
+  `TestPrepareRecurrentSpec_refusesBeforeAttach` pins each refusal.
+- **G4's window and void rule.** Both arms time from the first token out to the end of the turn. BlockSpec folds the prompt into
+  its drafter's context before its first token (`BlockSpec.generate`), so that work is outside the window in both arms; the last
+  forward and the commit are inside it in both, since plain decode forwards its last token before its channel closes. The
+  registered void rule is enforced in G2 and G4: a cell or pair whose start reads load above 8.0, or available memory under 15.3
+  GB (the identity run's peak resident memory for this load) plus 2 GB, is recorded as void and re-run in order.
+- **Plants and the guard trip** are armed through helpers that disarm them with `defer`, so a failing helper cannot leave a later
+  test planted.

@@ -742,17 +742,16 @@ func (m *Model) ResidentPrefillScratchForTest(promptTokens int) (int64, bool) {
 
 // NewBlockSpecForTest is NewBlockSpec around rd, a test's own drafter, in place of the weights' attach: SP2's scripted-drafter
 // gates drive the real loop with a drafter whose proposals they choose. dw stands for the drafter's weights; the loop reads
-// only its BlockSize and MaskTokenID. The recurrent refusal is NewBlockSpec's.
+// only its BlockSize and MaskTokenID. The fold path's preparation and refusal are NewBlockSpec's.
 func (m *Model) NewBlockSpecForTest(rd ResidentBlockDrafter, dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
 	host, ok := m.resident.(ResidentDrafterHost)
 	if !ok {
 		return nil, errBlockSpecUnsupported
 	}
-	s := &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}
-	if m.hasRecurrentState() && s.recurrentFold(2) == nil {
-		return nil, fmt.Errorf("decoder: recurrent model without the resident's fold path")
+	if err := m.prepareRecurrentSpec(host, dw); err != nil {
+		return nil, err
 	}
-	return s, nil
+	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
 }
 
 // TripBlockSpecGuardForTest makes every BlockSpec generation's acceptance guard stop speculating after its window, whatever

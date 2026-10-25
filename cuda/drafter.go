@@ -157,8 +157,6 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 	if r.setupErr != nil && r.setupErr != setupBefore {
 		return nil, fmt.Errorf("cuda drafter: weight upload failed: %w", r.setupErr)
 	}
-	// A Gated-DeltaNet target verifies through SP2's fold path, whose arena holds a verify pass's rows (recurrent_spec.go).
-	r.allocRecurrentSpec(min(w.BlockSize(), decoder.RecurrentSpecMaxRows))
 	return d, nil
 }
 

@@ -5,8 +5,12 @@ import "testing"
 // SP2's decoder-side tier-0 gates (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"): admission, the
 // arena's price, and the loop's fold accounting.
 
-type recurrentSpecStub struct{ rows int }
+type recurrentSpecStub struct {
+	rows    int
+	prepErr error
+}
 
+func (s recurrentSpecStub) PrepareRecurrentSpec(int) error                  { return s.prepErr }
 func (s recurrentSpecStub) RecurrentSpecRows() int                          { return s.rows }
 func (recurrentSpecStub) VerifyLastNArgmax([][]float32, int) ([]int, error) { panic("not reached") }
 func (recurrentSpecStub) FoldVerified(int) error                            { panic("not reached") }
@@ -33,13 +37,13 @@ func TestSpecRollbackSafeVia_admitsOnlyTheFoldPath(t *testing.T) {
 		want  bool
 	}{
 		{"DeltaNet, truncate path", dn, nil, 0, false},
-		{"DeltaNet, fold path, width 4 of 16", dn, recurrentSpecStub{16}, 4, true},
-		{"DeltaNet, fold path, width 16 of 16", dn, recurrentSpecStub{16}, 16, true},
-		{"DeltaNet, fold path, width 17 of 16", dn, recurrentSpecStub{16}, 17, false},
-		{"DeltaNet, a resident that kept no rows", dn, recurrentSpecStub{0}, 4, false},
-		{"Mamba-2, a resident claiming rows", mamba, recurrentSpecStub{16}, 4, false},
-		{"DeltaNet with a sliding window", windowedDN, recurrentSpecStub{16}, 4, false},
-		{"dense, fold path given", &Architecture{}, recurrentSpecStub{16}, 4, true},
+		{"DeltaNet, fold path, width 4 of 16", dn, recurrentSpecStub{rows: 16}, 4, true},
+		{"DeltaNet, fold path, width 16 of 16", dn, recurrentSpecStub{rows: 16}, 16, true},
+		{"DeltaNet, fold path, width 17 of 16", dn, recurrentSpecStub{rows: 16}, 17, false},
+		{"DeltaNet, a resident that kept no rows", dn, recurrentSpecStub{rows: 0}, 4, false},
+		{"Mamba-2, a resident claiming rows", mamba, recurrentSpecStub{rows: 16}, 4, false},
+		{"DeltaNet with a sliding window", windowedDN, recurrentSpecStub{rows: 16}, 4, false},
+		{"dense, fold path given", &Architecture{}, recurrentSpecStub{rows: 16}, 4, true},
 	} {
 		if got := mk(c.arch).specRollbackSafeVia(c.fold, c.width); got != c.want {
 			t.Errorf("%s: specRollbackSafeVia = %v, want %v", c.name, got, c.want)
@@ -72,6 +76,52 @@ func TestRecurrentSpecArenaBytes_formula(t *testing.T) {
 	if got := RecurrentSpecArenaBytes(&Architecture{NumLayers: 4}, 16); got != 0 {
 		t.Errorf("dense: %d, want 0", got)
 	}
+	wide := deltaNetArch(32)
+	wide.qwen35.KeyHeadDim = 256
+	if got := RecurrentSpecArenaBytes(wide, 16); got != 0 {
+		t.Errorf("key heads of 256, past the scan twins: %d, want 0", got)
+	}
+	windowed := deltaNetArch(32)
+	windowed.SlidingWindow = 4096
+	if got := RecurrentSpecArenaBytes(windowed, 16); got != 0 || recurrentSpecReserve(windowed, true) != 0 {
+		t.Errorf("a sliding window, which the path refuses: priced %d, want 0", got)
+	}
+}
+
+// prepHost is a drafter host with a fold capability whose attach must not be reached: prepareRecurrentSpec runs before it.
+type prepHost struct {
+	recurrentSpecStub
+	*blockspecWriteHost
+}
+
+// TestPrepareRecurrentSpec_refusesBeforeAttach: NewBlockSpec readies the fold path before the drafter's weights go to the
+// device, so a recurrent model the path refuses has nothing uploaded. The refusals: no fold capability, the resident declining
+// to prepare, no rows kept, and a recurrent kind the path does not serve.
+func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
+	mk := func(a *Architecture) *Model { return &Model{w: &Weights{arch: a}} }
+	dw := blockspecStubWeights{blockSize: 16}
+	dn := deltaNetArch(8)
+	mamba := &Architecture{NumLayers: 1, granite: &graniteParams{}, layerIsMamba: func(int) bool { return true }}
+	host := func(rows int, err error) ResidentDrafterHost {
+		return prepHost{recurrentSpecStub{rows: rows, prepErr: err}, &blockspecWriteHost{}}
+	}
+	for _, c := range []struct {
+		name string
+		arch *Architecture
+		host ResidentDrafterHost
+		ok   bool
+	}{
+		{"no fold capability", dn, &blockspecWriteHost{}, false},
+		{"the resident declines to prepare", dn, host(16, errBlockSpecUnsupported), false},
+		{"no rows kept", dn, host(0, nil), false},
+		{"Mamba-2", mamba, host(16, nil), false},
+		{"DeltaNet with a prepared path", dn, host(16, nil), true},
+		{"dense: nothing to prepare", &Architecture{}, &blockspecWriteHost{}, true},
+	} {
+		if err := mk(c.arch).prepareRecurrentSpec(c.host, dw); (err == nil) != c.ok {
+			t.Errorf("%s: err = %v, want ok %v", c.name, err, c.ok)
+		}
+	}
 }
 
 // foldHost is a drafter host with the fold path: the seed answers 7, every verify answers script, and it records each verify's
@@ -90,9 +140,10 @@ func (h *foldHost) PrefillLastNArgmax(embs [][]float32, startPos int) ([]int, er
 	ids[len(ids)-1] = 7
 	return ids, nil
 }
-func (h *foldHost) SetBatchedCapture([]int) error { return nil }
-func (h *foldHost) BatchedCapture() [][]float32   { return nil }
-func (h *foldHost) RecurrentSpecRows() int        { return 16 }
+func (h *foldHost) SetBatchedCapture([]int) error  { return nil }
+func (h *foldHost) BatchedCapture() [][]float32    { return nil }
+func (h *foldHost) RecurrentSpecRows() int         { return 16 }
+func (h *foldHost) PrepareRecurrentSpec(int) error { return nil }
 func (h *foldHost) VerifyLastNArgmax(embs [][]float32, startPos int) ([]int, error) {
 	h.verify = append(h.verify, len(embs))
 	return h.script[:len(embs)], nil

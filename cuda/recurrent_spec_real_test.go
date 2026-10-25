@@ -5,9 +5,11 @@ package cuda
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -214,24 +216,24 @@ func TestSP2_identity(t *testing.T) {
 		}
 	}
 	// The guard's fallback: the turn ends on plain steps after folded rounds.
-	restore := decoder.TripBlockSpecGuardForTest()
-	for i := range 4 {
-		got, rounds, err := g.spec.Generate(prompts[i].ids, decoder.BlockSpecOptions{VerifyWidth: 4, MaxTokens: maxNew})
-		if err != nil {
-			t.Fatalf("guard prompt %d: %v", i, err)
+	withGuardTripped(func() {
+		for i := range 4 {
+			got, rounds, err := g.spec.Generate(prompts[i].ids, decoder.BlockSpecOptions{VerifyWidth: 4, MaxTokens: maxNew})
+			if err != nil {
+				t.Fatalf("guard prompt %d: %v", i, err)
+			}
+			at := sp2Diverge(got, plains[i].toks)
+			stateDiff := ""
+			if at < 0 {
+				stateDiff = snapDiff(plains[i].state, dnSnapshot(t, g.r))
+			}
+			if at >= 0 || stateDiff != "" {
+				fails++
+				t.Errorf("guard tripped, prompt %d: divergence at %d; state: %q", i, at, stateDiff)
+			}
+			g.record(t, map[string]any{"kind": "g1c-guard", "prompt": i, "rounds": rounds, "diverge_at": at, "state_diff": stateDiff})
 		}
-		at := sp2Diverge(got, plains[i].toks)
-		stateDiff := ""
-		if at < 0 {
-			stateDiff = snapDiff(plains[i].state, dnSnapshot(t, g.r))
-		}
-		if at >= 0 || stateDiff != "" {
-			fails++
-			t.Errorf("guard tripped, prompt %d: divergence at %d; state: %q", i, at, stateDiff)
-		}
-		g.record(t, map[string]any{"kind": "g1c-guard", "prompt": i, "rounds": rounds, "diverge_at": at, "state_diff": stateDiff})
-	}
-	restore()
+	})
 	t.Logf("G1c: %d failures over %d prompts x 2 widths plus 4 guard runs", fails, len(prompts))
 
 	// The plants, at w = 4 on the 12 thinking-off prompts: each must diverge somewhere.
@@ -239,21 +241,20 @@ func TestSP2_identity(t *testing.T) {
 		name  string
 		plant int
 	}{{"P1-fold-skips-conv", dnSpecPlantFoldSkipsConv}, {"P2-verify-writes-state", dnSpecPlantVerifyWritesState}} {
-		dnSpecPlantForTest = pl.plant
 		caught := 0
-		for i := range 12 {
-			got, _, err := g.spec.Generate(prompts[i].ids, decoder.BlockSpecOptions{VerifyWidth: 4, MaxTokens: maxNew})
-			if err != nil {
-				dnSpecPlantForTest = 0
-				t.Fatalf("plant %s prompt %d: %v", pl.name, i, err)
+		withSpecPlant(pl.plant, func() {
+			for i := range 12 {
+				got, _, err := g.spec.Generate(prompts[i].ids, decoder.BlockSpecOptions{VerifyWidth: 4, MaxTokens: maxNew})
+				if err != nil {
+					t.Fatalf("plant %s prompt %d: %v", pl.name, i, err)
+				}
+				at := sp2Diverge(got, plains[i].toks)
+				if at >= 0 {
+					caught++
+				}
+				g.record(t, map[string]any{"kind": "plant", "plant": pl.name, "prompt": i, "diverge_at": at})
 			}
-			at := sp2Diverge(got, plains[i].toks)
-			if at >= 0 {
-				caught++
-			}
-			g.record(t, map[string]any{"kind": "plant", "plant": pl.name, "prompt": i, "diverge_at": at})
-		}
-		dnSpecPlantForTest = 0
+		})
 		if caught == 0 {
 			t.Errorf("plant %s diverged on none of 12 prompts: G1c cannot see it", pl.name)
 		} else {
@@ -293,11 +294,42 @@ func TestSP2_identity(t *testing.T) {
 		"state_diff": stateDiff, "warm_cold_diverge_at": sp2Diverge(warmB, coldB), "pass": ok})
 }
 
-// sp2Load records the load average and available memory at a cell's start, for the void rule.
-func sp2Load() map[string]any {
-	la, _ := os.ReadFile("/proc/loadavg")
+// sp2HostNeed is the host memory this load needs, for the void rule: the identity run's peak resident memory for the same
+// load and drafter (docs/measurements/sp2-2026-10/README.md, "G1c, the re-run"), larger than the fit guard's own estimate.
+const sp2HostNeed = int64(15_331_852) << 10
+
+// sp2Cell reads the box at a cell's start and returns the record and, when the registered rule voids the cell, why: the
+// 1-minute load average above 8.0 (half nobara's 16 cores), or available memory under sp2HostNeed plus 2 GB.
+func sp2Cell() (map[string]any, string) {
+	b, _ := os.ReadFile("/proc/loadavg")
+	la, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
 	avail := hostmem.Available()
-	return map[string]any{"loadavg": strings.Fields(string(la))[0], "mem_available": avail}
+	cell := map[string]any{"loadavg": la, "mem_available": avail}
+	switch {
+	case la > 8.0:
+		return cell, fmt.Sprintf("load %.2f > 8.0", la)
+	case avail < sp2HostNeed+2<<30:
+		return cell, fmt.Sprintf("available %d B < need %d B + 2 GB", avail, sp2HostNeed)
+	}
+	return cell, ""
+}
+
+// sp2ValidCell waits until a cell may start under the void rule, recording each void reading, and returns the valid one. A box
+// that stays busy for 30 minutes fails the test rather than measuring under load.
+func (g *sp2Rig) sp2ValidCell(t *testing.T, what string) map[string]any {
+	t.Helper()
+	for try := 0; ; try++ {
+		cell, why := sp2Cell()
+		if why == "" {
+			return cell
+		}
+		g.record(t, map[string]any{"kind": "void", "cell": what, "why": why, "reading": cell})
+		t.Logf("VOID at the start of %s (%s); re-run in order after 60 s", what, why)
+		if try >= 30 {
+			t.Fatalf("%s: the box stayed busy for 30 minutes (%s)", what, why)
+		}
+		time.Sleep(60 * time.Second)
+	}
 }
 
 func sp2Median(xs []float64) float64 {
@@ -338,7 +370,7 @@ func TestSP2_foldCost(t *testing.T) {
 		if _, err := g.r.PrefillLast(context.Background(), embsOf(g.mc, fill[:L]), 0); err != nil {
 			t.Fatalf("fill to %d: %v", L, err)
 		}
-		cell := sp2Load()
+		cell := g.sp2ValidCell(t, fmt.Sprintf("G2 L=%d", L))
 		embs := embsOf(g.mc, rows)
 		arms := []string{"step", "verify_fold", "verify_today", "fold1", "fold2", "fold3", "fold4"}
 		times := map[string][]float64{}
@@ -411,7 +443,10 @@ func TestSP2_foldCost(t *testing.T) {
 }
 
 // TestSP2_speed is G4: plain greedy against BlockSpec at w = 4, whole generations through the public API on one resident, 10 A B
-// B A pairs per context over SP0's 12 code and math prompts, decode timed from the first token to the end.
+// B A pairs per context over SP0's 12 code and math prompts, decode timed from the first token to the end. Both arms' windows
+// hold the same work outside decode: each starts when the prompt's first token is out (BlockSpec has folded the prompt into its
+// drafter's context by then) and ends after the last token is forwarded and the turn committed, which plain decode also does
+// before its channel closes. A pair started under heavy load is void and re-run in order (sp2ValidCell).
 func TestSP2_speed(t *testing.T) {
 	g := newSP2Rig(t)
 	const maxNew = 256
@@ -469,7 +504,7 @@ func TestSP2_speed(t *testing.T) {
 		pass(cs.prompts[:2], true)
 		var ratios []float64
 		for i := range 10 {
-			cell := sp2Load()
+			cell := g.sp2ValidCell(t, fmt.Sprintf("G4 %s pair %d", cs.name, i))
 			var pt, st int
 			var ps, ss float64
 			if i%2 == 0 {

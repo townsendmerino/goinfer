@@ -44,24 +44,34 @@ const (
 // q and k (keyDim each) and (beta, gt) per value head. decoder.RecurrentSpecArenaBytes prices the same formula.
 func recurrentSpecFloats(dp *dnetParams) int { return 2*dp.convDim + 2*dp.keyDim + 2*dp.nv }
 
-// allocRecurrentSpec allocates the arena for verify passes of up to rows rows, once, when a block drafter attaches. It keeps none,
-// and says why, for a model whose recurrent layers are not all Gated DeltaNet or whose heads are wider than the scan twins hold;
-// BlockSpec then refuses the model (decoder.Model.specRollbackSafe). Called on the caller's goroutine.
-func (r *cudaResident) allocRecurrentSpec(rows int) {
-	if r.dnet == nil || r.dnSpec != nil || rows < 1 {
-		return
+// PrepareRecurrentSpec (decoder.ResidentRecurrentSpec) allocates the arena for verify passes of up to rows rows, once, before a
+// block drafter attaches. It keeps none, and says why, for a model whose recurrent layers are not all Gated DeltaNet, whose heads are
+// wider than the scan twins hold, or whose card has no room for it. Called on the caller's goroutine.
+func (r *cudaResident) PrepareRecurrentSpec(rows int) error {
+	if r.dnSpec != nil {
+		return nil
 	}
+	if err := r.allocRecurrentSpec(rows); err != nil {
+		fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: none kept (%v)\n", err)
+		return err
+	}
+	return nil
+}
+
+// allocRecurrentSpec is PrepareRecurrentSpec's allocation.
+func (r *cudaResident) allocRecurrentSpec(rows int) error {
 	dp := r.dnet
 	switch {
+	case dp == nil:
+		return fmt.Errorf("no Gated-DeltaNet layer")
+	case rows < 1:
+		return fmt.Errorf("%d rows", rows)
 	case r.mamba != nil:
-		fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: none kept (a Mamba-2 layer: SP2 covers Gated DeltaNet only)\n")
-		return
+		return fmt.Errorf("a Mamba-2 layer: the fold path covers Gated DeltaNet only")
 	case dp.hk > 128 || dp.hv > 128:
-		fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: none kept (head dims %d/%d past the scan twins' 128)\n", dp.hk, dp.hv)
-		return
+		return fmt.Errorf("head dims %d/%d past the scan twins' 128", dp.hk, dp.hv)
 	case r.dnConvRowsSpec == (Pipeline{}) || r.dnRuleRowsSpec == (Pipeline{}) || r.dnRuleRows128Spec == (Pipeline{}):
-		fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: none kept (the verify kernels did not load)\n")
-		return
+		return fmt.Errorf("the verify kernels did not load")
 	}
 	var dnLayers []int
 	for l := range r.layers {
@@ -85,8 +95,7 @@ func (r *cudaResident) allocRecurrentSpec(rows int) {
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: none kept (%v)\n", err)
-		return
+		return err
 	}
 	a.bytes = int64(total) * 4
 	off := 0
@@ -105,6 +114,7 @@ func (r *cudaResident) allocRecurrentSpec(rows int) {
 	r.dnSpec = a
 	fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: %.1f MiB on the device (%d rows x %d DeltaNet layers, SP2)\n",
 		mib(a.bytes), rows, len(dnLayers))
+	return nil
 }
 
 // specBufs is the DeltaNet buffers layer l's mixer uses in this pass: b itself, or in a verify pass b with the row inputs

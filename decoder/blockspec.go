@@ -87,6 +87,10 @@ type ResidentSeedArgmax interface {
 // docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
 // because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
 type ResidentRecurrentSpec interface {
+	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a second call is a no-op.
+	// It returns why when this load cannot take the path (a recurrent layer it does not serve, no room for the rows), and
+	// RecurrentSpecRows then stays 0.
+	PrepareRecurrentSpec(rows int) error
 	// RecurrentSpecRows is the widest verify the path holds: 0 when this load cannot take it (a recurrent layer it does not
 	// serve, or no room for its rows).
 	RecurrentSpecRows() int
@@ -103,10 +107,10 @@ const RecurrentSpecMaxRows = 16
 
 // RecurrentSpecArenaBytes is the device memory a ResidentRecurrentSpec resident keeps for verify passes of up to rows rows on a model of
 // arch a: per Gated-DeltaNet layer and row, the conv input and output, the normed q and k and two gates per value head, plus the fold's
-// recurrence output once, f32, rounded up to the 2 MiB cuMemAlloc gives a buffer that size. 0 for a model with no recurrent state or with
-// a recurrent kind the path does not serve.
+// recurrence output once, f32, rounded up to the 2 MiB cuMemAlloc gives a buffer that size. 0 for a model the path refuses: no recurrent
+// state, a recurrent kind other than Gated DeltaNet, heads wider than the scan twins' 128, or a sliding window.
 func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
-	if a == nil || a.qwen35 == nil || rows < 1 {
+	if a == nil || a.qwen35 == nil || rows < 1 || a.SlidingWindow > 0 || a.qwen35.KeyHeadDim > 128 || a.qwen35.ValueHeadDim > 128 {
 		return 0
 	}
 	nDN := 0
@@ -219,16 +223,34 @@ func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 	if !ok {
 		return nil, errBlockSpecUnsupported
 	}
+	// Before the attach, so a refused model has no drafter uploaded to its device.
+	if err := m.prepareRecurrentSpec(host, dw); err != nil {
+		return nil, err
+	}
 	rd, err := host.AttachBlockDrafter(dw)
 	if err != nil {
 		return nil, err
 	}
-	s := &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}
-	if m.hasRecurrentState() && s.recurrentFold(2) == nil {
-		return nil, fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it " +
-			"(no ResidentRecurrentSpec path for every recurrent layer); block drafting would decode from over-advanced state")
+	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+}
+
+// prepareRecurrentSpec readies a recurrent target's fold path for dw's block, or says why block drafting would decode from
+// over-advanced state; nil for a model with no recurrent state.
+func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWeights) error {
+	if !m.hasRecurrentState() {
+		return nil
 	}
-	return s, nil
+	rs, ok := host.(ResidentRecurrentSpec)
+	if !ok {
+		return fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it (no ResidentRecurrentSpec)")
+	}
+	if err := rs.PrepareRecurrentSpec(min(dw.BlockSize(), RecurrentSpecMaxRows)); err != nil {
+		return fmt.Errorf("decoder: this model has recurrent state and its resident's fold path declined: %w", err)
+	}
+	if !m.specRollbackSafeVia(rs, 2) {
+		return fmt.Errorf("decoder: this model's recurrent layers are not all Gated DeltaNet, or it has a sliding window: the fold path does not serve it")
+	}
+	return nil
 }
 
 // recurrentFold is the resident's fold path for verifies of width rows on a recurrent model, or nil: on a model with no
