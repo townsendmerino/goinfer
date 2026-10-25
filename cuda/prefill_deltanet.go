@@ -46,13 +46,14 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 	// each thread; the gates and both norms are row-independent. Bit-identical to five launches per row.
 	// A speculative verify (SP2, recurrent_spec.go) takes the twins that never store: the conv reads its window and the pass's
 	// earlier rows, the scan starts from the committed state and leaves it there.
-	convRows, rule128, rule := r.dnConvRows, r.dnRuleRows128, r.dnRuleRows
+	convCfg := g1cfg(dp.convDim, 256)
+	convArgs := []KernelArg{Arg(b.mix), Arg(Ly.dnConvW), Arg(Ly.dnWin), Arg(b.conv),
+		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(dp.convK)), gpu.ArgValue(int32(M))}
 	if r.dnSpecOn {
-		convRows, rule128, rule = r.dnConvRowsSpec, r.dnRuleRows128Spec, r.dnRuleRowsSpec
-	}
-	if e := r.launch(convRows, g1cfg(dp.convDim, 256),
-		Arg(b.mix), Arg(Ly.dnConvW), Arg(Ly.dnWin), Arg(b.conv),
-		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(dp.convK)), gpu.ArgValue(int32(M))); e != nil {
+		if e := r.launch(r.dnConvRowsSpec, convCfg, convArgs...); e != nil {
+			return e
+		}
+	} else if e := r.launch(r.dnConvRows, convCfg, convArgs...); e != nil {
 		return e
 	}
 	if e := r.launch(r.dnGatesRows, g1cfg(M*dp.nv, 64),
@@ -69,7 +70,7 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 	}
 	// For hk == hv == 128 (every released model) the scan holds each state row in registers across the rows (the measured cost
 	// of the generic scan: docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
-	if e := r.launchRuleRows(rule128, rule, b.qn, b.kn, b.conv, b.headP, Ly.dnState, b.core, M); e != nil {
+	if e := r.launchRuleRows(r.dnSpecOn, b.qn, b.kn, b.conv, b.headP, Ly.dnState, b.core, M); e != nil {
 		return e
 	}
 	if e := r.launch(r.dnGNormRows, LaunchConfig{GridX: uint32(dp.nv), GridY: uint32(M), GridZ: 1,

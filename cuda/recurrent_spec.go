@@ -189,7 +189,7 @@ func (r *cudaResident) FoldVerified(n int) error {
 					return e
 				}
 			}
-			if e := r.launchRuleRows(r.dnRuleRows128, r.dnRuleRows, s.qn, s.kn, s.conv, s.headP, Ly.dnState, a.core, n); e != nil {
+			if e := r.launchRuleRows(false, s.qn, s.kn, s.conv, s.headP, Ly.dnState, a.core, n); e != nil {
 				return e
 			}
 		}
@@ -197,19 +197,27 @@ func (r *cudaResident) FoldVerified(n int) error {
 	})
 }
 
-// launchRuleRows launches the row scan for the model's geometry: k128 for hk == hv == 128, kGeneric otherwise. Both take the
-// same arguments as delta_rule_rows_128 and delta_rule_rows; the spec twins are passed in their place for a verify.
-func (r *cudaResident) launchRuleRows(k128, kGeneric Pipeline, qn, kn, conv, headP, state, core Buffer, M int) error {
+// launchRuleRows launches the row scan for the model's geometry, the state-row-in-registers kernel for hk == hv == 128 and the
+// generic one otherwise; spec takes their twins that never store the state.
+func (r *cudaResident) launchRuleRows(spec bool, qn, kn, conv, headP, state, core Buffer, M int) error {
 	dp := r.dnet
 	if dp.hk == 128 && dp.hv == 128 {
-		return r.launch(k128, LaunchConfig{GridX: uint32(dp.nv), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1},
-			Arg(qn), Arg(kn), Arg(conv), Arg(headP), Arg(state), Arg(core),
-			gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2*dp.keyDim)),
-			gpu.ArgValue(int32(dp.keyDim)), gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(M)))
+		cfg := LaunchConfig{GridX: uint32(dp.nv), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1}
+		args := []KernelArg{Arg(qn), Arg(kn), Arg(conv), Arg(headP), Arg(state), Arg(core),
+			gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2 * dp.keyDim)),
+			gpu.ArgValue(int32(dp.keyDim)), gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(M))}
+		if spec {
+			return r.launch(r.dnRuleRows128Spec, cfg, args...)
+		}
+		return r.launch(r.dnRuleRows128, cfg, args...)
 	}
-	return r.launch(kGeneric, g1cfg(dp.valueDim, 128),
-		Arg(qn), Arg(kn), Arg(conv), Arg(headP), Arg(state), Arg(core),
+	cfg := g1cfg(dp.valueDim, 128)
+	args := []KernelArg{Arg(qn), Arg(kn), Arg(conv), Arg(headP), Arg(state), Arg(core),
 		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hk)), gpu.ArgValue(int32(dp.hv)),
-		gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2*dp.keyDim)), gpu.ArgValue(int32(dp.keyDim)),
-		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(M)))
+		gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2 * dp.keyDim)), gpu.ArgValue(int32(dp.keyDim)),
+		gpu.ArgValue(int32(dp.convDim)), gpu.ArgValue(int32(M))}
+	if spec {
+		return r.launch(r.dnRuleRowsSpec, cfg, args...)
+	}
+	return r.launch(r.dnRuleRows, cfg, args...)
 }
