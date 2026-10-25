@@ -32,8 +32,12 @@ for path in sys.argv[1:]:
     faster = sum(1 for x in ratios if x < 1)
     med = statistics.median(ratios) if ratios else float("nan")
     print(f"== {cell}: {faster} of {len(ratios)} pairs faster, median ratio {med:.4f} ({1 / med:.3f}x)\n")
-    counts.append((cell, faster, len(ratios)))
+    counts.append((cell, faster, len(ratios), med))
 
+# Francis's standing merge rule (2026-10-25): median >= 1.05x (ratio <= 1/1.05) and at least 9 of 10 pairs faster, in every cell.
+merge = all(f >= 9 and m <= 1 / 1.05 for _, f, _, m in counts)
+print(f"merge bar (median >= 1.05x and >= 9 of 10 pairs faster, every cell): {'met' if merge else 'not met'}")
+counts = [c[:3] for c in counts]
 if any(n != 10 for _, _, n in counts):
     print("VERDICT INCOMPLETE: a cell has fewer than 10 complete pairs")
     sys.exit(1)
