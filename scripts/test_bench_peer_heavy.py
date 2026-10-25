@@ -81,7 +81,9 @@ class MainLoop(unittest.TestCase):
                             ("plan_embed_lengths", lambda: []), ("plan_vision", lambda: False),
                             ("quant_mismatch", lambda *a: ""), ("goinfer_quant", lambda mk: ("int4", None)),
                             ("prompt_tokens", lambda d, mk: 128), ("prompt_format", lambda d, mk: "test"),
-                            ("cell_ctx", lambda: 2048)]:
+                            ("cell_ctx", lambda: 2048),
+                            # the fake model's phase-A prompt, which main()'s missing-prompt check asks for before any cell runs
+                            ("_PROMPTS", dict(bench_peer._PROMPTS, **{"m:128": {"text": "test", "tokens": 128}}))]:
             patch(self, name, value)
         os.environ["BENCH_FIT_NEED_GB"] = "1"
         os.environ["BENCH_VOID_WAIT"] = "0"
