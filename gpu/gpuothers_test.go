@@ -122,8 +122,10 @@ func TestParseAGXClients(t *testing.T) {
 
 // TestOtherGPUWindow_seesAnotherProcess: otherGPUWindow reads a second process's GPU work. A child process (this binary, under
 // GOINFER_GPUOTHERS_CHILD=1) decodes llama-tiny on WebGPU for 8 seconds; a 3-second window opened 2 seconds in, with the child
-// still running at both ends, must read at least 5% of its wall time as other processes' GPU time. A process that exits inside
-// the window takes its client, and its GPU time, out of the registry before the window closes, so it is not seen. macOS only.
+// still running at both ends, must read at least 5% of its wall time as other processes' GPU time. It skips where the registry
+// lists no Apple GPU client at all (a virtualised GPU); with clients listed, a missing own client fails it. A process that exits
+// inside the window takes its client, and its GPU time, out of the registry before the window closes, so it is not seen. macOS
+// only.
 func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	if os.Getenv("GOINFER_GPUOTHERS_CHILD") == "1" {
 		gpuOthersChildLoad(t)
@@ -134,6 +136,9 @@ func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	}
 	c := newOrSkipHW(t) // the window needs this process's own GPU client listed
 	defer c.Close()
+	if out, err := exec.Command("ioreg", "-r", "-c", "AGXDeviceUserClient").Output(); err != nil || !strings.Contains(string(out), "AGXDeviceUserClient") {
+		t.Skipf("no AGXDeviceUserClient entries (a virtualised GPU, as on CI's macOS runners): %v", err)
+	}
 	cmd := exec.Command(os.Args[0], "-test.run", "^TestOtherGPUWindow_seesAnotherProcess$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "GOINFER_GPUOTHERS_CHILD=1")
 	if err := cmd.Start(); err != nil {
