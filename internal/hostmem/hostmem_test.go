@@ -103,43 +103,68 @@ func TestRead_live(t *testing.T) {
 }
 
 func TestBusyCores(t *testing.T) {
-	a := CPUTicks{Busy: 100, Total: 1000}
-	if got, ok := BusyCores(a, CPUTicks{Busy: 500, Total: 1800}, 8); !ok || got != 4 {
-		t.Errorf("400 busy of 800 ticks on 8 cores: %v, %v; want 4, true", got, ok)
+	lin := func(busy, idle uint64) CPUTicks { return CPUTicks{busy: []uint64{busy, 0}, idle: []uint64{idle, 0}} }
+	mac := func(busy, idle uint64) CPUTicks {
+		return CPUTicks{busy: []uint64{busy}, idle: []uint64{idle}, wrap32: true}
 	}
-	for _, b := range []CPUTicks{{Busy: 100, Total: 1000}, {Busy: 50, Total: 1800}, {Busy: 500, Total: 900}} {
-		if _, ok := BusyCores(a, b, 8); ok {
-			t.Errorf("BusyCores(%v, %v) ok; want not ok (no tick passed, or a count went back)", a, b)
+	for _, c := range []struct {
+		name string
+		a, b CPUTicks
+		want float64
+		ok   bool
+	}{
+		{"half busy", lin(100, 900), lin(500, 1300), 4, true},
+		{"no tick", lin(100, 900), lin(100, 900), 0, false},
+		{"idle steps back a tick (NOHZ): clamped", lin(100, 900), lin(500, 899), 8, true},
+		{"busy count wraps at 2^32", mac(1<<32-100, 900), mac(300, 1300), 4, true},
+		{"idle count wraps at 2^32", mac(100, 1<<32-200), mac(500, 200), 4, true},
+		{"mismatched samples", lin(1, 1), mac(2, 2), 0, false},
+	} {
+		got, ok := BusyCores(c.a, c.b, 8)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("%s: %v, %v; want %v, %v", c.name, got, ok, c.want, c.ok)
 		}
 	}
 }
 
-// TestReadCPU_live spins two goroutines for 400 ms and reads at least 1.5 busy cores over them (the rest of the machine only adds).
+// TestReadCPU_live: two goroutines spinning for 400 ms read at least 1.0 busy cores more than the 400 ms windows on either side of
+// them, so other processes' load cannot satisfy it alone.
 func TestReadCPU_live(t *testing.T) {
-	a, ok := ReadCPU()
-	if !ok {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs two Ps to spin two goroutines at once")
+	}
+	if _, ok := ReadCPU(); !ok {
 		t.Skip("no CPU reading on this platform")
 	}
-	stop := time.Now().Add(400 * time.Millisecond)
-	done := make(chan struct{})
-	for range 2 {
-		go func() {
-			for time.Now().Before(stop) {
+	window := func(spin bool) float64 {
+		a, _ := ReadCPU()
+		stop := time.Now().Add(400 * time.Millisecond)
+		done := make(chan struct{}, 2)
+		if spin {
+			for range 2 {
+				go func() {
+					for time.Now().Before(stop) {
+					}
+					done <- struct{}{}
+				}()
 			}
-			done <- struct{}{}
-		}()
+			<-done
+			<-done
+		} else {
+			time.Sleep(time.Until(stop))
+		}
+		b, ok := ReadCPU()
+		got, bok := BusyCores(a, b, runtime.NumCPU())
+		if !ok || !bok {
+			t.Fatalf("CPU reading failed: %v, %v", ok, bok)
+		}
+		return got
 	}
-	<-done
-	<-done
-	b, ok := ReadCPU()
-	if !ok {
-		t.Fatal("second CPU reading failed")
+	before, spun, after := window(false), window(true), window(false)
+	if spun < max(before, after)+1.0 {
+		t.Fatalf("busy cores: %.2f before, %.2f with two spinning goroutines, %.2f after; want the spin at least 1.0 above both", before, spun, after)
 	}
-	got, ok := BusyCores(a, b, runtime.NumCPU())
-	if !ok || got < 1.5 || got > float64(runtime.NumCPU())+0.01 {
-		t.Fatalf("busy cores over two spinning goroutines: %v, %v (ticks %+v → %+v)", got, ok, a, b)
-	}
-	t.Logf("%.2f busy cores", got)
+	t.Logf("busy cores: %.2f before, %.2f spinning, %.2f after", before, spun, after)
 }
 
 func TestReadWithOracle_live(t *testing.T) {

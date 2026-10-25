@@ -48,8 +48,7 @@ func readCPU() (CPUTicks, bool) {
 			return CPUTicks{}, false
 		}
 	}
-	busy := v[0] + v[1] + v[2] + v[5] + v[6] + v[7]
-	return CPUTicks{Busy: busy, Total: busy + v[3] + v[4]}, true
+	return CPUTicks{busy: []uint64{v[0], v[1], v[2], v[5], v[6], v[7]}, idle: []uint64{v[3], v[4]}}, true
 }
 
 func readTask(int) (TaskVM, bool) { return TaskVM{}, false }

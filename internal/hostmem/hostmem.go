@@ -36,22 +36,42 @@ func ReadTask(pid int) (TaskVM, bool) { return readTask(pid) }
 // that are not Apple's, and once callers system-wide pass 2 to 10 requests in a second it serves the last fresh reply.
 func Read() (r Reading, ok bool) { return read() }
 
-// CPUTicks is the machine's CPU time summed over its cores since boot, in the kernel's ticks: Busy counts user, nice and system time
-// (on Linux also irq, softirq and steal), Total adds idle (on Linux also iowait). On macOS each underlying count is 32 bits and
-// wraps.
-type CPUTicks struct{ Busy, Total uint64 }
+// CPUTicks is the machine's CPU time per CPU state, summed over its cores since boot, in the kernel's ticks. Busy states are user,
+// nice and system (on Linux also irq, softirq and steal); the others are idle (on Linux also iowait). Two samples are compared only
+// through BusyCores.
+type CPUTicks struct {
+	busy, idle []uint64
+	wrap32     bool // the counts are 32-bit and wrap (macOS)
+}
 
 // ReadCPU samples CPUTicks now; ok is false where this platform has none or the query failed. On macOS it is
 // host_statistics64(HOST_CPU_LOAD_INFO), which reads fresh at a few samples a second.
 func ReadCPU() (CPUTicks, bool) { return readCPU() }
 
-// BusyCores is the average number of busy cores from sample a to the later sample b on a machine with cores cores; ok is false
-// when no tick passed between them or a count wrapped.
+// BusyCores is the average number of busy cores from sample a to the later sample b on a machine with cores cores, at most cores.
+// Each state's count is differenced on its own: modulo 2^32 where the counts are 32-bit, and clamped at 0 where a count went back
+// (Linux's idle and iowait can step back a tick under NOHZ). ok is false when no tick passed or the samples do not match.
 func BusyCores(a, b CPUTicks, cores int) (float64, bool) {
-	if b.Total <= a.Total || b.Busy < a.Busy {
+	if len(a.busy) != len(b.busy) || len(a.idle) != len(b.idle) || len(b.busy) == 0 || a.wrap32 != b.wrap32 {
 		return 0, false
 	}
-	return float64(b.Busy-a.Busy) / float64(b.Total-a.Total) * float64(cores), true
+	delta := func(x, y []uint64) (d uint64) {
+		for i := range x {
+			switch {
+			case b.wrap32:
+				d += uint64(uint32(y[i]) - uint32(x[i]))
+			case y[i] > x[i]:
+				d += y[i] - x[i]
+			}
+		}
+		return d
+	}
+	busy := delta(a.busy, b.busy)
+	total := busy + delta(a.idle, b.idle)
+	if total == 0 {
+		return 0, false
+	}
+	return float64(busy) / float64(total) * float64(cores), true
 }
 
 // Available is Read's Available, or 0 when there is no reading.
