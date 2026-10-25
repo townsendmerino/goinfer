@@ -3,6 +3,7 @@ package hostmem
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -127,11 +128,35 @@ func TestBusyCores(t *testing.T) {
 	}
 }
 
-// TestReadCPU_live: two goroutines spinning for 400 ms read at least 1.0 busy cores more than the 400 ms windows on either side of
-// them, so other processes' load cannot satisfy it alone.
+// TestReadCPU_live reads two CPU samples 200 ms apart: both readings work and give between 0 and NumCPU busy cores. It holds on a
+// busy machine, so it runs everywhere; TestReadCPU_seesASpin is the sensitivity check.
 func TestReadCPU_live(t *testing.T) {
-	if runtime.GOMAXPROCS(0) < 2 {
-		t.Skip("needs two Ps to spin two goroutines at once")
+	a, ok := ReadCPU()
+	if !ok {
+		t.Skip("no CPU reading on this platform")
+	}
+	time.Sleep(200 * time.Millisecond)
+	b, ok := ReadCPU()
+	if !ok {
+		t.Fatal("second CPU reading failed")
+	}
+	got, ok := BusyCores(a, b, runtime.NumCPU())
+	if !ok || got < 0 || got > float64(runtime.NumCPU()) {
+		t.Fatalf("busy cores over 200 ms: %v, %v; want a reading in [0, %d]", got, ok, runtime.NumCPU())
+	}
+	t.Logf("%.2f busy cores", got)
+}
+
+// TestReadCPU_seesASpin: two goroutines spinning for 400 ms read at least 1.0 busy cores more than the 400 ms windows on either
+// side of them. A machine-wide reading cannot hold that margin where other work shares the box (a CI runner running other
+// packages' tests read 3.3-4.6 busy cores before the spin), so it runs only with GOINFER_HOSTMEM_LIVE=1, on a quiet machine of at
+// least 4 cores.
+func TestReadCPU_seesASpin(t *testing.T) {
+	if os.Getenv("GOINFER_HOSTMEM_LIVE") != "1" {
+		t.Skip("set GOINFER_HOSTMEM_LIVE=1 on a quiet machine")
+	}
+	if runtime.NumCPU() < 4 || runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs at least 4 CPUs and two Ps")
 	}
 	if _, ok := ReadCPU(); !ok {
 		t.Skip("no CPU reading on this platform")
