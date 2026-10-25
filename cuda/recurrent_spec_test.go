@@ -512,8 +512,12 @@ func TestRecurrentSpec_arenaPriced(t *testing.T) {
 			if r.extraBytes < priced {
 				t.Errorf("the resident's reserve %d does not hold the arena's %d", r.extraBytes, priced)
 			}
-			if err := r.PrepareRecurrentSpec(rows); err != nil {
-				t.Fatal(err)
+			// A narrower arena first: asking for more rows replaces it.
+			if err := r.PrepareRecurrentSpec(4); err != nil || r.RecurrentSpecRows() != 4 {
+				t.Fatalf("PrepareRecurrentSpec(4): %v, %d rows", err, r.RecurrentSpecRows())
+			}
+			if err := r.PrepareRecurrentSpec(rows); err != nil || r.RecurrentSpecRows() != rows {
+				t.Fatalf("PrepareRecurrentSpec(%d) after 4: %v, %d rows", rows, err, r.RecurrentSpecRows())
 			}
 			if got := r.RecurrentSpecBytes(); got != raw {
 				t.Errorf("allocated %d bytes, priced %d raw", got, raw)

@@ -436,6 +436,15 @@ func TestSP2_foldCost(t *testing.T) {
 		g.record(t, rec)
 		t.Logf("L=%d: step %.3f ms, fold at 3.30 rows %.3f ms = %.1f%% of a step; verify fold/today %.3f",
 			L, med["step"], fold330, 100*fold330/med["step"], med["verify_fold"]/med["verify_today"])
+		// The registered bands: under 5.0% passes; 5.0-11.0% passes the comparison, flagged; 11.0% or more fails.
+		switch r := fold330 / med["step"]; {
+		case r < 0.05:
+			t.Logf("VERDICT G2 L=%d: PASS (%.1f%% of a step, under 5.0%%)", L, 100*r)
+		case r < 0.11:
+			t.Logf("VERDICT G2 L=%d: PASS, FLAGGED (%.1f%% of a step, inside 5.0-11.0%%)", L, 100*r)
+		default:
+			t.Errorf("VERDICT G2 L=%d: FAIL (%.1f%% of a step, at or past R-01 phase 1's 11.0%%)", L, 100*r)
+		}
 	}
 }
 
@@ -553,6 +562,19 @@ func TestSP2_speed(t *testing.T) {
 		}
 		g.record(t, map[string]any{"kind": "g4-summary", "context": cs.name, "median": sp2Median(ratios), "pairs_above_1": above})
 		t.Logf("%s: median %.3fx, %d of %d pairs above 1", cs.name, sp2Median(ratios), above, pairs)
+		if pairs < 10 {
+			continue // a smoke run grades nothing
+		}
+		// SP0's rule, per context: a median of 1.30x or more with at least 9 of 10 pairs above 1 passes; 1.20-1.30x (or a median
+		// past 1.30x with fewer than 9 pairs above 1) is parked, to the owner; under 1.20x is not advanced at that context.
+		switch med := sp2Median(ratios); {
+		case med >= 1.30 && above >= 9:
+			t.Logf("VERDICT G4 %s: PASS (median %.3fx, %d of 10 pairs above 1)", cs.name, med, above)
+		case med >= 1.20:
+			t.Logf("VERDICT G4 %s: PARKED (median %.3fx, %d of 10 pairs above 1)", cs.name, med, above)
+		default:
+			t.Errorf("VERDICT G4 %s: NOT ADVANCED (median %.3fx under 1.20x, %d of 10 pairs above 1)", cs.name, med, above)
+		}
 	}
 }
 

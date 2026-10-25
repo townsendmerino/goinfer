@@ -131,6 +131,7 @@ func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
 		{"DeltaNet with value heads of 256", wide, 16, nil, false, false, 0},
 		{"DeltaNet with a prepared path", dn, 16, nil, false, true, 1},
 		{"dense: nothing to prepare", &Architecture{}, 16, nil, false, true, 0},
+		{"a prepared path narrower than the drafter's block", dn, 8, nil, false, false, 1},
 	} {
 		preps := 0
 		var host ResidentDrafterHost = prepHost{recurrentSpecStub{rows: c.rows, prepErr: c.prepErr}, &blockspecWriteHost{}, &preps}
@@ -143,6 +144,12 @@ func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
 		if preps != c.wantPreps {
 			t.Errorf("%s: the resident was asked to prepare %d times, want %d", c.name, preps, c.wantPreps)
 		}
+	}
+	// A block of one position verifies no draft: refused before the resident is asked for anything.
+	preps := 0
+	one := prepHost{recurrentSpecStub{rows: 16}, &blockspecWriteHost{}, &preps}
+	if err := mk(dn).prepareRecurrentSpec(one, blockspecStubWeights{blockSize: 1}); err == nil || preps != 0 {
+		t.Errorf("a one-position block: err %v after %d preparations, want a refusal before any", err, preps)
 	}
 }
 
@@ -233,4 +240,83 @@ func TestBlockSpecGenerate_foldsTheEmittedRows(t *testing.T) {
 			t.Errorf("resIDs = %v, want %v", m.resIDs, want)
 		}
 	})
+}
+
+// captureHost is a dense drafter host whose batched capture is one tap holding each row's absolute position, so a test can read
+// which rows reached the drafter and in what order. Every row answers 7.
+type captureHost struct {
+	hidden, rows, start int
+}
+
+func (h *captureHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
+	panic("not reached")
+}
+func (h *captureHost) PrefillLastNArgmax(embs [][]float32, startPos int) ([]int, error) {
+	h.rows, h.start = len(embs), startPos
+	ids := make([]int, len(embs))
+	for i := range ids {
+		ids[i] = 7
+	}
+	return ids, nil
+}
+func (h *captureHost) SetBatchedCapture([]int) error { return nil }
+func (h *captureHost) BatchedCapture() [][]float32 {
+	tap := make([]float32, h.rows*h.hidden)
+	for i := range h.rows {
+		for j := range h.hidden {
+			tap[i*h.hidden+j] = float32(h.start + i)
+		}
+	}
+	return [][]float32{tap}
+}
+
+// fuseRecorder is a drafter that records each FuseContext call's rows and the positions ExtendContext received, in order.
+type fuseRecorder struct {
+	calls []int
+	ctx   []int
+}
+
+func (d *fuseRecorder) FuseContext(rows [][]float32) ([][]float32, error) {
+	d.calls = append(d.calls, len(rows))
+	return rows, nil
+}
+func (d *fuseRecorder) ExtendContext(f [][]float32) error {
+	for _, r := range f {
+		d.ctx = append(d.ctx, int(r[0]))
+	}
+	return nil
+}
+func (d *fuseRecorder) ContextLen() int                                { return len(d.ctx) }
+func (d *fuseRecorder) TruncateContext(n int)                          { d.ctx = d.ctx[:min(n, len(d.ctx))] }
+func (d *fuseRecorder) DraftBlock(in [][]float32) ([][]float32, error) { return in, nil }
+func (d *fuseRecorder) DraftTokens(t [][]float32) ([]int, error)       { return make([]int, len(t)), nil }
+
+// TestBlockSpecGenerate_fusesALongSeedInPieces: a seed of 1,100 rows reaches the drafter in pieces of blockSpecFuseRows (512, 512,
+// 76), and the drafter's context holds every position once, in order, then the trailing token's.
+func TestBlockSpecGenerate_fusesALongSeedInPieces(t *testing.T) {
+	m, _ := loadWithFakeResident(t)
+	if !m.ResidentActive() {
+		t.Skip("fixture is not resident-eligible")
+	}
+	prompt := make([]int, 1100)
+	for i := range prompt {
+		prompt[i] = 1 + i%50
+	}
+	host := &captureHost{hidden: m.w.arch.HiddenDim}
+	d := &fuseRecorder{}
+	s := &BlockSpec{m: m, host: host, rd: d, dw: blockspecCommitStubWeights{blockspecStubWeights{blockSize: 8}}}
+	if _, _, err := s.generate(prompt, BlockSpecOptions{VerifyWidth: 4, MaxTokens: 1}, nil); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if want := []int{512, 512, 76, 1}; !equalIntSlices(d.calls, want) {
+		t.Errorf("FuseContext calls of %v rows, want %v (the seed in pieces, then the trailing token)", d.calls, want)
+	}
+	if len(d.ctx) != len(prompt)+1 {
+		t.Fatalf("the drafter's context holds %d positions, want %d", len(d.ctx), len(prompt)+1)
+	}
+	for i, p := range d.ctx {
+		if p != i {
+			t.Fatalf("context position %d holds row %d: the pieces were joined out of order", i, p)
+		}
+	}
 }

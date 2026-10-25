@@ -133,3 +133,14 @@ passing; the same 1.15 GB free with everything attached; peak resident 15.3 GB, 
 - **Checks on the fixed tree:** tier 0 on all three models, `touched.py` and the scan-table test green; the dense pairing's
   gates on Qwen3-4B pass (`TestDFlashLoop_lossless`, `TestGenerateBlockSpec_production`: 96 tokens identical, 5.65 tokens a
   round, 1.49×; `TestBlockSpecStream`).
+
+### Third review's follow-ups (2026-10-25, 02:30 PDT)
+
+- **The 512-row fuse pieces at tier 0:** `TestBlockSpecGenerate_fusesALongSeedInPieces` drives a 1,100-row seed through the loop
+  and reads the drafter's calls (512, 512, 76, then the trailing token's 1) and its context (every position once, in order).
+  Mutation-checked: one unlimited piece fails it.
+- **Widths:** the fold path is prepared for the drafter's widest verify (its block, at most 16 rows), admission checks that
+  width, and a one-position block is refused before anything is asked of the resident. The CUDA arena is replaced by a wider
+  one when a later drafter asks for more rows (`TestRecurrentSpec_arenaPriced` asks for 4 rows, then 16).
+- **G2 and G4 print their verdict** against the registered bands (`VERDICT G2 L=…`, `VERDICT G4 <context>: …`) and fail the
+  run on G2's FAIL band and on G4's not-advanced band; a parked G4 context is reported, not failed.

@@ -87,7 +87,8 @@ type ResidentSeedArgmax interface {
 // docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
 // because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
 type ResidentRecurrentSpec interface {
-	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a second call is a no-op.
+	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a later call for no more
+	// rows is a no-op.
 	// It returns why when this load cannot take the path (a recurrent layer it does not serve, no room for the rows), and
 	// RecurrentSpecRows then stays 0.
 	PrepareRecurrentSpec(rows int) error
@@ -252,11 +253,15 @@ func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWe
 	if RecurrentSpecArenaBytes(m.w.arch, 1) == 0 {
 		return fmt.Errorf("decoder: the fold path does not serve this model (a recurrent layer that is not Gated DeltaNet, heads past 128, or a sliding window)")
 	}
-	if err := rs.PrepareRecurrentSpec(min(dw.BlockSize(), RecurrentSpecMaxRows)); err != nil {
+	rows := min(dw.BlockSize(), RecurrentSpecMaxRows) // the widest verify this drafter's loop asks the fold path for
+	if rows < 2 {
+		return fmt.Errorf("decoder: a drafter block of %d positions verifies no draft", dw.BlockSize())
+	}
+	if err := rs.PrepareRecurrentSpec(rows); err != nil {
 		return fmt.Errorf("decoder: this model has recurrent state and its resident's fold path declined: %w", err)
 	}
-	if !m.specRollbackSafeVia(rs, 2) {
-		return fmt.Errorf("decoder: the resident's fold path kept no rows for this model")
+	if !m.specRollbackSafeVia(rs, rows) {
+		return fmt.Errorf("decoder: the resident's fold path holds %d rows, and this drafter verifies up to %d", rs.RecurrentSpecRows(), rows)
 	}
 	return nil
 }

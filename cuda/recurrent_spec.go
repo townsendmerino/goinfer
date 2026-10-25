@@ -46,10 +46,17 @@ func recurrentSpecFloats(dp *dnetParams) int { return 2*dp.convDim + 2*dp.keyDim
 
 // PrepareRecurrentSpec (decoder.ResidentRecurrentSpec) allocates the arena for verify passes of up to rows rows, once, before a
 // block drafter attaches. It keeps none, and says why, for a model whose recurrent layers are not all Gated DeltaNet, whose heads are
-// wider than the scan twins hold, or whose card has no room for it. Called on the caller's goroutine.
+// wider than the scan twins hold, or whose card has no room for it. An arena already holding rows rows is kept; a narrower one is
+// released and replaced. Called on the caller's goroutine.
 func (r *cudaResident) PrepareRecurrentSpec(rows int) error {
-	if r.dnSpec != nil {
-		return nil
+	if a := r.dnSpec; a != nil {
+		if a.rows >= rows {
+			return nil
+		}
+		r.dnSpec = nil
+		if err := r.do(func() error { r.dev.ReleaseBuf(a.buf); return nil }); err != nil {
+			return err
+		}
 	}
 	if err := r.allocRecurrentSpec(rows); err != nil {
 		fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: none kept (%v)\n", err)
