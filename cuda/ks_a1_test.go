@@ -51,10 +51,10 @@ func ksA1Half(rng *rand.Rand) (uint16, float64) {
 
 func ksA1HalfVal(b uint16) float64 {
 	e, m := int(b>>10)&31, float64(b&1023)
-	if e == 0 {
-		return math.Ldexp(m/1024, -14)
-	}
 	v := math.Ldexp(1+m/1024, e-15)
+	if e == 0 {
+		v = math.Ldexp(m/1024, -14) // subnormal
+	}
 	if b&0x8000 != 0 {
 		v = -v
 	}

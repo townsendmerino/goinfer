@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
@@ -70,6 +71,8 @@ func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat
 		return
 	}
 	src.int8Bytes, src.nativeBytes = int64(len(q8))+4*int64(len(sc)), int64(wm.Rows())*int64(in/256)*bb
+	kquantMu.Lock()
+	defer kquantMu.Unlock()
 	if w.kquant == nil {
 		w.kquant = map[*int8]kquantSrc{}
 	}
@@ -98,6 +101,10 @@ func kquantServes(dims []int, ok bool, err error, in int, src kquantSrc, rows in
 	}
 	return true
 }
+
+// kquantMu guards every Weights.kquant while a load records into it: parallelLayers builds layers on several goroutines.
+// Package-level because Weights is copied by value in places, and loads are few.
+var kquantMu sync.Mutex
 
 // kquantNativeOff empties every backend's kquantLane, so a load keeps the int8 copies on the device and in its pricing: KS-O1's
 // old arm. Set only by a test (SetKQuantNativeOffForTest).

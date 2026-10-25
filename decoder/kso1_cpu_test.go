@@ -18,7 +18,7 @@ import (
 // bit-identical within an arch, not across.
 var kso1CPUFingerprint = map[string]string{
 	"arm64": "e662bdd6c6cb108e89cda98e7aa3b9554ff17df556668dc05138d1477da0bfbe",
-	"amd64": "",
+	"amd64": "8bd2324c3e921ce233bf1d440d44e09244d60ba9ddfb3948dbbfe64d6c7a5a89",
 }
 
 // TestKSO1_cpuQ4KFingerprint is O1-G4 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the CPU at --quant q4k on

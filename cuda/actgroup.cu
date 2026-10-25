@@ -169,10 +169,13 @@ __device__ __forceinline__ void rowsQ6K(const unsigned char* __restrict__ W, int
             int n = n0 + r;
             if (n >= N) break;
             long nb = (long)n * nSB + b;
-            uint2 qa = *reinterpret_cast<const uint2*>(ql + nb * 128 + (hh << 6) + l0);
-            uint2 qb = *reinterpret_cast<const uint2*>(ql + nb * 128 + (hh << 6) + 32 + l0);
-            uint2 qhv = *reinterpret_cast<const uint2*>(qhp + nb * 64 + (hh << 5) + l0);
-            uint2 scw = *reinterpret_cast<const uint2*>(scp + nb * 16 + (hh << 3));
+            const unsigned char* qlb = ql + nb * 128 + (hh << 6) + l0;
+            const unsigned char* qhb = qhp + nb * 64 + (hh << 5) + l0;
+            const unsigned char* scb = scp + nb * 16 + (hh << 3);
+            uint2 qa = *reinterpret_cast<const uint2*>(qlb);
+            uint2 qb = *reinterpret_cast<const uint2*>(qlb + 32);
+            uint2 qhv = *reinterpret_cast<const uint2*>(qhb);
+            uint2 scw = *reinterpret_cast<const uint2*>(scb);
             float d = __half2float(__ushort_as_half(dp[nb]));
             // The group sub-scales sc[8hh + is + 2·grp], grp 0..3: bytes is and is + 2 of scw.x, then of scw.y.
             int c0 = (int)(signed char)((scw.x >> (is << 3)) & 0xffu);
@@ -461,7 +464,8 @@ __global__ void gemv_q5k_g32(
     float facc[KQ_ROWS];
     #pragma unroll
     for (int r = 0; r < KQ_ROWS; r++) facc[r] = 0.f;
-    rowsQ5K<KQ_ROWS>(W, n0, N, a, aS, aS + nSB * 8, nSB, lane, facc);
+    const float* asum = aS + nSB * 8;
+    rowsQ5K<KQ_ROWS>(W, n0, N, a, aS, asum, nSB, lane, facc);
     #pragma unroll
     for (int r = 0; r < KQ_ROWS; r++) {
         float s = warpSum(facc[r]);
