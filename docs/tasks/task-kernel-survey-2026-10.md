@@ -18,7 +18,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| KS-A1 | decision | KS-O1, then nobara: a Q5_K GEMV against `gemv_w8a8_g32`. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 (+284.3 Q5_K qkv, +72.6 Q6_K down, +17.8 Q6_K head, all int8 copies) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-A1 | done (GO) | done 2026-10-24 (A1-G0): a prototype Q5_K GEMV reaches **0.985×** `gemv_w8a8_g32`'s GB/s at 9216×3072 on the 2070 SUPER (bar 0.95), 0.697× its time summed over Phi-3; Q6_K 0.832×. The build is KS-O1 on CUDA. Tier 0 read 2026-10-23: the q4k plan reads 2,710.96 MB a token against the file's 2,336.28 | survey, "A1-G0 read" |
 | KS-A2 | done | done 2026-10-23 (#191, aikit `gpu/v0.34.0`): the CUDA resident launches from its own executor thread (aikit `Queue.LaunchDirect`), byte-identical. The 0.5B at depth 128 **1.492×** median, 10 of 10 ABBA quads (345 → 521 tok/s); gemma3-1b 1.465× (197 → 291); 10.4 → 2.3 µs a launch. Unblocks KS-A5 (decode now GPU-bound) | `docs/measurements/ks-a2-2026-10/README.md` |
 | KS-A3 | done | done 2026-10-23 (#195): the top-K as `topk_compact` (32 blocks) + `topk_finish` (select K, sort K) + `topk_z` (32 blocks, same partials); every output word equal to the one-block kernel on 608 cases; a sampled 0.5B token **1.0263×** median, 10 of 10 ABBA quads (2,007.5 → 1,955.4 µs); +36.9 KB device scratch | `docs/measurements/ks-a3-2026-10/README.md` |
 | KS-A4 | open | nobara: launch counter (tier 0), then an in-process A/B on gemma3-1b | — |
@@ -58,12 +58,12 @@
 | KS-D8 | done | done 2026-10-24: batched Mamba-2 prefill, the relu² MLP and mixer-only layers on Metal; the 9B's 512-token prefill 5.14× (D8-G4 SHIP); G1, G2, G5, G6 PASS; D8-G3 PASS on its reference route (against a CPU bf16 reference the pass reads mean KL 0.046 and top-1 7 of 8, the sequential path 0.102 and 4 of 8) | survey, "KS-D8 read", "D8-G3 reference-route read" |
 | KS-D9 | done | done 2026-10-24: the generic pager's phase 2 batched expert by expert, its scratch allocated once per call and priced in the plan; D9-G1 bit-identical on 7 paged cells (against sequential and against the per-row phase 2); Qwen1.5-MoE-A2.7B's 512-row paged prefill median 0.9050, 0.8241 and 0.9131 of per-row, 3 of 3 pairs each, 0 logits differ (D9-G2 SHIP) | survey, "KS-D9 read", "D9-G2 read", "After the review of #224" |
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
-| KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
+| KS-E1 | open (measured) | Mac 2026-10-25: the int4 decode GEMV moves 53.7 GB/s (144 µs for 8960×1536), slower per matrix than the production int8 GEMV (~113–145 GB/s from the decode profile): compute-bound. Next: a same-kernel A/B with the change built | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1, and every Context builder wired through quantSrc); the 1.5B's WebGPU decode 24.7 → 21.8 ms a token, median 0.8810, 10 of 10 pairs, with an A/A control (1.0041) in the same run and busy cores read per arm (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); E3-G2 on its full guard (busy cores, GPU contention, vanished clients) passes, median 0.9166, 10 of 10 pairs; the size varies with the machine's state (a quiet earlier session read 0.9916, also 10 of 10) | survey, "KS-E3 read" |
-| KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
-| KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
-| KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
+| KS-E4 | open (measured) | Mac 2026-10-25, Qwen3-VL-2B int4 on WebGPU: projections are 84% / 80% / 54% of the batched pass at 256 / 1,024 / 4,096 rows | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
+| KS-E5 | open (measured) | Mac 2026-10-25, the 1.5B on WebGPU: decode attention is 62% / 87% / 93% of a token at 2k / 8k / 16k positions, about 15 µs a position | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
+| KS-E6 | open (measured) | Mac 2026-10-25: prefill attention is 43% of a 4,096-row pass (5% at 256, 16% at 1,024) | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E7 | open | either box: KV bytes per slot and KV equality past the window | — |
 | KS-E8 | open | either box: a WebGPU twin of `cuda/lora_cost_measure_test.go` | — |
 | KS-E9 | open | either box: `TestSpike_capabilities` | — |
@@ -71,7 +71,7 @@
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
 | KS-F1 | open | either box: a fork/join counter and bit-identity on the tiny MoE fixtures | — |
 | KS-F2 | active | #239: gpt-oss's attendSinksToken fans its heads out and scores eight keys at once, bit-identical, default on for gpt-oss (Francis, 2026-10-25 10:16; limited to gpt-oss at 10:35). gpt-oss-20b at depth 128 10 of 10 pairs faster, 1.025×; then KS-O4 | `docs/measurements/ks-f2-2026-10/README.md` |
-| KS-F2b | open | time attendQueryP's new schedule (heads fanned out, eight keys at once) on Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4 before it ships for them: not run, by Francis's call of 2026-10-25 10:35 (#239 keeps their old path). The code is in #239's history | `docs/measurements/ks-f2-2026-10/README.md` |
+| KS-F2b | done | default on 2026-10-25 by Francis's call (14:01, option (c)) for every attendQueryP family: Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4. Bit-identical (768 function-level runs, 132 fanned; gate identity IDENTICAL for all five at 640 steps). Qwen3.5-0.8B on the Mac CPU 1.113× at depth 128 and 1.833× at 1,024, 10 of 10 each; the other four ship untimed by his call. LFM2.5-2.6B's confirming run is queued on the Mac's night runner | `docs/measurements/ks-f2b-2026-10-25/README.md` |
 | KS-F3 | open | either box: `GOINFER_DELTANET_TIMING=1` with M35 (tier 1, minutes) | — |
 | KS-F4 | open | nobara: per-fan-out timestamps inside a real 0.5B token | — |
 | KS-F5 | open | either box: `AllocsPerRun` and trig calls per token on `deepseek-tiny` | — |
@@ -93,7 +93,8 @@
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | blocked | nobara-ks-cuda, after KS-H2 and KS-H3 read: re-derive both margins from measured parts, the 2,048-row pass's scratch included, and bring the numbers to Francis before changing either guard (KS-O3 decided A, Francis, 2026-10-25) | — |
-| KS-O1 | done (Metal, owner override) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. CUDA not started | survey, "Owner override of O1-G7" |
+| KS-O1 | done (Metal and CUDA, owner overrides) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. **CUDA: done 2026-10-24** (owner's option A on O1C-G5): Phi-3 mini q4k 114.9 → 127.3 tok/s (0.9025, 10 of 10), the 1.5B 0.9786 (10 of 10); −374.7 MB on the device, head included; KL to the file 0.39× (Phi-3), 0.91× (0.5B); G-Q2 +0.13 points. Also fixes main's concurrent `noteKQuant` map write | survey, "Owner override of O1-G7" |
+| KS-O1-F | open | the CUDA native lane does worse than int8 against f32 on highly repetitive input (Phi-3, 110 × "the ": p10 0.8826 against the old bar's floor 0.9162, min 0.029; worse p10 and min at 60, 90, 130 too). Natural ~900-token text is about 2× better (KL 0.39×, 0.46×). Not yet explained: the per-layer differencing (hidden states against f32) on the 110-repeat prompt is the next measurement. Open on the owner's decision of 2026-10-25 | survey, "Owner decision on #230's long-context bar" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | moved | KS-B15: decided A (Francis, 2026-10-25): the opt-in on the exact attention kernels, band prompts on the exact GEMM; the fast-GEMM option is not approved (it would need its own fidelity gate and a new decision) | §2 |
 | KS-O3 | moved | KS-H6: decided A (Francis, 2026-10-25): re-derive the margins after KS-H2 and KS-H3, numbers to Francis before either guard changes | §2 |
@@ -305,6 +306,76 @@ matches llama.cpp's (1.46 against 1.50 ms), so its gap is bytes.
 - **First measurement:**
   - Plan bytes per token at tier 0 (2.711 → 2.336 GB).
   - A Q5_K GEMV against `gemv_w8a8_g32` at N=9216, K=3072. It must reach ≥0.95× that kernel's GB/s.
+
+**KS-A1 on CUDA: the first measurement's gate, registered 2026-10-24 before any kernel is written or timed (A1-G0), on the
+owner's word of 4:37 pm ("#2 then #1": KS-A1's CUDA half, then KS-O1 on CUDA).**
+- **Prototype kernels** (`cuda/ks_a1_proto.cu`, test-only, a module of its own; nothing shipped loads it): one warp per output row
+  group, 8 warps a 256-thread block, the shipped per-32 int8 activations (`quantG32`'s codes, scales and group sums) and the
+  explicit `__fmaf_rn` / `__fmul_rn` form of `rowQ4K`.
+  - `gemv_q5k_g32` (Q5_K, 176-byte blocks, 16-byte aligned in the file's own layout): (A) `rowQ4K`'s lane map, lane l on pair
+    l mod 4 of block l / 4, plus the block's 32 `qh` bytes; (B) 8 lanes a block, 4 blocks in flight, lane l on 16 bytes of pair
+    (l mod 8) / 2's codes and the matching 16 `qh` bytes, the min term added once a group (the low sub-block's by the even lane,
+    the high one's by the odd lane).
+  - `gemv_q6k_g32` (Q6_K): the 210-byte block is not word-aligned, so the prototype reads segment-wide planes of the same total
+    size (`ql`, `qh`, int8 scales, `d`), O1's production layout on Metal. Lane k of a block takes half k / 4 and elements
+    8·(k mod 4)…+7 of each of the half's four 32-element groups; the two Q6_K sub-scales of a group fold in integer arithmetic,
+    then × d × the group's activation scale.
+  - Each at R = 1, 2, 4 rows a warp (the activation loads shared by the R rows).
+- **Instrument:** `TestKSA1_gemvTiming` (`cuda/ks_a1_test.go`, `-tags cuda`), the timing lock held exclusively. The shipped
+  `gemv_w8a8_g32` comes from the embedded `actgroup.ptx` itself. Per shape and kernel: CUDA-event time of 50 launches, median of 7
+  batches after 3 warm launches, the weights rotated over copies of at least 64 MiB per arm (16× the 4 MiB L2), beside a
+  streaming-read ceiling over the same bytes. GB/s is the kernel's own weight bytes (int8: N·K plus the f32 row scales; Q5_K: the
+  file's N·K/256·176; Q6_K: N·K/256·210) over its time. Load average and free memory are logged at the start, and CLAUDE.md's
+  void rule applies (load above 8.0 on nobara, or free VRAM under the run's need plus 2 GB: about 0.6 GB here).
+- **Correctness first:** every prototype, at every R and shape, against a float64 host reference that dequantizes the same blocks
+  by ggml's formulas and takes the same int8 activations: every row within G-Q1's bar (|err| ≤ 1e-5 of Σ|w·a|). A kernel that
+  misses it is not timed and the reading is void for its kind.
+- **Shapes (Phi-3 mini q4, the graded ones):** Q5_K qkv 9216×3072 (×32 layers); Q6_K `ffn_down` 3072×8192 (×16) and the head
+  32064×3072. **Read, not graded:** Qwen2.5-Coder-1.5B q4_k_m's Q6_K shapes, `ffn_down` 1536×8960 and `attn_v` 256×1536 (O1-G7's
+  KILL on Metal came from that model), and the shipped `gemv_q4k_g32` at Phi-3's gate|up 16384×3072 for context.
+- **The pick:** per kind, the fastest variant and R summed over Phi-3's tensors of that kind; the smaller R on a tie within 2%.
+
+| outcome | PASS iff | what it means |
+|---|---|---|
+| **KS-A1 GO** (the survey's bar) | the best Q5_K kernel's GB/s at 9216×3072 is ≥ 0.95× `gemv_w8a8_g32`'s at the same shape (its time then ≤ 0.724× the int8 kernel's) | the survey's speed case stands (about 1.03× llama.cpp by its arithmetic); KS-O1 on CUDA builds Q5_K |
+| **KS-A1 short of the bar** | that ratio is under 0.95, but Q5_K's summed time is ≤ 0.95× the int8 kernel's (O1-G0's kill rule on Metal) | the survey's speed estimate is withdrawn and the record says so; KS-O1 on CUDA still builds Q5_K by the rule Metal's build used, its own gates deciding |
+| **KS-A1 NO-GO** for Q5_K | Q5_K's summed time is > 0.95× the int8 kernel's | no speed case for native Q5_K on CUDA; whether to build it for memory and fidelity alone (Metal's option C) is the owner's decision, so the work stops there with DECISION NEEDED |
+| Q6_K (KS-O1's build rule, read in the same run) | the best Q6_K kernel's time summed over Phi-3's 16 `ffn_down` and the head is ≤ 0.95× the int8 kernel's sum | built in KS-O1 on CUDA; otherwise killed for speed, and the same owner decision as Q5_K's NO-GO |
+
+Stopping rule: one pass. A kind that fails its rule may have at most one amended variant, registered here before it runs, as O1-G0
+did on Metal; that reading is final. Expected cost: the PTX build and the correctness check seconds, the timed pass about 1 min.
+
+**A1-G0 amended before it ran (2026-10-24, 16:49):** Phi-3's hidden size (3072) is over `fusedG32MaxHidden`, so on CUDA its q, k
+and v run as three separate `doG` launches of 3072×3072, not one launch of 9216 rows. A read-only Q5_K line at 3072×3072 is added.
+The graded shape, the bars and the rule are unchanged.
+
+**A1-G0 read 2026-10-24, by day: KS-A1 GO; Q6_K built.** Run 17:05 on nobara by `night.py serve` (the timing lock held
+exclusively) at b21a1f950, NVIDIA driver 595.91.07. At the start: 1-minute load 0.86 (the void line is 8.0), 57.9 GB available,
+7,277 MiB of VRAM free, only the desktop compositor's context on the card. Every prototype passed the correctness check first: worst
+|err|/Σ|w·a| 1.2e-7 to 2.4e-7 against the 1e-5 bar. The streaming ceiling read 416–419 GB/s. Medians of 7 batches of 50 launches,
+in ms (GB/s):
+
+| shape | `gemv_w8a8_g32` | best native | native / int8 time | native / int8 GB/s |
+|---|---:|---:|---:|---:|
+| Phi-3 qkv 9216×3072, Q5_K (graded) | 0.0705 (401.9) | B, R = 1: 0.0492 (396.0) | 0.697 | **0.985** |
+| Phi-3 q, k or v 3072×3072, Q5_K (read only, as dispatched) | 0.0250 (378.4) | B, R = 1: 0.0180 (360.8) | 0.720 | 0.954 |
+| Phi-3 `ffn_down` 3072×8192, Q6_K | 0.0626 (402.0) | R = 1: 0.0523 (394.9) | 0.835 | 0.982 |
+| Phi-3 head 32064×3072, Q6_K | 0.2374 (415.4) | R = 1: 0.1950 (414.3) | 0.821 | 0.997 |
+| 1.5B `ffn_down` 1536×8960, Q6_K (read only) | 0.0361 (381.9) | R = 2: 0.0300 (375.9); R = 1: 0.0319 | 0.833 / 0.886 | 0.984 / 0.925 |
+| 1.5B `attn_v` 256×1536, Q6_K (read only) | 0.0057 (69.7) | R = 2: 0.0058; R = 1: 0.0069 | 1.020 / 1.217 | 0.802 / 0.672 |
+| Phi-3 gate\|up 16384×3072, shipped `gemv_q4k_g32` (context) | 0.1223 (412.0) | 0.0722 (392.2) | 0.590 | 0.952 |
+
+- **KS-A1: GO.** The best Q5_K kernel reaches 0.985× the int8 kernel's GB/s at the graded shape (bar 0.95), so the survey's speed case
+  stands by its own arithmetic. Every variant and R cleared it (0.969–0.985).
+- **Summed over Phi-3 (ms a token):** Q5_K, 32 qkv launches: 2.257 int8 → 1.573 native (B, R = 1), **0.697**. Q6_K, 16 `ffn_down`
+  and the head: 1.240 → 1.032 (R = 1), **0.832**. Both are under O1-G0's 0.95, so KS-O1 on CUDA builds both.
+- **The pick:** every Q5_K variant and R is within 2% of the fastest, and the smaller R wins a tie. At R = 1, B (0.6970) is 0.9% faster
+  than A (0.7030), so B is built at R = 1. Q6_K: R = 1 (R = 4 is within 2%; the smaller R wins). `kquantGemvRows` is 1.
+- **What it does not show:** a kernel-only reading gives direction, not size (CLAUDE.md: its served effect ranged 0.05–1.72× of it).
+  The Phi-3 whole-token saving O1C-G7 can expect is at most about 0.9 ms (0.68 + 0.21) of the projections' time. On the 1.5B, the
+  tiny `attn_v` is slower native at R = 1 (1.22×), but on CUDA it runs inside `fused_rms_qkv_g32` at that hidden size, not standalone;
+  its `ffn_down` is 0.886× at R = 1. O1C-G7 reads the 1.5B as a whole token.
+- **Log:** `docs/measurements/ks-a1-2026-10/a1-g0-2026-10-24-1704.log` (from `~/goinfer-logs/ks-a1-2026-10/`).
 
 **KS-A5 · Load each short GEMV row in one round (output unchanged).**
 - **Where:** `fused_rms_gu` and `fused_rms_qkv` in `cuda/fused_qkv.cu`, their rows-per-warp twins, and aikit's
@@ -914,6 +985,210 @@ Expected cost: G1 seconds. G3 about 3 min, from C1-G4's wall, after Phi-3's fit 
 - **O1a-G2: PASS.** All 24 runs, both arms, gave the same 128 tokens and the same final logits' bytes.
 - **Log:** `~/goinfer-logs/kso1a-g3-2026-10-24-1053.log`. Binary built at f9f41aa5 from
   `docs/measurements/ks-night-2026-10/run-kso1a-g3.sh`.
+
+**KS-O1 on CUDA: gates, registered 2026-10-24 before any product code (O1C-G), on the owner's word of 4:37 pm ("#2 then #1":
+KS-A1's CUDA half, then KS-O1 on CUDA, the twin of what shipped on Metal).** Each kind is built only if it passed A1-G0's rule
+("KS-A1 on CUDA"); a kind A1-G0 kills stops for the owner's decision before any code for it. The build:
+- **Kernels** (`cuda/actgroup.cu`): per-row `rowQ5K` and `rowQ6K` bodies in A1-G0's chosen lane map, the per-32 int8 activations
+  and the explicit `__fmaf_rn` / `__fmul_rn` form of `rowQ4K`. `projRow` and `finishRow` gain two kinds (`WK_Q5K`, `WK_Q6K`), so the
+  fused per-32 kernels (`fused_rms_qkv_g32`, `fused_rms_gu_g32`, used at hidden sizes up to `fusedG32MaxHidden`) take them, and
+  standalone `gemv_q5k_g32` / `gemv_q6k_g32` at A1-G0's R serve `doG`. Q5_K is uploaded in the file's own 176-byte blocks (16-byte
+  aligned); Q6_K in planes over the whole weight (ql, qh, int8 scales, d in one buffer, offsets from the weight's block count), the
+  file's exact bytes, aligned for every block count (Metal's segment-wide layout, which fixed the odd-NB misread there).
+- **Data:** at `BuildResident`, from the GGUF's own blocks through `decoder.Model.OpenKQuant` / `KQuantReader`, streamed through the
+  existing staging pool (`streamW`), so the host holds one staging block, not a native copy. The CPU keeps the int8 copies; the CPU
+  path is unchanged.
+- **Scope:** every per-layer projection the CUDA resident plans (q, k, v, o, gate, up, down) and the **untied LM head**
+  (`output.weight`; on CUDA the head is an ordinary `doG` launch, so the launch-shape cost that kept Metal's head int8 does not arise).
+  A tied head (the embedding table) stays int8. `noteKQuant` also records the untied head; Metal's lane does not read that record
+  (its head is uploaded outside `q4kLaneProj` and `metalKQuantSavings` counts layer projections only), so Metal is unchanged.
+- **One precondition on scope:** the native kinds are taken only under per-32 activations (`ActQuantGroup` 32), whose group sums
+  the kernels read. Every `--quant q4k` load gets it (`modelFromOptions`), and under it CUDA already declines the batched prefill,
+  the drafter and LoRA (`prefillStaticDecline`, `NewDrafter`, `SetAdapter`), so the native kinds take no batched path away.
+- **Fit pricing:** `ResidentDenseWeightBytesFor("cuda")` (which the CUDA build's KV plan and `Plan` both read) takes off, per weight
+  the resident uploads natively and only those, its int8 bytes less the file's block bytes. The host term is unchanged. No threshold
+  or margin moves: the device term is made to equal what the build allocates (#215's Gemini finding: price native blocks only where
+  they are actually uploaded).
+- **Why not bit-identical:** as on Metal, the native kernels compute the file's own weights instead of an int8 re-quantization, so
+  the small-gains rule's bit-identity clause cannot hold; the fidelity gates below decide, and the speed gate takes the small-gains
+  rule's pair count.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| O1C-G1 kernels | 0 | O1-G1's method on CUDA: every new kernel (standalone at every built R, and each kind through both fused kernels) against a float64 host reference that dequantizes the same blocks by ggml's formulas, with the same per-32 int8 activations; the reference cross-checked against aikit's GGUF dequantization on the 0.5B q4_k_m's Q6_K tensors and Phi-3's Q5_K and Q6_K tensors. Super-block counts NB = 1, 2, 6, 12, 19, 32, 35 and a partial block of rows. Plants: (1) Q5_K's high bit dropped; (2) Q6_K's −32 offset dropped; (3) a Q6_K group read with its neighbour's scale; (4) a super-block offset of one | every row within G-Q1's bar (\|err\| ≤ 1e-5 of Σ\|w·a\|); the reference within 1e-6 of aikit's dequantization; each plant red |
+| O1C-G2 untouched bits | 0 | `actgroup.ptx` at origin/main against the new one: every existing kernel (`gemv_w8a8_g32`, `gemv_w4a8_g32`, `gemv_q4k_g32`, both fused kernels with int8 / int4 / Q4_K projections at rows-per-warp 1, 2, 4) on random inputs; `TestActGroupKernels_fusedG32BitIdentical` extended with the new kinds mixed into a group; `TestQ4K_fusedG32ResidentBitIdentical` | the old kinds' outputs byte-equal old against new; fused equal to unfused, byte for byte, with the new kinds |
+| O1C-G3 memory | 1 | through `decoder.Load` on CUDA, the 0.5B q4_k_m and Phi-3 mini q4: the resident's weight bytes by kind, native arm against an int8 arm (a test hook keeping the copies); layer 0's native buffers and the head read back and compared byte for byte with the file's blocks (Q6_K through the planes); the pricing's saving; the host heap over the load | each native buffer holds exactly the file's bytes for its weight; device bytes fall by exactly the pricing's saving (Phi-3: about −375 MB, the head included); the host heap not higher than the int8 arm's plus 1 MiB |
+| O1C-G4 CPU unchanged | 1 | the CPU q4k forward on the 0.5B q4_k_m (Q6_K in half its layers): every position's logits bytes over a prompt and 16 greedy tokens, hashed, against the digest taken at origin/main on this box (amd64) | byte-equal |
+| O1C-G5 agreement | 2 (by day) | the CUDA G-Q2: `g3Run` (CUDA's G3c procedure) on Phi-3 mini at `--quant q4k`, the CUDA resident on the native lane against the CPU at q4k on the same file, with Qwen2.5-Coder-1.5B as G3c runs it as the reference in the same process. Beside it, `TestQ4K_phi3ResidentMatchesCPU` by its own bars | PASS iff agreement ≥ the reference's − 2.0 points and free-run passes ≥ the reference's − 1; 2.0–4.0 points below is ambiguous (parked); worse fails. `TestQ4K_phi3ResidentMatchesCPU` must pass both its bars; if only its CPU-agreement bar fails (the CPU keeps the int8 copies, so a lane nearer the file sits further from it), that is the owner's call, not a pass |
+| O1C-G6 toward the file | 1 | Phi-3 mini q4 (Q5_K and Q6_K) and the 0.5B q4_k_m (Q6_K): the CUDA q4k resident's last-row logits on the int8 arm and the native arm, each against the CPU at f32 on the same GGUF (the file exactly), over G3's 8 prompts teacher-forced. Phi-3 at f32 is about 15 GB on the CPU, inside this box's 62 GB, so Q5_K is covered here, unlike on Metal | for each model, mean KL(native) ≤ mean KL(int8); up to 1.10× is ambiguous (parked); above fails |
+| O1C-G7 speed | timed, nobara, timing lock | C1-G4's A/B on CUDA: one Phi-3 mini q4k resident holding both the int8 and the native buffers of every natively uploaded weight (a test hook), swapped per run; 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each; then the same on Qwen2.5-Coder-1.5B q4_k_m (Q6_K only). Load and free memory logged per cell, CLAUDE.md's void rule | **SHIP** iff Phi-3 is faster on at least 9 of 10 pairs (the small-gains rule's count; device memory falls, so its memory clause holds) **and** the 1.5B's median native/int8 is ≤ 1.00. **PARK** if Phi-3 is faster on 6–8 pairs. **KILL** if Phi-3 is faster on 5 or fewer, or the 1.5B's median is above 1.00. A KILL or PARK goes to the owner (Metal shipped under his option C with the 1.5B at 1.0127) |
+
+Fit checks: every load's plan is read from the build's own `fit:` / `KV plan:` banner first; a refused load is not started. Order:
+G1, G2, G4 (seconds), G3, then G7 (timed, under the lock), then G6 and G5. Stopping rule: one pass each; a FAIL in G1 to G4 stops
+the build for a fix, and the fixed build re-runs every gate from G1. Expected cost: G1–G4 a few minutes; G3 about 2 min; G7 about
+6 min (two models); G6 about 10 min (Phi-3 at f32 on the CPU); G5 about 15 min (two models, G3c's procedure).
+
+**O1C amended 2026-10-24, 16:58, before any O1C gate ran:** the scope guardrail first registered here ("only when the resident also
+holds a Q4_K projection", so as not to take a batched prefill away) protected nothing. Every q4k load runs per-32 activations, under
+which CUDA has no batched prefill, drafter or LoRA, with or without a Q4_K tensor. The precondition is now per-32 activations, which
+the native kernels need for their group sums. The gates are unchanged.
+
+**KS-O1 on CUDA read, 2026-10-24, by day.** Run by `night.py serve` (the timing lock held exclusively) from
+`docs/measurements/ks-a1-2026-10/run-o1c-day.sh`, base origin/main 4814c869a, NVIDIA driver 595.91.07.
+- **First pass (437124772, 17:14): three failures, so the build was fixed and every gate re-ran from G1.** Log:
+  `docs/measurements/ks-a1-2026-10/` holds only the second pass; the first is `~/goinfer-logs/ks-a1-2026-10/o1c-t0-2026-10-24-1714.log`.
+  - **A crash in main's decoder, from #215.** `Weights.noteKQuant` wrote the `Weights.kquant` map from `parallelLayers`' goroutines
+    with no lock. Phi-3's q4k load died with `fatal error: concurrent map writes` (in the phi3 fused-split loader). The code is
+    backend-neutral, so a Metal or CPU load of the same file is exposed too; it is a race, so not every load. Fixed: the record is
+    taken under a package-level mutex (`kquantMu`).
+  - **The f16 reference dropped a subnormal's sign** (`ksA1HalfVal`, test code): a real Q6_K block of the 0.5B has a negative
+    subnormal `d`, and the reference read it positive, so `TestKSO1C_referenceMatchesAikit` failed against aikit. The kernels use
+    `__half2float` and were not affected; the random blocks of A1-G0 and O1C-G1 use positive normal halves only.
+  - **The FMA lint read pointer offsets as bare MACs** in `rowsQ6K` and `gemv_q5k_g32`. They are written as named offsets now, the
+    lint's idiom; the arithmetic is unchanged.
+- **Second pass (e3bd04a0d, 17:18; load 0.6–0.9).** Log: `docs/measurements/ks-a1-2026-10/o1c-t0-2026-10-24-1718.log`.
+  - **O1C-G1: PASS.** `TestKSO1C_nativeKernels`: worst |err|/Σ|w·a| 1.51e-7 (Q5_K) and 1.44e-7 (Q6_K) against 1e-5, over NB = 1, 2, 6,
+    12, 19, 32, 35 and 29 rows (a partial block of rows), with bias and accumulate. All four plants are red, the smallest at 0.16. CUDA's
+    PTX is built offline, so the plants are carried by the reference: a kernel that made the planted mistake would match the planted
+    reference. `TestKSO1C_referenceMatchesAikit`: within 1e-6 of aikit's dequantizer on 12 Q6_K tensors of the 0.5B and 32 Q5_K and 17
+    Q6_K tensors of Phi-3.
+  - **O1C-G2: PASS.** 22 cells byte-equal between origin/main's `actgroup.ptx` and the new one (the quantizer, the three standalone
+    GEMVs, both fused kernels with int8, int4 and Q4_K projections at rows-per-warp 1, 2, 4). The fused kernels with Q5_K and Q6_K in a
+    group equal the standalone GEMVs byte for byte (`TestKSO1C_fusedEqualsUnfused`). `TestQ4K_fusedG32ResidentBitIdentical` (the 1.5B,
+    whose Q6_K `attn_v` now runs native inside `fused_rms_qkv_g32`): 40 positions bit-identical fused against unfused. The FMA lint,
+    the local-memory census and the PTX consistency checks pass.
+  - **O1C-G4: PASS.** The CPU q4k digest on the 0.5B is `8bd2324c…5a89` at the base and at e3bd04a0d (amd64).
+  - **O1C-G3: PASS.** Through `decoder.Load` on CUDA at `--quant q4k`, after a discarded warm-up load:
+
+    | model | int8 arm, device bytes | native arm | saving = pricing's | heap, int8 → native |
+    |---|---:|---:|---:|---:|
+    | Qwen2.5-Coder-0.5B q4_k_m | 472,862,208 | 463,421,952 (Q6_K 42,900,480) | 9,440,256 | 803.68 → 803.72 MB |
+    | Phi-3 mini q4 | 2,710,959,360 | 2,336,288,256 (Q5_K 622,854,144; Q6_K 411,102,720) | **374,671,104** | 2,878.91 → 2,879.37 MB |
+
+    Phi-3's weights on the device are now the file's own 2,336.29 MB, the survey's figure, with the head (80.8 MB of the Q6_K bytes)
+    included. Each native buffer holds exactly the file's bytes for its weight; layer 0's native buffers and the head read back equal
+    to the file's blocks (1 on the 0.5B, whose head is tied and stays int8; 5 on Phi-3). The heap rose by 0.04 and 0.46 MB, inside
+    the 1 MiB slack.
+- **O1C-G7: SHIP** (e3bd04a0d, 17:29–17:30, the lock held exclusively; load 0.34 at the start and 0.56–1.11 at each pair, 54.6–56.4 GB
+  available, no void pair; the desktop compositor's context on the card). Log: `docs/measurements/ks-a1-2026-10/o1c-g7-2026-10-24-1729.log`.
+
+  | model | weights native | int8 arm | native arm | median native/int8 | pairs faster |
+  |---|---:|---:|---:|---:|---:|
+  | Phi-3 mini q4 | 113 (q, k, v ×32, 16 `ffn_down`, the head) | 8.696–8.716 ms (114.9 tok/s) | 7.847–7.861 ms (127.3 tok/s) | **0.9025** | **10 of 10** |
+  | Qwen2.5-Coder-1.5B q4_k_m | 29 | 4.952–5.004 ms (200.2 tok/s) | 4.870–4.896 ms (204.6 tok/s) | **0.9786** | 10 of 10 |
+
+  - Phi-3 saves 0.85 ms a token, against A1-G0's kernel-sum bound of about 0.9 ms. On Metal the same change saved 0.45 ms against a
+    kernel-sum projection of about 3 ms, and the 1.5B was slower (1.0127); on CUDA the 1.5B is faster.
+  - Each arm's 128 greedy tokens were the same in every run. The two arms agree for the first 40 tokens on Phi-3 and all 128 on the
+    1.5B: different weights (the file's own against an int8 copy), so a divergence is expected; G5 and G6 grade it.
+- **O1C-G6: PASS** (e3bd04a0d, 17:31–17:37, the lock held exclusively; not timed). Against the CPU at f32 on the same file, every
+  teacher-forced position over G3's 8 prompts and the CPU's own 32-token continuations:
+
+  | model | positions | mean KL, int8 arm | native arm | native / int8 | native lower at |
+  |---|---:|---:|---:|---:|---:|
+  | Qwen2.5-Coder-0.5B q4_k_m (12 weights native) | 566 | 0.00223 | 0.00203 | **0.9114** | 333 |
+  | Phi-3 mini q4 (113 weights native, Q5_K covered) | 372 | 0.01570 | 0.00614 | **0.3912** | 273 |
+
+  Native is lower on 7 of 8 prompts on the 0.5B and on all 8 on Phi-3. Metal's O1-G6 read 0.7638 on the 0.5B and could not cover
+  Q5_K.
+- **O1C-G5: the G-Q2 half PASS; `TestQ4K_phi3ResidentMatchesCPU` FAIL on both its bars, so O1C-G5 FAILS as registered.**
+  - G-Q2 (17:37–17:40): the reference Qwen2.5-Coder-1.5B 96.64% (547 of 566), 8 of 8 prompts; Phi-3 on the native lane **96.77%
+    (360 of 372), 8 of 8: delta +0.13 points** against the −2.0 margin. The CUDA reference reads 96.64%, not Metal's 93.99%, under
+    ChatML's default system message (the G3c record).
+  - `TestQ4K_phi3ResidentMatchesCPU` (one 141-token prompt: 110 × "the ", then an instruction; context 4096): CUDA q4k against CPU q4k
+    median cosine **0.993030** (bar ≥ 0.999); CUDA q4k against f32 p10 **0.882586** against the CPU q4k path's 0.926208 (bar: no more than
+    0.01 below). Log: `docs/measurements/ks-a1-2026-10/o1c-g56-2026-10-24-1731.log`.
+  - **On main's int8 lane the same test passes** (median 0.999804; p10 0.940085). Main itself could not run it: the Phi-3 load hit the
+    `noteKQuant` race, so the baseline is main with only the mutex applied, uncommitted, in a base worktree. Log:
+    `docs/measurements/ks-a1-2026-10/o1c-g5-base-int8lane-1742.log`.
+- **Diagnosis (not graded, run after the verdict above; `TestKSO1C_fillerDiagnostic`, both arms of one resident at context 512, the CPU
+  at f32 on the file, the shared lock).** It reproduces the two arms' p10 to six figures at context 512, so the KV plan is not the
+  cause.
+  - **Where:** native is closer to f32 at 76 of the 110 filler positions (median cosine 0.9830 → 0.9868) and further at 27 of the 29
+    instruction positions after them (0.9712 → 0.9231). Mean KL to f32 over the prompt: int8 0.427, native 0.510.
+  - **Which weights:** only the Q5_K qkv native, or only the Q6_K `ffn_down` native, each gives the same instruction-region median
+    (0.9236, 0.9237); only the head native changes nothing (0.9712). Two independent perturbations landing on one value is a bifurcation
+    of a degenerate repeated context, not a per-weight error.
+  - **Other filler lengths** (`GOINFER_KSO1C_DIAG_REPS`; instruction-region median and mean KL to f32, int8 → native): 60 repeats
+    0.9987 → 0.9984, KL 0.275 → 0.296; 90 repeats 0.9966 → 0.9959, KL 0.321 → 0.310; 130 repeats 0.9923 → 0.9927, KL 0.330 → 0.314.
+    The 110-repeat prompt the test pins is the outlier.
+  - **The p10:** native's p10 is lower at every length (0.963 / 0.959 / 0.967 against 0.971 / 0.970 / 0.976). It comes from a few
+    early filler positions (position 7, the sixth "the", reads cosine 0.28 native against 0.80 int8 at every length), where the
+    next-token distribution after a run of "the" is flat and cosine is a poor reader.
+  - **The CPU-agreement bar** cannot hold for a lane nearer the file: the CPU q4k reference keeps the int8 copies, which is the case
+    this registration named as the owner's call.
+  - Logs: `docs/measurements/ks-a1-2026-10/o1c-filler-diag-*.log`.
+
+**Owner decision on O1C-G5, Francis 2026-10-24 (option A): accept, and ship KS-O1 on CUDA.**
+- **The decision:** native Q5_K/Q6_K ships on the CUDA q4k lane on G7's SHIP, G6's KL and G-Q2's +0.13 points. This is his decision,
+  not a re-grading: O1C-G5 stays FAIL as registered.
+- **`TestQ4K_phi3ResidentMatchesCPU` now runs the int8 lane** (`decoder.SetKQuantNativeOffForTest` around its load, and an assertion
+  that no weight is native), so its two bars keep guarding that lane. On this branch it reads main's numbers exactly: median 0.999804,
+  p10 0.940085, **PASS**. Log: `docs/measurements/ks-a1-2026-10/o1c-phi3-int8lane-branch.log`. The native lane's fidelity gates are
+  `TestKSO1C_realPhi3NonInferiority` and `TestKSO1C_towardTheFile`.
+
+**#230's review, item 1 (Gemini, relayed by the coordinator, 2026-10-24 22:40): a long-context f32 quality bar for the native lane.
+Registered 2026-10-24 before any of it ran.** The review is right that the record overstated the diagnosis. The committed logs show
+the native lane's p10 cosine to f32 below the int8 lane's at all four filler lengths (60, 90, 110, 130). They also show its mean KL
+to f32 worse at 60 and 110 repeats, and "only Q5_K qkv native" worse on KL at all four. The PR text's "60/90/130 do not show it" held
+only for the instruction region's median.
+- **LQ1, the old bar on the native lane (tier 1, Phi-3, the shared lock):** `TestQ4K_phi3ResidentMatchesCPU` runs both lanes. The
+  int8 lane keeps both its bars. The native lane takes the f32 quality bar unchanged: p10 cosine to f32 no more than 0.01 below the CPU
+  q4k path's own on the same prompt. The CPU-agreement bar does not apply to it (the CPU keeps the int8 copies).
+- **LQ2, the filler table (tier 1, `TestKSO1C_fillerDiagnostic` at 60, 90, 110, 130 repeats):** for the int8 arm, the native arm and
+  the CPU q4k path, each against the CPU at f32: p10 and min cosine, and mean KL. The old bar is applied at every length.
+- **LQ3, natural long context (tier 1, the same diagnostic on a document):** two in-repo English documents, `README.md` and
+  `docs/benchmarks.md`, each cut to its first 900 tokens inside "Summarize this document:" under Phi-3's chat template (about 920
+  positions each, context 1024). Per document: mean KL to f32 over all positions and over positions 256 and later; p10 and min
+  cosine over the same.
+- **The reading, fixed now:** the native lane is **worse than int8 at long context** if, on either document, its mean KL to f32 over
+  positions 256 and later is above the int8 arm's by more than 5%. Otherwise the gap is the filler's alone. Either way the
+  work stops for the owner, with these numbers and the options. Shipping is not re-decided by this reading.
+- **Cost:** LQ1 about 4 min (two Phi-3 loads, three CPU passes over 141 tokens). LQ2 about 1.5 min a length. LQ3 about 8 min a
+  document: the CPU at f32 runs at about 0.5 s a position.
+
+**LQ1–LQ3 read 2026-10-24, 22:44–23:19, by day** (d0b69c56a; the shared lock, not timed; load under 1.2). Log:
+`docs/measurements/ks-a1-2026-10/lq-2026-10-24.log`.
+- **LQ1:** `TestQ4K_phi3ResidentMatchesCPU`, int8 lane **PASS** (median 0.999804, p10 to f32 0.940085). Native lane **FAIL** on the f32
+  bar: p10 **0.882586** against the CPU q4k path's 0.926208 (floor 0.9162), min 0.029366.
+- **LQ2, the filler at four lengths** (p10 / min cosine to f32, mean KL to f32; the old bar is native p10 ≥ the CPU q4k p10 − 0.01):
+
+  | repeats | CPU q4k | int8 arm | native arm | only Q5_K native | old bar on native |
+  |---:|---|---|---|---|---|
+  | 60 | 0.9691 / 0.788, 0.284 | 0.9707 / 0.798, 0.275 | 0.9627 / 0.281, **0.296** | 0.9516 / 0.302, 0.338 | pass (floor 0.9591) |
+  | 90 | 0.9663 / 0.788, 0.327 | 0.9704 / 0.798, 0.321 | 0.9593 / 0.281, 0.310 | 0.9516 / 0.302, 0.369 | pass (0.9563) |
+  | 110 | 0.9262 / 0.435, 0.449 | 0.9401 / 0.454, 0.427 | 0.8826 / 0.029, **0.510** | 0.9079 / 0.058, 0.545 | **FAIL** (0.9162) |
+  | 130 | 0.9754 / 0.788, 0.337 | 0.9765 / 0.798, 0.330 | 0.9666 / 0.281, 0.314 | 0.9545 / 0.302, 0.395 | pass (0.9654) |
+
+  On this filler the native arm's p10 and min are below the int8 arm's at every length, and its mean KL is worse at 60 and 110 and
+  better at 90 and 130. "Only Q5_K native" is worse on every measure at every length. The review's reading of the logs is right;
+  the PR text's "60/90/130 do not show it" was wrong for p10, min and the KL at 60, and is corrected.
+- **LQ3, natural long context** (912 positions each; mean KL to f32 over all positions / over positions 256 and later; p10 and min
+  over 256 and later):
+
+  | document | CPU q4k | int8 arm | native arm | only Q5_K native | native / int8 past 256 |
+  |---|---|---|---|---|---:|
+  | `README.md` | 0.00304 / 0.00187 | 0.00296 / 0.00173; p10 0.99941, min 0.9821 | **0.00148 / 0.00068**; p10 0.99973, min 0.9597 | 0.00190 / 0.00089 | **0.39** |
+  | `docs/benchmarks.md` | 0.00243 / 0.00168 | 0.00247 / 0.00175; p10 0.99936, min 0.9931 | **0.00105 / 0.00081**; p10 0.99968, min 0.9917 | 0.00153 / 0.00096 | **0.46** |
+
+  **By the reading fixed before the run, the native lane is not worse than int8 at long context.** Its KL past position 256 is 0.39×
+  and 0.46× the int8 arm's, against the +5% line. "Only Q5_K native" also beats int8 on both documents (0.51×, 0.55×). The one
+  statistic that favours int8 is the minimum past 256: on `README.md` native reads 0.9597 against 0.9821, and on
+  `docs/benchmarks.md` 0.9917 against 0.9931. One position sets each minimum.
+
+**Owner decision on #230's long-context bar, Francis 2026-10-25 6:11 am (relayed by the coordinator): option A.**
+- **The gate:** the native lane's long-context quality gate is `TestKSO1C_longContextQuality`. On `README.md` and `docs/benchmarks.md`,
+  each cut to its first 900 tokens, the native lane's mean KL to f32 over positions 256 and later must be at most 1.05× the int8
+  lane's. `TestQ4K_phi3ResidentMatchesCPU` and its filler bar stay on the int8 lane.
+- **Stated plainly, as the decision requires:**
+  - **The native lane does worse than int8 on highly repetitive input.** On the 110-repeat filler its p10 cosine to f32 is 0.8826
+    against the old bar's floor of 0.9162, and its minimum is 0.029. Its p10 and minimum are below int8's at every filler length
+    measured.
+  - **Its single-position minimum on `README.md` is lower:** 0.9597 against int8's 0.9821.
+- **Open item:** KS-O1-F in the ledger.
+- **The gate's first run: PASS** (e3a66d6d9, 06:13–06:33, the shared lock, not timed). On `README.md`, mean KL to f32 past position
+  256 is 0.00173 int8 against 0.00068 native, **0.3899**. On `docs/benchmarks.md` it is 0.00175 against 0.00081, **0.4623**. These are
+  LQ3's numbers to the digit. Log: `docs/measurements/ks-a1-2026-10/longctx-gate-2026-10-25.log`.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.

@@ -72,6 +72,24 @@ func planWeight(w *linalg.WeightMat) (hostW, error) {
 	}
 }
 
+// planKQuant is planWeight for a weight the q4k lane uploads as the file's Q5_K or Q6_K blocks (decoder.Model.KQuantNative):
+// row(r) is destination row r's blocks. Q5_K keeps the file's 176-byte blocks; Q6_K is laid out in planes over the whole weight
+// (q6kPlanes). Both hold exactly the file's bytes.
+func planKQuant(w *linalg.WeightMat, kind string, row func(r int) []byte) (hostW, error) {
+	N, K := w.Rows(), w.Cols()
+	bb := map[string]int{"q5k": 176, "q6k": 210}[kind]
+	if bb == 0 || K%256 != 0 || N <= 0 {
+		return hostW{}, fmt.Errorf("cuda: native %s weight %dx%d", kind, N, K)
+	}
+	return hostW{kind: kind, N: N, K: K, src: w, row: row, nBytes: N * (K / 256) * bb}, nil
+}
+
+// q6kPlanes is the Q6_K layout the q4k lane's kernels read (rowQ6K): the 210-byte GGUF blocks (ql[128], qh[64], scales[16], d)
+// of a weight of T blocks split into four planes in one buffer, T·128 bytes of ql, then T·64 of qh, T·16 of scales and T·2 of d.
+// Block g of the weight (row n, super-block b: g = n·K/256 + b) sits at g·128, T·128 + g·64, T·192 + g·16 and T·208 + g·2, so
+// every plane is 16-byte aligned for any T. q6kPlaneOffsets gives the four planes' starts.
+func q6kPlaneOffsets(T int) [4]int { return [4]int{0, T * 128, T * 192, T * 208} }
+
 // packStage is one staging block of the build: scratch for the packed words and scales of a run of rows, and the slices the upload reads. The build keeps a
 // small pool of them (packPool), reused for every tensor and dropped when the build's setup job ends (cudaResident.pk).
 type packStage struct {
@@ -82,6 +100,13 @@ type packStage struct {
 	outW []uint32
 	outH []uint16
 	outS []float32
+	outB []uint8
+}
+
+// bytes is n bytes of the stage's word scratch, so a native weight's staging adds no buffer beside the packed kinds' one.
+func (s *packStage) bytes(n int) []uint8 {
+	w := s.words((n + 3) / 4)
+	return unsafe.Slice((*uint8)(unsafe.Pointer(unsafe.SliceData(w))), n)
 }
 
 func (s *packStage) words(n int) []uint32 {
@@ -177,9 +202,12 @@ func (r *cudaResident) streamBlocks(N, block int, pack func(st *packStage, r0, r
 // staging blocks (streamBlocks) and uploads each at its offset. Every block holds whole rows, and each row's packed words and scales depend on that row
 // alone, so the device bytes are the bytes packWeight produces. An upload error is recorded as upW's are (recordUpload).
 func (r *cudaResident) streamW(h hostW) cudaWQ {
-	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: r.au32(h.nWpk)}
 	N, K := h.N, h.K
 	rowsFor := func(wordsPerRow int) int { return max(1, stagePackWords/max(wordsPerRow, 1)) }
+	if h.row != nil {
+		return r.streamKQuant(h)
+	}
+	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: r.au32(h.nWpk)}
 	putWords := func(st *packStage, r0, wpr int) { r.recordUpload(gpu.Upload(w.W.At(r0*wpr*4), st.outW)) }
 	switch h.kind {
 	case "int4":
@@ -259,6 +287,54 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 	default:
 		r.recordUpload(fmt.Errorf("cuda: unsupported planned kind %q", h.kind))
 	}
+	return w
+}
+
+// kquantStageRows is the rows of rowBytes each that one staging block holds: a block of them fits packStage.bytes inside one stage's
+// scratch (stagePackWords). A Q6_K row of an odd block count is not a whole number of words, so the row is counted rounded up.
+func kquantStageRows(rowBytes int) int { return max(1, stagePackWords/((rowBytes+3)/4)) }
+
+// streamKQuant is streamW for a native Q5_K or Q6_K weight (planKQuant): one byte buffer of the file's size, filled from the file's
+// rows in staging blocks. Q5_K rows are copied verbatim; Q6_K blocks are split into q6kPlanes, a block of rows landing in four
+// contiguous runs, one per plane.
+func (r *cudaResident) streamKQuant(h hostW) cudaWQ {
+	allocSeen(h.nBytes)
+	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: gpu.NewBufferLenOf[uint8](r.dev, h.nBytes)}
+	nSB := h.K / 256
+	if h.kind == "q5k" {
+		rb := nSB * 176
+		r.streamBlocks(h.N, kquantStageRows(rb), func(st *packStage, r0, rows int) {
+			b := st.bytes(rows * rb)
+			for i := range rows {
+				copy(b[i*rb:(i+1)*rb], h.row(r0+i))
+			}
+			st.outB = b
+		}, func(st *packStage, r0, rows int) { r.recordUpload(gpu.Upload(w.W.At(r0*rb), st.outB)) })
+		return w
+	}
+	off := q6kPlaneOffsets(h.N * nSB)
+	width := [4]int{128, 64, 16, 2}
+	r.streamBlocks(h.N, kquantStageRows(nSB*210), func(st *packStage, r0, rows int) {
+		nb := rows * nSB
+		b := st.bytes(nb * 210)
+		for i := range rows {
+			src := h.row(r0 + i)
+			for k := range nSB {
+				blk, g := src[k*210:(k+1)*210], i*nSB+k
+				copy(b[g*128:], blk[:128])
+				copy(b[nb*128+g*64:], blk[128:192])
+				copy(b[nb*192+g*16:], blk[192:208])
+				copy(b[nb*208+g*2:], blk[208:210])
+			}
+		}
+		st.outB = b
+	}, func(st *packStage, r0, rows int) {
+		g0, nb, at := r0*nSB, rows*nSB, 0
+		for p := range 4 {
+			r.recordUpload(gpu.Upload(w.W.At(off[p]+g0*width[p]), st.outB[at:at+nb*width[p]]))
+			at += nb * width[p]
+		}
+	})
 	return w
 }
 

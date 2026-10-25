@@ -1,0 +1,25 @@
+=== RUN   TestKSO1C_nativeKernels
+    kso1c_kernels_test.go:168: O1C-G1 kernels: worst |err|/Σ|w·a| Q5_K 1.51e-07, Q6_K 1.44e-07 (bar 1e-5); plants' smallest reds map[1:0.27119705312135095 2:0.1884697581835112 3:0.15596431889957585 4:0.22802570615472992]
+--- PASS: TestKSO1C_nativeKernels (0.30s)
+=== RUN   TestKSO1C_fusedEqualsUnfused
+--- PASS: TestKSO1C_fusedEqualsUnfused (0.01s)
+=== RUN   TestKSO1C_untouchedKernelsBitIdentical
+    kso1c_kernels_test.go:480: O1C-G2 untouched: 25 cells byte-equal between the old and the new actgroup.ptx
+--- PASS: TestKSO1C_untouchedKernelsBitIdentical (0.04s)
+=== RUN   TestKSO1C_referenceMatchesAikit
+    kso1c_kernels_test.go:540: O1C-G1 reference: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, within 1e-6 of aikit on 0 Q5_K and 12 Q6_K tensors
+    kso1c_kernels_test.go:540: O1C-G1 reference: phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, within 1e-6 of aikit on 32 Q5_K and 17 Q6_K tensors
+--- PASS: TestKSO1C_referenceMatchesAikit (0.07s)
+=== RUN   TestKSO1C_laneBytes
+O1C-G3 qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: int8 arm 472862208 device bytes map[int8:443444736 q4k:29417472], heap 803691096; native arm 463421952 map[int8:391104000 q4k:29417472 q6k:42900480], heap 803720576; pricing saves 9440256 (dense pricing 472862208 → 463421952)
+O1C-G3 qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: 1 native buffers (layer 0 and the head) equal the file's blocks
+O1C-G3 phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf: int8 arm 2710959360 device bytes map[int8:1408627968 q4k:1302331392], heap 2878908192; native arm 2336288256 map[q4k:1302331392 q5k:622854144 q6k:411102720], heap 2879353888; pricing saves 374671104 (dense pricing 2710959360 → 2336288256)
+O1C-G3 phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf: 5 native buffers (layer 0 and the head) equal the file's blocks
+--- PASS: TestKSO1C_laneBytes (7.83s)
+=== RUN   TestKSO1C_stageRowsFitTheScratch
+--- PASS: TestKSO1C_stageRowsFitTheScratch (0.00s)
+=== RUN   TestQ4K_fusedG32ResidentBitIdentical
+    q4k_fused_resident_test.go:66: 40 positions × 151936 logits bit-identical, fused vs unfused
+--- PASS: TestQ4K_fusedG32ResidentBitIdentical (2.39s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	10.791s
