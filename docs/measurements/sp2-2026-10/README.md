@@ -217,3 +217,26 @@ long context.**
 **The owner's decision on the parked cell (Francis, 2026-10-25, "A"):** #232 merges on these readings: lossless, PASS at short
 context, and faster than plain decode in every long-context pair. The follow-up is a small PR adding a `serve` option for the verify
 width (serve verifies at width 8, where SP0 projects 1.17×), and a served A/B, registered before it runs.
+
+### G4 graded against the owner's merge rule (Francis, 2026-10-25, 8:46–8:48 am)
+
+The rule, set after this gate was registered: a lossless, opt-in feature merges when it is consistently faster, a median of 1.05× or
+more with at least 9 of 10 pairs faster, and its PR states the memory cost. SP0's 1.30× is an investment bar and is not a merge bar.
+G4 registered SP0's 1.30× for an opt-in (`--drafter`), lossless (token-identical) change; the readings above stay as recorded, and
+are graded against the rule here:
+
+| context | median | pairs faster | the merge rule |
+|---|---|---|---|
+| short | 1.462× | 10 of 10 | **merges** |
+| long | 1.207× | 10 of 10 | **merges** (the owner: "1.21x gain there!!!") |
+
+**The memory cost:**
+- **Device:** the arena, on a Gated-DeltaNet target with a drafter attached: 63,373,312 B allocated on Qwen3.5-9B, priced in the
+  fit guard's companion reserve at 65,011,712 B (62 MiB). Nothing on any other model (its price is 0), and nothing without
+  `--drafter`. The drafter's own weights and K/V are `--drafter`'s existing cost, unchanged.
+- **Host:** nothing persistent. A long seed's captured rows are joined on the host across passes (rows × taps × hidden × 4 B, about
+  511 MB for a 3,900-token prompt on the 9B), the same bytes the single pass downloaded before; the drafter's device scratch for
+  them is now bounded by 512-row pieces.
+- **The longest context that fits:** with a drafter attached, an auto-sized context shrinks by about 567 positions (65,011,712 B
+  over a position's 65,536 B of f32 target K/V plus 49,152 B of drafter K/V, from the fit guard's own prices; computed, not
+  measured). The 4,608-position context SP0 and these gates pinned still fits, with 1.11 GB free.
