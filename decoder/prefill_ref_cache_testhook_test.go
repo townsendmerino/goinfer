@@ -185,11 +185,14 @@ func TestPrefillRefCurrent_refusesStaleReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := PrefillRefCurrentForTest(cp, ids); err != nil {
+	if err := PrefillRefCurrentForTest(cp, ck, ids); err != nil {
 		t.Fatalf("this tree's own reference refused: %v", err)
 	}
-	if err := PrefillRefCurrentForTest(cp, []int{1, 2, 3, 5}); err == nil {
+	if err := PrefillRefCurrentForTest(cp, ck, []int{1, 2, 3, 5}); err == nil {
 		t.Fatal("a reference for other ids was accepted")
+	}
+	if err := PrefillRefCurrentForTest(cp, fakeCheckpoint(t, "other weights"), ids); err == nil {
+		t.Fatal("a reference for another checkpoint was accepted")
 	}
 	old := parts
 	old.SourceSHA256 = "an-older-tree"
@@ -197,14 +200,23 @@ func TestPrefillRefCurrent_refusesStaleReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := PrefillRefCurrentForTest(stale, ids); err == nil {
+	if err := PrefillRefCurrentForTest(stale, ck, ids); err == nil {
 		t.Fatal("a reference built under another source was accepted")
+	}
+	short := parts
+	short.SourceSHA256 = "" // an empty or truncated source must be refused with an error, not a panic
+	trunc, err := StorePrefillRefForTest(short, []float32{1, 2}, []int{3}, [][]float32{{4, 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrefillRefCurrentForTest(trunc, ck, ids); err == nil {
+		t.Fatal("a reference with an empty source was accepted")
 	}
 	bare := filepath.Join(t.TempDir(), "bare.bin")
 	if err := os.WriteFile(bare, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrefillRefCurrentForTest(bare, ids); err == nil {
+	if err := PrefillRefCurrentForTest(bare, ck, ids); err == nil {
 		t.Fatal("a reference with no sidecar was accepted")
 	}
 }

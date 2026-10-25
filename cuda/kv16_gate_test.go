@@ -128,10 +128,6 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	if rf.faSplit < 1 || rf.faCombine == (Pipeline{}) {
 		t.Fatalf("-kv %s: the flash-decode lane is not loaded (faSplit=%d)", kv, rf.faSplit)
 	}
-	kl := 0 // the first layer that keeps K/V (a hybrid's layer 0 may be recurrent)
-	for kl < len(rf.layers)-1 && (rf.layers[kl].noKV() || rf.layers[kl].kvShared) {
-		kl++
-	}
 	res := kv16ArmResult{f16: rf.kvF16, allocated: seen[rf], kvPool: kvBytesForCap(rf.ctxCap, rf.layers) + kvPoolNullBytes(rf.layers), layers: len(rf.layers)}
 	res.mlaOnly = true
 	for l := range rf.layers {
@@ -223,7 +219,7 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	for pi, f := range promptFiles {
 		prompts[pi] = decoder.PrefillGateProseIDsForTest(t, tk, f, K)
 		ref := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi))
-		if err := decoder.PrefillRefCurrentForTest(ref, prompts[pi][:K]); err != nil { // the arms read the first K, as the generator keyed them
+		if err := decoder.PrefillRefCurrentForTest(ref, path, prompts[pi][:K]); err != nil { // the arms read the first K, as the generator keyed them
 			t.Fatalf("reference %d: %v", pi, err)
 		}
 		_, rt, rl, err := decoder.ReadPrefillReferenceForTest(ref)

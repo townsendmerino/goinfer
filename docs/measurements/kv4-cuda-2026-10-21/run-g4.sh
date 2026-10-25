@@ -44,7 +44,8 @@ if [ "$PHASE" = ref ] || [ "$PHASE" = both ]; then
     env GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CPU_REF_MODELS="$CELL" GOINFER_CPU_REF_KS="$DEPTH" \
     GOINFER_CPU_REF_PROMPTS_AT="$DEPTH:$N" GOINFER_CPU_REF_WORKERS="$WORKERS" \
     go test -count=1 -tags goinfer_testhooks -run '^TestPrefillGateReference$' -v -timeout "${REF_TIMEOUT:-3h}" ./decoder/) 2>&1 | tee -a "$log"
-  [ "${PIPESTATUS[0]}" = 0 ] && grep -q "^--- PASS: TestPrefillGateReference" "$log" || rc=1
+  # The cell's own subtest must pass: a skipped one (no checkpoint, say) leaves the parent test PASS and exit 0 over old files.
+  [ "${PIPESTATUS[0]}" = 0 ] && grep -q -- "--- PASS: TestPrefillGateReference/$CELL " "$log" || { echo "reference phase for $CELL did not pass (or its subtest skipped)" | tee -a "$log"; rc=1; }
   echo "reference files for $CELL K=$DEPTH: $(nref) (want at least $N)" | tee -a "$log"
   [ "$(nref)" -ge "$N" ] || rc=1
 fi

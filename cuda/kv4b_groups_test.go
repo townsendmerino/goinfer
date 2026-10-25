@@ -71,6 +71,7 @@ func kv4bPair(t *testing.T, fx string, opts decoder.Options, windowed bool) (m32
 			t.Fatalf("%s: windowed KV did not engage", fx)
 		}
 		kv4bAllocated[r] = seen[r]
+		t.Cleanup(func() { delete(kv4bAllocated, r) })
 		return m, r
 	}
 	m32, r32 = load("f32")
@@ -82,7 +83,7 @@ func kv4bPair(t *testing.T, fx string, opts decoder.Options, windowed bool) (m32
 }
 
 // kv4bAllocated is the K/V cache bytes each resident kv4bPair loaded allocated (kvAllocSeenForTest): read from the allocations
-// themselves rather than from the layer flags that price them.
+// themselves rather than from the layer flags that price them. The package's tests run serially; an entry goes with its test.
 var kv4bAllocated = map[*cudaResident]int64{}
 
 // TestKV4b_deliveredBytes is G3 for every delivered group: at -kv f16 each layer that keeps K/V holds it as f16, its pools hold the

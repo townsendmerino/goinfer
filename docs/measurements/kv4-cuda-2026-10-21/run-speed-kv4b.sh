@@ -16,9 +16,9 @@ BIN=$OUT/serve-cuda-kv4b
 git -C "$W" rev-parse HEAD > "$OUT/serve-cuda-kv4b.rev"
 cd "$W"
 export GOINFER_SERVE_CUDA=$BIN GOINFER_SERVE_CUDA_OLD=$BIN
-# BENCH_REQUIRE_BACKEND=0 for a checkpoint whose batched prefill declines on CUDA (DeepSeek-V2-Lite): the scorer still voids a cell that
-# does not decode on CUDA.
-export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cuda BENCH_ABBA=1 BENCH_REQUIRE_BACKEND=${BENCH_REQUIRE_BACKEND:-1} BENCH_SERVE_LOG_DIR="$OUT/serve-logs"
+# BENCH_REQUIRE_BACKEND=0 for a checkpoint whose batched prefill declines on CUDA (DeepSeek-V2-Lite): bench_peer then does not check the
+# backend, so this script voids the model unless its serve logs say decode ran on the CUDA resident.
+export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cuda BENCH_ABBA=1 BENCH_REQUIRE_BACKEND=${BENCH_REQUIRE_BACKEND:-1}
 export BENCH_GOINFER_ARGS="-kv f16" BENCH_GOINFER_OLD_ARGS="-kv f32"
 # Directory checkpoints have no file size for the heavy-load gate to read: the resident host memory each needs, in GB.
 export BENCH_FIT_NEED_GB="qmoe=16,cr7b=8,qvl3=6,dsv2lite=16,gemma3-4b=4,E2B=4"
@@ -28,8 +28,11 @@ idle() { for _ in $(seq 90); do awk '{exit !($1 < 0.9)}' /proc/loadavg && return
 rc=0
 for m in ${MODELS:-qmoe gemma3-4b cr7b qvl3 E2B}; do
   idle || { echo "VOID: $m not started (box busy)"; rc=1; continue; }
-  BENCH_MODELS=$m BENCH_DEPTHS=128,2048 python3 scripts/bench_peer.py "$OUT/decode-$m.json" 2>&1 | tee "$OUT/decode-$m.log"
+  BENCH_SERVE_LOG_DIR="$OUT/serve-logs/$m" BENCH_MODELS=$m BENCH_DEPTHS=128,2048 python3 scripts/bench_peer.py "$OUT/decode-$m.json" 2>&1 | tee "$OUT/decode-$m.log"
   hrc=${PIPESTATUS[0]}
+  if [ "$BENCH_REQUIRE_BACKEND" = 0 ] && ! grep -rqs "decode path: cuda-resident" "$OUT/serve-logs/$m"; then
+    echo "VOID: $m (BENCH_REQUIRE_BACKEND=0 and no serve log says decode ran on the CUDA resident)"; rc=1
+  fi
   # bench_peer writes its results file before the cells run, so a crash leaves one behind: its exit code and log decide, not the file.
   if [ "$hrc" != 0 ] || [ ! -s "$OUT/decode-$m.json" ] || grep -qE "^Traceback|REFUSED" "$OUT/decode-$m.log"; then
     echo "VOID: $m (bench_peer exit $hrc; the harness failed, refused or left no results)"; rc=1
