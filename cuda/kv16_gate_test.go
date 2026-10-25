@@ -103,7 +103,8 @@ type kv16ArmResult struct {
 	aa         [][]float32 // a second run of prompt 0 (the f16 arm only), for the A/A precondition
 	maxK, maxV []float32   // per layer, over every prompt (the f32 arm only)
 	layers     int
-	faLayers   int // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
+	faLayers   int  // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
+	mlaOnly    bool // every layer that keeps K/V is MLA's latent, which the flash-decode lane never reads
 }
 
 func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
@@ -126,7 +127,11 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 		kl++
 	}
 	res := kv16ArmResult{f16: rf.kvF16, kvBytes: rf.kc[kl].Len() * map[bool]int{true: 2, false: 4}[rf.layers[kl].kvHalf], layers: len(rf.layers)}
+	res.mlaOnly = true
 	for l := range rf.layers {
+		if !rf.layers[l].noKV() && !rf.layers[l].isMLA() {
+			res.mlaOnly = false
+		}
 		if w := int(rf.layers[l].window); !rf.layers[l].noKV() && !rf.layers[l].isMLA() && rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
 			res.faLayers++
 		}
@@ -239,7 +244,12 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	if f.kvBytes*2 != e.kvBytes {
 		t.Fatalf("PRECONDITION 1: the f16 arm's K buffer is %d B against the f32 arm's %d B, not half", f.kvBytes, e.kvBytes)
 	}
-	if want := f.faLayers * (contN - 1) * len(prompts); f.faLaunches < want { // an MLA model has no layer the lane takes; the rows below still must differ
+	// An MLA model has no layer the lane takes, so its vacuity rests on the rows below differing; any other model with none would
+	// decode its f16 cache through no lane at all, and the gate would grade nothing of it.
+	switch want := f.faLayers * (contN - 1) * len(prompts); {
+	case f.faLayers == 0 && !f.mlaOnly:
+		t.Fatalf("PRECONDITION 1 (vacuity): no layer takes the flash-decode lane at K=%d, so the f16 arm reads its cache through no lane", K)
+	case f.faLaunches < want:
 		t.Fatalf("PRECONDITION 1 (vacuity): the f16 arm launched fa_partial %d times, expected >= %d", f.faLaunches, want)
 	}
 	// PRECONDITION 2: A/A.

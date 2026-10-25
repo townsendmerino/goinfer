@@ -13,7 +13,8 @@
 # together, so a timeout loses every one in flight (decoder/prefill_ref_gen_test.go:refWorkers). The reference phase does not start a
 # prompt that its slowest finished prompt says would end past REF_TIMEOUT, and a rerun resumes from the cache.
 #
-# Both phases hold the timing lock shared (a CPU or GPU load, nothing timed). Logs go to ~/goinfer-bench/kv4-g4/<cell>-K<depth>-<phase>-<date>.log.
+# The CPU reference phase holds the timing lock shared (a CPU load, nothing timed); the gate phase, which loads both arms on the
+# card, holds it exclusively, so no other session's GPU work shares the card with it. Logs go to ~/goinfer-bench/kv4-g4/<cell>-K<depth>-<phase>-<date>.log.
 set -u
 export PATH=$PATH:/usr/local/go/bin
 CELL=${CELL:?name the cell}
@@ -50,7 +51,7 @@ fi
 if [ "$rc" = 0 ] && { [ "$PHASE" = gate ] || [ "$PHASE" = both ]; }; then
   log=$OUT/$CELL-K$DEPTH-gate-$stamp.log
   { echo "started: $(date '+%F %T %Z')"; echo "tree: $W at $(git -C "$W" rev-parse HEAD)"; nvidia-smi --query-gpu=driver_version,name,memory.used --format=csv,noheader; } > "$log"
-  (cd "$W" && python3 scripts/timing_lock.py run --shared --wait "${LOCK_WAIT:-3600}" --label "kv4b-g4-gate-$CELL-$DEPTH" -- \
+  (cd "$W" && python3 scripts/timing_lock.py run --wait "${LOCK_WAIT:-3600}" --label "kv4b-g4-gate-$CELL-$DEPTH" -- \
     env GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CUDA_FLASH_DECODE=16 GOINFER_KV4B_GATE_K="$DEPTH" GOINFER_KV4B_GATE_N="$N" \
     go test -count=1 -tags 'cuda goinfer_testhooks' -run "^TestKV4bGate_$CELL\$" -v -timeout 3h ./cuda/) 2>&1 | tee -a "$log"
   [ "${PIPESTATUS[0]}" = 0 ] || rc=1
