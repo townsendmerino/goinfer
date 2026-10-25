@@ -1004,14 +1004,51 @@ KS-A1's CUDA half, then KS-O1 on CUDA, the twin of what shipped on Metal).** Eac
 | O1C-G7 speed | timed, nobara, timing lock | C1-G4's A/B on CUDA: one Phi-3 mini q4k resident holding both the int8 and the native buffers of every natively uploaded weight (a test hook), swapped per run; 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each; then the same on Qwen2.5-Coder-1.5B q4_k_m (Q6_K only). Load and free memory logged per cell, CLAUDE.md's void rule | **SHIP** iff Phi-3 is faster on at least 9 of 10 pairs (the small-gains rule's count; device memory falls, so its memory clause holds) **and** the 1.5B's median native/int8 is ≤ 1.00. **PARK** if Phi-3 is faster on 6–8 pairs. **KILL** if Phi-3 is faster on 5 or fewer, or the 1.5B's median is above 1.00. A KILL or PARK goes to the owner (Metal shipped under his option C with the 1.5B at 1.0127) |
 
 Fit checks: every load's plan is read from the build's own `fit:` / `KV plan:` banner first; a refused load is not started. Order:
-G1, G2, G4 (seconds), G3, then G7 (timed, under the lock), then G6 and G5.
+G1, G2, G4 (seconds), G3, then G7 (timed, under the lock), then G6 and G5. Stopping rule: one pass each; a FAIL in G1 to G4 stops
+the build for a fix, and the fixed build re-runs every gate from G1. Expected cost: G1–G4 a few minutes; G3 about 2 min; G7 about
+6 min (two models); G6 about 10 min (Phi-3 at f32 on the CPU); G5 about 15 min (two models, G3c's procedure).
 
 **O1C amended 2026-10-24, 16:58, before any O1C gate ran:** the scope guardrail first registered here ("only when the resident also
 holds a Q4_K projection", so as not to take a batched prefill away) protected nothing. Every q4k load runs per-32 activations, under
 which CUDA has no batched prefill, drafter or LoRA, with or without a Q4_K tensor. The precondition is now per-32 activations, which
-the native kernels need for their group sums. The gates are unchanged. Stopping rule: one pass each; a FAIL in G1 to G4 stops
-the build for a fix, and the fixed build re-runs every gate from G1. Expected cost: G1–G4 a few minutes; G3 about 2 min; G7 about
-6 min (two models); G6 about 10 min (Phi-3 at f32 on the CPU); G5 about 15 min (two models, G3c's procedure).
+the native kernels need for their group sums. The gates are unchanged.
+
+**KS-O1 on CUDA read, 2026-10-24, by day.** Run by `night.py serve` (the timing lock held exclusively) from
+`docs/measurements/ks-a1-2026-10/run-o1c-day.sh`, base origin/main 4814c869a, NVIDIA driver 595.91.07.
+- **First pass (437124772, 17:14): three failures, so the build was fixed and every gate re-ran from G1.** Log:
+  `docs/measurements/ks-a1-2026-10/` holds only the second pass; the first is `~/goinfer-logs/ks-a1-2026-10/o1c-t0-2026-10-24-1714.log`.
+  - **A crash in main's decoder, from #215.** `Weights.noteKQuant` wrote the `Weights.kquant` map from `parallelLayers`' goroutines
+    with no lock. Phi-3's q4k load died with `fatal error: concurrent map writes` (in the phi3 fused-split loader). The code is
+    backend-neutral, so a Metal or CPU load of the same file is exposed too; it is a race, so not every load. Fixed: the record is
+    taken under a package-level mutex (`kquantMu`).
+  - **The f16 reference dropped a subnormal's sign** (`ksA1HalfVal`, test code): a real Q6_K block of the 0.5B has a negative
+    subnormal `d`, and the reference read it positive, so `TestKSO1C_referenceMatchesAikit` failed against aikit. The kernels use
+    `__half2float` and were not affected; the random blocks of A1-G0 and O1C-G1 use positive normal halves only.
+  - **The FMA lint read pointer offsets as bare MACs** in `rowsQ6K` and `gemv_q5k_g32`. They are written as named offsets now, the
+    lint's idiom; the arithmetic is unchanged.
+- **Second pass (e3bd04a0d, 17:18; load 0.6–0.9).** Log: `docs/measurements/ks-a1-2026-10/o1c-t0-2026-10-24-1718.log`.
+  - **O1C-G1: PASS.** `TestKSO1C_nativeKernels`: worst |err|/Σ|w·a| 1.51e-7 (Q5_K) and 1.44e-7 (Q6_K) against 1e-5, over NB = 1, 2, 6,
+    12, 19, 32, 35 and 29 rows (a partial block of rows), with bias and accumulate. All four plants are red, the smallest at 0.16. CUDA's
+    PTX is built offline, so the plants are carried by the reference: a kernel that made the planted mistake would match the planted
+    reference. `TestKSO1C_referenceMatchesAikit`: within 1e-6 of aikit's dequantizer on 12 Q6_K tensors of the 0.5B and 32 Q5_K and 17
+    Q6_K tensors of Phi-3.
+  - **O1C-G2: PASS.** 22 cells byte-equal between origin/main's `actgroup.ptx` and the new one (the quantizer, the three standalone
+    GEMVs, both fused kernels with int8, int4 and Q4_K projections at rows-per-warp 1, 2, 4). The fused kernels with Q5_K and Q6_K in a
+    group equal the standalone GEMVs byte for byte (`TestKSO1C_fusedEqualsUnfused`). `TestQ4K_fusedG32ResidentBitIdentical` (the 1.5B,
+    whose Q6_K `attn_v` now runs native inside `fused_rms_qkv_g32`): 40 positions bit-identical fused against unfused. The FMA lint,
+    the local-memory census and the PTX consistency checks pass.
+  - **O1C-G4: PASS.** The CPU q4k digest on the 0.5B is `8bd2324c…5a89` at the base and at e3bd04a0d (amd64).
+  - **O1C-G3: PASS.** Through `decoder.Load` on CUDA at `--quant q4k`, after a discarded warm-up load:
+
+    | model | int8 arm, device bytes | native arm | saving = pricing's | heap, int8 → native |
+    |---|---:|---:|---:|---:|
+    | Qwen2.5-Coder-0.5B q4_k_m | 472,862,208 | 463,421,952 (Q6_K 42,900,480) | 9,440,256 | 803.68 → 803.72 MB |
+    | Phi-3 mini q4 | 2,710,959,360 | 2,336,288,256 (Q5_K 622,854,144; Q6_K 411,102,720) | **374,671,104** | 2,878.91 → 2,879.37 MB |
+
+    Phi-3's weights on the device are now the file's own 2,336.29 MB, the survey's figure, with the head (80.8 MB of the Q6_K bytes)
+    included. Each native buffer holds exactly the file's bytes for its weight; layer 0's native buffers and the head read back equal
+    to the file's blocks (1 on the 0.5B, whose head is tied and stays int8; 5 on Phi-3). The heap rose by 0.04 and 0.46 MB, inside
+    the 1 MiB slack.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
