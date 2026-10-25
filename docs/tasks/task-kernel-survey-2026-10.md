@@ -33,7 +33,7 @@
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |
 | KS-B6 | open | nobara: served TTFT for phi3-mini at q4k against Ollama | — |
 | KS-B7 | open | nobara: a prototype against `gemv_w4a8_rn` at the 1.5B gate shape | — |
-| KS-B8 | open | nobara-ks-cuda, after #230 merges: 2,048-row CUDA prefill passes by default where scratch allows, priced by admission (decided A, Francis, 2026-10-25). Measured 2026-10-23 on the 1.5B at K=3,900: attention **1.556×** at 2,048 rows (1.231× at 1,024), whole prefill **1.247×** (933 → 748 ms) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-B8 | done | done 2026-10-25 (owner's option A): the default CUDA prefill pass is the widest of 2,048 / 1,024 / 512 rows whose scratch fits the VRAM the build leaves beyond the margin; bit-identical (B8-G2); the 1.5B's 3,900-row prefill **1.1559×**, 10 of 10 pairs (744 → 643 ms); 280 MiB of scratch at 2,048 rows, from free VRAM only | survey, "KS-B8 build read" |
 | KS-B9 | open | nobara: launch and grid counters, then the GEMV-category A/B | — |
 | KS-B10 | open | nobara: sync and launch counters in the generic expert-major Phase 1 | — |
 | KS-B11 | open | nobara: `PrefillScratchBytes` delta, then a glue+GEMM A/B | — |
@@ -534,6 +534,30 @@ prefill passes by default where the scratch allows, admission pricing the scratc
     no room left keeps 512.
 - **Stopping rule:** one pass each. **Cost:** G1 seconds; G2 about 2 min; G3 about 2 min (three loads); G4 about 4 min (two warm
   runs, then 20 prefills of about 0.75–0.93 s each).
+
+**KS-B8 build read 2026-10-25, 14:31–14:32, by day: SHIP.** Run by `night.py serve` (the timing lock held exclusively) at
+1622062be from `docs/measurements/ks-b8-2026-10/run-b8.sh`, NVIDIA driver 595.91.07, Qwen2.5-Coder-1.5B q4_k_m at int4. At the start:
+the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop compositor's context only. Log:
+`docs/measurements/ks-b8-2026-10/b8-2026-10-25-1430.log`.
+- **B8-G1: PASS.** Every row of the table picks its registered width, the knob and the learned cap act on the chosen width, and the
+  planted chooser (no margin) picks wider than the rule.
+- **B8-G2: PASS.** At passes of 512, 1,024 and 2,048 rows and at the default (2,048), 0 of 151,936 seed logits differ from one
+  unchunked pass of 4,100 rows, and the 8 greedy decode ids are equal. `TestPrefillChunked_bitIdentical` passes too.
+- **B8-G3: PASS.** The pass scratch is 75, 143 and 280 MiB at 512, 1,024 and 2,048 rows, and `PrefillScratchBytes` equals what each
+  pass allocated. With 5,887 MiB free at the choice:
+
+  | attached | room beyond the margin | width chosen and reported |
+  |---:|---:|---:|
+  | 0 | 5,503 MiB | 2,048 |
+  | 5,315 MiB | 188 MiB | 1,024 |
+  | 5,439 MiB | 64 MiB | 512 |
+
+- **B8-G4: SHIP** (load 1.84–2.08 at the pairs, no void). A 3,900-row prompt's `PrefillLast` at passes of 512 rows took 740.7–745.1
+  ms, and at the default 641.9–644.7 ms: **median 1.1559×, 10 of 10 pairs faster** at the default. That clears the merge rule
+  (≥ 1.05× and 9 of 10).
+- **Memory, measured:** at most one 2,048-row pass's 280 MiB of device scratch on the 1.5B (205 MiB more than a 512-row pass), taken
+  only from VRAM free beyond the margin after the build. Host bytes are unchanged, and the KV plan, so the longest context that
+  fits, is unchanged.
 
 **KS-B3 · Gemma 4 26B (M26) expert-major prefill never got option A (bit-identical).**
 - **Where:** `cuda/moe_expert_major_gemma4.go:cudaResident.prefillGemma4ExpertMajorRun`; it has no reference to the grouped
