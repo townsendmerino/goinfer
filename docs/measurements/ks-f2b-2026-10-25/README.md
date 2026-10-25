@@ -1,0 +1,66 @@
+# KS-F2b: #239's attendQueryP schedule on the other families, Mac CPU (2026-10-25)
+
+Francis's order of 12:30 (relayed), item 2: time #239's new `attendQueryP` schedule on the families it was held back from. It fans
+the heads out over the attention workers and scores eight keys at once as independent f64 chains. The families are Qwen3.5/3.6,
+Granite-4.0-H, Nemotron-H, LFM2 and Llama 4. Graded at the merge rule, per family, with the memory cost stated. Any default change is
+Francis's call. This is coordinated with mac-kapitsa, who owns KS-F2: its pointers are used here, and its code is untouched.
+
+## Registration (before any timed reading)
+
+- **Arms, two builds, one harness:**
+  - **A:** `origin/main` at `ba8225aa`, with today's `attendQueryP`.
+  - **B:** branch `ks-f2b-2026-10-25` at `48598110`, with f8a1eda2's `attendQueryP` body restored. Its helpers (`dotsF64x8`,
+    `scalarHeadWorkers`, `decodeScratch.headScoresPool`) are already on main for gpt-oss.
+  - **Harness:** both run `decoder/ksf2_speed_test.go:TestKSF2_cpuDecodeSpeed`, which uses exported API only and is unchanged on the
+    branch. CPU, int4, a prompt of `depth` pseudo-random ids, then 32 greedy tokens timed from the first to the last (ms a token).
+- **Bit-identity (done, before timing):**
+  - `TestKSF2_queryPFannedBitIdentical` on B: 768 runs (ring, window and global; softcap 0 and 30; GOMAXPROCS 1 and 8) equal word
+    for word to main's code, kept verbatim as `attendQueryPRef`. 132 of them are in cells the fan-out rule takes, and all 132 fanned
+    out. This is `TestKSF2_queryPKeepsTheOldPath` inverted.
+  - mac-kapitsa's `gate identity` at f8a1eda2 read IDENTICAL for qwen3_5_moe, granitemoehybrid, lfm2, nemotron_h and llama4_text,
+    64 steps, on the Mac CPU and on nobara amd64.
+- **Cells on the Mac (M1 Pro, CPU).** Real checkpoints this Mac's CPU path can load:
+  - **Qwen3.5-0.8B** (`~/models/qwen3.5-0.8b`) at depths 128 and 1,024. Fit check: 3.6 GB peak resident; about 20 s a run at 1,024.
+  - **LFM2.5-2.6B** (`~/models/lfm2.5-2.6b`) at depths 128 and 1,024. Fit check: 8.7 GB peak resident; its prefill runs token by token
+    at about 180 ms a token, so about 3 minutes a run at 1,024.
+- **Not covered on this Mac, with the reason:**
+  - **Granite-4.0-H:** no checkpoint on the Mac; only the tiny fixture.
+  - **Nemotron-H:** only the 9B's Metal `.giw`, and a 9B on the CPU path fails the fit guard here, as the 7B did for R-06.
+  - **Qwen3.6:** the 35B-A3B is off-limits on the Mac's CPU.
+  - **Llama 4:** no checkpoint small enough exists.
+  - Those cells need nobara (its session) or a pulled small checkpoint. That is for Francis.
+- **Instrument:** `run_ksf2b.py`, under the timing lock (exclusive). Per cell: 2 warm runs of each arm, then 10 valid pairs, A B then
+  B A alternately.
+- **The void rule:** a run is void when the 1-minute load at its start is over 4.0, when reclaimable memory at its start is under
+  the cell's fit-check peak plus 2 GiB, or when the machine pages or swaps during it (`vm_stat`). A void pair is re-run, up to 6 a
+  cell.
+- **Grade per cell:** median A ÷ B (the speedup), and how many pairs B is faster. **Meets the merge rule** iff the median is ≥ 1.05×
+  with at least 9 of 10 faster. A family meets it when all its cells do.
+- **Timing (stated before starting):**
+  - Qwen3.5-0.8B: about 2 min at depth 128 and about 8 min at 1,024, by day.
+  - LFM2.5-2.6B: about 12 min at depth 128 and about 75 min at 1,024. Its 8.7 GB peak needs about 10.7 GB reclaimable, which the Mac
+    does not have with apps open, so it goes on the Mac's night runner, gated on memory.
+- **Memory cost of B:**
+  - **Added:** score buffers per cache, at most `maxAttnWorkers` (6) × 2 × the key count × 4 bytes. That is 1.57 MB at 32k, the same
+    bound #239 states for gpt-oss.
+  - **Not added:** nothing else (no weights, no KV).
+  - **Longest context that fits:** unaffected beyond that bound.
+
+## Readings
+
+Raw records: `docs/measurements/ks-f2b-2026-10-25/readings-qwen35.jsonl` (every run: arm, ms a token, load, reclaimable, paging,
+validity). The instrument is `run_ksf2b.py` and the queued night job is `run-lfm.sh`, both beside this file.
+
+**Qwen3.5-0.8B (2026-10-25, 13:37–13:48, the lock held exclusively; every valid run started at a 1-minute load of 2.68 or below with
+9.4 GB or more reclaimable, and did not page):**
+
+| depth | A (main), ms a token | B (fanned), ms a token | median A ÷ B | pairs | B faster | void pairs | grade |
+|---|---|---|---|---|---|---|---|
+| 128 | 20.64–21.31 | 18.48–19.13 | **1.113×** | 1.080–1.134 | **10 of 10** | 1 (paged 3 pages) | **meets the merge rule** |
+| 1,024 | 37.44–38.74 | 20.41–21.40 | **1.833×** | 1.787–1.872 | **10 of 10** | 0 | **meets the merge rule** |
+
+Qwen3.5 meets the merge rule at both depths, and the gain grows with depth: attention is a larger part of the token there.
+
+**LFM2.5-2.6B:** queued on the Mac's night runner (`ksf2b-lfm25`, not before 22:00, gated on its 8.7 GB need); readings follow.
+
+**Not covered on the Mac:** Granite-4.0-H, Nemotron-H, Qwen3.6 and Llama 4 (see the registration).
