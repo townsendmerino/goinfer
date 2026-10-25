@@ -311,7 +311,7 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 		}
 	}
 	adopt := func(j job) {
-		cp, err := AdoptPrefillRefForTest(j.sibling, j.parts)
+		cp, err := AdoptPrefillRefForTest(j.sibling, j.parts, j.source)
 		if err != nil {
 			t.Fatalf("prompt %d: adopt %s: %v", j.pi, j.sibling, err)
 		}

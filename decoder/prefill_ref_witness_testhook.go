@@ -5,8 +5,13 @@ package decoder
 // Source witnesses for the reference cache. The key hashes all of the reference path's source, so any edit under decoder/ re-keys
 // every reference although most edits leave its numbers unchanged. A reference computed under one source stands in for another's
 // once a witness shows the two agree: one prompt of the same scope (every key part but the prompt and the source), computed under
-// both, byte-identical. A witness that differs is recorded too, and that pair of sources is never adopted. Only a direct pair
-// counts, never a chain through a third source. The records live in the cache dir's source-witness.json.
+// both, byte-identical. A witness that differs is recorded too, and that pair of sources is never adopted. Only a direct pair of
+// NATIVELY computed references counts, never a chain through a third source: an adopted reference carries a <bin>.adopted marker
+// (one adopted before markers existed is the newer of two entries sharing one file), and it is never a sibling, a backfill input or
+// either side of a witness. The records live in the cache dir's source-witness.json.
+//
+// A limit, stated: one agreeing prompt adopts the rest, so a source change whose effect depends on the prompt (a branch only some
+// token sequences reach) could agree on the witness and differ elsewhere.
 
 import (
 	"bytes"
@@ -108,14 +113,24 @@ func refWitnessedPrompt(parts PrefillRefKeyParts, other string) bool {
 	return false
 }
 
-// cachedRefParts lists every complete cache entry: its .bin path and its parts.
-func cachedRefParts() map[string]PrefillRefKeyParts {
+// refEntry is one complete cache entry.
+type refEntry struct {
+	parts   PrefillRefKeyParts
+	adopted bool // a sibling's file under this source, not computed by it
+}
+
+// refEntries lists every complete cache entry by its .bin path. An entry is adopted when it carries a .adopted marker, or when it
+// shares its file with another source's entry for the same scope and prompt and its sidecar is the newer: an adoption from before
+// the marker existed, which hard-linked the sibling.
+func refEntries() map[string]refEntry {
 	dir, err := PrefillRefCacheDirForTest()
 	if err != nil {
 		return nil
 	}
 	sidecars, _ := filepath.Glob(filepath.Join(dir, "*", "*.bin.key.json"))
-	out := map[string]PrefillRefKeyParts{}
+	out := map[string]refEntry{}
+	type group struct{ scope, prompt string }
+	by := map[group][]string{}
 	for _, s := range sidecars {
 		b, err := os.ReadFile(s)
 		if err != nil {
@@ -126,11 +141,78 @@ func cachedRefParts() map[string]PrefillRefKeyParts {
 			continue
 		}
 		bin := strings.TrimSuffix(s, ".key.json")
-		if _, err := os.Stat(bin); err == nil {
-			out[bin] = q
+		if _, err := os.Stat(bin); err != nil {
+			continue
+		}
+		_, marked := os.Stat(bin + ".adopted")
+		out[bin] = refEntry{parts: q, adopted: marked == nil}
+		g := group{q.scopeKey(), q.PromptSHA256}
+		by[g] = append(by[g], bin)
+	}
+	for _, bins := range by {
+		for i := range bins {
+			for j := i + 1; j < len(bins); j++ {
+				a, b := bins[i], bins[j]
+				fa, ea := os.Stat(a)
+				fb, eb := os.Stat(b)
+				if ea != nil || eb != nil || !os.SameFile(fa, fb) {
+					continue
+				}
+				sa, _ := os.Stat(a + ".key.json")
+				sb, _ := os.Stat(b + ".key.json")
+				newer := b
+				if sa != nil && sb != nil && sa.ModTime().After(sb.ModTime()) {
+					newer = a
+				}
+				e := out[newer]
+				e.adopted = true
+				out[newer] = e
+			}
 		}
 	}
 	return out
+}
+
+// cachedRefParts lists every natively computed cache entry: its .bin path and its parts.
+func cachedRefParts() map[string]PrefillRefKeyParts {
+	out := map[string]PrefillRefKeyParts{}
+	for bin, e := range refEntries() {
+		if !e.adopted {
+			out[bin] = e.parts
+		}
+	}
+	return out
+}
+
+// pruneRefWitnesses drops every witness record one of whose two entries, for its scope and prompt, is adopted: such a record
+// compared a file with its own link, or named a source that never computed the bytes. It returns how many it dropped.
+func pruneRefWitnesses() (int, error) {
+	p, err := refWitnessPath()
+	if err != nil {
+		return 0, err
+	}
+	adopted := map[[3]string]bool{} // scope, prompt, source
+	for _, e := range refEntries() {
+		if e.adopted {
+			adopted[[3]string{e.parts.scopeKey(), e.parts.PromptSHA256, e.parts.SourceSHA256}] = true
+		}
+	}
+	refWitnessMu.Lock()
+	defer refWitnessMu.Unlock()
+	ws := readRefWitnesses()
+	keep := ws[:0]
+	for _, w := range ws {
+		if adopted[[3]string{w.Scope, w.Prompt, w.A}] || adopted[[3]string{w.Scope, w.Prompt, w.B}] {
+			continue
+		}
+		keep = append(keep, w)
+	}
+	dropped := len(ws) - len(keep)
+	if dropped == 0 {
+		return 0, nil
+	}
+	out, _ := json.MarshalIndent(keep, "", " ")
+	return dropped, writeFileAtomic(p, out)
 }
 
 // PrefillRefSiblingForTest returns a cached reference for parts' scope and prompt computed under another source, and that
@@ -183,9 +265,9 @@ func WitnessPrefillRefForTest(parts PrefillRefKeyParts, computed, sibling, other
 	return same, recordRefWitness(parts, other, same)
 }
 
-// AdoptPrefillRefForTest stores sibling's reference under parts (a hard link, else a copy) and returns the cache path. The
-// caller adopts only across sources a witness has shown to agree.
-func AdoptPrefillRefForTest(sibling string, parts PrefillRefKeyParts) (string, error) {
+// AdoptPrefillRefForTest stores sibling's reference (computed under source from) under parts, a hard link, else a copy, with a
+// .adopted marker naming from, and returns the cache path. The caller adopts only across sources a witness has shown to agree.
+func AdoptPrefillRefForTest(sibling string, parts PrefillRefKeyParts, from string) (string, error) {
 	p, err := prefillRefCachePath(parts.Key())
 	if err != nil {
 		return "", err
@@ -203,6 +285,12 @@ func AdoptPrefillRefForTest(sibling string, parts PrefillRefKeyParts) (string, e
 	if err := os.Rename(tmp, p); err != nil {
 		return "", err
 	}
+	mark, _ := json.Marshal(struct {
+		From string `json:"adopted_from_source"`
+	}{from})
+	if err := writeFileAtomic(p+".adopted", mark); err != nil {
+		return "", err
+	}
 	b, _ := json.MarshalIndent(parts, "", " ")
 	if err := writeFileAtomic(p+".key.json", b); err != nil {
 		return "", err
@@ -212,7 +300,12 @@ func AdoptPrefillRefForTest(sibling string, parts PrefillRefKeyParts) (string, e
 
 // BackfillPrefillRefWitnessesForTest records a witness for every pair the cache already holds that no record covers: two
 // references of one scope and prompt under different sources. It returns how many it recorded and how many of those differ.
+//
+// It first drops the records an adopted entry produced (pruneRefWitnesses).
 func BackfillPrefillRefWitnessesForTest() (recorded, differ int, err error) {
+	if _, err := pruneRefWitnesses(); err != nil {
+		return 0, 0, err
+	}
 	type group struct{ scope, prompt string }
 	by := map[group]map[string]string{} // source -> bin
 	parts := map[group]PrefillRefKeyParts{}

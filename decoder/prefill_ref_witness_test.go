@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // moveRefsToSource re-keys every prompt's cached reference under another source, as a source change leaves them: the entries
@@ -166,5 +167,70 @@ func TestPrefillRefWitness_backfill(t *testing.T) {
 	q.SourceSHA256 = "e"
 	if _, src, ok := PrefillRefSiblingForTest(q); !ok || src != "a" {
 		t.Fatalf("sibling lookup returned source %q, ok %v: want a (most references in the scope, first by name), never another scope's d", src, ok)
+	}
+}
+
+// An adopted reference is never a witness: not a sibling, not a backfill input, and a record it produced is pruned. Source b
+// computes p0 and adopts p1 from a (with its marker); source d adopts p1 from a as adoptions did before the marker (a bare hard
+// link, its sidecar the newer). A third source must then see only natively computed entries, so no chain a → b → c forms.
+func TestPrefillRefWitness_adoptedIsNeverAWitness(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GOINFER_PREFILL_REF_CACHE", dir)
+	base := PrefillRefKeyParts{Version: 1, Checkpoint: "ck", PromptTokens: 4, Arch: "amd64", ContinuationN: 2}
+	at := func(src, prompt string) PrefillRefKeyParts {
+		p := base
+		p.SourceSHA256, p.PromptSHA256 = src, prompt
+		return p
+	}
+	store := func(p PrefillRefKeyParts) string {
+		cp, err := StorePrefillRefForTest(p, []float32{1, 2}, []int{3}, [][]float32{{4, 5}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cp
+	}
+	store(at("a", "p0"))
+	a1 := store(at("a", "p1"))
+	store(at("b", "p0"))
+	if _, err := AdoptPrefillRefForTest(a1, at("b", "p1"), "a"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond) // d's sidecar must be the newer
+	d1, err := prefillRefCachePath(at("d", "p1").Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(d1), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(a1, d1); err != nil {
+		t.Skipf("no hard links here: %v", err)
+	}
+	b, _ := json.MarshalIndent(at("d", "p1"), "", " ")
+	if err := writeFileAtomic(d1+".key.json", b); err != nil {
+		t.Fatal(err)
+	}
+	// A stale record built on b's adopted p1, as a backfill before the marker could have written.
+	if err := recordRefWitness(at("b", "p1"), "c", true); err != nil {
+		t.Fatal(err)
+	}
+
+	for bin, e := range refEntries() {
+		want := (e.parts.SourceSHA256 == "b" || e.parts.SourceSHA256 == "d") && e.parts.PromptSHA256 == "p1"
+		if e.adopted != want {
+			t.Errorf("%s (source %s, %s): adopted=%v, want %v", filepath.Base(bin), e.parts.SourceSHA256, e.parts.PromptSHA256, e.adopted, want)
+		}
+	}
+	if _, src, ok := PrefillRefSiblingForTest(at("c", "p1")); !ok || src != "a" {
+		t.Fatalf("c's sibling for p1 is source %q (ok %v): only a computed p1", src, ok)
+	}
+	n, differ, err := BackfillPrefillRefWitnessesForTest()
+	if err != nil || n != 1 || differ != 0 {
+		t.Fatalf("backfill recorded %d (%d differ), err %v: want 1, a-b on p0, the only pair both sides computed", n, differ, err)
+	}
+	for _, w := range readRefWitnesses() {
+		if w.Prompt == "p1" {
+			t.Fatalf("a witness on p1 survived (%s-%s): every p1 but a's is adopted", w.A, w.B)
+		}
 	}
 }
