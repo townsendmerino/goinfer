@@ -1728,6 +1728,15 @@ GiB reclaimable at its ends; no void pairs. The A/A control: median 1.0002, pair
 token, wide 21.70–22.02; **median wide/narrow 0.8824, 10 of 10 pairs faster** (11.8% less time a token). Over the three guarded
 readings the A/B reads 0.8811, 0.8846 and 0.8824. Log: `~/goinfer-logs/kse2-g2-rerun5-2026-10-24.log`.
 
+**The guard's CPU reading fixed, 2026-10-24 (17:05), registered before a re-run.** `hostmem.ReadCPU` read `host_statistics64(HOST_CPU_LOAD_INFO)`,
+which XNU rate-limits for non-Apple binaries: after a few calls in a second it serves the last reply again, so an arm's end sample
+could be up to a second stale (three calls in 0.4 s returned the same sample). It now reads `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`,
+per core, which is not rate-limited. Each state's count is differenced on its own, modulo 2^32 on macOS and clamped at 0 on Linux
+(NOHZ can step idle back a tick), so busy never exceeds total. A sample pair spanning no interval now voids the arm instead of
+failing the run, and counts toward the void cap. The memory term still reads `host_statistics64`, so it can be up to a second
+stale; that is immaterial for a point reading against a 2 GiB line. The guarded readings above were taken on the old reading, so
+the gate is re-run on the new one; that run decides, and the bar and the cap are unchanged.
+
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
 - **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
