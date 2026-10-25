@@ -2150,7 +2150,7 @@ def main():
         rec = {"phase": phase, "engine": engine, "backend": backend, "model": mk,
                "depth": depth, "prompt_tokens": ptoks,
                "prompt_format": prompt_format(depth, mk) if phase in ("A", "B", "C") else None,
-               "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
+               "config": cfg, "sent": CONFIGS[cfg].get("goinfer" if engine == "goinfer_old" else engine, {}),  # goinfer_payload sends goinfer's entry for both
                "ctx": None if engine == "mlx" else cell_ctx(),
                "mlx_path": mlx_server_path(mlx_payload("", "", CONFIGS[cfg])) if engine == "mlx" else None,
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
