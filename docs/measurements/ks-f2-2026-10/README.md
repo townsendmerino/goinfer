@@ -81,8 +81,28 @@ The exp-and-sum loop and the AV loop keep key order.
 |---|---|---|
 | G0 | the Mac, arm64 and amd64 (Rosetta), GOMAXPROCS 1 and 8 | **PASS.** `TestKSF2_sinksBitIdentical`: 256 cells, 48 with the heads fanned out. `TestKSF2_queryPBitIdentical`: 768 cells, 132 fanned out. Every ctx word and KV row equal on both arches. A planted defect (two of the eight key rows swapped in `dotsF64x8`) turned both tests red |
 | G1a | the Mac (Darwin/arm64), CPU | **PASS** (2026-10-25 06:55, `origin/main` `8135a0c3` against `f8a1eda2`, 64 steps): 33 families IDENTICAL, 0 within tolerance, 0 different, 10 not run (fixtures absent or not tiny). gpt-oss, `granitemoehybrid`, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are all IDENTICAL |
-| G1b | nobara CPU (amd64) | queued |
-| G2 | nobara CPU | queued |
+| G1b | nobara CPU (amd64) | **incomplete.** 2026-10-25 08:32, `ks-f2-nobara`: 32 IDENTICAL, 0 within tolerance, 0 different. gpt-oss, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are IDENTICAL. `granitemoehybrid` did NOT RUN, because its gitignored fixture is absent on nobara, which the registered bar counts as a failure. G0 under Rosetta already checks amd64 for the function Granite-4.0-H uses; the cell re-runs once the fixture is supplied |
+| G2 | nobara CPU | **one of three cells read; the job was stopped** (below) |
+
+**G2's first run (2026-10-25 08:32–09:46 PDT, `ks-f2-nobara`, stopped):**
+- **Why it was stopped:** it held nobara's timing lock past its estimate, blocking two other sessions, and its depth-2048 cell could not
+  finish.
+- **What the CPU costs:** gpt-oss-20b on nobara's CPU decodes at about 590 ms a token at depth 128, and prefills token by token at about
+  0.58 s a token (128 tokens in 75 s). The estimate assumed the survey's 0.13–0.15 s.
+- **So the depth-2048 cells cannot run as registered.** One run's prefill is about 20 min (the first warm run hit the 20 min test timeout),
+  and a cell is 24 runs, about 8 hours.
+
+| cell | pairs faster | median ratio (B/A) | speedup | registered small-gains reading | merge bar (≥ 1.05×, 9 of 10) |
+|---|---|---|---|---|---|
+| gpt-oss-20b, depth 128 | **10 of 10** | 0.9759 | **1.025×** | met for this cell | **not met** |
+| gpt-oss-20b, depth 2048 | — | — | — | not run (cost) | — |
+| Qwen3.5-9B, depth 2048 | — | — | — | not run | — |
+
+- **Validity:** every run started at load 3.3–6.0 (under 8.0) with 55+ GB available, and with 0 MiB swap.
+- **Raw readings:** `raw/g2-gptoss-d128.jsonl`.
+- **The job's own scripting defects,** fixed before any re-run:
+  - the summary line's Python quoting printed nothing;
+  - a missing fixture counted as a failure instead of being supplied.
 
 **What G1a needed first.** The identity gate had never run gpt-oss, on any revision.
 - **The cause:** its tiny GGUF has no embedded tokenizer, so `decoder.Load`'s default sidecar refused it.

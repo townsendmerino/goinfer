@@ -31,9 +31,10 @@ done
 rc=0
 
 echo "== G1b: gate identity on the CPU ($(date '+%T'))"
-# The tiny fixtures a fresh worktree lacks (gitignored) come from the runner's checkout, cloned, not linked.
+# The tiny fixtures a fresh worktree lacks (gitignored) are copied in (never linked) from $B/fixtures, where they were placed from the
+# Mac's checkout, or from the runner's checkout. A fixture found in neither is reported; G1b's bar then counts its family as not run.
 for fx in granite-tiny; do
-	[ -d "$B/wt-new/testdata/$fx" ] || cp -r "$R/testdata/$fx" "$B/wt-new/testdata/" 2>/dev/null || echo "note: no $fx in $R/testdata"
+	[ -d "$B/wt-new/testdata/$fx" ] || cp -r "$B/fixtures/$fx" "$B/wt-new/testdata/" 2>/dev/null || cp -r "$R/testdata/$fx" "$B/wt-new/testdata/" 2>/dev/null || echo "note: no $fx in $B/fixtures or $R/testdata"
 done
 (cd "$B/wt-new" && go run ./cmd/gate identity "$OLD" "$NEW" -backend cpu -assets tiny -steps 64 > "$LOG/g1b-identity.log" 2>&1)
 g1=$?
@@ -75,7 +76,7 @@ one() {
 	# Tag the line the harness wrote with this run's place in the order and the box's state at its start.
 	python3 -c "import json,sys; l=json.loads(open(sys.argv[1]).read().splitlines()[-1]); l.update(tag=sys.argv[2], load=float(sys.argv[3]), avail_mib=int(sys.argv[4]), vmhwm_mib=int(sys.argv[5])//1024, vmswap_peak_mib=int(sys.argv[6])//1024); print(json.dumps(l))" \
 		"$LOG/g2-$cell.jsonl.part" "$tag" "$load" "$avail" "$hwm" "$swap" >> "$LOG/g2-$cell.jsonl"
-	echo "   $cell $tag $arm: $(tail -1 "$LOG/g2-$cell.jsonl" | python3 -c 'import json,sys; l=json.loads(sys.stdin.read()); print(f"{l[\"decode_ms_per_token\"]:.2f} ms/token, load {l[\"load\"]}, VmHWM {l[\"vmhwm_mib\"]} MiB, swap {l[\"vmswap_peak_mib\"]} MiB")')"
+	echo "   $cell $tag $arm: $(tail -1 "$LOG/g2-$cell.jsonl" | python3 -c 'import json,sys; l=json.loads(sys.stdin.read()); print("%.2f ms/token, load %s, VmHWM %s MiB, swap %s MiB" % (l["decode_ms_per_token"], l["load"], l["vmhwm_mib"], l["vmswap_peak_mib"]))')"
 }
 
 # run: one, with a void run re-run in place (listed in void.txt, never averaged), at most 10 times a minute apart.
