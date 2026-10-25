@@ -93,6 +93,7 @@
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | decision | KS-O3, after KS-H2 and KS-H3 read | — |
 | KS-O1 | done (Metal and CUDA, owner overrides) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. **CUDA: done 2026-10-24** (owner's option A on O1C-G5): Phi-3 mini q4k 114.9 → 127.3 tok/s (0.9025, 10 of 10), the 1.5B 0.9786 (10 of 10); −374.7 MB on the device, head included; KL to the file 0.39× (Phi-3), 0.91× (0.5B); G-Q2 +0.13 points. Also fixes main's concurrent `noteKQuant` map write | survey, "Owner override of O1-G7" |
+| KS-O1-F | open | the CUDA native lane does worse than int8 against f32 on highly repetitive input (Phi-3, 110 × "the ": p10 0.8826 against the old bar's floor 0.9162, min 0.029; worse p10 and min at 60, 90, 130 too). Natural ~900-token text is about 2× better (KL 0.39×, 0.46×). Not yet explained: the per-layer differencing (hidden states against f32) on the 110-repeat prompt is the next measurement. Open on the owner's decision of 2026-10-25 | survey, "Owner decision on #230's long-context bar" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | decision | owner: the 64 KB shared-memory opt-in and past-bound prompts (§2) | — |
 | KS-O3 | decision | owner: the two CUDA 384 MiB margins (§2) | — |
@@ -1126,6 +1127,46 @@ only for the instruction region's median.
   work stops for the owner, with these numbers and the options. Shipping is not re-decided by this reading.
 - **Cost:** LQ1 about 4 min (two Phi-3 loads, three CPU passes over 141 tokens). LQ2 about 1.5 min a length. LQ3 about 8 min a
   document: the CPU at f32 runs at about 0.5 s a position.
+
+**LQ1–LQ3 read 2026-10-24, 22:44–23:19, by day** (d0b69c56a; the shared lock, not timed; load under 1.2). Log:
+`docs/measurements/ks-a1-2026-10/lq-2026-10-24.log`.
+- **LQ1:** `TestQ4K_phi3ResidentMatchesCPU`, int8 lane **PASS** (median 0.999804, p10 to f32 0.940085). Native lane **FAIL** on the f32
+  bar: p10 **0.882586** against the CPU q4k path's 0.926208 (floor 0.9162), min 0.029366.
+- **LQ2, the filler at four lengths** (p10 / min cosine to f32, mean KL to f32; the old bar is native p10 ≥ the CPU q4k p10 − 0.01):
+
+  | repeats | CPU q4k | int8 arm | native arm | only Q5_K native | old bar on native |
+  |---:|---|---|---|---|---|
+  | 60 | 0.9691 / 0.788, 0.284 | 0.9707 / 0.798, 0.275 | 0.9627 / 0.281, **0.296** | 0.9516 / 0.302, 0.338 | pass (floor 0.9591) |
+  | 90 | 0.9663 / 0.788, 0.327 | 0.9704 / 0.798, 0.321 | 0.9593 / 0.281, 0.310 | 0.9516 / 0.302, 0.369 | pass (0.9563) |
+  | 110 | 0.9262 / 0.435, 0.449 | 0.9401 / 0.454, 0.427 | 0.8826 / 0.029, **0.510** | 0.9079 / 0.058, 0.545 | **FAIL** (0.9162) |
+  | 130 | 0.9754 / 0.788, 0.337 | 0.9765 / 0.798, 0.330 | 0.9666 / 0.281, 0.314 | 0.9545 / 0.302, 0.395 | pass (0.9654) |
+
+  On this filler the native arm's p10 and min are below the int8 arm's at every length, and its mean KL is worse at 60 and 110 and
+  better at 90 and 130. "Only Q5_K native" is worse on every measure at every length. The review's reading of the logs is right;
+  the PR text's "60/90/130 do not show it" was wrong for p10, min and the KL at 60, and is corrected.
+- **LQ3, natural long context** (912 positions each; mean KL to f32 over all positions / over positions 256 and later; p10 and min
+  over 256 and later):
+
+  | document | CPU q4k | int8 arm | native arm | only Q5_K native | native / int8 past 256 |
+  |---|---|---|---|---|---:|
+  | `README.md` | 0.00304 / 0.00187 | 0.00296 / 0.00173; p10 0.99941, min 0.9821 | **0.00148 / 0.00068**; p10 0.99973, min 0.9597 | 0.00190 / 0.00089 | **0.39** |
+  | `docs/benchmarks.md` | 0.00243 / 0.00168 | 0.00247 / 0.00175; p10 0.99936, min 0.9931 | **0.00105 / 0.00081**; p10 0.99968, min 0.9917 | 0.00153 / 0.00096 | **0.46** |
+
+  **By the reading fixed before the run, the native lane is not worse than int8 at long context.** Its KL past position 256 is 0.39×
+  and 0.46× the int8 arm's, against the +5% line. "Only Q5_K native" also beats int8 on both documents (0.51×, 0.55×). The one
+  statistic that favours int8 is the minimum past 256: on `README.md` native reads 0.9597 against 0.9821, and on
+  `docs/benchmarks.md` 0.9917 against 0.9931. One position sets each minimum.
+
+**Owner decision on #230's long-context bar, Francis 2026-10-25 6:11 am (relayed by the coordinator): option A.**
+- **The gate:** the native lane's long-context quality gate is `TestKSO1C_longContextQuality`. On `README.md` and `docs/benchmarks.md`,
+  each cut to its first 900 tokens, the native lane's mean KL to f32 over positions 256 and later must be at most 1.05× the int8
+  lane's. `TestQ4K_phi3ResidentMatchesCPU` and its filler bar stay on the int8 lane.
+- **Stated plainly, as the decision requires:**
+  - **The native lane does worse than int8 on highly repetitive input.** On the 110-repeat filler its p10 cosine to f32 is 0.8826
+    against the old bar's floor of 0.9162, and its minimum is 0.029. Its p10 and minimum are below int8's at every filler length
+    measured.
+  - **Its single-position minimum on `README.md` is lower:** 0.9597 against int8's 0.9821.
+- **Open item:** KS-O1-F in the ledger.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
