@@ -307,6 +307,43 @@ func TestKSE2_decodeIdentity(t *testing.T) {
 	}
 }
 
+// TestKSE2_contextWiresEveryQuantizer: every Context entry point that builds a single-workgroup quantizer takes its source through
+// quantSrc, so a wide Context compiles all nine (the six decode quantizers and the three prefill row forms) widened and a narrow
+// one none. It calls each builder (ensureFuse, ensureQuantize, ensureRelu2, ensureGptOssGluQuant, ensureFusedRows) on a fresh
+// Context and reads which labels quantSrc served (quantSrcHookForTest). TestKSE2_widenedMatchesNarrow holds the widened
+// sources to the narrow ones' bits; this holds the builders to the widened sources.
+func TestKSE2_contextWiresEveryQuantizer(t *testing.T) {
+	want := []string{"rmsnormQuant", "swigluQuant", "gegluQuant", "quantizeRowsInt8", "relu2Quant", "gptossGluQuant",
+		"rmsnormQuantRows", "swigluQuantRows", "gegluQuantRows"}
+	for _, narrow := range []bool{false, true} {
+		prevN := quantNarrowForTest.Load()
+		quantNarrowForTest.Store(narrow)
+		c := newOrSkipHW(t)
+		quantNarrowForTest.Store(prevN)
+		seen := map[string]bool{}
+		quantSrcHookForTest = func(label string, wide bool) { seen[label] = wide }
+		for name, f := range map[string]func() error{"ensureFuse": c.ensureFuse, "ensureQuantize": c.ensureQuantize,
+			"ensureRelu2": c.ensureRelu2, "ensureGptOssGluQuant": c.ensureGptOssGluQuant, "ensureFusedRows": c.ensureFusedRows} {
+			if err := f(); err != nil {
+				t.Fatalf("narrow %v: %s: %v", narrow, name, err)
+			}
+		}
+		quantSrcHookForTest = nil
+		c.Close()
+		for _, l := range want {
+			wide, ok := seen[l]
+			if !ok {
+				t.Errorf("narrow %v: %s was built without quantSrc", narrow, l)
+			} else if wide == narrow {
+				t.Errorf("narrow %v: %s compiled wide = %v", narrow, l, wide)
+			}
+		}
+		if len(seen) != len(want) {
+			t.Errorf("narrow %v: quantSrc served %d labels %v, want the %d named", narrow, len(seen), seen, len(want))
+		}
+	}
+}
+
 // TestKSE2_decodeSpeed is E2-G2's re-run (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run" and its amendments): the
 // 1.5B's .gguf at int8int8 on WebGPU, one resident alive at a time (each arm builds its resident, warms it twice and times 128
 // greedy decode tokens after a 32-token prompt), A B B A over 10 valid pairs: the A/A control (narrow against narrow) first, then
