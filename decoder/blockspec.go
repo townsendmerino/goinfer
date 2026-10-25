@@ -200,11 +200,26 @@ const defaultVerifyWidth = 8
 // and doing it per request costs more than the speedup earns (a several-fold loss) while the loop stays lossless and acceptance looks
 // fine. Attach once per process, generate per request.
 type BlockSpec struct {
-	m    *Model
-	host ResidentDrafterHost
-	rd   ResidentBlockDrafter
-	dw   BlockDrafterWeights
-	taps []int
+	m     *Model
+	host  ResidentDrafterHost
+	rd    ResidentBlockDrafter
+	dw    BlockDrafterWeights
+	taps  []int
+	width int // GenerateStream's verify width (SetVerifyWidth); 0 is defaultVerifyWidth
+}
+
+// SetVerifyWidth sets the verify width GenerateStream runs at (BlockSpecOptions.VerifyWidth's meaning: 0 is the default, and the
+// drafter's block caps it). It refuses a width under 2, and on a recurrent target a width its resident's fold path cannot verify.
+// Set it once, before the BlockSpec serves; it is not safe beside a running generation.
+func (s *BlockSpec) SetVerifyWidth(w int) error {
+	if w != 0 && w < 2 {
+		return fmt.Errorf("decoder: block-spec verify width %d: want 0 (the default) or at least 2", w)
+	}
+	if width := s.verifyWidth(BlockSpecOptions{VerifyWidth: w}); s.m.hasRecurrentState() && s.recurrentFold(width) == nil {
+		return fmt.Errorf("decoder: block-spec verify width %d is past what the resident's fold path verifies on this recurrent model", width)
+	}
+	s.width = w
+	return nil
 }
 
 // NewBlockSpec attaches a block drafter to this model's resident target. Returns a decline
@@ -671,7 +686,7 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 	if sp.HistoryDependent() {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
-	if !s.m.specRollbackSafeVia(s.recurrentFold(s.verifyWidth(BlockSpecOptions{})), s.verifyWidth(BlockSpecOptions{})) {
+	if w := s.verifyWidth(BlockSpecOptions{VerifyWidth: s.width}); !s.m.specRollbackSafeVia(s.recurrentFold(w), w) {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family without the resident's fold path, or staged sliding-window, unsupported (rollback cannot restore)")
 	}
 	if len(prompt) == 0 {
@@ -699,9 +714,10 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 		// len(toks) would assume every round ran at the configured width.
 		var drafted, evaluated int
 		opt := BlockSpecOptions{
-			MaxTokens: maxTokens,
-			StopIDs:   sp.StopIDs,
-			scope:     kvScopeOf(ctx),
+			VerifyWidth: s.width,
+			MaxTokens:   maxTokens,
+			StopIDs:     sp.StopIDs,
+			scope:       kvScopeOf(ctx),
 			OnRound: func(width, committed int) {
 				drafted += width - 1 // the anchor is the target's own token, not a draft
 				evaluated += committed
