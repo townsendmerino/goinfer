@@ -1061,6 +1061,43 @@ the native kernels need for their group sums. The gates are unchanged.
     kernel-sum projection of about 3 ms, and the 1.5B was slower (1.0127); on CUDA the 1.5B is faster.
   - Each arm's 128 greedy tokens were the same in every run. The two arms agree for the first 40 tokens on Phi-3 and all 128 on the
     1.5B: different weights (the file's own against an int8 copy), so a divergence is expected; G5 and G6 grade it.
+- **O1C-G6: PASS** (e3bd04a0d, 17:31–17:37, the lock held exclusively; not timed). Against the CPU at f32 on the same file, every
+  teacher-forced position over G3's 8 prompts and the CPU's own 32-token continuations:
+
+  | model | positions | mean KL, int8 arm | native arm | native / int8 | native lower at |
+  |---|---:|---:|---:|---:|---:|
+  | Qwen2.5-Coder-0.5B q4_k_m (12 weights native) | 566 | 0.00223 | 0.00203 | **0.9114** | 333 |
+  | Phi-3 mini q4 (113 weights native, Q5_K covered) | 372 | 0.01570 | 0.00614 | **0.3912** | 273 |
+
+  Native is lower on 7 of 8 prompts on the 0.5B and on all 8 on Phi-3. Metal's O1-G6 read 0.7638 on the 0.5B and could not cover
+  Q5_K.
+- **O1C-G5: the G-Q2 half PASS; `TestQ4K_phi3ResidentMatchesCPU` FAIL on both its bars, so O1C-G5 FAILS as registered.**
+  - G-Q2 (17:37–17:40): the reference Qwen2.5-Coder-1.5B 96.64% (547 of 566), 8 of 8 prompts; Phi-3 on the native lane **96.77%
+    (360 of 372), 8 of 8: delta +0.13 points** against the −2.0 margin. The CUDA reference reads 96.64%, not Metal's 93.99%, under
+    ChatML's default system message (the G3c record).
+  - `TestQ4K_phi3ResidentMatchesCPU` (one 141-token prompt: 110 × "the ", then an instruction; context 4096): CUDA q4k against CPU q4k
+    median cosine **0.993030** (bar ≥ 0.999); CUDA q4k against f32 p10 **0.882586** against the CPU q4k path's 0.926208 (bar: no more than
+    0.01 below). Log: `docs/measurements/ks-a1-2026-10/o1c-g56-2026-10-24-1731.log`.
+  - **On main's int8 lane the same test passes** (median 0.999804; p10 0.940085). Main itself could not run it: the Phi-3 load hit the
+    `noteKQuant` race, so the baseline is main with only the mutex applied, uncommitted, in a base worktree. Log:
+    `docs/measurements/ks-a1-2026-10/o1c-g5-base-int8lane-1742.log`.
+- **Diagnosis (not graded, run after the verdict above; `TestKSO1C_fillerDiagnostic`, both arms of one resident at context 512, the CPU
+  at f32 on the file, the shared lock).** It reproduces the two arms' p10 to six figures at context 512, so the KV plan is not the
+  cause.
+  - **Where:** native is closer to f32 at 76 of the 110 filler positions (median cosine 0.9830 → 0.9868) and further at 27 of the 29
+    instruction positions after them (0.9712 → 0.9231). Mean KL to f32 over the prompt: int8 0.427, native 0.510.
+  - **Which weights:** only the Q5_K qkv native, or only the Q6_K `ffn_down` native, each gives the same instruction-region median
+    (0.9236, 0.9237); only the head native changes nothing (0.9712). Two independent perturbations landing on one value is a bifurcation
+    of a degenerate repeated context, not a per-weight error.
+  - **Other filler lengths** (`GOINFER_KSO1C_DIAG_REPS`; instruction-region median and mean KL to f32, int8 → native): 60 repeats
+    0.9987 → 0.9984, KL 0.275 → 0.296; 90 repeats 0.9966 → 0.9959, KL 0.321 → 0.310; 130 repeats 0.9923 → 0.9927, KL 0.330 → 0.314.
+    The 110-repeat prompt the test pins is the outlier.
+  - **The p10:** native's p10 is lower at every length (0.963 / 0.959 / 0.967 against 0.971 / 0.970 / 0.976). It comes from a few
+    early filler positions (position 7, the sixth "the", reads cosine 0.28 native against 0.80 int8 at every length), where the
+    next-token distribution after a run of "the" is flat and cosine is a poor reader.
+  - **The CPU-agreement bar** cannot hold for a lane nearer the file: the CPU q4k reference keeps the int8 copies, which is the case
+    this registration named as the owner's call.
+  - Logs: `docs/measurements/ks-a1-2026-10/o1c-filler-diag-*.log`.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.

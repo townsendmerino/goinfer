@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -202,5 +205,130 @@ func TestKSO1C_realPhi3NonInferiority(t *testing.T) {
 		t.Errorf("O1C-G5 AMBIGUOUS (parked): delta %+.2f points", delta)
 	default:
 		t.Errorf("O1C-G5 FAIL: delta %+.2f points, free-run %d vs reference %d", delta, pp, rp)
+	}
+}
+
+// TestKSO1C_fillerDiagnostic is not a gate: TestQ4K_phi3ResidentMatchesCPU's 141-token filler prompt through both arms of one
+// Phi-3 resident (kquantKeepInt8ForTest) against the CPU at f32, every position's cosine and KL printed, so the arms can be
+// compared where that test's bars read them (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA read").
+func TestKSO1C_fillerDiagnostic(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	path := modelPath("phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reps := 110
+	if v, err := strconv.Atoi(os.Getenv("GOINFER_KSO1C_DIAG_REPS")); err == nil {
+		reps = v
+	}
+	text := strings.Repeat("the ", reps) + "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kquantKeepInt8ForTest = true
+	ctx := 512
+	if v, err := strconv.Atoi(os.Getenv("GOINFER_KSO1C_DIAG_CTX")); err == nil {
+		ctx = v
+	}
+	mg, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: ctx})
+	kquantKeepInt8ForTest = false
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, ok := mg.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
+	}
+	fmt.Fprintf(os.Stderr, "[filler] %d repeats, %d tokens; resident context %d, layer 0 KV half %v\n", reps, len(ids), r.ctxCap, r.layers[0].kvHalf)
+	use, _ := kso1cArms(t, r, "Phi-3")
+	mf, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mf.Close()
+	c := mf.NewCache(len(ids) + 1)
+	var ref [][]float32
+	for _, id := range ids {
+		l, err := mf.ForwardForTest(id, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref = append(ref, append([]float32(nil), l...))
+	}
+	cos := func(a, b []float32) float64 {
+		var d, na, nb float64
+		for i := range a {
+			d += float64(a[i]) * float64(b[i])
+			na += float64(a[i]) * float64(a[i])
+			nb += float64(b[i]) * float64(b[i])
+		}
+		return d / math.Sqrt(na*nb)
+	}
+	var cs [5][]float64
+	var kl [5]float64
+	vocabRows := r.lmW.N
+	// arms: int8, all native, then one group native at a time (Q5_K qkv, Q6_K ffn_down, the Q6_K head).
+	only := func(pick func(w cudaWQ) bool) {
+		use(false)
+		slots := []*cudaWQ{&r.lmW}
+		for l := range r.layers {
+			Ly := &r.layers[l]
+			slots = append(slots, &Ly.q, &Ly.k, &Ly.v, &Ly.o, &Ly.g, &Ly.u, &Ly.d)
+		}
+		for _, p := range r.kquantAlt {
+			if !pick(p[0]) {
+				continue
+			}
+			for _, s := range slots {
+				if *s == p[1] {
+					*s = p[0]
+				}
+			}
+		}
+	}
+	names := []string{"int8", "native", "only Q5_K qkv native", "only Q6_K ffn_down native", "only the Q6_K head native"}
+	for a := range names {
+		switch a {
+		case 0:
+			use(false)
+		case 1:
+			use(true)
+		case 2:
+			only(func(w cudaWQ) bool { return w.kind == "q5k" })
+		case 3:
+			only(func(w cudaWQ) bool { return w.kind == "q6k" && w.N != vocabRows })
+		case 4:
+			only(func(w cudaWQ) bool { return w.kind == "q6k" && w.N == vocabRows })
+		}
+		r.Reset()
+		for p, id := range ids {
+			l, err := r.Forward(mg.EmbedResidentForTest(id), p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cs[a] = append(cs[a], cos(l, ref[p]))
+			kl[a] += kso1cKL(ref[p], l)
+		}
+	}
+	use(true)
+	for p := range ids {
+		fmt.Fprintf(os.Stderr, "[filler] pos %3d tok %6d: cosine to f32 int8 %.6f native %.6f\n", p, ids[p], cs[0][p], cs[1][p])
+	}
+	for a, name := range names {
+		s := append([]float64(nil), cs[a]...)
+		sort.Float64s(s)
+		tail := append([]float64(nil), cs[a][len(ids)-29:]...)
+		sort.Float64s(tail)
+		fmt.Fprintf(os.Stderr, "[filler] %s arm: %d positions, cosine min %.6f p10 %.6f median %.6f; mean KL to f32 %.5f; the last 29 positions' median %.6f\n",
+			name, len(s), s[0], s[len(s)/10], s[len(s)/2], kl[a]/float64(len(s)), tail[len(tail)/2])
 	}
 }
