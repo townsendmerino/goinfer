@@ -2696,6 +2696,26 @@ Logs: `~/goinfer-logs/kh1-g5-day-2026-10-24-0856/`.
 - **First measurement:** `TestKernelLocalMemoryCensus` reads 0 B for `moe_route`, and the reservation falls to ~1.3 MiB.
 - **Prior art:** new. The cost was recorded as "the price of the router cap".
 
+**KS-H2 / KS-H3 readings, registered 2026-10-25 before any data (owner, 1:52 pm: measurement only, no guard changes; the numbers go to
+nobara-ks-cuda for KS-H6).** Nobara, RTX 2070 SUPER 8 GB, driver 595.91.07, `main` at `d759bba19`; each run alone on the card under
+the exclusive timing lock, with the desktop compositor's context (about 16 MiB) recorded if present. Harness:
+`docs/measurements/ks-h2-h3-2026-10-25/harness_test.go.txt` (a scratch test, kept as text), driven by the existing
+`allocSeenForTest` and `kvAllocSeenForTest` seams, which fire on the executor thread before each allocation; it reads
+`cuMemGetInfo` through the resident's own context inside them.
+- **H2-R1, the 7B's build** (`qwen2.5-7b-instruct-q4_k_m.gguf`, int4, one slot, its default context): free VRAM at the load's
+  first allocation, at its first K/V pool allocation, and after the load returns. Reported: the drop from the first to the
+  second reading against the bytes requested in between (the weights and the build's scratch), and against those requests
+  rounded as `cuMemAlloc` rounds (2 MiB granularity at 2 MiB and over). Expectation from G-M1: about 406 MiB of rounding.
+- **H2-R2, Qwen3-8B's KV pools** (`Qwen3-8B-Q4_K_M.gguf`, int4, one slot, `ResidentContext` 16,384, `--kv` at its `auto`): free
+  VRAM just before the first pool buffer and just after the last, against the pool bytes requested (`kvAllocSeenForTest`) and
+  the same requests rounded. Expectation from the survey: about 135 MiB of rounding not in the price.
+- **H3-R1, H3-R2, `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` as they stand.** `moe_route` and
+  `route_gptoss` still keep their per-thread arrays (`cuda/moe.cu:moe_route`'s `score[MOE_MAX_E]`), so these are the readings
+  before the move, the baseline the move's own gate compares against; the move itself is KS-H3's code change, not this one.
+  Expectation: `moe_route` 4,416 B per thread; 138,412,032 B retained after its first launch.
+- **Void and stopping rule:** a reading taken while another process holds a CUDA context beyond the compositor is void and re-run;
+  one reading each, since a memory reading on an idle card does not vary. Cost: about 5 minutes in all.
+
 **KS-H4 · Metal towers keep their largest image's scratch until unload (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow` only grows; the same holds in the other tower accelerators and aikit's
   `qwenmetal` / `visionmetal`.
