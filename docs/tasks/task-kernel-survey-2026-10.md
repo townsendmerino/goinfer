@@ -1717,6 +1717,20 @@ earlier guarded readings, 0.9764 and 0.9788 with 10 of 10, stay in the record an
 not in the CPU figure the guard reads; its source (another app's GPU work is one candidate) is not identified. Log:
 `~/goinfer-logs/kse3-g2-rerun3-2026-10-24.log`.
 
+**E3-G2 with a GPU-contention term, registered 2026-10-24 (16:50) before the run, on Francis's choice (c) of the three put to him
+(revert, keep, or re-run with a GPU-contention check).** `otherGPUWindow` (`gpu/gpuothers_test.go`) reads, at both ends of each
+arm's timed decode, the GPU time every other process has accumulated: on macOS the IORegistry's `AGXDeviceUserClient` entries,
+`AppUsage` `accumulatedGPUTime` in nanoseconds, the figure Activity Monitor's GPU column reads. **An arm is void if other
+processes' GPU time exceeds 2% of its wall time**: the size of the effect under test, so contention of that size could produce
+it alone. The CPU and memory terms (`voidWindow`) and the void cap (15) are unchanged, and the term is required on macOS.
+- **The instrument is checked.** `TestOtherGPUWindow_seesAnotherProcess`: a child process decoding llama-tiny on WebGPU reads
+  58.5% of a 3-second window. With nothing of ours running, 3-second windows read at most 0.4% (WindowServer).
+- **Its limit:** a process that starts and exits inside one arm takes its registry entry, and its GPU time, with it, so a GPU job
+  shorter than an arm can pass unseen. A contender running across the arm, such as another session's test or a system service, is
+  seen.
+- **The bar is unchanged:** SHIP iff the median on/off is ≤ 0.98 with at least 9 of 10 pairs faster. On SHIP, KS-E3 stays on main.
+  Under it, KS-E3 parks and its revert from main is put to Francis. This reading decides; the four earlier ones stay in the record.
+
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
