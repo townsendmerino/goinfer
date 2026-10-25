@@ -96,7 +96,6 @@ type packStage struct {
 	u32 []uint32
 	u16 []uint16
 	f32 []float32
-	u8  []uint8
 	// what pack produced for upload: the packed words, and the block's scales (f16 for int4, f32 for a quantized f32 weight)
 	outW []uint32
 	outH []uint16
@@ -104,11 +103,10 @@ type packStage struct {
 	outB []uint8
 }
 
+// bytes is n bytes of the stage's word scratch, so a native weight's staging adds no buffer beside the packed kinds' one.
 func (s *packStage) bytes(n int) []uint8 {
-	if cap(s.u8) < n {
-		s.u8 = make([]uint8, max(n, stagePackWords*4))
-	}
-	return s.u8[:n]
+	w := s.words((n + 3) / 4)
+	return unsafe.Slice((*uint8)(unsafe.Pointer(unsafe.SliceData(w))), n)
 }
 
 func (s *packStage) words(n int) []uint32 {
