@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -16,7 +17,7 @@ type kquantSrc struct {
 	start  int
 	perm   []int32
 	// int8Bytes and nativeBytes are the weight's int8 copy (rows and per-row scales) and the file's blocks for it: what a lane
-	// that uploads the blocks saves on the device (metalKQuantSavings).
+	// that uploads the blocks saves on the device (kquantSavings).
 	int8Bytes, nativeBytes int64
 }
 
@@ -98,25 +99,70 @@ func kquantServes(dims []int, ok bool, err error, in int, src kquantSrc, rows in
 	return true
 }
 
-// metalKQuantSavings is the device bytes Metal's q4k lane does not allocate because it uploads the file's Q5_K and Q6_K
-// blocks (KQuantReader) in place of their int8 copies: over the weights that lane uploads natively, int8 less native bytes.
-// The lane runs on a q4k load and covers each layer's q, k, v, o, gate, up and down projections (metal's buildResident calls
-// q4kLaneProj on exactly those), so only those count. The host copy keeps the int8 copies, so only the device term of Metal's
-// need takes it (ResidentNeedBytes, ResidentDenseWeightBytesFor).
-func (m *Model) metalKQuantSavings(backend string) int64 {
-	if backend != "metal" || m == nil || m.w == nil || len(m.w.kquant) == 0 || m.Quant() != "q4k" {
-		return 0
+// kquantNativeOff empties every backend's kquantLane, so a load keeps the int8 copies on the device and in its pricing: KS-O1's
+// old arm. Set only by a test (SetKQuantNativeOffForTest).
+var kquantNativeOff atomic.Bool
+
+// kquantLane is the weights backend's q4k lane uploads as the file's Q5_K and Q6_K blocks (KQuantReader) in place of their
+// int8 copies, on a q4k load: those with a recorded source among the projections the backend's build hands its lane.
+//   - metal: each layer's q, k, v, o, gate, up and down (buildResident calls q4kLaneProj on exactly those).
+//   - cuda: the projections BuildResident plans (a KV-shared layer has no k or v, a K=V layer no v) and the untied LM head, under
+//     per-32 activations only (the native GEMVs read the group sums quantG32 writes; every q4k load has them).
+//
+// Any other backend, or a load that is not q4k, has no lane.
+func (m *Model) kquantLane(backend string) []*linalg.WeightMat {
+	if kquantNativeOff.Load() || m == nil || m.w == nil || len(m.w.kquant) == 0 || m.Quant() != "q4k" || (backend != "metal" && backend != "cuda") {
+		return nil
 	}
-	var n int64
+	if backend == "cuda" && m.actGroup != 32 {
+		return nil
+	}
+	var ws []*linalg.WeightMat
 	for l := range m.w.Layers {
 		lw := &m.w.Layers[l]
-		for _, wm := range []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj} {
-			if s, ok := m.w.kquantOf(wm); ok {
-				n += s.int8Bytes - s.nativeBytes
+		ps := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
+		if backend == "cuda" {
+			switch {
+			case m.KVSrcAtResident(l) != l:
+				ps = []*linalg.WeightMat{&lw.QProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
+			case m.VFromKResident(l):
+				ps = []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
+			}
+		}
+		for _, wm := range ps {
+			if _, ok := m.w.kquantOf(wm); ok {
+				ws = append(ws, wm)
 			}
 		}
 	}
+	if _, ok := m.w.kquantOf(&m.w.LMHead); ok && backend == "cuda" && m.w.LMHead.Rows() > 0 {
+		ws = append(ws, &m.w.LMHead)
+	}
+	return ws
+}
+
+// kquantSavings is the device bytes backend's q4k lane does not allocate because it uploads the file's blocks for the weights
+// of kquantLane: their int8 bytes less their native bytes. The host copy keeps the int8 copies, so only the device term of a
+// backend's need takes it (ResidentNeedBytes, ResidentDenseWeightBytesFor).
+func (m *Model) kquantSavings(backend string) int64 {
+	var n int64
+	for _, wm := range m.kquantLane(backend) {
+		s, _ := m.w.kquantOf(wm)
+		n += s.int8Bytes - s.nativeBytes
+	}
 	return n
+}
+
+// KQuantNative is "q5k" or "q6k" when backend's q4k lane uploads wm as the file's blocks (kquantLane), else "". wm is
+// compared by address, so it must be the model's own weight (a pointer into Weights()).
+func (m *Model) KQuantNative(backend string, wm *linalg.WeightMat) string {
+	for _, x := range m.kquantLane(backend) {
+		if x == wm {
+			s, _ := m.w.kquantOf(wm)
+			return s.kind
+		}
+	}
+	return ""
 }
 
 // kquantOf is wm's recorded source, when it has one.
@@ -176,9 +222,24 @@ func (k *KQuantReader) Kind(wm *linalg.WeightMat) string {
 // Rows calls each with every destination row of wm and that row's raw blocks in the file (176 bytes per 256 columns for
 // Q5_K, 210 for Q6_K), in row order.
 func (k *KQuantReader) Rows(wm *linalg.WeightMat, each func(r int, raw []byte) error) error {
+	row, err := k.RowSource(wm)
+	if err != nil {
+		return err
+	}
+	for r := range wm.Rows() {
+		if err := each(r, row(r)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RowSource validates wm's source once and returns destination row r's raw blocks in the file, for r in [0, wm.Rows()).
+// The slices alias the mapping (valid until Close) and the function is safe for concurrent use.
+func (k *KQuantReader) RowSource(wm *linalg.WeightMat) (func(r int) []byte, error) {
 	src, ok := k.w.kquantOf(wm)
 	if !ok {
-		return fmt.Errorf("decoder: KQuantReader: weight has no Q5_K/Q6_K source")
+		return nil, fmt.Errorf("decoder: KQuantReader: weight has no Q5_K/Q6_K source")
 	}
 	get, bb := k.g.Q5KRaw, 176
 	if src.kind == "q6k" {
@@ -186,22 +247,13 @@ func (k *KQuantReader) Rows(wm *linalg.WeightMat, each func(r int, raw []byte) e
 	}
 	dims, raw, ok, err := get(src.tensor)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !kquantServes(dims, ok, nil, wm.Cols(), src, wm.Rows()) {
-		return fmt.Errorf("decoder: KQuantReader: %q is not %s covering %d rows of %d columns (dims %v)", src.tensor, src.kind, wm.Rows(), wm.Cols(), dims)
+		return nil, fmt.Errorf("decoder: KQuantReader: %q is not %s covering %d rows of %d columns (dims %v)", src.tensor, src.kind, wm.Rows(), wm.Cols(), dims)
 	}
 	rb := dims[0] / 256 * bb
-	for r := range wm.Rows() {
-		s := src.src(r)
-		if s < 0 || s >= dims[1] {
-			return fmt.Errorf("decoder: KQuantReader: %q row %d outside %d", src.tensor, s, dims[1])
-		}
-		if err := each(r, raw[s*rb:(s+1)*rb]); err != nil {
-			return err
-		}
-	}
-	return nil
+	return func(r int) []byte { s := src.src(r); return raw[s*rb : (s+1)*rb] }, nil
 }
 
 // Close unmaps the file when the reader mapped it; the load's own mapping stays for releaseKQuantFile.

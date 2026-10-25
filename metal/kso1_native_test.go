@@ -342,7 +342,7 @@ func kso1LaneBytes(r *resident) (total int, byKind map[string]int) {
 // records provenance in both arms) and with the native kinds, after one discarded warm-up load so neither arm reads the file
 // cold. Native must upload exactly the file's layer Q5_K and Q6_K bytes in place of their int8 rows and scales, and layer 0's
 // native segments must hold the file's bytes (kso1CheckLayer0Blocks); the fit pricing's saving
-// (metalKQuantSavings) must equal the device bytes it saves; and the whole load must allocate no more Go heap than the int8 arm
+// (kquantSavings) must equal the device bytes it saves; and the whole load must allocate no more Go heap than the int8 arm
 // plus kso1HeapSlack.
 func kso1LaneBytesCheck(t *testing.T, path, label string) {
 	build := func(off bool) (int, map[string]int, uint64, int64) {

@@ -9,27 +9,59 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestKSO1_metalSavingsCountsOnlyTheLane: metalKQuantSavings prices only what Metal's q4k lane uploads natively. A recorded
-// weight in a layer projection counts on a q4k load for metal; the same record on the embedding table (not a lane projection)
-// does not; and nothing counts for another backend or when the load is not q4k (the lane off).
-func TestKSO1_metalSavingsCountsOnlyTheLane(t *testing.T) {
+// TestKSO1_savingsCountOnlyTheLane: kquantSavings prices only what a backend's q4k lane uploads natively. On metal a recorded
+// layer projection counts and the head does not; on cuda the layer projections and the untied head count, only under per-32
+// activations, and a K=V layer's v is not uploaded so does not count; a record on the embedding table never counts; nothing
+// counts for another backend or a load that is not q4k.
+func TestKSO1_savingsCountOnlyTheLane(t *testing.T) {
 	mk := func() linalg.WeightMat { return linalg.QuantizeInt8(make([]float32, 4*256), 4, 256, true) }
-	w := &Weights{Embed: mk(), Layers: []LayerWeights{{QProj: mk(), DownProj: mk()}}}
-	w.kquant = map[*int8]kquantSrc{}
-	note := func(wm *linalg.WeightMat, int8B, nativeB int64) {
-		q8, _, _, _ := wm.Int8()
-		w.kquant[unsafe.SliceData(q8)] = kquantSrc{kind: "q6k", int8Bytes: int8B, nativeBytes: nativeB}
+	q4 := func() linalg.WeightMat {
+		wm, err := linalg.WrapQ4K(make([]byte, 4*144), 4, 256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return wm
 	}
-	note(&w.Layers[0].QProj, 1040, 840)
-	note(&w.Layers[0].DownProj, 2000, 1500)
-	note(&w.Embed, 9000, 1000)
+	build := func(kEqV bool) *Weights {
+		w := &Weights{Embed: mk(), LMHead: mk(), Layers: []LayerWeights{{QProj: mk(), VProj: mk(), DownProj: mk(), GateProj: q4()}}, arch: &Architecture{NumLayers: 1}}
+		if kEqV {
+			w.arch.gemma4 = &gemma4Params{}
+			w.Layers[0].VFromK = true
+		}
+		w.kquant = map[*int8]kquantSrc{}
+		note := func(wm *linalg.WeightMat, int8B, nativeB int64) {
+			q8, _, _, _ := wm.Int8()
+			w.kquant[unsafe.SliceData(q8)] = kquantSrc{kind: "q6k", int8Bytes: int8B, nativeBytes: nativeB}
+		}
+		note(&w.Layers[0].QProj, 1040, 840)
+		note(&w.Layers[0].VProj, 1100, 1000)
+		note(&w.Layers[0].DownProj, 2000, 1500)
+		note(&w.LMHead, 5000, 4000)
+		note(&w.Embed, 9000, 1000)
+		return w
+	}
 	for _, c := range []struct {
+		name           string
 		quant, backend string
+		group          int
+		kEqV           bool
 		want           int64
-	}{{"q4k", "metal", 200 + 500}, {"q4k", "cuda", 0}, {"int8int8", "metal", 0}} {
-		m := &Model{w: w, quant: c.quant}
-		if got := m.metalKQuantSavings(c.backend); got != c.want {
-			t.Errorf("quant %s backend %s: saves %d, want %d", c.quant, c.backend, got, c.want)
+	}{
+		{"metal", "q4k", "metal", 32, false, 200 + 100 + 500},
+		{"cuda", "q4k", "cuda", 32, false, 200 + 100 + 500 + 1000},
+		{"cuda, a K=V layer", "q4k", "cuda", 32, true, 200 + 500 + 1000},
+		{"cuda, per-vector activations", "q4k", "cuda", 0, false, 0},
+		{"webgpu", "q4k", "webgpu", 32, false, 0},
+		{"not q4k", "int8int8", "metal", 32, false, 0},
+	} {
+		m := &Model{w: build(c.kEqV), quant: c.quant, actGroup: c.group}
+		if got := m.kquantSavings(c.backend); got != c.want {
+			t.Errorf("%s: saves %d, want %d", c.name, got, c.want)
+		}
+		for _, wm := range []*linalg.WeightMat{&m.w.Embed} {
+			if k := m.KQuantNative(c.backend, wm); k != "" {
+				t.Errorf("%s: the embedding table is native %q", c.name, k)
+			}
 		}
 	}
 }

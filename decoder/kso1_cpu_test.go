@@ -1,4 +1,4 @@
-//go:build darwin && arm64 && goinfer_testhooks
+//go:build ((darwin && arm64) || (linux && amd64)) && goinfer_testhooks
 
 package decoder
 
@@ -9,12 +9,17 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
-// kso1CPUFingerprint is O1-G4's digest taken before KS-O1 (docs/tasks/task-kernel-survey-2026-10.md, "Review fixes for #215").
-// It is arm64's: the CPU reference is bit-identical within an arch, not across.
-const kso1CPUFingerprint = "e662bdd6c6cb108e89cda98e7aa3b9554ff17df556668dc05138d1477da0bfbe"
+// kso1CPUFingerprint is O1-G4's digest by arch, taken before KS-O1 on Metal (arm64, docs/tasks/task-kernel-survey-2026-10.md,
+// "Review fixes for #215") and before KS-O1 on CUDA (amd64, on nobara: "KS-O1 on CUDA: gates", O1C-G4). The CPU reference is
+// bit-identical within an arch, not across.
+var kso1CPUFingerprint = map[string]string{
+	"arm64": "e662bdd6c6cb108e89cda98e7aa3b9554ff17df556668dc05138d1477da0bfbe",
+	"amd64": "",
+}
 
 // TestKSO1_cpuQ4KFingerprint is O1-G4 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the CPU at --quant q4k on
 // Qwen2.5-Coder-0.5B q4_k_m (its Q6_K layers are int8 copies there) forwards a fixed prompt and 16 greedy tokens one position at a
@@ -61,7 +66,11 @@ func TestKSO1_cpuQ4KFingerprint(t *testing.T) {
 	}
 	sum := fmt.Sprintf("%x", h.Sum(nil))
 	fmt.Fprintf(os.Stderr, "[O1-G4] CPU q4k 0.5B: tokens %v, logits fingerprint %s\n", seq[prompt:], sum)
-	if sum != kso1CPUFingerprint {
-		t.Errorf("O1-G4: fingerprint %s, want %s (before KS-O1)", sum, kso1CPUFingerprint)
+	want := kso1CPUFingerprint[runtime.GOARCH]
+	if w := os.Getenv("GOINFER_KSO1_CPU_WANT"); w != "" {
+		want = w // a digest taken at the base commit by the same run (docs/measurements/ks-a1-2026-10/run-o1c-day.sh)
+	}
+	if sum != want {
+		t.Errorf("O1-G4: fingerprint %s, want %s (%s, before KS-O1)", sum, want, runtime.GOARCH)
 	}
 }

@@ -74,6 +74,133 @@ __device__ __forceinline__ void q4kScaleMin(int j, unsigned int s0, unsigned int
     }
 }
 
+// q5kLo / q5kHi are four Q5_K values of one code word: the low or high nibbles plus their fifth bits, bit `shift` of each qh byte.
+__device__ __forceinline__ int q5kLo(unsigned int code, unsigned int qhw, int shift) {
+    return (int)((code & 0x0F0F0F0Fu) | (((qhw >> shift) & 0x01010101u) << 4));
+}
+__device__ __forceinline__ int q5kHi(unsigned int code, unsigned int qhw, int shift) {
+    return (int)(((code >> 4) & 0x0F0F0F0Fu) | (((qhw >> shift) & 0x01010101u) << 4));
+}
+
+// rowsQ5K: R rows n0.. of GGUF Q5_K weights (the file's 176-byte blocks, 44 words: d|dmin, three words of scales and minimums,
+// qh[32], qs[128]) × per-32 int8 activations, one lane partial a row into facc[r]. asum[g] = aS[g]·Σaq (quantG32).
+//
+// LANE MAPPING: 8 lanes a block, 4 blocks in flight. Lane l on block b0 + (l >> 3), pair j = (l & 7) >> 1 (sub-blocks 2j, 2j+1)
+// and half h = l & 1: 16 code bytes (elements 64j+16h.. in the low nibbles, 64j+32+16h.. in the high), the matching 16 qh bytes
+// (bits 2j and 2j+1), one 16-byte activation load per sub-block. Each group's minimum is added once, by the even lane for the
+// low sub-block and the odd lane for the high one. Per block and lane:
+//   facc += aS_lo·d·sc_lo · idot_lo + aS_hi·d·sc_hi · idot_hi − dmin·m_h · asum_h
+// Every load is 16-byte aligned. The activation loads are shared by the R rows; each row's arithmetic is the same at every R.
+template <int R>
+__device__ __forceinline__ void rowsQ5K(const unsigned int* __restrict__ W, int n0, int N, const int* __restrict__ a,
+                                        const float* __restrict__ aS, const float* __restrict__ asum, int nSB, int lane,
+                                        float* facc) {
+    int sub = lane >> 3, j = (lane & 7) >> 1, h = lane & 1;
+    for (int b0 = 0; b0 < nSB; b0 += 4) {
+        int b = b0 + sub;
+        if (b >= nSB) continue;
+        int4 lo = *reinterpret_cast<const int4*>(a + (b << 6) + (j << 4) + (h << 2));
+        int4 hi = *reinterpret_cast<const int4*>(a + (b << 6) + (j << 4) + 8 + (h << 2));
+        int g = (b << 3) + (j << 1);
+        float aLo = aS[g], aHi = aS[g + 1], sMin = asum[g + h];
+        #pragma unroll
+        for (int r = 0; r < R; r++) {
+            int n = n0 + r;
+            if (n >= N) break;
+            const unsigned int* blk = W + ((long)n * nSB + b) * 44;
+            uint4 hdr = *reinterpret_cast<const uint4*>(blk);
+            uint4 qh = *reinterpret_cast<const uint4*>(blk + 4 + (h << 2));
+            uint4 q = *reinterpret_cast<const uint4*>(blk + 12 + (j << 3) + (h << 2));
+            float d = __half2float(__ushort_as_half((unsigned short)(hdr.x & 0xffffu)));
+            float dmin = __half2float(__ushort_as_half((unsigned short)(hdr.x >> 16)));
+            int scLo, mLo, scHi, mHi;
+            q4kScaleMin(j << 1, hdr.y, hdr.z, hdr.w, &scLo, &mLo);
+            q4kScaleMin((j << 1) | 1, hdr.y, hdr.z, hdr.w, &scHi, &mHi);
+            int sl = j << 1, sh = sl + 1;
+            int pLo = 0, pHi = 0;
+            pLo = __dp4a(q5kLo(q.x, qh.x, sl), lo.x, pLo);
+            pLo = __dp4a(q5kLo(q.y, qh.y, sl), lo.y, pLo);
+            pLo = __dp4a(q5kLo(q.z, qh.z, sl), lo.z, pLo);
+            pLo = __dp4a(q5kLo(q.w, qh.w, sl), lo.w, pLo);
+            pHi = __dp4a(q5kHi(q.x, qh.x, sh), hi.x, pHi);
+            pHi = __dp4a(q5kHi(q.y, qh.y, sh), hi.y, pHi);
+            pHi = __dp4a(q5kHi(q.z, qh.z, sh), hi.z, pHi);
+            pHi = __dp4a(q5kHi(q.w, qh.w, sh), hi.w, pHi);
+            int m = h ? mHi : mLo;
+            float f = facc[r];
+            f = __fmaf_rn((float)pLo, __fmul_rn(__fmul_rn(d, (float)scLo), aLo), f);
+            f = __fmaf_rn((float)pHi, __fmul_rn(__fmul_rn(d, (float)scHi), aHi), f);
+            f = __fmaf_rn(-__fmul_rn(dmin, (float)m), sMin, f);
+            facc[r] = f;
+        }
+    }
+}
+
+// rowsQ6K: R rows n0.. of GGUF Q6_K weights in q6kPlanes' layout (cuda/pack_stream.go) × per-32 int8 activations, one lane
+// partial a row into facc[r]. The weight's T = N·nSB blocks sit in four planes of one buffer: ql at 0, qh at 128T, the int8
+// scales at 192T, d (f16) at 208T, block g = n·nSB + b at g·128, g·64, g·16 and g·2 within each; every plane is 16-byte aligned.
+//
+// LANE MAPPING: lane l on block b0 + (l >> 3), half hh = (l >> 2) & 1, elements 8·(l & 3)…+7 of each of the half's four 32-element
+// groups (one uint2 of ql low, one of ql high, one of qh, one of scales). A code is (4 ql bits | 2 qh bits << 4) − 32; the group's
+// one sub-scale (per 16 elements) multiplies the integer dot, then d and the group's activation scale:
+//   facc += (sc·idot) · (d·aS_g)
+// The activation loads are shared by the R rows; each row's arithmetic is the same at every R.
+template <int R>
+__device__ __forceinline__ void rowsQ6K(const unsigned char* __restrict__ W, int n0, int N, int nSB, const int* __restrict__ a,
+                                        const float* __restrict__ aS, int lane, float* facc) {
+    long T = (long)N * nSB;
+    const unsigned char* ql = W;
+    const unsigned char* qhp = W + 128 * T;
+    const unsigned char* scp = W + 192 * T;
+    const unsigned short* dp = reinterpret_cast<const unsigned short*>(W + 208 * T);
+    int sub = lane >> 3, k = lane & 7, hh = k >> 2, q = k & 3, l0 = q << 3, is = q >> 1;
+    for (int b0 = 0; b0 < nSB; b0 += 4) {
+        int b = b0 + sub;
+        if (b >= nSB) continue;
+        const int* ab = a + (b << 6) + (hh << 5) + (q << 1);
+        int2 a0 = *reinterpret_cast<const int2*>(ab);
+        int2 a1 = *reinterpret_cast<const int2*>(ab + 8);
+        int2 a2 = *reinterpret_cast<const int2*>(ab + 16);
+        int2 a3 = *reinterpret_cast<const int2*>(ab + 24);
+        int g = (b << 3) + (hh << 2);
+        float s0 = aS[g], s1 = aS[g + 1], s2 = aS[g + 2], s3 = aS[g + 3];
+        #pragma unroll
+        for (int r = 0; r < R; r++) {
+            int n = n0 + r;
+            if (n >= N) break;
+            long nb = (long)n * nSB + b;
+            uint2 qa = *reinterpret_cast<const uint2*>(ql + nb * 128 + (hh << 6) + l0);
+            uint2 qb = *reinterpret_cast<const uint2*>(ql + nb * 128 + (hh << 6) + 32 + l0);
+            uint2 qhv = *reinterpret_cast<const uint2*>(qhp + nb * 64 + (hh << 5) + l0);
+            uint2 scw = *reinterpret_cast<const uint2*>(scp + nb * 16 + (hh << 3));
+            float d = __half2float(__ushort_as_half(dp[nb]));
+            // The group sub-scales sc[8hh + is + 2·grp], grp 0..3: bytes is and is + 2 of scw.x, then of scw.y.
+            int c0 = (int)(signed char)((scw.x >> (is << 3)) & 0xffu);
+            int c1 = (int)(signed char)((scw.x >> ((is + 2) << 3)) & 0xffu);
+            int c2 = (int)(signed char)((scw.y >> (is << 3)) & 0xffu);
+            int c3 = (int)(signed char)((scw.y >> ((is + 2) << 3)) & 0xffu);
+            int v0x = (int)__vsub4((qa.x & 0x0F0F0F0Fu) | ((qhv.x & 0x03030303u) << 4), 0x20202020u);
+            int v0y = (int)__vsub4((qa.y & 0x0F0F0F0Fu) | ((qhv.y & 0x03030303u) << 4), 0x20202020u);
+            int v1x = (int)__vsub4((qb.x & 0x0F0F0F0Fu) | (((qhv.x >> 2) & 0x03030303u) << 4), 0x20202020u);
+            int v1y = (int)__vsub4((qb.y & 0x0F0F0F0Fu) | (((qhv.y >> 2) & 0x03030303u) << 4), 0x20202020u);
+            int v2x = (int)__vsub4(((qa.x >> 4) & 0x0F0F0F0Fu) | (((qhv.x >> 4) & 0x03030303u) << 4), 0x20202020u);
+            int v2y = (int)__vsub4(((qa.y >> 4) & 0x0F0F0F0Fu) | (((qhv.y >> 4) & 0x03030303u) << 4), 0x20202020u);
+            int v3x = (int)__vsub4(((qb.x >> 4) & 0x0F0F0F0Fu) | (((qhv.x >> 6) & 0x03030303u) << 4), 0x20202020u);
+            int v3y = (int)__vsub4(((qb.y >> 4) & 0x0F0F0F0Fu) | (((qhv.y >> 6) & 0x03030303u) << 4), 0x20202020u);
+            int p0 = __dp4a(v0y, a0.y, __dp4a(v0x, a0.x, 0));
+            int p1 = __dp4a(v1y, a1.y, __dp4a(v1x, a1.x, 0));
+            int p2 = __dp4a(v2y, a2.y, __dp4a(v2x, a2.x, 0));
+            int p3 = __dp4a(v3y, a3.y, __dp4a(v3x, a3.x, 0));
+            float f = facc[r];
+            f = __fmaf_rn((float)(c0 * p0), __fmul_rn(d, s0), f);
+            f = __fmaf_rn((float)(c1 * p1), __fmul_rn(d, s1), f);
+            f = __fmaf_rn((float)(c2 * p2), __fmul_rn(d, s2), f);
+            f = __fmaf_rn((float)(c3 * p3), __fmul_rn(d, s3), f);
+            facc[r] = f;
+        }
+    }
+}
+
 extern "C" {
 
 // rmsnorm_quant_g32: rmsnorm_quant's passes 1-2 unchanged (sum of squares ladder, normed values),
@@ -235,13 +362,26 @@ __device__ __forceinline__ float warpSum(float f) {
 #define WK_INT8 0
 #define WK_INT4 1
 #define WK_Q4K  2
+#define WK_Q5K  3
+#define WK_Q6K  4
 
-// projRow: lane partial for row n of a K-wide projection of the given kind. sc is the int8 row scales
-// (WK_INT8), the int4 f16 group scales (WK_INT4) or unused (WK_Q4K). Warp-uniform kind.
+// projRow: lane partial for row n of an N-row, K-wide projection of the given kind. sc is the int8 row scales
+// (WK_INT8), the int4 f16 group scales (WK_INT4) or unused (the block kinds). N matters only to WK_Q6K, whose
+// planes are laid out over the whole weight. Warp-uniform kind.
 __device__ __forceinline__ float projRow(int kind, const unsigned int* __restrict__ W, const void* __restrict__ sc,
-                                         int n, int K, const int* __restrict__ a, const float* __restrict__ aS,
+                                         int n, int N, int K, const int* __restrict__ a, const float* __restrict__ aS,
                                          const float* __restrict__ asum, int lane) {
     if (kind == WK_Q4K) return rowQ4K(W + (long)n * (K >> 8) * 36, a, aS, asum, K >> 8, lane);
+    if (kind == WK_Q5K) {
+        float f[1] = {0.f};
+        rowsQ5K<1>(W, n, N, a, aS, asum, K >> 8, lane, f);
+        return f[0];
+    }
+    if (kind == WK_Q6K) {
+        float f[1] = {0.f};
+        rowsQ6K<1>(reinterpret_cast<const unsigned char*>(W), n, N, K >> 8, a, aS, lane, f);
+        return f[0];
+    }
     if (kind == WK_INT4) return rowW4g32(W + (long)n * (K >> 3), a, (const __half*)sc + (long)n * (K >> 5), aS, K >> 3, lane);
     return rowW8g32((const int*)W + (long)n * (K >> 2), a, aS, K >> 2, lane);
 }
@@ -305,6 +445,56 @@ __global__ void gemv_q4k_g32(
     }
 }
 
+// KQ_ROWS is the rows a warp of gemv_q5k_g32 / gemv_q6k_g32 (cuda/resident.go's kquantGemvRows, which must match).
+#define KQ_ROWS 1
+
+// gemv_q5k_g32 / gemv_q6k_g32: the file's own Q5_K blocks (rowsQ5K) and Q6_K planes (rowsQ6K) × per-32 int8 activations, for
+// the int8 copies of a q4k load. aS holds scales then group sums (quantG32). KQ_ROWS rows a warp, 8 warps a 256-thread block;
+// each row's arithmetic is projRow's, so a fused projection of these kinds equals the standalone one.
+__global__ void gemv_q5k_g32(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ aS,
+    const float* __restrict__ bias, int N, int nSB, float* __restrict__ dst, int accum)
+{
+    int lane = threadIdx.x & 31;
+    int n0 = (blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5)) * KQ_ROWS;
+    if (n0 >= N) return;
+    float facc[KQ_ROWS];
+    #pragma unroll
+    for (int r = 0; r < KQ_ROWS; r++) facc[r] = 0.f;
+    rowsQ5K<KQ_ROWS>(W, n0, N, a, aS, aS + nSB * 8, nSB, lane, facc);
+    #pragma unroll
+    for (int r = 0; r < KQ_ROWS; r++) {
+        float s = warpSum(facc[r]);
+        int n = n0 + r;
+        if (lane == 0 && n < N) {
+            float val = __fadd_rn(s, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+
+__global__ void gemv_q6k_g32(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ aS,
+    const float* __restrict__ bias, int N, int nSB, float* __restrict__ dst, int accum)
+{
+    int lane = threadIdx.x & 31;
+    int n0 = (blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5)) * KQ_ROWS;
+    if (n0 >= N) return;
+    float facc[KQ_ROWS];
+    #pragma unroll
+    for (int r = 0; r < KQ_ROWS; r++) facc[r] = 0.f;
+    rowsQ6K<KQ_ROWS>(reinterpret_cast<const unsigned char*>(W), n0, N, nSB, a, aS, lane, facc);
+    #pragma unroll
+    for (int r = 0; r < KQ_ROWS; r++) {
+        float s = warpSum(facc[r]);
+        int n = n0 + r;
+        if (lane == 0 && n < N) {
+            float val = __fadd_rn(s, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+
 // rmsQuantShared is rmsnorm_quant_g32's body into SHARED memory: sh = normed[H] | red[256] | aq[H/4] |
 // aS[2·H/32]. Every block of a fused per-32 kernel runs it redundantly (x[H] is L2-resident), so the
 // activation, its per-32 scales and its group sums never make a global round trip, and no single-block
@@ -359,7 +549,7 @@ __global__ void fused_rms_qkv_g32(
         if (r < qDim)               { W = Wq; sc = sq; bias = bq; dst = qOut; row = r;                kind = kq; }
         else if (r < qDim + kvDim)  { W = Wk; sc = sk; bias = bk; dst = kOut; row = r - qDim;         kind = kk; }
         else                        { W = Wv; sc = sv; bias = bv; dst = vOut; row = r - qDim - kvDim; kind = kv; }
-        float f = warpSum(projRow(kind, W, sc, row, H, aq, aS, asum, lane));
+        float f = warpSum(projRow(kind, W, sc, row, r < qDim ? qDim : kvDim, H, aq, aS, asum, lane));
         if (lane == 0) dst[row] = finishRow(kind, f, sc, bias, row);
     }
 }
@@ -388,7 +578,7 @@ __global__ void fused_rms_gu_g32(
         const unsigned int* W = gate ? Wg : Wu;
         const void* sc = gate ? sg : su;
         int kind = gate ? kg : ku;
-        float f = warpSum(projRow(kind, W, sc, row, H, aq, aS, asum, lane));
+        float f = warpSum(projRow(kind, W, sc, row, I, H, aq, aS, asum, lane));
         if (lane == 0) (gate ? gOut : uOut)[row] = finishRow(kind, f, sc, (const float*)0, row);
     }
 }
