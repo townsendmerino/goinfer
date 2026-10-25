@@ -21,6 +21,10 @@ registration, committed before any code. A separate PR from KS-F2's.
     (survey §3, note 1).
   - **Bit-identical to Step 1:** the ring reads the same rows in the same order (G-RING).
 - `attnSinksF64` stays in the tree as the exact arm of the fidelity gate. Removing it is a later, separate change.
+- **Parity:** the change moves gpt-oss's numbers.
+  - **Every other family:** its `deps_hash` refresh is non-numeric, proven by G-ID.
+  - **gpt-oss:** its line in `testdata/parity_manifest.json` is refreshed only so the branch can be pushed, and is provisional. Its T3
+    parity (`go run ./cmd/gate parity` for gpt-oss, then `-update`) is owed before merge, after G-FID.
 
 ## Gates (registered before the code)
 
@@ -45,6 +49,7 @@ registration, committed before any code. A separate PR from KS-F2's.
 - **Prompts:** passages and instructions in the shape of `gpu/attn_fidelity_test.go`, with a pilot set that shares no passage with the gate
   set. `fidelity.PromptSetHash` is recorded.
   - **N, per cell:** from the pilot (2 prompts a cell): `python3 scripts/power.py fidelity --from-positions <the pilot's positions log>`.
+    It gives a pooled count, so N a cell is half of it, rounded up.
   - N is at least 10 and at most 24 a cell. If power.py asks for more than 24, the gate is "cannot resolve" and stops with DECISION NEEDED
     before the gate set runs.
 - **Criteria:** `fidelity.NonInferior`, pooled over the two cells, `AgreeMarginPts = 1`, `KLMargin = 0.10`, one-sided alpha 0.05, and hard
