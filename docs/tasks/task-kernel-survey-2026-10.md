@@ -1878,6 +1878,13 @@ and `Close`. `encodeAheadOffForTest`, read at each `Run`, records in line as tod
 | E3-G1 identity | 0 | llama-tiny and the 1.5B's `.gguf` at int8int8 on WebGPU, encode-ahead on against off on one resident: 32 greedy `Forward` steps; then a sequence mixing `Forward`, `RunNoLogits` (through `PrefillLast`'s trunk-only rows where the backend takes it), `ForwardN` and a second KV slot (`UseKVSlot`) | every logit byte-equal |
 | E3-G2 speed | timed, Mac, timing lock | a whole-token in-process A/B on the 1.5B on WebGPU: encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A over 10 pairs after 2 warm runs each | SHIP iff the median on/off per-token time is ≤ 0.98 with at least 9 of 10 pairs faster; under it, the owner's rule for a bit-identical change decides; otherwise PARK |
 
+**E3-G2's bar amended 2026-10-25 by Francis (his word of 6:10 am, relayed by the coordinator).** E3-G2 now encodes the owner's rule
+for a bit-identical change: **PASS iff at least 9 of 10 pairs are faster.** The median on/off is still printed on every run, as
+information, so a shrinking gain stays visible; it no longer decides. The reason: the registered median bar (≤ 0.98) handed its
+near-miss case to the owner's rule, and the test did not encode that rule. The quiet 23:32 reading (0.9916, 10 of 10) failed the
+test while meeting the rule Francis had kept KS-E3 on. `TestKSE3_decodeSpeed` fails only below 9 of 10. The void guard is
+unchanged. Every recorded reading keeps its verdict on the bar it was read under.
+
 E3-G3: none (one command buffer held per runner). Planted defect, run once and reverted: `SetAdapter` not dropping the pending
 buffer, with a slot switch in E3-G1's sequence; or, if that stays equal, the pending buffer submitted after its runner's steps
 were rebuilt must go red. Stopping rule: one pass each. Cost: G1 a minute; G2 about 4 minutes.
@@ -2059,6 +2066,13 @@ the start; only the Claude app open): PASS, 10 of 10.**
   state.
 - KS-E3 stays on main (Francis's decision).
 Log: `~/goinfer-logs/night/runs/2026-10-25/kse3-g2-gpuguard-3.log`.
+
+**After #227's fifth review (2026-10-25), test-only.** The GPU-time parse ignored `strconv` errors, so an overflowing time read as
+MaxInt64 and an unparsable pid as 0. A value that does not parse now makes the whole reading unknown: the arm cannot be judged, and
+E3-G2 fails on macOS rather than reading it as quiet. `TestParseAGXClients` adds overflow cases, and is red without the check. The
+instrument check (`TestOtherGPUWindow_seesAnotherProcess`) also no longer fails when an unrelated process closes a GPU client in its
+window: it requires only the child's own clients to stay listed. E3-G2's own rule, voiding an arm with any vanished client, is
+unchanged. The 00:44 reading stands: its log shows every client parsed (other processes 0.00–0.71%) and none vanished.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
