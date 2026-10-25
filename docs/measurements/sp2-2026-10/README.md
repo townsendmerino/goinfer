@@ -315,3 +315,16 @@ before it, `serve` verified at 8, where SP0 projects 1.17×.
   capture being the extra.
 - So the A/B as registered (the template's default) measures thinking-mode replies, which G4 did not (G4 rendered thinking off).
   How to proceed is the owner's decision; nothing is re-run until it is made.
+
+**Correction (2026-10-25, 10:40), to the diagnostic above and the amendment's stated reason.** The diagnostic rendered its prompts in
+the chat package's bare default mode (`asis`: nothing written after `assistant\n`, the model decides), not in the mode `serve` applies,
+`-thinking template`. For this GGUF (unsloth's), `template` renders the closed `<think>\n\n</think>\n\n`, thinking off, exactly as
+`-thinking off` does (read from the GGUF's own template, and from goinfer's rendering of it in both modes). So:
+- the first start's two cells (1.02× at 512) already ran with thinking off, and thinking does not explain them;
+- the amendment to `-thinking off` changes nothing for this file: the run measures the same condition it registered, and remains a
+  valid reading of `serve --drafter` with thinking off on the essay prompts;
+- the load banner's "template default off" is right for this file; `serve -h`'s "Qwen3.5-9B: on" describes the Hugging Face
+  checkpoint's template, which opens `<think>\n` by default.
+
+What the 1.02× does come from is open. The likeliest cause is the prompt class (essay prose here, code and math in G4); an
+in-process run of the same prompts in `serve`'s rendering will say, after this A/B finishes.
