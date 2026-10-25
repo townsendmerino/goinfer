@@ -1586,6 +1586,20 @@ fresh base dump of 922054f3 reads 0 logits differ on llama-tiny, qwen35-tiny and
 Logs: `~/goinfer-logs/ksd8-review-g125-2026-10-24.log`, `~/goinfer-logs/ksd8-review-g6-2026-10-24.log`,
 `~/goinfer-logs/ksd8-review-plant-2026-10-24.log`.
 
+**Correction to the plant reading above, 2026-10-24 (after the review of #222).** The three lengths that failed (M = 33, 48 and
+100) failed on the **top-1 clause** (pass 4, 4 and 5 of 8 against the sequential path's 6, 8 and 7), not on KL. The KL clause failed
+**none** of the six: the 10–20× rise (to 4.6e-4–1.0e-3) stayed far inside the flat +0.005-nat margin. So the KL clause was vacuous at
+this model's scale, and the plant was caught by the top-1 clause alone.
+
+**D8-G2's margin scaled, registered 2026-10-24 (23:20) after that review.** The KL clause's margin δ becomes half the sequential
+path's KL, at least 1e-5 and at most the registered 0.005 nats: never looser than registered, and on nemotron-tiny (both KLs about
+5e-5) a 1.5× rise fails it. The basis is the readings already recorded: clean, the pass sits at 0.91–1.06 of the sequential path's KL
+(both reads on the merged tree); under the window plant, at 13× or more. KS-D8 is merged, so this decides nothing about shipping; it
+makes D8-G2 able to catch what it exists for. The top-1 clause is unchanged. Also added: `TestKSD8_mambaShapeDeclines`, the
+batched Mamba-2 pass's shape guards in `recurrentPrefillOK` (pass off, a DeltaNet layer beside the Mamba ones, postOnly, conv width
+outside 2..8, hidden or inner width off a multiple of 32), each set alone on a built nemotron-tiny resident, plus one through
+`buildResident` (pass off → `prefillOK` false).
+
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
 - **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
