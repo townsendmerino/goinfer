@@ -65,7 +65,7 @@ func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat
 	}
 	start, perm := kquantRows(wm.Rows(), in, rowSrc)
 	src := kquantSrc{tensor: name, kind: kind, start: start, perm: perm}
-	if !kquantServes(dims, true, nil, wm.Cols(), src, wm.Rows()) {
+	if !kquantServes(dims, true, wm.Cols(), src, wm.Rows()) {
 		return
 	}
 	src.int8Bytes, src.nativeBytes = int64(len(q8))+4*int64(len(sc)), int64(wm.Rows())*int64(in/256)*bb
@@ -75,13 +75,14 @@ func (w *Weights) noteKQuant(g *embed.GGUFFile, name string, wm linalg.WeightMat
 	w.kquant[unsafe.SliceData(q8)] = src
 }
 
-// kquantServes reports whether a raw accessor's answer (dims, ok, err) for a weight of rows destination rows over in columns,
-// mapped by src, is one KQuantReader.Rows will serve: read without error, stored as the kind asked, two dims whose columns
-// are in (a multiple of 256), and every source row inside the tensor (a run, or a permutation of exactly rows entries).
+// kquantServes reports whether a raw accessor's answer (dims, ok; its caller has already handled an error) for a weight of rows
+// destination rows over in columns, mapped by src, is one KQuantReader.Rows will serve: stored as the kind asked, two dims whose
+// columns are in (positive, a multiple of 256), and every source row inside the tensor (a run, or a permutation of exactly rows
+// entries).
 // noteKQuant records only such a source and Rows checks the same, both with the weight's own columns and rows, so a recorded
 // weight is one the lane uploads natively.
-func kquantServes(dims []int, ok bool, err error, in int, src kquantSrc, rows int) bool {
-	if err != nil || !ok || len(dims) != 2 || dims[0] != in || in%256 != 0 || rows <= 0 {
+func kquantServes(dims []int, ok bool, in int, src kquantSrc, rows int) bool {
+	if !ok || len(dims) != 2 || dims[0] != in || in <= 0 || in%256 != 0 || rows <= 0 {
 		return false
 	}
 	if src.perm == nil {
@@ -188,7 +189,7 @@ func (k *KQuantReader) Rows(wm *linalg.WeightMat, each func(r int, raw []byte) e
 	if err != nil {
 		return err
 	}
-	if !kquantServes(dims, ok, nil, wm.Cols(), src, wm.Rows()) {
+	if !kquantServes(dims, ok, wm.Cols(), src, wm.Rows()) {
 		return fmt.Errorf("decoder: KQuantReader: %q is not %s covering %d rows of %d columns (dims %v)", src.tensor, src.kind, wm.Rows(), wm.Cols(), dims)
 	}
 	rb := dims[0] / 256 * bb
