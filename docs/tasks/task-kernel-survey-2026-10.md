@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
-| KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); with the GPU-contention guard, the 1.5B's WebGPU decode median 0.9807 of its time, 10 of 10 pairs, under the owner's bit-identical rule (0.0007 over the median bar) | survey, "KS-E3 read" |
+| KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); on the fixed GPU-contention guard, a quiet machine reads median 0.9916, 10 of 10 pairs (about 0.2 ms a token), under the owner's bit-identical rule, not the median bar | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1772,6 +1772,18 @@ KS-E3 stays on main whatever it reads (Francis's decision); the reading goes in 
 The first attempt (22:25) refused before loading: 4.4 GB reclaimable, under the test's 6 GB pre-load line, with the owner's apps
 open. It is queued on the Mac's night runner (`kse3-g2-gpuguard`, the pinned binary in `~/goinfer-bench/kse3-night/`, re-queued
 while under 6.5 GB reclaimable until 06:00); its reading is added here when it lands.
+
+**E3-G2 read on the fixed GPU guard, 2026-10-24.**
+- **First night attempt (22:31–22:41): no reading.** All 16 pairs were void: reclaimable memory fell from 3.6 to 1.8 GiB, and other
+  processes held about 5% of the GPU in every arm. A sample at 23:31 put 5.0% on a Claude app helper process.
+- **Second attempt, queued on Francis's word of 23:30 with only the Claude app open (23:32–23:34, the night runner holding the
+  lock; 8.4 GB reclaimable at the start).** Every arm was valid, the quietest of any E3-G2 run: 0.20–0.34 busy cores, other
+  processes' GPU 0.44–0.59% (the line is 2%), 3.85–4.01 GiB reclaimable; no void pairs. off 25.97–26.13 ms a token, on
+  25.71–25.85. **Median on/off 0.9916, 10 of 10 pairs faster** (0.9846–0.9939).
+- **Verdict.** It misses the median bar (≤ 0.98). The owner's bit-identical rule's terms are met again: 10 of 10 faster,
+  bit-identical, no memory allocated, one path. KS-E3 stays on main by Francis's decision either way.
+- **On a quiet machine the gain is about 0.2 ms a token (0.8%)**, smaller than the 0.5–0.6 ms the noisier readings showed.
+Log: `~/goinfer-logs/night/runs/2026-10-24/kse3-g2-gpuguard-2.log` (the first attempt's beside it, `kse3-g2-gpuguard.log`).
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
