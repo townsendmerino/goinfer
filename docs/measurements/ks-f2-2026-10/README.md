@@ -75,6 +75,16 @@ The exp-and-sum loop and the AV loop keep key order.
 - **First loads:** the first CPU int4 load of each model writes its CPU sidecar `.giw` beside the `.gguf` in nobara's `~/models`
   (about 11 GB for gpt-oss-20b and 5 GB for the 9B; 87 GB free). The fit step absorbs it, before any timed run.
 
+## Decision
+
+**Francis, 2026-10-25 10:16 (relayed by the coordinator):** "KS-F2 default ON for gpt-oss: bit-identical, 1.025× at depth 128 on 10 of 10
+pairs, at most 0.79 MB per cache at 32k. Ship it as a default change once the granitemoehybrid identity cell passes on nobara. The PR goes
+to Gemini review before merge."
+- **The cell he made it conditional on** (granitemoehybrid, which reads through `attendQueryP`) passed at 10:04. The PR ships both
+  functions' schedule.
+- **What it means for the `attendQueryP` families** (Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2, Llama 4): bit-identical by G0, G1a and
+  G1b, with their speed not measured.
+
 ## Results so far
 
 | gate | where | result |
