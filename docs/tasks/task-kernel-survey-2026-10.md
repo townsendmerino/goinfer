@@ -60,7 +60,7 @@
 | KS-D10 | open | aikit: GPU timestamps in `TestMetalANNCrossover` (no consumer today) | — |
 | KS-E1 | open | either box: `TestW4A8_parity_and_bandwidth` GB/s, then an A/B | — |
 | KS-E2 | open | either box: byte equality, then `TestDecode_dispatchProfile` deltas | — |
-| KS-E3 | open (owner's call) | on main since 2026-10-24 (#216): the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1). E3-G2 with the GPU-contention term: median 0.9807, 10 of 10 pairs, 0.0007 over the median bar; the owner's bit-identical rule's terms met, but the 16:50 registration said park, so the call is Francis's | survey, "KS-E3 read" |
+| KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); with the GPU-contention guard, the 1.5B's WebGPU decode median 0.9807 of its time, 10 of 10 pairs, under the owner's bit-identical rule (0.0007 over the median bar) | survey, "KS-E3 read" |
 | KS-E4 | open | either box: the projections class of `TestPrefillInt4_profile` | — |
 | KS-E5 | open | either box: the attention class at 2k, 8k and 16k | — |
 | KS-E6 | open | either box: `TestPrefillInt4_profile` at 4,096 rows | — |
@@ -1754,6 +1754,10 @@ busy cores, 2.81–4.33 GiB reclaimable; no void pairs. The arms held steady thi
 - **Readings so far:** 0.9796, 0.9764 and 0.9788 at 10 of 10 (the load-average guard); 0.9825 at 8 of 10 (16:11, busy-core guard;
   the arms swung 25–29 ms); 0.9807 at 10 of 10 (this run, GPU term, steady arms).
 Log: `~/goinfer-logs/kse3-g2-gpuguard-2026-10-24.log`.
+
+**Decided 2026-10-24 by Francis: keep.** Asked to keep KS-E3 on main or revert it after the 17:26 reading, he answered "Keep". KS-E3
+stays on main as shipped in #216, on the owner's bit-identical rule: 10 of 10 pairs faster, bit-identical, no memory allocated, one
+path. The median (0.9807) is 0.0007 over the median bar.
 
 **KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
