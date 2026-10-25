@@ -1,0 +1,146 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"sync"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// TestKSH2_buildVRAM is KS-H2's reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-H2 / KS-H3 readings"): free VRAM through one
+// CUDA build, read through the primary context at every requested allocation (allocSeenForTest, kvAllocSeenForTest), against the
+// bytes requested and those requests rounded as cuMemAlloc rounds. KSH2_MODEL names the checkpoint; KSH2_CTX (0: the default) and
+// KSH2_SLOTS (default 1) the build. The suite's own default is the f32 cache (kv16_default_test.go); KSH2_SERVED=1 turns kvF16Auto on,
+// so the build resolves its KV as serve's default does. A scratch harness, kept as text beside the record.
+func TestKSH2_buildVRAM(t *testing.T) {
+	path := os.Getenv("KSH2_MODEL")
+	if path == "" {
+		t.Skip("set KSH2_MODEL")
+	}
+	ctx, _ := strconv.Atoi(os.Getenv("KSH2_CTX"))
+	slots := 1
+	if v, err := strconv.Atoi(os.Getenv("KSH2_SLOTS")); err == nil && v > 0 {
+		slots = v
+	}
+	if os.Getenv("KSH2_SERVED") == "1" {
+		kvF16Auto.Store(true)
+		defer kvF16Auto.Store(false)
+	}
+	probe, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no CUDA device: %v", err)
+	}
+	free := func() uint64 {
+		f, _, err := probe.Context().MemInfo()
+		if err != nil {
+			t.Errorf("MemInfo: %v", err)
+		}
+		return f
+	}
+	type event struct {
+		kv    bool // a kvAllocSeenForTest event; its buffer's allocSeen event is beside it
+		bytes int
+		free  uint64
+	}
+	var (
+		mu     sync.Mutex
+		events []event
+	)
+	allocSeenForTest = func(b int) {
+		f := free()
+		mu.Lock()
+		events = append(events, event{bytes: b, free: f})
+		mu.Unlock()
+	}
+	kvAllocSeenForTest = func(_ *cudaResident, b int) {
+		f := free()
+		mu.Lock()
+		events = append(events, event{kv: true, bytes: b, free: f})
+		mu.Unlock()
+	}
+	before, total, _ := probe.Context().MemInfo()
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: ctx, ResidentKVSlots: slots})
+	allocSeenForTest, kvAllocSeenForTest = nil, nil
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	after := free()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+
+	// Which allocSeen events are K/V buffers: the one beside each kv event with the same size (before it at f16, after it at f32).
+	isKV := make([]bool, len(events))
+	for i, e := range events {
+		if !e.kv {
+			continue
+		}
+		isKV[i] = true
+		switch {
+		case i > 0 && !events[i-1].kv && events[i-1].bytes == e.bytes && !isKV[i-1]:
+			isKV[i-1] = true
+		case i+1 < len(events) && !events[i+1].kv && events[i+1].bytes == e.bytes:
+			isKV[i+1] = true
+		}
+	}
+	const q = 2 << 20
+	round := func(b int) int {
+		if b >= q {
+			return (b + q - 1) / q * q
+		}
+		return b
+	}
+	firstKV, lastKV := -1, -1
+	for i := range events {
+		if isKV[i] {
+			if firstKV < 0 {
+				firstKV = i
+			}
+			lastKV = i
+		}
+	}
+	mib := func(b float64) float64 { return b / (1 << 20) }
+	sum := func(lo, hi int, kv bool) (req, rnd, n, small, smallBytes int) {
+		for i := lo; i < hi; i++ {
+			if events[i].kv || isKV[i] != kv {
+				continue
+			}
+			req += events[i].bytes
+			rnd += round(events[i].bytes)
+			n++
+			if events[i].bytes < q {
+				small++
+				smallBytes += events[i].bytes
+			}
+		}
+		return
+	}
+	fmt.Printf("[KS-H2] %s ctx %d slots %d kvF16 %v: free before load %.1f MiB of %.1f, after %.1f; %d allocation events\n",
+		path, r.ctxCap, r.kvSlotsN, r.kvF16, mib(float64(before)), mib(float64(total)), mib(float64(after)), len(events))
+	if firstKV < 0 {
+		t.Fatal("no K/V pool allocation seen")
+	}
+	// Stage 1: the load's first allocation up to the first pool buffer.
+	f0, f1 := events[0].free, events[firstKV].free
+	req, rnd, n, small, smallB := sum(0, firstKV, false)
+	fmt.Printf("[KS-H2] before the pools: free %.1f -> %.1f MiB, actual %.1f MiB; %d requests %.1f MiB, rounded %.1f MiB (rounding %.1f); %d under 2 MiB (%.1f MiB); actual minus rounded %.1f MiB\n",
+		mib(float64(f0)), mib(float64(f1)), mib(float64(f0-f1)), n, mib(float64(req)), mib(float64(rnd)), mib(float64(rnd-req)), small, mib(float64(smallB)), mib(float64(f0-f1))-mib(float64(rnd)))
+	// Stage 2: the pools, from before the first pool buffer to the first event after the last (or the end of the load).
+	fAfter, where := after, "after the load returned"
+	if lastKV+1 < len(events) {
+		fAfter, where = events[lastKV+1].free, "at the next allocation"
+	}
+	kreq, krnd, kn, _, _ := sum(firstKV, lastKV+1, true)
+	oreq, ornd, on, _, _ := sum(firstKV, lastKV+1, false)
+	fmt.Printf("[KS-H2] the pools: free %.1f -> %.1f MiB (%s), actual %.1f MiB; %d pool buffers %.1f MiB requested, rounded %.1f MiB (rounding %.1f); %d other requests interleaved, %.1f MiB (rounded %.1f)\n",
+		mib(float64(f1)), mib(float64(fAfter)), where, mib(float64(f1-fAfter)), kn, mib(float64(kreq)), mib(float64(krnd)), mib(float64(krnd-kreq)), on, mib(float64(oreq)), mib(float64(ornd)))
+	fmt.Printf("[KS-H2] priced: kvBytesForCap %.1f MiB + null %.1f MiB per slot; allocations after the pools: %d\n",
+		mib(float64(kvBytesForCap(r.ctxCap, r.layers))), mib(float64(kvPoolNullBytes(r.layers))), len(events)-lastKV-1)
+}
