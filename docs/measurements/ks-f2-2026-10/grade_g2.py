@@ -6,8 +6,10 @@ warm2 or pair0..pair9). A pair's ratio is B's decode ms per token over A's; B is
   FAIL  any cell has at most 1 of 10 pairs faster
   PARK  otherwise
 
-It prints each pair, each cell's count and median ratio, and the verdict. G0, G1 and the memory statement are graded in the record, not
-here. Usage: grade_g2.py <cell.jsonl> ...
+A run is VOID, and its pair is dropped, when it started at a load above 8.0, when it swapped (vmswap_peak_mib > 0), or when it started
+with less available memory than the fit run's peak plus 2 GB (need_mib, which run-nobara.sh writes on every line). A cell without 10
+complete pairs is INCOMPLETE. It prints each pair, each cell's count and median ratio, and the verdict. G0, G1 and the memory statement
+are graded in the record, not here. Usage: grade_g2.py <cell.jsonl> ...
 """
 import json, os, statistics, sys
 
@@ -17,8 +19,19 @@ for path in sys.argv[1:]:
     runs = {}
     for line in open(path):
         r = json.loads(line)
-        if r["tag"].startswith("pair"):
-            runs.setdefault(r["tag"], {})[r["arm"]] = r
+        if not r["tag"].startswith("pair"):
+            continue
+        why = []
+        if r.get("load", 0) > 8.0:
+            why.append(f"load {r['load']} > 8.0")
+        if r.get("vmswap_peak_mib", 0) > 0:
+            why.append(f"swap peak {r['vmswap_peak_mib']} MiB")
+        if "need_mib" in r and r.get("avail_mib", 0) < r["need_mib"] + 2048:
+            why.append(f"available {r['avail_mib']} MiB < need {r['need_mib']} + 2048")
+        if why:
+            print(f"{cell} {r['tag']} {r['arm']}: VOID ({'; '.join(why)})")
+            continue
+        runs.setdefault(r["tag"], {})[r["arm"]] = r
     ratios = []
     for tag in sorted(runs, key=lambda t: int(t[4:])):
         a, b = runs[tag].get("A"), runs[tag].get("B")

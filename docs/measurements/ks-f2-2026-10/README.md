@@ -30,7 +30,7 @@ The exp-and-sum loop and the AV loop keep key order.
 | G1b | 0, nobara CPU (amd64) | the same, on nobara, through its `night.py` queue | the same |
 | G2 | timed, nobara CPU, the timing lock, by day | `decoder/ksf2_speed_test.go:TestKSF2_cpuDecodeSpeed` built as a test binary at `origin/main` and at the branch (the same file, copied into the old worktree), run A B B A over 10 pairs after 2 warm runs each. Cells: gpt-oss-20b (`gpt-oss-20b-MXFP4.gguf`, int4, CPU) at depth 128 and 2048, and Qwen3.5-9B (`Qwen3.5-9B-Q4_K_M.gguf`, int4, CPU) at depth 2048. Each run prefills to the depth, then times 32 greedy decode tokens | **SHIP** iff G0 and G1 pass, memory is as stated below, and in every cell at least 9 of 10 pairs are faster (the small-gains rule). **FAIL** if any cell has at most 1 of 10 pairs faster. **PARK** otherwise. The median per-cell ratio is reported beside it |
 
-- **Memory, stated and not gated:**
+- **Memory, stated and not gated** (corrected after Gemini's review of #239, below):
   - **Removed:** gpt-oss's per-call score allocation, nKeys × 4 bytes per layer per token.
   - **Added:** a score buffer per worker slot, held in `decodeScratch`: at most `maxAttnWorkers` (6) × nKeys × 4 bytes per cache, grown with
     the context (0.79 MB at 32k).
@@ -75,6 +75,28 @@ The exp-and-sum loop and the AV loop keep key order.
 - **First loads:** the first CPU int4 load of each model writes its CPU sidecar `.giw` beside the `.gguf` in nobara's `~/models`
   (about 11 GB for gpt-oss-20b and 5 GB for the 9B; 87 GB free). The fit step absorbs it, before any timed run.
 
+## Gemini's review of #239, and what changed
+
+Gemini found the product code bit-identical and race-free.
+- **Risk 1, the `attendQueryP` half shipping untimed:** the owner decides it. It is not acted on here.
+- **Risk 2, G2's void rules:** they were recorded but not enforced. Now:
+  - `grade_g2.py` drops a run that started above 8.0 load, that swapped, or that started with less available memory than the fit run's
+    peak plus 2 GB. A cell without 10 complete pairs is INCOMPLETE.
+  - `run-nobara.sh` voids and re-runs such a run, runs the fit check at the cell's own depth and keeps its peak as the cell's need, reads
+    the peak at exit through GNU `time -v`, and keeps the grader's exit code (`PIPESTATUS`).
+  - The recorded depth-128 cell passes those rules: no run started above load 6.56, none swapped, and available memory never fell below
+    59.5 GB against a peak of 23.4 GB. Its reading is unchanged.
+- **Nit 3, the memory bound:** `growCap` at least doubles a buffer, so a slot can hold up to about twice the key count. The added bound is
+  6 slots × 2 × the key count × 4 bytes, **1.57 MB per cache at 32k**, not the 0.79 MB first stated.
+  - When one worker serves, gpt-oss now scores into the cache's existing `scoresBuf` instead of a per-call allocation, the same buffer
+    `attendQueryP`'s callers already pass.
+  - Neither buffer is new.
+- **Test 4, G0's counts:**
+  - "180 cells fanned out" counted each cell at GOMAXPROCS 1 and at 8. It is **90 distinct cells** (24 gpt-oss, 66 `attendQueryP`), each
+    run at both.
+  - G0 now also runs `TestKSF2_scratchReuseAcrossSteps`: 300 decode steps on one cache and one scratch, the key count growing a row a step,
+    so the pool's reuse and growth are exercised. Every word is equal on arm64 and amd64, with 285–293 steps fanned out.
+
 ## Decision
 
 **Francis, 2026-10-25 10:16 (relayed by the coordinator):** "KS-F2 default ON for gpt-oss: bit-identical, 1.025× at depth 128 on 10 of 10
@@ -89,7 +111,7 @@ to Gemini review before merge."
 
 | gate | where | result |
 |---|---|---|
-| G0 | the Mac, arm64 and amd64 (Rosetta), GOMAXPROCS 1 and 8 | **PASS.** `TestKSF2_sinksBitIdentical`: 256 cells, 48 with the heads fanned out. `TestKSF2_queryPBitIdentical`: 768 cells, 132 fanned out. Every ctx word and KV row equal on both arches. A planted defect (two of the eight key rows swapped in `dotsF64x8`) turned both tests red |
+| G0 | the Mac, arm64 and amd64 (Rosetta), GOMAXPROCS 1 and 8 | **PASS.** `TestKSF2_sinksBitIdentical`: 256 cells, 48 with the heads fanned out. `TestKSF2_queryPBitIdentical`: 768 cells, 132 fanned out. Every ctx word and KV row equal on both arches. That is 90 distinct cells fanned out, each at GOMAXPROCS 1 and 8; the counts first printed as 48 and 132 counted both. A planted defect (two of the eight key rows swapped in `dotsF64x8`) turned both tests red. After the review, `TestKSF2_scratchReuseAcrossSteps` (300 steps on one scratch) is also equal on both arches |
 | G1a | the Mac (Darwin/arm64), CPU | **PASS** (2026-10-25 06:55, `origin/main` `8135a0c3` against `f8a1eda2`, 64 steps): 33 families IDENTICAL, 0 within tolerance, 0 different, 10 not run (fixtures absent or not tiny). gpt-oss, `granitemoehybrid`, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are all IDENTICAL |
 | G1b | nobara CPU (amd64) | **PASS.** The 2026-10-25 08:32 run (`ks-f2-nobara`) found 32 IDENTICAL, 0 within tolerance, 0 different. gpt-oss, `lfm2`, `qwen3_5_moe`, `nemotron_h` and `llama4_text` are IDENTICAL. `granitemoehybrid`, not run then for want of its fixture, was re-run alone at 10:04 (`ks-f2-g1b-granite`, at `998f36f8`): IDENTICAL |
 | G2 | nobara CPU | **one of three cells read** (below). Francis, 2026-10-25 09:58: "KS-F2 A — decide on the readings so far; no deeper cell" |

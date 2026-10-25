@@ -78,7 +78,7 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 		}
 		runtime.GOMAXPROCS(old)
 	}
-	t.Logf("%d cells, %d with the heads fanned out, every word equal", cells, fanned)
+	t.Logf("%d runs (each cell at GOMAXPROCS 1 and 8), %d of them with the heads fanned out (%d distinct cells), every word equal", cells, fanned, fanned/2)
 	if fanned == 0 {
 		t.Fatal("no cell fanned the heads out: the parallel path went untested")
 	}
@@ -139,7 +139,7 @@ func TestKSF2_queryPBitIdentical(t *testing.T) {
 		}
 		runtime.GOMAXPROCS(old)
 	}
-	t.Logf("%d cells, %d with the heads fanned out, every word equal", cells, fanned)
+	t.Logf("%d runs (each cell at GOMAXPROCS 1 and 8), %d of them with the heads fanned out (%d distinct cells), every word equal", cells, fanned, fanned/2)
 	if fanned == 0 {
 		t.Fatal("no cell fanned the heads out: the parallel path went untested")
 	}
@@ -255,5 +255,44 @@ func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache
 			vHead := vals[rowBase(s)+kvh*hd : rowBase(s)+kvh*hd+hd]
 			addScaled(oHead, vHead, w)
 		}
+	}
+}
+
+// The two functions over many decode steps on one cache and one scratch, the key count growing a row a step from 1 to 300: the fanned
+// path reuses decodeScratch.headScoresPool's buffers across steps (and grows them), and every step's ctx must still equal the reference's.
+// A reused buffer that carried a stale score into a shorter step, or a slot grown short, would show here and not in the one-call cells.
+func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
+	const steps = 300
+	for _, sh := range []ksf2Shape{{64, 8, 64}, {16, 2, 128}} {
+		r := rand.New(rand.NewSource(int64(sh.nH)))
+		arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
+		kvDim := sh.nKV * sh.hd
+		lw := &LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
+		p := attentionParams{Window: 40, Scale: 1 / math.Sqrt(float64(sh.hd)), Softcap: 30}
+		a, b := NewKVCache(1, sh.nKV, sh.hd, p.Window, steps, nil), NewKVCache(1, sh.nKV, sh.hd, p.Window, steps, nil)
+		a.scr = newDecodeScratch(arch)
+		qa, qb := NewKVCache(1, sh.nKV, sh.hd, 0, steps, nil), NewKVCache(1, sh.nKV, sh.hd, 0, steps, nil)
+		qa.scr = a.scr // one scratch serves both functions, as a cache's does across its layers
+		fanned := 0
+		for pos := range steps {
+			q, k, v := ksf2Floats(r, sh.nH*sh.hd, 2), ksf2Floats(r, kvDim, 2), ksf2Floats(r, kvDim, 2)
+			got, want := make([]float32, sh.nH*sh.hd), make([]float32, sh.nH*sh.hd)
+			attendSinksToken(p, q, k, v, got, a, arch, lw, 0, pos)
+			attendSinksTokenRef(p, q, k, v, want, b, arch, lw, 0, pos)
+			ksf2SameBits(t, fmt.Sprintf("%+v sinks step %d: ctx", sh, pos), got, want)
+			qa.Append(0, k, v)
+			qb.Append(0, k, v)
+			pq := attentionParams{Scale: p.Scale, Softcap: p.Softcap}
+			attendQueryP(pq, q, got, make([]float32, pos+1), qa, 0, pos, arch)
+			attendQueryPRef(pq, q, want, make([]float32, pos+1), qb, 0, pos, arch)
+			ksf2SameBits(t, fmt.Sprintf("%+v queryP step %d: ctx", sh, pos), got, want)
+			if scalarHeadWorkers(sh.nH, pos+1, sh.hd) > 1 {
+				fanned++
+			}
+		}
+		if fanned == 0 {
+			t.Fatalf("%+v: no step fanned the heads out", sh)
+		}
+		t.Logf("%+v: %d steps on one scratch, %d of them fanned out, every word equal", sh, steps, fanned)
 	}
 }

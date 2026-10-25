@@ -53,10 +53,17 @@ one() {
 	if awk -v l="$load" 'BEGIN{exit !(l > 8.0)}'; then
 		echo "VOID: $cell $tag $arm started at load $load (> 8.0)" | tee -a "$LOG/void.txt"; return 1
 	fi
+	local need
+	need=$(cat "$LOG/need-$(basename "$model").mib" 2>/dev/null || echo 0)
+	if [ "$need" -gt 0 ] && [ "$avail" -lt $((need + 2048)) ]; then
+		echo "VOID: $cell $tag $arm started with ${avail} MiB available, under the fit need ${need} + 2048" | tee -a "$LOG/void.txt"; return 1
+	fi
 	local bin=$B/ksf2-new.test
 	[ "$arm" = A ] && bin=$B/ksf2-old.test
+	# GNU time reports the process's peak resident set at its exit (the 1 s /proc samples below can miss the last rise); VmSwap's peak
+	# comes from the samples only.
 	(cd "$B" && env KSF2_MODEL="$model" KSF2_DEPTH="$depth" KSF2_TOKENS="$tokens" KSF2_ARM="$arm" KSF2_OUT="$LOG/g2-$cell.jsonl.part" \
-		"$bin" -test.run '^TestKSF2_cpuDecodeSpeed$' -test.v -test.count=1 -test.timeout 20m > "$LOG/g2-$cell-$tag-$arm.log" 2>&1 </dev/null) &
+		/usr/bin/time -v -o "$LOG/g2-$cell-$tag-$arm.time" "$bin" -test.run '^TestKSF2_cpuDecodeSpeed$' -test.v -test.count=1 -test.timeout "$TEST_TIMEOUT" > "$LOG/g2-$cell-$tag-$arm.log" 2>&1 </dev/null) &
 	local pid=$! hwm=0 swap=0 h s
 	while kill -0 $pid 2>/dev/null; do
 		local child
@@ -70,12 +77,19 @@ one() {
 		sleep 1
 	done
 	wait $pid; local r=$?
+	local maxrss
+	maxrss=$(awk -F': ' '/Maximum resident set size/ {print $2}' "$LOG/g2-$cell-$tag-$arm.time" 2>/dev/null)
+	[ -n "$maxrss" ] && [ "$maxrss" -gt "$hwm" ] && hwm=$maxrss
+	if [ "$tag" = fit ]; then echo $((hwm / 1024)) > "$LOG/need-$(basename "$model").mib"; fi
+	if [ "$swap" -gt 0 ]; then
+		echo "VOID: $cell $tag $arm swapped (peak VmSwap $((swap / 1024)) MiB)" | tee -a "$LOG/void.txt"; return 1
+	fi
 	if [ $r != 0 ] || ! grep -q -- '--- PASS' "$LOG/g2-$cell-$tag-$arm.log"; then
 		echo "FAILED: $cell $tag $arm (see $LOG/g2-$cell-$tag-$arm.log)"; tail -3 "$LOG/g2-$cell-$tag-$arm.log"; return 2
 	fi
 	# Tag the line the harness wrote with this run's place in the order and the box's state at its start.
-	python3 -c "import json,sys; l=json.loads(open(sys.argv[1]).read().splitlines()[-1]); l.update(tag=sys.argv[2], load=float(sys.argv[3]), avail_mib=int(sys.argv[4]), vmhwm_mib=int(sys.argv[5])//1024, vmswap_peak_mib=int(sys.argv[6])//1024); print(json.dumps(l))" \
-		"$LOG/g2-$cell.jsonl.part" "$tag" "$load" "$avail" "$hwm" "$swap" >> "$LOG/g2-$cell.jsonl"
+	python3 -c "import json,sys; l=json.loads(open(sys.argv[1]).read().splitlines()[-1]); l.update(tag=sys.argv[2], load=float(sys.argv[3]), avail_mib=int(sys.argv[4]), vmhwm_mib=int(sys.argv[5])//1024, vmswap_peak_mib=int(sys.argv[6])//1024, need_mib=int(sys.argv[7])); print(json.dumps(l))" \
+		"$LOG/g2-$cell.jsonl.part" "$tag" "$load" "$avail" "$hwm" "$swap" "$need" >> "$LOG/g2-$cell.jsonl"
 	echo "   $cell $tag $arm: $(tail -1 "$LOG/g2-$cell.jsonl" | python3 -c 'import json,sys; l=json.loads(sys.stdin.read()); print("%.2f ms/token, load %s, VmHWM %s MiB, swap %s MiB" % (l["decode_ms_per_token"], l["load"], l["vmhwm_mib"], l["vmswap_peak_mib"]))')"
 }
 
@@ -91,13 +105,18 @@ run() {
 	done
 }
 
-echo "== fit: each model loads, load only ($(date '+%T'))"
-for m in "$M/gpt-oss-20b-MXFP4.gguf" "$M/Qwen3.5-9B-Q4_K_M.gguf"; do
-	run fit-$(basename "$m" .gguf) B "$m" 16 1 fit || { grep -q -i -E 'refus|fit guard|would page' "$LOG"/g2-fit-*.log && { echo "FIT REFUSED: $m"; exit 75; }; echo "VOID: the fit load of $m failed"; exit 2; }
+# The cells: depth 128 only, by Francis's call of 2026-10-25 09:58 (the depth-2048 cells cost about 8 hours each on this CPU).
+cells=("gptoss-d128|$M/gpt-oss-20b-MXFP4.gguf|128")
+TEST_TIMEOUT=${TEST_TIMEOUT:-20m}
+
+echo "== fit: each cell's model at the cell's own depth, one token, its peak kept as the cell's need ($(date '+%T'))"
+for c in "${cells[@]}"; do
+	IFS='|' read -r cell m depth <<< "$c"
+	[ -e "$LOG/need-$(basename "$m").mib" ] && continue
+	run "fit-$cell" B "$m" "$depth" 1 fit || { grep -q -i -E 'refus|fit guard|would page' "$LOG"/g2-fit-*.log && { echo "FIT REFUSED: $m"; exit 75; }; echo "VOID: the fit load of $m failed"; exit 2; }
 done
 
 echo "== G2: A B B A, 2 warm runs each, then 10 pairs ($(date '+%T'))"
-cells=("gptoss-d128|$M/gpt-oss-20b-MXFP4.gguf|128" "gptoss-d2048|$M/gpt-oss-20b-MXFP4.gguf|2048" "qwen35-9b-d2048|$M/Qwen3.5-9B-Q4_K_M.gguf|2048")
 for c in "${cells[@]}"; do
 	IFS='|' read -r cell model depth <<< "$c"
 	echo "-- $cell ($(date '+%T'))"
@@ -110,7 +129,9 @@ for c in "${cells[@]}"; do
 		fi
 	done
 done
-python3 "$B/wt-new/docs/measurements/ks-f2-2026-10/grade_g2.py" "$LOG"/g2-gptoss-d128.jsonl "$LOG"/g2-gptoss-d2048.jsonl "$LOG"/g2-qwen35-9b-d2048.jsonl | tee "$LOG/g2-grade.txt"
+python3 "$B/wt-new/docs/measurements/ks-f2-2026-10/grade_g2.py" "$LOG"/g2-gptoss-d128.jsonl | tee "$LOG/g2-grade.txt"
+g2=${PIPESTATUS[0]}
+[ "$g2" = 0 ] || { echo "G2: grade exit $g2 (FAIL, PARK or INCOMPLETE)"; rc=1; }
 for side in new old; do git -C "$R" worktree remove --force "$B/wt-$side" 2>/dev/null; done
 echo "=== $(date '+%F %T %Z') end, rc $rc; record $LOG"
 exit $rc
