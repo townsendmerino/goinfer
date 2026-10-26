@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/mmap"
+
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // TestColdLoad_linuxProbesAndActions runs the real kernel calls on a real file: a file written, synced and dropped
@@ -43,14 +45,14 @@ func TestColdLoad_linuxProbesAndActions(t *testing.T) {
 	}
 	defer mmap.Unmap(mapping)
 
-	cold := giwResidentFraction(mapping)
+	cold := probe.ResidentFraction(mapping)
 	if cold >= coldResidentWarm {
 		t.Skipf("the file still samples %.0f%% resident after the drop: this filesystem cannot show a cold file", 100*cold)
 	}
 	giwAdviseReadAround(mapping, false)
 	giwAdviseReadAround(mapping, true)
 	giwReadThrough(mapping)
-	if warm := giwResidentFraction(mapping); warm < 0.99 {
+	if warm := probe.ResidentFraction(mapping); warm < 0.99 {
 		t.Errorf("after reading the mapping through it samples %.0f%% resident (it sampled %.0f%% before), want all of it", 100*warm, 100*cold)
 	}
 	for i := 0; i < size; i += 4099 {

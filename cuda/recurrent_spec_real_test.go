@@ -16,7 +16,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -312,7 +312,7 @@ func TestSP2_identity(t *testing.T) {
 func sp2Cell() (map[string]any, string) {
 	b, _ := os.ReadFile("/proc/loadavg")
 	la, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
-	avail := hostmem.Available()
+	avail := probe.Available()
 	cell := map[string]any{"loadavg": la, "mem_available": avail}
 	switch {
 	case la > 8.0:
