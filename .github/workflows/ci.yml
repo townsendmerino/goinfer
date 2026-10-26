@@ -177,13 +177,10 @@ jobs:
       - name: apidiff (Hard tier vs the v0.13.0 API-freeze baseline)
         run: scripts/apidiff_check.sh v0.13.0
 
-      # The lint resolves aikit/gpu path citations against cuda/go.mod's required version (B10:
-      # aikit and aikit/gpu are separate modules with separate tag series). The root module's
-      # go.mod does NOT require aikit/gpu (M-19 — only cuda/gpu/metal do), so root's own
-      # `go build ./...` above never populates it in the module cache, and the lint hard-fails
-      # with "CANNOT SEARCH" on every aikit/gpu citation. Downloading cuda's deps here (into the
-      # same shared GOMODCACHE) is what actually gives the lint something to search.
-      - name: populate module cache for cross-repo citations (aikit/gpu)
+      # The lint resolves a cross-repo citation at the version a go.mod requires today. No goinfer module
+      # requires aikit/gpu since Track AX moved the device package in; cuda's own dependencies are downloaded
+      # here into the shared GOMODCACHE, and a pinned record's older aikit/gpu comes through the next step.
+      - name: populate module cache for cross-repo citations (cuda's requires)
         run: cd cuda && go mod download
 
       # A PINNED record's aikit citations are checked at the aikit version the pinned commit required, read from

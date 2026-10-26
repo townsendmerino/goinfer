@@ -117,7 +117,7 @@ func rowPending(e *relEnv) relRow {
 	return done(name, "cmd/gate/parity.go awaitingFirstConfirmation", fmt.Sprintf("nothing pending since before %s (%s)", prevVer, prevDate))
 }
 
-// ---- row 2: the five modules agree on aikit, cuda and metal on aikit/gpu ----
+// ---- row 2: the five modules agree on aikit, and none requires aikit/gpu ----
 
 var relModules = []string{".", "gpu", "cuda", "metal", "demo/agent"}
 
@@ -132,7 +132,8 @@ func modRequire(gomod, module string) string {
 
 func rowPins(e *relEnv) relRow {
 	const name = "the modules agree on the aikit pins"
-	aikit, gpuPins := map[string]string{}, map[string]string{}
+	aikit := map[string]string{}
+	var gpuReq []string // aikit's gpu module moved into goinfer (Track AX); a require is a module that did not switch
 	for _, m := range relModules {
 		b, err := os.ReadFile(filepath.Join(e.root, m, "go.mod"))
 		if err != nil {
@@ -141,10 +142,8 @@ func rowPins(e *relEnv) relRow {
 		if v := modRequire(string(b), "github.com/townsendmerino/aikit"); v != "" {
 			aikit[m] = v
 		}
-		if m == "cuda" || m == "metal" {
-			if v := modRequire(string(b), "github.com/townsendmerino/aikit/gpu"); v != "" {
-				gpuPins[m] = v
-			}
+		if v := modRequire(string(b), "github.com/townsendmerino/aikit/gpu"); v != "" {
+			gpuReq = append(gpuReq, m+" "+v)
 		}
 	}
 	var bad []string
@@ -164,7 +163,9 @@ func rowPins(e *relEnv) relRow {
 		}
 	}
 	check("aikit", aikit)
-	check("aikit/gpu (cuda, metal)", gpuPins)
+	if len(gpuReq) > 0 {
+		bad = append(bad, "requires aikit/gpu, which goinfer no longer uses (cuda/internal/gpudev, metal/internal/gpudev): "+strings.Join(gpuReq, ", "))
+	}
 	if len(aikit) == 0 {
 		bad = append(bad, "no module requires aikit: the reader found nothing")
 	}
@@ -175,7 +176,7 @@ func rowPins(e *relEnv) relRow {
 	for _, v := range aikit {
 		vs = v
 	}
-	return done(name, "go.mod of "+strings.Join(relModules, ", "), fmt.Sprintf("aikit %s in %d modules; aikit/gpu %s", vs, len(aikit), gpuPins["cuda"]))
+	return done(name, "go.mod of "+strings.Join(relModules, ", "), fmt.Sprintf("aikit %s in %d modules; no aikit/gpu", vs, len(aikit)))
 }
 
 // ---- row 3: a cold-user record for the previous tag ----
