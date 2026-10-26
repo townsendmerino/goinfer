@@ -1,0 +1,100 @@
+# repository census at c4cfb4cb 2026-10-26, window since 2026-09-26
+
+## rate: 3260 non-merge commits; last ten days:
+  2026-10-17 82
+  2026-10-18 48
+  2026-10-19 38
+  2026-10-20 67
+  2026-10-21 113
+  2026-10-22 148
+  2026-10-23 148
+  2026-10-24 164
+  2026-10-25 125
+  2026-10-26 17
+
+## most-touched files
+   315  docs/tasks/task-multimodal-support-2026-10.md
+   241  docs/citation-index.md
+   229  CHANGELOG.md
+   225  testdata/parity_manifest.json
+   170  docs/tasks/task-kernel-survey-2026-10.md
+   162  docs/queue-engineering.md
+   155  docs/audit-metal-2026-09-12.md
+   139  docs/audit-metal-2026-09-30.md
+   128  docs/tasks/task-gpu-paths-2026-09.md
+   127  docs/server.md
+   116  internal/serveapp/main.go
+   113  docs/audit-2026-09-10.md
+   107  docs/tasks/red-october.md
+   106  docs/README.md
+   104  docs/tasks/task-int4-layout-2026-09.md
+   101  docs/tasks/task-recompute-audit.md
+    99  metal/model.go
+    86  decoder/model.go
+    83  docs/tasks/task-metal-audit-2026-10.md
+    80  docs/tasks/task-forward-architecture-2026-10.md
+    80  docs/tasks/task-memory-campaign-2026-10.md
+    78  docs/multimodal.md
+    75  docs/tasks/task-kv-architecture-2026-10.md
+    75  docs/tasks/task-constrained-confidence.md
+    73  docs/ollama-chase.md
+
+## parity manifest: 43 families; sets used: {'core': 42, 'loaders': 42, 'quant': 41, 'moe': 15, 'mamba2': 2, 'deltanet': 4}
+  core       decoder/model.go                  2577 lines   86 commits
+  core       decoder/forwardn.go               1547 lines   28 commits
+  core       decoder/attention.go               559 lines   12 commits
+  core       decoder/mlp.go                     792 lines    8 commits
+  core       decoder/kvcache.go                1078 lines   16 commits
+  core       decoder/rope.go                    363 lines    2 commits
+  core       decoder/ropescale.go               347 lines    2 commits
+  core       decoder/rmsnorm.go                 234 lines    1 commits
+  core       decoder/registry.go               2996 lines   20 commits
+  core       decoder/arch.go                    797 lines   15 commits
+  core       decoder/config.go                 1462 lines    9 commits
+  deltanet   decoder/deltanet.go                468 lines    4 commits
+  loaders    decoder/weights.go                3106 lines   27 commits
+  loaders    decoder/gguf.go                   3028 lines   22 commits
+  mamba2     decoder/mamba2.go                  295 lines    3 commits
+  moe        decoder/mlp.go                     792 lines    8 commits
+  quant      decoder/weightmat.go              1047 lines   15 commits
+  quant      decoder/gptq.go                    160 lines    1 commits
+  quant      decoder/awq.go                      82 lines    0 commits
+  serialize  decoder/serialize.go              1998 lines   24 commits
+  decoder/registry.go holds 40 family adapters
+
+## aikit requirement changes in go.mod: 37; by subject: {'embed, formats, mmap': 5, 'towers (vision, audio)': 14, 'linalg and kernels': 16, 'other': 1, 'GPU module': 1}
+
+## files importing decoder
+  cuda               test files  347, importing decoder  240; non-test importing  21; distinct decoder identifiers 93
+  metal              test files  401, importing decoder  245; non-test importing  16; distinct decoder identifiers 103
+  gpu                test files  172, importing decoder   87; non-test importing   7; distinct decoder identifiers 35
+  internal/serveapp  test files  162, importing decoder   39; non-test importing  20; distinct decoder identifiers 52
+
+## memory-related file groups
+  residency                      1 files   2019 lines   58 commits
+  fit guard                      1 files   1022 lines   28 commits
+  fit plan, query, Metal fit     3 files    656 lines   11 commits
+  prefill scratch                3 files    653 lines   21 commits
+  weight and resident bytes      2 files    427 lines   25 commits
+  KV plan                        4 files    529 lines   23 commits
+  pagers                         4 files    890 lines    5 commits
+  probes                        16 files    904 lines   12 commits
+  internal/hostmem               6 files    458 lines   17 commits
+  internal/swapguard             2 files    235 lines    2 commits
+  internal/fitcmd                1 files    312 lines    5 commits
+  internal/kvmgr                 5 files   1344 lines   11 commits
+  decoder files above: 34, 7100 lines, 141 commits
+
+## aikit at origin/main (3e7c479): tags since 2026-09-26: 35 root, 8 gpu/*
+  vision            23 files   6323 lines  30 tests; imports ['/embed', '/linalg']; aikit importers ['examples/vision', 'gpu/qwencuda', 'gpu/qwenmetal', 'gpu/visioncuda', 'gpu/visionmetal']; commits 22 (22 touching .go)
+  audio              8 files   2227 lines   6 tests; imports ['/embed', '/linalg']; aikit importers []; commits 12 (12 touching .go)
+  gpu               15 files   5125 lines  38 tests; imports []; aikit importers ['gpu/anncuda', 'gpu/annmetal', 'gpu/enccuda', 'gpu/encmetal', 'gpu/qwencuda', 'gpu/qwenmetal', 'gpu/visioncuda', 'gpu/visionmetal', 'tools/gpupins']; commits 52 (13 touching .go)
+  gpu/qwencuda       1 files    484 lines   1 tests; imports ['/gpu', '/vision']; aikit importers []; commits 41 (2 touching .go)
+  gpu/qwenmetal      1 files    527 lines   2 tests; imports ['/gpu', '/vision']; aikit importers []; commits 40 (1 touching .go)
+  gpu/visioncuda     1 files    330 lines   1 tests; imports ['/gpu', '/vision']; aikit importers []; commits 39 (0 touching .go)
+  gpu/visionmetal    1 files    398 lines   3 tests; imports ['/gpu', '/vision']; aikit importers []; commits 39 (0 touching .go)
+  gpu/webgpu         1 files     43 lines   1 tests; imports []; aikit importers []; commits 0 (0 touching .go)
+  gpu/anncuda        1 files    799 lines   3 tests; imports ['/ann', '/gpu']; aikit importers ['examples/gpu-ann']; commits 39 (0 touching .go)
+  gpu/annmetal       1 files    758 lines   6 tests; imports ['/ann', '/gpu']; aikit importers ['examples/gpu-ann']; commits 40 (1 touching .go)
+  gpu/enccuda        1 files    446 lines   2 tests; imports ['/encoder', '/gpu']; aikit importers []; commits 41 (2 touching .go)
+  gpu/encmetal       1 files    300 lines   2 tests; imports ['/encoder', '/gpu']; aikit importers []; commits 41 (2 touching .go)
