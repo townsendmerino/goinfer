@@ -1,0 +1,123 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// TestKSO1F_fillerGenerality is KS-O1-F (c) (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1-F (c), registered"): D1's logits-level
+// read on Phi-3 mini q4 for five prompts under the chat template: the filler at 110 repeats of "the " (the control), "and ", "apple "
+// and "hello ", each followed by D1's instruction, and README.md's first 110 tokens inside "Summarize this document:". Per prompt it
+// prints the int8 and native arms' cosine to the CPU at f32 (min, p10, median over all positions) and mean KL to f32, and the
+// registered per-prompt reading. A scratch harness, kept as text beside the record; it asserts only that the control reproduces D1.
+func TestKSO1F_fillerGenerality(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	path := modelPath("phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const tail = "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+	type cell struct{ label, text string }
+	var cells []cell
+	for _, w := range []string{"the ", "and ", "apple ", "hello "} {
+		cells = append(cells, cell{fmt.Sprintf("110 × %q", w), strings.Repeat(w, 110) + tail})
+	}
+	doc, docLabel := kso1cDocPrompt(t, tk, "../README.md", 110)
+	cells = append(cells, cell{docLabel, doc})
+
+	mg, err := kso1cLoadBothArms(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, ok := mg.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
+	}
+	use, _ := kso1cArms(t, r, "Phi-3")
+	mf, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mf.Close()
+	fmt.Fprintf(os.Stderr, "[C] resident context %d, layer 0 KV half %v\n", r.ctxCap, r.layers[0].kvHalf)
+
+	cos := func(a, b []float32) float64 {
+		var d, na, nb float64
+		for i := range a {
+			d += float64(a[i]) * float64(b[i])
+			na += float64(a[i]) * float64(a[i])
+			nb += float64(b[i]) * float64(b[i])
+		}
+		return d / math.Sqrt(na*nb)
+	}
+	type stat struct{ min, p10, med, kl float64 }
+	var control [2]stat
+	for ci, c := range cells {
+		ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: c.text}}), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cache := mf.NewCache(len(ids) + 1)
+		ref := make([][]float32, len(ids))
+		for p, id := range ids {
+			l, err := mf.ForwardForTest(id, cache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref[p] = append([]float32(nil), l...)
+		}
+		var st [2]stat // int8, native
+		for a, native := range []bool{false, true} {
+			use(native)
+			r.Reset()
+			var cs []float64
+			kl := 0.0
+			for p, id := range ids {
+				l, err := r.Forward(mg.EmbedResidentForTest(id), p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cs = append(cs, cos(l, ref[p]))
+				kl += kso1cKL(ref[p], l)
+			}
+			sort.Float64s(cs)
+			st[a] = stat{cs[0], cs[len(cs)/10], cs[len(cs)/2], kl / float64(len(cs))}
+		}
+		use(true)
+		worse := st[1].p10 < st[0].p10-0.01 && st[1].kl > 1.10*st[0].kl
+		notWorse := st[1].p10 >= st[0].p10-0.01 && st[1].kl <= 1.10*st[0].kl
+		reading := "mixed"
+		switch {
+		case worse:
+			reading = "native worse"
+		case notWorse:
+			reading = "native not worse"
+		}
+		fmt.Fprintf(os.Stderr, "[C] %-40s %3d positions | int8: min %.4f p10 %.4f med %.4f KL %.5f | native: min %.4f p10 %.4f med %.4f KL %.5f | KL ratio %.3f | %s\n",
+			c.label, len(ids), st[0].min, st[0].p10, st[0].med, st[0].kl, st[1].min, st[1].p10, st[1].med, st[1].kl, st[1].kl/st[0].kl, reading)
+		if ci == 0 {
+			control = st
+		}
+	}
+	if math.Abs(control[1].p10-0.8826) > 0.001 || math.Abs(control[0].p10-0.9401) > 0.001 {
+		t.Fatalf("the control does not reproduce D1 (native p10 %.4f, int8 p10 %.4f; D1 read 0.8826 and 0.9401)", control[1].p10, control[0].p10)
+	}
+}

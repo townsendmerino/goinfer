@@ -1190,6 +1190,112 @@ only for the instruction region's median.
   256 is 0.00173 int8 against 0.00068 native, **0.3899**. On `docs/benchmarks.md` it is 0.00175 against 0.00081, **0.4623**. These are
   LQ3's numbers to the digit. Log: `docs/measurements/ks-a1-2026-10/longctx-gate-2026-10-25.log`.
 
+**KS-O1-F diagnostic, registered 2026-10-25 before any data (owner, 1:52 pm).** The question: why the CUDA native lane's logits are
+further from f32 than the int8 lane's on highly repetitive input (Phi-3 mini q4, 110 × "the ": p10 0.8826, min 0.029, against
+int8's 0.9401 and 0.454), while about 2× closer on natural text (LQ3). Phi-3 mini q4 `Phi-3-mini-4k-instruct-q4.gguf`, the CUDA
+resident at `--quant q4k` holding both arms (`kso1cLoadBothArms`), against the CPU at f32 on the same GGUF. Instrument: a scratch
+harness beside `cuda/kso1c_fidelity_test.go:TestKSO1C_fillerDiagnostic`, kept as text in `docs/measurements/ks-o1-f-2026-10-25/`.
+Tier 1, the shared timing lock, not timed; about 5 minutes a run.
+- **D1, where they diverge.** The same prompt (TestQ4K_phi3ResidentMatchesCPU's filler at 110 repeats under Phi-3's chat template),
+  token by token through `cudaResident.Forward` with every layer's output captured (`cudaResident.SetHiddenCapture`), for four
+  arms: int8, native, only Q5_K qkv native, only Q6_K ffn_down native. The CPU at f32 over the same ids with every layer captured
+  (`decoder.KVCache.SetCaptureLayersForTest` on its batched prefill, bit-identical to its per-token walk). Per layer and arm: the
+  minimum and p10 over positions of the layer output's cosine to f32, its relative L2, and the position of the minimum. Reported:
+  the first layer at which the native arm's minimum falls below the int8 arm's by more than 0.05, and at which positions.
+- **D3, the KV path.** D1's native and int8 arms rerun with `--kv f32` (explicit). The KV path is implicated if the native arm's
+  final-layer minimum moves by more than half its gap to the int8 arm's.
+- **D3 amended (14:34, D1 running, none of its output read).** The figures this diagnostic explains were read on the f32 cache: the
+  CUDA test suite's default is f32 KV (`cuda/kv16_default_test.go`), and every LQ log reads `layer 0 KV half false`. KV precision is
+  therefore excluded by construction, and D3 as registered is D1's own configuration: it runs as an A/A repeat of D1 and is reported
+  as that (each layer's minimum must repeat to within 0.001, or D1's readings are not deterministic enough to locate anything). The
+  rest of the KV path, cached K and V that differ because each arm's own projections wrote them, is inside D1's per-layer reading.
+- **D2, which numerics, registered after D1 and before it runs.** At D1's first divergent layer, the suspect projection's output on
+  the same input computed four ways (f32 file weights × f32 activations; file weights × per-32 int8 activations; the int8 lane's
+  weights × per-32 int8 activations; the native kernel itself), to split activation quantization, weight representation and
+  accumulation.
+- **Stopping rule:** stop when one factor reproduces the native arm's gap at the first divergent layer to within 20%; the rest are
+  reported as not run. Any fix is a numerics change and gets its own registered fidelity gate and a Gemini review.
+
+**KS-O1-F D1 and D3 read (14:32–14:35, the shared lock, not timed).** Log: `docs/measurements/ks-o1-f-2026-10-25/d1.log`, `d3.log`.
+- **The figures reproduce:** at the logits, native p10 0.8826, min 0.0294; int8 0.9401, 0.4543 (LQ2's to the digit).
+- **D3, the A/A repeat:** every printed figure equal to D1's (largest difference 0), so the per-layer readings are deterministic.
+- **The registered metric names layer 31:** the first layer where the native minimum is below int8's by more than 0.05 (0.1528 at
+  position 122 against 0.5559; positions 7 and 114–122). Below layer 31 the minimum is a different thing: from layer 4 on, both
+  arms' minimum is position 8 (a massive-activation position, relative L2 above 1 in both arms) and the native arm's is the higher.
+- **The p10 tells where the gap opens:** native against int8, p10 cosine 0.9962 against 0.9979 at layer 2, 0.9824 against 0.9952 at
+  layer 4, 0.8939 against 0.9772 at layer 8, then flat (0.87–0.90 against 0.95–0.97) to layer 30. Each one-group arm (only the Q5_K
+  qkv native, only the Q6_K ffn_down native) carries about half of it at every layer from 4 on (layer 8: 0.9192 and 0.9191).
+- **What this rules out:** one tensor kind. Both kinds open about half the gap, starting at the same layers; Q6_K has no minimum term,
+  so the Q5_K minimum term is not the cause.
+
+**D2, registered 2026-10-25 after D1's read and before it runs.** D1 places the gap's opening at layers 2–8 in both native kinds, so
+D2 runs there as well as at the registered layer 31. D2a is the Q5_K qkv projection; D2b (ffn_down, Q6_K) is registered only if D2a
+does not stop.
+- **Input:** the native arm's own residual after layer L−1 at every one of the 141 positions (`SetHiddenCapture`), RMS-normed in
+  float64 with layer L's `attn_norm` weight and the GGUF's epsilon, then rounded to float32: the qkv input x. Layers L = 2, 4, 8, 31.
+- **Five outputs per row and position:** (1) the file's weights (GGUF `attn_qkv`, dequantized in float64) × x, the truth; (2) the
+  file's weights × the per-32 int8 activation (`quantG32Go`'s codes × scales), in float64; (3) the int8 lane's weights (the resident's
+  own int8 copies, downloaded) × the same activation, in float64; (4) `gemv_q5k_g32` on the file's blocks and that activation, on
+  the GPU; (5) `gemv_w8a8_g32` on the int8 copies and that activation, on the GPU.
+- **Read per position, over each of q, k and v separately:** e(i) = ‖(i) − (1)‖ / ‖(1)‖. Reported: the median and the p90 over
+  positions of each e, of ‖(4) − (2)‖/‖(2)‖ and ‖(5) − (3)‖/‖(3)‖ (kernel arithmetic), and the same at positions 7 and 114–122.
+  Sanity, before any reading counts: the int8 copies' rows match the file's within 10% relative L2 (a wrong row mapping reads
+  about 1.4). Amended 16:28, before any D2 figure was read: the first run stopped at this check at 1% with 1.73% on layer 2's q,
+  which is per-row int8 rounding of these rows, not a mapping error; 1% was set without that arithmetic.
+- **Attribution, at the projection:** the native gap is e(4) − e(5). Kernel arithmetic explains it if ‖(4) − (2)‖/‖(2)‖ is at least
+  0.8× the gap; activation quantization with the file's weights explains it if e(2) − e(3) is within 20% of it. If e(4) ≤ e(5) (the
+  native projection is no worse than int8's on the same input), no per-projection factor explains the gap: that is the finding,
+  and the next step is a question for Francis, not a fourth run.
+- **Cost:** one resident load with both arms, one GPU pass of 141 tokens, about 30 s of float64 a layer: about 5 minutes. The shared
+  lock, not timed.
+
+**KS-O1-F D2a read (18:31–18:39, nobara's night queue, the exclusive lock, only the compositor on the card).** Log:
+`docs/measurements/ks-o1-f-2026-10-25/d2a.log`; harness `proj_test.go.txt`. Two attempts before it are kept beside it:
+- `d2a-1-oom.log`: out of device memory beside another session's serve, under the shared lock.
+- `d2a-2-sanity.log`: stopped at the 1% sanity bar, amended above before any D2 figure was read.
+
+Sanity: the int8 copies are the file's rows at 0.86–1.78% relative L2 at every layer and segment, which is per-row int8 rounding.
+
+| layer | segment | e2 file × aq | e3 int8 × aq | e4 native kernel | e5 int8 kernel | e4 − e5 |
+|---|---|---|---|---|---|---|
+| 2 | q / k / v | 0.00243 / 0.00298 / 0.0290 | 0.00409 / 0.00459 / 0.0354 | = e2 | = e3 | −0.0017 / −0.0016 / −0.0064 |
+| 4 | q / k / v | 0.00194 / 0.00374 / 0.0522 | 0.00272 / 0.00514 / 0.0681 | = e2 | = e3 | −0.0008 / −0.0014 / −0.0159 |
+| 8 | q / k / v | 0.00266 / 0.00481 / 0.0270 | 0.00377 / 0.00659 / 0.0366 | = e2 | = e3 | −0.0011 / −0.0018 / −0.0096 |
+| 31 | q / k / v | 0.00307 / 0.00844 / 0.0052 | 0.00393 / 0.01082 / 0.0064 | = e2 | = e3 | −0.0009 / −0.0024 / −0.0013 |
+
+(Medians over the 141 positions. The p90s and the positions 7 and 114–122 order the same way, every one of them.)
+- **Kernel arithmetic:** both kernels equal their float64 twins: ‖(4) − (2)‖/‖(2)‖ and ‖(5) − (3)‖/‖(3)‖ print 0.00000 at every layer,
+  segment and position.
+- **The registered branch:** e4 ≤ e5 everywhere. On the same input, the native Q5_K qkv projection is closer to the truth than the
+  int8 lane's, by about a quarter. Both carry the same per-32 activation-quantization error (e2, largest on v: 3–5% at layers 2–8),
+  and the int8 lane adds its weight rounding on top. No per-projection factor explains the gap. By the registration, that is the
+  finding, and the next step is Francis's question, not a fourth run.
+- **Not run:** D2b (ffn_down, Q6_K). It was registered to run only if D2a did not stop.
+
+**KS-O1-F (c), registered 2026-10-25 before any run (Francis, 18:57: option c).** The question: does "native worse" come from
+repetitive input in general, or only from 110 × "the "?
+- **Instrument:** D1's logits-level read (TestKSO1C_fillerDiagnostic's statistics) for the int8 and native arms against the CPU at f32,
+  over all positions of each prompt. Phi-3 mini q4, one CUDA q4k resident holding both arms, the f32 cache. Harness:
+  `docs/measurements/ks-o1-f-2026-10-25/general_test.go.txt`.
+- **Five prompts, each under Phi-3's chat template:**
+  - **The control:** 110 × "the " followed by D1's instruction. It must reproduce D1 (native p10 0.8826, int8 0.9401, each within
+    0.001), or the run is void.
+  - **Three other fillers,** 110 repeats each with the same instruction: "and " (another function word), "apple " (a content word)
+    and "hello ".
+  - **Natural text:** `README.md`'s first 110 tokens inside "Summarize this document:", about the fillers' length, so length is
+    not the difference (LQ3's 900-token documents were six times longer).
+- **Reading per prompt:**
+  - **native worse:** native p10 below int8's by more than 0.01 and native mean KL above 1.10× int8's.
+  - **native not worse:** native p10 at least int8's − 0.01 and native KL at most 1.10× int8's.
+  - **mixed:** anything else.
+- **Reading over the prompts:**
+  - **Repetitive input in general:** at least 2 of the 3 other fillers read native worse, and the natural text reads native not
+    worse.
+  - **Specific to "the ":** at least 2 of the 3 other fillers read native not worse.
+  - **Ambiguous, parked:** anything else, and the natural text reading native worse.
+- **Cost:** one process, about 1.5 minutes a prompt: about 10 minutes, as one job on nobara's night queue at priority 55, ahead of
+  ks-o4-gfid. Not timed.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
