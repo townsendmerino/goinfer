@@ -132,18 +132,20 @@ type StreamedDrafterWeights interface {
 }
 
 // ReleasableDrafterWeights is a BlockDrafterWeights whose host weights can be released once a resident backend holds its own
-// copy (DFlashDrafter.ReleaseHostWeights). A backend's attach checks HostWeightsReleased and refuses a released drafter: its
-// matrices are zero, and an upload of them would draft noise that lossless verify only rejects.
+// copy (ReleaseHostWeights). A backend's attach checks HostWeightsReleased and refuses a released drafter: its matrices are
+// zero, and an upload of them would draft noise that lossless verify only rejects. A family satisfies it only once its release
+// also guards its own host drafting.
 type ReleasableDrafterWeights interface {
 	BlockDrafterWeights
 	HostWeightsReleased() bool
+	ReleaseHostWeights() error
 }
 
 // Compile-time proof that both families satisfy the interfaces through the shared trunk. If a
 // third drafter lands and does NOT embed blockTrunk, this is where that shows up.
 var (
 	_ StreamedDrafterWeights = (*DFlashDrafter)(nil)
-	_ StreamedDrafterWeights = (*DSparkDrafter)(nil)
+	_ BlockDrafterWeights    = (*DSparkDrafter)(nil) // not releasable: its own heads' host drafting has no release guard
 )
 
 // DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw. It is computed rather
@@ -159,6 +161,9 @@ var (
 // Not included: the verify and capture buffers NewBlockSpec allocates (a few MB at the default verify width, which the
 // ctxCapMarginBytes and slotMarginBytes margins in cuda/resident.go absorb), and the drafter's own K/V, which scales
 // with the target's context: see DrafterKVBytesPerPosition.
+//
+// Call it before a held drafter's release (ReleaseHostWeights): its matrix accessors then panic with ErrDrafterReleased. A
+// streamed drafter's estimate reads only dimensions.
 func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 	int8Bytes := func(w *linalg.WeightMat) int64 {
 		if w == nil {

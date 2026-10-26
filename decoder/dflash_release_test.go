@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -118,7 +119,7 @@ func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
 	} {
 		wantReleasedPanic(t, name, f)
 	}
-	if g := d.DrafterGeometry(); g.Layers != geo.Layers || g.Hidden != geo.Hidden || g.HeadDim != geo.HeadDim || !slices.Equal(g.InvFreq, geo.InvFreq) {
+	if g := d.DrafterGeometry(); !reflect.DeepEqual(g, geo) {
 		t.Errorf("geometry changed: %+v, want %+v", g, geo)
 	}
 	if d.BlockSize() != bs || d.MaskTokenID() != mask || !slices.Equal(d.TargetLayerIDs(), taps) {
