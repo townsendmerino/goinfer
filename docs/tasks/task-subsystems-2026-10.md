@@ -1,6 +1,6 @@
 # Task: subsystems with contracts — validations that carry over, tests that take seconds, one memory manager (VK0–VK6, MM0–MM6, AX0–AX7, SB1–SB13, PW1–PW6) — 2026-10
 
-> **Status 2026-10-26: SCOPED.** Two owner decisions are made, and SD4's settings are applied. **SD4:** auto-merge,
+> **Status 2026-10-26: SCOPED.** Every owner decision (SD1–SD8) was made on 2026-10-26, and SD4's settings are applied. **SD4:** auto-merge,
 > with the checks required on `main` (owner, 2026-10-26: "yes to SD4"; PW1). **SD1:** the towers and the GPU backends
 > move from aikit into goinfer, and `linalg` stays in aikit, worked on through `go.work` and tagged weekly (owner,
 > 2026-10-26: "yes to this - move the towers and the gpu backends into goinfer."). That is Track AX (§7). Every gate
@@ -51,8 +51,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX2 | blocked | AX1; switch goinfer's imports one module at a time, each step bit-identical; M | §7.3 |
 | AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
 | AX4 | blocked | AX3; aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
-| AX5 | decision | SD2: where the ANN and text-encoder GPU backends live | §7.3, §14 |
-| AX6 | decision | SD3: linalg through `go.work`, weekly tags, and pseudo-versions between them | §7.3, §14 |
+| AX5 | open | SD2 decided 2026-10-26: the ANN and text-encoder GPU backends stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops bumping them; S | §7.3, §14 |
+| AX6 | open | SD3 decided 2026-10-26: goinfer's main may require an aikit pseudo-version between weekly tags; a goinfer release requires a tagged aikit; S | §7.3, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
@@ -75,7 +75,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
-| SD2, SD3, SD5–SD8 | decision | the owner's calls in §14 | §14 |
+| SD2, SD3, SD5–SD8 | done | decided 2026-10-26, one at a time (§14) | §14 |
 
 ## 0. Summary
 
@@ -367,7 +367,7 @@ every family's key unchanged. M.
 ### 5.8 VK5 — the key, in shadow mode first
 
 On every push to main, compute both today's staleness and the new key, and log every disagreement with its reason.
-Switch only after SD6's period passes with no disagreement left unexplained. M.
+Switch after one week (SD6, decided 2026-10-26) with no disagreement left unexplained. M.
 
 ### 5.9 VK6 — the daily canary and the coverage audit
 
@@ -753,8 +753,8 @@ test files importing `decoder` may only fall). S.
 
 - **What runs:** VK6's canary and coverage audit; the performance calibration cells; MM's plan against measured on
   each box; the product smoke (serve, the SDK tests, a tool-call turn, the web UI's fetch); tower identity spot checks.
-- **Where and when:** nobara by day at a fixed hour, under the timing lock; the Mac's cells under night case (a) when the
-  fit guard needs the owner's apps closed (SD7). Under 2 hours per box, or it is night case (b).
+- **Where and when:** both boxes at night, on the night queue (SD7, decided 2026-10-26), within its limits (no job over
+  3 hours, none started that would end after 06:30).
 - **Nobody waits on it.** It writes a record and a short summary; a failure opens a queue entry; no session holds a turn
   on it.
 
@@ -804,13 +804,13 @@ test files importing `decoder` may only fall). S.
 | id | decision | recommendation |
 |---|---|---|
 | SD1 | move the towers and the GPU backends into goinfer; linalg stays in aikit, through `go.work`, tagged weekly | **decided 2026-10-26** |
-| SD2 | the ANN and text-encoder GPU backends (`…/gpu/anncuda`, `…/gpu/annmetal`, `…/gpu/enccuda`, `…/gpu/encmetal`) | stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops making them track the newest root tag |
-| SD3 | between weekly aikit tags, may goinfer's main require an aikit pseudo-version (a commit on aikit's main)? | yes for main; a goinfer release still requires a tagged aikit, which keeps aikit's own rule that goinfer never ships against an untagged aikit |
+| SD2 | the ANN and text-encoder GPU backends (`…/gpu/anncuda`, `…/gpu/annmetal`, `…/gpu/enccuda`, `…/gpu/encmetal`) | stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops making them track the newest root tag. **Decided 2026-10-26** as recommended |
+| SD3 | between weekly aikit tags, may goinfer's main require an aikit pseudo-version (a commit on aikit's main)? | yes for main; a goinfer release still requires a tagged aikit, which keeps aikit's own rule that goinfer never ships against an untagged aikit. **Decided 2026-10-26** as recommended |
 | SD4 | auto-merge, and a rule on `main` requiring the checks; the pre-push wait retired | **decided 2026-10-26** (owner: "yes to SD4"); applied the same day |
-| SD5 | the moved towers as internal packages, with what the examples and the demo need exposed through `multimodal` | yes |
-| SD6 | how long VK5 runs in shadow mode before it replaces today's hash | two weeks or 200 pushes to main, whichever is later, with no unexplained disagreement |
-| SD7 | the daily run's boxes and hours | nobara by day at a fixed hour; the Mac's cells under night case (a) |
-| SD8 | guard thresholds as `mem.Policy` data with an approval stamp (I7) | yes: it keeps "a threshold change needs Francis's word" and makes it a test |
+| SD5 | the moved towers as internal packages, with what the examples and the demo need exposed through `multimodal` | **decided 2026-10-26:** internal, as recommended |
+| SD6 | how long VK5 runs in shadow mode before it replaces today's hash | **decided 2026-10-26: one week**, with no unexplained disagreement (recommended was two weeks or 200 pushes) |
+| SD7 | the daily run's boxes and hours | **decided 2026-10-26: both boxes at night** (recommended was nobara by day), within the night queue's limits |
+| SD8 | guard thresholds as `mem.Policy` data with an approval stamp (I7) | **decided 2026-10-26:** yes, as recommended; it keeps "a threshold change needs Francis's word" and makes it a test |
 
 ## 15. Risks
 
