@@ -98,7 +98,7 @@ re-runs as registered once the lock is free. Log: `~/goinfer-logs/sp2-35b-2026-1
 - **Host:** the test process peaked at 38.7 GB VmHWM (the mapped `.giw` with experts streamed), 0 swap.
 - Raw: `identity-2026-10-26-0717.jsonl` and `.log` under `~/goinfer-logs/sp2-35b-2026-10/` on nobara.
 
-### G4's width amended to w = 4, before G4's run (2026-10-26, 07:45 PDT)
+### G4's width amended to w = 4, before G4's run (2026-10-26, 07:39 PDT)
 
 **Why:** `BlockSpec`'s acceptance guard (`decoder/blockspec.go:breakEvenTokensPerRound`, 2.5 committed tokens a round, judged
 after 6 rounds) does not scale with the width. At w = 3 a round commits at most 3, and SP0's mean at w = 3 was 2.76, so the guard
@@ -114,3 +114,42 @@ identity is checked there. No G4 data existed when this was written.
 **A finding for the owner, beside SP2:** the guard's fixed 2.5 makes widths of 3 or less nearly unusable. `serve` verifies at 8 by
 default and its `-drafter-width` takes any width from 2, so `-drafter-width 3` would trip on many turns. Whether the bar should
 scale with the width is a separate decision; nothing here changes it.
+
+### G4 (2026-10-26, 07:50–09:03 PDT, at `79c91b64`, w = 4, the timing lock exclusive): short DELIVERS; long stopped, not graded
+
+Graded by the merge rule, as registered. The harness printed "NOT ADVANCED" for the short cell: it still carried SP0's bands from
+the 9B's G4, which the 9B's record had already corrected for grading. The harness now prints the merge rule (`705fff57`), and the
+readings stand as recorded (the owner, 2026-10-26 09:01).
+
+| context | plain decode | `BlockSpec`, w = 4 | median of the pairs | pairs faster | spread | the merge rule |
+|---|---|---|---|---|---|---|
+| short (SP0's 12 prompts, about 100–250 tokens) | 40.1 tok/s | 43.6 tok/s | **1.089×** | 10 of 10 | 1.086–1.092 | **delivers** (≥ 1.05×, ≥ 9 of 10) |
+| long (behind the 3,800-token preamble) | 38.7 tok/s | 39.4 tok/s | 1.018× (one pair) | 1 of 1 | | **not graded**: stopped after one pair |
+
+- **Cells:** every pair started at load 2.8–5.8, with at least 40.3 GB available; none void. No token diverged from plain decode
+  at w = 4 on any prompt, so w = 4's identity holds on these 12 prompts.
+- **Against SP0's 1.30× (deciding nothing):** under it. The short cell's 1.09× is far below the ~1.6× that SP0's cycle projects
+  against the real step: its verify reading (a repeated token, so the same experts every row) was optimistic too, as the
+  registration feared. The 35B's verify rows each bring their own experts on an 8 GB card.
+- **Why the long cell stopped:** my cost estimate was wrong. One long pair took 35 minutes, not 3.5: its 24 prefills of about
+  3,900 tokens took about 80 s each with experts streamed (about 49 tok/s), and decode is a small part of the pair. Ten pairs would
+  have been about 6 hours, past the 3-hour cap on a night job. I stopped it at 09:03 (exit 143, 0 swap). The one pair read
+  1.018×; it is recorded and not graded.
+- Raw: `speed-2026-10-26-0739.jsonl` and `.log` under `~/goinfer-logs/sp2-35b-2026-10/` on nobara.
+
+### `--drafter`'s memory cost on the 35B (2026-10-26, 09:04–09:09 PDT, `serve` at `705fff57`)
+
+Plain `serve` against `serve --drafter -drafter-width 4`, one binary, experts streamed (`GOINFER_MOE_CACHE_EXPERTS=1`), context
+4,608, one warm and one timed greedy request (`measure-host.sh` beside the raw data):
+
+| | VmHWM | VmRSS 60 s after | timed request | reply |
+|---|---|---|---|---|
+| plain `serve` | 37.00 GB | 37.00 GB | 6.60 s | |
+| `serve --drafter` | 37.49 GB (+0.49) | 37.02 GB (+0.02) | 5.79 s | identical to plain |
+
+- **Device:** the drafter's reserve, 0.47 GB, and the fold's arena, 79 MB. The context stays at 4,608, and the expert cache keeps
+  its 64 slots a layer (the fairness check). The drafter needs an f32 KV cache, as on the 9B.
+- **Host:** +0.49 GB at the peak and +0.02 GB steady, with the drafter streamed from its file and released after attach (#259,
+  #263).
+- **The longest context that fits:** unchanged at the 4,608 measured; the fit banner prices it the same with the drafter (0.2 GB
+  of KV, 18.2 GB of weights).
