@@ -3030,6 +3030,36 @@ its own PR, and it gets a Gemini review before merge.
 - **Cost:** G1 seconds. G2, G3 and G5 share the loads, about 8 min (eight models). G4 about 2 min. All by day, with the timing lock
   shared: memory, not time, is read.
 
+**KS-H6 build, amendment: the self-test before the build (registered 2026-10-26 before any code, H6C-S).**
+- **Why:** after the KV pools, the build's own allocations come to under 1 MiB
+  (`docs/measurements/ks-h6c-2026-10/post-pool-reading.md`). The 132 MiB H6-R recorded there is the local-memory pool that the
+  startup self-test's MoE fixture reserves on the context, after the first build's fit check.
+- **Decided (Francis, 2026-10-26 01:21): A.** The startup self-test runs before the model is built, not after. The plan and the
+  fit check then see the pool exactly, and `--no-selftest` reserves nothing.
+  - If the self-test declines, the build is skipped and the model serves on the CPU path, with the reason given: the same end
+    state as today, without building and discarding a resident.
+  - It runs only after `residencyGate` passes, so a backend with no residency never probes.
+  - It still runs once per process for each backend and quant.
+  - A build that then declines on its own has paid the fixture builds, a few seconds, which it did not pay before.
+- **The same rule for a model's own pool:** a MoE resident pays `moe_route`'s first launch before its fit check, and
+  `route_gptoss`'s too where that is bound. This is A9's warm-up, moved ahead of `checkKVFits`, on scratch buffers, for every MoE
+  build (today it runs only with the expert cache, after the fit check).
+  - With `--no-selftest`, a MoE model's pool would otherwise arrive at its first decode token, past a margin that no longer has
+    384 MiB of slack to hide it.
+  - Dense kernels' own local memory (32–96 B a thread, about 1.2–3.8 MiB) stays inside the decode allowance.
+- **Part 1 of the margin** is then the build's own allocations after the pools, as registered.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| H6C-S1 the order | 0 | the decoder's counting fake backend (`TestGPUProbe_declinesAWrongResidentThroughLoad`'s rig), recording each build in order | on a first load with the probe on, every fixture build comes before the model's own, and a passing probe keeps the resident. A second load on the same backend and quant builds the model once and no fixture |
+| H6C-S2 the failure path | 0 | the same rig, with a resident the probe declines | the model's own build is never called (the builds are the fixtures'), no resident is attached, `ResidentDecline` names the startup self-test, and a WARN line is printed. A second load declines the same way from the cache and builds nothing |
+| H6C-S3 `--no-selftest` | 0 | the same rig, self-tests skipped | no fixture build, the model built once, and the resident kept: today's behaviour |
+| H6C-S4 the fit check sees the pool | 1 | `TestKSH6C_postPoolBreakdown` as serve loads (self-test on) and with it off, on Qwen3-8B and Qwen2.5-7B at 16,384 and the 1.5B unpinned, each in a fresh process. It also records the free VRAM of the build's first fit-check reading | with the self-test on, the card's drop from the first post-pool allocation to the end of the load is ≤ 2 MiB on all three (it was 130 MiB). The fit check's free reading with the self-test on is 130–134 MiB below the one with it off |
+| H6C-S5 a MoE model's own pool | 1 | `qwen35-tiny` (DeltaNet and MoE) on CUDA with self-tests skipped, through `decoder.Load`, then one prefill and 8 decode tokens. Free VRAM read at the fit check, at the end of the load and after the tokens | the drop from the end of the load to after the tokens is ≤ 2 MiB, and the fit check's reading is at least 130 MiB below a dense tiny fixture's in a fresh process with self-tests skipped (the pool paid before it). Plant: with the warm-up skipped by a test hook, the drop after the tokens is ≥ 130 MiB |
+
+- **Stopping rule:** a FAIL stops the margin code until it is fixed. **Cost:** S1–S3 seconds; S4 about 2 min (six loads); S5 about
+  1 min.
+
 
 ## 12. Already covered (not re-proposed)
 
