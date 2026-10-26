@@ -1737,6 +1737,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 			}
 		}
 	}
+	warnThinkingTemplate(lm)
 	fmt.Fprintf(os.Stderr, "loaded %q: %d-layer model (vocab %d) in %s [chat: %s]\n",
 		name, mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(lm.tmpl))
 	// State the RESOLVED paths, not the requested ones. The resident decode path and the batched prefill are optional
