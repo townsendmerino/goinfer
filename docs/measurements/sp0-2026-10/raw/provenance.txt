@@ -1,0 +1,8 @@
+rev:     b03412f3c8a06793bedba3c0ec42e5fe2452f190
+mode:    measure
+started: 2026-10-24T16:24:46-07:00
+go:      go version go1.27.0 linux/amd64
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 403 MiB, 8192 MiB
+desktop: kwin_wayland running (holds a CUDA context, about 16 MiB)
+drafter: /home/francis/models/qwen35-9b-dflash @ 5fc3b3d474760f18c516db87d84c37edbfd3ede6, sha256 0a42274b32554f48de1faa0d42824e9c2ceda649c30ae0a731cddf410dd698c7
+finished: 2026-10-24T16:40:51-07:00 rc=1

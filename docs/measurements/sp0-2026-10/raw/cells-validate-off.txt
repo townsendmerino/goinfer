@@ -1,0 +1,2 @@
+== validate-qwen3-4b-off: start 2026-10-24 22:21:29 load 0.20 MemAvailable 59224 MiB
+   validate-qwen3-4b-off: exit 0, VmHWM 14176 MiB, peak VmSwap 0 MiB, end 22:22:28

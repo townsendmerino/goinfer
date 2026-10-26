@@ -1,0 +1,10 @@
+== validate-qwen3-4b: start 2026-10-24 16:24:47 load 0.21 MemAvailable 59666 MiB
+   validate-qwen3-4b: exit 0, VmHWM 13761 MiB, peak VmSwap 0 MiB, end 16:26:13
+== dflash-qwen35-9b: start 2026-10-24 16:26:13 load 1.75 MemAvailable 59811 MiB
+   dflash-qwen35-9b: exit 1, VmHWM 21299 MiB, peak VmSwap 0 MiB, end 16:30:27
+== dflash-qwen35-9b-think: start 2026-10-24 16:30:27 load 1.52 MemAvailable 59814 MiB
+   dflash-qwen35-9b-think: exit 0, VmHWM 21173 MiB, peak VmSwap 0 MiB, end 16:32:23
+== ngram-gptoss-20b: start 2026-10-24 16:32:23 load 1.80 MemAvailable 59819 MiB
+   ngram-gptoss-20b: exit 0, VmHWM 24289 MiB, peak VmSwap 0 MiB, end 16:37:30
+== dflash-qwen36-35b: start 2026-10-24 16:37:30 load 3.04 MemAvailable 59810 MiB
+   dflash-qwen36-35b: exit 1, VmHWM 37250 MiB, peak VmSwap 0 MiB, end 16:40:51

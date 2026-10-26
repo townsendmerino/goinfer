@@ -1,0 +1,4 @@
+== cost4096-qwen35-9b: start 2026-10-24 17:06:37 load 1.94 MemAvailable 59106 MiB
+   cost4096-qwen35-9b: exit 0, VmHWM 21171 MiB, peak VmSwap 0 MiB, end 17:08:45
+== cost4096-qwen36-35b: start 2026-10-24 17:08:45 load 1.60 MemAvailable 59340 MiB
+   cost4096-qwen36-35b: exit 0, VmHWM 38081 MiB, peak VmSwap 0 MiB, end 17:12:08
