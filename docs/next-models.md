@@ -75,7 +75,7 @@ rule 2 outright (listed under Watching). What is left is short:
    checkpoint's outer `model_type` is `mistral3` (`Mistral3ForConditionalGeneration`) and its
    `text_config.model_type` is **`mistral4`**: MLA (`kv_lora_rank` 256, `q_lora_rank` 1024),
    128 routed experts top-4, `first_k_dense_replace` 0, 36 layers. goinfer resolves the outer
-   key (`decoder/registry.go:ministral3Architecture` documents that loadConfig re-applies it
+   key (`decoder/arch_mistral3.go:ministral3Architecture` documents that loadConfig re-applies it
    last), so this checkpoint is handed to the dense Ministral 3 adapter. The guard: decline a
    `mistral3` wrapper whose text config is `mistral4`, with a message that says so. The
    adapter is DeepSeek-V3-shaped substrate (MLA + routed MoE) — verify router scoring and
@@ -90,7 +90,7 @@ rule 2 outright (listed under Watching). What is left is short:
 
 **Already served by an existing adapter (no work, confirmed by config):** MiniCPM5-2B is a
 plain `LlamaForCausalLM`; Gemma 4 12B is `gemma4_unified_text`, registered under
-`decoder/registry.go:gemma4Architecture`; Mistral Medium 3.5 (below). Xiaomi's
+`decoder/arch_gemma4.go:gemma4Architecture`; Mistral Medium 3.5 (below). Xiaomi's
 MiMo-V2.6-Distill-Qwen-9B is a Qwen3.5-9B fine-tune, so expected to be `qwen3_5` — not checked.
 
 ## Field check — 2026-10-26 (an Ollama engineer's list of releases, 2026-10-11 to 10-25)
@@ -150,7 +150,7 @@ current tracks.
 - **Mistral Medium 3.5 (128B dense) — config check done 2026-10-15.** Outer `mistral3`, text
   `ministral3`: 88 layers, 96 query / 8 KV heads, head_dim 128, no sliding window, YaRN
   (factor 64, `llama_4_scaling_beta` 0). That is exactly what
-  `decoder/registry.go:ministral3Architecture` already expresses — a config alias, no new
+  `decoder/arch_mistral3.go:ministral3Architecture` already expresses — a config alias, no new
   forward. Two blockers, neither architectural: the safetensors ship per-tensor static fp8
   (`weight_block_size` null), which `decoder/fp8.go:fp8Reconstruct` does not read (it needs
   block-wise `weight_scale_inv`), so GGUF is the load route; and 128B dense fails rule 2 except at

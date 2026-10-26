@@ -34,7 +34,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 |---|---|---|---|
 | VK0 | done | 2026-10-26 (mac-vk01): 234 of 4,052 commits re-staled 8,895 family validations in 30 days; 8,775 (98.7%) came with no moved golden and no changed recorded metric, an upper bound on what a behavior key saves | §5.3; `docs/measurements/vk0-2026-10.md` |
 | VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
-| VK2 | active | mac-vk01, branch `vk2-adapters-2026-10`: part 1 (one file per adapter) under gates A1–A4 registered in §5.5; part 2 (`model.go` out of `core`) waits on a decision, because 19 files holding forward-path code are in no hash set; S–M | §5.5 |
+| VK2 | active | 2026-10-26 (mac-vk01): part 1 done, one file per family adapter (A1–A4 PASS); part 2 (`model.go` out of `core`) waits on a decision: 19 files holding forward-path code, `program.go` and `program_cpu.go` among them, are in no hash set; S–M | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
 | VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
 | VK5 | blocked | VK1–VK4; the behavior key in shadow mode beside today's hash, then in its place (SD6); M | §5.8 |
