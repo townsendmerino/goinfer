@@ -3,6 +3,9 @@ package serveapp
 import (
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestAttachBlockDrafter_declinesWithoutResident gates the startup behaviour an operator
@@ -26,11 +29,29 @@ func TestAttachBlockDrafter_declinesWithoutResident(t *testing.T) {
 	}
 }
 
-// TestWarnThinkingTemplate covers the branch, since the warning is the only signal an operator
-// gets for a configuration that is otherwise completely silent — correct output, reduced speed,
-// nothing in any log.
-func TestWarnThinkingTemplate_noTokenizer(t *testing.T) {
-	warnThinkingTemplate(&loadedModel{name: "x"}) // nil tokenizer must not panic
+// TestWarnThinkingTemplate: the warning follows the served template's thinking, not the vocabulary: a drafter beside a template
+// whose replies can think warns; -thinking off, a checkpoint whose own default is off, no template, and no drafter do not.
+func TestWarnThinkingTemplate(t *testing.T) {
+	nine := templateFromGolden(t, "qwen3.5-9b") // its template opens a think block by default
+	if !nine.WithThinking(chat.ThinkTemplate).ThinkingPossible() {
+		t.Fatal("qwen3.5-9b's golden template no longer thinks by default; pick a fixture that does")
+	}
+	bs := &decoder.BlockSpec{}
+	for _, c := range []struct {
+		name string
+		lm   *loadedModel
+		want bool
+	}{
+		{"drafter, template default on", &loadedModel{name: "x", blockSpec: bs, tmpl: nine.WithThinking(chat.ThinkTemplate)}, true},
+		{"drafter, -thinking on", &loadedModel{name: "x", blockSpec: bs, tmpl: nine.WithThinking(chat.ThinkOn)}, true},
+		{"drafter, -thinking off", &loadedModel{name: "x", blockSpec: bs, tmpl: nine.WithThinking(chat.ThinkOff)}, false},
+		{"drafter, no template", &loadedModel{name: "x", blockSpec: bs}, false},
+		{"no drafter", &loadedModel{name: "x", tmpl: nine.WithThinking(chat.ThinkTemplate)}, false},
+	} {
+		if got := warnThinkingTemplate(c.lm); got != c.want {
+			t.Errorf("%s: warned %v, want %v", c.name, got, c.want)
+		}
+	}
 }
 
 // TestDrafterWidth_validate: -drafter-width without -drafter is a startup error, not silently ignored, and so are 1 and negative
