@@ -1,0 +1,6 @@
+KS-O4 G-FID, mode pilot, prompt-set hash 63fb95aa1e35e879167e5ec7495c9897e12d8ad17f2ca0d90a5eb8c025d4944a, 4 prompts
+beside it, the candidate against the exact arm: top-1 agreement 59/64 (92.19%), mean KL(exact||candidate) 0.013, max 0.122
+short   prompts 2 positions 32: agreement cand 93.75% exact 84.38% (diff +9.38, LCB +4.23 pts); mean KL cand 0.02789 exact 0.03324 (ratio 0.839, UCB 1.219); hard flips cand 0 exact 0
+long    prompts 2 positions 32: agreement cand 96.88% exact 90.62% (diff +6.25, LCB -4.03 pts); mean KL cand 0.06699 exact 0.08893 (ratio 0.753, UCB 0.888); hard flips cand 0 exact 1
+pooled  prompts 4 positions 64: agreement cand 95.31% exact 87.50% (diff +7.81, LCB +2.89 pts); mean KL cand 0.04744 exact 0.06108 (ratio 0.777, UCB 0.909); hard flips cand 0 exact 1
+pilot: size N with `python3 scripts/power.py fidelity --from-positions /home/francis/goinfer-logs/ks-o4-2026-10/gfid-2026-10-26-0031/pilot-positions.jsonl` (registered: 10 <= N <= 24 a cell); the pilot grades nothing

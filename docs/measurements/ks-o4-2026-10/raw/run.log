@@ -1,0 +1,27 @@
+=== 2026-10-26 00:31:05 PDT start: b593e258ed2f2d33886cd57e08fee9631d43d998; 16 cores; 0.08 0.15 0.26 1/774 1635504; MemAvailable 59778 MiB
+== pilot (N 12 a cell): start 00:31:13 load 0.31 MemAvailable 59686 MiB
+   pilot: exit 0, VmHWM 31486 MiB, peak VmSwap 0 MiB, end 00:51:26
+ks-o4 [   538s] arms 1/4 (short)
+ks-o4 [   669s] arms 2/4 (short)
+ks-o4 [   943s] arms 3/4 (long)
+ks-o4 [  1212s] arms 4/4 (long)
+spreads (estimated from 4 prompts in /home/francis/goinfer-logs/ks-o4-2026-10/gfid-2026-10-26-0031/pilot-positions.jsonl (each sd is itself uncertain at that n)): agreement sd 5.984 pts per prompt, KL residual cv 0.1610
+  agreement  margin 1pts: 223 prompts (pooled across the gate's cells)
+  KL ratio   margin 0.1: 18 prompts (pooled across the gate's cells)
+prompts for the gate: 223 pooled (e.g. 45 per cell over 5 cells); hard flips use the pooled Poisson bound and add no requirement
+N: power.py asks 223 pooled (112 a cell); the pilot took 1213s, so a prompt pair about 606s; 8979s of the budget left admits 14 a cell
+note: power.py asked for 112 a cell; the gate runs at the registered cap, 12
+N: 12 a cell
+== gate (N 12 a cell): start 00:51:26 load 6.31 MemAvailable 59765 MiB
+   gate: exit 0, VmHWM 31280 MiB, peak VmSwap 628 MiB, end 02:54:21
+ks-o4 [  6520s] arms 21/24 (long)
+ks-o4 [  6815s] arms 22/24 (long)
+ks-o4 [  7081s] arms 23/24 (long)
+ks-o4 [  7373s] arms 24/24 (long)
+KS-O4 G-FID, mode gate, prompt-set hash 746fec76aa18c9e2ffc61837fb1f0a39d4564c076cf31a05804118350d3a015f, 24 prompts
+beside it, the candidate against the exact arm: top-1 agreement 365/384 (95.05%), mean KL(exact||candidate) 0.0136, max 1.72
+short   prompts 12 positions 192: agreement cand 94.27% exact 93.75% (diff +0.52, LCB -1.46 pts); mean KL cand 0.03177 exact 0.03624 (ratio 0.877, UCB 0.943); hard flips cand 0 exact 0
+long    prompts 12 positions 192: agreement cand 94.27% exact 94.79% (diff -0.52, LCB -3.19 pts); mean KL cand 0.03604 exact 0.03918 (ratio 0.920, UCB 1.140); hard flips cand 0 exact 3
+pooled  prompts 24 positions 384: agreement cand 94.27% exact 94.27% (diff +0.00, LCB -1.64 pts); mean KL cand 0.03391 exact 0.03771 (ratio 0.899, UCB 1.014); hard flips cand 0 exact 3
+VERDICT AMBIGUOUS agreement lower bound -1.64 pts < −1.00
+=== 2026-10-26 02:54:21 PDT end, verdict AMBIGUOUS; record /home/francis/goinfer-logs/ks-o4-2026-10/gfid-2026-10-26-0031

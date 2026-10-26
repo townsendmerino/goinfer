@@ -163,6 +163,62 @@ The fidelity gate, G-FID, is unchanged.
     long.
   - **Total:** about 1.5–2 hours, run by day. The start and expected finish are stated when it is queued.
 
+## G-FID result: AMBIGUOUS (2026-10-26, nobara, 00:31:05–02:54:21 PDT)
+
+The night job `ks-o4-gfid` ran on nobara's `night.py serve` under the timing lock, at `b593e258` (KS-O4's code and the amended harness),
+on `gpt-oss-20b-MXFP4.gguf`, CPU. Records: `raw/` here (copied from `~/goinfer-logs/ks-o4-2026-10/gfid-2026-10-26-0031/` on nobara).
+
+- **Pilot** (00:31–00:51, 4 prompts, prompt-set hash `63fb95aa…`):
+  - the per-prompt agreement spread was 5.98 points, and the KL residual's coefficient of variation 0.161;
+  - `power.py` asked for 223 prompts pooled (112 a cell) to resolve the agreement margin of 1 point, and 18 for the KL margin;
+  - the budget admitted 14 a cell, so the gate ran at the registered cap, **12 a cell**, as the amendment says.
+- **Gate** (00:51–02:54, 24 prompts, prompt-set hash `746fec76aa18c9e2ffc61837fb1f0a39d4564c076cf31a05804118350d3a015f`):
+  - it started at load 6.31 with 59,765 MiB available (valid);
+  - the process peaked at VmHWM 31,280 MiB and **628 MiB of swap**. That moves time, not numbers, and G-FID grades no time.
+
+| cell | prompts | agreement, candidate / exact | difference (lower bound) | mean KL, candidate / exact | ratio (upper bound) | hard flips, candidate / exact |
+|---|---|---|---|---|---|---|
+| short | 12 | 94.27% / 93.75% | +0.52 (−1.46) | 0.03177 / 0.03624 | 0.877 (0.943) | 0 / 0 |
+| long | 12 | 94.27% / 94.79% | −0.52 (−3.19) | 0.03604 / 0.03918 | 0.920 (1.140) | 0 / 3 |
+| **pooled** | **24** | **94.27% / 94.27%** | **+0.00 (−1.64)** | **0.03391 / 0.03771** | **0.899 (1.014)** | **0 / 3** |
+
+**Graded against the registered rule** (`fidelity.NonInferior`: `AgreeMarginPts` 1, `KLMargin` 0.10, alpha 0.05, pooled):
+
+| criterion | bar | reading | |
+|---|---|---|---|
+| agreement | lower bound ≥ −1.00 pt | −1.64 pt | not met |
+| KL | ratio upper bound ≤ 1.10 | 1.014 | met |
+| hard flips | candidate ≤ exact + 2√exact | 0 ≤ 3 + 3.46 | met |
+| AMBIGUOUS band | not PASS; agreement bound > −2, KL bound ≤ 1.25, flips met | −1.64, 1.014, met | **inside** |
+
+**VERDICT: AMBIGUOUS**, as the job graded it. Under the registration, KS-O4 stops here with DECISION NEEDED.
+
+**What the reading says, beside the verdict:**
+- **The point estimates all favour or equal the candidate.**
+  - Agreement is identical (94.27% both).
+  - The KL is 10% lower (ratio 0.899; the KL criterion passes).
+  - Hard flips are 0 against 3.
+- **Why agreement misses:** only its interval is too wide. With a per-prompt spread of about 6 points, 24 prompts give a one-sided
+  bound near −1.6 to −2.0 points around a difference of zero. The 1-point margin needs about 100 prompts pooled.
+- **The candidate against today's path, directly** (Francis's "against the current gpt-oss path"):
+  - top-1 agreement is 365 of 384 positions (95.05%), with mean KL(exact ‖ candidate) 0.0136.
+  - The largest KL, 1.72, is one position of one long prompt. The next largest is 0.13.
+  - At the 19 positions where the two arms differ, the reference sides with the candidate at 8, with today's path at 8, and with neither
+    at 3. That is no sign of a systematic shift.
+  - Disagreement this large for a change in the last bits fits gpt-oss's discontinuous MoE routing: a rounding difference can flip an
+    expert pick, and teacher forcing does not stop that within a position.
+
+### Decision: accepted as non-inferior (Francis, 2026-10-26 07:56, relayed by the coordinator)
+
+"A on KS-O4 G-FID — accept it as non-inferior and continue."
+- **What was not met:** the registered agreement bound. The lower bound read −1.64 points against the −1.00 margin.
+- **What he accepted it on, the point estimates:**
+  - an agreement difference of 0.00 points (94.27% both);
+  - a KL ratio of 0.899, whose bound (1.014) passes;
+  - hard flips 0 against 3.
+- **Next:** KS-O4 goes on to its remaining gates (G-ID on amd64, G-MEM, G-SPEED), then the owed real-checkpoint gpt-oss parity run, then
+  its PR. The PR has a Gemini review before merge.
+
 ## G-MEM result: PASS (2026-10-26, the Mac, tier 0)
 
 `TestKSO4_kvHeldBytes` on the tiny fixture (window 4), 19 positions:
