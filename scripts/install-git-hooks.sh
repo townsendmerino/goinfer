@@ -43,23 +43,6 @@ cd "$(git rev-parse --show-toplevel)"
 # git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref on stdin; read it before anything else can.
 refs="$(cat)"
 
-# A direct push to main that changes product code waits for main's latest CI run to finish (scripts/main_ci_guard.py;
-# CLAUDE.md, "Branch protection does not enforce this"); a docs-only one goes straight through. The guard gets the push's
-# range: the remote's main, or the merge base for a new ref. A checkout older than the guard says so and skips it rather than blocking.
-mainline="$(printf '%s\n' "$refs" | awk '$3 == "refs/heads/main"' | head -1)"
-if [ -n "$mainline" ]; then
-    lsha="$(printf '%s' "$mainline" | awk '{print $2}')"
-    rsha="$(printf '%s' "$mainline" | awk '{print $4}')"
-    case "$rsha" in 0000000000000000000000000000000000000000) rsha="$(git merge-base "$lsha" origin/main 2>/dev/null || true)" ;; esac
-    if [ -f scripts/main_ci_guard.py ]; then
-        if ! python3 scripts/main_ci_guard.py ${rsha:+"$rsha"} ${rsha:+"$lsha"}; then
-            exit 1
-        fi
-    else
-        echo "pre-push: scripts/main_ci_guard.py is not in this checkout; main's CI was not checked" >&2
-    fi
-fi
-
 if [ ! -f scripts/queue_citation_lint.py ]; then
     echo "pre-push: scripts/queue_citation_lint.py is missing — not silently passing." >&2
     exit 1
@@ -120,7 +103,7 @@ HOOK
 
 chmod +x "$hook"
 echo "installed $hook"
-echo "checks: main_ci_guard.py (a push to main only), queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
+echo "checks: queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
 echo "verifying it fires and that it passes on a clean tree:"
 if bash "$hook" </dev/null >/dev/null 2>&1; then # no refs on stdin: the hook reads it first, and would wait
     echo "  clean tree -> hook exits 0 (push allowed)"

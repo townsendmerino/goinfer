@@ -82,10 +82,13 @@ pushes**, because `gofmt` and `go vet` were run and staticcheck was not.
 
 **Product code reaches `main` through a pull request that merges itself; do not watch CI.** Owner rule, 2026-10-26 (SD4,
 `docs/tasks/task-subsystems-2026-10.md` §12 PW1), replacing the push rules of 2026-10-13 and 2026-10-17. Commit locally, push
-your branch (seconds) and open a PR. When it is ready, run `gh pr merge <n> --auto --merge` (a merge commit, as the merge train
-used) and move on: GitHub merges it once the 19 checks `main` requires pass on the PR. The rule is not strict, so the PR need
-not be rebased onto the newest `main`; a conflict leaves it open. Do not hold a turn open on its checks or on main's CI, poll
-them, or schedule wake-ups for them. Read the result at the next natural point (`gh pr view <n> --json state` and
+your branch (seconds), open a PR, and when it is ready print `BRANCHES READY: #<n> <head sha>`. The coordinator or Francis then
+sets auto-merge (`gh pr merge <n> --auto --merge`, a merge commit, as the merge train used), and GitHub merges it once the 19
+checks `main` requires pass on the PR. A session does not run `gh pr merge` itself: in a background session the permission
+classifier denies it as a merge without review, and **a session never routes around a denial** (no other merge command, no
+API call, no asking another session to run it); it reports the denial and moves on. The rule is not strict, so the PR need
+not be rebased onto the newest `main`; a conflict leaves it open. Nobody holds a turn open on its checks or on main's CI,
+polls them, or schedules wake-ups for them. Read the result at the next natural point (`gh pr view <n> --json state` and
 `gh run list --limit 5`: your next push, the start of the next task, and always before a tag) and report a red the moment
 you see it: red does not announce itself, and a break rides along under every later merge until someone looks. Waiting on
 CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wait-2026-10.md`).
@@ -94,11 +97,10 @@ CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wai
 so a direct push of product code to `main` goes through. Two direct pushes stay: a docs-only change
 (`scripts/ci_docs_only.sh`: `docs/**`, `RELEASING.md` and `.claude/**`, none read by Go code or tests) goes straight to
 `main` and runs only CI's light lint job, and a release pushes its commits and tags as `RELEASING.md`'s two-step tag says.
-The pre-push hook holds a direct product push to main while main's latest CI run is unfinished (`scripts/main_ci_guard.py`,
-installed by `bash scripts/install-git-hooks.sh`; owner rule, 2026-10-18); a merge GitHub makes never passes through it.
-A main run that has started always finishes: main's workflows never cancel a running run for the next push.
-Merges that land while one runs collapse into one pending run on the tip (`.github/workflows/ci.yml`, the concurrency note),
-so a red main run can cover several PRs, each green on its own. **If a hook holds a push you believe is wrong, stop and report
+No hook waits on main's CI: the pre-push guard that did was removed on 2026-10-26 (owner, PW1). A main run that has started
+always finishes: main's workflows never cancel a running run for the next push. Merges that land while one runs collapse
+into one pending run on the tip (`.github/workflows/ci.yml`, the concurrency note), so a red main run can cover several PRs,
+each green on its own. **If a hook holds a push you believe is wrong, stop and report
 it to Francis. Never `--no-verify`.** A background push job pushes a named commit (`git push origin <sha>:<branch>`), never
 `HEAD`, and runs in a worktree no one else edits while it waits.
 
