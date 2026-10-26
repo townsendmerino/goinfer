@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
@@ -73,9 +74,16 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // Production code routes through Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
-// KQuantDeviceSavingsForTest is metalKQuantSavings("metal"): what Metal's fit pricing takes off for the q4k lane's native
+// KQuantDeviceSavingsForTest is kquantSavings("metal"): what Metal's fit pricing takes off for the q4k lane's native
 // Q5_K and Q6_K uploads.
-func (m *Model) KQuantDeviceSavingsForTest() int64 { return m.metalKQuantSavings("metal") }
+func (m *Model) KQuantDeviceSavingsForTest() int64 { return m.kquantSavings("metal") }
+
+// SetKQuantNativeOffForTest keeps every later load's Q5_K and Q6_K weights on their int8 copies, on the device and in the fit
+// pricing (kquantNativeOff); false restores the native lanes.
+func SetKQuantNativeOffForTest(off bool) { kquantNativeOff.Store(off) }
+
+// KQuantSavingsForTest is kquantSavings(backend): what backend's fit pricing takes off for its q4k lane's native uploads.
+func (m *Model) KQuantSavingsForTest(backend string) int64 { return m.kquantSavings(backend) }
 
 // ResidentPrefillSeedForTest is residentPrefillSeed from position 0 with no adapter: the prompt into the resident KV
 // by the route a generation takes (blocks included), returning the last token's logits.
@@ -737,4 +745,48 @@ func SetEmbedRowsObserverForTest(f func(rows int)) { embedRowsObserver = f }
 // whether the resident splits or chunks its prefill (KS-H1).
 func (m *Model) ResidentPrefillScratchForTest(promptTokens int) (int64, bool) {
 	return m.residentPrefillScratch(promptTokens)
+}
+
+// NewBlockSpecForTest is NewBlockSpec around rd, a test's own drafter, in place of the weights' attach: SP2's scripted-drafter
+// gates drive the real loop with a drafter whose proposals they choose. dw stands for the drafter's weights; the loop reads
+// only its BlockSize and MaskTokenID. The fold path's preparation and refusal are NewBlockSpec's.
+func (m *Model) NewBlockSpecForTest(rd ResidentBlockDrafter, dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
+	host, ok := m.resident.(ResidentDrafterHost)
+	if !ok {
+		return nil, errBlockSpecUnsupported
+	}
+	if err := m.prepareRecurrentSpec(host, dw); err != nil {
+		return nil, err
+	}
+	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+}
+
+// TripBlockSpecGuardForTest makes every BlockSpec generation's acceptance guard stop speculating after its window, whatever
+// the acceptance, so a test reaches the plain-step fallback after folded rounds. Returns the restore.
+func TripBlockSpecGuardForTest() (restore func()) {
+	blockSpecGuardTripForTest = true
+	return func() { blockSpecGuardTripForTest = false }
+}
+
+// ForgetResidentForTest clears the resident's record of committed ids, so the next generation prefills cold.
+func (m *Model) ForgetResidentForTest() { m.residentForgetIDs() }
+
+// GenerateFirstTokenForTest is BlockSpec.Generate that also returns when its first token was emitted, so a speed gate can time
+// decode apart from the prompt's prefill.
+func (s *BlockSpec) GenerateFirstTokenForTest(prompt []int, opt BlockSpecOptions) (out []int, rounds int, first time.Time, err error) {
+	out, rounds, err = s.generate(prompt, opt, func([]int) bool {
+		if first.IsZero() {
+			first = time.Now()
+		}
+		return true
+	})
+	return out, rounds, first, err
+}
+
+// GenerateStopAfterForTest is BlockSpec.Generate whose consumer stops taking tokens after its emits-th emit, as a cancelled stream
+// does: the loop returns early, committing nothing.
+func (s *BlockSpec) GenerateStopAfterForTest(prompt []int, opt BlockSpecOptions, emits int) ([]int, error) {
+	n := 0
+	out, _, err := s.generate(prompt, opt, func([]int) bool { n++; return n < emits })
+	return out, err
 }

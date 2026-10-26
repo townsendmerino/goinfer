@@ -605,10 +605,11 @@ func runIdentityDumper(o identityOpts, wd string, r identityRun, family string, 
 		return err.Error()
 	}
 	type cellSpec struct {
-		ID      string  `json:"id"`
-		Path    string  `json:"path"`
-		Quant   string  `json:"quant"`
-		Prompts [][]int `json:"prompts"`
+		ID         string  `json:"id"`
+		Path       string  `json:"path"`
+		Quant      string  `json:"quant"`
+		Prompts    [][]int `json:"prompts"`
+		DirectLoad bool    `json:"direct_load,omitempty"`
 	}
 	spec := struct {
 		Backend string     `json:"backend"`
@@ -624,7 +625,7 @@ func runIdentityDumper(o identityOpts, wd string, r identityRun, family string, 
 				continue
 			}
 		}
-		spec.Cells = append(spec.Cells, cellSpec{c.ID, path, c.Quant, c.Prompts})
+		spec.Cells = append(spec.Cells, cellSpec{c.ID, path, c.Quant, c.Prompts, c.DirectLoad})
 	}
 	if len(spec.Cells) == 0 {
 		return ""

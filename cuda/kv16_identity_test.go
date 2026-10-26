@@ -3,10 +3,16 @@
 package cuda
 
 import (
+	"context"
+	"errors"
 	"math"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // The exact-input identity of docs/tasks/task-cuda-f16-kv-2026-10.md: on K and V that are already f16-representable, a _kv16 attention reader
@@ -141,8 +147,8 @@ func TestKV16_exactInputIdentity_decodeReaders(t *testing.T) {
 	}
 }
 
-// TestKV16_exactInputIdentity_prefillReaders is the same bar for the batched-prefill attention kernels: attn_batched and every fused tile that serves the
-// head dimension, over a fresh prompt and a warm cache. The fused kernels already round K/V to f16 in the f32 build, so on representable inputs
+// TestKV16_exactInputIdentity_prefillReaders is the same bar for the batched-prefill attention kernels: attn_batched, attn_img_batched and attn_span_batched (with an image
+// block inside the rows) and every fused tile that serves the head dimension, over a fresh prompt and a warm cache. The fused kernels already round K/V to f16 in the f32 build, so on representable inputs
 // the two builds' fused kernels must also agree to the bit.
 func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 	for _, model := range []string{kv16Model, "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
@@ -155,10 +161,18 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 				name     string
 				p32, p16 Pipeline
 				fused    bool
-				bm, bn   int // query-tile rows and key-tile rows; 0 for the 64x64 kernel
+				bm, bn   int   // query-tile rows and key-tile rows; 0 for the 64x64 kernel
+				img      bool  // attn_img_batched and attn_span_batched: take the image-block table after the sinks
+				window   int32 // a sliding window to pass instead of the layer's, so a span reaches back past it; 0 keeps the layer's
 			}
 			var ks []kernel
-			ks = append(ks, kernel{name: "attn_batched", p32: r32.bAttn, p16: r16.bAttn})
+			ks = append(ks, kernel{name: "attn_batched", p32: r32.bAttn, p16: r16.bAttn},
+				kernel{name: "attn_img_batched", p32: r32.bAttnImg, p16: r16.bAttnImg, img: true},
+				kernel{name: "attn_span_batched", p32: r32.bAttnSpan, p16: r16.bAttnSpan, img: true},
+				// A 32-key window, shorter than every span below, so a span row's window reaches back to its span start: the branch
+				// attn_span_batched has and attn_img_batched does not.
+				kernel{name: "attn_span_batched window 32", p32: r32.bAttnSpan, p16: r16.bAttnSpan, img: true, window: 32},
+				kernel{name: "attn_img_batched window 32", p32: r32.bAttnImg, p16: r16.bAttnImg, img: true, window: 32})
 			if hd == 64 {
 				ks = append(ks, kernel{name: "attn_fused hd64", p32: r32.bAttnFused64, p16: r16.bAttnFused64, fused: true},
 					kernel{name: "attn_fused_bm32x64 hd64", p32: r32.bAttnBM32x64hd64, p16: r16.bAttnBM32x64hd64, fused: true, bm: 32, bn: 64},
@@ -187,6 +201,7 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+				f32Out := map[string][]float32{} // each kernel's f32 output, so the windowed span case can be shown to differ from the plain one
 				for _, k := range ks {
 					var out [2][]float32
 					for i, r := range []*cudaResident{r32, r16} {
@@ -201,9 +216,20 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 							if e := gpu.Upload(qB, q); e != nil {
 								return e
 							}
+							win := Ly.window
+							if k.window != 0 {
+								win = k.window
+							}
 							args := []gpu.KernelArg{Arg(qB), Arg(r.kvK(0)), Arg(r.kvV(0)), Arg(r.kvT(0)), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)),
-								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(tc.startPos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window),
+								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(tc.startPos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(win),
 								gpu.ArgValue(int32(tc.M)), Arg(cB), r.sinkArg(0)}
+							if k.img { // one image block over rows [startPos+10, startPos+M-20) of the M
+								bB := gpu.NewBufferLenOf[int32](r.dev, 2)
+								if e := gpu.Upload(bB, []int32{int32(tc.startPos + 10), int32(nTot - 20)}); e != nil {
+									return e
+								}
+								args = append(args, Arg(bB), gpu.ArgValue(int32(1)))
+							}
 							cfg := LaunchConfig{GridX: uint32(nH), GridY: uint32(tc.M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nTot + 128) * 4)}
 							if k.fused {
 								cfg = LaunchConfig{GridX: uint32(nH), GridY: uint32((tc.M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
@@ -240,8 +266,67 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 					if diff != 0 {
 						t.Errorf("%s startPos=%d M=%d hd=%d: %d/%d elements differ between the f16 reader and the f32 original", k.name, tc.startPos, tc.M, hd, diff, len(out[0]))
 					}
+					f32Out[k.name] = out[0]
+				}
+				// The window must change what the span kernel computes, and the span kernel must differ from the image kernel under it
+				// (its window reaches back to the span start, min(window start, span start)), or the windowed case is vacuous.
+				if a, b := f32Out["attn_span_batched"], f32Out["attn_span_batched window 32"]; len(a) > 0 && slices.Equal(a, b) {
+					t.Errorf("startPos=%d M=%d: attn_span_batched gives the same output with a 32-key window as with none: the window case is vacuous", tc.startPos, tc.M)
+				}
+				if a, b := f32Out["attn_img_batched window 32"], f32Out["attn_span_batched window 32"]; len(a) > 0 && slices.Equal(a, b) {
+					t.Errorf("startPos=%d M=%d: under a 32-key window attn_span_batched equals attn_img_batched: its reach-back to the span start did not fire", tc.startPos, tc.M)
 				}
 			}
 		})
+	}
+}
+
+// TestKV16_pairwiseMRoPENeverF16 holds the invariant behind GLM-OCR's f32-only pairwise m-RoPE kernel (rope_kv_mrope_batched_pw writes f32
+// rows): a resident built with an f16 cache for it, forced here past decoder.CUDAKVF16Decline, does not load that kernel, and its batched
+// m-RoPE prefill declines. Without the force the same load takes the kernel, so the f16 arm's decline is the guard's doing.
+func TestKV16_pairwiseMRoPENeverF16(t *testing.T) {
+	requireCUDADevice(t)
+	ckpt := filepath.Join("..", "testdata", "glm-ocr-tiny")
+	if _, err := os.Stat(ckpt); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	load := func(forceF16 bool) *cudaResident {
+		if forceF16 {
+			restore := decoder.SetResolveKVHookForTest(func(backend string, _ decoder.Options) (string, string, bool) {
+				return "f16", "forced by the test", backend == "cuda"
+			})
+			defer restore()
+		}
+		m, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int8int8"})
+		if err != nil {
+			t.Fatalf("load (force f16 %v): %v", forceF16, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			t.Fatalf("not CUDA-resident (force f16 %v): %s", forceF16, m.ResidentDecline())
+		}
+		if !r.pairwiseRoPE {
+			t.Fatal("glm-ocr-tiny does not rotate pairwise: this test checks nothing")
+		}
+		return r
+	}
+	r32 := load(false)
+	if r32.kvF16 || !r32.mropePrefillReady {
+		t.Fatalf("f32 control: kvF16 %v, m-RoPE prefill ready %v; want the pairwise m-RoPE kernel loaded", r32.kvF16, r32.mropePrefillReady)
+	}
+	r16 := load(true)
+	if !r16.kvF16 {
+		t.Fatal("the forced load did not build an f16 cache: the guard went unexercised")
+	}
+	if r16.mropePrefillReady || r16.bRopeKVMRoPE != (Pipeline{}) {
+		t.Fatal("an f16 cache loaded the f32-only pairwise m-RoPE kernel")
+	}
+	row := [][]float32{make([]float32, r16.hidden)}
+	if _, err := r32.PrefillMRoPELast(context.Background(), row, 0, [][3]int{{0, 0, 0}}); err != nil { // the same call runs on the f32 cache
+		t.Fatalf("PrefillMRoPELast on the f32 control: %v", err)
+	}
+	if _, err := r16.PrefillMRoPELast(context.Background(), row, 0, [][3]int{{0, 0, 0}}); !errors.Is(err, errPrefillDeclined) {
+		t.Fatalf("PrefillMRoPELast on the f16 cache: %v, want it declined", err)
 	}
 }

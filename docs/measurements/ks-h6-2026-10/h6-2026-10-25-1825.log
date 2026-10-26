@@ -1,0 +1,14 @@
+18:25:08 KS-H6 at e790fc51a, log /home/francis/goinfer-logs/ks-h6-2026-10/h6-2026-10-25-1825.log; load 0.44 1.09 1.28; MemAvailable 58.3 GB; GPU 403 MiB
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestKSH6_marginParts
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.5 GB free — capping to 30 (3.1 GB)
+[resident] BuildResident declined (ok=false err=cuda: resident context 280 positions needs 0.00 GB of KV (1.1 KB/position across 4 layers) but only 0.40 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=cuda: resident context 116 positions needs 0.00 GB of KV (0.6 KB/position across 4 layers) but only 0.40 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=cuda: resident context 64 positions needs 0.00 GB of KV (0.5 KB/position across 2 layers) but only 0.40 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=cuda: resident context 64 positions needs 0.00 GB of KV (0.3 KB/position across 4 layers) but only 0.40 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model) — continuing on the CPU/staged path
+[H6] Gemma 4 26B-A4B: context 4096, KV f16 false, expert cache true (30 slots); free after the load 385.1 MiB (cuMemGetInfo); nvidia-smi used 403 → 7400 MiB over the load; a 512-row pass 77.8 MiB of scratch at 3584 keys
+[H6] Gemma 4 26B-A4B: a 3584-token prefill (37.425s, passes of 512 rows, learned cap 0) and 64 decode tokens: nvidia-smi peak used 7542 MiB over 1950 samples, 142 MiB above the post-load figure; the run's minimum free ≈ 243.1 MiB (cuMemGetInfo after the load less that peak rise); free at the end 385.1 MiB
+--- PASS: TestKSH6_marginParts (106.60s)
+PASS
+18:27:03 DONE rc 0

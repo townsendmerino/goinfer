@@ -212,7 +212,8 @@ var _ decoder.ResidentSpanPrefill = (*cudaResident)(nil)
 // passes are prefillPassRows wide and cut outside the spans, so a span longer than a pass gets a pass of its own. Every
 // pass takes attn_span_batched, with or without a span in it, so where the passes fall does not change a bit. An OOM is
 // retried narrower from the same row, as in prefillChunked; any other failure after the first pass is a
-// decoder.PrefillPartial. Declines: an E-model, an f16 KV cache (attn_span_batched reads f32), a sliding layer that would
+// decoder.PrefillPartial. Declines: an E-model, an f16 KV cache (attn_span_batched's f16 twin passes exact-input identity, but no
+// end-to-end f16 span gate has run, so f16 keeps the CPU prefill and upload), a sliding layer that would
 // need the row-batched kernels, and whatever prefillCore declines.
 func (r *cudaResident) PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) ([]float32, error) {
 	M := len(embeddings)
@@ -223,7 +224,7 @@ func (r *cudaResident) PrefillSpansLast(ctx context.Context, embeddings [][]floa
 	case r.eModel:
 		return nil, fmt.Errorf("cuda prefill: span prefill on a Gemma 4 E-model: %w", errPrefillDeclined)
 	case r.kvF16:
-		return nil, fmt.Errorf("cuda prefill: span prefill on an f16 KV cache (attn_span_batched reads f32): %w", errPrefillDeclined)
+		return nil, fmt.Errorf("cuda prefill: span prefill on an f16 KV cache is not gated end to end yet: %w", errPrefillDeclined)
 	case !r.spanPrefillReady:
 		return nil, fmt.Errorf("cuda prefill: attn_span_batched unavailable: %w", errPrefillDeclined)
 	}
@@ -407,16 +408,6 @@ func (r *cudaResident) HybridMRoPEPrefill() bool {
 	return delta
 }
 
-// prefillChunkRows is prefillDefaultChunk unless GOINFER_PREFILL_CHUNK parses to a positive integer. An unusable value
-// is ignored, not an error: this is a tuning knob on a path with a correct fallback, and a typo must not take a model
-// off the fast path.
-func prefillChunkRows(v string) int {
-	if n, err := strconv.Atoi(v); err == nil && n > 0 {
-		return n
-	}
-	return prefillDefaultChunk
-}
-
 // HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for embedding requests: same chunking, same K/V,
 // bit-identical per-row math, but the final tail returns the last row's post-final-norm hidden state and never
 // dispatches the LM head, which an embedder does not need (decoder/embed.go's HiddenLast). startPos is taken so it
@@ -438,10 +429,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	chunk := prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK"))
-	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
-		chunk = learned
-	}
+	chunk := r.prefillPassRows()
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, e
 	}
@@ -472,7 +460,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 	return all, nil
 }
 
-// prefillChunked runs the prompt through the batched path in passes of at most prefillChunkRows() rows and returns the
+// prefillChunked runs the prompt through the batched path in passes of at most prefillPassRows() rows and returns the
 // last row's tail output: logits for tailLastLogits, the post-final-norm hidden state for tailHiddenLast. mropePos is
 // nil except for PrefillMRoPELast; otherwise a row's rotation position equals its KV position. Each pass writes K/V at
 // absolute positions startPos+i and attention reads the cache, so the result is bit-identical to one unchunked pass
@@ -483,9 +471,9 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 // positional KV). Only errPrefillOOM is retried: a static decline is independent of M and would spin, so it is checked
 // once up front. Any other failure after the first pass returns a decoder.PrefillPartial naming the first unwritten position.
 //
-// Not chunked while a batched hidden-state capture is armed (r.capBTaps): the taps record the residual for all M rows of
-// one pass, and a chunked run would leave a block drafter holding the last chunk's rows only, a silent wrong answer. It
-// runs as one pass instead.
+// With a batched hidden-state capture armed (r.capBTaps) each pass records its own rows, and the passes' rows are joined in
+// order, so a block drafter gets every row of the prompt whatever the chunking (one pass of a long prompt does not fit
+// beside a drafter on an 8 GB card).
 func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int, finalTail int, mropePos [][3]int) ([]float32, error) {
 	return r.prefillChunkedMarked(ctx, embeddings, startPos, finalTail, mropePos, 0, nil)
 }
@@ -507,12 +495,18 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, e
 	}
-	if M <= chunk || len(r.capBTaps) > 0 {
+	if M <= chunk {
 		outs, _, err := r.prefillCore(ctx, embeddings, startPos, finalTail, nil, mropePos, nil)
 		if err != nil {
 			return nil, err
 		}
 		return outs[len(outs)-1], nil
+	}
+	// capt joins the passes' captured rows per tap; r.capBOut holds the whole prompt's when the last pass returns.
+	var capt [][]float32
+	if len(r.capBTaps) > 0 {
+		capt = make([][]float32, len(r.capBTaps))
+		defer func() { r.capBOut = capt }()
 	}
 	// The non-final passes are tailKVOnly; they belong to this prompt's prefill and take the kernels its FINAL tail takes (see chunkOrdinary).
 	r.chunkOrdinary = finalTail == tailLastLogits
@@ -555,6 +549,12 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 				continue                              // same i: nothing was committed by the pass that failed to allocate
 			}
 			return nil, prefillPartialAt(startPos, i, err)
+		}
+		if prefillPassDoneForTest != nil {
+			prefillPassDoneForTest()
+		}
+		for slot := range capt {
+			capt[slot] = append(capt[slot], r.capBOut[slot]...)
 		}
 		if last {
 			return outs[len(outs)-1], nil
@@ -611,15 +611,15 @@ func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) 
 // leave the context launching kernels that "return SUCCESS and execute NOTHING" (prefillChunkCap in resident.go).
 func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
 	// No context: decoder.ResidentSeedArgmax carries none, so a cancelled block-spec seed runs to completion. Known gap;
-	// closing it is an interface change (docs/code-notes/cuda.md#PrefillSeedArgmax: cancellation gap).
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, nil, nil, nil)
+	// closing it is an interface change (docs/code-notes/cuda.md#PrefillSeedArgmax: cancellation gap). The passes are
+	// PrefillLast's, so the seed writes the K/V and state a plain prefill of the prompt writes.
+	row, err := r.prefillChunked(context.Background(), embeddings, startPos, tailLastLogits, nil)
 	if err != nil {
 		return 0, err
 	}
-	if len(outs) == 0 || outs[len(outs)-1] == nil {
+	if row == nil {
 		return 0, fmt.Errorf("cuda prefill: seed argmax got no logits for the last row")
 	}
-	row := outs[len(outs)-1]
 	best := 0
 	for i, v := range row {
 		if v > row[best] {
@@ -838,7 +838,7 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 		// Say rows per pass, not "one pass": the report is read as a promise about how a long prompt is ingested, and a prompt
 		// past the chunk width is several weight-stationary passes (TestPrefillChunked_bitIdentical).
 		return true, fmt.Sprintf("batched (weight-stationary CUDA passes of up to %d rows)%s",
-			prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK")), r.fusedAttnNote())
+			r.prefillPassRows(), r.fusedAttnNote())
 	}
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
@@ -1257,7 +1257,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				// Gated-DeltaNet mixer (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): replaces segA + rope +
 				// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
 				// the recurrence row by row in order. The FFN below is the shared one.
-				if e := r.prefillDeltaNetRows(Ly, xB, aqB, aScB, M, dnB); e != nil { // profiles its own categories
+				pend, pM := r.specPending(l)
+				if e := r.prefillDeltaNetRows(Ly, xB, aqB, aScB, M, r.specBufs(l, dnB), pend, pM); e != nil { // profiles its own categories
 					return e
 				}
 			} else {

@@ -39,8 +39,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
 | KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
 | KV4 | active | nobara: gates registered 2026-10-21; KV4a then KV4b. Pool = the VRAM main gives KV at the same flags (D-KV4-1 (a)); only a borrower past its share is stopped, as at the context cap (D-KV4-2) (owner, 2026-10-21); L | §6; `docs/measurements/kv4-cuda-2026-10-21.md` |
-| KV4a | active | nobara: built (KV4a-1 to -3), draft PR #138; G1a (with its registered plants red), G1b (tiny and real assets), G1c, G3a to G3d (G3b served included), G4 and TTFT pass; MC3 0.973 to 0.983 and Gemma-3-1B decode ambiguous: shipped on the capacity arm with the ~2% cost at four clients recorded, MC3 on decode's bands (D-KV4-3 (b), owner, 2026-10-22); G1d's heavy partitions read (three failures were KV4a's and are fixed, one fails on `main` too) | `kv4-cuda-2026-10-21.md` §3, §5 |
-| KV4b | active | nobara, branch `kv4b-2026-10-22`: f16 delivered on request per family group, `auto` per group on G4 PASS (D7). G4 keeps both cells: K=3,900 by day with ten prompts, K=8,000 on the night queue at four prompts (D-KV4-4 (b), owner, 2026-10-22); tier 0 re-run alone under the exclusive timing lock (owner, 2026-10-22) | `kv4-cuda-2026-10-21.md` §2 G5; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
+| KV4a | done | nobara: merged as #138 (2026-10-22). Paged KV on CUDA: per-group pools of 64-row blocks behind block tables, preamble blocks shared by reference with copy on write, one conversation can use the whole pool (2.71x the 7B's single-conversation context on the 8 GB card). Every gate read; MC3 0.973 on decode's bands (D-KV4-3 (b), owner, 2026-10-22), the ~2% cost at four clients recorded | `kv4-cuda-2026-10-21.md` §3, §5 |
+| KV4b | done | closed 2026-10-24 (owner, D-KV4-9); final table in `kv4-cuda-2026-10-21.md` §3. nobara, branch `kv4b-2026-10-22`: f16 delivered on request per family group, `auto` per group on G4 PASS (D7). G4 keeps both cells: K=3,900 by day with ten prompts, K=8,000 on the night queue at four prompts (D-KV4-4 (b), owner, 2026-10-22); tier 0 re-run alone under the exclusive timing lock (owner, 2026-10-22); tier 0 passes on all six groups; G4 passes at both depths on Qwen2.5-VL-3B (m-RoPE: `auto` f16); Gemma-3-4B passes K=3,900 and reads AMBIGUOUS at K=8,000 (sliding window `auto` f32: D-KV4-10 withdrew D-KV4-6's override, 2026-10-25); Qwen1.5-MoE passes K=3,900 and K=8,000 (2026-10-24; MoE `auto` f16, qwen3_vl_moe with it; gpt-oss f32 until its sinks are gated, D-KV4-10); Command-R7B passes K=3,900 and fails K=8,000 on hard flips alone (2 against f32's 0, where criterion (a) allows none), re-read on native references 2026-10-25 with the same PASS at K=3,900; pairwise `auto` f32 (D-KV4-10 withdrew D-KV4-8); Qwen3.5-9B's K=3,900 DOES NOT PASS (KL ratio 1.21, f16 ≥ f32 on 4/10; hybrids' `auto` stays f32, f16 on request; kept without a re-read, D-KV4-11); the K=8,000 cells of both wait on the CPU reference's speed (owner, 2026-10-23); MLA's DeepSeek-V2-Lite K=3,900 was stopped with no prompt stored (four concurrent per-token prompts could not finish inside REF_TIMEOUT), and MLA stays f32 with no verdict, gradable later (D-KV4-9); its batched CPU prefill branch `mla-batched-cpu-prefill-2026-10-24` is parked (owner, 2026-10-25) | `kv4-cuda-2026-10-21.md` §2 G5; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
 | KV5 | blocked | KV4; takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |
 | KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
@@ -256,7 +256,7 @@ slot is gone; and every KV feature is built three or four times.
 | hybrids | all four recurrent kinds | DeltaNet, one slot | DeltaNet, one slot | DeltaNet, Mamba-2, one slot |
 | prefix reuse | `decoder/session.go:Session.rewindForReuse` behind `bestExtend` / `pickSession` | per-slot id lists, longest common prefix (`reuseLenOf`), slot choice (`pickResidentSlot`) | the same | the same |
 | persistence | `.giw-kv` v3 snapshots (`decoder/kvsnapshot.go:Session.Snapshot`), NVMe cold tier | none | none | none |
-| prefill scratch | admission prices an upper bound over the whole prompt (`decoder/prefill_budget.go:prefillScratchBytes`) | 512-row passes, about 146 MB (`cuda/prefill.go:prefillChunkRows`) | the whole padded prompt in one pass (KV-pre is changing this) | allocated per call |
+| prefill scratch | admission prices an upper bound over the whole prompt (`decoder/prefill_budget.go:prefillScratchBytes`) | passes of 512 to 2,048 rows, the widest whose scratch the build leaves room for (KS-B8; `cuda/prefill_scratch.go:prefillWidthFor`) | the whole padded prompt in one pass (KV-pre is changing this) | allocated per call |
 
 **What is already right and carries over:**
 - **The cache-state grid** (`decoder/cachestate.go`). It is exactly the correctness skeleton the new manager needs.
@@ -1021,7 +1021,7 @@ KV2 merges when every arm on both boxes is read.
 `kv3-cuda-2026-10` with its record, `docs/measurements/kv3-cuda-2026-10-13.md`; the Metal half is the KV-pre session's (`metal/`).
 
 - **Build:**
-  - every resident's chunk size is a multiple of B (CUDA's `prefillChunkRows` default is already 512);
+  - every resident's chunk size is a multiple of B (CUDA's pass widths, `prefillWidths`, are 512, 1,024 and 2,048);
   - admission is in blocks plus the chunk scratch, from each allocator's own figure, replacing the whole-prompt bound on
     the resident paths;
   - **the 12,288-key limit on CUDA** (added 2026-10-13, KV0's biggest time-to-first-token finding): the batched prefill declined past 12,160
@@ -1743,7 +1743,7 @@ Code, read at `e2ffb953`:
     `cuda/resident.go:resolveCtxCapFit`, `cuda/resident.go:cudaResident.checkKVFits`, `cuda/resident.go:cudaLayer`,
     `cuda/resident.go:cudaResident.UseKVSlot`;
   - `cuda/kvwindow.go:cudaResident.kvEnsure`, `cuda/kvwindow.go:cudaResident.ReusableKV`;
-  - `cuda/prefill.go:prefillChunkRows`, `cuda/batchstep.go:cudaResident.StepBatch`.
+  - `cuda/prefill_scratch.go:cudaResident.prefillBaseRows`, `cuda/batchstep.go:cudaResident.StepBatch`.
 - **Metal:** `metal/model.go:resolveMetalCtxCap`, `metal/backend.go:metalResident.UseKVSlot`,
   `metal/batch.go:metalResident.StepBatch`, `metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`.
 - **WebGPU:** `gpu/kv_slots.go:webgpuKVSlot`.

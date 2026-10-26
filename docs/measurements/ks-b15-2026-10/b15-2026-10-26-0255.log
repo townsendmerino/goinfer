@@ -1,0 +1,184 @@
+02:55:21 KS-B15 gates at 410c6ee87 (all), log /home/francis/goinfer-logs/ks-b15-2026-10/b15-2026-10-26-0255.log; driver 595.91.07
+== g1 02:55:55: load 1.37 4.05 4.80; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSB15_limitArithmetic
+--- PASS: TestKSB15_limitArithmetic (0.00s)
+=== RUN   TestKSB15_optIn
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+    ksb15_test.go:56: KV precision f32
+[B15-G1] attn_batched: 65536 B of dynamic shared memory
+[B15-G1] attn_img_batched: 65536 B of dynamic shared memory
+[B15-G1] attn_span_batched: 65536 B of dynamic shared memory
+[B15-G1] the prefill limit 65536 B holds 16256 keys (the default 48 KiB holds 12,160)
+    ksb15_test.go:100: KV precision f32
+--- PASS: TestKSB15_optIn (3.96s)
+=== RUN   TestKV3_shmemGuardEquivalence
+--- PASS: TestKV3_shmemGuardEquivalence (0.00s)
+=== RUN   TestAttnShmemLimit_matchesDevice
+    shmem_limit_test.go:54: device MAX_SHARED_MEMORY_PER_BLOCK = 49152 B (48 KB); guard is 49152 B => nWin <= 12160 keys
+--- PASS: TestAttnShmemLimit_matchesDevice (0.00s)
+=== RUN   TestCheckPrefillShmem_declinesPastTheLimit
+--- PASS: TestCheckPrefillShmem_declinesPastTheLimit (0.00s)
+PASS
+== g2 02:55:59: load 1.37 4.05 4.80; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSB15_bandBitsTiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+    ksb15_test.go:122: KV precision f32
+[B15-G2] kv=f32 n=12400   in the band true: row-batched groups 6 today, 0 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 12697600
+[B15-G2] kv=f32 n=14000   in the band true: row-batched groups 18 today, 0 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 14336000
+[B15-G2] kv=f32 n=16000   in the band true: row-batched groups 34 today, 0 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 16384000
+[B15-G2] kv=f32 n=16384   in the band false: row-batched groups 36 today, 4 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 16777216
+    ksb15_test.go:122: KV precision f16
+[B15-G2] kv=f16 n=12400   in the band true: row-batched groups 6 today, 0 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 12697600
+[B15-G2] kv=f16 n=14000   in the band true: row-batched groups 18 today, 0 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 14336000
+[B15-G2] kv=f16 n=16000   in the band true: row-batched groups 34 today, 0 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 16384000
+[B15-G2] kv=f16 n=16384   in the band false: row-batched groups 36 today, 4 opt-in; logits differing 0 of 256 (worst 0), KV differing 0 of 16777216
+--- PASS: TestKSB15_bandBitsTiny (24.94s)
+=== RUN   TestKV3Families_forcedRouteEqualsAttnBatched
+=== RUN   TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-twogeom-tiny
+    kv3_families_test.go:35: no fixture at ../testdata/gemma4-dense-twogeom-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+=== RUN   TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-scaled
+    kv3_families_test.go:35: no fixture at ../testdata/gemma4-dense-scaled (uncommitted; regenerate with the matching scripts/pin_*.py)
+=== RUN   TestKV3Families_forcedRouteEqualsAttnBatched/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[kv3-families] qwen35-tiny                gemm=false n=300         logits differing 0 of 256, KV differing 0 of 19200 (1 groups)
+[kv3-families] qwen35-tiny                gemm=false n=1000        logits differing 0 of 256, KV differing 0 of 64000 (2 groups)
+[kv3-families] qwen35-tiny                gemm=false n=2600        logits differing 0 of 256, KV differing 0 of 166400 (6 groups)
+[kv3-families] qwen35-tiny                gemm=true n=300          logits differing 0 of 256, KV differing 0 of 19200 (1 groups)
+[kv3-families] qwen35-tiny                gemm=true n=1000         logits differing 0 of 256, KV differing 0 of 64000 (2 groups)
+[kv3-families] qwen35-tiny                gemm=true n=2600         logits differing 0 of 256, KV differing 0 of 166400 (6 groups)
+--- PASS: TestKV3Families_forcedRouteEqualsAttnBatched (2.63s)
+    --- SKIP: TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-twogeom-tiny (0.00s)
+    --- SKIP: TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-scaled (0.00s)
+    --- PASS: TestKV3Families_forcedRouteEqualsAttnBatched/qwen35-tiny (2.63s)
+=== RUN   TestKV3Families_pastBoundBatchedEqualsPerToken
+=== RUN   TestKV3Families_pastBoundBatchedEqualsPerToken/gemma4-dense-twogeom-tiny
+    kv3_families_test.go:77: no fixture at ../testdata/gemma4-dense-twogeom-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+=== RUN   TestKV3Families_pastBoundBatchedEqualsPerToken/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[kv3-families] past the bound qwen35-tiny                logits differing 0 of 256 (worst 0), KV differing 0 of 1049600; batched 2.49 s (3 groups), per-token 7.35 s
+--- PASS: TestKV3Families_pastBoundBatchedEqualsPerToken (12.48s)
+    --- SKIP: TestKV3Families_pastBoundBatchedEqualsPerToken/gemma4-dense-twogeom-tiny (0.00s)
+    --- PASS: TestKV3Families_pastBoundBatchedEqualsPerToken/qwen35-tiny (12.48s)
+=== RUN   TestKV3Families_imageBlockForcedRouteEqualsAttnImgBatched
+[kv3-families] image block forced route: logits differing 0 of 262, KV differing 0 of 44800 (2 groups)
+--- PASS: TestKV3Families_imageBlockForcedRouteEqualsAttnImgBatched (0.25s)
+=== RUN   TestKV3Families_imageBlockPastTheBound
+--- PASS: TestKV3Families_imageBlockPastTheBound (0.61s)
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_tiny
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_tiny/f32
+    kv3_longprefill_test.go:169: KV precision f32
+[kv3] tiny f32 n=12400 seed=0      cosine 0.999861 argmax equal true (reference margin 0.1151, near tie false), fused attention launches 50
+[kv3] tiny f32 n=12400 seed=0      control (last 8 tokens replaced) cosine 0.823451: the comparison sees it
+[kv3] tiny f32 n=12400 seed=1      cosine 0.999872 argmax equal true (reference margin 0.1346, near tie false), fused attention launches 50
+[kv3] tiny f32 n=12400 seed=1      control (last 8 tokens replaced) cosine 0.807009: the comparison sees it
+[kv3] tiny f32 n=12400 seed=2      cosine 0.999898 argmax equal true (reference margin 0.1159, near tie false), fused attention launches 50
+[kv3] tiny f32 n=12400 seed=2      control (last 8 tokens replaced) cosine 0.767123: the comparison sees it
+[kv3] tiny f32 n=14000 seed=0      cosine 0.999903 argmax equal true (reference margin 0.2392, near tie false), fused attention launches 56
+[kv3] tiny f32 n=14000 seed=0      control (last 8 tokens replaced) cosine 0.810080: the comparison sees it
+[kv3] tiny f32 n=14000 seed=1      cosine 0.999906 argmax equal true (reference margin 0.4077, near tie false), fused attention launches 56
+[kv3] tiny f32 n=14000 seed=1      control (last 8 tokens replaced) cosine 0.810191: the comparison sees it
+[kv3] tiny f32 n=14000 seed=2      cosine 0.999877 argmax equal true (reference margin 0.3411, near tie false), fused attention launches 56
+[kv3] tiny f32 n=14000 seed=2      control (last 8 tokens replaced) cosine 0.724037: the comparison sees it
+[kv3] tiny f32 n=16384 seed=0      cosine 0.999917 argmax equal true (reference margin 0.1554, near tie false), fused attention launches 64
+[kv3] tiny f32 n=16384 seed=0      control (last 8 tokens replaced) cosine 0.810550: the comparison sees it
+[kv3] tiny f32 n=16384 seed=1      cosine 0.999916 argmax equal true (reference margin 0.1743, near tie false), fused attention launches 64
+[kv3] tiny f32 n=16384 seed=1      control (last 8 tokens replaced) cosine 0.782905: the comparison sees it
+[kv3] tiny f32 n=16384 seed=2      cosine 0.999894 argmax equal true (reference margin 0.1322, near tie false), fused attention launches 64
+[kv3] tiny f32 n=16384 seed=2      control (last 8 tokens replaced) cosine 0.759240: the comparison sees it
+=== RUN   TestKV3_batchedPrefillPastTheSpanBound_tiny/f16
+    kv3_longprefill_test.go:169: KV precision f16
+[kv3] tiny f16 n=12400 seed=0      cosine 0.999911 argmax equal true (reference margin 0.1353, near tie false), fused attention launches 50
+[kv3] tiny f16 n=12400 seed=0      control (last 8 tokens replaced) cosine 0.822103: the comparison sees it
+[kv3] tiny f16 n=12400 seed=1      cosine 0.999911 argmax equal true (reference margin 0.1234, near tie false), fused attention launches 50
+[kv3] tiny f16 n=12400 seed=1      control (last 8 tokens replaced) cosine 0.805493: the comparison sees it
+[kv3] tiny f16 n=12400 seed=2      cosine 0.999911 argmax equal true (reference margin 0.1115, near tie false), fused attention launches 50
+[kv3] tiny f16 n=12400 seed=2      control (last 8 tokens replaced) cosine 0.767733: the comparison sees it
+[kv3] tiny f16 n=14000 seed=0      cosine 0.999888 argmax equal true (reference margin 0.2416, near tie false), fused attention launches 56
+[kv3] tiny f16 n=14000 seed=0      control (last 8 tokens replaced) cosine 0.809480: the comparison sees it
+[kv3] tiny f16 n=14000 seed=1      cosine 0.999904 argmax equal true (reference margin 0.4105, near tie false), fused attention launches 56
+[kv3] tiny f16 n=14000 seed=1      control (last 8 tokens replaced) cosine 0.809644: the comparison sees it
+[kv3] tiny f16 n=14000 seed=2      cosine 0.999891 argmax equal true (reference margin 0.3438, near tie false), fused attention launches 56
+[kv3] tiny f16 n=14000 seed=2      control (last 8 tokens replaced) cosine 0.723619: the comparison sees it
+[kv3] tiny f16 n=16384 seed=0      cosine 0.999927 argmax equal true (reference margin 0.1508, near tie false), fused attention launches 64
+[kv3] tiny f16 n=16384 seed=0      control (last 8 tokens replaced) cosine 0.810331: the comparison sees it
+[kv3] tiny f16 n=16384 seed=1      cosine 0.999961 argmax equal true (reference margin 0.1674, near tie false), fused attention launches 64
+[kv3] tiny f16 n=16384 seed=1      control (last 8 tokens replaced) cosine 0.782679: the comparison sees it
+[kv3] tiny f16 n=16384 seed=2      cosine 0.999954 argmax equal true (reference margin 0.1191, near tie false), fused attention launches 64
+[kv3] tiny f16 n=16384 seed=2      control (last 8 tokens replaced) cosine 0.760013: the comparison sees it
+--- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny (149.10s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 (74.61s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f16 (74.49s)
+=== RUN   TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny
+    kv3_tiled_test.go:45: KV precision f32
+[kv3-tiled] forced route kv=f32 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f32 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+    kv3_tiled_test.go:45: KV precision f16
+[kv3-tiled] forced route kv=f16 gemm=false n=300    logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=1000   logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=false n=3900   logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=300     logits differing 0 of 256, KV differing 0 of 307200 (2 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=1000    logits differing 0 of 256, KV differing 0 of 1024000 (4 row-batched groups)
+[kv3-tiled] forced route kv=f16 gemm=true n=3900    logits differing 0 of 256, KV differing 0 of 3993600 (16 row-batched groups)
+--- PASS: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny (1.61s)
+=== RUN   TestKV3Tiled_batchedEqualsPerToken_tiny
+    kv3_tiled_test.go:91: KV precision f32
+[kv3-tiled] past the bound kv=f32 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 1.03 s (0 groups), per-token 6.16 s
+[kv3-tiled] past the bound kv=f32 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.79 s (4 groups), per-token 10.00 s
+    kv3_tiled_test.go:91: KV precision f16
+[kv3-tiled] past the bound kv=f16 n=12400   logits differing 0 of 256 (worst 0), KV differing 0 of 12697600; batched 1.00 s (0 groups), per-token 6.04 s
+[kv3-tiled] past the bound kv=f16 n=16384   logits differing 0 of 256 (worst 0), KV differing 0 of 16777216; batched 1.72 s (4 groups), per-token 9.86 s
+--- PASS: TestKV3Tiled_batchedEqualsPerToken_tiny (38.68s)
+=== RUN   TestKV3Tiled_pastBoundPromptRunsExact_tiny
+    kv3_tiled_test.go:145: KV precision f32
+[kv3-tiled] past the default bound at 12400, GEMM lever on: 0 row-batched groups, 0 tensor-core launches; logits differing 0 of 256, KV differing 0 of 12697600
+[kv3-tiled] past the default bound at 16400, GEMM lever on: 6 row-batched groups, 0 tensor-core launches; logits differing 0 of 256, KV differing 0 of 16793600
+--- PASS: TestKV3Tiled_pastBoundPromptRunsExact_tiny (6.32s)
+=== RUN   TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines
+    kv3_tiled_test.go:182: KV precision f16
+--- PASS: TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines (3.67s)
+=== RUN   TestKV3Tiled_spanScratchMatchesThePass
+    kv3_tiled_test.go:206: KV precision f16
+[kv3-tiled] scratch levers=true start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=15888 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=15888 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=15888 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=15888 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=15888 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=15888 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=15888 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=15888 M=512: 6692864 B + span 67112944 B = the pass's allocations
+--- PASS: TestKV3Tiled_spanScratchMatchesThePass (0.57s)
+PASS
+FAILED: g2 skipped a gate
+== g3 03:00:00: load 3.10 3.61 4.44; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSB15_bandBitsGemma3
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[B15] gemma-3-4b at 14400 positions: f32 KV (fit check: <nil>)
+    ksb15_test.go:198: KV precision f32
+[B15-G3] gemma-3-4b: 13824-token lead in 39.2 s
+[B15-G3] gemma-3-4b pass at 14336 keys: row-batched groups 20 today, 0 opt-in; tensor-core launches 0, 0; logits differing 0 of 262144 (worst 0), KV differing 0 of 35651584
+--- PASS: TestKSB15_bandBitsGemma3 (64.63s)
+PASS
+03:01:04 DONE fail=1

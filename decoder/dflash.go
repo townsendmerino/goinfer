@@ -1,11 +1,15 @@
 package decoder
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -45,18 +49,20 @@ type DFlashDrafter struct {
 	draftVocab int
 
 	st *embed.SafetensorsFile // retained: the WeightMats alias its mmap
+	sf *stFile                // a streamed drafter's row readers' file (OpenDFlashDrafter); nil otherwise
 }
 
 // HasOwnHead reports whether this drafter emits ids from its own reduced vocabulary
 // (and therefore must map them through d2t) rather than borrowing the target's LM
 // head. Callers use it to pick between DraftTokenID and DrafterHeadLogits.
-func (d *DFlashDrafter) HasOwnHead() bool { return d.lmHead.Rows() > 0 }
+func (d *DFlashDrafter) HasOwnHead() bool { return d.draftVocab > 0 }
 
 // DraftTokenID turns one already-normed trunk hidden row into a target token id using the drafter's own reduced-vocab
 // head, mapping the argmax back through d2t. An unmapped argmax is a valid-looking id in the wrong space. Drafting is
 // lossless (the target re-verifies every token), so it would not corrupt output, but it would silently destroy
 // acceptance. Hence the mapping lives here, next to the argmax, not in the caller.
 func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
+	d.mustHoldWeights()
 	logits := make([]float32, d.draftVocab)
 	matmul(be, &d.lmHead, h, logits, 1)
 	i := argmax(logits)
@@ -65,13 +71,17 @@ func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
 
 // EmbedDraft writes the drafter's OWN embedding row for a target token id. Drafters
 // without their own embedding use the target's (Model.embedResident).
-func (d *DFlashDrafter) EmbedDraft(id int, dst []float32) { d.embed.Row(id, dst) }
+func (d *DFlashDrafter) EmbedDraft(id int, dst []float32) {
+	d.mustHoldWeights()
+	d.embed.Row(id, dst)
+}
 
 // EmbedBlock builds the trunk's block input for ids, using the drafter's own embedding when it has one and the
 // target's otherwise. The fallback is not cosmetic: a drafter that ships embed_tokens was trained against those
 // vectors, and the target's are a silent off-distribution input. The trunk still runs and output stays lossless, so
 // the only symptom is acceptance landing below what the pairing is worth.
 func (d *DFlashDrafter) EmbedBlock(m *Model, ids []int) [][]float32 {
+	d.mustHoldWeights() // a released embedding is zero-rowed, and would read as "borrows the target's"
 	if d.embed.Rows() == 0 {
 		return m.DrafterEmbedBlock(ids)
 	}
@@ -88,6 +98,7 @@ func (d *DFlashDrafter) EmbedBlock(m *Model, ids []int) [][]float32 {
 // One call site for both drafter shapes, so a pairing cannot silently take the wrong
 // output path.
 func (d *DFlashDrafter) DraftIDs(m *Model, rows [][]float32) []int {
+	d.mustHoldWeights()
 	out := make([]int, len(rows))
 	for i, h := range rows {
 		if d.HasOwnHead() {
@@ -113,7 +124,200 @@ type blockTrunk struct {
 	hiddenNorm []float32        // RMSNorm on the fused context
 	finalNorm  []float32        // RMSNorm at the end of the trunk
 	layers     []dflashLayer
+
+	released bool // releaseHostWeights ran: the matrices and norms above are zero
+
+	// rows is each matrix's row reader, keyed by the field it stands in for, on a drafter opened to stream its matrices
+	// (OpenDFlashDrafter): those fields hold nothing. Nil when the matrices are held.
+	rows map[*linalg.WeightMat]DrafterRows
 }
+
+// ErrDrafterReleased is what host drafting on a drafter whose host weights were released returns (DFlashDrafter.ReleaseHostWeights),
+// and what the methods with no error result panic with: its matrices are zero, and drafting on them would return garbage.
+var ErrDrafterReleased = errors.New("decoder: the drafter's host weights were released after its resident attach; load it again to draft on the host")
+
+// ErrDrafterStreamed is ErrDrafterReleased's counterpart for a drafter opened to stream its matrices to a resident
+// (OpenDFlashDrafter): it holds none, so it cannot draft on the host.
+var ErrDrafterStreamed = errors.New("decoder: the drafter was opened to stream its matrices to a resident (OpenDFlashDrafter); load it with LoadDFlashDrafter to draft on the host")
+
+// weightsErr says why host drafting cannot read the matrices, or nil when it can.
+func (d *blockTrunk) weightsErr() error {
+	switch {
+	case d.released:
+		return ErrDrafterReleased
+	case d.rows != nil:
+		return ErrDrafterStreamed
+	}
+	return nil
+}
+
+// mustHoldWeights panics with weightsErr's error, for the host drafting methods and matrix accessors with no error result.
+func (d *blockTrunk) mustHoldWeights() {
+	if err := d.weightsErr(); err != nil {
+		panic(err)
+	}
+}
+
+// mustHoldNorms panics with ErrDrafterReleased on a released drafter: a streamed one holds its norms.
+func (d *blockTrunk) mustHoldNorms() {
+	if d.released {
+		panic(ErrDrafterReleased)
+	}
+}
+
+// Streamed reports whether the drafter was opened to stream its matrices (StreamedDrafterWeights).
+func (d *blockTrunk) Streamed() bool { return d.rows != nil }
+
+// DrafterFCRows is fc's row reader on a streamed drafter; it panics on any other.
+func (d *blockTrunk) DrafterFCRows() DrafterRows { return d.rowsOf(&d.fc) }
+
+// DrafterLayerRows is layer i's matrices as row readers, with its norms, on a streamed drafter; it panics on any other.
+func (d *blockTrunk) DrafterLayerRows(i int) DrafterLayerRows {
+	d.mustStream()
+	l := &d.layers[i]
+	return DrafterLayerRows{
+		Q: d.rowsOf(&l.q), K: d.rowsOf(&l.k), V: d.rowsOf(&l.v), O: d.rowsOf(&l.o),
+		Gate: d.rowsOf(&l.gate), Up: d.rowsOf(&l.up), Down: d.rowsOf(&l.down),
+		QNorm: l.qNorm, KNorm: l.kNorm, InputNorm: l.inputNorm, PostAttnNorm: l.postAttnNorm,
+	}
+}
+
+func (d *blockTrunk) rowsOf(w *linalg.WeightMat) DrafterRows {
+	d.mustStream()
+	return d.rows[w]
+}
+
+// mustStream panics unless the drafter was opened to stream and is not released.
+func (d *blockTrunk) mustStream() {
+	d.mustHoldNorms()
+	if d.rows == nil {
+		panic("decoder: a row reader asked of a drafter not opened to stream (OpenDFlashDrafter)")
+	}
+}
+
+// stFile is a safetensors file's tensor byte ranges, read with ReadAt rather than through a mapping: a row read decodes straight
+// into its destination, so streaming a matrix allocates nothing per block beyond a pooled byte buffer and maps no page of it.
+// Safe for concurrent reads (os.File.ReadAt); a read after Close errors.
+type stFile struct {
+	f    *os.File
+	base int64               // the payload's start: 8 + the header's length
+	at   map[string][2]int64 // tensor name -> [start, end) within the payload
+}
+
+func openSTFile(path string) (*stFile, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	fail := func(err error) (*stFile, error) {
+		f.Close()
+		return nil, err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return fail(err)
+	}
+	var n [8]byte
+	if _, err := f.ReadAt(n[:], 0); err != nil {
+		return fail(err)
+	}
+	hl := int64(binary.LittleEndian.Uint64(n[:]))
+	if hl <= 0 || 8+hl > fi.Size() {
+		return fail(fmt.Errorf("safetensors header of %d bytes in a %d-byte file", hl, fi.Size()))
+	}
+	hdr := make([]byte, hl)
+	if _, err := f.ReadAt(hdr, 8); err != nil {
+		return fail(err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(hdr, &raw); err != nil {
+		return fail(err)
+	}
+	sf := &stFile{f: f, base: 8 + hl, at: make(map[string][2]int64, len(raw))}
+	for name, m := range raw {
+		if name == "__metadata__" {
+			continue
+		}
+		var e struct {
+			DataOffsets [2]int64 `json:"data_offsets"`
+		}
+		if err := json.Unmarshal(m, &e); err != nil {
+			return fail(fmt.Errorf("tensor %q: %w", name, err))
+		}
+		sf.at[name] = e.DataOffsets
+	}
+	return sf, nil
+}
+
+func (sf *stFile) Close() error { return sf.f.Close() }
+
+// stRowBufs pools stRows' byte buffers, one per concurrent read.
+var stRowBufs sync.Pool
+
+// stRows is a row reader over tensor name [rows, cols] (F32, BF16 or F16), checked against st's view of the same file. Each read
+// is one ReadAt of the block's bytes, at any byte offset, decoded into dst: neither the matrix nor its f32 widening is held, and
+// the values are the bits LoadDFlashDrafter's matrices hold, widened.
+func stRows(st *embed.SafetensorsFile, sf *stFile, name string, rows, cols int) (DrafterRows, error) {
+	t, err := st.Tensor(name)
+	if err != nil {
+		return DrafterRows{}, err
+	}
+	if !slices.Equal(t.Shape, []int{rows, cols}) {
+		return DrafterRows{}, fmt.Errorf("tensor %q: shape %v, want [%d %d]", name, t.Shape, rows, cols)
+	}
+	esz := map[string]int{"F32": 4, "BF16": 2, "F16": 2}[t.DType]
+	if esz == 0 {
+		return DrafterRows{}, fmt.Errorf("tensor %q: dtype %s, want F32, BF16 or F16", name, t.DType)
+	}
+	rng, ok := sf.at[name]
+	if !ok || rng[1]-rng[0] != int64(rows*cols*esz) {
+		return DrafterRows{}, fmt.Errorf("tensor %q: byte range %v, want %d bytes", name, rng, rows*cols*esz)
+	}
+	dtype := t.DType
+	return DrafterRows{Rows: rows, Cols: cols, Read: func(r0, n int, dst []float32) error {
+		need := n * cols
+		if r0 < 0 || n < 0 || r0+n > rows || len(dst) < need {
+			return fmt.Errorf("tensor %q: rows %d..%d of %d into %d floats", name, r0, r0+n-1, rows, len(dst))
+		}
+		bp, _ := stRowBufs.Get().(*[]byte)
+		if bp == nil || cap(*bp) < need*esz {
+			b := make([]byte, need*esz)
+			bp = &b
+		}
+		b := (*bp)[:need*esz]
+		defer stRowBufs.Put(bp)
+		if _, err := sf.f.ReadAt(b, sf.base+rng[0]+int64(r0*cols*esz)); err != nil {
+			return fmt.Errorf("tensor %q: %w", name, err)
+		}
+		switch dtype {
+		case "BF16":
+			for i := range need {
+				dst[i] = math.Float32frombits(uint32(binary.LittleEndian.Uint16(b[2*i:])) << 16)
+			}
+		case "F16":
+			for i := range need {
+				dst[i] = linalg.F16ToF32(binary.LittleEndian.Uint16(b[2*i:]))
+			}
+		default:
+			for i := range need {
+				dst[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[4*i:]))
+			}
+		}
+		return nil
+	}}, nil
+}
+
+// releaseHostWeights drops the trunk's matrices and norms; the geometry stays.
+func (d *blockTrunk) releaseHostWeights() {
+	d.fc, d.hiddenNorm, d.finalNorm, d.rows = linalg.WeightMat{}, nil, nil, nil
+	for i := range d.layers {
+		d.layers[i] = dflashLayer{}
+	}
+	d.released = true
+}
+
+// HostWeightsReleased reports whether the host weights were released (ReleasableDrafterWeights).
+func (d *blockTrunk) HostWeightsReleased() bool { return d.released }
 
 type dflashLayer struct {
 	q, k, v, o     linalg.WeightMat
@@ -138,10 +342,28 @@ func (d *DFlashDrafter) TargetLayerIDs() []int { return append([]int(nil), d.tar
 
 // Close releases the drafter's mmap'd weights.
 func (d *DFlashDrafter) Close() error {
-	if d.st != nil {
-		return d.st.Close()
+	var err error
+	if d.sf != nil {
+		err = d.sf.Close()
+		d.sf = nil
 	}
-	return nil
+	if d.st != nil {
+		st := d.st
+		d.st = nil
+		err = errors.Join(err, st.Close())
+	}
+	return err
+}
+
+// ReleaseHostWeights drops every host weight once a resident backend has uploaded its own copy (ResidentDrafterHost's
+// AttachBlockDrafter): the trunk's, and an own head, embedding and d2t, which only host drafting reads. It closes the mapping,
+// which nothing aliases afterwards. What a BlockSpec reads afterwards stays: BlockSize, MaskTokenID, TargetLayerIDs,
+// DrafterGeometry and HasOwnHead. Host drafting on the drafter then fails with ErrDrafterReleased, and a backend's attach
+// refuses it (ReleasableDrafterWeights). Not safe beside a call that reads the weights.
+func (d *DFlashDrafter) ReleaseHostWeights() error {
+	d.releaseHostWeights()
+	d.lmHead, d.embed, d.d2t = linalg.WeightMat{}, linalg.WeightMat{}, nil
+	return d.Close()
 }
 
 // dflashConfig is the subset of the checkpoint's config.json the loader needs.
@@ -191,7 +413,16 @@ type dflashConfig struct {
 // LoadDFlashDrafter loads a DFlash drafter from dir (config.json + model.safetensors, the
 // z-lab layout). The drafter's hidden size must equal the target's — it consumes the
 // target's hidden states and embeddings directly, with no projection between them.
-func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
+func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, false) }
+
+// OpenDFlashDrafter is LoadDFlashDrafter for a drafter a resident backend will hold: it reads the config and the safetensors
+// header, checks every tensor as LoadDFlashDrafter does, and holds the norms and d2t, but no matrix. Each matrix is a row reader
+// over the file (stRows, StreamedDrafterWeights), which the backend's attach streams to the device, so the host never holds the
+// drafter, however its file is aligned. Only a resident that streams drafter rows takes it (StreamingDrafterHost); it cannot
+// draft on the host (ErrDrafterStreamed).
+func OpenDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, true) }
+
+func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	cfgBytes, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		return nil, fmt.Errorf("dflash: read config: %w", err)
@@ -281,8 +512,27 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 		targetLayerIDs: c.DFlash.TargetLayerIDs,
 		st:             st,
 	}
+	if streamed {
+		d.rows = map[*linalg.WeightMat]DrafterRows{}
+		if d.sf, err = openSTFile(filepath.Join(dir, "model.safetensors")); err != nil {
+			return nil, fmt.Errorf("dflash: %w", err)
+		}
+		defer func() {
+			if !loaded {
+				d.sf.Close()
+			}
+		}()
+	}
 
 	mat := func(dst *linalg.WeightMat, name string, rows, cols int) error {
+		if streamed {
+			r, err := stRows(st, d.sf, name, rows, cols)
+			if err != nil {
+				return fmt.Errorf("dflash: %w", err)
+			}
+			d.rows[dst] = r
+			return nil
+		}
 		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped (MEM11-bf16)
 		if err != nil {
 			return fmt.Errorf("dflash: %w", err)
@@ -393,6 +643,9 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 // This is the ONLY place the target's hidden states enter, and the result is what every
 // layer's K/V read. It is computed once per round, not per layer.
 func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, error) {
+	if err := d.weightsErr(); err != nil {
+		return nil, err
+	}
 	// fc's input width IS the tap count x hidden, so it validates the caller's concatenation
 	// without the trunk needing to know which layers were tapped — that belongs to the drafter.
 	want := d.fc.Cols()
@@ -449,6 +702,7 @@ func (c *DFlashContext) TruncateTo(n int) {
 // FuseContext's output for those positions ONLY; they are assumed to sit immediately
 // after the positions already cached, which is what fixes their RoPE offsets.
 func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]float32) {
+	d.mustHoldWeights()
 	start := ctx.Len()
 	kvDim := d.nKV * d.headDim
 	for li := range d.layers {
@@ -470,6 +724,9 @@ func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]
 // final-normed hidden states, [blockSize][hidden]. This is the form production should
 // use; DraftBlock is the uncached convenience wrapper.
 func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]float32) ([][]float32, error) {
+	if err := d.weightsErr(); err != nil {
+		return nil, err
+	}
 	// The block's WIDTH is whatever the caller passes — the trained width is the drafter's
 	// property, not the trunk's, and the enclosing type checks it.
 	if len(blockIn) == 0 {
@@ -503,6 +760,9 @@ func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]f
 // for the parity gate, which is handed the reference's fused context directly), but a
 // generation loop should hold a DFlashContext and call DraftBlockCtx.
 func (d *blockTrunk) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]float32, error) {
+	if err := d.weightsErr(); err != nil {
+		return nil, err
+	}
 	ctx := d.NewContext()
 	d.ExtendContext(be, ctx, fused)
 	return d.DraftBlockCtx(be, ctx, blockIn)

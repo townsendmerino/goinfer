@@ -71,6 +71,10 @@ func layerFusable(qkvInt4, moe, guInt4 bool) bool {
 // LockOSThread-pinned CUDA executor, and uploads weights and KV scratch once, returning a *cudaResident. It declines
 // (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
 // uses the staged/CPU path.
+// kquantKeepInt8ForTest makes BuildResident upload every native Q5_K / Q6_K weight's int8 copy beside it (cudaResident.kquantAlt),
+// so one resident can run both arms of KS-O1's A/B. Set only by a test, before the load.
+var kquantKeepInt8ForTest bool
+
 func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
@@ -94,6 +98,35 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	w := m.Weights()
 	if w == nil || len(w.Layers) == 0 {
 		return declined(fmt.Errorf("the model has no loaded layer weights"))
+	}
+	// planProj plans a projection or the head: the file's own Q5_K or Q6_K blocks where the q4k lane uploads them natively
+	// (decoder.Model.KQuantNative, which the fit pricing also reads), else planWeight. kq reads the file until the build returns.
+	var kq *decoder.KQuantReader
+	defer func() { _ = kq.Close() }()
+	planProj := func(src *linalg.WeightMat) (hostW, error) {
+		kind := m.KQuantNative("cuda", src)
+		if kind == "" {
+			return planWeight(src)
+		}
+		if kq == nil {
+			var e error
+			if kq, e = m.OpenKQuant(); e != nil || kq == nil {
+				return hostW{}, fmt.Errorf("cuda: the file's %s blocks are unreadable: %v", kind, e)
+			}
+		}
+		row, e := kq.RowSource(src)
+		if e != nil {
+			return hostW{}, e
+		}
+		h, e := planKQuant(src, kind, row)
+		if e == nil && kquantKeepInt8ForTest {
+			alt, e2 := planWeight(src)
+			if e2 != nil {
+				return hostW{}, e2
+			}
+			h.alt = &alt
+		}
+		return h, e
 	}
 
 	// Admission: DecodeRunnerEligible was scoped to the richer WebGPU runner, so it is too permissive for this backend. A
@@ -452,7 +485,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hl.postPLENorm = lw.PostPLENorm
 		}
 		for _, p := range proj {
-			hw, e := planWeight(p.src) // validated now, packed into the device buffer at upload
+			hw, e := planProj(p.src) // validated now, packed into the device buffer at upload
 			if e != nil {
 				return declined(e)
 			}
@@ -670,7 +703,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if w.LMHead.Rows() == 0 {
 		lmSrc = &w.Embed // tied embeddings
 	}
-	hlm, e := planWeight(lmSrc)
+	hlm, e := planProj(lmSrc)
 	if e != nil {
 		return declined(e)
 	}
@@ -854,7 +887,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// no fallback.
 		r.pairwiseRoPE = m.PairwiseRoPEResident()
 		if r.pairwiseRoPE {
-			pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX)
+			pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
 			if pe != nil {
 				return fmt.Errorf("pairwise rope: compile rope_pairwise.ptx: %w", pe)
 			}
@@ -924,6 +957,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}{
 				{&r.fRms, "rmsnorm_quant_g32"}, {&r.fQ, "quant_vec_g32"}, {&r.fSw, "glu_quant_g32"},
 				{&r.gemvW4, "gemv_w4a8_g32"}, {&r.gemvW8, "gemv_w8a8_g32"}, {&r.gemvQ4K, "gemv_q4k_g32"},
+				{&r.gemvQ5K, "gemv_q5k_g32"}, {&r.gemvQ6K, "gemv_q6k_g32"},
 				{&r.fQKVg32, "fused_rms_qkv_g32"}, {&r.fGUg32, "fused_rms_gu_g32"},
 			} {
 				if *f.dst, e = r.dev.NewComputePipeline(agmod, f.name); e != nil {
@@ -1010,7 +1044,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
 				if r.pairwiseRoPE {
 					// GPT-J pairwise twin of rope_kv_batched (same signature); see the decode bind above.
-					if pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX); pe == nil {
+					if pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
 						load(&r.bRopeKV, pwmod, "rope_kv_batched_pw")
 					} else {
 						ok = false
@@ -1048,7 +1082,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
 		// It depends on r.prefillReady, as L2 does.
 		if r.prefillReady {
-			if imod, e8 := r.dev.CompileLibrary(attnImgPrefillPTX); e8 == nil {
+			if imod, e8 := r.dev.CompileLibrary(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
 				// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
 				// static scan recognizes `&r.<field>` or a direct NewComputePipeline RHS as a bind
 				// site, matching the loadF/loadG idiom L2/L3 already use below.
@@ -1072,11 +1106,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// unconditionally). A load failure or a non-m-RoPE model is not fatal: PrefillMRoPELast declines to the
 		// CPU-prefill-then-UploadKV bridge.
 		if r.prefillReady {
-			if sec := m.MRopeSectionResident(); len(sec) == 3 {
+			// GLM-OCR's pairwise m-RoPE kernel writes f32 rows, so an f16 cache never compiles or loads it, whatever the policy says: the
+			// batched m-RoPE prefill stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
+			if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
-				mropePTX, mropeName := ropeMRopePrefillPTX, "rope_kv_mrope_batched"
-				if r.pairwiseRoPE {
+				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
+				if r.pairwiseRoPE { // GLM-OCR, which keeps f32 KV (decoder.CUDAKVF16Decline), so the f32 module's kernel
 					mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
 				}
 				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
@@ -1348,6 +1384,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			loadD(&r.dnRuleRows, "delta_rule_rows")
 			loadD(&r.dnRuleRows128, "delta_rule_rows_128")
 			loadD(&r.dnGNormRows, "delta_gnorm_rows")
+			// SP2's verify twins (recurrent_spec.go).
+			loadD(&r.dnConvRowsSpec, "delta_conv_rows_spec")
+			loadD(&r.dnRuleRowsSpec, "delta_rule_rows_spec")
+			loadD(&r.dnRuleRows128Spec, "delta_rule_rows_128_spec")
 			loadD(&r.dnQSplit, "delta_qsplit")
 			loadD(&r.dnAttnGate, "delta_attn_gate")
 			if lerr != nil {
@@ -1373,7 +1413,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		if r.isMLA {
-			mlamod, me := r.dev.CompileLibrary(mlaPTX)
+			mlamod, me := r.dev.CompileLibrary(r.kvPTX(mlaPTX, mlaKV16PTX))
 			if me != nil {
 				return fmt.Errorf("cuda: JIT mla.ptx: %w", me)
 			}
@@ -1654,7 +1694,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.layers {
-			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].isMLA() && !r.layers[l].noKV() && !r.layers[l].kvShared
+			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].noKV() && !r.layers[l].kvShared
 		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
@@ -1920,6 +1960,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if e := r.initOverlap(); e != nil {
 			r.Close()
 			return declined(fmt.Errorf("cuda: overlap: %w", e))
+		}
+	}
+	// KS-B8: the default pass width, from what the build left free.
+	if r.prefillReady {
+		if e := r.do(func() error { r.choosePrefillWidth(); return nil }); e != nil {
+			r.Close()
+			return declined(fmt.Errorf("cuda: prefill width: %w", e))
 		}
 	}
 	b.resident = r

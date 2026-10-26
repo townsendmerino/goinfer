@@ -55,7 +55,7 @@ func kv2PredictedClasses(floor, start, m, chunk int) (rows []string, fastPasses 
 // the fused-attention launch count, against the passes the chunker makes; the recorded class is
 // KVBoundClassesForTest's.
 func kv2RecordedClass(t *testing.T, g *kv2Rig) {
-	floor, chunk := g.r.FastPrefillFloor(), prefillDefaultChunk // no GOINFER_PREFILL_CHUNK knob is set here
+	floor, chunk := g.r.FastPrefillFloor(), g.r.prefillPassRows() // the width the chunker uses: no knob is set here, so the build's choice
 	layers := len(g.r.layers)
 	check := func(name string, rec []string, start, m int) {
 		t.Helper()

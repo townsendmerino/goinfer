@@ -79,11 +79,26 @@ func (d *blockTrunk) DrafterGeometry() DrafterGeometry {
 	}
 }
 
-func (d *blockTrunk) DrafterFC() *linalg.WeightMat { return &d.fc }
-func (d *blockTrunk) DrafterHiddenNorm() []float32 { return d.hiddenNorm }
-func (d *blockTrunk) DrafterFinalNorm() []float32  { return d.finalNorm }
+// The weight accessors panic once the host weights are released (ErrDrafterReleased), and the matrix ones on a streamed
+// drafter too (ErrDrafterStreamed), rather than hand out zero matrices.
+
+func (d *blockTrunk) DrafterFC() *linalg.WeightMat {
+	d.mustHoldWeights()
+	return &d.fc
+}
+
+func (d *blockTrunk) DrafterHiddenNorm() []float32 {
+	d.mustHoldNorms()
+	return d.hiddenNorm
+}
+
+func (d *blockTrunk) DrafterFinalNorm() []float32 {
+	d.mustHoldNorms()
+	return d.finalNorm
+}
 
 func (d *blockTrunk) DrafterLayer(i int) DrafterLayerWeights {
+	d.mustHoldWeights()
 	l := &d.layers[i]
 	return DrafterLayerWeights{
 		Q: &l.q, K: &l.k, V: &l.v, O: &l.o,
@@ -93,11 +108,51 @@ func (d *blockTrunk) DrafterLayer(i int) DrafterLayerWeights {
 	}
 }
 
-// Compile-time proof that both families satisfy the interface through the shared trunk. If a
+// DrafterRows is a drafter matrix [Rows, Cols] that is not held: Read widens rows r0..r0+n-1 to f32 into dst (n*Cols long).
+type DrafterRows struct {
+	Rows, Cols int
+	Read       func(r0, n int, dst []float32) error
+}
+
+// DrafterLayerRows is a layer's seven matrices as row readers, with its norms (DrafterLayerWeights' streamed form).
+type DrafterLayerRows struct {
+	Q, K, V, O, Gate, Up, Down DrafterRows
+	QNorm, KNorm               []float32
+	InputNorm, PostAttnNorm    []float32
+}
+
+// StreamedDrafterWeights is a drafter whose matrices may be row readers over its file rather than held (OpenDFlashDrafter).
+// When Streamed reports true, the matrix accessors (DrafterFC, DrafterLayer) panic, and a backend's attach reads every matrix
+// through DrafterFCRows and DrafterLayerRows instead.
+type StreamedDrafterWeights interface {
+	ReleasableDrafterWeights
+	Streamed() bool
+	DrafterFCRows() DrafterRows
+	DrafterLayerRows(i int) DrafterLayerRows
+}
+
+// StreamingDrafterHost is a ResidentDrafterHost whose attach reads a streamed drafter's matrices through its row readers
+// (StreamedDrafterWeights). NewBlockSpec refuses a streamed drafter on any other host, before anything is read.
+type StreamingDrafterHost interface {
+	ResidentDrafterHost
+	StreamsDrafterRows()
+}
+
+// ReleasableDrafterWeights is a BlockDrafterWeights whose host weights can be released once a resident backend holds its own
+// copy (ReleaseHostWeights). A backend's attach checks HostWeightsReleased and refuses a released drafter: its matrices are
+// zero, and an upload of them would draft noise that lossless verify only rejects. A family satisfies it only once its release
+// also guards its own host drafting.
+type ReleasableDrafterWeights interface {
+	BlockDrafterWeights
+	HostWeightsReleased() bool
+	ReleaseHostWeights() error
+}
+
+// Compile-time proof that both families satisfy the interfaces through the shared trunk. If a
 // third drafter lands and does NOT embed blockTrunk, this is where that shows up.
 var (
-	_ BlockDrafterWeights = (*DFlashDrafter)(nil)
-	_ BlockDrafterWeights = (*DSparkDrafter)(nil)
+	_ StreamedDrafterWeights = (*DFlashDrafter)(nil)
+	_ BlockDrafterWeights    = (*DSparkDrafter)(nil) // not releasable: its own heads' host drafting has no release guard
 )
 
 // DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw. It is computed rather
@@ -113,6 +168,9 @@ var (
 // Not included: the verify and capture buffers NewBlockSpec allocates (a few MB at the default verify width, which the
 // ctxCapMarginBytes and slotMarginBytes margins in cuda/resident.go absorb), and the drafter's own K/V, which scales
 // with the target's context: see DrafterKVBytesPerPosition.
+//
+// Call it before a held drafter's release (ReleaseHostWeights): its matrix accessors then panic with ErrDrafterReleased. A
+// streamed drafter's estimate reads only dimensions.
 func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 	int8Bytes := func(w *linalg.WeightMat) int64 {
 		if w == nil {
@@ -121,8 +179,19 @@ func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 		n, k := int64(w.Rows()), int64(w.Cols())
 		return n*k + n*4 // packed int8 rows + one f32 scale per row
 	}
-	total := int8Bytes(dw.DrafterFC())
 	geo := dw.DrafterGeometry()
+	if s, ok := dw.(StreamedDrafterWeights); ok && s.Streamed() {
+		rowBytes := func(r DrafterRows) int64 { return int64(r.Rows)*int64(r.Cols) + int64(r.Rows)*4 }
+		total := rowBytes(s.DrafterFCRows())
+		for i := 0; i < geo.Layers; i++ {
+			l := s.DrafterLayerRows(i)
+			for _, r := range [...]DrafterRows{l.Q, l.K, l.V, l.O, l.Gate, l.Up, l.Down} {
+				total += rowBytes(r)
+			}
+		}
+		return total
+	}
+	total := int8Bytes(dw.DrafterFC())
 	for i := 0; i < geo.Layers; i++ {
 		l := dw.DrafterLayer(i)
 		for _, w := range [...]*linalg.WeightMat{l.Q, l.K, l.V, l.O, l.Gate, l.Up, l.Down} {

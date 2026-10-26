@@ -103,9 +103,16 @@ func (m *Model) hasRecurrentState() bool {
 // over-advances it and the next round decodes from it, a silent distribution bug rather than a crash. It is also false for
 // windowed models (see below). The n-gram speculative entry points refuse unsafe models and the caller falls back to plain
 // decode; no checkpoint-at-block-start/restore path exists.
-func (m *Model) specRollbackSafe() bool {
+func (m *Model) specRollbackSafe() bool { return m.specRollbackSafeVia(nil, 0) }
+
+// specRollbackSafeVia is specRollbackSafe for a loop that verifies through fold, a resident's recurrent fold path, in passes of up
+// to width rows (BlockSpec; nil for a loop that rolls back with TruncateTo or ForwardN). A recurrent model is admitted only there:
+// the fold path never writes the committed recurrent state during a verify and folds only the committed rows into it
+// (ResidentRecurrentSpec, SP2). The resident reports rows only when it serves every recurrent layer, and the model's own layers must
+// all be Gated DeltaNet (RecurrentSpecArenaBytes), the kind the path is built for.
+func (m *Model) specRollbackSafeVia(fold ResidentRecurrentSpec, width int) bool {
 	a := m.w.arch
-	if m.hasRecurrentState() {
+	if m.hasRecurrentState() && (fold == nil || width < 1 || width > fold.RecurrentSpecRows() || RecurrentSpecArenaBytes(a, 1) == 0) {
 		return false
 	}
 	// A staged sliding-window cache stores local layers in physical rings. Once a ring wraps (context > window), a rollback of more

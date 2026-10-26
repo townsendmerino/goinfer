@@ -129,6 +129,9 @@ MODELS = {
     # itself does NOT load this GGUF -- it runs its own kind-4 .giw bundle (the shipped-default path
     # for these two MoE models), so the GGUF here is the PEER-ONLY artifact.
     "M35": (os.path.expanduser("~/models/qwen3.6-35b-a3b-q4_k_m.gguf"), "m35q4km"),
+    # Q9 (Qwen3.5-9B, a Gated-DeltaNet hybrid) added 2026-10-25 for SP2's served A/B of --drafter (docs/measurements/sp2-2026-10/
+    # README.md): goinfer arms only, no peer tag, and prompts at depths 512 and 4096 only (no phase-A depth 128: BENCH_PHASES=B).
+    "Q9": (os.path.expanduser("~/models/Qwen3.5-9B-Q4_K_M.gguf"), "q9-none"),
     "M26": (os.path.expanduser("~/models/gemma4-26b-q4_k_m.gguf"), "m26q4km"),
     # G20 added 2026-09-05 (docs/tasks/task-peer-benchmarks.md §2/§5, tier 2: "fits the Mac, not the
     # card: a resident cell on one box and an offload cell on the other"). gpt-oss-20b's OWN
@@ -154,6 +157,12 @@ MODELS = {
     # reads this file and Ollama's tag g4-26b is it (its model blob IS this file's sha256; gguf_same_weights.py: SAME
     # WEIGHTS). Its own key so cell c's M26 (the requantized Q4_K_M peer file + goinfer's .giw) keeps its history.
     "G26Q": (os.path.expanduser("~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf"), "g4-26b"),
+    # KV4b's speed check (docs/measurements/kv4-cuda-2026-10-21.md §2, G5): one checkpoint per f16 family group, goinfer against itself at
+    # -kv f16 and -kv f32 (BENCH_ENGINES=goinfer,goinfer_old). No peer row is taken for these; the tags are placeholders.
+    "qmoe":     (os.path.expanduser("~/models/qwen15-moe-a27b"), "qmoe-none"),
+    "cr7b":     (os.path.expanduser("~/models/command-r7b"), "cr7b-none"),
+    "qvl3":     (os.path.expanduser("~/models/qwen2.5-vl-3b"), "qvl3-none"),
+    "dsv2lite": (os.path.expanduser("~/models/deepseek-v2-lite"), "dsv2l-none"),
 }
 
 # MoE cells whose VRAM footprint exceeds this box's 8 GB card: goinfer needs -moe-cache-experts
@@ -166,7 +175,7 @@ MODELS = {
 # for those two, not just changed -- "cannot apply to the prequantized .giw bundle ... baked at
 # int4mix"); G20 has no such bundle and takes the harness's normal `-quant int4` unmodified (see
 # the MODELS/G20 comment above) while still needing everything else in this set.
-MOE_MODELS = {"M35", "M26", "G20", "G26Q"}
+MOE_MODELS = {"M35", "M26", "G20", "G26Q", "qmoe", "dsv2lite"}
 
 # goinfer's OWN path for the MOE_MODELS set, distinct from MODELS[key][0] above (which is the
 # Q4_K_M GGUF ollama/llama-server load). goinfer runs its native kind-4 .giw bundle instead --
@@ -512,7 +521,7 @@ def _group_rss_kb(pgid):
     supervisor's overhead alone -- not merely imprecise, actively backwards, the exact "reports
     the opposite of what it exists to catch" failure CLAUDE.md's own measurement-discipline rule
     warns about for a different memory guard. Every engine here is launched with
-    `preexec_fn=os.setsid`, so the Popen PID IS its own new process group leader and any child it
+    `preexec_fn=_child_setup` (os.setsid), so the Popen PID IS its own new process group leader and any child it
     spawns (like llama-server here) inherits that SAME pgid unless it calls setsid itself -- which
     is also exactly the group `os.killpg` already tears down, so this reuses an invariant the code
     already depended on rather than adding a new one."""
@@ -646,7 +655,7 @@ class RSSSampler:
     POLL_S = 0.2
 
     def __init__(self, pid):
-        # preexec_fn=os.setsid (every Popen call in this file) makes pid its own process group
+        # preexec_fn=_child_setup's os.setsid (every Popen call in this file) makes pid its own process group
         # leader, so pgid == pid at launch -- getpgid is still called explicitly rather than
         # assumed equal, since that is what os.killpg's own teardown already does and this should
         # track the SAME group that teardown kills, not a value merely equal to it by convention.
@@ -708,6 +717,7 @@ def provenance():
     return {
         "kind": "provenance",
         "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "free_mem_override": _FREE_MEM_OVERRIDE_USED,  # the run went ahead without a free-memory reading (check_free_mem)
         "host": socket.gethostname(),
         "uname": _sh(["uname", "-srm"]),
         "distro": _sh(["sh", "-c", ". /etc/os-release 2>/dev/null && echo \"$NAME $VERSION_ID\""]),
@@ -855,7 +865,28 @@ def preflight():
     if len(apps) > 1:
         sys.exit("REFUSED: %d compute processes already hold the GPU (1 = the compositor, expected):\n  %s"
                  % (len(apps), "\n  ".join(apps)))
+    check_free_mem()
     print(f"# preflight OK: gate {IDLE_GATE} · loadavg {la} · gpu {_gpu_state()} · compute apps {apps}", flush=True)
+
+
+_FREE_MEM_OVERRIDE_USED = False  # set by check_free_mem when BENCH_ALLOW_NO_FREE_MEM=1 let a run go ahead without a reading
+
+
+def check_free_mem():
+    """Refuses a run that cannot read this box's free memory, since the heavy-load void's memory term would then never apply and
+    every cell would record free_mem_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did, and only
+    when it did (a set override with a reading present is not recorded). Returns whether the override was used."""
+    global _FREE_MEM_OVERRIDE_USED
+    _FREE_MEM_OVERRIDE_USED = False
+    if free_mem_mb() is not None:
+        return False
+    if os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1":
+        _FREE_MEM_OVERRIDE_USED = True
+        print("# WARNING: no free-memory reading; BENCH_ALLOW_NO_FREE_MEM=1, so the heavy-load void's memory term is off for this run",
+              flush=True)
+        return True
+    sys.exit("REFUSED: no free-memory reading (scripts/hostmem.py runs `go run ./cmd/hostmem`: is go on PATH?), so the heavy-load "
+             "void's memory term cannot apply. Put go on PATH, or set BENCH_ALLOW_NO_FREE_MEM=1 to run without it (recorded).")
 
 def wait_port(port, timeout=180):
     t0 = time.time()
@@ -983,6 +1014,13 @@ def prompt_for_depth(depth, model_key):
     which tokenizes ~4 tokens/word — "depth 2048" was actually 9094 tokens and blew the 4096
     context window, 400ing both engines identically."""
     return _PROMPTS[f"{model_key}:{depth}"]["text"]
+
+def prompt_texts(depth, model_key):
+    """The prompts a cell sends, in order: an entry's "texts" (a prompt SET, which a cell cycles through, one per completion) or
+    its single "text"."""
+    e = _PROMPTS[f"{model_key}:{depth}"]
+    return list(e["texts"]) if "texts" in e else [e["text"]]
+
 
 def prompt_tokens(depth, model_key):
     return _PROMPTS[f"{model_key}:{depth}"]["tokens"]
@@ -1400,7 +1438,15 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     have made the 'CPU' row a GPU number on both engines and nobody would have seen it."""
     path, tag = MODELS[model_key]
     cfg = CONFIGS[cfg_name]
-    prompt = prompt_for_depth(depth, model_key)
+    # A prompt set is cycled one prompt per request: the warm-up takes the first, and the timed completions start again from
+    # the first, so every arm of a cell sends the same sequence. A single-text entry sends its text every time, as before.
+    texts = prompt_texts(depth, model_key)
+    _pi = [0]
+
+    def prompt_next():
+        t = texts[_pi[0] % len(texts)]
+        _pi[0] += 1
+        return t
     # M35/M26 load a 16-26 GB checkpoint (mmap page-in + CUDA expert-cache fill for goinfer;
     # weight load for llama-server); the generic 180s default (sized for 0.5B-7B) measured a real
     # M35 goinfer load STILL not listening at 359s on this box (2026-09-04 smoke test) -- so a
@@ -1454,9 +1500,9 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                     + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else [])
                     + be_args + EXTRA_GOINFER_ARGS + (EXTRA_GOINFER_OLD_ARGS if engine == "goinfer_old" else []),
                     stdout=subprocess.DEVNULL, stderr=serve_log,
-                    preexec_fn=os.setsid)
+                    preexec_fn=_child_setup)
             port, url, parse, mk = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", parse_openai, \
-                (lambda: goinfer_payload(path, prompt, cfg))
+                (lambda: goinfer_payload(path, prompt_next(), cfg))
         elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS,
                        OLLAMA_HOST=f"127.0.0.1:{OPORT}")
@@ -1470,9 +1516,9 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             with open(os.path.join(SERVE_LOG_DIR, f"ollama-{backend}-{model_key}-{depth}-{cfg_name}.log"), "ab") as olog:
                 proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                         stdout=olog, stderr=olog,
-                                        preexec_fn=os.setsid)
+                                        preexec_fn=_child_setup)
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
-                (lambda: ollama_payload(tag, prompt, cfg, backend))
+                (lambda: ollama_payload(tag, prompt_next(), cfg, backend))
         elif engine == "llamacpp":
             # V-08 (docs/review-2026-09-04.md): this branch used to launch with NO -ngl at all,
             # so llama-server fell back to its own auto-offload default -- Metal on a Mac, meaning
@@ -1501,9 +1547,9 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             proc = subprocess.Popen(
                 llamacpp_cmd(path, ngl_args),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid)
+                preexec_fn=_child_setup)
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
-                parse_openai, (lambda: llamacpp_payload(prompt, cfg))
+                parse_openai, (lambda: llamacpp_payload(prompt_next(), cfg))
         elif engine == "mlx":
             # Mac only (docs/tasks/task-peer-benchmarks.md §1): MLX_MODELS holds only the checkpoints
             # actually pulled -- a model_key with no entry is a clean skip, not a crash, since a
@@ -1517,12 +1563,12 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             proc = subprocess.Popen(
                 [MLX_BIN, "--model", mlx_path, "--port", str(MPORT), "--host", "127.0.0.1"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid)
+                preexec_fn=_child_setup)
             # mlx_lm.server's own httpd only starts listening once the model is loaded (verified
             # 2026-09-04: no llama-server-style 503-while-loading window), so plain wait_port is a
             # real readiness check here, not just a connectable-socket one.
             port, url, parse, mk = MPORT, f"http://127.0.0.1:{MPORT}/v1/chat/completions", \
-                parse_openai, (lambda: mlx_payload(mlx_path, prompt, cfg))
+                parse_openai, (lambda: mlx_payload(mlx_path, prompt_next(), cfg))
         if proc is not None:
             swap.start(proc.pid)
         ready = wait_llamacpp_ready(port, timeout=load_timeout) if engine == "llamacpp" \
@@ -1559,6 +1605,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             stats = swap.stop()
             return None, swap.void_reason() or f"warmup failed: {e}", {"swap": stats}
         phases["warmup_s"] = round(time.time() - t_warm, 2)
+        _pi[0] = 0  # the timed completions start the prompt set from its first prompt
 
         _, ncomp, nruns = gen_params()
         t_runs, decode_s = time.time(), 0.0
@@ -1680,14 +1727,14 @@ def run_embed_cell(engine, approx_tokens, n_inputs):
                 return None, f"no goinfer embed checkpoint at {EMBED_MODEL_PATH} (GOINFER_EMBED_MODEL)", None
             proc = subprocess.Popen(
                 [SERVE["cpu"], "-embed-model", EMBED_MODEL_PATH, "-addr", f"127.0.0.1:{EMBED_PORT}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=_child_setup)
             port, url, build = EMBED_PORT, f"http://127.0.0.1:{EMBED_PORT}/v1/embeddings", \
                 (lambda: embed_payload_goinfer(texts))
         elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
             proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    preexec_fn=os.setsid)
+                                    preexec_fn=_child_setup)
             port, url, build = OPORT, f"http://127.0.0.1:{OPORT}/api/embed", \
                 (lambda: embed_payload_ollama(texts))
         else:
@@ -1781,14 +1828,14 @@ def run_vision_cell(engine):
             proc = subprocess.Popen(
                 [SERVE["cpu"], "-model", f"bench={VISION_MODEL_PATH}", "-backend", "cpu",
                  "-addr", f"127.0.0.1:{GPORT}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=_child_setup)
             port, url, parse, build = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", \
                 parse_openai, vision_payload_goinfer
         elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
             proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    preexec_fn=os.setsid)
+                                    preexec_fn=_child_setup)
             port, url, parse, build = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
                 vision_payload_ollama
         else:
@@ -1847,6 +1894,37 @@ def plan_depths():
     if raw.lower() == "none":
         return []
     return [int(d) for d in raw.split(",") if d.strip()]
+
+
+def depth_backend():
+    """Phase B's backend (BENCH_DEPTH_BACKEND, default cuda), or None when the plan runs no phase B. Refuses an unknown backend
+    when phase B runs, and, while depths are planned, one that BENCH_BACKENDS excludes when phase A runs too or BENCH_BACKENDS
+    is set (BENCH_BACKENDS=metal with no BENCH_DEPTH_BACKEND would otherwise run phase B on cuda). A phase-A-only plan never
+    reads it."""
+    phases = plan_phases()
+    if "B" not in phases:
+        return None
+    depth_be = os.environ.get("BENCH_DEPTH_BACKEND", "cuda").strip()
+    if depth_be not in SERVE:
+        sys.exit(f"BENCH_DEPTH_BACKEND: unknown backend {depth_be!r}; known: {sorted(SERVE)}")
+    if ("A" in phases or os.environ.get("BENCH_BACKENDS", "").strip()) and plan_depths() and depth_be not in plan_backends():
+        sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
+                 "-- phase A and B would test different backends silently")
+    return depth_be
+
+
+def plan_phases():
+    """Which of phases A (the backend table at depth 128) and B (the depth curve) run. BENCH_PHASES narrows them (e.g. "B" for a
+    depth-only A/B whose model has no depth-128 prompt); default is both, unchanged. Phases C-E keep their own switches."""
+    raw = os.environ.get("BENCH_PHASES", "").strip()
+    if not raw:
+        return {"A", "B"}
+    got = {p.strip().upper() for p in raw.split(",") if p.strip()}
+    if not got:
+        sys.exit(f"BENCH_PHASES={raw!r} names no phase; want A, B or both")
+    if not got <= {"A", "B"}:
+        sys.exit(f"BENCH_PHASES: unknown phase(s) {sorted(got - {'A', 'B'})}; known: A, B")
+    return got
 
 
 def plan_engines():
@@ -1928,6 +2006,15 @@ def plan_vision():
     """Vision TTFT phase (run_vision_cell). Off by default (BENCH_VISION=1 opts in) -- one image,
     one model pair, no axis to sweep, so this is a bool rather than a list like the phases above."""
     return os.environ.get("BENCH_VISION", "").strip() == "1"
+
+
+def missing_prompts(plan):
+    """Refuses, before any server starts, a plan whose phase A, B or C cell has no prompt for its model and depth (e.g. Q9 has no
+    depth-128 prompt, which phase A needs: run it with BENCH_PHASES=B, or calibrate one)."""
+    gone = sorted({f"{p[3]}:{p[4]}" for p in plan if p[0] in ("A", "B", "C") and f"{p[3]}:{p[4]}" not in _PROMPTS})
+    if gone:
+        sys.exit(f"no prompt for {', '.join(gone)} in {os.environ.get('BENCH_PROMPTS', 'scripts/prompts.json')}: calibrate them "
+                 "(scripts/bench_prompts_calibrate.py) or narrow the plan (BENCH_PHASES, BENCH_DEPTHS)")
 
 
 def abba_plan(plan, quads):
@@ -2029,7 +2116,7 @@ def main():
                         # other row here being inert unless its backend/engine is selected.
                         ("goinfer_old","cpu"), ("goinfer_old","cuda"), ("goinfer_old","webgpu"),
                         ("goinfer_old","metal")]:
-            if be in bes and eng in engs:
+            if be in bes and eng in engs and "A" in plan_phases():
                 plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, one GPU backend, all engines. Defaults to CUDA, unchanged from before
     # (V-08): every engine's launch maps it to a real GPU-offload flag (goinfer -backend cuda,
@@ -2039,14 +2126,9 @@ def main():
     # backend=="cpu" is the only special case either payload builder makes). Must be one of the
     # backends BENCH_BACKENDS also selected, or Phase A and B would silently disagree about which
     # GPU is under test.
-    depth_be = os.environ.get("BENCH_DEPTH_BACKEND", "cuda").strip()
-    if depth_be not in SERVE:
-        sys.exit(f"BENCH_DEPTH_BACKEND: unknown backend {depth_be!r}; known: {sorted(SERVE)}")
-    if plan_depths() and depth_be not in plan_backends():
-        sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
-                  "-- phase A and B would test different backends silently")
+    depth_be = depth_backend()
     for mk in plan_models():
-        for d in plan_depths():
+        for d in (plan_depths() if depth_be else []):
             for eng in plan_engines():
                 plan.append(("B", eng, depth_be, mk, d, "greedy"))
 
@@ -2093,6 +2175,7 @@ def main():
             if eng in ("goinfer", "ollama"):
                 plan.append(("E", eng, "vision", "vision", 0, "greedy"))
 
+    missing_prompts(plan)
     quads = int(os.environ.get("BENCH_ABBA", "0") or 0)
     plan = abba_plan(plan, quads)
     if quads:
@@ -2129,7 +2212,7 @@ def main():
         rec = {"phase": phase, "engine": engine, "backend": backend, "model": mk,
                "depth": depth, "prompt_tokens": ptoks,
                "prompt_format": prompt_format(depth, mk) if phase in ("A", "B", "C") else None,
-               "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
+               "config": cfg, "sent": CONFIGS[cfg].get("goinfer" if engine == "goinfer_old" else engine, {}),  # goinfer_payload sends goinfer's entry for both
                "ctx": None if engine == "mlx" else cell_ctx(),
                "mlx_path": mlx_server_path(mlx_payload("", "", CONFIGS[cfg])) if engine == "mlx" else None,
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
@@ -2175,7 +2258,27 @@ def main():
             sys.exit(f"REFUSED after this cell: goinfer loaded a quant the peers do not share: {unmatched}. The cell is "
                      f"recorded with quant_matched false; match the quants, or set BENCH_UNMATCHED=1.")
 
+def _child_setup():
+    """A server's preexec_fn: its own session (os.setsid), so a cell stops it and its children by process group; and SIGTERM and
+    SIGINT at their defaults, so a server started after _term_exits masked them does not inherit SIG_IGN and ignore that stop."""
+    os.setsid()
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _term_exits(signum, frame):
+    """SIGTERM (and SIGINT) as SystemExit, so the running cell's `finally` stops its server's process group and waits for it to exit before the
+    timing lock is released. The default action ends the process at once, and the server, in its own session (os.setsid), would
+    keep the GPU while the next timed run takes the lock. A second SIGTERM or SIGINT during that teardown is ignored, so it cannot
+    interrupt the `finally` that stops the server."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    raise SystemExit(128 + signum)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _term_exits)
+    signal.signal(signal.SIGINT, _term_exits)  # Ctrl-C takes the same masked teardown, not a KeyboardInterrupt a second one can cut short
     # TE9 (docs/tasks/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and
     # taken before preflight(), so a second timed run refuses, naming this one; BENCH_LOCK_WAIT=<seconds> waits for a
     # holder instead. Under a night.py job or a `timing_lock.py run` wrapper the lock is inherited, not re-taken.

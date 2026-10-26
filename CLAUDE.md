@@ -533,6 +533,12 @@ This repo's measurements are the product, so the standards are load-bearing:
   (2) its scratch and allocated memory are not higher; (3) it is faster on at least 9 of 10 timed pairs; (4) it replaces code
   rather than adding a second path (a test-only switch back to the old form is not a second path). The registered bar still
   decides any change that alters outputs. Owner's rule, 2026-10-23.
+- **A lossless opt-in feature merges when it is consistently faster:** median ≥ 1.05× with at least 9 of 10 timed pairs faster.
+  Lossless means bit-identical, or inside a registered fidelity gate. Its PR states the memory cost: device and host bytes, and any
+  effect on the longest context that fits. **Changing a default needs more:** the gain judged against its memory trade-off, and
+  Francis's call. The rule above still covers a bit-identical replacement that costs no memory. **An investment bar is not a merge
+  bar:** a projection that decides whether a track is worth building (SP0's ≥ 1.3×) does not carry over to the merge gate of what
+  the track produces. Owner's rule, 2026-10-25 ("even 1.05 should be a merge … unless there's some other issue").
 - **Include the do-nothing arm.** "Beats every configuration" means nothing if *off* wins. A
   speculation suite was found where no verify width beat running no drafter at all — only
   visible because `off` was a competitor.

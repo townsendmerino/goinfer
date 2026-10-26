@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"testing"
 	"time"
 )
@@ -251,8 +252,8 @@ func TestKV3_residentReportsItsChunks(t *testing.T) {
 	if _, ok := any(g.r).(decoder.ResidentPrefillSpanScratch); !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentPrefillSpanScratch")
 	}
-	if c := pc.PrefillChunkRows(); c != 512 || c%64 != 0 {
-		t.Errorf("PrefillChunkRows %d, want the default 512 (a multiple of the block size 64)", c)
+	if c := pc.PrefillChunkRows(); c != g.r.prefillWidth || !slices.Contains(prefillWidths, c) || c%64 != 0 {
+		t.Errorf("PrefillChunkRows %d, want the build's chosen width %d, one of %v (each a multiple of the block size 64)", c, g.r.prefillWidth, prefillWidths)
 	}
 	if got := g.r.PrefillTailMinRows(); got != 16 {
 		t.Errorf("PrefillTailMinRows %d, want 16", got)

@@ -1,0 +1,24 @@
+decoder-A.test: OK
+decoder-B.test: OK
+hostmem-cur: OK
+run_ksf2b.py: OK
+2026-10-26 01:27:32 start: load { 1.10 1.30 1.27 } reclaimable 6975913984
+[01:27:55] warm A 96.54 ms/token load 1.1 recl 6.49 paged 91 VOID
+[01:28:11] warm B 92.29 ms/token load 1.38 recl 10.04 paged 41 VOID
+[01:28:28] warm A 95.32 ms/token load 1.53 recl 9.74 paged 85 VOID
+[01:28:44] warm B 93.29 ms/token load 1.72 recl 9.73 paged 29 VOID
+[01:29:01] pair0 A 95.86 ms/token load 1.56 recl 9.64 paged 183 VOID
+[01:29:18] pair0 B 92.31 ms/token load 2.04 recl 9.7 paged 10 VOID
+[01:30:04] pair0 A 99.21 ms/token load 1.54 recl 9.72 paged 27 VOID
+[01:30:20] pair0 B 92.86 ms/token load 1.71 recl 9.88 paged 18 VOID
+[01:31:06] pair0 A 94.97 ms/token load 1.09 recl 9.75 paged 43 VOID
+[01:31:22] pair0 B 93.51 ms/token load 1.51 recl 9.76 paged 22 VOID
+[01:32:09] pair0 A 94.93 ms/token load 1.5 recl 9.68 paged 4 VOID
+[01:32:26] pair0 B 96.72 ms/token load 1.54 recl 9.8 paged 147 VOID
+[01:33:13] pair0 A 95.90 ms/token load 1.82 recl 9.59 paged 26 VOID
+[01:33:30] pair0 B 92.22 ms/token load 2.42 recl 9.83 paged 24 VOID
+[01:34:17] pair0 A 95.02 ms/token load 1.7 recl 9.8 paged 29 VOID
+[01:34:33] pair0 B 92.39 ms/token load 1.71 recl 9.95 paged 10 VOID
+[01:35:19] pair0 A 94.79 ms/token load 1.61 recl 9.88 paged 42 VOID
+[01:35:35] pair0 B 92.43 ms/token load 1.95 recl 9.88 paged 0 VOID
+over 6 void pairs

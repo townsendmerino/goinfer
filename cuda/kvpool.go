@@ -277,7 +277,7 @@ func (r *cudaResident) kvAllocPools(slots int) error {
 		}
 		rows := r.kvPools[r.kvGroupOf(l)].blocks * kvBlock
 		if Ly.isMLA() {
-			r.kc[l] = r.af(rows * Ly.kvDim) // one latent row per position, no V
+			r.kc[l] = r.akv(l, rows*Ly.kvDim) // one latent row per position, no V
 			continue
 		}
 		r.kc[l], r.vc[l] = r.akv(l, rows*Ly.kvDim), r.akv(l, rows*Ly.kvDim)
@@ -537,7 +537,7 @@ func kvPoolNullBytes(layers []cudaLayer) int64 {
 			elem = 2
 		}
 		if Ly.isMLA() {
-			n += kvBlock * int64(Ly.kvDim) * 4
+			n += kvBlock * int64(Ly.kvDim) * elem
 			continue
 		}
 		n += 2 * kvBlock * int64(Ly.kvDim) * elem

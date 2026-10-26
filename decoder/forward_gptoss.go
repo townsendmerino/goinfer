@@ -20,7 +20,8 @@ import (
 //	ctx      = Σ_s (exp(scores_s − m)/denom)·v_s
 //
 // Scores and the denominator accumulate in float64. It reads the layer's f32 rows as appended, so the cache keeps no ring for it
-// (Architecture.kvRingsOK).
+// (Architecture.kvRingsOK). Heads fan out over the attention workers, each with its own score buffer from the
+// cache's scratch, and each head's arithmetic is the one-key-at-a-time loop's, so the result does not depend on the fan-out.
 func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, arch *Architecture, lw *LayerWeights, l, pos int) {
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 	kvDim := nKV * hd
@@ -32,13 +33,28 @@ func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache,
 	group := nH / nKV
 
 	clear(ctx)
-	scores := make([]float32, nKeys)
-	for qh := range nH {
+	head := func(qh int, scores []float32) {
 		kvh := qh / group
 		qHead := q[qh*hd : qh*hd+hd]
 
 		maxS := math.Inf(-1)
-		for s := start; s < nKeys; s++ {
+		s := start
+		var base [8]int
+		var dots [8]float64
+		for ; s+8 <= nKeys; s += 8 {
+			for j := range base {
+				base[j] = (s+j)*kvDim + kvh*hd
+			}
+			dotsF64x8(qHead, keys, &base, &dots)
+			for j, dot := range dots {
+				sc := dot * scale
+				scores[s+j] = float32(sc)
+				if sc > maxS {
+					maxS = sc
+				}
+			}
+		}
+		for ; s < nKeys; s++ {
 			base := s*kvDim + kvh*hd
 			kHead := keys[base : base+hd]
 			var dot float64
@@ -67,12 +83,29 @@ func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache,
 		for s := start; s < nKeys; s++ {
 			w := float32(float64(scores[s]) * inv)
 			base := s*kvDim + kvh*hd
-			vHead := vals[base : base+hd]
-			for d := range hd {
-				oHead[d] += w * vHead[d]
-			}
+			addScaled(oHead, vals[base:base+hd], w)
 		}
 	}
+	workers := scalarHeadWorkers(nH, nKeys-start, hd)
+	if workers <= 1 || cache.scr == nil {
+		var scores []float32
+		if cache.scr != nil {
+			scores = cache.scr.scoresBuf(nKeys)
+		} else {
+			scores = make([]float32, nKeys)
+		}
+		for qh := range nH {
+			head(qh, scores)
+		}
+		return
+	}
+	pool := cache.scr.headScoresPool(workers, nKeys)
+	runSplitAligned(len(pool), nH, 1, func(w, lo, hi int) {
+		sc := pool[w].scores[:nKeys]
+		for qh := lo; qh < hi; qh++ {
+			head(qh, sc)
+		}
+	})
 }
 
 // gptOssMoE runs the sparse FFN with arch's routing and expert constants; gptOssMoEWith is the program walker's form.

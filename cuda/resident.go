@@ -202,7 +202,7 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 			elem = 2
 		}
 		if layers[i].isMLA() {
-			perBlock += kvBlock * int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
+			perBlock += kvBlock * int64(layers[i].kvDim) * elem // MLA caches 1 latent row per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer maps window+slack positions however long the context (kvWindowBlocks)
 			held := int64(kvWindowBlocks(cap, int(layers[i].window)+kvWindowSlack))
@@ -662,6 +662,11 @@ type cudaResident struct {
 	// gemvQ4K is actgroup.cu's gemv_q4k_g32: native GGUF Q4_K weights (--quant q4k), bound only
 	// under per-32 activations, the only mode that carries the per-group activation sums it needs.
 	gemvQ4K Pipeline
+	// gemvQ5K / gemvQ6K are actgroup.cu's gemv_q5k_g32 / gemv_q6k_g32: the file's own Q5_K blocks and Q6_K planes (q6kPlanes)
+	// for the int8 copies of a q4k load (decoder.Model.KQuantNative), kquantGemvRows rows a warp. Bound with gemvQ4K.
+	gemvQ5K, gemvQ6K Pipeline
+	// kquantAlt pairs each native weight with its int8 copy when kquantKeepInt8ForTest held at the build; nil otherwise.
+	kquantAlt [][2]cudaWQ
 	// fQKVg32 / fGUg32 are actgroup.cu's fused_rms_qkv_g32 / fused_rms_gu_g32: the per-32 twins of
 	// fQKV / fGU (rmsnorm + per-32 quant redundantly per block + the projection rows, any of int8 /
 	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
@@ -724,8 +729,13 @@ type cudaResident struct {
 	// Row-batched twins of the five, for prompt prefill (prefillDeltaNetRows): one launch per layer covers M rows.
 	dnConvRows, dnGatesRows, dnNormRows, dnRuleRows, dnGNormRows Pipeline
 	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
-	dnQSplit, dnAttnGate                                         Pipeline // the family's fused double-width q_proj + output gate
-	dnet                                                         *dnetParams
+	// SP2's verify twins of dnConvRows, dnRuleRows and dnRuleRows128, which never store the window or the state, and the arena
+	// a verify pass keeps its rows in (recurrent_spec.go). dnSpecOn is set for the duration of one VerifyLastNArgmax.
+	dnConvRowsSpec, dnRuleRowsSpec, dnRuleRows128Spec Pipeline
+	dnSpec                                            *dnSpecArena
+	dnSpecOn                                          bool
+	dnQSplit, dnAttnGate                              Pipeline // the family's fused double-width q_proj + output gate
+	dnet                                              *dnetParams
 	// Mamba-2 mixer and the non-gated MLP (mamba_resident.go): loaded only for Nemotron-H; every other model leaves these zero.
 	mamba                                     *mambaParams
 	mbConvP, mbSSMP, mbGNormP, relu2QuantP    Pipeline
@@ -770,7 +780,10 @@ type cudaResident struct {
 	// A13 note; docs/code-notes/cuda.md#cudaResident.prefillChunkCap). Atomic because both callers run on their own
 	// CALLER's goroutine (only the per-pass job is serialized through the executor).
 	prefillChunkCap atomic.Int64
-	prof            *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
+	// prefillWidth is the default pass width the build chose (prefillWidthFor; 0 before the choice, which reads as
+	// prefillDefaultChunk). GOINFER_PREFILL_CHUNK overrides it and prefillChunkCap lowers it (prefillBaseRows).
+	prefillWidth int
+	prof         *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	// passPromptLen is the TOTAL prompt length this batched pass belongs to (startPos+M), set once at the top of
 	// prefillCore. The fast-prefill floor is a property of the PROMPT, not of the chunk: prefillChunked splits a long
 	// prompt into passes of <=512 rows, so gating on M alone would judge a 3900-token prompt by its 512-row chunk.
@@ -959,9 +972,22 @@ func (r *cudaResident) af(n int) Buffer {
 func (r *cudaResident) akv(l, n int) Buffer {
 	if r.layers[l].kvHalf {
 		allocSeen(n * 2)
+		kvAllocSeen(r, n*2)
 		return gpu.NewBufferLenOf[uint16](r.dev, n)
 	}
+	kvAllocSeen(r, n*4)
 	return r.af(n)
+}
+
+// kvAllocSeenForTest, when set, is told the resident and the bytes of every K/V cache buffer akv allocates, from the branch that
+// picks the element type. A test seam, nil in production; a delivered-bytes gate sums it for the resident a load returns, so another
+// build during that load (a first load's probe) does not count.
+var kvAllocSeenForTest func(r *cudaResident, bytes int)
+
+func kvAllocSeen(r *cudaResident, bytes int) {
+	if kvAllocSeenForTest != nil {
+		kvAllocSeenForTest(r, bytes)
+	}
 }
 func (r *cudaResident) ai(n int) Buffer {
 	allocSeen(n * 4)
@@ -1019,7 +1045,12 @@ func (r *cudaResident) loadAborted() bool {
 }
 
 func (r *cudaResident) upW(h hostW) cudaWQ {
-	if h.src != nil {
+	if h.alt != nil {
+		w := r.streamW(h)
+		r.kquantAlt = append(r.kquantAlt, [2]cudaWQ{w, r.upW(*h.alt)})
+		return w
+	}
+	if h.src != nil || h.readRows != nil { // planned, not packed: packed at upload
 		return r.streamW(h)
 	}
 	w := cudaWQ{kind: h.kind, W: r.upu32(h.wpk), N: h.N, K: h.K}
@@ -1157,6 +1188,7 @@ func packedAllocSlack(v any) int64 {
 				n := allocRoundSlack(elems("wpk", "nWpk") * 4)
 				n += allocRoundSlack(elems("ws", "nWs") * 4)
 				n += allocRoundSlack(elems("ws16", "nWs16") * 2)
+				n += allocRoundSlack(rv.FieldByName("nBytes").Int())
 				return n
 			}
 			var n int64
@@ -2474,6 +2506,7 @@ func (r *cudaResident) resetState() error {
 	if e := r.resetMambaState(); e != nil {
 		return e
 	}
+	r.DropFold() // rows marked against the state being zeroed must never fold into the new sequence
 	if r.dnet == nil {
 		return nil
 	}
@@ -2816,6 +2849,14 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 		// BuildResident admits q4k only with actG32 (the per-group sums in as[K/32:] come from quantG32).
 		return r.launch(r.gemvQ4K, cfg, Arg(wt.W), Arg(a), Arg(as), bias,
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), Arg(dst), gpu.ArgValue(accum))
+	}
+	if wt.kind == "q5k" || wt.kind == "q6k" {
+		cfg.GridX = uint32((wt.N + 8*kquantGemvRows - 1) / (8 * kquantGemvRows))
+		args := []KernelArg{Arg(wt.W), Arg(a), Arg(as), bias, gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K / 256)), Arg(dst), gpu.ArgValue(accum)}
+		if wt.kind == "q6k" {
+			return r.launch(r.gemvQ6K, cfg, args...)
+		}
+		return r.launch(r.gemvQ5K, cfg, args...)
 	}
 	if wt.kind == "int4" {
 		return r.launch(r.gemvW4, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
@@ -4075,6 +4116,15 @@ type hostW struct {
 	// the three device buffers upW allocates for it.
 	src              *linalg.WeightMat
 	nWpk, nWs, nWs16 int
+	// A planned row source (planRows) has no src: readRows widens a block of its rows into the staging block at upload.
+	readRows func(r0, n int, dst []float32) error
+
+	// A planned native Q5_K or Q6_K weight (planKQuant) reads its rows from the file: row(r) is destination row r's blocks, and
+	// nBytes is the one device buffer's size, the file's bytes for the weight.
+	row    func(r int) []byte
+	nBytes int
+	// alt is the same weight's int8 plan, uploaded beside the native one only under kquantKeepInt8ForTest (KS-O1's A/B).
+	alt *hostW
 
 	// A planned expert stack (planWeightStack) names its member weights here, in row order, with src nil: only cacheWQ consumes it.
 	srcs []*linalg.WeightMat
@@ -4384,6 +4434,10 @@ func (r *cudaResident) actScaleLen(k int) int {
 // wkCode is actgroup.cu's WK_* code for a per-32 weight kind (fused_rms_qkv_g32 / fused_rms_gu_g32).
 func wkCode(kind string) int32 {
 	switch kind {
+	case "q6k":
+		return 4
+	case "q5k":
+		return 3
 	case "q4k":
 		return 2
 	case "int4":
@@ -4396,7 +4450,7 @@ func wkCode(kind string) int32 {
 // g32Fusable reports whether every listed projection has a kind the fused per-32 kernels read.
 func g32Fusable(kinds ...string) bool {
 	for _, k := range kinds {
-		if k != "int8" && k != "int4" && k != "q4k" {
+		if k != "int8" && k != "int4" && k != "q4k" && k != "q5k" && k != "q6k" {
 			return false
 		}
 	}
@@ -4404,10 +4458,10 @@ func g32Fusable(kinds ...string) bool {
 }
 
 // wkScale is a projection's scale argument for the fused per-32 kernels: the int8 row scales, the
-// int4 f16 group scales, or null for q4k (its scales live in the super-blocks).
+// int4 f16 group scales, or null for the block kinds (their scales live in the super-blocks).
 func wkScale(w cudaWQ) KernelArg {
 	switch w.kind {
-	case "q4k":
+	case "q4k", "q5k", "q6k":
 		return ArgNull()
 	case "int4":
 		return Arg(w.ws16)
@@ -4420,6 +4474,10 @@ func wkScale(w cudaWQ) KernelArg {
 // win (H=1536). Wider measured sizes (Phi-3 at 3072, qwen2.5-7b at 3584) were slower fused than unfused
 // (docs/tasks/task-int4-weight-quality-2026-09.md, lever 3), and the sizes between are unmeasured and stay unfused.
 const fusedG32MaxHidden = 1536
+
+// kquantGemvRows is the rows a warp of the standalone native Q5_K and Q6_K GEMVs (gemv_q5k_g32, gemv_q6k_g32; KQ_ROWS in
+// actgroup.cu, which must match), A1-G0's pick (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA").
+const kquantGemvRows = 1
 
 // fusedG32Shmem is fused_rms_qkv_g32 / fused_rms_gu_g32's shared memory for hidden size H:
 // normed[H] | red[256] | aq[H/4] int32 | aS[2·H/32].
