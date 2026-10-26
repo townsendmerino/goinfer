@@ -37,7 +37,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | open | either box: one file per family adapter out of `decoder/registry.go`; `decoder/model.go`'s numeric helpers into a numeric file; `core` narrowed to numeric code; S–M | §5.5 |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
 | VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
-| VK5 | blocked | VK1–VK4; the behavior key in shadow mode beside today's hash, then in its place (SD6); M | §5.8 |
+| VK5 | active | mac-vk01, branch `vk5-shadow-2026-10`: shadow mode with the kernel fingerprint in place of `aikit_version` (VK4's program fingerprint joins when it exists); gates P1–P4 registered in §5.8 before the code; SD6's week starts at the workflow's first run; M | §5.8 |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -442,6 +442,32 @@ every family's key unchanged. M.
 
 On every push to main, compute both today's staleness and the new key, and log every disagreement with its reason.
 Switch after one week (SD6, decided 2026-10-26) with no disagreement left unexplained. M.
+
+#### VK5's gates, registered 2026-10-26 before the code (mac-vk01)
+
+Order: VK5 shadow mode first, then VK2 (owner, 2026-10-26 13:06, relayed). Until VK4 exists, the shadow key is today's
+key with one input replaced: `aikit_version=<pin>` becomes `kernelprint=<digest>`, the SHA-256 of the dispatch
+configuration and every kernel's VK1 fingerprint. The source files are hashed as today. The instrument is
+`internal/paritykey` (today's key as a library, and the shadow key), `go run ./cmd/gate shadow <before> <after>`, and a
+workflow, `.github/workflows/vk-shadow.yml`, that runs it on every push to main. It is not a required check and has no
+concurrency group, so collapsed pushes are not skipped. It writes the comparison to the job summary and to an artifact.
+Both fingerprints of a push come from one runner and one suite: the after side builds the suite against the after
+pin, the before side the same suite against the before pin.
+
+Across a push, each family is one of: agree-stale, agree-fresh, old-only (today's key re-stales it, the shadow key does
+not), new-only (the reverse). Old-only is **explained** when the aikit pin is the only input of today's key that moved
+and every fingerprint is unchanged. New-only cannot happen with one suite and one toolchain unless something the key
+does not see moved, so every new-only is **unexplained** until someone explains it in the shadow record.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| P1 equivalence | `paritykey`'s today key equals `freshDepsHash` for every family in the tree (a decoder test calling both) | never | one run | seconds |
+| P2 classifier | a table test covers every class and reason; removing the "every fingerprint unchanged" condition turns it red (`gate mutation`) | never | one run | seconds |
+| P3 history | `gate shadow` on three real pushes from VK0's window: an aikit-only bump the suite builds both sides of (all 43 families old-only, explained), a commit that only edits `decoder/model.go` (all agree-stale), and one that touches no dependency (all agree-fresh) | the suite does not build against a side's pin | one run each | one child build per pin change, about 5 s; under a minute in all |
+| P4 the job | on a push to main it finishes and writes its summary; a push whose before commit is missing (a new branch, a force push) or whose before pin the suite cannot build is logged VOID, never as agreement | — | read at the next natural point, never watched (`CLAUDE.md`, "Push finished work") | under 3 min a push (estimate, checked on the first runs) |
+
+The shadow period's stopping rule is SD6's: one week of pushes to main from the workflow's first run, with no
+unexplained disagreement. The switch is its own PR and its own decision.
 
 ### 5.9 VK6 — the daily canary and the coverage audit
 
