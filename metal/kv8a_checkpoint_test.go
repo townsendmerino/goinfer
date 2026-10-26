@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // KV8a's Metal gates M1, M2(a) and M4(a) (docs/measurements/kv8a-metal-2026-10/README.md), on qwen3next-tiny (Gated-DeltaNet) and

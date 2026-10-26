@@ -36,3 +36,23 @@ Three commits: the mechanical switch (`763b7711`, made by `ax2_rewrite.py`), thi
 | AX2b-B (builds) | **PASS** locally: build and vet of every module under its tags (root also `realckpt`, cuda for linux, demo/agent through CI's workspace shape); CI's staticcheck clean in all five, canary red; root cleanliness guard 0. `touched.py` (15:34 to 15:41) found one red, `TestEnvVars_docAndCodeAgree`: `internal/towerid` read `GOINFER_TOWER_ID_OUT` from non-test code. Fixed on AX2a's branch (the tests read it and pass the path) and merged up; the test passes. CI's full suite and apidiff run on the PR |
 
 The image and audio parity tests run in CI's suite; the switch changes no golden file.
+
+## AX2c: the metal module on metal/internal/gpudev
+
+One mechanical commit (`ax2cd_rewrite.py metal`): 18 files, the import path only. The first attempt missed
+`metal/device.go`'s one-line `import gpu "…"`, so the package's type aliases still named aikit's types and the module did
+not compile; the regex was fixed in its own commit before the mechanical one was made.
+
+| gate | result |
+|---|---|
+| AX2c-N | **PASS**: `ax2cd_rewrite.py metal check` reproduces the 18 files, 0 problems |
+| AX2c-S | **PASS**: `go list -deps -test -tags goinfer_testhooks ./...` in `metal` names no `aikit/gpu` |
+| AX2c-ID | **PASS**: Metal's record at AX2c's head equals AX2b's, 17 cases (`records-ax2c/`) |
+| AX2c-T | **PASS**: the five `metal` packages, base (AX2b's head, 15:45:40 to 15:51:53) and head (15:53:12 to 15:59:25), by name: `metal` 699 and 699 PASS, `metal/internal/gpudev` 56, `qwenmetal` 5, `visionmetal` 5, `metal/kernels` 10, 0 regressions. 12.9 to 13.0 GB available at each start (void below 4 GB). Registered at about 5 minutes a side; measured 6 |
+| AX2c-B | **PASS**: build and vet (plain and `goinfer_testhooks`), staticcheck, gofmt |
+
+Seven `metal` tests fail at the base and at the head alike, all for a gitignored fixture this worktree does not have
+(`granite-tiny`, `kimi-tiny`, a GPT-2 and a Gemma checkpoint: "read config.json: no such file"); listed and excluded as
+registered: `TestGPT2ResidentParityMetal`, `TestHiddenLastResidentParityMetal`, `TestI8_exactKernelModelIsSplit`,
+`TestMLAResident_routingForced`, `TestMLAResident_tinyAgainstControl`, `TestMambaKernels_cpuParity`,
+`TestMambaKernels_plantsAreRed`. Logs: `logs-ax2c/`.

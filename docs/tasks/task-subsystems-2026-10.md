@@ -826,6 +826,35 @@ CHANGELOG line. Second, `examples/invoice` and `demo/agent` reach the towers thr
 of importing an internal package (§7.2). That is a separate commit after the mechanical one, gated by AX2b-B, with each
 example's own test.
 
+### 7.9 AX2c gates (registered 2026-10-26 15:45 PDT by mac-ax01, before AX2c's code)
+
+AX2c switches the `metal` module (with `metal/kernels`) from aikit's `gpu` to `metal/internal/gpudev`, the device
+package's Metal half from AX1. It is one scripted commit (`ax2cd_rewrite.py metal`): the import path becomes
+`gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"`, so no body changes. Tier 0 and tier 1 (the Mac's GPU,
+no model), by day, under the shared timing lock.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2c-N | Re-running the script on the commit's parent reproduces the commit byte for byte. The commit contains nothing else. | — | complete | seconds |
+| AX2c-S | `go list -deps -test -tags goinfer_testhooks ./...` in `metal` names no `github.com/townsendmerino/aikit/gpu`. | — | complete | seconds |
+| AX2c-ID | `TestTowerIdentity_metal`'s record at AX2c's head equals AX2b's head record, case by case. | no Metal device | once | a second |
+| AX2c-T (the Metal suite carries over) | The `metal` module's tests, one package per `go test -v -count=1 -tags goinfer_testhooks` call, at AX2b's head (the base) and at AX2c's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. A test that fails at the base is listed and excluded, not fixed here. | another session holds the timing lock exclusive (wait); the Mac's free memory is under 4 GB at a run's start (a device suite under memory pressure fails for reasons no code owns; the run is re-made) | each side once, to completion; a red is re-run by name only | the Metal suite measured 4 min 12 s in a quick-full run (`CLAUDE.md`, "Gate tiers"); estimate 5 min a side, 10 min in all |
+| AX2c-B | Build, vet and staticcheck of `metal` under its tags (plain, `goinfer_testhooks`); gofmt; the root cleanliness guard | — | complete | a minute |
+
+### 7.10 AX2d gates (registered 2026-10-26 15:45 PDT by mac-ax01, before AX2d's code)
+
+AX2d switches the `cuda` module from aikit's `gpu` to `cuda/internal/gpudev`, the device package's CUDA half from AX1,
+in one scripted commit (`ax2cd_rewrite.py cuda`). The Mac compiles it (`GOOS=linux`); the device legs run on nobara,
+by day, through nobara's own session (relayed), never over ssh from the Mac.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2d-N | Re-running the script on the commit's parent reproduces the commit byte for byte. The commit contains nothing else. | — | complete | seconds |
+| AX2d-S | `GOOS=linux go list -deps -test -tags 'cuda goinfer_testhooks' ./...` in `cuda` names no `github.com/townsendmerino/aikit/gpu`. | — | complete | seconds |
+| AX2d-B | Build, vet and staticcheck of `cuda` with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, tags `cuda` and `cuda goinfer_testhooks`; gofmt; the root cleanliness guard | — | complete | a minute |
+| AX2d-ID (nobara) | `TestTowerIdentity_cuda` and `TestTowerIdentity_cpu` records at AX2b's base, AX2b's head and AX2d's head, equal case by case (one nobara session covers AX2b-ID's CUDA leg too). | no CUDA device answers | once each | seconds each |
+| AX2d-T (nobara) | The `cuda` module's tests (`-tags 'cuda goinfer_testhooks'`, one package per `go test -v -count=1` call) at AX2c's head (the base) and at AX2d's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. `TestCUDA_launchDirect` segfaults on both sides at AX1 (#279), so it runs alone and the rest with `-skip '^TestCUDA_launchDirect$'`; a test failing at the base is listed and excluded, not fixed here. | a desktop session holds a CUDA context (`kwin_wayland`), which shifts plans and skips the drain-group tests (`CLAUDE.md`, "Testing tiers"): the record notes it, and drain-group skips on both sides are not counted as passes | each side once, to completion | nobara's session states the estimate from its last CUDA suite record before starting |
+
 ## 8. The other subsystems (SB1–SB13)
 
 Each: what it is today, its contract, its fast check, what stops re-running, its first step and size.

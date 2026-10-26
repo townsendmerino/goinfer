@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // KV8a's recurrent checkpoint on Metal (decoder.ResidentRecurrentCheckpoint; docs/measurements/kv8a-metal-2026-10/README.md): one copy
