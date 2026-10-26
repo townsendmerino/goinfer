@@ -24,8 +24,8 @@ import (
 	_ "github.com/townsendmerino/goinfer/metal/internal/visionmetal" // registers the Metal ResidentEncoder
 
 	"github.com/townsendmerino/aikit/bench"
-	gpu "github.com/townsendmerino/goinfer/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 func envStr(key, def string) string {

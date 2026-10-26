@@ -27,7 +27,7 @@ func gpuDocs(t *testing.T, file string) map[string]string {
 }
 
 func TestOutputContract_newBufferDocsAgreeWithBackends(t *testing.T) {
-	cuda, metal := gpuDocs(t, "cuda.go"), gpuDocs(t, "metal.go")
+	cuda, metal := gpuDocs(t, "../../../cuda/internal/gpudev/cuda.go"), gpuDocs(t, "metal.go")
 	for _, fn := range []string{"NewBufferLen", "NewBufferBytes", "NewBufferLenOf"} {
 		c, m := strings.ToLower(cuda[fn]), strings.ToLower(metal[fn])
 		if c == "" || m == "" {
@@ -42,7 +42,7 @@ func TestOutputContract_newBufferDocsAgreeWithBackends(t *testing.T) {
 		if strings.Contains(m, "uninitialized") && !strings.Contains(m, "cuda") {
 			t.Errorf("metal.go %s: still calls Metal's buffer uninitialized", fn)
 		}
-		for name, d := range map[string]string{"cuda.go": c, "metal.go": m} {
+		for name, d := range map[string]string{"../../../cuda/internal/gpudev/cuda.go": c, "metal.go": m} {
 			if !strings.Contains(d, "must not rely") {
 				t.Errorf("%s %s: the doc must say that code shared across backends must not rely on zeros", name, fn)
 			}
@@ -51,17 +51,17 @@ func TestOutputContract_newBufferDocsAgreeWithBackends(t *testing.T) {
 }
 
 func TestOutputContract_hostWritersStateTheirs(t *testing.T) {
-	cuda, metal := gpuDocs(t, "cuda.go"), gpuDocs(t, "metal.go")
+	cuda, metal := gpuDocs(t, "../../../cuda/internal/gpudev/cuda.go"), gpuDocs(t, "metal.go")
 	for _, c := range []struct {
 		docs map[string]string
 		file string
 		fn   string
-	}{{cuda, "cuda.go", "Download"}, {metal, "metal.go", "Download"}, {cuda, "cuda.go", "ReadToHost"}} {
+	}{{cuda, "../../../cuda/internal/gpudev/cuda.go", "Download"}, {metal, "metal.go", "Download"}, {cuda, "../../../cuda/internal/gpudev/cuda.go", "ReadToHost"}} {
 		if !strings.Contains(c.docs[c.fn], "Output contract: overwrites") {
 			t.Errorf("%s %s: no 'Output contract: overwrites …' line", c.file, c.fn)
 		}
 	}
-	for _, file := range []string{"cuda_copy.go", "metal_copy.go"} {
+	for _, file := range []string{"../../../cuda/internal/gpudev/cuda_copy.go", "metal_copy.go"} {
 		if !strings.Contains(gpuDocs(t, file)["CopyDevice"], "Output contract: overwrites") {
 			t.Errorf("%s CopyDevice: no 'Output contract: overwrites …' line", file)
 		}

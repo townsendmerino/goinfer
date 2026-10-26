@@ -5,7 +5,7 @@ package qwenmetal
 import (
 	"testing"
 
-	gpu "github.com/townsendmerino/goinfer/internal/gpudev"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // TestAttnThreadgroupBytes covers the audit C-02 guard's arithmetic without a

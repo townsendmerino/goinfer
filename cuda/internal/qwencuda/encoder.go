@@ -31,7 +31,7 @@ import (
 	"math"
 	"sync"
 
-	gpu "github.com/townsendmerino/goinfer/internal/gpudev"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 

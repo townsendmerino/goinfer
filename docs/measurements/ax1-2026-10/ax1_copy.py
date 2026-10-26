@@ -13,21 +13,31 @@ The rewrite is the whole of the change: import paths, the gpudev package clause,
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 GI = "github.com/townsendmerino/goinfer"
 AK = "github.com/townsendmerino/aikit"
 
-# (snapshot key, source dir, destination dir, fixture-path rewrite)
+# (snapshot key, source dir, destination dir, fixture-path rewrite or device-package half)
 PACKAGES = [
     ("root", "vision", "internal/vision", "vision"),
     ("root", "audio", "internal/audio", None),
-    ("gpu", "gpu", "internal/gpudev", None),
+    ("gpu", "gpu", "cuda/internal/gpudev", "cuda"),
+    ("gpu", "gpu", "metal/internal/gpudev", "metal"),
     ("gpu", "gpu/qwencuda", "cuda/internal/qwencuda", "backend"),
     ("gpu", "gpu/visioncuda", "cuda/internal/visioncuda", "backend"),
     ("gpu", "gpu/qwenmetal", "metal/internal/qwenmetal", "backend"),
     ("gpu", "gpu/visionmetal", "metal/internal/visionmetal", "backend"),
 ]
+# The device package splits by backend, so the root module never compiles purego or gocudrv (ci.yml's cleanliness
+# guard): a file built only on linux goes to the cuda module, one built only on darwin to the metal module, and the
+# rest (untagged, `darwin || linux`, `!darwin && !linux`) to both, except as SPLIT_ONLY says.
+SPLIT_ONLY = {
+    "kernel_fma_lint_test.go": "cuda", "ptx_reproducible_test.go": "cuda",  # read the .cu and .ptx files
+    "outputcontract_doc_test.go": "metal",  # reads both halves' sources; the cuda half's by relative path
+}
+CUDA_HALF_FROM_METAL = "../../../cuda/internal/gpudev/"
 # Sub-directories of gpu/ that are their own modules and are not part of the device package.
 GPU_SUBMODULES = {"qwencuda", "visioncuda", "qwenmetal", "visionmetal", "webgpu",
                   "anncuda", "annmetal", "enccuda", "encmetal"}
@@ -49,7 +59,7 @@ VISION_ORACLES = ["pin_bicubic_resize.py", "pin_qwen25vl_vision.py", "pin_qwen35
 GOINFER_FIXTURES = ["gemma4-vision-tiny"]
 # Copied files edited after the copy commit, each with why; `check` lists them instead of comparing their bytes.
 EDITED_AFTER_COPY = {
-    "internal/gpudev/residencyset_test.go": "skips when the device makes no residency set (hosted CI runner)",
+    "metal/internal/gpudev/residencyset_test.go": "skips when the device makes no residency set (hosted CI runner)",
     "cuda/internal/visioncuda/encoder_test.go": "graphCapture skips when there is no CUDA device (GPU-less CI runner)",
 }
 
@@ -67,9 +77,11 @@ GPU_IMPORT = re.compile(r'^(\s*)(\w+ )?"' + re.escape(AK) + r'/gpu"', re.M)
 def rewrite_go(text, dest, fixtures):
     for old, new in IMPORTS:
         text = text.replace(old, new)
-    # The device package is named gpudev; importers keep the identifier gpu, so their bodies are unchanged.
-    text = GPU_IMPORT.sub(lambda m: f'{m.group(1)}{m.group(2) or "gpu "}"{GI}/internal/gpudev"', text)
-    if dest == "internal/gpudev":
+    # The device package is named gpudev, one half in each backend module; importers keep the identifier gpu, so
+    # their bodies are unchanged.
+    half = "cuda" if dest.startswith("cuda/") else "metal"
+    text = GPU_IMPORT.sub(lambda m: f'{m.group(1)}{m.group(2) or "gpu "}"{GI}/{half}/internal/gpudev"', text)
+    if dest.endswith("internal/gpudev"):
         text = re.sub(r"^package gpu(_test)?$", lambda m: "package gpudev" + (m.group(1) or ""), text, flags=re.M)
         text = text.replace("// Package gpu is ", "// Package gpudev is ")
     if fixtures == "vision":
@@ -77,7 +89,25 @@ def rewrite_go(text, dest, fixtures):
         text = text.replace('filepath.Join("..", "testdata"', 'filepath.Join("testdata"')
     elif fixtures == "backend":
         text = text.replace('"../../testdata/', '"../../../internal/vision/testdata/')
+    if dest == "metal/internal/gpudev":
+        for name in ("cuda.go", "cuda_copy.go"):
+            text = text.replace(f'"{name}"', f'"{CUDA_HALF_FROM_METAL}{name}"')
     return text
+
+
+def half_of(name, data):
+    """Which device-package half(s) a file of aikit's gpu/ goes to."""
+    if name in SPLIT_ONLY:
+        return {SPLIT_ONLY[name]}
+    if not name.endswith(".go"):
+        return {"cuda"}  # the .cu sources, the PTX build scripts and testdata/*.ptx
+    for line in data.decode().splitlines():
+        if line.startswith("//go:build "):
+            expr = line[len("//go:build "):].strip()
+            return {"linux": {"cuda"}, "darwin": {"metal"}}.get(expr, {"cuda", "metal"})
+        if line.startswith("package "):
+            break
+    return {"cuda", "metal"}
 
 
 def plan(snaps, goinfer):
@@ -94,8 +124,12 @@ def plan(snaps, goinfer):
                 sp = os.path.join(dirpath, name)
                 dp = os.path.normpath(os.path.join(dest, rel, name))
                 data = open(sp, "rb").read()
+                if fixtures in ("cuda", "metal") and fixtures not in half_of(name, data):
+                    continue
                 if name.endswith(".go"):
-                    data = rewrite_go(data.decode(), dest, fixtures).encode()
+                    # gofmt re-sorts an import block whose rewritten paths changed order.
+                    data = subprocess.run(["gofmt"], input=rewrite_go(data.decode(), dest, fixtures).encode(),
+                                          capture_output=True, check=True).stdout
                 yield sp, dp, data
     for name in VISION_FIXTURES:
         yield from tree(os.path.join(snaps["root"], "testdata", name), os.path.join("internal/vision/testdata", name))

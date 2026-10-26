@@ -118,10 +118,6 @@ SCANS = [
     Scan("internal/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/fitcmd/fit.go")),
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
-    Scan("internal/gpudev", "TestOutputContract_newBufferDocsAgreeWithBackends", F("internal/gpudev/cuda.go", "internal/gpudev/metal.go")),
-    Scan("internal/gpudev", "TestOutputContract_hostWritersStateTheirs",
-         F("internal/gpudev/cuda.go", "internal/gpudev/metal.go", "internal/gpudev/cuda_copy.go", "internal/gpudev/metal_copy.go")),
-    Scan("internal/gpudev", "TestPTXReproducible", CU("internal/gpudev") + F("internal/gpudev/testdata/*.ptx")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("examples/*/main.go", "docs/use-from-go.md")),
     Scan("cmd/gate", "TestGPU_metalPrefillCellChecksVacuous", F("cmd/gate/gpu.go")),
@@ -149,6 +145,11 @@ SCANS = [
     Scan("gpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("gpu/residency.go")),
     # metal module
     Scan("metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("metal/moe.go")),
+    Scan("metal/internal/gpudev", "TestOutputContract_newBufferDocsAgreeWithBackends",
+         F("cuda/internal/gpudev/cuda.go", "metal/internal/gpudev/metal.go")),
+    Scan("metal/internal/gpudev", "TestOutputContract_hostWritersStateTheirs",
+         F("cuda/internal/gpudev/cuda.go", "metal/internal/gpudev/metal.go", "cuda/internal/gpudev/cuda_copy.go",
+           "metal/internal/gpudev/metal_copy.go")),
     # cuda module
     Scan("cuda", "TestKernelLocalMemoryCensus", F("cuda/kernels.go", "cuda/backend.go", "cuda/testdata/*.ptx")),
     Scan("cuda", "TestKernelFMALint_coversEmbeddedPTX", F("cuda/kernels.go") + CU("cuda")),
@@ -161,6 +162,7 @@ SCANS = [
     Scan("cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("cuda/prefill.go")),
     Scan("cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("cuda/backend.go")),
     Scan("cuda", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
+    Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
 ]
 
 # Tests that read Go source but are not selected here, each with the reason. A new reader goes in SCANS or here.
