@@ -63,7 +63,7 @@ func TestDrafterWidth_validate(t *testing.T) {
 		ok      bool
 	}{
 		{"", 0, true}, {"", 4, false}, {"", -1, false},
-		{"d", 0, true}, {"d", 4, true}, {"d", 1, false}, {"d", -1, false},
+		{"d", 0, true}, {"d", 4, true}, {"d", 16, true}, {"d", 1, false}, {"d", 2, false}, {"d", 3, false}, {"d", -1, false},
 	} {
 		// A bare config fails other required flags; only whether a -drafter-width refusal appears is this test's.
 		err := (config{drafter: c.drafter, drafterWidth: c.width}).validate()

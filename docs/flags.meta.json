@@ -276,7 +276,7 @@
   {
    "name": "drafter-width",
    "group": "Speculative decoding",
-   "summary": "The verify width for `--drafter`: block positions the target checks per round (0 keeps the default of 8; the drafter's block caps it). The best width depends on the pairing and the box.",
+   "summary": "The verify width for `--drafter`: block positions the target checks per round (0 keeps the default of 8; the drafter's block caps it). The best width depends on the pairing and the box. Widths under 4 are refused: the acceptance guard would turn most turns back to plain decode.",
    "see": "docs/measurements/sp2-2026-10/README.md"
   },
   {

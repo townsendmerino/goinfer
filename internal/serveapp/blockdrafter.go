@@ -8,6 +8,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
+// minDrafterWidth is the narrowest -drafter-width serve takes. The acceptance guard (decoder/blockspec.go:breakEvenTokensPerRound)
+// stops drafting when a generation commits under 2.5 tokens a round, and a round of width w commits at most w, so under 4 it
+// trips on many turns and they finish on plain decode (docs/measurements/sp2-35b-2026-10/README.md, "G4's width amended").
+const minDrafterWidth = 4
+
 // attachBlockDrafter attaches an already-loaded block drafter (--drafter) to an already-loaded model, so requests can
 // take the block-speculative path.
 //
