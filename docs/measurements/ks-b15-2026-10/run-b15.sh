@@ -3,7 +3,7 @@
 # lock). Builds the cuda test binary at <rev> in a detached worktree and runs B15-G1..G3, then the timed B15-G4. A skip counts as a
 # failure. G3's load is the fit check: a load the card refuses at f32 KV runs at f16 (the registered fallback, ksb15Gemma3).
 set -u
-REV=${1:?usage: run-b15.sh <rev> [all|untimed]}
+REV=${1:?usage: run-b15.sh <rev> [all|untimed|g4]}
 PHASE=${2:-all}
 WT=$HOME/goinfer-bench/ks-b15-run-$REV
 LOG=$HOME/goinfer-logs/ks-b15-2026-10/b15-$(date +%Y-%m-%d-%H%M).log
@@ -30,6 +30,11 @@ gate() {
 	grep -q -- '--- PASS' "$WT/$label.out" || { echo "FAILED: $label ran no test"; fail=1; }
 	return $rc
 }
+if [ "$PHASE" = g4 ]; then
+	gate g4 '^TestKSB15_speedGemma3$' GOINFER_HEAVY_TESTS=1 KSB15_TIMING=1
+	echo "$(date '+%H:%M:%S') DONE fail=$fail"
+	exit $fail
+fi
 gate g1 '^(TestKSB15_limitArithmetic|TestKSB15_optIn|TestAttnShmemLimit_matchesDevice|TestCheckPrefillShmem_declinesPastTheLimit|TestKV3_shmemGuardEquivalence)$'
 gate g2 '^(TestKSB15_bandBitsTiny|TestKV3Tiled_batchedEqualsPerToken_tiny|TestKV3Tiled_pastBoundPromptRunsExact_tiny|TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines|TestKV3Tiled_spanScratchMatchesThePass|TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny|TestKV3Families_forcedRouteEqualsAttnBatched|TestKV3Families_pastBoundBatchedEqualsPerToken|TestKV3Families_imageBlockForcedRouteEqualsAttnImgBatched|TestKV3Families_imageBlockPastTheBound|TestKV3_batchedPrefillPastTheSpanBound_tiny)$'
 gate g3 '^TestKSB15_bandBitsGemma3$' GOINFER_HEAVY_TESTS=1 KSB15_REAL=1
