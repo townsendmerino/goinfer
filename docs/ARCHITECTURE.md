@@ -190,7 +190,7 @@ Each generated token runs the whole stack once.
 ```mermaid
 flowchart TB
   TOK["tokenizer · byte-level BPE / SentencePiece<br/>(ids exact vs Hugging Face)"] --> EMB["token embedding<br/>(+ embed scale · learned positions · Gemma 4 per-layer embeddings)"]
-  IMG["image (serve --vision)<br/>tower in aikit/vision → projector in multimodal"] -. "spliced in at the image placeholders" .-> EMB
+  IMG["image (serve --vision)<br/>tower in internal/vision → projector in multimodal"] -. "spliced in at the image placeholders" .-> EMB
   EMB --> BLK
   subgraph BLK["decoder block × N  (Architecture descriptor, per layer)"]
     direction TB
@@ -287,7 +287,7 @@ because they did not pay, and their records stay:
 
 Vision in, text out, and on serve only (`--vision`).
 
-- **Towers** live in `aikit/vision`: SigLIP for Gemma 3, Gemma 4's own ViT, the
+- **Towers** live in `internal/vision` (moved from aikit, Track AX): SigLIP for Gemma 3, Gemma 4's own ViT, the
   dynamic-resolution ViT for Qwen2.5-VL, the Qwen3.5+ tower, and GLM-OCR's own tower.
 - **`multimodal`** holds the goinfer side: projectors, image-token blocks, preprocessing, and image
   hashing.
@@ -1013,16 +1013,16 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 | `tokenizer` | byte-level BPE and SentencePiece byte-fallback, from `tokenizer.json` or a GGUF; ids exact against Hugging Face | `aikit/embed`, `golang.org/x/text` |
 | `chat` | template detection and byte-exact renderers (`chatml`, `mellum2`, `gemma3`, `gemma4`, `harmony`, `llama3`, `mistral`, `ministral`); per-family tool calling — render, parse, and prose that is safe to stream | `goinfer/tokenizer` |
 | `constrain` | constrained decoding: a streaming JSON grammar compiled from JSON Schema or a Go struct, applied as a logit mask | — |
-| `multimodal` | projectors, image-token blocks, preprocessing (Qwen dynamic resolution, Gemma 4), image hashing; the towers themselves are in `aikit/vision` | `aikit/embed`, `aikit/linalg` |
+| `multimodal` | projectors, image-token blocks, preprocessing (Qwen dynamic resolution, Gemma 4), image hashing; the towers themselves are in `internal/vision` and `internal/audio`, and `SiglipTower` and `GlmOcrTower` expose two of them | `internal/vision`, `internal/audio`, `aikit/embed`, `aikit/linalg` |
 | `pull` | `hf:` and `demo:` references, and the curated sha256-pinned tiers | — |
 | `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) | `goinfer/decoder` |
 | `internal/modelload` | the one load path (§2) | `goinfer/decoder`, `goinfer/pull`, `goinfer/tokenizer`, `internal/giw`, `internal/prequant`, `internal/swapguard` |
 | `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame | |
 | `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's | — |
-| `internal/chatapp`, `internal/serveapp` | the logic of the two binaries | the packages above; serve adds `aikit/encoder` and `aikit/vision` |
+| `internal/chatapp`, `internal/serveapp` | the logic of the two binaries | the packages above; serve adds `aikit/encoder` and `internal/vision` |
 | `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire | |
-| `gpu` (`-tags gpu`) | the WebGPU backend | `oliverbestmann/webgpu` (cgo), `aikit/encoder`, `aikit/linalg`, `aikit/vision`, `goinfer/decoder` |
-| `cuda` (`-tags cuda`) | the CUDA backend | `aikit/gpu`, `aikit/linalg`, `aikit/vision`, `eitamring/gocudrv`, `goinfer/decoder` |
+| `gpu` (`-tags gpu`) | the WebGPU backend | `oliverbestmann/webgpu` (cgo), `aikit/encoder`, `aikit/linalg`, `internal/vision`, `goinfer/decoder` |
+| `cuda` (`-tags cuda`) | the CUDA backend | `aikit/gpu`, `aikit/linalg`, `internal/vision`, `eitamring/gocudrv`, `goinfer/decoder` |
 | `metal` (darwin) | the Metal backend | `aikit/gpu`, `aikit/linalg`, `golang.org/x/sys`, `goinfer/decoder` |
 
 ## The contract

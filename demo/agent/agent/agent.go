@@ -32,7 +32,6 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -145,9 +144,8 @@ type Session struct {
 	// Vision tower (Gemma 3 VL) — nil unless Options.Vision is set / auto-discovered.
 	// When present, TurnImage runs an image through preprocess → encoder → projector
 	// and answers it via decoder.GenerateVL.
-	venc    *vision.Encoder
+	venc    *multimodal.SiglipTower
 	vproj   *multimodal.Projector
-	vcfg    vision.Config
 	vimgTok int
 
 	ken *kenClient
@@ -295,14 +293,9 @@ func (s *Session) loadVision(dir string) error {
 	// The resident GPU encoder needs int8 (W8A8) matmul weights, so webgpu implies
 	// an int8 tower even if --vision-quant wasn't set.
 	webgpu := s.opts.VisionBackend == "webgpu"
-	enc, err := vision.LoadEncoder(dir, s.opts.VisionQuant == "int8" || webgpu)
+	enc, err := multimodal.LoadSiglipTower(dir, s.opts.VisionQuant == "int8" || webgpu, webgpu)
 	if err != nil {
 		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
-	}
-	if webgpu {
-		if err := enc.EnableResident(); err != nil {
-			return fmt.Errorf("enable resident GPU vision encoder: %w", err)
-		}
 	}
 	proj, err := multimodal.LoadProjector(dir)
 	if err != nil {
@@ -312,7 +305,7 @@ func (s *Session) loadVision(dir string) error {
 	if !ok {
 		return fmt.Errorf("vision: tokenizer has no %q token", multimodal.ImageSoftToken)
 	}
-	s.venc, s.vproj, s.vcfg, s.vimgTok = enc, proj, vision.Gemma3(), id
+	s.venc, s.vproj, s.vimgTok = enc, proj, id
 	be := "cpu"
 	if webgpu {
 		be = "int8/webgpu-resident"
@@ -333,13 +326,13 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 	if !s.HasVision() {
 		return "", fmt.Errorf("agent: no vision tower loaded (set Options.Vision)")
 	}
-	pv, err := vision.Preprocess(image, s.vcfg)
+	pixels, err := s.venc.Preprocess(image)
 	if err != nil {
 		return "", err
 	}
 	imgHash := multimodal.HashImageBytes(image)
 	features := func() ([]float32, error) {
-		hidden, err := s.venc.Forward(pv.Data)
+		hidden, err := s.venc.Forward(pixels)
 		if err != nil {
 			return nil, fmt.Errorf("vision encoder: %w", err)
 		}
