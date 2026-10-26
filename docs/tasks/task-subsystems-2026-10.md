@@ -796,6 +796,21 @@ CHANGELOG line. Second, `examples/invoice` and `demo/agent` reach the towers thr
 of importing an internal package (§7.2). That is a separate commit after the mechanical one, gated by AX2b-B, with each
 example's own test.
 
+### 7.9 AX2c gates (registered 2026-10-26 15:45 PDT by mac-ax01, before AX2c's code)
+
+AX2c switches the `metal` module (with `metal/kernels`) from aikit's `gpu` to `metal/internal/gpudev`, the device
+package's Metal half from AX1. It is one scripted commit (`ax2cd_rewrite.py metal`): the import path becomes
+`gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"`, so no body changes. Tier 0 and tier 1 (the Mac's GPU,
+no model), by day, under the shared timing lock.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2c-N | Re-running the script on the commit's parent reproduces the commit byte for byte. The commit contains nothing else. | — | complete | seconds |
+| AX2c-S | `go list -deps -test -tags goinfer_testhooks ./...` in `metal` names no `github.com/townsendmerino/aikit/gpu`. | — | complete | seconds |
+| AX2c-ID | `TestTowerIdentity_metal`'s record at AX2c's head equals AX2b's head record, case by case. | no Metal device | once | a second |
+| AX2c-T (the Metal suite carries over) | The `metal` module's tests, one package per `go test -v -count=1 -tags goinfer_testhooks` call, at AX2b's head (the base) and at AX2c's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. A test that fails at the base is listed and excluded, not fixed here. | another session holds the timing lock exclusive (wait); the Mac's free memory is under 4 GB at a run's start (a device suite under memory pressure fails for reasons no code owns; the run is re-made) | each side once, to completion; a red is re-run by name only | the Metal suite measured 4 min 12 s in a quick-full run (`CLAUDE.md`, "Gate tiers"); estimate 5 min a side, 10 min in all |
+| AX2c-B | Build, vet and staticcheck of `metal` under its tags (plain, `goinfer_testhooks`); gofmt; the root cleanliness guard | — | complete | a minute |
+
 ## 8. The other subsystems (SB1–SB13)
 
 Each: what it is today, its contract, its fast check, what stops re-running, its first step and size.
