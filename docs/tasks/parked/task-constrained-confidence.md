@@ -165,7 +165,7 @@ is.
 
 **Decisions.**
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
-  (`decoder/model.go:Model.ForwardCapture`) returns logits plus captured residuals. `qwen3_5` dense shares
+  (`decoder/model_forward.go:Model.ForwardCapture`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
   (the own-loop table, `ownForwards`, since removed in OP3z; its predicate was `a.qwen35 != nil`, so it matched both). The capture
   contract (`decoder/program_cpu.go:Model.walkToken`, which captures it) is the residual *after* layer l, before the final norm, so D2
@@ -970,7 +970,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 ## Sources
 
 `constrain/constrain.go:Masker.ForcedRun`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model.go:Model.ForwardCapture` (`ForwardCapture`) · `decoder/program_cpu.go:Model.walkToken` (the capture
+`Process`) · `decoder/model_forward.go:Model.ForwardCapture` (`ForwardCapture`) · `decoder/program_cpu.go:Model.walkToken` (the capture
 contract) · the own-loop table `ownForwards` (removed in OP3z; it had the `qwen3_5` / `qwen3_5_moe` row) ·
 `decoder/arch.go:qwen35Params` (`FusedDeltaNetProj`) · `decoder/lora.go:loraAdapter.validateTargets` (`validateTargets`) ·
 `decoder/lora.go:Model.LoadAdapter` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:buildWeightsFromSafetensorsTo`, `:744`
