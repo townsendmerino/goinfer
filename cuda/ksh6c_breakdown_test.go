@@ -15,11 +15,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSH6C_postPoolBreakdown is a reading for KS-H6's build (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build"), not a
-// gate: one CUDA build of KSH6C_MODEL at KSH6C_CTX, served as serve loads it, with free VRAM read through the primary context at every
-// requested allocation. It lists every allocation after the last K/V pool buffer (bytes, and the card's drop across it) and the
-// drop no allocation accounts for, so the post-pool pricing can mirror what the build does. KSH6C_NO_SELFTEST skips the decoder's
-// startup self-test, whose fixture builds follow this one on the same context.
+// TestKSH6C_postPoolBreakdown is a reading for KS-H6's build (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build"): one CUDA
+// build of KSH6C_MODEL at KSH6C_CTX, served as serve loads it, with free VRAM read at every requested allocation. It lists every
+// allocation after the last K/V pool buffer (bytes, and the card's drop across it) and the drop no allocation accounts for.
+// KSH6C_NO_SELFTEST skips the decoder's startup self-test, whose fixtures build before this one. KSH6C_S4=1 makes it H6C-S4's
+// gate: the card's drop from the first post-pool allocation to the end of the load must be at most 2 MiB.
 func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	path := os.Getenv("KSH6C_MODEL")
 	if path == "" {
@@ -27,7 +27,7 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	}
 	ctx, _ := strconv.Atoi(os.Getenv("KSH6C_CTX"))
 	if os.Getenv("KSH6C_NO_SELFTEST") != "" {
-		decoder.SkipSelfTests() // the probe's fixture builds run after this build, on the same context
+		decoder.SkipSelfTests() // the probe's fixtures build before this build
 	}
 	kvF16Auto.Store(true)
 	defer kvF16Auto.Store(false)
@@ -153,6 +153,9 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[H6C] %s ctx %d kvF16 %v: %d allocations after the pools, requested %.1f MiB, charged by allocRoundSlack %.1f MiB; the card's drop from the first of them to the end of the load %.1f MiB; unaccounted %.1f MiB\n",
 		path, r.ctxCap, r.kvF16, len(post), mib(req), mib(charged), mib(startFree-after), mib(startFree-after-charged))
 	fmt.Fprintf(os.Stderr, "[H6C] %s self-test skipped %v: the fit check read %.1f MiB free\n", path, os.Getenv("KSH6C_NO_SELFTEST") != "", mib(fitByR[r]))
+	if os.Getenv("KSH6C_S4") != "" && startFree-after > 2<<20 {
+		t.Errorf("H6C-S4: the card dropped %.1f MiB after the pools (want <= 2): something the margin does not price came after them", mib(startFree-after))
+	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].drop > rows[j].drop })
 	for i, x := range rows {
 		if i >= 25 {

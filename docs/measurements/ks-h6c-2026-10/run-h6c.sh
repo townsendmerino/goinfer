@@ -2,7 +2,7 @@
 # KS-H6 build gates (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build: gates" and its amendment), through night.py (the timing
 # lock held: memory is read, so nothing else may load the card). Builds the decoder and cuda test binaries at <rev>, and the cuda
 # binary at <base> for H6C-G5's before-figures, each in a detached worktree. A skip counts as a failure, except in the readings.
-set -u
+set -u -o pipefail
 REV=${1:?usage: run-h6c.sh <rev> <base> [all|review]}
 BASE=${2:?usage: run-h6c.sh <rev> <base> [all|review]}
 PHASE=${3:-all}
@@ -52,19 +52,23 @@ if [ "$PHASE" = review ]; then
 	exit $fail
 fi
 gate s123 "$NEW/decoder.test" "$NEW/decoder" '^TestGPUProbe_' gate
-gate g1 "$NEW/cuda.test" "$NEW/cuda" '^(TestKSH6C_chargedKVArithmetic|TestKSH6C_marginParts|TestFitsWeightsBudget|TestResolveCtxCapFit_shortcuts|TestKernelLocalMemoryCensus|TestKVBytesForCap|TestCheckPrefillShmem_declinesPastTheLimit)$' gate
+gate g1 "$NEW/cuda.test" "$NEW/cuda" '^(TestKSH6C_chargedKVArithmetic|TestKSH6C_marginParts|TestKSH6C_roundingBoundHolds|TestKSH6C_marginAtTheReturnedContext|TestFitsWeightsBudget|TestResolveCtxCapFit_shortcuts|TestKernelLocalMemoryCensus|TestKVBytesForCap|TestCheckPrefillShmem_declinesPastTheLimit)$' gate
 gate tiny "$NEW/cuda.test" "$NEW/cuda" '^(TestResolveCtxCapFit_agreesWithCheckKVFits|TestCUDAKVSlots_clampedBuild|TestCUDAKVSlots_pricedAgainstWhatIsLeft|TestResolveCtxCapFit_slotsShrinkTheContext|TestCUDAKVSlots_buildTrimsTheContext|TestCUDAKVSlots_oomKeepsTheSlotsThatFit|TestWindowedKV_grantArithmetic|TestWindowedKV_grant|TestWindowedKV_expertCacheGetsTheGrant|TestCheckKVFits_realDevice_explicitRefusesWithNumbers|TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers|TestCheckKVFits_explicitFailsHard_defaultDeclines|TestResidentDenseBytes_matchesCUDADevice)$' gate
 # H6C-S4: each model in its own process, as serve loads it and with the self-test skipped.
+n4=0
 for spec in "qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf 16384" "qwen2.5-7b-instruct-q4_k_m.gguf 16384" "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 0"; do
 	set -- $spec
 	for nost in "" 1; do
-		echo "== s4 $1 ctx $2 self-test skipped '${nost}' $(date '+%H:%M:%S'): $(host)"
-		(cd "$NEW/cuda" && KSH6C_NO_SELFTEST=$nost KSH6C_MODEL=$HOME/models/$1 KSH6C_CTX=$2 "$NEW/cuda.test" -test.run '^TestKSH6C_postPoolBreakdown$' -test.v -test.count 1 -test.timeout 15m 2>&1 | grep -E '^\[H6C\]|--- |FAIL|panic')
+		n4=$((n4 + 1))
+		gate "s4-$n4" "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_postPoolBreakdown$' gate KSH6C_S4=1 KSH6C_NO_SELFTEST=$nost KSH6C_MODEL=$HOME/models/$1 KSH6C_CTX=$2
 	done
 done
 # H6C-S5: the MoE fixture's own pool, and the plant, each in a fresh process.
 gate s5 "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_moeModelPaysItsPool$' gate KSH6C_S5=1
 gate s5plant "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_moeModelPaysItsPool$' gate KSH6C_S5=1 KSH6C_S5_PLANT=1
+# H6C-S6: the plan sees a MoE build's own pool, and the plant, each in a fresh process.
+gate s6 "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_planSeesTheMoEPool$' gate KSH6C_S6=1
+gate s6plant "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_planSeesTheMoEPool$' gate KSH6C_S6=1 KSH6C_S6_PLANT=1
 # H6C-G2, G3 and G5's after-figures: one process per heavy group.
 gate g2small "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_marginPriced$' gate $H KSH6C_MARGIN=1
 gate g2large "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_marginPriced7B8B$' gate $H KSH6C_MARGIN=1

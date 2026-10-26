@@ -3213,8 +3213,9 @@ its own PR, and it gets a Gemini review before merge.
   | Gemma 4 26B-A4B, expert cache | 1,880 MiB | 250.8 MiB |
 
 - **G3: PASS.** No build trimmed its planned context. Gemma-3-4B, the one plan under the ceiling, planned 15,680 against an exact
-  allowance of 15,808 (128 below; allowed 584: 64, the rounding bound's 520 positions, and Plan's own dense residual, reported
-  at 259). The others planned at the 16,384 ceiling, which the exact figure also allows.
+  allowance of 15,808 (128 below; allowed 584: 64 and the rounding bound's 520 positions. Plan's own dense residual, reported
+  at +259, adds nothing: only a negative residual widens the allowance). The others planned at the 16,384 ceiling, which the
+  exact figure also allows.
 - **G4: PASS.** Qwen3-8B unpinned took 16,384 positions. The minimum free VRAM over a 15,872-token prefill and 64 tokens was
   281.1 MiB against the 167 MiB bar. On main, the same model pinned at 16,384 ran a 15,000-token prefill at a minimum of
   149.1 MiB (H6-R's run, re-read in this session).

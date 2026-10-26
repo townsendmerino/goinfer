@@ -830,15 +830,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// (runJob — the executor's panic boundary — is defined below.)
 
-	// A MoE build opens its device and pays moe_route's local-memory pool (payRoutePool) before the plan reads free VRAM, on the
-	// context it keeps: the startup self-test's pool is released with its own context before the build, so nothing else has paid
-	// it (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). The setup job keeps this device and stream.
-	if r.moe {
-		if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
-			r.Close()
-			return declined(e)
-		}
-	}
 	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
 	// and the fused-attention flags are set again where the modules load.
 	r.layers = planLayerGeometry(m, hls, nH, r)
@@ -851,6 +842,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.fastAttn, r.fastGemm = false, false
 	}
 	r.planning = true
+	// A MoE build whose context is planned opens its device and pays moe_route's local-memory pool (payRoutePool) before the plan
+	// reads free VRAM, on the context it keeps: the startup self-test's pool is released with its own context before the build, so
+	// nothing else has paid it (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). It checks the weights
+	// first, against the margin at the floor, so a model that does not fit gets checkWeightsFit's decline rather than a warm-up's
+	// failure. The setup job keeps this device and stream, and checks the weights again against the margin it plans.
+	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
+		r.ctxMarginBytes = r.ctxMarginFor(floor)
+		if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
+			r.Close()
+			return declined(e)
+		}
+	}
 	owners, mlaPools := kvLayerCounts(r.layers)
 	// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site: several buffers are sized from it
 	// earlier (the split-KV score scratch among them), and a zero-value ctxCap makes those 0-byte allocations that fail the whole
@@ -1980,9 +1983,10 @@ var routePoolOffForTest bool
 // payRoutePool pays moe_route's deferred first-launch local-memory reservation before checkKVFits and allocSlots read free VRAM,
 // so the context and the expert cache are sized net of it by construction rather than covered by a margin. moe_route declares
 // per-thread local scratch, and the driver backs it for the device's occupancy the first time the kernel runs, not at module
-// load: on the RTX 2070 SUPER the launch demands about 289 MB and retains about 138 MB. A MoE build pays it before the plan
-// (openForPlan), and here again before the fit check, a no-op once the pool exists. The startup self-test's own pool goes with
-// its context, so it does not count (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment").
+// load: on the RTX 2070 SUPER the launch demands about 289 MB and retains about 138 MB. A MoE build whose context is planned pays
+// it before the plan (openForPlan); every MoE build pays it here before the fit check, where, once the pool exists, it costs one
+// launch and no memory. The startup self-test's own pool goes with its context, so it does not count
+// (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment").
 //
 // Naming moe_route is safe because the backing store is shared and sized by the largest kernel launched, and
 // TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if another kernel
@@ -2020,9 +2024,10 @@ func (r *cudaResident) payRoutePool() error {
 	return nil
 }
 
-// openForPlan is a MoE build's step before the plan, on the executor thread: it creates the build's device and stream, binds
-// moe_route (and route_gptoss on gpt-oss) from their own modules, and pays the local-memory pool (payRoutePool), so the plan's free
-// reading is net of it. The setup job binds the routed kernels again with the rest of their modules.
+// openForPlan is a MoE build's step before its plan, on the executor thread: it creates the build's device and stream, checks the
+// weights fit (checkWeightsFit, against the margin set before it), binds moe_route (and route_gptoss on gpt-oss) from their own
+// modules, and pays the local-memory pool (payRoutePool), so the plan's free reading is net of it. The setup job compiles those
+// modules again with the rest of their kernels.
 func (r *cudaResident) openForPlan(m *decoder.Model) error {
 	var e error
 	if r.dev, e = CreateSystemDefaultDevice(); e != nil {
@@ -2032,6 +2037,9 @@ func (r *cudaResident) openForPlan(m *decoder.Model) error {
 		return e
 	}
 	r.stream, r.openedForPlan = r.dev.NewCommandQueue(), true
+	if e := r.checkWeightsFit(m); e != nil {
+		return e
+	}
 	if prePlanPoolOffForTest {
 		return nil
 	}

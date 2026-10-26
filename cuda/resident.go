@@ -101,29 +101,13 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int, margin fun
 // kvRound bounds what the device's rounding of the KV pools adds to Plan's linear KV figure (kvRoundingBound): the plan reserves
 // it beside the margin, so the context it picks fits the build's exact, charged figure (checkKVFits).
 func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, allocSlack int64, margin func(ctx int) int64, kvRound int64) (int, int64) {
-	if (request > 0 && m.ResidentContextPinned()) || m.FitDisabled() || m.MoECacheExperts() {
-		c := resolveCtxCap(request, modelCtx) // a genuine explicit -ctx is untouched either way
+	candidate, floor, plans := ctxPlanRange(m, request, modelCtx)
+	if !plans {
+		c := floor
+		if candidate == 0 {
+			c = resolveCtxCap(request, modelCtx) // a genuine explicit -ctx is untouched either way
+		}
 		return c, margin(c)
-	}
-	candidate := fitDefaultCtx
-	if modelCtx > 0 && candidate > modelCtx {
-		candidate = modelCtx
-	}
-	floor := cudaCtxCapDefault
-	if request > 0 {
-		// A guard pin (request>0, not ResidentContextPinned — the branch above already returned
-		// otherwise): the ceiling AND the floor both follow it down, never up. Growing past it
-		// asks Plan for more than the guard already determined host RAM can hold; flooring above
-		// it (at the historical cudaCtxCapDefault) would do the same by a different route.
-		if candidate > request {
-			candidate = request
-		}
-		if floor > request {
-			floor = request
-		}
-	}
-	if candidate <= floor {
-		return floor, margin(floor) // nothing to gain from asking Plan: already at or below the real floor
 	}
 	// The margin at candidate, the widest context this call asks Plan for; the build keeps the figure at the context returned.
 	mb := margin(candidate)
@@ -153,6 +137,33 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 		c = ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots, floor)
 	}
 	return c, margin(c)
+}
+
+// ctxPlanRange is resolveCtxCapFitSlack's context range: the widest context it asks Plan for and the floor, and whether it asks
+// Plan at all (and so reads free VRAM). candidate is 0 when the context is not planned (a genuine pin, fit disabled, the expert
+// cache): resolveCtxCap decides it. A MoE build pays its local-memory pool before the plan only when plans is true (openForPlan).
+func ctxPlanRange(m *decoder.Model, request, modelCtx int) (candidate, floor int, plans bool) {
+	if (request > 0 && m.ResidentContextPinned()) || m.FitDisabled() || m.MoECacheExperts() {
+		return 0, 0, false
+	}
+	candidate = fitDefaultCtx
+	if modelCtx > 0 && candidate > modelCtx {
+		candidate = modelCtx
+	}
+	floor = cudaCtxCapDefault
+	if request > 0 {
+		// A guard pin (request>0, not ResidentContextPinned — the branch above already returned
+		// otherwise): the ceiling AND the floor both follow it down, never up. Growing past it
+		// asks Plan for more than the guard already determined host RAM can hold; flooring above
+		// it (at the historical cudaCtxCapDefault) would do the same by a different route.
+		if candidate > request {
+			candidate = request
+		}
+		if floor > request {
+			floor = request
+		}
+	}
+	return candidate, floor, candidate > floor // at or below the floor there is nothing to gain from asking Plan
 }
 
 // planFreeSeenForTest, when set (tests only), is told the free VRAM resolveCtxCapFitSlack hands Plan.
@@ -847,8 +858,8 @@ type cudaResident struct {
 	ctxPlanned      int           // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
 	deepPlan        *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
 	allocSlackBytes int64         // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
-	ctxMarginBytes  int64         // the context margin at load (ctxMarginFor at ctxMarginCtx), read by the plan, checkKVFits and checkWeightsFit
-	ctxMarginCtx    int           // the context the plan priced the margin at: the widest it asked Plan for
+	ctxMarginBytes  int64         // the context margin at load (ctxMarginFor at ctxMarginCtx), read by checkKVFits, checkWeightsFit and their declines
+	ctxMarginCtx    int           // the context the margin is priced at: the one the plan returned
 	kvSlotsN        int           // what checkKVFits granted (>= 1)
 	kvSlot          int
 	kvTabSlot       int
