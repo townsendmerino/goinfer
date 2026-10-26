@@ -46,8 +46,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
 | MM6 | blocked | MM1; `night.py add` and `goinfer fit` call `Solve` against the box's recorded profile at queue time; S | §6.5 |
-| AX0 | open | freeze the moving aikit paths at the tags the move starts from; S | §7.3 |
-| AX1 | open | copy into goinfer with provenance, NOTICE lines, tests and fixtures; M | §7.3 |
+| AX0 | active | aikit PR #21 (README freeze note at root v1.75.0 and `gpu/v0.35.0`, the newest tags) is open; the coordinator merges it; S | §7.3 |
+| AX1 | active | copied on branch `ax1-move-towers-2026-10`, gates AX1-S, -N, -B and -T green on the Mac (§7.6); left: nobara runs the CUDA device tests, then the coordinator merges; `gpu/webgpu` proposed for retirement, not copied; M | §7.3, §7.6 |
 | AX2 | blocked | AX1; switch goinfer's imports one module at a time, each step bit-identical; M | §7.3 |
 | AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
 | AX4 | blocked | AX3; aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
@@ -647,6 +647,45 @@ type Arbiter interface {
 - Cross-repo citations in goinfer's docs that point at moved aikit files must be re-pointed in the same commits, or the
   citation lint goes red.
 - The CUDA half of the substrate builds on Linux only; the move keeps its build tags.
+
+### 7.6 AX1 gates (registered 2026-10-26 11:40 PDT by mac-ax01, before the copy was made or any test ran; committed here once this doc reached the branch)
+
+Tier 0 throughout: no model, no timed run. The Metal device tests touch the Mac's GPU, so every test command holds the
+timing lock shared (`timing_lock.py run --shared`).
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX1-T (tests carry over) | Baseline: each moved package's tests at its freeze tag (a `git archive` of root `v1.75.0` and of `gpu/v0.35.0`, tracked files only), on this Mac, `go test -v -count=1`. The copy: the same packages in goinfer, same flags. **Pass:** every test that reads `--- PASS` in the baseline reads `--- PASS` in goinfer, by name, and no test reads `--- FAIL` in goinfer. A test that skips in the baseline and skips in goinfer for the same reason (a real checkpoint, an untracked bench fixture, a CUDA device) is listed, not counted as a pass. | a baseline test fails at the tag (it is listed and excluded, not fixed here); the timing lock is held exclusive by another session (wait, do not overlap) | each side runs once, to completion; a red is re-run by name only | not yet measured; estimated under 10 min a side on the Mac (vision and audio CPU tests plus the Metal ViT tests); the baseline's wall time becomes the record |
+| AX1-S (source identity) | Every moved `.go` file equals its file at the tag after the scripted rewrite (import paths, the package clause and doc line of `gpudev`, the fixture paths), and nothing else differs; every non-Go file (`.cu`, `.ptx`, `testdata/`) is byte-identical. A script diffs the two trees. | — | complete | seconds |
+| AX1-B (builds under every tag) | `go build` and `go vet` of: the root module (darwin), `internal/gpudev` with `GOOS=linux`, the `metal` module (`metal`, `metal goinfer_testhooks`), the `cuda` module with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0` (`cuda`, `cuda goinfer_testhooks`), the `gpu` module; `gofmt -l` empty; CI's pinned staticcheck on the new packages, after its canary prints U1000 | — | complete | about a minute |
+| AX1-N (adds only) | `git diff origin/main --name-status` shows only added files, plus `go.mod`/`go.sum` lines, `.gitignore` exceptions for the moved fixtures, NOTICE and THIRD_PARTY_LICENSES lines, and docs; no existing `.go` file changes | — | complete | seconds |
+
+What this gate cannot see, and who runs it: the CUDA device tests (`internal/gpudev`'s `cuda_*_test.go`, `cuda/internal/visioncuda`,
+`cuda/internal/qwencuda`) build here with `GOOS=linux` and run only on nobara; they are listed for nobara in the PR.
+
+**Result, 2026-10-26 (mac-ax01):** AX1-S, AX1-N, AX1-B and AX1-T PASS on the Mac; the measured cost was 11 s for the aikit baseline and 8 s for goinfer. The record, the logs and the two scripts are in [`../measurements/ax1-2026-10/`](../measurements/ax1-2026-10/README.md). Open: the CUDA device tests on nobara.
+
+### 7.7 AX2 plan (proposed by mac-ax01 at AX1's stop point; AX2 registers these gates in full, with void, stopping and cost terms, before its code)
+
+**`vision` and `audio` switch in every module in one commit; the device package switches one module at a time after.**
+The towers cannot go one module at a time: the backends register their resident encoders into `vision`'s package-level
+hooks (`vision.RegisterResident`, `vision.RegisterQwenResident`) and receive the root's `*vision.Encoder` values, so a
+root on `internal/vision` beside a backend on aikit's `vision` either fails to compile (the types) or compiles and
+silently runs the CPU tower (the hooks). Importers on origin/main `4a91080e`, non-test + test files:
+`vision` 18 + 22 root, 6 + 23 cuda, 3 + 16 metal, 5 + 8 gpu, 1 `demo/agent`; `audio` 10 + 18 root, 1 + 3 cuda, 1 + 3
+metal; aikit's `gpu` 31 + 52 cuda, 8 + 10 metal (the root imports none: `cmd/gate`'s release check and
+`internal/hwcensus`'s census name it as a module string, and AX3 points both at `internal/gpudev`).
+
+| step | what | gate |
+|---|---|---|
+| AX2a | a tower-identity test, landed before any import moves: for every tower family's committed tiny fixture (SigLIP, Gemma 4, Qwen2.5-VL, Qwen3.5-VL, Qwen3-VL DeepStack, GLM-OCR, Pixtral, SigLIP2 NaFlex, Whisper, Gemma 4 audio, Qwen3-ASR, Voxtral) and every backend present (CPU; Metal on the Mac; CUDA on nobara), it writes the tower's output bytes' sha256 and whether the resident (device) path ran, to a JSON record | records at the base commit; tier 0 |
+| AX2b | `vision` and `audio`: rewrite every importer in root, `gpu`, `metal`, `cuda` and `demo/agent` to `internal/vision` and `internal/audio`, one mechanical commit (a script, as AX1's); `examples/invoice` moves to what `multimodal` exposes (§7.2) | **tower identity:** every (family, backend) hash equal to AX2a's record, and the resident flag unchanged; mutation-checked once by leaving one backend on aikit's `vision` (its resident flag must flip and the gate go red); every family's image and audio parity test unchanged; build, vet and staticcheck under every tag; apidiff clean |
+| AX2c | `gpudev` in the `metal` module (with `metal/kernels`; `metal/internal/*` already use it) | the same identity record on Metal; the metal suite's device tests by name |
+| AX2d | `gpudev` in the `cuda` module, and its one test's `visioncuda` import to `cuda/internal/visioncuda` | the same identity record on CUDA, on nobara; the CUDA suite's device tests by name |
+
+Then AX3 drops `aikit/gpu` and `aikit/gpu/visioncuda` from every `go.mod`. Docs citing a moved aikit file stay valid
+while aikit keeps the frozen copy (AX4 removes `audio` after one minor); each is re-pointed in the AX2 commit that moves
+its importer, or the citation lint goes red at AX4.
 
 ## 8. The other subsystems (SB1–SB13)
 
