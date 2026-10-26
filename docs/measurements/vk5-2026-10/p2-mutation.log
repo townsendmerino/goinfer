@@ -1,0 +1,6 @@
+[1m== mutation[p2-moved-only-pin] ==[0m
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  [32mPASS[0m: p2-moved-only-pin is falsifiable

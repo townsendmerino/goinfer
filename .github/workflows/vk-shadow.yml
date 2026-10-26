@@ -1,0 +1,41 @@
+name: vk-shadow
+
+# VK5's shadow mode (docs/tasks/task-subsystems-2026-10.md §5.8): on every push to main, every parity family judged by
+# today's key and by the shadow key (the kernel fingerprints in place of the aikit pin), each disagreement with its
+# reason. Not a required check. No concurrency group, so a push that lands while another runs is not collapsed away.
+# The comparison goes to the job summary and to an artifact; read them with
+# `gh run list --workflow vk-shadow.yml` and `gh run download <id>`. The run goes red only on an unexplained
+# disagreement; a VOID push (a new branch, a force push, a pin the suite cannot build) is green and says VOID.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shadow:
+    name: VK5 shadow key
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: shadow
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -o pipefail
+          go run ./cmd/gate shadow -json shadow.json "$BEFORE" "$AFTER" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: vk-shadow-${{ github.sha }}
+          path: shadow.json
+          if-no-files-found: ignore
