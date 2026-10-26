@@ -2856,6 +2856,9 @@ before each load). Logs: `docs/measurements/ks-h6-2026-10/`.
   - The 26B at a long context: its build's default is 4,096 positions, so a 20k prompt (the survey's first measurement) is not
     possible without raising `-ctx`, which takes slots away.
   - KS-H3's after-move reading, which would give back its 132 MiB.
+- **The instrument after the run:** `TestKSH6_marginParts` is split into `TestKSH6_marginPartsQwen3` and `TestKSH6_marginParts26B`,
+  with the same body, because the heavy tier runs one large checkpoint per process (`cmd/gate/heavy_groups.go`). Qwen3-8B also gets
+  its row there.
 - **Seen in passing, not part of the reading:** beside the 26B, every tiny self-test probe resident declined for room ("0.40 GB is
   free on the device beside the weights (plus 384 MB reserved...)"). The 26B's own resident was unaffected.
 
