@@ -1,0 +1,16 @@
+=== RUN   TestQwenCUDA_parityWithCPU
+    encoder_test.go:111: Qwen ViT GPU≡CPU: 512 values, cosine 1.000000000, worst abs Δ 1.13e-06
+    encoder_test.go:121: Qwen merged GPU≡CPU: 256 values, cosine 1.000000000, worst abs Δ 5.96e-08
+    encoder_test.go:139: break-it-first: negated input scores cosine -0.999971
+--- PASS: TestQwenCUDA_parityWithCPU (0.25s)
+=== RUN   TestQwenCUDA_fixtureExercisesBothAttentionKinds
+    encoder_test.go:163: fixture blocks: 1 full-attention, 1 windowed
+--- PASS: TestQwenCUDA_fixtureExercisesBothAttentionKinds (0.00s)
+=== RUN   TestQwenCUDA_repeatable
+    encoder_test.go:193: 4 forwards on reused scratch: bit-identical
+--- PASS: TestQwenCUDA_repeatable (0.20s)
+=== RUN   TestQwenCUDA_allocationFailureIsAnErrorAndTheEncoderRecovers
+    encoder_test.go:224: allocation failure came back as an error: qwencuda: scratch for 2147483648 patches: cuda: device allocation failed (typed-len, 10101763080192 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF
+--- PASS: TestQwenCUDA_allocationFailureIsAnErrorAndTheEncoderRecovers (0.24s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/internal/qwencuda	0.746s

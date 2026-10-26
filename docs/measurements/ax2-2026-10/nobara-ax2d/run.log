@@ -1,0 +1,38 @@
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07
+### 2026-10-26T16:23:23-07:00 start ID B | load 0.86 | avail 58.1 GB | gpu 403 MiB, 52
+    cpu rc=0
+    cuda rc=0
+### 2026-10-26T16:23:32-07:00 start ID H2 | load 0.96 | avail 58.1 GB | gpu 403 MiB, 57
+    cpu rc=0
+    cuda rc=0
+### 2026-10-26T16:23:39-07:00 start ID main | load 1.12 | avail 58.0 GB | gpu 403 MiB, 57
+    cpu rc=0
+    cuda rc=0
+### 2026-10-26T16:23:49-07:00 start ID D | load 1.19 | avail 57.9 GB | gpu 403 MiB, 58
+    cpu rc=0
+    cuda rc=0
+### 2026-10-26T16:23:58-07:00 start T base cuda | load 2.60 | avail 57.9 GB | gpu 403 MiB, 58
+    rc=1 792 pass 4 fail 338 skip
+### 2026-10-26T16:32:24-07:00 start T head cuda | load 3.45 | avail 58.2 GB | gpu 403 MiB, 51
+    rc=1 792 pass 4 fail 338 skip
+### 2026-10-26T16:40:47-07:00 start T base cuda-internal-gpudev | load 2.96 | avail 58.3 GB | gpu 403 MiB, 51
+    rc=0 65 pass 0 fail 0 skip
+### 2026-10-26T16:40:59-07:00 start T head cuda-internal-gpudev | load 2.66 | avail 58.2 GB | gpu 403 MiB, 53
+    rc=0 65 pass 0 fail 0 skip
+### 2026-10-26T16:41:11-07:00 start T base cuda-internal-qwencuda | load 2.37 | avail 58.3 GB | gpu 403 MiB, 53
+    rc=0 4 pass 0 fail 0 skip
+### 2026-10-26T16:41:13-07:00 start T head cuda-internal-qwencuda | load 2.37 | avail 58.2 GB | gpu 403 MiB, 53
+    rc=0 4 pass 0 fail 0 skip
+### 2026-10-26T16:41:14-07:00 start T base cuda-internal-visioncuda | load 2.37 | avail 58.2 GB | gpu 403 MiB, 53
+    rc=0 4 pass 0 fail 0 skip
+### 2026-10-26T16:41:15-07:00 start T head cuda-internal-visioncuda | load 2.34 | avail 58.2 GB | gpu 403 MiB, 53
+    rc=0 4 pass 0 fail 0 skip
+### 2026-10-26T16:41:17-07:00 start T base cuda-s4siglip | load 2.34 | avail 58.2 GB | gpu 403 MiB, 53
+    rc=0 0 pass 0 fail 1 skip
+### 2026-10-26T16:41:17-07:00 start T head cuda-s4siglip | load 2.34 | avail 58.2 GB | gpu 403 MiB, 53
+    rc=0 0 pass 0 fail 1 skip
+### 2026-10-26T16:41:18-07:00 start launchDirect base | load 2.34 | avail 58.2 GB | gpu 403 MiB, 53
+    rc=1 signal: segmentation fault (core dumped) FAIL	github.com/townsendmerino/goinfer/cuda/internal/gpudev	0.843s FAIL 
+### 2026-10-26T16:41:19-07:00 start launchDirect head | load 2.34 | avail 58.2 GB | gpu 403 MiB, 52
+    rc=1 signal: segmentation fault (core dumped) FAIL	github.com/townsendmerino/goinfer/cuda/internal/gpudev	0.821s FAIL 
+### 2026-10-26T16:41:20-07:00 all done | load 2.23 | avail 58.2 GB | gpu 403 MiB, 51

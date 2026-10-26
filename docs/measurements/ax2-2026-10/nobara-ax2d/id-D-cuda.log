@@ -1,0 +1,21 @@
+=== RUN   TestTowerIdentity_cuda
+    tower_identity_test.go:20: siglip             normal-9                     device=true  values=512     3d0f9b628136e6e0bbed3694547d1d2671ccb722977258e3df48ff81247d2723
+    tower_identity_test.go:20: qwen2.5-vl         [[1 8 8]]                    device=true  values=1024    269467a96da408abbb25f66fd4f2fa67dc1e3ab0c60901ccb7a8ef61dd1082f6
+    tower_identity_test.go:20: qwen2.5-vl         [[1 12 16]]                  device=true  values=3072    332cee8f8b75aa86fa39f15bb6c1fc6abd964370e52cdc9ea9b3a3e2095e4867
+    tower_identity_test.go:20: qwen3              [[1 4 4]]                    device=true  values=256     70292239bb927fca7ad19863496f414149cd757e6e36984660b6b6785d5f6b87
+    tower_identity_test.go:20: qwen3              [[1 6 8]]                    device=true  values=768     a33b7eb6d8d4e0369d22605f9fed0b37dc8fb89c6e0829496b883191078bdd31
+    tower_identity_test.go:20: qwen3              [[1 10 6]]                   device=true  values=960     b3197ddce09bdc650e48c793960c5c30899d3e171cb8592816344545dcb08879
+    tower_identity_test.go:20: qwen3              [[1 4 4] [1 6 4]]            device=true  values=640     19f140ecc9a46b35e3812b26d00b5d520e201a6e62c30609195a103f72c2b4c3
+    tower_identity_test.go:20: qwen3-deepstack    [[1 4 6]]                    device=true  values=1152    5803987f13d980f62fc7ec27c233d93a06574300828ecf6bf6cf7ad689f7feab
+    tower_identity_test.go:20: qwen3-deepstack    [[1 6 4] [1 4 4]]            device=true  values=1920    20b3da6edd5fcd3755e1e663b57d5137693c304ed7e25d606cca56d7d506b2e2
+    tower_identity_test.go:20: glm-ocr            [[1 4 4]]                    device=true  values=768     445e1731e5d271d3853e2adb1339decfc06c386263464a39d87b484c89cb36f6
+    tower_identity_test.go:20: glm-ocr            [[1 6 8]]                    device=true  values=2304    8aff8319db1ca3b0a3c64d5afecf83d88fa8883522f492a7824d8254785e0132
+    tower_identity_test.go:20: glm-ocr            [[1 10 6]]                   device=true  values=2880    8914bddf032e2fa09ce15dd535d17a401ca81d66dfa43e18a2adb41b6020f897
+    tower_identity_test.go:20: glm-ocr            [[1 4 4] [1 6 4]]            device=true  values=1920    5e2bc50df847501a94d40e46cdbe3eca8184adfd639c6a2c0edbd8e8cc9c4ac7
+    tower_identity_test.go:20: gemma4-vision      2x3 pooled                   device=true  values=144     3141f5150054d78e65a7c7e609985c4d53d3a78ed11a6f6360b7de7ebc92f2b4
+    tower_identity_test.go:20: gemma4-vision      3x2 pooled                   device=true  values=144     d05256cc58fa46b855afb3300a4bffdc5ac1a62aaa9ad0dfcc23925703ea7864
+    tower_identity_test.go:20: whisper            normal-80                    device=true  values=48000   f6023fd08d4575df8d3c4eb6da4203cc1855b429756e846715d4ab72055c76e5
+    tower_identity_test.go:20: voxtral            normal-81                    device=true  values=48000   4d6eb4426d10861f7764d48fff681d69b7160a27116f816c1de654b7a46cfda2
+--- PASS: TestTowerIdentity_cuda (3.82s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	3.885s

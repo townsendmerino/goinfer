@@ -82,3 +82,30 @@ PR head; check each out in turn:
   for every package with tests (`go list -tags 'cuda goinfer_testhooks' -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...`),
   plus `-run '^TestCUDA_launchDirect$' ./internal/gpudev/` alone; compare each package's two logs with
   `python3 docs/measurements/ax1-2026-10/ax1_compare.py`.
+
+## AX2b-ID and AX2d on nobara (2026-10-26, nobara-ax1-cuda, relayed)
+
+**Verdict: PASS, identical before and after.** RTX 2070 SUPER, driver 595.91.07, Go 1.27.3 linux/amd64. The runs held the
+timing lock exclusively, from 16:23 to 16:41 PDT. At every start the load average was 0.9 to 3.5 and 58 GB was available.
+`kwin_wayland` held a 17 MiB CUDA context, so a desktop session was logged in. Nobara's own write-up is
+`nobara-ax2d/pr284-comment.md`; its records and logs are beside it, copied read-only from nobara with its lock checked
+free in the same command.
+
+- **AX2b-ID and AX2d-ID:** the CPU (22 cases) and CUDA (17 cases) records at `7d0727c0`, `67bcf5d4`, origin/main and
+  `528ced85` agree, 0 differ in every pair. All 17 CUDA cases record the device path at all four revisions. Re-checked
+  here with `ax2_compare.py` on the copied records.
+- **AX2d-T:** the before and after results match by name.
+
+  | package | PASS | FAIL | SKIP |
+  |---|---:|---:|---:|
+  | `cuda` | 792 | 4 | 338 |
+  | `cuda/internal/gpudev` | 65 | 0 | 0 |
+  | `qwencuda` | 4 | 0 | 0 |
+  | `visioncuda` | 4 | 0 | 0 |
+  | `s4siglip` | 0 | 0 | 1 (real checkpoint) |
+
+  The four `cuda` failures are the same on both sides, with the same messages and figures, so they are listed and
+  excluded as registered: `TestCUDAKVSlots_pricedAgainstWhatIsLeft` (the free-VRAM probe ran twice during the build) and
+  `TestResidentDenseBytes_matchesCUDADevice` with its 0.5B and 1.5B subtests (the build's device bytes exceed Plan's
+  figure plus the scratch margin). **They are red on origin/main on nobara's card**, independent of Track AX.
+  `TestCUDA_launchDirect` segfaults on both sides, as at AX1.
