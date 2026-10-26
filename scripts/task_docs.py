@@ -28,8 +28,8 @@ closable, and `check` and `rank` say so. A doc without a ledger is reported as s
 
 REFERENCES, AND WHY `--refs auto` IS THE DEFAULT. A push to main that changes only docs/**, RELEASING.md and .claude/**,
 none of it read by Go code, is docs-only and goes straight through (scripts/ci_docs_only.sh, both of its rules); one
-that edits a Go comment is product code, waits for CI (scripts/main_ci_guard.py), and touches files other sessions'
-branches are editing. So `auto` re-points every reference in a docs-only file, and if any reference lives anywhere else
+that edits a Go comment is product code, goes through a PR (CLAUDE.md, "Product code reaches `main`"), and touches files
+other sessions' branches are editing. So `auto` re-points every reference in a docs-only file, and if any reference lives anywhere else
 (a code comment, a test, a help string, CLAUDE.md, a generated page or a generator's input such as docs/flags.meta.json,
 whose `_fresh` test would go red on a hand edit), it leaves a pointer stub at the old path, in docs/plan-still-slow.md's
 shape, so those still resolve in one hop; `check` lists stubs and how many files still use each. `all` re-points
