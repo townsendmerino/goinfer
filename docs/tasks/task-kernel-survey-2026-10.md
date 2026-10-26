@@ -1249,6 +1249,29 @@ does not stop.
 - **Cost:** one resident load with both arms, one GPU pass of 141 tokens, about 30 s of float64 a layer: about 5 minutes. The shared
   lock, not timed.
 
+**KS-O1-F D2a read (18:31–18:39, nobara's night queue, the exclusive lock, only the compositor on the card).** Log:
+`docs/measurements/ks-o1-f-2026-10-25/d2a.log`; harness `proj_test.go.txt`. Two attempts before it are kept beside it:
+- `d2a-1-oom.log`: out of device memory beside another session's serve, under the shared lock.
+- `d2a-2-sanity.log`: stopped at the 1% sanity bar, amended above before any D2 figure was read.
+
+Sanity: the int8 copies are the file's rows at 0.86–1.78% relative L2 at every layer and segment, which is per-row int8 rounding.
+
+| layer | segment | e2 file × aq | e3 int8 × aq | e4 native kernel | e5 int8 kernel | e4 − e5 |
+|---|---|---|---|---|---|---|
+| 2 | q / k / v | 0.00243 / 0.00298 / 0.0290 | 0.00409 / 0.00459 / 0.0354 | = e2 | = e3 | −0.0017 / −0.0016 / −0.0064 |
+| 4 | q / k / v | 0.00194 / 0.00374 / 0.0522 | 0.00272 / 0.00514 / 0.0681 | = e2 | = e3 | −0.0008 / −0.0014 / −0.0159 |
+| 8 | q / k / v | 0.00266 / 0.00481 / 0.0270 | 0.00377 / 0.00659 / 0.0366 | = e2 | = e3 | −0.0011 / −0.0018 / −0.0096 |
+| 31 | q / k / v | 0.00307 / 0.00844 / 0.0052 | 0.00393 / 0.01082 / 0.0064 | = e2 | = e3 | −0.0009 / −0.0024 / −0.0013 |
+
+(Medians over the 141 positions. The p90s and the positions 7 and 114–122 order the same way, every one of them.)
+- **Kernel arithmetic:** both kernels equal their float64 twins: ‖(4) − (2)‖/‖(2)‖ and ‖(5) − (3)‖/‖(3)‖ print 0.00000 at every layer,
+  segment and position.
+- **The registered branch:** e4 ≤ e5 everywhere. On the same input, the native Q5_K qkv projection is closer to the truth than the
+  int8 lane's, by about a quarter. Both carry the same per-32 activation-quantization error (e2, largest on v: 3–5% at layers 2–8),
+  and the int8 lane adds its weight rounding on top. No per-projection factor explains the gap. By the registration, that is the
+  finding, and the next step is Francis's question, not a fourth run.
+- **Not run:** D2b (ffn_down, Q6_K). It was registered to run only if D2a did not stop.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
