@@ -107,3 +107,15 @@ swaps more than **1,000 pages (16 MB) during it**, measured as before (`vm_stat`
 and memory terms are unchanged (load over 4.0; under the 2.2 GB need plus 2 GiB reclaimable). The worst run so far paged 29 pages,
 under 3% of the line, while a cell under memory pressure pages far more: the forced run's directory loads paged up to 183 pages. Only
 the LFM2.5 cells use the amended line. The Qwen3.5-0.8B readings were taken under the strict one, and stand.
+
+**LFM2.5-2.6B read from the `.giw` with the amended line (2026-10-26, 01:51–02:39, the lock held exclusively; 8.15 GB reclaimable at
+the start).** Every run was valid: load 1.83–3.82, reclaimable 6.85–9.38 GiB, at most 53 pages paged. No void pairs. Records:
+`readings-lfm25.jsonl`; log: `lfm25-giw2-2026-10-26.log`.
+
+| depth | A (main), ms a token | B (fanned), ms a token | median A ÷ B | pairs | B faster | grade |
+|---|---|---|---|---|---|---|
+| 128 | 94.28–98.33 | 92.07–95.20 | **1.028×** | 1.010–1.036 | **10 of 10** | below the merge rule's 1.05×; faster in every pair |
+| 1,024 | 116.17–117.20 | 95.81–96.52 | **1.217×** | 1.210–1.221 | **10 of 10** | **meets the merge rule** |
+
+**LFM2 confirms #247's default:** faster in every pair at both depths, meeting the merge rule at 1,024 and gaining about 2.8% at 128.
+Its attention layers are a smaller part of a shallow token. It reads no slower anywhere, so no decision is owed.
