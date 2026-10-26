@@ -8,6 +8,7 @@ import (
 	"hash"
 	"math"
 	"runtime"
+	"sort"
 	"strings"
 	"testing/fstest"
 
@@ -40,6 +41,22 @@ func CurrentConfig() Config {
 type Report struct {
 	Config  Config            `json:"config"`
 	Kernels map[string]string `json:"kernels"`
+}
+
+// Digest is one SHA-256 over the configuration and every kernel's fingerprint, in name order: what a key mixes in
+// until it can name the kernels a family's operations use (VK4).
+func (r Report) Digest() string {
+	names := make([]string, 0, len(r.Kernels))
+	for n := range r.Kernels {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	h.Write([]byte(r.Config.String() + "\n"))
+	for _, n := range names {
+		h.Write([]byte(n + "=" + r.Kernels[n] + "\n"))
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 // Kernels returns the kernel names in suite order.
