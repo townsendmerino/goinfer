@@ -66,6 +66,16 @@ func TestKSB8_widthChooser(t *testing.T) {
 	if got := r.prefillBaseRows(); got != prefillDefaultChunk {
 		t.Errorf("before the choice: %d rows, want %d", got, prefillDefaultChunk)
 	}
+	// A windowed model: the chooser keeps 512 without reading free VRAM, and a pass is clamped to the slack whatever the width.
+	w := &cudaResident{kvWin: true, prefillWidth: 2048}
+	w.choosePrefillWidth()
+	if w.prefillWidth != prefillDefaultChunk {
+		t.Errorf("a windowed model chose width %d, want %d", w.prefillWidth, prefillDefaultChunk)
+	}
+	w.prefillWidth = 2048
+	if got := w.prefillPassRows(); got != min(2048, kvWindowSlack+1) {
+		t.Errorf("a windowed model's pass at a 2,048 width: %d rows, want %d (the slack clamp)", got, min(2048, kvWindowSlack+1))
+	}
 }
 
 // ksb8Model is the 1.5B these gates load, skipping when it or a device is absent (the run script counts a skip as a failure).
@@ -192,9 +202,10 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 		t.Helper()
 		var free int64
 		saved := cudaFreeVRAM
-		cudaFreeVRAM = func(r *cudaResident) (uint64, error) { // the figure the chooser read, recorded as it read it
+		last := map[*cudaResident]int64{} // each build's latest reading: the chooser's is its build's last; the self-test's fixtures build too
+		cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
 			f, err := saved(r)
-			free = int64(f)
+			last[r] = int64(f)
 			return f, err
 		}
 		defer func() { cudaFreeVRAM = saved }()
@@ -207,6 +218,7 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 		if !ok {
 			t.Fatalf("no CUDA resident (extra %d): %s", extra, m.ResidentDecline())
 		}
+		free = last[r]
 		b := built{width: r.prefillWidth, reported: r.PrefillChunkRows(), free: free}
 		b.pass = func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
 		var widest int64

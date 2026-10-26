@@ -97,7 +97,8 @@ func (r *cudaResident) prefillSplitKVPlan(M, keys int, fused func(hd int) bool, 
 // whose last row attends keys keys allocates beyond PrefillScratchBytes(rows): the row-batched exact attention's scores and
 // inverses. It is not the last pass's own figure (prefillSpanScratchPass). A launch group holds as many rows as the split-KV
 // budget allows at its span, so an earlier pass at a shorter span can take a little more. The bound is a group of up to rows rows
-// at the prompt's span, capped by the budget, with the inverses of rows rows.
+// at the prompt's span, capped by the budget but never below one row (a group holds at least one, whatever its span costs), with
+// the inverses of rows rows.
 //
 // A prompt whose last pass routes no layer to the row kernels routes none in any pass: a shorter span is further under the bound,
 // and the fused attention that serves the last pass serves every pass at or above the fast floor (a pass under it is under the
@@ -106,7 +107,7 @@ func (r *cudaResident) PrefillSpanScratchBytes(rows, keys int) int64 {
 	if r.prefillSpanScratchPass(rows, keys) == 0 && !(prefillSplitKVForceForTest && rows > 0 && keys > 0) {
 		return 0
 	}
-	return scratchBufBytes(min(rows*r.nH*keys, prefillSplitKVBudget/4)) + scratchBufBytes(rows*r.nH)
+	return scratchBufBytes(max(min(rows*r.nH*keys, prefillSplitKVBudget/4), r.nH*keys)) + scratchBufBytes(rows*r.nH)
 }
 
 // prefillSpanScratchPass is what one pass of rows rows whose last row attends keys keys allocates beyond PrefillScratchBytes(rows):
