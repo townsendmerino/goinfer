@@ -1,0 +1,41 @@
+== arm64 (tags: none) 12:34:23
+    census_test.go:144: configuration arm64[dotprod], tags [], aikit at ~/go/pkg/mod/github.com/townsendmerino/aikit@v1.75.0
+    census_test.go:192: 14 census sites: 8 reached, 6 excluded as unreached by goinfer, 0 unreached
+--- PASS: TestCompute_reachesCensus (1.92s)
+    kernelprint_test.go:24: 65 kernels under arm64[dotprod]; one Compute took 1.007s
+--- PASS: TestCompute_stable (1.99s)
+ok  	github.com/townsendmerino/goinfer/internal/kernelprint	4.172s
+== arm64 (tags: aikit_nodotprod) 12:34:27
+    census_test.go:144: configuration arm64[] forced=nodotprod, tags ["aikit_nodotprod"], aikit at ~/go/pkg/mod/github.com/townsendmerino/aikit@v1.75.0
+    census_test.go:192: 14 census sites: 9 reached, 5 excluded as unreached by goinfer, 0 unreached
+--- PASS: TestCompute_reachesCensus (2.16s)
+    kernelprint_test.go:24: 65 kernels under arm64[] forced=nodotprod; one Compute took 1.127s
+--- PASS: TestCompute_stable (2.26s)
+ok  	github.com/townsendmerino/goinfer/internal/kernelprint	4.739s
+== amd64 (tags: none) 12:34:32
+    census_test.go:144: configuration amd64[avx2,f16c,popcnt], tags [], aikit at ~/go/pkg/mod/github.com/townsendmerino/aikit@v1.75.0
+    census_test.go:192: 41 census sites: 20 reached, 21 excluded as unreached by goinfer, 0 unreached
+--- PASS: TestCompute_reachesCensus (3.40s)
+    kernelprint_test.go:24: 64 kernels under amd64[avx2,f16c,popcnt]; one Compute took 1.895s
+--- PASS: TestCompute_stable (3.75s)
+ok  	github.com/townsendmerino/goinfer/internal/kernelprint	7.893s
+== amd64 (tags: aikit_noavx2) 12:34:41
+    census_test.go:144: configuration amd64[f16c,popcnt] forced=noavx2, tags ["aikit_noavx2"], aikit at ~/go/pkg/mod/github.com/townsendmerino/aikit@v1.75.0
+    census_test.go:192: 41 census sites: 26 reached, 15 excluded as unreached by goinfer, 0 unreached
+--- PASS: TestCompute_reachesCensus (4.32s)
+    kernelprint_test.go:24: 64 kernels under amd64[f16c,popcnt] forced=noavx2; one Compute took 2.549s
+--- PASS: TestCompute_stable (5.07s)
+ok  	github.com/townsendmerino/goinfer/internal/kernelprint	10.079s
+== amd64 (tags: aikit_nopopcnt) 12:34:51
+    census_test.go:144: configuration amd64[avx2,f16c] forced=nopopcnt, tags ["aikit_nopopcnt"], aikit at ~/go/pkg/mod/github.com/townsendmerino/aikit@v1.75.0
+    census_test.go:192: 41 census sites: 20 reached, 21 excluded as unreached by goinfer, 0 unreached
+--- PASS: TestCompute_reachesCensus (3.40s)
+    kernelprint_test.go:24: 64 kernels under amd64[avx2,f16c] forced=nopopcnt; one Compute took 1.895s
+--- PASS: TestCompute_stable (3.78s)
+ok  	github.com/townsendmerino/goinfer/internal/kernelprint	7.883s
+== amd64 (tags: aikit_noavx512) 12:34:59
+    census_test.go:130: VOID: tag aikit_noavx512 forced nothing on this CPU (detected [avx2 f16c popcnt]); run it where the CPU has avx512vnni
+--- SKIP: TestCompute_reachesCensus (0.00s)
+    kernelprint_test.go:24: 64 kernels under amd64[avx2,f16c,popcnt] forced=noavx512; one Compute took 1.907s
+--- PASS: TestCompute_stable (3.78s)
+ok  	github.com/townsendmerino/goinfer/internal/kernelprint	4.481s

@@ -1,0 +1,74 @@
+[12:27:50] 1/74 v1.75.0 arm64: ok in 1.6s; elapsed 2s
+[12:27:53] 2/74 v1.75.0 amd64-rosetta: ok in 3.2s; elapsed 5s
+[12:27:58] 3/74 v1.74.1-0.20261024180951-0df4c98b97f2 arm64: ok in 4.2s; elapsed 9s
+[12:28:01] 4/74 v1.74.1-0.20261024180951-0df4c98b97f2 amd64-rosetta: ok in 3.4s; elapsed 12s
+[12:28:06] 5/74 v1.74.0 arm64: ok in 4.7s; elapsed 17s
+[12:28:09] 6/74 v1.74.0 amd64-rosetta: ok in 3.4s; elapsed 21s
+[12:28:13] 7/74 v1.73.0 arm64: ok in 4.0s; elapsed 25s
+[12:28:16] 8/74 v1.73.0 amd64-rosetta: ok in 3.3s; elapsed 28s
+[12:28:20] 9/74 v1.72.0 arm64: ok in 3.7s; elapsed 32s
+[12:28:23] 10/74 v1.72.0 amd64-rosetta: ok in 3.3s; elapsed 35s
+[12:28:27] 11/74 v1.71.0 arm64: ok in 3.7s; elapsed 39s
+[12:28:30] 12/74 v1.71.0 amd64-rosetta: ok in 3.3s; elapsed 42s
+[12:28:36] 13/74 v1.70.2 arm64: ok in 5.2s; elapsed 47s
+[12:28:39] 14/74 v1.70.2 amd64-rosetta: ok in 3.3s; elapsed 50s
+[12:28:43] 15/74 v1.70.1 arm64: ok in 4.5s; elapsed 55s
+[12:28:47] 16/74 v1.70.1 amd64-rosetta: ok in 3.2s; elapsed 58s
+[12:28:52] 17/74 v1.70.0 arm64: ok in 5.7s; elapsed 64s
+[12:28:56] 18/74 v1.70.0 amd64-rosetta: ok in 3.3s; elapsed 67s
+[12:28:59] 19/74 v1.69.0 arm64: build failed in 3.6s; elapsed 70s
+[12:29:00] 20/74 v1.69.0 amd64-rosetta: build failed in 0.4s; elapsed 71s
+[12:29:03] 21/74 v1.68.0 arm64: build failed in 3.2s; elapsed 74s
+[12:29:03] 22/74 v1.68.0 amd64-rosetta: build failed in 0.4s; elapsed 75s
+[12:29:06] 23/74 v1.67.1 arm64: build failed in 3.1s; elapsed 78s
+[12:29:07] 24/74 v1.67.1 amd64-rosetta: build failed in 0.4s; elapsed 78s
+[12:29:10] 25/74 v1.67.0 arm64: build failed in 3.1s; elapsed 81s
+[12:29:10] 26/74 v1.67.0 amd64-rosetta: build failed in 0.4s; elapsed 82s
+[12:29:14] 27/74 v1.66.0 arm64: build failed in 4.1s; elapsed 86s
+[12:29:15] 28/74 v1.66.0 amd64-rosetta: build failed in 0.4s; elapsed 86s
+[12:29:19] 29/74 v1.65.0 arm64: build failed in 3.8s; elapsed 90s
+[12:29:19] 30/74 v1.65.0 amd64-rosetta: build failed in 0.4s; elapsed 90s
+[12:29:23] 31/74 v1.64.0 arm64: build failed in 3.9s; elapsed 94s
+[12:29:23] 32/74 v1.64.0 amd64-rosetta: build failed in 0.4s; elapsed 95s
+[12:29:26] 33/74 v1.63.0 arm64: build failed in 2.9s; elapsed 98s
+[12:29:27] 34/74 v1.63.0 amd64-rosetta: build failed in 0.4s; elapsed 98s
+[12:29:31] 35/74 v1.62.0 arm64: build failed in 4.0s; elapsed 102s
+[12:29:31] 36/74 v1.62.0 amd64-rosetta: build failed in 0.4s; elapsed 102s
+[12:29:34] 37/74 v1.61.0 arm64: build failed in 3.1s; elapsed 105s
+[12:29:34] 38/74 v1.61.0 amd64-rosetta: build failed in 0.4s; elapsed 106s
+[12:29:37] 39/74 v1.60.0 arm64: build failed in 3.0s; elapsed 109s
+[12:29:38] 40/74 v1.60.0 amd64-rosetta: build failed in 0.4s; elapsed 109s
+[12:29:41] 41/74 v1.59.0 arm64: build failed in 2.6s; elapsed 112s
+[12:29:41] 42/74 v1.59.0 amd64-rosetta: build failed in 0.4s; elapsed 112s
+[12:29:44] 43/74 v1.58.0 arm64: build failed in 3.3s; elapsed 116s
+[12:29:45] 44/74 v1.58.0 amd64-rosetta: build failed in 0.4s; elapsed 116s
+[12:29:47] 45/74 v1.57.0 arm64: build failed in 2.1s; elapsed 118s
+[12:29:47] 46/74 v1.57.0 amd64-rosetta: build failed in 0.4s; elapsed 119s
+[12:29:50] 47/74 v1.56.1 arm64: build failed in 2.8s; elapsed 121s
+[12:29:50] 48/74 v1.56.1 amd64-rosetta: build failed in 0.4s; elapsed 122s
+[12:29:53] 49/74 v1.56.0 arm64: build failed in 2.2s; elapsed 124s
+[12:29:53] 50/74 v1.56.0 amd64-rosetta: build failed in 0.4s; elapsed 124s
+[12:29:56] 51/74 v1.55.0 arm64: build failed in 3.2s; elapsed 128s
+[12:29:57] 52/74 v1.55.0 amd64-rosetta: build failed in 0.4s; elapsed 128s
+[12:30:00] 53/74 v1.54.0 arm64: build failed in 2.9s; elapsed 131s
+[12:30:00] 54/74 v1.54.0 amd64-rosetta: build failed in 0.4s; elapsed 131s
+[12:30:03] 55/74 v1.53.0 arm64: build failed in 3.1s; elapsed 135s
+[12:30:04] 56/74 v1.53.0 amd64-rosetta: build failed in 0.4s; elapsed 135s
+[12:30:06] 57/74 v1.52.0 arm64: build failed in 2.8s; elapsed 138s
+[12:30:07] 58/74 v1.52.0 amd64-rosetta: build failed in 0.4s; elapsed 138s
+[12:30:09] 59/74 v1.51.1 arm64: build failed in 2.4s; elapsed 141s
+[12:30:10] 60/74 v1.51.1 amd64-rosetta: build failed in 0.4s; elapsed 141s
+[12:30:12] 61/74 v1.51.0 arm64: build failed in 2.4s; elapsed 143s
+[12:30:12] 62/74 v1.51.0 amd64-rosetta: build failed in 0.4s; elapsed 144s
+[12:30:15] 63/74 v1.50.2 arm64: build failed in 2.8s; elapsed 147s
+[12:30:16] 64/74 v1.50.2 amd64-rosetta: build failed in 0.4s; elapsed 147s
+[12:30:19] 65/74 v1.50.1 arm64: build failed in 3.1s; elapsed 150s
+[12:30:19] 66/74 v1.50.1 amd64-rosetta: build failed in 0.4s; elapsed 150s
+[12:30:22] 67/74 v1.50.0 arm64: build failed in 2.6s; elapsed 153s
+[12:30:22] 68/74 v1.50.0 amd64-rosetta: build failed in 0.4s; elapsed 153s
+[12:30:25] 69/74 v1.49.0 arm64: build failed in 3.0s; elapsed 157s
+[12:30:25] 70/74 v1.49.0 amd64-rosetta: build failed in 0.4s; elapsed 157s
+[12:30:28] 71/74 v1.48.0 arm64: build failed in 2.3s; elapsed 159s
+[12:30:28] 72/74 v1.48.0 amd64-rosetta: build failed in 0.4s; elapsed 160s
+[12:30:31] 73/74 v1.47.1 arm64: build failed in 3.1s; elapsed 163s
+[12:30:32] 74/74 v1.47.1 amd64-rosetta: build failed in 0.4s; elapsed 163s

@@ -1,0 +1,124 @@
+window: 2026-09-26T11:58:53-07:00 .. 2026-10-26T11:48:09-07:00 (committer dates), 4052 commits (731 merges), last 4a91080e
+commits with a family that could not be hashed: 0
+
+== replay vs history ==
+commits that wrote a deps_hash: 212; of them, every validated family's committed hash equals the replay: 210
+  differs: ccc2fdcc 2026-10-08 P2 36 families: Merge origin/main into main (Go 1.27.2, aikit v1.60.0, S18 on the Mac, option-path admissi
+  differs: fd845be1 2026-10-22 P1 3 families: decoder, metal, cuda, gpu: MLA's q, kv-A and o projections held as int8 on a quantized loa
+commits whose tree fails TestParityManifest_fresh (a validated family stale as committed): 467 of 4052
+
+== today's function (Go tokens), every commit ==
+commits that re-stale at least one family: 234 (40 merges); family re-stalings: 8895
+families per re-staling commit: 1:13, 2:1, 4:2, 35:1, 36:17, 37:6, 38:8, 39:25, 40:22, 41:9, 42:115, 43:15
+
+== the function of the day (raw bytes before 5ff89161) ==
+commits that re-stale at least one family: 256 (45 merges); family re-stalings: 9584
+families per re-staling commit: 1:16, 2:3, 4:2, 35:1, 36:19, 37:6, 38:10, 39:25, 40:23, 41:19, 42:117, 43:15
+re-stalings the token hash removed in the window: 689 family re-stalings, 22 commits
+
+== what triggered each re-staling commit (today's function) ==
+input | commits it is among the triggers of | family re-stalings in those commits
+  core decoder/model.go | 103 | 4194
+  own | 61 | 925
+  aikit | 46 | 1876
+  core decoder/forwardn.go | 37 | 1510
+  loaders decoder/weights.go | 27 | 1089
+  loaders decoder/gguf.go | 24 | 983
+  core decoder/kvcache.go | 23 | 939
+  core decoder/registry.go | 19 | 758
+  quant decoder/weightmat.go | 18 | 726
+  core decoder/attention.go | 17 | 696
+  core decoder/arch.go | 16 | 666
+  core decoder/config.go | 11 | 449
+  core decoder/mlp.go | 10 | 414
+  moe decoder/mlp.go | 10 | 414
+  deltanet decoder/deltanet.go | 4 | 122
+  core decoder/rope.go | 2 | 77
+  core decoder/ropescale.go | 1 | 36
+  deps | 1 | 39
+  mamba2 decoder/mamba2.go | 1 | 42
+sole trigger | commits | family re-stalings
+  (several inputs) | 87 | 3560
+  core decoder/model.go | 67 | 2715
+  aikit | 38 | 1553
+  own | 15 | 19
+  loaders decoder/gguf.go | 5 | 201
+  loaders decoder/weights.go | 5 | 201
+  core decoder/kvcache.go | 4 | 159
+  core decoder/attention.go | 4 | 168
+  quant decoder/weightmat.go | 3 | 114
+  core decoder/forwardn.go | 3 | 122
+  deltanet decoder/deltanet.go | 1 | 4
+  core decoder/registry.go | 1 | 39
+  core decoder/config.go | 1 | 40
+
+== aikit pin changes ==
+re-staling commits with an aikit trigger: 46 (37 non-merge); family re-stalings: 1876
+distinct aikit transitions: 36
+  e8c1ee0e 2026-09-26 v1.47.1->v1.48.0 37 fam: build: bump aikit v1.47.1 -> v1.48.0 in all five modules (per-group activation q
+  bf9cb18f 2026-09-26 v1.48.0->v1.49.0 37 fam: build: bump aikit v1.48.0 -> v1.49.0 in all five modules (native Q4_K kind for -
+  2a816395 2026-09-28 v1.49.0->v1.50.0 37 fam: deps: aikit v1.50.0 (int4 group scales stored as binary16) in every module
+  afd1eb88 2026-09-28 v1.50.0->v1.50.1 37 fam: deps: aikit v1.50.1 (arm64 NEON widen for binary16 int4 scales) in every module
+  81c250d7 2026-09-28 v1.50.1->v1.50.2 37 fam: deps: aikit v1.50.2 (amd64 AVX2 activation quantizer) in every module
+  a0c19993 2026-09-30 v1.50.2->v1.51.0 37 fam: deps: aikit v1.51.0 (the Qwen3.5+ vision tower, vision.Qwen3VisionEncoder) in ev
+  58475d46 2026-10-01 v1.51.0->v1.51.1 39 fam: deps: aikit v1.51.1 (the amd64 int8 quantizer rounds 0.49999997 to 0 again) in e
+  36aa0e73 2026-10-02 v1.51.1->v1.52.0 40 fam: deps: bump aikit to v1.52.0 in all five modules (the GLM-OCR vision tower)
+  475a177f 2026-10-03 v1.52.0->v1.53.0 40 fam: deps: bump aikit to v1.53.0 in all five modules (embed.OpenGGUFSplitMmap, for sp
+  9f554f4a 2026-10-04 v1.53.0->v1.54.0 40 fam: deps: bump aikit to v1.54.0 in all five modules (the forced CPU-fallback tags, l
+  cfe7db35 2026-10-04 v1.54.0->v1.55.0 40 fam: H2 (CPU part): a startup self-test of the CPU kernels at the first Load, with th
+  45af0ea3 2026-10-04 v1.55.0->v1.56.0 40 fam: build: bump aikit v1.55.0 -> v1.56.0 in all five modules (DotProd is detected on
+  e781faf4 2026-10-05 v1.56.0->v1.56.1 40 fam: Bump aikit v1.56.1 and gpu v0.33.5 (audit C-N01 guard); add a lint for dead zero
+  575a3768 2026-10-05 v1.56.1->v1.57.0 40 fam [subject says unchanged]: aikit v1.57.0 in all five modules: R-13/R-14 land (CPU W4A8 quantizes each share
+  837e2c80 2026-10-06 v1.57.0->v1.58.0 40 fam: all modules: aikit v1.58.0 (the release carrying the Gemma 4 tower export, audio
+  0ade6e0b 2026-10-07 v1.58.0->v1.59.0 40 fam: go.mod: aikit v1.59.0 in every module, qwencuda v0.1.1 (the device-tower exports
+  83ae442a 2026-10-07 v1.58.0->v1.59.0 40 fam: all modules: aikit v1.59.0 (the release carrying the SigLIP, Qwen3.5+/Qwen3-VL a
+  8ba17ee5 2026-10-08 v1.59.0->v1.60.0 40 fam: go.mod: aikit v1.60.0 in every module (LoadEncoderHead, ForEachSiglipBlock: S18'
+  ecd5a35d 2026-10-08 v1.60.0->v1.61.0 41 fam: go.mod: aikit v1.60.0 -> v1.61.0 in all five modules (audio: Whisper and Qwen3-A
+  a9ca95fc 2026-10-09 v1.61.0->v1.62.0 42 fam: go.mod: aikit v1.61.0 -> v1.62.0 in all five modules (audio: Voxtral's audio pat
+  b870893d 2026-10-09 v1.62.0->v1.63.0 42 fam: go.mod: aikit v1.62.0 -> v1.63.0 in all five modules (vision: the Pixtral tower 
+  db2bd381 2026-10-09 v1.63.0->v1.64.0 42 fam: go.mod: aikit v1.63.0 -> v1.64.0 in all five modules (vision: SigLIP2's NaFlex t
+  05e8aeeb 2026-10-10 v1.64.0->v1.65.0 43 fam [subject says unchanged]: go.mod: aikit v1.64.0 -> v1.65.0 in all five modules (embed: Tensor.SubF32Transp
+  c3e921e6 2026-10-10 v1.65.0->v1.66.0 43 fam [subject says unchanged]: go.mod: aikit v1.65.0 -> v1.66.0 in all five modules (linalg: the int4 weight qu
+  96f3a4aa 2026-10-10 v1.66.0->v1.67.0 43 fam [subject says unchanged]: go.mod: aikit v1.66.0 -> v1.67.0 in all five modules (embed: the Q4_K and Q6_K G
+  1f8ff6d2 2026-10-11 v1.67.0->v1.67.1 43 fam [subject says unchanged]: go.mod: aikit v1.67.0 -> v1.67.1 in all five modules (linalg: the amd64 activati
+  da10494f 2026-10-11 v1.67.1->v1.68.0 43 fam: go.mod: aikit v1.67.1 -> v1.68.0 in all five modules (audio: the Whisper-style e
+  1db05267 2026-10-11 v1.68.0->v1.69.0 43 fam: go.mod: aikit v1.68.0 -> v1.69.0 in all five modules (audio.WhisperDevice: the h
+  a44ce1af 2026-10-11 v1.69.0->v1.70.0 43 fam: go.mod: aikit v1.69.0 -> v1.70.0 in all five modules (the 16-bit WeightMat bf16-
+  d837ac37 2026-10-11 v1.70.0->v1.70.1 43 fam: go.mod: aikit v1.70.0 -> v1.70.1 in all five modules (the NEON bf16 widen)
+  d795053c 2026-10-15 v1.70.1->v1.70.2 43 fam: deps: aikit v1.70.1 -> v1.70.2 in all five modules (dst-length check, encoder sc
+  3763d83e 2026-10-17 v1.70.2->v1.71.0 43 fam: deps: aikit v1.70.2 -> v1.71.0 in all five modules (MEM3: SafetensorsFile.Close 
+  c446a7b2 2026-10-22 v1.71.0->v1.72.0 43 fam: deps: aikit v1.71.0 -> v1.72.0 in all five modules; serve drops a device tower's
+  fd60c29a 2026-10-23 v1.72.0->v1.73.0 43 fam: deps: aikit v1.72.0 -> v1.73.0 in all five modules (column-blocked weight-only i
+  8dd4e0ae 2026-10-23 v1.73.0->v1.74.0 43 fam: aikit v1.74.0 (MEM4(a)): unload closes the aliased vision encoders, the last hol
+  14d42d25 2026-10-24 v1.74.0->v1.74.1-0.20261024180951-0df4c98b97f2 43 fam: KS-O1: O1-G5 (G-Q2 on Phi-3, native lane) PASS, 98.39%, +4.39 points; aikit pinn
+  37daa991 2026-10-24 v1.74.1-0.20261024180951-0df4c98b97f2->v1.75.0 43 fam: deps: aikit v1.75.0 (embed.Q5KRaw/Q6KRaw, townsendmerino/aikit#18) in place of i
+
+== did a forward golden move? ==
+non-merge commits that modify an existing forward golden: 15
+  2669bf11 2026-09-27 re-stales 36: testdata/int4_forward_goldens.json | CPU int4 group scales are binary16 (aikit f16-scales): decode reads f1
+  1b698b22 2026-09-28 re-stales 1: testdata/qwen3next_tiny_text_golden.json | fix(cuda deltanet prefill): close item 9's fixture gap — MoE DeltaNet 
+  c0ecb31f 2026-09-28 re-stales 0: testdata/int4_forward_goldens.json | fix(goldens): re-capture qwen3next-tiny's int4 golden after 1b698b22 r
+  a86742fc 2026-10-01 re-stales 0: testdata/olmo3_real_golden.json.gz | olmo3: re-pin the real golden under transformers 5.15; TestOlmo3Real_g
+  97995b8d 2026-10-03 re-stales 39: testdata/metal_snapshot_golden.json | metal: the night of 2026-10-03 graded -- B-P01, B-P02, D-B04 ship; B-P
+  0eb53e90 2026-10-03 re-stales 0: testdata/metal_snapshot_golden.json | metal: revert B-P03's floor move (attnFADepthFloor back to 1536) -- at
+  84f3db6d 2026-10-03 re-stales 0: testdata/metal_snapshot_golden.json | metal: restore B-P03's floor (attnFADepthFloor 1024) -- the --spec ngr
+  b38868b2 2026-10-04 re-stales 0: testdata/metal_snapshot_golden.json | metal MoE int8: X3 PASSES forced by day (1.034x, bar 1.10); nativeInt8
+  c12e2778 2026-10-06 re-stales 0: testdata/metal_snapshot_golden.json | metal: Gemma 4 dense layers apply the per-layer output scalar, and eve
+  05fa8227 2026-10-06 re-stales 1: testdata/gemma4_emodel_tiny_golden.json | decoder: an E-model's resident embedding row is [h ‖ PLE inputs], comp
+  ed8d4756 2026-10-07 re-stales 0: testdata/qwen3vl-vision-tiny/golden.json.gz | S10: the tiny Qwen3-VL DeepStack fixture sharpened (nonzero biases at 
+  9437b879 2026-10-09 re-stales 1: testdata/qwen3vlmoe_tiny_golden.json | cmd/gate: qwen3_vl_moe's identity asset (its tiny, the golden's prompt
+  c9d2396f 2026-10-15 re-stales 0: testdata/int4_forward_goldens.json | B26: re-pin nemotron-tiny's and nemotron3nano-tiny's int4 goldens (the
+  fd845be1 2026-10-22 re-stales 42: testdata/int4_forward_goldens.json | decoder, metal, cuda, gpu: MLA's q, kv-A and o projections held as int
+  d5c5a1d5 2026-10-23 re-stales 0: testdata/int4_forward_goldens.json | decoder: MLA's projections back to f32 on every load (D14 (a))
+re-staling commits that also modify a forward golden: 6; their family re-stalings: 120
+re-staling commits that only add a new golden (a new feature's reference, no existing golden moved): 10
+family deps_hash writes: 8123; of them with metrics, validated_at, date or status changed too: 5
+  e89ae216 2026-09-28 ['gemma4', 'qwen3_next']: parity: refresh 34 families' deps_hash for aikit v1.50.0 (goldens-gated); gemma4 and qwen3
+  83c45abd 2026-09-30 ['gemma', 'gemma2']: parity: gemma and gemma2 rows (tiny-golden, merged from the gate's own PARITY_ROWs) + the 
+  27845987 2026-10-01 ['glm_ocr']: glm_ocr: parity-manifest row, deps_hash refresh, regenerated matrices, README count 40
+
+== the before number ==
+family re-stalings by today's key: 8895 in 234 commits
+  of them in commits that moved no existing forward golden and changed no family's recorded metrics: 8775 in 228 commits
+  in commits that did move a golden or a recorded metric: 120 in 6 commits
+commits that wrote a deps_hash (the refreshes the key made someone run): 212

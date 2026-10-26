@@ -1,0 +1,14 @@
+=== RUN   TestCompute_mutation
+K2 unplanted copy: built and computed in 3s
+K2 MatmulAVAcc64 +1 ULP: built and computed in 3s
+    mutation_test.go:102: MatmulAVAcc64 +1 ULP: changed exactly linalg.MatmulAVAcc64
+K2 Q5_0 dequant +1 ULP: built and computed in 3s
+    mutation_test.go:102: Q5_0 dequant +1 ULP: changed exactly embed.GGUFFile(Q5_0).Tensor
+K2 MatmulAVAcc64 -1 ULP: built and computed in 3s
+    mutation_test.go:102: MatmulAVAcc64 -1 ULP: changed exactly linalg.MatmulAVAcc64
+K2 Q5_0 dequant -1 ULP: built and computed in 3s
+    mutation_test.go:102: Q5_0 dequant -1 ULP: changed exactly embed.GGUFFile(Q5_0).Tensor
+K2 plants removed: built and computed in 3s
+--- PASS: TestCompute_mutation (21.42s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/kernelprint	22.142s

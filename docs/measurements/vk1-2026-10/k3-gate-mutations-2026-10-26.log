@@ -1,0 +1,12 @@
+[1m== mutation[k3-ragged-k] ==[0m
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  [32mPASS[0m: k3-ragged-k is falsifiable
+[1m== mutation[k3-uncalled-scan] ==[0m
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  [32mPASS[0m: k3-uncalled-scan is falsifiable
