@@ -32,8 +32,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| VK0 | open | either box: replay `freshDepsHash` over the last 30 days of main and count which commits re-staled how many families, and why; the before number for VK; S | §5.3 |
-| VK1 | open | either box: a numerics fingerprint of the aikit kernels goinfer calls, mixed into the parity key in place of `aikit_version`; S–M | §5.4 |
+| VK0 | done | 2026-10-26 (mac-vk01): 234 of 4,052 commits re-staled 8,895 family validations in 30 days; 8,775 (98.7%) came with no moved golden and no changed recorded metric, an upper bound on what a behavior key saves | §5.3; `docs/measurements/vk0-2026-10.md` |
+| VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
 | VK2 | open | either box: one file per family adapter out of `decoder/registry.go`; `decoder/model.go`'s numeric helpers into a numeric file; `core` narrowed to numeric code; S–M | §5.5 |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
 | VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
@@ -46,7 +46,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
 | MM6 | blocked | MM1; `night.py add` and `goinfer fit` call `Solve` against the box's recorded profile at queue time; S | §6.5 |
-| AX0 | active | aikit PR #21 (README freeze note at root v1.75.0 and `gpu/v0.35.0`, the newest tags) is open; the coordinator merges it; S | §7.3 |
+| AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | active | copied in PR #274 (branch `ax1-move-towers-2026-10`), the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev` (the root stays free of backend deps; supersedes §7.1 and §9's `internal/gpudev`), gates AX1-S, -N, -B and -T green on the Mac (§7.6); left: nobara runs the CUDA device tests, then the coordinator merges; `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6 |
 | AX2 | blocked | AX1; switch goinfer's imports one module at a time, each step bit-identical; M | §7.3 |
 | AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
@@ -398,6 +398,24 @@ Tier 0; minutes. S.
 - **Gates (sketch):** a planted one-ULP change in one kernel changes that kernel's fingerprint and only that one
   (mutation, both directions); a release that changes no kernel leaves every fingerprint unchanged; the suite reaches
   every path the dispatch census lists. S–M.
+
+#### VK1's gates, registered 2026-10-26 before the code (mac-vk01)
+
+All tier 0: no model, no device, no timed run. The instrument is the package `internal/kernelprint`: `Compute` runs each
+aikit `linalg` and `embed` kernel goinfer's production code calls over a fixed, generated input suite and returns one
+SHA-256 per kernel, keyed by the dispatch configuration (GOARCH, `linalg.ActiveKernels().Active`, `ForcedFallbacks()`).
+"The dispatch census" is the `cpu-*` entries of `docs/hardware-coverage.json` and the predicates they name.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| K1 stable | two `Compute` calls in one process give identical fingerprints for every kernel | never | one run per configuration | one `Compute`: seconds (estimate, measured in the record) |
+| K2 mutation, both directions | on a copy of aikit v1.75.0 with a planted one-ULP change in one kernel's output (+1 ULP and −1 ULP, in two kernels: `MatmulAVAcc64` and GGUF Q5_0 dequantization), exactly the planted kernel's fingerprint changes and every other kernel's stays; the same copy with no plant reproduces the module cache's fingerprints for every kernel (removing a plant restores) | a plant whose text replacement does not apply (a no-op mutation): fix the plant, not the rule | one run: the unplanted copy and four plants | five builds of `linalg`, `embed` and the test, about 1–2 min on the Mac (estimate) |
+| K3 census reach | in each configuration run, every `if` in aikit's `linalg` and `embed` (the files built for that configuration) whose condition names a census predicate has its active side executed by the suite (read from a coverage profile of the suite), unless it is on a content-keyed exclusion list that says why goinfer's production code never reaches it; a predicate site the condition does not decide needs both sides | a configuration run under a forcing tag that forced nothing (`ForcedFallbacks()` empty); it is re-run on hardware where the tag forces | one run per configuration | one coverage build and run: under a minute (estimate) |
+
+Configurations run on the Mac: arm64 as built, arm64 `aikit_nodotprod`, and amd64 under Rosetta (`ROSETTA_ADVERTISE_AVX=1`)
+as built, `aikit_noavx2` and `aikit_nopopcnt`. No machine here has AVX-512 VNNI, so `aikit_noavx512` forces nothing on
+it and the AVX-512 side of K3 is not run here; the record says so, and CI's mixed runner pool or nobara under SDE is
+where it can run. `freshDepsHash` and the parity manifest do not change in VK1 (VK5 is the shadow mode).
 
 ### 5.5 VK2 — one file per family adapter, and only numeric code in `core`
 

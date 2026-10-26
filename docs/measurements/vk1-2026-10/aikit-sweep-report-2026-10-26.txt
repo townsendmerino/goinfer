@@ -1,0 +1,45 @@
+versions that build the suite, per configuration:
+  arm64: 9 of 37
+  amd64-rosetta: 9 of 37
+
+aikit transition | per configuration: kernels whose fingerprint changed | commits | family re-stalings | sole-trigger re-stalings
+  v1.47.1 -> v1.48.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 37 | 37
+  v1.48.0 -> v1.49.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 37 | 37
+  v1.49.0 -> v1.50.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 37 | 37
+  v1.50.0 -> v1.50.1 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 37 | 37
+  v1.50.1 -> v1.50.2 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 37 | 37
+  v1.50.2 -> v1.51.0 | arm64: not comparable; amd64-rosetta: not comparable | 2 | 73 | 37
+  v1.51.0 -> v1.51.1 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 39 | 39
+  v1.51.1 -> v1.52.0 | arm64: not comparable; amd64-rosetta: not comparable | 2 | 79 | 40
+  v1.52.0 -> v1.53.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 40 | 40
+  v1.53.0 -> v1.54.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 40 | 40
+  v1.54.0 -> v1.55.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 40 | 0
+  v1.55.0 -> v1.56.0 | arm64: not comparable; amd64-rosetta: not comparable | 2 | 79 | 79
+  v1.56.0 -> v1.56.1 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 40 | 40
+  v1.56.1 -> v1.57.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 40 | 40
+  v1.57.0 -> v1.58.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 40 | 40
+  v1.58.0 -> v1.59.0 | arm64: not comparable; amd64-rosetta: not comparable | 2 | 80 | 80
+  v1.59.0 -> v1.60.0 | arm64: not comparable; amd64-rosetta: not comparable | 2 | 80 | 40
+  v1.60.0 -> v1.61.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 41 | 41
+  v1.61.0 -> v1.62.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 42 | 42
+  v1.62.0 -> v1.63.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 42 | 42
+  v1.63.0 -> v1.64.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 42 | 42
+  v1.64.0 -> v1.65.0 | arm64: not comparable; amd64-rosetta: not comparable | 2 | 85 | 43
+  v1.65.0 -> v1.66.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 43 | 43
+  v1.66.0 -> v1.67.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 43 | 43
+  v1.67.0 -> v1.67.1 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 43 | 43
+  v1.67.1 -> v1.68.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 43 | 43
+  v1.68.0 -> v1.69.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 43 | 43
+  v1.69.0 -> v1.70.0 | arm64: not comparable; amd64-rosetta: not comparable | 1 | 43 | 43
+  v1.70.0 -> v1.70.1 | arm64: none; amd64-rosetta: none | 1 | 43 | 43
+  v1.70.1 -> v1.70.2 | arm64: none; amd64-rosetta: none | 3 | 127 | 43
+  v1.70.2 -> v1.71.0 | arm64: none; amd64-rosetta: none | 1 | 43 | 43
+  v1.71.0 -> v1.72.0 | arm64: none; amd64-rosetta: none | 2 | 85 | 43
+  v1.72.0 -> v1.73.0 | arm64: none; amd64-rosetta: none | 1 | 43 | 43
+  v1.73.0 -> v1.74.0 | arm64: none; amd64-rosetta: none | 2 | 84 | 84
+  v1.74.0 -> v1.74.1-0.20261024180951-0df4c98b97f2 | arm64: none; amd64-rosetta: none | 1 | 43 | 43
+  v1.74.1-0.20261024180951-0df4c98b97f2 -> v1.75.0 | arm64: none; amd64-rosetta: none | 1 | 43 | 43
+
+transitions: 36; comparable in every configuration: 8; no fingerprint changed in any configuration: 8
+re-staling commits with an aikit trigger: 46 (1876 family re-stalings); aikit the sole trigger: 38 (1553)
+of the sole-trigger commits on comparable transitions (9, 385 re-stalings), a kernel-fingerprint key would have re-staled nothing at 9 commits, 385 family re-stalings
