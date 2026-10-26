@@ -2567,6 +2567,9 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
     bytes, stated and priced; and an end-to-end served A/B, wall time and TTFT beside decode tok/s, on repeated and on agent-style
     prompts, graded at the merge rule (median ≥ 1.05×, at least 9 of 10 pairs faster).
   - Not blocking #238.
+  - **Registered on nobara, 2026-10-26, before any code:** `docs/measurements/sp2b-2026-10/README.md` (the change: `BlockSpec`
+    takes the KV scope, a marked seed, the drafter's fused rows in the snapshot, the restore rebuilding its context; the gates:
+    identity with two plants, the added bytes priced, the served wall time new ÷ old by the merge rule, agent-style reuse).
 - **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
   - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
     masks.
