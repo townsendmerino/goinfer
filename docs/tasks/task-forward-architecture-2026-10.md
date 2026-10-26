@@ -2546,6 +2546,9 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
     - identity as SP1, conv window included (spec/09: skipping it gives wrong logits with no error);
     - the fold's cost per cycle, against R-01 phase 1's 11.0%;
     - speed with DFlash on Qwen3.5-9B (nobara) and Qwen3.6-35B-A3B (Mac), at SP0's bar.
+      **Amended (the owner, 2026-10-25 8:46 am, restated 2026-10-26 09:01):** graded by the merge rule for a lossless opt-in
+      feature (median ≥ 1.05×, at least 9 of 10 pairs faster, the memory cost stated); SP0's 1.30× is an investment bar, not a merge
+      bar (`docs/measurements/sp2-2026-10/README.md`, "G4 graded against the owner's merge rule").
   - **What it must agree with:** KV8a's checkpoint is taken before decode and is unaffected. The committed sequence after a
     speculative turn must be what kvmgr scores (R-03, `docs/tasks/task-recompute-audit.md`).
   - **Registered on nobara, 2026-10-24:** the design and the gates are in "SP2 on nobara" below. SP0 parked the 35B (its MoE
@@ -2688,6 +2691,9 @@ DFlash projects 1.55× at L = 512 (w = 4) and 1.29× at L = 4096 (w = 4).
   - **Bar, per context:** SP0's rule. The median pair ≥ 1.30× and at least 9 of 10 pairs above 1.0 → passes at that
     context. 1.20–1.30× → parked, to the owner. Under 1.20× → not advanced at that context. The verdict names each
     context's outcome; SP0's 4,096 projection was 1.29×, so a parked reading there would be the expected one.
+  - **Amended (the owner, 2026-10-25 8:46 am, restated 2026-10-26 09:01):** G4 is graded by the merge rule (median ≥ 1.05×, at
+    least 9 of 10 pairs above 1.0, the memory cost stated), not SP0's bands above; the readings stand as recorded
+    (`docs/measurements/sp2-2026-10/README.md`, "G4 graded against the owner's merge rule").
   - **The small-gains rule does not decide this.** The tokens are identical, but SP2 adds device memory (the arena and the
     drafter) and keeps two paths, so the registered bar decides.
 - **G5 — agreement with KV8a and kvmgr (R-03; tier 0/1).**
