@@ -1,0 +1,15 @@
+=== RUN   TestRouteGptOssGrowsPoolPastMoERoute
+    route_gptoss_reservation_test.go:60:   moe_route (the old warm-up)                  cost   138412032 B (132.0 MiB)
+    route_gptoss_reservation_test.go:60:   route_gptoss after moe_route (the gap)       cost     8388608 B (8.0 MiB)
+    route_gptoss_reservation_test.go:60:   route_gptoss at nE=32 k=4, both forced       cost           0 B (0.0 MiB)
+--- PASS: TestRouteGptOssGrowsPoolPastMoERoute (0.28s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	0.387s
+----- after (./cuda/kernels/) -----
+=== RUN   TestRouteGptOssGrowsPoolPastMoERoute
+    route_gptoss_reservation_test.go:60:   moe_route (the old warm-up)                  cost   138412032 B (132.0 MiB)
+    route_gptoss_reservation_test.go:60:   route_gptoss after moe_route (the gap)       cost     8388608 B (8.0 MiB)
+    route_gptoss_reservation_test.go:60:   route_gptoss at nE=32 k=4, both forced       cost           0 B (0.0 MiB)
+--- PASS: TestRouteGptOssGrowsPoolPastMoERoute (0.18s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	0.294s
