@@ -1834,7 +1834,7 @@ sides on different drivers; the control failing; a refused load.
 Read at main `2c56d9c6`, with CPU f16 KV merged (#55) and G40 merged, which §4.7 makes OP3's precondition.
 
 **What the CPU forward is today.** Three generic paths, not two:
-- the per-token loop, `decoder/model.go:Model.runLayersFromEmbed`;
+- the per-token loop, `decoder/model_forward.go:Model.runLayersFromEmbed`;
 - the batched loop, `decoder/forwardn.go:Model.runLayersFromEmbedNFloor`;
 - MC3c's multi-sequence step, `decoder/cpu_batch.go:Model.decodeMultiStep`.
 

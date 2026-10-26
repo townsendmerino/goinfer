@@ -1,0 +1,82 @@
+[
+ {
+  "Decl": "(*Model).forward",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).forwardFromEmbed",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).forwardCapture",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).ForwardCapture",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).ForwardSubCapture",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).runLayers",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).runLayersFromEmbed",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).runLayersFromEmbedPLE",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).runLayersFromEmbedLoop",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).logitsFromHidden",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "(*Model).logitsFromNormed",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "addResidual",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "addResidual2",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "normalize",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "normalizeInto",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ },
+ {
+  "Decl": "softcapParallel",
+  "From": "decoder/model.go",
+  "To": "decoder/model_forward.go"
+ }
+]
