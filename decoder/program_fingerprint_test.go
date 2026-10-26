@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -46,8 +47,10 @@ func fixtureProgramFingerprints(t *testing.T) map[string]string {
 	return out
 }
 
-// TestProgramFingerprint_table is VK4's F1: every committed fixture's program fingerprint equals the committed table
-// (-update rewrites it), and two computations agree.
+// TestProgramFingerprint_table is VK4's F1: every committed fixture's program fingerprint equals the committed table for
+// this GOARCH (-update rewrites this GOARCH's entry), and two computations agree. The table is per architecture because a
+// program's float parameters (RoPE frequencies and the like) are computed with math functions whose last bit differs
+// between amd64's assembly and arm64's fused multiply-adds.
 func TestProgramFingerprint_table(t *testing.T) {
 	got := fixtureProgramFingerprints(t)
 	again := fixtureProgramFingerprints(t)
@@ -56,29 +59,35 @@ func TestProgramFingerprint_table(t *testing.T) {
 			t.Fatalf("%s: two computations differ (%s, %s)", k, v, again[k])
 		}
 	}
+	table := map[string]map[string]string{}
+	if raw, err := os.ReadFile(programFingerprintsPath); err == nil {
+		if err := json.Unmarshal(raw, &table); err != nil {
+			t.Fatal(err)
+		}
+	} else if !*updateMatrix {
+		t.Fatalf("read %s: %v (run with -update to create it)", programFingerprintsPath, err)
+	}
+	arch := runtime.GOARCH
 	if *updateMatrix {
-		b, err := json.MarshalIndent(got, "", "  ")
+		table[arch] = got
+		b, err := json.MarshalIndent(table, "", "  ")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(programFingerprintsPath, append(b, '\n'), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("wrote %d fingerprints to %s", len(got), programFingerprintsPath)
+		t.Logf("wrote %d %s fingerprints to %s", len(got), arch, programFingerprintsPath)
 		return
 	}
-	raw, err := os.ReadFile(programFingerprintsPath)
-	if err != nil {
-		t.Fatalf("read %s: %v (run with -update to create it)", programFingerprintsPath, err)
-	}
-	var want map[string]string
-	if err := json.Unmarshal(raw, &want); err != nil {
-		t.Fatal(err)
+	want, ok := table[arch]
+	if !ok {
+		t.Fatalf("%s has no %s table: run with -update on %s", programFingerprintsPath, arch, arch)
 	}
 	var diffs []string
 	for k, v := range got {
 		if want[k] != v {
-			diffs = append(diffs, k)
+			diffs = append(diffs, k+" "+v)
 		}
 	}
 	for k := range want {
@@ -88,10 +97,10 @@ func TestProgramFingerprint_table(t *testing.T) {
 	}
 	sort.Strings(diffs)
 	if len(diffs) > 0 {
-		t.Errorf("program fingerprints changed for %d fixture(s); if the change is meant, run -update and say which programs moved:\n  %s",
-			len(diffs), strings.Join(diffs, "\n  "))
+		t.Errorf("%s program fingerprints changed for %d fixture(s); if the change is meant, run -update and say which programs moved:\n  %s",
+			arch, len(diffs), strings.Join(diffs, "\n  "))
 	}
-	t.Logf("%d fixture programs", len(got))
+	t.Logf("%d fixture programs (%s)", len(got), arch)
 }
 
 // TestProgramFingerprint_configMatchesWeights is VK4's F2: for every fixture whose weights are present here, the program
