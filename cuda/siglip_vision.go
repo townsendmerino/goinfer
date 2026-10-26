@@ -7,7 +7,7 @@ import (
 	"math"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // Gemma 3's SigLIP tower in float32 on the CUDA tower base (docs/tasks/task-multimodal-support-2026-10.md): the port of

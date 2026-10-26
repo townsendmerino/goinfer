@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestKSH4_repeatCallTiming is H4-G3 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H4 gates"): Qwen3-VL-2B's grid tower at 4K,

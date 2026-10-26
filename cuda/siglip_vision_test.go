@@ -14,8 +14,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // G-S3a on CUDA for the float32 SigLIP tower (the S4 addendum, docs/tasks/task-multimodal-support-2026-10.md): the CUDA tower against aikit's CPU tower, both float32,

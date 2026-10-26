@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "backend": "webgpu",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "cases": [
+    {
+      "family": "siglip",
+      "input": "normal-9",
+      "device": true,
+      "values": 512,
+      "sha256": "a3e521c07b665a7542603bdfaf2605346e320173f5a45083792a915ef0dd9e28"
+    },
+    {
+      "family": "qwen2.5-vl",
+      "input": "[[1 8 8]]",
+      "device": true,
+      "values": 1024,
+      "sha256": "7c223664676ae88d96bee1885f9639a978af2f7ad8c47bf002bc735ec662f67a"
+    },
+    {
+      "family": "qwen2.5-vl",
+      "input": "[[1 12 16]]",
+      "device": true,
+      "values": 3072,
+      "sha256": "ebe3fce646a0803eaf1aa405b5b1750d6aea3c589cb4f1be5b3919b4fb1429b4"
+    },
+    {
+      "family": "qwen3",
+      "input": "[[1 4 4]]",
+      "device": true,
+      "values": 256,
+      "sha256": "4e7de1055fb5326f7481d34a7f22051684941f76f7b68635298e15664a8a8c8e"
+    },
+    {
+      "family": "qwen3",
+      "input": "[[1 6 8]]",
+      "device": true,
+      "values": 768,
+      "sha256": "618c6eb1cd6e98985f15dd664144dbd53992ee2035cc10d343bbec7f6d730e85"
+    },
+    {
+      "family": "qwen3",
+      "input": "[[1 10 6]]",
+      "device": true,
+      "values": 960,
+      "sha256": "e46fc8502c3cf4a36c13726256c4c01c6689cd945e06d2b569cfa4ee07a6e6fb"
+    },
+    {
+      "family": "qwen3",
+      "input": "[[1 4 4] [1 6 4]]",
+      "device": true,
+      "values": 640,
+      "sha256": "39b1de5b291d727e6b35241bbb96d494841d779a774833845b283e08d460565d"
+    },
+    {
+      "family": "qwen3-deepstack",
+      "input": "[[1 4 6]]",
+      "device": true,
+      "values": 1152,
+      "sha256": "f1c20866c14ac87257782b75b4bf97f097413750e36cb0c7dc73fad890685c57"
+    },
+    {
+      "family": "qwen3-deepstack",
+      "input": "[[1 6 4] [1 4 4]]",
+      "device": true,
+      "values": 1920,
+      "sha256": "ddc313802a56bd72f1e2fe4285db158f56982fc1849b5133616fbee6934094c8"
+    },
+    {
+      "family": "glm-ocr",
+      "input": "[[1 4 4]]",
+      "device": true,
+      "values": 768,
+      "sha256": "e355570eaa113b463881ed3757adffdd54f0c238ee8496dbdfd603b2c94af872"
+    },
+    {
+      "family": "glm-ocr",
+      "input": "[[1 6 8]]",
+      "device": true,
+      "values": 2304,
+      "sha256": "0bc23289909195bb0494ff97b5bdde676a7eec7301787f08cd0c62e75a92a341"
+    },
+    {
+      "family": "glm-ocr",
+      "input": "[[1 10 6]]",
+      "device": true,
+      "values": 2880,
+      "sha256": "3eecb5482c039d6b8a044b273dfe682617249b92ec6d3aeb94239ba0f25f1377"
+    },
+    {
+      "family": "glm-ocr",
+      "input": "[[1 4 4] [1 6 4]]",
+      "device": true,
+      "values": 1920,
+      "sha256": "0eeb88b8f675f5a15257652bbe1328b801838a0908759143295562cfa8438758"
+    },
+    {
+      "family": "gemma4-vision",
+      "input": "2x3 pooled",
+      "device": true,
+      "values": 144,
+      "sha256": "0166db475b299d1dcab39db530bab07ff12fcf02a2167b86457f1db15890aa5b"
+    },
+    {
+      "family": "gemma4-vision",
+      "input": "3x2 pooled",
+      "device": true,
+      "values": 144,
+      "sha256": "1391bdec05cf751e2c6582e6c5c9a3be88ee31b65d3a40ea3ba8e5b8c030637b"
+    }
+  ]
+}

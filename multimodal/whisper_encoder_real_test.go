@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14d2 (small) and G-S14d3 (large-v3) of docs/tasks/task-multimodal-support-2026-10.md: a real Whisper checkpoint's encoder, goinfer float32 on the CPU, against

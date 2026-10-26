@@ -7,9 +7,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // S14.6 lever B's kernels and encoder (docs/tasks/task-multimodal-support-2026-10.md, G-S14t4): the exact GELU against aikit's contract kernel BIT FOR BIT, the im2col

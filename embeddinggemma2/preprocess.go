@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // The encoder's image resize (Phase V, docs/tasks/task-embeddinggemma2.md). The checkpoint's Gemma4ImageProcessor

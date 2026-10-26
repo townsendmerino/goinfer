@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14b3 of docs/tasks/task-multimodal-support-2026-10.md: Qwen3-ASR-0.6B's audio encoder and projector, goinfer float32 on the CPU, against transformers

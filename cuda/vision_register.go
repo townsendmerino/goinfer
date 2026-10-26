@@ -3,7 +3,7 @@
 package cuda
 
 import (
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/multimodal"
 )

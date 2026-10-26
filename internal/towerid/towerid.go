@@ -28,9 +28,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 

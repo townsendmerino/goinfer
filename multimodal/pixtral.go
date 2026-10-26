@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // Ministral 3's image path (Mistral3ForConditionalGeneration; S10 of docs/tasks/task-multimodal-support-2026-10.md):

@@ -7,8 +7,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/townsendmerino/aikit/audio"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // The Gemma 4 audio tower's conformer blocks on Metal (Phase A's AM, docs/tasks/task-embeddinggemma2.md): aikit's

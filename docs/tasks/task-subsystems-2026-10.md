@@ -47,8 +47,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
 | MM6 | blocked | MM1; `night.py add` and `goinfer fit` call `Solve` against the box's recorded profile at queue time; S | §6.5 |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
-| AX1 | active | copied in PR #274 (branch `ax1-move-towers-2026-10`), the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev` (the root stays free of backend deps; supersedes §7.1 and §9's `internal/gpudev`), gates AX1-S, -N, -B and -T green on the Mac (§7.6); left: nobara runs the CUDA device tests, then the coordinator merges; `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6 |
-| AX2 | active | AX2a (the tower-identity instrument) on branch `ax2a-tower-identity-2026-10`; gates registered in §7.8 (Francis, 15:15: "AX2, go"); then AX2b, AX2c, AX2d as in §7.7; M | §7.7, §7.8 |
+| AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
+| AX2 | active | AX2a (`internal/towerid`) in PR #278; AX2b (the import switch) on branch `ax2b-import-switch-2026-10`, Mac gates PASS (§7.8); left: nobara's CUDA and CPU identity records for AX2b, then AX2c (metal to `metal/internal/gpudev`) and AX2d (cuda to `cuda/internal/gpudev`); M | §7.7, §7.8 |
 | AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
 | AX4 | blocked | AX3; aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
 | AX5 | open | SD2 decided 2026-10-26: the ANN and text-encoder GPU backends stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops bumping them; S | §7.3, §14 |
@@ -832,12 +832,47 @@ WebGPU (5 families, 15 cases), each under a second; CUDA builds and waits for no
 registration linked in errors on its first declared tower instead of returning CPU bits. The record is
 [`../measurements/ax2-2026-10/`](../measurements/ax2-2026-10/README.md).
 
+**AX2b result, 2026-10-26 (mac-ax01):** AX2b-N, -S, -ID (CPU, Metal, WebGPU: 54 cases, 0 differ) and -M PASS on the Mac;
+AX2b-S caught `cuda/s4siglip`'s blank import of aikit's `gpu/visioncuda`, which compiles and would have registered into a
+slot nothing reads, and the script now maps it to `cuda/internal/visioncuda`. AX2b-M's fallback form: no single
+registration file left on aikit compiles, and two plants at the registration each turned the Metal identity test red.
+CUDA's and nobara's CPU records wait for nobara. Detail in the record.
+
 **What AX2b changes outside the import lines.** First, `multimodal` and `embeddinggemma2`'s exported functions that take
 tower types now take `internal/vision` and `internal/audio` types. Both packages are Experimental tier
 (`docs/api-tiers.md`; apidiff checks `decoder`, `tokenizer`, `chat` and `constrain`), so this is allowed, and it gets a
 CHANGELOG line. Second, `examples/invoice` and `demo/agent` reach the towers through new `multimodal` functions instead
 of importing an internal package (§7.2). That is a separate commit after the mechanical one, gated by AX2b-B, with each
 example's own test.
+
+### 7.9 AX2c gates (registered 2026-10-26 15:45 PDT by mac-ax01, before AX2c's code)
+
+AX2c switches the `metal` module (with `metal/kernels`) from aikit's `gpu` to `metal/internal/gpudev`, the device
+package's Metal half from AX1. It is one scripted commit (`ax2cd_rewrite.py metal`): the import path becomes
+`gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"`, so no body changes. Tier 0 and tier 1 (the Mac's GPU,
+no model), by day, under the shared timing lock.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2c-N | Re-running the script on the commit's parent reproduces the commit byte for byte. The commit contains nothing else. | — | complete | seconds |
+| AX2c-S | `go list -deps -test -tags goinfer_testhooks ./...` in `metal` names no `github.com/townsendmerino/aikit/gpu`. | — | complete | seconds |
+| AX2c-ID | `TestTowerIdentity_metal`'s record at AX2c's head equals AX2b's head record, case by case. | no Metal device | once | a second |
+| AX2c-T (the Metal suite carries over) | The `metal` module's tests, one package per `go test -v -count=1 -tags goinfer_testhooks` call, at AX2b's head (the base) and at AX2c's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. A test that fails at the base is listed and excluded, not fixed here. | another session holds the timing lock exclusive (wait); the Mac's free memory is under 4 GB at a run's start (a device suite under memory pressure fails for reasons no code owns; the run is re-made) | each side once, to completion; a red is re-run by name only | the Metal suite measured 4 min 12 s in a quick-full run (`CLAUDE.md`, "Gate tiers"); estimate 5 min a side, 10 min in all |
+| AX2c-B | Build, vet and staticcheck of `metal` under its tags (plain, `goinfer_testhooks`); gofmt; the root cleanliness guard | — | complete | a minute |
+
+### 7.10 AX2d gates (registered 2026-10-26 15:45 PDT by mac-ax01, before AX2d's code)
+
+AX2d switches the `cuda` module from aikit's `gpu` to `cuda/internal/gpudev`, the device package's CUDA half from AX1,
+in one scripted commit (`ax2cd_rewrite.py cuda`). The Mac compiles it (`GOOS=linux`); the device legs run on nobara,
+by day, through nobara's own session (relayed), never over ssh from the Mac.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2d-N | Re-running the script on the commit's parent reproduces the commit byte for byte. The commit contains nothing else. | — | complete | seconds |
+| AX2d-S | `GOOS=linux go list -deps -test -tags 'cuda goinfer_testhooks' ./...` in `cuda` names no `github.com/townsendmerino/aikit/gpu`. | — | complete | seconds |
+| AX2d-B | Build, vet and staticcheck of `cuda` with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, tags `cuda` and `cuda goinfer_testhooks`; gofmt; the root cleanliness guard | — | complete | a minute |
+| AX2d-ID (nobara) | `TestTowerIdentity_cuda` and `TestTowerIdentity_cpu` records at AX2b's base, AX2b's head and AX2d's head, equal case by case (one nobara session covers AX2b-ID's CUDA leg too). | no CUDA device answers | once each | seconds each |
+| AX2d-T (nobara) | The `cuda` module's tests (`-tags 'cuda goinfer_testhooks'`, one package per `go test -v -count=1` call) at AX2c's head (the base) and at AX2d's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. `TestCUDA_launchDirect` segfaults on both sides at AX1 (#279), so it runs alone and the rest with `-skip '^TestCUDA_launchDirect$'`; a test failing at the base is listed and excluded, not fixed here. | a desktop session holds a CUDA context (`kwin_wayland`), which shifts plans and skips the drain-group tests (`CLAUDE.md`, "Testing tiers"): the record notes it, and drain-group skips on both sides are not counted as passes | each side once, to completion | nobara's session states the estimate from its last CUDA suite record before starting |
 
 ## 8. The other subsystems (SB1–SB13)
 
