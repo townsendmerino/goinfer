@@ -44,6 +44,23 @@ AX1-T, per package (`go test -v -count=1`, one package per call, under the share
 
 Logs: `logs/aikit-*.log` and `logs/goinfer-*.log`.
 
+## After the first CI run (2026-10-26)
+
+PR #274's first CI run was red in five jobs. Four causes, each reproduced on the Mac where it could be:
+
+- **cmd/gate's quick selector** (`TestQuick_neverDropsAGoListDependent`, root-darwin and root-windows) dropped the cuda
+  module's test binaries for an edit to `internal/gpudev/testdata/*.ptx`. The ptx files are embedded only by gpudev's Linux
+  files, and the selector took a package's files from its owner's listing (the root module, listed for the host) alone.
+  `loadGraph` now adds the files another module's listing compiles. On the Mac the test reads 4 dropped without the change
+  and 0 with it.
+- **touched.py's scan table** lacked the three gpudev tests that read source; they are now in `scripts/touched_scans.py`.
+- **`TestEncoder_useResidencySet`** (root-darwin): the hosted runner's virtualized GPU makes no residency set, and the
+  test's helpers called `Fatalf` on the parent test from inside subtests (the `panic(nil)`). It now skips when the device
+  makes no set, and its helpers fail the subtest. It still passes on the MacBook.
+- **`TestVisionCUDA_graphCapture`** (cuda, a GPU-less runner) now skips when there is no CUDA device at all.
+
+The last two change copied files; `ax1_copy.py check` lists them as edited after the copy and compares the rest byte for byte.
+
 ## Not run here
 
 The CUDA code builds on Linux only. It compiled here with `GOOS=linux`; its device tests run on nobara:
