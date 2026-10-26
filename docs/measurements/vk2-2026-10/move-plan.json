@@ -1,0 +1,222 @@
+[
+ {
+  "Decl": "gemma3Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_gemma3.go"
+ },
+ {
+  "Decl": "gemma4Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_gemma4.go"
+ },
+ {
+  "Decl": "qwen3Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3.go"
+ },
+ {
+  "Decl": "qwen3MoeArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_moe.go"
+ },
+ {
+  "Decl": "llamaArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_llama.go"
+ },
+ {
+  "Decl": "smollm3Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_smollm3.go"
+ },
+ {
+  "Decl": "olmo3Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_olmo3.go"
+ },
+ {
+  "Decl": "olmoHybridArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_olmo_hybrid.go"
+ },
+ {
+  "Decl": "cohereArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_cohere.go"
+ },
+ {
+  "Decl": "cohere2Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_cohere2.go"
+ },
+ {
+  "Decl": "mistralArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_mistral.go"
+ },
+ {
+  "Decl": "ministral3Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_mistral3.go"
+ },
+ {
+  "Decl": "gpt2Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_gpt2.go"
+ },
+ {
+  "Decl": "mixtralArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_mixtral.go"
+ },
+ {
+  "Decl": "mellumArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_mellum.go"
+ },
+ {
+  "Decl": "qwen35Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_5_moe.go"
+ },
+ {
+  "Decl": "qwen3NextArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_next.go"
+ },
+ {
+  "Decl": "qwen2Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen2.go"
+ },
+ {
+  "Decl": "qwen2_5_vlArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen2_5_vl.go"
+ },
+ {
+  "Decl": "qwen3_vlArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_vl.go"
+ },
+ {
+  "Decl": "qwen3VLMoeArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_vl_moe.go"
+ },
+ {
+  "Decl": "voxtralArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_voxtral.go"
+ },
+ {
+  "Decl": "qwen3_asrArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_asr.go"
+ },
+ {
+  "Decl": "qwen2MoeArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen2_moe.go"
+ },
+ {
+  "Decl": "glm4moeArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_glm4_moe.go"
+ },
+ {
+  "Decl": "lfm2Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_lfm2.go"
+ },
+ {
+  "Decl": "graniteArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_granitemoehybrid.go"
+ },
+ {
+  "Decl": "graniteDenseArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_granite.go"
+ },
+ {
+  "Decl": "nemotronhArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_nemotron_h.go"
+ },
+ {
+  "Decl": "deepseekArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_deepseek.go"
+ },
+ {
+  "Decl": "bailingHybridArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_bailing_hybrid.go"
+ },
+ {
+  "Decl": "phi3Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_phi3.go"
+ },
+ {
+  "Decl": "glmOcrArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_glm_ocr.go"
+ },
+ {
+  "Decl": "gptOssArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_gpt_oss.go"
+ },
+ {
+  "Decl": "llama4Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_llama4_text.go"
+ },
+ {
+  "Decl": "lagunaArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_laguna.go"
+ },
+ {
+  "Decl": "spark25Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_spark2_5.go"
+ },
+ {
+  "Decl": "internlm2Architecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_internlm2.go"
+ },
+ {
+  "Decl": "qwen35DenseArchitecture",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_5.go"
+ },
+ {
+  "Decl": "gpt2Act",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_gpt2.go"
+ },
+ {
+  "Decl": "lfm2FFNDim",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_lfm2.go"
+ },
+ {
+  "Decl": "nopePredicate",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_granitemoehybrid.go"
+ },
+ {
+  "Decl": "(*Config).validateGlmOcr",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_glm_ocr.go"
+ },
+ {
+  "Decl": "qwen3VLMRopeSection",
+  "From": "decoder/registry.go",
+  "To": "decoder/arch_qwen3_vl.go"
+ }
+]

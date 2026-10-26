@@ -1,0 +1,50 @@
+declarations before 2624 after 2624
+only before: []
+only after: []
+token stream changed: []
+moved: 44
+  decoder.(*Config).validateGlmOcr: registry.go -> arch_glm_ocr.go
+  decoder.bailingHybridArchitecture: registry.go -> arch_bailing_hybrid.go
+  decoder.cohere2Architecture: registry.go -> arch_cohere2.go
+  decoder.cohereArchitecture: registry.go -> arch_cohere.go
+  decoder.deepseekArchitecture: registry.go -> arch_deepseek.go
+  decoder.gemma3Architecture: registry.go -> arch_gemma3.go
+  decoder.gemma4Architecture: registry.go -> arch_gemma4.go
+  decoder.glm4moeArchitecture: registry.go -> arch_glm4_moe.go
+  decoder.glmOcrArchitecture: registry.go -> arch_glm_ocr.go
+  decoder.gpt2Act: registry.go -> arch_gpt2.go
+  decoder.gpt2Architecture: registry.go -> arch_gpt2.go
+  decoder.gptOssArchitecture: registry.go -> arch_gpt_oss.go
+  decoder.graniteArchitecture: registry.go -> arch_granitemoehybrid.go
+  decoder.graniteDenseArchitecture: registry.go -> arch_granite.go
+  decoder.internlm2Architecture: registry.go -> arch_internlm2.go
+  decoder.lagunaArchitecture: registry.go -> arch_laguna.go
+  decoder.lfm2Architecture: registry.go -> arch_lfm2.go
+  decoder.lfm2FFNDim: registry.go -> arch_lfm2.go
+  decoder.llama4Architecture: registry.go -> arch_llama4_text.go
+  decoder.llamaArchitecture: registry.go -> arch_llama.go
+  decoder.mellumArchitecture: registry.go -> arch_mellum.go
+  decoder.ministral3Architecture: registry.go -> arch_mistral3.go
+  decoder.mistralArchitecture: registry.go -> arch_mistral.go
+  decoder.mixtralArchitecture: registry.go -> arch_mixtral.go
+  decoder.nemotronhArchitecture: registry.go -> arch_nemotron_h.go
+  decoder.nopePredicate: registry.go -> arch_granitemoehybrid.go
+  decoder.olmo3Architecture: registry.go -> arch_olmo3.go
+  decoder.olmoHybridArchitecture: registry.go -> arch_olmo_hybrid.go
+  decoder.phi3Architecture: registry.go -> arch_phi3.go
+  decoder.qwen2Architecture: registry.go -> arch_qwen2.go
+  decoder.qwen2MoeArchitecture: registry.go -> arch_qwen2_moe.go
+  decoder.qwen2_5_vlArchitecture: registry.go -> arch_qwen2_5_vl.go
+  decoder.qwen35Architecture: registry.go -> arch_qwen3_5_moe.go
+  decoder.qwen35DenseArchitecture: registry.go -> arch_qwen3_5.go
+  decoder.qwen3Architecture: registry.go -> arch_qwen3.go
+  decoder.qwen3MoeArchitecture: registry.go -> arch_qwen3_moe.go
+  decoder.qwen3NextArchitecture: registry.go -> arch_qwen3_next.go
+  decoder.qwen3VLMRopeSection: registry.go -> arch_qwen3_vl.go
+  decoder.qwen3VLMoeArchitecture: registry.go -> arch_qwen3_vl_moe.go
+  decoder.qwen3_asrArchitecture: registry.go -> arch_qwen3_asr.go
+  decoder.qwen3_vlArchitecture: registry.go -> arch_qwen3_vl.go
+  decoder.smollm3Architecture: registry.go -> arch_smollm3.go
+  decoder.spark25Architecture: registry.go -> arch_spark2_5.go
+  decoder.voxtralArchitecture: registry.go -> arch_voxtral.go
+A1 PASS

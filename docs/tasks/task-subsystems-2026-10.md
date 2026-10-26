@@ -34,7 +34,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 |---|---|---|---|
 | VK0 | done | 2026-10-26 (mac-vk01): 234 of 4,052 commits re-staled 8,895 family validations in 30 days; 8,775 (98.7%) came with no moved golden and no changed recorded metric, an upper bound on what a behavior key saves | §5.3; `docs/measurements/vk0-2026-10.md` |
 | VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
-| VK2 | open | either box: one file per family adapter out of `decoder/registry.go`; `decoder/model.go`'s numeric helpers into a numeric file; `core` narrowed to numeric code; S–M | §5.5 |
+| VK2 | active | 2026-10-26 (mac-vk01): part 1 done, one file per family adapter (A1–A4 PASS); part 2 (`model.go` out of `core`) waits on a decision: 19 files holding forward-path code, `program.go` and `program_cpu.go` among them, are in no hash set; S–M | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
 | VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
 | VK5 | active | mac-vk01: shadow mode built (`internal/paritykey`, `gate shadow`, `.github/workflows/vk-shadow.yml`); P1–P3 PASS, P4 pending the workflow's first run on main, when SD6's week starts; the switch is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
@@ -425,6 +425,23 @@ where it can run. `freshDepsHash` and the parity manifest do not change in VK1 (
 - Move `decoder/model.go`'s numeric helpers into a numeric file in `core`; `decoder/model.go` leaves `core`.
 - **Gates (sketch):** no family's state changes at the commit that narrows the sets (every validation carried by
   identity); a planted edit in one adapter stales exactly one family. S–M, mechanical.
+
+#### VK2 part 1's gates (the adapters), registered 2026-10-26 before the code (mac-vk01)
+
+Part 1 moves each `…Architecture` adapter, and each helper only one adapter uses, from `decoder/registry.go` into
+`decoder/arch_<family>.go`, unchanged. It is done by a tool that cuts each declaration with its doc comment, then
+`goimports`. Each manifest family's `own` list gains its adapter's file and the files of the adapters it calls
+(voxtral→llama; qwen3_asr and qwen3_vl→qwen3; qwen2_5_vl→qwen2; qwen3_vl_moe→qwen3_moe and qwen3_vl's m-RoPE helper).
+`registry.go` keeps the map, `resolveArchitecture`, `validateResolved`, the bounds check and the two helpers several
+adapters share, and stays in `core`. Part 2 (`model.go` and what `core` covers) waits on a decision. Measured while
+planning it: 19 files holding forward-path code are in no hash set, among them `program.go` and `program_cpu.go`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| A1 unchanged code | every top-level declaration in `decoder` has the same Go token stream before and after the move; only the file holding it changes | never | one run | seconds |
+| A2 carried by identity | `scripts/refresh_parity_hashes.sh` (goldens-gated) refreshes `deps_hash`; the manifest diff changes `own` lists and `deps_hash` and nothing else: no status, `validated_at`, date or metrics | a golden red before the move (then it is not this change's) | one run | about 4 min (the script's own figure) |
+| A3 a planted adapter edit | on a throwaway commit after the move, `gate shadow` stales exactly: `{phi3}` for an edit in `arch_phi3.go`; `{llama, voxtral}` for one in `arch_llama.go`; every family that uses `core` for one in `registry.go` | — | one run each | about a minute in all |
+| A4 the census holds | a new test, `TestParityManifest_adapterFilesOwned`, derives each family's adapter files from the registry and the adapters' calls and fails when a family's `own` list lacks one; `gate mutation` turns it red by dropping one entry | — | one run | seconds |
 
 ### 5.6 VK3 — one parity record per family
 

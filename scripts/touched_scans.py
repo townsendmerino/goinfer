@@ -63,6 +63,8 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
+    Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity_manifest.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),

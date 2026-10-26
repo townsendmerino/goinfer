@@ -467,7 +467,7 @@ traps worth knowing before you hit them:
 - A backtick-quoted concrete path under a **gitignored** directory (`docs/internal/…`) is a
   FORBIDDEN DESTINATION — *including in another repo*, since nobody else can resolve it.
   Describe the record in prose instead; that is what `c494c62` did.
-- **Code is cited by declaration, never by line.** A live doc writes `decoder/registry.go:voxtralArchitecture` or
+- **Code is cited by declaration, never by line.** A live doc writes `decoder/arch_voxtral.go:voxtralArchitecture` or
   `chat/chat.go:Template.Render` (`Type.Method` for a method; a const or var in a block by its own name), and the lint checks the
   file declares it today. A rename or a deletion is red, with the message to name what it became; a function that merely moved
   within its file is green, and nothing has to be renumbered. A **dated record** (an audit, a review, a measurement write-up) is
