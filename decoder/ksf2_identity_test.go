@@ -87,10 +87,11 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 	}
 }
 
-// KS-F2b: attendQueryP with the heads fanned out and eight keys scored at once is bit-identical to its reference in every cell, and
-// fans out where gpt-oss's rule would (its cache's head worker pool grows there).
+// KS-F2b: attendQueryP with the heads fanned out and eight keys scored at once is bit-identical to its reference in every cell. In
+// every run with a scratch it fans out exactly where scalarHeadWorkers says to (its cache's head worker pool grows there and nowhere
+// else).
 func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
-	cells, fanned, grown := 0, 0, 0
+	cells, fanned := 0, 0
 	for _, procs := range []int{1, 8} {
 		old := runtime.GOMAXPROCS(procs)
 		for _, sh := range ksf2Shapes {
@@ -135,11 +136,15 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 							ksf2SameBits(t, name+": ctx", got, want)
 							cells++
 							if withScr {
-								if scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1 {
-									fanned++ // a cell the fan-out rule takes
-									if len(a.scr.headPool) > 0 {
-										grown++
-									}
+								eligible := scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1
+								switch {
+								case eligible && len(a.scr.headPool) == 0:
+									t.Errorf("%s: the fan-out rule takes this cell, but attendQueryP grew no head worker slot", name)
+								case !eligible && len(a.scr.headPool) > 0:
+									t.Errorf("%s: under the fan-out threshold, but attendQueryP grew %d head worker slots", name, len(a.scr.headPool))
+								}
+								if eligible {
+									fanned++
 								}
 							}
 						}
@@ -149,9 +154,9 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 		}
 		runtime.GOMAXPROCS(old)
 	}
-	t.Logf("%d runs, every word equal; %d in cells the fan-out rule takes, %d of them fanned out", cells, fanned, grown)
-	if fanned == 0 || grown == 0 {
-		t.Fatalf("fan-out cells %d, fanned %d: the fanned schedule was not exercised", fanned, grown)
+	t.Logf("%d runs, every word equal; %d in cells the fan-out rule takes, each of them fanned out", cells, fanned)
+	if fanned == 0 {
+		t.Fatal("no cell the fan-out rule takes: the fanned schedule was not exercised")
 	}
 }
 
@@ -321,7 +326,8 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 // the fanned schedule through its own forward. Its tiny fixture, on the CPU, decodes past a prompt long enough that a layer's
 // heads × span × head size crosses scalarHeadWorkers' threshold, and attendQueryPFanned must rise. A fixture that is absent here
 // (granite-tiny is gitignored) skips. Bit-identity is TestKSF2_queryPFannedBitIdentical's, and each family's full logits are
-// gate identity's.
+// gate identity's. It reads the package-wide attendQueryPFanned counter, so it and its subtests run serially: a test calling
+// attendQueryP in parallel with it could raise the counter and pass a family that never fanned out.
 func TestKSF2_familiesTakeTheFannedSchedule(t *testing.T) {
 	for _, fx := range []string{"qwen35-tiny", "granite-tiny", "lfm2-tiny", "nemotron-tiny", "llama4-tiny"} {
 		t.Run(fx, func(t *testing.T) {
