@@ -274,6 +274,12 @@
    "see": "docs/spec/08-dspark-dflash.md"
   },
   {
+   "name": "drafter-width",
+   "group": "Speculative decoding",
+   "summary": "The verify width for `--drafter`: block positions the target checks per round (0 keeps the default of 8; the drafter's block caps it). The best width depends on the pairing and the box.",
+   "see": "docs/measurements/sp2-2026-10/README.md"
+  },
+  {
    "name": "addr",
    "group": "Network and security",
    "summary": "Listen address. Loopback by default; bind `0.0.0.0` only with `--api-key` and TLS, or behind a TLS-terminating proxy."

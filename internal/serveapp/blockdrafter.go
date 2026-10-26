@@ -19,7 +19,7 @@ import (
 // pairing or a backend that cannot host one should be a startup error seen once, not a fleet quietly serving at 1x.
 // The one exception is a sampler the spec path does not support, a per-request property that falls back per request
 // by design.
-func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter) error {
+func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter, width int) error {
 	if lm.model == nil || !lm.model.BlockSpecCapable() {
 		return fmt.Errorf("this model has no resident GPU decode path that can host a block " +
 			"drafter. Block drafting needs a resident GPU backend (--backend cuda) and a model " +
@@ -32,11 +32,14 @@ func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter) error {
 		}
 		return err
 	}
+	if err := spec.SetVerifyWidth(width); err != nil {
+		return fmt.Errorf("--drafter-width %d: %w", width, err)
+	}
 	lm.blockSpec = spec
 	geo := dw.DrafterGeometry()
-	log.Printf("block drafter attached to %q: %d layers, hidden %d, block %d, %d taps %v — "+
+	log.Printf("block drafter attached to %q: %d layers, hidden %d, block %d, verify width %d, %d taps %v — "+
 		"greedy requests take the speculative path, sampled ones fall back",
-		lm.name, geo.Layers, geo.Hidden, dw.BlockSize(), len(dw.TargetLayerIDs()), dw.TargetLayerIDs())
+		lm.name, geo.Layers, geo.Hidden, dw.BlockSize(), spec.VerifyWidthInUse(), len(dw.TargetLayerIDs()), dw.TargetLayerIDs())
 	return nil
 }
 
