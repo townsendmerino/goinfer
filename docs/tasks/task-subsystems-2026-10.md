@@ -48,7 +48,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM6 | blocked | MM1; `night.py add` and `goinfer fit` call `Solve` against the box's recorded profile at queue time; S | §6.5 |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | active | copied in PR #274 (branch `ax1-move-towers-2026-10`), the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev` (the root stays free of backend deps; supersedes §7.1 and §9's `internal/gpudev`), gates AX1-S, -N, -B and -T green on the Mac (§7.6); left: nobara runs the CUDA device tests, then the coordinator merges; `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6 |
-| AX2 | blocked | AX1; switch goinfer's imports one module at a time, each step bit-identical; M | §7.3 |
+| AX2 | active | AX2a (the tower-identity instrument) on branch `ax2a-tower-identity-2026-10`; gates registered in §7.8 (Francis, 15:15: "AX2, go"); then AX2b, AX2c, AX2d as in §7.7; M | §7.7, §7.8 |
 | AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
 | AX4 | blocked | AX3; aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
 | AX5 | open | SD2 decided 2026-10-26: the ANN and text-encoder GPU backends stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops bumping them; S | §7.3, §14 |
@@ -754,6 +754,36 @@ metal; aikit's `gpu` 31 + 52 cuda, 8 + 10 metal (the root imports none: `cmd/gat
 Then AX3 drops `aikit/gpu` and `aikit/gpu/visioncuda` from every `go.mod`. Docs citing a moved aikit file stay valid
 while aikit keeps the frozen copy (AX4 removes `audio` after one minor); each is re-pointed in the AX2 commit that moves
 its importer, or the citation lint goes red at AX4.
+
+### 7.8 AX2a and AX2b gates (registered 2026-10-26 15:22 PDT by mac-ax01, before AX2a's code)
+
+Tier 0: tiny committed fixtures, f32 towers, no model, no timed run. Every Mac test command holds the timing lock shared.
+The test-only environment variable below is read by tests only, so `testdata/env_reads.txt` does not change.
+
+**The instrument (AX2a).** `internal/towerid` runs each tower family on its committed tiny fixture with fixed synthetic
+inputs: SigLIP, Qwen2.5-VL, Qwen3.5-VL, Qwen3-VL with DeepStack, GLM-OCR, Gemma 4 vision, Pixtral, SigLIP2 NaFlex,
+Gemma 4 audio, Whisper, Voxtral and Qwen3-ASR. On a device backend it attaches each tower through the registry production
+uses: the unnamed slots (`EnableResident`) for SigLIP and Qwen2.5-VL, and the named ones (`multimodal.NewQwen3Tower`,
+`NewGlmOcrTower`, `NewGemma4Tower`, `embeddinggemma2.NewAudioAccelerator`, `multimodal.UseWhisperDevice`) for the rest. It
+covers every family the backend serves. A record holds, per (backend, family, case), the SHA-256 of the output's float32
+bits and whether the device path attached. One test per backend calls it: the root module (CPU), `metal` (Metal), `gpu`
+(WebGPU, `-tags gpu`) and `cuda` (CUDA, on nobara). `GOINFER_TOWER_ID_OUT=<file>` writes the record.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2a-T (the instrument holds) | Each backend's test passes. Every case runs twice with equal hashes, or the identity gate below could not be read. Every family the backend serves attaches its device path; an attach error is a FAIL, not a skip. | the backend's device is absent (a named skip, VOID for that backend, never a pass) | once per backend, to completion | not measured; estimated under a minute a backend on the Mac. The first run's wall time becomes the record |
+| AX2b-ID (tower identity) | A record from the AX2a test at AX2b's base commit and one at AX2b's head, same machine and flags. **Pass:** every (backend, family, case) hash and device flag is equal. Any difference is a FAIL, with no tolerance band: the switch changes no numeric code, because `internal/vision` and `internal/audio`'s production files are aikit v1.75.0's, byte for byte. Backends: CPU, Metal and WebGPU on the Mac; CPU and CUDA on nobara (relayed, by day). | as AX2a-T | each record once; a difference is diagnosed by name, never re-run until it agrees | AX2a-T's measured time, twice per backend |
+| AX2b-M (the identity gate can go red) | Once, at AX2b's head, plant the failure it exists for. One backend's registration for an unnamed slot is left on aikit's `vision`. If that compiles, its family's device flag must flip and AX2b-ID read FAIL. If no such plant compiles, the record says so: the split cannot ship silently there. The gate is then planted at the test instead, with the registration name changed, and must read FAIL. | — | once | minutes |
+| AX2b-N (the mechanical commit is the script) | The import switch is one commit made by a script. Re-running the script on that commit's parent reproduces it byte for byte. The commit contains nothing else. The script also runs gofmt. | — | complete | seconds |
+| AX2b-S (nothing left on aikit's towers) | `go list -deps` of every module, under every build tag it uses (root with `realckpt` and `goinfer_testhooks`; `metal`; `gpu`; `cuda` with `GOOS=linux`; `demo/agent`), names neither `github.com/townsendmerino/aikit/vision` nor `.../aikit/audio`, test packages included | — | complete | seconds |
+| AX2b-B (builds) | Build and vet under every tag. The cleanliness guard is run from the root as CI runs it. gofmt, and CI's staticcheck after its canary. `touched.py`. CI's full suite on the PR, apidiff included. The image and audio parity tests are in that suite, and none of their goldens may change. | — | complete | minutes; CI as usual |
+
+**What AX2b changes outside the import lines.** First, `multimodal` and `embeddinggemma2`'s exported functions that take
+tower types now take `internal/vision` and `internal/audio` types. Both packages are Experimental tier
+(`docs/api-tiers.md`; apidiff checks `decoder`, `tokenizer`, `chat` and `constrain`), so this is allowed, and it gets a
+CHANGELOG line. Second, `examples/invoice` and `demo/agent` reach the towers through new `multimodal` functions instead
+of importing an internal package (§7.2). That is a separate commit after the mechanical one, gated by AX2b-B, with each
+example's own test.
 
 ## 8. The other subsystems (SB1–SB13)
 
