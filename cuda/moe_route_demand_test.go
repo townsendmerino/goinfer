@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // These tests measure moe_route's first-launch demand directly instead of inferring it from the

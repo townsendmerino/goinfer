@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // TestGemvW8A8Batched_bitIdentical is §C6's milestone-1 gate: the weight-stationary batched W8A8 GEMV

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // TestAttnVit_logicAndBMIdentity is gates 1 and 2 of docs/measurements/vision-tower-attn-PREREGISTERED.md for the R8 phase-A

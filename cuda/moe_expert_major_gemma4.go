@@ -5,7 +5,7 @@ package cuda
 import (
 	"slices"
 
-	"github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // Gemma-4 extension of moe_expert_major.go's expert-major restructuring (docs/queue-performance.md P20,

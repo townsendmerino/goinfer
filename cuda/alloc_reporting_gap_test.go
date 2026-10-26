@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // TestA10ReportingGap is the cheap cross-check of the A10 reporting-gap model (cuMemGetInfo reports more

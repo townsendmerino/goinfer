@@ -10,7 +10,7 @@
 // ReadToHost) are called as gpu.X[T](...) at the sites.
 package cuda
 
-import gpu "github.com/townsendmerino/aikit/gpu"
+import gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 
 type (
 	Device       = gpu.Device

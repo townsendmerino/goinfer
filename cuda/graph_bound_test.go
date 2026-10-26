@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // TestCUDA_graphReplayBound is the fail-fast in front of the CUDA-graphs forward restructure. The

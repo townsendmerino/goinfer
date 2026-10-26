@@ -8,7 +8,7 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // TestLead3_pinOrderMicrobench is docs/tasks/task-freetoken-techniques.md Lead 3's own "cheap,

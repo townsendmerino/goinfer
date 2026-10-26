@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // S17 lever A's kernel gate (docs/tasks/task-multimodal-support-2026-10.md, "S17's CUDA lever A"): the fused float32 attention (tower_base.cu) against a float64 reference at the production shapes

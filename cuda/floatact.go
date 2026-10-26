@@ -5,7 +5,7 @@ package cuda
 import (
 	"fmt"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // Float-activation decode for Gemma 4 MoE (floatAct, gemv_w4f32.cu): every int4 projection of a decode step reads its

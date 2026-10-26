@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"runtime"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // The CUDA vision-tower base (docs/tasks/task-multimodal-support-2026-10.md;
