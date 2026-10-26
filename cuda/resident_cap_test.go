@@ -130,7 +130,7 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 			if got := m.ResidentContextPinned(); got != c.pinned {
 				t.Fatalf("ResidentContextPinned() = %v, want %v — this case's own setup is wrong", got, c.pinned)
 			}
-			if got := resolveCtxCapFit(m, c.request, c.modelCtx, 1); got != c.want {
+			if got, _ := resolveCtxCapFit(m, c.request, c.modelCtx, 1, fixedMargin(testCtxMargin)); got != c.want {
 				t.Errorf("resolveCtxCapFit(m, %d, %d) = %d, want %d", c.request, c.modelCtx, got, c.want)
 			}
 		})
@@ -178,7 +178,7 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 	// Target the interior of (cudaCtxCapDefault, fitDefaultCtx]: an ExtraResidentBytes big enough that, with the SAME margin
 	// resolveCtxCapFit itself subtracts before calling Plan, dense+kv(fitDefaultCtx)+extra does NOT fit but
 	// dense+kv(targetCtx)+extra does, forcing chooseCtx's budget branch instead of its "fits outright" shortcut. Computed
-	// against the MARGINED budget on purpose: llama-tiny's perPos is tiny next to ctxCapMarginBytes (384 MiB), so a term sized
+	// against the MARGINED budget on purpose: llama-tiny's perPos is tiny next to the margin (testCtxMargin), so a term sized
 	// against raw free would leave the margin subtraction nothing to bite on and land the floor. A planner without that
 	// internal margin subtraction lands at the ceiling (fitDefaultCtx) instead: still a checkable planning-vs-build
 	// disagreement (the checkKVFits assertion below), but not "interior" in that arm, so both arms are logged, not asserted
@@ -200,7 +200,7 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 			// what resolveCtxCapFit's own Plan call reserves (priced at candidate, not targetCtx —
 			// M-22's own over-estimate-not-under design), so a forcing term calibrated for the
 			// no-companion case would over-constrain the companion one.
-			forcedExtra := free - ctxCapMarginBytes - dense - perPos*targetCtx - c.kvPerPosition*fitDefaultCtx
+			forcedExtra := free - testCtxMargin - dense - perPos*targetCtx - c.kvPerPosition*fitDefaultCtx
 			if forcedExtra <= 0 {
 				t.Skipf("this box's free VRAM (%d bytes) is too small relative to llama-tiny's dense "+
 					"weights (%d bytes) to construct a positive forcing term — nothing to check here", free, dense)
@@ -216,7 +216,7 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 			defer m.Close()
 
 			// Unpinned, modelCtx large enough that fitDefaultCtx itself is the real candidate.
-			ctx := resolveCtxCapFit(m, 0, 1<<20, 1)
+			ctx, margin := resolveCtxCapFit(m, 0, 1<<20, 1, fixedMargin(testCtxMargin))
 			if ctx <= cudaCtxCapDefault {
 				t.Fatalf("resolveCtxCapFit did not improve on the historical default (got %d) — the "+
 					"forcing term left no room at all; this test's own arithmetic needs adjusting, not "+
@@ -227,10 +227,11 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 			// The SAME extraBytes arithmetic the real build uses (cuda/backend.go): priced at the
 			// FINAL ctx this test just got back, not the candidate resolveCtxCapFit tried internally.
 			r := &cudaResident{
-				dev:        dev,
-				ctxCap:     ctx,
-				layers:     layers,
-				extraBytes: m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(ctx),
+				dev:            dev,
+				ctxCap:         ctx,
+				layers:         layers,
+				extraBytes:     m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(ctx),
+				ctxMarginBytes: margin,
 			}
 			if err := r.checkKVFits(); err != nil {
 				t.Errorf("resolveCtxCapFit chose an INTERIOR ctx=%d, but checkKVFits refuses it at the "+
@@ -288,8 +289,8 @@ func TestFitsWeightsBudget(t *testing.T) {
 		want       bool
 	}{
 		{"comfortably_fits", 4 * gb, 8 * gb, true},
-		{"exactly_at_margin", 8*gb - ctxCapMarginBytes, 8 * gb, true},
-		{"just_over_margin", 8*gb - ctxCapMarginBytes + 1, 8 * gb, false},
+		{"exactly_at_margin", 8*gb - testCtxMargin, 8 * gb, true},
+		{"just_over_margin", 8*gb - testCtxMargin + 1, 8 * gb, false},
 		{"far_too_large", 22 * gb, 8 * gb, false}, // Qwen3.5-35B-A3B-shaped dense-only sum on an 8 GB card
 		// Unknown inputs must never refuse: an unreadable MemInfo or a model reporting zero bytes
 		// would otherwise disable residency for everyone, silently.
@@ -297,7 +298,7 @@ func TestFitsWeightsBudget(t *testing.T) {
 		{"unknown_free", 4 * gb, 0, true},
 		{"negative_need", -1, 8 * gb, true},
 	} {
-		if got := fitsWeightsBudget(c.need, c.free); got != c.want {
+		if got := fitsWeightsBudget(c.need, c.free, testCtxMargin); got != c.want {
 			t.Errorf("%s: fitsWeightsBudget(%.2f GB, %.2f GB) = %v, want %v",
 				c.name, float64(c.need)/float64(gb), float64(c.free)/float64(gb), got, c.want)
 		}

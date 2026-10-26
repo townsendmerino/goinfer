@@ -184,37 +184,17 @@ func TestCUDAKVSlots_recurrentKeepsOne(t *testing.T) {
 	}
 }
 
-// TestKVSlotsFit pins MC1's clamp arithmetic on CUDA (kvSlotsFit) without allocating a real clamp's worth of KV.
-func TestKVSlotsFit(t *testing.T) {
-	const mb = int64(1 << 20)
-	for _, tc := range []struct {
-		name                string
-		want                int
-		free, slot, reserve int64
-		got                 int
-	}{
-		{"all fit", 4, 4000 * mb, 470 * mb, 384 * mb, 4},
-		{"clamped to what fits", 4, 2000 * mb, 470 * mb, 384 * mb, 3}, // 3*470+384 = 1794 <= 2000; 4*470+384 > 2000
-		{"exactly at the edge fits", 2, 940*mb + 384*mb, 470 * mb, 384 * mb, 2},
-		{"only the first fits", 4, 900 * mb, 470 * mb, 384 * mb, 1},
-		{"even the first over budget: still 1, the refusal is checkKVFits'", 4, 100 * mb, 470 * mb, 384 * mb, 1},
-		{"request of 0 means 1", 0, 4000 * mb, 470 * mb, 384 * mb, 1},
-	} {
-		if got := kvSlotsFit(tc.want, tc.free, tc.slot, tc.reserve); got != tc.got {
-			t.Errorf("%s: kvSlotsFit(%d, ...) = %d, want %d", tc.name, tc.want, got, tc.got)
-		}
-	}
-}
-
 // kvSlotsProbe is one armed cudaFreeVRAM stub of TestCUDAKVSlots_pricedAgainstWhatIsLeft: it reports live minus
 // the real bytes the device has allocated since it was armed (or the real free figure, live == 0), and records what
 // it saw at the call.
 type kvSlotsProbe struct {
-	free0   uint64 // the real free VRAM when the probe was armed
-	live    int64  // the fictional free figure the probe falls from; 0: report the real one
-	sawNeed int64  // one slot's KV at the probed resident's context
-	sawDrop int64  // real bytes allocated between arming and the probe call
-	sawFree int64  // what the probe returned
+	free0   uint64   // the real free VRAM when the probe was armed
+	live    int64    // the fictional free figure the probe falls from; 0: report the real one
+	sawNeed int64    // one slot's KV at the probed resident's context, as the pools charge it
+	sawKV   [4]int64 // the pools' charged bytes for 0..3 slots at that context
+	sawRes  int64    // the build's context margin
+	sawDrop int64    // real bytes allocated between arming and the probe call
+	sawFree int64    // what the probe returned
 	calls   int
 }
 
@@ -238,8 +218,8 @@ func TestCUDAKVSlots_clampedBuild(t *testing.T) {
 	orig := cudaFreeVRAM
 	t.Cleanup(func() { cudaFreeVRAM = orig })
 	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
-		need := kvBytesForCap(r.ctxCap, r.layers)
-		return uint64(2*need + r.extraBytes + ctxCapMarginBytes + need/2), nil
+		two, three := kvChargedBytes(r.ctxCap, 2, r.layers), kvChargedBytes(r.ctxCap, 3, r.layers)
+		return uint64((two+three)/2 + r.extraBytes + r.ctxMargin()), nil
 	}
 	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 4})
 	if err != nil {
@@ -318,7 +298,11 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 		cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
 			p.calls++
 			now := realFree()
-			p.sawNeed, p.sawDrop = kvBytesForCap(r.ctxCap, r.layers), int64(p.free0)-int64(now)
+			p.sawNeed, p.sawDrop = kvChargedBytes(r.ctxCap, 1, r.layers), int64(p.free0)-int64(now)
+			for n := 1; n < len(p.sawKV); n++ {
+				p.sawKV[n] = kvChargedBytes(r.ctxCap, n, r.layers)
+			}
+			p.sawRes = r.ctxMargin()
 			p.sawFree = int64(now)
 			if p.live > 0 {
 				p.sawFree = p.live - p.sawDrop
@@ -342,12 +326,12 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 
 	_, cal := build(0, 1) // calibration: what the build allocates before its KV, and one slot's KV
 	const want = 2
-	reserve := int64(ctxCapMarginBytes) // no companion attach in this test
+	reserve := cal.sawRes // no companion attach in this test
 	if cal.sawDrop < cal.sawNeed/2 {
 		t.Skipf("the build allocates %d B before its KV against %d B per slot: a double count of that could not "+
 			"change the slot count here (run with GOINFER_CUDA_KVSLOTS_MODEL on a real checkpoint)", cal.sawDrop, cal.sawNeed)
 	}
-	live := cal.sawDrop + reserve + want*cal.sawNeed + cal.sawNeed/2
+	live := cal.sawDrop + reserve + (cal.sawKV[want]+cal.sawKV[want+1])/2
 	got, p := build(live, want+1)
 	t.Logf("pre-KV bytes %d (calibration) / %d (this build), one slot %d B, probe returned %d B: %d of %d slots granted",
 		cal.sawDrop, p.sawDrop, p.sawNeed, p.sawFree, got, want+1)
@@ -399,7 +383,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 		{"not even the floor holds 4: the floor, and the build clamps", 3000, func(got int) bool { return got == cudaCtxCapDefault }, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			forced := free - ctxCapMarginBytes - dense - int64(slots)*perPos*int64(c.target)
+			forced := free - testCtxMargin - dense - int64(slots)*perPos*int64(c.target)
 			if forced <= 0 {
 				t.Skipf("free VRAM %d B too small to force this budget", free)
 			}
@@ -418,9 +402,9 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Fatalf("Load (pinned): %v", err)
 			}
 			defer mPinned.Close()
-			one := resolveCtxCapFit(m, 0, 1<<20, 1)
-			got := resolveCtxCapFit(m, 0, 1<<20, slots)
-			pinned := resolveCtxCapFit(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots)
+			one, _ := resolveCtxCapFit(m, 0, 1<<20, 1, fixedMargin(testCtxMargin))
+			got, _ := resolveCtxCapFit(m, 0, 1<<20, slots, fixedMargin(testCtxMargin))
+			pinned, _ := resolveCtxCapFit(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots, fixedMargin(testCtxMargin))
 			t.Logf("one slot: ctx %d; %d slots: ctx %d (target %d); explicit 8192 with %d slots: %d", one, slots, got, c.target, slots, pinned)
 			// One slot gets the smaller of the candidate and what the forced budget holds (slots*target positions of KV beside the weights).
 			// With the candidate at 8192 that was always the candidate; at 16384 the 3000-position case holds only ~12000, which is the
@@ -440,7 +424,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Errorf("an explicit -ctx 8192 became %d with slots requested — a pinned context must never shrink", pinned)
 			}
 			grant := func(ctx int, pinned bool) (int, int) {
-				r := &cudaResident{dev: dev, ctxCap: ctx, ctxExplicit: pinned, layers: layers, kvSlotsReq: slots, extraBytes: m.ExtraResidentBytes()}
+				r := &cudaResident{dev: dev, ctxCap: ctx, ctxExplicit: pinned, layers: layers, kvSlotsReq: slots, extraBytes: m.ExtraResidentBytes(), ctxMarginBytes: testCtxMargin}
 				if err := r.checkKVFits(); err != nil {
 					t.Fatalf("checkKVFits at ctx %d: %v", ctx, err)
 				}
@@ -475,8 +459,9 @@ const planOverPriceToleranceBytes = 16 << 20
 // (decoder.Model.ResidentDenseWeightBytesFor("cuda")) against what a real build puts on the device before its KV: the
 // fall in free VRAM from before the load to checkKVFits' probe. That fall is the weights plus the build's scratch and
 // kernel modules, so the estimate must not exceed it by more than an allocation quantum per matrix-ish slack, and it
-// must fall short of it by less than ctxCapMarginBytes, the margin Plan and checkKVFits both reserve for exactly that
-// scratch. The untied 7B's host-side embedding table must not be priced as device weights
+// must fall short of it by less than the build's context margin (ctxMarginFor), which Plan and checkKVFits both reserve. The
+// startup self-test runs before the first build in a process and leaves the context's local-memory pool behind, after the
+// free reading the drop starts from, so a warm-up load pays it first. The untied 7B's host-side embedding table must not be priced as device weights
 // (docs/measurements/concurrency-mc1-cuda-2026-09-27.md). GOINFER_HEAVY_TESTS adds the 7B, the one untied model here.
 func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 	requireCUDADevice(t)
@@ -506,6 +491,9 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 	}
 	orig := cudaFreeVRAM
 	t.Cleanup(func() { cudaFreeVRAM = orig })
+	if w, err := decoder.Load(models[0], decoder.Options{Backend: "cuda", Quant: "int4"}); err == nil {
+		_ = w.Close() // the warm-up: the self-test's pool, before any drop is read
+	}
 	ran := 0
 	for _, p := range models {
 		t.Run(filepath.Base(p), func(t *testing.T) {
@@ -535,15 +523,15 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 			// (res.allocSlackBytes). The margin is for what neither knows, so the bound below is on Plan + that slack, not on Plan alone: the rounding alone can exceed the whole margin on the 7B
 			// (docs/tasks/task-multimodal-support-2026-10.md).
 			t.Logf("device before KV %.0f MB; Plan's CUDA dense %.0f MB (all dense, host tables included, %.0f MB) + allocation slack %.0f MB; "+
-				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(res.allocSlackBytes), mb(drop-est-res.allocSlackBytes), mb(ctxCapMarginBytes))
+				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(res.allocSlackBytes), mb(drop-est-res.allocSlackBytes), mb(res.ctxMargin()))
 			est += res.allocSlackBytes
 			if est > drop+planOverPriceToleranceBytes {
 				t.Errorf("Plan prices %.0f MB of dense weights for CUDA, but the build put only %.0f MB on the device "+
 					"before its KV (tolerance %.0f MB): it counts something CUDA keeps on the host", mb(est), mb(drop), mb(planOverPriceToleranceBytes))
 			}
-			if drop-est >= ctxCapMarginBytes {
+			if drop-est >= res.ctxMargin() {
 				t.Errorf("the build put %.0f MB on the device before its KV, %.0f MB more than Plan's %.0f MB: more than "+
-					"the %.0f MB margin reserved for scratch", mb(drop), mb(drop-est), mb(est), mb(ctxCapMarginBytes))
+					"the %.0f MB margin reserved for scratch", mb(drop), mb(drop-est), mb(est), mb(res.ctxMargin()))
 			}
 		})
 	}
@@ -571,7 +559,7 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 	t.Cleanup(func() { cudaFreeVRAM = orig })
 	const slots, target = 4, 5000
 	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
-		return uint64(int64(slots)*kvBytesForCap(target, r.layers) + kvPoolNullBytes(r.layers) + r.extraBytes + ctxCapMarginBytes), nil
+		return uint64(kvChargedBytes(target, slots, r.layers) + r.extraBytes + r.ctxMargin()), nil
 	}
 	for _, c := range []struct {
 		name               string

@@ -89,4 +89,41 @@ func TestKSH6C_chargedKVArithmetic(t *testing.T) {
 	if n := kvChargedSlotsFit(4, want2+1, cap, layers, 1); n != 2 {
 		t.Errorf("kvChargedSlotsFit = %d with room for exactly two slots, want 2", n)
 	}
+	if n := kvChargedSlotsFit(0, 1<<40, cap, layers, 0); n != 1 {
+		t.Errorf("kvChargedSlotsFit of a request for 0 slots = %d, want 1", n)
+	}
+	if n := kvChargedSlotsFit(4, 1, cap, layers, 0); n != 1 {
+		t.Errorf("kvChargedSlotsFit with no room = %d, want 1 (the refusal is checkKVFits')", n)
+	}
+}
+
+// testCtxMargin is the context margin the plan and fit-check tests that construct a resident by hand price against (the figure the
+// flat margin was), and fixedMargin hands it to resolveCtxCapFit as a margin that does not vary with the context.
+const testCtxMargin = int64(384 << 20)
+
+func fixedMargin(b int64) func(int) int64 { return func(int) int64 { return b } }
+
+// TestKSH6C_marginParts is H6C-G1's margin half: on a struct-only resident, postPoolBytes against a hand count, and the margin as
+// exactly its four parts. Two layers of qDim 8, hidden 64, a dense FFN of 128: every post-pool buffer is under the quantum except
+// the logits at a 600,000-token vocabulary (2,400,000 B, charged 4 MiB), so part 1 is one 2 MiB page plus 4 MiB, or one page at a
+// 1,000-token vocabulary. Plant: a margin with the floor left out does not equal the margin.
+func TestKSH6C_marginParts(t *testing.T) {
+	r := declineFixture(2, "int4")
+	r.hidden, r.inter, r.vocab = 64, 128, 1000
+	if got := r.postPoolBytes(); got != 2<<20 {
+		t.Errorf("postPoolBytes at a 1,000-token vocabulary %d B, the hand count one 2 MiB page", got)
+	}
+	r.vocab = 600000
+	if got := r.postPoolBytes(); got != 6<<20 {
+		t.Errorf("postPoolBytes at a 600,000-token vocabulary %d B, the hand count 6 MiB (one page, and the logits at 4 MiB)", got)
+	}
+	const ctx = 4096
+	parts := r.postPoolBytes() + r.PrefillScratchBytes(prefillDefaultChunk) + r.PrefillSpanScratchBytes(prefillDefaultChunk, ctx)
+	m := r.ctxMarginFor(ctx)
+	if m != parts+allocFloorBytes+decodeAllowanceBytes {
+		t.Errorf("ctxMarginFor %d B, its parts %d + floor %d + allowance %d", m, parts, int64(allocFloorBytes), int64(decodeAllowanceBytes))
+	}
+	if planted := parts + decodeAllowanceBytes; planted == m {
+		t.Error("plant: a margin without the allocation floor equals the margin; the check cannot see it")
+	}
 }

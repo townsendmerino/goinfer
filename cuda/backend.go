@@ -728,7 +728,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			nMamba++
 		}
 	}
-	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack+mambaStateBytes(mambaP, nMamba))
 	attnCap := m.AttnLogitSoftcapResident()
 	if attnSoftcapDropForTest {
 		attnCap = 0
@@ -759,14 +758,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		isMLA:        mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
-		mlaRopeScale: float32(mlaRopeScale),
-		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
-		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
-		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
-		// cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who
-		// did not ask allocates exactly what they always did.
-		ctxCap:          residentCtxCap,
-		ctxPlanned:      residentCtxCap,
+		mlaRopeScale:    float32(mlaRopeScale),
 		allocSlackBytes: allocSlack,
 		ctxExplicit:     m.ResidentContextRequest() > 0,
 		// One conversation may use the whole KV pool (KV4a-3) unless a context was asked for or pinned by the fit guard, or a companion's
@@ -774,11 +766,33 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		kvRaise:    m.ResidentContextRequest() <= 0 && m.ExtraResidentKVPerPosition() == 0,
 		modelCtx:   m.Config().MaxPositions,
 		kvSlotsReq: kvSlotsReq,
-		// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate,
-		// the widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller
-		// price than the one planned against; checkKVFits enforces it.
-		extraBytes: m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(residentCtxCap),
 	}
+	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
+	// and the fused-attention flags are set again where the modules load.
+	r.layers = planLayerGeometry(m, hls, nH, r)
+	r.pleP, r.eModel = pleP, pleP > 0
+	for l := range r.layers {
+		r.eModel = r.eModel || r.layers[l].kvShared
+	}
+	r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
+	if m.ExactPrefill() {
+		r.fastAttn, r.fastGemm = false, false
+	}
+	r.planning = true
+	owners, mlaPools := kvLayerCounts(r.layers)
+	// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site: several buffers are sized from it
+	// earlier (the split-KV score scratch among them), and a zero-value ctxCap makes those 0-byte allocations that fail the whole
+	// resident build. cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who did not ask
+	// allocates exactly what they always did.
+	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
+		allocSlack+mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
+		kvRoundingBound(owners, mlaPools))
+	r.planning, r.layers = false, nil
+	r.ctxPlanned = r.ctxCap
+	// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate, the
+	// widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller price than the
+	// one planned against; checkKVFits enforces it.
+	r.extraBytes = m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(r.ctxCap)
 	if moeSig {
 		r.moeSigmoid = 1
 	}
@@ -1731,6 +1745,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if e := r.kvAllocPoolsFit(); e != nil {
 			return e
 		}
+		if kvPoolsDoneForTest != nil {
+			kvPoolsDoneForTest()
+		}
 		if r.actG32 && maxQDim%32 != 0 {
 			return fmt.Errorf("per-32 activations need the attention width (%d) to be a multiple of 32", maxQDim)
 		}
@@ -1835,6 +1852,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
 		}
 		// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
+		if postPoolDoneForTest != nil {
+			postPoolDoneForTest()
+		}
 		r.allocRecurrentCheckpoint()
 		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
 		// cache to what actually fits (cap-and-log, never OOM) and allocate it.
@@ -1931,6 +1951,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	b.resident = r
 	return r, true, nil
 }
+
+// kvPoolsDoneForTest and postPoolDoneForTest, when set (tests only), are called after the KV pools are allocated and before the
+// self-sizing grants (the recurrent checkpoint, the expert slots, the windowed grant), so a test can hold postPoolBytes to what the
+// build allocates between them (TestKSH6C_marginPriced).
+var kvPoolsDoneForTest, postPoolDoneForTest func()
 
 // routePoolOffForTest, when set (tests only), skips payRoutePool: H6C-S5's plant.
 var routePoolOffForTest bool

@@ -149,7 +149,7 @@ slot is gone; and every KV feature is built three or four times.
 
 1. **One conversation gets 1/N of the KV memory.** Every resident slot reserves its whole context up front, so slots and
    context trade against each other.
-   - CUDA shrinks context until the requested slots fit (`cuda/resident.go:ctxForSlots`, `cuda/resident.go:kvSlotsFit`).
+   - CUDA shrinks context until the requested slots fit (`cuda/resident.go:ctxForSlots`, `cuda/margin.go:kvChargedSlotsFit`).
      On the 8 GB card, the 2026-10-05 cold-user run's 7B at `-ctx 16384` got 1 slot of the 4 requested
      (`docs/measurements/cold-user-2026-10-05-nobara-pc.md`).
    - Metal keeps 2 slots by default, and M2 picks the largest context up to 16,384 that fits beside the weights and both
@@ -1739,7 +1739,7 @@ Code, read at `e2ffb953`:
   - `decoder/residentneed.go:Model.ResidentKVBytes`, `decoder/residentneed.go:Model.ResidentNeedBytes`;
   - `decoder/prefill_budget.go:Model.AdmitPrefillMemory`, `decoder/prefill_budget.go:prefillScratchBytes`.
 - **CUDA:**
-  - `cuda/resident.go:kvSlotsFit`, `cuda/resident.go:ctxForSlots`, `cuda/resident.go:kvBytesForCap`,
+  - `cuda/margin.go:kvChargedSlotsFit`, `cuda/resident.go:ctxForSlots`, `cuda/resident.go:kvBytesForCap`,
     `cuda/resident.go:resolveCtxCapFit`, `cuda/resident.go:cudaResident.checkKVFits`, `cuda/resident.go:cudaLayer`,
     `cuda/resident.go:cudaResident.UseKVSlot`;
   - `cuda/kvwindow.go:cudaResident.kvEnsure`, `cuda/kvwindow.go:cudaResident.ReusableKV`;

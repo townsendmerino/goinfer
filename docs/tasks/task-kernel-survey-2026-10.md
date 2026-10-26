@@ -180,7 +180,7 @@ By expected value for the effort, per box. Sizes: S up to a day, M a few days, L
 - **KS-O2 / KS-B15: A.** The 64 KB opt-in goes through aikit onto the exact attention kernels (bound 12,160 → 16,256 keys).
   - Prompts in that band stay on the exact GEMM, which is bit-identical. The gain is measured.
   - The fast-GEMM option is not approved; it would need its own fidelity gate and a new decision.
-- **KS-O3 / KS-H6: A.** After KS-H2 and KS-H3 read, the two 384 MiB margins (`cuda/resident.go:ctxCapMarginBytes`,
+- **KS-O3 / KS-H6: A.** After KS-H2 and KS-H3 read, the two 384 MiB margins (`cuda/margin.go:cudaResident.ctxMarginFor` (then the constant `ctxCapMarginBytes`),
   `cuda/resident.go:slotMarginBytes`) are re-derived from measured parts, the wider (2,048-row) pass's scratch included.
   - The numbers come to Francis before either guard changes.
 - **KS-O4: B, approved gated.** gpt-oss moves onto the batched acc64 attention with a sink term.
@@ -199,7 +199,7 @@ The options as they were put to the owner:
     16,256.
   - Prompts in between could stay past-bound (exact GEMM).
   - Or they could regain the fast GEMM: 1.37× on Gemma-3-4B, but it re-exposes the measured cosine drift of 0.9865–0.990.
-- **KS-O3, the two CUDA 384 MiB margins (`cuda/resident.go:ctxCapMarginBytes`, `cuda/resident.go:slotMarginBytes`).**
+- **KS-O3, the two CUDA 384 MiB margins (`cuda/margin.go:cudaResident.ctxMarginFor` (then the constant `ctxCapMarginBytes`), `cuda/resident.go:slotMarginBytes`).**
   - After KS-H2 and KS-H3, a margin built from measured parts could return about 100–200 MiB (estimate): 700–1,400
     positions on Qwen3-8B, or 1–2 expert slots on the 26B.
   - The parts are the ~144 MiB allocation floor, one prefill pass's scratch, and decode transients.
@@ -3059,6 +3059,13 @@ its own PR, and it gets a Gemini review before merge.
 
 - **Stopping rule:** a FAIL stops the margin code until it is fixed. **Cost:** S1–S3 seconds; S4 about 2 min (six loads); S5 about
   1 min.
+- **Amendment to H6C-G3, 2026-10-26, before any run:** "below what the build's exact figure would allow" is read beyond Plan's
+  own dense-weight residual, not just the rounding bound. That is the device's drop from before the load to the fit check, less
+  Plan's dense figure and the packing slack, in positions. It is Plan's figure, not the margin's, and on an 8B one MiB of it is
+  about 7 positions; TestBuildScratchAccounting's G-M1 band allows −16 to +64 MiB of it. The residual is reported per model
+  beside the result (`TestKSH6C_marginPriced`).
+- **Part 1's rounding:** the buffers after the pools that are under 2 MiB come from the driver's 2 MiB pages, so their sum is
+  rounded up to whole pages, and each larger buffer is rounded up to 2 MiB. G2 applies the same rule to the observed buffers.
 
 
 ## 12. Already covered (not re-proposed)

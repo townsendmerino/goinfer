@@ -24,16 +24,16 @@ var accountingModels = []string{
 // buildRow is one measured build: what the device gave up before the first checkKVFits probe against what Plan and the slack priced, the plan's context against
 // the one checkKVFits left standing, and what was allocated after the probe (beyond the KV) and on first use.
 type buildRow struct {
-	name                                 string
-	preKV, plan, slack, kv, postKV, lazy int64
-	slots, ctxPlanned, ctxFinal          int
+	name                                         string
+	preKV, plan, slack, kv, postKV, lazy, margin int64
+	slots, ctxPlanned, ctxFinal                  int
 }
 
 func (b buildRow) residual() int64 { return b.preKV - b.plan - b.slack }
 
 func (b buildRow) log(t *testing.T, tag string) {
 	t.Logf("[margin accounting%s] %-42s device before KV %5.0f MiB | Plan %5.0f + slack %4.0f -> residual %4.0f MiB | ctx planned %5d final %5d (%d slots, KV %5.0f MiB) | post-KV scratch %4.0f, first-use %4.0f MiB, against the %0.f MiB margin",
-		tag, b.name, mb(b.preKV), mb(b.plan), mb(b.slack), mb(b.residual()), b.ctxPlanned, b.ctxFinal, b.slots, mb(b.kv), mb(b.postKV), mb(b.lazy), mb(ctxCapMarginBytes))
+		tag, b.name, mb(b.preKV), mb(b.plan), mb(b.slack), mb(b.residual()), b.ctxPlanned, b.ctxFinal, b.slots, mb(b.kv), mb(b.postKV), mb(b.lazy), mb(b.margin))
 }
 
 // measureBuild loads rel on the card at the defaults (int4, unpinned context), reading the free VRAM around the build and one 520-token prefill + decode. slackOff
@@ -99,8 +99,8 @@ func measureBuild(t *testing.T, rel string, slackOff bool) (row buildRow, ok boo
 	freeAfter := realFree()
 	row = buildRow{
 		name: filepath.Base(rel), preKV: free0 - atKV, plan: m.ResidentDenseWeightBytesFor("cuda"), slack: r.allocSlackBytes,
-		kv: int64(r.kvSlotsN) * kvBytesForCap(r.ctxCap, r.layers), slots: r.kvSlotsN, ctxPlanned: r.ctxPlanned, ctxFinal: r.ctxCap,
-		lazy: freeBuilt - freeAfter,
+		kv: kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers), slots: r.kvSlotsN, ctxPlanned: r.ctxPlanned, ctxFinal: r.ctxCap,
+		lazy: freeBuilt - freeAfter, margin: r.ctxMargin(),
 	}
 	row.postKV = atKV - row.kv - freeBuilt
 	return row, true
@@ -135,8 +135,8 @@ func TestBuildScratchAccounting(t *testing.T) {
 				t.Errorf("G-M1: residual %d MiB outside [%d, %d]: the build puts %d MiB on the device before the KV, Plan %d + slack %d: a cost the rounding rule does not know",
 					res, lo, hi, row.preKV>>20, row.plan>>20, row.slack>>20)
 			}
-			if row.postKV+row.lazy > ctxCapMarginBytes {
-				t.Errorf("post-KV scratch %d + first-use %d MiB exceeds the %d MiB margin", row.postKV>>20, row.lazy>>20, ctxCapMarginBytes>>20)
+			if row.postKV+row.lazy > row.margin {
+				t.Errorf("post-KV scratch %d + first-use %d MiB exceeds the %d MiB margin", row.postKV>>20, row.lazy>>20, row.margin>>20)
 			}
 		})
 	}
@@ -168,8 +168,8 @@ func TestBuildScratchAccounting_plantedDefect(t *testing.T) {
 		}
 		switch rel {
 		case "qwen2.5-7b-instruct-q4_k_m.gguf":
-			if without.residual() < ctxCapMarginBytes || with.residual() >= 64<<20 {
-				t.Errorf("7B: residual %d MiB without the slack (want >= the %d MiB margin) and %d MiB with it (want < 64)", without.residual()>>20, ctxCapMarginBytes>>20, with.residual()>>20)
+			if without.residual() < without.margin || with.residual() >= 64<<20 {
+				t.Errorf("7B: residual %d MiB without the slack (want >= the %d MiB margin) and %d MiB with it (want < 64)", without.residual()>>20, without.margin>>20, with.residual()>>20)
 			}
 		case "gemma-3-4b-it":
 			if with.ctxPlanned-with.ctxFinal >= without.ctxPlanned-without.ctxFinal {
