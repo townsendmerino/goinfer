@@ -194,7 +194,8 @@ func TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines(t *testing.T) {
 }
 
 // TestKV3Tiled_spanScratchMatchesThePass (G7): the buffers a pass asks for are PrefillScratchBytes(M) plus
-// PrefillSpanScratchBytes(M, keys), exactly, for passes below and past the bound, fused-served and not. Admission adds the two.
+// prefillSpanScratchPass(M, keys), exactly, for passes below and past the bound, fused-served and not; PrefillSpanScratchBytes, the
+// bound admission adds, is at least the pass's own figure.
 func TestKV3Tiled_spanScratchMatchesThePass(t *testing.T) {
 	const base = "../testdata/llama-attnfa-tiny"
 	requireDeviceAndFixture(t, base)
@@ -211,7 +212,10 @@ func TestKV3Tiled_spanScratchMatchesThePass(t *testing.T) {
 					t.Fatalf("levers=%v start=%d M=%d: %v", levers, start, M, err)
 				}
 				prefillScratchSeenForTest = nil
-				base, span := g.r.PrefillScratchBytes(M), g.r.PrefillSpanScratchBytes(M, start+M)
+				base, span := g.r.PrefillScratchBytes(M), g.r.prefillSpanScratchPass(M, start+M)
+				if bound := g.r.PrefillSpanScratchBytes(M, start+M); bound < span || (bound > 0) != (span > 0) {
+					t.Errorf("levers=%v start=%d M=%d: the span bound %d B against the pass's own %d B", levers, start, M, bound, span)
+				}
 				if span > 0 {
 					sawSpan++
 				}

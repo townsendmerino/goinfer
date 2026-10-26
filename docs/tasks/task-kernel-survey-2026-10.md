@@ -33,14 +33,14 @@
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |
 | KS-B6 | open | nobara: served TTFT for phi3-mini at q4k against Ollama | — |
 | KS-B7 | open | nobara: a prototype against `gemv_w4a8_rn` at the 1.5B gate shape | — |
-| KS-B8 | open | nobara-ks-cuda, after #230 merges: 2,048-row CUDA prefill passes by default where scratch allows, priced by admission (decided A, Francis, 2026-10-25). Measured 2026-10-23 on the 1.5B at K=3,900: attention **1.556×** at 2,048 rows (1.231× at 1,024), whole prefill **1.247×** (933 → 748 ms) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-B8 | done | done 2026-10-25 (owner's option A): the default CUDA prefill pass is the widest of 2,048 / 1,024 / 512 rows whose scratch fits the VRAM the build leaves beyond the margin; bit-identical (B8-G2); the 1.5B's 3,900-row prefill **1.1559×**, 10 of 10 pairs (744 → 643 ms); 280 MiB of scratch at 2,048 rows, from free VRAM only | survey, "KS-B8 build read" |
 | KS-B9 | open | nobara: launch and grid counters, then the GEMV-category A/B | — |
 | KS-B10 | open | nobara: sync and launch counters in the generic expert-major Phase 1 | — |
 | KS-B11 | open | nobara: `PrefillScratchBytes` delta, then a glue+GEMM A/B | — |
 | KS-B12 | open | nobara: per-token TTFT on Nemotron-H as the baseline | — |
 | KS-B13 | open | aikit: a microbenchmark at SigLIP shapes, bit-gated | — |
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
-| KS-B15 | open | nobara-ks-cuda, after #230 merges: pass the 64 KB shared-memory opt-in through aikit and set it on the exact attention kernels (bound 12,160 → 16,256 keys); prompts in that band stay on the exact GEMM (bit-identical); measure the gain (KS-O2 decided A, Francis, 2026-10-25; the fast GEMM is not approved) | — |
+| KS-B15 | done: KILL | nobara-ks-cuda: the 64 KB shared-memory opt-in on the exact attention kernels (bound 12,160 → 16,256 keys) is bit-identical but slower: a 14,336-key pass ran 0.9715× of today's row-batched route, 0 of 10 pairs faster ("KS-B15 build read"); the opt-in stays unset | — |
 | KS-C1 | done (a)+(b) | done 2026-10-24: the q4k lane's GEMVs on `gemv_q4k_f32_rows<8>` and `gemv_w8_f32_rows<2>`; the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0); G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 98.66% against the reference's 93.99% (C1-G3 PASS); Phi-3 mini q4k decode 22.3 → 33.0 tok/s, median 0.6741, 10 of 10 pairs (C1-G4 SHIP). (c) done on Metal as KS-O1 (#215; the head stays int8); its CUDA half is KS-A1 | survey, "KS-C1 read" |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
@@ -62,7 +62,7 @@
 | KS-E2 | done | done 2026-10-24: the six single-workgroup WebGPU quantizers and the prefill row forms on 256 lanes, rmsnorm's sum kept on 64; bit-identical (E2-G1, and every Context builder wired through quantSrc); the 1.5B's WebGPU decode 24.7 → 21.8 ms a token, median 0.8810, 10 of 10 pairs, with an A/A control (1.0041) in the same run and busy cores read per arm (E2-G2 SHIP) | survey, "KS-E2 read" |
 | KS-E3 | done | done 2026-10-24, kept on main by Francis's decision: the WebGPU DecodeRunner records the next token's command buffer while the GPU runs this one; bit-identical (E3-G1); E3-G2 on its full guard (busy cores, GPU contention, vanished clients) passes, median 0.9166, 10 of 10 pairs; the size varies with the machine's state (a quiet earlier session read 0.9916, also 10 of 10) | survey, "KS-E3 read" |
 | KS-E4 | open (measured) | Mac 2026-10-25, Qwen3-VL-2B int4 on WebGPU: projections are 84% / 80% / 54% of the batched pass at 256 / 1,024 / 4,096 rows | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
-| KS-E5 | open (measured) | Mac 2026-10-25, the 1.5B on WebGPU: decode attention is 62% / 87% / 93% of a token at 2k / 8k / 16k positions, about 15 µs a position | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
+| KS-E5 | parked (STOP POINT 2026-10-26) | Mac 2026-10-25, the 1.5B on WebGPU: decode attention is 62% / 87% / 93% of a token at 2k / 8k / 16k positions, about 15 µs a position. Nothing built. Next, by Francis's call: confirm the share on nobara's WebGPU, then (a) the bit-identical V-load unroll, then (b) split-KV behind its fidelity gate | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E6 | open (measured) | Mac 2026-10-25: prefill attention is 43% of a 4,096-row pass (5% at 256, 16% at 1,024) | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E7 | open | either box: KV bytes per slot and KV equality past the window | — |
 | KS-E8 | open | either box: a WebGPU twin of `cuda/lora_cost_measure_test.go` | — |
@@ -71,7 +71,7 @@
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
 | KS-F1 | open | either box: a fork/join counter and bit-identity on the tiny MoE fixtures | — |
 | KS-F2 | active | #239: gpt-oss's attendSinksToken fans its heads out and scores eight keys at once, bit-identical, default on for gpt-oss (Francis, 2026-10-25 10:16; limited to gpt-oss at 10:35). gpt-oss-20b at depth 128 10 of 10 pairs faster, 1.025×; then KS-O4 | `docs/measurements/ks-f2-2026-10/README.md` |
-| KS-F2b | done | default on 2026-10-25 by Francis's call (14:01, option (c)) for every attendQueryP family: Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4. Bit-identical (768 function-level runs, 132 fanned; gate identity IDENTICAL for all five at 640 steps). Qwen3.5-0.8B on the Mac CPU 1.113× at depth 128 and 1.833× at 1,024, 10 of 10 each; the other four ship untimed by his call. LFM2.5-2.6B's confirming run is queued on the Mac's night runner | `docs/measurements/ks-f2b-2026-10-25/README.md` |
+| KS-F2b | done | default on 2026-10-25 by Francis's call (14:01, option (c)) for every attendQueryP family: Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4 (#247). Bit-identical: 768 function-level runs, 132 fanned; gate identity IDENTICAL for all five at 640 steps. Timed on the Mac CPU: Qwen3.5-0.8B 1.113× / 1.833× (depth 128 / 1,024) and LFM2.5-2.6B 1.028× / 1.217×, 10 of 10 pairs each. Granite-4.0-H, Nemotron-H, Qwen3.6 and Llama 4 are untimed by his call. STOP POINT 2026-10-26: the review's test follow-ups are #248 (CI green); whether the four untimed families get timed on nobara is Francis's call | `docs/measurements/ks-f2b-2026-10-25/README.md` |
 | KS-F3 | open | either box: `GOINFER_DELTANET_TIMING=1` with M35 (tier 1, minutes) | — |
 | KS-F4 | open | nobara: per-fan-out timestamps inside a real 0.5B token | — |
 | KS-F5 | open | either box: `AllocsPerRun` and trig calls per token on `deepseek-tiny` | — |
@@ -499,6 +499,87 @@ in ms (GB/s):
 - **First measurement:** `TestPrefillDecomp` with the pass width at 512/1024/2048 and K=2048/3900.
 - **Prior art:** reopens the `cuda/prefill.go:prefillDefaultChunk` note, which was measured on the old grid.
 
+**KS-B8 build: gates, registered 2026-10-25 before any code (B8-G), on the owner's word of 6:33–6:36 am (option A: 2,048-row CUDA
+prefill passes by default where the scratch allows, admission pricing the scratch, falling back to narrower passes otherwise).**
+- **The change:** at the end of `BuildResident`, after every standing allocation (weights, KV, the recurrent checkpoint, the
+  expert slots), the build reads free VRAM once and sets the default pass width. It is the widest of 2,048, 1,024 and 512 rows whose
+  pass fits: `PrefillScratchBytes(w)` plus `PrefillSpanScratchBytes(w, context)` must be at most the free VRAM less
+  `ctxCapMarginBytes` and the bytes still to attach (`extraBytes`).
+  - When none fits, the width stays 512, today's default, which already lives inside that margin.
+  - A windowed model keeps 512. Its slack (512) bounds a pass at 513 rows, and a wider default would move its passes off the
+    512-row width the slack was sized for. (Added before any gate ran, on reading `prefillPassRows`.)
+  - `GOINFER_PREFILL_CHUNK`, the learned out-of-memory cap (`prefillChunkCap`) and a windowed model's slack bound all lower or
+    override it as they do today.
+  - `PrefillChunkRows` reports the chosen width, so the decoder's per-request admission (`residentChunkedScratch`) prices that pass.
+  - The image prefill keeps its own budget.
+  - The two runtime reserves that price two 512-row passes (`kvGrantRollback`, `allocRecurrentCheckpoint`) are unchanged. The
+    width is chosen after them, from what they leave.
+- **Class:** bit-identical. A pass's rows attend the keys the earlier passes committed at the same absolute positions, with the
+  same per-row kernels (`TestPrefillChunked_bitIdentical`). No guard threshold or margin changes.
+- **Merge rule:** this changes a default, so it needs the gain judged against the memory and the owner's call, which option A gives
+  under these gates. The speed bar is the merge rule's (owner, 2026-10-25), not an investment bar.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B8-G1 the chooser | 0 | the width rule as a function of the free bytes, the margin, the bytes to attach and a scratch function, on a table: room for 2,048; room for 1,024 only; for 512 only; for less than 512's; `extraBytes` taking the 2,048's room; the knob over the chosen width; the learned cap under it. Planted defect: the chooser without the margin | every row picks the registered width; the plant goes red |
+| B8-G2 bits | 1 | Qwen2.5-Coder-1.5B q4_k_m on CUDA: `PrefillLast` over a 4,100-row prompt at passes of 512, 1,024, 2,048 and the build's chosen default, against one unchunked pass, then 8 greedy decode steps from each (`TestPrefillChunked_bitIdentical`'s method) | the seed logits byte-equal across all five, and the 8 decode ids equal |
+| B8-G3 the build prices it | 1 | the same model loaded three times: with nothing attached; with `Options.ExtraResidentBytes` leaving room for 1,024 rows but not 2,048; and with it leaving room for less than 1,024. Each load's chosen width, `PrefillChunkRows`, the free VRAM at the choice, and `PrefillScratchBytes` at that width against the bytes a pass of that width actually asks for (`prefillScratchSeenForTest`) | the three widths are 2,048, 1,024 and 512; the reported rows equal them; the priced bytes equal the pass's own |
+| B8-G4 speed | timed, nobara, timing lock | one 1.5B resident; a 3,900-token prompt's `PrefillLast` with the width at 512 (the knob) against the build's default (2,048), A B B A over 10 pairs after 2 warm runs each; load and free memory per cell, CLAUDE.md's void rule | **SHIP** iff the median 512/default wall ratio is ≥ 1.05× with at least 9 of 10 pairs faster (the merge rule). **PARK** under 1.05× with 6–8 pairs faster. **KILL** if the median is ≤ 1.00 |
+
+- **Memory, stated:**
+  - **Device:** at most one pass's scratch at the chosen width, in VRAM that is free beyond the margin after the build. On the 1.5B
+    that is 138 or 276 MiB at 1,024 or 2,048 rows, against about 70 MiB at 512. G3 records the exact figures.
+  - **Host:** unchanged.
+  - **The longest context that fits:** unchanged. The KV plan runs before the choice and the width never shrinks it, so a load with
+    no room left keeps 512.
+- **Stopping rule:** one pass each. **Cost:** G1 seconds; G2 about 2 min; G3 about 2 min (three loads); G4 about 4 min (two warm
+  runs, then 20 prefills of about 0.75–0.93 s each).
+
+**KS-B8 build read 2026-10-25, 14:31–14:32, by day: SHIP.** Run by `night.py serve` (the timing lock held exclusively) at
+1622062be from `docs/measurements/ks-b8-2026-10/run-b8.sh`, NVIDIA driver 595.91.07, Qwen2.5-Coder-1.5B q4_k_m at int4. At the start:
+the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop compositor's context only. Log:
+`docs/measurements/ks-b8-2026-10/b8-2026-10-25-1430.log`.
+- **B8-G1: PASS.** Every row of the table picks its registered width, the knob and the learned cap act on the chosen width, and the
+  planted chooser (no margin) picks wider than the rule.
+- **B8-G2: PASS.** At passes of 512, 1,024 and 2,048 rows and at the default (2,048), 0 of 151,936 seed logits differ from one
+  unchunked pass of 4,100 rows, and the 8 greedy decode ids are equal. `TestPrefillChunked_bitIdentical` passes too.
+- **B8-G3: PASS.** The pass scratch is 75, 143 and 280 MiB at 512, 1,024 and 2,048 rows, and `PrefillScratchBytes` equals what each
+  pass allocated. With 5,887 MiB free at the choice:
+
+  | attached | room beyond the margin | width chosen and reported |
+  |---:|---:|---:|
+  | 0 | 5,503 MiB | 2,048 |
+  | 5,315 MiB | 188 MiB | 1,024 |
+  | 5,439 MiB | 64 MiB | 512 |
+
+- **B8-G4: SHIP** (load 1.84–2.08 at the pairs, no void). A 3,900-row prompt's `PrefillLast` at passes of 512 rows took 740.7–745.1
+  ms, and at the default 641.9–644.7 ms: **median 1.1559×, 10 of 10 pairs faster** at the default. That clears the merge rule
+  (≥ 1.05× and 9 of 10).
+- **Memory, measured:** at most one 2,048-row pass's 280 MiB of device scratch on the 1.5B (205 MiB more than a 512-row pass), taken
+  only from VRAM free beyond the margin after the build. Host bytes are unchanged, and the KV plan, so the longest context that
+  fits, is unchanged.
+- **Review re-run, 2026-10-26 03:02, untimed (G1–G3), at 25a65ae12:** every gate PASS. Log:
+  `docs/measurements/ks-b8-2026-10/b8-2026-10-26-0302.log`.
+  - Admission and the chooser now price `PrefillSpanScratchBytes` as a bound over every pass of a prompt: a launch group of up
+    to the pass's rows at the prompt's span, capped by the split-KV budget, plus the inverses. The one-pass figure is
+    `prefillSpanScratchPass`.
+  - With the fused attention off on the 1.5B, prompts of 13,000 and 16,380 tokens ran 7 and 8 passes of up to 2,048 rows on
+    the row kernels. The largest allocated 344.0 MiB against 344.1 MiB priced.
+- **Decided (Francis, 2026-10-26 01:55): A.** A pass the chooser prices in full may use the room the two grant reserves
+  (`allocRecurrentCheckpoint`, `kvGrantRollback`) leave.
+  - The reserves exist for the prefill pass, which `prefillPassBytes` undercounts.
+  - The chooser prices the pass exactly (its scratch plus the span bound) against free VRAM less the untouched 384 MiB margin.
+  - One pass runs at a time, and nothing is allocated after the chooser.
+  - The alternative, a width above 512 only beside a reserve of two 512-row passes, was not taken.
+- **Review re-run, 2026-10-25 23:58, untimed (G1–G3), at f81188f74:** every gate PASS. Log:
+  `docs/measurements/ks-b8-2026-10/b8-2026-10-25-2358.log`. Since the read:
+  - The chooser prices the most span scratch any prompt up to the context allocates (`prefillSpanScratchMax`).
+  - `ResidualAll` chunks by `prefillPassRows`.
+  - G2 asserts each run's width.
+  - G3 adds two checks. A prompt of the width plus 4 rows allocates no buffer wider than the width's pass. Admission, read
+    through the decoder, prices one pass at the width (11 prompt lengths, two of them with a remainder under 16 rows), with
+    a non-zero span term exercised.
+
 **KS-B3 · Gemma 4 26B (M26) expert-major prefill never got option A (bit-identical).**
 - **Where:** `cuda/moe_expert_major_gemma4.go:cudaResident.prefillGemma4ExpertMajorRun`; it has no reference to the grouped
   kernels that `cuda/moe_expert_major.go` uses.
@@ -602,6 +683,69 @@ tiling reproduces").**
 - **Waste:** the needed call exists in the pinned gocudrv, but aikit does not pass it through.
 - **Change:** pass the attribute through aikit and set it on the exact attention kernels: bound 12,160 → 16,256 keys.
 - **Class:** bit-identical attention; the decision is about the GEMM that comes with it. **Size:** S.
+
+**KS-B15 build: gates, registered 2026-10-26 before any code (B15-G).** On aikit `gpu` v0.35.0
+(`Pipeline.SetMaxDynamicSharedBytes`, `Pipeline.MaxDynamicSharedBytes`).
+- **The change:**
+  - At load, the three exact prefill attention kernels opt in to the most dynamic shared memory each can take: `attn_batched`,
+    `attn_img_batched` and `attn_span_batched`.
+  - The prefill's span limit becomes the smallest of what they got. On the RTX 2070 SUPER that is 64 KiB less each kernel's
+    static shared memory, which moves the span bound from 12,160 keys to at most 16,256.
+  - In that band a layer that took the row-batched kernels (`prefillSplitKVAttn`) takes `attn_batched` or its image twins
+    instead. Past the new bound, the row kernels serve as today.
+  - A failed opt-in keeps 48 KiB, which is today's behaviour.
+- **Unchanged:**
+  - Decode's single-block attention and its split-KV choice keep the 48 KiB bound (`splitKVRequired`), and so does the drafter.
+  - A band prompt stays on the exact GEMM: `prefillPastBoundExact` keeps the 48 KiB bound (owner decision A; the fast GEMM is
+    not approved).
+- **Memory:** a band pass no longer allocates the row kernels' score scratch (up to 64 MiB plus its inverses,
+  `PrefillSpanScratchBytes`). Nothing is added.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B15-G1 the opt-in | 0 (device, tiny fixture) | `llama-attnfa-tiny` on the card | each of the three kernels reports a limit above 48 KiB, and the prefill's limit is their minimum. A 16-row pass whose last row attends the new bound in keys runs on `attn_batched` (no row-batched group), and one attending a key more takes the row kernels. Decode's `splitKVRequired` is unchanged at 12,161 keys. Plant: with the opt-in skipped, the prefill limit is 48 KiB and a band span takes the row kernels |
+| B15-G2 bits, tiny | 1 | `llama-attnfa-tiny` at context 17,000, f32 and f16 KV, fast levers off. Prompts of 12,400, 14,000 and 16,000 tokens (in the band), and 16,384 (past it). Arms: the opt-in, and today's limit set back to 48 KiB on the same resident. Also `TestKV3Tiled_batchedEqualsPerToken_tiny` at 12,400 and 16,384 | in the band, 0 differing logits and 0 differing K/V elements between the arms. The opt-in arm has no row-batched group and the other arm some, and neither runs a tensor-core launch. Past the band both arms run the row kernels and are equal. The batched prefill equals the per-token path (decode on split-KV), bit for bit, at both lengths |
+| B15-G3 bits, real | 1 | Gemma-3-4B Q4_K_M, f32 KV, default levers: a 13,824-token lead, then a 512-row pass whose last row attends 14,336 keys, each arm once. The load is the fit check: G3 runs first, and if the f32 load is refused (about 3.9 GB of KV beside the weights on 8 GB), G3 and G4 both run at f16 KV | 0 differing logits and 0 differing K/V rows across the pass; the opt-in arm has no row-batched group; neither arm runs a tensor-core launch |
+| B15-G4 speed | 1 (timed, the timing lock) | the same load and pass: off and on interleaved A B B A, 10 pairs after 2 warm runs each. The load average and free memory are recorded per pair, and a pair started above 8.0 is void and re-run. Second reading: one whole 14,336-token `PrefillLast`, off then on, twice each | **SHIP** iff the pass's median off/on ≥ 1.00 with at least 8 of 10 pairs faster. **KILL** at a median < 0.98: the band keeps the row kernels and the opt-in stays unset. **Ambiguous** (0.98–1.00, or fewer than 8 faster): parked, to Francis |
+
+- **Why G4's bar is 1.00, not the standing merge rule's 1.05:**
+  - Francis decided A; this records the gain rather than earning a decision.
+  - A change that is bit-identical and no slower still frees the band's score scratch.
+  - It also lets an image span pass on a sliding layer run in the band, where it declines today.
+  - The whole prompt is a reading, not the rule. Of a 14,336-token prompt's 28 passes at 512 rows, only the four or five whose
+    last row is past 12,160 keys can move, so the whole-prompt ratio is diluted by the 23 passes that cannot.
+- **Stopping rule:** each gate once. **Cost:** G1 seconds; G2 about 5 min (two per-token references at 12,400 and 16,384
+  rows, plus eight batched passes); G3 about 2 min; G4 about 5 min (24 passes of about 0.2–0.5 s and four whole prompts).
+- **Review:** it touches kernel routing, so Gemini reviews it before merge.
+
+**KS-B15 build read 2026-10-26, 02:55–03:12, by day: KILL.**
+- **Setup:** run by `night.py serve` (the timing lock held exclusively) at 410c6ee87, from
+  `docs/measurements/ks-b15-2026-10/run-b15.sh` (the G4 phase from c758a83da, the same tree with the script's G4-only phase
+  added).
+  - NVIDIA driver 595.91.07.
+  - At G4's start the 1-minute load was 0.62, and 58.2 GB was available.
+  - The code is on branch `ks-b15-shared-optin-2026-10-26` (pushed, unmerged).
+  - Logs: `docs/measurements/ks-b15-2026-10/b15-2026-10-26-0255.log` (G1–G3) and `b15-2026-10-26-0307.log` (G4).
+- **B15-G1: PASS.**
+  - `attn_batched`, `attn_img_batched` and `attn_span_batched` each opted in to 65,536 B. None has static shared memory.
+  - So the prefill bound is 16,256 keys.
+  - A 16-row pass whose last row attends the bound ran on `attn_batched`, and one key more took the row kernels.
+  - Decode's bound is unchanged.
+  - Plant: with the opt-in skipped, the limit stayed at 48 KiB and a 12,400-key span took the row kernels.
+- **B15-G2: PASS.** At 12,400, 14,000 and 16,000 tokens, in f32 and f16 KV, the opt-in arm ran no row-batched group (today's
+  route ran 6, 18 and 34). 0 of 256 logits and 0 K/V elements differed. At 16,384 both arms ran the row kernels and were equal.
+  `TestKV3Tiled_batchedEqualsPerToken_tiny` passed at 12,400 (now on `attn_batched`) and 16,384.
+  - The run's own exit was red only because two extra families tests skipped subtests whose Gemma 4 fixtures are not on this
+    box (`gemma4-dense-twogeom-tiny`, `gemma4-dense-scaled`). Those are not registered gates.
+- **B15-G3: PASS.** Gemma-3-4B Q4_K_M, f32 KV (the load fitted), a 512-row pass at 14,336 keys: 0 of 262,144 logits and 0 of
+  35,651,584 K/V elements differed, the opt-in arm ran no row-batched group (today's ran 20), and neither ran a tensor-core
+  launch.
+- **B15-G4: KILL.** The opt-in is slower on every pair: off 1,854.7–1,861.0 ms, on 1,911.9–1,914.3 ms, **median off/on
+  0.9715**, 0 of 10 pairs faster, no void. That is under the 0.98 kill line.
+  - The whole 14,336-token prompt (a reading) took 40.99 and 41.00 s off, 41.26 and 41.25 s on.
+  - By the registration, the band keeps the row-batched kernels and the opt-in stays unset. Nothing merges.
+  - aikit `gpu` v0.35.0's `Pipeline.SetMaxDynamicSharedBytes` stays available, and goinfer does not call it.
+  - Why `attn_batched` is slower at these spans was not investigated.
 
 ## 6. Metal decode (KS-C)
 

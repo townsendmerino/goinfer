@@ -202,11 +202,41 @@ const defaultVerifyWidth = 8
 // and doing it per request costs more than the speedup earns (a several-fold loss) while the loop stays lossless and acceptance looks
 // fine. Attach once per process, generate per request.
 type BlockSpec struct {
-	m    *Model
-	host ResidentDrafterHost
-	rd   ResidentBlockDrafter
-	dw   BlockDrafterWeights
-	taps []int
+	m     *Model
+	host  ResidentDrafterHost
+	rd    ResidentBlockDrafter
+	dw    BlockDrafterWeights
+	taps  []int
+	width int // the verify width SetVerifyWidth set; 0 is defaultVerifyWidth
+}
+
+// VerifyWidthInUse is the verify width GenerateStream, and Generate without its own VerifyWidth, run at: SetVerifyWidth's value
+// after the default and the caps apply.
+func (s *BlockSpec) VerifyWidthInUse() int {
+	return s.verifyWidth(BlockSpecOptions{})
+}
+
+// SetVerifyWidth sets the verify width GenerateStream, and Generate without its own VerifyWidth, run at (BlockSpecOptions.VerifyWidth's
+// meaning: 0 is the default, and the drafter's block caps it). It refuses a width under 2 and a width GenerateStream would refuse
+// (specRollbackSafeVia): on a recurrent target, one its resident's fold path cannot verify.
+// Set it once, before the BlockSpec serves; it is not safe beside a running generation.
+func (s *BlockSpec) SetVerifyWidth(w int) error {
+	if w != 0 && w < 2 {
+		return fmt.Errorf("decoder: block-spec verify width %d: want 0 (the default) or at least 2", w)
+	}
+	v := w
+	if v == 0 {
+		v = defaultVerifyWidth // the width 0 selects, not the one set before (verifyWidth falls back to s.width)
+	}
+	// Only the drafter's block caps the request here. verifyWidth's other cap, to the fold path's prepared rows, must not hide a
+	// width past them: that width is refused, as GenerateStream would refuse it.
+	v = min(v, s.dw.BlockSize())
+	if !s.m.specRollbackSafeVia(s.recurrentFold(v), v) {
+		return fmt.Errorf("decoder: block-spec verify width %d (%d after the drafter's block of %d) cannot roll back on this model (a recurrent model past its resident's fold rows, or a staged sliding window)",
+			w, v, s.dw.BlockSize())
+	}
+	s.width = w
+	return nil
 }
 
 // NewBlockSpec attaches a block drafter to this model's resident target. Returns a decline
@@ -233,6 +263,11 @@ func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 	host, ok := m.resident.(ResidentDrafterHost)
 	if !ok {
 		return nil, errBlockSpecUnsupported
+	}
+	if sw, ok := dw.(StreamedDrafterWeights); ok && sw.Streamed() {
+		if _, ok := host.(StreamingDrafterHost); !ok {
+			return nil, fmt.Errorf("decoder: this resident cannot take a drafter opened to stream its matrices (OpenDFlashDrafter); load it with LoadDFlashDrafter")
+		}
 	}
 	// Before the attach, so a refused model has no drafter uploaded to its device.
 	if err := m.prepareRecurrentSpec(host, dw); err != nil {
@@ -285,10 +320,13 @@ func (s *BlockSpec) recurrentFold(width int) ResidentRecurrentSpec {
 	return rs
 }
 
-// verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, or defaultVerifyWidth, clamped to the
-// drafter's block and, on a recurrent target, to the rows the fold path is prepared for.
+// verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, else SetVerifyWidth's, else defaultVerifyWidth,
+// clamped to the drafter's block and, on a recurrent target, to the rows the fold path is prepared for.
 func (s *BlockSpec) verifyWidth(opt BlockSpecOptions) int {
 	width := opt.VerifyWidth
+	if width <= 0 {
+		width = s.width // SetVerifyWidth's, for Generate as for GenerateStream
+	}
 	if width <= 0 {
 		width = defaultVerifyWidth
 	}
@@ -681,7 +719,7 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 	if sp.HistoryDependent() {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
-	if !s.m.specRollbackSafeVia(s.recurrentFold(s.verifyWidth(BlockSpecOptions{})), s.verifyWidth(BlockSpecOptions{})) {
+	if w := s.verifyWidth(BlockSpecOptions{}); !s.m.specRollbackSafeVia(s.recurrentFold(w), w) {
 		return nil, nil, fmt.Errorf("decoder.BlockSpec.GenerateStream: recurrent family without the resident's fold path, or staged sliding-window, unsupported (rollback cannot restore)")
 	}
 	if len(prompt) == 0 {
