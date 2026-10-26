@@ -1,0 +1,13 @@
+active 120 h
+  model thinking/writing           59.1 h   49.4%
+  wait: CI after push              20.3 h   16.9%
+  wait: tests & gates (local)      13.1 h   10.9%
+  tool work (read/edit/git)         7.1 h    5.9%
+  wait: benchmarks/measurement      7.0 h    5.8%
+  wait: nobara/night jobs           5.3 h    4.5%
+  build/vet/lint                    4.9 h    4.1%
+  wait: other polling               2.9 h    2.4%
+week of     active  tests+gates+CI  all waiting
+2026-10-12     43 h   37.5%   51.7%
+2026-10-19     76 h   22.5%   40.9%
+2026-10-26      1 h   14.3%   18.1%

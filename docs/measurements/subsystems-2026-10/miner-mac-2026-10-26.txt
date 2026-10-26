@@ -1,0 +1,119 @@
+# transcript census — macbookpro.lan — 2026-10-26 09:45 PDT
+182 transcript files; 13187 Bash calls since 2026-10-12; 13026 with a duration; 161 without (detached launches, or a result never recorded). Day = 07-22 local.
+
+## 1. by class (sum of call durations; parallel calls overlap)
+
+| class | calls | total | day | night | median | longest |
+|---|---:|---:|---:|---:|---:|---:|
+| wait/poll | 347 |   36.0 h |   29.0 h |    7.0 h |    2.8 m |    3.0 h |
+| other | 7440 |   14.0 h |   12.0 h |    2.0 h |    0.0 m |    3.6 h |
+| test suite | 1430 |   10.8 h |   10.2 h |   39.0 m |    0.1 m |   28.5 m |
+| build/lint | 1253 |    8.4 h |    7.1 h |    1.4 h |    0.1 m |    1.4 h |
+| served gate | 650 |    7.9 h |    7.7 h |   13.1 m |    0.0 m |    2.0 h |
+| git/gh | 1549 |    3.3 h |    3.0 h |   19.6 m |    0.0 m |   13.8 m |
+| in-test measurement | 153 |    1.9 h |    1.8 h |   11.0 m |    0.2 m |   18.4 m |
+| gate | 109 |    1.7 h |    1.4 h |   18.1 m |    0.5 m |    9.6 m |
+| parity/refresh | 164 |    1.7 h |    1.6 h |    6.9 m |    0.4 m |   10.6 m |
+| detached launch | 57 |   14.0 m |   12.5 m |    1.5 m |    0.0 m |    9.3 m |
+| evaluation | 35 |    4.3 m |    3.7 m |    0.6 m |    0.0 m |    0.6 m |
+
+All classes:   86.1 h of call time;   80.8 h after merging each session's overlapping calls.
+Excluded: 3 call(s),    9.5 h in total: foreground calls whose result came more than 610 s later (blocked, since a foreground call cannot run that long), and background tasks that ended 'stopped' (they ran until someone stopped them, so the span is not the work).
+  work (excluding wait/poll) run local:   49.1 h
+  work (excluding wait/poll) run nobara (via ssh):   57.6 m
+
+## 2. by day (sum of call durations, excluding wait/poll)
+
+| date | calls | work | of which served / in-test / suite / parity | wait/poll |
+|---|---:|---:|---|---:|
+| 2026-10-12 | 607 |    2.6 h |   24.0 m /   39.7 m /   30.6 m /    0.0 m |    3.5 h |
+| 2026-10-13 | 1159 |    2.1 h |    8.5 m /    0.5 m /   45.8 m /    0.9 m |   24.9 m |
+| 2026-10-14 | 768 |    1.8 h |   47.6 m /    0.8 m /   20.6 m /    2.0 m |    9.1 m |
+| 2026-10-15 | 1195 |    2.7 h |    5.5 m /   10.8 m /    1.1 h /    6.1 m |    2.3 h |
+| 2026-10-16 | 910 |    3.3 h |    1.4 h /    5.6 m /   25.8 m /   16.2 m |   40.3 m |
+| 2026-10-17 | 1630 |    3.9 h |    5.7 m /   23.7 m /    1.5 h /    4.8 m |    1.4 h |
+| 2026-10-18 | 387 |   52.5 m |    0.6 m /    0.0 m /   28.1 m /    0.3 m |   41.1 m |
+| 2026-10-19 | 312 |   13.5 m |    1.2 m /    0.0 m /    1.3 m /    0.0 m |    1.6 h |
+| 2026-10-20 | 653 |    1.2 h |    1.1 m /    0.4 m /   17.6 m /    1.6 m |    5.5 h |
+| 2026-10-21 | 1567 |    2.6 h |    3.2 m /    3.6 m /   30.1 m /    8.8 m |    2.7 h |
+| 2026-10-22 | 1214 |    9.5 h |    0.0 m /    7.4 m /    2.1 h /   40.9 m |    7.2 h |
+| 2026-10-23 | 713 |    7.1 h |    4.5 h /    6.5 m /    1.1 h /    0.4 m |   49.9 m |
+| 2026-10-24 | 1315 |    8.3 h |   13.7 m /   17.6 m /    1.6 h /   14.5 m |    5.6 h |
+| 2026-10-25 | 525 |    2.8 h |    4.6 m /    0.0 m /    7.7 m /    3.7 m |    3.3 h |
+| 2026-10-26 | 71 |    1.1 h |    3.1 m /    0.0 m /    0.6 m /    0.4 m |    8.3 m |
+
+## 3. the 40 longest calls
+
+| started (local) | dur | class | bg | command |
+|---|---:|---|---|---|
+| 10-22 13:13 |    3.6 h | other |  | `go clean -cache; df -h /System/Volumes/Data \| tail -1; du -sh ~/models ~/goinfer-bench ~/goinfer-logs ~/Librar` |
+| 10-22 03:58 |    3.0 h | wait/poll | y | `while [ "$(date +%H%M)" -lt 0700 ]; do sleep 60; done; date '+%H:%M'; sysctl -n vm.loadavg; python3 ~/tmcode/g` |
+| 10-23 15:40 |    2.0 h | served gate | y | `mv ~/goinfer-logs/als-g0-2026-10-23.log ~/goinfer-logs/als-g0-void-2026-10-23.log; bash $CLAUDE_JOB_DIR/tmp/ru` |
+| 10-20 16:37 |    1.8 h | wait/poll | y | `sleep 2880; for i in $(seq 1 12); do s=$(ssh -o ConnectTimeout=8 nobara 'python3 ~/goinfer-runner/scripts/nigh` |
+| 10-25 08:18 |    1.8 h | wait/poll | y | `sleep 6300; ssh -o ConnectTimeout=10 nobara bash -s <<'EOF' date; cat /proc/loadavg; cd ~/goinfer-runner && py` |
+| 10-23 10:17 |    1.5 h | served gate | y | `bash $CLAUDE_JOB_DIR/tmp/run-g3.sh > ~/goinfer-logs/ksd5c-g3-2026-10-23.log 2>&1` |
+| 10-24 17:43 |    1.4 h | build/lint | y | `cd ~/tmcode/goinfer && git fetch -q origin; for w in kse2-wt kse3-wt ksd9-wt; do cd ~/goinfer-bench/$w; git ad` |
+| 10-20 15:22 |    1.3 h | wait/poll | y | `sleep 2880; for i in $(seq 1 12); do s=$(ssh -o ConnectTimeout=8 nobara 'python3 ~/goinfer-runner/scripts/nigh` |
+| 10-16 14:57 |    1.2 h | served gate | y | `cd ~/tmcode/goinfer; while kill -0 67370 2>/dev/null; do sleep 30; done; echo "runner 67370 exited $(date '+%H` |
+| 10-20 22:47 |    1.1 h | wait/poll | y | `for i in $(seq 1 50); do L=$(ssh -o ConnectTimeout=8 nobara 'f=~/goinfer-logs/night/runs/2026-10-20/kv8a-gate2` |
+| 10-24 16:24 |    1.0 h | wait/poll | y | `sleep 3720; ssh -o ConnectTimeout=10 nobara bash -s <<'EOF' cd ~/goinfer-runner && python3 scripts/night.py st` |
+| 10-25 07:16 |    1.0 h | wait/poll | y | `sleep 3600; ssh -o ConnectTimeout=10 nobara bash -s <<'EOF' date; cat /proc/loadavg; cd ~/goinfer-runner && py` |
+| 10-24 16:50 |   50.0 m | wait/poll | y | `sleep 3000; ssh -o ConnectTimeout=10 nobara bash -s <<'EOF' cd ~/goinfer-runner && python3 scripts/night.py st` |
+| 10-26 01:51 |   47.4 m | other | y | `D=~/goinfer-bench/ksf2b-night; G=~/goinfer-bench/lfm-giw/lfm2.5-2.6b.int4.cpu-arm64.v17.giw; cd $D && date '+%` |
+| 10-25 12:33 |   46.4 m | other | y | `cd ~/goinfer-bench/kse-prof-wt/gpu && B=$CLAUDE_JOB_DIR/tmp/gpu-ksprof.test && L=~/goinfer-logs/ks-e-profiles-` |
+| 10-22 07:06 |   42.7 m | wait/poll | y | `cat > $CLAUDE_JOB_DIR/tmp/vc-remote.sh <<'EOF' export PATH=$PATH:/usr/local/go/bin cd ~/mycode/goinfer && pyth` |
+| 10-14 11:23 |   40.5 m | served gate | y | `cd ~/tmcode/goinfer && while kill -0 45759 2>/dev/null; do sleep 60; done; sleep 30; python3 scripts/night.py ` |
+| 10-19 07:06 |   38.7 m | wait/poll | y | `cd ~/goinfer-bench/heavy-void-wt && FILES='.github/workflows/ci.yml CLAUDE.md docs/measurements/noise-registry` |
+| 10-24 14:09 |   36.1 m | wait/poll | y | `until ! ssh -o ConnectTimeout=15 nobara 'cd ~/mycode/goinfer && python3 scripts/night.py status 2>/dev/null \| ` |
+| 10-24 22:45 |   31.0 m | wait/poll | y | `sleep 1860; ssh -o ConnectTimeout=10 nobara 'cd ~/goinfer-runner && python3 scripts/night.py status \| grep -E ` |
+| 10-22 20:03 |   28.5 m | test suite |  | `cd ~/goinfer-bench/mem5vl-2026-10 && go test -count=1 -timeout 15m -run 'TestTwoImages\|TestQwen3VLMoe_tiny\|Tes` |
+| 10-24 08:52 |   27.8 m | wait/poll | y | `cd ~/goinfer-bench/ks-night-wt && L=~/goinfer-logs/ks-day-9b-2026-10-24.log; { echo "== waiting for load < 3.5` |
+| 10-24 15:56 |   26.0 m | wait/poll | y | `sleep 1560; ssh -o ConnectTimeout=10 nobara bash -s <<'EOF' cd ~/goinfer-runner && python3 scripts/night.py st` |
+| 10-24 23:17 |   25.0 m | wait/poll | y | `sleep 1500; ssh -o ConnectTimeout=10 nobara 'date; cat /proc/loadavg; cd ~/goinfer-runner && python3 scripts/n` |
+| 10-19 21:38 |   25.0 m | wait/poll | y | `cd ~/goinfer-bench/capcheck-wt && FILES='metal/prefill.go metal/prefill_capcheck_test.go'; date '+waiting from` |
+| 10-20 17:18 |   24.0 m | wait/poll | y | `for i in $(seq 1 60); do L=$(ssh -o ConnectTimeout=8 nobara 'f=$(ls -t ~/goinfer-logs/night/runs/*/kvp0-kvf16-` |
+| 10-22 11:24 |   23.9 m | wait/poll | y | `cd ~/goinfer-bench/d5-mla-2026-10 && sleep 30; gh pr checks 150 --watch --interval 60 > ~/goinfer-bench/d5-che` |
+| 10-23 09:13 |   23.8 m | wait/poll | y | `cd ~/tmcode/goinfer && sleep 30; gh pr checks 183 --watch --interval 60 >/dev/null 2>&1; gh pr checks 183 \| aw` |
+| 10-24 16:25 |   19.7 m | build/lint |  | `cd ~/tmcode/goinfer && git fetch -q origin; for w in ksd9-wt kse2-wt kse3-wt; do cd ~/goinfer-bench/$w; echo "` |
+| 10-15 15:41 |   19.7 m | wait/poll |  | `until ! kill -0 51923 2>/dev/null; do sleep 20; done; B=~/goinfer-logs/g40-2026-10/tier1-kvfix-2026-10-15; cat` |
+| 10-17 11:35 |   19.5 m | wait/poll | y | `cd ~/goinfer-bench/sampling-wt && for n in ci coverage; do ID=$(timeout 60 gh run list --branch main --limit 6` |
+| 10-23 12:17 |   19.4 m | served gate | y | `bash $CLAUDE_JOB_DIR/tmp/run-d2g3.sh > ~/goinfer-logs/ksd2-g3-2026-10-23.log 2>&1` |
+| 10-17 13:50 |   18.4 m | in-test measurement |  | `cd /Users/francistownsend-merino/tmcode/aikit; setopt pipefail; cat > ann/zz_repr_bench_test.go <<'EOF' packag` |
+| 10-20 09:59 |   18.0 m | wait/poll | y | `sleep 1080; for i in $(seq 1 15); do s=$(ssh -o ConnectTimeout=8 nobara 'python3 ~/goinfer-runner/scripts/nigh` |
+| 10-22 20:26 |   16.7 m | wait/poll | y | `cd ~/goinfer-bench/mem5vl-g4-2026-10 && sleep 30; gh pr checks 168 --watch --interval 45 >/dev/null 2>&1; gh p` |
+| 10-21 08:14 |   16.0 m | wait/poll | y | `for i in $(seq 1 30); do L=$(ssh -o ConnectTimeout=8 nobara 'g=~/goinfer-logs/night/runs/2026-10-21; [ -f $g/b` |
+| 10-18 11:33 |   16.0 m | test suite | y | `cd ~/goinfer-bench/prefill-partial-wt && date '+start %H:%M:%S'; GOWORK=$PWD/go.work go test -count=1 -v -time` |
+| 10-24 17:26 |   16.0 m | other | y | `CLAUDE_JOB_DIR=$CLAUDE_JOB_DIR bash $CLAUDE_JOB_DIR/tmp/runs3.sh > $CLAUDE_JOB_DIR/tmp/runs3.out 2>&1; tail -2` |
+| 10-21 07:51 |   16.0 m | wait/poll | y | `for i in $(seq 1 40); do L=$(ssh -o ConnectTimeout=8 nobara 'g=~/goinfer-logs/night/runs/2026-10-21; [ -f $g/k` |
+| 10-19 06:51 |   15.3 m | wait/poll | y | `cd ~/goinfer-bench/heavy-void-wt && SHA=6bd8e718; MAIN=4d5a8245; date '+waiting from %H:%M'; for i in $(seq 1 ` |
+
+## 4. re-runs: the same test/bench command run 3+ times in one day
+
+| date | runs | total | class | command |
+|---|---:|---:|---|---|
+| 2026-10-12 | 3 |    4.4 m | served gate | `ssh -o ConnectTimeout=8 nobara bash -s <<'EOF' cd ~/mycode/goinfer \|\| exit 0 python3 scripts/timing_` |
+| 2026-10-12 | 4 |    3.8 m | test suite | `cd ~/tmcode/goinfer-s12-4b && python3 - <<'EOF' p='/Users/francistownsend-merino/tmcode/goinfer-s12-` |
+| 2026-10-23 | 3 |    1.3 m | test suite | `cd ~/goinfer-bench/ksd5-2026-10 && go test -tags goinfer_testhooks -count=1 -timeout 20m -run 'TestP` |
+| 2026-10-17 | 4 |    1.0 m | served gate | `cd ~/goinfer-bench/sampling-wt && python3 - <<'EOF' p='/Users/francistownsend-merino/goinfer-bench/s` |
+| 2026-10-15 | 3 |    0.9 m | parity/refresh | `cd ~/tmcode/goinfer && echo "started $(date +%H:%M)"; GOINFER_REFRESH_HEAVY=0 bash scripts/refresh_p` |
+| 2026-10-21 | 5 |    0.7 m | test suite | `cd ~/tmcode/goinfer-kv2fu1 && export GOWORK=$HOME/tmcode/goinfer-kv2fu1/go.work && python3 scripts/t` |
+| 2026-10-24 | 3 |    0.2 m | served gate | `cd ~/goinfer-bench/hostmem-split-wt && python3 - <<'EOF' def edit(p, pairs): s=open(p).read() for a,` |
+| 2026-10-13 | 3 |    0.2 m | in-test measurement | `cd /Users/francistownsend-merino/tmcode/goinfer-sec && python3 - <<'EOF' def edit(p, pairs): s=open(` |
+
+## 5. detached launches (duration in their own logs, see census.py): 57
+
+- 10-12 10:21 `ssh -o ConnectTimeout=8 nobara bash -s <<'EOF' > /tmp/claude-501/nobara-3c-launch.txt 2>&1 export PATH=/usr/local/go/bin:$PATH cd ~/mycode/g`
+- 10-12 12:27 `cd ~/tmcode/goinfer-s12-4b && git check-ignore -q testdata/glm_ocr/invoices/inv01.png && echo IGNORED; git add gpu/mrope_fidelity_test.go do`
+- 10-12 14:27 `ssh -o ConnectTimeout=8 nobara bash -s <<'EOF' 2>&1 | tail -6 | cut -c1-200 cd ~/mycode/goinfer python3 scripts/timing_lock.py status | grep`
+- 10-12 14:28 `cd ~/tmcode/goinfer-s12-4b && launchctl remove s12-4c-mac 2>/dev/null; launchctl submit -l s12-4c-mac -- /bin/bash -lc "cd $HOME/tmcode/goin`
+- 10-12 15:04 `cd ~/tmcode/goinfer-s12-4b && (cd gpu && ~/go/bin/staticcheck -tags 'gpu goinfer_testhooks' ./... > /tmp/claude-501/sc.txt 2>&1; echo "stati`
+- 10-12 15:59 `S=/private/tmp/claude-501/-Users-francistownsend-merino-tmcode-goinfer/118b1a93-e224-4969-a915-4659ad84054e/scratchpad/run-s12-4c-nobara.sh `
+- 10-12 16:15 `S=/private/tmp/claude-501/-Users-francistownsend-merino-tmcode-goinfer/118b1a93-e224-4969-a915-4659ad84054e/scratchpad/run-s12-4a4-prep-noba`
+- 10-12 18:00 `S=/private/tmp/claude-501/-Users-francistownsend-merino-tmcode-goinfer/118b1a93-e224-4969-a915-4659ad84054e/scratchpad/harness/run-gate1-nob`
+- 10-12 22:07 `date '+%F %T %Z'; python3 scripts/night.py start --dry-run 2>&1 | head -30; echo "--- lock"; python3 scripts/timing_lock.py status | head -2`
+- 10-12 22:07 `python3 scripts/night.py start 2>&1 | tail -6`
+- 10-13 22:46 `cd ~/tmcode/goinfer && python3 scripts/night.py start --dry-run 2>&1 | cut -c1-200; echo "---lock"; python3 scripts/timing_lock.py status; e`
+- 10-13 22:49 `cd ~/tmcode/goinfer && python3 scripts/night.py start 2>&1 | tail -6 | cut -c1-200`
+- 10-14 11:12 `cd ~/tmcode/goinfer && python3 scripts/night.py start --dry-run 2>&1 | tail -12; echo ---; python3 scripts/timing_lock.py status | head -2; `
+- 10-14 11:12 `cd ~/tmcode/goinfer && python3 scripts/night.py start -h 2>&1 | sed -n 1,20p`
+- 10-14 11:13 `cd ~/tmcode/goinfer && python3 scripts/night.py start 2>&1 | tail -5; sleep 5; python3 scripts/night.py status 2>&1 | head -6`
