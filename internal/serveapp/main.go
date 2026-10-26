@@ -1651,14 +1651,15 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 
 	// --drafter attaches AFTER this model's own residency is built (attachBlockDrafter), but the elastic terms BuildResident
 	// sizes against live free VRAM (CUDA's expert-cache slots, its unpinned ctx-by-default) cannot know it is coming unless
-	// something prices it first. So the drafter is loaded HERE, before decoder.Load, and Options.ExtraResidentBytes carries
+	// something prices it first. So the drafter is opened HERE, before decoder.Load, and Options.ExtraResidentBytes carries
 	// its size into BuildResident: without that a 26B auto-sizes its expert cache to every free byte and the later attach
-	// fails with nowhere left to go (docs/tasks/task-fit-to-hardware.md §2). Loaded once and reused at the attach call site,
-	// so pricing and the actual attach see the same weights.
+	// fails with nowhere left to go (docs/tasks/task-fit-to-hardware.md §2). Opened, not loaded (OpenDFlashDrafter): its header
+	// prices it, and the attach streams its matrices from the file, so the host never holds the drafter beside the target's
+	// load. Opened once and reused at the attach call site, so pricing and the actual attach see the same weights.
 	var drafter *decoder.DFlashDrafter
 	if cfg.drafter != "" {
 		var derr error
-		if drafter, derr = decoder.LoadDFlashDrafter(cfg.drafter); derr != nil {
+		if drafter, derr = decoder.OpenDFlashDrafter(cfg.drafter); derr != nil {
 			return nil, fmt.Errorf("--drafter %q: load drafter: %w", cfg.drafter, derr)
 		}
 		opts.ExtraResidentBytes = decoder.DrafterResidentBytesEstimate(drafter)

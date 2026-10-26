@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -122,22 +123,103 @@ type blockTrunk struct {
 	layers     []dflashLayer
 
 	released bool // releaseHostWeights ran: the matrices and norms above are zero
+
+	// rows is each matrix's row reader, keyed by the field it stands in for, on a drafter opened to stream its matrices
+	// (OpenDFlashDrafter): those fields hold nothing. Nil when the matrices are held.
+	rows map[*linalg.WeightMat]DrafterRows
 }
 
 // ErrDrafterReleased is what host drafting on a drafter whose host weights were released returns (DFlashDrafter.ReleaseHostWeights),
 // and what the methods with no error result panic with: its matrices are zero, and drafting on them would return garbage.
 var ErrDrafterReleased = errors.New("decoder: the drafter's host weights were released after its resident attach; load it again to draft on the host")
 
-// mustHoldWeights panics with ErrDrafterReleased on a released drafter, for the host drafting methods with no error result.
+// ErrDrafterStreamed is ErrDrafterReleased's counterpart for a drafter opened to stream its matrices to a resident
+// (OpenDFlashDrafter): it holds none, so it cannot draft on the host.
+var ErrDrafterStreamed = errors.New("decoder: the drafter was opened to stream its matrices to a resident (OpenDFlashDrafter); load it with LoadDFlashDrafter to draft on the host")
+
+// weightsErr says why host drafting cannot read the matrices, or nil when it can.
+func (d *blockTrunk) weightsErr() error {
+	switch {
+	case d.released:
+		return ErrDrafterReleased
+	case d.rows != nil:
+		return ErrDrafterStreamed
+	}
+	return nil
+}
+
+// mustHoldWeights panics with weightsErr's error, for the host drafting methods and matrix accessors with no error result.
 func (d *blockTrunk) mustHoldWeights() {
+	if err := d.weightsErr(); err != nil {
+		panic(err)
+	}
+}
+
+// mustHoldNorms panics with ErrDrafterReleased on a released drafter: a streamed one holds its norms.
+func (d *blockTrunk) mustHoldNorms() {
 	if d.released {
 		panic(ErrDrafterReleased)
 	}
 }
 
+// Streamed reports whether the drafter was opened to stream its matrices (StreamedDrafterWeights).
+func (d *blockTrunk) Streamed() bool { return d.rows != nil }
+
+// DrafterFCRows is fc's row reader on a streamed drafter; it panics on any other.
+func (d *blockTrunk) DrafterFCRows() DrafterRows { return d.rowsOf(&d.fc) }
+
+// DrafterLayerRows is layer i's matrices as row readers, with its norms, on a streamed drafter; it panics on any other.
+func (d *blockTrunk) DrafterLayerRows(i int) DrafterLayerRows {
+	l := &d.layers[i]
+	return DrafterLayerRows{
+		Q: d.rowsOf(&l.q), K: d.rowsOf(&l.k), V: d.rowsOf(&l.v), O: d.rowsOf(&l.o),
+		Gate: d.rowsOf(&l.gate), Up: d.rowsOf(&l.up), Down: d.rowsOf(&l.down),
+		QNorm: l.qNorm, KNorm: l.kNorm, InputNorm: l.inputNorm, PostAttnNorm: l.postAttnNorm,
+	}
+}
+
+func (d *blockTrunk) rowsOf(w *linalg.WeightMat) DrafterRows {
+	d.mustHoldNorms()
+	r, ok := d.rows[w]
+	if !ok {
+		panic("decoder: a row reader asked of a drafter not opened to stream (OpenDFlashDrafter)")
+	}
+	return r
+}
+
+// stRows is a row reader over tensor name [rows, cols] in st (F32, BF16 or F16). Each read widens one block of rows through
+// Tensor.SubF32, which reads a payload at any byte offset, so neither the whole matrix nor its f32 widening is ever held. A read
+// after st closes errors.
+func stRows(st *embed.SafetensorsFile, name string, rows, cols int) (DrafterRows, error) {
+	t, err := st.Tensor(name)
+	if err != nil {
+		return DrafterRows{}, err
+	}
+	if !slices.Equal(t.Shape, []int{rows, cols}) {
+		return DrafterRows{}, fmt.Errorf("tensor %q: shape %v, want [%d %d]", name, t.Shape, rows, cols)
+	}
+	switch t.DType {
+	case "F32", "BF16", "F16":
+	default:
+		return DrafterRows{}, fmt.Errorf("tensor %q: dtype %s, want F32, BF16 or F16", name, t.DType)
+	}
+	return DrafterRows{Rows: rows, Cols: cols, Read: func(r0, n int, dst []float32) error {
+		t, err := st.Tensor(name)
+		if err != nil {
+			return err
+		}
+		f, err := t.SubF32(r0*cols, n*cols)
+		if err != nil {
+			return err
+		}
+		copy(dst, f)
+		return nil
+	}}, nil
+}
+
 // releaseHostWeights drops the trunk's matrices and norms; the geometry stays.
 func (d *blockTrunk) releaseHostWeights() {
-	d.fc, d.hiddenNorm, d.finalNorm = linalg.WeightMat{}, nil, nil
+	d.fc, d.hiddenNorm, d.finalNorm, d.rows = linalg.WeightMat{}, nil, nil, nil
 	for i := range d.layers {
 		d.layers[i] = dflashLayer{}
 	}
@@ -236,7 +318,15 @@ type dflashConfig struct {
 // LoadDFlashDrafter loads a DFlash drafter from dir (config.json + model.safetensors, the
 // z-lab layout). The drafter's hidden size must equal the target's — it consumes the
 // target's hidden states and embeddings directly, with no projection between them.
-func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
+func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, false) }
+
+// OpenDFlashDrafter is LoadDFlashDrafter for a drafter a resident backend will hold: it reads the config and the safetensors
+// header, checks every tensor as LoadDFlashDrafter does, and holds the norms and d2t, but no matrix. Each matrix is a row reader
+// over the mapped file (StreamedDrafterWeights), which the backend's attach streams to the device, so the host never holds the
+// drafter, however its file is aligned. It cannot draft on the host (ErrDrafterStreamed).
+func OpenDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, true) }
+
+func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	cfgBytes, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		return nil, fmt.Errorf("dflash: read config: %w", err)
@@ -326,8 +416,19 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 		targetLayerIDs: c.DFlash.TargetLayerIDs,
 		st:             st,
 	}
+	if streamed {
+		d.rows = map[*linalg.WeightMat]DrafterRows{}
+	}
 
 	mat := func(dst *linalg.WeightMat, name string, rows, cols int) error {
+		if streamed {
+			r, err := stRows(st, name, rows, cols)
+			if err != nil {
+				return fmt.Errorf("dflash: %w", err)
+			}
+			d.rows[dst] = r
+			return nil
+		}
 		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped (MEM11-bf16)
 		if err != nil {
 			return fmt.Errorf("dflash: %w", err)
@@ -438,8 +539,8 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 // This is the ONLY place the target's hidden states enter, and the result is what every
 // layer's K/V read. It is computed once per round, not per layer.
 func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, error) {
-	if d.released {
-		return nil, ErrDrafterReleased
+	if err := d.weightsErr(); err != nil {
+		return nil, err
 	}
 	// fc's input width IS the tap count x hidden, so it validates the caller's concatenation
 	// without the trunk needing to know which layers were tapped — that belongs to the drafter.
@@ -519,8 +620,8 @@ func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]
 // final-normed hidden states, [blockSize][hidden]. This is the form production should
 // use; DraftBlock is the uncached convenience wrapper.
 func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]float32) ([][]float32, error) {
-	if d.released {
-		return nil, ErrDrafterReleased
+	if err := d.weightsErr(); err != nil {
+		return nil, err
 	}
 	// The block's WIDTH is whatever the caller passes — the trained width is the drafter's
 	// property, not the trunk's, and the enclosing type checks it.
@@ -555,8 +656,8 @@ func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]f
 // for the parity gate, which is handed the reference's fused context directly), but a
 // generation loop should hold a DFlashContext and call DraftBlockCtx.
 func (d *blockTrunk) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]float32, error) {
-	if d.released {
-		return nil, ErrDrafterReleased
+	if err := d.weightsErr(); err != nil {
+		return nil, err
 	}
 	ctx := d.NewContext()
 	d.ExtendContext(be, ctx, fused)

@@ -108,9 +108,18 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 	// rather than clearing it.
 	setupBefore := r.setupErr
 	err := r.do(func() error {
-		// Every matrix is planned and streamed (planWeight, upW): a bf16 drafter's rows are widened and quantized one staging block
-		// at a time, so the host never holds a widened or packed copy of a whole matrix; the device bytes are packWeight's.
-		fcw, e := planWeight(w.DrafterFC())
+		// Every matrix is planned and streamed (planWeight or planRows, upW): a bf16 drafter's rows are widened and quantized one
+		// staging block at a time, so the host never holds a widened or packed copy of a whole matrix; the device bytes are
+		// packWeight's. A streamed drafter's rows come from its file (StreamedDrafterWeights), so the host never holds the drafter.
+		sw, _ := w.(decoder.StreamedDrafterWeights)
+		streamed := sw != nil && sw.Streamed()
+		fcSrc := drafterSrc{}
+		if streamed {
+			fcSrc.rows = sw.DrafterFCRows()
+		} else {
+			fcSrc.held = w.DrafterFC()
+		}
+		fcw, e := fcSrc.plan()
 		if e != nil {
 			return fmt.Errorf("cuda drafter: pack fc: %w", e)
 		}
@@ -132,27 +141,31 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 		d.rhalf = geo.HeadDim / 2 // full rotary: the drafter rotates every pair
 		d.layers = make([]drafterLayer, geo.Layers)
 		for i := range d.layers {
-			lw := w.DrafterLayer(i)
-			for _, m := range []struct {
-				dst *cudaWQ
-				src *linalg.WeightMat
-				nm  string
-			}{
-				{&d.layers[i].q, lw.Q, "q"}, {&d.layers[i].k, lw.K, "k"},
-				{&d.layers[i].v, lw.V, "v"}, {&d.layers[i].o, lw.O, "o"},
-				{&d.layers[i].gate, lw.Gate, "gate"}, {&d.layers[i].up, lw.Up, "up"},
-				{&d.layers[i].down, lw.Down, "down"},
-			} {
-				h, e := planWeight(m.src)
-				if e != nil {
-					return fmt.Errorf("cuda drafter: layer %d %s: %w", i, m.nm, e)
+			var srcs [7]drafterSrc // q, k, v, o, gate, up, down
+			var norms [4][]float32 // q, k, input, post-attention
+			if streamed {
+				lr := sw.DrafterLayerRows(i)
+				for j, m := range [7]decoder.DrafterRows{lr.Q, lr.K, lr.V, lr.O, lr.Gate, lr.Up, lr.Down} {
+					srcs[j].rows = m
 				}
-				*m.dst = r.upW(h)
+				norms = [4][]float32{lr.QNorm, lr.KNorm, lr.InputNorm, lr.PostAttnNorm}
+			} else {
+				lw := w.DrafterLayer(i)
+				for j, m := range [7]*linalg.WeightMat{lw.Q, lw.K, lw.V, lw.O, lw.Gate, lw.Up, lw.Down} {
+					srcs[j].held = m
+				}
+				norms = [4][]float32{lw.QNorm, lw.KNorm, lw.InputNorm, lw.PostAttnNorm}
 			}
-			d.layers[i].qNorm = r.up32(lw.QNorm)
-			d.layers[i].kNorm = r.up32(lw.KNorm)
-			d.layers[i].inputNorm = r.up32(lw.InputNorm)
-			d.layers[i].postAttnNorm = r.up32(lw.PostAttnNorm)
+			l := &d.layers[i]
+			for j, dst := range [7]*cudaWQ{&l.q, &l.k, &l.v, &l.o, &l.gate, &l.up, &l.down} {
+				h, e := srcs[j].plan()
+				if e != nil {
+					return fmt.Errorf("cuda drafter: layer %d %s: %w", i, [7]string{"q", "k", "v", "o", "gate", "up", "down"}[j], e)
+				}
+				*dst = r.upW(h)
+			}
+			l.qNorm, l.kNorm = r.up32(norms[0]), r.up32(norms[1])
+			l.inputNorm, l.postAttnNorm = r.up32(norms[2]), r.up32(norms[3])
 		}
 		r.pk = nil // the staging blocks, as the build releases them
 		return r.stream.Sync()
@@ -164,6 +177,19 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 		return nil, fmt.Errorf("cuda drafter: weight upload failed: %w", r.setupErr)
 	}
 	return d, nil
+}
+
+// drafterSrc is one drafter matrix as the attach plans it: held (planWeight) or a row reader over the drafter's file (planRows).
+type drafterSrc struct {
+	held *linalg.WeightMat
+	rows decoder.DrafterRows
+}
+
+func (s drafterSrc) plan() (hostW, error) {
+	if s.held != nil {
+		return planWeight(s.held)
+	}
+	return planRows(s.rows)
 }
 
 // FuseContext projects the target's concatenated tap hidden states down to the trunk's width and norms them (the
