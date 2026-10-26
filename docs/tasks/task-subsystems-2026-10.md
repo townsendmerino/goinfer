@@ -861,6 +861,13 @@ Every gate is tier 0: seconds, no model, no device, no timed run. Each runs once
 
 If the hook itself changes after DECISION PW1-D1, G1 to G4 are re-run on the changed hook, with G3's expected exit set by the decision.
 
+**Results, 2026-10-26, on the branch after the `CLAUDE.md` change (the hook's logic unchanged).** G1 PASS (9 tests `ok`, none
+skipped). G2's first run was void by its own rule: it passed `980f449b^`, and `ci_docs_only.sh` accepts only hex SHAs, so it
+failed open to "code"; the hook always passes SHAs. Re-run with both ends resolved to full SHAs: classifier `true`, guard exit 0,
+"a docs-only push". G3 PASS: classifier `false`, exit 1, naming fake run 99 (against the real `gh run list` it also held,
+naming #264's merge run). G4 PASS: the docs-only range exits 0 through the guard, the citation lint,
+`TestParityManifest_fresh` and the census warning; the product range exits 1 at the guard. G5 PASS: both lints exit 0.
+
 ## 13. Order, sizes, and what each step is worth alone
 
 | order | items | worth alone |
