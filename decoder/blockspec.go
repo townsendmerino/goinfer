@@ -264,6 +264,11 @@ func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 	if !ok {
 		return nil, errBlockSpecUnsupported
 	}
+	if sw, ok := dw.(StreamedDrafterWeights); ok && sw.Streamed() {
+		if _, ok := host.(StreamingDrafterHost); !ok {
+			return nil, fmt.Errorf("decoder: this resident cannot take a drafter opened to stream its matrices (OpenDFlashDrafter); load it with LoadDFlashDrafter")
+		}
+	}
 	// Before the attach, so a refused model has no drafter uploaded to its device.
 	if err := m.prepareRecurrentSpec(host, dw); err != nil {
 		return nil, err

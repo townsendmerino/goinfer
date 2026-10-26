@@ -3,7 +3,9 @@
 package cuda
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"testing"
@@ -472,4 +474,86 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 	t.Logf("verify M=%d: capture OFF %.3f ms | ON %.3f ms | seam %+.3f ms for the WHOLE block",
 		M, off, on, on-off)
 	t.Logf("   per-token seam would be %.3f ms for %d committed tokens (0.465 ms each)", 0.465*float64(M), M)
+}
+
+// TestResidentDrafter_streamedAttachMatchesHeld is serve's attach (a drafter opened to stream, decoder.OpenDFlashDrafter, every
+// matrix read through its row readers) against the same drafter loaded with its weights held: the device bytes are equal buffer
+// by buffer (fc, both trunk norms, each layer's seven matrices and four norms), so a reader or norm wired to the wrong field
+// shows. Then the opened drafter is released, as serve releases it, and a second attach of it is refused.
+func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
+	if _, err := os.Stat(tgt); err != nil {
+		t.Skipf("no target at %s", tgt)
+	}
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	held, err := decoder.LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	opened, err := decoder.OpenDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	a, err := r.AttachDrafter(held)
+	if err != nil {
+		t.Fatalf("attach held: %v", err)
+	}
+	b, err := r.AttachDrafter(opened)
+	if err != nil {
+		t.Fatalf("attach opened: %v", err)
+	}
+	get := func(buf gpu.Buffer, n int) []byte {
+		out := make([]byte, n)
+		if err := r.do(func() error { return gpu.Download(buf, out) }); err != nil {
+			t.Fatalf("download: %v", err)
+		}
+		return out
+	}
+	same := func(name string, x, y gpu.Buffer, n int) {
+		if !bytes.Equal(get(x, n), get(y, n)) {
+			t.Errorf("%s: the streamed attach's device bytes differ from the held attach's", name)
+		}
+	}
+	wq := func(name string, x, y cudaWQ) {
+		if x.N != y.N || x.K != y.K || x.kind != y.kind {
+			t.Fatalf("%s: %s %dx%d streamed, %s %dx%d held", name, y.kind, y.N, y.K, x.kind, x.N, x.K)
+		}
+		same(name+".W", x.W, y.W, x.N*(x.K/4)*4)
+		same(name+".ws", x.ws, y.ws, x.N*4)
+	}
+	geo := held.DrafterGeometry()
+	wq("fc", a.fc, b.fc)
+	same("hiddenNorm", a.hiddenNorm, b.hiddenNorm, geo.Hidden*4)
+	same("finalNorm", a.finalNorm, b.finalNorm, geo.Hidden*4)
+	for i := range geo.Layers {
+		x, y := &a.layers[i], &b.layers[i]
+		for j, m := range [7][2]cudaWQ{{x.q, y.q}, {x.k, y.k}, {x.v, y.v}, {x.o, y.o}, {x.gate, y.gate}, {x.up, y.up}, {x.down, y.down}} {
+			wq(fmt.Sprintf("layer %d %s", i, [7]string{"q", "k", "v", "o", "gate", "up", "down"}[j]), m[0], m[1])
+		}
+		same(fmt.Sprintf("layer %d qNorm", i), x.qNorm, y.qNorm, geo.HeadDim*4)
+		same(fmt.Sprintf("layer %d kNorm", i), x.kNorm, y.kNorm, geo.HeadDim*4)
+		same(fmt.Sprintf("layer %d inputNorm", i), x.inputNorm, y.inputNorm, geo.Hidden*4)
+		same(fmt.Sprintf("layer %d postAttnNorm", i), x.postAttnNorm, y.postAttnNorm, geo.Hidden*4)
+	}
+	if err := opened.ReleaseHostWeights(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if _, err := r.AttachDrafter(opened); err == nil {
+		t.Error("a second attach of the released drafter was accepted")
+	}
 }
