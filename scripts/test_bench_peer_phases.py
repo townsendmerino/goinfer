@@ -49,10 +49,10 @@ class FreeMemCheck(unittest.TestCase):
         os.environ["BENCH_ALLOW_NO_FREE_MEM"] = "1"
         bench_peer.free_mem_mb = lambda: 60000  # set, but a reading is there
         bench_peer.check_free_mem()
-        self.assertFalse(bench_peer._FREE_MEM_OVERRIDE_USED)
+        self.assertFalse(bench_peer.provenance()["free_mem_override"])
         bench_peer.free_mem_mb = lambda: None
         bench_peer.check_free_mem()
-        self.assertTrue(bench_peer._FREE_MEM_OVERRIDE_USED)
+        self.assertTrue(bench_peer.provenance()["free_mem_override"])
         bench_peer._FREE_MEM_OVERRIDE_USED = False
 
     def test_no_reading_refuses_without_the_override(self):
@@ -89,6 +89,53 @@ class TermExits(unittest.TestCase):
             signal.signal(signal.SIGINT, saved[1])
 
 
+_TEARDOWN_CHILD = r"""
+import os, signal, subprocess, sys, time
+sys.path.insert(0, sys.argv[1])
+import bench_peer, timing_lock
+signal.signal(signal.SIGTERM, bench_peer._term_exits)
+with timing_lock.hold("teardown test"):
+    try:
+        print("ready", flush=True)
+        time.sleep(60)
+    finally:
+        print("teardown", flush=True)
+        time.sleep(1.0)  # a cell's teardown: the test sends a second SIGTERM in here
+        env = {k: v for k, v in os.environ.items() if k != timing_lock.TOKEN_ENV}
+        rc = subprocess.run([sys.executable, os.path.join(sys.argv[1], "timing_lock.py"), "status"], env=env,
+                            capture_output=True).returncode
+        open(sys.argv[2], "w").write(str(rc))
+"""
+
+
+class TeardownBeforeUnlock(unittest.TestCase):
+    def test_sigterm_runs_the_teardown_to_its_end_while_the_lock_is_held(self):
+        import signal
+        import subprocess
+        import tempfile
+        scripts = os.path.dirname(os.path.abspath(__file__))
+        with tempfile.TemporaryDirectory() as d:
+            lock, marker = os.path.join(d, "lock"), os.path.join(d, "marker")
+            env = dict(os.environ, GOINFER_TIMING_LOCK_FILE=lock)
+            env.pop("GOINFER_TIMING_LOCK", None)
+            child = subprocess.Popen([sys.executable, "-c", _TEARDOWN_CHILD, scripts, marker], env=env,
+                                     stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(), "ready")
+                child.send_signal(signal.SIGTERM)
+                self.assertEqual(child.stdout.readline().strip(), "teardown")
+                child.send_signal(signal.SIGTERM)  # a second signal must not cut the teardown short
+                self.assertEqual(child.wait(timeout=30), 128 + signal.SIGTERM)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+            with open(marker) as f:
+                self.assertEqual(f.read(), "1", "the lock must still be held during the teardown (timing_lock status exits 1)")
+            free = subprocess.run([sys.executable, os.path.join(scripts, "timing_lock.py"), "status"], env=env,
+                                  capture_output=True)
+            self.assertEqual(free.returncode, 0, "the lock must be free once the run has exited")
+
+
 class SignalInstall(unittest.TestCase):
     def test_main_installs_the_handler_for_sigterm_and_sigint(self):
         src = open(bench_peer.__file__).read()
@@ -98,7 +145,7 @@ class SignalInstall(unittest.TestCase):
 
 
 class DepthBackend(unittest.TestCase):
-    KEYS = ("BENCH_PHASES", "BENCH_DEPTH_BACKEND", "BENCH_BACKENDS")
+    KEYS = ("BENCH_PHASES", "BENCH_DEPTH_BACKEND", "BENCH_BACKENDS", "BENCH_DEPTHS")
 
     def setUp(self):
         self.saved = {k: os.environ.pop(k, None) for k in self.KEYS}
@@ -120,11 +167,16 @@ class DepthBackend(unittest.TestCase):
         with self.assertRaises(SystemExit):
             bench_peer.depth_backend()
 
-    def test_phase_b_refuses_a_backend_phase_a_did_not_select(self):
-        os.environ["BENCH_PHASES"] = "B"
+    def test_both_phases_refuse_a_backend_phase_a_did_not_select(self):
+        os.environ["BENCH_PHASES"] = "A,B"
         os.environ["BENCH_BACKENDS"] = "cpu"
         with self.assertRaises(SystemExit):
             bench_peer.depth_backend()
+
+    def test_phase_b_alone_has_no_phase_a_to_disagree_with(self):
+        os.environ["BENCH_PHASES"] = "B"
+        os.environ["BENCH_BACKENDS"] = "cpu"
+        self.assertEqual(bench_peer.depth_backend(), "cuda")
 
     def test_phase_b_default_is_cuda(self):
         os.environ["BENCH_PHASES"] = "B"

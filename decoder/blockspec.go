@@ -228,8 +228,12 @@ func (s *BlockSpec) SetVerifyWidth(w int) error {
 	if v == 0 {
 		v = defaultVerifyWidth // the width 0 selects, not the one set before (verifyWidth falls back to s.width)
 	}
-	if width := s.verifyWidth(BlockSpecOptions{VerifyWidth: v}); !s.m.specRollbackSafeVia(s.recurrentFold(width), width) {
-		return fmt.Errorf("decoder: block-spec verify width %d cannot roll back on this model (a recurrent model past its resident's fold rows, or a staged sliding window)", width)
+	// Only the drafter's block caps the request here. verifyWidth's other cap, to the fold path's prepared rows, must not hide a
+	// width past them: that width is refused, as GenerateStream would refuse it.
+	v = min(v, s.dw.BlockSize())
+	if !s.m.specRollbackSafeVia(s.recurrentFold(v), v) {
+		return fmt.Errorf("decoder: block-spec verify width %d (%d after the drafter's block of %d) cannot roll back on this model (a recurrent model past its resident's fold rows, or a staged sliding window)",
+			w, v, s.dw.BlockSize())
 	}
 	s.width = w
 	return nil

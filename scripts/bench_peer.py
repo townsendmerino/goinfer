@@ -1881,14 +1881,16 @@ def plan_depths():
 
 
 def depth_backend():
-    """Phase B's backend (BENCH_DEPTH_BACKEND, default cuda), or None when the plan runs no phase B. Refuses an unknown backend, and
-    one BENCH_BACKENDS did not select while depths are planned, only when phase B runs: a phase-A-only plan never reads it."""
-    if "B" not in plan_phases():
+    """Phase B's backend (BENCH_DEPTH_BACKEND, default cuda), or None when the plan runs no phase B. Refuses an unknown backend
+    when phase B runs, and one BENCH_BACKENDS did not select when phase A runs too and depths are planned: a phase-A-only plan
+    never reads it, and a phase-B-only plan has no phase A to disagree with."""
+    phases = plan_phases()
+    if "B" not in phases:
         return None
     depth_be = os.environ.get("BENCH_DEPTH_BACKEND", "cuda").strip()
     if depth_be not in SERVE:
         sys.exit(f"BENCH_DEPTH_BACKEND: unknown backend {depth_be!r}; known: {sorted(SERVE)}")
-    if plan_depths() and depth_be not in plan_backends():
+    if "A" in phases and plan_depths() and depth_be not in plan_backends():
         sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
                  "-- phase A and B would test different backends silently")
     return depth_be

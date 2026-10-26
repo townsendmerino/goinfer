@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -96,6 +98,17 @@ func TestBlockSpec_setVerifyWidthRefuses(t *testing.T) {
 	}
 	if got := rec4.VerifyWidthInUse(); got != 4 {
 		t.Errorf("recurrent, after a refused width: VerifyWidthInUse %d, want the 4 set before", got)
+	}
+	// the real fold's 16 rows and a 32-position block: 32 must be refused, not clamped to 16 by verifyWidth's row cap
+	rec16 := &BlockSpec{m: &Model{w: &Weights{arch: deltaNetArch(8)}}, host: prepHost{recurrentSpecStub{rows: RecurrentSpecMaxRows}, &blockspecWriteHost{}, new(int)},
+		dw: blockspecStubWeights{blockSize: 2 * RecurrentSpecMaxRows}}
+	if err := rec16.SetVerifyWidth(2 * RecurrentSpecMaxRows); err == nil {
+		t.Errorf("recurrent, width %d past the fold's %d rows: accepted", 2*RecurrentSpecMaxRows, RecurrentSpecMaxRows)
+	} else if !strings.Contains(err.Error(), fmt.Sprintf("width %d ", 2*RecurrentSpecMaxRows)) {
+		t.Errorf("the refusal names the width after its caps, not the one asked for: %v", err)
+	}
+	if err := rec16.SetVerifyWidth(RecurrentSpecMaxRows); err != nil {
+		t.Errorf("recurrent, width %d of the fold's %d rows: %v", RecurrentSpecMaxRows, RecurrentSpecMaxRows, err)
 	}
 }
 
