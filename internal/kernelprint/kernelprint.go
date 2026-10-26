@@ -686,6 +686,23 @@ var suite = []kernel{
 			}
 		}
 	}},
+	{"linalg.SoftmaxRowScaledContractInto", func(s *sink, g *gen) {
+		for _, n := range contractLens {
+			for _, scale := range []float32{1, 0.125} {
+				src := g.vec(n, 4)
+				dst := make([]float32, n)
+				linalg.SoftmaxRowScaledContractInto(dst, src, scale)
+				s.tag("sms", n)
+				s.f32(dst)
+				// In place, as internal/audio's Whisper encoder calls it.
+				linalg.SoftmaxRowScaledContractInto(src, src, scale)
+				s.f32(src)
+			}
+		}
+	}},
+	{"linalg.SiLUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "silu", linalg.SiLUContractInto) }},
+	{"linalg.GELUContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelu", linalg.GELUContractInto) }},
+	{"linalg.GELUTanhContractInto", func(s *sink, g *gen) { contractActivation(s, g, "gelutanh", linalg.GELUTanhContractInto) }},
 	{"linalg.GatherVBlockMajor", func(s *sink, g *gen) {
 		for _, hd := range []int{16, 64} {
 			for _, nKeys := range []int{1, 5, 512, 513, 1100} {
@@ -721,6 +738,35 @@ var suite = []kernel{
 						}
 						ok := linalg.AttendTileFused(linalg.MatmulBT, qh, kh, vBlk, ch, linalg.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
 						s.tag("fa", hd, nKeys, kt, window)
+						s.ok(ok)
+						s.f32(ch)
+					}
+				}
+			}
+		}
+	}},
+	{"linalg.AttendTileFusedContractExp", func(s *sink, g *gen) {
+		for _, hd := range []int{16, 64, 80} {
+			for _, nKeys := range []int{1, 5, 512, 513, 1100} {
+				for _, kt := range []int{1, 3, 8} {
+					if kt > nKeys {
+						continue
+					}
+					for _, window := range []int{0, 600} {
+						kvDim := hd
+						keys, vals := g.vec(nKeys*kvDim, 1), g.vec(nKeys*kvDim, 1)
+						kh, vBlk := make([]float32, nKeys*hd), make([]float32, nKeys*hd)
+						linalg.GatherVBlockMajor(kh, vBlk, keys, vals, 0, hd, kvDim, nKeys)
+						qh, ch := g.vec(kt*hd, 1), make([]float32, kt*hd)
+						lo, hi := make([]int, kt), make([]int, kt)
+						for i := range kt {
+							hi[i] = nKeys - kt + i
+							if window > 0 {
+								lo[i] = max(0, hi[i]-window)
+							}
+						}
+						ok := linalg.AttendTileFusedContractExp(linalg.MatmulBT, qh, kh, vBlk, ch, linalg.NewFusedAttnScratch(kt, hd), kt, hd, nKeys, 1/math.Sqrt(float64(hd)), lo, hi)
+						s.tag("fac", hd, nKeys, kt, window)
 						s.ok(ok)
 						s.f32(ch)
 					}
@@ -919,4 +965,21 @@ func (g *gen) probs(rows, nKeys int) []float32 {
 		p[i] = float32(g.unit()+1) * (1.0 / 512)
 	}
 	return p
+}
+
+// contractLens crosses the contract kernels' 4-wide and 8-wide vector bodies and their tails.
+var contractLens = []int{1, 2, 3, 4, 7, 8, 15, 16, 17, 31, 32, 33, 64, 100, 511, 512, 513, 1000}
+
+// contractActivation fingerprints an elementwise contract activation out of place and in place, over inputs wide enough
+// to reach its clamps.
+func contractActivation(s *sink, g *gen, name string, f func(dst, src []float32)) {
+	for _, n := range contractLens {
+		src := g.vec(n, 12)
+		dst := make([]float32, n)
+		f(dst, src)
+		s.tag(name, n)
+		s.f32(dst)
+		f(src, src)
+		s.f32(src)
+	}
 }
