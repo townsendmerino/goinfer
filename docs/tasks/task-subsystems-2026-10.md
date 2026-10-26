@@ -665,6 +665,25 @@ type Arbiter interface {
 | MM5 | demand from the program: each operation declares its buffers (weights, per-sequence state, per-step scratch), and `Demand` is their sum plus the backend's deltas | the census unchanged; a planted new family with no hand-written memory line is priced correctly | M; after OP4 |
 | MM6 | `night.py add` and `goinfer fit` call `Solve` against the target box's recorded profile at queue time | replay the last three weeks' refused night jobs: each would have been refused at queue time | S; after MM1 |
 
+#### MM0's gates, registered 2026-10-26 before the code (nobara-mm01)
+
+What moves: the OS memory readings in `decoder/hostram_*`, `decoder/memwatch_*`, `decoder/faultcount_*`, the cold-load
+residency sample (`giwResidentFraction`), `decoder/swapwatch.go`'s sampler, all of `internal/hostmem` (which `internal/mem/probe`
+absorbs; `cmd/hostmem` prints the same lines), `internal/swapguard`'s readings, the Metal module's direct `hw.memsize` reads and
+`cmd/gate`'s `/proc/<pid>/status` read. `decoder`'s exported readers (`HostRAMBytes`, `HostRAMAvailableBytes`, `SwapUsedBytes`,
+`SelfSwapReader`, `SelfSwapBytes`, `StartSwapWatch` and its types) stay, as delegates (§3 item 3). Out of scope, named so the
+gap is visible: the device readings (`cuMemGetInfo`, Metal's `recommendedMaxWorkingSetSize` and `currentAllocatedSize`) need a
+device handle and the device library, which §9 keeps out of the probe's imports; MM2 has the backends report them.
+
+All four are tier 0: no model, no device, no timed run, so the timing lock is not taken beyond `touched.py`'s shared hold.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM0-1 identical readings | (a) every parser test that existed moves with its parser and passes with its expected values unchanged; (b) a frozen copy of each pre-move reader (from `origin/main` at bc365a837), kept in a test file, agrees with the probe on the live box: `Physical`, `SelfSwap`'s availability and `FaultCounts`' ok exactly; `Available`, `SwapUsed` and `SelfSwap` equal, or between two reference reads that bracket the probe's, within 5 tries; (c) every decoder seam (`hostRAM`, `hostRAMAvailable`, `coldAvailBytes`, `coldRAMBytes`, `coldResidentFraction`, `sidecarHostRAM`) and the exported readers return the probe's value | the box has no swap configured and (b)'s swap leg compares 0 with 0 (reported, not passed) | all run to completion | seconds; Linux natively, darwin and windows in CI's root jobs |
+| G-MM0-2 a fake drives the fit guard | with `probe.Fake` installed through one test helper, each outcome is reached and named: `guardFit` (through `fitCheckFor` on a tracked tiny fixture) proceeds on an unknown reading, proceeds when it fits, auto-pins, refuses a pinned context, refuses at the floor; `decideGIWFit` reaches the same five; `planColdLoad` through `prepareColdLoad` reaches read-first, no-read-around and nothing | an outcome is reached only by setting a non-probe input (each case changes the fake's readings alone, plus the pin) | all cases run | seconds |
+| G-MM0-3 one reader | a source scan (go/ast, not text, so comments do not count) over every non-test `.go` file in all seven modules, outside `testdata/`, finds none of the OS memory reads (the literals `/proc/meminfo`, `MemTotal:`, `MemAvailable:`, `SwapTotal:`, `SwapFree:`, `VmSwap`, `VmHWM`, `VmRSS`, `statm`, `smaps`, `hw.memsize`, `vm.swapusage`, `kern.memorystatus_level`, `vm.page_`, `GlobalMemoryStatusEx`, `host_statistics64`, `task_info`; the selectors `Getrusage`, `Sysinfo`, `SYS_MINCORE`, `Mincore`) outside `internal/mem/probe`. It must go red first: a planted source per pattern is flagged. And `internal/mem/probe` imports the standard library and `golang.org/x/sys` only | the scan reads zero files, or fewer than the tree's count of non-test `.go` files less the excluded ones (a scan that read nothing passes vacuously) | runs to completion | seconds |
+| G-MM0-4 builds | `go build` and `go vet` of the root for GOOS linux, darwin and windows; `metal` for darwin; `gpu` and `cuda` for linux with their tags (`cuda goinfer_testhooks`, `gpu goinfer_testhooks`); CI's pinned `staticcheck` on the touched modules after its U1000 canary goes red; `gofmt -l` empty on every touched module | the staticcheck canary does not go red (then nothing was checked) | all run | about a minute |
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
