@@ -59,7 +59,7 @@ cannot go blind. Separately, the NeoX dispatch was forced in **production code**
 a pairwise model binds the NeoX kernels) and the gates run: both read red with the same numbers as the in-test control
 (`mutation-neox-production.log`); the edit was reverted (`git checkout`).
 
-### Kernel level (`cuda/rope_pairwise_test.go`, hermetic, runs in about a second)
+### Kernel level (`cuda/kernels/rope_pairwise_test.go`, hermetic, runs in about a second)
 
 Reference written from the semantics in float64, tolerance 2e-5, covering full rotary, partial rotary (8 of 16, 6 of 16),
 `mscale` 0.85, a Q-temperature scale, `ropePos != pos`, 37-row batches with and without `qTempRows`, distinct per-row

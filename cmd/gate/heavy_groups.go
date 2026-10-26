@@ -74,11 +74,12 @@ func classifyLiteral(s string) *heavyFamily {
 }
 
 // heavyGroup is one process of the heavy tier's main group: the tests it owns and the -run pattern that selects exactly
-// those.
+// those, in Pkg (./cuda/ when empty).
 type heavyGroup struct {
 	Label string
 	Tests []string
 	Run   string
+	Pkg   string
 }
 
 // heavyPartition assigns each listed test to one group. refs maps every top-level test found in source to the string
@@ -334,7 +335,7 @@ func runCUDAHeavy(argv []string, w io.Writer) int {
 		}
 	}
 	g := &gpuGate{w: w, logDir: *logDir, emitted: map[string]bool{}, models: env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))}
-	listed, err := listCUDATests()
+	listed, err := listCUDATests("./cuda/")
 	if err != nil || len(listed) == 0 {
 		fmt.Fprintf(w, "gate cuda-heavy: `go test -list` found no tests in ./cuda/ (%v)\n", err)
 		return 1

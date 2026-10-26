@@ -58,7 +58,7 @@ accumulates in tile order, so its float rounding differs from the shipped 128-wi
 partition+tree reduction — same distribution to within ULPs, different bytes. goinfer's
 CUDA decode attention is gated **byte-identical** (`TestSplitKV_bitIdentical` +
 `_gemma3`, `cuda/splitkv_bitident_test.go`; `TestAttnBatched_bitIdentical`,
-`cuda/attn_batched_test.go:28` — names verified against source), and reduction *width* is
+`cuda/kernels/attn_batched_test.go:28` — names verified against source), and reduction *width* is
 explicitly part of the contract (the Metal 128-vs-256 finding). Campaign A's own record
 says the quiet part: the fix "is split-KV parallelism, **not FA's online rescale, which is
 not bit-exact**." Crossing that line is a decision, not a patch — which is what this doc

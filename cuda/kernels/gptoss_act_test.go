@@ -1,0 +1,378 @@
+//go:build cuda
+
+// Gate for gpt-oss's clamped interleaved-SwiGLU expert epilogue (residency step 2 of 2).
+//
+// Checked against the CPU reference in decoder/forward_gptoss.go, which is itself matched to
+// HF's GptOssExperts:
+//
+//	gate = clamp(Gate·h + gateBias, max = limit)      // UPPER only
+//	up   = clamp(Up·h   + upBias,   [-limit, limit])  // BOTH
+//	glu  = gate · sigmoid(alpha · gate)
+//	d    = (up + 1) · glu
+//
+// THE INPUTS DELIBERATELY SATURATE BOTH BRANCHES. A clamp that is symmetric on the gate — the
+// tidier-looking mistake — agrees everywhere the activation does not saturate, which is most
+// random data. It differs only past the limit, i.e. exactly where a clamp exists to matter.
+// So the test drives values well past ±limit on both branches and compares against a
+// reference that encodes the asymmetry.
+//
+// The comparison is on the DEQUANTIZED int8 output, because that is what the down-projection
+// GEMV consumes; a tolerance of one quantization step is therefore expected and anything
+// larger is a real disagreement.
+package kernels
+
+import (
+	"context"
+	"math"
+	"testing"
+
+	gc "github.com/eitamring/gocudrv/cuda"
+)
+
+func TestGptOssAct_matchesReference(t *testing.T) {
+	const I = 256
+	const alpha, limit = float32(1.702), float32(7.0)
+
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	cx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("primary ctx: %v", err)
+	}
+	defer cx.Close()
+	bg := context.Background()
+	mod, err := cx.LoadModule(gptOssActPTX)
+	if err != nil {
+		t.Fatalf("LoadModule(gptoss_act): %v", err)
+	}
+	fn, err := mod.Function("glu_quant_gptoss")
+	if err != nil {
+		t.Fatalf("Function: %v", err)
+	}
+	stream := mustStream(t, cx)
+
+	// Spread well past ±limit so BOTH clamps engage on many elements.
+	g := make([]float32, I)
+	u := make([]float32, I)
+	gb := make([]float32, I)
+	ub := make([]float32, I)
+	for i := range g {
+		g[i] = float32(math.Sin(float64(i)*0.37)) * 12 // |g| up to 12 > limit 7
+		u[i] = float32(math.Cos(float64(i)*0.29)) * 11
+		gb[i] = float32(math.Sin(float64(i)*1.1)) * 0.5
+		ub[i] = float32(math.Cos(float64(i)*0.9)) * 0.5
+	}
+	clampedHi, clampedLo := 0, 0
+	for i := range g {
+		if g[i]+gb[i] > limit {
+			clampedHi++
+		}
+		if u[i]+ub[i] < -limit {
+			clampedLo++
+		}
+	}
+	if clampedHi == 0 || clampedLo == 0 {
+		t.Fatalf("inputs do not exercise both clamps (%d over, %d under) — the test would pass "+
+			"against a symmetric clamp", clampedHi, clampedLo)
+	}
+	t.Logf("clamp coverage: %d elements over +limit, %d under -limit", clampedHi, clampedLo)
+
+	dG := mustAlloc[float32](t, cx, I)
+	dU := mustAlloc[float32](t, cx, I)
+	// Bias table for TWO experts, and the routing index selects expert 1 — so the test
+	// exercises the on-device biasRow = idx[slot]*2*I arithmetic rather than only the
+	// activation. Expert 0 is filled with a decoy that would be visibly wrong if used.
+	const nExp, slot = 2, 0
+	biasGU := make([]float32, nExp*2*I)
+	for k := range I {
+		biasGU[k] = 99        // expert 0 gate bias: decoy
+		biasGU[I+k] = -99     // expert 0 up bias: decoy
+		biasGU[2*I+k] = gb[k] // expert 1 gate bias (the one idx selects)
+		biasGU[3*I+k] = ub[k] // expert 1 up bias
+	}
+	dBias := mustAlloc[float32](t, cx, len(biasGU))
+	dIdx := mustAlloc[int32](t, cx, 1)
+	dQ := mustAlloc[int32](t, cx, I/4)
+	dScale := mustAlloc[float32](t, cx, 1)
+	dScratch := mustAlloc[float32](t, cx, I)
+	for _, cp := range []struct {
+		d *gc.Buffer[float32]
+		h []float32
+	}{{dG, g}, {dU, u}, {dBias, biasGU}} {
+		if e := gc.CopyHtoD(bg, cp.d, cp.h); e != nil {
+			t.Fatalf("H2D: %v", e)
+		}
+	}
+	if e := gc.CopyHtoD(bg, dIdx, []int32{1}); e != nil { // select expert 1
+		t.Fatalf("H2D idx: %v", e)
+	}
+
+	cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4}
+	if e := fn.LaunchOn(bg, stream, cfg,
+		gc.Arg(dG), gc.Arg(dU), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)),
+		gc.Arg(dBias), gc.Arg(dIdx), gc.ArgValue(int32(slot)), gc.ArgValue(alpha), gc.ArgValue(limit),
+		gc.Arg(dQ), gc.Arg(dScale), gc.Arg(dScratch)); e != nil {
+		t.Fatalf("launch: %v", e)
+	}
+	if e := stream.Synchronize(bg); e != nil {
+		t.Fatalf("sync: %v", e)
+	}
+	qs := make([]int32, I/4)
+	sc := make([]float32, 1)
+	if e := gc.CopyDtoH(bg, qs, dQ); e != nil {
+		t.Fatalf("D2H q: %v", e)
+	}
+	if e := gc.CopyDtoH(bg, sc, dScale); e != nil {
+		t.Fatalf("D2H scale: %v", e)
+	}
+
+	// CPU reference — decoder/forward_gptoss.go's gptOssExpertWith, activation only.
+	want := make([]float32, I)
+	for i := range want {
+		gx := g[i] + gb[i]
+		ux := u[i] + ub[i]
+		if gx > limit {
+			gx = limit // upper clamp ONLY
+		}
+		if ux > limit {
+			ux = limit
+		} else if ux < -limit {
+			ux = -limit
+		}
+		glu := gx * float32(1.0/(1.0+math.Exp(-float64(alpha*gx))))
+		want[i] = (ux + 1) * glu
+	}
+
+	// Compare dequantized: one step of the symmetric int8 scale is the expected floor.
+	step := float64(sc[0])
+	worst, at := 0.0, -1
+	for i := range want {
+		code := int8(uint32(qs[i/4]) >> (8 * (i % 4)))
+		got := float64(code) * step
+		d := math.Abs(got - float64(want[i]))
+		if d > worst {
+			worst, at = d, i
+		}
+	}
+	t.Logf("clamped-SwiGLU: scale %.6g, max|diff| %.3e (one int8 step = %.3e)", step, worst, step)
+	if worst > 1.5*step {
+		t.Errorf("max|diff| %.3e at %d exceeds 1.5 quantization steps (%.3e) — a real disagreement, "+
+			"not rounding", worst, at, 1.5*step)
+	}
+}
+
+// TestRouteGptOss_matchesReference gates the third gpt-oss-specific kernel: its MoE router.
+//
+// The bug this exists to prevent is NOT a crash. moe.cu's moe_route emits score[best] with the
+// bias steering selection only; gpt-oss's router folds the bias into the logits and softmaxes
+// over the selected top-k. Feeding gpt-oss through moe_route yields well-formed weights that
+// sum to 1 and simply are not this model's — invisible to any check that asks whether the
+// output is finite or normalized.
+//
+// So the reference here is decoder's gptOssMoE arithmetic, and the test asserts the WEIGHTS,
+// not just the selection. It also includes a case where the bias CHANGES WHICH EXPERTS WIN,
+// since a router that ignored the bias entirely would still produce a valid-looking softmax.
+func TestRouteGptOss_matchesReference(t *testing.T) {
+	const nE, k = 32, 4
+
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	cx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("primary ctx: %v", err)
+	}
+	defer cx.Close()
+	bg := context.Background()
+	mod, err := cx.LoadModule(gptOssActPTX)
+	if err != nil {
+		t.Fatalf("LoadModule: %v", err)
+	}
+	fn, err := mod.Function("route_gptoss")
+	if err != nil {
+		t.Fatalf("Function(route_gptoss): %v", err)
+	}
+	stream := mustStream(t, cx)
+
+	logits := make([]float32, nE)
+	bias := make([]float32, nE)
+	for i := range logits {
+		logits[i] = float32(math.Sin(float64(i)*0.9)) * 2
+	}
+	// Bias chosen so it REORDERS the winners: experts 30/31 have low logits and large biases.
+	bias[30], bias[31] = 5, 4.5
+
+	dL := mustAlloc[float32](t, cx, nE)
+	dB := mustAlloc[float32](t, cx, nE)
+	dIdx := mustAlloc[uint32](t, cx, k)
+	dW := mustAlloc[float32](t, cx, k)
+	if e := gc.CopyHtoD(bg, dL, logits); e != nil {
+		t.Fatalf("H2D logits: %v", e)
+	}
+	if e := gc.CopyHtoD(bg, dB, bias); e != nil {
+		t.Fatalf("H2D bias: %v", e)
+	}
+	if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
+		gc.Arg(dL), gc.Arg(dB), gc.Arg(dIdx), gc.Arg(dW),
+		gc.ArgValue(int32(nE)), gc.ArgValue(int32(k))); e != nil {
+		t.Fatalf("launch: %v", e)
+	}
+	if e := stream.Synchronize(bg); e != nil {
+		t.Fatalf("sync: %v", e)
+	}
+	gotIdx := make([]uint32, k)
+	gotW := make([]float32, k)
+	if e := gc.CopyDtoH(bg, gotIdx, dIdx); e != nil {
+		t.Fatalf("D2H idx: %v", e)
+	}
+	if e := gc.CopyDtoH(bg, gotW, dW); e != nil {
+		t.Fatalf("D2H wgt: %v", e)
+	}
+
+	// Reference: bias into the logits, top-k (ties → lowest index), softmax over the selected.
+	ref := make([]float64, nE)
+	for i := range ref {
+		ref[i] = float64(logits[i]) + float64(bias[i])
+	}
+	taken := make([]bool, nE)
+	wantIdx := make([]int, k)
+	sel := make([]float64, k)
+	for j := range k {
+		best, bv := -1, math.Inf(-1)
+		for i := range nE {
+			if !taken[i] && ref[i] > bv {
+				bv, best = ref[i], i
+			}
+		}
+		taken[best] = true
+		wantIdx[j], sel[j] = best, bv
+	}
+	mx := sel[0]
+	for _, v := range sel {
+		mx = math.Max(mx, v)
+	}
+	sum := 0.0
+	for j := range sel {
+		sel[j] = math.Exp(sel[j] - mx)
+		sum += sel[j]
+	}
+
+	// The bias must have actually changed the outcome, or this test would also pass against a
+	// router that ignored it.
+	if wantIdx[0] != 30 && wantIdx[1] != 30 {
+		t.Fatalf("test setup no longer exercises bias-driven selection: winners %v", wantIdx)
+	}
+	t.Logf("route_gptoss: idx %v (bias promoted expert 30/31), weights %v", gotIdx, gotW)
+
+	for j := range k {
+		if int(gotIdx[j]) != wantIdx[j] {
+			t.Fatalf("idx[%d] = %d, want %d (full got %v want %v)", j, gotIdx[j], wantIdx[j], gotIdx, wantIdx)
+		}
+		want := sel[j] / sum
+		if d := math.Abs(float64(gotW[j]) - want); d > 1e-6 {
+			t.Errorf("weight[%d] = %v, want %v (|diff| %.2e) — softmax must be over the SELECTED "+
+				"top-k biased logits, not the unbiased scores", j, gotW[j], want, d)
+		}
+	}
+	tot := 0.0
+	for _, w := range gotW {
+		tot += float64(w)
+	}
+	if math.Abs(tot-1) > 1e-5 {
+		t.Errorf("weights sum to %v, want 1", tot)
+	}
+}
+
+// TestRouteGptOss_neverEmitsAnOutOfRangeExpert: when no expert score beats the -1e30 floor (every score NaN, or below it), the top-k loop
+// left its best index at the -1 sentinel, wrote taken[-1], and emitted expert 0xFFFFFFFF, which the indexed expert GEMVs then used as a
+// row offset: a read about 2^32 rows past the weight buffer, and on CUDA a sticky ILLEGAL_ADDRESS that kills every resident on the context.
+// A NaN reaches the router from a crafted checkpoint's router weights, or from an activation that overflowed. Whatever the scores, every
+// emitted index must be a valid, distinct expert and every weight finite.
+func TestRouteGptOss_neverEmitsAnOutOfRangeExpert(t *testing.T) {
+	const nE, k = 32, 4
+	if err := gc.Init(); err != nil {
+		t.Skipf("cuInit: %v", err)
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	cx, err := dev.Primary()
+	if err != nil {
+		t.Skipf("primary ctx: %v", err)
+	}
+	defer cx.Close()
+	bg := context.Background()
+	mod, err := cx.LoadModule(gptOssActPTX)
+	if err != nil {
+		t.Fatalf("LoadModule: %v", err)
+	}
+	fn, err := mod.Function("route_gptoss")
+	if err != nil {
+		t.Fatalf("Function(route_gptoss): %v", err)
+	}
+	stream := mustStream(t, cx)
+	nan := float32(math.NaN())
+	for name, mk := range map[string]func(i int) float32{
+		"every score NaN":             func(int) float32 { return nan },
+		"every score below the floor": func(int) float32 { return -3e30 },
+		"fewer finite scores than k": func(i int) float32 {
+			if i < 2 {
+				return float32(i)
+			}
+			return nan
+		},
+		"infinite scores": func(i int) float32 { return float32(math.Inf(-1)) },
+	} {
+		logits := make([]float32, nE)
+		for i := range logits {
+			logits[i] = mk(i)
+		}
+		dL := mustAlloc[float32](t, cx, nE)
+		dB := mustAlloc[float32](t, cx, nE)
+		dIdx := mustAlloc[uint32](t, cx, k)
+		dW := mustAlloc[float32](t, cx, k)
+		if e := gc.CopyHtoD(bg, dL, logits); e != nil {
+			t.Fatalf("H2D: %v", e)
+		}
+		if e := gc.CopyHtoD(bg, dB, make([]float32, nE)); e != nil {
+			t.Fatalf("H2D: %v", e)
+		}
+		if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
+			gc.Arg(dL), gc.Arg(dB), gc.Arg(dIdx), gc.Arg(dW), gc.ArgValue(int32(nE)), gc.ArgValue(int32(k))); e != nil {
+			t.Fatalf("%s: launch: %v", name, e)
+		}
+		if e := stream.Synchronize(bg); e != nil {
+			t.Fatalf("%s: sync: %v", name, e)
+		}
+		idx, w := make([]uint32, k), make([]float32, k)
+		if e := gc.CopyDtoH(bg, idx, dIdx); e != nil {
+			t.Fatalf("D2H: %v", e)
+		}
+		if e := gc.CopyDtoH(bg, w, dW); e != nil {
+			t.Fatalf("D2H: %v", e)
+		}
+		seen := map[uint32]bool{}
+		for j := range k {
+			if idx[j] >= nE {
+				t.Errorf("%s: slot %d routes to expert %#x (nE %d)", name, j, idx[j], nE)
+			}
+			if seen[idx[j]] {
+				t.Errorf("%s: expert %d chosen twice: %v", name, idx[j], idx)
+			}
+			seen[idx[j]] = true
+			if math.IsNaN(float64(w[j])) || math.IsInf(float64(w[j]), 0) {
+				t.Errorf("%s: slot %d weight %v is not finite", name, j, w[j])
+			}
+		}
+	}
+}

@@ -1,0 +1,258 @@
+=== RUN   TestA13_SingleFailedAllocPoisons
+    a13_singlefail_test.go:28: set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier
+--- SKIP: TestA13_SingleFailedAllocPoisons (0.00s)
+=== RUN   TestAllocGranularity
+    allocgran_test.go:38: 5 MiB -> 6.00 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:38: 6 MiB -> 6.00 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:38: 9 MiB -> 10.00 MiB/alloc (2MiB-granular predicts 10, nextPow2 16)
+--- PASS: TestAllocGranularity (0.28s)
+=== RUN   TestSmallAllocPool
+    allocgran_test.go:63: 512 allocs of 371712 B -> 206.00 MiB total, 421888 B/alloc amortised
+--- PASS: TestSmallAllocPool (0.01s)
+=== RUN   TestAttnBatched_bitIdentical
+    attn_batched_test.go:175: startPos= 0 M=16 window=0: attn_batched == M=1 attention, BIT-IDENTICAL (16 rows)
+    attn_batched_test.go:175: startPos= 7 M=16 window=0: attn_batched == M=1 attention, BIT-IDENTICAL (16 rows)
+    attn_batched_test.go:175: startPos= 0 M=40 window=5: attn_batched == M=1 attention, BIT-IDENTICAL (40 rows)
+    attn_batched_test.go:175: startPos= 7 M=40 window=5: attn_batched == M=1 attention, BIT-IDENTICAL (40 rows)
+    attn_batched_test.go:175: startPos= 3 M=33 window=8: attn_batched == M=1 attention, BIT-IDENTICAL (33 rows)
+--- PASS: TestAttnBatched_bitIdentical (0.01s)
+=== RUN   TestAttnBatchedBandwidth
+    attn_bw_test.go:22: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestAttnBatchedBandwidth (0.00s)
+=== RUN   TestAttention_TailPoison
+    attn_headdim_test.go:107: tail poison clean: hd=16 attention byte-identical in tight vs 32x-wide sentinel-tailed scratch
+--- PASS: TestAttention_TailPoison (0.00s)
+=== RUN   TestAttention_HeadDimWidths
+=== RUN   TestAttention_HeadDimWidths/hd16
+    e2e_decode_test.go:429: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd64
+    e2e_decode_test.go:429: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd128
+    e2e_decode_test.go:429: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd256
+    e2e_decode_test.go:429: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd512
+    e2e_decode_test.go:429: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+--- PASS: TestAttention_HeadDimWidths (0.01s)
+    --- PASS: TestAttention_HeadDimWidths/hd16 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd64 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd128 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd256 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd512 (0.01s)
+=== RUN   TestAttnSink_matchesReference
+    attn_sink_test.go:158: no sink: max|diff| = 2.980e-08
+    attn_sink_test.go:158: small sink: max|diff| = 2.980e-08
+    attn_sink_test.go:158: sink dominates: max|diff| = 2.576e-14
+    attn_sink_test.go:158: negligible sink ≈ no sink: max|diff| = 2.980e-08
+--- PASS: TestAttnSink_matchesReference (0.00s)
+=== RUN   TestDecodeTokProjection
+    decode_projection_test.go:133: qwen2.5-1.5b decode projection (UNFUSED CUDA GEMV chain, 141 launches/token):
+    decode_projection_test.go:134:   per-token: 4.05 ms | 247 tok/s | weight stream 1.53 GB | 379 GB/s = 85% peak
+    decode_projection_test.go:136:   vs WebGPU 112 tok/s (37% peak) | GO bar 145 tok/s (1.3x) — unfused is a LOWER bound (fused cuts launches)
+    decode_projection_test.go:138:   ⇒ clears the GO bar EVEN UNFUSED — the fused megakernel would clear it by more
+--- PASS: TestDecodeTokProjection (0.17s)
+=== RUN   TestE2EDecodeThroughput_synthetic
+    e2e_decode_test.go:429: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+    e2e_decode_test.go:216: E2E cgo-free CUDA decode (qwen2.5-1.5b, full per-token work, pos=128):
+    e2e_decode_test.go:217:   5.69 ms/token | 176 tok/s | 271 GB/s = 61% of ~448 GB/s peak
+    e2e_decode_test.go:218:   breakdown: GEMV 4.06 ms (71%) | glue+attn+argmax 1.63 ms (29%)
+    e2e_decode_test.go:220:   vs projection ceiling 244 (GEMV-only, 83% peak); the glue is the 29% the projection dropped
+    e2e_decode_test.go:221:   anchors (same model): WebGPU 112 → 1.57x | Ollama-CUDA 147 → 1.20x
+    e2e_decode_test.go:222:   NOTE optimism (real number is somewhat lower): omits per-token KV-store, uses pure int8 (< q8_0 bytes),
+    e2e_decode_test.go:223:        greedy/no-sampler, pos=128 small attn; the Ollama 147 anchor is unpinned. Read ~Ollama parity, not a clean beat.
+    e2e_decode_test.go:228:   VERDICT: PAUSE — cgo-free CUDA ~matches native CUDA (Ollama) and clearly beats WebGPU (~1.5x), but the
+    e2e_decode_test.go:229:            prize is *parity with llama.cpp*, not beating it; whether that's worth the permanent CUDA-kernel
+    e2e_decode_test.go:230:            maintenance burden is a maintainer business call, not an engineering step. Park as measured option.
+--- PASS: TestE2EDecodeThroughput_synthetic (0.40s)
+=== RUN   TestGemvW8A8Bandwidth
+    gemv_bw_test.go:159: W8A8 GEMV [8960×1536] correct (cosine 1.000000 vs CPU ref):
+    gemv_bw_test.go:160:   kernel 35.8 us | weight read 13.76 MB | 384 GB/s = 86% of ~448 GB/s peak
+    gemv_bw_test.go:162:   (WebGPU decode sits ~37% of peak — a hand quant GEMV clearing that is the 'lane is real' signal)
+--- PASS: TestGemvW8A8Bandwidth (0.04s)
+=== RUN   TestGocudrvLayerA
+    gocudrv_proof_test.go:149: Layer A OK — cgo-free JIT+launch+event-time verified on the 2070 SUPER:
+    gocudrv_proof_test.go:150:   JIT cold-start (LoadModule of embedded PTX): 0.60 ms — does not wreck boot
+    gocudrv_proof_test.go:151:   per-dispatch CPU cost (gocudrv channel-hop + cuLaunchKernel, async burst, best of 8×500): 3.70 us
+    gocudrv_proof_test.go:152:   one dependent synced launch (record→launch→sync, idle GPU incl. wake-up): 13.38 us
+    gocudrv_proof_test.go:153:   ⇒ both are launch-bound (trivial-kernel compute <1us); at ~13 dispatches/layer this per-dispatch
+    gocudrv_proof_test.go:154:      tax is exactly what collapsing to ~1-3 super-kernels/layer amortizes. Real GPU decode time = Phase 2.
+--- PASS: TestGocudrvLayerA (0.02s)
+=== RUN   TestGptOssAct_matchesReference
+    gptoss_act_test.go:83: clamp coverage: 75 elements over +limit, 74 under -limit
+    gptoss_act_test.go:162: clamped-SwiGLU: scale 0.440942, max|diff| 2.177e-01 (one int8 step = 4.409e-01)
+--- PASS: TestGptOssAct_matchesReference (0.00s)
+=== RUN   TestRouteGptOss_matchesReference
+    gptoss_act_test.go:274: route_gptoss: idx [30 31 2 9] (bias promoted expert 30/31), weights [0.8333302 0.15508647 0.005814606 0.005768763]
+--- PASS: TestRouteGptOss_matchesReference (0.00s)
+=== RUN   TestRouteGptOss_neverEmitsAnOutOfRangeExpert
+--- PASS: TestRouteGptOss_neverEmitsAnOutOfRangeExpert (0.00s)
+=== RUN   TestLayerNormQuant
+    layernorm_quant_test.go:120: layernorm_quant: cosine 0.9999884
+--- PASS: TestLayerNormQuant (0.00s)
+=== RUN   TestLead3_pinOrderMicrobench
+    lead3_pin_order_bench_test.go:29: GOINFER_HEAVY_TESTS unset — allocates ~11 GB of pinned host memory
+--- SKIP: TestLead3_pinOrderMicrobench (0.00s)
+=== RUN   TestMLALatentReuse_prototype
+    mla_latent_reuse_prototype_test.go:172: rank-prefix vs CPU absorb reference: max|Δ| = 3.176e-08  max relΔ = 2.770e-06
+    mla_latent_reuse_prototype_test.go:201: per-dim independence: rank dims bit-identical with the rope tail zeroed ✅ (waste is inert)
+    mla_latent_reuse_prototype_test.go:245: wasted-dim overhead: hd=latDim(24) 4083 ns | hd=rank(16) 4591 ns | 0.889× (rope tail is 8/24 = 33.3% of the value width)
+    mla_latent_reuse_prototype_test.go:249: VERDICT: attn_batched reuse HOLDS at the latent geometry — docs/completed/task-mla-cuda-residency.md's ~3-day path is the live one
+--- PASS: TestMLALatentReuse_prototype (0.19s)
+=== RUN   TestMLALatentStore_cuda
+=== RUN   TestMLALatentStore_cuda/neox
+    mla_test.go:145: interleave=false: cosine=1.00000000 maxAbs=1.192e-07
+=== RUN   TestMLALatentStore_cuda/gptj
+    mla_test.go:145: interleave=true: cosine=1.00000000 maxAbs=1.192e-07
+--- PASS: TestMLALatentStore_cuda (0.00s)
+    --- PASS: TestMLALatentStore_cuda/neox (0.00s)
+    --- PASS: TestMLALatentStore_cuda/gptj (0.00s)
+=== RUN   TestMLAHeadMatvec_cuda
+=== RUN   TestMLAHeadMatvec_cuda/absorb_WUK
+    mla_test.go:226: absorb_WUK: cosine=1.00000000 maxAbs=2.384e-07
+=== RUN   TestMLAHeadMatvec_cuda/lift_WUV
+    mla_test.go:226: lift_WUV: cosine=1.00000000 maxAbs=2.384e-07
+--- PASS: TestMLAHeadMatvec_cuda (0.00s)
+    --- PASS: TestMLAHeadMatvec_cuda/absorb_WUK (0.00s)
+    --- PASS: TestMLAHeadMatvec_cuda/lift_WUV (0.00s)
+=== RUN   TestMLAAttn_cuda
+    mla_test.go:322: mla_attn: cosine=1.00000000 maxAbs=4.098e-08
+--- PASS: TestMLAAttn_cuda (0.00s)
+=== RUN   TestMoERoute
+=== RUN   TestMoERoute/mixtral/softmax-norm
+    moe_route_test.go:166: idx=[2 7] wgt=[0.6506733 0.34932673]
+=== RUN   TestMoERoute/qwen2_moe/softmax
+    moe_route_test.go:166: idx=[22 19 2 29] wgt=[0.07389043 0.064108916 0.06258862 0.05430321]
+=== RUN   TestMoERoute/glm/sigmoid-bias-norm
+    moe_route_test.go:166: idx=[6 46 18 19 32 44 22 49] wgt=[0.12029684 0.13025647 0.12396059 0.14187622 0.11311261 0.122051604 0.14485322 0.10359244]
+=== RUN   TestMoERoute/deepseek/sigmoid-bias-scale
+    moe_route_test.go:166: idx=[6 46 18 19 32 44] wgt=[0.40016013 0.43329027 0.41234738 0.4719426 0.37626225 0.40599728]
+=== RUN   TestMoERoute/deepseek/group-limited
+    moe_route_test.go:166: idx=[46 18 19 32 44 22] wgt=[0.41958088 0.3993006 0.45701024 0.36435723 0.3931514 0.46659973]
+=== RUN   TestMoERoute/kimi/group-limited-wide
+    moe_route_test.go:166: idx=[108 113 6 14 77 117 96 104] wgt=[0.37867764 0.38624144 0.3327291 0.3244614 0.31469125 0.38944262 0.39576176 0.3049948]
+=== RUN   TestMoERoute/k=1/top1
+    moe_route_test.go:166: idx=[2] wgt=[0.22903056]
+=== RUN   TestMoERoute/k==nE/all-experts
+    moe_route_test.go:166: idx=[2 7 6 0 3 1 5 4] wgt=[0.37324026 0.20038137 0.17736723 0.13566957 0.040294804 0.038560268 0.021417808 0.01306873]
+=== RUN   TestMoERoute/past-old-cap/257
+    moe_route_test.go:166: idx=[124 113 2 151] wgt=[0.82375526 0.83145857 0.8415758 0.8222987]
+=== RUN   TestMoERoute/kimi_k2/384-real-shape
+    moe_route_test.go:166: idx=[205 236 375 124 269 370 131 241] wgt=[0.36480412 0.35694185 0.3652002 0.34785518 0.35771126 0.36278895 0.33255085 0.33914736]
+=== RUN   TestMoERoute/new-cap-boundary/512
+    moe_route_test.go:166: idx=[114 330 124 434 82 108 479 333] wgt=[0.32888347 0.31552422 0.30855024 0.30589932 0.31090903 0.30533674 0.32161507 0.30328205]
+=== RUN   TestMoERoute/new-cap-boundary/512-grouped
+    moe_route_test.go:166: idx=[114 330 124 82 108 479] wgt=[0.4348427 0.41717944 0.40795857 0.41107726 0.40370974 0.4252326]
+--- PASS: TestMoERoute (0.01s)
+    --- PASS: TestMoERoute/mixtral/softmax-norm (0.00s)
+    --- PASS: TestMoERoute/qwen2_moe/softmax (0.00s)
+    --- PASS: TestMoERoute/glm/sigmoid-bias-norm (0.00s)
+    --- PASS: TestMoERoute/deepseek/sigmoid-bias-scale (0.00s)
+    --- PASS: TestMoERoute/deepseek/group-limited (0.00s)
+    --- PASS: TestMoERoute/kimi/group-limited-wide (0.00s)
+    --- PASS: TestMoERoute/k=1/top1 (0.00s)
+    --- PASS: TestMoERoute/k==nE/all-experts (0.00s)
+    --- PASS: TestMoERoute/past-old-cap/257 (0.00s)
+    --- PASS: TestMoERoute/kimi_k2/384-real-shape (0.00s)
+    --- PASS: TestMoERoute/new-cap-boundary/512 (0.00s)
+    --- PASS: TestMoERoute/new-cap-boundary/512-grouped (0.00s)
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32
+    prefill_splitkv_test.go:209: 180 cases bit-identical to attn_batched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16
+    prefill_splitkv_test.go:209: 180 cases bit-identical to attn_batched
+--- PASS: TestPrefillSplitKV_rowsEqualAttnBatched (1.18s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32 (0.46s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16 (0.72s)
+=== RUN   TestQuantVec_scaleIsExactMaxabs
+--- PASS: TestQuantVec_scaleIsExactMaxabs (0.00s)
+=== RUN   TestGluQuant_scaleIsExactMaxabs
+--- PASS: TestGluQuant_scaleIsExactMaxabs (0.00s)
+=== RUN   TestQuantVecBatched_scaleIsExactMaxabs
+--- PASS: TestQuantVecBatched_scaleIsExactMaxabs (0.00s)
+=== RUN   TestRmsnormBatched_bitIdentical
+    rmsnorm_batched_test.go:96: H=1536: rmsnorm_quant == rmsnorm_quant_batched BIT-IDENTICAL
+    rmsnorm_batched_test.go:96: H=8960: rmsnorm_quant == rmsnorm_quant_batched BIT-IDENTICAL
+--- PASS: TestRmsnormBatched_bitIdentical (0.00s)
+=== RUN   TestRopeMscale
+    rope_mscale_test.go:141: scale=1 (no-op, the path every non-YaRN family takes): max|diff| = 8.941e-08
+    rope_mscale_test.go:145: scale=0.85: max|diff| = 5.960e-08
+--- PASS: TestRopeMscale (0.00s)
+=== RUN   TestRopePairwiseKernels_decode
+=== RUN   TestRopePairwiseKernels_decode/full-rotary
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 3.8 (control)
+=== RUN   TestRopePairwiseKernels_decode/partial-half
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 1.4 (control)
+=== RUN   TestRopePairwiseKernels_decode/mscale+qtemp
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 4.19 (control)
+=== RUN   TestRopePairwiseKernels_decode/ropePos-ne-pos
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 1.81 (control)
+=== RUN   TestRopePairwiseKernels_decode/partial-6of16/odd-rhalf
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 4.19 (control)
+--- PASS: TestRopePairwiseKernels_decode (0.01s)
+    --- PASS: TestRopePairwiseKernels_decode/full-rotary (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/partial-half (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/mscale+qtemp (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/ropePos-ne-pos (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/partial-6of16/odd-rhalf (0.00s)
+=== RUN   TestRopePairwiseKernels_batched
+=== RUN   TestRopePairwiseKernels_batched/full-rotary
+=== RUN   TestRopePairwiseKernels_batched/full-rotary/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/partial-half
+=== RUN   TestRopePairwiseKernels_batched/partial-half/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/mscale+qtemp
+=== RUN   TestRopePairwiseKernels_batched/mscale+qtemp/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/ropePos-ne-pos
+=== RUN   TestRopePairwiseKernels_batched/ropePos-ne-pos/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf
+=== RUN   TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf/qTempRows
+--- PASS: TestRopePairwiseKernels_batched (0.01s)
+    --- PASS: TestRopePairwiseKernels_batched/full-rotary (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/full-rotary/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-half (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-half/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/mscale+qtemp (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/mscale+qtemp/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/ropePos-ne-pos (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/ropePos-ne-pos/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf/qTempRows (0.00s)
+=== RUN   TestRopePairwiseKernels_mrope
+    rope_pairwise_test.go:441: pairwise m-RoPE == reference; NeoX rope_kv_mrope_batched differs by 4.6 (control)
+--- PASS: TestRopePairwiseKernels_mrope (0.00s)
+=== RUN   TestRopePartial
+=== RUN   TestRopePartial/full-rotary/unchanged
+    rope_partial_test.go:212: nH=4 nKV=2 hd=16 rotaryDim=16 (rhalf=8, tail=0/head): q rotated, full head cached
+=== RUN   TestRopePartial/glm/half-rotary
+    rope_partial_test.go:212: nH=4 nKV=2 hd=16 rotaryDim=8 (rhalf=4, tail=8/head): q rotated, full head cached
+=== RUN   TestRopePartial/phi/quarter-rotary
+    rope_partial_test.go:212: nH=8 nKV=2 hd=32 rotaryDim=8 (rhalf=4, tail=24/head): q rotated, full head cached
+=== RUN   TestRopePartial/partial/pos0
+    rope_partial_test.go:212: nH=2 nKV=1 hd=8 rotaryDim=4 (rhalf=2, tail=4/head): q rotated, full head cached
+=== RUN   TestRopePartial/odd-ish/6-of-16
+    rope_partial_test.go:212: nH=4 nKV=4 hd=16 rotaryDim=6 (rhalf=3, tail=10/head): q rotated, full head cached
+--- PASS: TestRopePartial (0.00s)
+    --- PASS: TestRopePartial/full-rotary/unchanged (0.00s)
+    --- PASS: TestRopePartial/glm/half-rotary (0.00s)
+    --- PASS: TestRopePartial/phi/quarter-rotary (0.00s)
+    --- PASS: TestRopePartial/partial/pos0 (0.00s)
+    --- PASS: TestRopePartial/odd-ish/6-of-16 (0.00s)
+=== RUN   TestQKNorm_widths
+=== RUN   TestQKNorm_widths/hd128
+    vnorm_test.go:124: hd=128: maxRelErr Q=1.25e-07 K=1.19e-07 V=0.00e+00
+=== RUN   TestQKNorm_widths/hd256
+    vnorm_test.go:124: hd=256: maxRelErr Q=1.62e-07 K=1.53e-07 V=0.00e+00
+=== RUN   TestQKNorm_widths/hd512
+    vnorm_test.go:124: hd=512: maxRelErr Q=1.45e-07 K=1.19e-07 V=0.00e+00
+--- PASS: TestQKNorm_widths (0.00s)
+    --- PASS: TestQKNorm_widths/hd128 (0.00s)
+    --- PASS: TestQKNorm_widths/hd256 (0.00s)
+    --- PASS: TestQKNorm_widths/hd512 (0.00s)
+=== RUN   TestVNorm_scaleless
+    vnorm_test.go:209: scale-less v_norm vs CPU rmsNormNoWeight: maxRelErr=0.00e+00 (a 2x would read ~1.0)
+--- PASS: TestVNorm_scaleless (0.00s)
+=== RUN   TestSlidingWindowAttention
+    window_test.go:111: windowed(40 keys, W=12) vs full(last 12 keys): maxAbs=0
+    window_test.go:128: window=0 and window>=nKeys are both exactly full-causal ✓
+--- PASS: TestSlidingWindowAttention (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	2.492s

@@ -67,6 +67,7 @@ NOT_SOURCE_READERS = {
     "TestMutation_sedInvocationIsPortable": "sed arguments only",
     "TestQuick_deferCells_checkpointCell": "a synthetic package (ckFixture)",
     "TestQuick_deferCells_slowOfAnUntouchedDeviceModule": "a synthetic package (ckFixture)",
+    "TestScanTree_skipsIgnoredFiles": "two synthetic files in a temp dir",
     "TestQuick_checkpointLoadersGetTheirOwnCell": "a synthetic package (ckFixture)",
     "TestQuick_smallCheckpointPackageRunsWholeInTheLane": "a synthetic package (ckFixture)",
     "TestRowGofmtAndLint": "path strings in a synthetic report",

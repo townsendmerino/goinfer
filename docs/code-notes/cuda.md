@@ -2841,7 +2841,7 @@ executor thread (r.do), which is the only place its context is current.
 
 ## TestA13_SingleFailedAllocPoisons
 
-Moved from `cuda/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons`) on 2026-10-09.
+Moved from `cuda/kernels/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons`) on 2026-10-09.
 
 ```text
 TestA13_SingleFailedAllocPoisons asks the question that decides whether A13 is a test defect or a
@@ -2865,7 +2865,7 @@ Three repeats either way: A13's failures vary run to run, so a single negative c
 
 ## TestA13_SingleFailedAllocPoisons.pin
 
-Moved from `cuda/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.pin`) on 2026-10-09.
+Moved from `cuda/kernels/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.pin`) on 2026-10-09.
 
 ```text
 A13 item 1: PIN THE GOROUTINE. Every observed poisoning has been on a test goroutine, which Go
@@ -2877,7 +2877,7 @@ cache-site comment, and everything downstream of it are wrong.
 
 ## TestA13_SingleFailedAllocPoisons.keep
 
-Moved from `cuda/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.keep`) on 2026-10-09.
+Moved from `cuda/kernels/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.keep`) on 2026-10-09.
 
 ```text
 A13 item 1: PERSISTENT ALLOCATION (GOINFER_A13_KEEP=<MiB>). Held for the whole test and never
@@ -2892,7 +2892,7 @@ converts four separately-measured nulls into one predicted property.
 
 ## TestA13_SingleFailedAllocPoisons.nfail
 
-Moved from `cuda/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.nfail`) on 2026-10-09.
+Moved from `cuda/kernels/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.nfail`) on 2026-10-09.
 
 ```text
 (b) EXACTLY ONE failed allocation. Not a drain: one request, larger than the whole device, and
@@ -2905,7 +2905,7 @@ to sit inside whatever bound comes out.
 
 ## TestA13_SingleFailedAllocPoisons.holdpct
 
-Moved from `cuda/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.holdpct`) on 2026-10-09.
+Moved from `cuda/kernels/a13_singlefail_test.go` (the comment above `TestA13_SingleFailedAllocPoisons.holdpct`) on 2026-10-09.
 
 ```text
 PARTIAL DRAIN (GOINFER_A13_HOLDPCT): successfully hold a percentage of free VRAM, then
@@ -3130,7 +3130,7 @@ real and the comparison was not like-for-like.
 
 ## TestAllocGranularity
 
-Moved from `cuda/allocgran_test.go` (the comment above `TestAllocGranularity`) on 2026-10-09.
+Moved from `cuda/kernels/allocgran_test.go` (the comment above `TestAllocGranularity`) on 2026-10-09.
 
 ```text
 TestAllocGranularity records what this driver actually charges for a device allocation. It exists
@@ -3162,7 +3162,7 @@ mis-estimate introduced by the fix for the old one.
 
 ## TestSmallAllocPool
 
-Moved from `cuda/allocgran_test.go` (the comment above `TestSmallAllocPool`) on 2026-10-09.
+Moved from `cuda/kernels/allocgran_test.go` (the comment above `TestSmallAllocPool`) on 2026-10-09.
 
 ```text
 TestSmallAllocPool records that sub-granularity allocations are NOT free, which a single
@@ -3214,7 +3214,7 @@ This times both kernels at the drafter's real geometry, which is the only remain
 
 ## TestAttnBatchedBandwidth
 
-Moved from `cuda/attn_bw_test.go` (the comment above `TestAttnBatchedBandwidth`) on 2026-10-09.
+Moved from `cuda/kernels/attn_bw_test.go` (the comment above `TestAttnBatchedBandwidth`) on 2026-10-09.
 
 ```text
 TestAttnBatchedBandwidth times attn_batched in isolation at the real qwen2.5-coder-1.5b attention
@@ -3323,7 +3323,7 @@ every chunk by default and never when forced; the hd64 model must not use it at 
 
 ## TestAttention_TailPoison
 
-Moved from `cuda/attn_headdim_test.go` (the comment above `TestAttention_TailPoison`) on 2026-10-09.
+Moved from `cuda/kernels/attn_headdim_test.go` (the comment above `TestAttention_TailPoison`) on 2026-10-09.
 
 ```text
 TestAttention_TailPoison is the scratch-to-max gate for the per-layer geometry port
@@ -3344,7 +3344,7 @@ from the wide allocation processes sentinel and diverges.
 
 ## TestAttention_HeadDimWidths
 
-Moved from `cuda/attn_headdim_test.go` (the comment above `TestAttention_HeadDimWidths`) on 2026-10-09.
+Moved from `cuda/kernels/attn_headdim_test.go` (the comment above `TestAttention_HeadDimWidths`) on 2026-10-09.
 
 ```text
 TestAttention_HeadDimWidths guards that the shipped `attention` kernel is correct across the
@@ -3361,7 +3361,7 @@ attributable to the geometry seam, not to the tiny head. Single variable = hd.
 
 ## attn_sink_test.header
 
-Moved from `cuda/attn_sink_test.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `cuda/kernels/attn_sink_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Attention-sink kernel gate (gpt-oss residency, step 1 of 2).
@@ -3992,7 +3992,7 @@ forget.
 
 ## TestE2EDecodeThroughput_synthetic.argmax
 
-Moved from `cuda/e2e_decode_test.go` (the comment above `TestE2EDecodeThroughput_synthetic.argmax`) on 2026-10-09.
+Moved from `cuda/kernels/e2e_decode_test.go` (the comment above `TestE2EDecodeThroughput_synthetic.argmax`) on 2026-10-09.
 
 ```text
 argmax_reduce comes from argmaxPTX, NOT gluePTX. C-14 (c6600fc) split it into its own
@@ -4002,7 +4002,7 @@ binding it off glmod here exercised the PRE-C-14 kernel, i.e. not the one produc
 
 ## validateGlue.errors
 
-Moved from `cuda/e2e_decode_test.go` (the comment above `validateGlue.errors`) on 2026-10-09.
+Moved from `cuda/kernels/e2e_decode_test.go` (the comment above `validateGlue.errors`) on 2026-10-09.
 
 ```text
 ERRORS ARE CHECKED, NOT DROPPED. Every call here used to be `_ =`, so a failure left `dc`
@@ -4017,7 +4017,7 @@ A zero cosine now means the arithmetic is wrong. Anything else names the call th
 
 ## validateGlue.handle
 
-Moved from `cuda/e2e_decode_test.go` (the comment above `validateGlue.handle`) on 2026-10-09.
+Moved from `cuda/kernels/e2e_decode_test.go` (the comment above `validateGlue.handle`) on 2026-10-09.
 
 ```text
 A13 launch diff (GOINFER_A13_LAUNCH=1). Prints everything the launch depends on, so a
@@ -4034,7 +4034,7 @@ it names, so a launch through a stale handle returns success and does nothing.
 
 ## validateGlue.reload
 
-Moved from `cuda/e2e_decode_test.go` (the comment above `validateGlue.reload`) on 2026-10-09.
+Moved from `cuda/kernels/e2e_decode_test.go` (the comment above `validateGlue.reload`) on 2026-10-09.
 
 ```text
 A13 step 2, TEMPORARY PROBE (GOINFER_A13_RELOAD=1) — not a fix. Re-load the module and
@@ -4744,7 +4744,7 @@ silent when wrong — the K/V would still be the right shape at the right positi
 
 ## TestE2EDecodeThroughput_synthetic
 
-Moved from `cuda/e2e_decode_test.go` (the comment above `TestE2EDecodeThroughput_synthetic`) on 2026-10-09.
+Moved from `cuda/kernels/e2e_decode_test.go` (the comment above `TestE2EDecodeThroughput_synthetic`) on 2026-10-09.
 
 ```text
 TestE2EDecodeThroughput_synthetic is the end-to-end cgo-free CUDA decode THROUGHPUT measurement
@@ -5169,7 +5169,7 @@ unexpected value is still a real finding and still fails.
 
 ## TestMoERoute
 
-Moved from `cuda/moe_route_test.go` (the comment above `TestMoERoute`) on 2026-10-09.
+Moved from `cuda/kernels/moe_route_test.go` (the comment above `TestMoERoute`) on 2026-10-09.
 
 ```text
 The router is where MoE goes wrong QUIETLY. Its output steers a DISCRETE choice, so a
@@ -5577,7 +5577,7 @@ vs truth -12.
 
 ## TestGemvW8A8Bandwidth
 
-Moved from `cuda/gemv_bw_test.go` (the comment above `TestGemvW8A8Bandwidth`) on 2026-10-09.
+Moved from `cuda/kernels/gemv_bw_test.go` (the comment above `TestGemvW8A8Bandwidth`) on 2026-10-09.
 
 ```text
 TestGemvW8A8Bandwidth is the spike's decisive-proxy experiment: decode is
@@ -5959,7 +5959,7 @@ which a random unrelated token from a real bug would not satisfy.
 
 ## TestMLALatentReuse_prototype
 
-Moved from `cuda/mla_latent_reuse_prototype_test.go` (the comment above `TestMLALatentReuse_prototype`) on 2026-10-09.
+Moved from `cuda/kernels/mla_latent_reuse_prototype_test.go` (the comment above `TestMLALatentReuse_prototype`) on 2026-10-09.
 
 ```text
 TestMLALatentReuse_prototype is micro-leg B of docs/completed/task-mla-cuda-residency.md: the experiment
@@ -6886,7 +6886,7 @@ first decrement (free at first launch → free at the failing launch) from this 
 
 ## TestRmsnormBatched_bitIdentical
 
-Moved from `cuda/rmsnorm_batched_test.go` (the comment above `TestRmsnormBatched_bitIdentical`) on 2026-10-09.
+Moved from `cuda/kernels/rmsnorm_batched_test.go` (the comment above `TestRmsnormBatched_bitIdentical`) on 2026-10-09.
 
 ```text
 TestRmsnormBatched_bitIdentical compares the batched rmsnorm_quant_batched (M=1) against the decode
@@ -6910,7 +6910,7 @@ CUDA_ERROR_INVALID_VALUE, which is how this test sat red from 2026-09-11 to 2026
 
 ## TestRopeMscale
 
-Moved from `cuda/rope_mscale_test.go` (the comment above `TestRopeMscale`) on 2026-10-09.
+Moved from `cuda/kernels/rope_mscale_test.go` (the comment above `TestRopeMscale`) on 2026-10-09.
 
 ```text
 WHY IN ISOLATION, AND WHY BEFORE THE DECLARATION. `FeatRopeMscale` is a claim that this
@@ -7619,7 +7619,7 @@ which would pass a correctness-only (cosine) gate but not this one.
 
 ## TestQKNorm_widths
 
-Moved from `cuda/vnorm_test.go` (the comment above `TestQKNorm_widths`) on 2026-10-09.
+Moved from `cuda/kernels/vnorm_test.go` (the comment above `TestQKNorm_widths`) on 2026-10-09.
 
 ```text
 TestQKNorm_widths sweeps the per-head qk_norm kernel across head widths — 128 (Qwen3), 256
@@ -7635,7 +7635,7 @@ would hide a uniform scale).
 
 ## TestVNorm_scaleless
 
-Moved from `cuda/vnorm_test.go` (the comment above `TestVNorm_scaleless`) on 2026-10-09.
+Moved from `cuda/kernels/vnorm_test.go` (the comment above `TestVNorm_scaleless`) on 2026-10-09.
 
 ```text
 TestVNorm_scaleless isolates Gemma 4's V-norm (attention_k_eq_v) BEFORE it is wired into
@@ -7706,7 +7706,7 @@ checkpoint is actually run resident.
 
 ## TestRopePartial
 
-Moved from `cuda/rope_partial_test.go` (the comment above `TestRopePartial`) on 2026-10-09.
+Moved from `cuda/kernels/rope_partial_test.go` (the comment above `TestRopePartial`) on 2026-10-09.
 
 ```text
 TestRopePartial is the kernel gate for partial rotary (rotary_dim < head_dim: GLM, Phi).

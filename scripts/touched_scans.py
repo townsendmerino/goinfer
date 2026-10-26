@@ -123,6 +123,7 @@ SCANS = [
     Scan("internal/fitcmd", "TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn", F("cuda/resident.go", "internal/fitcmd/fit.go")),
     Scan("internal/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/fitcmd/fit.go")),
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
+    Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
     Scan("internal/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("examples/*/main.go", "docs/use-from-go.md")),
