@@ -337,6 +337,7 @@ type config struct {
 	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
 	specAdaptive    bool          // -spec-adaptive: "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
 	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
+	drafterWidth    int           // -drafter-width: the verify width a greedy request's block-spec rounds run at; 0 = decoder's default
 	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	allowedHosts    string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
 	logRequests     bool          // -log-requests: one stderr line per generation request
@@ -446,6 +447,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		"A model directory that carries joint_head.safetensors is a Clef decision model (Route C): POST /v1/systemone on it\n"+
 		"answers with its joint head, one backbone pass for every question, and it loads at the same default.\n"+
 		"(Paths may not contain commas.)")
+	fs.IntVar(&cfg.drafterWidth, "drafter-width", 0, "verify width for --drafter: how many block positions the target verifies per round (the anchor and width-1 drafts). 0 keeps the default of 8; the drafter's block caps it. The best width depends on the pairing and the box: on nobara's RTX 2070 SUPER, Qwen3.5-9B with z-lab's DFlash measured 1.46x at 4 (docs/measurements/sp2-2026-10/README.md), where SP0 projected 1.17x at 8. A width the target cannot verify (past a recurrent model's fold rows) is a startup error.")
 	fs.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise serve-only; goinfer-chat offers --spec ngram and --draft instead.")
 	sf.showVersion = fs.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
 	// The model-loading flags goinfer-chat shares — one registration, so the two binaries cannot drift.
@@ -542,6 +544,12 @@ func (cfg config) validate() error {
 	}
 	if cfg.kvIdleDemote > 0 && (cfg.sessionDir == "" || cfg.kvSessions <= 0) {
 		return errors.New("-kv-idle-demote needs -session-dir and -kv-sessions > 0")
+	}
+	if cfg.drafterWidth != 0 && cfg.drafter == "" {
+		return fmt.Errorf("-drafter-width %d without -drafter: the width applies only to a block drafter's verify", cfg.drafterWidth)
+	}
+	if cfg.drafterWidth < 0 || cfg.drafterWidth == 1 {
+		return fmt.Errorf("-drafter-width %d: want 0 (the default) or at least 2", cfg.drafterWidth)
 	}
 	if _, ok := chat.ParseThinkMode(cfg.thinking); !ok {
 		return fmt.Errorf("-thinking %q: want asis, template, on or off", cfg.thinking)
@@ -1704,7 +1712,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// It fails startup rather than degrading silently: an operator who passed --drafter wants block drafting, and a wrong
 	// pairing or an incapable backend should be one startup error they see, not a fleet quietly serving at 1x.
 	if drafter != nil {
-		if err := attachBlockDrafter(lm, drafter); err != nil {
+		if err := attachBlockDrafter(lm, drafter, cfg.drafterWidth); err != nil {
 			return nil, fmt.Errorf("--drafter %q: %w", cfg.drafter, err)
 		}
 	}

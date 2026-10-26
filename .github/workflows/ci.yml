@@ -238,6 +238,11 @@ jobs:
       - name: bench_peer heavy-load void
         run: python3 -B scripts/test_bench_peer_heavy.py
 
+      # bench_peer.py refuses a plan it cannot run before any server starts (no phase, a missing prompt, phase B's backend, no
+      # free-memory reading), and SIGTERM runs the cell's teardown before the timing lock is released. Stdlib, milliseconds.
+      - name: bench_peer plan refusals and teardown
+        run: python3 -B scripts/test_bench_peer_phases.py
+
       # touched.py runs each source-scan test when a file it reads changes (scripts/touched_scans.py), and the table must name
       # every test that reads Go source: a scanner missing from it is the day loop going green on a change CI then fails.
       - name: touched.py scan selection
