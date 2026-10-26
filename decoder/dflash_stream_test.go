@@ -54,8 +54,18 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 			t.Fatal(err)
 		} else if ten.DType != c.dtype {
 			t.Fatalf("the fixture's dtype is %s, want %s", ten.DType, c.dtype)
-		} else if _, err := ten.Uint16s(); c.dtype != "F32" && (err != nil) != odd {
-			t.Fatalf("odd=%v: the fixture's payload alignment is not what the case needs (Uint16s: %v)", odd, err)
+		}
+		// The payload's file offset is its alignment in the (page-aligned) mapping: a multiple of the element size when aligned, odd
+		// otherwise, for every dtype.
+		sf, err := openSTFile(filepath.Join(dir, "model.safetensors"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		off := sf.base + sf.at["fc.weight"][0]
+		sf.Close()
+		esz := map[string]int64{"F32": 4, "F16": 2, "BF16": 2}[c.dtype]
+		if aligned := off%esz == 0; aligned == odd || (odd && off%2 != 1) {
+			t.Fatalf("%s odd=%v: fc.weight's payload is at byte %d, not what the case needs", c.dtype, odd, off)
 		}
 		s, err := OpenDFlashDrafter(dir)
 		if err != nil {
