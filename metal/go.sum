@@ -18,6 +18,8 @@ github.com/townsendmerino/aikit/gpu v0.33.5 h1:25cPfdw0nGjtSwEV/iaRZMYrKd0o/ShsY
 github.com/townsendmerino/aikit/gpu v0.33.5/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
 github.com/townsendmerino/aikit/gpu v0.34.0 h1:x5d7wZLXgNGfapfMIgag68SVXi+O/t6e01LQMuHVCA4=
 github.com/townsendmerino/aikit/gpu v0.34.0/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
+github.com/townsendmerino/aikit/gpu v0.35.0 h1:2yjAKzV5XtTJywL6wS2p3x1C+hP60+mVRZNB37b+saA=
+github.com/townsendmerino/aikit/gpu v0.35.0/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
 github.com/townsendmerino/goinfer v0.23.0 h1:HcqBYAx7QqQptzlYdfYP8c9HalFhsRHWz1GYlxA1ezI=
 github.com/townsendmerino/goinfer v0.23.0/go.mod h1:Pk0kSX6D2trUn9EARRcns/RHMx62C1YDFUXvPUUTwHM=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

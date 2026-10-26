@@ -603,6 +603,40 @@ tiling reproduces").**
 - **Change:** pass the attribute through aikit and set it on the exact attention kernels: bound 12,160 → 16,256 keys.
 - **Class:** bit-identical attention; the decision is about the GEMM that comes with it. **Size:** S.
 
+**KS-B15 build: gates, registered 2026-10-26 before any code (B15-G).** On aikit `gpu` v0.35.0
+(`Pipeline.SetMaxDynamicSharedBytes`, `Pipeline.MaxDynamicSharedBytes`).
+- **The change:**
+  - At load, the three exact prefill attention kernels opt in to the most dynamic shared memory each can take: `attn_batched`,
+    `attn_img_batched` and `attn_span_batched`.
+  - The prefill's span limit becomes the smallest of what they got. On the RTX 2070 SUPER that is 64 KiB less each kernel's
+    static shared memory, which moves the span bound from 12,160 keys to at most 16,256.
+  - In that band a layer that took the row-batched kernels (`prefillSplitKVAttn`) takes `attn_batched` or its image twins
+    instead. Past the new bound, the row kernels serve as today.
+  - A failed opt-in keeps 48 KiB, which is today's behaviour.
+- **Unchanged:**
+  - Decode's single-block attention and its split-KV choice keep the 48 KiB bound (`splitKVRequired`), and so does the drafter.
+  - A band prompt stays on the exact GEMM: `prefillPastBoundExact` keeps the 48 KiB bound (owner decision A; the fast GEMM is
+    not approved).
+- **Memory:** a band pass no longer allocates the row kernels' score scratch (up to 64 MiB plus its inverses,
+  `PrefillSpanScratchBytes`). Nothing is added.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B15-G1 the opt-in | 0 (device, tiny fixture) | `llama-attnfa-tiny` on the card | each of the three kernels reports a limit above 48 KiB, and the prefill's limit is their minimum. A 1-row pass whose span is the new bound in keys launches `attn_batched` (no row-batched group), and one key more takes the row kernels. Decode's `splitKVRequired` is unchanged at 12,161 keys. Plant: with the opt-in skipped, the prefill limit is 48 KiB and a band span takes the row kernels |
+| B15-G2 bits, tiny | 1 | `llama-attnfa-tiny` at context 17,000, f32 and f16 KV, fast levers off. Prompts of 12,400, 14,000 and 16,000 tokens (in the band), and 16,384 (past it). Arms: the opt-in, and today's limit set back to 48 KiB on the same resident. Also `TestKV3Tiled_batchedEqualsPerToken_tiny` at 12,400 and 16,384 | in the band, 0 differing logits and 0 differing K/V elements between the arms. The opt-in arm has no row-batched group and the other arm some, and neither runs a tensor-core launch. Past the band both arms run the row kernels and are equal. The batched prefill equals the per-token path (decode on split-KV), bit for bit, at both lengths |
+| B15-G3 bits, real | 1 | Gemma-3-4B Q4_K_M, f32 KV, default levers: a 13,824-token lead, then a 512-row pass whose last row attends 14,336 keys, each arm once, after a fit check of the load | 0 differing logits and 0 differing K/V rows across the pass; the opt-in arm has no row-batched group; neither arm runs a tensor-core launch |
+| B15-G4 speed | 1 (timed, the timing lock) | the same load and pass: off and on interleaved A B B A, 10 pairs after 2 warm runs each. The load average and free memory are recorded per pair, and a pair started above 8.0 is void and re-run. Second reading: one whole 14,336-token `PrefillLast`, off then on, twice each | **SHIP** iff the pass's median off/on ≥ 1.00 with at least 8 of 10 pairs faster. **KILL** at a median < 0.98: the band keeps the row kernels and the opt-in stays unset. **Ambiguous** (0.98–1.00, or fewer than 8 faster): parked, to Francis |
+
+- **Why G4's bar is 1.00, not the standing merge rule's 1.05:**
+  - Francis decided A; this records the gain rather than earning a decision.
+  - A change that is bit-identical and no slower still frees the band's score scratch.
+  - It also lets an image span pass on a sliding layer run in the band, where it declines today.
+  - The whole prompt is a reading, not the rule. Of a 14,336-token prompt's 28 passes at 512 rows, only the four or five whose
+    last row is past 12,160 keys can move, so the whole-prompt ratio is diluted by the 23 passes that cannot.
+- **Stopping rule:** each gate once. **Cost:** G1 seconds; G2 about 5 min (two per-token references at 12,400 and 16,384
+  rows, plus eight batched passes); G3 about 2 min; G4 about 5 min (24 passes of about 0.2–0.5 s and four whole prompts).
+- **Review:** it touches kernel routing, so Gemini reviews it before merge.
+
 ## 6. Metal decode (KS-C)
 
 **Where P33's gap sits, by arithmetic (depth 128; mlx-lm's 4-bit head is from memory):**
