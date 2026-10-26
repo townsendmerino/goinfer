@@ -162,3 +162,30 @@ peak, the system's swap pages, validity) and the night jobs' logs `nobara/night-
 run it waits, up to 5 minutes, for a 1-minute load of 4.0 or less, and records the wait (`settled_s`). The void rule is unchanged
 (8.0 at the run's start). The cost is about a minute a run: Nemotron's two cells are now about 2 h 5 min, re-queued as
 `ksf2b-nobara-nemotron-2`.
+
+**Nemotron-H 4B, attempt 2 (2026-10-25, 20:07–22:02, night job `ksf2b-nobara-nemotron-2`, with the idle gate):**
+- Every valid run started at a 1-minute load of 4.00 or below, after an idle-gate wait of at most 75 s. MemAvailable was 58.2 GiB or
+  more, and no run swapped. No void runs.
+- Peak resident memory: 16,667 MiB.
+
+| depth | A (old), ms a token | B (fanned), ms a token | median A ÷ B | pairs | B faster | void pairs | grade |
+|---|---|---|---|---|---|---|---|
+| 128 | 162.9–173.1 | 161.8–164.4 | **1.0083×** | 1.0034–1.0526 | **10 of 10** | 0 | below the merge rule; not slower |
+| 1,024 | 183.7–184.9 | 168.2–169.5 | **1.0926×** | 1.0858–1.0949 | **10 of 10** | 0 | **meets the merge rule** |
+
+- B is faster in every pair at both depths. The gain grows with depth, as on the Mac's Qwen3.5: attention is a larger part of the
+  token at 1,024.
+- The family does not meet the merge rule as a whole, since its 128 cell is below 1.05×.
+- Not slower than the old schedule, so the default stands on this record.
+
+### Summary on nobara
+
+| family | depth 128 | depth 1,024 | slower than the old schedule? |
+|---|---|---|---|
+| Granite-4.0-H tiny | 1.0033×, 10 of 10 | 1.0455×, 10 of 10 | no |
+| Nemotron-H 4B | 1.0083×, 10 of 10 | 1.0926×, 10 of 10 | no |
+| Qwen3.6-35B-A3B | untimed (Francis, 16:29) | untimed | — |
+| Llama-4-Scout | untimed: refused by the fit guard | untimed | — |
+
+No DECISION NEEDED: no timed family reads slower than the old schedule. The fanned schedule shipped on by default in #247, and that
+default stands on this record.
