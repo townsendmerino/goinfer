@@ -856,6 +856,41 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
 - **Then** OP4 (residents walk the program) and RF1 (one call shape) land with the kit as their gate. L in all; the
   first step S–M.
 
+#### SB1 step 1 — gates, registered 2026-10-26 before the code (nobara-sb01)
+
+- **What a file-level count misses.** Package `cuda`'s own non-test files import `decoder` (21 of them), so every test in
+  package `cuda` is rebuilt and re-run on a decoder edit whether or not its own file imports `decoder`. The same holds
+  for `metal` and `gpu`. So the ratchet counts two things per backend module: **direct**, the test files whose own
+  imports name `decoder` (the §6 census figure: 240, 245, 87), and **reach**, the test files in a directory whose test
+  build reaches `decoder` through any chain of goinfer imports. Reach is the one a decoder edit invalidates; a kernel
+  test leaves it only by leaving the package, as `metal/kernels` did.
+- **Ratchet (tier 0).** `internal/layout`'s `TestBackendTests_decoderImportsOnlyFall` parses the imports of every Go
+  file in the tree (build tags ignored, so a count is the union over tags; `//go:build ignore` files skipped) and fails
+  when either count of any of the three modules differs from the committed figure: above it is a regression; below it,
+  the figure is lowered in the same commit. It lands at the counts of `origin/main` at `bc365a837`, in its own commit.
+  `-v` prints the census. Cost: milliseconds; no device, no model. Void: none (it is deterministic over the tree).
+- **Each batch of moved tests (tier 0 on the device, seconds).** The batch's files move from `cuda/` to `cuda/kernels/`,
+  a package that imports nothing from goinfer (aikit `gpu` and gocudrv only); it reads the PTX the moved tests load
+  from `cuda/testdata/*.ptx`, the same files `cuda/kernels.go` embeds. A moved file's `goinfer_testhooks` constraint is
+  dropped: it gates package `cuda`'s test seams, which a moved test does not use, so the moved test runs under `-tags
+  cuda` alone, in `gate gpu`'s 2a suite.
+  - **Rule:** every moved `Test`/`Benchmark` function is listed before the move and found after it (no test deleted);
+    each moved test is run by name with `-v` on nobara's RTX 2070 SUPER before the move (in `./cuda/`, under `cuda
+    goinfer_testhooks`) and after (in `./cuda/kernels/`, under `cuda`), and its outcome (PASS, FAIL or SKIP with the same reason) is the same in both;
+    `go build` and `go vet` of the cuda module pass under each of no tag, `cuda`, and `cuda goinfer_testhooks`;
+    `go list -deps -test ./cuda/kernels/` contains no `goinfer/decoder`; the ratchet's reach count for `cuda` falls by
+    the number of moved files, and is lowered.
+  - **Void:** a run while `timing_lock.py status` shows a timed holder (the runs hold the lock shared, so they refuse
+    instead); a run on a card with another process's context (`nvidia-smi` names it), which can fail a test on memory
+    for reasons not in the test.
+  - **Stopping rule:** one before-run and one after-run per batch; a mismatch stops the batch and is reported, not
+    re-run until it agrees.
+  - **Cost basis:** the kernel tests in `gate gpu`'s 2a suite take about 12 s together
+    (`docs/measurements/cuda-device-suite-2026-10-18/run-cuda-device-suite.sh`'s header); a batch is a fraction of it.
+    Heavy-gated (`GOINFER_HEAVY_TESTS`) and env-gated (`GOINFER_A13_*`) tests skip in both runs, and the record says so.
+- `gate gpu`'s 2a kernel-level suite lists `./cuda/kernels/` beside `./cuda/`, so the moved tests stay in it; the night
+  `cuda-device-suite` and CI's cuda job run `./cuda/...` and need no change.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/residency.go:Model.residentAdmission`: the runner shape (`Model.decodeRunnerDecline`), then
