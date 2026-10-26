@@ -3,6 +3,7 @@ package serveapp
 import (
 	"fmt"
 	"log"
+	"runtime/debug"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -34,6 +35,11 @@ func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter) error {
 	}
 	lm.blockSpec = spec
 	geo := dw.DrafterGeometry()
+	// The resident holds its own copy now, and nothing reads the host one: drop it and hand the freed heap back to the OS.
+	if err := dw.ReleaseHostWeights(); err != nil {
+		log.Printf("block drafter for %q: closing its weights file after the upload: %v", lm.name, err)
+	}
+	debug.FreeOSMemory()
 	log.Printf("block drafter attached to %q: %d layers, hidden %d, block %d, %d taps %v — "+
 		"greedy requests take the speculative path, sampled ones fall back",
 		lm.name, geo.Layers, geo.Hidden, dw.BlockSize(), len(dw.TargetLayerIDs()), dw.TargetLayerIDs())

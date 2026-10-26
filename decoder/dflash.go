@@ -113,7 +113,23 @@ type blockTrunk struct {
 	hiddenNorm []float32        // RMSNorm on the fused context
 	finalNorm  []float32        // RMSNorm at the end of the trunk
 	layers     []dflashLayer
+
+	released bool // releaseHostWeights ran: the matrices and norms above are zero
 }
+
+// releaseHostWeights drops the trunk's matrices and norms; the geometry stays.
+func (d *blockTrunk) releaseHostWeights() {
+	d.fc, d.hiddenNorm, d.finalNorm = linalg.WeightMat{}, nil, nil
+	for i := range d.layers {
+		d.layers[i] = dflashLayer{}
+	}
+	d.released = true
+}
+
+// HostWeightsReleased reports whether the trunk's host weights were released (DFlashDrafter.ReleaseHostWeights). A backend's
+// attach must refuse such a drafter: its matrices are zero, and an upload of them drafts noise that lossless verify only
+// rejects, a cost in acceptance and nothing else.
+func (d *blockTrunk) HostWeightsReleased() bool { return d.released }
 
 type dflashLayer struct {
 	q, k, v, o     linalg.WeightMat
@@ -139,9 +155,23 @@ func (d *DFlashDrafter) TargetLayerIDs() []int { return append([]int(nil), d.tar
 // Close releases the drafter's mmap'd weights.
 func (d *DFlashDrafter) Close() error {
 	if d.st != nil {
-		return d.st.Close()
+		st := d.st
+		d.st = nil
+		return st.Close()
 	}
 	return nil
+}
+
+// ReleaseHostWeights drops the trunk's host weights once a resident backend has uploaded its own copy (ResidentDrafterHost's
+// AttachBlockDrafter), and closes the mapping when nothing the drafter keeps aliases it (no own head or embedding). What a
+// BlockSpec reads afterwards stays: BlockSize, MaskTokenID, TargetLayerIDs and DrafterGeometry. The drafter cannot be attached
+// or drafted on the host again (HostWeightsReleased). Not safe beside a call that reads the weights.
+func (d *DFlashDrafter) ReleaseHostWeights() error {
+	d.releaseHostWeights()
+	if d.lmHead.Rows() > 0 || d.embed.Rows() > 0 {
+		return nil // an own head or embedding may be a view of the mapping
+	}
+	return d.Close()
 }
 
 // dflashConfig is the subset of the checkpoint's config.json the loader needs.
