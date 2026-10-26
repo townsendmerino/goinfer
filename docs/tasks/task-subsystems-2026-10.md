@@ -868,6 +868,18 @@ failed open to "code"; the hook always passes SHAs. Re-run with both ends resolv
 naming #264's merge run). G4 PASS: the docs-only range exits 0 through the guard, the citation lint,
 `TestParityManifest_fresh` and the census warning; the product range exits 1 at the guard. G5 PASS: both lints exit 0.
 
+**DECISION PW1-D1, Francis, 2026-10-26 11:47 (relayed by the coordinator): remove `scripts/main_ci_guard.py` and its pre-push
+step** (option (b); recommended was to turn the wait into a refusal of direct product pushes). The guard, its tests, the hook
+step, its CI step and the `CLAUDE.md` sentence go. Amended gates, registered before that change, run once on the changed branch:
+
+| gate | rule (PASS iff) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW1-G1' nothing names the guard | `git grep -n -E 'main_ci_guard\|MAIN_CI_GUARD'` outside frozen records (`docs/completed/`, `docs/measurements/`) and this section's own history matches nothing that runs: no script, hook, workflow or `CLAUDE.md` line | — | one run | a second |
+| PW1-G2' the hook on the docs-only range | the hook extracted from the changed `install-git-hooks.sh`, fed `980f449b`'s range as full SHAs on a `refs/heads/main` line, exits 0 | the citation lint or the parity test is red on the tree for a reason unrelated to the range | one run | under a minute |
+| PW1-G3' the hook on the product range | the same for `4f9f07aa`'s range exits 0, with `MAIN_CI_GUARD_RUNS` still naming a fake in-progress run (it must now be ignored: nothing waits on main's CI) | as G2' | one run | under a minute |
+| PW1-G4' the workflow and the installer parse | `ci.yml` loads as YAML with the `main CI guard` step gone and every other step of its job kept; `bash -n` on `install-git-hooks.sh` and on the extracted hook | — | one run | a second |
+| PW1-G5' the text | as G5, after the deletion (a citation of the deleted file in a live doc is red and is fixed, not pinned away) | — | one run | seconds |
+
 ## 13. Order, sizes, and what each step is worth alone
 
 | order | items | worth alone |
