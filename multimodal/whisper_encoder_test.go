@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14d1 of docs/tasks/task-multimodal-support-2026-10.md: aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper

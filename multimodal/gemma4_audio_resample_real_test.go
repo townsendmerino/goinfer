@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // TestGemma4AudioResample is G-S5e of docs/tasks/task-multimodal-support-2026-10.md (S5's follow-up): the LibriSpeech clip at 44.1 kHz mono and at 48 kHz stereo (made offline by

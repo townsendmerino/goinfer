@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestG4VMetal_gemma4E2B is F2a of docs/multimodal.md ("Finishing this doc"): Gemma 4 E2B's own vision tower

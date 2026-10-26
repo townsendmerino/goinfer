@@ -7,7 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // Segment is a stretch of text with its times in seconds from the start of the clip. Tokens are the generated ids that make it up, timestamp tokens included.

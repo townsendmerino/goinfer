@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // S10, Ministral 3 (Pixtral), G-S10m-a and G-S10m-b (docs/tasks/task-multimodal-support-2026-10.md), against transformers' references from scripts/pin_pixtral_real.py (nobara;

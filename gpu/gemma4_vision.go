@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/multimodal"
 )

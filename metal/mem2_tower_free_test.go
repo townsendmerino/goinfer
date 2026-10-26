@@ -10,9 +10,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // mem2Inst is one built tower: its device (for the ledger), a forward over input i, and Close.

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestVisionTowerTiming is R8's committed timing driver (docs/tasks/red-october.md R8; the P6 driver was a throwaway).

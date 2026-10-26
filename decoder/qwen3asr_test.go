@@ -11,7 +11,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14c1 and G-S14c2 of docs/tasks/task-multimodal-support-2026-10.md: Qwen3-ASR's decoder loads from the checkpoint's own layout (nested thinker_config,

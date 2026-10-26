@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestQwenVisionEncoder_crosscheck runs the aikit v1.8.1 Qwen2.5-VL vision tower

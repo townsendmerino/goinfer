@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // G-S18f (docs/tasks/task-multimodal-support-2026-10.md, "S18 on the Mac, the tower", registered before the code): the

@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 

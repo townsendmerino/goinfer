@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // The audio tower on another device (Phase A's AM, docs/tasks/task-embeddinggemma2.md: Metal). An AudioAccelerator

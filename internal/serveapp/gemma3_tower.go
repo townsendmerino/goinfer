@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // attachableTower is what attachGemma3Tower needs of a vision encoder: the device attach and the release of one that did not take.

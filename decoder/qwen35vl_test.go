@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // P8a gate G1 (docs/measurements/p8a-qwen35-vl-2026-09/preregistration.md): the tiny Qwen3.5 image

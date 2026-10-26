@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/townsendmerino/aikit/gpu/visioncuda"
-	"github.com/townsendmerino/aikit/vision"
+	_ "github.com/townsendmerino/goinfer/cuda/internal/visioncuda"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 func worst(t *testing.T, got, want []float32, width int) (w float64, below int) {

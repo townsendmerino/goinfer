@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // TestG4AMetal_matchesCPU is Phase A's gate AM1 on the tiny tower (docs/tasks/task-embeddinggemma2.md): the Metal

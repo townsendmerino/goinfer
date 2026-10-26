@@ -9,7 +9,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14a (docs/tasks/task-multimodal-support-2026-10.md): aikit's Whisper front end against transformers 5.15.0's WhisperFeatureExtractor, both of its
