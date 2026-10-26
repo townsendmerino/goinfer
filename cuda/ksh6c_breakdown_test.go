@@ -5,8 +5,10 @@ package cuda
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -41,15 +43,34 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 		bytes       int
 		freeBefore  int64
 		freeAfterOf int64 // filled from the next event's freeBefore
+		site        string
+		next        string // the next allocation's site: the drop falls between the two
 	}
 	var (
 		mu     sync.Mutex
 		events []event
 	)
+	site := func() string {
+		pc := make([]uintptr, 12)
+		n := runtime.Callers(3, pc)
+		fr := runtime.CallersFrames(pc[:n])
+		var parts []string
+		for {
+			f, more := fr.Next()
+			if strings.Contains(f.Function, "/cuda.") && !strings.Contains(f.Function, "ForTest") {
+				parts = append(parts, f.Function[strings.LastIndex(f.Function, ".")+1:]+":"+strconv.Itoa(f.Line))
+			}
+			if !more || len(parts) == 4 {
+				break
+			}
+		}
+		return strings.Join(parts, " < ")
+	}
 	allocSeenForTest = func(b int) {
 		f := free()
+		st := site()
 		mu.Lock()
-		events = append(events, event{bytes: b, freeBefore: f})
+		events = append(events, event{bytes: b, freeBefore: f, site: st})
 		mu.Unlock()
 	}
 	kvAllocSeenForTest = func(_ *cudaResident, b int) {
@@ -92,6 +113,7 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 		for j := i + 1; j < len(events); j++ {
 			if !events[j].kv {
 				e.freeAfterOf = events[j].freeBefore
+				e.next = events[j].site
 				break
 			}
 		}
@@ -100,14 +122,15 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	mib := func(b int64) float64 { return float64(b) / (1 << 20) }
 	var req, charged int64
 	type row struct {
-		bytes int
-		drop  int64
+		bytes      int
+		drop       int64
+		site, next string
 	}
 	var rows []row
 	for _, e := range post {
 		req += int64(e.bytes)
 		charged += int64(e.bytes) + allocRoundSlack(int64(e.bytes))
-		rows = append(rows, row{e.bytes, e.freeBefore - e.freeAfterOf})
+		rows = append(rows, row{e.bytes, e.freeBefore - e.freeAfterOf, e.site, e.next})
 	}
 	var startFree int64 = after
 	if len(post) > 0 {
@@ -121,5 +144,8 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 			break
 		}
 		fmt.Fprintf(os.Stderr, "[H6C]   %10d B requested, the card's drop across it %.2f MiB\n", x.bytes, mib(x.drop))
+		if x.drop > 1<<20 {
+			fmt.Fprintf(os.Stderr, "[H6C]     at %s\n[H6C]     next allocation at %s\n", x.site, x.next)
+		}
 	}
 }
