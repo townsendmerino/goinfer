@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"os"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/towerid"
@@ -16,5 +17,5 @@ func TestTowerIdentity_cuda(t *testing.T) {
 		t.Skipf("no CUDA device: %v", err)
 	}
 	d.ReleaseObjects()
-	towerid.Check(t, "..", "cuda")
+	towerid.Check(t, "..", "cuda", os.Getenv("GOINFER_TOWER_ID_OUT"))
 }

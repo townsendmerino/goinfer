@@ -1,10 +1,13 @@
 package towerid
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // TestTowerIdentity_cpu is AX2a-T for the CPU: every tower family's record, twice, agreeing.
 func TestTowerIdentity_cpu(t *testing.T) {
-	r := Check(t, "../..", "cpu")
+	r := Check(t, "../..", "cpu", os.Getenv("GOINFER_TOWER_ID_OUT"))
 	families := map[string]bool{}
 	for _, c := range r.Cases {
 		families[c.Family] = true
