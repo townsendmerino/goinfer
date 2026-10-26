@@ -1,10 +1,9 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
-	_ "embed"
 	"testing"
 	"time"
 
@@ -13,9 +12,7 @@ import (
 
 // addonePTX is a trivial verifiable kernel compiled cgo-free by NVRTC (release 12.6,
 // compute_75) — the Layer-A proof loads/launches it via gocudrv's dlopen'd libcuda.
-//
-//go:embed testdata/addone.ptx
-var addonePTX []byte
+var addonePTX = readPTX("addone")
 
 // TestGocudrvLayerA is the spike's Layer-A end-to-end proof (docs/task-cuda-cgofree-spike.md):
 // does the cgo-free plumbing — dlopen libcuda (gocudrv) → JIT PTX → alloc/H2D → launch →

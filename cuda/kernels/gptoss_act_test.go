@@ -1,4 +1,4 @@
-//go:build cuda && goinfer_testhooks
+//go:build cuda
 
 // Gate for gpt-oss's clamped interleaved-SwiGLU expert epilogue (residency step 2 of 2).
 //
@@ -19,7 +19,7 @@
 // The comparison is on the DEQUANTIZED int8 output, because that is what the down-projection
 // GEMV consumes; a tolerance of one quantization step is therefore expected and anything
 // larger is a real disagreement.
-package cuda
+package kernels
 
 import (
 	"context"

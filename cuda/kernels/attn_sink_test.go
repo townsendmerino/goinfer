@@ -1,4 +1,4 @@
-//go:build cuda && goinfer_testhooks
+//go:build cuda
 
 // Attention-sink kernel gate (gpt-oss).
 //
@@ -16,7 +16,7 @@
 // This test therefore includes a case where the SINK DOMINATES.
 //
 // It gates the kernel directly rather than through a model, so it is independently checkable.
-package cuda
+package kernels
 
 import (
 	"context"

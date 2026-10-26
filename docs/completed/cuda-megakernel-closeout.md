@@ -47,8 +47,8 @@
 - `cuda/kernel_local_memory_test.go:150-156` carries a hand-audit comment dated 2026-08-13 that
   says "22 .ptx blobs are go:embed-ed … 10 of the difference (…, megakernel.ptx) are referenced
   ONLY from _test.go". The 22 is already stale (43 today) and megakernel.ptx is about to go.
-- Other `megakernel` mentions (`gpu/staged_bench_test.go:21`, `cuda/gemv_bw_test.go:22`,
-  `cuda/gocudrv_proof_test.go:26,147`, `cuda/decode_projection_test.go:17,138`) describe the
+- Other `megakernel` mentions (`gpu/staged_bench_test.go:21`, `cuda/kernels/gemv_bw_test.go:22`,
+  `cuda/kernels/gocudrv_proof_test.go:26,147`, `cuda/kernels/decode_projection_test.go:17,138`) describe the
   *thesis* — launch amortization — not the file. **Leave them.**
 
 ## Steps

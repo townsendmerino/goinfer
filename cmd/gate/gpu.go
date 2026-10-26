@@ -546,7 +546,7 @@ func (g *gpuGate) cudaSuite() {
 	g.grp("suite")
 	g.hdr("2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint)")
 	res, cr, out := g.run(cell{
-		Name: "cuda-suite", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda"},
+		Name: "cuda-suite", Pkgs: []string{"./cuda/", "./cuda/kernels/"}, Tags: []string{"cuda"},
 		Serial: true, Extra: []string{"-short"}, Env: map[string]string{"CGO_ENABLED": "0"},
 	}, false)
 	if cr.RC != 0 {
@@ -649,7 +649,7 @@ func (g *gpuGate) cudaHeavy() {
 		g.bad("heavy tier partition: the marker derivation found ZERO draining tests")
 		g.note("drainsDevice() marker matched nothing — the derivation is broken, not the tree clean")
 	}
-	listed, err := listCUDATests()
+	listed, err := listCUDATests("./cuda/")
 	total := len(listed)
 	if err != nil || total == 0 {
 		g.bad("heavy tier: `go test -list` found no tests in ./cuda/, so the main tier cannot be partitioned (%v)", err)
@@ -662,8 +662,17 @@ func (g *gpuGate) cudaHeavy() {
 		g.note("heavy tier did not run: the model-family derivation could not read cuda/*_test.go")
 		return
 	}
+	// The kernel-level tests in ./cuda/kernels/ load no model, so they are one more process, run whole.
+	kernels, err := listCUDATests(cudaKernelsPkg)
+	if err != nil || len(kernels) == 0 {
+		g.bad("heavy tier: `go test -list` found no tests in %s (%v)", cudaKernelsPkg, err)
+		g.note("heavy tier did not run: the " + cudaKernelsPkg + " test listing was empty or failed to build")
+		return
+	}
+	groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
+	listed = append(listed, kernels...)
 	fmt.Fprintf(g.w, "      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):\n")
-	fmt.Fprintf(g.w, "        package total     %d test(s)   [go test -list '.*']\n", total)
+	fmt.Fprintf(g.w, "        package total     %d test(s)   [go test -list '.*'], plus %d in %s\n", total, len(kernels), cudaKernelsPkg)
 	fmt.Fprintf(g.w, "        drain group        %d test(s)   %s\n", len(drain), strings.Join(drain, " "))
 	fmt.Fprintf(g.w, "        main group         %d test(s)   [complement, by construction], %d process(es):\n", total-len(drain), len(groups))
 	for _, h := range groups {
@@ -702,7 +711,7 @@ func (g *gpuGate) cudaHeavy() {
 	// A partition that drops or doubles a test is the failure mode, so every listed test must have a result in exactly
 	// one process.
 	missing, doubled := reconcileGroups(listed, mainRes)
-	fmt.Fprintf(g.w, "      split reconciliation: listed=%d  missing=%d  in-two=%d\n", total, len(missing), len(doubled))
+	fmt.Fprintf(g.w, "      split reconciliation: listed=%d  missing=%d  in-two=%d\n", len(listed), len(missing), len(doubled))
 	if len(missing) > 0 || len(doubled) > 0 {
 		g.bad("heavy tier split does not reconcile — a test is in no process or in two")
 		g.note(fmt.Sprintf("main-tier split mismatch: missing %v, in two processes %v", missing, doubled))
@@ -800,9 +809,12 @@ func (g *gpuGate) cudaHeavy() {
 	}
 }
 
-// listCUDATests lists ./cuda/'s top-level tests under the heavy tier's tags.
-func listCUDATests() ([]string, error) {
-	lst := exec.Command("go", "test", "-tags", "cuda goinfer_testhooks", "./cuda/", "-list", ".*")
+// cudaKernelsPkg holds the CUDA kernel-level tests that need nothing from package cuda but its PTX.
+const cudaKernelsPkg = "./cuda/kernels/"
+
+// listCUDATests lists pkg's top-level tests under the heavy tier's tags.
+func listCUDATests(pkg string) ([]string, error) {
+	lst := exec.Command("go", "test", "-tags", "cuda goinfer_testhooks", pkg, "-list", ".*")
 	lst.Env = append(os.Environ(), "CGO_ENABLED=0")
 	b, err := lst.Output()
 	if err != nil {
@@ -836,8 +848,12 @@ func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, pro
 		fmt.Fprintf(g.w, "        · %s: %s\n", strings.ToUpper(action), test)
 	}
 	var peak procPeak
+	pkg := h.Pkg
+	if pkg == "" {
+		pkg = "./cuda/"
+	}
 	c := cell{
-		Name: "cuda-heavy-" + h.Label, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+		Name: "cuda-heavy-" + h.Label, Pkgs: []string{pkg}, Tags: []string{"cuda", "goinfer_testhooks"},
 		Serial: true, Timeout: "120m", Run: h.Run,
 		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_ISOLATE_DEFER": "1"},
 		OnStart: func(pid int) func() {
