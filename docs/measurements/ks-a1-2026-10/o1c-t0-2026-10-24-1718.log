@@ -1,0 +1,98 @@
+17:18:43 O1C t0 at e3bd04a0d (base 4814c869a), log /home/francis/goinfer-logs/ks-a1-2026-10/o1c-t0-2026-10-24-1718.log
+17:18:51 load 0.72 1.59 1.81; MemAvailable 57.7 GB; GPU 403 MiB, 8192 MiB
+== g1g2: ^(TestKSO1C_nativeKernels|TestKSO1C_referenceMatchesAikit|TestKSO1C_fusedEqualsUnfused|TestKSO1C_untouchedKernelsBitIdentical|TestActGroupKernels_.*|TestQ4K_fusedG32ResidentBitIdentical)$
+=== RUN   TestActGroupKernels_quantizers
+--- PASS: TestActGroupKernels_quantizers (0.60s)
+=== RUN   TestActGroupKernels_gemv
+--- PASS: TestActGroupKernels_gemv (0.01s)
+=== RUN   TestActGroupKernels_gemvQ4K
+--- PASS: TestActGroupKernels_gemvQ4K (0.01s)
+=== RUN   TestActGroupKernels_fusedG32BitIdentical
+--- PASS: TestActGroupKernels_fusedG32BitIdentical (0.17s)
+=== RUN   TestKSO1C_nativeKernels
+    kso1c_kernels_test.go:168: O1C-G1 kernels: worst |err|/Σ|w·a| Q5_K 1.51e-07, Q6_K 1.44e-07 (bar 1e-5); plants' smallest reds map[1:0.27119705312135095 2:0.1884697581835112 3:0.15596431889957585 4:0.22802570615472992]
+--- PASS: TestKSO1C_nativeKernels (0.05s)
+=== RUN   TestKSO1C_fusedEqualsUnfused
+--- PASS: TestKSO1C_fusedEqualsUnfused (0.01s)
+=== RUN   TestKSO1C_untouchedKernelsBitIdentical
+    kso1c_kernels_test.go:442: O1C-G2 untouched: 22 cells byte-equal between the old and the new actgroup.ptx
+--- PASS: TestKSO1C_untouchedKernelsBitIdentical (0.05s)
+=== RUN   TestKSO1C_referenceMatchesAikit
+    kso1c_kernels_test.go:499: O1C-G1 reference: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, within 1e-6 of aikit on 0 Q5_K and 12 Q6_K tensors
+    kso1c_kernels_test.go:499: O1C-G1 reference: phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, within 1e-6 of aikit on 32 Q5_K and 17 Q6_K tensors
+--- PASS: TestKSO1C_referenceMatchesAikit (0.09s)
+=== RUN   TestQ4K_fusedG32ResidentBitIdentical
+    q4k_fused_resident_test.go:66: 40 positions × 151936 logits bit-identical, fused vs unfused
+--- PASS: TestQ4K_fusedG32ResidentBitIdentical (2.10s)
+PASS
+17:18:54 load 0.72 1.59 1.81; MemAvailable 57.8 GB; GPU 403 MiB, 8192 MiB
+== lints: ^(TestKernelLocalMemoryCensus|TestKernelFMALint|TestKernelFMALint_coversEmbeddedPTX|TestPTX_matchesSourcesAndBindings|TestPTXModules_coverEveryEmbed)$
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:114: all float MACs in 37 contracted kernels are explicit intrinsics ✓
+--- PASS: TestKernelFMALint (0.04s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:143: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:149: 52 embedded PTX kernels: 37 linted, 1 exempt
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+=== RUN   TestKernelLocalMemoryCensus
+    kernel_local_memory_test.go:78: device: 40 SMs x 1024 max threads/SM = 40960 resident threads
+    kernel_local_memory_test.go:125: module                 kernel                        local/thr   SMs*maxT*local
+    kernel_local_memory_test.go:132: gptoss_act.ptx         route_gptoss                       4608        188743680  (180.0 MiB)
+    kernel_local_memory_test.go:132: moe.ptx                moe_route                          4416        180879360  (172.5 MiB)
+    kernel_local_memory_test.go:132: deltanet.ptx           delta_rule_rows_128                  96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:132: rope_mrope_prefill.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mamba.ptx              mamba_conv                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_kv16_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_kv16.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: gemv_fwd_kv16.ptx      rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla.ptx                mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla.ptx                mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched.ptx    rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: gemv_fwd.ptx           rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:135: 259 entry points across 52 modules; 16 declare per-thread local memory
+    kernel_local_memory_test.go:145: EXAMINED: 52 module(s) — gemv_fwd.ptx gemv_w8a8_batched.ptx prefill_batched.ptx decode_splitkv.ptx prefill_splitkv.ptx deltanet.ptx gptoss_act.ptx actgroup.ptx gemv_w4a8_rn.ptx glue.ptx argmax.ptx moe_fold.ptx moe_rows.ptx audio_encoder.ptx topk.ptx gumbel.ptx decode_fa.ptx lora.ptx attn_block.ptx attn_img_prefill.ptx rope_mrope_prefill.ptx rope_pairwise.ptx layernorm_quant.ptx gelu_quant.ptx attn_fused.ptx attn_fused_bm.ptx attn_fused_vit.ptx tower_base.ptx gemm_w4a8_mma.ptx moe.ptx router_f32.ptx gemv_w4f32.ptx fused_qkv.ptx fused_qkv_rows.ptx fused_gu_rows.ptx mla.ptx gemv_fwd_kv16.ptx glue_kv16.ptx prefill_batched_kv16.ptx decode_splitkv_kv16.ptx prefill_splitkv_kv16.ptx decode_fa_kv16.ptx attn_fused_kv16.ptx attn_fused_bm_kv16.ptx glue_cap.ptx glue_kv16_cap.ptx prefill_batched_cap.ptx prefill_batched_kv16_cap.ptx decode_splitkv_cap.ptx decode_splitkv_kv16_cap.ptx mamba.ptx nongated_act.ptx. Derived straight from kernels.go's //go:embed list, so this line names exactly what that list currently contains.
+    kernel_local_memory_test.go:153: SUM of per-kernel backing stores at full occupancy: 390594560 B (372.5 MiB) — an UPPER BOUND on the deferred cost, not a prediction: the driver may share or reuse a backing store across kernels, and nothing here shows that it allocates them all simultaneously
+    kernel_local_memory_test.go:259: moe_route: local 4416 B/thread, naive form predicts 180879360 B, MEASURED 138412032 B (ratio 0.7652)
+    kernel_local_memory_test.go:262:   => the naive multiplier does NOT reproduce the measurement. The occupancy factor is not SMs x maxThreadsPerSM (40 x 1024); proportionality in local-bytes is therefore UNVERIFIED, and any 'halving MOE_MAX_E halves the cost' claim must be measured by building at 256 rather than derived from this form.
+--- PASS: TestKernelLocalMemoryCensus (0.24s)
+=== RUN   TestPTX_matchesSourcesAndBindings
+    ptx_consistency_test.go:96: 52 .cu/.ptx pairs, 259 kernels checked by name and signature; 114 bound kernel names resolved
+--- PASS: TestPTX_matchesSourcesAndBindings (0.07s)
+=== RUN   TestPTXModules_coverEveryEmbed
+    ptx_modules_cover_test.go:53: 52 embedded modules, 52 in ptxModules()
+--- PASS: TestPTXModules_coverEveryEmbed (0.00s)
+PASS
+17:18:54 load 0.72 1.59 1.81; MemAvailable 57.8 GB; GPU 403 MiB, 8192 MiB
+== g4 base
+=== RUN   TestKSO1_cpuQ4KFingerprint
+[O1-G4] CPU q4k 0.5B: tokens [374 279 7290 315 279 17133 330 27763 13876 38835 34208 916 279 15678 5562 43869], logits fingerprint 8bd2324c3e921ce233bf1d440d44e09244d60ba9ddfb3948dbbfe64d6c7a5a89
+--- PASS: TestKSO1_cpuQ4KFingerprint (1.12s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	1.128s
+== g4 at e3bd04a0d against the base digest 8bd2324c3e921ce233bf1d440d44e09244d60ba9ddfb3948dbbfe64d6c7a5a89
+=== RUN   TestKSO1_cpuQ4KFingerprint
+[O1-G4] CPU q4k 0.5B: tokens [374 279 7290 315 279 17133 330 27763 13876 38835 34208 916 279 15678 5562 43869], logits fingerprint 8bd2324c3e921ce233bf1d440d44e09244d60ba9ddfb3948dbbfe64d6c7a5a89
+--- PASS: TestKSO1_cpuQ4KFingerprint (1.11s)
+=== RUN   TestKSO1_savingsCountOnlyTheLane
+--- PASS: TestKSO1_savingsCountOnlyTheLane (0.00s)
+=== RUN   TestKSO1_kquantRows
+--- PASS: TestKSO1_kquantRows (0.00s)
+=== RUN   TestKSO1_kquantServesRejects
+--- PASS: TestKSO1_kquantServesRejects (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	1.114s
+17:19:09 load 0.78 1.56 1.80; MemAvailable 57.8 GB; GPU 403 MiB, 8192 MiB
+== g3: ^TestKSO1C_laneBytes$
+=== RUN   TestKSO1C_laneBytes
+O1C-G3 qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: int8 arm 472862208 device bytes map[int8:443444736 q4k:29417472], heap 803683576; native arm 463421952 map[int8:391104000 q4k:29417472 q6k:42900480], heap 803722896; pricing saves 9440256 (dense pricing 472862208 → 463421952)
+O1C-G3 qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: 1 native buffers (layer 0 and the head) equal the file's blocks
+O1C-G3 phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf: int8 arm 2710959360 device bytes map[int8:1408627968 q4k:1302331392], heap 2878910272; native arm 2336288256 map[q4k:1302331392 q5k:622854144 q6k:411102720], heap 2879367024; pricing saves 374671104 (dense pricing 2710959360 → 2336288256)
+O1C-G3 phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf: 5 native buffers (layer 0 and the head) equal the file's blocks
+--- PASS: TestKSO1C_laneBytes (8.38s)
+PASS
+17:19:17 load 0.81 1.55 1.79; MemAvailable 57.9 GB; GPU 403 MiB, 8192 MiB
+17:19:17 DONE t0 fail=0

@@ -74,9 +74,16 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // Production code routes through Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
-// KQuantDeviceSavingsForTest is metalKQuantSavings("metal"): what Metal's fit pricing takes off for the q4k lane's native
+// KQuantDeviceSavingsForTest is kquantSavings("metal"): what Metal's fit pricing takes off for the q4k lane's native
 // Q5_K and Q6_K uploads.
-func (m *Model) KQuantDeviceSavingsForTest() int64 { return m.metalKQuantSavings("metal") }
+func (m *Model) KQuantDeviceSavingsForTest() int64 { return m.kquantSavings("metal") }
+
+// SetKQuantNativeOffForTest keeps every later load's Q5_K and Q6_K weights on their int8 copies, on the device and in the fit
+// pricing (kquantNativeOff); false restores the native lanes.
+func SetKQuantNativeOffForTest(off bool) { kquantNativeOff.Store(off) }
+
+// KQuantSavingsForTest is kquantSavings(backend): what backend's fit pricing takes off for its q4k lane's native uploads.
+func (m *Model) KQuantSavingsForTest(backend string) int64 { return m.kquantSavings(backend) }
 
 // ResidentPrefillSeedForTest is residentPrefillSeed from position 0 with no adapter: the prompt into the resident KV
 // by the route a generation takes (blocks included), returning the last token's logits.

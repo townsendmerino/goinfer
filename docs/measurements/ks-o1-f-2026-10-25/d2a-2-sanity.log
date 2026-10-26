@@ -1,0 +1,23 @@
+=== night job ks-o1f-d2a
+=== cmd      bash /home/francis/goinfer-logs/ks-o1-f-2026-10-25/run-d2.sh
+=== cwd      /home/francis/goinfer-bench/ks-o1-f
+=== rev      queued at c4ab7f224, now c4ab7f224
+=== host     nobara-pc
+=== est      8.0 min, timeout 28.0 min
+=== by       kv4b-grade, KS-O1-F D2a (Francis 13:52 item 2)
+=== doc      docs/tasks/task-kernel-survey-2026-10.md
+=== START    2026-10-25 16:26:39 PDT  loadavg 2.93
+== 2026-10-25T16:26:39-07:00 commit c4ab7f224
+1709249, /usr/bin/kwin_wayland, 17 MiB
+ 16:26:39 up 21 days, 19:49,  6 users,  load average: 2.93, 4.70, 3.77
+=== RUN   TestKSO1F_projectionNumerics
+[D2a] 141 positions, 32 layers, rms eps 9.999999747378752e-06
+[D2a] layer 2 q: the int8 copy against the file's weights, relative L2 0.01734
+    kso1f_proj_test.go:168: layer 2 q: the int8 rows are not the file's rows (relative L2 0.0173): the row mapping is wrong
+--- FAIL: TestKSO1F_projectionNumerics (4.94s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	5.074s
+FAIL
+== exit 1 2026-10-25T16:26:46-07:00
+
+=== END      2026-10-25 16:26:46 PDT  rc=1

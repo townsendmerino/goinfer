@@ -10,6 +10,8 @@ github.com/modelcontextprotocol/go-sdk v1.6.1 h1:0zOSupjKUxPKSocPT1Wtago+mUHU2/u
 github.com/modelcontextprotocol/go-sdk v1.6.1/go.mod h1:kzm3kzFL1/+AziGOE0nUs3gvPoNxMCvkxokMkuFapXQ=
 github.com/oliverbestmann/webgpu v1.36.0 h1:X/S2kafLwjelwQvxE/WXIubB4CDIaJ9pjzYsOJRuS/o=
 github.com/oliverbestmann/webgpu v1.36.0/go.mod h1:GQectz+JGhriyME9VEChIZvHupghM2Y/lj5sfo53brI=
+github.com/oliverbestmann/webgpu v1.37.1 h1:w2h7GhyzXmfQiEpFYufoGo6uxDBu9aybJNPoKesmxes=
+github.com/oliverbestmann/webgpu v1.37.1/go.mod h1:GQectz+JGhriyME9VEChIZvHupghM2Y/lj5sfo53brI=
 github.com/oliverbestmann/webgpu/libs-android v0.0.0-20260628152806-6b27e30a172e h1:FX62Djj//RQiIrjnyo7oxhQJ4rdNlbzvLiICxTbE4z4=
 github.com/oliverbestmann/webgpu/libs-android v0.0.0-20260628152806-6b27e30a172e/go.mod h1:tczQXCdsoFy+FTJVsZSve/vF8cmWEkxhvjcyY2Rujp8=
 github.com/oliverbestmann/webgpu/libs-darwin v0.0.0-20260628152755-66a5dfa57f8d h1:DX7hw4Pmr73MNVEtOmEq4+nKH+rd8fSdL1a5PLHrqrE=

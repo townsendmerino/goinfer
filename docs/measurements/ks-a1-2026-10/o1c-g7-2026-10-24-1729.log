@@ -1,0 +1,33 @@
+17:29:47 O1C g7 at e3bd04a0d (base 4814c869a), log /home/francis/goinfer-logs/ks-a1-2026-10/o1c-g7-2026-10-24-1729.log
+17:29:47 load 0.34 0.34 0.97; MemAvailable 57.9 GB; GPU 403 MiB, 8192 MiB
+== g7: ^TestKSO1C_speed$
+=== RUN   TestKSO1C_speed
+[O1C-G7] Phi-3 mini: 113 weights native (the int8 copies beside them); load 0.34, 55.1 GB available
+[O1C-G7] Phi-3 mini pair 0 (load 0.56, 55.0 GB available): int8 8.716 ms/token (114.7 tok/s), native 7.847 (127.4), native/int8 0.9002
+[O1C-G7] Phi-3 mini pair 1 (load 0.59, 55.0 GB available): int8 8.698 ms/token (115.0 tok/s), native 7.849 (127.4), native/int8 0.9025
+[O1C-G7] Phi-3 mini pair 2 (load 0.59, 54.9 GB available): int8 8.710 ms/token (114.8 tok/s), native 7.861 (127.2), native/int8 0.9025
+[O1C-G7] Phi-3 mini pair 3 (load 0.62, 54.9 GB available): int8 8.707 ms/token (114.8 tok/s), native 7.854 (127.3), native/int8 0.9020
+[O1C-G7] Phi-3 mini pair 4 (load 0.65, 54.9 GB available): int8 8.701 ms/token (114.9 tok/s), native 7.850 (127.4), native/int8 0.9022
+[O1C-G7] Phi-3 mini pair 5 (load 0.65, 54.8 GB available): int8 8.706 ms/token (114.9 tok/s), native 7.854 (127.3), native/int8 0.9022
+[O1C-G7] Phi-3 mini pair 6 (load 0.68, 54.8 GB available): int8 8.696 ms/token (115.0 tok/s), native 7.851 (127.4), native/int8 0.9029
+[O1C-G7] Phi-3 mini pair 7 (load 0.68, 54.7 GB available): int8 8.699 ms/token (115.0 tok/s), native 7.857 (127.3), native/int8 0.9032
+[O1C-G7] Phi-3 mini pair 8 (load 0.71, 54.7 GB available): int8 8.697 ms/token (115.0 tok/s), native 7.854 (127.3), native/int8 0.9031
+[O1C-G7] Phi-3 mini pair 9 (load 0.71, 54.6 GB available): int8 8.699 ms/token (115.0 tok/s), native 7.856 (127.3), native/int8 0.9032
+[O1C-G7] Phi-3 mini median native/int8 0.9025, 10 of 10 pairs faster, 0 void; the arms' greedy tokens agree for the first 40 of 128
+[O1C-G7] Qwen2.5-Coder-1.5B: 29 weights native (the int8 copies beside them); load 0.73, 56.4 GB available
+[O1C-G7] Qwen2.5-Coder-1.5B pair 0 (load 0.75, 56.3 GB available): int8 4.983 ms/token (200.7 tok/s), native 4.891 (204.5), native/int8 0.9815
+[O1C-G7] Qwen2.5-Coder-1.5B pair 1 (load 0.75, 56.3 GB available): int8 4.996 ms/token (200.2 tok/s), native 4.887 (204.6), native/int8 0.9781
+[O1C-G7] Qwen2.5-Coder-1.5B pair 2 (load 0.75, 56.2 GB available): int8 5.002 ms/token (199.9 tok/s), native 4.870 (205.3), native/int8 0.9737
+[O1C-G7] Qwen2.5-Coder-1.5B pair 3 (load 0.77, 56.2 GB available): int8 4.991 ms/token (200.4 tok/s), native 4.887 (204.6), native/int8 0.9790
+[O1C-G7] Qwen2.5-Coder-1.5B pair 4 (load 0.77, 56.2 GB available): int8 4.995 ms/token (200.2 tok/s), native 4.892 (204.4), native/int8 0.9795
+[O1C-G7] Qwen2.5-Coder-1.5B pair 5 (load 0.77, 56.2 GB available): int8 4.996 ms/token (200.2 tok/s), native 4.896 (204.2), native/int8 0.9799
+[O1C-G7] Qwen2.5-Coder-1.5B pair 6 (load 0.77, 56.1 GB available): int8 5.004 ms/token (199.8 tok/s), native 4.889 (204.6), native/int8 0.9769
+[O1C-G7] Qwen2.5-Coder-1.5B pair 7 (load 1.11, 56.1 GB available): int8 4.952 ms/token (201.9 tok/s), native 4.885 (204.7), native/int8 0.9865
+[O1C-G7] Qwen2.5-Coder-1.5B pair 8 (load 1.11, 56.1 GB available): int8 4.997 ms/token (200.1 tok/s), native 4.882 (204.8), native/int8 0.9771
+[O1C-G7] Qwen2.5-Coder-1.5B pair 9 (load 1.11, 56.1 GB available): int8 5.000 ms/token (200.0 tok/s), native 4.877 (205.0), native/int8 0.9754
+[O1C-G7] Qwen2.5-Coder-1.5B median native/int8 0.9786, 10 of 10 pairs faster, 0 void; the arms' greedy tokens agree for the first 128 of 128
+[O1C-G7] Phi-3 median 0.9025 (10 of 10 faster), 1.5B median 0.9786 (10 of 10): SHIP
+--- PASS: TestKSO1C_speed (53.91s)
+PASS
+17:30:41 load 1.18 0.57 1.01; MemAvailable 57.9 GB; GPU 403 MiB, 8192 MiB
+17:30:41 DONE g7 fail=0

@@ -62,6 +62,8 @@ func streamWeights() map[string]linalg.WeightMat {
 		"int8":      linalg.QuantizeInt8(fill(N*K, 2), N, K, true),
 		"q4k":       k4,
 		"f32->int8": linalg.WrapF32(fill(N*K, 3), N, K),
+		// a bf16 weight, a block drafter's (AttachDrafter streams it): widened row by row and quantized to int8
+		"bf16->int8": linalg.QuantizeBF16(fill(N*K, 4), N, K),
 	}
 }
 

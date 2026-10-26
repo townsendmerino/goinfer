@@ -355,6 +355,47 @@ mirrored quads per depth, 10 pairs; every cell started at load 0.98 or below; no
 - **What would answer G4's own condition served:** the same A/B on code and math prompts (SP0's suites, calibrated to depth). That is
   a separate run; it is proposed, not run.
 
+### The essay A/B end to end, and `--drafter`'s host memory (2026-10-25, from #238's second-opinion review)
+
+The headline above is decode tok/s (`decode_timed_s`). The same cells' phases, medians of each arm's 10 cells, 16 timed completions a
+cell (`raw/served-ab-2026-10-25.json`, `counts.phases` and `counts.rss_peak_kb`):
+
+| depth | arm | wall of the 16 completions | prefill + request | per request (prefill + TTFT) | decode | peak RSS |
+|---|---|---|---|---|---|---|
+| 512 | plain | 88.2 s | 24.0 s | 1.50 s | 64.2 s | 4.7 GB |
+| 512 | `--drafter` | 92.7 s | 29.6 s | 1.85 s | 63.1 s | 12.8–12.9 GB |
+| 4096 | plain | 69.1 s | 3.4 s | 0.21 s | 65.7 s | 5.1–5.2 GB |
+| 4096 | `--drafter` | 364.8 s | 298.4 s | 18.65 s | 66.4 s | 13.9–14.1 GB |
+
+- **End to end, `--drafter` lost on these prompts:** 0.95× of plain's wall at 512, and 0.19× at 4096 (5.3× slower).
+- **Why 4096 is so far apart: prefix reuse.** The harness sends one identical prompt 17 times a cell. Plain `serve` restores the
+  prompt's prefix from a host snapshot after the first request (0.21 s a request). `BlockSpec` restores nothing: its drafter needs
+  its own context for any reused prefix, and the snapshots carry the target's rows and recurrent state but not the drafter's, so
+  `BlockSpec.generate` sets its reuse to 0 unless the prompt extends its own last turn (`resDrafterSynced`). Every request
+  re-prefills all 4,131 tokens on the exact kernels a recurrent model's prefill takes, with the drafter's capture on top: 18.65 s.
+  An agent loop, whose turns extend the last, does reuse (G5 measured it: 119 of 119 positions); an identical resend, a retry or a
+  second conversation does not.
+- **Why the in-process diagnostic read 0.894× and the served headline 0.989×:** the diagnostic timed from the first token to the end
+  of the turn, so it held the trailing work and not the prefill; the served headline is decode windows only. Neither held the
+  prefill, which is where `--drafter` loses most here.
+- **Is the missing reuse a bug?** Not a correctness one: every turn is token-identical to plain greedy, and the cold prefill is the
+  defined fallback. It is a missing capability that costs `--drafter` most of its served value on repeated or re-sent prompts:
+  snapshots that carry the drafter's context, so `BlockSpec` can take the same prefix plain `serve` takes. It would also bear on the
+  code/math A/B now running, whose prompts repeat within a cell in the same way.
+- **Host memory: 8–9 GB more at peak with `--drafter`, and no guard prices it.** The drafter's weights are a mapped bf16 file (2.6 GB
+  of pages), and attaching widens each matrix to an f32 copy before quantizing it to int8 for upload (`packWeight`), so the attach's
+  transient copies sit on top. The peak is `VmHWM`, so how much of it outlives the attach is not yet measured. The load-time host
+  guard prices the target model only (`modelload.Load`); `serve` loads the drafter before it and attaches after, so the drafter's
+  host memory reaches no fit check. The harness's `fit_need_mb` (5,417, the checkpoint's file size) is the harness's own figure for
+  the void rule, not `serve`'s.
+- **The void rule's memory term was not applied** in either served A/B: `free_mem_mb` is null in every cell because the harness
+  reads it through `go run ./cmd/hostmem` and my run scripts did not put Go on `PATH`. Reconstructed, not recorded: this box's
+  `MemAvailable` reads about 60 GB with a served 9B up, against a 14 GB peak for the drafter's process, so no cell came near the 2 GB
+  floor. The harness now refuses at preflight when it has no reading (`BENCH_ALLOW_NO_FREE_MEM=1` runs anyway, with a warning, and the
+  provenance records it), and later runs set `PATH`.
+- **The 3.4 MB of swap-in in a depth-4096 cell** is the system's counter over a 6-minute cell, with zero swap growth; the
+  registered rule has no swap term (the harness's swap voids are off unless set), so it voids nothing.
+
 ## The served A/B on code and math, under G4's conditions (registered 2026-10-25, before the run)
 
 On the owner's decision (Francis, 2026-10-25 13:01, option C): #238 merges on its own, and this follow-up record asks the question

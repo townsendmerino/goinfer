@@ -1,0 +1,24 @@
+tree a579f7a30; driver 595.91.07; start 2026-10-25 14:32:01 PDT; load 1.69 1.60 1.37
+== card before H2-R1 (only the compositor):
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestKSH2_buildVRAM
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[KS-H2] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 slots 1 kvF16 false: free before load 7277.1 MiB of 7784.2, after 795.1; 1335 allocation events
+[KS-H2] before the pools: free 7275.1 -> 2831.1 MiB, actual 4444.0 MiB; 572 requests 4023.8 MiB, rounded 4429.6 MiB (rounding 405.8); 347 under 2 MiB (101.6 MiB); actual minus rounded 14.4 MiB
+[KS-H2] the pools: free 2831.1 -> 925.1 MiB (at the next allocation), actual 1906.0 MiB; 72 pool buffers 1799.7 MiB requested, rounded 1904.7 MiB (rounding 105.0); 549 other requests interleaved, 4.6 MiB (rounded 4.6)
+[KS-H2] priced: kvBytesForCap 1792.0 MiB + null 7.0 MiB per slot; allocations after the pools: 70
+--- PASS: TestKSH2_buildVRAM (8.28s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	8.479s
+== card before H2-R2 (only the compositor):
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestKSH2_buildVRAM
+[resident] BuildResident declined (ok=false err=cuda: resident context 16384 positions needs 4.83 GB of KV (288.0 KB/position across 36 layers) but only 2.98 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model) — continuing on the CPU/staged path
+    ks_h2_harness_test.go:71: not resident: backend failed to build a resident path: cuda: resident context 16384 positions needs 4.83 GB of KV (288.0 KB/position across 36 layers) but only 2.98 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model
+--- FAIL: TestKSH2_buildVRAM (11.17s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	11.296s
+FAIL
+end of H2 2026-10-25 14:32:22 PDT
+end 2026-10-25 14:35:46 PDT
