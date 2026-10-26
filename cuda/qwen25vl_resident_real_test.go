@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestQwen25VLResidentReal_gate is the real-checkpoint continuation of decoder/qwen25vl_real_test.go's

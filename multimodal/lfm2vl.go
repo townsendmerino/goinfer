@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // LFM2-VL's image path (Lfm2VlForConditionalGeneration; S10 of docs/tasks/task-multimodal-support-2026-10.md): the

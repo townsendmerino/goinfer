@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // The serve half of the prefill-path report. Both fast paths a GPU backend advertises, the resident decode

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // The Whisper-style audio encoder on a device. Whisper's transcriber and Voxtral's tower both run aikit's audio.WhisperEncoder, so one registration moves both: a

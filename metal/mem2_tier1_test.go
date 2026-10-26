@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestMEM2_tier1Qwen3VL is MEM2-G4 (docs/tasks/task-memory-campaign-2026-10.md, MEM2 gates): the Qwen3-VL-2B tower on

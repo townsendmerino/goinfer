@@ -251,7 +251,7 @@ for both halves of the request: `constrain.TemplateFromStruct(Invoice{})` is the
 with a JSON *template* (an object of blank values) and not a JSON Schema, and `constrain.GrammarFromStruct(Invoice{})` is the
 guarantee. Type the amounts as numbers (`float64`, `int`): the model answers a numeric column with a bare number, and a
 string-typed field would leave the grammar only whitespace to emit (see `docs/server.md`). The image reaches the decoder through
-`multimodal.QwenPreprocess`, aikit's `vision.LoadGlmOcrVisionEncoder` and `Model.GenerateQwenVL`, with the image block spliced into the
+`multimodal.QwenPreprocess`, `multimodal.LoadGlmOcrTower` and `Model.GenerateQwenVL`, with the image block spliced into the
 prompt by `multimodal.SpliceImageBlock`. Needs the GLM-OCR checkpoint (`zai-org/GLM-OCR`, about 2.7 GB); about a minute and a half
 on a CPU. Over HTTP the same request is an `image_url` part plus `response_format` (`docs/server.md`); in the terminal it is
 `goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json`.

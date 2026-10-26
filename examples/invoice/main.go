@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -74,7 +73,7 @@ func main() {
 	defer m.Close()
 	tk, err := tokenizer.Load(dir)
 	check(err, "tokenizer")
-	tower, err := vision.LoadGlmOcrVisionEncoder(dir, false)
+	tower, err := multimodal.LoadGlmOcrTower(dir)
 	check(err, "vision tower")
 	pp, err := multimodal.LoadGlmOcrPreprocessConfig(dir) // the checkpoint's pixel budget, halved the way the model's processor does
 	check(err, "preprocess config")
@@ -109,7 +108,7 @@ func main() {
 	}
 	mask := constrain.NewMasker(grammar, constrain.TokenBytes(m.Config().VocabSize, tk.TokenText), stop).StopWhenComplete()
 
-	features := func() ([]float32, error) { return tower.Forward(pixels, [][3]int{grid}) }
+	features := func() ([]float32, error) { return tower.Forward(pixels, grid) }
 	ch, gen := m.GenerateQwenVL(context.Background(), ids, imgPos, imgLen, multimodal.HashImageBytes(raw), features,
 		[][3]int{grid}, pp.MergeSize, imageToken, 1500,
 		decoder.SamplingParams{Temperature: 0, LogitProcessor: mask.Process, StopIDs: stop})

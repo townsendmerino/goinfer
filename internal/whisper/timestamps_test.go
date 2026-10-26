@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14g2 of docs/tasks/task-multimodal-support-2026-10.md: timestamps and sequential long-form against transformers' generate(return_timestamps=True, return_segments=True) on a tiny random-weight Whisper

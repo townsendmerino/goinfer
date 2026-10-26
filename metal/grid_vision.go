@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/gpu"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/metal/kernels"
 	"github.com/townsendmerino/goinfer/multimodal"
 )

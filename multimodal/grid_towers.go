@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // Device towers for the grid-based vision encoders, Qwen3.5+ and GLM-OCR (S2 of docs/tasks/task-multimodal-support-2026-10.md),

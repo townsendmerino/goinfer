@@ -12,7 +12,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14e2 of docs/tasks/task-multimodal-support-2026-10.md (registered 2026-10-09 before any code): Voxtral's text decoder loads from the checkpoint's own layout (nested text_config, tensors

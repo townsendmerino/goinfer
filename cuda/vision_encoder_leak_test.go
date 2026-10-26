@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestVisionEncoder_forwardPatchesReleasesDeviceScratch is M-18's gate (docs/audit-2026-09-10.md): ForwardPatches must

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestLookupLockedOnlyViaResolve enforces item-5 of the design: withModel/withModelAnthropic are the

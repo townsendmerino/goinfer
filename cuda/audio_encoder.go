@@ -9,7 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
