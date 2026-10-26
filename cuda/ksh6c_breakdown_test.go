@@ -18,13 +18,17 @@ import (
 // TestKSH6C_postPoolBreakdown is a reading for KS-H6's build (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build"), not a
 // gate: one CUDA build of KSH6C_MODEL at KSH6C_CTX, served as serve loads it, with free VRAM read through the primary context at every
 // requested allocation. It lists every allocation after the last K/V pool buffer (bytes, and the card's drop across it) and the
-// drop no allocation accounts for, so the post-pool pricing can mirror what the build does.
+// drop no allocation accounts for, so the post-pool pricing can mirror what the build does. KSH6C_NO_SELFTEST skips the decoder's
+// startup self-test, whose fixture builds follow this one on the same context.
 func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	path := os.Getenv("KSH6C_MODEL")
 	if path == "" {
 		t.Skip("set KSH6C_MODEL")
 	}
 	ctx, _ := strconv.Atoi(os.Getenv("KSH6C_CTX"))
+	if os.Getenv("KSH6C_NO_SELFTEST") != "" {
+		decoder.SkipSelfTests() // the probe's fixture builds run after this build, on the same context
+	}
 	kvF16Auto.Store(true)
 	defer kvF16Auto.Store(false)
 	probe, err := CreateSystemDefaultDevice()
