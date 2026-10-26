@@ -292,10 +292,17 @@ checkout). Records: `raw/parity/`.
   0.99843 (`25a4711`) to 0.99848. `docs/capability-matrix.md`, its JSON and `pull/capability-matrix.json` are regenerated from it.
 - **The two arms agree to five digits** on this one prompt. KS-O4's difference is in the last bits, so it does not show at this precision.
 
-## Status (2026-10-26): every registered gate has run; whether it lands is Francis's call
+## STOP POINT (2026-10-26): lands today, by Francis's call (10:12, option A)
 
-- **G-FID:** AMBIGUOUS, accepted by Francis (07:56).
-- **G-SINK, G-RING, G-ID, G-MEM:** PASS.
-- **G-SPEED:** passes its registered reading at 1.030×, and the merge bar is not met.
-- **Real-checkpoint parity:** PASS.
-- **Decision posted:** whether KS-O4 lands today, posted through the coordinator during the 2026-10-26 wind-down.
+- **Where it stands:** every registered gate has run.
+  - G-FID: AMBIGUOUS, accepted by Francis (07:56).
+  - G-SINK, G-RING, G-ID, G-MEM and the real-checkpoint parity: PASS.
+  - G-SPEED: passes its registered reading at 1.030×; the merge bar is not met.
+- **The PR:** #271, from `ks-o4-2026-10`, with `main` merged in, the parity hashes refreshed and the day checks green. No Gemini review, by
+  the coordinator's instruction during the wind-down. It merges through the coordinator's train after green CI.
+- **Next, after it merges:**
+  - **The rings it enables:** gpt-oss's window layers now keep KV rings on the CPU path (`Architecture.kvRingsOK`). Work that builds on them
+    starts from `main`.
+  - **The old order:** `attnSinksF64` is kept only as G-FID's exact arm. Removing it is a separate change, with its own identity check.
+  - **The 10 NOT RUN families:** G-ID's NOT RUN set has no tiny identity asset on either box. That is a gap in `cmd/gate identity`'s
+    coverage, not in this change.
