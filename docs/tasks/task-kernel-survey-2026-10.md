@@ -2968,6 +2968,48 @@ before each load). Logs: `docs/measurements/ks-h6-2026-10/`.
 - **Seen in passing, not part of the reading:** beside the 26B, every tiny self-test probe resident declined for room ("0.40 GB is
   free on the device beside the weights (plus 384 MB reserved...)"). The 26B's own resident was unaffected.
 
+**Owner decision on KS-H6, Francis 2026-10-25: A at 18:56, then A1 at 20:25.** `ctxCapMarginBytes` is computed from its parts at load in
+place of the flat 384 MiB, and the KV pools are priced as the card charges them. `slotMarginBytes` stays 384. A pinned `-ctx` that
+no longer fits is refused, which is A1, not A3. This is a guard change: its gates are registered here before the code, it goes in
+its own PR, and it gets a Gemini review before merge.
+
+**KS-H6 build: gates, registered 2026-10-25 before any code (H6C-G).**
+- **The margin at load:** the sum of four parts. All four are computed once, in `BuildResident` before the context is planned,
+  from the planned geometry (the model's dimensions and the host layer plans). The same figure goes to the plan
+  (`resolveCtxCapFitSlack`), the build's fit check (`checkKVFits`) and the decline messages, so the plan and the build cannot
+  disagree about it.
+  1. **The build's own allocations after the KV pools:** every buffer the setup job allocates after `kvAllocPools`, each priced as
+     the card charges it, at least one 2 MiB page and larger ones rounded up to 2 MiB (KS-H2). A function of the geometry mirrors
+     those allocations.
+     - Excluded: the grants that size themselves from what is left after their own reserve (the recurrent checkpoint, the expert
+       slots, the windowed KV grant).
+  2. **One 512-row prefill pass's scratch:** `PrefillScratchBytes(512)` plus `PrefillSpanScratchBytes(512, the candidate context)`,
+     both computed from the same geometry. `PrefillScratchBytes` is refactored to compute from it too, so there is one formula.
+     - A model whose batched prefill is declined still prices the pass. This is conservative, and the figure is reported.
+  3. **The allocation floor:** 155 MiB, the top of `TestAllocFloor`'s recorded band (148–155).
+  4. **A decode allowance:** 16 MiB. H6-R measured no rise beyond the pass for a dense decode (Qwen3-8B, 64 tokens).
+- **The KV priced as charged:** `kvBytesForCap` becomes each pool buffer rounded as the card charges it, plus the slot tables.
+  - **At the plan:** the plan prices the KV linearly per position. It adds an upper bound on the rounding (one 2 MiB page per pool
+    buffer), so the context it picks always fits the build's exact figure, and the build never trims what the plan chose.
+- **Unchanged:**
+  - `slotMarginBytes`.
+  - The two runtime grant reserves, the windowed KV rollback and the recurrent checkpoint. They price two 512-row passes beside the
+    old 384 MiB constant, which they keep under its own name (`grantReserveBytes`). Changing them is not part of this decision.
+  - Every kernel. Outputs are bit-identical; only the context, the slot counts and the refusals can move.
+- **Merge note:** KS-B8 (#250) reads `ctxCapMarginBytes` in its width chooser. Whichever merges second takes the other's figure.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| H6C-G1 the arithmetic | 0 | the margin from a table of parts; the charged KV against a hand count on a synthetic layer set (a pool buffer under 2 MiB, one exactly 2 MiB, one over); the plan's rounding bound against the exact figure. Plants: the floor left out; the pools priced as requested | every row equal; both plants red |
+| H6C-G2 priced equals allocated | 1 | through `decoder.Load` on CUDA, as serve loads each model, the bytes the build allocates after the pools, from the allocation hook, each rounded as charged, against part 1; and the pools' charged bytes against the priced KV. Models: Qwen2.5-Coder-0.5B, 1.5B, Qwen2.5-7B, Qwen3-8B at 16,384, Gemma-3-4B, Qwen2.5-VL-3B, Gemma 4 E2B and the 26B with its cache | part 1 equals the allocations exactly on every model, and the priced KV equals the pools' charged bytes exactly |
+| H6C-G3 the plan agrees with the build | 1 | the same loads, unpinned: the context the plan picks and the context the build keeps | no build trims the plan's context, and the plan's context is at most one KV block (64 positions) below what the build's exact figure would allow, beyond the stated rounding bound |
+| H6C-G4 headroom | 1 | H6-R's run (`TestKSH6_marginPartsQwen3`) on Qwen3-8B, unpinned at its new context: the minimum free VRAM over a long prefill and 64 decode tokens | the run's minimum free is at least the floor plus the allowance less 4 MiB (167 MiB) |
+| H6C-G5 the cost, stated | 1 | per model above, the default unpinned context before and after, in positions; Qwen3-8B with `-ctx 16384` pinned; the 26B's slots and context | a reading. A configuration that loads today and is refused after is listed in the PR by name |
+
+- **Stopping rule:** a FAIL in G1 or G2 stops the build for a fix, and the fixed build re-runs every gate from G1.
+- **Cost:** G1 seconds. G2, G3 and G5 share the loads, about 8 min (eight models). G4 about 2 min. All by day, with the timing lock
+  shared: memory, not time, is read.
+
 
 ## 12. Already covered (not re-proposed)
 
