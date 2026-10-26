@@ -24,6 +24,10 @@ func TestEncoder_useResidencySet(t *testing.T) {
 	if !ResidencySetsSupported() {
 		t.Skip("MTLResidencySet unavailable (macOS <15)")
 	}
+	// The class can exist while the device refuses to make a set (a virtualized GPU, such as a hosted CI runner's).
+	if _, err := d.NewResidencySet(); err != nil {
+		t.Skipf("this device makes no residency set: %v", err)
+	}
 
 	const src = `
 #include <metal_stdlib>
@@ -41,7 +45,7 @@ kernel void bump(device float* buf [[buffer(0)]], uint tid [[thread_position_in_
 	}
 	q := d.NewCommandQueue()
 
-	newSet := func(bufs ...Buffer) ResidencySet {
+	newSet := func(t *testing.T, bufs ...Buffer) ResidencySet {
 		rs, err := d.NewResidencySet()
 		if err != nil {
 			t.Fatalf("NewResidencySet: %v", err)
@@ -54,7 +58,7 @@ kernel void bump(device float* buf [[buffer(0)]], uint tid [[thread_position_in_
 		return rs
 	}
 
-	dispatch := func(e *Encoder, buf Buffer) {
+	dispatch := func(t *testing.T, e *Encoder, buf Buffer) {
 		e.Dispatch(pipe, 8, 8, buf)
 		e.End()
 		if err := e.Err(); err != nil {
@@ -64,7 +68,7 @@ kernel void bump(device float* buf [[buffer(0)]], uint tid [[thread_position_in_
 
 	t.Run("plain, no residency set", func(t *testing.T) {
 		buf := d.NewBufferLen(8)
-		dispatch(q.Begin(), buf)
+		dispatch(t, q.Begin(), buf)
 		got := buf.Floats()
 		if got[0] != 1 {
 			t.Errorf("buf[0] = %v, want 1", got[0])
@@ -73,9 +77,9 @@ kernel void bump(device float* buf [[buffer(0)]], uint tid [[thread_position_in_
 
 	t.Run("queue-wide AddResidencySet", func(t *testing.T) {
 		buf := d.NewBufferLen(8)
-		rs := newSet(buf)
+		rs := newSet(t, buf)
 		q.AddResidencySet(rs)
-		dispatch(q.Begin(), buf)
+		dispatch(t, q.Begin(), buf)
 		if got := buf.Floats()[0]; got != 1 {
 			t.Errorf("buf[0] = %v, want 1", got)
 		}
@@ -83,11 +87,11 @@ kernel void bump(device float* buf [[buffer(0)]], uint tid [[thread_position_in_
 
 	t.Run("per-encoder UseResidencySet", func(t *testing.T) {
 		buf := d.NewBufferLen(8)
-		rs := newSet(buf)
+		rs := newSet(t, buf)
 		q2 := d.NewCommandQueue() // fresh queue: no lingering AddResidencySet from the prior subtest
 		e := q2.Begin()
 		e.UseResidencySet(rs)
-		dispatch(e, buf)
+		dispatch(t, e, buf)
 		if got := buf.Floats()[0]; got != 1 {
 			t.Errorf("buf[0] = %v, want 1", got)
 		}
@@ -100,13 +104,13 @@ kernel void bump(device float* buf [[buffer(0)]], uint tid [[thread_position_in_
 		// residency set (proving the attach really is per-encoder, not silently promoted queue-wide).
 		q3 := d.NewCommandQueue()
 		setBuf := d.NewBufferLen(8)
-		rs := newSet(setBuf)
+		rs := newSet(t, setBuf)
 		e1 := q3.Begin()
 		e1.UseResidencySet(rs)
-		dispatch(e1, setBuf)
+		dispatch(t, e1, setBuf)
 
 		plainBuf := d.NewBufferLen(8)
-		dispatch(q3.Begin(), plainBuf)
+		dispatch(t, q3.Begin(), plainBuf)
 
 		if got := setBuf.Floats()[0]; got != 1 {
 			t.Errorf("setBuf[0] = %v, want 1", got)

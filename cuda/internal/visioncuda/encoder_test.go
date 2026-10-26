@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	gpu "github.com/townsendmerino/goinfer/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -169,6 +170,10 @@ func TestVisionCUDA_graphCapture(t *testing.T) {
 	}
 	enc, err := newEncoder(w)
 	if err != nil {
+		// Skip only when there is no device at all; a failure on a real device stays red.
+		if _, derr := gpu.CreateSystemDefaultDevice(); derr != nil {
+			t.Skipf("no CUDA device: %v", derr)
+		}
 		t.Fatalf("newEncoder: %v", err)
 	}
 	defer enc.Close()

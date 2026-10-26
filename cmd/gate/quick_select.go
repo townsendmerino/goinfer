@@ -470,6 +470,10 @@ func loadGraph(qc *quickConfig, overlay string) (*quickGraph, error) {
 		deps []string
 	}
 	var rootEntries []rootEntry
+	// A package's files depend on GOOS and tags, and its owner's listing shows one variant. Another module's listing
+	// can compile files the owner's does not: the cuda module lists internal/gpudev for linux, where it embeds .ptx
+	// files the darwin listing never names. Those files join the package after the loop.
+	extra := map[string][]string{} // import path -> absolute paths from other modules' listings
 	for _, m := range qc.Modules {
 		env, err := qc.cmdEnv(m, m.listTarget(), overlay, false)
 		if err != nil {
@@ -509,7 +513,15 @@ func loadGraph(qc *quickConfig, overlay string) (*quickGraph, error) {
 			}
 			// The plain variant, from the listing of the module that OWNS it: its file lists and
 			// non-test deps are then the ones its own tags produce.
-			if p.ImportPath != base || p.ForTest != "" || local[p.Module.Path] != m {
+			if p.ImportPath != base || p.ForTest != "" {
+				continue
+			}
+			if local[p.Module.Path] != m {
+				for _, fl := range [][]string{p.GoFiles, p.CgoFiles, p.SFiles, p.CFiles, p.HFiles, p.CXXFiles, p.MFiles, p.SysoFiles, p.EmbedFiles} {
+					for _, n := range fl {
+						extra[base] = append(extra[base], filepath.Join(p.Dir, n))
+					}
+				}
 				continue
 			}
 			if p.Error != nil {
@@ -544,6 +556,24 @@ func loadGraph(qc *quickConfig, overlay string) (*quickGraph, error) {
 			add(p.XTestEmbedFiles, true)
 			g.pkgs[base] = q
 			g.dirPkgs[p.Dir] = append(g.dirPkgs[p.Dir], base)
+		}
+	}
+	for base, files := range extra {
+		q := g.pkgs[base]
+		if q == nil {
+			continue
+		}
+	file:
+		for _, abs := range files {
+			for _, o := range g.owners[abs] {
+				if o.Pkg == base {
+					continue file
+				}
+			}
+			g.owners[abs] = append(g.owners[abs], fileOwner{base, false})
+			if strings.HasSuffix(abs, ".go") {
+				q.Files = append(q.Files, abs)
+			}
 		}
 	}
 	for _, re := range rootEntries {
