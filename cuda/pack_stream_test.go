@@ -293,15 +293,23 @@ func TestPackStream_rowSourceBytesIdenticalToPackWeight(t *testing.T) {
 	if r.setupErr != nil {
 		t.Fatalf("upload error: %v", r.setupErr)
 	}
-	withStage(t, 1<<20)
-	failing, err := planRows(decoder.DrafterRows{Rows: 8, Cols: 16, Read: func(int, int, []float32) error { return errors.New("read failed") }})
+	// a reader that fails only on a later block: one block of all 8 rows, then blocks of 2 rows (an 8-word stage, 4 words a row)
+	failing, err := planRows(decoder.DrafterRows{Rows: 8, Cols: 16, Read: func(r0, n int, _ []float32) error {
+		if r0+n > 4 {
+			return errors.New("read failed")
+		}
+		return nil
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.pk = nil
-	r.upW(failing)
-	if r.setupErr == nil || !strings.Contains(r.setupErr.Error(), "read failed") {
-		t.Errorf("a failing row source: setupErr %v, want the reader's error", r.setupErr)
+	for _, words := range []int{1 << 20, 8} {
+		withStage(t, words)
+		r.pk = nil
+		r.upW(failing)
+		if r.setupErr == nil || !strings.Contains(r.setupErr.Error(), "read failed") {
+			t.Errorf("staging %d words, a reader failing from row 4: setupErr %v, want the reader's error", words, r.setupErr)
+		}
+		r.setupErr = nil
 	}
-	r.setupErr = nil
 }
