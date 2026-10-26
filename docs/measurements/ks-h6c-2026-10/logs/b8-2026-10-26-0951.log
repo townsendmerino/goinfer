@@ -1,0 +1,89 @@
+09:51:02 KS-B8 gates at bb3377e15, log /home/francis/goinfer-logs/ks-b8-2026-10/b8-2026-10-26-0951.log
+== g1 09:51:31: load 1.05 3.40 4.41; MemAvailable 57.4 GB; GPU 403 MiB
+=== RUN   TestKSB8_widthChooser
+--- PASS: TestKSB8_widthChooser (0.00s)
+PASS
+== g2g3 09:51:31: load 1.05 3.40 4.41; MemAvailable 57.4 GB; GPU 403 MiB
+=== RUN   TestKSB8_bitsAcrossWidths
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7100 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7100 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7100 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5490 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[B8-G2] passes of 4200 rows (4200 per pass): prefill 671ms
+[B8-G2] passes of 512 rows (512 per pass): prefill 822ms
+[B8-G2] 512: 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+[B8-G2] passes of 1024 rows (1024 per pass): prefill 755ms
+[B8-G2] 1024: 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+[B8-G2] passes of 2048 rows (2048 per pass): prefill 722ms
+[B8-G2] 2048: 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+[B8-G2] passes of  rows (2048 per pass): prefill 722ms
+[B8-G2] the default (2048): 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+--- PASS: TestKSB8_bitsAcrossWidths (11.13s)
+=== RUN   TestKSB8_buildPricesThePass
+cuda: prefill width 2048 rows (280 MiB of scratch; 5714 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[B8-G3] extra 0 MiB: width 2048 (reported 2048); 5887 MiB free at the choice; pass scratch at 512 / 1,024 / 2,048: 75 / 143 / 280 MiB
+cuda: prefill width 1024 rows (143 MiB of scratch; 188 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+[B8-G3] extra 5526 MiB: width 1024 (reported 1024); 5887 MiB free at the choice; pass scratch at 512 / 1,024 / 2,048: 75 / 143 / 280 MiB
+cuda: prefill width 512 rows (75 MiB of scratch; 96 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+[B8-G3] extra 5617 MiB: width 512 (reported 512); 5887 MiB free at the choice; pass scratch at 512 / 1,024 / 2,048: 75 / 143 / 280 MiB
+--- PASS: TestKSB8_buildPricesThePass (15.77s)
+=== RUN   TestKSB8_admissionPricesTheChosenPass
+cuda: prefill width 2048 rows (280 MiB of scratch; 5042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[B8-G3 admission] 100 tokens, fused attention true: 15.2 MiB of device scratch priced (a 100-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 2052 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 3900 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 4100 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 12200 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 13000 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 14000 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 15000 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 16000 tokens, fused attention true: 280.0 MiB of device scratch priced (a 2048-row pass, 0.0 MiB span bound)
+[B8-G3 admission] 13000 tokens, fused attention false: 344.1 MiB of device scratch priced (a 2048-row pass, 64.1 MiB span bound)
+[B8-G3 admission] 13000 tokens, fused attention off: 7 passes, the largest allocated 344.0 MiB against 344.1 MiB priced
+[B8-G3 admission] 16380 tokens, fused attention false: 344.1 MiB of device scratch priced (a 2048-row pass, 64.1 MiB span bound)
+[B8-G3 admission] 16380 tokens, fused attention off: 8 passes, the largest allocated 344.0 MiB against 344.1 MiB priced
+--- PASS: TestKSB8_admissionPricesTheChosenPass (122.63s)
+=== RUN   TestKV3_prefillScratchBytes_matchesThePass
+cuda: prefill width 2048 rows (26 MiB of scratch; 7092 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv3_longprefill_test.go:224: KV precision f16
+[kv3] tiny M=16: scratch 209152 B (0.2 MiB) = the pass's allocations
+[kv3] tiny M=300: scratch 3921600 B (3.7 MiB) = the pass's allocations
+[kv3] tiny M=512: scratch 6692864 B (6.4 MiB) = the pass's allocations
+--- PASS: TestKV3_prefillScratchBytes_matchesThePass (0.40s)
+=== RUN   TestKV3_residentReportsItsChunks
+cuda: prefill width 2048 rows (26 MiB of scratch; 7092 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv3_longprefill_test.go:244: KV precision f16
+--- PASS: TestKV3_residentReportsItsChunks (0.29s)
+=== RUN   TestKV3Tiled_spanScratchMatchesThePass
+cuda: prefill width 2048 rows (26 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv3_tiled_test.go:202: KV precision f16
+[kv3-tiled] scratch levers=true start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=true start=12300 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=8: 104576 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=16: 209152 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=300: 3921600 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=0 M=512: 6692864 B + span 0 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=8: 104576 B + span 1575552 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=16: 209152 B + span 4194560 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=300: 3921600 B + span 60822208 B = the pass's allocations
+[kv3-tiled] scratch levers=false start=12300 M=512: 6692864 B + span 67114096 B = the pass's allocations
+--- PASS: TestKV3Tiled_spanScratchMatchesThePass (0.42s)
+=== RUN   TestPrefillChunked_bitIdentical
+cuda: prefill width 2048 rows (280 MiB of scratch; 5042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[chunked] chunk=4096   M=1024 prefill 179ms
+[chunked] chunk=256    M=1024 prefill 219ms
+[chunked] chunk=256    0/151936 seed logits differ from the single-pass reference
+[chunked] chunk=300    M=1024 prefill 222ms
+[chunked] chunk=300    0/151936 seed logits differ from the single-pass reference
+--- PASS: TestPrefillChunked_bitIdentical (5.79s)
+PASS
+09:54:07 DONE fail=0

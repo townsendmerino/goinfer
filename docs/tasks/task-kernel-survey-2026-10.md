@@ -3242,6 +3242,13 @@ its own PR, and it gets a Gemini review before merge.
   - **G1c:** every return gives the margin at the context it returns.
   - **S5, G2, G3, G4:** as in the read below. G2 is exact on all eight models, no build trims its plan, and G4's minimum free is
     281.1 MiB.
+- **Round 2 and the KS-B8 merge, 2026-10-26.**
+  - A MoE build opens its device before the plan only when the context is planned (`ctxPlanRange`), and checks its weights first
+    (`checkWeightsFit`, against the margin at the floor).
+  - KS-B8's width chooser now keeps `marginBesidePass`.
+  - S5, S6, G2, G3 and G4 re-read PASS on the merged head (`logs/h6c-2026-10-26-0742.log`). KS-B8's untimed G1–G3 PASS there too
+    (`logs/b8-2026-10-26-0951.log`), after its 512 case moved to room between a 512-row and a 1,024-row pass: the context margin
+    now holds the 512-row pass.
 
 **KS-H6 build read 2026-10-26, by day.**
 - **Setup:** run by `night.py serve` (the timing lock held exclusively; memory, not time, is read). NVIDIA driver 595.91.07,
