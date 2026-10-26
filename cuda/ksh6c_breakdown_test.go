@@ -51,16 +51,16 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 		events []event
 	)
 	site := func() string {
-		pc := make([]uintptr, 12)
-		n := runtime.Callers(3, pc)
+		pc := make([]uintptr, 24)
+		n := runtime.Callers(2, pc)
 		fr := runtime.CallersFrames(pc[:n])
 		var parts []string
 		for {
 			f, more := fr.Next()
-			if strings.Contains(f.Function, "/cuda.") && !strings.Contains(f.Function, "ForTest") {
-				parts = append(parts, f.Function[strings.LastIndex(f.Function, ".")+1:]+":"+strconv.Itoa(f.Line))
+			if strings.Contains(f.Function, "goinfer/cuda.") {
+				parts = append(parts, f.Function[strings.Index(f.Function, "cuda.")+5:]+" "+f.File[strings.LastIndex(f.File, "/")+1:]+":"+strconv.Itoa(f.Line))
 			}
-			if !more || len(parts) == 4 {
+			if !more || len(parts) == 6 {
 				break
 			}
 		}
