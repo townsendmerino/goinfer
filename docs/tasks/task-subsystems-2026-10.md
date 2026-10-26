@@ -879,6 +879,28 @@ by day, through nobara's own session (relayed), never over ssh from the Mac.
 **AX2c and AX2d results, 2026-10-26 (mac-ax01):** AX2c-N, -S, -ID, -T (775 base passes, 0 regressions) and -B PASS on
 the Mac. AX2d-N, -S and -B PASS on the Mac (compiled for linux/amd64); AX2d-ID and -T wait for nobara. Detail in the record.
 
+### 7.11 AX3 gates (registered 2026-10-26 16:54 PDT by mac-ax01, before AX3's code)
+
+AX3 drops `github.com/townsendmerino/aikit/gpu` and `…/gpu/visioncuda` from every goinfer `go.mod`. A test then keeps the
+moved paths out: it fails on a `.go` file importing aikit's `vision`, `audio` or `gpu` (or anything under it), and on a
+`go.mod` requiring the `gpu` module or one under it. Three things outside the imports move with it.
+
+- **`internal/hwcensus`'s census** scans goinfer's two `gpudev` halves in place of the aikit module.
+- **`cmd/gate release`'s row 2 and `decoder/aikit_pin_test.go`** stop pinning `aikit/gpu`; no module requires it.
+- **The citation lint.** It resolves aikit `gpu/...` citations through `cuda/go.mod`'s require. With the require gone,
+  it falls back to the frozen tag `gpu/v0.35.0`, which aikit keeps (SD2, AX0), so those citations stay valid. §7.5
+  expected every citation to be re-pointed instead. CI's cache step downloads that tag.
+
+One mechanical commit first: `cuda/kernels/ptx_test.go` (SB1's batch 1, merged after AX2d's rewrite) still imports aikit's
+`gpu`, and `ax2cd_rewrite.py cuda` switches it.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX3-S (the scan) | The new scan passes on the tree. Planted once, it reads red twice: an aikit `gpu` import added to a test file, then an `aikit/gpu` require added to `metal/go.mod`. It reads green again after each plant is removed. It is listed in `scripts/touched_scans.py`. | — | complete | seconds |
+| AX3-M (the module graphs) | No goinfer `go.mod` or `go.sum` names `aikit/gpu` or `aikit/gpu/visioncuda`. `go list -m all` names neither in `metal` (workspace), nor in `cuda` (workspace, `GOOS=linux`). | — | complete | seconds |
+| AX3-B (builds and the moved checks) | Build, vet and staticcheck of every module under its tags. The root cleanliness guard. `TestHardwareCensus`, `cmd/gate`'s release tests and `decoder`'s pin test, by name with `-v`. `test_touched.py` and the citation lint, exit code read directly, with every aikit `gpu/...` citation resolving. `TestTowerIdentity_metal` against AX2c's record, as a smoke check. | — | complete | minutes |
+| AX3-G (standalone builds) | §7.3's `GOWORK=off` build of each module. It needs the two-step tag, so it is deferred to the next release, where `standalone-build.yml` runs it; nothing here grades it. | — | — | — |
+
 ## 8. The other subsystems (SB1–SB13)
 
 Each: what it is today, its contract, its fast check, what stops re-running, its first step and size.
