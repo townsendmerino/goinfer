@@ -255,7 +255,7 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 	}{
 		{0, 2048},
 		{room - (b0.pass(1024)+b0.pass(2048))/2, 1024},
-		{room - b0.pass(1024)/2, 512},
+		{room - (b0.pass(512)+b0.pass(1024))/2, 512}, // room for 512 but not 1,024: the context margin holds the 512-row pass
 	}
 	for i, c := range cases {
 		b := b0
