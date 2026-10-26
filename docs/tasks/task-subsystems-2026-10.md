@@ -1,4 +1,4 @@
-# Task: subsystems with contracts — validations that carry over, tests that take seconds, one memory manager (VK0–VK6, MM0–MM6, AX0–AX7, SB1–SB13, PW1–PW6) — 2026-10
+# Task: subsystems with contracts — validations that carry over, tests that take seconds, one memory manager (VK0–VK6, MM0–MM6, AX0–AX7, SB1–SB14, PW1–PW6) — 2026-10
 
 > **Status 2026-10-26: SCOPED.** Every owner decision (SD1–SD8) was made on 2026-10-26, and SD4's settings are applied. **SD4:** auto-merge,
 > with the checks required on `main` (owner, 2026-10-26: "yes to SD4"; PW1). **SD1:** the towers and the GPU backends
@@ -67,6 +67,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
 | SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
 | SB13 | open | the package layout as an import-direction test with ratchets; S | §9 |
+| SB14 | open | the doc-drift test: every invariant a `doc.go` lists names a test that exists, and `docs/ARCHITECTURE.md`'s import table equals SB13's data; S | §4.1 |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW3 | open | the shared hot files sharded or generated; S–M | §12 |
@@ -297,6 +298,61 @@ touched files: `docs/citation-index.md` 241, `CHANGELOG.md` 229, `testdata/parit
    reading test names.
 8. **The day loop checks contracts; the daily run audits them.** A change that cannot be judged without the daily run
    is a modularity bug (`CLAUDE.md`, "Day loop").
+
+### 4.1 How each subsystem is documented (owner, 2026-10-26)
+
+Four homes, one kind of fact each, and each one checked so it cannot drift:
+
+| where | holds | checked by |
+|---|---|---|
+| the package's `doc.go` | the contract: what it owns, inputs and outputs, the invariants it promises (each naming its test), what it may import, the one command that tests it in seconds; plus `Example` functions | `go doc`; SB14's test (each named test exists); the import gate (SB13) |
+| `docs/code-notes/<package>.md` | the design: why this shape, what was considered and rejected, known limits, links to the task docs and measurements | the citation lint (code cited by declaration) |
+| `docs/ARCHITECTURE.md` | the one system map: a section per subsystem, its allowed imports, links to its `doc.go` and code-notes | SB14's test: its import table equals the SB13 gate's data |
+| a short `CLAUDE.md` in the module or package folder | working rules for the sessions: the day-loop command, what not to import, which fixtures to use, the gate before a push | review; it stays short, and the root `CLAUDE.md` keeps only repo-wide rules |
+
+- **No `README.md` per package.** `go doc` does not show it, so it becomes a second copy of `doc.go`. READMEs stay at module roots
+  (`cuda/`, `metal/`, `gpu/`), where GitHub shows them.
+- **No ADR files.** Decisions live in the task docs, dated and in the owner's words (SD1–SD8 here); code-notes link to them.
+- **History stays out of all four**, per `CLAUDE.md`'s comment rule: it goes in commit messages, task docs and measurement records.
+
+**The template, for `internal/mem` (MM0 starts from it):**
+
+```go
+// Package mem plans, accounts for and arbitrates every byte goinfer holds: weights, KV blocks, recurrent state,
+// expert slots, the prefix cache and scratch, on every tier (VRAM, unified memory, host, pinned, file-mapped).
+//
+// Contract. Solve(Demand, Machine, Policy) is pure and returns a Plan or a named Decline. At run time every
+// allocation is a Lease from the Ledger that names its plan line; the Arbiter is the one budget for the
+// evictable classes. Machine state arrives as data: mem/probe is the only package that reads the OS or a device.
+//
+// Invariants, each with the test that holds it:
+//
+//	I1 nothing is allocated without a plan line        TestLedger_noUnplannedBytes
+//	I2 every lifetime closes to zero                   TestLedger_lifetimesClose
+//	I3 the ledger agrees with the measured process     TestLedger_closesAgainstProbe (per backend)
+//	I4 Solve is pure                                   TestSolve_pure
+//	I5 Solve is monotone                               TestSolve_monotone
+//	I6 one decider                                     TestNoOtherAllocationEstimate (source scan)
+//	I7 thresholds carry the owner's approval           TestPolicy_approvalStamp
+//	I8 budgets key on computed bytes                   TestSolve_ignoresOSAccount
+//
+// Imports: the standard library only (mem/probe adds golang.org/x/sys).
+//
+// Test it: go test ./internal/mem/... (seconds; no model, no device). The machine zoo is testdata/machines/*.json.
+//
+// Design: docs/code-notes/mem.md. Plan and phases: docs/tasks/task-subsystems-2026-10.md, Track MM.
+package mem
+```
+
+And its folder's `CLAUDE.md`, in full:
+
+```markdown
+# internal/mem — working rules
+- Day loop: `go test ./internal/mem/...` (seconds). Never load a model or touch a device here.
+- Import nothing from goinfer. Read the OS or a device only in `mem/probe`.
+- A guard threshold changes only in the committed Policy, with Francis's approval stamp.
+- A new invariant goes in `doc.go` with its test name, or SB14's test fails.
+```
 
 ## 5. Track VK — validations keyed on behavior
 
@@ -714,6 +770,12 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
 - **Contract:** runners launch, lock and record; graders are pure functions of records.
 - **Fast check:** graders run on recorded fixtures with plants, as the CUDA device-suite judge already does with fake
   streams. M.
+
+### SB14 — documentation that cannot drift
+
+§4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
+architecture doc's import table is the import gate's data. It is `CLAUDE.md`'s rule that a doc comment claiming coverage
+is not coverage, made mechanical. S.
 
 ### SB13 — the package layout, as a test
 
