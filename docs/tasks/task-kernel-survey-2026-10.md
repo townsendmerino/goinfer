@@ -2796,6 +2796,73 @@ red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 a
 - The margins can be rebuilt from measured parts after KS-H2 and KS-H3.
 - **First measurement:** minimum free VRAM over a 20k prompt on Qwen3-8B at 16k and on the 26B.
 
+**KS-H6 reading, registered 2026-10-25 before it runs (H6-R).** A reading for the owner's decision, not a gate: no guard or
+margin changes in this work, and it stops with the numbers.
+- **What each margin must cover:**
+  - `ctxCapMarginBytes` is left free beside the weights and KV at the load-time fit check. It must absorb what the build allocates
+    after the KV pools, the allocation floor, the one prefill pass that is not priced beyond it, and decode's transients.
+  - `slotMarginBytes` is left free when the 26B's expert cache is sized, after everything else. It must absorb the floor and the
+    transients that come after the slots.
+- **The parts and where each comes from:**
+  - **The allocation floor:** cited, not re-measured. `TestAllocFloor` drains the device, and it skips while the desktop compositor
+    holds a context. Its record (`docs/code-notes/cuda.md`, "TestAllocFloor") puts the refusals at 148–155 MiB free at any request
+    size.
+  - **The build after the pools:** kv4b-grade's KS-H2 readings (#251): 70 allocations, about 130 MiB, on the 7B and on Qwen3-8B at
+    16k.
+  - **The moe_route reservation:** KS-H3's baseline, 132.0 MiB retained after its first launch. The 26B's build forces it before it
+    reads free VRAM for the slots.
+  - **The prefill pass inside the margin:** `PrefillScratchBytes(512)` plus `PrefillSpanScratchBytes(512, context)` per model. Under
+    KS-B8 (#250) a wider pass is taken only from VRAM beyond the margin.
+  - **The run's transients (new, `TestKSH6_marginParts`):** each model loaded as serve loads it (`--kv auto`, f16 where cleared;
+    the 26B at int4 with its expert cache). The test records the free VRAM after the load. It then prefills a long prompt and
+    decodes 64 tokens while a child `nvidia-smi --query-gpu=memory.used -lms 20` samples the card. The prompts are 15,000 tokens on
+    Qwen3-8B at context 16,384, and on the 26B its context less 512. The reading is the minimum free VRAM over the run, its drop
+    below free-after-load, and the pass width the run used, including any learned narrowing.
+- **The derivation:** for each margin, the sum of its parts against 384 MiB, per model. The owner gets the measured headroom left at
+  the run's minimum: free VRAM above the floor, or a refusal.
+- **Out:** DECISION NEEDED with the numbers and the options (keep 384; a different constant; a margin computed from the parts at
+  load). Nothing is changed here.
+- **Cost:** two loads. Qwen3-8B about 2 min (a 15,000-token prefill and 64 tokens). The 26B about 5 min (its load from
+  safetensors and the prompt). By day, with the timing lock shared: memory, not time, is read.
+
+**H6-R read 2026-10-25, by day** (`night.py`, the lock exclusive; driver 595.91.07; only the desktop compositor's 17 MiB on the card
+before each load). Logs: `docs/measurements/ks-h6-2026-10/`.
+- **The first run (82a14f63a, 16:23)** read Qwen3-8B. The 26B was refused because the test had not set serve's
+  `-moe-cache-experts`, which the registration names. **The second run (e790fc51a, 18:25)** read the 26B with the cache.
+
+| | Qwen3-8B q4_k_m, context 16,384, f16 KV | Gemma 4 26B-A4B, int4, expert cache (30 slots), context 4,096 |
+|---|---:|---:|
+| the margin that binds | `ctxCapMarginBytes`, 384 MiB | `slotMarginBytes`, 384 MiB |
+| free after the load (cuMemGetInfo) | 261.1 MiB | 385.1 MiB |
+| the prompt | 15,000 tokens, passes of 512 rows, no narrowing | 3,584 tokens, passes of 512 rows, no narrowing |
+| a 512-row pass's scratch | 112.0 MiB | 77.8 MiB |
+| the run's peak rise above the post-load figure (nvidia-smi, every 20 ms) | 112 MiB (961 samples) | 142 MiB (1,950 samples) |
+| the run's minimum free | **≈ 149.1 MiB** | **≈ 243.1 MiB** |
+| above the allocation floor (148–155 MiB) | **about 0** | about 90 MiB |
+
+- **`ctxCapMarginBytes` on Qwen3-8B at 16k: used up.**
+  - The margin's 384 MiB goes to about 130 MiB of build allocations after the KV pools (KS-H2, #251), so 261 MiB is left after the
+    load.
+  - The 512-row pass then takes 112 MiB, which leaves about 149 MiB: the allocation floor. Decode added nothing above the pass.
+  - The parts sum to about 130 + 112 + 150 = 392 MiB against 384. The run fit with no headroom: any more scratch would have refused
+    an allocation, and the prefill would have narrowed its passes.
+- **`slotMarginBytes` on the 26B: about 90 MiB to spare.**
+  - The cache is sized last, so the 385 MiB free after the load is the margin itself. The `moe_route` reservation (KS-H3, 132 MiB)
+    is taken before that figure is read.
+  - The run took 142 MiB: the 78 MiB pass and about 64 MiB of MoE and decode transients. About 243 MiB stayed free, some 90 MiB
+    over the floor.
+  - Each expert slot costs about 106 MiB on this load (30 slots, 3.1 GB), so the spare is under one slot.
+- **Not covered:**
+  - The 26B at a long context: its build's default is 4,096 positions, so a 20k prompt (the survey's first measurement) is not
+    possible without raising `-ctx`, which takes slots away.
+  - KS-H3's after-move reading, which would give back its 132 MiB.
+- **The instrument after the run:** `TestKSH6_marginParts` is split into `TestKSH6_marginPartsQwen3` and `TestKSH6_marginParts26B`,
+  with the same body, because the heavy tier runs one large checkpoint per process (`cmd/gate/heavy_groups.go`). Qwen3-8B also gets
+  its row there.
+- **Seen in passing, not part of the reading:** beside the 26B, every tiny self-test probe resident declined for room ("0.40 GB is
+  free on the device beside the weights (plus 384 MB reserved...)"). The 26B's own resident was unaffected.
+
+
 ## 12. Already covered (not re-proposed)
 
 **CUDA**
