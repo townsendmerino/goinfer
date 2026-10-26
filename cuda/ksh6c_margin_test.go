@@ -21,17 +21,28 @@ type ksh6cModel struct {
 	moeCache bool
 }
 
-// ksh6cModels are H6C-G2's models (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build: gates"). KSH6C_MODELS (a comma-separated
-// list of the file names) narrows it.
-var ksh6cModels = []ksh6cModel{
-	{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", 0, false},
-	{"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", 0, false},
-	{"qwen2.5-7b-instruct-q4_k_m.gguf", 0, false},
-	{"qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf", 16384, false},
-	{"gemma-3-4b-it", 0, false},
-	{"qwen25vl-3b-instruct", 0, false},
-	{"gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf", 0, false},
-	{"gemma4-26b-q4_k_m.gguf", 0, true},
+// H6C-G2's models (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build: gates"), one test per heavy-tier group, since a process
+// holds at most one large checkpoint (cmd/gate's heavyFamilies). KSH6C_MODELS (a comma-separated list of file names) narrows each.
+
+func TestKSH6C_marginPriced(t *testing.T) {
+	ksh6cMarginPriced(t, []ksh6cModel{
+		{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", 0, false},
+		{"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", 0, false},
+		{"gemma-3-4b-it", 0, false},
+		{"qwen25vl-3b-instruct", 0, false},
+		{"gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf", 0, false},
+	})
+}
+
+func TestKSH6C_marginPriced7B8B(t *testing.T) {
+	ksh6cMarginPriced(t, []ksh6cModel{
+		{"qwen2.5-7b-instruct-q4_k_m.gguf", 0, false},
+		{"qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf", 16384, false},
+	})
+}
+
+func TestKSH6C_marginPriced26B(t *testing.T) {
+	ksh6cMarginPriced(t, []ksh6cModel{{"gemma4-26b-q4_k_m.gguf", 0, true}})
 }
 
 // ksh6cPageCharged is postPoolBytes' rule applied to observed buffers: those under the quantum share whole pages, each larger one
@@ -48,7 +59,7 @@ func ksh6cPageCharged(bufs []int) int64 {
 	return (small+allocQuantumBytes-1)/allocQuantumBytes*allocQuantumBytes + large
 }
 
-// TestKSH6C_marginPriced is H6C-G2 and H6C-G3, with H6C-G5's after-figures. Each model loads through decoder.Load as serve loads it,
+// ksh6cMarginPriced is H6C-G2 and H6C-G3, with H6C-G5's after-figures. Each model loads through decoder.Load as serve loads it,
 // after a warm-up load that runs the startup self-test (whose pool the plan then sees), with every device allocation the build makes
 // recorded in order.
 //   - G2: the buffers between the pools and the self-sizing grants, rounded by postPoolBytes' rule, equal postPoolBytes on the built
@@ -58,7 +69,10 @@ func ksh6cPageCharged(bufs []int) int64 {
 //     positions below the largest the build's exact figure allows at its fit-check reading, beyond the rounding bound and Plan's own
 //     dense-weight residual (the device's drop from before the load to the fit check, less Plan's dense figure and the packing slack,
 //     which is Plan's and not the margin's, and is reported).
-func TestKSH6C_marginPriced(t *testing.T) {
+//
+// A pinned load the computed margin refuses is H6C-G5's reading (a configuration that loads today and is refused after), not a
+// failure: it is printed and the model is skipped.
+func ksh6cMarginPriced(t *testing.T, models []ksh6cModel) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("KSH6C_MARGIN") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1")
 	}
@@ -89,7 +103,7 @@ func TestKSH6C_marginPriced(t *testing.T) {
 		_ = w.Close() // the startup self-test runs here, once, before any figure below is read
 	}
 	ran := 0
-	for _, c := range ksh6cModels {
+	for _, c := range models {
 		if len(want) > 0 && !want[filepath.Base(c.rel)] {
 			continue
 		}
@@ -144,6 +158,10 @@ func TestKSH6C_marginPriced(t *testing.T) {
 			before = free()
 			m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: c.ctx, MoECacheExperts: c.moeCache})
 			allocSeenForTest, kvAllocSeenForTest, kvPoolsDoneForTest, postPoolDoneForTest, cudaFreeVRAM = nil, nil, nil, nil, saved
+			if err != nil && c.ctx > 0 && strings.Contains(err.Error(), "GB of KV") {
+				fmt.Fprintf(os.Stderr, "[H6C-G5] %s at -ctx %d: REFUSED after the change: %v\n", c.rel, c.ctx, err)
+				return
+			}
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}

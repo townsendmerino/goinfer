@@ -85,7 +85,7 @@ func TestKSH6_marginParts26B(t *testing.T) {
 	ksh6MarginParts(t, ksh6Model{"Gemma 4 26B-A4B", modelPath("gemma-4-26b-a4b-it"), 0, 0, true})
 }
 
-func ksh6MarginParts(t *testing.T, c ksh6Model) {
+func ksh6MarginParts(t *testing.T, c ksh6Model) (minFreeMiB float64) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
 	}
@@ -154,4 +154,17 @@ func ksh6MarginParts(t *testing.T, c ksh6Model) {
 		c.name, prompt, tPre.Round(time.Millisecond), r.prefillPassRows(), r.prefillChunkCap.Load(), maxUsed, n, maxUsed-usedLoad,
 		float64(free)/(1<<20)-(maxUsed-usedLoad), float64(freeEnd)/(1<<20))
 	m.Close()
+	return float64(free)/(1<<20) - (maxUsed - usedLoad)
+}
+
+// TestKSH6C_headroomQwen3 is H6C-G4 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build: gates"): H6-R's run on Qwen3-8B,
+// unpinned at the context the computed margin gives it, a prompt of that context less 512 and 64 decode tokens. The run's minimum
+// free VRAM must be at least the allocation floor plus the decode allowance less 4 MiB.
+func TestKSH6C_headroomQwen3(t *testing.T) {
+	lowest := ksh6MarginParts(t, ksh6Model{"Qwen3-8B q4_k_m, unpinned", modelPath("qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf"), 0, 0, false})
+	bar := float64(allocFloorBytes+decodeAllowanceBytes-4<<20) / (1 << 20)
+	fmt.Fprintf(os.Stderr, "[H6C-G4] the run's minimum free %.1f MiB against the bar %.0f MiB\n", lowest, bar)
+	if lowest < bar {
+		t.Errorf("H6C-G4: the run's minimum free VRAM %.1f MiB is under %.0f MiB (the floor plus the allowance, less 4 MiB)", lowest, bar)
+	}
 }
