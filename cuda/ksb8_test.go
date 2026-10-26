@@ -324,8 +324,9 @@ func TestKSB8_speed(t *testing.T) {
 
 // TestKSB8_admissionPricesTheChosenPass is B8-G3's admission half, through the decoder: on the 1.5B at context 16,384, the
 // per-request price (decoder residentPrefillScratch, through ResidentPrefillScratchForTest) of a prompt is one pass at the build's
-// chosen width, its span scratch at the prompt's length, and the prompt's host embeddings. A prompt length whose span scratch is
-// not zero must be among those checked, so that term is exercised.
+// chosen width, its span scratch at the prompt's length, and the prompt's host embeddings. The 1.5B's fused attention serves past
+// attn_batched's bound, so its span scratch is zero at every length; the row-batched route is forced (prefillSplitKVForceForTest)
+// below the fast floor for two lengths, and a non-zero span must be among those checked, so that term is exercised.
 func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 	path := ksb8Model(t)
 	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 16384})
@@ -341,8 +342,14 @@ func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 	if w != r.prefillWidth {
 		t.Fatalf("PrefillChunkRows %d, the chosen width %d", w, r.prefillWidth)
 	}
+	defer func() { prefillSplitKVForceForTest = false }()
 	withSpan := 0
-	for _, p := range []int{100, 3900, 12200, 13000, 14000, 15000, 16000} {
+	for _, c := range []struct {
+		p     int
+		force bool
+	}{{100, false}, {3900, false}, {12200, false}, {13000, false}, {14000, false}, {15000, false}, {16000, false}, {100, true}, {400, true}} {
+		p := c.p
+		prefillSplitKVForceForTest = c.force
 		rows := min(p, w)
 		span := r.PrefillSpanScratchBytes(rows, p)
 		want := r.PrefillScratchBytes(rows) + span + int64(p)*4*int64(m.ResidentEmbedLen())
@@ -353,7 +360,7 @@ func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 		if span > 0 {
 			withSpan++
 		}
-		fmt.Fprintf(os.Stderr, "[B8-G3 admission] %d tokens: %.1f MiB priced (a %d-row pass, %.1f MiB span scratch)\n", p, float64(got)/(1<<20), rows, float64(span)/(1<<20))
+		fmt.Fprintf(os.Stderr, "[B8-G3 admission] %d tokens (row-batched forced %v): %.1f MiB priced (a %d-row pass, %.1f MiB span scratch)\n", p, c.force, float64(got)/(1<<20), rows, float64(span)/(1<<20))
 	}
 	if withSpan == 0 {
 		t.Errorf("no prompt length checked has non-zero span scratch: the span term is not exercised")
