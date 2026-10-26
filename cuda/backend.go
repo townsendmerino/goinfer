@@ -1962,6 +1962,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return declined(fmt.Errorf("cuda: overlap: %w", e))
 		}
 	}
+	// KS-B8: the default pass width, from what the build left free.
+	if r.prefillReady {
+		if e := r.do(func() error { r.choosePrefillWidth(); return nil }); e != nil {
+			r.Close()
+			return declined(fmt.Errorf("cuda: prefill width: %w", e))
+		}
+	}
 	b.resident = r
 	return r, true, nil
 }

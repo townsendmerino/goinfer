@@ -1,0 +1,75 @@
+14:30:39 KS-B8 gates at 1622062be, log /home/francis/goinfer-logs/ks-b8-2026-10/b8-2026-10-25-1430.log
+== g1 14:31:07: load 2.14 1.64 1.36; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestKSB8_widthChooser
+--- PASS: TestKSB8_widthChooser (0.00s)
+PASS
+== g2g3 14:31:07: load 2.14 1.64 1.36; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestKSB8_bitsAcrossWidths
+cuda: prefill passes of up to 2048 rows (280 MiB of scratch; 5663 MiB free beside the 384 MiB margin)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill passes of up to 2048 rows (21 MiB of scratch; 5661 MiB free beside the 384 MiB margin)
+cuda: prefill passes of up to 2048 rows (6 MiB of scratch; 5661 MiB free beside the 384 MiB margin)
+cuda: prefill passes of up to 2048 rows (6 MiB of scratch; 5661 MiB free beside the 384 MiB margin)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill passes of up to 2048 rows (8 MiB of scratch; 5661 MiB free beside the 384 MiB margin)
+[B8-G2] passes of 4200 rows (4200 per pass): prefill 689ms
+[B8-G2] passes of 512 rows (512 per pass): prefill 826ms
+[B8-G2] 512: 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+[B8-G2] passes of 1024 rows (1024 per pass): prefill 760ms
+[B8-G2] 1024: 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+[B8-G2] passes of 2048 rows (2048 per pass): prefill 725ms
+[B8-G2] 2048: 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+[B8-G2] passes of  rows (2048 per pass): prefill 726ms
+[B8-G2] the default (2048): 0 of 151936 seed logits differ from the single pass; decode ids [19287 350 711 3385 47 431 953 350] (single pass [19287 350 711 3385 47 431 953 350])
+--- PASS: TestKSB8_bitsAcrossWidths (9.95s)
+=== RUN   TestKSB8_buildPricesThePass
+cuda: prefill passes of up to 2048 rows (280 MiB of scratch; 5887 MiB free beside the 384 MiB margin)
+[B8-G3] extra 0 MiB: width 2048 (reported 2048); 5887 MiB free at the choice; pass scratch at 512 / 1,024 / 2,048: 75 / 143 / 280 MiB
+cuda: prefill passes of up to 1024 rows (143 MiB of scratch; 572 MiB free beside the 384 MiB margin)
+[B8-G3] extra 5315 MiB: width 1024 (reported 1024); 5887 MiB free at the choice; pass scratch at 512 / 1,024 / 2,048: 75 / 143 / 280 MiB
+cuda: prefill passes of up to 512 rows (75 MiB of scratch; 448 MiB free beside the 384 MiB margin)
+[B8-G3] extra 5439 MiB: width 512 (reported 512); 5887 MiB free at the choice; pass scratch at 512 / 1,024 / 2,048: 75 / 143 / 280 MiB
+--- PASS: TestKSB8_buildPricesThePass (14.22s)
+=== RUN   TestKV3_prefillScratchBytes_matchesThePass
+cuda: prefill passes of up to 2048 rows (26 MiB of scratch; 7265 MiB free beside the 384 MiB margin)
+    kv3_longprefill_test.go:224: KV precision f16
+[kv3] tiny M=16: scratch 209152 B (0.2 MiB) = the pass's allocations
+[kv3] tiny M=300: scratch 3921600 B (3.7 MiB) = the pass's allocations
+[kv3] tiny M=512: scratch 6692864 B (6.4 MiB) = the pass's allocations
+--- PASS: TestKV3_prefillScratchBytes_matchesThePass (0.29s)
+=== RUN   TestKV3_residentReportsItsChunks
+cuda: prefill passes of up to 2048 rows (26 MiB of scratch; 7265 MiB free beside the 384 MiB margin)
+    kv3_longprefill_test.go:244: KV precision f16
+--- PASS: TestKV3_residentReportsItsChunks (0.24s)
+=== RUN   TestPrefillChunked_bitIdentical
+cuda: prefill passes of up to 2048 rows (280 MiB of scratch; 5215 MiB free beside the 384 MiB margin)
+[chunked] chunk=4096   M=1024 prefill 176ms
+[chunked] chunk=256    M=1024 prefill 219ms
+[chunked] chunk=256    0/151936 seed logits differ from the single-pass reference
+[chunked] chunk=300    M=1024 prefill 219ms
+[chunked] chunk=300    0/151936 seed logits differ from the single-pass reference
+--- PASS: TestPrefillChunked_bitIdentical (5.68s)
+PASS
+== g4 14:31:37: load 1.91 1.62 1.37; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestKSB8_speed
+cuda: prefill passes of up to 2048 rows (280 MiB of scratch; 5887 MiB free beside the 384 MiB margin)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill passes of up to 2048 rows (21 MiB of scratch; 5885 MiB free beside the 384 MiB margin)
+cuda: prefill passes of up to 2048 rows (6 MiB of scratch; 5885 MiB free beside the 384 MiB margin)
+cuda: prefill passes of up to 2048 rows (6 MiB of scratch; 5885 MiB free beside the 384 MiB margin)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill passes of up to 2048 rows (8 MiB of scratch; 5885 MiB free beside the 384 MiB margin)
+[B8-G4] pair 0 (load 2.08, 56.7 GB available): 512 rows 744.2 ms, default 641.9 ms, ratio 1.1593
+[B8-G4] pair 1 (load 1.99, 56.7 GB available): 512 rows 744.1 ms, default 643.6 ms, ratio 1.1562
+[B8-G4] pair 2 (load 1.99, 56.7 GB available): 512 rows 743.3 ms, default 643.8 ms, ratio 1.1546
+[B8-G4] pair 3 (load 1.99, 56.6 GB available): 512 rows 744.6 ms, default 644.7 ms, ratio 1.1549
+[B8-G4] pair 4 (load 1.91, 56.6 GB available): 512 rows 742.8 ms, default 642.0 ms, ratio 1.1569
+[B8-G4] pair 5 (load 1.91, 56.6 GB available): 512 rows 740.7 ms, default 643.4 ms, ratio 1.1513
+[B8-G4] pair 6 (load 1.91, 56.5 GB available): 512 rows 744.2 ms, default 643.8 ms, ratio 1.1559
+[B8-G4] pair 7 (load 1.91, 56.4 GB available): 512 rows 742.2 ms, default 644.6 ms, ratio 1.1514
+[B8-G4] pair 8 (load 1.84, 56.4 GB available): 512 rows 745.1 ms, default 644.0 ms, ratio 1.1571
+[B8-G4] pair 9 (load 1.84, 56.3 GB available): 512 rows 744.9 ms, default 644.4 ms, ratio 1.1559
+[B8-G4] median 512/default 1.1559, 10 of 10 pairs faster at the default, 0 void: SHIP
+--- PASS: TestKSB8_speed (22.02s)
+PASS
+14:31:59 DONE fail=0

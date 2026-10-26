@@ -780,7 +780,10 @@ type cudaResident struct {
 	// A13 note; docs/code-notes/cuda.md#cudaResident.prefillChunkCap). Atomic because both callers run on their own
 	// CALLER's goroutine (only the per-pass job is serialized through the executor).
 	prefillChunkCap atomic.Int64
-	prof            *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
+	// prefillWidth is the default pass width the build chose (prefillWidthFor; 0 before the choice, which reads as
+	// prefillDefaultChunk). GOINFER_PREFILL_CHUNK overrides it and prefillChunkCap lowers it (prefillBaseRows).
+	prefillWidth int
+	prof         *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	// passPromptLen is the TOTAL prompt length this batched pass belongs to (startPos+M), set once at the top of
 	// prefillCore. The fast-prefill floor is a property of the PROMPT, not of the chunk: prefillChunked splits a long
 	// prompt into passes of <=512 rows, so gating on M alone would judge a 3900-token prompt by its 512-row chunk.
