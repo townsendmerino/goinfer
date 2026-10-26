@@ -75,6 +75,21 @@ registration, committed before any code. A separate PR from KS-F2's.
 | G-MEM | 0, nobara | the KV bytes per position, and the fit guard's plan for gpt-oss-20b at 32k, before and after Step 2 | the window layers' KV is stated before and after, from the plan's own pricing; the bar is that it falls by the window layers' share less the ring's fixed bytes |
 | G-SPEED | timed, nobara CPU, the timing lock, by day | KS-F2's harness (`TestKSF2_cpuDecodeSpeed`), A B B A over 10 pairs, with today's build against Step 1 + 2, gpt-oss-20b at depth 128 and 2048 | reported. **FAIL** if a cell has at most 1 of 10 pairs faster (a slowdown beyond doubt); otherwise it passes with the ratio stated. Not a speed claim: KS-O4's purpose is what it unblocks |
 
+**Amended before any G-MEM or G-SPEED data (2026-10-26), after G-FID's acceptance:**
+- **G-MEM, why its registered form cannot answer:**
+  - The fit guard prices a sliding-window layer at its window plus a mirror (`Architecture.kvPositionsAt`, `kvBytesForCtx`), whether or not
+    the layer keeps a ring. So the plan's own figure for gpt-oss is the same before and after KS-O4.
+  - On `main`, gpt-oss's window layers keep append-forever KV, so the plan under-prices the memory actually held. KS-O4 makes it true.
+- **G-MEM, as amended (tier 0, the Mac):** `decoder/ks_o4_mem_test.go:TestKSO4_kvHeldBytes` counts the bytes the cache actually holds
+  (every layer's K and V arrays and ring buffers) on the tiny fixture, past its window, with the ring (KS-O4) and with every layer
+  append-forever (`main`'s layout). It checks them against the per-layer arithmetic.
+  - The same arithmetic, from gpt-oss-20b's config (24 layers, 12 window-128; 8 KV heads × 64), is stated for 32k and 131k.
+  - The fit plan's figure is reported beside it.
+  - **Bar:** the held bytes fall by exactly the window layers' append-forever bytes, less the ring's 2 × window positions, and match the
+    plan's pricing after.
+- **G-SPEED:** depth 128 only. KS-F2 measured gpt-oss-20b's CPU prefill on nobara at about 0.58 s a token, so a depth-2048 cell is about 8
+  hours. A is `main` (which now carries KS-F2), B is KS-O4 merged with it.
+
 **Amended before any data (2026-10-25 10:20, Francis: "KS-O4 A"): G-FID's budget.**
 
 KS-F2's first nobara run measured gpt-oss-20b's CPU path there at about 0.58 s a token (prefill and decode), not the 0.13–0.15 s assumed
@@ -147,3 +162,27 @@ The fidelity gate, G-FID, is unchanged.
   - **Three passes a prompt.** The pilot (2 + 2 prompts) is about 12 min. The gate at N = 12 a cell is about 14 min short and 55 min
     long.
   - **Total:** about 1.5–2 hours, run by day. The start and expected finish are stated when it is queued.
+
+## G-MEM result: PASS (2026-10-26, the Mac, tier 0)
+
+`TestKSO4_kvHeldBytes` on the tiny fixture (window 4), 19 positions:
+
+| layout | KV in use | arithmetic |
+|---|---|---|
+| append-forever (`main`'s layout) | 9,728 B | equal |
+| ring (KS-O4) | 6,912 B | equal |
+| what the fit plan prices (`kvBytesForCtx`) | 6,912 B | equal to the ring layout |
+
+**gpt-oss-20b, from its config** (24 layers, 12 window-128 and 12 full, 8 KV heads × 64, f32: 4,096 B a layer a position):
+
+| | full layers | window layers | KV held | what the fit plan prices |
+|---|---|---|---|---|
+| **32k, before** | 1.61 GB | 1.61 GB | **3.22 GB** | 1.62 GB |
+| **32k, after** | 1.61 GB | 12.6 MB | **1.62 GB** | 1.62 GB |
+| **131k, before** | 6.44 GB | 6.44 GB | **12.9 GB** | 6.45 GB |
+| **131k, after** | 6.44 GB | 12.6 MB | **6.45 GB** | 6.45 GB |
+
+- **The saving:** 1.6 GB of host memory at 32k and 6.4 GB at 131k. Device memory: none, on the CPU path.
+- **The pricing gap it closes:** on `main` the fit guard under-prices gpt-oss's CPU KV by exactly that much, so the longest context it
+  admits is longer than the memory actually allows. After KS-O4 the plan and the memory agree, and the longest context the plan admits is
+  unchanged.
