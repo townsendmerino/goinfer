@@ -14,9 +14,9 @@ import (
 	"sync"
 	"unsafe"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // metalCtxCapDefault is the resident KV capacity in positions an unpinned load never goes under of its own accord (4096), and

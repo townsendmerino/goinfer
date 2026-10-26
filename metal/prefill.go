@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // prefillSteelAttnOff, set only by tests, runs attention_prefill_fused where attention_prefill_steel would run: the

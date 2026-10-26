@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 type (

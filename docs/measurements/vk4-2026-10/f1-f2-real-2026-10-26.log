@@ -1,0 +1,15 @@
+    program_fingerprint_test.go:94: 37 fixture programs
+--- PASS: TestProgramFingerprint_table (1.51s)
+    program_fingerprint_test.go:120: checked 36 fixtures; 1 not loadable here: [testdata/mellum21-config]
+--- PASS: TestProgramFingerprint_configMatchesWeights (0.81s)
+    program_fingerprint_test.go:160: real GOINFER_QWEN3_FP8 qwen3-0.6b-fp8 sha256:3874643150ebda7318592d1672900151b305cd83cf80454ffccc1d918a3cabeb
+    program_fingerprint_test.go:160: real GOINFER_QWEN3_BF16 qwen3-0.6b-bf16 sha256:3874643150ebda7318592d1672900151b305cd83cf80454ffccc1d918a3cabeb
+    program_fingerprint_test.go:160: real GOINFER_SPARK25_1_7B spark25-1.7b sha256:029494d1c57befc85f260f59d02e005d83cd071551ea26461e883a33191b8b69
+    program_fingerprint_test.go:160: real GOINFER_MINISTRAL3_3B ministral3-3b-bf16 sha256:d7ee6e2a94abe81faa140ddbdd3cc06b768982355ef2ed3c8e3230d75334cb48
+    program_fingerprint_test.go:160: real GOINFER_INTERNLM2_1_8B internlm2-1_8b sha256:3c7486777dc5052e7981365ad05e1490cd5616cb5ec9acb6ded87a7d3ab09163
+    program_fingerprint_test.go:160: real GOINFER_QWEN25VL_3B qwen25vl-3b-instruct sha256:cb4510377c80d98e516078c99f476adcf971af7e77b153d4564e26258812d9f1
+    program_fingerprint_test.go:160: real GOINFER_QWEN3VL_2B qwen3-vl-2b-instruct sha256:6824aa6c4153a89cee04bac9a0c1e44db56ca28bf24764e2dcb5210cf95abc81
+    program_fingerprint_test.go:160: real GOINFER_QWEN35VL_08B qwen3.5-0.8b sha256:679118afa4ba32716312d91e61ac21d33efadf7525d279dc2feb8b8d09befe49
+    program_fingerprint_test.go:160: real GOINFER_GLM_OCR glm-ocr sha256:5435fe7cb82372c54ec21d47b7b83d17c47e0e95ada62c8a9d5d00b9fd60537d
+--- PASS: TestProgramFingerprint_realCheckpoints (0.03s)
+ok  	github.com/townsendmerino/goinfer/decoder	2.738s

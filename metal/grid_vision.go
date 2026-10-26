@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/internal/vision"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/metal/kernels"
 	"github.com/townsendmerino/goinfer/multimodal"
 )

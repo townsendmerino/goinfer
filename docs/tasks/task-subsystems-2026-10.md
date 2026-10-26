@@ -36,8 +36,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
-| VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
-| VK5 | active | mac-vk01: shadow mode built (`internal/paritykey`, `gate shadow`, `.github/workflows/vk-shadow.yml`); P1–P3 PASS, P4 pending the workflow's first run on main, when SD6's week starts; the switch is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
+| VK5 | active | shadow week 1 (SD6) runs from the workflow's first run on main, 2026-10-26, and grades the aikit-pin → kernel-fingerprint swap alone; week 2 then grades the key built from program fingerprints (VK4) plus kernel fingerprints, with the forward source files out of it (Francis 16:27: option 1); the switch after each week is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -485,7 +485,23 @@ built from a config alone. Serialize the op kinds and their parameters and hash 
 config and per real checkpoint config in `testdata/assets.json`. A refactor that leaves every program unchanged leaves
 every family's key unchanged. M.
 
-### 5.8 VK5 — the key, in shadow mode first
+#### VK4's gates, registered 2026-10-26 before the code (mac-vk01)
+
+Francis (15:55, relayed): VK4 next. Nothing in `program.go` or `program_cpu*.go` changes; the code is new files, so the
+nobara sessions working near the program walker see no collision. `programFingerprint` hashes a program by a
+reflection walk of its operations and their parameters: kinds, registers, every parameter field by name and value, and
+floats by their bits. It writes no type names, so renaming a type is not a program change. `programForConfig` builds
+the program from a `config.json` alone. Its experts predicate is the config's: layers `[FirstKDense, NumLayers)` of an
+MoE architecture, or Llama 4's own per-layer MoE flags. Every committed fixture `config.json` that resolves to an
+architecture gets a fingerprint in `testdata/program_fingerprints.json`; each real-checkpoint directory in
+`testdata/assets.json` gets one in the record, computed where its `config.json` is present.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| F1 the table | `TestProgramFingerprint_table` recomputes every committed fixture's fingerprint and fails on any difference from the table (`-update` rewrites it); two computations in one process agree | never | one run | seconds |
+| F2 config equals weights | for every fixture whose weights are present on the machine, the program built from its config has the same fingerprint as the program `Load` builds from its weights | — | one run (fixtures absent are listed, not counted) | a few seconds per tiny fixture |
+| F3 refactor-blind, change-sensitive | (a) VK2's moves left every program unchanged: the table computed at `f8e248b7` (before part 2) equals the one at this branch; (b) `gate mutation` changing one parameter in one family's layer ops (`gemma4LayerOps`' v-norm epsilon) turns F1 red, and the diff names only Gemma 4 fixtures | — | one run each | seconds |
+ — the key, in shadow mode first
 
 On every push to main, compute both today's staleness and the new key, and log every disagreement with its reason.
 Switch after one week (SD6, decided 2026-10-26) with no disagreement left unexplained. M.
@@ -515,6 +531,11 @@ does not see moved, so every new-only is **unexplained** until someone explains 
 
 The shadow period's stopping rule is SD6's: one week of pushes to main from the workflow's first run, with no
 unexplained disagreement. The switch is its own PR and its own decision.
+
+**Two shadow weeks (Francis, 2026-10-26 16:27, option 1).** Week 1, the one running, grades only the swap of the aikit
+pin for the kernel fingerprints. When it ends, week 2 grades the key built from VK4's program fingerprints plus the
+kernel fingerprints, with the forward's source files out of it. Each week then explains its disagreements by one
+change. Week 2's gates are registered before its code, like week 1's.
 
 ### 5.9 VK6 — the daily canary and the coverage audit
 
@@ -825,6 +846,35 @@ tower types now take `internal/vision` and `internal/audio` types. Both packages
 CHANGELOG line. Second, `examples/invoice` and `demo/agent` reach the towers through new `multimodal` functions instead
 of importing an internal package (§7.2). That is a separate commit after the mechanical one, gated by AX2b-B, with each
 example's own test.
+
+### 7.9 AX2c gates (registered 2026-10-26 15:45 PDT by mac-ax01, before AX2c's code)
+
+AX2c switches the `metal` module (with `metal/kernels`) from aikit's `gpu` to `metal/internal/gpudev`, the device
+package's Metal half from AX1. It is one scripted commit (`ax2cd_rewrite.py metal`): the import path becomes
+`gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"`, so no body changes. Tier 0 and tier 1 (the Mac's GPU,
+no model), by day, under the shared timing lock.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2c-N | Re-running the script on the commit's parent reproduces the commit byte for byte. The commit contains nothing else. | — | complete | seconds |
+| AX2c-S | `go list -deps -test -tags goinfer_testhooks ./...` in `metal` names no `github.com/townsendmerino/aikit/gpu`. | — | complete | seconds |
+| AX2c-ID | `TestTowerIdentity_metal`'s record at AX2c's head equals AX2b's head record, case by case. | no Metal device | once | a second |
+| AX2c-T (the Metal suite carries over) | The `metal` module's tests, one package per `go test -v -count=1 -tags goinfer_testhooks` call, at AX2b's head (the base) and at AX2c's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. A test that fails at the base is listed and excluded, not fixed here. | another session holds the timing lock exclusive (wait); the Mac's free memory is under 4 GB at a run's start (a device suite under memory pressure fails for reasons no code owns; the run is re-made) | each side once, to completion; a red is re-run by name only | the Metal suite measured 4 min 12 s in a quick-full run (`CLAUDE.md`, "Gate tiers"); estimate 5 min a side, 10 min in all |
+| AX2c-B | Build, vet and staticcheck of `metal` under its tags (plain, `goinfer_testhooks`); gofmt; the root cleanliness guard | — | complete | a minute |
+
+### 7.10 AX2d gates (registered 2026-10-26 15:45 PDT by mac-ax01, before AX2d's code)
+
+AX2d switches the `cuda` module from aikit's `gpu` to `cuda/internal/gpudev`, the device package's CUDA half from AX1,
+in one scripted commit (`ax2cd_rewrite.py cuda`). The Mac compiles it (`GOOS=linux`); the device legs run on nobara,
+by day, through nobara's own session (relayed), never over ssh from the Mac.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX2d-N | Re-running the script on the commit's parent reproduces the commit byte for byte. The commit contains nothing else. | — | complete | seconds |
+| AX2d-S | `GOOS=linux go list -deps -test -tags 'cuda goinfer_testhooks' ./...` in `cuda` names no `github.com/townsendmerino/aikit/gpu`. | — | complete | seconds |
+| AX2d-B | Build, vet and staticcheck of `cuda` with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, tags `cuda` and `cuda goinfer_testhooks`; gofmt; the root cleanliness guard | — | complete | a minute |
+| AX2d-ID (nobara) | `TestTowerIdentity_cuda` and `TestTowerIdentity_cpu` records at AX2b's base, AX2b's head and AX2d's head, equal case by case (one nobara session covers AX2b-ID's CUDA leg too). | no CUDA device answers | once each | seconds each |
+| AX2d-T (nobara) | The `cuda` module's tests (`-tags 'cuda goinfer_testhooks'`, one package per `go test -v -count=1` call) at AX2c's head (the base) and at AX2d's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. `TestCUDA_launchDirect` segfaults on both sides at AX1 (#279), so it runs alone and the rest with `-skip '^TestCUDA_launchDirect$'`; a test failing at the base is listed and excluded, not fixed here. | a desktop session holds a CUDA context (`kwin_wayland`), which shifts plans and skips the drain-group tests (`CLAUDE.md`, "Testing tiers"): the record notes it, and drain-group skips on both sides are not counted as passes | each side once, to completion | nobara's session states the estimate from its last CUDA suite record before starting |
 
 ## 8. The other subsystems (SB1–SB13)
 

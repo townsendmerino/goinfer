@@ -11,8 +11,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // expertSlot is a view of one slot of an expertPool: .At()-offset Buffers onto the pool's contiguous per-field buffers,
