@@ -3,7 +3,8 @@
 (A, main before #247) against the fanned schedule (B, main after it), one process a run, through TestKSF2_cpuDecodeSpeed. Per cell:
 2 warm runs of each arm, then 10 valid pairs, A B then B A alternately. A run is void when the 1-minute load at its start is over 8.0
 (half nobara's 16 threads), when MemAvailable at its start is under the cell's need plus 2 GiB, or when the test process swaps
-(its VmSwap peak, sampled every 0.5 s, above 0); a void pair is re-run, up to 6 times a cell. Each run also records the process's
+(its VmSwap peak, sampled every 0.5 s, above 0). Before each run an idle gate waits up to 5 minutes for a 1-minute load of 4.0
+or less. A void pair is re-run, up to 6 times a cell. Each run also records the process's
 VmHWM and the system's pswpin/pswpout delta (context only). Usage: run_ksf2b_linux.py <bin-dir> <model> <depth> <need-GiB> <out.jsonl>
 [--fit]. --fit runs one B run at 2 tokens and prints its peak (the fit check). Run under timing_lock.py (exclusive)."""
 import json, os, subprocess, sys, tempfile, time
@@ -38,7 +39,17 @@ def status_kib(pid, key):
     return None
 
 
+def settle():
+    # The idle gate: a run that keeps 16 threads busy leaves the 1-minute load near 10 behind it, so without a wait the next run
+    # starts over the void rule's 8.0 on the harness's own residue. Wait up to 5 minutes for 4.0 or less; the void rule still decides.
+    t0 = time.time()
+    while load1() > 4.0 and time.time() - t0 < 300:
+        time.sleep(5)
+    return round(time.time() - t0)
+
+
 def run(arm, tokens=32):
+    waited = settle()
     l0, a0, s0 = load1(), avail(), swapio()
     with tempfile.NamedTemporaryFile("r", suffix=".jsonl") as f:
         env = dict(os.environ, KSF2_MODEL=model, KSF2_DEPTH=str(depth), KSF2_TOKENS=str(tokens), KSF2_OUT=f.name, KSF2_ARM=arm)
@@ -56,7 +67,7 @@ def run(arm, tokens=32):
         sys.exit(f"{arm} run failed (rc {p.returncode}):\n{text[-3000:]}")
     valid = l0 <= 8.0 and a0 >= (need + 2) * 2**30 and swap == 0
     rec.update(load1=l0, avail_gib=round(a0 / 2**30, 2), vmhwm_mib=hwm // 1024, vmswap_peak_kib=swap,
-               sys_swapio_pages=swapio() - s0, valid=valid, t=time.strftime("%T"))
+               sys_swapio_pages=swapio() - s0, valid=valid, settled_s=waited, t=time.strftime("%T"))
     return rec
 
 

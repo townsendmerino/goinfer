@@ -1,0 +1,67 @@
+=== night job ksf2b-nobara-granite
+=== cmd      bash docs/measurements/ks-f2b-2026-10-25/run-nobara.sh granite
+=== cwd      /home/francis/goinfer-bench/ks-f2b-nobara
+=== rev      queued at cc363fb8b, now cc363fb8b
+=== host     nobara-pc
+=== est      130.0 min, timeout 260.0 min
+=== by       kv4b-grade, KS-F2b nobara (Francis 14:01, order 14:34)
+=== doc      docs/measurements/ks-f2b-2026-10-25/README.md
+=== START    2026-10-25 16:27:46 PDT  loadavg 1.69
+== 2026-10-25 16:27:46 PDT KS-F2b granite: granite/granite-4.0-h-tiny-Q8_0.gguf, need 13 GiB; load 1.69 4.06 3.61
+57488963795fe84f139227c03bab775f88a40774e42190246ed745196f244173  /home/francis/goinfer-logs/ks-f2b-nobara-2026-10-25/bins/decoder-A.test
+460366ca204f8981c93717b81e55d073d4af5201176d229790cc9eab8562c7dd  /home/francis/goinfer-logs/ks-f2b-nobara-2026-10-25/bins/decoder-B.test
+== 16:27:46 depth 128
+[16:28:29] warm A 237.14 ms/token prefill 29.5 s load 1.69 avail 58.24 GiB VmHWM 12639 MiB swap 0 KiB ok
+[16:29:08] warm B 236.33 ms/token prefill 29.4 s load 2.43 avail 58.2 GiB VmHWM 12638 MiB swap 0 KiB ok
+[16:29:48] warm A 234.33 ms/token prefill 29.4 s load 1.79 avail 58.29 GiB VmHWM 12637 MiB swap 0 KiB ok
+[16:30:28] warm B 236.11 ms/token prefill 29.3 s load 1.6 avail 58.18 GiB VmHWM 12641 MiB swap 0 KiB ok
+[16:31:07] pair0 A 237.18 ms/token prefill 29.4 s load 1.35 avail 58.29 GiB VmHWM 12639 MiB swap 0 KiB ok
+[16:31:47] pair0 B 236.39 ms/token prefill 29.3 s load 1.1 avail 58.31 GiB VmHWM 12637 MiB swap 0 KiB ok
+[16:32:26] pair1 B 236.46 ms/token prefill 29.3 s load 1.1 avail 58.31 GiB VmHWM 12641 MiB swap 0 KiB ok
+[16:33:06] pair1 A 237.37 ms/token prefill 29.3 s load 1.73 avail 58.34 GiB VmHWM 12643 MiB swap 0 KiB ok
+[16:33:45] pair2 A 237.10 ms/token prefill 29.4 s load 2.24 avail 58.34 GiB VmHWM 12646 MiB swap 0 KiB ok
+[16:34:25] pair2 B 236.60 ms/token prefill 29.4 s load 2.3 avail 58.33 GiB VmHWM 12645 MiB swap 0 KiB ok
+[16:35:04] pair3 B 236.01 ms/token prefill 29.3 s load 2.33 avail 58.34 GiB VmHWM 12639 MiB swap 0 KiB ok
+[16:35:44] pair3 A 236.77 ms/token prefill 29.4 s load 1.68 avail 58.34 GiB VmHWM 12641 MiB swap 0 KiB ok
+[16:36:23] pair4 A 237.05 ms/token prefill 29.4 s load 1.4 avail 58.33 GiB VmHWM 12634 MiB swap 0 KiB ok
+[16:37:03] pair4 B 235.84 ms/token prefill 29.3 s load 1.2 avail 58.37 GiB VmHWM 12643 MiB swap 0 KiB ok
+[16:37:42] pair5 B 236.60 ms/token prefill 29.4 s load 1.16 avail 58.36 GiB VmHWM 12647 MiB swap 0 KiB ok
+[16:38:22] pair5 A 238.01 ms/token prefill 29.5 s load 1.32 avail 58.35 GiB VmHWM 12639 MiB swap 0 KiB ok
+[16:39:01] pair6 A 237.47 ms/token prefill 29.5 s load 1.32 avail 58.3 GiB VmHWM 12636 MiB swap 0 KiB ok
+[16:39:41] pair6 B 236.76 ms/token prefill 29.3 s load 1.3 avail 58.28 GiB VmHWM 12645 MiB swap 0 KiB ok
+[16:40:20] pair7 B 236.11 ms/token prefill 29.4 s load 1.88 avail 58.31 GiB VmHWM 12637 MiB swap 0 KiB ok
+[16:41:00] pair7 A 237.42 ms/token prefill 29.4 s load 2.51 avail 58.33 GiB VmHWM 12641 MiB swap 0 KiB ok
+[16:41:40] pair8 A 236.60 ms/token prefill 29.3 s load 2.52 avail 58.31 GiB VmHWM 12634 MiB swap 0 KiB ok
+[16:42:19] pair8 B 236.50 ms/token prefill 29.4 s load 1.78 avail 58.34 GiB VmHWM 12643 MiB swap 0 KiB ok
+[16:42:59] pair9 B 236.96 ms/token prefill 29.4 s load 1.4 avail 58.34 GiB VmHWM 12636 MiB swap 0 KiB ok
+[16:43:38] pair9 A 237.56 ms/token prefill 29.4 s load 1.2 avail 58.33 GiB VmHWM 12637 MiB swap 0 KiB ok
+{"tag": "grade", "model": "/home/francis/models/granite/granite-4.0-h-tiny-Q8_0.gguf", "depth": 128, "median_speedup": 1.0033, "min": 1.0004, "max": 1.006, "faster": 10, "voids": 0, "grade": "below the merge rule", "slower_than_old": false}
+== 16:43:38 depth 1024
+[16:47:52] warm A 252.88 ms/token prefill 243.2 s load 1.1 avail 58.32 GiB VmHWM 12642 MiB swap 0 KiB ok
+[16:52:01] warm B 242.14 ms/token prefill 238.3 s load 1.61 avail 58.34 GiB VmHWM 12640 MiB swap 0 KiB ok
+[16:56:15] warm A 253.21 ms/token prefill 243.5 s load 1.15 avail 58.37 GiB VmHWM 12641 MiB swap 0 KiB ok
+[17:00:24] warm B 241.89 ms/token prefill 238.7 s load 1.16 avail 58.38 GiB VmHWM 12642 MiB swap 0 KiB ok
+[17:04:38] pair0 A 253.08 ms/token prefill 243.5 s load 1.73 avail 58.38 GiB VmHWM 12645 MiB swap 0 KiB ok
+[17:08:47] pair0 B 242.37 ms/token prefill 238.4 s load 1.49 avail 58.39 GiB VmHWM 12646 MiB swap 0 KiB ok
+[17:12:55] pair1 B 241.97 ms/token prefill 238.3 s load 1.34 avail 58.37 GiB VmHWM 12636 MiB swap 0 KiB ok
+[17:17:10] pair1 A 253.06 ms/token prefill 243.6 s load 1.76 avail 58.38 GiB VmHWM 12643 MiB swap 0 KiB ok
+[17:21:23] pair2 A 252.84 ms/token prefill 243.4 s load 1.13 avail 58.36 GiB VmHWM 12636 MiB swap 0 KiB ok
+[17:25:32] pair2 B 242.02 ms/token prefill 238.4 s load 1.08 avail 58.37 GiB VmHWM 12640 MiB swap 0 KiB ok
+[17:29:40] pair3 B 241.11 ms/token prefill 238.2 s load 1.05 avail 58.35 GiB VmHWM 12642 MiB swap 0 KiB ok
+[17:33:54] pair3 A 252.42 ms/token prefill 243.0 s load 1.53 avail 58.35 GiB VmHWM 12639 MiB swap 0 KiB ok
+[17:38:08] pair4 A 252.84 ms/token prefill 243.3 s load 1.31 avail 58.36 GiB VmHWM 12638 MiB swap 0 KiB ok
+[17:42:17] pair4 B 242.15 ms/token prefill 238.4 s load 0.97 avail 58.37 GiB VmHWM 12635 MiB swap 0 KiB ok
+[17:46:25] pair5 B 241.97 ms/token prefill 238.6 s load 1.3 avail 58.36 GiB VmHWM 12639 MiB swap 0 KiB ok
+[17:50:39] pair5 A 253.43 ms/token prefill 243.2 s load 1.43 avail 58.35 GiB VmHWM 12637 MiB swap 0 KiB ok
+[17:54:53] pair6 A 252.92 ms/token prefill 243.2 s load 1.38 avail 58.35 GiB VmHWM 12636 MiB swap 0 KiB ok
+[17:59:01] pair6 B 241.70 ms/token prefill 238.3 s load 1.09 avail 58.36 GiB VmHWM 12638 MiB swap 0 KiB ok
+[18:03:10] pair7 B 241.43 ms/token prefill 238.3 s load 1.64 avail 58.35 GiB VmHWM 12643 MiB swap 0 KiB ok
+[18:07:24] pair7 A 252.45 ms/token prefill 243.1 s load 1.36 avail 58.34 GiB VmHWM 12637 MiB swap 0 KiB ok
+[18:11:37] pair8 A 252.76 ms/token prefill 243.3 s load 1.12 avail 58.35 GiB VmHWM 12636 MiB swap 0 KiB ok
+[18:15:46] pair8 B 241.82 ms/token prefill 238.3 s load 1.45 avail 58.34 GiB VmHWM 12639 MiB swap 0 KiB ok
+[18:19:54] pair9 B 242.08 ms/token prefill 238.1 s load 1.76 avail 58.33 GiB VmHWM 12637 MiB swap 0 KiB ok
+[18:24:08] pair9 A 253.06 ms/token prefill 243.3 s load 1.85 avail 58.35 GiB VmHWM 12639 MiB swap 0 KiB ok
+{"tag": "grade", "model": "/home/francis/models/granite/granite-4.0-h-tiny-Q8_0.gguf", "depth": 1024, "median_speedup": 1.0455, "min": 1.0441, "max": 1.0474, "faster": 10, "voids": 0, "grade": "below the merge rule", "slower_than_old": false}
+== 2026-10-25 18:24:08 PDT end, rc 0
+
+=== END      2026-10-25 18:24:08 PDT  rc=0

@@ -1,0 +1,59 @@
+=== night job ksf2b-nobara-nemotron
+=== cmd      bash docs/measurements/ks-f2b-2026-10-25/run-nobara.sh nemotron
+=== cwd      /home/francis/goinfer-bench/ks-f2b-nobara
+=== rev      queued at cc363fb8b, now 6989181fd
+=== host     nobara-pc
+=== est      90.0 min, timeout 180.0 min
+=== by       kv4b-grade, KS-F2b nobara (Francis 14:01, order 14:34)
+=== doc      docs/measurements/ks-f2b-2026-10-25/README.md
+=== START    2026-10-25 18:40:35 PDT  loadavg 1.68
+== 2026-10-25 18:40:35 PDT KS-F2b nemotron: nemotron-h-4b-instruct-128k, need 17 GiB; load 1.68 2.46 2.39
+57488963795fe84f139227c03bab775f88a40774e42190246ed745196f244173  /home/francis/goinfer-logs/ks-f2b-nobara-2026-10-25/bins/decoder-A.test
+460366ca204f8981c93717b81e55d073d4af5201176d229790cc9eab8562c7dd  /home/francis/goinfer-logs/ks-f2b-nobara-2026-10-25/bins/decoder-B.test
+== 18:40:35 depth 128
+[18:41:08] warm A 164.38 ms/token prefill 18.9 s load 1.68 avail 58.4 GiB VmHWM 16496 MiB swap 0 KiB ok
+[18:41:37] warm B 167.94 ms/token prefill 19.1 s load 8.07 avail 58.31 GiB VmHWM 16522 MiB swap 0 KiB void, re-run [expected]
+[18:42:08] warm A 170.62 ms/token prefill 19.4 s load 8.68 avail 58.14 GiB VmHWM 16451 MiB swap 0 KiB void, re-run [expected]
+[18:42:38] warm B 164.88 ms/token prefill 19.3 s load 8.88 avail 58.18 GiB VmHWM 16559 MiB swap 0 KiB void, re-run [expected]
+[18:43:08] pair0 A 166.87 ms/token prefill 19.2 s load 9.26 avail 58.22 GiB VmHWM 16475 MiB swap 0 KiB void, re-run [expected]
+[18:43:37] pair0 B 162.63 ms/token prefill 19.0 s load 10.53 avail 58.21 GiB VmHWM 16435 MiB swap 0 KiB void, re-run [expected]
+[18:44:37] pair0 A 166.11 ms/token prefill 19.1 s load 6.34 avail 58.27 GiB VmHWM 16592 MiB swap 0 KiB ok
+[18:45:06] pair0 B 163.35 ms/token prefill 18.9 s load 5.6 avail 58.19 GiB VmHWM 16457 MiB swap 0 KiB ok
+[18:45:36] pair1 B 165.00 ms/token prefill 18.9 s load 6.26 avail 58.23 GiB VmHWM 16426 MiB swap 0 KiB ok
+[18:46:06] pair1 A 172.63 ms/token prefill 19.0 s load 6.95 avail 58.26 GiB VmHWM 16547 MiB swap 0 KiB ok
+[18:46:35] pair2 A 165.32 ms/token prefill 19.1 s load 9.27 avail 58.21 GiB VmHWM 16533 MiB swap 0 KiB void, re-run [expected]
+[18:47:05] pair2 B 164.81 ms/token prefill 18.9 s load 11.79 avail 58.28 GiB VmHWM 16448 MiB swap 0 KiB void, re-run [expected]
+[18:48:04] pair2 A 164.05 ms/token prefill 18.9 s load 7.49 avail 58.28 GiB VmHWM 16599 MiB swap 0 KiB ok
+[18:48:34] pair2 B 162.87 ms/token prefill 18.9 s load 11.14 avail 58.29 GiB VmHWM 16468 MiB swap 0 KiB void, re-run [expected]
+[18:49:33] pair2 A 163.23 ms/token prefill 18.7 s load 6.54 avail 58.3 GiB VmHWM 16588 MiB swap 0 KiB ok
+[18:50:02] pair2 B 162.30 ms/token prefill 18.7 s load 9.32 avail 58.29 GiB VmHWM 16512 MiB swap 0 KiB void, re-run [expected]
+[18:51:01] pair2 A 163.40 ms/token prefill 18.8 s load 5.9 avail 58.31 GiB VmHWM 16577 MiB swap 0 KiB ok
+[18:51:31] pair2 B 162.11 ms/token prefill 18.8 s load 8.56 avail 58.32 GiB VmHWM 16498 MiB swap 0 KiB void, re-run [expected]
+[18:52:30] pair2 A 163.26 ms/token prefill 18.8 s load 7.05 avail 58.31 GiB VmHWM 16536 MiB swap 0 KiB ok
+[18:52:59] pair2 B 161.89 ms/token prefill 18.8 s load 10.02 avail 58.31 GiB VmHWM 16473 MiB swap 0 KiB void, re-run [expected]
+[18:53:58] pair2 A 163.06 ms/token prefill 18.8 s load 6.57 avail 58.3 GiB VmHWM 16499 MiB swap 0 KiB ok
+[18:54:27] pair2 B 161.71 ms/token prefill 18.8 s load 9.67 avail 58.34 GiB VmHWM 16512 MiB swap 0 KiB void, re-run [expected]
+VOID cell: over 6 void pairs
+== 18:54:27 depth 1024
+[18:57:20] warm A 184.81 ms/token prefill 161.2 s load 9.51 avail 58.32 GiB VmHWM 16517 MiB swap 0 KiB void, re-run [expected]
+[19:00:07] warm B 168.48 ms/token prefill 156.0 s load 8.59 avail 58.3 GiB VmHWM 16425 MiB swap 0 KiB void, re-run [expected]
+[19:02:59] warm A 184.75 ms/token prefill 161.0 s load 9.81 avail 58.3 GiB VmHWM 16491 MiB swap 0 KiB void, re-run [expected]
+[19:05:44] warm B 169.03 ms/token prefill 153.8 s load 9.72 avail 58.32 GiB VmHWM 16467 MiB swap 0 KiB void, re-run [expected]
+[19:08:36] pair0 A 184.22 ms/token prefill 161.1 s load 11.06 avail 58.31 GiB VmHWM 16497 MiB swap 0 KiB void, re-run [expected]
+[19:11:20] pair0 B 168.66 ms/token prefill 153.7 s load 8.79 avail 58.33 GiB VmHWM 16497 MiB swap 0 KiB void, re-run [expected]
+[19:14:43] pair0 A 184.30 ms/token prefill 161.0 s load 6.79 avail 58.34 GiB VmHWM 16469 MiB swap 0 KiB ok
+[19:17:26] pair0 B 167.63 ms/token prefill 153.0 s load 8.72 avail 58.35 GiB VmHWM 16550 MiB swap 0 KiB void, re-run [expected]
+[19:20:48] pair0 A 184.38 ms/token prefill 160.7 s load 5.56 avail 58.33 GiB VmHWM 16436 MiB swap 0 KiB ok
+[19:23:33] pair0 B 169.62 ms/token prefill 153.9 s load 11.17 avail 58.32 GiB VmHWM 16597 MiB swap 0 KiB void, re-run [expected]
+[19:26:55] pair0 A 184.72 ms/token prefill 161.0 s load 7.06 avail 58.34 GiB VmHWM 16520 MiB swap 0 KiB ok
+[19:29:40] pair0 B 168.95 ms/token prefill 153.8 s load 10.17 avail 58.33 GiB VmHWM 16514 MiB swap 0 KiB void, re-run [expected]
+[19:33:02] pair0 A 184.46 ms/token prefill 160.8 s load 6.55 avail 58.34 GiB VmHWM 16493 MiB swap 0 KiB ok
+[19:35:47] pair0 B 169.16 ms/token prefill 153.8 s load 10.36 avail 58.34 GiB VmHWM 16450 MiB swap 0 KiB void, re-run [expected]
+[19:39:09] pair0 A 184.43 ms/token prefill 161.1 s load 6.72 avail 58.34 GiB VmHWM 16506 MiB swap 0 KiB ok
+[19:41:53] pair0 B 168.54 ms/token prefill 153.7 s load 9.14 avail 58.35 GiB VmHWM 16537 MiB swap 0 KiB void, re-run [expected]
+[19:45:15] pair0 A 184.72 ms/token prefill 161.1 s load 6.12 avail 58.34 GiB VmHWM 16530 MiB swap 0 KiB ok
+[19:48:00] pair0 B 169.81 ms/token prefill 153.9 s load 9.78 avail 58.33 GiB VmHWM 16523 MiB swap 0 KiB void, re-run [expected]
+VOID cell: over 6 void pairs
+== 2026-10-25 19:48:00 PDT end, rc 1
+
+=== END      2026-10-25 19:48:00 PDT  rc=1

@@ -133,3 +133,32 @@ machine. The default stays on. The record for the qwen3_5 attention path is the 
   - The harness's random-id prompt also draws a stop token at once, so timing it at all would need an instrument change in both
     arms (ignore the stop token).
 - **Llama 4 (Scout, 109B), why:** the fit guard refuses it on nobara's 62 GB, and no checkpoint small enough exists for the Mac.
+
+### Readings on nobara
+
+Raw records: `nobara/readings-<family>.jsonl` (every run: arm, ms a token, load at its start, MemAvailable, VmHWM, the process's swap
+peak, the system's swap pages, validity) and the night jobs' logs `nobara/night-<family>.log`.
+
+**Granite-4.0-H tiny (2026-10-25, 16:28–18:24, night job `ksf2b-nobara-granite`):**
+- Every run started at a 1-minute load of 2.52 or below, with 58.2 GiB or more available, and did not swap. No void runs.
+- Peak resident memory: 12,647 MiB.
+
+| depth | A (old), ms a token | B (fanned), ms a token | median A ÷ B | pairs | B faster | void pairs | grade |
+|---|---|---|---|---|---|---|---|
+| 128 | 236.6–238.0 | 235.8–237.0 | **1.0033×** | 1.0004–1.0060 | **10 of 10** | 0 | below the merge rule; not slower |
+| 1,024 | 252.4–253.4 | 241.1–242.4 | **1.0455×** | 1.0441–1.0474 | **10 of 10** | 0 | below the merge rule; not slower |
+
+- B is faster in every pair at both depths, but by less than the merge rule's 1.05×. Granite-4.0-H is mostly Mamba-2 layers, so
+  attention is a small part of its token.
+- Not slower than the old schedule (the DECISION NEEDED trigger), so the default stands on this record.
+
+**Nemotron-H 4B, attempt 1 (2026-10-25, 18:40–19:48, night job `ksf2b-nobara-nemotron`): VOID, both cells.**
+- Both cells hit the 6-void-pair limit (`nobara/readings-nemotron-1-void.jsonl`, `nobara/night-nemotron-1-void.log`).
+- The void rule caught the harness's own residue: a Nemotron run keeps all 16 threads busy, and the next run started at a 1-minute
+  load of 8–12, over the 8.0 bar. Granite's runs never took the load past 2.5.
+- These runs are not graded.
+
+**Amendment before attempt 2 (2026-10-25, 20:10, no reading taken since):** `run_ksf2b_linux.py` gains an idle gate. Before each
+run it waits, up to 5 minutes, for a 1-minute load of 4.0 or less, and records the wait (`settled_s`). The void rule is unchanged
+(8.0 at the run's start). The cost is about a minute a run: Nemotron's two cells are now about 2 h 5 min, re-queued as
+`ksf2b-nobara-nemotron-2`.
