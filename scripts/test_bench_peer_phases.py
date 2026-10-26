@@ -136,6 +136,27 @@ class TeardownBeforeUnlock(unittest.TestCase):
             self.assertEqual(free.returncode, 0, "the lock must be free once the run has exited")
 
 
+class ChildSetup(unittest.TestCase):
+    def test_a_server_started_under_the_mask_still_stops_on_sigterm(self):
+        import signal
+        import subprocess
+        saved = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # as _term_exits leaves it during a teardown
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            child = subprocess.Popen(["sleep", "30"], preexec_fn=bench_peer._child_setup)
+        finally:
+            signal.signal(signal.SIGTERM, saved[0])
+            signal.signal(signal.SIGINT, saved[1])
+        try:
+            self.assertEqual(os.getpgid(child.pid), child.pid, "the child leads its own process group")
+            child.send_signal(signal.SIGTERM)
+            self.assertEqual(child.wait(timeout=10), -signal.SIGTERM)
+        finally:
+            if child.poll() is None:
+                child.kill()
+
+
 class SignalInstall(unittest.TestCase):
     def test_main_installs_the_handler_for_sigterm_and_sigint(self):
         src = open(bench_peer.__file__).read()
@@ -173,9 +194,14 @@ class DepthBackend(unittest.TestCase):
         with self.assertRaises(SystemExit):
             bench_peer.depth_backend()
 
-    def test_phase_b_alone_has_no_phase_a_to_disagree_with(self):
+    def test_phase_b_alone_refuses_a_backend_bench_backends_excludes(self):
         os.environ["BENCH_PHASES"] = "B"
-        os.environ["BENCH_BACKENDS"] = "cpu"
+        os.environ["BENCH_BACKENDS"] = "metal"  # and no BENCH_DEPTH_BACKEND: phase B would run on cuda
+        with self.assertRaises(SystemExit):
+            bench_peer.depth_backend()
+
+    def test_phase_b_alone_without_bench_backends_takes_the_default(self):
+        os.environ["BENCH_PHASES"] = "B"
         self.assertEqual(bench_peer.depth_backend(), "cuda")
 
     def test_phase_b_default_is_cuda(self):

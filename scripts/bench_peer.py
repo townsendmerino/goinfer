@@ -521,7 +521,7 @@ def _group_rss_kb(pgid):
     supervisor's overhead alone -- not merely imprecise, actively backwards, the exact "reports
     the opposite of what it exists to catch" failure CLAUDE.md's own measurement-discipline rule
     warns about for a different memory guard. Every engine here is launched with
-    `preexec_fn=os.setsid`, so the Popen PID IS its own new process group leader and any child it
+    `preexec_fn=_child_setup` (os.setsid), so the Popen PID IS its own new process group leader and any child it
     spawns (like llama-server here) inherits that SAME pgid unless it calls setsid itself -- which
     is also exactly the group `os.killpg` already tears down, so this reuses an invariant the code
     already depended on rather than adding a new one."""
@@ -655,7 +655,7 @@ class RSSSampler:
     POLL_S = 0.2
 
     def __init__(self, pid):
-        # preexec_fn=os.setsid (every Popen call in this file) makes pid its own process group
+        # preexec_fn=_child_setup's os.setsid (every Popen call in this file) makes pid its own process group
         # leader, so pgid == pid at launch -- getpgid is still called explicitly rather than
         # assumed equal, since that is what os.killpg's own teardown already does and this should
         # track the SAME group that teardown kills, not a value merely equal to it by convention.
@@ -1485,7 +1485,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                     + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else [])
                     + be_args + EXTRA_GOINFER_ARGS + (EXTRA_GOINFER_OLD_ARGS if engine == "goinfer_old" else []),
                     stdout=subprocess.DEVNULL, stderr=serve_log,
-                    preexec_fn=os.setsid)
+                    preexec_fn=_child_setup)
             port, url, parse, mk = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", parse_openai, \
                 (lambda: goinfer_payload(path, prompt, cfg))
         elif engine == "ollama":
@@ -1501,7 +1501,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             with open(os.path.join(SERVE_LOG_DIR, f"ollama-{backend}-{model_key}-{depth}-{cfg_name}.log"), "ab") as olog:
                 proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                         stdout=olog, stderr=olog,
-                                        preexec_fn=os.setsid)
+                                        preexec_fn=_child_setup)
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
                 (lambda: ollama_payload(tag, prompt, cfg, backend))
         elif engine == "llamacpp":
@@ -1532,7 +1532,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             proc = subprocess.Popen(
                 llamacpp_cmd(path, ngl_args),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid)
+                preexec_fn=_child_setup)
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
                 parse_openai, (lambda: llamacpp_payload(prompt, cfg))
         elif engine == "mlx":
@@ -1548,7 +1548,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             proc = subprocess.Popen(
                 [MLX_BIN, "--model", mlx_path, "--port", str(MPORT), "--host", "127.0.0.1"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid)
+                preexec_fn=_child_setup)
             # mlx_lm.server's own httpd only starts listening once the model is loaded (verified
             # 2026-09-04: no llama-server-style 503-while-loading window), so plain wait_port is a
             # real readiness check here, not just a connectable-socket one.
@@ -1711,14 +1711,14 @@ def run_embed_cell(engine, approx_tokens, n_inputs):
                 return None, f"no goinfer embed checkpoint at {EMBED_MODEL_PATH} (GOINFER_EMBED_MODEL)", None
             proc = subprocess.Popen(
                 [SERVE["cpu"], "-embed-model", EMBED_MODEL_PATH, "-addr", f"127.0.0.1:{EMBED_PORT}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=_child_setup)
             port, url, build = EMBED_PORT, f"http://127.0.0.1:{EMBED_PORT}/v1/embeddings", \
                 (lambda: embed_payload_goinfer(texts))
         elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
             proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    preexec_fn=os.setsid)
+                                    preexec_fn=_child_setup)
             port, url, build = OPORT, f"http://127.0.0.1:{OPORT}/api/embed", \
                 (lambda: embed_payload_ollama(texts))
         else:
@@ -1812,14 +1812,14 @@ def run_vision_cell(engine):
             proc = subprocess.Popen(
                 [SERVE["cpu"], "-model", f"bench={VISION_MODEL_PATH}", "-backend", "cpu",
                  "-addr", f"127.0.0.1:{GPORT}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=_child_setup)
             port, url, parse, build = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", \
                 parse_openai, vision_payload_goinfer
         elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
             proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    preexec_fn=os.setsid)
+                                    preexec_fn=_child_setup)
             port, url, parse, build = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
                 vision_payload_ollama
         else:
@@ -1882,15 +1882,16 @@ def plan_depths():
 
 def depth_backend():
     """Phase B's backend (BENCH_DEPTH_BACKEND, default cuda), or None when the plan runs no phase B. Refuses an unknown backend
-    when phase B runs, and one BENCH_BACKENDS did not select when phase A runs too and depths are planned: a phase-A-only plan
-    never reads it, and a phase-B-only plan has no phase A to disagree with."""
+    when phase B runs, and, while depths are planned, one that BENCH_BACKENDS excludes when phase A runs too or BENCH_BACKENDS
+    is set (BENCH_BACKENDS=metal with no BENCH_DEPTH_BACKEND would otherwise run phase B on cuda). A phase-A-only plan never
+    reads it."""
     phases = plan_phases()
     if "B" not in phases:
         return None
     depth_be = os.environ.get("BENCH_DEPTH_BACKEND", "cuda").strip()
     if depth_be not in SERVE:
         sys.exit(f"BENCH_DEPTH_BACKEND: unknown backend {depth_be!r}; known: {sorted(SERVE)}")
-    if "A" in phases and plan_depths() and depth_be not in plan_backends():
+    if ("A" in phases or os.environ.get("BENCH_BACKENDS", "").strip()) and plan_depths() and depth_be not in plan_backends():
         sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
                  "-- phase A and B would test different backends silently")
     return depth_be
@@ -2240,6 +2241,14 @@ def main():
         if unmatched and not ALLOW_UNMATCHED:
             sys.exit(f"REFUSED after this cell: goinfer loaded a quant the peers do not share: {unmatched}. The cell is "
                      f"recorded with quant_matched false; match the quants, or set BENCH_UNMATCHED=1.")
+
+def _child_setup():
+    """A server's preexec_fn: its own session (os.setsid), so a cell stops it and its children by process group; and SIGTERM and
+    SIGINT at their defaults, so a server started after _term_exits masked them does not inherit SIG_IGN and ignore that stop."""
+    os.setsid()
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
 
 def _term_exits(signum, frame):
     """SIGTERM (and SIGINT) as SystemExit, so the running cell's `finally` stops its server's process group and waits for it to exit before the
