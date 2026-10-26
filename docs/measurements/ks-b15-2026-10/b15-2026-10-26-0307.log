@@ -1,0 +1,28 @@
+03:07:15 KS-B15 gates at 410c6ee87 (g4), log /home/francis/goinfer-logs/ks-b15-2026-10/b15-2026-10-26-0307.log; driver 595.91.07
+== g4 03:07:36: load 0.62 1.47 3.06; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestKSB15_speedGemma3
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[B15] gemma-3-4b at 14400 positions: f32 KV (fit check: <nil>)
+    ksb15_test.go:250: KV precision f32
+[B15-G4] pair 0: load 1.03, 55.2 GB available; off 1857.3 ms, on 1912.0 ms, off/on 0.9714
+[B15-G4] pair 1: load 1.03, 55.2 GB available; off 1859.8 ms, on 1912.8 ms, off/on 0.9723
+[B15-G4] pair 2: load 1.02, 55.2 GB available; off 1859.0 ms, on 1912.4 ms, off/on 0.9721
+[B15-G4] pair 3: load 1.02, 55.2 GB available; off 1859.9 ms, on 1911.9 ms, off/on 0.9728
+[B15-G4] pair 4: load 1.02, 55.2 GB available; off 1854.7 ms, on 1911.9 ms, off/on 0.9701
+[B15-G4] pair 5: load 1.02, 55.2 GB available; off 1857.0 ms, on 1913.4 ms, off/on 0.9705
+[B15-G4] pair 6: load 1.02, 55.2 GB available; off 1857.8 ms, on 1912.2 ms, off/on 0.9715
+[B15-G4] pair 7: load 1.02, 55.2 GB available; off 1855.1 ms, on 1912.0 ms, off/on 0.9703
+[B15-G4] pair 8: load 1.02, 55.1 GB available; off 1858.1 ms, on 1912.6 ms, off/on 0.9715
+[B15-G4] pair 9: load 1.02, 55.1 GB available; off 1861.0 ms, on 1914.3 ms, off/on 0.9722
+[B15-G4] the 14336-key pass: median off/on 0.9715, 0 of 10 pairs faster on, 0 void: KILL
+[B15-G4] whole 14336-token prompt, opt-in false: 40.99 s
+[B15-G4] whole 14336-token prompt, opt-in true: 41.26 s
+[B15-G4] whole 14336-token prompt, opt-in false: 41.00 s
+[B15-G4] whole 14336-token prompt, opt-in true: 41.25 s
+    ksb15_test.go:317: B15-G4 KILL: median off/on 0.9715
+--- FAIL: TestKSB15_speedGemma3 (266.99s)
+FAIL
+FAILED: g4 rc 1
+FAILED: g4 ran no test
+03:12:03 DONE fail=1
