@@ -101,3 +101,9 @@ Qwen3.5 meets the merge rule at both depths, and the gain grows with depth: atte
 - **What it shows:** with this process far from memory pressure, the "any paging" line counts background paging by other processes.
   It cannot complete on this Mac in an ordinary state. Changing the line is a void-rule change, so it is Francis's call.
 - The log is beside this file: `lfm25-giw-2026-10-26.log`.
+
+**The paging line amended 2026-10-26, on Francis's (a), registered before the re-run.** A run is void when the machine pages out or
+swaps more than **1,000 pages (16 MB) during it**, measured as before (`vm_stat` Pageouts plus Swapouts, machine-wide). The load
+and memory terms are unchanged (load over 4.0; under the 2.2 GB need plus 2 GiB reclaimable). The worst run so far paged 29 pages,
+under 3% of the line, while a cell under memory pressure pages far more: the forced run's directory loads paged up to 183 pages. Only
+the LFM2.5 cells use the amended line. The Qwen3.5-0.8B readings were taken under the strict one, and stand.
