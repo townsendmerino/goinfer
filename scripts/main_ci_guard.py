@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuse a push to main while main's latest CI run is still going (owner, 2026-10-18; CLAUDE.md, "Push finished work").
+"""Refuse a push to main while main's latest CI run is still going (owner, 2026-10-18; CLAUDE.md, "Branch protection does not enforce this").
 
 "Latest" is every push-triggered workflow run for the newest commit on main. If any of them has not completed, a push now
 would land on top of a run nobody has read, and a docs-only push would cancel it. The script names each such run and
@@ -10,7 +10,7 @@ docs-only range goes straight through: scripts/ci_docs_only.sh decides, the same
 RELEASING.md and .claude/**, none read by Go code or tests), so the guard and CI agree on what is product code. It reads
 the runs with `gh run list`; MAIN_CI_GUARD_RUNS names a JSON file of the same shape instead, and MAIN_CI_GUARD_DOCS_ONLY
 (true or false) stands in for the classifier, for the tests. A failed read refuses rather than passing silently. A hold you
-believe is wrong is reported to the owner, never bypassed (CLAUDE.md, "Push finished work").
+believe is wrong is reported to the owner, never bypassed (CLAUDE.md, "Branch protection does not enforce this").
 
 Usage: python3 scripts/main_ci_guard.py [BASE HEAD]"""
 import json

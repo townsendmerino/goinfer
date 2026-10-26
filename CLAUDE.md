@@ -80,25 +80,27 @@ like a broken tool rather than an unrun gate, and exits without checking your co
 2026-08-28: a dead struct field (U1000) shipped in `decoder/mtp.go` and held CI red across **three
 pushes**, because `gofmt` and `go vet` were run and staticcheck was not.
 
-**Push finished work, and read CI; do not watch it.** Owner rule, 2026-10-13: commit locally, and push only when he asks
-or when a finished body of work merges. A push to a branch takes seconds and runs no CI; a push to `main` starts a CI run
-of about 8 minutes. Do not hold a turn open on CI, poll it, or schedule wake-ups for it. Read `gh run list --limit 5` at
-the next natural point (your next push, the start of the next task, and always before a merge or a tag) and report a red
-the moment you see it: red does not announce itself, and a break rides along under every later push until someone looks.
-Waiting on CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wait-2026-10.md`). **The pre-push hook refuses a push to main that changes product code while main's latest CI run is unfinished**
-(`scripts/main_ci_guard.py`, installed by `bash scripts/install-git-hooks.sh`; owner rule, 2026-10-18). It names the run;
-wait for it, read it, then push. A docs-only push (`scripts/ci_docs_only.sh`: `docs/**`, `RELEASING.md` and `.claude/**`,
-none read by Go code or tests) goes straight through and runs only CI's light lint job. Every push to main gets a
-complete run: main's workflows do not cancel one push's run for the next. **If a hook holds a push you believe is wrong,
-stop and report it to Francis. Never `--no-verify`.** A background push job pushes a named commit (`git push origin <sha>:main`), never `HEAD`, and runs in a worktree no one
-else edits while it waits.
+**Product code reaches `main` through a pull request that merges itself; do not watch CI.** Owner rule, 2026-10-26 (SD4,
+`docs/tasks/task-subsystems-2026-10.md` §12 PW1), replacing the push rules of 2026-10-13 and 2026-10-17. Commit locally, push
+your branch (seconds) and open a PR. When it is ready, run `gh pr merge <n> --auto --merge` (a merge commit, as the merge train
+used) and move on: GitHub merges it once the 19 checks `main` requires pass on the PR. The rule is not strict, so the PR need
+not be rebased onto the newest `main`; a conflict leaves it open. Do not hold a turn open on its checks or on main's CI, poll
+them, or schedule wake-ups for them. Read the result at the next natural point (`gh pr view <n> --json state` and
+`gh run list --limit 5`: your next push, the start of the next task, and always before a tag) and report a red the moment
+you see it: red does not announce itself, and a break rides along under every later merge until someone looks. Waiting on
+CI was 16% of both boxes' session time over 30 days (`docs/measurements/test-wait-2026-10.md`).
 
-**Don't push product code to main while CI for the previous push is still running.** Owner rule, 2026-10-17: wait for it
-to finish green, so a red run points at one commit. Check `gh run list --branch main --limit 3` before the push; while it
-runs, keep working and committing locally rather than holding the turn on it. Two reasons. A new push to `main` cancels
-the run in progress, so the earlier commit never gets a verdict. And a red run over several commits has to be
-bisected. On 2026-10-17 three pushes in twenty minutes cancelled each other's runs, and the one that finished was red for
-a commit two pushes back.
+**Branch protection does not enforce this; the rule does.** Admins are exempt and every session pushes as the owner's account,
+so a direct push of product code to `main` goes through. Two direct pushes stay: a docs-only change
+(`scripts/ci_docs_only.sh`: `docs/**`, `RELEASING.md` and `.claude/**`, none read by Go code or tests) goes straight to
+`main` and runs only CI's light lint job, and a release pushes its commits and tags as `RELEASING.md`'s two-step tag says.
+The pre-push hook holds a direct product push to main while main's latest CI run is unfinished (`scripts/main_ci_guard.py`,
+installed by `bash scripts/install-git-hooks.sh`; owner rule, 2026-10-18); a merge GitHub makes never passes through it.
+A main run that has started always finishes: main's workflows never cancel a running run for the next push.
+Merges that land while one runs collapse into one pending run on the tip (`.github/workflows/ci.yml`, the concurrency note),
+so a red main run can cover several PRs, each green on its own. **If a hook holds a push you believe is wrong, stop and report
+it to Francis. Never `--no-verify`.** A background push job pushes a named commit (`git push origin <sha>:<branch>`), never
+`HEAD`, and runs in a worktree no one else edits while it waits.
 
 **No new production env reads.** `testdata/env_reads.txt` lists every `GOINFER_*` variable production code reads
 from the environment, and `TestEnvVars_docAndCodeAgree` fails on a read that is not on it. A new operator choice is a
