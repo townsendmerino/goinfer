@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestKSD6H4_gridTowerScratch is KS-D6's and KS-H4's first measurement (docs/tasks/task-kernel-survey-2026-10.md), on the

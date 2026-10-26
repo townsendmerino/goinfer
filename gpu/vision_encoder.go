@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once (the matmul weights as int8 ResidentW8A8,

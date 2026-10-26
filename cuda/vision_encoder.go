@@ -21,7 +21,7 @@ import (
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // visionLayer holds one SigLIP transformer layer's device-resident weights.

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // siglipTinySharpened loads the tiny SigLIP tower in float32 and randomises its norms, biases and position table

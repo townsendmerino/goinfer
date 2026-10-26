@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestTWRG3_qwen3VLHostHeap is TWR-G3 (docs/tasks/task-memory-campaign-2026-10.md, MEM4(b) gates): the Qwen3-VL-2B tower

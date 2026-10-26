@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // G-S14b1 and G-S14b2 of docs/tasks/task-multimodal-support-2026-10.md: aikit's Qwen3-ASR front end against transformers 5.15.0's

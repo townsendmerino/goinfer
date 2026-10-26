@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/aikit/audio"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // TestAudioTowerClose_leavesTheOtherModelsServing: closing Voxtral's device tower, as serve's unload does, releases that tower

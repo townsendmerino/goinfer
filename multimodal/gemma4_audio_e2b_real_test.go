@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
 // TestGemma4E2BAudioTower is G-S5a of docs/tasks/task-multimodal-support-2026-10.md (S5):

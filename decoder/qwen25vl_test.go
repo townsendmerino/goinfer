@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestQwen25VL_e2eChain runs the REAL goinfer pipeline end-to-end: the aikit ViT

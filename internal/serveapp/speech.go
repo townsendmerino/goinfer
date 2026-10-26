@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/townsendmerino/aikit/audio"
+	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/whisper"
 	"github.com/townsendmerino/goinfer/multimodal"
 )

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // S4's Gemma 4 vision tower on CUDA (docs/tasks/task-multimodal-support-2026-10.md), the twin of metal/gemma4_vision_test.go: the tower followed by aikit's tail
