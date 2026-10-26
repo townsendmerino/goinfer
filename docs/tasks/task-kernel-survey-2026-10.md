@@ -747,6 +747,25 @@ tiling reproduces").**
   - aikit `gpu` v0.35.0's `Pipeline.SetMaxDynamicSharedBytes` stays available, and goinfer does not call it.
   - Why `attn_batched` is slower at these spans was not investigated.
 
+**STOP POINT 2026-10-26 (nobara-ks-cuda, wind-down; Francis, 09:56).** Where each CUDA item stands, and what is next.
+- **KS-A1 and KS-O1:** done. #230 merged.
+- **KS-B8:** done. #250 merged. Three follow-ups from its last review are parked, none blocking, none started:
+  1. `TestKSB8_admissionPricesTheChosenPass` should assert no learned cap (`prefillChunkCap` 0) after each fused-off prefill, so a
+     run that narrowed on an out-of-memory error cannot pass.
+  2. `choosePrefillWidth` should price its candidate widths clamped to the context, so a build with a context between 512 and
+     2,048 does not step down needlessly or report 2,048.
+  3. `TestKSB8_buildPricesThePass` could check the width+4 prompt's per-pass totals (`prefillPassDoneForTest`) rather than its
+     largest single buffer.
+- **KS-B15:** KILL by its rule; the records merged in #262. The code stays on `ks-b15-shared-optin-2026-10-26` (pushed,
+  unmerged), and aikit `gpu` v0.35.0's opt-in API is unused. If it is reopened, the first question is why `attn_batched` at
+  12–16k keys is 3% slower than the row-batched kernels.
+- **KS-H6:** landing in #264, the computed context margin with the startup self-test before the build. The registered gates are
+  read above ("KS-H6 build read" and the review amendment). Nothing is parked from its build. `slotMarginBytes` is unchanged,
+  as decided.
+- **The CUDA device suite (issue #229):** landing in #255, the two tests held to Gemma 4 MoE's W4A8 decode.
+- **Measured and not acted on (no decision asked):** the self-test's 132 MiB local-memory pool does not outlive its context in
+  serve, so a dense model's process no longer carries it (KS-H6 build read, S4).
+
 ## 6. Metal decode (KS-C)
 
 **Where P33's gap sits, by arithmetic (depth 128; mlx-lm's 4-bit head is from memory):**
