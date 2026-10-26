@@ -1483,7 +1483,7 @@ A9-SPEC needs anyway.
 instruments agreeing, so it is a real zero and not a blind spot. A9's *shape* (a deferred fixed cost
 invisible to the cap) is confirmed; the thing paying it is local memory, not code.
 
-Gated by `TestMoERouteFirstLaunchReservation` (`cuda/moe_route_reservation_test.go`, seconds, no
+Gated by `TestMoERouteFirstLaunchReservation` (`cuda/kernels/moe_route_reservation_test.go`, seconds, no
 fixture), which asserts `shared_gate_combine` reserves 0 and `moe_route` reserves more than 0 — so a
 future change to `MOE_MAX_E` cannot silently move a 132 MiB fixed cost.
 

@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -61,4 +62,44 @@ func gcKVIdentityTab(t testing.TB, cx *gc.Context, positions int) *gc.Buffer[int
 		t.Fatalf("identity KV table: %v", err)
 	}
 	return b
+}
+
+// f16rne rounds a float32 through f16 with round-to-nearest-even, as the device's __float2half_rn does. It is not
+// cuda/kernels.go's f32tof16, which rounds half up on purpose for the int4 group scales.
+func f16rne(x float32) float32 {
+	b := math.Float32bits(x)
+	sign := b & 0x80000000
+	exp := int32((b>>23)&0xFF) - 127
+	if exp > 15 {
+		return math.Float32frombits(sign | 0x7F800000)
+	}
+	if exp < -24 {
+		return math.Float32frombits(sign)
+	}
+	shift := uint(13)
+	if exp < -14 {
+		shift = uint(13 + (-14 - exp))
+	}
+	m := b & 0x7FFFFF
+	if exp < -14 {
+		m |= 0x800000
+	}
+	half := m >> shift
+	rem := m & ((1 << shift) - 1)
+	mid := uint32(1) << (shift - 1)
+	if rem > mid || (rem == mid && half&1 == 1) {
+		half++
+	}
+	if exp < -14 {
+		v := float32(half) * float32(math.Pow(2, -24))
+		if sign != 0 {
+			v = -v
+		}
+		return v
+	}
+	out := sign | uint32(exp+127)<<23 | (half << shift)
+	if half<<shift >= 0x800000 {
+		out = sign | uint32(exp+1+127)<<23
+	}
+	return math.Float32frombits(out)
 }
