@@ -48,7 +48,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM6 | blocked | MM1; `night.py add` and `goinfer fit` call `Solve` against the box's recorded profile at queue time; S | §6.5 |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
-| AX2 | active | AX2a (`internal/towerid`) in PR #278; AX2b (the import switch) on branch `ax2b-import-switch-2026-10`, Mac gates PASS (§7.8); left: nobara's CUDA and CPU identity records for AX2b, then AX2c (metal to `metal/internal/gpudev`) and AX2d (cuda to `cuda/internal/gpudev`); M | §7.7, §7.8 |
+| AX2 | active | AX2a (`internal/towerid`) PR #278; AX2b (the import switch) PR #282; AX2c (metal on `metal/internal/gpudev`) and AX2d (cuda on `cuda/internal/gpudev`) on branches `ax2c-metal-gpudev-2026-10` and `ax2d-cuda-gpudev-2026-10`; every Mac gate PASS (§7.8–§7.10); left: nobara's AX2b-ID and AX2d-ID records and AX2d-T, relayed (commands in `docs/measurements/ax2-2026-10/README.md`), which gate AX2d's merge; M | §7.7–§7.10 |
 | AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
 | AX4 | blocked | AX3; aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
 | AX5 | open | SD2 decided 2026-10-26: the ANN and text-encoder GPU backends stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops bumping them; S | §7.3, §14 |
@@ -824,6 +824,9 @@ by day, through nobara's own session (relayed), never over ssh from the Mac.
 | AX2d-B | Build, vet and staticcheck of `cuda` with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, tags `cuda` and `cuda goinfer_testhooks`; gofmt; the root cleanliness guard | — | complete | a minute |
 | AX2d-ID (nobara) | `TestTowerIdentity_cuda` and `TestTowerIdentity_cpu` records at AX2b's base, AX2b's head and AX2d's head, equal case by case (one nobara session covers AX2b-ID's CUDA leg too). | no CUDA device answers | once each | seconds each |
 | AX2d-T (nobara) | The `cuda` module's tests (`-tags 'cuda goinfer_testhooks'`, one package per `go test -v -count=1` call) at AX2c's head (the base) and at AX2d's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. `TestCUDA_launchDirect` segfaults on both sides at AX1 (#279), so it runs alone and the rest with `-skip '^TestCUDA_launchDirect$'`; a test failing at the base is listed and excluded, not fixed here. | a desktop session holds a CUDA context (`kwin_wayland`), which shifts plans and skips the drain-group tests (`CLAUDE.md`, "Testing tiers"): the record notes it, and drain-group skips on both sides are not counted as passes | each side once, to completion | nobara's session states the estimate from its last CUDA suite record before starting |
+
+**AX2c and AX2d results, 2026-10-26 (mac-ax01):** AX2c-N, -S, -ID, -T (775 base passes, 0 regressions) and -B PASS on
+the Mac. AX2d-N, -S and -B PASS on the Mac (compiled for linux/amd64); AX2d-ID and -T wait for nobara. Detail in the record.
 
 ## 8. The other subsystems (SB1–SB13)
 

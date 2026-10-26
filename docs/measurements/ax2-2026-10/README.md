@@ -56,3 +56,29 @@ Seven `metal` tests fail at the base and at the head alike, all for a gitignored
 registered: `TestGPT2ResidentParityMetal`, `TestHiddenLastResidentParityMetal`, `TestI8_exactKernelModelIsSplit`,
 `TestMLAResident_routingForced`, `TestMLAResident_tinyAgainstControl`, `TestMambaKernels_cpuParity`,
 `TestMambaKernels_plantsAreRed`. Logs: `logs-ax2c/`.
+
+## AX2d: the cuda module on cuda/internal/gpudev (Mac side)
+
+One mechanical commit (`ax2cd_rewrite.py cuda`): 83 files, the import path only.
+
+| gate | result |
+|---|---|
+| AX2d-N | **PASS**: `ax2cd_rewrite.py cuda check` reproduces the 83 files, 0 problems |
+| AX2d-S | **PASS**: `GOOS=linux go list -deps -test -tags 'cuda goinfer_testhooks' ./...` in `cuda` names nothing under `aikit/gpu` |
+| AX2d-B | **PASS**: build and vet for linux/amd64 with `cuda` and `cuda goinfer_testhooks`; staticcheck with CI's `cuda goinfer_testhooks` clean. With plain `cuda` it reports 10 unused helpers (used only under `goinfer_testhooks`), the same 10 as origin/main's, so none is this commit's |
+| AX2d-ID, AX2d-T | on nobara (relayed): the commands are below |
+
+### What nobara runs (by day, in its own session, under its timing lock shared)
+
+From a checkout of this branch, with a `go.work` covering `.` and `./cuda`. `B` is AX2b's base (AX2a's head, `7d0727c0`),
+`H2` AX2b's head (`67bcf5d4`), `C` AX2c's head (`3367cb58`, the commit before AX2d's mechanical one) and `D` AX2d's
+PR head; check each out in turn:
+
+- AX2b-ID and AX2d-ID, at `B`, `H2` and `D`:
+  `GOINFER_TOWER_ID_OUT=<dir>/<rev>-cpu-linux-amd64.json go test -count=1 -v -run '^TestTowerIdentity_cpu$' ./internal/towerid/`
+  and from `cuda/`: `GOINFER_TOWER_ID_OUT=<dir>/<rev>-cuda-linux-amd64.json go test -count=1 -v -tags cuda -run '^TestTowerIdentity_cuda$' .`;
+  then `python3 docs/measurements/ax2-2026-10/ax2_compare.py` on each pair (B against H2, H2 against D).
+- AX2d-T, at `C` and at `D`: from `cuda/`, one package per call, `go test -v -count=1 -timeout 60m -tags 'cuda goinfer_testhooks' -skip '^TestCUDA_launchDirect$' <pkg>`
+  for every package with tests (`go list -tags 'cuda goinfer_testhooks' -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...`),
+  plus `-run '^TestCUDA_launchDirect$' ./internal/gpudev/` alone; compare each package's two logs with
+  `python3 docs/measurements/ax1-2026-10/ax1_compare.py`.
