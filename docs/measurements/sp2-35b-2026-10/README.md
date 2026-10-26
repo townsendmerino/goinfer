@@ -22,7 +22,8 @@ whether the same path pays on the 35B, and is read against the owner's merge rul
   loaded it.
 - **Drafter:** `z-lab/Qwen3.6-35B-A3B-DFlash` at `f181eece646affea2c38b2765f1aaa01a9734ccd` (`~/models/qwen36-35b-dflash`; 6
   layers, hidden 2,048, block 16, 8 taps; 0.77 GB bf16), opened as `serve` opens it (`decoder.OpenDFlashDrafter`, #263).
-- **Width:** w = 3, SP0's best for the 35B, fixed before any data. G1 also runs w = 16 (the block, the widest fold).
+- **Width:** w = 3, SP0's best for the 35B, fixed before any data. G1 also runs w = 16 (the block, the widest fold). **G4 amended
+  to w = 4 before its run** (Readings, "G4's width amended").
 - **Harness:** SP2's (`cuda/recurrent_spec_real_test.go`), unchanged but for two knobs: `SP2_WIDTH` (the verify width of G1c
   and G4, default 4) and `SP2_MOE_STREAM=1`. Run script: `run-sp2-35b.sh` here.
 - **Prompts:** SP2's. G1: SP0's 12 code and math prompts with thinking off, its 6 math prompts with thinking on, and two long
@@ -84,3 +85,32 @@ is free on the device". My own host-memory measurement for #263's follow-ups hel
 `serve` it had started: both runs held the timing lock shared, which lets two loaders share the box but not one card. Nothing was
 read. **Amended before the re-run:** `run-sp2-35b.sh` takes the lock exclusive for G1 too (it needs the card to itself), and G1
 re-runs as registered once the lock is free. Log: `~/goinfer-logs/sp2-35b-2026-10/identity-2026-10-26-0716.log` on nobara.
+
+### G1, the re-run (2026-10-26, 07:19–07:37 PDT, at `7129a5ab`, the timing lock exclusive): PASS
+
+- **Identity:** 0 failures over 20 prompts × 2 widths (w = 3 and 16) plus the guard runs: tokens and the Gated-DeltaNet state equal
+  plain greedy decode on every prompt. The served plain decode agrees on every prompt too. So the MoE verify, which scores a
+  pass's rows in one batched pass, did not diverge from per-token decode here.
+- **The plants:** P1 (the fold skips the conv window) caught on 12 of 12 prompts, P2 (verify writes the state) on 11 of 12.
+- **G5:** passes (kvmgr reuses the 119 rows it should; state and checkpoint equal).
+- **G3, from the load:** context 4,608 planned; the fold's arena 79,151,104 B (16 rows × 30 DeltaNet layers, "75.5 MiB on the
+  device"); the drafter's device reserve 466,116,608 B; 0.94 GB of VRAM free after attach, the fairness check's figure.
+- **Host:** the test process peaked at 38.7 GB VmHWM (the mapped `.giw` with experts streamed), 0 swap.
+- Raw: `identity-2026-10-26-0717.jsonl` and `.log` under `~/goinfer-logs/sp2-35b-2026-10/` on nobara.
+
+### G4's width amended to w = 4, before G4's run (2026-10-26, 07:45 PDT)
+
+**Why:** `BlockSpec`'s acceptance guard (`decoder/blockspec.go:breakEvenTokensPerRound`, 2.5 committed tokens a round, judged
+after 6 rounds) does not scale with the width. At w = 3 a round commits at most 3, and SP0's mean at w = 3 was 2.76, so the guard
+switches many turns to plain decode: in G1, 5 of 20 turns at w = 3 tripped it within 6–7 rounds (1 of 20 at w = 16). A G4 at w = 3
+would largely time the guard, not the drafter. I missed this when I registered w = 3.
+
+**The amendment:** G4 runs at **w = 4** (`run-sp2-35b.sh` sets `SP2_WIDTH=4` for `MODE=speed`). SP0's projection is within a few
+percent of w = 3 (1.17× against 1.22× at SP0's 17.57 ms step; about 1.57× against 1.64× scaled to the real 23.6 ms step), its mean
+of 3.52 committed tokens a cycle sits well above the guard, and it is the width the 9B's G4 ran. Nothing else changes: the
+contexts, pairs, void rule and bars stand. G4 records any token divergence from plain decode on its 12 prompts at w = 4, so w = 4's
+identity is checked there. No G4 data existed when this was written.
+
+**A finding for the owner, beside SP2:** the guard's fixed 2.5 makes widths of 3 or less nearly unusable. `serve` verifies at 8 by
+default and its `-drafter-width` takes any width from 2, so `-drafter-width 3` would trip on many turns. Whether the bar should
+scale with the width is a separate decision; nothing here changes it.

@@ -13,7 +13,7 @@ mkdir -p "$OUT"
 stamp=$(date +%Y-%m-%d-%H%M)
 case $MODE in
 identity) run='^TestSP2_identity$'; lock=; tmo=60m ;;
-speed) run='^TestSP2_speed$'; lock=; tmo=150m ;;
+speed) run='^TestSP2_speed$'; lock=; tmo=150m; export SP2_WIDTH=4 ;; # amended before G4's run: README, "G4's width amended"
 *) echo "MODE $MODE?"; exit 2 ;;
 esac
 cd "$REPO/cuda" || exit 1
