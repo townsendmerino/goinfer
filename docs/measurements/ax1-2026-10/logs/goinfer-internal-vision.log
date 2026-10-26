@@ -1,0 +1,251 @@
+=== RUN   TestALS_G1_identity
+=== RUN   TestALS_G1_identity/pixtral
+[ALS-G1] pixtral f32: 14 weights aliased, 0 of 384 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] pixtral bf16: 14 weights aliased, 0 of 384 outputs differ; forward after Close: vision: the tower is closed
+=== RUN   TestALS_G1_identity/siglip2-naflex
+[ALS-G1] siglip2-naflex f32: 12 weights aliased, 0 of 384 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] siglip2-naflex bf16: 12 weights aliased, 0 of 384 outputs differ; forward after Close: vision: the tower is closed
+=== RUN   TestALS_G1_identity/gemma4
+[ALS-G1] gemma4 f32: 15 weights aliased, 0 of 96 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] gemma4 bf16: 15 weights aliased, 0 of 96 outputs differ; forward after Close: vision: the tower is closed
+=== RUN   TestALS_G1_identity/glm-ocr
+[ALS-G1] glm-ocr f32: 14 weights aliased, 0 of 1920 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] glm-ocr bf16: 14 weights aliased, 0 of 1920 outputs differ; forward after Close: vision: the tower is closed
+=== RUN   TestALS_G1_identity/qwen3.5
+[ALS-G1] qwen3.5 f32: 10 weights aliased, 0 of 480 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] qwen3.5 bf16: 10 weights aliased, 0 of 480 outputs differ; forward after Close: vision: the tower is closed
+=== RUN   TestALS_G1_identity/qwen3-vl_(DeepStack)
+[ALS-G1] qwen3-vl (DeepStack) f32: 18 weights aliased, 0 of 768 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] qwen3-vl (DeepStack) bf16: 18 weights aliased, 0 of 768 outputs differ; forward after Close: vision: the tower is closed
+=== RUN   TestALS_G1_identity/siglip
+[ALS-G1] siglip f32: 12 weights aliased, 0 of 512 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] siglip bf16: 12 weights aliased, 0 of 512 outputs differ; forward after Close: vision: the tower is closed
+=== RUN   TestALS_G1_identity/qwen2.5-vl
+[ALS-G1] qwen2.5-vl f32: 12 weights aliased, 0 of 384 outputs differ; forward after Close: vision: the tower is closed
+[ALS-G1] qwen2.5-vl bf16: 12 weights aliased, 0 of 384 outputs differ; forward after Close: vision: the tower is closed
+--- PASS: TestALS_G1_identity (0.09s)
+    --- PASS: TestALS_G1_identity/pixtral (0.00s)
+    --- PASS: TestALS_G1_identity/siglip2-naflex (0.00s)
+    --- PASS: TestALS_G1_identity/gemma4 (0.00s)
+    --- PASS: TestALS_G1_identity/glm-ocr (0.02s)
+    --- PASS: TestALS_G1_identity/qwen3.5 (0.01s)
+    --- PASS: TestALS_G1_identity/qwen3-vl_(DeepStack) (0.01s)
+    --- PASS: TestALS_G1_identity/siglip (0.01s)
+    --- PASS: TestALS_G1_identity/qwen2.5-vl (0.02s)
+=== RUN   TestALS_G0_speed
+    als_speed_test.go:41: set ALS_G0=1 (real checkpoints; timed)
+--- SKIP: TestALS_G0_speed (0.00s)
+=== RUN   TestALS_G2_heap
+    als_speed_test.go:194: set ALS_G2=1 (a real checkpoint)
+--- SKIP: TestALS_G2_heap (0.00s)
+=== RUN   TestResizeBicubicAA_matchesTorchvision
+    bicubic_test.go:72: 12 cases equal torchvision 0.29.1; the float64 control differs on 156 values
+--- PASS: TestResizeBicubicAA_matchesTorchvision (0.00s)
+=== RUN   TestGemma4PreprocessResize_layout
+--- PASS: TestGemma4PreprocessResize_layout (0.04s)
+=== RUN   TestPreprocess_zeroMaxPixelsUsesDefaultCap
+--- PASS: TestPreprocess_zeroMaxPixelsUsesDefaultCap (0.01s)
+=== RUN   TestAveragePool_partialBucketUsesActualOccupancy
+--- PASS: TestAveragePool_partialBucketUsesActualOccupancy (0.00s)
+=== RUN   TestLoadEncoderHead_matchesLoadEncoder
+--- PASS: TestLoadEncoderHead_matchesLoadEncoder (0.00s)
+=== RUN   TestEncoder_scratchNumericGuard
+=== RUN   TestEncoder_scratchNumericGuard/f32
+=== RUN   TestEncoder_scratchNumericGuard/int8(W8A8)
+--- PASS: TestEncoder_scratchNumericGuard (0.00s)
+    --- PASS: TestEncoder_scratchNumericGuard/f32 (0.00s)
+    --- PASS: TestEncoder_scratchNumericGuard/int8(W8A8) (0.00s)
+=== RUN   TestSiglipEncoder_parity
+    encoder_test.go:50: SigLIP encoder vs HF golden (f32): cosine=1.00000000, max abs diff=1.788e-06 (shape [1 16 32])
+    encoder_test.go:66: SigLIP encoder vs HF golden (int8 W8A8): cosine=0.99996609, max abs diff=2.792e-02
+--- PASS: TestSiglipEncoder_parity (0.00s)
+=== RUN   TestGemma4Encoder_realCheckpointParity
+    gemma4_encoder_real_test.go:59: real gemma-4-E2B-it checkpoint not found at /Users/francistownsend-merino/models/gemma-4-E2B-unq (models-pull gemma-4-E2B-unq first): stat /Users/francistownsend-merino/models/gemma-4-E2B-unq/model.safetensors: no such file or directory
+--- SKIP: TestGemma4Encoder_realCheckpointParity (0.00s)
+=== RUN   TestGemma4Encoder_realCheckpointParity_26B
+    gemma4_encoder_real_test.go:138: real gemma-4-26b-a4b-it checkpoint not found at /Users/francistownsend-merino/models/gemma-4-26b-a4b-it: stat /Users/francistownsend-merino/models/gemma-4-26b-a4b-it/model.safetensors.index.json: no such file or directory
+--- SKIP: TestGemma4Encoder_realCheckpointParity_26B (0.00s)
+=== RUN   TestGemma4Encoder_tinyGoldenParity
+    gemma4_encoder_test.go:128: gemma4 vision tiny-golden parity: cosine = 1.000000000, 4 pooled tokens
+--- PASS: TestGemma4Encoder_tinyGoldenParity (0.00s)
+=== RUN   TestGemma4Weights_reproduceForward
+    gemma4_export_test.go:69: tower from the export against Forward: cosine 1.000000000 over 2 soft tokens, 14 clipped projections
+--- PASS: TestGemma4Weights_reproduceForward (0.00s)
+=== RUN   TestGemma4AspectRatioSize_matchesRealFormula
+--- PASS: TestGemma4AspectRatioSize_matchesRealFormula (0.00s)
+=== RUN   TestGemma4Preprocess_shapeAndDeterminism
+--- PASS: TestGemma4Preprocess_shapeAndDeterminism (0.01s)
+=== RUN   TestGemma4Preprocess_rejectsUnsupportedBudget
+--- PASS: TestGemma4Preprocess_rejectsUnsupportedBudget (0.00s)
+=== RUN   TestGlmOcrVisionEncoder_parity
+    glm_ocr_encoder_test.go:82: S1 patch_embed: worst-row cosine 1.000000000 (row 5 of 40), max|diff| 9.54e-07, relative 3.05e-07 (bar 5e-06)
+    glm_ocr_encoder_test.go:87: S2 post_layernorm: worst-row cosine 1.000000000 (row 39 of 40), max|diff| 3.84e-06, relative 6.15e-07 (bar 5e-06)
+    glm_ocr_encoder_test.go:89: S3 downsample (last_hidden_state): worst-row cosine 1.000000000 (row 4 of 10), max|diff| 6.68e-06, relative 9.34e-07 (bar 5e-06)
+    glm_ocr_encoder_test.go:94: S4 merged features (pooler_output): worst-row cosine 1.000000000 (row 8 of 10), max|diff| 1.96e-05, relative 1.56e-06 (bar 5e-06)
+--- PASS: TestGlmOcrVisionEncoder_parity (0.01s)
+=== RUN   TestGlmOcrVisionEncoder_quantSanity
+    glm_ocr_encoder_test.go:114: quant (W8A8) vs f32 golden: worst-row cosine 0.99763 (row 0), max|diff| 0.61
+--- PASS: TestGlmOcrVisionEncoder_quantSanity (0.01s)
+=== RUN   TestGlmOcrVisionEncoder_downsampleOrder
+--- PASS: TestGlmOcrVisionEncoder_downsampleOrder (0.00s)
+=== RUN   TestGlmOcrVisionEncoder_refusesWhatItCannotRun
+--- PASS: TestGlmOcrVisionEncoder_refusesWhatItCannotRun (0.00s)
+=== RUN   TestGlmOcrVisionEncoder_realParity
+    glm_ocr_encoder_test.go:246: no real golden at /Users/francistownsend-merino/models/glm-ocr-tower-golden (run goinfer scripts/pin_glm_ocr_vision.py real): open /Users/francistownsend-merino/models/glm-ocr-tower-golden/manifest.json: no such file or directory
+--- SKIP: TestGlmOcrVisionEncoder_realParity (0.00s)
+=== RUN   TestGlmOcrVisionEncoder_costSweep
+    glm_ocr_encoder_test.go:308: set AIKIT_GLM_OCR_COST=1,2,4.8 to record tower wall time (night job, quiet box)
+--- SKIP: TestGlmOcrVisionEncoder_costSweep (0.00s)
+=== RUN   TestPixtralVisionEncoder_matchesHF
+    pixtral_encoder_test.go:69: s_conv: worst-row cosine 1.000000000 (row 8 of 23), max|diff| 5.96e-07, relative 2.21e-07 (bar 5e-06)
+    pixtral_encoder_test.go:69: s_lnpre: worst-row cosine 1.000000000 (row 8 of 23), max|diff| 1.19e-06, relative 2.88e-07 (bar 5e-06)
+    pixtral_encoder_test.go:69: s_layer0: worst-row cosine 1.000000000 (row 8 of 23), max|diff| 9.54e-07, relative 2.16e-07 (bar 5e-06)
+    pixtral_encoder_test.go:69: s_layer1: worst-row cosine 1.000000000 (row 17 of 23), max|diff| 1.67e-06, relative 3.41e-07 (bar 5e-06)
+    pixtral_encoder_test.go:78: image 0 alone: worst-row cosine 1.000000000 (row 4 of 15), max|diff| 1.67e-06, relative 3.41e-07 (bar 5e-06)
+    pixtral_encoder_test.go:78: image 1 alone: worst-row cosine 1.000000000 (row 2 of 8), max|diff| 1.31e-06, relative 3.4e-07 (bar 5e-06)
+--- PASS: TestPixtralVisionEncoder_matchesHF (0.00s)
+=== RUN   TestPixtralVisionEncoder_plantedDefects
+    pixtral_encoder_test.go:105: planted column frequencies from the even list: worst-row cosine 0.993877, max|diff| 0.341
+    pixtral_encoder_test.go:105: planted row and column halves swapped: worst-row cosine 0.965959, max|diff| 0.89
+    pixtral_encoder_test.go:105: planted the block mask dropped: worst-row cosine 0.938499, max|diff| 1.08
+--- PASS: TestPixtralVisionEncoder_plantedDefects (0.00s)
+=== RUN   TestResizeNormalize_matchesGenericPath
+--- PASS: TestResizeNormalize_matchesGenericPath (0.19s)
+=== RUN   TestXMap_matchesInlineComputation
+--- PASS: TestXMap_matchesInlineComputation (0.00s)
+=== RUN   TestPreprocess_solidColor
+--- PASS: TestPreprocess_solidColor (0.00s)
+=== RUN   TestPreprocess_rangeAndDeterminism
+--- PASS: TestPreprocess_rangeAndDeterminism (0.00s)
+=== RUN   TestPreprocess_guardsAndErrors
+--- PASS: TestPreprocess_guardsAndErrors (0.00s)
+=== RUN   TestPreprocess_zeroStdRejected
+--- PASS: TestPreprocess_zeroStdRejected (0.00s)
+=== RUN   TestQMat_migrationIsBitIdentical
+--- PASS: TestQMat_migrationIsBitIdentical (0.00s)
+=== RUN   TestQMat_f32DoesNotAliasSource
+--- PASS: TestQMat_f32DoesNotAliasSource (0.00s)
+=== RUN   TestQMat_int8ExportMatchesGPUContract
+--- PASS: TestQMat_int8ExportMatchesGPUContract (0.00s)
+=== RUN   TestQwen3Deepstack_tiny
+    qwen3_deepstack_test.go:69: main merged rows: worst cosine 1.000000000
+    qwen3_deepstack_test.go:78: DeepStack set 0 (block 0): worst cosine 1.000000000
+    qwen3_deepstack_test.go:78: DeepStack set 1 (block 1): worst cosine 1.000000000
+    qwen3_deepstack_test.go:102: planted: DeepStack set 0 without its post-shuffle norm: worst cosine 0.897746
+    qwen3_deepstack_test.go:102: planted: DeepStack set 1 without its post-shuffle norm: worst cosine 0.879576
+--- PASS: TestQwen3Deepstack_tiny (0.02s)
+=== RUN   TestQwen3VisionEncoder_realDeepstack
+    qwen3_deepstack_test.go:150: artifacts at /Users/francistownsend-merino/goinfer-logs/qwen3vl-tower hold no stage files (a copy taken for something else?): stat /Users/francistownsend-merino/goinfer-logs/qwen3vl-tower/gemma3_preprocess_image.merged.f32: no such file or directory
+--- SKIP: TestQwen3VisionEncoder_realDeepstack (0.00s)
+=== RUN   TestQwen3Deepstack_exportRecomposes
+--- PASS: TestQwen3Deepstack_exportRecomposes (0.00s)
+=== RUN   TestQwen3VisionEncoder_parity
+    qwen3_encoder_test.go:173: S1 patch_embed+pos_embed: worst-row cosine 1.000000000 (row 21 of 40), max|diff| 9.54e-07, relative 3.09e-07 (bar 5e-06)
+    qwen3_encoder_test.go:173: S2 last_hidden_state: worst-row cosine 1.000000000 (row 26 of 40), max|diff| 9.54e-07, relative 2.71e-07 (bar 5e-06)
+    qwen3_encoder_test.go:173: S3 merged features: worst-row cosine 1.000000000 (row 5 of 10), max|diff| 1.62e-05, relative 5.54e-07 (bar 5e-06)
+--- PASS: TestQwen3VisionEncoder_parity (0.00s)
+=== RUN   TestQwen3VisionEncoder_realParity
+    qwen3_encoder_test.go:191: no golden /Users/francistownsend-merino/models/qwen35vl_tower_golden/qwen35vl_tower_golden.json.gz (open /Users/francistownsend-merino/models/qwen35vl_tower_golden/qwen35vl_tower_golden.json.gz: no such file or directory)
+--- SKIP: TestQwen3VisionEncoder_realParity (0.00s)
+=== RUN   TestQwen3VisionEncoder_refusesWhatItCannotRun
+--- PASS: TestQwen3VisionEncoder_refusesWhatItCannotRun (0.00s)
+=== RUN   TestQwenScratch_poisonedArenaIsInert
+--- PASS: TestQwenScratch_poisonedArenaIsInert (0.43s)
+=== RUN   TestQwenVisionEncoder_parity
+    qwen_encoder_test.go:62: Qwen2.5-VL ViT pre-merge vs HF golden (f32): cosine=1.00000000 max abs diff=7.749e-07
+    qwen_encoder_test.go:85: Qwen2.5-VL merged features vs HF golden (f32): cosine=1.00000000 max abs diff=4.470e-08
+--- PASS: TestQwenVisionEncoder_parity (0.00s)
+=== RUN   TestQwenVision_zeroPatchGrid
+=== RUN   TestQwenVision_zeroPatchGrid/empty_(no_images)
+=== RUN   TestQwenVision_zeroPatchGrid/zero_temporal
+=== RUN   TestQwenVision_zeroPatchGrid/zero_height
+=== RUN   TestQwenVision_zeroPatchGrid/zero_width
+--- PASS: TestQwenVision_zeroPatchGrid (0.00s)
+    --- PASS: TestQwenVision_zeroPatchGrid/empty_(no_images) (0.00s)
+    --- PASS: TestQwenVision_zeroPatchGrid/zero_temporal (0.00s)
+    --- PASS: TestQwenVision_zeroPatchGrid/zero_height (0.00s)
+    --- PASS: TestQwenVision_zeroPatchGrid/zero_width (0.00s)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/copied/qwen3.5
+    release_test.go:175: qwen3.5: blocks 234752 bytes; heap 5030672 -> 4792848 (freed 237824, 101%)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/copied/glm-ocr
+    release_test.go:175: glm-ocr: blocks 1323008 bytes; heap 5033120 -> 3706672 (freed 1326448, 100%)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/copied/qwen2.5-vl
+    release_test.go:175: qwen2.5-vl: blocks 84736 bytes; heap 5034416 -> 4946240 (freed 88176, 104%)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/copied/gemma4
+    release_test.go:175: gemma4: blocks 83072 bytes; heap 5031424 -> 4943488 (freed 87936, 106%)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/aliased/qwen3.5
+    release_test.go:175: qwen3.5: blocks 234752 bytes; heap 1495176 -> 1486728 (freed 8448, 4%)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/aliased/glm-ocr
+    release_test.go:175: glm-ocr: blocks 1323008 bytes; heap 1506536 -> 1490792 (freed 15744, 1%)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/aliased/qwen2.5-vl
+    release_test.go:175: qwen2.5-vl: blocks 84736 bytes; heap 1516776 -> 1510504 (freed 6272, 7%)
+=== RUN   TestReleaseBlocks_reloadsTheSameTower/aliased/gemma4
+    release_test.go:175: gemma4: blocks 83072 bytes; heap 1530992 -> 1524976 (freed 6016, 7%)
+--- PASS: TestReleaseBlocks_reloadsTheSameTower (0.04s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/copied/qwen3.5 (0.00s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/copied/glm-ocr (0.01s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/copied/qwen2.5-vl (0.00s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/copied/gemma4 (0.00s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/aliased/qwen3.5 (0.00s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/aliased/glm-ocr (0.01s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/aliased/qwen2.5-vl (0.00s)
+    --- PASS: TestReleaseBlocks_reloadsTheSameTower/aliased/gemma4 (0.00s)
+=== RUN   TestReleaseBlocks_refusesACallersSource
+--- PASS: TestReleaseBlocks_refusesACallersSource (0.00s)
+=== RUN   TestSiglip2NaFlexEncoder_matchesHF
+    siglip2_naflex_test.go:97: grow embeddings: worst-row cosine 1.000000000 (row 14 of 30), max|diff| 7.15e-07, relative 2.69e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: grow layer0: worst-row cosine 1.000000000 (row 7 of 30), max|diff| 7.15e-07, relative 2.3e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: grow layer1: worst-row cosine 1.000000000 (row 29 of 30), max|diff| 7.15e-07, relative 2.31e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: grow last: worst-row cosine 1.000000000 (row 10 of 30), max|diff| 8.34e-07, relative 2.61e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: shrink embeddings: worst-row cosine 1.000000000 (row 1 of 6), max|diff| 4.77e-07, relative 1.92e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: shrink layer0: worst-row cosine 1.000000000 (row 1 of 6), max|diff| 4.77e-07, relative 1.77e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: shrink layer1: worst-row cosine 1.000000000 (row 1 of 6), max|diff| 4.77e-07, relative 1.62e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: shrink last: worst-row cosine 1.000000000 (row 1 of 6), max|diff| 6.38e-07, relative 2.45e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: same embeddings: worst-row cosine 1.000000000 (row 12 of 16), max|diff| 5.96e-07, relative 2.6e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: same layer0: worst-row cosine 1.000000000 (row 7 of 16), max|diff| 7.15e-07, relative 3.47e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: same layer1: worst-row cosine 1.000000000 (row 11 of 16), max|diff| 8.34e-07, relative 3.42e-07 (bar 5e-06)
+    siglip2_naflex_test.go:97: same last: worst-row cosine 1.000000000 (row 11 of 16), max|diff| 1.01e-06, relative 2.93e-07 (bar 5e-06)
+--- PASS: TestSiglip2NaFlexEncoder_matchesHF (0.01s)
+=== RUN   TestSiglip2NaFlexEncoder_plantedDefects
+    siglip2_naflex_test.go:123: planted the position table resized without antialias, tile shrink: worst-row cosine 0.999581, max|diff| 0.0809
+    siglip2_naflex_test.go:123: planted the patches flattened channel-major, tile grow: worst-row cosine -0.219799, max|diff| 4.37
+    siglip2_naflex_test.go:123: planted the patches flattened channel-major, tile shrink: worst-row cosine 0.208108, max|diff| 3.91
+    siglip2_naflex_test.go:123: planted the patches flattened channel-major, tile same: worst-row cosine -0.078317, max|diff| 3.85
+    siglip2_naflex_test.go:123: planted the post-layernorm dropped, tile grow: worst-row cosine 0.888886, max|diff| 1.69
+    siglip2_naflex_test.go:123: planted the post-layernorm dropped, tile shrink: worst-row cosine 0.922758, max|diff| 1.2
+    siglip2_naflex_test.go:123: planted the post-layernorm dropped, tile same: worst-row cosine 0.883719, max|diff| 1.46
+--- PASS: TestSiglip2NaFlexEncoder_plantedDefects (0.00s)
+=== RUN   TestResizeBilinearAA_matchesTorchvision
+    siglip2_naflex_test.go:157: 37x53 -> 24x70: 0 of 5040 values differ from torchvision
+    siglip2_naflex_test.go:157: 37x53 -> 64x96: 0 of 18432 values differ from torchvision
+    siglip2_naflex_test.go:157: 37x53 -> 20x20: 0 of 1200 values differ from torchvision
+    siglip2_naflex_test.go:157: 37x53 -> 37x107: 0 of 11877 values differ from torchvision
+    siglip2_naflex_test.go:169: float 4x4 -> 2x3: max|diff| 1.79e-07
+    siglip2_naflex_test.go:169: float 4x4 -> 6x5: max|diff| 5.96e-07
+    siglip2_naflex_test.go:169: float 4x4 -> 3x7: max|diff| 4.77e-07
+--- PASS: TestResizeBilinearAA_matchesTorchvision (0.00s)
+=== RUN   TestSiglipExport_recomposesForward
+--- PASS: TestSiglipExport_recomposesForward (0.00s)
+=== RUN   TestQwen3Export_recomposesForward
+--- PASS: TestQwen3Export_recomposesForward (0.00s)
+=== RUN   TestGlmOcrExport_recomposesForward
+--- PASS: TestGlmOcrExport_recomposesForward (0.01s)
+=== RUN   TestEncoderConfig_validate
+--- PASS: TestEncoderConfig_validate (0.00s)
+=== RUN   TestQwenEncoderConfig_validate
+--- PASS: TestQwenEncoderConfig_validate (0.00s)
+=== RUN   TestLoadEncoder_shapeMismatchIsError
+--- PASS: TestLoadEncoder_shapeMismatchIsError (0.00s)
+=== RUN   FuzzPreprocess
+=== RUN   FuzzPreprocess/seed#0
+=== RUN   FuzzPreprocess/seed#1
+=== RUN   FuzzPreprocess/seed#2
+=== RUN   FuzzPreprocess/seed#3
+--- PASS: FuzzPreprocess (0.00s)
+    --- PASS: FuzzPreprocess/seed#0 (0.00s)
+    --- PASS: FuzzPreprocess/seed#1 (0.00s)
+    --- PASS: FuzzPreprocess/seed#2 (0.00s)
+    --- PASS: FuzzPreprocess/seed#3 (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/vision	1.210s
