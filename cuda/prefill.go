@@ -429,7 +429,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	chunk := r.prefillBaseRows()
+	chunk := r.prefillPassRows()
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, e
 	}

@@ -26,10 +26,10 @@ func prefillWidthFor(free, margin, attach int64, pass func(rows int) int64) int 
 	return prefillDefaultChunk
 }
 
-// choosePrefillWidth sets prefillWidth from the free VRAM after the build (the executor thread, the build's last step): the pass is
-// priced as admission prices it, its scratch plus the attention span scratch at the full context. An unreadable figure keeps
-// prefillDefaultChunk, and so does a windowed model: its slack bounds a pass (prefillPassRows), and a wider default would move its
-// passes off the 512-row width that slack was sized for.
+// choosePrefillWidth sets prefillWidth from the free VRAM after the build (the executor thread, the build's last step): a pass is
+// priced at its scratch plus the most attention span scratch any prompt up to the context allocates, so it is at least admission's
+// price for every prompt at that width. An unreadable figure keeps prefillDefaultChunk, and so does a windowed model: its slack
+// bounds a pass (prefillPassRows), and a wider default would move its passes off the 512-row width that slack was sized for.
 func (r *cudaResident) choosePrefillWidth() {
 	r.prefillWidth = prefillDefaultChunk
 	if r.kvWin {
@@ -39,10 +39,25 @@ func (r *cudaResident) choosePrefillWidth() {
 	if err != nil {
 		return
 	}
-	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
+	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.prefillSpanScratchMax(rows) }
 	r.prefillWidth = prefillWidthFor(int64(free), ctxCapMarginBytes, r.extraBytes, pass)
 	fmt.Fprintf(os.Stderr, "cuda: prefill passes of up to %d rows (%.0f MiB of scratch; %.0f MiB free beyond the %d MiB margin)\n",
 		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-ctxCapMarginBytes-r.extraBytes)/(1<<20), ctxCapMarginBytes>>20)
+}
+
+// prefillSpanScratchMax is the most span scratch a pass of rows rows allocates for any prompt up to the context. It is not always
+// the figure at the full context: a row group holds as many rows as the split-KV budget allows at the span, so a shorter span can
+// allocate a few hundred KiB more. Below attn_batched's bound the span scratch is zero, so the scan stops at the first zero.
+func (r *cudaResident) prefillSpanScratchMax(rows int) int64 {
+	var most int64
+	for k := r.ctxCap; k > 0; k-- {
+		s := r.PrefillSpanScratchBytes(rows, k)
+		if s == 0 {
+			break
+		}
+		most = max(most, s)
+	}
+	return most
 }
 
 // prefillBaseRows is a pass's width before the per-prompt bounds: GOINFER_PREFILL_CHUNK when it parses to a positive integer, else

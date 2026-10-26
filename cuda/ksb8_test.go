@@ -177,7 +177,9 @@ func TestKSB8_bitsAcrossWidths(t *testing.T) {
 // TestKSB8_buildPricesThePass is B8-G3: the 1.5B loaded with nothing attached, then with Options.ExtraResidentBytes leaving room for
 // 1,024 rows but not 2,048, then for less than 1,024; the context is pinned so the KV plan, and the free VRAM it leaves, do not move.
 // Each load's chosen width must be 2,048, 1,024 and 512, PrefillChunkRows must report it, and PrefillScratchBytes at that width must
-// equal what a pass of that width allocates (prefillScratchSeenForTest).
+// equal what a pass of that width allocates (prefillScratchSeenForTest). A prompt of width+4 rows, a remainder under
+// attnFusedMinRows, must allocate no buffer larger than the width's pass does: prefillChunked takes the short tail's rows from the
+// pass before it (prefillTailCut), so no pass is wider than the chosen width.
 func TestKSB8_buildPricesThePass(t *testing.T) {
 	path := ksb8Model(t)
 	type built struct {
@@ -207,7 +209,8 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 		}
 		b := built{width: r.prefillWidth, reported: r.PrefillChunkRows(), free: free}
 		b.pass = func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
-		prefillScratchSeenForTest = func(n int64) { b.seen += n + allocRoundSlack(n) }
+		var widest int64
+		prefillScratchSeenForTest = func(n int64) { b.seen += n + allocRoundSlack(n); widest = max(widest, n) }
 		_, err = r.PrefillLast(context.Background(), ksb8Embeddings(b.width, r.hidden), 0)
 		prefillScratchSeenForTest = nil
 		if err != nil {
@@ -215,6 +218,18 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 		}
 		if want := r.PrefillScratchBytes(b.width); b.seen != want {
 			t.Errorf("extra %d: PrefillScratchBytes(%d) is %d B, the pass allocated %d B", extra, b.width, want, b.seen)
+		}
+		var widestTail int64
+		prefillScratchSeenForTest = func(n int64) { widestTail = max(widestTail, n) }
+		r.Reset()
+		_, err = r.PrefillLast(context.Background(), ksb8Embeddings(b.width+4, r.hidden), 0)
+		prefillScratchSeenForTest = nil
+		if err != nil {
+			t.Fatalf("a prompt of %d rows: %v", b.width+4, err)
+		}
+		if widestTail > widest || r.prefillChunkCap.Load() != 0 {
+			t.Errorf("extra %d: a %d-row prompt allocated a %d B buffer (learned cap %d), wider than the %d-row pass's largest, %d B",
+				extra, b.width+4, widestTail, r.prefillChunkCap.Load(), b.width, widest)
 		}
 		fmt.Fprintf(os.Stderr, "[B8-G3] extra %d MiB: width %d (reported %d); %.0f MiB free at the choice; pass scratch at 512 / 1,024 / 2,048: %.0f / %.0f / %.0f MiB\n",
 			extra>>20, b.width, b.reported, float64(free)/(1<<20), float64(b.pass(512))/(1<<20), float64(b.pass(1024))/(1<<20), float64(b.pass(2048))/(1<<20))
@@ -326,7 +341,10 @@ func TestKSB8_speed(t *testing.T) {
 // per-request price (decoder residentPrefillScratch, through ResidentPrefillScratchForTest) of a prompt is one pass at the build's
 // chosen width, its span scratch at the prompt's length, and the prompt's host embeddings. The 1.5B's fused attention serves past
 // attn_batched's bound, so its span scratch is zero at every length; the row-batched route is forced (prefillSplitKVForceForTest)
-// below the fast floor for two lengths, and a non-zero span must be among those checked, so that term is exercised.
+// below the fast floor for two lengths, and a non-zero span must be among those checked, so that term is exercised. 2,052 and 4,100
+// leave a remainder under attnFusedMinRows past the width: the price is still one pass of the width, since prefillChunked takes
+// the short tail's rows from the pass before it (TestKSB8_buildPricesThePass holds the execution side). The chooser's span price
+// (prefillSpanScratchMax) must be at least every checked prompt's.
 func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 	path := ksb8Model(t)
 	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 16384})
@@ -347,7 +365,7 @@ func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 	for _, c := range []struct {
 		p     int
 		force bool
-	}{{100, false}, {3900, false}, {12200, false}, {13000, false}, {14000, false}, {15000, false}, {16000, false}, {100, true}, {400, true}} {
+	}{{100, false}, {2052, false}, {3900, false}, {4100, false}, {12200, false}, {13000, false}, {14000, false}, {15000, false}, {16000, false}, {100, true}, {400, true}} {
 		p := c.p
 		prefillSplitKVForceForTest = c.force
 		rows := min(p, w)
@@ -359,6 +377,9 @@ func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 		}
 		if span > 0 {
 			withSpan++
+		}
+		if most := r.prefillSpanScratchMax(rows); most < span {
+			t.Errorf("a %d-token prompt: the chooser's span price for %d rows is %d B, under this prompt's %d B", p, rows, most, span)
 		}
 		fmt.Fprintf(os.Stderr, "[B8-G3 admission] %d tokens (row-batched forced %v): %.1f MiB priced (a %d-row pass, %.1f MiB span scratch)\n", p, c.force, float64(got)/(1<<20), rows, float64(span)/(1<<20))
 	}
