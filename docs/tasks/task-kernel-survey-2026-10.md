@@ -558,6 +558,14 @@ the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop composi
 - **Memory, measured:** at most one 2,048-row pass's 280 MiB of device scratch on the 1.5B (205 MiB more than a 512-row pass), taken
   only from VRAM free beyond the margin after the build. Host bytes are unchanged, and the KV plan, so the longest context that
   fits, is unchanged.
+- **Review re-run, 2026-10-25 23:58, untimed (G1–G3), at f81188f74:** every gate PASS. Log:
+  `docs/measurements/ks-b8-2026-10/b8-2026-10-25-2358.log`. Since the read:
+  - The chooser prices the most span scratch any prompt up to the context allocates (`prefillSpanScratchMax`).
+  - `ResidualAll` chunks by `prefillPassRows`.
+  - G2 asserts each run's width.
+  - G3 adds two checks. A prompt of the width plus 4 rows allocates no buffer wider than the width's pass. Admission, read
+    through the decoder, prices one pass at the width (11 prompt lengths, two of them with a remainder under 16 rows), with
+    a non-zero span term exercised.
 
 **KS-B3 · Gemma 4 26B (M26) expert-major prefill never got option A (bit-identical).**
 - **Where:** `cuda/moe_expert_major_gemma4.go:cudaResident.prefillGemma4ExpertMajorRun`; it has no reference to the grouped
