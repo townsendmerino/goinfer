@@ -1272,6 +1272,30 @@ Sanity: the int8 copies are the file's rows at 0.86–1.78% relative L2 at every
   finding, and the next step is Francis's question, not a fourth run.
 - **Not run:** D2b (ffn_down, Q6_K). It was registered to run only if D2a did not stop.
 
+**KS-O1-F (c), registered 2026-10-25 before any run (Francis, 18:57: option c).** The question: does "native worse" come from
+repetitive input in general, or only from 110 × "the "?
+- **Instrument:** D1's logits-level read (TestKSO1C_fillerDiagnostic's statistics) for the int8 and native arms against the CPU at f32,
+  over all positions of each prompt. Phi-3 mini q4, one CUDA q4k resident holding both arms, the f32 cache. Harness:
+  `docs/measurements/ks-o1-f-2026-10-25/general_test.go.txt`.
+- **Five prompts, each under Phi-3's chat template:**
+  - **The control:** 110 × "the " followed by D1's instruction. It must reproduce D1 (native p10 0.8826, int8 0.9401, each within
+    0.001), or the run is void.
+  - **Three other fillers,** 110 repeats each with the same instruction: "and " (another function word), "apple " (a content word)
+    and "hello ".
+  - **Natural text:** `README.md`'s first 110 tokens inside "Summarize this document:", about the fillers' length, so length is
+    not the difference (LQ3's 900-token documents were six times longer).
+- **Reading per prompt:**
+  - **native worse:** native p10 below int8's by more than 0.01 and native mean KL above 1.10× int8's.
+  - **native not worse:** native p10 at least int8's − 0.01 and native KL at most 1.10× int8's.
+  - **mixed:** anything else.
+- **Reading over the prompts:**
+  - **Repetitive input in general:** at least 2 of the 3 other fillers read native worse, and the natural text reads native not
+    worse.
+  - **Specific to "the ":** at least 2 of the 3 other fillers read native not worse.
+  - **Ambiguous, parked:** anything else, and the natural text reading native worse.
+- **Cost:** one process, about 1.5 minutes a prompt: about 10 minutes, as one job on nobara's night queue at priority 55, ahead of
+  ks-o4-gfid. Not timed.
+
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
