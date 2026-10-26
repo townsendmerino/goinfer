@@ -1,0 +1,204 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// TestKSO1F_layerDivergence is KS-O1-F's D1 (and, with KSO1F_KV=f32, D3) (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1-F
+// diagnostic"): Phi-3 mini q4 on the 110-repeat filler, every layer's output captured per token on the CUDA resident for four arms
+// and on the CPU at f32 (ForwardCapture, the per-token walk TestKSO1C_fillerDiagnostic's reference takes). Per layer and arm it prints
+// the minimum, p10 and median cosine to f32 over positions, the relative L2 at the minimum and its p90, and the minimum's position;
+// then the first layer at which the native arm's minimum is below the int8 arm's by more than 0.05. A scratch harness, kept as text
+// beside the record; it asserts only that every arm ran.
+func TestKSO1F_layerDivergence(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	path := modelPath("phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Repeat("the ", 110) + "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv := os.Getenv("KSO1F_KV") // "" is the default (auto); D3 sets f32
+	mg, err := kso1cLoadBothArms(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 512, KVPrecision: kv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, ok := mg.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
+	}
+	nL := r.nLayers
+	taps := make([]int, nL)
+	for l := range taps {
+		taps[l] = l
+	}
+	fmt.Fprintf(os.Stderr, "[D1] %d positions, %d layers; KV %q, layer 0 KV half %v\n", len(ids), nL, kv, r.layers[0].kvHalf)
+
+	// The f32 reference: [position][layer][hidden], plus the logits.
+	mf, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := mf.NewCache(len(ids) + 1)
+	ref := make([][][]float32, len(ids))
+	refLog := make([][]float32, len(ids))
+	for p, id := range ids {
+		l, h, err := mf.ForwardCapture(id, cache, taps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref[p], refLog[p] = h, append([]float32(nil), l...)
+	}
+	mf.Close()
+
+	cos := func(a, b []float32) float64 {
+		var d, na, nb float64
+		for i := range a {
+			d += float64(a[i]) * float64(b[i])
+			na += float64(a[i]) * float64(a[i])
+			nb += float64(b[i]) * float64(b[i])
+		}
+		return d / math.Sqrt(na*nb)
+	}
+	relL2 := func(a, ref []float32) float64 {
+		var d, n float64
+		for i := range a {
+			e := float64(a[i]) - float64(ref[i])
+			d += e * e
+			n += float64(ref[i]) * float64(ref[i])
+		}
+		return math.Sqrt(d / n)
+	}
+	type stat struct {
+		min, p10, med, rlAtMin, rlP90 float64
+		at                            int
+	}
+	summarize := func(cs, rl []float64) stat {
+		s := stat{min: 2}
+		for p, c := range cs {
+			if c < s.min {
+				s.min, s.at, s.rlAtMin = c, p, rl[p]
+			}
+		}
+		sc := append([]float64(nil), cs...)
+		sort.Float64s(sc)
+		sr := append([]float64(nil), rl...)
+		sort.Float64s(sr)
+		s.p10, s.med, s.rlP90 = sc[len(sc)/10], sc[len(sc)/2], sr[len(sr)*9/10]
+		return s
+	}
+
+	use, _ := kso1cArms(t, r, "Phi-3")
+	vocabRows := r.lmW.N
+	arms := []struct {
+		name string
+		pick func(w cudaWQ) bool // which native weights are bound; nil binds none
+	}{
+		{"int8", nil},
+		{"native", func(cudaWQ) bool { return true }},
+		{"only Q5_K qkv native", func(w cudaWQ) bool { return w.kind == "q5k" }},
+		{"only Q6_K ffn_down native", func(w cudaWQ) bool { return w.kind == "q6k" && w.N != vocabRows }},
+	}
+	slots := []*cudaWQ{&r.lmW}
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		slots = append(slots, &Ly.q, &Ly.k, &Ly.v, &Ly.o, &Ly.g, &Ly.u, &Ly.d)
+	}
+	if err := r.SetHiddenCapture(taps); err != nil {
+		t.Fatal(err)
+	}
+	defer r.SetHiddenCapture(nil)
+	res := make([][]stat, len(arms))        // [arm][layer], then the logits as layer nL
+	allCS := make([][][]float64, len(arms)) // [arm][layer][position]
+	for ai, a := range arms {
+		use(false)
+		for _, p := range r.kquantAlt {
+			if a.pick == nil || !a.pick(p[0]) {
+				continue
+			}
+			for _, s := range slots {
+				if *s == p[1] {
+					*s = p[0]
+				}
+			}
+		}
+		r.Reset()
+		cs := make([][]float64, nL+1)
+		rl := make([][]float64, nL+1)
+		for p, id := range ids {
+			lg, err := r.Forward(mg.EmbedResidentForTest(id), p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hc := r.HiddenCapture()
+			for l := 0; l < nL; l++ {
+				cs[l] = append(cs[l], cos(hc[l], ref[p][l]))
+				rl[l] = append(rl[l], relL2(hc[l], ref[p][l]))
+			}
+			cs[nL] = append(cs[nL], cos(lg, refLog[p]))
+			rl[nL] = append(rl[nL], relL2(lg, refLog[p]))
+		}
+		for l := 0; l <= nL; l++ {
+			res[ai] = append(res[ai], summarize(cs[l], rl[l]))
+		}
+		allCS[ai] = cs
+	}
+	use(true)
+	for l := 0; l <= nL; l++ {
+		name := fmt.Sprintf("layer %2d", l)
+		if l == nL {
+			name = "logits  "
+		}
+		var b strings.Builder
+		for ai, a := range arms {
+			s := res[ai][l]
+			fmt.Fprintf(&b, " | %s: min %.4f@%d p10 %.4f med %.4f relL2 %.3f p90 %.3f", a.name, s.min, s.at, s.p10, s.med, s.rlAtMin, s.rlP90)
+		}
+		fmt.Fprintf(os.Stderr, "[D1] %s%s\n", name, b.String())
+	}
+	first := -1
+	for l := 0; l <= nL; l++ {
+		if res[1][l].min < res[0][l].min-0.05 {
+			first = l
+			break
+		}
+	}
+	if first < 0 {
+		fmt.Fprintf(os.Stderr, "[D1] the native arm's minimum is never below the int8 arm's by more than 0.05\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "[D1] first divergent layer: %d (native min %.4f at position %d, int8 min %.4f at position %d)\n",
+			first, res[1][first].min, res[1][first].at, res[0][first].min, res[0][first].at)
+		var at []string
+		for p := range ids {
+			if allCS[1][first][p] < allCS[0][first][p]-0.05 {
+				at = append(at, fmt.Sprintf("%d (%.4f vs %.4f)", p, allCS[1][first][p], allCS[0][first][p]))
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[D1] positions at layer %d where native is below int8 by more than 0.05: %s\n", first, strings.Join(at, ", "))
+	}
+	if len(res[len(arms)-1]) != nL+1 {
+		t.Fatal("not every arm ran")
+	}
+}
