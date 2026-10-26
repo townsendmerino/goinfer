@@ -37,25 +37,23 @@ func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter) error {
 	log.Printf("block drafter attached to %q: %d layers, hidden %d, block %d, %d taps %v — "+
 		"greedy requests take the speculative path, sampled ones fall back",
 		lm.name, geo.Layers, geo.Hidden, dw.BlockSize(), len(dw.TargetLayerIDs()), dw.TargetLayerIDs())
-	warnThinkingTemplate(lm)
 	return nil
 }
 
-// warnThinkingTemplate warns when the served template will put the target in thinking mode. Block drafting is
-// lossless, so a thinking-mode target returns correct responses at reduced speed and nothing in any log says why: the
-// pretrained drafters are trained on non-thinking output, so acceptance falls sharply and --drafter can turn from a
-// win into a loss. The runtime acceptance guard limits the harm, so this is a warning and not a refusal.
-func warnThinkingTemplate(lm *loadedModel) {
-	if lm.tk == nil {
-		return
+// warnThinkingTemplate warns, and reports true, when a block drafter is attached and a reply to the served template can think
+// (chat.Template.ThinkingPossible: the -thinking mode, or under -thinking template the checkpoint's own default). Block drafting is
+// lossless, so a thinking-mode target returns correct responses at reduced speed and nothing in any log says why: the pretrained
+// drafters are trained on non-thinking output, so acceptance falls sharply and --drafter can turn from a win into a loss. The
+// runtime acceptance guard limits the harm, so this is a warning and not a refusal. Call it after lm.tmpl is set.
+func warnThinkingTemplate(lm *loadedModel) bool {
+	if lm.blockSpec == nil || !lm.tmpl.ThinkingPossible() {
+		return false
 	}
-	if _, ok := lm.tk.TokenID("<think>"); !ok {
-		return // no thinking mode in this vocab
-	}
-	log.Printf("WARNING: %q has a thinking mode and the served chat template leaves it ON. "+
+	log.Printf("WARNING: %q is served with thinking possible (-thinking %s). "+
 		"Pretrained block drafters are trained on NON-thinking output, so acceptance roughly "+
 		"halves (measured 5.76 -> 3.00 accepted/round on Qwen3-4B) and --drafter turns from a "+
 		"~1.5x win into a ~0.8x loss. The runtime acceptance guard limits that to about "+
-		"break-even, but you will not see the speedup. Serve a non-thinking template to get it.",
-		lm.name)
+		"break-even, but you will not see the speedup. Serve with -thinking off to get it.",
+		lm.name, lm.tmpl.ThinkMode())
+	return true
 }

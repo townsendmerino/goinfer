@@ -1,0 +1,27 @@
+tree a579f7a30; driver 595.91.07; start 2026-10-25 14:40:46 PDT; load 4.40 6.75 4.44
+== card before H2-R1 (only the compositor):
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestKSH2_buildVRAM
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[KS-H2] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 slots 1 kvF16 true: free before load 7277.1 MiB of 7784.2, after 1691.1; 1335 allocation events
+[KS-H2] before the pools: free 7275.1 -> 2831.1 MiB, actual 4444.0 MiB; 572 requests 4023.8 MiB, rounded 4429.6 MiB (rounding 405.8); 347 under 2 MiB (101.6 MiB); actual minus rounded 14.4 MiB
+[KS-H2] the pools: free 2831.1 -> 1821.1 MiB (at the next allocation), actual 1010.0 MiB; 72 pool buffers 900.1 MiB requested, rounded 1008.6 MiB (rounding 108.5); 549 other requests interleaved, 4.6 MiB (rounded 4.6)
+[KS-H2] priced: kvBytesForCap 896.0 MiB + null 3.5 MiB per slot; allocations after the pools: 70
+--- PASS: TestKSH2_buildVRAM (10.68s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	10.817s
+== card before H2-R2 (only the compositor):
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestKSH2_buildVRAM
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[KS-H2] /home/francis/models/qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 slots 1 kvF16 true: free before load 7277.1 MiB of 7784.2, after 261.1; 1491 allocation events
+[KS-H2] before the pools: free 7275.1 -> 2843.1 MiB, actual 4432.0 MiB; 696 requests 4323.3 MiB, rounded 4431.8 MiB (rounding 108.5); 334 under 2 MiB (91.8 MiB); actual minus rounded 0.2 MiB
+[KS-H2] the pools: free 2843.1 -> 391.1 MiB (at the next allocation), actual 2452.0 MiB; 88 pool buffers 2313.6 MiB requested, rounded 2448.6 MiB (rounding 135.0); 549 other requests interleaved, 4.6 MiB (rounded 4.6)
+[KS-H2] priced: kvBytesForCap 2304.0 MiB + null 9.0 MiB per slot; allocations after the pools: 70
+--- PASS: TestKSH2_buildVRAM (13.74s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	14.037s
+end of H2 2026-10-25 14:41:16 PDT
+end 2026-10-25 14:41:16 PDT

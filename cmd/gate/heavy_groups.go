@@ -44,7 +44,7 @@ var heavyFamilies = []heavyFamily{
 	{Group: "qwen1.5-moe", Large: true, Rank: 97, re: regexp.MustCompile(`(?i)qwen15-moe-a27b|qwen1\.5-moe`)},
 	{Group: "deepseek-v2-lite", Large: true, Rank: 96, re: regexp.MustCompile(`(?i)deepseek-v2-lite`)},
 	{Group: "qwen3.5-9b", Large: true, Rank: 91, re: regexp.MustCompile(`(?i)qwen3\.5-9b`)},
-	{Group: "7b-8b", Large: true, Rank: 90, re: regexp.MustCompile(`(?i)qwen2\.5-7b|command-r7b|aya-expanse-8b`)},
+	{Group: "7b-8b", Large: true, Rank: 90, re: regexp.MustCompile(`(?i)qwen2\.5-7b|command-r7b|aya-expanse-8b|qwen3-8b`)},
 	{Group: "qwen3.5-9b", Large: true, Rank: 86, re: regexp.MustCompile(`(?i)qwen3?\.?5-9b`)}, // with its DFlash drafter attached it fills most of an 8 GB card
 	{Group: "nemotron-h", Large: true, Rank: 85, re: regexp.MustCompile(`(?i)nemotron-h-4b|nemotron-nano-9b|nvidia_NVIDIA-Nemotron`)},
 	{Group: "mellum2.1", Large: true, Rank: 75, re: regexp.MustCompile(`(?i)mellum2\.1`)},
