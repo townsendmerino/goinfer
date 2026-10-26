@@ -558,6 +558,13 @@ the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop composi
 - **Memory, measured:** at most one 2,048-row pass's 280 MiB of device scratch on the 1.5B (205 MiB more than a 512-row pass), taken
   only from VRAM free beyond the margin after the build. Host bytes are unchanged, and the KV plan, so the longest context that
   fits, is unchanged.
+- **Review re-run, 2026-10-26 03:02, untimed (G1–G3), at 25a65ae12:** every gate PASS. Log:
+  `docs/measurements/ks-b8-2026-10/b8-2026-10-26-0302.log`.
+  - Admission and the chooser now price `PrefillSpanScratchBytes` as a bound over every pass of a prompt: a launch group of up
+    to the pass's rows at the prompt's span, capped by the split-KV budget, plus the inverses. The one-pass figure is
+    `prefillSpanScratchPass`.
+  - With the fused attention off on the 1.5B, prompts of 13,000 and 16,380 tokens ran 7 and 8 passes of up to 2,048 rows on
+    the row kernels. The largest allocated 344.0 MiB against 344.1 MiB priced.
 - **Decided (Francis, 2026-10-26 01:55): A.** A pass the chooser prices in full may use the room the two grant reserves
   (`allocRecurrentCheckpoint`, `kvGrantRollback`) leave.
   - The reserves exist for the prefill pass, which `prefillPassBytes` undercounts.
