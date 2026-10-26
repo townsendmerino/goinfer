@@ -1,10 +1,9 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
-	_ "embed"
 	"math"
 	"testing"
 
@@ -12,9 +11,7 @@ import (
 )
 
 // gemvPTX is the W8A8 GEMV hot-path kernel (NVRTC, compute_75, __dp4a int8 dot).
-//
-//go:embed testdata/gemv_w8a8.ptx
-var gemvPTX []byte
+var gemvPTX = readPTX("gemv_w8a8")
 
 // TestGemvW8A8Bandwidth measures what a *hand CUDA quant GEMV* achieves in isolation: decode is
 // weight-streaming-bound, so this is the bandwidth ceiling a fused decode could approach once the

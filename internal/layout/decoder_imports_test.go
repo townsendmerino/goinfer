@@ -24,7 +24,7 @@ const (
 // its figure fails as a regression; a count below it fails until the figure is lowered to match, so each fall is
 // recorded in the commit that made it.
 var decoderRatchet = map[string]struct{ Direct, Reach int }{
-	"cuda":  {Direct: 246, Reach: 352},
+	"cuda":  {Direct: 246, Reach: 327},
 	"metal": {Direct: 245, Reach: 395},
 	"gpu":   {Direct: 87, Reach: 172},
 }

@@ -1,10 +1,9 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
-	_ "embed"
 	"math"
 	"os"
 	"reflect"

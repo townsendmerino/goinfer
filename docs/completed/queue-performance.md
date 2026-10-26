@@ -914,7 +914,7 @@ ignoring the quantum. Machine state for every figure here: free 3,847,880,704 B,
 
 Known and durable: driver quantum is **2 MiB** (not next-power-of-two — 5→6, 6→6, 9→10 MiB
 measured); sub-quantum requests are pool-served but **not free**. Both asserted in
-`cuda/allocgran_test.go` with their measurements.
+`cuda/kernels/allocgran_test.go` with their measurements.
 
 **A2 · 26B documentation correction** — `linux`, **DONE 2026-08-31.** Published as
 `docs/benchmarks.md` §B4.2. The pre-registered prediction at the bottom of this entry **resolved,

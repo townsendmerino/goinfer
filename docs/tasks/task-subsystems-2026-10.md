@@ -891,6 +891,9 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
     Heavy-gated (`GOINFER_HEAVY_TESTS`) and env-gated (`GOINFER_A13_*`) tests skip in both runs, and the record says so.
 - `gate gpu`'s 2a kernel-level suite lists `./cuda/kernels/` beside `./cuda/`, so the moved tests stay in it; the night
   `cuda-device-suite` and CI's cuda job run `./cuda/...` and need no change.
+- **Batch 1 (2026-10-26):** 25 files (35 tests, 16 benchmarks) moved to `cuda/kernels/`, every outcome the same before
+  and after; cuda reach 352 → 327. `gate gpu`'s heavy tier also runs `./cuda/kernels/` as one more process, so its two
+  heavy-gated bandwidth tests stay in it. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
 
 ### SB2 — admission and routing
 

@@ -101,7 +101,7 @@ which is a host-side stride, not a kernel change.
 **If that holds, MLA decode attention on CUDA needs no new attention kernel and inherits the existing
 byte-identical gate** — collapsing the expensive half of this task.
 
-> ### ✅ TESTED AND IT HOLDS (2026-08-09, micro-leg B) — `cuda/mla_latent_reuse_prototype_test.go`
+> ### ✅ TESTED AND IT HOLDS (2026-08-09, micro-leg B) — `cuda/kernels/mla_latent_reuse_prototype_test.go`
 >
 > Test-only prototype at `testdata/deepseek-tiny`'s real MLA geometry (nH=4, `kv_lora_rank` 16,
 > `qk_rope_head_dim` 8 ⇒ latDim 24), driving `attn_batched` at `nKV=1, hd=latDim, M=1` against an
@@ -228,7 +228,7 @@ hole, and this is the only task that closes it.
 **Recommended queue position: AFTER the v1.0 cut, and behind the other CUDA depth work.**
 
 1. ~~**The gate to run first**~~ — **DONE (micro-leg B).** The prototype ran; the reuse holds; this
-   is the ~3-day task, not the ~3-week one. `cuda/mla_latent_reuse_prototype_test.go` is checked in
+   is the ~3-day task, not the ~3-week one. `cuda/kernels/mla_latent_reuse_prototype_test.go` is checked in
    and doubles as the parity gate's skeleton.
 2. **Do not schedule the full build on K2/V3's account** — they do not fit, and the doc should stop
    implying otherwise.
