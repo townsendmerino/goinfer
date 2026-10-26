@@ -80,3 +80,14 @@ Qwen3.5 meets the merge rule at both depths, and the gain grows with depth: atte
 - The log is beside this file: `lfm25-forced-2026-10-26.log`.
 - **The cause is the cell's own load:** the 2.6B loads from its Hugging Face directory at an 8.7 GB peak, which leaves the Mac
   paging. A pre-quantized CPU `.giw` would load mapped, at a lower peak.
+
+**LFM2.5-2.6B re-run from a CPU `.giw`, registered 2026-10-26 (01:42) before it runs, on Francis's (a).**
+- **The bundle:** `cmd/prequant -quant int4 -target cpu-arm64` of `~/models/lfm2.5-2.6b`, written to
+  `~/goinfer-bench/lfm-giw/lfm2.5-2.6b.int4.cpu-arm64.v17.giw` on the internal SSD (2.08 GB; kept out of `~/models` by the session's
+  brief).
+- **Fit check:** both arms load it mapped, at a **2.19 GB peak** against the directory's 8.7 GB. Decode reads 91–92 ms a token on
+  both arms.
+- **The cell's need becomes 2.2 GB:** a run voids under 2.2 GB plus 2 GiB reclaimable, or on any paging, as registered.
+- Everything else is as registered: the same two binaries, the same harness and rules, depths 128 and 1,024, 10 valid pairs each,
+  graded at the merge rule.
+- **Cost:** about 6 min at depth 128 and about 42 min at 1,024, under the timing lock.
