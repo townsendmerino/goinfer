@@ -365,7 +365,6 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 	for i := range layers {
 		layers[i].kvDim = nKV * hd
 	}
-	perPos := kvBytesForCap(kvBlock, layers) / kvBlock // one position, read over the block it is priced in
 	dense := probe.ResidentDenseWeightBytesFor("cuda") // what Plan prices for CUDA
 	probe.Close()
 	free, ok := decoder.FreeBytesFor("cuda")
@@ -383,7 +382,10 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 		{"not even the floor holds 4: the floor, and the build clamps", 3000, func(got int) bool { return got == cudaCtxCapDefault }, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			forced := free - testCtxMargin - kvRoundingBound(nLayers, 0) - dense - int64(slots)*perPos*int64(c.target)
+			// The budget holds exactly `slots` slots at the target as the pools charge them (kvChargedBytes): on this fixture the
+			// 2 MiB rounding of each pool buffer is a large share of the KV, so a linear budget would not hold them at all.
+			round := kvChargedBytes(c.target, slots, layers) - (int64(slots)*kvBytesForCap(c.target, layers) + kvPoolNullBytes(layers))
+			forced := free - testCtxMargin - dense - kvChargedBytes(c.target, slots, layers)
 			if forced <= 0 {
 				t.Skipf("free VRAM %d B too small to force this budget", free)
 			}
@@ -402,9 +404,8 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Fatalf("Load (pinned): %v", err)
 			}
 			defer mPinned.Close()
-			// The build's own planning arguments: the KV pools' rounding bound beside the margin, since checkKVFits prices the pools
-			// as charged.
-			round := kvRoundingBound(nLayers, 0)
+			// Plan prices the KV linearly; it reserves the rounding at the target beside the margin, the exact figure where the build
+			// reserves its upper bound (kvRoundingBound), which on this fixture exceeds the whole KV.
 			one, _ := resolveCtxCapFitSlack(m, 0, 1<<20, 1, 0, fixedMargin(testCtxMargin), round)
 			got, _ := resolveCtxCapFitSlack(m, 0, 1<<20, slots, 0, fixedMargin(testCtxMargin), round)
 			pinned, _ := resolveCtxCapFitSlack(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots, 0, fixedMargin(testCtxMargin), round)
@@ -441,8 +442,20 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Errorf("pinned at the one-slot ctx %d checkKVFits still grants %d slots — the forced budget does not show the trade", one, g)
 			}
 			// Unpinned there, the build trims the context itself (TestCUDAKVSlots_buildTrimsTheContext) and fits them.
-			if g, ctx := grant(one, false); g != c.wantSlots || ctx > max(got+64, cudaCtxCapDefault) {
-				t.Errorf("unpinned at the one-slot ctx %d the build gave %d slots at ctx %d, want %d slots near ctx %d", one, g, ctx, c.wantSlots, got)
+			// Unpinned there, the build trims the context itself (TestCUDAKVSlots_buildTrimsTheContext) to the largest context whose
+			// charged pools for every requested slot fit what is free, never below cudaCtxCapDefault, where it clamps the slots instead.
+			// On this fixture the pools' rounding makes that context longer than the plan's linear figure for the same bytes.
+			f, _, e := dev.Context().MemInfo()
+			if e != nil {
+				t.Fatalf("MemInfo: %v", e)
+			}
+			budget := int64(f) - m.ExtraResidentBytes() - testCtxMargin
+			exact, ok := kvChargedCapForBytes(budget, slots, cudaCtxCapDefault, one, layers)
+			if !ok {
+				exact = cudaCtxCapDefault
+			}
+			if g, ctx := grant(one, false); g != c.wantSlots || ctx != exact || ctx < got {
+				t.Errorf("unpinned at the one-slot ctx %d the build gave %d slots at ctx %d, want %d slots at ctx %d (the charged pools' edge; the plan chose %d)", one, g, ctx, c.wantSlots, exact, got)
 			}
 		})
 	}
