@@ -12,11 +12,11 @@
 //
 //	K1 stable          TestCompute_stable
 //	K2 mutation        TestCompute_mutation (runs with GOINFER_KERNELPRINT_MUTATION=1: it copies aikit and builds five times)
-//	K3 census reach    TestCompute_reachesCensus
+//	K3 census reach    TestCompute_reachesCensus (in the configurations it was validated under; VOID where a tag forced nothing)
 //
 // Imports: the standard library and aikit's linalg and embed.
 //
 // Test it: go test ./internal/kernelprint/ (seconds, plus one coverage build for K3).
 //
-// Design: docs/code-notes/kernelprint.md.
+// Design: docs/code-notes/internal-kernelprint.md. Record: docs/measurements/vk1-2026-10.md.
 package kernelprint

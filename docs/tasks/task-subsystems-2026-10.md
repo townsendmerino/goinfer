@@ -33,7 +33,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | id | state | next | evidence |
 |---|---|---|---|
 | VK0 | done | 2026-10-26 (mac-vk01): 234 of 4,052 commits re-staled 8,895 family validations in 30 days; 8,775 (98.7%) came with no moved golden and no changed recorded metric, an upper bound on what a behavior key saves | §5.3; `docs/measurements/vk0-2026-10.md` |
-| VK1 | active | mac-vk01, branch `vk01-2026-10`: `internal/kernelprint`, gates K1–K3 registered in §5.4 before the code; `freshDepsHash` unchanged (VK5 mixes it in); S–M | §5.4 |
+| VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
 | VK2 | open | either box: one file per family adapter out of `decoder/registry.go`; `decoder/model.go`'s numeric helpers into a numeric file; `core` narrowed to numeric code; S–M | §5.5 |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
 | VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |

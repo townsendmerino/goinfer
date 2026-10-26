@@ -1,10 +1,8 @@
-//go:build ignore
-
 // replay.go replays decoder/parity_manifest_test.go:freshDepsHash over every commit of a window, reading every
 // input from git objects rather than the working tree, and writes one JSON record per step to stdout.
 //
-//	go run docs/measurements/vk0-2026-10/replay.go -end <sha> -days 30 > steps.jsonl
-//	go run docs/measurements/vk0-2026-10/replay.go -end <sha> -check   # the proof: replay == committed deps_hash at <sha>
+//	go run docs/measurements/vk0-2026-10/testdata/replay.go -end <sha> -days 30 > steps.jsonl
+//	go run docs/measurements/vk0-2026-10/testdata/replay.go -end <sha> -check   # the proof: replay == committed deps_hash at <sha>
 //
 // Each step is hashed twice: with today's function (Go files as their token stream, from 5ff89161) and with the function
 // of the day (raw bytes before 5ff89161), chosen by whether the step's own parity_manifest_test.go defines goCodeTokens.
