@@ -550,6 +550,9 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 			}
 			return nil, prefillPartialAt(startPos, i, err)
 		}
+		if prefillPassDoneForTest != nil {
+			prefillPassDoneForTest()
+		}
 		for slot := range capt {
 			capt[slot] = append(capt[slot], r.capBOut[slot]...)
 		}

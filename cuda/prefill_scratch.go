@@ -27,8 +27,8 @@ func prefillWidthFor(free, margin, attach int64, pass func(rows int) int64) int 
 }
 
 // choosePrefillWidth sets prefillWidth from the free VRAM after the build (the executor thread, the build's last step): a pass is
-// priced at its scratch plus the most attention span scratch any prompt up to the context allocates, so it is at least admission's
-// price for every prompt at that width. An unreadable figure keeps prefillDefaultChunk, and so does a windowed model: its slack
+// priced at its scratch plus the span bound at the full context (PrefillSpanScratchBytes), which is at least admission's price for
+// every prompt up to the context at that width. An unreadable figure keeps prefillDefaultChunk, and so does a windowed model: its slack
 // bounds a pass (prefillPassRows), and a wider default would move its passes off the 512-row width that slack was sized for.
 func (r *cudaResident) choosePrefillWidth() {
 	r.prefillWidth = prefillDefaultChunk
@@ -39,22 +39,10 @@ func (r *cudaResident) choosePrefillWidth() {
 	if err != nil {
 		return
 	}
-	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.prefillSpanScratchMax(rows) }
+	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
 	r.prefillWidth = prefillWidthFor(int64(free), ctxCapMarginBytes, r.extraBytes, pass)
 	fmt.Fprintf(os.Stderr, "cuda: prefill passes of up to %d rows (%.0f MiB of scratch; %.0f MiB free beyond the %d MiB margin)\n",
 		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-ctxCapMarginBytes-r.extraBytes)/(1<<20), ctxCapMarginBytes>>20)
-}
-
-// prefillSpanScratchMax is the most span scratch a pass of rows rows allocates for any prompt up to the context. It is not always
-// the figure at the full context: a row group holds as many rows as the split-KV budget allows at the span, so a shorter span can
-// allocate a few hundred KiB more, and the fused attention can serve the full context while a shorter span routes to the
-// row-batched kernels. So every span is priced; the scan runs once per build.
-func (r *cudaResident) prefillSpanScratchMax(rows int) int64 {
-	var most int64
-	for k := 1; k <= r.ctxCap; k++ {
-		most = max(most, r.PrefillSpanScratchBytes(rows, k))
-	}
-	return most
 }
 
 // prefillBaseRows is a pass's width before the per-prompt bounds: GOINFER_PREFILL_CHUNK when it parses to a positive integer, else
@@ -94,6 +82,10 @@ func (r *cudaResident) PrefillTailMinRows() int { return attnFusedMinRows }
 // prefillScratchSeenForTest, when set (tests only), is told the byte size of each scratch buffer prefillCore asks for, before the
 // allocator's rounding, so a test can hold PrefillScratchBytes to the pass.
 var prefillScratchSeenForTest func(bytes int64)
+
+// prefillPassDoneForTest, when set (tests only), is called after each pass of a chunked prefill completes, so a test can split
+// prefillScratchSeenForTest's figures by pass.
+var prefillPassDoneForTest func()
 
 // scratchBufBytes is what the device charges for one scratch buffer of n 4-byte elements: the request, rounded up to the
 // allocator's quantum from a quantum upward (allocRoundSlack). A request of no elements is one (prefillCore's af and ai).

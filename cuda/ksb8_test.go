@@ -339,12 +339,14 @@ func TestKSB8_speed(t *testing.T) {
 
 // TestKSB8_admissionPricesTheChosenPass is B8-G3's admission half, through the decoder: on the 1.5B at context 16,384, the
 // per-request price (decoder residentPrefillScratch, through ResidentPrefillScratchForTest) of a prompt is one pass at the build's
-// chosen width, its span scratch at the prompt's length, and the prompt's host embeddings. The 1.5B's fused attention serves past
-// attn_batched's bound, so its span scratch is zero at every length; the row-batched route is forced (prefillSplitKVForceForTest)
-// below the fast floor for two lengths, and a non-zero span must be among those checked, so that term is exercised. 2,052 and 4,100
+// chosen width, the span bound at the prompt's length (PrefillSpanScratchBytes), and the prompt's host embeddings. 2,052 and 4,100
 // leave a remainder under attnFusedMinRows past the width: the price is still one pass of the width, since prefillChunked takes
-// the short tail's rows from the pass before it (TestKSB8_buildPricesThePass holds the execution side). The chooser's span price
-// (prefillSpanScratchMax) must be at least every checked prompt's.
+// the short tail's rows from the pass before it (TestKSB8_buildPricesThePass holds the execution side).
+//
+// The 1.5B's fused attention serves past attn_batched's bound, so its span scratch is zero at default settings. With the fused
+// attention off, prompts of 13,000 and 16,380 tokens run every pass past the bound on the row kernels, at 2,048 rows and shorter
+// spans before the last: each is prefilled, and the largest pass's allocations (prefillScratchSeenForTest, per pass by
+// prefillPassDoneForTest) must not exceed the device part of admission's price, whose span term must be non-zero.
 func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 	path := ksb8Model(t)
 	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 16384})
@@ -360,30 +362,42 @@ func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
 	if w != r.prefillWidth {
 		t.Fatalf("PrefillChunkRows %d, the chosen width %d", w, r.prefillWidth)
 	}
-	defer func() { prefillSplitKVForceForTest = false }()
-	withSpan := 0
-	for _, c := range []struct {
-		p     int
-		force bool
-	}{{100, false}, {2052, false}, {3900, false}, {4100, false}, {12200, false}, {13000, false}, {14000, false}, {15000, false}, {16000, false}, {100, true}, {400, true}} {
-		p := c.p
-		prefillSplitKVForceForTest = c.force
+	price := func(p int) (dev int64) {
+		t.Helper()
 		rows := min(p, w)
-		span := r.PrefillSpanScratchBytes(rows, p)
-		want := r.PrefillScratchBytes(rows) + span + int64(p)*4*int64(m.ResidentEmbedLen())
-		got, ok := m.ResidentPrefillScratchForTest(p)
-		if !ok || got != want {
-			t.Errorf("a %d-token prompt: admission prices %d B (ok %v), want %d (a %d-row pass, %d B of span scratch, the embeddings)", p, got, ok, want, rows, span)
+		dev = r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, p)
+		want := dev + int64(p)*4*int64(m.ResidentEmbedLen())
+		if got, ok := m.ResidentPrefillScratchForTest(p); !ok || got != want {
+			t.Errorf("a %d-token prompt: admission prices %d B (ok %v), want %d (a %d-row pass, %d B of span bound, the embeddings)", p, got, ok, want, rows, dev-r.PrefillScratchBytes(rows))
 		}
-		if span > 0 {
-			withSpan++
-		}
-		if most := r.prefillSpanScratchMax(rows); most < span {
-			t.Errorf("a %d-token prompt: the chooser's span price for %d rows is %d B, under this prompt's %d B", p, rows, most, span)
-		}
-		fmt.Fprintf(os.Stderr, "[B8-G3 admission] %d tokens (row-batched forced %v): %.1f MiB priced (a %d-row pass, %.1f MiB span scratch)\n", p, c.force, float64(got)/(1<<20), rows, float64(span)/(1<<20))
+		fmt.Fprintf(os.Stderr, "[B8-G3 admission] %d tokens, fused attention %v: %.1f MiB of device scratch priced (a %d-row pass, %.1f MiB span bound)\n",
+			p, r.fastAttn, float64(dev)/(1<<20), rows, float64(r.PrefillSpanScratchBytes(rows, p))/(1<<20))
+		return dev
 	}
-	if withSpan == 0 {
-		t.Errorf("no prompt length checked has non-zero span scratch: the span term is not exercised")
+	for _, p := range []int{100, 2052, 3900, 4100, 12200, 13000, 14000, 15000, 16000} {
+		price(p)
+	}
+	fast := r.fastAttn
+	r.fastAttn = false
+	defer func() { r.fastAttn = fast; prefillScratchSeenForTest, prefillPassDoneForTest = nil, nil }()
+	for _, p := range []int{13000, 16380} {
+		dev := price(p)
+		if span := r.PrefillSpanScratchBytes(w, p); span == 0 {
+			t.Errorf("a %d-token prompt with the fused attention off prices no span scratch at %d rows: the term is not exercised", p, w)
+		}
+		var cur, most int64
+		passes := 0
+		prefillScratchSeenForTest = func(n int64) { cur += n + allocRoundSlack(n) }
+		prefillPassDoneForTest = func() { most, cur = max(most, cur), 0; passes++ }
+		r.Reset()
+		if _, err := r.PrefillLast(context.Background(), ksb8Embeddings(p, r.hidden), 0); err != nil {
+			t.Fatalf("a %d-token prompt, fused attention off: %v", p, err)
+		}
+		prefillScratchSeenForTest, prefillPassDoneForTest = nil, nil
+		fmt.Fprintf(os.Stderr, "[B8-G3 admission] %d tokens, fused attention off: %d passes, the largest allocated %.1f MiB against %.1f MiB priced\n",
+			p, passes, float64(most)/(1<<20), float64(dev)/(1<<20))
+		if passes < 2 || most == 0 || most > dev {
+			t.Errorf("a %d-token prompt: %d passes, the largest allocated %d B, admission's device price %d B", p, passes, most, dev)
+		}
 	}
 }
