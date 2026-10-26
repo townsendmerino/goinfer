@@ -3151,6 +3151,14 @@ its own PR, and it gets a Gemini review before merge.
 | H6C-G1c the margin's context | 0 | `resolveCtxCapFit` on `llama-tiny` with a margin that names its context | every return, the shortcuts and the floor included, gives the margin at the context it returns |
 
 - **Then:** H6C-S5, G2, G3 and G4 are re-read on the changed build.
+- **Read 2026-10-26, 05:52, at b0aa5d367** (`docs/measurements/ks-h6c-2026-10/logs/h6c-2026-10-26-0552.log`; G1b and G1c by hand
+  at the same rev): every gate PASS.
+  - **S6:** with the warm-up before the plan, the plan read 7,145.1 MiB free and the fit check 7,141.1, 4.0 MiB apart. With it
+    skipped (the plant), the plan read 7,277.1, 136.0 MiB above the fit check.
+  - **G1b:** 79,872 configurations, none past the bound; the closest came 2.03 MiB under it.
+  - **G1c:** every return gives the margin at the context it returns.
+  - **S5, G2, G3, G4:** as in the read below. G2 is exact on all eight models, no build trims its plan, and G4's minimum free is
+    281.1 MiB.
 
 **KS-H6 build read 2026-10-26, by day.**
 - **Setup:** run by `night.py serve` (the timing lock held exclusively; memory, not time, is read). NVIDIA driver 595.91.07,

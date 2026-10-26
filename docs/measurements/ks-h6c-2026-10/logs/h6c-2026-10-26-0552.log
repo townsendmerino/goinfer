@@ -1,0 +1,88 @@
+05:52:52 KS-H6 gates at b0aa5d367 (before-figures at f6ca0966c), log /home/francis/goinfer-logs/ks-h6c-2026-10/h6c-2026-10-26-0552.log; driver 595.91.07
+== s5 05:53:32: load 1.19 1.99 1.45; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_moeModelPaysItsPool
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6C-S5] plant false: free 7277.1 MiB before the load, 7141.1 at the fit check, 7141.1 at the end of the load, 7141.1 after a prefill and 8 tokens: the drop across serving 0.0 MiB
+--- PASS: TestKSH6C_moeModelPaysItsPool (0.61s)
+PASS
+== s6 05:53:33: load 1.19 1.99 1.45; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_planSeesTheMoEPool
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6C-S6] plant false: the plan read 7145.1 MiB free, the fit check 7141.1 MiB: 4.0 MiB between them; context 16384 (planned 16384)
+--- PASS: TestKSH6C_planSeesTheMoEPool (0.27s)
+PASS
+== s6plant 05:53:33: load 1.19 1.99 1.45; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_planSeesTheMoEPool
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6C-S6] plant true: the plan read 7277.1 MiB free, the fit check 7141.1 MiB: 136.0 MiB between them; context 16384 (planned 16384)
+--- PASS: TestKSH6C_planSeesTheMoEPool (0.26s)
+PASS
+== g2small 05:53:34: load 1.19 1.99 1.45; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_marginPriced
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestKSH6C_marginPriced/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+[H6C-G2] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 49 buffers, 288.00 MiB charged against kvChargedBytes 288.00 MiB; margin 214.1 MiB planned, 214.1 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 214.1 MiB
+[H6C-G3] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 8363 positions, Plan's dense residual 435 positions; 0 below, 8427 allowed
+=== RUN   TestKSH6C_marginPriced/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[H6C-G2] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 57 buffers, 560.00 MiB charged against kvChargedBytes 560.00 MiB; margin 248.3 MiB planned, 248.3 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 248.3 MiB
+[H6C-G3] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 4169 positions, Plan's dense residual 213 positions; 0 below, 4233 allowed
+=== RUN   TestKSH6C_marginPriced/gemma-3-4b-it
+[H6C-G2] gemma-3-4b-it: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 69 buffers, 4216.00 MiB charged against kvChargedBytes 4216.00 MiB; margin 330.5 MiB planned, 330.5 MiB on the built resident (at 15680 positions)
+[H6C-G5] gemma-3-4b-it: context 15680 (planned 15680), 1 KV slots, margin 330.5 MiB
+[H6C-G3] gemma-3-4b-it: planned 15680, the build's exact figure allows 15808 (ceiling 16384); the rounding bound 520 positions, Plan's dense residual 259 positions; 128 below, 584 allowed
+=== RUN   TestKSH6C_marginPriced/qwen25vl-3b-instruct
+[H6C-G2] qwen25vl-3b-instruct: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 73 buffers, 720.00 MiB charged against kvChargedBytes 720.00 MiB; margin 261.0 MiB planned, 261.0 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen25vl-3b-instruct: context 16384 (planned 16384), 1 KV slots, margin 261.0 MiB
+[H6C-G3] qwen25vl-3b-instruct: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 4153 positions, Plan's dense residual 1025 positions; 0 below, 4217 allowed
+=== RUN   TestKSH6C_marginPriced/gemma-4-E2B_q4_0-it.gguf
+[H6C-G2] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: post-pool 26 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 31 buffers, 636.00 MiB charged against kvChargedBytes 636.00 MiB; margin 363.0 MiB planned, 363.0 MiB on the built resident (at 16384 positions)
+[H6C-G5] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: context 16384 (planned 16384), 1 KV slots, margin 363.0 MiB
+[H6C-G3] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 1764 positions, Plan's dense residual 1652 positions; 0 below, 1828 allowed
+--- PASS: TestKSH6C_marginPriced (46.58s)
+    --- PASS: TestKSH6C_marginPriced/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.38s)
+    --- PASS: TestKSH6C_marginPriced/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.37s)
+    --- PASS: TestKSH6C_marginPriced/gemma-3-4b-it (15.23s)
+    --- PASS: TestKSH6C_marginPriced/qwen25vl-3b-instruct (12.87s)
+    --- PASS: TestKSH6C_marginPriced/gemma-4-E2B_q4_0-it.gguf (9.04s)
+PASS
+== g2large 05:54:21: load 4.51 2.80 1.76; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestKSH6C_marginPriced7B8B
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestKSH6C_marginPriced7B8B/qwen2.5-7b-instruct-q4_k_m.gguf
+[H6C-G2] qwen2.5-7b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 57 buffers, 1008.00 MiB charged against kvChargedBytes 1008.00 MiB; margin 328.3 MiB planned, 328.3 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-7b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 328.3 MiB
+[H6C-G3] qwen2.5-7b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 2085 positions, Plan's dense residual 355 positions; 0 below, 2149 allowed
+=== RUN   TestKSH6C_marginPriced7B8B/Qwen3-8B-Q4_K_M.gguf
+[H6C-G2] qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 73 buffers, 2448.00 MiB charged against kvChargedBytes 2448.00 MiB; margin 285.0 MiB planned, 285.0 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf: context 16384 (planned 16384), 1 KV slots, margin 285.0 MiB
+--- PASS: TestKSH6C_marginPriced7B8B (26.74s)
+    --- PASS: TestKSH6C_marginPriced7B8B/qwen2.5-7b-instruct-q4_k_m.gguf (10.83s)
+    --- PASS: TestKSH6C_marginPriced7B8B/Qwen3-8B-Q4_K_M.gguf (14.16s)
+PASS
+== g2moe 05:54:48: load 4.29 2.90 1.82; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_marginPriced26B
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestKSH6C_marginPriced26B/gemma4-26b-q4_k_m.gguf
+decoder: fit is tight — gemma4-26b-q4_k_m.gguf needs ~38.4 GB of host memory while building the CUDA expert cache (13.2 GB weights + 13.2 GB packed copy + 12.0 GB pinned copy of the experts); this machine currently has 58.1 GB of memory available (budget 40.7 GB = 70% of that) (94% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.5 GB free — capping to 30 (3.1 GB)
+[H6C-G2] gemma4-26b-q4_k_m.gguf: post-pool 40 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 61 buffers, 1880.00 MiB charged against kvChargedBytes 1880.00 MiB; margin 250.8 MiB planned, 250.8 MiB on the built resident (at 4096 positions)
+[H6C-G5] gemma4-26b-q4_k_m.gguf: context 4096 (planned 4096), 1 KV slots, margin 250.8 MiB
+--- PASS: TestKSH6C_marginPriced26B (32.13s)
+    --- PASS: TestKSH6C_marginPriced26B/gemma4-26b-q4_k_m.gguf (30.35s)
+PASS
+== g4 05:55:20: load 5.48 3.36 2.02; MemAvailable 56.9 GB; GPU 403 MiB
+=== RUN   TestKSH6C_headroomQwen3
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6] Qwen3-8B q4_k_m, unpinned: context 16384, KV f16 true, expert cache false (0 slots); free after the load 393.1 MiB (cuMemGetInfo); nvidia-smi used 403 → 7392 MiB over the load; a 512-row pass 112.0 MiB of scratch at 15872 keys
+[H6] Qwen3-8B q4_k_m, unpinned: a 15872-token prefill (17.18s, passes of 512 rows, learned cap 0) and 64 decode tokens: nvidia-smi peak used 7504 MiB over 1023 samples, 112 MiB above the post-load figure; the run's minimum free ≈ 281.1 MiB (cuMemGetInfo after the load less that peak rise); free at the end 393.1 MiB
+[H6C-G4] the run's minimum free 281.1 MiB against the bar 167 MiB
+--- PASS: TestKSH6C_headroomQwen3 (36.12s)
+PASS
+05:55:56 DONE fail=0
