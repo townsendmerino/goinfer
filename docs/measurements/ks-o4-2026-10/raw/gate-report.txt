@@ -1,0 +1,6 @@
+KS-O4 G-FID, mode gate, prompt-set hash 746fec76aa18c9e2ffc61837fb1f0a39d4564c076cf31a05804118350d3a015f, 24 prompts
+beside it, the candidate against the exact arm: top-1 agreement 365/384 (95.05%), mean KL(exact||candidate) 0.0136, max 1.72
+short   prompts 12 positions 192: agreement cand 94.27% exact 93.75% (diff +0.52, LCB -1.46 pts); mean KL cand 0.03177 exact 0.03624 (ratio 0.877, UCB 0.943); hard flips cand 0 exact 0
+long    prompts 12 positions 192: agreement cand 94.27% exact 94.79% (diff -0.52, LCB -3.19 pts); mean KL cand 0.03604 exact 0.03918 (ratio 0.920, UCB 1.140); hard flips cand 0 exact 3
+pooled  prompts 24 positions 384: agreement cand 94.27% exact 94.27% (diff +0.00, LCB -1.64 pts); mean KL cand 0.03391 exact 0.03771 (ratio 0.899, UCB 1.014); hard flips cand 0 exact 3
+VERDICT AMBIGUOUS agreement lower bound -1.64 pts < −1.00

@@ -698,6 +698,25 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 	group := nH / nKV
 	scale := ap.Scale
 	nKeys := len(keys) / kvDim
+	if arch.gptoss != nil && ap.Sinks == nil {
+		panic(fmt.Sprintf("decoder: layer %d: gpt-oss attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
+	}
+	// sinkMax and sinkSum add query head qh's learned sink to a softmax: to the max-shift, then exp(sink − max) to the denominator. They
+	// do nothing when ap.Sinks is nil, so every other family runs the same operations as before.
+	sinkMax := func(qh int, maxS float64) float64 {
+		if ap.Sinks != nil {
+			if sl := float64(ap.Sinks[qh]); sl > maxS {
+				return sl
+			}
+		}
+		return maxS
+	}
+	sinkSum := func(qh int, maxS, sum float64) float64 {
+		if ap.Sinks != nil {
+			return sum + math.Exp(float64(ap.Sinks[qh])-maxS)
+		}
+		return sum
+	}
 	// MoE routing is discontinuous: an f32 QKᵀ reassociation can flip a top-k expert at a near-tie and cascade, so the acc64 kernels
 	// accumulate each dot in f64 (bit-identical to the sequential f64 reference); dense MLPs tolerate the f32 error. There is no
 	// shared `matmul` variable: acc64 calls MatmulQKAcc64/MatmulAVAcc64 directly (strided, no gather), and the f32 path is handed its
@@ -792,6 +811,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 							}
 						}
 					}
+					maxS = sinkMax(qhead, maxS)
 					var sum float64
 					for s := range nKeys {
 						if allowed(s) {
@@ -802,6 +822,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 							rowS[s] = 0
 						}
 					}
+					sum = sinkSum(qhead, maxS, sum)
 					inv := 1.0 / sum
 					for s := range nKeys {
 						if rowS[s] != 0 {
@@ -834,12 +855,14 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 							maxS = sc
 						}
 					}
+					maxS = sinkMax(qhead, maxS)
 					var sum float64
 					for s, v := range active {
 						e := math.Exp(float64(v) - maxS)
 						active[s] = float32(e)
 						sum += e
 					}
+					sum = sinkSum(qhead, maxS, sum)
 					inv := 1.0 / sum
 					clear(rowS[:loP])
 					for s, v := range active {
@@ -911,12 +934,14 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 						maxS = sc
 					}
 				}
+				maxS = sinkMax(qh0+g, maxS)
 				var sum float64
 				for s, v := range active {
 					e := math.Exp(float64(v) - maxS)
 					active[s] = float32(e)
 					sum += e
 				}
+				sum = sinkSum(qh0+g, maxS, sum)
 				inv := 1.0 / sum
 				clear(rowS[:loP])
 				for s, v := range active {
@@ -1013,12 +1038,14 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 							maxS = sc
 						}
 					}
+					maxS = sinkMax(kvh*group+g, maxS)
 					var sum float64
 					for s, v := range active {
 						e := math.Exp(float64(v) - maxS)
 						active[s] = float32(e)
 						sum += e
 					}
+					sum = sinkSum(kvh*group+g, maxS, sum)
 					inv := 1.0 / sum
 					clear(rowS[:loP])
 					for s, v := range active {
