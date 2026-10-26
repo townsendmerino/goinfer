@@ -91,3 +91,13 @@ Qwen3.5 meets the merge rule at both depths, and the gain grows with depth: atte
 - Everything else is as registered: the same two binaries, the same harness and rules, depths 128 and 1,024, 10 valid pairs each,
   graded at the merge rule.
 - **Cost:** about 6 min at depth 128 and about 42 min at 1,024, under the timing lock.
+
+**The `.giw` re-run's result (01:40–01:49): no complete reading. The paging check voided half the runs while memory was ample.**
+- **Memory was not the problem:** reclaimable read 8.78–9.50 GiB through the run, about twice the 4.2 GiB line.
+- **Paging was:** 8 of 24 runs recorded machine-wide pageouts during the run, 1 to 29 pages each (at most about 0.5 MB). The
+  registered rule voids a run on any paging at all. The harness stopped after 6 void pairs, at depth 128 pair 3, so depth 1,024 did
+  not run.
+- **Not graded:** 3 valid pairs, B faster in all 3, at 1.017×, 1.027× and 1.022×. That is too few pairs to grade.
+- **What it shows:** with this process far from memory pressure, the "any paging" line counts background paging by other processes.
+  It cannot complete on this Mac in an ordinary state. Changing the line is a void-rule change, so it is Francis's call.
+- The log is beside this file: `lfm25-giw-2026-10-26.log`.

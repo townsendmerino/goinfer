@@ -1,0 +1,27 @@
+== start 01:40:34 reclaimable 10211606528
+[01:40:48] warm A 94.56 ms/token load 1.67 recl 9.5 paged 0 ok
+[01:41:03] warm B 92.08 ms/token load 1.88 recl 9.42 paged 0 ok
+[01:41:18] warm A 94.57 ms/token load 2.13 recl 9.36 paged 0 ok
+[01:41:33] warm B 92.21 ms/token load 2.32 recl 9.39 paged 0 ok
+[01:41:47] pair0 A 94.38 ms/token load 2.57 recl 9.38 paged 0 ok
+[01:42:02] pair0 B 93.48 ms/token load 2.98 recl 9.35 paged 1 VOID
+[01:42:47] pair0 A 95.10 ms/token load 2.37 recl 9.1 paged 3 VOID
+[01:43:02] pair0 B 92.85 ms/token load 2.45 recl 9.07 paged 2 VOID
+[01:43:47] pair0 A 94.75 ms/token load 1.84 recl 9.0 paged 0 ok
+[01:44:02] pair0 B 93.18 ms/token load 2.19 recl 8.98 paged 29 VOID
+[01:44:46] pair0 A 94.52 ms/token load 1.88 recl 8.83 paged 25 VOID
+[01:45:01] pair0 B 92.92 ms/token load 2.18 recl 8.8 paged 0 ok
+[01:45:46] pair0 A 94.28 ms/token load 1.93 recl 8.91 paged 0 ok
+[01:46:01] pair0 B 92.68 ms/token load 2.15 recl 8.92 paged 0 ok
+[01:46:15] pair1 B 92.07 ms/token load 1.97 recl 8.89 paged 0 ok
+[01:46:30] pair1 A 94.58 ms/token load 1.83 recl 8.9 paged 0 ok
+[01:46:45] pair2 A 94.29 ms/token load 1.93 recl 8.91 paged 0 ok
+[01:47:00] pair2 B 92.27 ms/token load 2.4 recl 8.91 paged 0 ok
+[01:47:14] pair3 B 92.21 ms/token load 2.23 recl 8.89 paged 0 ok
+[01:47:29] pair3 A 96.04 ms/token load 2.2 recl 8.9 paged 2 VOID
+[01:48:14] pair3 B 92.24 ms/token load 2.32 recl 8.79 paged 0 ok
+[01:48:29] pair3 A 94.83 ms/token load 2.72 recl 8.78 paged 21 VOID
+[01:49:14] pair3 B 92.18 ms/token load 2.07 recl 8.81 paged 0 ok
+[01:49:29] pair3 A 94.42 ms/token load 1.91 recl 8.8 paged 7 VOID
+over 6 void pairs
+== end 01:49:29 rc=0
