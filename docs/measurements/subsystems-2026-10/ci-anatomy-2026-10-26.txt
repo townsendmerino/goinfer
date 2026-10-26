@@ -1,0 +1,150 @@
+# 60 completed ci runs: median 8.6 min, p90 12.3 min, max 44.7 min
+
+40359037823 push         success    2026-10-26T16:25:50Z  14.5 min
+40356191641 pull_request success    2026-10-26T16:08:23Z  11.9 min
+40346133182 push         success    2026-10-26T15:07:02Z   8.7 min
+40338691998 push         success    2026-10-26T14:20:11Z  12.3 min
+40338659037 pull_request success    2026-10-26T14:19:59Z  22.1 min
+    starts +  0.1 min, runs   2.0 min  lint
+    starts +  0.1 min, runs   0.2 min  changes
+    starts +  0.3 min, runs   6.6 min  test-rest
+    starts +  0.3 min, runs   0.6 min  sdktest
+    starts +  0.3 min, runs   7.0 min  root-windows-arm64
+    starts +  0.3 min, runs   0.9 min  gpu
+    starts +  0.3 min, runs   0.6 min  forced fallbacks (nopopcnt)
+    starts +  0.3 min, runs   7.8 min  test-decoder-tail
+    starts +  0.3 min, runs   0.6 min  forced fallbacks (noavx512)
+    starts +  0.3 min, runs   0.5 min  test-decoder-a
+    starts +  0.3 min, runs   1.5 min  cuda
+    starts +  0.3 min, runs   2.4 min  test-decoder-b
+    starts +  0.3 min, runs   0.8 min  forced fallbacks (noavx2)
+    starts +  0.3 min, runs   0.6 min  forced fallbacks (arm64 nodotprod)
+    starts +  0.3 min, runs   3.6 min  root-linux-arm64
+    starts +  0.4 min, runs   0.5 min  readme-smoke (a stranger's install, from an empty dir)
+    starts +  0.6 min, runs   3.1 min  test-decoder-c
+    starts +  0.9 min, runs   6.8 min  root-windows
+    starts +  1.0 min, runs   2.5 min  test-decoder-d
+    starts +  5.8 min, runs   5.6 min  root-darwin
+    starts + 16.2 min, runs   5.9 min  gpu-darwin
+    starts + 16.2 min, runs   1.1 min  metal-darwin
+40336953102 push         success    2026-10-26T14:09:06Z   8.9 min
+40326560969 pull_request success    2026-10-26T12:57:33Z  44.7 min
+    starts +  0.0 min, runs   0.2 min  changes
+    starts +  0.1 min, runs   1.9 min  lint
+    starts +  0.3 min, runs   0.9 min  gpu
+    starts +  0.3 min, runs   0.7 min  forced fallbacks (noavx2)
+    starts +  0.3 min, runs   3.2 min  test-decoder-c
+    starts +  0.3 min, runs   0.8 min  forced fallbacks (noavx512)
+    starts +  0.3 min, runs   2.3 min  cuda
+    starts +  0.3 min, runs   4.7 min  test-decoder-tail
+    starts +  0.3 min, runs   3.0 min  test-decoder-b
+    starts +  0.3 min, runs   1.8 min  test-decoder-d
+    starts +  0.3 min, runs   0.7 min  sdktest
+    starts +  0.3 min, runs   0.6 min  test-decoder-a
+    starts +  0.3 min, runs   0.7 min  readme-smoke (a stranger's install, from an empty dir)
+    starts +  0.3 min, runs   6.6 min  root-darwin
+    starts +  0.9 min, runs   0.8 min  forced fallbacks (nopopcnt)
+    starts +  0.9 min, runs   6.1 min  root-windows-arm64
+    starts +  1.0 min, runs   0.6 min  forced fallbacks (arm64 nodotprod)
+    starts +  1.1 min, runs   8.9 min  gpu-darwin
+    starts +  1.1 min, runs   5.7 min  test-rest
+    starts +  1.2 min, runs   1.6 min  metal-darwin
+    starts +  1.4 min, runs   3.7 min  root-linux-arm64
+    starts + 38.0 min, runs   6.7 min  root-windows
+40325934332 pull_request success    2026-10-26T12:52:46Z   8.4 min
+40324918964 pull_request success    2026-10-26T12:45:00Z   8.2 min
+40314416355 pull_request success    2026-10-26T11:21:07Z  10.5 min
+40313918866 pull_request success    2026-10-26T11:17:07Z  10.8 min
+40313891625 push         success    2026-10-26T11:16:54Z   8.6 min
+40313348871 pull_request success    2026-10-26T11:12:41Z  43.5 min
+    starts +  0.0 min, runs   0.2 min  changes
+    starts +  0.0 min, runs   1.7 min  lint
+    starts +  0.2 min, runs   2.4 min  test-decoder-b
+    starts +  0.2 min, runs   0.7 min  forced fallbacks (noavx2)
+    starts +  0.2 min, runs   0.7 min  forced fallbacks (nopopcnt)
+    starts +  0.2 min, runs   0.5 min  readme-smoke (a stranger's install, from an empty dir)
+    starts +  0.2 min, runs   0.9 min  gpu
+    starts +  0.2 min, runs   0.7 min  forced fallbacks (noavx512)
+    starts +  0.2 min, runs   0.4 min  test-decoder-a
+    starts +  0.2 min, runs   1.9 min  cuda
+    starts +  0.2 min, runs   6.5 min  test-rest
+    starts +  0.2 min, runs   0.5 min  test-decoder-c
+    starts +  0.3 min, runs   0.7 min  sdktest
+    starts +  0.3 min, runs   7.3 min  gpu-darwin
+    starts +  0.3 min, runs   7.9 min  test-decoder-tail
+    starts +  0.3 min, runs   1.1 min  metal-darwin
+    starts +  0.3 min, runs   5.2 min  root-darwin
+    starts +  0.3 min, runs   7.0 min  root-windows
+    starts +  0.3 min, runs   3.5 min  root-linux-arm64
+    starts +  0.3 min, runs   0.6 min  forced fallbacks (arm64 nodotprod)
+    starts +  0.7 min, runs   2.5 min  test-decoder-d
+    starts + 37.2 min, runs   6.3 min  root-windows-arm64
+40311037313 push         success    2026-10-26T10:54:33Z   9.0 min
+40309795501 push         success    2026-10-26T10:44:50Z   2.1 min
+40308683153 pull_request success    2026-10-26T10:36:07Z   9.1 min
+40305999948 pull_request success    2026-10-26T10:15:37Z   1.5 min
+40305978775 pull_request success    2026-10-26T10:15:28Z   8.6 min
+40305586373 pull_request success    2026-10-26T10:12:31Z   8.8 min
+40305583395 pull_request success    2026-10-26T10:12:30Z  40.7 min
+    starts + 31.8 min, runs   0.3 min  changes
+    starts + 31.8 min, runs   1.6 min  lint
+    starts + 32.1 min, runs   8.1 min  test-decoder-tail
+    starts + 32.1 min, runs   3.1 min  test-decoder-d
+    starts + 32.1 min, runs   0.6 min  test-decoder-a
+    starts + 32.1 min, runs   1.4 min  readme-smoke (a stranger's install, from an empty dir)
+    starts + 32.1 min, runs   2.1 min  test-decoder-c
+    starts + 32.1 min, runs   2.7 min  test-decoder-b
+    starts + 32.1 min, runs   6.4 min  test-rest
+    starts + 32.1 min, runs   2.6 min  cuda
+    starts + 32.1 min, runs   1.3 min  gpu
+    starts + 32.1 min, runs   6.9 min  root-windows-arm64
+    starts + 32.1 min, runs   8.6 min  gpu-darwin
+    starts + 32.1 min, runs   0.8 min  forced fallbacks (nopopcnt)
+    starts + 32.1 min, runs   5.6 min  root-darwin
+    starts + 32.1 min, runs   0.8 min  forced fallbacks (noavx2)
+    starts + 32.1 min, runs   0.8 min  forced fallbacks (noavx512)
+    starts + 32.1 min, runs   1.3 min  metal-darwin
+    starts + 32.1 min, runs   3.7 min  root-linux-arm64
+    starts + 32.1 min, runs   0.6 min  forced fallbacks (arm64 nodotprod)
+    starts + 32.7 min, runs   0.5 min  sdktest
+    starts + 32.7 min, runs   6.8 min  root-windows
+40305430651 push         success    2026-10-26T10:11:21Z   1.3 min
+40301360961 pull_request success    2026-10-26T09:40:24Z   1.3 min
+40296401825 push         success    2026-10-26T09:01:25Z   2.7 min
+40296038318 pull_request success    2026-10-26T08:58:31Z   2.3 min
+40295216796 pull_request success    2026-10-26T08:51:41Z   1.6 min
+40295086957 pull_request cancelled  2026-10-26T08:50:34Z   1.4 min
+40293924433 pull_request success    2026-10-26T08:40:38Z   1.8 min
+40293629243 pull_request success    2026-10-26T08:38:05Z   2.5 min
+40292178603 push         success    2026-10-26T08:25:38Z  10.2 min
+40289528774 push         success    2026-10-26T08:02:15Z   9.5 min
+40283119907 pull_request success    2026-10-26T07:00:09Z   9.3 min
+40282882591 pull_request success    2026-10-26T06:57:38Z   8.4 min
+40282261684 pull_request success    2026-10-26T06:51:17Z   8.1 min
+40274663158 pull_request success    2026-10-26T05:31:18Z   6.9 min
+40273362630 pull_request success    2026-10-26T05:16:51Z   9.1 min
+40273171695 pull_request success    2026-10-26T05:14:43Z   8.9 min
+40272927474 pull_request success    2026-10-26T05:11:51Z   8.6 min
+40272275785 pull_request success    2026-10-26T05:04:08Z   1.6 min
+40265427967 push         success    2026-10-26T03:42:58Z   1.7 min
+40264684876 pull_request success    2026-10-26T03:33:48Z   8.6 min
+40264431980 push         success    2026-10-26T03:30:41Z   8.2 min
+40262322661 pull_request success    2026-10-26T03:05:30Z   8.1 min
+40261424444 pull_request failure    2026-10-26T02:54:41Z   8.6 min
+40260996803 pull_request success    2026-10-26T02:49:26Z   9.1 min
+40258240160 push         success    2026-10-26T02:15:53Z   1.4 min
+40257329376 push         success    2026-10-26T02:05:02Z   8.8 min
+40256880085 pull_request success    2026-10-26T01:59:37Z   1.3 min
+40255595209 pull_request success    2026-10-26T01:43:21Z   8.0 min
+40255537312 pull_request success    2026-10-26T01:42:37Z   1.3 min
+40254435464 pull_request failure    2026-10-26T01:29:05Z   8.4 min
+40245013580 push         success    2026-10-25T23:29:44Z   2.6 min
+40244342513 pull_request success    2026-10-25T23:20:48Z   7.3 min
+40240191244 pull_request success    2026-10-25T22:26:20Z   7.5 min
+40236823169 pull_request success    2026-10-25T21:43:27Z   3.2 min
+40236580586 pull_request success    2026-10-25T21:40:21Z   9.7 min
+40236487497 pull_request failure    2026-10-25T21:39:11Z   8.6 min
+40235771395 pull_request success    2026-10-25T21:30:02Z  10.1 min
+40235565131 pull_request success    2026-10-25T21:27:18Z   9.3 min
+40235310003 push         success    2026-10-25T21:24:02Z   7.2 min
+40234387666 push         success    2026-10-25T21:12:24Z   1.4 min
