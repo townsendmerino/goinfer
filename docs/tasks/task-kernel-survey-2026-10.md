@@ -94,7 +94,7 @@
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | blocked | nobara-ks-cuda, after KS-H2 and KS-H3 read: re-derive both margins from measured parts, the 2,048-row pass's scratch included, and bring the numbers to Francis before changing either guard (KS-O3 decided A, Francis, 2026-10-25) | — |
 | KS-O1 | done (Metal and CUDA, owner overrides) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. **CUDA: done 2026-10-24** (owner's option A on O1C-G5): Phi-3 mini q4k 114.9 → 127.3 tok/s (0.9025, 10 of 10), the 1.5B 0.9786 (10 of 10); −374.7 MB on the device, head included; KL to the file 0.39× (Phi-3), 0.91× (0.5B); G-Q2 +0.13 points. Also fixes main's concurrent `noteKQuant` map write | survey, "Owner override of O1-G7" |
-| KS-O1-F | open | the CUDA native lane does worse than int8 against f32 on highly repetitive input (Phi-3, 110 × "the ": p10 0.8826 against the old bar's floor 0.9162, min 0.029; worse p10 and min at 60, 90, 130 too). Natural ~900-token text is about 2× better (KL 0.39×, 0.46×). Not yet explained: the per-layer differencing (hidden states against f32) on the 110-repeat prompt is the next measurement. Open on the owner's decision of 2026-10-25 | survey, "Owner decision on #230's long-context bar" |
+| KS-O1-F | open | read 2026-10-25 (D1, D3, D2a, (c)): the native lane's gap on 110 × "the " (p10 0.8826 against int8's 0.9401) is specific to that prompt. On the same input the native qkv projection is closer to f32 than int8's at every layer, and its kernels are exact. On "and ", "apple ", "hello " and a 110-token natural text, the native lane is the closer end to end (KL 0.27–0.73× int8's). No fix indicated; closing is Francis's call | survey, "KS-O1-F diagnostic"; "KS-O1-F (c) read" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | moved | KS-B15: decided A (Francis, 2026-10-25): the opt-in on the exact attention kernels, band prompts on the exact GEMM; the fast-GEMM option is not approved (it would need its own fidelity gate and a new decision) | §2 |
 | KS-O3 | moved | KS-H6: decided A (Francis, 2026-10-25): re-derive the margins after KS-H2 and KS-H3, numbers to Francis before either guard changes | §2 |
@@ -1295,6 +1295,24 @@ repetitive input in general, or only from 110 × "the "?
   - **Ambiguous, parked:** anything else, and the natural text reading native worse.
 - **Cost:** one process, about 1.5 minutes a prompt: about 10 minutes, as one job on nobara's night queue at priority 55, ahead of
   ks-o4-gfid. Not timed.
+
+**KS-O1-F (c) read (19:50–20:01, nobara's night queue, the exclusive lock).** Log: `docs/measurements/ks-o1-f-2026-10-25/c.log`.
+
+| prompt | positions | int8 p10 / min / KL | native p10 / min / KL | native ÷ int8 KL | reading |
+|---|---|---|---|---|---|
+| 110 × "the " (control) | 141 | 0.9401 / 0.4543 / 0.42710 | 0.8826 / 0.0294 / 0.50969 | 1.193 | native worse |
+| 110 × "and " | 141 | 0.9887 / 0.8084 / 0.08847 | 0.9882 / 0.8861 / 0.06437 | 0.728 | native not worse |
+| 110 × "apple " | 141 | 0.9826 / 0.6715 / 0.08729 | 0.9925 / 0.6699 / 0.02393 | 0.274 | native not worse |
+| 110 × "hello " | 141 | 0.9817 / 0.8059 / 0.10998 | 0.9916 / 0.8021 / 0.05983 | 0.544 | native not worse |
+| `README.md`, first 110 tokens | 122 | 0.9958 / 0.9567 / 0.01024 | 0.9979 / 0.9921 / 0.00634 | 0.619 | native not worse |
+
+- **The control reproduces D1** to the digit.
+- **By the registered rule, the result is specific to "the ":** all three other fillers and the natural text read native not worse,
+  with the native arm's KL to f32 at 0.27–0.73× the int8 arm's.
+- **"the " is unusual as a filler:** both arms are far further from f32 on it than on any other prompt (int8 KL 0.43 against 0.09–0.11
+  on the other fillers).
+- **Together with D2a:** on the same input, the native projections are the more accurate ones. On every other prompt measured, the
+  native lane is the closer of the two end to end.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
