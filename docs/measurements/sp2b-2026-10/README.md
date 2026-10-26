@@ -82,4 +82,18 @@ Not changed: the snapshot budget, its eviction, its 2,048-id threshold, and plai
 
 ## Readings
 
-(none yet)
+(none: no code was written)
+
+## STOP POINT (2026-10-26, 10:07 PDT): parked by the owner's wind-down
+
+The gates above are registered (`ad12a015`) and nothing else exists: no code, no run. What is next, in order:
+1. **The fused-rows choice first:** confirm a restore's `ExtendContext` replay of 3,840 fused rows costs little beside the
+   re-prefill it replaces (the drafter's own projection, 6 layers), or store the drafter's K/V instead (48 KiB a position, 3× the
+   bytes). Either way G2 prices what is stored.
+2. The change in the order listed above (scope into `BlockSpec`, the marked seed, the rows in the snapshot, the restore, the
+   reporting), with G1's tier-0 tests and plants written beside each piece.
+3. G1 tier 1, G4, then G3 (about 65 min of runs, by day).
+
+**A dependency to read first:** the DFlash drafters' sliding, causal layers (`docs/measurements/dflash-window-2026-10/README.md`,
+parked at its own STOP POINT) change what a fused row's K/V means for a windowed layer at a restore past 4,096 positions. Land that
+fix before SP2b's G3, so G3 measures the drafter as it was trained.
