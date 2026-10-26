@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"os"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/towerid"
@@ -16,5 +17,5 @@ func TestTowerIdentity_webgpu(t *testing.T) {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
 	c.Close()
-	towerid.Check(t, "..", "webgpu")
+	towerid.Check(t, "..", "webgpu", os.Getenv("GOINFER_TOWER_ID_OUT"))
 }

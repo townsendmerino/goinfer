@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"os"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/towerid"
@@ -16,5 +17,5 @@ func TestTowerIdentity_metal(t *testing.T) {
 		t.Skipf("no Metal device: %v", err)
 	}
 	d.ReleaseObjects()
-	towerid.Check(t, "..", "metal")
+	towerid.Check(t, "..", "metal", os.Getenv("GOINFER_TOWER_ID_OUT"))
 }

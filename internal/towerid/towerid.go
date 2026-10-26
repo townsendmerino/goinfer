@@ -8,7 +8,8 @@
 // that backend declares (multimodal.DeclaredTowers, and multimodal.WhisperDevices for the Whisper encoders), and a
 // declared family whose device path does not attach is an error, never a CPU fallback.
 //
-// Check is the test every backend module calls: two runs must agree, and GOINFER_TOWER_ID_OUT names a file for the record.
+// Check is the test every backend module calls: two runs must agree, and out (when not empty) receives the record. The
+// callers pass GOINFER_TOWER_ID_OUT, read in their test files: this package reads no environment.
 //
 // Test it: go test ./internal/towerid/ (the CPU record, seconds).
 package towerid
@@ -452,9 +453,9 @@ func (r *runner) qwenASR() error {
 	return nil
 }
 
-// Check runs backend's record twice and fails unless both runs agree case by case; with GOINFER_TOWER_ID_OUT set it
-// writes the record there as JSON. A device backend's caller skips first when the device is absent.
-func Check(t testing.TB, root, backend string) Record {
+// Check runs backend's record twice and fails unless both runs agree case by case; a non-empty out receives the record
+// as JSON. A device backend's caller skips first when the device is absent.
+func Check(t testing.TB, root, backend, out string) Record {
 	t.Helper()
 	a, err := Run(root, backend)
 	if err != nil {
@@ -478,7 +479,7 @@ func Check(t testing.TB, root, backend string) Record {
 	for _, c := range a.Cases {
 		t.Logf("%-18s %-28s device=%-5v values=%-7d %s", c.Family, c.Input, c.Device, c.Values, c.SHA256)
 	}
-	if out := os.Getenv("GOINFER_TOWER_ID_OUT"); out != "" {
+	if out != "" {
 		j, err := json.MarshalIndent(a, "", "  ")
 		if err != nil {
 			t.Fatal(err)
