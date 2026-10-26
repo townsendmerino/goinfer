@@ -1,0 +1,4 @@
+=== RUN   TestCUDA_launchDirect
+signal: segmentation fault (core dumped)
+FAIL	github.com/townsendmerino/aikit/gpu	0.770s
+FAIL

@@ -1,0 +1,16 @@
+=== RUN   TestVisionCUDA_parityWithCPU
+    encoder_test.go:97: SigLIP GPU≡CPU: 512 values, cosine 1.000000000, worst abs Δ 6.52e-07
+    encoder_test.go:117: break-it-first: negated input scores cosine -0.420146 — the gate discriminates
+--- PASS: TestVisionCUDA_parityWithCPU (0.26s)
+=== RUN   TestVisionCUDA_registersBackend
+    encoder_test.go:130: vision.RegisterResident wired: EnableResident attached the CUDA tower
+--- PASS: TestVisionCUDA_registersBackend (0.22s)
+=== RUN   TestVisionCUDA_repeatable
+    encoder_test.go:158: 4 forwards on reused scratch: bit-identical
+--- PASS: TestVisionCUDA_repeatable (0.20s)
+=== RUN   TestVisionCUDA_graphCapture
+    encoder_test.go:179: whole-tower CUDA Graph captured successfully
+    encoder_test.go:209: CUDA Graph replay is BIT-IDENTICAL to direct forwardTower dispatch
+--- PASS: TestVisionCUDA_graphCapture (0.19s)
+PASS
+ok  	github.com/townsendmerino/aikit/gpu/visioncuda	0.913s
