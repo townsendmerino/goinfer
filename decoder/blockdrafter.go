@@ -79,11 +79,26 @@ func (d *blockTrunk) DrafterGeometry() DrafterGeometry {
 	}
 }
 
-func (d *blockTrunk) DrafterFC() *linalg.WeightMat { return &d.fc }
-func (d *blockTrunk) DrafterHiddenNorm() []float32 { return d.hiddenNorm }
-func (d *blockTrunk) DrafterFinalNorm() []float32  { return d.finalNorm }
+// The weight accessors panic with ErrDrafterReleased once the host weights are released (ReleasableDrafterWeights), rather
+// than hand out zero matrices.
+
+func (d *blockTrunk) DrafterFC() *linalg.WeightMat {
+	d.mustHoldWeights()
+	return &d.fc
+}
+
+func (d *blockTrunk) DrafterHiddenNorm() []float32 {
+	d.mustHoldWeights()
+	return d.hiddenNorm
+}
+
+func (d *blockTrunk) DrafterFinalNorm() []float32 {
+	d.mustHoldWeights()
+	return d.finalNorm
+}
 
 func (d *blockTrunk) DrafterLayer(i int) DrafterLayerWeights {
+	d.mustHoldWeights()
 	l := &d.layers[i]
 	return DrafterLayerWeights{
 		Q: &l.q, K: &l.k, V: &l.v, O: &l.o,

@@ -84,6 +84,7 @@ func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
 		t.Fatal("the fixture loaded without weights or without its mapping")
 	}
 	geo, bs, mask, taps := d.DrafterGeometry(), d.BlockSize(), d.MaskTokenID(), d.TargetLayerIDs()
+	st := d.st
 
 	if err := d.ReleaseHostWeights(); err != nil {
 		t.Fatal(err)
@@ -91,22 +92,31 @@ func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
 	if !d.HostWeightsReleased() {
 		t.Error("HostWeightsReleased is false after the release")
 	}
-	if d.st != nil {
+	if _, err := st.Tensor("fc.weight"); err == nil {
 		t.Error("the mapping is still open after the release of a drafter with no own head")
 	}
-	if d.DrafterFC().Rows() != 0 || d.DrafterHiddenNorm() != nil || d.DrafterFinalNorm() != nil {
+	if d.fc.Rows() != 0 || d.hiddenNorm != nil || d.finalNorm != nil {
 		t.Error("fc or a trunk norm survived the release")
 	}
-	for i := range geo.Layers {
-		l := d.DrafterLayer(i)
-		for _, m := range []*linalg.WeightMat{l.Q, l.K, l.V, l.O, l.Gate, l.Up, l.Down} {
+	for i := range d.layers {
+		l := &d.layers[i]
+		for _, m := range []*linalg.WeightMat{&l.q, &l.k, &l.v, &l.o, &l.gate, &l.up, &l.down} {
 			if m.Rows() != 0 {
 				t.Errorf("layer %d: a %d-row matrix survived the release", i, m.Rows())
 			}
 		}
-		if l.QNorm != nil || l.KNorm != nil || l.InputNorm != nil || l.PostAttnNorm != nil {
+		if l.qNorm != nil || l.kNorm != nil || l.inputNorm != nil || l.postAttnNorm != nil {
 			t.Errorf("layer %d: a norm survived the release", i)
 		}
+	}
+	// the weight accessors refuse rather than hand out the zero matrices
+	for name, f := range map[string]func(){
+		"DrafterFC":         func() { d.DrafterFC() },
+		"DrafterHiddenNorm": func() { d.DrafterHiddenNorm() },
+		"DrafterFinalNorm":  func() { d.DrafterFinalNorm() },
+		"DrafterLayer":      func() { d.DrafterLayer(0) },
+	} {
+		wantReleasedPanic(t, name, f)
 	}
 	if g := d.DrafterGeometry(); g.Layers != geo.Layers || g.Hidden != geo.Hidden || g.HeadDim != geo.HeadDim || !slices.Equal(g.InvFreq, geo.InvFreq) {
 		t.Errorf("geometry changed: %+v, want %+v", g, geo)
@@ -134,10 +144,11 @@ func TestDFlashDrafter_releaseOwnHead(t *testing.T) {
 	if !d.HasOwnHead() || d.lmHead.Rows() == 0 || d.embed.Rows() == 0 || len(d.d2t) == 0 {
 		t.Fatal("the fixture loaded without its own head, embedding or d2t")
 	}
+	st := d.st
 	if err := d.ReleaseHostWeights(); err != nil {
 		t.Fatal(err)
 	}
-	if d.st != nil {
+	if _, err := st.Tensor("lm_head.weight"); err == nil {
 		t.Error("the mapping is still open after the release of a drafter with its own head")
 	}
 	if d.lmHead.Rows() != 0 || d.embed.Rows() != 0 || d.d2t != nil {
@@ -154,19 +165,28 @@ func TestDFlashDrafter_releaseOwnHead(t *testing.T) {
 	if _, err := d.FuseContext(be, [][]float32{make([]float32, 2*d.hidden)}); !errors.Is(err, ErrDrafterReleased) {
 		t.Errorf("FuseContext: %v, want ErrDrafterReleased", err)
 	}
-	for name, f := range map[string]func(){
-		"EmbedDraft":   func() { d.EmbedDraft(1, row) },
-		"EmbedBlock":   func() { d.EmbedBlock(nil, []int{1}) },
-		"DraftTokenID": func() { d.DraftTokenID(be, row) },
-		"DraftIDs":     func() { d.DraftIDs(nil, [][]float32{row}) },
-	} {
-		func() {
-			defer func() {
-				if r := recover(); r != ErrDrafterReleased {
-					t.Errorf("%s on a released drafter: recovered %v, want a panic with ErrDrafterReleased", name, r)
-				}
-			}()
-			f()
-		}()
+	ctx := d.NewContext() // reads no weights: the incremental entry points below are each reached on their own
+	if _, err := d.DraftBlockCtx(be, ctx, [][]float32{row}); !errors.Is(err, ErrDrafterReleased) {
+		t.Errorf("DraftBlockCtx: %v, want ErrDrafterReleased", err)
 	}
+	for name, f := range map[string]func(){
+		"ExtendContext": func() { d.ExtendContext(be, ctx, [][]float32{row}) },
+		"EmbedDraft":    func() { d.EmbedDraft(1, row) },
+		"EmbedBlock":    func() { d.EmbedBlock(nil, []int{1}) },
+		"DraftTokenID":  func() { d.DraftTokenID(be, row) },
+		"DraftIDs":      func() { d.DraftIDs(nil, [][]float32{row}) },
+	} {
+		wantReleasedPanic(t, name, f)
+	}
+}
+
+// wantReleasedPanic fails unless f panics with ErrDrafterReleased.
+func wantReleasedPanic(t *testing.T, name string, f func()) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != ErrDrafterReleased {
+			t.Errorf("%s on a released drafter: recovered %v, want a panic with ErrDrafterReleased", name, r)
+		}
+	}()
+	f()
 }
