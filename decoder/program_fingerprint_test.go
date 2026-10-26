@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,7 +12,7 @@ import (
 
 const programFingerprintsPath = "../testdata/program_fingerprints.json"
 
-// fixtureProgramFingerprints fingerprints every committed fixture config.json under testdata that resolves to an
+// fixtureProgramFingerprints fingerprints every fixture config.json under testdata that git does not ignore and that resolves to an
 // architecture, keyed by its directory relative to the repository root. A config the registry does not take (an
 // encoder, a tower, a sampling-only fixture) is not a decoder program and has no entry.
 func fixtureProgramFingerprints(t *testing.T) map[string]string {
@@ -25,6 +26,10 @@ func fixtureProgramFingerprints(t *testing.T) map[string]string {
 			return nil
 		}
 		dir := filepath.Dir(path)
+		// A gitignored fixture (a local drop CI never has) is not in the table.
+		if exec.Command("git", "check-ignore", "-q", path).Run() == nil {
+			return nil
+		}
 		p, perr := programForConfigDir(dir)
 		if perr != nil {
 			return nil
