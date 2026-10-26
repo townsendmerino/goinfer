@@ -134,6 +134,10 @@ func tailsRun(t *testing.T, dir string, moeCache bool) (res map[string]string, o
 }
 
 func TestPrefillTails_bitIdenticalToTheRecordedBaseline(t *testing.T) {
+	// The recorded baselines are of the W4A8 decode, which floatActOffForTest keeps on a Gemma 4 MoE resident; that model's
+	// float-activation decode (floatact.go) is held to the CPU by TestGemma4MoE_floatParity instead.
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	fixtures := []struct {
 		dir      string
 		moeCache bool

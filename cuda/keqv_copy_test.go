@@ -170,6 +170,10 @@ func keqvRunFixture(t *testing.T, dir string, graphs bool) (run keqvRun, kEqVLay
 }
 
 func TestKEqVCopy_bitIdenticalToTheDoubleProjection(t *testing.T) {
+	// The recorded baselines are of the W4A8 decode, which floatActOffForTest keeps on a Gemma 4 MoE resident; that model's
+	// float-activation decode (floatact.go) is held to the CPU by TestGemma4MoE_floatParity instead.
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	fixtures := []string{"gemma4-dense-scaled", "gemma4-moe-scaled", "gemma4-moe-kv-tiny"}
 	dev, drv := gpuIdentity(t)
 	record := os.Getenv("GOINFER_KEQV_RECORD") != ""

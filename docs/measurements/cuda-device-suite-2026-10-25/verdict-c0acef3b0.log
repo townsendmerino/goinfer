@@ -1,0 +1,11 @@
+--- FAIL: github.com/townsendmerino/goinfer/cuda.TestKEqVCopy_bitIdenticalToTheDoubleProjection
+--- FAIL: github.com/townsendmerino/goinfer/cuda.TestPrefillTails_bitIdenticalToTheRecordedBaseline
+finished in 21s
+cuda-device-suite: 0 passed, 2 failed, 0 device skips, 0 other skips, 1 failed package(s)
+RED: no test passed, so nothing ran
+FAILED TESTS (2):
+  github.com/townsendmerino/goinfer/cuda.TestKEqVCopy_bitIdenticalToTheDoubleProjection
+  github.com/townsendmerino/goinfer/cuda.TestPrefillTails_bitIdenticalToTheRecordedBaseline
+FAILED PACKAGES (1):
+  github.com/townsendmerino/goinfer/cuda
+VERDICT: RED
