@@ -47,15 +47,12 @@ func (r *cudaResident) choosePrefillWidth() {
 
 // prefillSpanScratchMax is the most span scratch a pass of rows rows allocates for any prompt up to the context. It is not always
 // the figure at the full context: a row group holds as many rows as the split-KV budget allows at the span, so a shorter span can
-// allocate a few hundred KiB more. Below attn_batched's bound the span scratch is zero, so the scan stops at the first zero.
+// allocate a few hundred KiB more, and the fused attention can serve the full context while a shorter span routes to the
+// row-batched kernels. So every span is priced; the scan runs once per build.
 func (r *cudaResident) prefillSpanScratchMax(rows int) int64 {
 	var most int64
-	for k := r.ctxCap; k > 0; k-- {
-		s := r.PrefillSpanScratchBytes(rows, k)
-		if s == 0 {
-			break
-		}
-		most = max(most, s)
+	for k := 1; k <= r.ctxCap; k++ {
+		most = max(most, r.PrefillSpanScratchBytes(rows, k))
 	}
 	return most
 }
