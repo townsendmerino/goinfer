@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // forwardLogitsSharedEvent is Step-6 Step-0 regime (3): the whole trunk in ONE command buffer, but

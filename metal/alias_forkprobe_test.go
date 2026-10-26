@@ -16,8 +16,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/mmap"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // TestAliasForkProbe measures whether a fork() of a process that holds a GPU-wired no-copy buffer over a

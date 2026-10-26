@@ -5,8 +5,8 @@ package metal
 import (
 	"fmt"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 var _ decoder.ResidentKVCopier = (*metalResident)(nil)

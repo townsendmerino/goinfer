@@ -5,7 +5,7 @@
 // bit-identical across it (the Metal device-parity suite is the tripwire).
 package metal
 
-import gpu "github.com/townsendmerino/aikit/gpu"
+import gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 
 type (
 	Device       = gpu.Device

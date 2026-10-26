@@ -5,7 +5,7 @@ package metal
 import (
 	"testing"
 
-	"github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // TestCopyBytesToU32Buf_oversizedSrcPanics gates N-33 (audit-metal-2026-09-12.md): an oversized src must panic, as

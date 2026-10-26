@@ -8,8 +8,8 @@ import (
 	"math"
 	"sync"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // EmbeddingGemma 2's text encoder on Metal (Phase M, docs/tasks/task-embeddinggemma2.md): the CPU forward of
