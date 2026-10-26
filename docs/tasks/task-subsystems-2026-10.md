@@ -867,7 +867,8 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
 - **Ratchet (tier 0).** `internal/layout`'s `TestBackendTests_decoderImportsOnlyFall` parses the imports of every Go
   file in the tree (build tags ignored, so a count is the union over tags; `//go:build ignore` files skipped) and fails
   when either count of any of the three modules differs from the committed figure: above it is a regression; below it,
-  the figure is lowered in the same commit. It lands at the counts of `origin/main` at `bc365a837`, in its own commit.
+  the figure is lowered in the same commit. It lands at the counts of `origin/main` at `bc365a837`, in its own commit:
+  direct 246, 245 and 87, reach 352, 395 and 172 for `cuda`, `metal` and `gpu`.
   `-v` prints the census. Cost: milliseconds; no device, no model. Void: none (it is deterministic over the tree).
 - **Each batch of moved tests (tier 0 on the device, seconds).** The batch's files move from `cuda/` to `cuda/kernels/`,
   a package that imports nothing from goinfer (aikit `gpu` and gocudrv only); it reads the PTX the moved tests load
