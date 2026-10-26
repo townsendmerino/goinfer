@@ -1,0 +1,231 @@
+{
+  "Before": "fd6ab21cc9f06729135a28230ae222d748a258f9",
+  "After": "1ec4e8e788da21244199d2f3de55aaaf8979799f",
+  "Outcome": "OK",
+  "Config": "arm64[dotprod]",
+  "PinBefore": "v1.75.0",
+  "PinAfter": "v1.75.0",
+  "DigestBefore": "sha256:5a26a18b769383fb46b3b6dbf4eaf3cd1847b270e56ba0da07c3ccc4156038ea",
+  "DigestAfter": "sha256:5a26a18b769383fb46b3b6dbf4eaf3cd1847b270e56ba0da07c3ccc4156038ea",
+  "ChangedKernels": null,
+  "Counts": {
+    "agree-fresh": 43
+  },
+  "Verdicts": [
+    {
+      "family": "bailing_hybrid",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "cohere",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "cohere2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "deepseek_v2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "deepseek_v3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gemma",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gemma2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gemma3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gemma4",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "glm4_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "glm_ocr",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gpt-oss",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gpt2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "granite",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "granitemoehybrid",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "internlm2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "kimi_k2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "laguna",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "lfm2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "llama",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "llama4_text",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mellum",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mistral",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mistral3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mixtral",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "nemotron_h",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "olmo3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "olmo_hybrid",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "phi3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen2_5_vl",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen2_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_5",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_5_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_asr",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_next",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "smollm3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "spark2_5",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "voxtral",
+      "class": "agree-fresh",
+      "explained": true
+    }
+  ]
+}
