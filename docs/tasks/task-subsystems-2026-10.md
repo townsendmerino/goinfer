@@ -34,7 +34,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 |---|---|---|---|
 | VK0 | done | 2026-10-26 (mac-vk01): 234 of 4,052 commits re-staled 8,895 family validations in 30 days; 8,775 (98.7%) came with no moved golden and no changed recorded metric, an upper bound on what a behavior key saves | §5.3; `docs/measurements/vk0-2026-10.md` |
 | VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
-| VK2 | active | 2026-10-26 (mac-vk01): part 1 done, one file per family adapter (A1–A4 PASS); part 2 (`model.go` out of `core`) waits on a decision: 19 files holding forward-path code, `program.go` and `program_cpu.go` among them, are in no hash set; S–M | §5.5; `docs/measurements/vk2-2026-10.md` |
+| VK2 | active | mac-vk01, branch `vk2-core-forward-2026-10`: part 1 done (#277); part 2, `core` covering the forward path (Francis 15:31, option 1), under gates B1–B4 registered in §5.5; S–M | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
 | VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
 | VK5 | active | mac-vk01: shadow mode built (`internal/paritykey`, `gate shadow`, `.github/workflows/vk-shadow.yml`); P1–P3 PASS, P4 pending the workflow's first run on main, when SD6's week starts; the switch is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
@@ -442,6 +442,28 @@ planning it: 19 files holding forward-path code are in no hash set, among them `
 | A2 carried by identity | `scripts/refresh_parity_hashes.sh` (goldens-gated) refreshes `deps_hash`; the manifest diff changes `own` lists and `deps_hash` and nothing else: no status, `validated_at`, date or metrics | a golden red before the move (then it is not this change's) | one run | about 4 min (the script's own figure) |
 | A3 a planted adapter edit | on a throwaway commit after the move, `gate shadow` stales exactly: `{phi3}` for an edit in `arch_phi3.go`; `{llama, voxtral}` for one in `arch_llama.go`; every family that uses `core` for one in `registry.go` | — | one run each | about a minute in all |
 | A4 the census holds | a new test, `TestParityManifest_adapterFilesOwned`, derives each family's adapter files from the registry and the adapters' calls and fails when a family's `own` list lacks one; `gate mutation` turns it red by dropping one entry | — | one run | seconds |
+
+#### VK2 part 2's gates (`core` covers the forward path), registered 2026-10-26 before the code (mac-vk01)
+
+Francis (15:31, relayed): option 1. Move `model.go`'s forward functions into a forward file in `core`, drop its load,
+option and generation plumbing from `core`, give every uncovered forward-path file to `core` or to its one family's
+`own` list, and add the test that fails when forward-path code sits in a file no set covers.
+
+The rule the test holds: **`core` is closed under calls.** From every function in a `core` file, a type-checked call
+graph of `decoder` (the files this GOOS and GOARCH build, calls resolved by `go/types`, interface and func-value calls not
+followed) reaches only functions in files some shared set or some family's `own` list covers. Rooting at `model.go`'s
+forward reaches 19 uncovered files today. Rooting at all of `core` also reaches the batched prefill, the VL prefill and
+config loading: 31 in all. The 12 beyond the 19 follow the same rule. A file only one family subset reaches goes to
+that subset's set or `own` lists: KDA → bailing_hybrid, Gemma 4's MoE FFN → gemma4, MLA int8 → deepseek_v2, deepseek_v3
+and kimi_k2, the DeltaNet batched path → the `deltanet` set, Qwen3.5's VL prefill → qwen3_5 and qwen3_5_moe. Everything
+else goes to `core`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| B1 unchanged code | as A1: every top-level declaration in `decoder` keeps its token stream; only `model.go`'s forward functions change file | never | one run | seconds |
+| B2 the forward census | `TestParityManifest_coreClosed` passes after the change and fails on the tree before it (it names the uncovered files); `gate mutation` taking `program_cpu.go` out of `core` turns it red | — | one run each | seconds (one type-check of `decoder`) |
+| B3 carried by identity | the goldens-gated refresh; the manifest diff changes the sets, `own` lists and `deps_hash` and nothing else | a golden red before the change | one run | about 4 min |
+| B4 planted edits | `gate shadow` on throwaway commits stales: every `core` family for a token in `program_cpu.go` (none before) and in the new forward file; none for a token in `model.go`'s `Load`; exactly `{bailing_hybrid}` for one in `kda.go` | — | one run each | about a minute in all |
 
 ### 5.6 VK3 — one parity record per family
 
