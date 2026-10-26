@@ -8,8 +8,8 @@ import "github.com/townsendmerino/goinfer/internal/mem/probe"
 func HostRAMBytes() int64 { return probe.Physical() }
 
 // HostRAMAvailableBytes is this machine's currently available memory, or 0 when it cannot be determined: MemAvailable on
-// Linux, the kernel's free percentage of physical memory less a 500 MiB buffer on macOS, ullAvailPhys on Windows. Not
-// cached: it changes as other processes run.
+// Linux, the kernel's free percentage of physical memory less a fixed pressure buffer on macOS, ullAvailPhys on Windows.
+// Not cached: it changes as other processes run.
 func HostRAMAvailableBytes() int64 { return probe.Available() }
 
 // SwapUsedBytes is the machine's swap in use in bytes, or (0, false) when it cannot be determined. Zero swap in use is a
