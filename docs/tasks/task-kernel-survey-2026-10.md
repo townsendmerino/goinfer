@@ -71,7 +71,7 @@
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
 | KS-F1 | open | either box: a fork/join counter and bit-identity on the tiny MoE fixtures | — |
 | KS-F2 | active | #239: gpt-oss's attendSinksToken fans its heads out and scores eight keys at once, bit-identical, default on for gpt-oss (Francis, 2026-10-25 10:16; limited to gpt-oss at 10:35). gpt-oss-20b at depth 128 10 of 10 pairs faster, 1.025×; then KS-O4 | `docs/measurements/ks-f2-2026-10/README.md` |
-| KS-F2b | open | time attendQueryP's new schedule (heads fanned out, eight keys at once) on Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4 before it ships for them: not run, by Francis's call of 2026-10-25 10:35 (#239 keeps their old path). The code is in #239's history | `docs/measurements/ks-f2-2026-10/README.md` |
+| KS-F2b | done | default on 2026-10-25 by Francis's call (14:01, option (c)) for every attendQueryP family: Qwen3.5/3.6, Granite-4.0-H, Nemotron-H, LFM2 and Llama 4. Bit-identical (768 function-level runs, 132 fanned; gate identity IDENTICAL for all five at 640 steps). Qwen3.5-0.8B on the Mac CPU 1.113× at depth 128 and 1.833× at 1,024, 10 of 10 each; the other four ship untimed by his call. LFM2.5-2.6B's confirming run is queued on the Mac's night runner | `docs/measurements/ks-f2b-2026-10-25/README.md` |
 | KS-F3 | open | either box: `GOINFER_DELTANET_TIMING=1` with M35 (tier 1, minutes) | — |
 | KS-F4 | open | nobara: per-fan-out timestamps inside a real 0.5B token | — |
 | KS-F5 | open | either box: `AllocsPerRun` and trig calls per token on `deepseek-tiny` | — |
@@ -88,8 +88,8 @@
 | KS-G9 | open | aikit: time the final loop in `BenchmarkFlatBinaryQuery` | — |
 | KS-G10 | open | aikit: an offline block-max simulation counting documents scored | — |
 | KS-H1 | open (512) | done 2026-10-22 for head dim ≤ 256 and E-models on their batched pass: blocked prefill byte-equal to whole, admission prices one pass; KH1-G1 to G4 PASS. G5 read 2026-10-24: Qwen3.5-9B at 20K, transient prefill scratch 4.86 → 0.58 GiB, peak footprint −70%. Left: head-dim-512 models (the tile choice must key on the whole prompt's length) | `docs/measurements/ksh1-2026-10/README.md` |
-| KS-H2 | open | nobara: `cuMemGetInfo` around the 7B build; free VRAM after `kvAllocPools` | — |
-| KS-H3 | open | nobara: `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` after the move | — |
+| KS-H2 | done | read 2026-10-25: the 7B's weights round up by 405.8 MiB; Qwen3-8B's 16k f16 pools by 135.0 MiB; rounding explains the card's drop to within 14.4 MiB; free after `kvAllocPools` 1,821.1 MiB (7B) and 391.1 MiB (8B at 16k) | §11, "KS-H2 / KS-H3 readings, read" |
+| KS-H3 | open | baseline read 2026-10-25 before the move (`moe_route` 4,416 B a thread, 132.0 MiB retained); the move (the per-thread arrays to shared memory) is not on `main`, so the reading after it is still to do | §11, "KS-H2 / KS-H3 readings, read" |
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | blocked | nobara-ks-cuda, after KS-H2 and KS-H3 read: re-derive both margins from measured parts, the 2,048-row pass's scratch included, and bring the numbers to Francis before changing either guard (KS-O3 decided A, Francis, 2026-10-25) | — |
@@ -2777,6 +2777,64 @@ Logs: `~/goinfer-logs/kh1-g5-day-2026-10-24-0856/`.
 - **Size:** S.
 - **First measurement:** `TestKernelLocalMemoryCensus` reads 0 B for `moe_route`, and the reservation falls to ~1.3 MiB.
 - **Prior art:** new. The cost was recorded as "the price of the router cap".
+
+**KS-H2 / KS-H3 readings, registered 2026-10-25 before any data (owner, 1:52 pm: measurement only, no guard changes; the numbers go to
+nobara-ks-cuda for KS-H6).** Nobara, RTX 2070 SUPER 8 GB, driver 595.91.07, `main` at `d759bba19`; each run alone on the card under
+the exclusive timing lock, with the desktop compositor's context (about 16 MiB) recorded if present. Harness:
+`docs/measurements/ks-h2-h3-2026-10-25/harness_test.go.txt` (a scratch test, kept as text), driven by the existing
+`allocSeenForTest` and `kvAllocSeenForTest` seams, which fire on the executor thread before each allocation; it reads
+`cuMemGetInfo` through the resident's own context inside them.
+- **H2-R1, the 7B's build** (`qwen2.5-7b-instruct-q4_k_m.gguf`, int4, one slot, its default context): free VRAM at the load's
+  first allocation, at its first K/V pool allocation, and after the load returns. Reported: the drop from the first to the
+  second reading against the bytes requested in between (the weights and the build's scratch), and against those requests
+  rounded as `cuMemAlloc` rounds (2 MiB granularity at 2 MiB and over). Expectation from G-M1: about 406 MiB of rounding.
+- **H2-R2, Qwen3-8B's KV pools** (`Qwen3-8B-Q4_K_M.gguf`, int4, one slot, `ResidentContext` 16,384, `--kv` at its `auto`): free
+  VRAM just before the first pool buffer and just after the last, against the pool bytes requested (`kvAllocSeenForTest`) and
+  the same requests rounded. Expectation from the survey: about 135 MiB of rounding not in the price.
+- **H3-R1, H3-R2, `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` as they stand.** `moe_route` and
+  `route_gptoss` still keep their per-thread arrays (`cuda/moe.cu:moe_route`'s `score[MOE_MAX_E]`), so these are the readings
+  before the move, the baseline the move's own gate compares against; the move itself is KS-H3's code change, not this one.
+  Expectation: `moe_route` 4,416 B per thread; 138,412,032 B retained after its first launch.
+- **Void and stopping rule:** a reading taken while another process holds a CUDA context beyond the compositor is void and re-run;
+  one reading each, since a memory reading on an idle card does not vary. Cost: about 5 minutes in all.
+
+**KS-H2 / KS-H3 readings, read 2026-10-25, 14:28–14:41, by day under the exclusive lock.** Logs and harness:
+`docs/measurements/ks-h2-h3-2026-10-25/`. Three attempts, all kept:
+- **Attempt 1 (14:28, `readings-1-h2void-h3ok.log`):** H2-R1 and H2-R2 void. Another process's serve held 6.9 GB on the card, left
+  over after its harness released the lock (since fixed on that harness's branch). H3-R1 and H3-R2 valid: the card held only the
+  compositor by then.
+- **Attempt 2 (14:32, `readings-2-h2.log`), a deviation:** both builds came up on the f32 cache. The cuda test suite's default
+  turns `--kv auto`'s f16 off (`cuda/kv16_default_test.go`), so the harness did not resolve the KV as serve does. That is right for
+  H2-R1's weight stage, which does not depend on the KV, and wrong for the registration's `auto`. Qwen3-8B at 16,384 was refused on
+  f32 (4.83 GB of KV against 2.98 GB free).
+- **Attempt 3 (14:40, `readings-3-h2-served.log`):** `KSH2_SERVED=1` turns `kvF16Auto` on for the build, so both builds resolve f16 as
+  serve does. Only the compositor (17 MiB) was on the card. These are the H2 readings.
+
+| reading | stage | requested | rounded to 2 MiB | the card's drop | rounding (rounded − requested) | drop − rounded |
+|---|---|---|---|---|---|---|
+| H2-R1, qwen2.5-7b q4_k_m, 16,384, f16 | weights and scratch (572 requests, 347 under 2 MiB) | 4,023.8 MiB | 4,429.6 MiB | 4,444.0 MiB | **405.8 MiB** | 14.4 MiB |
+| H2-R1 | K/V pools (72 buffers) | 900.1 MiB | 1,008.6 MiB | 1,010.0 MiB | **108.5 MiB** | 1.4 MiB |
+| H2-R2, Qwen3-8B q4_k_m, 16,384, f16 | weights and scratch (696 requests, 334 under 2 MiB) | 4,323.3 MiB | 4,431.8 MiB | 4,432.0 MiB | **108.5 MiB** | 0.2 MiB |
+| H2-R2 | K/V pools (88 buffers) | 2,313.6 MiB | 2,448.6 MiB | 2,452.0 MiB | **135.0 MiB** | 3.4 MiB |
+
+- **Free VRAM** (of 7,784.2 MiB; 7,277.1 free before each load):
+  - H2-R1: 1,821.1 MiB after `kvAllocPools`, 1,691.1 MiB after the load returned.
+  - H2-R2: 391.1 MiB after the pools, 261.1 MiB after the load.
+  - 70 allocations follow the pools in each build, about 130 MiB.
+- **Prices:** `kvBytesForCap` 896.0 MiB + a 3.5 MiB null slot (H2-R1), 2,304.0 + 9.0 MiB (H2-R2). Both are the requested pool bytes;
+  the rounding is not in them.
+- **Against the registration:** H2-R1's 405.8 MiB meets the expected 406. H2-R2's 135.0 MiB meets the expected 135. Rounding at 2 MiB
+  accounts for the card's drop to within 14.4 MiB at every stage.
+- **The f32-cache reading of attempt 2**, for the record: the 7B's pools requested 1,799.7 MiB, rounded 1,904.7 (105.0 of
+  rounding), and the card dropped 1,906.0.
+- **KS-H3, before the move** (`moe_route` and `route_gptoss` still keep their per-thread arrays on `main`):
+  - `moe_route` declares 4,416 B per thread. Its naive full-occupancy product is 180,879,360 B (40 SMs × 1,024 threads), but the
+    MEASURED retention after its first launch is **138,412,032 B (132.0 MiB)**, ratio 0.7652; the module load and the first other
+    launch cost 0 B. Both meet the expectation.
+  - `route_gptoss` declares 4,608 B per thread (180.0 MiB naive), and 21 other kernels declare 32–96 B.
+  - The census's upper bound, every backing store at once, is 383.8 MiB.
+  - The readings after the move belong to the move's own gate.
+- **Handed to nobara-ks-cuda for KS-H6.** No guard changed here.
 
 **KS-H4 · Metal towers keep their largest image's scratch until unload (bit-identical).**
 - **Where:** `metal/grid_vision.go:gridVAccel.grow` only grows; the same holds in the other tower accelerators and aikit's
