@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 
-OLD = re.compile(r'^(\s*)(\w+ )?"github\.com/townsendmerino/aikit/gpu"', re.M)
+OLD = re.compile(r'^(\s*(?:import\s+)?)(\w+\s+)?"github\.com/townsendmerino/aikit/gpu"', re.M)
 
 
 def git(*args, binary=False):
@@ -21,7 +21,7 @@ def git(*args, binary=False):
 
 def rewrite(module, src: bytes) -> bytes:
     new = f'"github.com/townsendmerino/goinfer/{module}/internal/gpudev"'
-    text = OLD.sub(lambda m: f'{m.group(1)}{m.group(2) or "gpu "}{new}', src.decode())
+    text = OLD.sub(lambda m: f'{m.group(1)}{(m.group(2) or "gpu").strip()} {new}', src.decode())
     return subprocess.run(["gofmt"], input=text.encode(), capture_output=True, check=True).stdout
 
 
