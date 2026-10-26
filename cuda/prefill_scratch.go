@@ -13,8 +13,8 @@ import (
 var prefillWidths = []int{2048, 1024, prefillDefaultChunk}
 
 // prefillWidthFor is the build's default pass width: the widest of prefillWidths whose pass (pass(rows), its device scratch) fits in
-// free less margin less attach, the VRAM left after the build beyond ctxCapMarginBytes and what is still to attach. When none of
-// the wider ones fits it is prefillDefaultChunk, whose pass has always lived inside the margin. Measurement and gates:
+// free less margin less attach, the VRAM left after the build beyond what must stay free beside a pass (marginBesidePass) and what
+// is still to attach. When none of the wider ones fits it is prefillDefaultChunk, whose pass the context margin holds. Measurement and gates:
 // docs/tasks/task-kernel-survey-2026-10.md, "KS-B8 build".
 func prefillWidthFor(free, margin, attach int64, pass func(rows int) int64) int {
 	room := free - margin - attach
@@ -40,9 +40,10 @@ func (r *cudaResident) choosePrefillWidth() {
 		return
 	}
 	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
-	r.prefillWidth = prefillWidthFor(int64(free), ctxCapMarginBytes, r.extraBytes, pass)
-	fmt.Fprintf(os.Stderr, "cuda: prefill width %d rows (%.0f MiB of scratch; %.0f MiB free beyond the %d MiB margin); passes take up to %d rows\n",
-		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-ctxCapMarginBytes-r.extraBytes)/(1<<20), ctxCapMarginBytes>>20,
+	keep := r.marginBesidePass()
+	r.prefillWidth = prefillWidthFor(int64(free), keep, r.extraBytes, pass)
+	fmt.Fprintf(os.Stderr, "cuda: prefill width %d rows (%.0f MiB of scratch; %.0f MiB free beyond the %.0f MiB kept beside a pass); passes take up to %d rows\n",
+		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-keep-r.extraBytes)/(1<<20), float64(keep)/(1<<20),
 		min(r.prefillPassRows(), r.ctxCap))
 }
 

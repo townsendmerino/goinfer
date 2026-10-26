@@ -3161,6 +3161,8 @@ its own PR, and it gets a Gemini review before merge.
     old 384 MiB constant, which they keep under its own name (`grantReserveBytes`). Changing them is not part of this decision.
   - Every kernel. Outputs are bit-identical; only the context, the slot counts and the refusals can move.
 - **Merge note:** KS-B8 (#250) reads `ctxCapMarginBytes` in its width chooser. Whichever merges second takes the other's figure.
+  - **Done here (KS-B8 merged first):** the chooser keeps `marginBesidePass`, the context margin less the 512-row pass it holds,
+    since the wider pass it prices replaces that one. The margin's span term is KS-B8's bound over a prompt's passes.
 
 | gate | tier | instrument | PASS iff |
 |---|---|---|---|

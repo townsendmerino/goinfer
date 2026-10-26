@@ -237,5 +237,11 @@ func kvLayerCounts(layers []cudaLayer) (owners, mla int) {
 	return owners, mla
 }
 
+// marginBesidePass is the context margin less the 512-row pass it holds: what the width chooser keeps free beside the wider pass it
+// prices instead (choosePrefillWidth). It reads the built resident's figures, which equal the planned ones (TestKSH6C_marginPriced).
+func (r *cudaResident) marginBesidePass() int64 {
+	return r.ctxMarginBytes - r.PrefillScratchBytes(prefillDefaultChunk) - r.PrefillSpanScratchBytes(prefillDefaultChunk, r.ctxMarginCtx)
+}
+
 // ctxMargin is the context margin this build keeps (ctxMarginFor at the planned context).
 func (r *cudaResident) ctxMargin() int64 { return r.ctxMarginBytes }
