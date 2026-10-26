@@ -1047,7 +1047,7 @@ func (r *cudaResident) upW(h hostW) cudaWQ {
 		r.kquantAlt = append(r.kquantAlt, [2]cudaWQ{w, r.upW(*h.alt)})
 		return w
 	}
-	if h.src != nil {
+	if h.src != nil || h.readRows != nil { // planned, not packed: packed at upload
 		return r.streamW(h)
 	}
 	w := cudaWQ{kind: h.kind, W: r.upu32(h.wpk), N: h.N, K: h.K}
@@ -4113,6 +4113,8 @@ type hostW struct {
 	// the three device buffers upW allocates for it.
 	src              *linalg.WeightMat
 	nWpk, nWs, nWs16 int
+	// A planned row source (planRows) has no src: readRows widens a block of its rows into the staging block at upload.
+	readRows func(r0, n int, dst []float32) error
 
 	// A planned native Q5_K or Q6_K weight (planKQuant) reads its rows from the file: row(r) is destination row r's blocks, and
 	// nBytes is the one device buffer's size, the file's bytes for the weight.

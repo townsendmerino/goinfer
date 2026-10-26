@@ -4,7 +4,9 @@ package cuda
 
 import (
 	"bytes"
+	"errors"
 	"runtime"
+	"strings"
 	"testing"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -246,4 +248,60 @@ func TestPackStream_buildAllocatesNothingBeforeEveryLayerIsAccepted(t *testing.T
 	if allocs == 0 {
 		t.Error("VOID: the build allocated no device buffers at all")
 	}
+}
+
+// A row source (planRows, a streamed drafter's matrices) uploads packWeight's device bytes for the same values, at one staging
+// block and at several, and a reader that fails is an upload error rather than a weight of garbage.
+func TestPackStream_rowSourceBytesIdenticalToPackWeight(t *testing.T) {
+	r := streamRig(t)
+	kinds := map[string]bool{}
+	for name, wm := range streamWeights() {
+		if k := wm.Kind(); k != "f32" && k != "bf16" {
+			continue
+		}
+		kinds[wm.Kind()] = true
+		wm := wm
+		N, K := wm.Rows(), wm.Cols()
+		eager, err := packWeight(&wm)
+		if err != nil {
+			t.Fatalf("%s: packWeight: %v", name, err)
+		}
+		plan, err := planRows(decoder.DrafterRows{Rows: N, Cols: K, Read: func(r0, n int, dst []float32) error {
+			for i := range n {
+				wm.Row(r0+i, dst[i*K:(i+1)*K])
+			}
+			return nil
+		}})
+		if err != nil {
+			t.Fatalf("%s: planRows: %v", name, err)
+		}
+		want := devBytes(t, r.upW(eager), plan)
+		for _, words := range []int{1 << 20, 700, 1} {
+			withStage(t, words)
+			r.pk = nil
+			got := devBytes(t, r.upW(plan), plan)
+			for k, b := range want {
+				if !bytes.Equal(got[k], b) {
+					t.Errorf("%s, staging %d words: device buffer %s differs from packWeight's", name, words, k)
+				}
+			}
+		}
+	}
+	if !kinds["f32"] || !kinds["bf16"] {
+		t.Fatalf("streamWeights gave the row-source check kinds %v, want both f32 and bf16", kinds)
+	}
+	if r.setupErr != nil {
+		t.Fatalf("upload error: %v", r.setupErr)
+	}
+	withStage(t, 1<<20)
+	failing, err := planRows(decoder.DrafterRows{Rows: 8, Cols: 16, Read: func(int, int, []float32) error { return errors.New("read failed") }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.pk = nil
+	r.upW(failing)
+	if r.setupErr == nil || !strings.Contains(r.setupErr.Error(), "read failed") {
+		t.Errorf("a failing row source: setupErr %v, want the reader's error", r.setupErr)
+	}
+	r.setupErr = nil
 }
