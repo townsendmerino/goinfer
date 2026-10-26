@@ -47,7 +47,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
 | MM6 | blocked | MM1; `night.py add` and `goinfer fit` call `Solve` against the box's recorded profile at queue time; S | §6.5 |
 | AX0 | active | aikit PR #21 (README freeze note at root v1.75.0 and `gpu/v0.35.0`, the newest tags) is open; the coordinator merges it; S | §7.3 |
-| AX1 | active | copied on branch `ax1-move-towers-2026-10`, gates AX1-S, -N, -B and -T green on the Mac (§7.6); left: nobara runs the CUDA device tests, then the coordinator merges; `gpu/webgpu` proposed for retirement, not copied; M | §7.3, §7.6 |
+| AX1 | active | copied in PR #274 (branch `ax1-move-towers-2026-10`), gates AX1-S, -N, -B and -T green on the Mac (§7.6); left: nobara runs the CUDA device tests, then the coordinator merges; `gpu/webgpu` proposed for retirement, not copied; M | §7.3, §7.6 |
 | AX2 | blocked | AX1; switch goinfer's imports one module at a time, each step bit-identical; M | §7.3 |
 | AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
 | AX4 | blocked | AX3; aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
