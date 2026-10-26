@@ -18,8 +18,8 @@ import (
 // at layer 0 and falls back to the sequential path with nothing logged. It bites at -ctx 16384+ on any geometry whose perf
 // table says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini).
 //
-// Nothing raises the kernel into the opt-in range, and this pins BOTH halves (the arithmetic and the device's limit) against
-// the device.
+// Decode and the drafter keep this bound (the exact prefill attention kernels opt in past it: TestKSB15_optIn), and this pins
+// BOTH halves (the arithmetic and the device's limit) against the device.
 func TestAttnShmemLimit_matchesDevice(t *testing.T) {
 	// The arithmetic half runs anywhere.
 	if got := attnShmemBytes(12160); got > singleBlockAttnShmemLimit {

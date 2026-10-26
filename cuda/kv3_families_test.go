@@ -67,7 +67,7 @@ func TestKV3Families_forcedRouteEqualsAttnBatched(t *testing.T) {
 	}
 }
 
-// TestKV3Families_pastBoundBatchedEqualsPerToken: past the 12,160-key bound a prompt prefills in batched passes on the row-batched kernels (it declined before
+// TestKV3Families_pastBoundBatchedEqualsPerToken: past the exact attention's bound (kv3PastBound) a prompt prefills in batched passes on the row-batched kernels (it declined before
 // them) and leaves the logits and the K and V rows of the per-token path, bit for bit, on the Gemma 4 dense geometry and on the Qwen3.5 hybrid (whose
 // recurrent layers run beside the attention layers the route serves). Negative arm: with the row-batched module absent, the same prompt declines by name.
 func TestKV3Families_pastBoundBatchedEqualsPerToken(t *testing.T) {
@@ -76,9 +76,9 @@ func TestKV3Families_pastBoundBatchedEqualsPerToken(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			requireDeviceAndFixture(t, base)
 			dir := kv3LongContextCopy(t, base, 32768)
-			g := kv0LoadCtxAny(t, dir, "f32", 13000, kv0RandomTokens)
+			g := kv0LoadCtxAny(t, dir, "f32", 17000, kv0RandomTokens)
 			g.r.fastAttn, g.r.fastGemm = false, false
-			const n = 12400
+			n := kv3PastBound(g.r)
 			e := g.embs(g.tokens(n, 3*n))
 			g.poison(n)
 			p0 := g.r.psLaunches
@@ -174,18 +174,19 @@ func TestKV3Families_imageBlockForcedRouteEqualsAttnImgBatched(t *testing.T) {
 	}
 }
 
-// TestKV3Families_imageBlockPastTheBound: an image-block pass that starts past 12,160 keys, which attn_img_batched cannot run (its row of scores does not
-// fit shared memory), prefills on the row-batched kernels with no decline and finite logits. The reference for the numbers is the forced-route gate above
+// TestKV3Families_imageBlockPastTheBound: an image-block pass past the exact attention's bound (kv3PastBound), which attn_img_batched cannot run (its row of
+// scores does not fit shared memory even with the opt-in), prefills on the row-batched kernels with no decline and finite logits. The reference for the numbers is the forced-route gate above
 // and the kernel-level one (both below the bound, where attn_img_batched can run); there is no per-token oracle for a bidirectional block.
 // Negative arm: with the row-batched module absent the same pass declines by name, as it did before the module could take an image block.
 func TestKV3Families_imageBlockPastTheBound(t *testing.T) {
 	const base = "../testdata/gemma3-vl-tiny"
 	requireDeviceAndFixture(t, base)
 	dir := kv3LongContextCopy(t, base, 32768)
-	g := kv0LoadCtxAny(t, dir, "f32", 13000, kv0RandomTokens)
+	g := kv0LoadCtxAny(t, dir, "f32", 17000, kv0RandomTokens)
 	g.r.fastAttn, g.r.fastGemm = false, false
-	const lead, rows = 12300, 256
-	blocks := [][2]int{{12320, 12380}}
+	const rows = 256
+	lead := kv3PastBound(g.r) - 100
+	blocks := [][2]int{{lead + 20, lead + 80}}
 	e := g.embs(g.tokens(lead+rows, 5))
 	g.prefill(e[:lead], 0)
 

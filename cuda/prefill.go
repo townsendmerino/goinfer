@@ -537,7 +537,7 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 		}
 		// A prefill never ends in a pass of fewer than attnFusedMinRows rows: such a pass runs the exact kernels while every row
 		// before it ran the fast ones, so the prompt would depend on where its last chunk fell (the 16-row rule, KV0's invariance
-		// record), and past singleBlockAttnShmemLimit keys the exact attention is not launchable at all. The rows come from this
+		// record), and past prefillAttnShmemLimit's span the exact attention is not launchable at all. The rows come from this
 		// pass (prefillTailCut), not the last one's; a chunk under 32 rows keeps its short last pass.
 		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
 			n -= prefillTailCut(n, rem)
@@ -706,7 +706,7 @@ func (r *cudaResident) prefillMaxGeom() (maxQDim, maxKvDim int) {
 }
 
 // checkPrefillShmem is prefillStaticDecline's prompt-dependent twin. The exact batched attention (attn_batched and its image
-// twin) sizes its dynamic shared memory as decode's does, (maxNWin+128)*4 bytes, so a launch past singleBlockAttnShmemLimit
+// twin) sizes its dynamic shared memory as decode's does, (maxNWin+128)*4 bytes, so a launch past prefillAttnShmemLimit
 // is not survivable and must be a named decline; otherwise the launch fails in the driver and the caller silently falls to
 // the sequential path. prefillCore asks it only when the row-batched exact attention did not load: with it, an ordinary pass and an image-block
 // pass both have no layer attn_batched or its image twin would run past the bound (prefillSplitKVServes). Checked per layer, because a sliding-window layer's maxNWin is clamped to its
@@ -723,7 +723,7 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int, fused func(hd int) boo
 		if Ly.window > 0 && int(Ly.window) < maxNWin {
 			maxNWin = int(Ly.window)
 		}
-		if splitKVRequired(maxNWin) {
+		if !r.prefillAttnFits(maxNWin) {
 			if fused != nil && fused(Ly.hd) {
 				continue
 			}
@@ -731,7 +731,7 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int, fused func(hd int) boo
 				"shared memory, past this device's %d B limit — the row-batched exact attention does not serve "+
 				"this pass (its module did not load) and neither does the fused attention (it needs head dim 64 "+
 				"or 128, an ordinary last-row prefill, 16 rows or more, no image block), so this prompt length needs the sequential path: %w",
-				l, maxNWin, attnShmemBytes(maxNWin), singleBlockAttnShmemLimit, errPrefillDeclined)
+				l, maxNWin, attnShmemBytes(maxNWin), r.prefillAttnShmemLimit(), errPrefillDeclined)
 		}
 	}
 	return nil
@@ -786,10 +786,10 @@ func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]i
 			causalMaxNWin = window
 		}
 		maxNWin := imgBlocksMaxNWin(causalMaxNWin, window, blocks)
-		if splitKVRequired(maxNWin) && !r.prefillSplitKVServes(maxNWin) {
+		if !r.prefillAttnFits(maxNWin) && !r.prefillSplitKVServes(maxNWin) {
 			return fmt.Errorf("cuda prefill: layer %d image-block attention at %d attended keys "+
 				"needs %d B of shared memory, past this device's %d B limit: %w",
-				l, maxNWin, attnShmemBytes(maxNWin), singleBlockAttnShmemLimit, errPrefillDeclined)
+				l, maxNWin, attnShmemBytes(maxNWin), r.prefillAttnShmemLimit(), errPrefillDeclined)
 		}
 	}
 	return nil
@@ -2048,7 +2048,7 @@ func (r *cudaResident) FastPrefillFloor() int {
 
 // attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus Vtsh[hd][BN+KPAD], in halves. It
 // is constant in K, unlike the exact path's (maxNWin+128)*4 scratch, so a layer it serves is not held to
-// singleBlockAttnShmemLimit's span bound (checkPrefillShmem).
+// prefillAttnShmemLimit's span bound (checkPrefillShmem).
 func attnFusedShmem(hd int) uint32 {
 	return uint32(2 * (attnFusedBM*(hd+attnFusedKPAD) + hd*(attnFusedBM+attnFusedKPAD)))
 }

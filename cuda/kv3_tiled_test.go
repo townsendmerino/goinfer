@@ -78,8 +78,9 @@ func TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny(t *testing.T) {
 	}
 }
 
-// TestKV3Tiled_batchedEqualsPerToken_tiny (G3): past the 12,160-key bound, with the fast levers off, a prompt prefills in batched
-// passes (it declined before) and leaves the logits and the K and V rows of the per-token path, bit for bit.
+// TestKV3Tiled_batchedEqualsPerToken_tiny (G3; B15-G2's per-token half): past the 12,160-key default bound, with the fast levers
+// off, a prompt prefills in batched passes and leaves the logits and the K and V rows of the per-token path (decode on split-KV),
+// bit for bit: at 12,400 on attn_batched under the opt-in (no row-batched group), at 16,384 past it on the row kernels.
 //
 //	go test -count=1 -timeout 30m -tags 'cuda goinfer_testhooks' -run '^TestKV3Tiled_batchedEqualsPerToken_tiny$' -v ./cuda/
 func TestKV3Tiled_batchedEqualsPerToken_tiny(t *testing.T) {
@@ -99,8 +100,9 @@ func TestKV3Tiled_batchedEqualsPerToken_tiny(t *testing.T) {
 			tb := time.Since(t0)
 			groups := g.r.psLaunches - p0
 			gotKV := g.snapshot(n)
-			if groups == 0 || g.r.fastAttnLaunches != 0 || g.r.fastGemmLaunches != 0 {
-				t.Fatalf("%s: %d row-batched groups, %d fused attention and %d tensor-core launches: not an exact pass on the row kernels", name, groups, g.r.fastAttnLaunches, g.r.fastGemmLaunches)
+			rows := !g.r.prefillAttnFits(n) // past the opt-in's bound the row kernels serve; inside it attn_batched
+			if (groups > 0) != rows || g.r.fastAttnLaunches != 0 || g.r.fastGemmLaunches != 0 {
+				t.Fatalf("%s: %d row-batched groups (want some: %v), %d fused attention and %d tensor-core launches: not the exact pass expected", name, groups, rows, g.r.fastAttnLaunches, g.r.fastGemmLaunches)
 			}
 			g.poison(n)
 			t0, last := time.Now(), time.Now()
@@ -133,13 +135,14 @@ func TestKV3Tiled_batchedEqualsPerToken_tiny(t *testing.T) {
 }
 
 // TestKV3Tiled_pastBoundPromptRunsExact_tiny: with the tensor-core GEMM on and no fused attention (the shape of a head-dim-256 model
-// above the floor), a prompt whose attention takes the row-batched kernels past the bound runs no tensor-core launch and leaves the
-// bits of the levers-off pass (the per-token bits, TestKV3Tiled_batchedEqualsPerToken_tiny); below the bound the GEMM still runs.
+// above the floor), a prompt past the 12,160-key default bound runs no tensor-core launch and leaves the bits of the levers-off pass
+// (the per-token bits, TestKV3Tiled_batchedEqualsPerToken_tiny): at 12,400, inside the opt-in's bound, on attn_batched, and past it
+// on the row-batched kernels. Below the default bound the GEMM still runs.
 func TestKV3Tiled_pastBoundPromptRunsExact_tiny(t *testing.T) {
 	const base = "../testdata/llama-attnfa-tiny"
 	requireDeviceAndFixture(t, base)
 	dir := kv3LongContextCopy(t, base, 32768)
-	g := kv0LoadCtx(t, dir, "f32", 13000, kv0RandomTokens)
+	g := kv0LoadCtx(t, dir, "f32", 17000, kv0RandomTokens)
 	if !g.r.prefillSplitKVReady() {
 		t.Fatal("the row-batched kernels did not load")
 	}
@@ -154,19 +157,20 @@ func TestKV3Tiled_pastBoundPromptRunsExact_tiny(t *testing.T) {
 	if _, _, ps, mma := pass(3900, true); ps != 0 || mma == 0 {
 		t.Fatalf("below the bound: %d row-batched groups (want 0), %d tensor-core launches (want some)", ps, mma)
 	}
-	const n = 12400
-	want, wantKV, _, _ := pass(n, false)
-	got, gotKV, ps, mma := pass(n, true)
-	kv3NoNaN(t, "past the bound", got, gotKV)
-	ld, _ := kv0LogitsDiff(want, got)
-	kd, total := kv0CompareRows(wantKV, gotKV, 0, n)
-	fmt.Fprintf(os.Stderr, "[kv3-tiled] past the bound, GEMM lever on: %d row-batched groups, %d tensor-core launches; logits differing %d of %d, KV differing %d of %d\n",
-		ps, mma, ld, len(want), kd, total)
-	if ps == 0 || mma != 0 {
-		t.Fatalf("past the bound: %d row-batched groups (want some), %d tensor-core launches (want 0)", ps, mma)
-	}
-	if ld != 0 || kd != 0 {
-		t.Errorf("past the bound: differs from the levers-off pass: %d logits, %d KV elements", ld, kd)
+	for _, n := range []int{12400, kv3PastBound(g.r)} {
+		want, wantKV, _, _ := pass(n, false)
+		got, gotKV, ps, mma := pass(n, true)
+		kv3NoNaN(t, "past the bound", got, gotKV)
+		ld, _ := kv0LogitsDiff(want, got)
+		kd, total := kv0CompareRows(wantKV, gotKV, 0, n)
+		fmt.Fprintf(os.Stderr, "[kv3-tiled] past the default bound at %d, GEMM lever on: %d row-batched groups, %d tensor-core launches; logits differing %d of %d, KV differing %d of %d\n",
+			n, ps, mma, ld, len(want), kd, total)
+		if rows := !g.r.prefillAttnFits(n); (ps > 0) != rows || mma != 0 {
+			t.Fatalf("n=%d: %d row-batched groups (want some: %v), %d tensor-core launches (want 0)", n, ps, rows, mma)
+		}
+		if ld != 0 || kd != 0 {
+			t.Errorf("n=%d: differs from the levers-off pass: %d logits, %d KV elements", n, ld, kd)
+		}
 	}
 }
 
@@ -176,13 +180,14 @@ func TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines(t *testing.T) {
 	const base = "../testdata/llama-attnfa-tiny"
 	requireDeviceAndFixture(t, base)
 	g := kv0LoadCtx(t, kv3LongContextCopy(t, base, 32768), "f16", 17000, kv0RandomTokens)
-	e := g.embs(g.tokens(12400, 1))
+	n := kv3PastBound(g.r)
+	e := g.embs(g.tokens(n, 1))
 	g.r.fastAttn, g.r.fastGemm = false, false
 	sc, sm, vs := g.r.psScores, g.r.psSoftmax, g.r.psVsum
 	g.r.psScores, g.r.psSoftmax, g.r.psVsum = Pipeline{}, Pipeline{}, Pipeline{}
 	_, err := g.r.PrefillLast(g.ctx, e, 0)
 	if err == nil {
-		t.Fatal("a 12,400-token exact pass prefilled with no row-batched kernels: attn_batched's span bound is not being applied")
+		t.Fatalf("a %d-token exact pass prefilled with no row-batched kernels: attn_batched's span bound is not being applied", n)
 	}
 	if !errors.Is(err, errPrefillDeclined) || !strings.Contains(err.Error(), "layer 0") {
 		t.Errorf("the decline must wrap errPrefillDeclined and name the layer: %v", err)
@@ -203,7 +208,7 @@ func TestKV3Tiled_spanScratchMatchesThePass(t *testing.T) {
 	sawSpan := 0
 	for _, levers := range []bool{true, false} {
 		g.r.fastAttn, g.r.fastGemm = levers, levers
-		for _, start := range []int{0, 12300} {
+		for _, start := range []int{0, 12300, kv3PastBound(g.r) - 512} {
 			for _, M := range []int{8, 16, 300, 512} {
 				var seen int64
 				prefillScratchSeenForTest = func(b int64) { seen += b + allocRoundSlack(b) }
@@ -221,7 +226,7 @@ func TestKV3Tiled_spanScratchMatchesThePass(t *testing.T) {
 					fmt.Fprintf(os.Stderr, "[kv3-tiled] scratch levers=%v start=%d M=%d: %d B + span %d B = the pass's allocations\n", levers, start, M, base, span)
 				}
 				// the cases that must and must not carry the score scratch
-				routes := start+M > 12160 && (!levers || M < attnFusedMinRows)
+				routes := !g.r.prefillAttnFits(start+M) && (!levers || M < attnFusedMinRows)
 				if (span > 0) != routes {
 					t.Errorf("levers=%v start=%d M=%d: span scratch %d B, want it present exactly when the pass is exact past the bound (%v)", levers, start, M, span, routes)
 				}
@@ -360,8 +365,8 @@ func TestKV3Tiled_batchedEqualsPerToken_real(t *testing.T) {
 				tb := time.Since(t0)
 				groups, gemm := g.r.psLaunches-p0, g.r.fastGemmLaunches-m0
 				gotKV := g.snapshot(n)
-				if groups == 0 {
-					t.Fatalf("%s %s: no row-batched launch groups: the pass did not take the row kernels", mdl.name, a.name)
+				if rows := !g.r.prefillAttnFits(n); (groups > 0) != rows {
+					t.Fatalf("%s %s: %d row-batched launch groups, want some: %v (attn_batched serves inside the opt-in's bound)", mdl.name, a.name, groups, rows)
 				}
 				if a.exact && gemm != 0 {
 					t.Fatalf("%s %s: %d tensor-core launches in a pass graded as exact", mdl.name, a.name, gemm)

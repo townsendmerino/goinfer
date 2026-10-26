@@ -1101,6 +1101,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
+		r.optInPrefillShmem() // after all three exact prefill attention kernels are bound
 		// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentMRoPEPrefill): own module, prefill_batched.ptx untouched. Loaded
 		// only for an m-RoPE model, since it needs the model's MRopeSection for sec0/sec1 (unlike bAttnImg above, which loads
 		// unconditionally). A load failure or a non-m-RoPE model is not fatal: PrefillMRoPELast declines to the

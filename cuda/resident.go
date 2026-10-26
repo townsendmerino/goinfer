@@ -260,13 +260,10 @@ var cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
 // capacity pays for it). Larger than any reachable nWin, so the gate comparison stays a plain >=.
 const splitkvNever = 1 << 30
 
-// singleBlockAttnShmemLimit is the dynamic shared memory a single-block attention launch may request. The
-// glue/batched attention kernels size their scratch (nWin+128)*4 with no ceiling. 48 KB is the device's default
-// per-block limit (the 64 KB opt-in needs a per-kernel cuFuncSetAttribute, which nothing here calls), so past
-// 12,160 attended keys the launch is refused: decode fails outright at that position (split-KV takes over where it
-// exists), and a batched prefill pass on the exact attention declines (checkPrefillShmem) and the prompt falls back to the
-// much slower sequential path. A pass the fused attention serves has no such bound. If per-kernel SetAttribute support
-// lands, this becomes a device query (docs/code-notes/cuda.md#singleBlockAttnShmemLimit).
+// singleBlockAttnShmemLimit is the device's default per-block dynamic shared memory, 48 KB: what a single-block attention
+// launch may request without a per-kernel opt-in. The glue/batched attention kernels size their scratch (nWin+128)*4 with no
+// ceiling, so past 12,160 attended keys the launch is refused. Decode and the drafter keep this bound (split-KV takes over
+// past it); the exact prefill attention kernels opt in past it at load (optInPrefillShmem, prefillAttnShmemLimit).
 const singleBlockAttnShmemLimit = 48 * 1024
 
 // attnShmemBytes is the dynamic shared memory a single-block attention launch needs for an
@@ -764,6 +761,7 @@ type cudaResident struct {
 	bAttnSpan                                 Pipeline // attn_span_batched (attn_img_prefill.ptx) — Gemma 4's bidirectional span attention (gemma4AttendRange)
 	spanPrefillReady                          bool     // bAttnSpan loaded; PrefillSpansLast usable, else it declines to the CPU prefill + UploadKV
 	spanPass                                  bool     // set by PrefillSpansLast for its passes: every pass's attention is attn_span_batched, with or without a span in it
+	prefillShmem                              int      // the dynamic shared memory the exact prefill attention kernels opted in to (optInPrefillShmem); 0 is the default limit (prefillAttnShmemLimit)
 	bRopeKVMRoPE                              Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
 	pairwiseRoPE                              bool     // GPT-J pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR): ropeKV/bRopeKV/bRopeKVMRoPE are bound to the rope_pairwise.ptx twins, not the NeoX kernels. Set from Model.PairwiseRoPEResident() at build
 	mropePrefillReady                         bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV

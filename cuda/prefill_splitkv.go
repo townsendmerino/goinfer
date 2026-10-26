@@ -39,14 +39,63 @@ func (r *cudaResident) prefillSplitKVReady() bool {
 }
 
 // prefillSplitKVServes reports whether an exact-attention layer whose widest row attends maxNWin keys takes the row-batched
-// kernels: exactly where attn_batched's shared memory cannot hold the row (splitKVRequired), as decode chooses its split-KV.
+// kernels: exactly where attn_batched's shared memory cannot hold the row at the prefill's limit (prefillAttnFits).
 func (r *cudaResident) prefillSplitKVServes(maxNWin int) bool {
-	return r.prefillSplitKVReady() && (splitKVRequired(maxNWin) || prefillSplitKVForceForTest)
+	return r.prefillSplitKVReady() && (!r.prefillAttnFits(maxNWin) || prefillSplitKVForceForTest)
 }
 
-// prefillPastBoundExact reports whether a prompt whose last row attends keys keys has a layer that takes the row-batched kernels:
-// past attn_batched's shared-memory bound (window-clamped), with no fused attention serving its head dim. prefillCore runs every
-// pass of such a prompt on the exact kernels, so it is bit-identical to the per-token path. The tensor-core GEMM beside the row
+// prefillShmemOptInOffForTest, when set (tests only), makes optInPrefillShmem a no-op, so a load keeps the default limit.
+var prefillShmemOptInOffForTest bool
+
+// optInPrefillShmem opts the loaded exact prefill attention kernels (attn_batched, attn_img_batched, attn_span_batched) in to the
+// most dynamic shared memory each can take beside its static shared memory, and sets prefillShmem to the smallest. Any kernel that
+// cannot go past the default, or any failed opt-in, leaves prefillShmem 0 (the default limit for all). Decode and the drafter
+// are not opted in: they keep splitKVRequired's bound.
+func (r *cudaResident) optInPrefillShmem() {
+	if prefillShmemOptInOffForTest || r.bAttn == (Pipeline{}) {
+		return
+	}
+	ps := []*Pipeline{&r.bAttn, &r.bAttnImg, &r.bAttnSpan}
+	limit := 0
+	for _, p := range ps {
+		if *p == (Pipeline{}) {
+			continue
+		}
+		n := p.MaxDynamicSharedBytes(r.dev)
+		if n <= singleBlockAttnShmemLimit {
+			return
+		}
+		if limit == 0 || n < limit {
+			limit = n
+		}
+	}
+	for _, p := range ps {
+		if *p != (Pipeline{}) && p.SetMaxDynamicSharedBytes(limit) != nil {
+			return
+		}
+	}
+	r.prefillShmem = limit
+}
+
+// prefillAttnShmemLimit is the dynamic shared memory the exact prefill attention kernels may request: what optInPrefillShmem
+// set, or singleBlockAttnShmemLimit when it set nothing.
+func (r *cudaResident) prefillAttnShmemLimit() int {
+	if r.prefillShmem > 0 {
+		return r.prefillShmem
+	}
+	return singleBlockAttnShmemLimit
+}
+
+// prefillAttnFits reports whether the exact prefill attention can hold a row attending nWin keys in shared memory.
+func (r *cudaResident) prefillAttnFits(nWin int) bool {
+	return attnShmemBytes(nWin) <= r.prefillAttnShmemLimit()
+}
+
+// prefillPastBoundExact reports whether a prompt whose last row attends keys keys has an exact-attention layer past the default
+// 48 KiB shared-memory bound (splitKVRequired, window-clamped), with no fused attention serving its head dim. prefillCore runs
+// every pass of such a prompt on the exact kernels, so it is bit-identical to the per-token path. The bound stays the default
+// one where the opt-in moves the attention's (prefillAttnFits): a prompt between the two keeps the exact GEMM (KS-B15, owner
+// decision A, docs/tasks/task-kernel-survey-2026-10.md). The tensor-core GEMM beside the row
 // kernels missed its fidelity bar there; enabling it past the bound needs a fidelity gate of its own first
 // (docs/measurements/kv3-tiled-exact-2026-10-13.md §11). The test hook that forces the route below the bound does not count.
 func (r *cudaResident) prefillPastBoundExact(keys int) bool {
