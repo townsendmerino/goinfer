@@ -63,6 +63,8 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
+    Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity_manifest.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
@@ -77,8 +79,6 @@ SCANS = [
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
     Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),
     Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json")),
-    # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
-    Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity_manifest.json")),
     # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),
