@@ -383,7 +383,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 		{"not even the floor holds 4: the floor, and the build clamps", 3000, func(got int) bool { return got == cudaCtxCapDefault }, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			forced := free - testCtxMargin - dense - int64(slots)*perPos*int64(c.target)
+			forced := free - testCtxMargin - kvRoundingBound(nLayers, 0) - dense - int64(slots)*perPos*int64(c.target)
 			if forced <= 0 {
 				t.Skipf("free VRAM %d B too small to force this budget", free)
 			}
@@ -402,9 +402,12 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Fatalf("Load (pinned): %v", err)
 			}
 			defer mPinned.Close()
-			one, _ := resolveCtxCapFit(m, 0, 1<<20, 1, fixedMargin(testCtxMargin))
-			got, _ := resolveCtxCapFit(m, 0, 1<<20, slots, fixedMargin(testCtxMargin))
-			pinned, _ := resolveCtxCapFit(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots, fixedMargin(testCtxMargin))
+			// The build's own planning arguments: the KV pools' rounding bound beside the margin, since checkKVFits prices the pools
+			// as charged.
+			round := kvRoundingBound(nLayers, 0)
+			one, _ := resolveCtxCapFitSlack(m, 0, 1<<20, 1, 0, fixedMargin(testCtxMargin), round)
+			got, _ := resolveCtxCapFitSlack(m, 0, 1<<20, slots, 0, fixedMargin(testCtxMargin), round)
+			pinned, _ := resolveCtxCapFitSlack(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots, 0, fixedMargin(testCtxMargin), round)
 			t.Logf("one slot: ctx %d; %d slots: ctx %d (target %d); explicit 8192 with %d slots: %d", one, slots, got, c.target, slots, pinned)
 			// One slot gets the smaller of the candidate and what the forced budget holds (slots*target positions of KV beside the weights).
 			// With the candidate at 8192 that was always the candidate; at 16384 the 3000-position case holds only ~12000, which is the

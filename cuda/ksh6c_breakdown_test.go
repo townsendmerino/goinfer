@@ -31,16 +31,15 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	}
 	kvF16Auto.Store(true)
 	defer kvF16Auto.Store(false)
-	probe, err := CreateSystemDefaultDevice()
-	if err != nil {
-		t.Skipf("no CUDA device: %v", err)
-	}
+	// Free VRAM is read through a short-lived device, as decoder.FreeBytesFor reads it: a handle held across the load would keep
+	// the primary context alive between the self-test's fixture builds, and with it a local-memory pool serve does not keep.
+	requireCUDADevice(t)
 	free := func() int64 {
-		f, _, err := probe.Context().MemInfo()
-		if err != nil {
-			t.Errorf("MemInfo: %v", err)
+		f, ok := decoder.FreeBytesFor("cuda")
+		if !ok {
+			t.Errorf("no free-VRAM reading")
 		}
-		return int64(f)
+		return f
 	}
 	type event struct {
 		kv          bool
@@ -82,13 +81,15 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 		events = append(events, event{kv: true, bytes: b})
 		mu.Unlock()
 	}
-	var fitFree int64 // the build's first fit-check reading (checkKVFits)
+	fitByR := map[*cudaResident]int64{} // each build's first fit-check reading (checkKVFits): the self-test's fixtures build first
 	saved := cudaFreeVRAM
 	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
 		f, e := saved(r)
-		if fitFree == 0 {
-			fitFree = int64(f)
+		mu.Lock()
+		if _, seen := fitByR[r]; !seen {
+			fitByR[r] = int64(f)
 		}
+		mu.Unlock()
 		return f, e
 	}
 	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: ctx})
@@ -151,7 +152,7 @@ func TestKSH6C_postPoolBreakdown(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "[H6C] %s ctx %d kvF16 %v: %d allocations after the pools, requested %.1f MiB, charged by allocRoundSlack %.1f MiB; the card's drop from the first of them to the end of the load %.1f MiB; unaccounted %.1f MiB\n",
 		path, r.ctxCap, r.kvF16, len(post), mib(req), mib(charged), mib(startFree-after), mib(startFree-after-charged))
-	fmt.Fprintf(os.Stderr, "[H6C] %s self-test skipped %v: the fit check read %.1f MiB free\n", path, os.Getenv("KSH6C_NO_SELFTEST") != "", mib(fitFree))
+	fmt.Fprintf(os.Stderr, "[H6C] %s self-test skipped %v: the fit check read %.1f MiB free\n", path, os.Getenv("KSH6C_NO_SELFTEST") != "", mib(fitByR[r]))
 	sort.Slice(rows, func(i, j int) bool { return rows[i].drop > rows[j].drop })
 	for i, x := range rows {
 		if i >= 25 {

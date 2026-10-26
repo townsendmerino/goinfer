@@ -25,16 +25,13 @@ func TestKSH6C_moeModelPaysItsPool(t *testing.T) {
 	routePoolOffForTest = plant
 	defer func() { routePoolOffForTest = false }()
 	decoder.SkipSelfTests() // the probe's MoE fixture would pay the pool first
-	probe, err := CreateSystemDefaultDevice()
-	if err != nil {
-		t.Skipf("no CUDA device: %v", err)
-	}
+	// A short-lived device per reading (decoder.FreeBytesFor): a held handle would keep the primary context alive across the load.
 	free := func() int64 {
-		f, _, err := probe.Context().MemInfo()
-		if err != nil {
-			t.Fatalf("MemInfo: %v", err)
+		f, ok := decoder.FreeBytesFor("cuda")
+		if !ok {
+			t.Fatal("no free-VRAM reading")
 		}
-		return int64(f)
+		return f
 	}
 	var beforeWarm, fitFree int64
 	saved := cudaFreeVRAM

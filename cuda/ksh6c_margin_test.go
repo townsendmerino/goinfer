@@ -10,7 +10,6 @@ import (
 	"sync"
 	"testing"
 
-	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -78,27 +77,23 @@ func ksh6cMarginPriced(t *testing.T, models []ksh6cModel) {
 	}
 	requireCUDADevice(t)
 	home, _ := os.UserHomeDir()
+	// Free VRAM is read through a short-lived device (decoder.FreeBytesFor): a handle held across the loads would keep the primary
+	// context, and the self-test's local-memory pool, alive where serve keeps neither.
+	free := func() int64 {
+		f, ok := decoder.FreeBytesFor("cuda")
+		if !ok {
+			t.Fatal("no free-VRAM reading")
+		}
+		return f
+	}
 	want := map[string]bool{}
 	if v := os.Getenv("KSH6C_MODELS"); v != "" {
 		for _, s := range strings.Split(v, ",") {
 			want[strings.TrimSpace(s)] = true
 		}
 	}
-	dev, err := gc.GetDevice(0)
-	if err != nil {
-		t.Skipf("no device: %v", err)
-	}
-	pctx, err := dev.Primary()
-	if err != nil {
-		t.Skipf("primary ctx: %v", err)
-	}
-	free := func() int64 {
-		f, _, e := pctx.MemInfo()
-		if e != nil {
-			t.Fatalf("MemInfo: %v", e)
-		}
-		return int64(f)
-	}
+	kvF16Auto.Store(true) // serve's --kv auto: f16 KV where the family is cleared
+	defer kvF16Auto.Store(false)
 	if w, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"}); err == nil {
 		_ = w.Close() // the startup self-test runs here, once, before any figure below is read
 	}
