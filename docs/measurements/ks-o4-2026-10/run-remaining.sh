@@ -3,9 +3,9 @@
 # gpt-oss is expected to differ (KS-O4 changes its output; G-FID graded it); every other family must be IDENTICAL.
 # Builds the branch (NEW) and the revision before it (OLD) in their own detached worktrees; the speed harness is copied from NEW into
 # OLD, so both arms run the same harness. Each timed run is a process of its own, run directly so its VmHWM and peak VmSwap can be read.
-#   python3 scripts/night.py add ks-f2-nobara --est 60 --by "mac-kapitsa, KS-O4" --doc docs/measurements/ks-o4-2026-10/README.md -- \
-#     bash -c 'cd ~/goinfer-runner && git fetch -q origin && mkdir -p ~/goinfer-bench/ks-f2 && git show <new>:docs/measurements/ks-o4-2026-10/run-remaining.sh > ~/goinfer-bench/ks-f2/run.sh && SRC=$HOME/goinfer-runner bash ~/goinfer-bench/ks-f2/run.sh <new> <old>'
-# Exit 0 when G1b and G2 ran (the verdicts are in the record), 75 when a load is refused, 1 when a gate failed or a cell is void, 2 when it
+#   python3 scripts/night.py add ks-o4-remaining --est 50 --by "mac-kapitsa, KS-O4" --doc docs/measurements/ks-o4-2026-10/README.md -- \
+#     bash -c 'cd ~/goinfer-runner && git fetch -q origin && mkdir -p ~/goinfer-bench/ks-o4r && git show <new>:docs/measurements/ks-o4-2026-10/run-remaining.sh > ~/goinfer-bench/ks-o4r/run.sh && SRC=$HOME/goinfer-runner bash ~/goinfer-bench/ks-o4r/run.sh <new> <old>'
+# Exit 0 when G-ID and G-SPEED ran (the verdicts are in the record), 75 when a load is refused, 1 when a gate failed or a cell is void, 2 when it
 # could not run.
 set -uo pipefail
 NEW=${1:?the branch commit}
@@ -32,8 +32,8 @@ done
 rc=0
 
 echo "== G-ID: gate identity on the CPU ($(date '+%T'))"
-# The tiny fixtures a fresh worktree lacks (gitignored) are copied in (never linked) from $B/fixtures, where they were placed from the
-# Mac's checkout, or from the runner's checkout. A fixture found in neither is reported; G1b's bar then counts its family as not run.
+# The tiny fixtures a fresh worktree lacks (gitignored) are copied in (never linked) from ~/goinfer-bench/ks-f2/fixtures, where they were placed from the
+# Mac's checkout, or from the runner's checkout. A fixture found in neither is reported; G-ID's bar then counts its family as not run.
 for fx in granite-tiny; do
 	[ -d "$B/wt-new/testdata/$fx" ] || cp -r "$HOME/goinfer-bench/ks-f2/fixtures/$fx" "$B/wt-new/testdata/" 2>/dev/null || cp -r "$R/testdata/$fx" "$B/wt-new/testdata/" 2>/dev/null || echo "note: no $fx; its family will be NOT RUN"
 done
@@ -130,7 +130,7 @@ for c in "${cells[@]}"; do
 	run "fit-$cell" B "$m" "$depth" 1 fit || { grep -q -i -E 'refus|fit guard|would page' "$LOG"/g2-fit-*.log && { echo "FIT REFUSED: $m"; exit 75; }; echo "VOID: the fit load of $m failed"; exit 2; }
 done
 
-echo "== G2: A B B A, 2 warm runs each, then 10 pairs ($(date '+%T'))"
+echo "== G-SPEED: A B B A, 2 warm runs each, then 10 pairs ($(date '+%T'))"
 for c in "${cells[@]}"; do
 	IFS='|' read -r cell model depth <<< "$c"
 	echo "-- $cell ($(date '+%T'))"
@@ -145,7 +145,7 @@ for c in "${cells[@]}"; do
 done
 python3 "$B/wt-new/docs/measurements/ks-o4-2026-10/grade_speed.py" "$LOG"/g2-gptoss-d128.jsonl | tee "$LOG/g2-grade.txt"
 g2=${PIPESTATUS[0]}
-[ "$g2" = 0 ] || { echo "G2: grade exit $g2 (FAIL, PARK or INCOMPLETE)"; rc=1; }
+[ "$g2" = 0 ] || { echo "G-SPEED: grade exit $g2 (FAIL, PARK or INCOMPLETE)"; rc=1; }
 for side in new old; do git -C "$R" worktree remove --force "$B/wt-$side" 2>/dev/null; done
 echo "=== $(date '+%F %T %Z') end, rc $rc; record $LOG"
 exit $rc
