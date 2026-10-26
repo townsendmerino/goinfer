@@ -460,6 +460,14 @@ else goes to `core`.
 
 | gate | rule | void when | stopping rule | cost basis |
 |---|---|---|---|---|
+**Amended 2026-10-26, before B2–B4 were graded (mac-vk01):** the rule's roots. Rooting at every function in a `core` file
+does not converge: each file it adds brings its plumbing in as new roots (`blockspec.go`'s `GenerateStream`,
+`lora.go`'s adapter loading), and the closure passed 65 files and was still growing, most of `decoder`. The test roots at
+the forward's entry points instead: every function in `model_forward.go` (the per-token forward) and `forwardn.go` (the
+batched one), both in `core`. A file the forward reaches is covered, but its other functions are not roots. That is
+Francis's wording, "forward-path code". Under it, 26 files were uncovered (`config_nonfinite.go` and
+`recommended_sampling.go` drop out, `lifecycle.go` comes in). The test is `TestParityManifest_coreClosed`.
+
 | B1 unchanged code | as A1: every top-level declaration in `decoder` keeps its token stream; only `model.go`'s forward functions change file | never | one run | seconds |
 | B2 the forward census | `TestParityManifest_coreClosed` passes after the change and fails on the tree before it (it names the uncovered files); `gate mutation` taking `program_cpu.go` out of `core` turns it red | — | one run each | seconds (one type-check of `decoder`) |
 | B3 carried by identity | the goldens-gated refresh; the manifest diff changes the sets, `own` lists and `deps_hash` and nothing else | a golden red before the change | one run | about 4 min |

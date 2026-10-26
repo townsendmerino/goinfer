@@ -65,6 +65,8 @@ SCANS = [
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
     # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
     Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity_manifest.json")),
+    # VK2's forward census: every file the forward reaches is in a hash set or an own list.
+    Scan("decoder", "TestParityManifest_coreClosed", NT("decoder") + F("testdata/parity_manifest.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),

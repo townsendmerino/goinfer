@@ -1,7 +1,7 @@
 {
   "shared_sets": {
     "core": [
-      "decoder/model.go",
+      "decoder/model_forward.go",
       "decoder/forwardn.go",
       "decoder/attention.go",
       "decoder/mlp.go",
@@ -11,10 +11,31 @@
       "decoder/rmsnorm.go",
       "decoder/registry.go",
       "decoder/arch.go",
-      "decoder/config.go"
+      "decoder/config.go",
+      "decoder/backend.go",
+      "decoder/blockspec.go",
+      "decoder/cpu_gateup_fused.go",
+      "decoder/fusedattn.go",
+      "decoder/image_spans.go",
+      "decoder/int4_floatact.go",
+      "decoder/knobs.go",
+      "decoder/knobs_drift_prod.go",
+      "decoder/kvdequant_parallel.go",
+      "decoder/layerpaging.go",
+      "decoder/lifecycle.go",
+      "decoder/lora.go",
+      "decoder/moepaging.go",
+      "decoder/moepool.go",
+      "decoder/program.go",
+      "decoder/program_cpu.go",
+      "decoder/program_cpu_n.go",
+      "decoder/routercapture.go",
+      "decoder/scratch.go"
     ],
     "deltanet": [
-      "decoder/deltanet.go"
+      "decoder/deltanet.go",
+      "decoder/deltanet_n.go",
+      "decoder/forward_qwen35_n.go"
     ],
     "loaders": [
       "decoder/weights.go",
@@ -39,7 +60,9 @@
     "bailing_hybrid": {
       "uses": [],
       "own": [
-        "decoder/arch_bailing_hybrid.go"
+        "decoder/arch_bailing_hybrid.go",
+        "decoder/kda.go",
+        "decoder/kda_rehearsal.go"
       ],
       "deps_hash": "sha256:984cf50d8c42d462df9533b83cb0a42329747061571bd6ab3cdaa3af08ee37b9",
       "status": "experimental",
@@ -107,7 +130,8 @@
       ],
       "own": [
         "decoder/forward_deepseek.go",
-        "decoder/arch_deepseek.go"
+        "decoder/arch_deepseek.go",
+        "decoder/mla_int8.go"
       ],
       "deps_hash": "sha256:b798cff7d02de68aac0a26924b405ab17213165638e681a6eac5c94e60a2ce35",
       "status": "validated",
@@ -131,7 +155,8 @@
       ],
       "own": [
         "decoder/forward_deepseek.go",
-        "decoder/arch_deepseek.go"
+        "decoder/arch_deepseek.go",
+        "decoder/mla_int8.go"
       ],
       "deps_hash": "sha256:b798cff7d02de68aac0a26924b405ab17213165638e681a6eac5c94e60a2ce35",
       "status": "validated",
@@ -220,7 +245,8 @@
       ],
       "own": [
         "decoder/forward_gemma4.go",
-        "decoder/arch_gemma4.go"
+        "decoder/arch_gemma4.go",
+        "decoder/forward_gemma4_moe.go"
       ],
       "deps_hash": "sha256:78c254ba0d232dbd4532b7f5396223e2b4916578372855ba4289257d6faa64fa",
       "status": "validated",
@@ -412,7 +438,8 @@
       ],
       "own": [
         "decoder/forward_deepseek.go",
-        "decoder/arch_deepseek.go"
+        "decoder/arch_deepseek.go",
+        "decoder/mla_int8.go"
       ],
       "deps_hash": "sha256:b798cff7d02de68aac0a26924b405ab17213165638e681a6eac5c94e60a2ce35",
       "status": "validated",
@@ -810,7 +837,8 @@
         "decoder/forward_qwen35.go",
         "decoder/qwen3_5_test.go",
         "scripts/pin_qwen3_5_forward.py",
-        "decoder/arch_qwen3_5.go"
+        "decoder/arch_qwen3_5.go",
+        "decoder/generate_vl_qwen35.go"
       ],
       "deps_hash": "sha256:f4f97f3eb4885cfec9492720289007bbfd7bea1d12be5172d3996a0e3ac95352",
       "status": "validated",
@@ -836,7 +864,8 @@
       "own": [
         "decoder/forward_qwen35.go",
         "decoder/gguf_qwen35.go",
-        "decoder/arch_qwen3_5_moe.go"
+        "decoder/arch_qwen3_5_moe.go",
+        "decoder/generate_vl_qwen35.go"
       ],
       "deps_hash": "sha256:c6fc029212a5d9339ab24235755d1758042fcc9fa4f113abb7455121bada36af",
       "status": "validated",

@@ -1,0 +1,22 @@
+declarations before 2624 after 2624
+only before: []
+only after: []
+token stream changed: []
+moved: 16
+  decoder.(*Model).ForwardCapture: model.go -> model_forward.go
+  decoder.(*Model).ForwardSubCapture: model.go -> model_forward.go
+  decoder.(*Model).forward: model.go -> model_forward.go
+  decoder.(*Model).forwardCapture: model.go -> model_forward.go
+  decoder.(*Model).forwardFromEmbed: model.go -> model_forward.go
+  decoder.(*Model).logitsFromHidden: model.go -> model_forward.go
+  decoder.(*Model).logitsFromNormed: model.go -> model_forward.go
+  decoder.(*Model).runLayers: model.go -> model_forward.go
+  decoder.(*Model).runLayersFromEmbed: model.go -> model_forward.go
+  decoder.(*Model).runLayersFromEmbedLoop: model.go -> model_forward.go
+  decoder.(*Model).runLayersFromEmbedPLE: model.go -> model_forward.go
+  decoder.addResidual: model.go -> model_forward.go
+  decoder.addResidual2: model.go -> model_forward.go
+  decoder.normalize: model.go -> model_forward.go
+  decoder.normalizeInto: model.go -> model_forward.go
+  decoder.softcapParallel: model.go -> model_forward.go
+B1 PASS
