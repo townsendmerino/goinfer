@@ -1,4 +1,5 @@
 # KS-H6 build: what the card loses after the KV pools (a reading, 2026-10-25)
+<!-- citations-at: 38b400371 -->
 
 For the KS-H6 build registration (`docs/tasks/task-kernel-survey-2026-10.md`, "KS-H6 build: gates"), part 1 of the margin: "the build's
 own allocations after the KV pools". A reading, not a gate. `TestKSH6C_postPoolBreakdown` (`cuda/ksh6c_breakdown_test.go`), run by

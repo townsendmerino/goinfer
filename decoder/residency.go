@@ -1210,6 +1210,16 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = why
 		return m
 	}
+	// H2: the backend's startup self-test, once per backend and quant per process, BEFORE the build: its fixture builds reserve
+	// the context's deferred device memory (the local-memory pool their kernels' first launches take, which the context keeps), so
+	// the build's plan and fit check read free memory net of it (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build,
+	// amendment"). A mismatch skips the build and continues on the CPU path with the reason on the decode path, instead of
+	// producing wrong numbers silently.
+	if r, ran := gpuProbeBeforeResident(m); ran && r.Status == SelfTestDeclined {
+		m.resDecline = describeProbe(r)
+		fmt.Fprintf(os.Stderr, "[resident] %s — continuing on the CPU/staged path\n", m.resDecline)
+		return m
+	}
 	rf, ok, err := rb.BuildResident(m)
 	if errors.Is(err, ErrLoadAborted) {
 		// The swap tripwire stopped the build: not a decline (which would continue on the CPU and keep loading), but the load's error.
@@ -1231,15 +1241,6 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	m.resident = rf
-	// H2: the backend's startup self-test, once per backend and quant per process, with the device context this resident already holds. A mismatch drops the resident and continues on the CPU
-	// path with the reason on the decode path (the existing decline route), instead of producing wrong numbers silently.
-	if r, ran := gpuProbeAfterResident(m); ran && r.Status == SelfTestDeclined {
-		_ = rf.Close()
-		m.resident = nil
-		m.resDecline = describeProbe(r)
-		fmt.Fprintf(os.Stderr, "[resident] %s — continuing on the CPU/staged path\n", m.resDecline)
-		return m
-	}
 	// BuildResident's host-side work (the CUDA backend packs every layer's weights on the Go heap before uploading,
 	// and stages the expert stacks in pinned memory) is garbage the moment it returns, but Go hands freed heap back
 	// to the OS only when its background scavenger gets round to it. Release it now, once, at load time: a resident

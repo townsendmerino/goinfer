@@ -1700,6 +1700,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
 		// belongs HERE, though: it needs the per-layer kvDims, and running it immediately before the
 		// caches are allocated is what makes `free` mean "what is actually left for KV".
+		if e := r.payRoutePool(); e != nil {
+			return e
+		}
 		if e := r.checkKVFits(); e != nil {
 			return e
 		}
@@ -1831,43 +1834,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		} else {
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
 		}
-		// Pay moe_route's deferred first-launch local-memory reservation BEFORE the free reading that sizes the cache, so the
-		// cap is correct by construction rather than covered by a margin. moe_route declares per-thread local scratch, and the
-		// driver backs it for the device's occupancy the first time the kernel runs, not at module load; the launch demands
-		// about 289 MB and retains about 138 MB on the RTX 2070 SUPER, invisible to allocSlots, which reads free VRAM before any
-		// kernel has run. Forcing it here beats enlarging slotMarginBytes: the peak is transient, so paying it now means the
-		// reading below sees only what is retained, and a margin would bury a named consumer in an unnamed constant.
-		//
-		// Naming moe_route is safe because the backing store is shared and sized by the largest kernel, and
-		// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if
-		// another kernel declares more. route_gptoss does (4608 B/thread against 4416), so it is forced below wherever it is
-		// bound (TestRouteGptOssGrowsPoolPastMoERoute). This was measured with sequential single-stream launches, which is what
-		// goinfer does; concurrent streams would reopen whether the bound is the max or a sum.
-		if r.moe && r.cacheExperts {
-			// nE=1, k=1, nGroup=1 does the least work the kernel can do. Its outputs are discarded (rIdx/rWgt are overwritten by
-			// every real token before being read, and rLogits is read uninitialised as logits and bias): only the allocation side
-			// effect is wanted.
-			if e := r.stream.Launch(r.fRoute, onecfg(1, 0),
-				Arg(r.rLogits), Arg(r.rLogits), Arg(r.rIdx), Arg(r.rWgt),
-				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)),
-				gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
-				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
-				return fmt.Errorf("pre-sizing warm-up of moe_route failed: %w", e)
-			}
-			if r.gptOssRoute != (Pipeline{}) {
-				// nE=1, k=1, with the same discarded outputs and rLogits as the bias.
-				if e := r.stream.Launch(r.gptOssRoute, onecfg(1, 0),
-					Arg(r.rLogits), Arg(r.rLogits), Arg(r.rIdx), Arg(r.rWgt),
-					gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
-					return fmt.Errorf("pre-sizing warm-up of route_gptoss failed: %w", e)
-				}
-			}
-			// Synchronise: the reservation must be a fact before free VRAM is read, and an async
-			// launch would let allocSlots read the pre-launch figure and reproduce the whole defect.
-			if e := r.stream.Sync(); e != nil {
-				return fmt.Errorf("pre-sizing warm-up of moe_route failed to complete: %w", e)
-			}
-		}
 		// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
 		r.allocRecurrentCheckpoint()
 		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
@@ -1964,6 +1930,52 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 	b.resident = r
 	return r, true, nil
+}
+
+// routePoolOffForTest, when set (tests only), skips payRoutePool: H6C-S5's plant.
+var routePoolOffForTest bool
+
+// payRoutePool pays moe_route's deferred first-launch local-memory reservation before checkKVFits and allocSlots read free VRAM,
+// so the context and the expert cache are sized net of it by construction rather than covered by a margin. moe_route declares
+// per-thread local scratch, and the driver backs it for the device's occupancy the first time the kernel runs, not at module
+// load: on the RTX 2070 SUPER the launch demands about 289 MB and retains about 138 MB. The startup self-test pays it too when
+// its MoE fixture runs, before the build (decoder.gpuProbeBeforeResident); this covers a load with the self-test skipped
+// (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, amendment").
+//
+// Naming moe_route is safe because the backing store is shared and sized by the largest kernel launched, and
+// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if another kernel
+// declares more. route_gptoss does (4608 B/thread against 4416), so it is forced too wherever it is bound
+// (TestRouteGptOssGrowsPoolPastMoERoute). This was measured with sequential single-stream launches, which is what goinfer does;
+// concurrent streams would reopen whether the bound is the max or a sum. A dense build binds neither and pays nothing.
+func (r *cudaResident) payRoutePool() error {
+	if r.fRoute == (Pipeline{}) || routePoolOffForTest {
+		return nil
+	}
+	// nE=1, k=1, nGroup=1 does the least work the kernel can do, on scratch released below: only the allocation side effect is
+	// wanted (logits and bias are read uninitialised, the index and weight outputs discarded).
+	lg, idx, wgt := gpu.NewBufferLenOf[float32](r.dev, 1), gpu.NewBufferLenOf[uint32](r.dev, 1), gpu.NewBufferLenOf[float32](r.dev, 1)
+	defer func() { r.dev.ReleaseBuf(lg); r.dev.ReleaseBuf(idx); r.dev.ReleaseBuf(wgt) }()
+	if e := r.stream.Launch(r.fRoute, onecfg(1, 0),
+		Arg(lg), Arg(lg), Arg(idx), Arg(wgt),
+		gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)),
+		gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
+		gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+		return fmt.Errorf("pre-sizing warm-up of moe_route failed: %w", e)
+	}
+	if r.gptOssRoute != (Pipeline{}) {
+		// nE=1, k=1, with the same discarded outputs and the logits as the bias.
+		if e := r.stream.Launch(r.gptOssRoute, onecfg(1, 0),
+			Arg(lg), Arg(lg), Arg(idx), Arg(wgt),
+			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+			return fmt.Errorf("pre-sizing warm-up of route_gptoss failed: %w", e)
+		}
+	}
+	// Synchronise: the reservation must be a fact before free VRAM is read, and an async launch would let the fit check read the
+	// pre-launch figure.
+	if e := r.stream.Sync(); e != nil {
+		return fmt.Errorf("pre-sizing warm-up of moe_route failed to complete: %w", e)
+	}
+	return nil
 }
 
 // cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for: the model's request
