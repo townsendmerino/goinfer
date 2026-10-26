@@ -1,0 +1,10 @@
+=== RUN   TestGptOssReal_gate
+decoder: fit is tight — gpt-oss-20b-MXFP4.gguf needs ~19.8 GB resident at quant int8 + 6.0 GB KV + 11.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 37.1 GB; this machine currently has 57.4 GB of memory available (budget 40.1 GB = 70% of that) (92% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    gptoss_real_test.go:53: gpt-oss:20b loaded int8: 24 layers, H=64 kv=8 headDim=64 experts=32 top4 window=128
+    gptoss_real_test.go:75: gpt-oss:20b gen: " Paris.\"\n\nSure! Here's a simple example of a function that takes a string"
+--- PASS: TestGptOssReal_gate (13.24s)
+=== RUN   TestGptOssReal_logitParity
+decoder: fit is tight — gpt-oss-20b-MXFP4.gguf needs ~19.8 GB resident at quant int8 + 6.0 GB KV + 11.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 37.1 GB; this machine currently has 57.6 GB of memory available (budget 40.3 GB = 70% of that) (92% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    gptoss_real_test.go:128: gpt-oss:20b logit parity ("The capital of France is"): argmax got=12650 want=12650 | cosine=0.99848
+--- PASS: TestGptOssReal_logitParity (7.44s)
+PASS

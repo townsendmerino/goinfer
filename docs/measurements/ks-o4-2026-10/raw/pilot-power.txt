@@ -1,0 +1,4 @@
+spreads (estimated from 4 prompts in /home/francis/goinfer-logs/ks-o4-2026-10/gfid-2026-10-26-0031/pilot-positions.jsonl (each sd is itself uncertain at that n)): agreement sd 5.984 pts per prompt, KL residual cv 0.1610
+  agreement  margin 1pts: 223 prompts (pooled across the gate's cells)
+  KL ratio   margin 0.1: 18 prompts (pooled across the gate's cells)
+prompts for the gate: 223 pooled (e.g. 45 per cell over 5 cells); hard flips use the pooled Poisson bound and add no requirement

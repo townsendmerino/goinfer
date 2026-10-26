@@ -307,6 +307,8 @@ func indexesOf(ops []op, k opKind) []int {
 // programParamUnreached names the (kind, parameter) pairs no tiny fixture's logits can show, each with the reason. Gate L
 // passes a pair only when it changes some fixture's logits, or is listed here; a listed pair that does change is stale.
 var programParamUnreached = map[string]string{
+	"attention.Sinks":        "the walker sets it at the call from the layer's weights (LayerWeights.AttnSinks); the builder leaves it nil, so a changed program value is overwritten",
+	"gated-attn.Attn.Sinks":  "gated attention runs attendQuery, which takes no sink term, and the builder leaves it nil",
 	"ffn.Limit":              "gpt-oss's clamp bound: the tiny fixture's gate and up values never reach 7, so a doubled bound clamps nothing either",
 	"ffn.MoE.PerExpertScale": "Gemma 4's router extra in MoEConfig: its MoE block (opGemma4MoE) reads the router from its weights, and no other MoE reads it",
 	"ffn.MoE.RouterPreNorm":  "Gemma 4's router extra in MoEConfig: its MoE block (opGemma4MoE) reads the router from its weights, and no other MoE reads it",

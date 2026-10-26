@@ -161,7 +161,7 @@ type attnOrder uint8
 
 const (
 	attnBatchedAcc64 attnOrder = iota + 1 // attendBatchedHeads with float64 accumulation
-	attnSinksF64                          // gpt-oss: inline float64 dots and softmax with a learned sink per head (attendSinksToken)
+	attnSinksF64                          // attendSinksToken: inline float64 dots and float32 AV with a learned sink per head; gpt-oss's order before KS-O4, kept as its fidelity gate's exact arm
 	attnQuery                             // attendQuery: float64 dots, float32 accumulation of the values
 	attnMLA                               // the family attends through opMLA, over a latent cache
 	attnGemma4                            // the family attends through opGemma4Attn (gemma4Attend: float32 matmuls)
@@ -173,6 +173,9 @@ type attentionParams struct {
 	Scale   float64
 	Softcap float64 // 0 = none
 	Order   attnOrder
+	// Sinks is the layer's learned per-head sink logit (gpt-oss, LayerWeights.AttnSinks): it joins every softmax's max-shift and
+	// denominator and carries no value. The walker sets it at the call from the layer's weights; nil for every other family.
+	Sinks []float32
 }
 
 type outGateParams struct{ Sigmoid bool } // sigmoid, else softplus
@@ -492,8 +495,6 @@ func (a *Architecture) genericKindsOnly() bool {
 // attnOrder is the attention kernel this family's CPU forward computes in.
 func (a *Architecture) attnOrder() attnOrder {
 	switch {
-	case a.gptoss != nil:
-		return attnSinksF64
 	case a.llama4 != nil:
 		return attnQuery
 	case a.mla != nil:

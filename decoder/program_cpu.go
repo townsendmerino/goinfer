@@ -110,7 +110,9 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 					cache.Append(l, k, v)
 					attendQueryP(o.attn, q, ctx, scr.scoresBuf(cache.storedRows(l, arch.NumKVHeads*hd)), cache, l, pos, arch)
 				default:
-					if err := attendToken(o.attn, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
+					ap := o.attn
+					ap.Sinks = lw.AttnSinks // gpt-oss's learned sinks; nil for every other family
+					if err := attendToken(ap, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
 						return nil, err
 					}
 				}

@@ -1,0 +1,17 @@
+=== 2026-10-26 09:55:08 PDT start: new 960ef65a73790d248bbeb40a8c9877aac4b8c23c, old 2abd032c2e4d1b1f19a99b1008d7df0af208ded0; 16 cores; 0.40 1.99 3.64 1/944 1945740
+75c2e662408e5319affb8d7f272b15456bb3cc55ed9f142549f7fb1bdeab46e2  /home/francis/mycode/goinfer/decoder/testdata/gptoss_20b_golden.json
+== old (2abd032c2e4d1b1f19a99b1008d7df0af208ded0), 09:55:16: load 1.84, available 58614 MiB
+    gptoss_real_test.go:53: gpt-oss:20b loaded int8: 24 layers, H=64 kv=8 headDim=64 experts=32 top4 window=128
+--- PASS: TestGptOssReal_gate (12.72s)
+    gptoss_real_test.go:128: gpt-oss:20b logit parity ("The capital of France is"): argmax got=12650 want=12650 | cosine=0.99848
+--- PASS: TestGptOssReal_logitParity (7.12s)
+PASS
+   old: exit 0; VmHWM 31638 MiB; peak VmSwap 0 MiB
+== new (960ef65a73790d248bbeb40a8c9877aac4b8c23c), 09:55:46: load 4.29, available 58734 MiB
+    gptoss_real_test.go:53: gpt-oss:20b loaded int8: 24 layers, H=64 kv=8 headDim=64 experts=32 top4 window=128
+--- PASS: TestGptOssReal_gate (13.24s)
+    gptoss_real_test.go:128: gpt-oss:20b logit parity ("The capital of France is"): argmax got=12650 want=12650 | cosine=0.99848
+--- PASS: TestGptOssReal_logitParity (7.44s)
+PASS
+   new: exit 0; VmHWM 31636 MiB; peak VmSwap 0 MiB
+=== 2026-10-26 09:56:08 PDT end, rc 0; record /home/francis/goinfer-logs/ks-o4-2026-10/parity-2026-10-26-0955
