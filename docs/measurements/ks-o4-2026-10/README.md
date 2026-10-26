@@ -192,3 +192,14 @@ on `gpt-oss-20b-MXFP4.gguf`, CPU. Records: `raw/` here (copied from `~/goinfer-l
     at 3. That is no sign of a systematic shift.
   - Disagreement this large for a change in the last bits fits gpt-oss's discontinuous MoE routing: a rounding difference can flip an
     expert pick, and teacher forcing does not stop that within a position.
+
+### Decision: accepted as non-inferior (Francis, 2026-10-26 07:56, relayed by the coordinator)
+
+"A on KS-O4 G-FID — accept it as non-inferior and continue."
+- **What was not met:** the registered agreement bound. The lower bound read −1.64 points against the −1.00 margin.
+- **What he accepted it on, the point estimates:**
+  - an agreement difference of 0.00 points (94.27% both);
+  - a KL ratio of 0.899, whose bound (1.014) passes;
+  - hard flips 0 against 3.
+- **Next:** KS-O4 goes on to its remaining gates (G-ID on amd64, G-MEM, G-SPEED), then the owed real-checkpoint gpt-oss parity run, then
+  its PR. The PR has a Gemini review before merge.
