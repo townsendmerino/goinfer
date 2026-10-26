@@ -1,0 +1,39 @@
+== 2026-10-25T16:17:28-07:00 commit c4ab7f224
+1709249, /usr/bin/kwin_wayland, 17 MiB
+1363139, /home/francis/goinfer-logs/drafter-host-mem/serve-branch-e933d24c, 386 MiB
+ 16:17:29 up 21 days, 19:39,  6 users,  load average: 3.90, 3.82, 2.48
+=== RUN   TestKSO1F_projectionNumerics
+[cuda] resident build failure, detail:
+goroutine 98 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/goinfer-bench/ks-o1-f/cuda/resident.go:2071 +0x3d
+panic({0x19ed328?, 0x1cc8425e8070?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x1cc8422720f0, 0x13b0000, 0x13b0000, {0xe5fbaf, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.34.0/cuda.go:312 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.34.0/cuda.go:445
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).streamKQuant(_, {{0xe5d195, 0x3}, {0x0, 0x0, 0x0}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	/home/francis/goinfer-bench/ks-o1-f/cuda/pack_stream.go:302 +0x1a6
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).streamW(_, {{0xe5d195, 0x3}, {0x0, 0x0, 0x0}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	/home/francis/goinfer-bench/ks-o1-f/cuda/pack_stream.go:208 +0x1109
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xe5d195, 0x3}, {0x0, 0x0, 0x0}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	/home/francis/goinfer-bench/ks-o1-f/cuda/resident.go:1046 +0x665
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func7()
+	/home/francis/goinfer-bench/ks-o1-f/cuda/backend.go:1513 +0x8012
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/goinfer-bench/ks-o1-f/cuda/resident.go:2074 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func6()
+	/home/francis/goinfer-bench/ks-o1-f/cuda/backend.go:837 +0x69
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 8
+	/home/francis/goinfer-bench/ks-o1-f/cuda/backend.go:833 +0x7c45
+
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 20643840 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts (a mixture-of-experts model keeps its hottest experts on the GPU and streams the rest from host memory), a smaller -quant (int4) or -ctx, or run on the CPU on purpose with -backend cpu) — continuing on the CPU/staged path
+    kso1f_proj_test.go:53: no CUDA resident: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 20643840 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts (a mixture-of-experts model keeps its hottest experts on the GPU and streams the rest from host memory), a smaller -quant (int4) or -ctx, or run on the CPU on purpose with -backend cpu
+--- FAIL: TestKSO1F_projectionNumerics (3.73s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	3.762s
+FAIL
+== exit 1 2026-10-25T16:17:38-07:00
