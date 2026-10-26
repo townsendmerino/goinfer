@@ -64,3 +64,19 @@ Qwen3.5 meets the merge rule at both depths, and the gain grows with depth: atte
 **LFM2.5-2.6B:** queued on the Mac's night runner (`ksf2b-lfm25`, not before 22:00, gated on its 8.7 GB need); readings follow.
 
 **Not covered on the Mac:** Granite-4.0-H, Nemotron-H, Qwen3.6 and Llama 4 (see the registration).
+
+**LFM2.5-2.6B, forced run, 2026-10-26 (01:27–01:36): no reading, every run void.**
+- **Why it ran forced:** the night runner held `ksf2b-lfm25` all evening. Free memory read 7.2 GB, under its 8.9 GB need plus the
+  runner's 2 GB headroom. At Francis's "force it" (01:26), the coordinator dropped it from the queue and started `run-lfm.sh`
+  directly under the timing lock (label `ksf2b-lfm25-forced`). So it started below the runner's headroom rule. The harness's own
+  void rule still applied, as registered.
+- **Result:** all 18 runs (4 warm, then 7 attempts at pair 0) were void.
+  - **Memory:** reclaimable read 6.49 GiB at the first run and 9.59–10.04 GiB after, under the cell's 10.7 GiB line (8.7 GB plus
+    2 GiB).
+  - **Paging:** 17 of the 18 runs paged during the run, 4 to 183 pages.
+  - The harness stopped after 6 void pairs ("over 6 void pairs"), before depth 1,024.
+- **Not graded:** voided runs are not a reading. For the record only, the voided depth-128 runs read A 94.8–99.2 and B 92.2–96.7 ms
+  a token.
+- The log is beside this file: `lfm25-forced-2026-10-26.log`.
+- **The cause is the cell's own load:** the 2.6B loads from its Hugging Face directory at an 8.7 GB peak, which leaves the Mac
+  paging. A pre-quantized CPU `.giw` would load mapped, at a lower peak.
