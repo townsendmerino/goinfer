@@ -79,11 +79,26 @@ func (d *blockTrunk) DrafterGeometry() DrafterGeometry {
 	}
 }
 
-func (d *blockTrunk) DrafterFC() *linalg.WeightMat { return &d.fc }
-func (d *blockTrunk) DrafterHiddenNorm() []float32 { return d.hiddenNorm }
-func (d *blockTrunk) DrafterFinalNorm() []float32  { return d.finalNorm }
+// The weight accessors panic with ErrDrafterReleased once the host weights are released (ReleasableDrafterWeights), rather
+// than hand out zero matrices.
+
+func (d *blockTrunk) DrafterFC() *linalg.WeightMat {
+	d.mustHoldWeights()
+	return &d.fc
+}
+
+func (d *blockTrunk) DrafterHiddenNorm() []float32 {
+	d.mustHoldWeights()
+	return d.hiddenNorm
+}
+
+func (d *blockTrunk) DrafterFinalNorm() []float32 {
+	d.mustHoldWeights()
+	return d.finalNorm
+}
 
 func (d *blockTrunk) DrafterLayer(i int) DrafterLayerWeights {
+	d.mustHoldWeights()
 	l := &d.layers[i]
 	return DrafterLayerWeights{
 		Q: &l.q, K: &l.k, V: &l.v, O: &l.o,
@@ -93,11 +108,19 @@ func (d *blockTrunk) DrafterLayer(i int) DrafterLayerWeights {
 	}
 }
 
-// Compile-time proof that both families satisfy the interface through the shared trunk. If a
+// ReleasableDrafterWeights is a BlockDrafterWeights whose host weights can be released once a resident backend holds its own
+// copy (DFlashDrafter.ReleaseHostWeights). A backend's attach checks HostWeightsReleased and refuses a released drafter: its
+// matrices are zero, and an upload of them would draft noise that lossless verify only rejects.
+type ReleasableDrafterWeights interface {
+	BlockDrafterWeights
+	HostWeightsReleased() bool
+}
+
+// Compile-time proof that both families satisfy the interfaces through the shared trunk. If a
 // third drafter lands and does NOT embed blockTrunk, this is where that shows up.
 var (
-	_ BlockDrafterWeights = (*DFlashDrafter)(nil)
-	_ BlockDrafterWeights = (*DSparkDrafter)(nil)
+	_ ReleasableDrafterWeights = (*DFlashDrafter)(nil)
+	_ ReleasableDrafterWeights = (*DSparkDrafter)(nil)
 )
 
 // DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw. It is computed rather

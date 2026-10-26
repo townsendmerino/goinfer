@@ -77,6 +77,9 @@ type drafterLayer struct {
 // against the target, not trusted: a drafter reads the target's residual stream, so a hidden-dim mismatch is the wrong
 // pairing, and the failure mode is a drafter that runs and drafts noise (docs/spec/08).
 func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDrafter, error) {
+	if rel, ok := w.(decoder.ReleasableDrafterWeights); ok && rel.HostWeightsReleased() {
+		return nil, fmt.Errorf("cuda drafter: the drafter's host weights were released after an earlier attach; load it again")
+	}
 	if r.attnCap != 0 {
 		return nil, fmt.Errorf("cuda drafter: the target has an attention softcap, which attn_block_full does not apply")
 	}
