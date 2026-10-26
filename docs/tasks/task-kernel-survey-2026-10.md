@@ -92,7 +92,7 @@
 | KS-H3 | open | baseline read 2026-10-25 before the move (`moe_route` 4,416 B a thread, 132.0 MiB retained); the move (the per-thread arrays to shared memory) is not on `main`, so the reading after it is still to do | §11, "KS-H2 / KS-H3 readings, read" |
 | KS-H4 | done | done 2026-10-23: the grid tower releases scratch over 256 MiB after 5 s idle; Qwen3-VL-2B 10 s after a 4K forward 1,515.4 → 0.0 MiB; outputs byte-equal; a repeat call 0.9996 of release-off, the first call after a release +67 ms on 50 s (H4-G1 to G3 PASS). Other tower accelerators and aikit's `qwenmetal`/`visionmetal` not covered | `docs/measurements/ks-night-2026-10/README.md` |
 | KS-H5 | open | either box: bytes allocated at build | — |
-| KS-H6 | blocked | nobara-ks-cuda, after KS-H2 and KS-H3 read: re-derive both margins from measured parts, the 2,048-row pass's scratch included, and bring the numbers to Francis before changing either guard (KS-O3 decided A, Francis, 2026-10-25) | — |
+| KS-H6 | done, PR open | nobara-ks-cuda: the CUDA context margin computed from its parts and the KV pools priced as charged (A1, Francis 2026-10-25), and the startup self-test before the build (A, 2026-10-26); gates H6C-S and H6C-G read ("KS-H6 build read"); `slotMarginBytes` unchanged | — |
 | KS-O1 | done (Metal and CUDA, owner overrides) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. **CUDA: done 2026-10-24** (owner's option A on O1C-G5): Phi-3 mini q4k 114.9 → 127.3 tok/s (0.9025, 10 of 10), the 1.5B 0.9786 (10 of 10); −374.7 MB on the device, head included; KL to the file 0.39× (Phi-3), 0.91× (0.5B); G-Q2 +0.13 points. Also fixes main's concurrent `noteKQuant` map write | survey, "Owner override of O1-G7" |
 | KS-O1-F | done | closed 2026-10-25 by Francis (20:31) on the (c) finding, read 2026-10-25 (D1, D3, D2a, (c)): the native lane's gap on 110 × "the " (p10 0.8826 against int8's 0.9401) is specific to that prompt. On the same input the native qkv projection is closer to f32 than int8's at every layer, and its kernels are exact. On "and ", "apple ", "hello " and a 110-token natural text, the native lane is the closer end to end (KL 0.27–0.73× int8's). No fix indicated | survey, "KS-O1-F diagnostic"; "KS-O1-F (c) read" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
@@ -3129,6 +3129,78 @@ its own PR, and it gets a Gemini review before merge.
   beside the result (`TestKSH6C_marginPriced`).
 - **Part 1's rounding:** the buffers after the pools that are under 2 MiB come from the driver's 2 MiB pages, so their sum is
   rounded up to whole pages, and each larger buffer is rounded up to 2 MiB. G2 applies the same rule to the observed buffers.
+
+**KS-H6 build read 2026-10-26, by day.**
+- **Setup:** run by `night.py serve` (the timing lock held exclusively; memory, not time, is read). NVIDIA driver 595.91.07,
+  the desktop compositor's context only.
+- **Revs and logs:**
+  - The first full run, at 26da8c2ca, is `docs/measurements/ks-h6c-2026-10/logs/h6c-2026-10-26-0320.log`.
+  - The instrument-corrected run, at e0cf2c5d1, is `logs/h6c-2026-10-26-0357.log`.
+  - The slots test, fixed after that run at 8bf6ddbac, was re-run by hand.
+  - The before-figures are main at f6ca0966c.
+- **The instrument, corrected between the two runs.**
+  - The CUDA backend holds no device of its own, so when the self-test's last fixture closes, the primary context's refcount
+    reaches zero. The context is destroyed, and with it the local-memory pool.
+  - The breakdown and priced tests held a primary-context handle for their whole run, which kept the pool alive where serve
+    does not.
+  - The priced test also lacked serve's `--kv auto`.
+  - The breakdown's "fit-check reading" was the first build's in the process, a fixture's when the self-test runs.
+  - All four are fixed in e0cf2c5d1. The readings below are from that run unless named.
+
+**The self-test before the build (H6C-S):**
+- **S1, S2, S3: PASS.** The fixture builds all come before the model's own; a declined probe skips the model's build (no
+  resident, the decline names the self-test, a WARN, the cache declines a second load with no build); `--no-selftest` builds the
+  model once and keeps it.
+- **S4: bar 1 PASS, bar 2 FAIL as registered, for a better reason than it allowed for.**
+  - With the self-test on, the drop after the pools to the end of the load is at most 2 MiB on all three models (2.0, 0.0
+    and 0.0 MiB; it was 130 MiB).
+  - Bar 2 assumed the pool survives into the build, and it does not. The fit check reads the same free VRAM with the self-test
+    on and off: 2,843.1 MiB on Qwen3-8B at 16,384, 2,831.1 MiB on Qwen2.5-7B at 16,384, and 6,223.1 MiB on the 1.5B.
+  - So a dense model's process no longer holds the 132 MiB pool at all, and the plan and the fit check see what is there.
+  - Where something else holds the context across the probe, the pool is there when the fit check reads, and is priced the
+    same way.
+- **S5: PASS, with its plant.**
+  - `qwen35-tiny` (DeltaNet and MoE), with the self-test skipped, pays its pool before the fit check (7,277.1 → 7,141.1 MiB at
+    the fit check). It takes 0.0 MiB across a prefill and 8 tokens.
+  - With the warm-up skipped (the plant), serving took 132.0 MiB the fit check had not seen.
+
+**The A1 margin (H6C-G):**
+- **G1: PASS.** The margin is exactly its parts. Part 1 matches a hand count on a synthetic geometry (one 2 MiB page, plus
+  4 MiB for a 2.4 MB logits buffer). The charged KV matches a hand count on buffers under, at and over 2 MiB, f16, MLA,
+  shared and no-KV layers, and two slots. Both plants are red: the floor left out, and the pools priced as requested.
+- **G2: PASS on all eight models.** Part 1 is 2.00 MiB priced against 2.00 MiB allocated on every one. The pools' charged bytes
+  equal `kvChargedBytes` exactly. The margin recomputed on the built resident equals the planned one.
+
+  | model (serve's `--kv auto`) | pools charged | margin |
+  |---|---:|---:|
+  | Qwen2.5-Coder-0.5B, unpinned | 288 MiB | 214.1 MiB |
+  | Qwen2.5-Coder-1.5B, unpinned | 560 MiB | 248.3 MiB |
+  | Gemma-3-4B, unpinned | 4,216 MiB | 330.5 MiB |
+  | Qwen2.5-VL-3B, unpinned | 720 MiB | 261.0 MiB |
+  | Gemma 4 E2B, unpinned | 636 MiB | 363.0 MiB |
+  | Qwen2.5-7B, unpinned | 1,008 MiB | 328.3 MiB |
+  | Qwen3-8B, `-ctx 16384` | 2,448 MiB | 285.0 MiB |
+  | Gemma 4 26B-A4B, expert cache | 1,880 MiB | 250.8 MiB |
+
+- **G3: PASS.** No build trimmed its planned context. Gemma-3-4B, the one plan under the ceiling, planned 15,680 against an exact
+  allowance of 15,808 (128 below; allowed 584: 64, the rounding bound's 520 positions, and Plan's own dense residual, reported
+  at 259). The others planned at the 16,384 ceiling, which the exact figure also allows.
+- **G4: PASS.** Qwen3-8B unpinned took 16,384 positions. The minimum free VRAM over a 15,872-token prefill and 64 tokens was
+  281.1 MiB against the 167 MiB bar. On main, the same model pinned at 16,384 ran a 15,000-token prefill at a minimum of
+  149.1 MiB (H6-R's run, re-read in this session).
+- **G5, the cost: no configuration that loads today is refused after.**
+  - The default unpinned contexts, from `TestBuildScratchAccounting` on both builds (f32 KV, the harness holding the context in
+    both arms, so the after arm keeps a pool serve drops): 0.5B, 1.5B, 7B, Qwen2.5-VL-3B and Gemma 4 E2B 16,384 → 16,384.
+    Gemma-3-4B goes from 15,232 (planned 15,488, trimmed at the build) to 15,168 (planned and kept).
+  - Read as serve loads it (f16 KV, nothing held), Gemma-3-4B takes 15,680 after.
+  - Qwen3-8B with `-ctx 16384` loads on both. After the change it has 107 MiB to spare beyond its margin at the fit check
+    (2,843.1 MiB free against 2,448 + 285).
+  - The 26B keeps 30 expert slots and 4,096 positions.
+  - Beside the 26B, the self-test's fixtures now run before the build instead of declining for room, as H6-R saw them do
+    after it.
+- **The slots test:** `TestResolveCtxCapFit_slotsShrinkTheContext` now prices its forced budget as the pools charge it. On the
+  tiny fixture the 2 MiB rounding of each pool buffer is a large share of the KV. It expects the build's charged edge, and
+  passes (8bf6ddbac).
 
 
 ## 12. Already covered (not re-proposed)

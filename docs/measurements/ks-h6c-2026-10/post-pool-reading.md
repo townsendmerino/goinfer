@@ -37,3 +37,9 @@ pass.
 
 **So under the old flat margin**, the first model a serve process loads was fitted against free VRAM that the self-test then took
 132 MiB of. The 384 MiB margin covered that without naming it. The figure H6-R recorded as "post-pool allocations" is this pool.
+
+**Note, 2026-10-26:** "the context keeps it for the life of the process" held for this reading's harness, which kept a
+primary-context handle open across the load. Serve keeps none: the CUDA backend holds no device of its own, so once the
+self-test's last fixture closes, the primary context and its pool are released. With the self-test now before the build, a
+dense model's fit check reads the same free VRAM with or without it (`docs/tasks/task-kernel-survey-2026-10.md`, "KS-H6 build
+read", S4).
