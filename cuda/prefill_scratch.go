@@ -41,8 +41,8 @@ func (r *cudaResident) choosePrefillWidth() {
 	}
 	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
 	r.prefillWidth = prefillWidthFor(int64(free), ctxCapMarginBytes, r.extraBytes, pass)
-	fmt.Fprintf(os.Stderr, "cuda: prefill passes of up to %d rows (%.0f MiB of scratch; %.0f MiB free beside the %d MiB margin)\n",
-		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-r.extraBytes)/(1<<20), ctxCapMarginBytes>>20)
+	fmt.Fprintf(os.Stderr, "cuda: prefill passes of up to %d rows (%.0f MiB of scratch; %.0f MiB free beyond the %d MiB margin)\n",
+		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-ctxCapMarginBytes-r.extraBytes)/(1<<20), ctxCapMarginBytes>>20)
 }
 
 // prefillBaseRows is a pass's width before the per-prompt bounds: GOINFER_PREFILL_CHUNK when it parses to a positive integer, else

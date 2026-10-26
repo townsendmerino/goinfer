@@ -111,6 +111,9 @@ func TestKSB8_bitsAcrossWidths(t *testing.T) {
 	if batched, why := r.PrefillPath(); !batched {
 		t.Fatalf("batched prefill declined: %s", why)
 	}
+	if r.prefillWidth != 2048 {
+		t.Fatalf("the build chose %d rows, not 2,048: the default run would not be the registered arm", r.prefillWidth)
+	}
 	const M = 4100
 	embs := ksb8Embeddings(M, r.hidden)
 	run := func(chunk string) ([]float32, []int) {
@@ -124,6 +127,18 @@ func TestKSB8_bitsAcrossWidths(t *testing.T) {
 		}
 		lg = slices.Clone(lg)
 		fmt.Fprintf(os.Stderr, "[B8-G2] passes of %s rows (%d per pass): prefill %s\n", chunk, r.prefillPassRows(), time.Since(t0).Round(time.Millisecond))
+		// The run must have used the width it names: no learned narrowing (an out-of-memory pass halves and remembers it, and
+		// Reset does not clear that), and the pass rows the knob or the default asks for.
+		if c := r.prefillChunkCap.Load(); c != 0 {
+			t.Fatalf("chunk %q: a pass narrowed to %d rows after running out of memory, so this run is not the width it names", chunk, c)
+		}
+		wantRows := r.prefillWidth
+		if n, err := strconv.Atoi(chunk); err == nil {
+			wantRows = n
+		}
+		if got := r.prefillPassRows(); got != wantRows {
+			t.Fatalf("chunk %q: passes of %d rows, want %d", chunk, got, wantRows)
+		}
 		ids, cur := make([]int, 0, 8), lg
 		for k := range 8 {
 			best := 0
@@ -304,5 +319,43 @@ func TestKSB8_speed(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[B8-G4] median 512/default %.4f, %d of 10 pairs faster at the default, %d void: %s\n", med, faster, voids, verdict)
 	if verdict != "SHIP" {
 		t.Errorf("B8-G4 %s: median %.4f, %d of 10 faster", verdict, med, faster)
+	}
+}
+
+// TestKSB8_admissionPricesTheChosenPass is B8-G3's admission half, through the decoder: on the 1.5B at context 16,384, the
+// per-request price (decoder residentPrefillScratch, through ResidentPrefillScratchForTest) of a prompt is one pass at the build's
+// chosen width, its span scratch at the prompt's length, and the prompt's host embeddings. A prompt length whose span scratch is
+// not zero must be among those checked, so that term is exercised.
+func TestKSB8_admissionPricesTheChosenPass(t *testing.T) {
+	path := ksb8Model(t)
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 16384})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("no CUDA resident: %s", m.ResidentDecline())
+	}
+	w := r.PrefillChunkRows()
+	if w != r.prefillWidth {
+		t.Fatalf("PrefillChunkRows %d, the chosen width %d", w, r.prefillWidth)
+	}
+	withSpan := 0
+	for _, p := range []int{100, 3900, 12200, 13000, 14000, 15000, 16000} {
+		rows := min(p, w)
+		span := r.PrefillSpanScratchBytes(rows, p)
+		want := r.PrefillScratchBytes(rows) + span + int64(p)*4*int64(m.ResidentEmbedLen())
+		got, ok := m.ResidentPrefillScratchForTest(p)
+		if !ok || got != want {
+			t.Errorf("a %d-token prompt: admission prices %d B (ok %v), want %d (a %d-row pass, %d B of span scratch, the embeddings)", p, got, ok, want, rows, span)
+		}
+		if span > 0 {
+			withSpan++
+		}
+		fmt.Fprintf(os.Stderr, "[B8-G3 admission] %d tokens: %.1f MiB priced (a %d-row pass, %.1f MiB span scratch)\n", p, float64(got)/(1<<20), rows, float64(span)/(1<<20))
+	}
+	if withSpan == 0 {
+		t.Errorf("no prompt length checked has non-zero span scratch: the span term is not exercised")
 	}
 }

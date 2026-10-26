@@ -2,7 +2,8 @@
 # KS-B8 build gates (docs/tasks/task-kernel-survey-2026-10.md, "KS-B8 build"), by day through night.py (which holds the timing lock).
 # Builds the cuda test binary at <rev> in a detached worktree; runs B8-G1..G3 then the timed B8-G4. A skip counts as a failure.
 set -u
-REV=${1:?usage: run-b8.sh <rev>}
+REV=${1:?usage: run-b8.sh <rev> [all|untimed]}
+PHASE=${2:-all}
 WT=$HOME/goinfer-bench/ks-b8-run-$REV
 LOG=$HOME/goinfer-logs/ks-b8-2026-10/b8-$(date +%Y-%m-%d-%H%M).log
 export PATH=/usr/local/go/bin:$PATH
@@ -27,7 +28,7 @@ gate() {
 	grep -q -- '--- PASS' "$WT/$label.out" || { echo "FAILED: $label ran no test"; fail=1; }
 }
 gate g1 '^TestKSB8_widthChooser$'
-gate g2g3 '^(TestKSB8_bitsAcrossWidths|TestKSB8_buildPricesThePass|TestPrefillChunked_bitIdentical|TestKV3_residentReportsItsChunks|TestKV3_prefillScratchBytes_matchesThePass)$' GOINFER_HEAVY_TESTS=1
-gate g4 '^TestKSB8_speed$' GOINFER_HEAVY_TESTS=1 GOINFER_KSB8_TIMING=1
+gate g2g3 '^(TestKSB8_bitsAcrossWidths|TestKSB8_buildPricesThePass|TestKSB8_admissionPricesTheChosenPass|TestPrefillChunked_bitIdentical|TestKV3_residentReportsItsChunks|TestKV3_prefillScratchBytes_matchesThePass)$' GOINFER_HEAVY_TESTS=1
+[ "$PHASE" = all ] && gate g4 '^TestKSB8_speed$' GOINFER_HEAVY_TESTS=1 GOINFER_KSB8_TIMING=1
 echo "$(date '+%H:%M:%S') DONE fail=$fail"
 exit $fail
