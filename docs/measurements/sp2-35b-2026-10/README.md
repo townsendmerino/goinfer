@@ -77,4 +77,10 @@ plan:` and expert-cache banners. G4 is not started unless G1's load planned 4,60
 
 ## Readings
 
-(none yet)
+### G1's first start (2026-10-26, 07:16:30–07:16:44 PDT, at `c69545d6`): void, no data
+
+The resident build declined: "dense weights need 1.16 GB plus 0.47 GB reserved for a companion attach (--drafter) but only 0.71 GB
+is free on the device". My own host-memory measurement for #263's follow-ups held 6.6 GB of the card at the time, through a
+`serve` it had started: both runs held the timing lock shared, which lets two loaders share the box but not one card. Nothing was
+read. **Amended before the re-run:** `run-sp2-35b.sh` takes the lock exclusive for G1 too (it needs the card to itself), and G1
+re-runs as registered once the lock is free. Log: `~/goinfer-logs/sp2-35b-2026-10/identity-2026-10-26-0716.log` on nobara.

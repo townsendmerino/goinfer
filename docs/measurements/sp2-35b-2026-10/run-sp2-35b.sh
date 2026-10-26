@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SP2 on the 35B (docs/measurements/sp2-35b-2026-10/README.md): the SP2 harness with the 35B, its drafter, w = 3 and experts streamed.
-#   MODE=identity  G1 (SP2's G1c + plants + G5) on the 35B, with G3's load record (correctness; holds the timing lock shared)
+#   MODE=identity  G1 (SP2's G1c + plants + G5) on the 35B, with G3's load record (correctness; the timing lock exclusive: it needs the card to itself)
 #   MODE=speed     G4, speed against plain decode at w = 3 (timed; exclusive lock)
 # The test binary runs directly (go test -c), and its VmHWM and peak VmSwap are sampled until it exits.
 set -u
@@ -12,7 +12,7 @@ export SP2_TARGET=$HOME/models/qwen3.6-35b-a3b-q4_k_m.int4.e4h.cuda.v17.giw SP2_
 mkdir -p "$OUT"
 stamp=$(date +%Y-%m-%d-%H%M)
 case $MODE in
-identity) run='^TestSP2_identity$'; lock=--shared; tmo=60m ;;
+identity) run='^TestSP2_identity$'; lock=; tmo=60m ;;
 speed) run='^TestSP2_speed$'; lock=; tmo=150m ;;
 *) echo "MODE $MODE?"; exit 2 ;;
 esac
