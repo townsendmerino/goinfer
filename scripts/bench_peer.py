@@ -1015,6 +1015,13 @@ def prompt_for_depth(depth, model_key):
     context window, 400ing both engines identically."""
     return _PROMPTS[f"{model_key}:{depth}"]["text"]
 
+def prompt_texts(depth, model_key):
+    """The prompts a cell sends, in order: an entry's "texts" (a prompt SET, which a cell cycles through, one per completion) or
+    its single "text"."""
+    e = _PROMPTS[f"{model_key}:{depth}"]
+    return list(e["texts"]) if "texts" in e else [e["text"]]
+
+
 def prompt_tokens(depth, model_key):
     return _PROMPTS[f"{model_key}:{depth}"]["tokens"]
 
@@ -1431,7 +1438,15 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     have made the 'CPU' row a GPU number on both engines and nobody would have seen it."""
     path, tag = MODELS[model_key]
     cfg = CONFIGS[cfg_name]
-    prompt = prompt_for_depth(depth, model_key)
+    # A prompt set is cycled one prompt per request: the warm-up takes the first, and the timed completions start again from
+    # the first, so every arm of a cell sends the same sequence. A single-text entry sends its text every time, as before.
+    texts = prompt_texts(depth, model_key)
+    _pi = [0]
+
+    def prompt_next():
+        t = texts[_pi[0] % len(texts)]
+        _pi[0] += 1
+        return t
     # M35/M26 load a 16-26 GB checkpoint (mmap page-in + CUDA expert-cache fill for goinfer;
     # weight load for llama-server); the generic 180s default (sized for 0.5B-7B) measured a real
     # M35 goinfer load STILL not listening at 359s on this box (2026-09-04 smoke test) -- so a
@@ -1487,7 +1502,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                     stdout=subprocess.DEVNULL, stderr=serve_log,
                     preexec_fn=_child_setup)
             port, url, parse, mk = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", parse_openai, \
-                (lambda: goinfer_payload(path, prompt, cfg))
+                (lambda: goinfer_payload(path, prompt_next(), cfg))
         elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS,
                        OLLAMA_HOST=f"127.0.0.1:{OPORT}")
@@ -1503,7 +1518,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                                         stdout=olog, stderr=olog,
                                         preexec_fn=_child_setup)
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
-                (lambda: ollama_payload(tag, prompt, cfg, backend))
+                (lambda: ollama_payload(tag, prompt_next(), cfg, backend))
         elif engine == "llamacpp":
             # V-08 (docs/review-2026-09-04.md): this branch used to launch with NO -ngl at all,
             # so llama-server fell back to its own auto-offload default -- Metal on a Mac, meaning
@@ -1534,7 +1549,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=_child_setup)
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
-                parse_openai, (lambda: llamacpp_payload(prompt, cfg))
+                parse_openai, (lambda: llamacpp_payload(prompt_next(), cfg))
         elif engine == "mlx":
             # Mac only (docs/tasks/task-peer-benchmarks.md §1): MLX_MODELS holds only the checkpoints
             # actually pulled -- a model_key with no entry is a clean skip, not a crash, since a
@@ -1553,7 +1568,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             # 2026-09-04: no llama-server-style 503-while-loading window), so plain wait_port is a
             # real readiness check here, not just a connectable-socket one.
             port, url, parse, mk = MPORT, f"http://127.0.0.1:{MPORT}/v1/chat/completions", \
-                parse_openai, (lambda: mlx_payload(mlx_path, prompt, cfg))
+                parse_openai, (lambda: mlx_payload(mlx_path, prompt_next(), cfg))
         if proc is not None:
             swap.start(proc.pid)
         ready = wait_llamacpp_ready(port, timeout=load_timeout) if engine == "llamacpp" \
@@ -1590,6 +1605,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             stats = swap.stop()
             return None, swap.void_reason() or f"warmup failed: {e}", {"swap": stats}
         phases["warmup_s"] = round(time.time() - t_warm, 2)
+        _pi[0] = 0  # the timed completions start the prompt set from its first prompt
 
         _, ncomp, nruns = gen_params()
         t_runs, decode_s = time.time(), 0.0
