@@ -1,0 +1,59 @@
+=== 2026-10-26 09:09:07 PDT start: new dc378f6b54281eb9786a63cd289933004b1d4cd6, old 2abd032c2e4d1b1f19a99b1008d7df0af208ded0; 16 cores; 0.36 2.50 4.01 1/750 1902444
+== G-ID: gate identity on the CPU (09:09:23)
+== verdict ==
+  families 43: 32 IDENTICAL, 0 WITHIN TOLERANCE, 1 DIFFERENT, 10 NOT RUN (a skip is not a pass)
+  wall     16s (09:09:23 → 09:09:40): builds 4s, runs 11s
+  logs     /tmp/gate-identity-20261026-090923-4146154747/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  RED — 1 family(ies) DIFFERENT: they, and only they, go to their reference gates
+exit status 1
+  DIFFERENT        gpt-oss            3/3 cell(s) ran  goes to its reference gate
+  IDENTICAL        granitemoehybrid   3/3 cell(s) ran  validation inheritable from 2abd032c2
+  IDENTICAL        lfm2               3/3 cell(s) ran  validation inheritable from 2abd032c2
+  IDENTICAL        llama4_text        3/3 cell(s) ran  validation inheritable from 2abd032c2
+  IDENTICAL        nemotron_h         6/6 cell(s) ran  validation inheritable from 2abd032c2
+  IDENTICAL        qwen3_5_moe        6/6 cell(s) ran  validation inheritable from 2abd032c2
+  families 43: 32 IDENTICAL, 0 WITHIN TOLERANCE, 1 DIFFERENT, 10 NOT RUN (a skip is not a pass)
+== fit: each cell's model at the cell's own depth, one token, its peak kept as the cell's need (09:09:40)
+   fit-gptoss-d128 fit B: 618.36 ms/token, load 0.77, VmHWM 16184 MiB, swap 0 MiB
+== G-SPEED: A B B A, 2 warm runs each, then 10 pairs (09:11:03)
+-- gptoss-d128 (09:11:03)
+   gptoss-d128 warm1 A: 586.47 ms/token, load 2.88, VmHWM 23377 MiB, swap 0 MiB
+   gptoss-d128 warm1 B: 562.39 ms/token, load 5.64, VmHWM 23379 MiB, swap 0 MiB
+   gptoss-d128 warm2 A: 585.40 ms/token, load 4.16, VmHWM 23379 MiB, swap 0 MiB
+   gptoss-d128 warm2 B: 576.91 ms/token, load 4.19, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair0 A: 589.65 ms/token, load 4.62, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair0 B: 581.60 ms/token, load 5.15, VmHWM 23384 MiB, swap 0 MiB
+   gptoss-d128 pair1 B: 571.38 ms/token, load 2.77, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair1 A: 588.22 ms/token, load 4.41, VmHWM 23383 MiB, swap 0 MiB
+   gptoss-d128 pair2 A: 593.38 ms/token, load 6.38, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair2 B: 566.46 ms/token, load 4.76, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair3 B: 563.38 ms/token, load 3.53, VmHWM 23380 MiB, swap 0 MiB
+   gptoss-d128 pair3 A: 580.96 ms/token, load 4.42, VmHWM 23383 MiB, swap 0 MiB
+   gptoss-d128 pair4 A: 586.54 ms/token, load 5.41, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair4 B: 560.22 ms/token, load 3.97, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair5 B: 520.43 ms/token, load 5.25, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair5 A: 587.35 ms/token, load 5.38, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair6 A: 564.80 ms/token, load 7.37, VmHWM 23381 MiB, swap 0 MiB
+   gptoss-d128 pair6 B: 580.05 ms/token, load 5.04, VmHWM 23380 MiB, swap 0 MiB
+   gptoss-d128 pair7 B: 568.02 ms/token, load 6.41, VmHWM 23378 MiB, swap 0 MiB
+   gptoss-d128 pair7 A: 576.50 ms/token, load 4.64, VmHWM 23379 MiB, swap 0 MiB
+   gptoss-d128 pair8 A: 571.88 ms/token, load 3.93, VmHWM 23380 MiB, swap 0 MiB
+   gptoss-d128 pair8 B: 575.21 ms/token, load 4.85, VmHWM 23379 MiB, swap 0 MiB
+   gptoss-d128 pair9 B: 565.76 ms/token, load 3.95, VmHWM 23377 MiB, swap 0 MiB
+   gptoss-d128 pair9 A: 585.27 ms/token, load 3.81, VmHWM 23383 MiB, swap 0 MiB
+gptoss-d128 pair0: A 589.65 ms, B 581.60 ms, ratio 0.9863 (loads 4.62, 5.15; swap peaks 0, 0 MiB)
+gptoss-d128 pair1: A 588.22 ms, B 571.38 ms, ratio 0.9714 (loads 4.41, 2.77; swap peaks 0, 0 MiB)
+gptoss-d128 pair2: A 593.38 ms, B 566.46 ms, ratio 0.9546 (loads 6.38, 4.76; swap peaks 0, 0 MiB)
+gptoss-d128 pair3: A 580.96 ms, B 563.38 ms, ratio 0.9697 (loads 4.42, 3.53; swap peaks 0, 0 MiB)
+gptoss-d128 pair4: A 586.54 ms, B 560.22 ms, ratio 0.9551 (loads 5.41, 3.97; swap peaks 0, 0 MiB)
+gptoss-d128 pair5: A 587.35 ms, B 520.43 ms, ratio 0.8861 (loads 5.38, 5.25; swap peaks 0, 0 MiB)
+gptoss-d128 pair6: A 564.80 ms, B 580.05 ms, ratio 1.0270 (loads 7.37, 5.04; swap peaks 0, 0 MiB)
+gptoss-d128 pair7: A 576.50 ms, B 568.02 ms, ratio 0.9853 (loads 4.64, 6.41; swap peaks 0, 0 MiB)
+gptoss-d128 pair8: A 571.88 ms, B 575.21 ms, ratio 1.0058 (loads 3.93, 4.85; swap peaks 0, 0 MiB)
+gptoss-d128 pair9: A 585.27 ms, B 565.76 ms, ratio 0.9667 (loads 3.81, 3.95; swap peaks 0, 0 MiB)
+== gptoss-d128: 8 of 10 pairs faster, median ratio 0.9706 (1.030x)
+
+merge bar (median >= 1.05x and >= 9 of 10 pairs faster, every cell): not met
+VERDICT PARK (some cell has 2 to 8 of 10 pairs faster: the owner decides)
+G-SPEED: grade exit 3 (FAIL, PARK or INCOMPLETE)
+=== 2026-10-26 09:50:01 PDT end, rc 1; record /home/francis/goinfer-logs/ks-o4-2026-10/remaining-2026-10-26-0909

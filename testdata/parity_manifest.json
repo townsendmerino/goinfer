@@ -283,14 +283,14 @@
       ],
       "deps_hash": "sha256:6c7f4b9618010ce2bc04f48978e10ce73de9e29ba30df6af19b19d2b2ef62a5f",
       "status": "validated",
-      "validated_at": "25a4711",
-      "date": "2026-07-27",
-      "reference": "tiny HF f32 gpt-oss golden (attention sinks + clamped-SwiGLU MoE + sliding/full + YaRN): argmax-exact, logit cosine 1.0. Real gpt-oss:20b MXFP4 (int8 resident, ~20 GB) vs HF bf16 (scripts/gptoss_hf_oracle.py): argmax-exact (\" Paris\") and coherent generation. Reproduced on main once the root go.mod pinned aikit v1.12.0, whose ggml type-39 dequant the MXFP4 experts need. | SAFETENSORS loader (2026-08-18) diffed against this same GGUF path at identical int8: argmax identical, logit cosine 0.999121; residual attributable to the GGUF's Q8_0 attention vs safetensors BF16 (experts are MXFP4 ggml_type 39 in BOTH, so the expert path agrees exactly). A wrong nibble order or mis-split gate_up measured 0.081, so the threshold separates right from wrong by three orders of magnitude. The loader also generalizes to gpt-oss-120b (4-layer slice: 128 experts, distinct across indices 0/63/127, all logits finite) -- shape coverage only, since 4 layers of 120b dequantize to ~51GB in f32 and no reference forward fits.",
+      "validated_at": "960ef65a7",
+      "date": "2026-10-26",
+      "reference": "KS-O4 re-validation (2026-10-26, nobara CPU, int8, the batched sink order): TestGptOssReal_logitParity argmax-exact, logit cosine 0.99848 at both 2abd032c2 and 960ef65a7, record docs/measurements/ks-o4-2026-10/README.md. | tiny HF f32 gpt-oss golden (attention sinks + clamped-SwiGLU MoE + sliding/full + YaRN): argmax-exact, logit cosine 1.0. Real gpt-oss:20b MXFP4 (int8 resident, ~20 GB) vs HF bf16 (scripts/gptoss_hf_oracle.py): argmax-exact (\" Paris\") and coherent generation. Reproduced on main once the root go.mod pinned aikit v1.12.0, whose ggml type-39 dequant the MXFP4 experts need. | SAFETENSORS loader (2026-08-18) diffed against this same GGUF path at identical int8: argmax identical, logit cosine 0.999121; residual attributable to the GGUF's Q8_0 attention vs safetensors BF16 (experts are MXFP4 ggml_type 39 in BOTH, so the expert path agrees exactly). A wrong nibble order or mis-split gate_up measured 0.081, so the threshold separates right from wrong by three orders of magnitude. The loader also generalizes to gpt-oss-120b (4-layer slice: 128 experts, distinct across indices 0/63/127, all logits finite) -- shape coverage only, since 4 layers of 120b dequantize to ~51GB in f32 and no reference forward fits.",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.99843
+        "cosine_min": 0.99848
       }
     },
     "gpt2": {

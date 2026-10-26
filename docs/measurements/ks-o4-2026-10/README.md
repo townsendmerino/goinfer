@@ -242,3 +242,60 @@ on `gpt-oss-20b-MXFP4.gguf`, CPU. Records: `raw/` here (copied from `~/goinfer-l
 - **The pricing gap it closes:** on `main` the fit guard under-prices gpt-oss's CPU KV by exactly that much, so the longest context it
   admits is longer than the memory actually allows. After KS-O4 the plan and the memory agree, and the longest context the plan admits is
   unchanged.
+
+## G-ID result: PASS (2026-10-26, the Mac and nobara CPU)
+
+`go run ./cmd/gate identity 2abd032c2 <branch> -backend cpu -assets tiny -steps 64`, with the gitignored granite fixture copied in:
+
+| box | revision | IDENTICAL | DIFFERENT | NOT RUN | record |
+|---|---|---|---|---|---|
+| the Mac (arm64), 08:00 | `b593e258` merged with `main` | 32 | 1, gpt-oss | 10 | `raw/g-id-mac-identity.log` |
+| nobara (amd64), 09:09 | `dc378f6b5` | 32 | 1, gpt-oss | 10 | `raw/remaining/g-id-identity.log` |
+
+- **Bar met:** every family that ran other than gpt-oss is IDENTICAL on both arches, including granitemoehybrid, lfm2, llama4_text,
+  nemotron_h and qwen3_5_moe, whose cells ran in full. gpt-oss differs as expected and is graded by G-FID.
+- **NOT RUN, on both boxes:** deepseek_v2, gpt2, kimi_k2, mellum, qwen2, qwen2_moe, qwen3, qwen3_asr, qwen3_vl and voxtral have no tiny
+  identity asset on either box. They are reported, not counted as a pass.
+
+## G-SPEED result: passes its registered reading; the merge bar is not met (2026-10-26, nobara CPU, 09:11–09:50 PDT)
+
+The night job `ks-o4-remaining` ran on nobara under the timing lock, with KS-F2's harness. A is `2abd032c2` (`main` with KS-F2) and B is
+`dc378f6b5` (KS-O4). gpt-oss-20b-MXFP4.gguf from `~/models`, int4, depth 128, 32 decode tokens; A B B A, 2 warm runs, then 10 pairs.
+Records: `raw/remaining/`.
+
+- **Validity:** no run was void. Each run started at a load of at most 7.37 (bar 8.0), with at least 58,721 MiB available against a need of
+  16,184 MiB + 2,048, and none swapped.
+- **Decode:** median 585.9 ms a token (A) against 567.2 ms (B). Pair ratios (B / A): 0.986, 0.971, 0.955, 0.970, 0.955, 0.886, 1.027,
+  0.985, 1.006, 0.967.
+
+| reading | bar | result |
+|---|---|---|
+| registered: FAIL if a cell has at most 1 of 10 pairs faster | | 8 of 10 faster: **passes**, at a median 1.030× |
+| the merge bar (median ≥ 1.05× and at least 9 of 10 pairs faster) | | **not met** (1.030×, 8 of 10) |
+
+- **Not a speed claim:** `grade_speed.py` printed PARK, which is KS-F2's small-gains label. KS-O4 registered G-SPEED as "reported, FAIL only on
+  a slowdown beyond doubt", because its purpose is the KV saving.
+- **Peak memory:** VmHWM 23,383 MiB (A) and 23,384 MiB (B). At 160 positions the window layers' saving is under 8 MB, so the peak does not move.
+
+## Real-checkpoint parity: PASS (2026-10-26, nobara CPU, 09:55–09:56 PDT)
+
+The night job `ks-o4-parity` ran `TestGptOssReal_gate` and `TestGptOssReal_logitParity` (`-tags realckpt`, int8) at A (`2abd032c2`) and
+at KS-O4 (`960ef65a7`), against the HF bf16 golden from `scripts/gptoss_hf_oracle.py` (sha256 `75c2e662…`, copied from the box's main
+checkout). Records: `raw/parity/`.
+
+| arm | gate | logit parity: argmax | cosine | VmHWM | swap |
+|---|---|---|---|---|---|
+| A | PASS | 12650 = 12650 | 0.99848 | 31,638 MiB | 0 |
+| KS-O4 | PASS | 12650 = 12650 | 0.99848 | 31,636 MiB | 0 |
+
+- **Bar met:** argmax exact and cosine ≥ 0.99 at KS-O4, so the manifest's gpt-oss row is re-validated at `960ef65a7`: cosine_min goes from
+  0.99843 (`25a4711`) to 0.99848. `docs/capability-matrix.md`, its JSON and `pull/capability-matrix.json` are regenerated from it.
+- **The two arms agree to five digits** on this one prompt. KS-O4's difference is in the last bits, so it does not show at this precision.
+
+## Status (2026-10-26): every registered gate has run; whether it lands is Francis's call
+
+- **G-FID:** AMBIGUOUS, accepted by Francis (07:56).
+- **G-SINK, G-RING, G-ID, G-MEM:** PASS.
+- **G-SPEED:** passes its registered reading at 1.030×, and the merge bar is not met.
+- **Real-checkpoint parity:** PASS.
+- **Decision posted:** whether KS-O4 lands today, posted through the coordinator during the 2026-10-26 wind-down.

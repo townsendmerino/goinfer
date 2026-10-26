@@ -1066,7 +1066,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "real-oracle 100.0%/0.99843",
+    "parity": "real-oracle 100.0%/0.99848",
     "checkpoint": {
       "name": "gpt-oss-20b",
       "label": "gpt-oss 20B",
