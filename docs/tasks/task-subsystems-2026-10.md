@@ -778,6 +778,11 @@ bits and whether the device path attached. One test per backend calls it: the ro
 | AX2b-S (nothing left on aikit's towers) | `go list -deps` of every module, under every build tag it uses (root with `realckpt` and `goinfer_testhooks`; `metal`; `gpu`; `cuda` with `GOOS=linux`; `demo/agent`), names neither `github.com/townsendmerino/aikit/vision` nor `.../aikit/audio`, test packages included | — | complete | seconds |
 | AX2b-B (builds) | Build and vet under every tag. The cleanliness guard is run from the root as CI runs it. gofmt, and CI's staticcheck after its canary. `touched.py`. CI's full suite on the PR, apidiff included. The image and audio parity tests are in that suite, and none of their goldens may change. | — | complete | minutes; CI as usual |
 
+**AX2a result, 2026-10-26 (mac-ax01):** AX2a-T PASS on the CPU (12 families, 22 cases), Metal (6 families, 17 cases) and
+WebGPU (5 families, 15 cases), each under a second; CUDA builds and waits for nobara with AX2d. A device backend with no
+registration linked in errors on its first declared tower instead of returning CPU bits. The record is
+[`../measurements/ax2-2026-10/`](../measurements/ax2-2026-10/README.md).
+
 **What AX2b changes outside the import lines.** First, `multimodal` and `embeddinggemma2`'s exported functions that take
 tower types now take `internal/vision` and `internal/audio` types. Both packages are Experimental tier
 (`docs/api-tiers.md`; apidiff checks `decoder`, `tokenizer`, `chat` and `constrain`), so this is allowed, and it gets a
