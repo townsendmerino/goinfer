@@ -865,6 +865,47 @@ test files importing `decoder` may only fall). S.
   read a probe, a device or a file outside the module is listed as such, and a source scan keeps the list true.
 - **PW6.** Re-run §1's census 30 days after the first VK, MM and PW items land.
 
+### 12.1 PW1's gates (registered 2026-10-26, before the change)
+
+Every gate is tier 0: seconds, no model, no device, no timed run. Each runs once on the finished branch.
+
+| gate | rule (PASS iff) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW1-G1 the guard's own tests | `python3 -B scripts/test_main_ci_guard.py` exits 0, all tests `ok` (the CI step of the same name) | a test is skipped | one run | stdlib, under a second (the CI step's own note) |
+| PW1-G2 the guard on a docs-only range | `scripts/main_ci_guard.py 980f449b^ 980f449b` (a docs-only commit on main) exits 0 with "a docs-only push", with `MAIN_CI_GUARD_RUNS` naming a fake in-progress run, so the pass cannot come from an idle main | `ci_docs_only.sh` classifies the range as code | one run | about a second |
+| PW1-G3 the guard on a product range | the same with `4f9f07aa^ 4f9f07aa` (a Go change on main) exits 1 and names the fake run | `ci_docs_only.sh` classifies the range as docs-only | one run | about a second |
+| PW1-G4 the whole hook, both ranges | the hook as `install-git-hooks.sh` writes it, fed each range as a `refs/heads/main` stdin line (no push), runs the guard, the citation lint, `TestParityManifest_fresh` and the census warning, and its exit matches G2 and G3 | the citation lint or the parity test is red on the tree for a reason unrelated to the range (then G4 reports the guard's verdict only) | one run per range | the lint and the parity test, under a minute warm |
+| PW1-G5 the text | `queue_citation_lint.py` exits 0 (read directly, not through a pipe) and `book_link_lint.py` exits 0 | — | one run | seconds |
+
+If the hook itself changes after DECISION PW1-D1, G1 to G4 are re-run on the changed hook, with G3's expected exit set by the decision.
+
+**Results, 2026-10-26, on the branch after the `CLAUDE.md` change (the hook's logic unchanged).** G1 PASS (9 tests `ok`, none
+skipped). G2's first run was void by its own rule: it passed `980f449b^`, and `ci_docs_only.sh` accepts only hex SHAs, so it
+failed open to "code"; the hook always passes SHAs. Re-run with both ends resolved to full SHAs: classifier `true`, guard exit 0,
+"a docs-only push". G3 PASS: classifier `false`, exit 1, naming fake run 99 (against the real `gh run list` it also held,
+naming #264's merge run). G4 PASS: the docs-only range exits 0 through the guard, the citation lint,
+`TestParityManifest_fresh` and the census warning; the product range exits 1 at the guard. G5 PASS: both lints exit 0.
+
+**DECISION PW1-D1, Francis, 2026-10-26 11:47 (relayed by the coordinator): remove `scripts/main_ci_guard.py` and its pre-push
+step** (option (b); recommended was to turn the wait into a refusal of direct product pushes). The guard, its tests, the hook
+step, its CI step and the `CLAUDE.md` sentence go. Amended gates, registered before that change, run once on the changed branch:
+
+| gate | rule (PASS iff) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW1-G1' nothing names the guard | `git grep -n -E 'main_ci_guard\|MAIN_CI_GUARD'` outside frozen records (`docs/completed/`, `docs/measurements/`) and this section's own history matches nothing that runs: no script, hook, workflow or `CLAUDE.md` line | — | one run | a second |
+| PW1-G2' the hook on the docs-only range | the hook extracted from the changed `install-git-hooks.sh`, fed `980f449b`'s range as full SHAs on a `refs/heads/main` line, exits 0 | the citation lint or the parity test is red on the tree for a reason unrelated to the range | one run | under a minute |
+| PW1-G3' the hook on the product range | the same for `4f9f07aa`'s range exits 0, with `MAIN_CI_GUARD_RUNS` still naming a fake in-progress run (it must now be ignored: nothing waits on main's CI) | as G2' | one run | under a minute |
+| PW1-G4' the workflow and the installer parse | `ci.yml` loads as YAML with the `main CI guard` step gone and every other step of its job kept; `bash -n` on `install-git-hooks.sh` and on the extracted hook | — | one run | a second |
+| PW1-G5' the text | as G5, after the deletion (a citation of the deleted file in a live doc is red and is fixed, not pinned away) | — | one run | seconds |
+
+**Results, 2026-10-26.** G1' PASS: the only matches left are this doc's ledger, its §2.5 diagnosis, the PW1 plan text and this
+section. G2' PASS: the docs-only range exits 0. G3' PASS: the product range exits 0 with the fake in-progress run named,
+so nothing waits on main's CI. G4' PASS: `ci.yml` parses, and against `origin/main` the only change is the `lint` job's
+`main CI guard` step, with every job kept; both `bash -n` checks pass. G5' PASS: the citation lint and the book link lint exit 0.
+The `CLAUDE.md` merge step also took the coordinator's correction of 11:52: a session prints `BRANCHES READY` and the
+coordinator or Francis sets auto-merge, because a background session's own `gh pr merge` is denied as a merge without
+review and a session never routes around a denial.
+
 ## 13. Order, sizes, and what each step is worth alone
 
 | order | items | worth alone |

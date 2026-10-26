@@ -261,11 +261,6 @@ jobs:
           python3 -B scripts/test_cuda_device_suite_issue.py
           python3 -B scripts/test_cuda_device_suite_queue.py
 
-      # The pre-push guard (scripts/main_ci_guard.py) refuses a push to main while main's latest CI run is unfinished, names
-      # the run, and refuses on a failed read; fed fake `gh run list` output. Stdlib, under a second.
-      - name: main CI guard
-        run: python3 -B scripts/test_main_ci_guard.py
-
       # ci_docs_only.sh's rule 2 matches a read by the file's full path, not its basename: a docs commit adding a
       # docs/**/README.md or run.py is docs-only, while the root README.md and a docs file a test reads are code. Each case
       # is a real commit in a scratch worktree. Stdlib, seconds.
