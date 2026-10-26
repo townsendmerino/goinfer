@@ -108,6 +108,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/townsendmerino/aikit — MIT
 
+This text also covers the aikit code copied into this repository: `internal/vision` and `internal/audio` (from aikit
+v1.75.0), and `cuda/internal/gpudev`, `metal/internal/gpudev`, `cuda/internal/qwencuda`, `cuda/internal/visioncuda`,
+`metal/internal/qwenmetal` and `metal/internal/visionmetal` (from aikit `gpu/v0.35.0`).
+
 ```
 MIT License
 

@@ -1,0 +1,172 @@
+=== RUN   TestCoalesce_dispatchCount
+=== RUN   TestCoalesce_dispatchCount/fully_adjacent_collapses_to_one
+=== RUN   TestCoalesce_dispatchCount/a_gap_in_src_splits_the_run
+=== RUN   TestCoalesce_dispatchCount/a_gap_in_dst_splits_the_run
+=== RUN   TestCoalesce_dispatchCount/different_buffers_never_merge
+=== RUN   TestCoalesce_dispatchCount/zero-byte_pairs_drop_out
+=== RUN   TestCoalesce_dispatchCount/single_pair_is_returned_untouched
+=== RUN   TestCoalesce_dispatchCount/empty_stays_empty
+--- PASS: TestCoalesce_dispatchCount (0.05s)
+    --- PASS: TestCoalesce_dispatchCount/fully_adjacent_collapses_to_one (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/a_gap_in_src_splits_the_run (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/a_gap_in_dst_splits_the_run (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/different_buffers_never_merge (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/zero-byte_pairs_drop_out (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/single_pair_is_returned_untouched (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/empty_stays_empty (0.00s)
+=== RUN   TestCoalesce_movesTheSameBytes
+--- PASS: TestCoalesce_movesTheSameBytes (0.00s)
+=== RUN   TestCopyDevice_rejectsBadPairs
+--- PASS: TestCopyDevice_rejectsBadPairs (0.00s)
+=== RUN   TestHazardTrackingProbe
+    hazard_tracking_probe_test.go:93: tracked:   median 1.0655 ms/token (3.437 µs/dispatch), min 0.7406, max 1.7079
+    hazard_tracking_probe_test.go:95: untracked: median 1.0704 ms/token (3.453 µs/dispatch), min 0.7800, max 1.4473
+    hazard_tracking_probe_test.go:98: untracked vs tracked: 100.5% of tracked's GPU-busy time (-0.5% delta)
+--- PASS: TestHazardTrackingProbe (0.08s)
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:143: every float MAC is an explicit intrinsic in 1 contracted kernel(s): [gemv_quant.cu]
+    kernel_fma_lint_test.go:145: exempt (declared, not linted): [anncuda/gemv_w8a8.cu roofline.cu vit.cu]
+--- PASS: TestKernelFMALint (0.01s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:200: gemv_quant.cu                BIT-IDENTITY-CONTRACT (linted)
+    kernel_fma_lint_test.go:202: vit.cu                       BIT-IDENTITY-EXEMPT
+    kernel_fma_lint_test.go:202: anncuda/gemv_w8a8.cu         BIT-IDENTITY-EXEMPT
+    kernel_fma_lint_test.go:211: smoke.cu                     test-only (embedded by cuda_smoke_test.go) — declaration not required
+    kernel_fma_lint_test.go:211: roofline.cu                  test-only (embedded by roofline_test.go) — declaration not required
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.01s)
+=== RUN   TestEncoderBindBuffers_limit
+=== RUN   TestEncoderBindBuffers_limit/Dispatch/exactlyTheLimit
+=== RUN   TestEncoderBindBuffers_limit/Dispatch/oneOverPanicsWithTheMessage
+    metal_bindlimit_test.go:134: panic message: gpu: dispatch binds 32 buffers, over Metal's limit of 31 buffer-argument-table entries per kernel function; the kernel must bind fewer buffers
+=== RUN   TestEncoderBindBuffers_limit/Dispatch2D/exactlyTheLimit
+=== RUN   TestEncoderBindBuffers_limit/Dispatch2D/oneOverPanicsWithTheMessage
+    metal_bindlimit_test.go:134: panic message: gpu: dispatch binds 32 buffers, over Metal's limit of 31 buffer-argument-table entries per kernel function; the kernel must bind fewer buffers
+=== RUN   TestEncoderBindBuffers_limit/DispatchTG/exactlyTheLimit
+=== RUN   TestEncoderBindBuffers_limit/DispatchTG/oneOverPanicsWithTheMessage
+    metal_bindlimit_test.go:134: panic message: gpu: dispatch binds 32 buffers, over Metal's limit of 31 buffer-argument-table entries per kernel function; the kernel must bind fewer buffers
+--- PASS: TestEncoderBindBuffers_limit (0.00s)
+    --- PASS: TestEncoderBindBuffers_limit/Dispatch/exactlyTheLimit (0.00s)
+    --- PASS: TestEncoderBindBuffers_limit/Dispatch/oneOverPanicsWithTheMessage (0.00s)
+    --- PASS: TestEncoderBindBuffers_limit/Dispatch2D/exactlyTheLimit (0.00s)
+    --- PASS: TestEncoderBindBuffers_limit/Dispatch2D/oneOverPanicsWithTheMessage (0.00s)
+    --- PASS: TestEncoderBindBuffers_limit/DispatchTG/exactlyTheLimit (0.00s)
+    --- PASS: TestEncoderBindBuffers_limit/DispatchTG/oneOverPanicsWithTheMessage (0.00s)
+=== RUN   TestCmdBufStatus_C09
+    metal_cmdbuf_status_test.go:80: C-09 status path OK: completed=4/nil; abort formats "metal: command buffer aborted: The operation couldn’t be completed. (MTLCommandBufferErrorDomain error 3.)"
+--- PASS: TestCmdBufStatus_C09 (0.00s)
+=== RUN   TestFenceProbe_compileMSL32
+    metal_fence_probe_test.go:188: set AIKIT_FENCE_PROBE=1 to run the coherent(system) fence probe (perf timing)
+--- SKIP: TestFenceProbe_compileMSL32 (0.00s)
+=== RUN   TestFenceProbe_wakeLatency
+    metal_fence_probe_test.go:292: set AIKIT_FENCE_PROBE=1 to run the coherent(system) fence probe (perf timing)
+--- SKIP: TestFenceProbe_wakeLatency (0.00s)
+=== RUN   TestLedger_buffers
+--- PASS: TestLedger_buffers (0.00s)
+=== RUN   TestLedger_objects
+--- PASS: TestLedger_objects (0.00s)
+=== RUN   TestCurrentAllocatedSize_reflectsRealAllocation
+--- PASS: TestCurrentAllocatedSize_reflectsRealAllocation (0.00s)
+=== RUN   TestLedger_perDeviceIsolation
+--- PASS: TestLedger_perDeviceIsolation (0.00s)
+=== RUN   TestNoCopyWiring
+    metal_nocopy_test.go:64: set GOINFER_NOCOPY_PROBE=1 to run the no-copy wiring probe (maps ~1.2 GB, shells vm_stat)
+--- SKIP: TestNoCopyWiring (0.00s)
+=== RUN   TestCompileLibraryPrecise_mathVerified
+--- PASS: TestCompileLibraryPrecise_mathVerified (0.00s)
+=== RUN   TestSetPreciseMath_unverifiableIsError
+--- PASS: TestSetPreciseMath_unverifiableIsError (0.00s)
+=== RUN   TestSetPreciseMath_fallbackPath
+--- PASS: TestSetPreciseMath_fallbackPath (0.00s)
+=== RUN   TestSharedEventHandshake
+    metal_sharedevent_test.go:50: set GOINFER_HANDSHAKE_PROBE=1 to run the shared-event handshake probe (perf timing)
+--- SKIP: TestSharedEventHandshake (0.00s)
+=== RUN   TestMaxThreadgroupMemoryLength
+    metal_tgmem_test.go:21: device tile-memory limit: 32768 bytes
+--- PASS: TestMaxThreadgroupMemoryLength (0.00s)
+=== RUN   TestMetal_vitAttentionTiled
+    metal_vit_attntiled_test.go:89: attention_tiled worst Δ 5.36e-07 vs double CPU (untiled attention's own bound: 5e-5)
+--- PASS: TestMetal_vitAttentionTiled (0.07s)
+=== RUN   TestMetal_vitAttentionTiled_matchesUntiled
+    metal_vit_attntiled_test.go:134: attention_tiled vs production attention (both Metal, same inputs): worst Δ 4.47e-07
+--- PASS: TestMetal_vitAttentionTiled_matchesUntiled (0.02s)
+=== RUN   TestAttentionTiledEligible
+--- PASS: TestAttentionTiledEligible (0.00s)
+=== RUN   TestMetal_gemmW8A8Fused
+--- PASS: TestMetal_gemmW8A8Fused (0.12s)
+=== RUN   TestMetal_vitLayerNorm
+    metal_vit_test.go:119: layernorm f32-reduction worst Δ 9.54e-07 vs double CPU (CUDA bar was 1e-5)
+--- PASS: TestMetal_vitLayerNorm (0.01s)
+=== RUN   TestMetal_vitGELU
+    metal_vit_test.go:140: gelu_tanh f32 worst Δ 4.77e-07 vs double CPU (CUDA bar was 1e-6)
+    metal_vit_test.go:154: erf-GELU rejected at Δ 0.000473 — the gate is tanh-specific
+--- PASS: TestMetal_vitGELU (0.00s)
+=== RUN   TestMetal_vitQuantRows
+    metal_vit_test.go:213: quant_rows byte-exact vs linalg quantizeRowInt8 (incl. all-zero row)
+--- PASS: TestMetal_vitQuantRows (0.00s)
+=== RUN   TestMetal_vitGEMMs
+    metal_vit_test.go:266: gemm_w8a8 ≡ exact int32; gemm_f32 ≡ f32 reference (3 shapes each)
+--- PASS: TestMetal_vitGEMMs (0.00s)
+=== RUN   TestMetal_vitAttention
+    metal_vit_test.go:319: attention f32-softmax worst Δ 2.38e-07 vs double CPU (CUDA bar was 1e-5)
+--- PASS: TestMetal_vitAttention (0.01s)
+=== RUN   TestMetal_vitAddOps
+    metal_vit_test.go:352: add_bias / add_vec ≡ CPU references
+--- PASS: TestMetal_vitAddOps (0.00s)
+=== RUN   TestMetal_vitRMSNorm
+    metal_vit_test.go:397: rmsnorm f32-reduction worst Δ 9.54e-07 vs double CPU (CUDA bar was 1e-5)
+--- PASS: TestMetal_vitRMSNorm (0.00s)
+=== RUN   TestMetal_vitGELUErf
+    metal_vit_test.go:421: gelu_erf f32-approx worst Δ 4.77e-07 vs double math.Erf (CUDA bar was 1e-6)
+    metal_vit_test.go:431: gelu_erf distinct from gelu_tanh by Δ 0.000473
+--- PASS: TestMetal_vitGELUErf (0.00s)
+=== RUN   TestMetal_vitSiLUMul
+    metal_vit_test.go:449: silu_mul f32 worst Δ 1.91e-06 vs double CPU (CUDA bar was 1e-6)
+--- PASS: TestMetal_vitSiLUMul (0.00s)
+=== RUN   TestMetal_vitRopeQK
+    metal_vit_test.go:497: rope_qk ≡ CPU applyRotaryVision on q,k; v untouched
+--- PASS: TestMetal_vitRopeQK (0.00s)
+=== RUN   TestMetal_vitAttentionSeg
+    metal_vit_test.go:560: attention_seg f32-softmax worst Δ 1.19e-07 vs double CPU (CUDA bar was 1e-5)
+    metal_vit_test.go:576: attention_seg ≡ CPU per-segment MHA; full-attention differs (bounds enforced)
+--- PASS: TestMetal_vitAttentionSeg (0.00s)
+=== RUN   TestMetal_gemmTiledMatchesUntiled
+    metal_vit_test.go:656: gemm_w8a8_tiled BIT-IDENTICAL to untiled across 5 shapes; gemm_f32_tiled ≡ float64 CPU reference
+--- PASS: TestMetal_gemmTiledMatchesUntiled (0.02s)
+=== RUN   TestMetal_gemmF32SG
+    metal_vit_test.go:705: gemm_f32_sg + gemm_f32_sg_big (via GEMMF32Plan) ≡ float64 CPU across 7 shapes (incl. overhang + aligned 512×768×3072)
+--- PASS: TestMetal_gemmF32SG (1.60s)
+=== RUN   TestMetal_gemmW8A8Reg
+--- PASS: TestMetal_gemmW8A8Reg (0.06s)
+=== RUN   TestOutputContract_newBufferDocsAgreeWithBackends
+--- PASS: TestOutputContract_newBufferDocsAgreeWithBackends (0.00s)
+=== RUN   TestOutputContract_hostWritersStateTheirs
+--- PASS: TestOutputContract_hostWritersStateTheirs (0.00s)
+=== RUN   TestPTXReproducible
+    ptx_reproducible_test.go:107: NVRTC not found (install: pip install nvidia-cuda-nvrtc-cu12==12.9.86, or set NVRTC_LIB)
+--- SKIP: TestPTXReproducible (0.01s)
+=== RUN   TestGemvQuantFMAHistogram
+    ptx_reproducible_test.go:227: testdata/gemv_quant.ptx built by NVRTC 12.9.86
+    ptx_reproducible_test.go:250: gemv_quant.ptx: 13 fma.rn.f32 / 1 mul.f32 — no compiler discretion remains
+--- PASS: TestGemvQuantFMAHistogram (0.00s)
+=== RUN   TestEncoder_useResidencySet
+=== RUN   TestEncoder_useResidencySet/plain,_no_residency_set
+=== RUN   TestEncoder_useResidencySet/queue-wide_AddResidencySet
+=== RUN   TestEncoder_useResidencySet/per-encoder_UseResidencySet
+=== RUN   TestEncoder_useResidencySet/second_dispatch_on_the_SAME_queue_without_UseResidencySet_still_completes
+--- PASS: TestEncoder_useResidencySet (0.00s)
+    --- PASS: TestEncoder_useResidencySet/plain,_no_residency_set (0.00s)
+    --- PASS: TestEncoder_useResidencySet/queue-wide_AddResidencySet (0.00s)
+    --- PASS: TestEncoder_useResidencySet/per-encoder_UseResidencySet (0.00s)
+    --- PASS: TestEncoder_useResidencySet/second_dispatch_on_the_SAME_queue_without_UseResidencySet_still_completes (0.00s)
+=== RUN   TestMetal_smokeAdd
+    smoke_test.go:27: device: Apple M1 Pro
+    smoke_test.go:50: vadd result: [11 22 33 44 55]
+--- PASS: TestMetal_smokeAdd (0.00s)
+=== RUN   TestUploadBatch_movesTheSameBytes
+--- PASS: TestUploadBatch_movesTheSameBytes (0.00s)
+=== RUN   TestUploadBatch_matchesLoopedUpload
+--- PASS: TestUploadBatch_matchesLoopedUpload (0.00s)
+=== RUN   TestUploadBatch_rejectsBadPairs
+--- PASS: TestUploadBatch_rejectsBadPairs (0.00s)
+PASS
+ok  	github.com/townsendmerino/aikit/gpu	2.443s

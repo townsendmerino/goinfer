@@ -1,0 +1,18 @@
+=== RUN   TestQwenMetal_parityWithCPU
+    encoder_test.go:111: Qwen ViT GPU≡CPU: 512 values, cosine 1.000000000, worst abs Δ 1.25e-06
+    encoder_test.go:121: Qwen merged GPU≡CPU: 256 values, cosine 1.000000000, worst abs Δ 6.33e-08
+    encoder_test.go:139: break-it-first: negated input scores cosine -0.999971
+--- PASS: TestQwenMetal_parityWithCPU (0.06s)
+=== RUN   TestQwenMetal_fixtureExercisesBothAttentionKinds
+    encoder_test.go:162: fixture blocks: 1 full-attention, 1 windowed
+--- PASS: TestQwenMetal_fixtureExercisesBothAttentionKinds (0.00s)
+=== RUN   TestQwenMetal_repeatable
+    encoder_test.go:192: 4 forwards on reused scratch: bit-identical
+--- PASS: TestQwenMetal_repeatable (0.01s)
+=== RUN   TestQwenMetal_allocationFailureIsAnErrorAndTheEncoderRecovers
+    encoder_test.go:220: allocation failure came back as an error: qwenmetal: scratch for 2147483648 patches: metal: MTLBuffer allocation failed (len, 2525440770048 bytes) — out of memory
+--- PASS: TestQwenMetal_allocationFailureIsAnErrorAndTheEncoderRecovers (0.01s)
+=== RUN   TestAttnThreadgroupBytes
+--- PASS: TestAttnThreadgroupBytes (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal/internal/qwenmetal	0.449s

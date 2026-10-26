@@ -1,0 +1,35 @@
+=== RUN   TestAudioLoaders_holdTheirCheckpointUntilClose
+=== RUN   TestAudioLoaders_holdTheirCheckpointUntilClose/whisper
+=== RUN   TestAudioLoaders_holdTheirCheckpointUntilClose/voxtral
+=== RUN   TestAudioLoaders_holdTheirCheckpointUntilClose/qwen3-asr
+--- PASS: TestAudioLoaders_holdTheirCheckpointUntilClose (0.15s)
+    --- PASS: TestAudioLoaders_holdTheirCheckpointUntilClose/whisper (0.07s)
+    --- PASS: TestAudioLoaders_holdTheirCheckpointUntilClose/voxtral (0.07s)
+    --- PASS: TestAudioLoaders_holdTheirCheckpointUntilClose/qwen3-asr (0.00s)
+=== RUN   TestWriteF32Checkpoint_tensorsAliasTheMapping
+--- PASS: TestWriteF32Checkpoint_tensorsAliasTheMapping (0.00s)
+=== RUN   TestEncoderSpeed_record
+    encoder_speed_test.go:19: set AIKIT_SPEED_WHISPER and/or AIKIT_SPEED_VOXTRAL
+--- SKIP: TestEncoderSpeed_record (0.00s)
+=== RUN   TestGemma4Counts
+--- PASS: TestGemma4Counts (0.00s)
+=== RUN   TestGemma4Features_edges
+--- PASS: TestGemma4Features_edges (0.00s)
+=== RUN   TestWhisperEncoder_deviceTakesForward
+--- PASS: TestWhisperEncoder_deviceTakesForward (0.00s)
+=== RUN   TestWhisperEncoder_weightsView
+--- PASS: TestWhisperEncoder_weightsView (0.00s)
+=== RUN   TestParallelRows_coversEveryIndexOnce
+--- PASS: TestParallelRows_coversEveryIndexOnce (0.00s)
+=== RUN   TestWhisperGeluInto_isTheKernelAndKeepsTheDefect
+--- PASS: TestWhisperGeluInto_isTheKernelAndKeepsTheDefect (0.00s)
+=== RUN   TestWhisperValidFrames
+--- PASS: TestWhisperValidFrames (0.00s)
+=== RUN   TestWhisperFFT_matchesDFT
+--- PASS: TestWhisperFFT_matchesDFT (0.00s)
+=== RUN   TestWhisperFeatures_edges
+--- PASS: TestWhisperFeatures_edges (0.45s)
+=== RUN   TestWhisperFeatures_plantedDefectsMove
+--- PASS: TestWhisperFeatures_plantedDefectsMove (0.92s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/audio	1.799s

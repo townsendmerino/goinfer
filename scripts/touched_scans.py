@@ -147,6 +147,11 @@ SCANS = [
     Scan("gpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("gpu/residency.go")),
     # metal module
     Scan("metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("metal/moe.go")),
+    Scan("metal/internal/gpudev", "TestOutputContract_newBufferDocsAgreeWithBackends",
+         F("cuda/internal/gpudev/cuda.go", "metal/internal/gpudev/metal.go")),
+    Scan("metal/internal/gpudev", "TestOutputContract_hostWritersStateTheirs",
+         F("cuda/internal/gpudev/cuda.go", "metal/internal/gpudev/metal.go", "cuda/internal/gpudev/cuda_copy.go",
+           "metal/internal/gpudev/metal_copy.go")),
     # cuda module
     Scan("cuda", "TestKernelLocalMemoryCensus", F("cuda/kernels.go", "cuda/backend.go", "cuda/testdata/*.ptx")),
     Scan("cuda", "TestKernelFMALint_coversEmbeddedPTX", F("cuda/kernels.go") + CU("cuda")),
@@ -159,6 +164,7 @@ SCANS = [
     Scan("cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("cuda/prefill.go")),
     Scan("cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("cuda/backend.go")),
     Scan("cuda", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
+    Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # K3 checks that no production file names an entry point its exclusions call uncalled, against the census's predicates.
     Scan("internal/kernelprint", "TestCompute_reachesCensus", TREE_NT + F("docs/hardware-coverage.json")),
 ]

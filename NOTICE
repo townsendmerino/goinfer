@@ -57,6 +57,13 @@ Third-party Go dependencies
     Copyright (c) 2026 Francis Townsend-Merino
     Licensed under the MIT License.
 
+    Code copied from github.com/townsendmerino/aikit into this repository
+    (Copyright (c) 2026 Francis Townsend-Merino, MIT License, as above):
+    internal/vision and internal/audio from aikit v1.75.0; cuda/internal/gpudev,
+    metal/internal/gpudev (aikit's gpu device module, split by backend),
+    cuda/internal/qwencuda, cuda/internal/visioncuda, metal/internal/qwenmetal
+    and metal/internal/visionmetal from aikit gpu/v0.35.0.
+
 The optional WebGPU backend (./gpu submodule, built only under `-tags gpu`)
 additionally links:
 

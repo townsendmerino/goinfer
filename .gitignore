@@ -72,6 +72,10 @@ demo/chat/dist/
 # pinned by scripts/pin_qwen3vl_vision_tiny.py), committed so G-S10e's Metal check runs without an aikit checkout.
 !testdata/qwen3vl-vision-tiny/
 !testdata/qwen3vl-vision-tiny/model.safetensors
+# EXCEPTION: internal/vision/testdata holds the tiny tower checkpoints the vision package's tests read (copied from
+# aikit's testdata at v1.75.0 with the package, Track AX). Several share a name with a root testdata fixture and differ
+# from it (siglip-tiny), which is why they sit beside the package rather than in testdata/.
+!internal/vision/testdata/*/model.safetensors
 # EXCEPTION: lfm2-tiny is a 708 KB deterministic random-weight conv/attention hybrid
 # (scripts/pin_lfm2_tiny.py). Committed on purpose so the LFM2/LFM2.5 forward-parity gate
 # is a real T1 — runnable in CI without a per-machine asset — rather than a golden that

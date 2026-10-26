@@ -1,0 +1,20 @@
+=== RUN   TestVisionMetal_parityWithCPU
+    encoder_test.go:97: SigLIP GPU≡CPU: 512 values, cosine 1.000000000, worst abs Δ 7.45e-07
+    encoder_test.go:117: break-it-first: negated input scores cosine -0.420146 — the gate discriminates
+--- PASS: TestVisionMetal_parityWithCPU (0.04s)
+=== RUN   TestVisionMetal_registersBackend
+    encoder_test.go:130: vision.RegisterResident wired: EnableResident attached the Metal tower
+--- PASS: TestVisionMetal_registersBackend (0.00s)
+=== RUN   TestVisionMetal_repeatable
+    encoder_test.go:158: 4 forwards on reused scratch: bit-identical
+--- PASS: TestVisionMetal_repeatable (0.01s)
+=== RUN   TestAttnThreadgroupBytes
+--- PASS: TestAttnThreadgroupBytes (0.00s)
+=== RUN   TestNewEncoder_declinesOverBudgetPatchCount
+    threadgroup_budget_test.go:66: declined as expected: visionmetal: ViT attention needs 32772 B of threadgroup memory for 7681 patches but the device allows 32768 — this tower's resolution exceeds what Metal supports
+--- PASS: TestNewEncoder_declinesOverBudgetPatchCount (0.00s)
+=== RUN   TestMetalViTThroughput
+    crossover_test.go:43: periodic GPU pass — set AIKIT_GPU_BENCH=1 to run (docs/BENCH-gpu.md)
+--- SKIP: TestMetalViTThroughput (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal/internal/visionmetal	0.343s
