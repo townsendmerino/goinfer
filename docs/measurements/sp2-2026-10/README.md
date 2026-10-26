@@ -58,8 +58,9 @@ Run on nobara under the timing lock (shared), driver 595.91.07: `go test -tags '
   on a long prompt no longer needs one 3k-row pass beside the drafter.
 
 **The source-scan gates:** `touched.py` green at `f3d4b1b2` (gofmt, build and vet of both modules, the cuda kernel lints, the
-gate's heavy partition, which now classifies Qwen3.5-9B). The local-memory census pins the new `delta_rule_rows_128_spec` at 80
-B/thread, under the 96 B of the scan it twins. staticcheck (CI's v0.8.1 build, its unused-field canary red first) is clean on
+gate's heavy partition, which now classifies Qwen3.5-9B). The local-memory census pinned the twin as it stood then,
+`delta_rule_rows_128_spec`, at 80 B/thread; the final twin (the fold in the scan, below) spills 96 B, the committing scan's own
+figure, and is pinned at 96. staticcheck (CI's v0.8.1 build, its unused-field canary red first) is clean on
 `./decoder/` and on `./cuda/` under `cuda goinfer_testhooks`.
 
 ### G1c, first run (2026-10-24, 23:41–23:45 PDT): stopped by an out-of-memory in the seed, not a divergence
@@ -263,3 +264,202 @@ are graded against the rule here:
 - **G2 and G4 stand as read.** The fix acts only on an exit that commits nothing and on a reset with rows pending; every G4
   generation ran to the end and flushed, G2 drives the resident directly, and the width clamp starts above 16 rows (G4 ran at
   4). So both readings came from the code path the fix leaves unchanged, and neither is re-run.
+
+## The served A/B of `--drafter` (registered 2026-10-25, before the run)
+
+The follow-up the owner's decision named. `serve -drafter-width` (this branch) sets the width `BlockSpec.GenerateStream` verifies at;
+before it, `serve` verified at 8, where SP0 projects 1.17×.
+
+- **The question:** does the served path, a user's `serve --drafter`, deliver what G4 read in process?
+- **Instrument:** `scripts/bench_peer.py`, two goinfer arms on one CUDA `serve` binary built at this branch's commit:
+  - `goinfer` is plain `serve` with its own defaults (the KV precision a user gets without a drafter, recorded from the log);
+  - `goinfer_old` is the same binary with `BENCH_GOINFER_OLD_ARGS="-drafter ~/models/qwen35-9b-dflash -drafter-width 4"` (f32 KV,
+    which a drafter forces).
+  - `BENCH_MODELS=Q9` (Qwen3.5-9B Q4_K_M; serve loads its `.giw` sidecar), `BENCH_BACKENDS=cuda`, `BENCH_DEPTHS=512,4096`,
+    `BENCH_NGEN=256`, `BENCH_CTX=4608` (G1c's context), `BENCH_ABBA=5`: 5 mirrored quads per depth, 10 pairs, each cell a
+    restarted server, the harness's warm-up, then 2 runs of 8 completions. `BENCH_PHASES=B` (added to the harness on this branch,
+    before the run): the depth cells only, without the backend table's depth-128 cell, which this model has no prompt for.
+  - **Prompts:** the harness's essay-v2 prompts, token-calibrated for Q9 at 512 and 4,096 with `scripts/bench_prompts_calibrate.py`
+    and committed to `scripts/prompts.json` before the run. Prose, where SP0's prompts were code and math.
+  - Greedy (temperature 0), so every request takes the speculative path.
+  - **Amended 2026-10-25, 10:24, on the owner's decision (Francis: option A), after seeing data:** both arms run with thinking off,
+    `BENCH_GOINFER_ARGS="-thinking off"`; everything else as registered. The amendment came after the first start's 2 cells at depth
+    512 (1.02×) and the in-process diagnostic recorded below: Qwen3.5-9B's template renders thinking on by default, and DFlash is
+    trained on non-thinking output. G4 rendered its prompts with thinking off, so this is what makes the A/B measure what G4
+    measured. What `serve --drafter` gives on this model's default template is recorded by that diagnostic, not by this gate.
+- **The reading, per depth:** each pair's drafter tok/s over plain tok/s; the median, the count of pairs above 1, and the pairs'
+  spread.
+- **Bands, per depth: the owner's merge rule** (Francis, 2026-10-25, 8:46 am; amended here before the run, which had not started;
+  first written with SP0's 1.30×, an investment bar that a merge gate must not inherit): `--drafter` is opt-in and lossless, so a
+  median of 1.05× or more with at least 9 of 10 pairs faster → the served path delivers the speedup at that depth; anything less →
+  it does not, at that depth.
+- **What each outcome means:** delivering is the claim a user can rely on, stated with the memory cost (the arena and the drafter,
+  and the drafter arm's f32 KV against the plain arm's default). A shortfall where G4 passed is a served-path gap to explain, from
+  the KV precision, the HTTP stream or the prose prompts; it does not revisit G4. Nothing here changes `serve`'s default width (8):
+  a default change needs the gain judged against its memory trade-off, and the owner's call.
+- **Void cells:** the harness's own gates (the 1-minute load cap and its memory and swap voids) and the registered rule (load
+  above 8.0 at a cell's start, or available memory under 2 GB with the model loaded) void a cell, re-run in order.
+- **Cost:** about 100 s a cell (load and attach 40 s; 16 completions of 256 tokens), 4 cells a quad, 5 quads, 2 depths: about 70
+  minutes, plus the 4,096 prefills. Through the timing lock, by day.
+- **Tier:** 2 (a number that will be quoted). Tiers 0 and 1 cannot answer it: it is the served end to end.
+
+### The served A/B's first start (2026-10-25, 10:08–10:13 PDT): stopped by me after 2 cells, not graded
+
+- Two cells ran at depth 512: plain 63.6 tok/s, the drafter arm 64.6 tok/s (1.02×). The drafter arm's record showed `"sent": {}`, and
+  I stopped the run believing its requests went out without `temperature: 0`. They did not: `goinfer_payload` sends goinfer's
+  sampling for both goinfer arms, so the run was valid and only the record was wrong (fixed: a `goinfer_old` cell now records what
+  it sent). The two cells and the serve logs are kept on nobara (`~/goinfer-logs/sp2-2026-10/served-void-1008/`).
+- **Why 1.02×** (a diagnostic in process, not a gate, on the same essay prompts): Qwen3.5-9B's template renders thinking on by
+  default (`serve -h`: "Qwen3.5-9B: on"), and both replies open with `<think>`. DFlash is trained on non-thinking output. At 512 the
+  drafter accepted 3.1 tokens a round (4.81 s against plain's 5.47 s, prefill included); at 4,096 it accepted 1, 1, 1, 1, 4, 1, the
+  guard switched to plain decode after its 6 rounds, and the turn ended slower than plain (23.0 s against 20.0 s), the long seed's
+  capture being the extra.
+- So the A/B as registered (the template's default) measures thinking-mode replies, which G4 did not (G4 rendered thinking off).
+  How to proceed is the owner's decision; nothing is re-run until it is made.
+
+**Correction (2026-10-25, 10:40), to the diagnostic above and the amendment's stated reason.** The diagnostic rendered its prompts in
+the chat package's bare default mode (`asis`: nothing written after `assistant\n`, the model decides), not in the mode `serve` applies,
+`-thinking template`. For this GGUF (unsloth's), `template` renders the closed `<think>\n\n</think>\n\n`, thinking off, exactly as
+`-thinking off` does (read from the GGUF's own template, and from goinfer's rendering of it in both modes). So:
+- the first start's two cells (1.02× at 512) already ran with thinking off, and thinking does not explain them;
+- the amendment to `-thinking off` changes nothing for this file: the run measures the same condition it registered, and remains a
+  valid reading of `serve --drafter` with thinking off on the essay prompts;
+- the load banner's "template default off" is right for this file; `serve -h`'s "Qwen3.5-9B: on" describes the Hugging Face
+  checkpoint's template, which opens `<think>\n` by default.
+
+What the 1.02× does come from is open. The likeliest cause is the prompt class (essay prose here, code and math in G4); an
+in-process run of the same prompts in `serve`'s rendering will say, after this A/B finishes.
+
+### The served A/B, read (2026-10-25, 10:26–12:48 PDT; binary `a6e9b8c7`, scripts at `300e73c6`): does not deliver on these prompts
+
+`bench_peer.py` as registered and amended (both arms `-thinking off`), the timing lock held by the harness for the whole run. 5
+mirrored quads per depth, 10 pairs; every cell started at load 0.98 or below; no void cell, no error. Raw:
+`raw/served-ab-2026-10-25.json` (per-cell runs, machine state, serve logs on nobara under `~/goinfer-logs/sp2-2026-10/served/`).
+
+| depth | plain `serve` | `serve --drafter -drafter-width 4` | median of the pairs | pairs faster | spread | the merge rule |
+|---|---|---|---|---|---|---|
+| 512 | 63.6 tok/s | 64.6 tok/s | **1.016×** | 10 of 10 | 1.011–1.017 | **does not deliver** (median under 1.05×) |
+| 4096 | 62.1 tok/s | 61.4 tok/s | **0.989×** | 0 of 10 | 0.987–0.990 | **does not deliver** (slower) |
+
+- **An overlap, recorded:** at 10:34:50–10:35:10 I ran `go test ./cmd/gate/` (about 18 s of CPU) without taking the timing lock,
+  inside the plain arm's depth-512 cell of block 1. That cell read 63.5 and 63.6 tok/s, as every plain cell at that depth did; the
+  median and the count are the same with that pair dropped (1.016×, 9 of 9).
+- **Why, from a diagnostic in process** (not a gate; the same essay prompts rendered as `serve` renders them, thinking off;
+  `BlockSpec.GenerateStream` at width 4, the call `serve` makes): 1.021× at 512 and 0.894× at 4096, so the served path behaves as
+  the in-process path does. The drafter accepted 2.43 tokens a round over 21 rounds at 512 and 2.27 over 26 at 4096, under the
+  acceptance guard's 2.5, so the guard switched each turn to plain decode partway. At 4096 the long seed's capture and the slower
+  long-context verify cost more than the few accepted drafts saved.
+- **What it means:** the served path delivers what the drafter's acceptance allows. On essay prose this drafter accepts too little to
+  pay; on SP0's code and math it accepted 3.3 and more per round, and G4 read 1.46× in process. So the reading here is about the
+  workload, not a served-path gap. It does not revisit G4, and `serve`'s default width stays 8.
+- **What would answer G4's own condition served:** the same A/B on code and math prompts (SP0's suites, calibrated to depth). That is
+  a separate run; it is proposed, not run.
+
+### The essay A/B end to end, and `--drafter`'s host memory (2026-10-25, from #238's second-opinion review)
+
+The headline above is decode tok/s (`decode_timed_s`). The same cells' phases, medians of each arm's 10 cells, 16 timed completions a
+cell (`raw/served-ab-2026-10-25.json`, `counts.phases` and `counts.rss_peak_kb`):
+
+| depth | arm | wall of the 16 completions | prefill + request | per request (prefill + TTFT) | decode | peak RSS |
+|---|---|---|---|---|---|---|
+| 512 | plain | 88.2 s | 24.0 s | 1.50 s | 64.2 s | 4.7 GB |
+| 512 | `--drafter` | 92.7 s | 29.6 s | 1.85 s | 63.1 s | 12.8–12.9 GB |
+| 4096 | plain | 69.1 s | 3.4 s | 0.21 s | 65.7 s | 5.1–5.2 GB |
+| 4096 | `--drafter` | 364.8 s | 298.4 s | 18.65 s | 66.4 s | 13.9–14.1 GB |
+
+- **End to end, `--drafter` lost on these prompts:** 0.95× of plain's wall at 512, and 0.19× at 4096 (5.3× slower).
+- **Why 4096 is so far apart: prefix reuse.** The harness sends one identical prompt 17 times a cell. Plain `serve` restores the
+  prompt's prefix from a host snapshot after the first request (0.21 s a request). `BlockSpec` restores nothing: its drafter needs
+  its own context for any reused prefix, and the snapshots carry the target's rows and recurrent state but not the drafter's, so
+  `BlockSpec.generate` sets its reuse to 0 unless the prompt extends its own last turn (`resDrafterSynced`). Every request
+  re-prefills all 4,131 tokens on the exact kernels a recurrent model's prefill takes, with the drafter's capture on top: 18.65 s.
+  An agent loop, whose turns extend the last, does reuse (G5 measured it: 119 of 119 positions); an identical resend, a retry or a
+  second conversation does not.
+- **Why the in-process diagnostic read 0.894× and the served headline 0.989×:** the diagnostic timed from the first token to the end
+  of the turn, so it held the trailing work and not the prefill; the served headline is decode windows only. Neither held the
+  prefill, which is where `--drafter` loses most here.
+- **Is the missing reuse a bug?** Not a correctness one: every turn is token-identical to plain greedy, and the cold prefill is the
+  defined fallback. It is a missing capability that costs `--drafter` most of its served value on repeated or re-sent prompts:
+  snapshots that carry the drafter's context, so `BlockSpec` can take the same prefix plain `serve` takes. It would also bear on the
+  code/math A/B now running, whose prompts repeat within a cell in the same way.
+- **Host memory: 8–9 GB more at peak with `--drafter`, and no guard prices it.** The drafter's weights are a mapped bf16 file (2.6 GB
+  of pages), and attaching widens each matrix to an f32 copy before quantizing it to int8 for upload (`packWeight`), so the attach's
+  transient copies sit on top. The peak is `VmHWM`, so how much of it outlives the attach is not yet measured. The load-time host
+  guard prices the target model only (`modelload.Load`); `serve` loads the drafter before it and attaches after, so the drafter's
+  host memory reaches no fit check. The harness's `fit_need_mb` (5,417, the checkpoint's file size) is the harness's own figure for
+  the void rule, not `serve`'s.
+- **The void rule's memory term was not applied** in either served A/B: `free_mem_mb` is null in every cell because the harness
+  reads it through `go run ./cmd/hostmem` and my run scripts did not put Go on `PATH`. Reconstructed, not recorded: this box's
+  `MemAvailable` reads about 60 GB with a served 9B up, against a 14 GB peak for the drafter's process, so no cell came near the 2 GB
+  floor. The harness now refuses at preflight when it has no reading (`BENCH_ALLOW_NO_FREE_MEM=1` runs anyway, with a warning, and the
+  provenance records it), and later runs set `PATH`.
+- **The 3.4 MB of swap-in in a depth-4096 cell** is the system's counter over a 6-minute cell, with zero swap growth; the
+  registered rule has no swap term (the harness's swap voids are off unless set), so it voids nothing.
+
+## The served A/B on code and math, under G4's conditions (registered 2026-10-25, before the run)
+
+On the owner's decision (Francis, 2026-10-25 13:01, option C): #238 merges on its own, and this follow-up record asks the question
+the essay A/B could not: does the served path deliver G4's speedup on G4's prompts?
+
+- **Instrument:** `scripts/bench_peer.py` as in the essay A/B, one CUDA `serve` binary (built at `a6e9b8c7`), two arms: `goinfer`
+  plain, `goinfer_old` with `-drafter ~/models/qwen35-9b-dflash -drafter-width 4`; `BENCH_GOINFER_ARGS="-thinking off"` (G4 rendered
+  thinking off; this GGUF's template default is off already); `BENCH_MODELS=Q9`, `BENCH_BACKENDS=cuda`, `BENCH_PHASES=B`,
+  `BENCH_NGEN=256`, `BENCH_CTX=4608`, `BENCH_ABBA=5` (5 mirrored quads per depth, 10 pairs).
+- **Prompts: G4's own,** `BENCH_PROMPTS=scripts/prompts-sp2-codemath.json`. Two prompt sets of SP0's 12 code and math prompts:
+  - `Q9:32`: the prompts as they are, rendered 23–36 tokens;
+  - `Q9:3840`: the same behind G4's preamble (the leading lines of `docs/benchmarks.md` at `721cce5e`, G4's commit, about 3,800
+    tokens), rendered 3,816–3,829 tokens.
+  - The depth keys are bucket labels. Each cell cycles through its set, one prompt per completion (a harness addition on this
+    branch: an entry's `"texts"`); the warm-up takes the first prompt and the 16 timed completions start again from the first, so
+    every cell of both arms sends the same sequence, prompts 1–4 twice.
+- **Bands, per depth: the owner's merge rule.** A median of 1.05× or more with at least 9 of 10 pairs faster → the served path
+  delivers G4's speedup on G4's prompts at that depth; anything less → it does not.
+- **What each outcome means:** delivering backs the record's claim, "about 1.0× on prose, up to 1.46× on code and math", on the served
+  path. Not delivering on these prompts would be a served-path gap to find, since the essay A/B showed the served and in-process paths
+  agree on prose. Nothing changes `serve`'s default width.
+- **Void cells:** the harness's gates (its load cap, memory and swap voids) and the registered rule (load above 8.0 at a cell's start,
+  or available memory under 2 GB with the model loaded); a void cell is re-run in order.
+- **Cost:** the essay A/B took 2 h 22 min, mostly its 4,096-token cells; the long set here is a little shorter, so about 2 h. By day
+  under the timing lock, after the 35B fairness check (done, below); the night queue if the day is taken.
+- **A correction to G4's record:** it described the short context as "about 100–250 tokens". SP0's prompts render to 23–36 tokens.
+  G4's readings are unchanged; only that description was wrong.
+
+### The 35B expert-cache fairness check (2026-10-25, 13:03 PDT; a check, not a gate)
+
+Qwen3.6-35B-A3B (`.int4.e4h.cuda.v17.giw`, experts streamed), resident context 4,608, f32 KV, in one process under the exclusive
+timing lock: loaded once without and once with its DFlash drafter attached, plain greedy decode of 128 tokens on SP0's first code
+prompt, 3 timed runs after a warm-up.
+
+| load | expert cache | free VRAM after load | plain decode, median of 3 |
+|---|---|---|---|
+| no drafter | 64 slots per layer | 1.41 GB | 42.36 tok/s |
+| drafter attached (arena 79,151,104 B) | 64 slots per layer | 0.94 GB | 42.29 tok/s |
+
+Attaching the drafter leaves the expert cache at 64 slots per layer at this context, and plain decode moves 0.2%: the drafter's
+reserve does not slow the 35B's plain decode here, so it does not sink a speedup measured against it. Real decode runs 23.6 ms a
+token, where SP0's step arm read 17.6 ms on a repeated token at one position (the same experts every time), so SP0's 35B projection
+needs a real measurement of its verify cost too.
+
+### The served A/B on code and math, read (2026-10-25, 13:06–14:28 PDT): stopped on the owner's call, deemed successful
+
+The owner stopped it at 14:27 (Francis: "I deem this successful without finishing"), with the short depth complete and the long
+depth at 4 of its 10 pairs. Cells as run (`raw/served-ab-codemath-2026-10-25-cells.json`; serve logs on nobara under
+`~/goinfer-logs/sp2-2026-10/served-codemath/`). Every cell started at load 1.0 or below; no error.
+
+| depth | prompts | plain decode | `--drafter -drafter-width 4` | median of the pairs | pairs faster | spread | wall of 16 completions, plain / drafter | prefill + TTFT a request, plain / drafter | peak RSS, plain / drafter |
+|---|---|---|---|---|---|---|---|---|---|
+| 32 | SP0's 12 as they are (23–36 tokens) | 65.6 tok/s | 98.5 tok/s | **1.501×** | 10 of 10 | 1.477–1.505 | 60.4 / 41.8 s | 0.11 / 0.13 s | 4.7 / 12.8 GB |
+| 3840 | the same behind G4's preamble (3,816–3,829) | 62.6 tok/s | 79.1 tok/s | 1.264× (4 pairs) | 4 of 4 | 1.263–1.265 | 80.2 / 323.4 s | 1.13 / 17.06 s | 5.1 / 13.9 GB |
+
+- **Short depth: the served path delivers G4's speedup on G4's prompts.** 1.501× against G4's in-process 1.462×, faster in all 10
+  pairs; under the merge rule it delivers. End to end it is faster too (0.69 of plain's wall).
+- **Long depth: incomplete.** 4 of 10 pairs, so the registered rule cannot be applied to it; the pairs it has are all faster in decode
+  (1.26×). End to end it is 4.0× slower, the missing prefix reuse again (17.06 s a request against plain's 1.13 s; SP2b).
+- **The owner's verdict: successful.** The record keeps the long depth as partial.
+- **Memory term of the void rule:** not recorded here either (Go was not on the harness's `PATH`, as in the essay run); this box's
+  `MemAvailable` stayed about 60 GB against a 14 GB peak, so no cell neared the 2 GB floor.
+- **An overlap at the stop, recorded:** the drafter arm's last `serve` (6.9 GB of VRAM) was still exiting at 14:28:47 when another
+  session's timed job (`ks-h2-h3-readings`) took the lock; it was gone a few seconds later.
+- **Summary across the served A/Bs:** on code and math `--drafter` delivers about 1.5× in decode at short context and about 1.26×
+  behind a long preamble; on essay prose about 1.0× (the guard caps the loss); and on any prompt it cannot reuse, the cold prefill
+  with the capture costs wall time that SP2b addresses.

@@ -256,7 +256,7 @@ slot is gone; and every KV feature is built three or four times.
 | hybrids | all four recurrent kinds | DeltaNet, one slot | DeltaNet, one slot | DeltaNet, Mamba-2, one slot |
 | prefix reuse | `decoder/session.go:Session.rewindForReuse` behind `bestExtend` / `pickSession` | per-slot id lists, longest common prefix (`reuseLenOf`), slot choice (`pickResidentSlot`) | the same | the same |
 | persistence | `.giw-kv` v3 snapshots (`decoder/kvsnapshot.go:Session.Snapshot`), NVMe cold tier | none | none | none |
-| prefill scratch | admission prices an upper bound over the whole prompt (`decoder/prefill_budget.go:prefillScratchBytes`) | 512-row passes, about 146 MB (`cuda/prefill.go:prefillChunkRows`) | the whole padded prompt in one pass (KV-pre is changing this) | allocated per call |
+| prefill scratch | admission prices an upper bound over the whole prompt (`decoder/prefill_budget.go:prefillScratchBytes`) | passes of 512 to 2,048 rows, the widest whose scratch the build leaves room for (KS-B8; `cuda/prefill_scratch.go:prefillWidthFor`) | the whole padded prompt in one pass (KV-pre is changing this) | allocated per call |
 
 **What is already right and carries over:**
 - **The cache-state grid** (`decoder/cachestate.go`). It is exactly the correctness skeleton the new manager needs.
@@ -1021,7 +1021,7 @@ KV2 merges when every arm on both boxes is read.
 `kv3-cuda-2026-10` with its record, `docs/measurements/kv3-cuda-2026-10-13.md`; the Metal half is the KV-pre session's (`metal/`).
 
 - **Build:**
-  - every resident's chunk size is a multiple of B (CUDA's `prefillChunkRows` default is already 512);
+  - every resident's chunk size is a multiple of B (CUDA's pass widths, `prefillWidths`, are 512, 1,024 and 2,048);
   - admission is in blocks plus the chunk scratch, from each allocator's own figure, replacing the whole-prompt bound on
     the resident paths;
   - **the 12,288-key limit on CUDA** (added 2026-10-13, KV0's biggest time-to-first-token finding): the batched prefill declined past 12,160
@@ -1743,7 +1743,7 @@ Code, read at `e2ffb953`:
     `cuda/resident.go:resolveCtxCapFit`, `cuda/resident.go:cudaResident.checkKVFits`, `cuda/resident.go:cudaLayer`,
     `cuda/resident.go:cudaResident.UseKVSlot`;
   - `cuda/kvwindow.go:cudaResident.kvEnsure`, `cuda/kvwindow.go:cudaResident.ReusableKV`;
-  - `cuda/prefill.go:prefillChunkRows`, `cuda/batchstep.go:cudaResident.StepBatch`.
+  - `cuda/prefill_scratch.go:cudaResident.prefillBaseRows`, `cuda/batchstep.go:cudaResident.StepBatch`.
 - **Metal:** `metal/model.go:resolveMetalCtxCap`, `metal/backend.go:metalResident.UseKVSlot`,
   `metal/batch.go:metalResident.StepBatch`, `metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`.
 - **WebGPU:** `gpu/kv_slots.go:webgpuKVSlot`.

@@ -11,8 +11,8 @@ type ResidentPrefillChunks interface {
 }
 
 // ResidentPrefillSpanScratch is the optional capability of a chunking resident whose pass allocates more when its rows attend
-// many keys: PrefillSpanScratchBytes is what a pass of rows rows whose last row attends keys keys allocates beyond
-// PrefillScratchBytes(rows). Admission adds it at the request's prompt length.
+// many keys: PrefillSpanScratchBytes is at least what any pass of rows rows of a prompt whose last row attends keys keys
+// allocates beyond PrefillScratchBytes(rows). Admission adds it at the request's prompt length.
 type ResidentPrefillSpanScratch interface {
 	PrefillSpanScratchBytes(rows, keys int) int64
 }

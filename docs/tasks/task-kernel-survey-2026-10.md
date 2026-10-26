@@ -33,14 +33,14 @@
 | KS-B5 | open | nobara: MoE category and cache misses on M35 and gpt-oss-20b | — |
 | KS-B6 | open | nobara: served TTFT for phi3-mini at q4k against Ollama | — |
 | KS-B7 | open | nobara: a prototype against `gemv_w4a8_rn` at the 1.5B gate shape | — |
-| KS-B8 | open | nobara-ks-cuda, after #230 merges: 2,048-row CUDA prefill passes by default where scratch allows, priced by admission (decided A, Francis, 2026-10-25). Measured 2026-10-23 on the 1.5B at K=3,900: attention **1.556×** at 2,048 rows (1.231× at 1,024), whole prefill **1.247×** (933 → 748 ms) | `docs/measurements/kernel-survey-2026-10/README.md` |
+| KS-B8 | done | done 2026-10-25 (owner's option A): the default CUDA prefill pass is the widest of 2,048 / 1,024 / 512 rows whose scratch fits the VRAM the build leaves beyond the margin; bit-identical (B8-G2); the 1.5B's 3,900-row prefill **1.1559×**, 10 of 10 pairs (744 → 643 ms); 280 MiB of scratch at 2,048 rows, from free VRAM only | survey, "KS-B8 build read" |
 | KS-B9 | open | nobara: launch and grid counters, then the GEMV-category A/B | — |
 | KS-B10 | open | nobara: sync and launch counters in the generic expert-major Phase 1 | — |
 | KS-B11 | open | nobara: `PrefillScratchBytes` delta, then a glue+GEMM A/B | — |
 | KS-B12 | open | nobara: per-token TTFT on Nemotron-H as the baseline | — |
 | KS-B13 | open | aikit: a microbenchmark at SigLIP shapes, bit-gated | — |
 | KS-B14 | open | nobara: host round trips per image (55 → 0), then a tower A/B | — |
-| KS-B15 | open | nobara-ks-cuda, after #230 merges: pass the 64 KB shared-memory opt-in through aikit and set it on the exact attention kernels (bound 12,160 → 16,256 keys); prompts in that band stay on the exact GEMM (bit-identical); measure the gain (KS-O2 decided A, Francis, 2026-10-25; the fast GEMM is not approved) | — |
+| KS-B15 | done: KILL | nobara-ks-cuda: the 64 KB shared-memory opt-in on the exact attention kernels (bound 12,160 → 16,256 keys) is bit-identical but slower: a 14,336-key pass ran 0.9715× of today's row-batched route, 0 of 10 pairs faster ("KS-B15 build read"); the opt-in stays unset | — |
 | KS-C1 | done (a)+(b) | done 2026-10-24: the q4k lane's GEMVs on `gemv_q4k_f32_rows<8>` and `gemv_w8_f32_rows<2>`; the Q4_K GEMVs 1.75–2.03× in isolation (C1-G0); G-Q1 and the step identity PASS (C1-G1, G2); G-Q2 98.66% against the reference's 93.99% (C1-G3 PASS); Phi-3 mini q4k decode 22.3 → 33.0 tok/s, median 0.6741, 10 of 10 pairs (C1-G4 SHIP). (c) done on Metal as KS-O1 (#215; the head stays int8); its CUDA half is KS-A1 | survey, "KS-C1 read" |
 | KS-C2 | done | done 2026-10-23: the staged coal kernels (the int4 decode down projection; DeltaNet's coal projections) take each word's sum in R18b's masked form; bit-identical (C2b-G1); the down GEMV 1.48× in sequence; the 1.5B's int4 Metal decode 10.75 → 10.02 ms a token, median 0.9332, 10 of 10 (C2b-G2 SHIP) | survey, "KS-C2 wiring read" |
 | KS-C3 | done | done 2026-10-23: a native int8 resident's dense decode GEMVs take int8 twins of R18's rows kernels; bit-identical (C3-G1); the int8 body at the 1.5B's shapes 135 → 157 GB/s (C3-G2); the 1.5B at int8int8 decodes 13.83 → 12.60 ms a token, median 0.9109, 10 of 10 pairs (C3-G3b SHIP). The 0.5B's C3-G3 did not resolve (median 1.0021) | this doc, "KS-C3 read" |
@@ -94,7 +94,7 @@
 | KS-H5 | open | either box: bytes allocated at build | — |
 | KS-H6 | blocked | nobara-ks-cuda, after KS-H2 and KS-H3 read: re-derive both margins from measured parts, the 2,048-row pass's scratch included, and bring the numbers to Francis before changing either guard (KS-O3 decided A, Francis, 2026-10-25) | — |
 | KS-O1 | done (Metal and CUDA, owner overrides) | native Q5_K/Q6_K on the Metal q4k lane. O1-G1–G6 PASS (G-Q2 on Phi-3 98.39%, +4.39 points; KL to the file 0.7638 of int8; Phi-3 −357 MB on the device); O1-G7 KILL (re-run on the fixed harness: Phi-3 0.9743, 10 of 10; the 1.5B 1.0127, 1 of 10), shipped on Francis's override of 2026-10-24 11:47 am. The head stays int8. **CUDA: done 2026-10-24** (owner's option A on O1C-G5): Phi-3 mini q4k 114.9 → 127.3 tok/s (0.9025, 10 of 10), the 1.5B 0.9786 (10 of 10); −374.7 MB on the device, head included; KL to the file 0.39× (Phi-3), 0.91× (0.5B); G-Q2 +0.13 points. Also fixes main's concurrent `noteKQuant` map write | survey, "Owner override of O1-G7" |
-| KS-O1-F | open | the CUDA native lane does worse than int8 against f32 on highly repetitive input (Phi-3, 110 × "the ": p10 0.8826 against the old bar's floor 0.9162, min 0.029; worse p10 and min at 60, 90, 130 too). Natural ~900-token text is about 2× better (KL 0.39×, 0.46×). Not yet explained: the per-layer differencing (hidden states against f32) on the 110-repeat prompt is the next measurement. Open on the owner's decision of 2026-10-25 | survey, "Owner decision on #230's long-context bar" |
+| KS-O1-F | done | closed 2026-10-25 by Francis (20:31) on the (c) finding, read 2026-10-25 (D1, D3, D2a, (c)): the native lane's gap on 110 × "the " (p10 0.8826 against int8's 0.9401) is specific to that prompt. On the same input the native qkv projection is closer to f32 than int8's at every layer, and its kernels are exact. On "and ", "apple ", "hello " and a 110-token natural text, the native lane is the closer end to end (KL 0.27–0.73× int8's). No fix indicated | survey, "KS-O1-F diagnostic"; "KS-O1-F (c) read" |
 | KS-O1a | done | done 2026-10-24: the q4k lane's Q4_K scale decode without a branch (`q4k_scale_min2`), bit-identical in 192 kernel cells and 24 Phi-3 runs (O1a-G1, G2); Phi-3 mini q4k Metal decode 33.4 → 41.7 tok/s, median 0.8044, 10 of 10 pairs (O1a-G3 SHIP) | survey, "KS-O1a read" |
 | KS-O2 | moved | KS-B15: decided A (Francis, 2026-10-25): the opt-in on the exact attention kernels, band prompts on the exact GEMM; the fast-GEMM option is not approved (it would need its own fidelity gate and a new decision) | §2 |
 | KS-O3 | moved | KS-H6: decided A (Francis, 2026-10-25): re-derive the margins after KS-H2 and KS-H3, numbers to Francis before either guard changes | §2 |
@@ -499,6 +499,87 @@ in ms (GB/s):
 - **First measurement:** `TestPrefillDecomp` with the pass width at 512/1024/2048 and K=2048/3900.
 - **Prior art:** reopens the `cuda/prefill.go:prefillDefaultChunk` note, which was measured on the old grid.
 
+**KS-B8 build: gates, registered 2026-10-25 before any code (B8-G), on the owner's word of 6:33–6:36 am (option A: 2,048-row CUDA
+prefill passes by default where the scratch allows, admission pricing the scratch, falling back to narrower passes otherwise).**
+- **The change:** at the end of `BuildResident`, after every standing allocation (weights, KV, the recurrent checkpoint, the
+  expert slots), the build reads free VRAM once and sets the default pass width. It is the widest of 2,048, 1,024 and 512 rows whose
+  pass fits: `PrefillScratchBytes(w)` plus `PrefillSpanScratchBytes(w, context)` must be at most the free VRAM less
+  `ctxCapMarginBytes` and the bytes still to attach (`extraBytes`).
+  - When none fits, the width stays 512, today's default, which already lives inside that margin.
+  - A windowed model keeps 512. Its slack (512) bounds a pass at 513 rows, and a wider default would move its passes off the
+    512-row width the slack was sized for. (Added before any gate ran, on reading `prefillPassRows`.)
+  - `GOINFER_PREFILL_CHUNK`, the learned out-of-memory cap (`prefillChunkCap`) and a windowed model's slack bound all lower or
+    override it as they do today.
+  - `PrefillChunkRows` reports the chosen width, so the decoder's per-request admission (`residentChunkedScratch`) prices that pass.
+  - The image prefill keeps its own budget.
+  - The two runtime reserves that price two 512-row passes (`kvGrantRollback`, `allocRecurrentCheckpoint`) are unchanged. The
+    width is chosen after them, from what they leave.
+- **Class:** bit-identical. A pass's rows attend the keys the earlier passes committed at the same absolute positions, with the
+  same per-row kernels (`TestPrefillChunked_bitIdentical`). No guard threshold or margin changes.
+- **Merge rule:** this changes a default, so it needs the gain judged against the memory and the owner's call, which option A gives
+  under these gates. The speed bar is the merge rule's (owner, 2026-10-25), not an investment bar.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B8-G1 the chooser | 0 | the width rule as a function of the free bytes, the margin, the bytes to attach and a scratch function, on a table: room for 2,048; room for 1,024 only; for 512 only; for less than 512's; `extraBytes` taking the 2,048's room; the knob over the chosen width; the learned cap under it. Planted defect: the chooser without the margin | every row picks the registered width; the plant goes red |
+| B8-G2 bits | 1 | Qwen2.5-Coder-1.5B q4_k_m on CUDA: `PrefillLast` over a 4,100-row prompt at passes of 512, 1,024, 2,048 and the build's chosen default, against one unchunked pass, then 8 greedy decode steps from each (`TestPrefillChunked_bitIdentical`'s method) | the seed logits byte-equal across all five, and the 8 decode ids equal |
+| B8-G3 the build prices it | 1 | the same model loaded three times: with nothing attached; with `Options.ExtraResidentBytes` leaving room for 1,024 rows but not 2,048; and with it leaving room for less than 1,024. Each load's chosen width, `PrefillChunkRows`, the free VRAM at the choice, and `PrefillScratchBytes` at that width against the bytes a pass of that width actually asks for (`prefillScratchSeenForTest`) | the three widths are 2,048, 1,024 and 512; the reported rows equal them; the priced bytes equal the pass's own |
+| B8-G4 speed | timed, nobara, timing lock | one 1.5B resident; a 3,900-token prompt's `PrefillLast` with the width at 512 (the knob) against the build's default (2,048), A B B A over 10 pairs after 2 warm runs each; load and free memory per cell, CLAUDE.md's void rule | **SHIP** iff the median 512/default wall ratio is ≥ 1.05× with at least 9 of 10 pairs faster (the merge rule). **PARK** under 1.05× with 6–8 pairs faster. **KILL** if the median is ≤ 1.00 |
+
+- **Memory, stated:**
+  - **Device:** at most one pass's scratch at the chosen width, in VRAM that is free beyond the margin after the build. On the 1.5B
+    that is 138 or 276 MiB at 1,024 or 2,048 rows, against about 70 MiB at 512. G3 records the exact figures.
+  - **Host:** unchanged.
+  - **The longest context that fits:** unchanged. The KV plan runs before the choice and the width never shrinks it, so a load with
+    no room left keeps 512.
+- **Stopping rule:** one pass each. **Cost:** G1 seconds; G2 about 2 min; G3 about 2 min (three loads); G4 about 4 min (two warm
+  runs, then 20 prefills of about 0.75–0.93 s each).
+
+**KS-B8 build read 2026-10-25, 14:31–14:32, by day: SHIP.** Run by `night.py serve` (the timing lock held exclusively) at
+1622062be from `docs/measurements/ks-b8-2026-10/run-b8.sh`, NVIDIA driver 595.91.07, Qwen2.5-Coder-1.5B q4_k_m at int4. At the start:
+the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop compositor's context only. Log:
+`docs/measurements/ks-b8-2026-10/b8-2026-10-25-1430.log`.
+- **B8-G1: PASS.** Every row of the table picks its registered width, the knob and the learned cap act on the chosen width, and the
+  planted chooser (no margin) picks wider than the rule.
+- **B8-G2: PASS.** At passes of 512, 1,024 and 2,048 rows and at the default (2,048), 0 of 151,936 seed logits differ from one
+  unchunked pass of 4,100 rows, and the 8 greedy decode ids are equal. `TestPrefillChunked_bitIdentical` passes too.
+- **B8-G3: PASS.** The pass scratch is 75, 143 and 280 MiB at 512, 1,024 and 2,048 rows, and `PrefillScratchBytes` equals what each
+  pass allocated. With 5,887 MiB free at the choice:
+
+  | attached | room beyond the margin | width chosen and reported |
+  |---:|---:|---:|
+  | 0 | 5,503 MiB | 2,048 |
+  | 5,315 MiB | 188 MiB | 1,024 |
+  | 5,439 MiB | 64 MiB | 512 |
+
+- **B8-G4: SHIP** (load 1.84–2.08 at the pairs, no void). A 3,900-row prompt's `PrefillLast` at passes of 512 rows took 740.7–745.1
+  ms, and at the default 641.9–644.7 ms: **median 1.1559×, 10 of 10 pairs faster** at the default. That clears the merge rule
+  (≥ 1.05× and 9 of 10).
+- **Memory, measured:** at most one 2,048-row pass's 280 MiB of device scratch on the 1.5B (205 MiB more than a 512-row pass), taken
+  only from VRAM free beyond the margin after the build. Host bytes are unchanged, and the KV plan, so the longest context that
+  fits, is unchanged.
+- **Review re-run, 2026-10-26 03:02, untimed (G1–G3), at 25a65ae12:** every gate PASS. Log:
+  `docs/measurements/ks-b8-2026-10/b8-2026-10-26-0302.log`.
+  - Admission and the chooser now price `PrefillSpanScratchBytes` as a bound over every pass of a prompt: a launch group of up
+    to the pass's rows at the prompt's span, capped by the split-KV budget, plus the inverses. The one-pass figure is
+    `prefillSpanScratchPass`.
+  - With the fused attention off on the 1.5B, prompts of 13,000 and 16,380 tokens ran 7 and 8 passes of up to 2,048 rows on
+    the row kernels. The largest allocated 344.0 MiB against 344.1 MiB priced.
+- **Decided (Francis, 2026-10-26 01:55): A.** A pass the chooser prices in full may use the room the two grant reserves
+  (`allocRecurrentCheckpoint`, `kvGrantRollback`) leave.
+  - The reserves exist for the prefill pass, which `prefillPassBytes` undercounts.
+  - The chooser prices the pass exactly (its scratch plus the span bound) against free VRAM less the untouched 384 MiB margin.
+  - One pass runs at a time, and nothing is allocated after the chooser.
+  - The alternative, a width above 512 only beside a reserve of two 512-row passes, was not taken.
+- **Review re-run, 2026-10-25 23:58, untimed (G1–G3), at f81188f74:** every gate PASS. Log:
+  `docs/measurements/ks-b8-2026-10/b8-2026-10-25-2358.log`. Since the read:
+  - The chooser prices the most span scratch any prompt up to the context allocates (`prefillSpanScratchMax`).
+  - `ResidualAll` chunks by `prefillPassRows`.
+  - G2 asserts each run's width.
+  - G3 adds two checks. A prompt of the width plus 4 rows allocates no buffer wider than the width's pass. Admission, read
+    through the decoder, prices one pass at the width (11 prompt lengths, two of them with a remainder under 16 rows), with
+    a non-zero span term exercised.
+
 **KS-B3 · Gemma 4 26B (M26) expert-major prefill never got option A (bit-identical).**
 - **Where:** `cuda/moe_expert_major_gemma4.go:cudaResident.prefillGemma4ExpertMajorRun`; it has no reference to the grouped
   kernels that `cuda/moe_expert_major.go` uses.
@@ -602,6 +683,69 @@ tiling reproduces").**
 - **Waste:** the needed call exists in the pinned gocudrv, but aikit does not pass it through.
 - **Change:** pass the attribute through aikit and set it on the exact attention kernels: bound 12,160 → 16,256 keys.
 - **Class:** bit-identical attention; the decision is about the GEMM that comes with it. **Size:** S.
+
+**KS-B15 build: gates, registered 2026-10-26 before any code (B15-G).** On aikit `gpu` v0.35.0
+(`Pipeline.SetMaxDynamicSharedBytes`, `Pipeline.MaxDynamicSharedBytes`).
+- **The change:**
+  - At load, the three exact prefill attention kernels opt in to the most dynamic shared memory each can take: `attn_batched`,
+    `attn_img_batched` and `attn_span_batched`.
+  - The prefill's span limit becomes the smallest of what they got. On the RTX 2070 SUPER that is 64 KiB less each kernel's
+    static shared memory, which moves the span bound from 12,160 keys to at most 16,256.
+  - In that band a layer that took the row-batched kernels (`prefillSplitKVAttn`) takes `attn_batched` or its image twins
+    instead. Past the new bound, the row kernels serve as today.
+  - A failed opt-in keeps 48 KiB, which is today's behaviour.
+- **Unchanged:**
+  - Decode's single-block attention and its split-KV choice keep the 48 KiB bound (`splitKVRequired`), and so does the drafter.
+  - A band prompt stays on the exact GEMM: `prefillPastBoundExact` keeps the 48 KiB bound (owner decision A; the fast GEMM is
+    not approved).
+- **Memory:** a band pass no longer allocates the row kernels' score scratch (up to 64 MiB plus its inverses,
+  `PrefillSpanScratchBytes`). Nothing is added.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| B15-G1 the opt-in | 0 (device, tiny fixture) | `llama-attnfa-tiny` on the card | each of the three kernels reports a limit above 48 KiB, and the prefill's limit is their minimum. A 16-row pass whose last row attends the new bound in keys runs on `attn_batched` (no row-batched group), and one attending a key more takes the row kernels. Decode's `splitKVRequired` is unchanged at 12,161 keys. Plant: with the opt-in skipped, the prefill limit is 48 KiB and a band span takes the row kernels |
+| B15-G2 bits, tiny | 1 | `llama-attnfa-tiny` at context 17,000, f32 and f16 KV, fast levers off. Prompts of 12,400, 14,000 and 16,000 tokens (in the band), and 16,384 (past it). Arms: the opt-in, and today's limit set back to 48 KiB on the same resident. Also `TestKV3Tiled_batchedEqualsPerToken_tiny` at 12,400 and 16,384 | in the band, 0 differing logits and 0 differing K/V elements between the arms. The opt-in arm has no row-batched group and the other arm some, and neither runs a tensor-core launch. Past the band both arms run the row kernels and are equal. The batched prefill equals the per-token path (decode on split-KV), bit for bit, at both lengths |
+| B15-G3 bits, real | 1 | Gemma-3-4B Q4_K_M, f32 KV, default levers: a 13,824-token lead, then a 512-row pass whose last row attends 14,336 keys, each arm once. The load is the fit check: G3 runs first, and if the f32 load is refused (about 3.9 GB of KV beside the weights on 8 GB), G3 and G4 both run at f16 KV | 0 differing logits and 0 differing K/V rows across the pass; the opt-in arm has no row-batched group; neither arm runs a tensor-core launch |
+| B15-G4 speed | 1 (timed, the timing lock) | the same load and pass: off and on interleaved A B B A, 10 pairs after 2 warm runs each. The load average and free memory are recorded per pair, and a pair started above 8.0 is void and re-run. Second reading: one whole 14,336-token `PrefillLast`, off then on, twice each | **SHIP** iff the pass's median off/on ≥ 1.00 with at least 8 of 10 pairs faster. **KILL** at a median < 0.98: the band keeps the row kernels and the opt-in stays unset. **Ambiguous** (0.98–1.00, or fewer than 8 faster): parked, to Francis |
+
+- **Why G4's bar is 1.00, not the standing merge rule's 1.05:**
+  - Francis decided A; this records the gain rather than earning a decision.
+  - A change that is bit-identical and no slower still frees the band's score scratch.
+  - It also lets an image span pass on a sliding layer run in the band, where it declines today.
+  - The whole prompt is a reading, not the rule. Of a 14,336-token prompt's 28 passes at 512 rows, only the four or five whose
+    last row is past 12,160 keys can move, so the whole-prompt ratio is diluted by the 23 passes that cannot.
+- **Stopping rule:** each gate once. **Cost:** G1 seconds; G2 about 5 min (two per-token references at 12,400 and 16,384
+  rows, plus eight batched passes); G3 about 2 min; G4 about 5 min (24 passes of about 0.2–0.5 s and four whole prompts).
+- **Review:** it touches kernel routing, so Gemini reviews it before merge.
+
+**KS-B15 build read 2026-10-26, 02:55–03:12, by day: KILL.**
+- **Setup:** run by `night.py serve` (the timing lock held exclusively) at 410c6ee87, from
+  `docs/measurements/ks-b15-2026-10/run-b15.sh` (the G4 phase from c758a83da, the same tree with the script's G4-only phase
+  added).
+  - NVIDIA driver 595.91.07.
+  - At G4's start the 1-minute load was 0.62, and 58.2 GB was available.
+  - The code is on branch `ks-b15-shared-optin-2026-10-26` (pushed, unmerged).
+  - Logs: `docs/measurements/ks-b15-2026-10/b15-2026-10-26-0255.log` (G1–G3) and `b15-2026-10-26-0307.log` (G4).
+- **B15-G1: PASS.**
+  - `attn_batched`, `attn_img_batched` and `attn_span_batched` each opted in to 65,536 B. None has static shared memory.
+  - So the prefill bound is 16,256 keys.
+  - A 16-row pass whose last row attends the bound ran on `attn_batched`, and one key more took the row kernels.
+  - Decode's bound is unchanged.
+  - Plant: with the opt-in skipped, the limit stayed at 48 KiB and a 12,400-key span took the row kernels.
+- **B15-G2: PASS.** At 12,400, 14,000 and 16,000 tokens, in f32 and f16 KV, the opt-in arm ran no row-batched group (today's
+  route ran 6, 18 and 34). 0 of 256 logits and 0 K/V elements differed. At 16,384 both arms ran the row kernels and were equal.
+  `TestKV3Tiled_batchedEqualsPerToken_tiny` passed at 12,400 (now on `attn_batched`) and 16,384.
+  - The run's own exit was red only because two extra families tests skipped subtests whose Gemma 4 fixtures are not on this
+    box (`gemma4-dense-twogeom-tiny`, `gemma4-dense-scaled`). Those are not registered gates.
+- **B15-G3: PASS.** Gemma-3-4B Q4_K_M, f32 KV (the load fitted), a 512-row pass at 14,336 keys: 0 of 262,144 logits and 0 of
+  35,651,584 K/V elements differed, the opt-in arm ran no row-batched group (today's ran 20), and neither ran a tensor-core
+  launch.
+- **B15-G4: KILL.** The opt-in is slower on every pair: off 1,854.7–1,861.0 ms, on 1,911.9–1,914.3 ms, **median off/on
+  0.9715**, 0 of 10 pairs faster, no void. That is under the 0.98 kill line.
+  - The whole 14,336-token prompt (a reading) took 40.99 and 41.00 s off, 41.26 and 41.25 s on.
+  - By the registration, the band keeps the row-batched kernels and the opt-in stays unset. Nothing merges.
+  - aikit `gpu` v0.35.0's `Pipeline.SetMaxDynamicSharedBytes` stays available, and goinfer does not call it.
+  - Why `attn_batched` is slower at these spans was not investigated.
 
 ## 6. Metal decode (KS-C)
 
@@ -1189,6 +1333,132 @@ only for the instruction region's median.
 - **The gate's first run: PASS** (e3a66d6d9, 06:13–06:33, the shared lock, not timed). On `README.md`, mean KL to f32 past position
   256 is 0.00173 int8 against 0.00068 native, **0.3899**. On `docs/benchmarks.md` it is 0.00175 against 0.00081, **0.4623**. These are
   LQ3's numbers to the digit. Log: `docs/measurements/ks-a1-2026-10/longctx-gate-2026-10-25.log`.
+
+**KS-O1-F diagnostic, registered 2026-10-25 before any data (owner, 1:52 pm).** The question: why the CUDA native lane's logits are
+further from f32 than the int8 lane's on highly repetitive input (Phi-3 mini q4, 110 × "the ": p10 0.8826, min 0.029, against
+int8's 0.9401 and 0.454), while about 2× closer on natural text (LQ3). Phi-3 mini q4 `Phi-3-mini-4k-instruct-q4.gguf`, the CUDA
+resident at `--quant q4k` holding both arms (`kso1cLoadBothArms`), against the CPU at f32 on the same GGUF. Instrument: a scratch
+harness beside `cuda/kso1c_fidelity_test.go:TestKSO1C_fillerDiagnostic`, kept as text in `docs/measurements/ks-o1-f-2026-10-25/`.
+Tier 1, the shared timing lock, not timed; about 5 minutes a run.
+- **D1, where they diverge.** The same prompt (TestQ4K_phi3ResidentMatchesCPU's filler at 110 repeats under Phi-3's chat template),
+  token by token through `cudaResident.Forward` with every layer's output captured (`cudaResident.SetHiddenCapture`), for four
+  arms: int8, native, only Q5_K qkv native, only Q6_K ffn_down native. The CPU at f32 over the same ids with every layer captured
+  (`decoder.KVCache.SetCaptureLayersForTest` on its batched prefill, bit-identical to its per-token walk). Per layer and arm: the
+  minimum and p10 over positions of the layer output's cosine to f32, its relative L2, and the position of the minimum. Reported:
+  the first layer at which the native arm's minimum falls below the int8 arm's by more than 0.05, and at which positions.
+- **D3, the KV path.** D1's native and int8 arms rerun with `--kv f32` (explicit). The KV path is implicated if the native arm's
+  final-layer minimum moves by more than half its gap to the int8 arm's.
+- **D3 amended (14:34, D1 running, none of its output read).** The figures this diagnostic explains were read on the f32 cache: the
+  CUDA test suite's default is f32 KV (`cuda/kv16_default_test.go`), and every LQ log reads `layer 0 KV half false`. KV precision is
+  therefore excluded by construction, and D3 as registered is D1's own configuration: it runs as an A/A repeat of D1 and is reported
+  as that (each layer's minimum must repeat to within 0.001, or D1's readings are not deterministic enough to locate anything). The
+  rest of the KV path, cached K and V that differ because each arm's own projections wrote them, is inside D1's per-layer reading.
+- **D2, which numerics, registered after D1 and before it runs.** At D1's first divergent layer, the suspect projection's output on
+  the same input computed four ways (f32 file weights × f32 activations; file weights × per-32 int8 activations; the int8 lane's
+  weights × per-32 int8 activations; the native kernel itself), to split activation quantization, weight representation and
+  accumulation.
+- **Stopping rule:** stop when one factor reproduces the native arm's gap at the first divergent layer to within 20%; the rest are
+  reported as not run. Any fix is a numerics change and gets its own registered fidelity gate and a Gemini review.
+
+**KS-O1-F D1 and D3 read (14:32–14:35, the shared lock, not timed).** Log: `docs/measurements/ks-o1-f-2026-10-25/d1.log`, `d3.log`.
+- **The figures reproduce:** at the logits, native p10 0.8826, min 0.0294; int8 0.9401, 0.4543 (LQ2's to the digit).
+- **D3, the A/A repeat:** every printed figure equal to D1's (largest difference 0), so the per-layer readings are deterministic.
+- **The registered metric names layer 31:** the first layer where the native minimum is below int8's by more than 0.05 (0.1528 at
+  position 122 against 0.5559; positions 7 and 114–122). Below layer 31 the minimum is a different thing: from layer 4 on, both
+  arms' minimum is position 8 (a massive-activation position, relative L2 above 1 in both arms) and the native arm's is the higher.
+- **The p10 tells where the gap opens:** native against int8, p10 cosine 0.9962 against 0.9979 at layer 2, 0.9824 against 0.9952 at
+  layer 4, 0.8939 against 0.9772 at layer 8, then flat (0.87–0.90 against 0.95–0.97) to layer 30. Each one-group arm (only the Q5_K
+  qkv native, only the Q6_K ffn_down native) carries about half of it at every layer from 4 on (layer 8: 0.9192 and 0.9191).
+- **What this rules out:** one tensor kind. Both kinds open about half the gap, starting at the same layers; Q6_K has no minimum term,
+  so the Q5_K minimum term is not the cause.
+
+**D2, registered 2026-10-25 after D1's read and before it runs.** D1 places the gap's opening at layers 2–8 in both native kinds, so
+D2 runs there as well as at the registered layer 31. D2a is the Q5_K qkv projection; D2b (ffn_down, Q6_K) is registered only if D2a
+does not stop.
+- **Input:** the native arm's own residual after layer L−1 at every one of the 141 positions (`SetHiddenCapture`), RMS-normed in
+  float64 with layer L's `attn_norm` weight and the GGUF's epsilon, then rounded to float32: the qkv input x. Layers L = 2, 4, 8, 31.
+- **Five outputs per row and position:** (1) the file's weights (GGUF `attn_qkv`, dequantized in float64) × x, the truth; (2) the
+  file's weights × the per-32 int8 activation (`quantG32Go`'s codes × scales), in float64; (3) the int8 lane's weights (the resident's
+  own int8 copies, downloaded) × the same activation, in float64; (4) `gemv_q5k_g32` on the file's blocks and that activation, on
+  the GPU; (5) `gemv_w8a8_g32` on the int8 copies and that activation, on the GPU.
+- **Read per position, over each of q, k and v separately:** e(i) = ‖(i) − (1)‖ / ‖(1)‖. Reported: the median and the p90 over
+  positions of each e, of ‖(4) − (2)‖/‖(2)‖ and ‖(5) − (3)‖/‖(3)‖ (kernel arithmetic), and the same at positions 7 and 114–122.
+  Sanity, before any reading counts: the int8 copies' rows match the file's within 10% relative L2 (a wrong row mapping reads
+  about 1.4). Amended 16:28, before any D2 figure was read: the first run stopped at this check at 1% with 1.73% on layer 2's q,
+  which is per-row int8 rounding of these rows, not a mapping error; 1% was set without that arithmetic.
+- **Attribution, at the projection:** the native gap is e(4) − e(5). Kernel arithmetic explains it if ‖(4) − (2)‖/‖(2)‖ is at least
+  0.8× the gap; activation quantization with the file's weights explains it if e(2) − e(3) is within 20% of it. If e(4) ≤ e(5) (the
+  native projection is no worse than int8's on the same input), no per-projection factor explains the gap: that is the finding,
+  and the next step is a question for Francis, not a fourth run.
+- **Cost:** one resident load with both arms, one GPU pass of 141 tokens, about 30 s of float64 a layer: about 5 minutes. The shared
+  lock, not timed.
+
+**KS-O1-F D2a read (18:31–18:39, nobara's night queue, the exclusive lock, only the compositor on the card).** Log:
+`docs/measurements/ks-o1-f-2026-10-25/d2a.log`; harness `proj_test.go.txt`. Two attempts before it are kept beside it:
+- `d2a-1-oom.log`: out of device memory beside another session's serve, under the shared lock.
+- `d2a-2-sanity.log`: stopped at the 1% sanity bar, amended above before any D2 figure was read.
+
+Sanity: the int8 copies are the file's rows at 0.86–1.78% relative L2 at every layer and segment, which is per-row int8 rounding.
+
+| layer | segment | e2 file × aq | e3 int8 × aq | e4 native kernel | e5 int8 kernel | e4 − e5 |
+|---|---|---|---|---|---|---|
+| 2 | q / k / v | 0.00243 / 0.00298 / 0.0290 | 0.00409 / 0.00459 / 0.0354 | = e2 | = e3 | −0.0017 / −0.0016 / −0.0064 |
+| 4 | q / k / v | 0.00194 / 0.00374 / 0.0522 | 0.00272 / 0.00514 / 0.0681 | = e2 | = e3 | −0.0008 / −0.0014 / −0.0159 |
+| 8 | q / k / v | 0.00266 / 0.00481 / 0.0270 | 0.00377 / 0.00659 / 0.0366 | = e2 | = e3 | −0.0011 / −0.0018 / −0.0096 |
+| 31 | q / k / v | 0.00307 / 0.00844 / 0.0052 | 0.00393 / 0.01082 / 0.0064 | = e2 | = e3 | −0.0009 / −0.0024 / −0.0013 |
+
+(Medians over the 141 positions. The p90s and the positions 7 and 114–122 order the same way, every one of them.)
+- **Kernel arithmetic:** both kernels equal their float64 twins: ‖(4) − (2)‖/‖(2)‖ and ‖(5) − (3)‖/‖(3)‖ print 0.00000 at every layer,
+  segment and position.
+- **The registered branch:** e4 ≤ e5 everywhere. On the same input, the native Q5_K qkv projection is closer to the truth than the
+  int8 lane's, by about a quarter. Both carry the same per-32 activation-quantization error (e2, largest on v: 3–5% at layers 2–8),
+  and the int8 lane adds its weight rounding on top. No per-projection factor explains the gap. By the registration, that is the
+  finding, and the next step is Francis's question, not a fourth run.
+- **Not run:** D2b (ffn_down, Q6_K). It was registered to run only if D2a did not stop.
+
+**KS-O1-F (c), registered 2026-10-25 before any run (Francis, 18:57: option c).** The question: does "native worse" come from
+repetitive input in general, or only from 110 × "the "?
+- **Instrument:** D1's logits-level read (TestKSO1C_fillerDiagnostic's statistics) for the int8 and native arms against the CPU at f32,
+  over all positions of each prompt. Phi-3 mini q4, one CUDA q4k resident holding both arms, the f32 cache. Harness:
+  `docs/measurements/ks-o1-f-2026-10-25/general_test.go.txt`.
+- **Five prompts, each under Phi-3's chat template:**
+  - **The control:** 110 × "the " followed by D1's instruction. It must reproduce D1 (native p10 0.8826, int8 0.9401, each within
+    0.001), or the run is void.
+  - **Three other fillers,** 110 repeats each with the same instruction: "and " (another function word), "apple " (a content word)
+    and "hello ".
+  - **Natural text:** `README.md`'s first 110 tokens inside "Summarize this document:", about the fillers' length, so length is
+    not the difference (LQ3's 900-token documents were six times longer).
+- **Reading per prompt:**
+  - **native worse:** native p10 below int8's by more than 0.01 and native mean KL above 1.10× int8's.
+  - **native not worse:** native p10 at least int8's − 0.01 and native KL at most 1.10× int8's.
+  - **mixed:** anything else.
+- **Reading over the prompts:**
+  - **Repetitive input in general:** at least 2 of the 3 other fillers read native worse, and the natural text reads native not
+    worse.
+  - **Specific to "the ":** at least 2 of the 3 other fillers read native not worse.
+  - **Ambiguous, parked:** anything else, and the natural text reading native worse.
+- **Cost:** one process, about 1.5 minutes a prompt: about 10 minutes, as one job on nobara's night queue at priority 55, ahead of
+  ks-o4-gfid. Not timed.
+
+**KS-O1-F (c) read (19:50–20:01, nobara's night queue, the exclusive lock).** Log: `docs/measurements/ks-o1-f-2026-10-25/c.log`.
+
+| prompt | positions | int8 p10 / min / KL | native p10 / min / KL | native ÷ int8 KL | reading |
+|---|---|---|---|---|---|
+| 110 × "the " (control) | 141 | 0.9401 / 0.4543 / 0.42710 | 0.8826 / 0.0294 / 0.50969 | 1.193 | native worse |
+| 110 × "and " | 141 | 0.9887 / 0.8084 / 0.08847 | 0.9882 / 0.8861 / 0.06437 | 0.728 | native not worse |
+| 110 × "apple " | 141 | 0.9826 / 0.6715 / 0.08729 | 0.9925 / 0.6699 / 0.02393 | 0.274 | native not worse |
+| 110 × "hello " | 141 | 0.9817 / 0.8059 / 0.10998 | 0.9916 / 0.8021 / 0.05983 | 0.544 | native not worse |
+| `README.md`, first 110 tokens | 122 | 0.9958 / 0.9567 / 0.01024 | 0.9979 / 0.9921 / 0.00634 | 0.619 | native not worse |
+
+- **The control reproduces D1** to the digit.
+- **By the registered rule, the result is specific to "the ":** all three other fillers and the natural text read native not worse,
+  with the native arm's KL to f32 at 0.27–0.73× the int8 arm's.
+- **"the " is unusual as a filler:** both arms are far further from f32 on it than on any other prompt (int8 KL 0.43 against 0.09–0.11
+  on the other fillers).
+- **Together with D2a:** on the same input, the native projections are the more accurate ones. On every other prompt measured, the
+  native lane is the closer of the two end to end.
+- **Closed (Francis, 2026-10-25, 20:31):** KS-O1-F closes on this finding. The native lane's gap is specific to 110 × "the ", and
+  no fix is indicated.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
 - **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
@@ -2795,6 +3065,73 @@ red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 a
   - nobara-ks-cuda.
 - The margins can be rebuilt from measured parts after KS-H2 and KS-H3.
 - **First measurement:** minimum free VRAM over a 20k prompt on Qwen3-8B at 16k and on the 26B.
+
+**KS-H6 reading, registered 2026-10-25 before it runs (H6-R).** A reading for the owner's decision, not a gate: no guard or
+margin changes in this work, and it stops with the numbers.
+- **What each margin must cover:**
+  - `ctxCapMarginBytes` is left free beside the weights and KV at the load-time fit check. It must absorb what the build allocates
+    after the KV pools, the allocation floor, the one prefill pass that is not priced beyond it, and decode's transients.
+  - `slotMarginBytes` is left free when the 26B's expert cache is sized, after everything else. It must absorb the floor and the
+    transients that come after the slots.
+- **The parts and where each comes from:**
+  - **The allocation floor:** cited, not re-measured. `TestAllocFloor` drains the device, and it skips while the desktop compositor
+    holds a context. Its record (`docs/code-notes/cuda.md`, "TestAllocFloor") puts the refusals at 148–155 MiB free at any request
+    size.
+  - **The build after the pools:** kv4b-grade's KS-H2 readings (#251): 70 allocations, about 130 MiB, on the 7B and on Qwen3-8B at
+    16k.
+  - **The moe_route reservation:** KS-H3's baseline, 132.0 MiB retained after its first launch. The 26B's build forces it before it
+    reads free VRAM for the slots.
+  - **The prefill pass inside the margin:** `PrefillScratchBytes(512)` plus `PrefillSpanScratchBytes(512, context)` per model. Under
+    KS-B8 (#250) a wider pass is taken only from VRAM beyond the margin.
+  - **The run's transients (new, `TestKSH6_marginParts`):** each model loaded as serve loads it (`--kv auto`, f16 where cleared;
+    the 26B at int4 with its expert cache). The test records the free VRAM after the load. It then prefills a long prompt and
+    decodes 64 tokens while a child `nvidia-smi --query-gpu=memory.used -lms 20` samples the card. The prompts are 15,000 tokens on
+    Qwen3-8B at context 16,384, and on the 26B its context less 512. The reading is the minimum free VRAM over the run, its drop
+    below free-after-load, and the pass width the run used, including any learned narrowing.
+- **The derivation:** for each margin, the sum of its parts against 384 MiB, per model. The owner gets the measured headroom left at
+  the run's minimum: free VRAM above the floor, or a refusal.
+- **Out:** DECISION NEEDED with the numbers and the options (keep 384; a different constant; a margin computed from the parts at
+  load). Nothing is changed here.
+- **Cost:** two loads. Qwen3-8B about 2 min (a 15,000-token prefill and 64 tokens). The 26B about 5 min (its load from
+  safetensors and the prompt). By day, with the timing lock shared: memory, not time, is read.
+
+**H6-R read 2026-10-25, by day** (`night.py`, the lock exclusive; driver 595.91.07; only the desktop compositor's 17 MiB on the card
+before each load). Logs: `docs/measurements/ks-h6-2026-10/`.
+- **The first run (82a14f63a, 16:23)** read Qwen3-8B. The 26B was refused because the test had not set serve's
+  `-moe-cache-experts`, which the registration names. **The second run (e790fc51a, 18:25)** read the 26B with the cache.
+
+| | Qwen3-8B q4_k_m, context 16,384, f16 KV | Gemma 4 26B-A4B, int4, expert cache (30 slots), context 4,096 |
+|---|---:|---:|
+| the margin that binds | `ctxCapMarginBytes`, 384 MiB | `slotMarginBytes`, 384 MiB |
+| free after the load (cuMemGetInfo) | 261.1 MiB | 385.1 MiB |
+| the prompt | 15,000 tokens, passes of 512 rows, no narrowing | 3,584 tokens, passes of 512 rows, no narrowing |
+| a 512-row pass's scratch | 112.0 MiB | 77.8 MiB |
+| the run's peak rise above the post-load figure (nvidia-smi, every 20 ms) | 112 MiB (961 samples) | 142 MiB (1,950 samples) |
+| the run's minimum free | **≈ 149.1 MiB** | **≈ 243.1 MiB** |
+| above the allocation floor (148–155 MiB) | **about 0** | about 90 MiB |
+
+- **`ctxCapMarginBytes` on Qwen3-8B at 16k: used up.**
+  - The margin's 384 MiB goes to about 130 MiB of build allocations after the KV pools (KS-H2, #251), so 261 MiB is left after the
+    load.
+  - The 512-row pass then takes 112 MiB, which leaves about 149 MiB: the allocation floor. Decode added nothing above the pass.
+  - The parts sum to about 130 + 112 + 150 = 392 MiB against 384. The run fit with no headroom: any more scratch would have refused
+    an allocation, and the prefill would have narrowed its passes.
+- **`slotMarginBytes` on the 26B: about 90 MiB to spare.**
+  - The cache is sized last, so the 385 MiB free after the load is the margin itself. The `moe_route` reservation (KS-H3, 132 MiB)
+    is taken before that figure is read.
+  - The run took 142 MiB: the 78 MiB pass and about 64 MiB of MoE and decode transients. About 243 MiB stayed free, some 90 MiB
+    over the floor.
+  - Each expert slot costs about 106 MiB on this load (30 slots, 3.1 GB), so the spare is under one slot.
+- **Not covered:**
+  - The 26B at a long context: its build's default is 4,096 positions, so a 20k prompt (the survey's first measurement) is not
+    possible without raising `-ctx`, which takes slots away.
+  - KS-H3's after-move reading, which would give back its 132 MiB.
+- **The instrument after the run:** `TestKSH6_marginParts` is split into `TestKSH6_marginPartsQwen3` and `TestKSH6_marginParts26B`,
+  with the same body, because the heavy tier runs one large checkpoint per process (`cmd/gate/heavy_groups.go`). Qwen3-8B also gets
+  its row there.
+- **Seen in passing, not part of the reading:** beside the 26B, every tiny self-test probe resident declined for room ("0.40 GB is
+  free on the device beside the weights (plus 384 MB reserved...)"). The 26B's own resident was unaffected.
+
 
 ## 12. Already covered (not re-proposed)
 

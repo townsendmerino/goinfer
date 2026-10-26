@@ -1,0 +1,275 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+	"testing"
+
+	gc "github.com/eitamring/gocudrv/cuda"
+	gpu "github.com/townsendmerino/aikit/gpu"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// TestKSO1F_projectionNumerics is KS-O1-F's D2a (docs/tasks/task-kernel-survey-2026-10.md, "D2, registered"): Phi-3 mini q4's Q5_K
+// qkv projection at layers 2, 4, 8 and 31, on the native arm's own input at each of the 110-repeat filler's 141 positions, five
+// ways: (1) the file's weights × the float input, (2) the file's weights × the per-32 int8 activation, (3) the int8 lane's weights
+// (the resident's copies) × that activation, all in float64; (4) gemv_q5k_g32 and (5) gemv_w8a8_g32 on the GPU. Per layer and
+// q/k/v segment it prints e(i) = ‖(i) − (1)‖/‖(1)‖ (median and p90 over positions, and at positions 7 and 114–122) and the kernels'
+// distance from their own float64 twins. A scratch harness, kept as text beside the record; it asserts only the row-mapping sanity.
+func TestKSO1F_projectionNumerics(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	path := modelPath("phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Repeat("the ", 110) + "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mg, err := kso1cLoadBothArms(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, ok := mg.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
+	}
+	use, _ := kso1cArms(t, r, "Phi-3")
+	use(true)
+	nL := r.nLayers
+	taps := make([]int, nL)
+	for l := range taps {
+		taps[l] = l
+	}
+	if err := r.SetHiddenCapture(taps); err != nil {
+		t.Fatal(err)
+	}
+	r.Reset()
+	hs := make([][][]float32, len(ids)) // [position][layer] the native arm's residual after that layer
+	for p, id := range ids {
+		if _, err := r.Forward(mg.EmbedResidentForTest(id), p); err != nil {
+			t.Fatal(err)
+		}
+		hs[p] = append([][]float32(nil), r.HiddenCapture()...)
+	}
+	r.SetHiddenCapture(nil)
+
+	g, err := decoder.OpenGGUFMmap(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	eps, ok := g.Float("phi3.attention.layer_norm_rms_epsilon")
+	if !ok {
+		t.Fatal("no phi3.attention.layer_norm_rms_epsilon in the GGUF")
+	}
+	ctx, _, launch := actGroupHarness(t)
+	fmt.Fprintf(os.Stderr, "[D2a] %d positions, %d layers, rms eps %g\n", len(ids), nL, eps)
+
+	pctl := func(v []float64, q float64) float64 {
+		s := append([]float64(nil), v...)
+		sort.Float64s(s)
+		return s[min(len(s)-1, int(q*float64(len(s))))]
+	}
+	focus := []int{7, 114, 115, 116, 117, 118, 119, 120, 121, 122}
+	for _, L := range []int{2, 4, 8, 31} {
+		_, normW, err := g.Tensor(fmt.Sprintf("blk.%d.attn_norm.weight", L))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dims, raw, ok, err := g.Q5KRaw(fmt.Sprintf("blk.%d.attn_qkv.weight", L))
+		if err != nil || !ok {
+			t.Fatalf("layer %d attn_qkv is not Q5_K (ok %v, err %v)", L, ok, err)
+		}
+		K, N := dims[0], dims[1]
+		rb := K / 256 * 176
+		wf := make([][]float64, N) // the file's rows, float64
+		for n := range N {
+			wf[n] = make([]float64, K)
+			ksA1Q5KRow(raw[n*rb:(n+1)*rb], wf[n])
+		}
+		// The int8 lane's copies of q, k and v, in that order, as the int8 arm binds them.
+		Ly := &r.layers[L]
+		var w8 [][]float64
+		var w8words []int32
+		var w8scales []float32
+		segs := []struct {
+			name   string
+			lo, hi int
+		}{}
+		for si, slot := range []cudaWQ{Ly.q, Ly.k, Ly.v} {
+			var alt *cudaWQ
+			for i := range r.kquantAlt {
+				if r.kquantAlt[i][0] == slot {
+					alt = &r.kquantAlt[i][1]
+				}
+			}
+			if alt == nil || alt.kind != "int8" {
+				t.Fatalf("layer %d slot %d: no int8 copy beside the native weight", L, si)
+			}
+			words := make([]int32, alt.N*alt.K/4)
+			sc := make([]float32, alt.N)
+			if err := gpu.Download(alt.W, words); err != nil {
+				t.Fatal(err)
+			}
+			if err := gpu.Download(alt.ws, sc); err != nil {
+				t.Fatal(err)
+			}
+			codes := unpackI8(words, alt.N*alt.K)
+			lo := len(w8)
+			for n := range alt.N {
+				row := make([]float64, alt.K)
+				for k := range alt.K {
+					row[k] = float64(codes[n*alt.K+k]) * float64(sc[n])
+				}
+				w8 = append(w8, row)
+			}
+			segs = append(segs, struct {
+				name   string
+				lo, hi int
+			}{[]string{"q", "k", "v"}[si], lo, len(w8)})
+			w8words = append(w8words, words...)
+			w8scales = append(w8scales, sc...)
+		}
+		if len(w8) != N {
+			t.Fatalf("layer %d: the int8 copies hold %d rows, the file %d", L, len(w8), N)
+		}
+		// Sanity: each segment's int8 rows are the file's rows to within 1% relative L2.
+		for _, s := range segs {
+			var d, n2 float64
+			for n := s.lo; n < s.hi; n++ {
+				for k := range K {
+					e := w8[n][k] - wf[n][k]
+					d += e * e
+					n2 += wf[n][k] * wf[n][k]
+				}
+			}
+			rel := math.Sqrt(d / n2)
+			fmt.Fprintf(os.Stderr, "[D2a] layer %d %s: the int8 copy against the file's weights, relative L2 %.5f\n", L, s.name, rel)
+			if rel > 0.10 {
+				t.Fatalf("layer %d %s: the int8 rows are not the file's rows (relative L2 %.4f): the row mapping is wrong", L, s.name, rel)
+			}
+		}
+		dW5 := upload(t, ctx, ksA1Words(raw))
+		dW8 := upload(t, ctx, w8words)
+		dS8 := upload(t, ctx, w8scales)
+		zero := make([]float32, N)
+		dBias := upload(t, ctx, zero)
+		d4, d5 := upload(t, ctx, zero), upload(t, ctx, zero)
+
+		type errs struct{ e [6][]float64 } // per segment: e2, e3, e4, e5, k4 (‖4−2‖/‖2‖), k5 (‖5−3‖/‖3‖)
+		per := make([]errs, len(segs))
+		for p := range ids {
+			h := hs[p][L-1]
+			var ss float64
+			for _, v := range h {
+				ss += float64(v) * float64(v)
+			}
+			inv := 1 / math.Sqrt(ss/float64(len(h))+eps)
+			x := make([]float32, K)
+			for i := range x {
+				x[i] = float32(float64(h[i]) * inv * float64(normW[i]))
+			}
+			codes, scales := quantG32Go(x)
+			nG := K / 32
+			aBuf := make([]float32, 2*nG)
+			copy(aBuf, scales)
+			aq := make([]float64, K)
+			for gi := range nG {
+				var s int32
+				for i := 32 * gi; i < 32*gi+32; i++ {
+					s += int32(codes[i])
+					aq[i] = float64(codes[i]) * float64(scales[gi])
+				}
+				aBuf[nG+gi] = scales[gi] * float32(s)
+			}
+			y := [4][]float64{make([]float64, N), make([]float64, N), make([]float64, N)} // (1), (2), (3)
+			var wg sync.WaitGroup
+			const workers = 16
+			for w := range workers {
+				wg.Add(1)
+				go func(w int) {
+					defer wg.Done()
+					for n := w; n < N; n += workers {
+						var a1, a2, a3 float64
+						rf, r8 := wf[n], w8[n]
+						for k := range K {
+							a1 += rf[k] * float64(x[k])
+							a2 += rf[k] * aq[k]
+							a3 += r8[k] * aq[k]
+						}
+						y[0][n], y[1][n], y[2][n] = a1, a2, a3
+					}
+				}(w)
+			}
+			wg.Wait()
+			da, das := upload(t, ctx, packActI8(codes)), upload(t, ctx, aBuf)
+			cfg5 := gc.LaunchConfig{GridX: uint32((N + 8*kquantGemvRows - 1) / (8 * kquantGemvRows)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+			launch("gemv_q5k_g32", cfg5, gc.Arg(dW5), gc.Arg(da), gc.Arg(das), gc.Arg(dBias), gc.ArgValue(int32(N)), gc.ArgValue(int32(K/256)), gc.Arg(d4), gc.ArgValue(int32(0)))
+			cfg8 := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+			launch("gemv_w8a8_g32", cfg8, gc.Arg(dW8), gc.Arg(da), gc.Arg(dS8), gc.Arg(das), gc.Arg(dBias), gc.ArgValue(int32(N)), gc.ArgValue(int32(K/4)), gc.Arg(d5), gc.ArgValue(int32(0)))
+			y4, y5 := download(t, d4, N), download(t, d5, N)
+			da.Close()
+			das.Close()
+			rel := func(a func(int) float64, b []float64, lo, hi int) float64 {
+				var d, n2 float64
+				for n := lo; n < hi; n++ {
+					e := a(n) - b[n]
+					d += e * e
+					n2 += b[n] * b[n]
+				}
+				return math.Sqrt(d / n2)
+			}
+			f64 := func(v []float64) func(int) float64 { return func(n int) float64 { return v[n] } }
+			f32 := func(v []float32) func(int) float64 { return func(n int) float64 { return float64(v[n]) } }
+			for si, s := range segs {
+				e := &per[si].e
+				e[0] = append(e[0], rel(f64(y[1]), y[0], s.lo, s.hi))
+				e[1] = append(e[1], rel(f64(y[2]), y[0], s.lo, s.hi))
+				e[2] = append(e[2], rel(f32(y4), y[0], s.lo, s.hi))
+				e[3] = append(e[3], rel(f32(y5), y[0], s.lo, s.hi))
+				e[4] = append(e[4], rel(f32(y4), y[1], s.lo, s.hi))
+				e[5] = append(e[5], rel(f32(y5), y[2], s.lo, s.hi))
+			}
+		}
+		dW5.Close()
+		dW8.Close()
+		dS8.Close()
+		dBias.Close()
+		d4.Close()
+		d5.Close()
+		names := []string{"e2 file×aq", "e3 int8×aq", "e4 native kernel", "e5 int8 kernel", "‖4−2‖/‖2‖", "‖5−3‖/‖3‖"}
+		for si, s := range segs {
+			var b strings.Builder
+			for i, nm := range names {
+				v := per[si].e[i]
+				var fs []string
+				for _, p := range focus {
+					fs = append(fs, fmt.Sprintf("%.4f", v[p]))
+				}
+				fmt.Fprintf(&b, "\n[D2a]     %-17s median %.5f p90 %.5f | at 7,114-122: %s", nm, pctl(v, 0.5), pctl(v, 0.9), strings.Join(fs, " "))
+			}
+			e := per[si].e
+			gap := pctl(e[2], 0.5) - pctl(e[3], 0.5)
+			fmt.Fprintf(os.Stderr, "[D2a] layer %d %s: native gap at the projection, median e4 − median e5 = %+.5f%s\n", L, s.name, gap, b.String())
+		}
+	}
+}
