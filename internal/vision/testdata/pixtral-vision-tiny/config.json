@@ -1,0 +1,20 @@
+{
+ "model_type": "mistral3",
+ "vision_config": {
+  "hidden_size": 64,
+  "intermediate_size": 96,
+  "num_hidden_layers": 2,
+  "num_attention_heads": 4,
+  "head_dim": 16,
+  "num_channels": 3,
+  "patch_size": 4,
+  "image_size": 64,
+  "hidden_act": "silu",
+  "rope_theta": 10000.0,
+  "rope_parameters": {
+   "rope_type": "default",
+   "rope_theta": 10000.0
+  },
+  "model_type": "pixtral"
+ }
+}
