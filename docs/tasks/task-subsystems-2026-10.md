@@ -36,8 +36,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
-| VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; not yet in any key (VK5's next step is a decision) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | mac-vk01: shadow mode built (`internal/paritykey`, `gate shadow`, `.github/workflows/vk-shadow.yml`); P1–P3 PASS, P4 pending the workflow's first run on main, when SD6's week starts; the switch is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
+| VK5 | active | shadow week 1 (SD6) runs from the workflow's first run on main, 2026-10-26, and grades the aikit-pin → kernel-fingerprint swap alone; week 2 then grades the key built from program fingerprints (VK4) plus kernel fingerprints, with the forward source files out of it (Francis 16:27: option 1); the switch after each week is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -531,6 +531,11 @@ does not see moved, so every new-only is **unexplained** until someone explains 
 
 The shadow period's stopping rule is SD6's: one week of pushes to main from the workflow's first run, with no
 unexplained disagreement. The switch is its own PR and its own decision.
+
+**Two shadow weeks (Francis, 2026-10-26 16:27, option 1).** Week 1, the one running, grades only the swap of the aikit
+pin for the kernel fingerprints. When it ends, week 2 grades the key built from VK4's program fingerprints plus the
+kernel fingerprints, with the forward's source files out of it. Each week then explains its disagreements by one
+change. Week 2's gates are registered before its code, like week 1's.
 
 ### 5.9 VK6 — the daily canary and the coverage audit
 
