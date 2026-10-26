@@ -88,7 +88,7 @@ PR head; check each out in turn:
 **Verdict: PASS, identical before and after.** RTX 2070 SUPER, driver 595.91.07, Go 1.27.3 linux/amd64. The runs held the
 timing lock exclusively, from 16:23 to 16:41 PDT. At every start the load average was 0.9 to 3.5 and 58 GB was available.
 `kwin_wayland` held a 17 MiB CUDA context, so a desktop session was logged in. Nobara's own write-up is
-`nobara-ax2d/pr284-comment.md`; its records and logs are beside it, copied read-only from nobara with its lock checked
+`nobara-ax2d/pr284-comment.txt`; its records and logs are beside it, copied read-only from nobara with its lock checked
 free in the same command.
 
 - **AX2b-ID and AX2d-ID:** the CPU (22 cases) and CUDA (17 cases) records at `7d0727c0`, `67bcf5d4`, origin/main and
