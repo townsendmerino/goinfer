@@ -76,8 +76,8 @@ func planWeight(w *linalg.WeightMat) (hostW, error) {
 // quantized to int8 row by row at upload as a held f32 or bf16 weight is, so the device bytes are packWeight's for the same values.
 func planRows(m decoder.DrafterRows) (hostW, error) {
 	N, K := m.Rows, m.Cols
-	if K%4 != 0 {
-		return hostW{}, fmt.Errorf("cuda: K=%d not a multiple of 4", K)
+	if K <= 0 || K%4 != 0 {
+		return hostW{}, fmt.Errorf("cuda: K=%d not a positive multiple of 4", K)
 	}
 	if N <= 0 || m.Read == nil {
 		return hostW{}, fmt.Errorf("cuda: a %dx%d row source with no reader", N, K)

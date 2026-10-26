@@ -254,10 +254,12 @@ func TestPackStream_buildAllocatesNothingBeforeEveryLayerIsAccepted(t *testing.T
 // block and at several, and a reader that fails is an upload error rather than a weight of garbage.
 func TestPackStream_rowSourceBytesIdenticalToPackWeight(t *testing.T) {
 	r := streamRig(t)
+	kinds := map[string]bool{}
 	for name, wm := range streamWeights() {
 		if k := wm.Kind(); k != "f32" && k != "bf16" {
 			continue
 		}
+		kinds[wm.Kind()] = true
 		wm := wm
 		N, K := wm.Rows(), wm.Cols()
 		eager, err := packWeight(&wm)
@@ -285,9 +287,13 @@ func TestPackStream_rowSourceBytesIdenticalToPackWeight(t *testing.T) {
 			}
 		}
 	}
+	if !kinds["f32"] || !kinds["bf16"] {
+		t.Fatalf("streamWeights gave the row-source check kinds %v, want both f32 and bf16", kinds)
+	}
 	if r.setupErr != nil {
 		t.Fatalf("upload error: %v", r.setupErr)
 	}
+	withStage(t, 1<<20)
 	failing, err := planRows(decoder.DrafterRows{Rows: 8, Cols: 16, Read: func(int, int, []float32) error { return errors.New("read failed") }})
 	if err != nil {
 		t.Fatal(err)

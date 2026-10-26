@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -47,6 +49,7 @@ type DFlashDrafter struct {
 	draftVocab int
 
 	st *embed.SafetensorsFile // retained: the WeightMats alias its mmap
+	sf *stFile                // a streamed drafter's row readers' file (OpenDFlashDrafter); nil otherwise
 }
 
 // HasOwnHead reports whether this drafter emits ids from its own reduced vocabulary
@@ -170,6 +173,7 @@ func (d *blockTrunk) DrafterFCRows() DrafterRows { return d.rowsOf(&d.fc) }
 
 // DrafterLayerRows is layer i's matrices as row readers, with its norms, on a streamed drafter; it panics on any other.
 func (d *blockTrunk) DrafterLayerRows(i int) DrafterLayerRows {
+	d.mustStream()
 	l := &d.layers[i]
 	return DrafterLayerRows{
 		Q: d.rowsOf(&l.q), K: d.rowsOf(&l.k), V: d.rowsOf(&l.v), O: d.rowsOf(&l.o),
@@ -179,18 +183,81 @@ func (d *blockTrunk) DrafterLayerRows(i int) DrafterLayerRows {
 }
 
 func (d *blockTrunk) rowsOf(w *linalg.WeightMat) DrafterRows {
-	d.mustHoldNorms()
-	r, ok := d.rows[w]
-	if !ok {
-		panic("decoder: a row reader asked of a drafter not opened to stream (OpenDFlashDrafter)")
-	}
-	return r
+	d.mustStream()
+	return d.rows[w]
 }
 
-// stRows is a row reader over tensor name [rows, cols] in st (F32, BF16 or F16). Each read widens one block of rows through
-// Tensor.SubF32, which reads a payload at any byte offset, so neither the whole matrix nor its f32 widening is ever held. A read
-// after st closes errors.
-func stRows(st *embed.SafetensorsFile, name string, rows, cols int) (DrafterRows, error) {
+// mustStream panics unless the drafter was opened to stream and is not released.
+func (d *blockTrunk) mustStream() {
+	d.mustHoldNorms()
+	if d.rows == nil {
+		panic("decoder: a row reader asked of a drafter not opened to stream (OpenDFlashDrafter)")
+	}
+}
+
+// stFile is a safetensors file's tensor byte ranges, read with ReadAt rather than through a mapping: a row read decodes straight
+// into its destination, so streaming a matrix allocates nothing per block beyond a pooled byte buffer and maps no page of it.
+// Safe for concurrent reads (os.File.ReadAt); a read after Close errors.
+type stFile struct {
+	f    *os.File
+	base int64               // the payload's start: 8 + the header's length
+	at   map[string][2]int64 // tensor name -> [start, end) within the payload
+}
+
+func openSTFile(path string) (*stFile, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	fail := func(err error) (*stFile, error) {
+		f.Close()
+		return nil, err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return fail(err)
+	}
+	var n [8]byte
+	if _, err := f.ReadAt(n[:], 0); err != nil {
+		return fail(err)
+	}
+	hl := int64(binary.LittleEndian.Uint64(n[:]))
+	if hl <= 0 || 8+hl > fi.Size() {
+		return fail(fmt.Errorf("safetensors header of %d bytes in a %d-byte file", hl, fi.Size()))
+	}
+	hdr := make([]byte, hl)
+	if _, err := f.ReadAt(hdr, 8); err != nil {
+		return fail(err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(hdr, &raw); err != nil {
+		return fail(err)
+	}
+	sf := &stFile{f: f, base: 8 + hl, at: make(map[string][2]int64, len(raw))}
+	for name, m := range raw {
+		if name == "__metadata__" {
+			continue
+		}
+		var e struct {
+			DataOffsets [2]int64 `json:"data_offsets"`
+		}
+		if err := json.Unmarshal(m, &e); err != nil {
+			return fail(fmt.Errorf("tensor %q: %w", name, err))
+		}
+		sf.at[name] = e.DataOffsets
+	}
+	return sf, nil
+}
+
+func (sf *stFile) Close() error { return sf.f.Close() }
+
+// stRowBufs pools stRows' byte buffers, one per concurrent read.
+var stRowBufs sync.Pool
+
+// stRows is a row reader over tensor name [rows, cols] (F32, BF16 or F16), checked against st's view of the same file. Each read
+// is one ReadAt of the block's bytes, at any byte offset, decoded into dst: neither the matrix nor its f32 widening is held, and
+// the values are the bits LoadDFlashDrafter's matrices hold, widened.
+func stRows(st *embed.SafetensorsFile, sf *stFile, name string, rows, cols int) (DrafterRows, error) {
 	t, err := st.Tensor(name)
 	if err != nil {
 		return DrafterRows{}, err
@@ -198,21 +265,44 @@ func stRows(st *embed.SafetensorsFile, name string, rows, cols int) (DrafterRows
 	if !slices.Equal(t.Shape, []int{rows, cols}) {
 		return DrafterRows{}, fmt.Errorf("tensor %q: shape %v, want [%d %d]", name, t.Shape, rows, cols)
 	}
-	switch t.DType {
-	case "F32", "BF16", "F16":
-	default:
+	esz := map[string]int{"F32": 4, "BF16": 2, "F16": 2}[t.DType]
+	if esz == 0 {
 		return DrafterRows{}, fmt.Errorf("tensor %q: dtype %s, want F32, BF16 or F16", name, t.DType)
 	}
+	rng, ok := sf.at[name]
+	if !ok || rng[1]-rng[0] != int64(rows*cols*esz) {
+		return DrafterRows{}, fmt.Errorf("tensor %q: byte range %v, want %d bytes", name, rng, rows*cols*esz)
+	}
+	dtype := t.DType
 	return DrafterRows{Rows: rows, Cols: cols, Read: func(r0, n int, dst []float32) error {
-		t, err := st.Tensor(name)
-		if err != nil {
-			return err
+		need := n * cols
+		if r0 < 0 || n < 0 || r0+n > rows || len(dst) < need {
+			return fmt.Errorf("tensor %q: rows %d..%d of %d into %d floats", name, r0, r0+n-1, rows, len(dst))
 		}
-		f, err := t.SubF32(r0*cols, n*cols)
-		if err != nil {
-			return err
+		bp, _ := stRowBufs.Get().(*[]byte)
+		if bp == nil || cap(*bp) < need*esz {
+			b := make([]byte, need*esz)
+			bp = &b
 		}
-		copy(dst, f)
+		b := (*bp)[:need*esz]
+		defer stRowBufs.Put(bp)
+		if _, err := sf.f.ReadAt(b, sf.base+rng[0]+int64(r0*cols*esz)); err != nil {
+			return fmt.Errorf("tensor %q: %w", name, err)
+		}
+		switch dtype {
+		case "BF16":
+			for i := range need {
+				dst[i] = math.Float32frombits(uint32(binary.LittleEndian.Uint16(b[2*i:])) << 16)
+			}
+		case "F16":
+			for i := range need {
+				dst[i] = linalg.F16ToF32(binary.LittleEndian.Uint16(b[2*i:]))
+			}
+		default:
+			for i := range need {
+				dst[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[4*i:]))
+			}
+		}
 		return nil
 	}}, nil
 }
@@ -252,12 +342,17 @@ func (d *DFlashDrafter) TargetLayerIDs() []int { return append([]int(nil), d.tar
 
 // Close releases the drafter's mmap'd weights.
 func (d *DFlashDrafter) Close() error {
+	var err error
+	if d.sf != nil {
+		err = d.sf.Close()
+		d.sf = nil
+	}
 	if d.st != nil {
 		st := d.st
 		d.st = nil
-		return st.Close()
+		err = errors.Join(err, st.Close())
 	}
-	return nil
+	return err
 }
 
 // ReleaseHostWeights drops every host weight once a resident backend has uploaded its own copy (ResidentDrafterHost's
@@ -322,8 +417,9 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDr
 
 // OpenDFlashDrafter is LoadDFlashDrafter for a drafter a resident backend will hold: it reads the config and the safetensors
 // header, checks every tensor as LoadDFlashDrafter does, and holds the norms and d2t, but no matrix. Each matrix is a row reader
-// over the mapped file (StreamedDrafterWeights), which the backend's attach streams to the device, so the host never holds the
-// drafter, however its file is aligned. It cannot draft on the host (ErrDrafterStreamed).
+// over the file (stRows, StreamedDrafterWeights), which the backend's attach streams to the device, so the host never holds the
+// drafter, however its file is aligned. Only a resident that streams drafter rows takes it (StreamingDrafterHost); it cannot
+// draft on the host (ErrDrafterStreamed).
 func OpenDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, true) }
 
 func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
@@ -418,11 +514,19 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	}
 	if streamed {
 		d.rows = map[*linalg.WeightMat]DrafterRows{}
+		if d.sf, err = openSTFile(filepath.Join(dir, "model.safetensors")); err != nil {
+			return nil, fmt.Errorf("dflash: %w", err)
+		}
+		defer func() {
+			if !loaded {
+				d.sf.Close()
+			}
+		}()
 	}
 
 	mat := func(dst *linalg.WeightMat, name string, rows, cols int) error {
 		if streamed {
-			r, err := stRows(st, name, rows, cols)
+			r, err := stRows(st, d.sf, name, rows, cols)
 			if err != nil {
 				return fmt.Errorf("dflash: %w", err)
 			}

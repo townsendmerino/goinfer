@@ -131,6 +131,13 @@ type StreamedDrafterWeights interface {
 	DrafterLayerRows(i int) DrafterLayerRows
 }
 
+// StreamingDrafterHost is a ResidentDrafterHost whose attach reads a streamed drafter's matrices through its row readers
+// (StreamedDrafterWeights). NewBlockSpec refuses a streamed drafter on any other host, before anything is read.
+type StreamingDrafterHost interface {
+	ResidentDrafterHost
+	StreamsDrafterRows()
+}
+
 // ReleasableDrafterWeights is a BlockDrafterWeights whose host weights can be released once a resident backend holds its own
 // copy (ReleaseHostWeights). A backend's attach checks HostWeightsReleased and refuses a released drafter: its matrices are
 // zero, and an upload of them would draft noise that lossless verify only rejects. A family satisfies it only once its release

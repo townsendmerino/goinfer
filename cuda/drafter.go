@@ -186,10 +186,13 @@ type drafterSrc struct {
 }
 
 func (s drafterSrc) plan() (hostW, error) {
-	if s.held != nil {
-		return planWeight(s.held)
+	if s.rows.Read != nil {
+		return planRows(s.rows)
 	}
-	return planRows(s.rows)
+	if s.held == nil {
+		return hostW{}, fmt.Errorf("cuda: the drafter handed out no weight")
+	}
+	return planWeight(s.held)
 }
 
 // FuseContext projects the target's concatenated tap hidden states down to the trunk's width and norms them (the
@@ -701,6 +704,12 @@ func (d *residentDrafter) TruncateContext(n int) {
 
 // AttachBlockDrafter satisfies decoder.ResidentDrafterHost, returning the concrete AttachDrafter result through the
 // interface so decoder can drive the loop without importing this package.
+// StreamsDrafterRows marks the CUDA resident as a decoder.StreamingDrafterHost: AttachDrafter plans a streamed drafter's matrices
+// from their row readers.
+func (r *cudaResident) StreamsDrafterRows() {}
+
+var _ decoder.StreamingDrafterHost = (*cudaResident)(nil)
+
 func (r *cudaResident) AttachBlockDrafter(w decoder.BlockDrafterWeights) (decoder.ResidentBlockDrafter, error) {
 	return r.AttachDrafter(w)
 }

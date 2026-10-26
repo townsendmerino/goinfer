@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -95,11 +96,25 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		if a, b := DrafterKVBytesPerPosition(s), DrafterKVBytesPerPosition(held); a != b {
 			t.Errorf("odd=%v: K/V bytes per position %d opened, %d loaded", odd, a, b)
 		}
-		row := make([]float32, s.hidden)
-		if _, err := s.DraftBlock(&cpuBackend{}, [][]float32{row}, [][]float32{row}); !errors.Is(err, ErrDrafterStreamed) {
+		row, be := make([]float32, s.hidden), &cpuBackend{}
+		if _, err := s.DraftBlock(be, [][]float32{row}, [][]float32{row}); !errors.Is(err, ErrDrafterStreamed) {
 			t.Errorf("odd=%v: DraftBlock on an opened drafter: %v, want ErrDrafterStreamed", odd, err)
 		}
-		for name, f := range map[string]func(){"DrafterFC": func() { s.DrafterFC() }, "DrafterLayer": func() { s.DrafterLayer(0) }} {
+		if _, err := s.FuseContext(be, [][]float32{make([]float32, 2*s.hidden)}); !errors.Is(err, ErrDrafterStreamed) {
+			t.Errorf("odd=%v: FuseContext on an opened drafter: %v, want ErrDrafterStreamed", odd, err)
+		}
+		ctx := s.NewContext()
+		if _, err := s.DraftBlockCtx(be, ctx, [][]float32{row}); !errors.Is(err, ErrDrafterStreamed) {
+			t.Errorf("odd=%v: DraftBlockCtx on an opened drafter: %v, want ErrDrafterStreamed", odd, err)
+		}
+		if fc := s.DrafterFCRows(); fc.Read(0, 2, make([]float32, fc.Cols)) == nil {
+			t.Errorf("odd=%v: a read into a destination one row short succeeded", odd)
+		}
+		for name, f := range map[string]func(){
+			"DrafterFC":     func() { s.DrafterFC() },
+			"DrafterLayer":  func() { s.DrafterLayer(0) },
+			"ExtendContext": func() { s.ExtendContext(be, ctx, [][]float32{row}) },
+		} {
 			func() {
 				defer func() {
 					if r := recover(); r != ErrDrafterStreamed {
@@ -109,6 +124,14 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 				f()
 			}()
 		}
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("odd=%v: DrafterLayerRows on a held drafter did not panic", odd)
+				}
+			}()
+			held.DrafterLayerRows(0)
+		}()
 		fc := s.DrafterFCRows()
 		if err := s.Close(); err != nil {
 			t.Fatal(err)
@@ -116,5 +139,30 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		if err := fc.Read(0, 1, make([]float32, fc.Cols)); err == nil {
 			t.Errorf("odd=%v: a read after Close succeeded", odd)
 		}
+	}
+}
+
+// TestNewBlockSpec_refusesAStreamedDrafterOnAHostThatCannotStream: a resident that hosts drafters but does not read row sources
+// (no StreamingDrafterHost) refuses a drafter opened to stream before anything is read, rather than reaching its matrix
+// accessors; the same drafter loaded with its weights held gets past that check.
+func TestNewBlockSpec_refusesAStreamedDrafterOnAHostThatCannotStream(t *testing.T) {
+	m, _ := loadWithFakeResident(t)
+	m.resident = &blockspecStubHost{}
+	dir := writeTinyDFlash(t, false)
+	s, err := OpenDFlashDrafter(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := m.NewBlockSpec(s, s.TargetLayerIDs()); err == nil || !strings.Contains(err.Error(), "opened to stream") {
+		t.Errorf("a streamed drafter on a host that cannot stream: %v, want the refusal naming it", err)
+	}
+	held, err := LoadDFlashDrafter(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	if _, err := m.NewBlockSpec(held, held.TargetLayerIDs()); err == nil || strings.Contains(err.Error(), "opened to stream") {
+		t.Errorf("control: a held drafter on the same host: %v, want the stub host's own refusal", err)
 	}
 }
