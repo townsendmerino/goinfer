@@ -153,3 +153,9 @@ Plain `serve` against `serve --drafter -drafter-width 4`, one binary, experts st
   #263).
 - **The longest context that fits:** unchanged at the 4,608 measured; the fit banner prices it the same with the drafter (0.2 GB
   of KV, 18.2 GB of weights).
+
+### The owner's decision (Francis, 2026-10-26 09:30): B
+
+The long cell stays ungraded; its one pair (1.018×) stays recorded as such. **The 35B is recorded as `--drafter` delivering at
+short context only: 1.089×, 10 of 10 pairs, by the merge rule,** at the memory cost above (device 0.47 GB + 79 MB; host +0.49 GB
+at the peak, +0.02 GB steady; the context and the expert cache unchanged). The work moves on to SP2b.
