@@ -197,7 +197,8 @@ func TestCompute_reachesCensus(t *testing.T) {
 
 // checkUncalled fails when goinfer's production code names an entry point uncalled says it does not.
 func checkUncalled(t *testing.T) {
-	var src [][]byte
+	ref := regexp.MustCompile(`\b(linalg|embed)\.([A-Z][A-Za-z0-9_]*)\b`)
+	named := map[string]bool{}
 	err := filepath.WalkDir("../..", func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -209,27 +210,29 @@ func checkUncalled(t *testing.T) {
 			}
 			return nil
 		}
-		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			b, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			src = append(src, b)
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range ref.FindAllSubmatch(b, -1) {
+			named[string(m[1])+"."+string(m[2])] = true
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !named["linalg.MatmulBT"] {
+		t.Fatal("the source scan found no linalg.MatmulBT: it read nothing")
+	}
 	for fn, u := range uncalled {
 		pkg := strings.SplitN(fn, ".", 2)[0]
 		for _, v := range u.via {
-			re := regexp.MustCompile(`\b` + pkg + `\.` + v + `\b`)
-			for _, b := range src {
-				if re.Match(b) {
-					t.Errorf("uncalled says goinfer never reaches %s, but its production code names %s.%s", fn, pkg, v)
-					break
-				}
+			if named[pkg+"."+v] {
+				t.Errorf("uncalled says goinfer never reaches %s, but its production code names %s.%s", fn, pkg, v)
 			}
 		}
 	}
