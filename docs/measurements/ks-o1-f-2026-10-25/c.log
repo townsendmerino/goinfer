@@ -1,0 +1,25 @@
+=== night job ks-o1f-c
+=== cmd      bash /home/francis/goinfer-logs/ks-o1-f-2026-10-25/run-c.sh
+=== cwd      /home/francis/goinfer-bench/ks-o1-f
+=== rev      queued at a030b4cfa, now a030b4cfa
+=== host     nobara-pc
+=== est      12.0 min, timeout 32.0 min
+=== by       kv4b-grade, KS-O1-F (c) (Francis 18:57)
+=== doc      docs/tasks/task-kernel-survey-2026-10.md
+=== START    2026-10-25 19:54:29 PDT  loadavg 1.05
+== 2026-10-25T19:54:29-07:00 commit a030b4cfa
+1709249, /usr/bin/kwin_wayland, 17 MiB
+ 19:54:29 up 21 days, 23:16,  6 users,  load average: 1.05, 5.24, 7.97
+=== RUN   TestKSO1F_fillerGenerality
+[C] resident context 512, layer 0 KV half false
+[C] 110 × "the "                             141 positions | int8: min 0.4543 p10 0.9401 med 0.9827 KL 0.42710 | native: min 0.0294 p10 0.8826 med 0.9847 KL 0.50969 | KL ratio 1.193 | native worse
+[C] 110 × "and "                             141 positions | int8: min 0.8084 p10 0.9887 med 0.9954 KL 0.08847 | native: min 0.8861 p10 0.9882 med 0.9973 KL 0.06437 | KL ratio 0.728 | native not worse
+[C] 110 × "apple "                           141 positions | int8: min 0.6715 p10 0.9826 med 0.9950 KL 0.08729 | native: min 0.6699 p10 0.9925 med 0.9974 KL 0.02393 | KL ratio 0.274 | native not worse
+[C] 110 × "hello "                           141 positions | int8: min 0.8059 p10 0.9817 med 0.9913 KL 0.10998 | native: min 0.8021 p10 0.9916 med 0.9965 KL 0.05983 | KL ratio 0.544 | native not worse
+[C] ../README.md, first 110 tokens           122 positions | int8: min 0.9567 p10 0.9958 med 0.9985 KL 0.01024 | native: min 0.9921 p10 0.9979 med 0.9992 KL 0.00634 | KL ratio 0.619 | native not worse
+--- PASS: TestKSO1F_fillerGenerality (439.61s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	440.110s
+== exit 0 2026-10-25T20:01:54-07:00
+
+=== END      2026-10-25 20:01:54 PDT  rc=0

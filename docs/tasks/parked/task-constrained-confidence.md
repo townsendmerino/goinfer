@@ -10,6 +10,39 @@
 >
 > **Trigger to reopen:** the owner wants TypeSafe/jevx compatibility proven (item 1), or a release cut is planned that should carry the Clef-flash tag (item 2). **Corrections made on parking:** the "Owed: D1 against transformers' B0" line below was already done inside D6a (`testdata/decisions/route_a_b0.jsonl`, 150 items, token ids identical), and the doc-reviewed footer was two weeks old.
 >
+> **Added 2026-10-26: decision models went mainstream; this stays parked until the current work is done (owner:
+> "Keep it after current work, but update docs").** Reopen with the first step below once the harness, KV and SP tracks in
+> hand are done. Facts read 2026-10-26, from an Ollama engineer's list of releases for 2026-10-11 to 10-25 (11 of its 17
+> local releases are decision models) and the sources named here:
+> - **Ollama serves this API.** Ollama 0.35 (2026-09-29) added `/v1/systemone` in TypeSafe's shape: `state` plus typed
+>   `questions` (`choice`, `noul`, `score`), answers with per-option probabilities and `confidence` (Ollama's blog, "Ollama
+>   now supports Jev-style decision models"). This confirms, with shipped models, the 2026-10-12 correction to D0 §6.
+> - **Twelve decision models on ollama.com, by pulls:** tev1 118.6K, nimble 60.2K, clef 42K (cloud only), clef-flash 40.4K,
+>   d1 20.8K, nimble-v3 18K, laya 15.8K, kev 13.4K, d3 12K, pplx-decider 11.7K, d1-omni 9,958, strands-decider 7,351.
+> - **Backbones** (ollaya's README, not verified here):
+>   - **Qwen3.5 or 3.8**, which goinfer runs:
+>     - Nimble (a LoRA; reads the request as a JSON schema and scores option codes);
+>     - Kev (a LoRA and a pointer head);
+>     - d3, Jeb and Jeeves;
+>     - pplx-decider (Ollama says Qwen3.8-27B; ollaya lists a Qwen3.5-4B "flash");
+>     - strands-decider (Qwen3.5-2B, or Gemma 4 E2B/E4B);
+>     - Clef.
+>   - **Gemma 4 E4B:** Winnow.
+>   - **LFM2.5-VL-3B:** d1. goinfer's `lfm2` is CPU-only.
+>   - **ModernBERT, DeBERTa or mmBERT encoders:** Laya, NLI, Decima, Largha. goinfer has no encoder family.
+>   - **Not stated:** Tev1 (Together AI; 0.8B and 4B, the sizes Qwen3.5 comes in).
+> - **The work per model is its recipe, not its backbone:** prompt assembly, which positions and tokens are read, any LoRA
+>   or head. That is what D10–D14 did for Clef.
+> - **A dedicated competitor: ollaya** (`ollaya-dev/ollaya`; Rust, llama.cpp and ONNX Runtime). It serves 25 families
+>   behind `/v1/systemone` and `/v1/decisions`, "wire-identical" to `typesafe-sdk` 0.7.1. It says each runtime is checked
+>   question by question against the authors' code, and runs a public bench (bench.ollaya.dev, 5,880 questions). Route C's
+>   distinction, gating against the vendor's own reference, is no longer goinfer's alone.
+> - **First step on reopening (desk, no weights).** Read Ollama's open-source `/v1/systemone` implementation for Tev1 and
+>   Nimble, the two most pulled: how each assembles its prompt and reads its answer. Then, D10-style, decide whether
+>   goinfer's endpoint can reproduce Ollama's answers on a fixed record set, gated as route C was. Kev and d3 come next.
+>   Item 1 below (jevx end to end) can use Ollama 0.35 as a second server to compare against.
+> - **Trigger added 2026-10-26:** the current work is done (owner).
+>
 > **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
 > backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
 > needed. One backbone pass scores every question, so D8 does not apply to this route. **Status, 2026-10-03: D10–D14 are done.** D10 is the reference fixture (f32 and bf16 over 150 records). D11 is the resident hidden state (CUDA and Metal). D12 is the encoder (150/150 identical) and head, with the head's gate of record passed on real hidden states (worst probability difference 9.65e-8). D13 is the serve wiring (`route: "clef"` on `/v1/systemone`) and its graded fidelity (`decisions-d13-clef-fidelity-2026-10-03.md` §7: f32 PASS; no quantized arm meets the 98% top-1 bar; `int8int8` stays the default), plus the multi-question check on real weights. D14 is graded (below). Owner decisions: request text is tokenized literally; `confidence` is the top probability on this route; no int4 for Clef; Clef-flash at `int8int8` may carry the decision-model tag (his decision, not a gate pass). Open: the site tag (it waits for a release and a registry entry). Clef 27B on the CPU is graded (int8int8 FAIL on top-1, as for Clef-flash; 160 ms per input token). (Joint versus single is measured: they differ by mean KL 0.0135, see D13's multi-question addendum.)

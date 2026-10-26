@@ -6,7 +6,7 @@
 > [`docs/capability-matrix.md`](capability-matrix.md) (families, generated from the registry) and
 > [`docs/hardware-matrix.md`](hardware-matrix.md) (which backend runs each resident, generated from
 > the admission predicate) are the truth. This doc is for *which family next, and why*.
-> Last field check: 2026-10-15.
+> Last field check: 2026-10-15. Ollama's 2026-10-11 to 10-25 list read 2026-10-26 (below).
 
 ## Where the 2026-08-17 list ended up (status 2026-09-12)
 
@@ -92,6 +92,39 @@ rule 2 outright (listed under Watching). What is left is short:
 plain `LlamaForCausalLM`; Gemma 4 12B is `gemma4_unified_text`, registered under
 `decoder/registry.go:gemma4Architecture`; Mistral Medium 3.5 (below). Xiaomi's
 MiMo-V2.6-Distill-Qwen-9B is a Qwen3.5-9B fine-tune, so expected to be `qwen3_5` — not checked.
+
+## Field check — 2026-10-26 (an Ollama engineer's list of releases, 2026-10-11 to 10-25)
+
+Read from the list and the sources named here, 2026-10-26. Nothing new to build now; the owner keeps new work behind the
+current tracks.
+
+- **Already handled:**
+  - EmbeddingGemma-2: shipped in v0.22.0.
+  - Flint: `tasks/task-flint-2026-10.md`, F0 in progress.
+  - Clef-flash: route C.
+  - Nemotron 3.5 Bolt E4B: NVIDIA's post-training of Gemma 4 E4B (8B total, 4B effective, 64K context, Q4_K_M GGUF of
+    6.18 GB). Expected to be a `gemma4` checkpoint swap; its Gate 0 checks the architecture, the license and the chat
+    template's reasoning toggle and tool format. Its DFlash drafter is a candidate windowed target for SP0
+    (`tasks/task-forward-architecture-2026-10.md` §6a).
+  - Bolt 74B-A9B: item 4 above, unchanged.
+- **Out:**
+  - Nemotron 3.5 Super (120B-A12B, vision, ~76 GB in NVFP4): rule 2.
+  - Phonon (Gradium, a 40M text-to-speech model): speech output is out of scope.
+  - Cloud-only on Ollama: Beam, Muse-spark-open, MiniMax M3.1 Flash, Mistral Large 4, DeepSeek V4.1 Flash. No action;
+    Mistral Large 4's config check stays at pickup (item 3 above).
+- **Bonsai-2: the format question changed (item 2's guard).**
+  - Ollama serves PrismML's 2B, 4B, 9B and 27B as `qwen35` GGUFs in `Q2_0` only.
+  - OrcaRouter reads upstream llama.cpp as running `Q2_0` and rejecting `PQ2_0` and `PTQ1_0`.
+  - Item 2 says PrismML's `PQ2_0` files carry a `Q2_0` label and load silently into garbage. Whether Ollama's files are a
+    true upstream `Q2_0` or the relabelled `PQ2_0` is what the guard must check first.
+  - The other reason `completed/task-ternary-weights.md` closed (quality figures that are PrismML's own, unreproduced)
+    still stands.
+- **Decision models: 11 of the 17 local releases.** Ollama 0.35 serves `/v1/systemone`. The facts, and the owner's call
+  to keep the work parked until the current tracks are done, are in `tasks/parked/task-constrained-confidence.md`
+  (2026-10-26 note). For this backlog:
+  - most are Qwen3.5 or Gemma 4 E-model recipes on families goinfer runs;
+  - Laya, NLI, Decima and Largha need an encoder family (ModernBERT, DeBERTa or mmBERT) goinfer does not have;
+  - d1 needs `lfm2` on a GPU.
 
 ## Watching — current list
 
