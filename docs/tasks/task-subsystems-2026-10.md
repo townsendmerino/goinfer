@@ -684,6 +684,16 @@ All four are tier 0: no model, no device, no timed run, so the timing lock is no
 | G-MM0-3 one reader | a source scan (go/ast, not text, so comments do not count) over every non-test `.go` file in all seven modules, outside `testdata/`, finds none of the OS memory reads (the literals `/proc/meminfo`, `MemTotal:`, `MemAvailable:`, `SwapTotal:`, `SwapFree:`, `VmSwap`, `VmHWM`, `VmRSS`, `statm`, `smaps`, `hw.memsize`, `vm.swapusage`, `kern.memorystatus_level`, `vm.page_`, `GlobalMemoryStatusEx`, `host_statistics64`, `task_info`; the selectors `Getrusage`, `Sysinfo`, `SYS_MINCORE`, `Mincore`) outside `internal/mem/probe`. It must go red first: a planted source per pattern is flagged. And `internal/mem/probe` imports the standard library and `golang.org/x/sys` only | the scan reads zero files, or fewer than the tree's count of non-test `.go` files less the excluded ones (a scan that read nothing passes vacuously) | runs to completion | seconds |
 | G-MM0-4 builds | `go build` and `go vet` of the root for GOOS linux, darwin and windows; `metal` for darwin; `gpu` and `cuda` for linux with their tags (`cuda goinfer_testhooks`, `gpu goinfer_testhooks`); CI's pinned `staticcheck` on the touched modules after its U1000 canary goes red; `gofmt -l` empty on every touched module | the staticcheck canary does not go red (then nothing was checked) | all run | about a minute |
 
+**MM0 read, 2026-10-26 (nobara, linux/amd64): all four pass.** G-MM0-1: `TestHost_matchesFrozenReaders` and
+`TestMemProbe_seamsReadTheProbe` pass on nobara (swap in use was nonzero, so the swap leg was a real comparison); the darwin and
+windows legs run in CI's root jobs. G-MM0-2: `TestFitGuard_fakeProbeReachesEveryOutcome` reaches all five `guardFit` outcomes (on
+internlm2-tiny with its context raised to 131,072 in a temp copy), all five `decideGIWFit` outcomes and the three cold-load
+actions. G-MM0-3: `TestOnlyProbeReadsOSMemory` scans 720 non-test files, flags every planted pattern and passes;
+its first run flagged `cmd/gate`'s `/proc/<pid>/status` field names, which now come typed from `probe.ReadProcMemory`.
+G-MM0-4: builds and vets clean on all three systems and the tagged modules; the pinned staticcheck's canary went red, then
+the touched packages were clean on all three systems (Metal's untagged run lists unused test hooks in files this change does
+not touch; CI does not run staticcheck on Metal). The parity manifest stayed fresh: no moved file is in a family's deps.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
