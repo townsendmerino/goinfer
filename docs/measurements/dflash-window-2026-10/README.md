@@ -78,4 +78,42 @@ which costs acceptance only. Every speed reading with these drafters (SP0, SP2's
 
 ## Readings
 
-(none yet)
+### G1 tier 0 (2026-10-26, 09:57 PDT): PASS
+
+`TestDFlashMasks_config` (the config's mapping to masks, every rule in the reference) and `TestDFlashTrunk_maskProperties` (on the
+tiny drafter: with causal layers an earlier block row ignores a later one, where full layers mix them; with a window of 3 a
+context key outside every row's window changes nothing, and a visible one does) pass. The release and streaming tests pass beside
+them. That stage's `touched.py` went red on two old callers of `blockTrunk.layer` (its signature now takes the layer index),
+fixed before the next run.
+
+### G1 tier 1 on the CPU (2026-10-26, 09:56–10:01 PDT, the golden approved by the owner): PASS
+
+The golden is from z-lab's own code (`scripts/pin_dflash_window_trace.py`, `z-lab/dflash@07ebd93d`, `~/g4venv` torch CPU f32,
+19.8 s, peak 7.9 GB): `testdata/dflash_window_qwen35_9b_golden.json.gz`. `TestDFlashWindow_matchesReference` (`realckpt`, 204 s),
+worst row cosine per case:
+
+| fused context | with the masks | every layer full (today's goinfer) | causal, no window |
+|---|---|---|---|
+| 64 | **1.0000000** | 0.2538678 | 1.0000000 |
+| 4,000 | **1.0000000** | 0.8754476 | 1.0000000 |
+| 4,500 | **1.0000000** | 0.8308822 | 0.8308247 |
+
+goinfer's CPU trunk with the masks reproduces z-lab's reference to every printed digit, and both plants go red as registered: full
+attention fails every case, and the window alone fails only past it. **Today's goinfer drafts from a trunk whose output is at
+cosine 0.25 to the reference on a short context**, which says how far its drafts have been from what the drafter was trained to
+give.
+
+## STOP POINT (2026-10-26, 10:05 PDT): parked by the owner's wind-down
+
+Where it stands, on branch `dflash-window-2026-10`:
+- **Done and gated:** the loader's per-layer masks (`dflashMasks`, `DrafterGeometry.LayerCausal` and `LayerWindow`), the CPU trunk's
+  mask (`blockTrunk.keyVisible`), G1 tier 0 and tier 1 (above).
+- **Written, compiled and vetted, not yet run on the device:** the CUDA drafter's per-layer launch (`residentDrafter.layerMask`: a
+  causal layer through the target's `attn_batched` with its window over the drafter's identity table, a full one through
+  `attn_block_full`; a windowed non-causal layer refused at attach), `drafterMasksOffForTest`, and their gates:
+  `TestResidentDrafter_masksMatchCPU` (G1's device half) and `TestDFlashMasks_speed` (G3).
+- **Not run:** G1's device half, G2 (identity on the 9B), G3 (acceptance and speed).
+
+What is next, in order: `TestResidentDrafter_masksMatchCPU` on nobara (a tier-1 GPU run, the timing lock exclusive, about 5 min);
+then G2 (`TestSP2_identity` on the 9B, about 15 min); then G3 (about 65 min, by day); then the PR. The 35B and Gemma-4-26B
+drafters take the same masks from their configs and are re-read only if the owner asks.

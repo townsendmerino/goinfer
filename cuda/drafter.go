@@ -61,6 +61,8 @@ type residentDrafter struct {
 	headIdx   Buffer // [headCap] int32: argmax_rows' output
 	headCap   int
 	attnBlock Pipeline // attn_block_full — bound HERE, where the consumer now exists
+	causal    []bool   // each layer's mask (decoder.DrafterGeometry.LayerCausal, LayerWindow); nil: every layer full
+	window    []int
 }
 
 // drafterLayer is one trunk layer on the device. Same projections as a Qwen3 layer, which is why
@@ -101,7 +103,13 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 	if geo.Layers == 0 {
 		return nil, fmt.Errorf("cuda drafter: zero layers")
 	}
-	d := &residentDrafter{r: r, geo: geo}
+	d := &residentDrafter{r: r, geo: geo, causal: geo.LayerCausal, window: geo.LayerWindow}
+	for i := range d.window {
+		if d.window[i] > 0 && !d.causal[i] {
+			// attn_batched windows a causal row; attn_block_full's window counts from the block's last row, not each row's own.
+			return nil, fmt.Errorf("cuda drafter: layer %d is windowed and not causal, which the drafter's kernels do not implement", i)
+		}
+	}
 	// r.upW / r.up32 do not return errors: they record into r.setupErr, which the build path has already consumed by now. An
 	// upload failure below would go unread and the drafter would be returned with zeroed weights, proposing garbage that
 	// lossless verify rejects, a cost in acceptance that no gate can see. Compare r.setupErr with this snapshot afterwards
@@ -193,6 +201,18 @@ func (s drafterSrc) plan() (hostW, error) {
 		return hostW{}, fmt.Errorf("cuda: the drafter handed out no weight")
 	}
 	return planWeight(s.held)
+}
+
+// drafterMasksOffForTest makes every drafter layer full attention (the masks off), for an in-process comparison against the
+// reference masks. Set by tests only.
+var drafterMasksOffForTest bool
+
+// layerMask is layer l's mask: causal, and its window (0: none).
+func (d *residentDrafter) layerMask(l int) (bool, int) {
+	if d.causal == nil || drafterMasksOffForTest {
+		return false, 0
+	}
+	return d.causal[l], d.window[l]
 }
 
 // FuseContext projects the target's concatenated tap hidden states down to the trunk's width and norms them (the
@@ -430,9 +450,10 @@ func checkDrafterShmem(ctxLen, M int) error {
 }
 
 // DraftBlock runs the trunk over one block and returns its output rows. The block occupies absolute positions [ctxLen,
-// ctxLen+M), directly after the context ExtendContext wrote, so attention sees ctx||block exactly, with
-// attn_block_full's uniform nKeys giving every row all of it (the block is bidirectional; see attn_block.cu). Every
-// kernel is the target's own except that one.
+// ctxLen+M), directly after the context ExtendContext wrote, so attention sees ctx||block through each layer's mask
+// (layerMask): a full layer's attn_block_full gives every row all of it (bidirectional; see attn_block.cu), a causal layer's
+// attn_batched each row the keys up to its own position within its window. Every kernel is the target's own except
+// attn_block_full.
 //
 // The norm constants are the drafter's, not the target's, everywhere: bRmsB, bNormF32B and the prefill qk-norm read
 // r.eps and r.addOneArg(), and reusing them would apply the target's normalization to the drafter's weights, silently.
@@ -533,9 +554,23 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 				gpu.ArgValue(float32(0)), gpu.ArgValue(float32(0))); e != nil { // no FeatAttnTemp on a drafter geometry either — see the note above
 				return e
 			}
-			// THE one kernel that is not the target's: uniform nKeys, so every block row
+			// A causal layer (a retrained drafter's sliding_attention) is the target's own causal kernel, windowed, over the
+			// drafter's cache through its identity table; a full layer is attn_block_full: uniform nKeys, so every block row
 			// attends the whole context AND the whole block.
-			if e := d.r.launch(d.attnBlock, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
+			if causal, window := d.layerMask(l); causal {
+				nWin := nKeys
+				if window > 0 && nWin > window {
+					nWin = window
+				}
+				if e := d.r.launch(d.r.bAttn, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
+					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+					Arg(s.q), Arg(d.kc[l]), Arg(d.vc[l]), Arg(d.kvt),
+					gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+					gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.attnScale()),
+					gpu.ArgValue(int32(window)), gpu.ArgValue(int32(M)), Arg(s.cctx), ArgNull()); e != nil {
+					return e
+				}
+			} else if e := d.r.launch(d.attnBlock, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
 				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 				Arg(s.q), Arg(d.kc[l]), Arg(d.vc[l]),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),

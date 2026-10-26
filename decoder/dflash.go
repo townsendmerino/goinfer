@@ -125,6 +125,9 @@ type blockTrunk struct {
 	finalNorm  []float32        // RMSNorm at the end of the trunk
 	layers     []dflashLayer
 
+	layerCausal []bool // each layer's mask (DrafterGeometry.LayerCausal); nil: every layer full attention
+	layerWindow []int
+
 	released bool // releaseHostWeights ran: the matrices and norms above are zero
 
 	// rows is each matrix's row reader, keyed by the field it stands in for, on a drafter opened to stream its matrices
@@ -402,7 +405,13 @@ type dflashConfig struct {
 	//
 	// DraftVocabSize marks the other structural difference: this drafter ships its own embed_tokens and a reduced-vocab
 	// lm_head plus d2t/t2d, where z-lab's borrow the target's. See the own-head fields on DFlashDrafter.
-	MaskTokenIDTop         *int            `json:"mask_token_id"`
+	MaskTokenIDTop *int `json:"mask_token_id"`
+	// The per-layer attention of the retrained drafters (z-lab's dflash/model.py, Qwen3DFlashAttention): a "sliding_attention"
+	// layer is causal unless is_causal says otherwise, and windowed by sliding_window; a "full_attention" one is neither. Set,
+	// is_causal applies to every layer.
+	LayerTypes             []string        `json:"layer_types"`
+	SlidingWindow          *int            `json:"sliding_window"`
+	IsCausal               *bool           `json:"is_causal"`
 	AuxHiddenStateLayerIDs []int           `json:"aux_hidden_state_layer_ids"`
 	DraftVocabSize         int             `json:"draft_vocab_size"`
 	VocabSize              int             `json:"vocab_size"`
@@ -467,6 +476,10 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	if c.MaskTokenIDTop != nil && c.DFlash.MaskTokenID == 0 {
 		c.DFlash.MaskTokenID = *c.MaskTokenIDTop
 	}
+	causal, window, err := dflashMasks(c)
+	if err != nil {
+		return nil, err
+	}
 	switch {
 	case c.HiddenSize <= 0 || c.NumHiddenLayers <= 0 || c.NumAttentionHeads <= 0:
 		return nil, fmt.Errorf("dflash: bad dims (hidden=%d layers=%d heads=%d)", c.HiddenSize, c.NumHiddenLayers, c.NumAttentionHeads)
@@ -512,6 +525,7 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 		targetLayerIDs: c.DFlash.TargetLayerIDs,
 		st:             st,
 	}
+	d.layerCausal, d.layerWindow = causal, window
 	if streamed {
 		d.rows = map[*linalg.WeightMat]DrafterRows{}
 		if d.sf, err = openSTFile(filepath.Join(dir, "model.safetensors")); err != nil {
@@ -751,7 +765,7 @@ func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]f
 		h[i] = append([]float32(nil), row...)
 	}
 	for i := range d.layers {
-		d.layer(be, &d.layers[i], ctx.k[i], ctx.v[i], h)
+		d.layer(be, i, ctx.k[i], ctx.v[i], h)
 	}
 	out := make([][]float32, len(h))
 	for i, row := range h {
@@ -829,7 +843,8 @@ func (m *Model) DrafterEmbedBlock(ids []int) [][]float32 {
 // K/V are projected from the fused context RAW (in ExtendContext) — the reference passes
 // `target_hidden` straight into k_proj/v_proj while only `hidden_states` goes through the
 // norm. Norming both would be the natural-looking port and would be wrong.
-func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h [][]float32) {
+func (d *blockTrunk) layer(be Backend, li int, ctxK, ctxV [][]float32, h [][]float32) {
+	l := &d.layers[li]
 	hid, hd := d.hidden, d.headDim
 	qDim, kvDim := d.nHeads*hd, d.nKV*hd
 	nBlk, nCtx := len(h), len(ctxK)
@@ -871,13 +886,18 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 		rmsNorm(q, l.qNorm, d.nHeads, hd, d.normEps, false)
 		applyRoPE(q, d.nHeads, hd, nCtx+i, d.invFreq, 1)
 
-		// Non-causal: every block query attends every context key AND every block key,
-		// including positions after itself. No mask, by construction.
+		// The layer's mask (keyVisible): a full layer attends every context key and every block key, positions after itself
+		// included; a causal or windowed one, the reference's subset.
+		qPos := nCtx + i
 		for hI := range d.nHeads {
 			kvH := hI / (d.nHeads / d.nKV) // GQA broadcast
 			qo, ko := hI*hd, kvH*hd
 			maxS := math.Inf(-1)
 			for j := range nKeys {
+				if !d.keyVisible(li, qPos, j) {
+					scores[j] = math.Inf(-1)
+					continue
+				}
 				var dot float64
 				kr := keys[j][ko : ko+hd]
 				for t, qv := range q[qo : qo+hd] {
@@ -926,4 +946,50 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 			h[i][t] += down[t]
 		}
 	}
+}
+
+// dflashMasks is each layer's mask from the config, as z-lab's reference reads it (Qwen3DFlashAttention.__init__): nil, nil for a
+// drafter that names no layer types (every layer full attention, the original DFlash).
+func dflashMasks(c dflashConfig) ([]bool, []int, error) {
+	if len(c.LayerTypes) == 0 {
+		if c.IsCausal != nil && *c.IsCausal {
+			return nil, nil, fmt.Errorf("dflash: is_causal set with no layer_types")
+		}
+		return nil, nil, nil
+	}
+	if len(c.LayerTypes) != c.NumHiddenLayers {
+		return nil, nil, fmt.Errorf("dflash: %d layer_types for %d layers", len(c.LayerTypes), c.NumHiddenLayers)
+	}
+	causal, window := make([]bool, len(c.LayerTypes)), make([]int, len(c.LayerTypes))
+	for i, t := range c.LayerTypes {
+		switch t {
+		case "full_attention":
+		case "sliding_attention":
+			causal[i] = true
+			if c.SlidingWindow == nil || *c.SlidingWindow <= 0 {
+				return nil, nil, fmt.Errorf("dflash: layer %d is sliding_attention with no positive sliding_window", i)
+			}
+			window[i] = *c.SlidingWindow
+		default:
+			return nil, nil, fmt.Errorf("dflash: layer %d has layer type %q", i, t)
+		}
+		if c.IsCausal != nil {
+			causal[i] = *c.IsCausal
+		}
+	}
+	return causal, window, nil
+}
+
+// keyVisible reports whether layer li's block row at absolute position q sees key position k (z-lab's _attention_mask).
+func (d *blockTrunk) keyVisible(li, q, k int) bool {
+	if d.layerCausal == nil {
+		return true
+	}
+	if d.layerCausal[li] && k > q {
+		return false
+	}
+	if w := d.layerWindow[li]; w > 0 && (q-k >= w || (!d.layerCausal[li] && k-q >= w)) {
+		return false
+	}
+	return true
 }

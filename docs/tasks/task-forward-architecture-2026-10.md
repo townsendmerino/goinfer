@@ -2567,6 +2567,10 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
     bytes, stated and priced; and an end-to-end served A/B, wall time and TTFT beside decode tok/s, on repeated and on agent-style
     prompts, graded at the merge rule (median ≥ 1.05×, at least 9 of 10 pairs faster).
   - Not blocking #238.
+- **The DFlash drafters' sliding, causal layers (on the owner's decision "2-a", 2026-10-26).** z-lab's reference makes a
+  `sliding_attention` layer causal and windowed; goinfer ran every drafter layer full. **STOP POINT:** the CPU fix passes against
+  z-lab's own code (cosine 1.0000000; today's goinfer 0.25 on a short context); the CUDA half is written, not yet run on the device
+  (`docs/measurements/dflash-window-2026-10/README.md`, "STOP POINT"; branch `dflash-window-2026-10`).
 - **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
   - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
     masks.

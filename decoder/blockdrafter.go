@@ -48,6 +48,11 @@ type DrafterGeometry struct {
 	NormEps      float64
 	// InvFreq is the RoPE inverse-frequency table, already built for this drafter's theta.
 	InvFreq []float64
+	// LayerCausal and LayerWindow are each layer's attention mask over [context ‖ block], as z-lab's reference builds it
+	// (dflash/model.py, _attention_mask): causal, a block row sees the keys up to its own position; a window w > 0, only the
+	// keys within w positions of it. Nil for a drafter whose layers are all full attention (non-causal, no window).
+	LayerCausal []bool
+	LayerWindow []int
 }
 
 // DrafterLayerWeights is one trunk layer. The projections match a standard Qwen3-shaped layer,
@@ -76,6 +81,8 @@ func (d *blockTrunk) DrafterGeometry() DrafterGeometry {
 		Intermediate: d.inter,
 		NormEps:      d.normEps,
 		InvFreq:      d.invFreq,
+		LayerCausal:  d.layerCausal,
+		LayerWindow:  d.layerWindow,
 	}
 }
 

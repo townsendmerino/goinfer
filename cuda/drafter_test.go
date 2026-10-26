@@ -557,3 +557,106 @@ func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
 		t.Error("a second attach of the released drafter was accepted")
 	}
 }
+
+// TestResidentDrafter_masksMatchCPU is G1's device half (docs/measurements/dflash-window-2026-10/README.md): Qwen3.5-9B's
+// drafter, whose sliding layers are causal and windowed, on the CUDA resident against the CPU trunk (which
+// decoder.TestDFlashWindow_matchesReference holds to z-lab's reference), one block over hashed fused context of 64 and 4,500
+// positions. Every row at cosine >= 0.999 (the device's int8 activations, as TestResidentDrafter_fuseParity bars them). Plant:
+// with the device's masks off (drafterMasksOffForTest) the worst row falls under the bar.
+func TestResidentDrafter_masksMatchCPU(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.ExpandEnv("$HOME/models/Qwen3.5-9B-Q4_K_M.int4.e4h.cuda.v17.giw")
+	ddir := os.ExpandEnv("$HOME/models/qwen35-9b-dflash")
+	for _, p := range []string{tgt, ddir} {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("no %s", p)
+		}
+	}
+	dr, err := decoder.LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dr.Close()
+	opts := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 4608, KVPrecision: "f32", Drafter: true,
+		ExtraResidentBytes: decoder.DrafterResidentBytesEstimate(dr), ExtraResidentKVPerPosition: decoder.DrafterKVBytesPerPosition(dr)}
+	mc, err := decoder.Load(tgt, opts)
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	rd, err := r.AttachDrafter(dr)
+	if err != nil {
+		t.Fatalf("AttachDrafter: %v", err)
+	}
+	if rd.causal == nil {
+		t.Fatal("the drafter attached with no per-layer masks; this gate needs its sliding layers")
+	}
+	h, block := dr.DrafterGeometry().Hidden, 16
+	rows := func(seed, n int) [][]float32 {
+		v := hashedRows(seed, n*h)
+		out := make([][]float32, n)
+		for i := range out {
+			out[i] = v[i*h : (i+1)*h]
+		}
+		return out
+	}
+	worst := func(got, want [][]float32) float64 {
+		w := 1.0
+		for i := range want {
+			var dot, na, nb float64
+			for k := range want[i] {
+				dot += float64(got[i][k]) * float64(want[i][k])
+				na += float64(got[i][k]) * float64(got[i][k])
+				nb += float64(want[i][k]) * float64(want[i][k])
+			}
+			w = min(w, dot/(math.Sqrt(na)*math.Sqrt(nb)+1e-30))
+		}
+		return w
+	}
+	for _, n := range []int{64, 4500} {
+		fused, blk := rows(1, n), rows(2, block)
+		want, err := decoder.DraftBlockCPUForTest(dr, fused, blk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		draft := func(off bool) [][]float32 {
+			drafterMasksOffForTest = off
+			defer func() { drafterMasksOffForTest = false }()
+			rd.TruncateContext(0)
+			if err := rd.ExtendContext(fused); err != nil {
+				t.Fatal(err)
+			}
+			got, err := rd.DraftBlock(blk)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return got
+		}
+		on, off := worst(draft(false), want), worst(draft(true), want)
+		t.Logf("ctx %d: worst row cosine %.6f with the masks, %.6f with the device's masks off", n, on, off)
+		if on < 0.999 {
+			t.Errorf("ctx %d: worst row cosine %.6f to the CPU trunk, want >= 0.999", n, on)
+		}
+		if off >= 0.999 {
+			t.Errorf("ctx %d: plant (masks off) still at %.6f; the gate cannot see the device's masks", n, off)
+		}
+	}
+}
+
+// hashedRows is decoder's dflashWindowHashed (scripts/pin_dflash_window_trace.py's hashed()), for inputs both sides build alike.
+func hashedRows(seed, n int) []float32 {
+	out := make([]float32, n)
+	const m = 0xFFFFFFFF
+	for i := range out {
+		h := (uint64(i) + uint64(seed)*0x9E3779B9) * 2654435761 & m
+		h ^= h >> 15
+		h = h * 2246822519 & m
+		h ^= h >> 13
+		out[i] = float32(float64(h%2001)/2000.0 - 0.5)
+	}
+	return out
+}

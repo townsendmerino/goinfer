@@ -114,7 +114,7 @@ func TestDFlash_referenceParity(t *testing.T) {
 				h[i] = append([]float32(nil), row...)
 			}
 			for li := range d.layers {
-				d.layer(be, &d.layers[li], cctx.k[li], cctx.v[li], h)
+				d.layer(be, li, cctx.k[li], cctx.v[li], h)
 				want := readRows(t, ref, tr.Name+"/layer_out."+strconv.Itoa(li), tr.BlockSize, d.hidden)
 				cos, maxAbs := compareRows(h, want)
 				t.Logf("layer_out.%d: cosine %.8f maxAbs %.3e", li, cos, maxAbs)
