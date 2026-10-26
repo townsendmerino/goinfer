@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,14 +12,19 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// writeTinyDFlash writes a BF16 DFlash v1 checkpoint (2 layers, hidden 8) to a temp dir and returns the dir.
-func writeTinyDFlash(t *testing.T) string {
+// writeTinyDFlash writes a BF16 DFlash v1 checkpoint (2 layers, hidden 8) to a temp dir and returns the dir. With ownHead it
+// also ships a reduced-vocab head, an embedding and d2t, as poolside's Laguna drafters do.
+func writeTinyDFlash(t *testing.T, ownHead bool) string {
 	t.Helper()
-	const h, heads, kv, hd, inter, layers = 8, 2, 1, 4, 16, 2
+	const h, heads, kv, hd, inter, layers, vocab, draftVocab = 8, 2, 1, 4, 16, 2, 32, 6
 	dir := t.TempDir()
+	head := ""
+	if ownHead {
+		head = fmt.Sprintf(`"vocab_size": %d, "draft_vocab_size": %d,`, vocab, draftVocab)
+	}
 	cfg := fmt.Sprintf(`{"hidden_size": %d, "num_hidden_layers": %d, "num_attention_heads": %d, "num_key_value_heads": %d,
-	  "head_dim": %d, "intermediate_size": %d, "rms_norm_eps": 1e-6, "rope_theta": 10000,
-	  "dflash_config": {"block_size": 4, "mask_token_id": 7, "target_layer_ids": [0, 1]}}`, h, layers, heads, kv, hd, inter)
+	  "head_dim": %d, "intermediate_size": %d, "rms_norm_eps": 1e-6, "rope_theta": 10000, %s
+	  "dflash_config": {"block_size": 4, "mask_token_id": 7, "target_layer_ids": [0, 1]}}`, h, layers, heads, kv, hd, inter, head)
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -36,6 +43,14 @@ func writeTinyDFlash(t *testing.T) string {
 		return stTyped{"BF16", shape, raw}
 	}
 	ts := map[string]stTyped{"fc.weight": bf(h, 2*h), "hidden_norm.weight": bf(h), "norm.weight": bf(h)}
+	if ownHead {
+		ts["lm_head.weight"], ts["embed_tokens.weight"] = bf(draftVocab, h), bf(vocab, h)
+		d2t := make([]byte, 8*draftVocab)
+		for i := range draftVocab {
+			binary.LittleEndian.PutUint64(d2t[8*i:], uint64(3*i)) // target id = i + 3i, inside the vocab
+		}
+		ts["d2t"] = stTyped{"I64", []int{draftVocab}, d2t}
+	}
 	for i := range layers {
 		p := fmt.Sprintf("layers.%d.", i)
 		ts[p+"self_attn.q_proj.weight"] = bf(heads*hd, h)
@@ -60,7 +75,7 @@ func writeTinyDFlash(t *testing.T) string {
 // closed, what a BlockSpec reads afterwards (BlockSize, MaskTokenID, TargetLayerIDs, DrafterGeometry) is unchanged, and a
 // second release or a Close is harmless.
 func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
-	d, err := LoadDFlashDrafter(writeTinyDFlash(t))
+	d, err := LoadDFlashDrafter(writeTinyDFlash(t, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,5 +119,54 @@ func TestDFlashDrafter_releaseHostWeights(t *testing.T) {
 	}
 	if err := d.Close(); err != nil {
 		t.Errorf("Close after the release: %v", err)
+	}
+}
+
+// TestDFlashDrafter_releaseOwnHead: a drafter that ships its own head, embedding and d2t releases those too and closes the
+// mapping; HasOwnHead still says which output path it takes; and host drafting on it fails cleanly with ErrDrafterReleased
+// instead of reading zero matrices (or, for EmbedBlock, quietly falling back to the target's embedding).
+func TestDFlashDrafter_releaseOwnHead(t *testing.T) {
+	d, err := LoadDFlashDrafter(writeTinyDFlash(t, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if !d.HasOwnHead() || d.lmHead.Rows() == 0 || d.embed.Rows() == 0 || len(d.d2t) == 0 {
+		t.Fatal("the fixture loaded without its own head, embedding or d2t")
+	}
+	if err := d.ReleaseHostWeights(); err != nil {
+		t.Fatal(err)
+	}
+	if d.st != nil {
+		t.Error("the mapping is still open after the release of a drafter with its own head")
+	}
+	if d.lmHead.Rows() != 0 || d.embed.Rows() != 0 || d.d2t != nil {
+		t.Error("the own head, embedding or d2t survived the release")
+	}
+	if !d.HasOwnHead() {
+		t.Error("HasOwnHead is false after the release; it names the output path, not whether the weights are held")
+	}
+	be := &cpuBackend{}
+	row := make([]float32, d.hidden)
+	if _, err := d.DraftBlock(be, [][]float32{row}, [][]float32{row}); !errors.Is(err, ErrDrafterReleased) {
+		t.Errorf("DraftBlock: %v, want ErrDrafterReleased", err)
+	}
+	if _, err := d.FuseContext(be, [][]float32{make([]float32, 2*d.hidden)}); !errors.Is(err, ErrDrafterReleased) {
+		t.Errorf("FuseContext: %v, want ErrDrafterReleased", err)
+	}
+	for name, f := range map[string]func(){
+		"EmbedDraft":   func() { d.EmbedDraft(1, row) },
+		"EmbedBlock":   func() { d.EmbedBlock(nil, []int{1}) },
+		"DraftTokenID": func() { d.DraftTokenID(be, row) },
+		"DraftIDs":     func() { d.DraftIDs(nil, [][]float32{row}) },
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != ErrDrafterReleased {
+					t.Errorf("%s on a released drafter: recovered %v, want a panic with ErrDrafterReleased", name, r)
+				}
+			}()
+			f()
+		}()
 	}
 }

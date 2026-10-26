@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -50,13 +51,14 @@ type DFlashDrafter struct {
 // HasOwnHead reports whether this drafter emits ids from its own reduced vocabulary
 // (and therefore must map them through d2t) rather than borrowing the target's LM
 // head. Callers use it to pick between DraftTokenID and DrafterHeadLogits.
-func (d *DFlashDrafter) HasOwnHead() bool { return d.lmHead.Rows() > 0 }
+func (d *DFlashDrafter) HasOwnHead() bool { return d.draftVocab > 0 }
 
 // DraftTokenID turns one already-normed trunk hidden row into a target token id using the drafter's own reduced-vocab
 // head, mapping the argmax back through d2t. An unmapped argmax is a valid-looking id in the wrong space. Drafting is
 // lossless (the target re-verifies every token), so it would not corrupt output, but it would silently destroy
 // acceptance. Hence the mapping lives here, next to the argmax, not in the caller.
 func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
+	d.mustHoldWeights()
 	logits := make([]float32, d.draftVocab)
 	matmul(be, &d.lmHead, h, logits, 1)
 	i := argmax(logits)
@@ -65,13 +67,17 @@ func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
 
 // EmbedDraft writes the drafter's OWN embedding row for a target token id. Drafters
 // without their own embedding use the target's (Model.embedResident).
-func (d *DFlashDrafter) EmbedDraft(id int, dst []float32) { d.embed.Row(id, dst) }
+func (d *DFlashDrafter) EmbedDraft(id int, dst []float32) {
+	d.mustHoldWeights()
+	d.embed.Row(id, dst)
+}
 
 // EmbedBlock builds the trunk's block input for ids, using the drafter's own embedding when it has one and the
 // target's otherwise. The fallback is not cosmetic: a drafter that ships embed_tokens was trained against those
 // vectors, and the target's are a silent off-distribution input. The trunk still runs and output stays lossless, so
 // the only symptom is acceptance landing below what the pairing is worth.
 func (d *DFlashDrafter) EmbedBlock(m *Model, ids []int) [][]float32 {
+	d.mustHoldWeights() // a released embedding is zero-rowed, and would read as "borrows the target's"
 	if d.embed.Rows() == 0 {
 		return m.DrafterEmbedBlock(ids)
 	}
@@ -88,6 +94,7 @@ func (d *DFlashDrafter) EmbedBlock(m *Model, ids []int) [][]float32 {
 // One call site for both drafter shapes, so a pairing cannot silently take the wrong
 // output path.
 func (d *DFlashDrafter) DraftIDs(m *Model, rows [][]float32) []int {
+	d.mustHoldWeights()
 	out := make([]int, len(rows))
 	for i, h := range rows {
 		if d.HasOwnHead() {
@@ -117,6 +124,17 @@ type blockTrunk struct {
 	released bool // releaseHostWeights ran: the matrices and norms above are zero
 }
 
+// ErrDrafterReleased is what host drafting on a drafter whose host weights were released returns (DFlashDrafter.ReleaseHostWeights),
+// and what the methods with no error result panic with: its matrices are zero, and drafting on them would return garbage.
+var ErrDrafterReleased = errors.New("decoder: the drafter's host weights were released after its resident attach; load it again to draft on the host")
+
+// mustHoldWeights panics with ErrDrafterReleased on a released drafter, for the host drafting methods with no error result.
+func (d *blockTrunk) mustHoldWeights() {
+	if d.released {
+		panic(ErrDrafterReleased)
+	}
+}
+
 // releaseHostWeights drops the trunk's matrices and norms; the geometry stays.
 func (d *blockTrunk) releaseHostWeights() {
 	d.fc, d.hiddenNorm, d.finalNorm = linalg.WeightMat{}, nil, nil
@@ -126,9 +144,7 @@ func (d *blockTrunk) releaseHostWeights() {
 	d.released = true
 }
 
-// HostWeightsReleased reports whether the trunk's host weights were released (DFlashDrafter.ReleaseHostWeights). A backend's
-// attach must refuse such a drafter: its matrices are zero, and an upload of them drafts noise that lossless verify only
-// rejects, a cost in acceptance and nothing else.
+// HostWeightsReleased reports whether the host weights were released (ReleasableDrafterWeights).
 func (d *blockTrunk) HostWeightsReleased() bool { return d.released }
 
 type dflashLayer struct {
@@ -162,15 +178,14 @@ func (d *DFlashDrafter) Close() error {
 	return nil
 }
 
-// ReleaseHostWeights drops the trunk's host weights once a resident backend has uploaded its own copy (ResidentDrafterHost's
-// AttachBlockDrafter), and closes the mapping when nothing the drafter keeps aliases it (no own head or embedding). What a
-// BlockSpec reads afterwards stays: BlockSize, MaskTokenID, TargetLayerIDs and DrafterGeometry. The drafter cannot be attached
-// or drafted on the host again (HostWeightsReleased). Not safe beside a call that reads the weights.
+// ReleaseHostWeights drops every host weight once a resident backend has uploaded its own copy (ResidentDrafterHost's
+// AttachBlockDrafter): the trunk's, and an own head, embedding and d2t, which only host drafting reads. It closes the mapping,
+// which nothing aliases afterwards. What a BlockSpec reads afterwards stays: BlockSize, MaskTokenID, TargetLayerIDs,
+// DrafterGeometry and HasOwnHead. Host drafting on the drafter then fails with ErrDrafterReleased, and a backend's attach
+// refuses it (ReleasableDrafterWeights). Not safe beside a call that reads the weights.
 func (d *DFlashDrafter) ReleaseHostWeights() error {
 	d.releaseHostWeights()
-	if d.lmHead.Rows() > 0 || d.embed.Rows() > 0 {
-		return nil // an own head or embedding may be a view of the mapping
-	}
+	d.lmHead, d.embed, d.d2t = linalg.WeightMat{}, linalg.WeightMat{}, nil
 	return d.Close()
 }
 
@@ -423,6 +438,9 @@ func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) {
 // This is the ONLY place the target's hidden states enter, and the result is what every
 // layer's K/V read. It is computed once per round, not per layer.
 func (d *blockTrunk) FuseContext(be Backend, ctxCat [][]float32) ([][]float32, error) {
+	if d.released {
+		return nil, ErrDrafterReleased
+	}
 	// fc's input width IS the tap count x hidden, so it validates the caller's concatenation
 	// without the trunk needing to know which layers were tapped — that belongs to the drafter.
 	want := d.fc.Cols()
@@ -479,6 +497,7 @@ func (c *DFlashContext) TruncateTo(n int) {
 // FuseContext's output for those positions ONLY; they are assumed to sit immediately
 // after the positions already cached, which is what fixes their RoPE offsets.
 func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]float32) {
+	d.mustHoldWeights()
 	start := ctx.Len()
 	kvDim := d.nKV * d.headDim
 	for li := range d.layers {
@@ -500,6 +519,9 @@ func (d *blockTrunk) ExtendContext(be Backend, ctx *DFlashContext, fusedNew [][]
 // final-normed hidden states, [blockSize][hidden]. This is the form production should
 // use; DraftBlock is the uncached convenience wrapper.
 func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]float32) ([][]float32, error) {
+	if d.released {
+		return nil, ErrDrafterReleased
+	}
 	// The block's WIDTH is whatever the caller passes — the trained width is the drafter's
 	// property, not the trunk's, and the enclosing type checks it.
 	if len(blockIn) == 0 {
@@ -533,6 +555,9 @@ func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]f
 // for the parity gate, which is handed the reference's fused context directly), but a
 // generation loop should hold a DFlashContext and call DraftBlockCtx.
 func (d *blockTrunk) DraftBlock(be Backend, fused, blockIn [][]float32) ([][]float32, error) {
+	if d.released {
+		return nil, ErrDrafterReleased
+	}
 	ctx := d.NewContext()
 	d.ExtendContext(be, ctx, fused)
 	return d.DraftBlockCtx(be, ctx, blockIn)
