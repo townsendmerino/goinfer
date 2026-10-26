@@ -1,0 +1,39 @@
+16:23:30 KS-H6 at 82a14f63a, log /home/francis/goinfer-logs/ks-h6-2026-10/h6-2026-10-25-1623.log; load 0.57 3.59 3.16; MemAvailable 58.2 GB; GPU 403 MiB
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestKSH6_marginParts
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6] Qwen3-8B q4_k_m: context 16384, KV f16 true, expert cache false (0 slots); free after the load 261.1 MiB (cuMemGetInfo); nvidia-smi used 403 → 7524 MiB over the load; a 512-row pass 112.0 MiB of scratch at 15000 keys
+[H6] Qwen3-8B q4_k_m: a 15000-token prefill (16.063s, passes of 512 rows, learned cap 0) and 64 decode tokens: nvidia-smi peak used 7636 MiB over 961 samples, 112 MiB above the post-load figure; the run's minimum free ≈ 149.1 MiB (cuMemGetInfo after the load less that peak rise); free at the end 261.1 MiB
+[cuda] resident build failure, detail:
+goroutine 40367 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/resident.go:2071 +0x3d
+panic({0x19e7580?, 0x581dd320030?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x580a8c0a050, 0x2d6000, 0xb5800, {0xe5aba1, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.34.0/cuda.go:312 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.34.0/cuda.go:445
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(0x580ad50a008?, 0x840?)
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/resident.go:995 +0x89
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).streamW(_, {{0xe584be, 0x4}, {0x0, 0x0, 0x0}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/pack_stream.go:210 +0x1c9
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xe584be, 0x4}, {0x0, 0x0, 0x0}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/resident.go:1051 +0x48a
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func7()
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/backend.go:1513 +0x7e25
+github.com/townsendmerino/goinfer/cuda.runJob(0x10000000084a78a?)
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/resident.go:2074 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func6()
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/backend.go:837 +0x69
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 8
+	/home/francis/goinfer-bench/ks-h6-run-82a14f63a/cuda/backend.go:833 +0x7c45
+
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2973696 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts (a mixture-of-experts model keeps its hottest experts on the GPU and streams the rest from host memory), a smaller -quant (int4) or -ctx, or run on the CPU on purpose with -backend cpu) — continuing on the CPU/staged path
+    ksh6_test.go:95: Gemma 4 26B-A4B: no CUDA resident: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2973696 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY; the model does not fit this GPU's memory. Try -moe-cache-experts (a mixture-of-experts model keeps its hottest experts on the GPU and streams the rest from host memory), a smaller -quant (int4) or -ctx, or run on the CPU on purpose with -backend cpu
+--- FAIL: TestKSH6_marginParts (118.62s)
+FAIL
+16:25:39 DONE rc 1
