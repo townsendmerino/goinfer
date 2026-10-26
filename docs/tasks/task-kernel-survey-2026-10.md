@@ -558,6 +558,12 @@ the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop composi
 - **Memory, measured:** at most one 2,048-row pass's 280 MiB of device scratch on the 1.5B (205 MiB more than a 512-row pass), taken
   only from VRAM free beyond the margin after the build. Host bytes are unchanged, and the KV plan, so the longest context that
   fits, is unchanged.
+- **Decided (Francis, 2026-10-26 01:55): A.** A pass the chooser prices in full may use the room the two grant reserves
+  (`allocRecurrentCheckpoint`, `kvGrantRollback`) leave.
+  - The reserves exist for the prefill pass, which `prefillPassBytes` undercounts.
+  - The chooser prices the pass exactly (its scratch plus the span bound) against free VRAM less the untouched 384 MiB margin.
+  - One pass runs at a time, and nothing is allocated after the chooser.
+  - The alternative, a width above 512 only beside a reserve of two 512-row passes, was not taken.
 - **Review re-run, 2026-10-25 23:58, untimed (G1–G3), at f81188f74:** every gate PASS. Log:
   `docs/measurements/ks-b8-2026-10/b8-2026-10-25-2358.log`. Since the read:
   - The chooser prices the most span scratch any prompt up to the context allocates (`prefillSpanScratchMax`).
