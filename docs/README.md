@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (68: 59 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (70: 61 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -93,6 +93,16 @@ agent fits in, a thinking switch, and reasoning emitted separately.
 half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
 decisions (2026-10-14), and its gates, registered that day before any code.
+
+[`task-subsystems-2026-10.md`](tasks/task-subsystems-2026-10.md) (VK0–VK6, MM0–MM6, AX0–AX7, SB1–SB13 and PW1–PW6, filed
+2026-10-26, scoped; SD1 decided the same day) starts from where session time went in October (CI waits first, then
+local tests and gates; the hour-long runs are timed and real-checkpoint gates, and most night-queue failures are the
+box's state, not a test) and proposes subsystems whose contracts are checked in seconds and whose fingerprints the
+validations above them key on: parity keyed on behavior instead of source files and aikit's version (VK); one
+memory-management subsystem with a pure planner, a ledger with leases and one arbiter (MM); the towers and GPU backends
+moving from aikit into goinfer (AX, decided); the backend interface, admission, formats, engine policies, the scheduler,
+the serving shell, the codec, configuration, counters and gate infrastructure (SB); and the waiting itself (PW). Its
+census is [`measurements/subsystems-2026-10.md`](measurements/subsystems-2026-10.md).
 
 [`task-kernel-survey-2026-10.md`](tasks/task-kernel-survey-2026-10.md) (survey, filed 2026-10-22) is a static read of
 every kernel in goinfer and aikit for speed and memory: about seventy candidates by backend (KS-A to KS-H), each with its

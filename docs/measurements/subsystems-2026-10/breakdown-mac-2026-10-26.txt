@@ -1,0 +1,61 @@
+# command breakdown since 2026-10-12: 146 transcript files, 13026 calls with a duration
+
+## go test: 1641 calls,  13.85 h
+  with -count=1                1485 calls  11.92 h
+  with -run                    1377 calls   9.69 h
+  with -tags                    647 calls   6.95 h
+  with -bench / -benchtime      935 calls   8.36 h
+  with GOINFER_HEAVY_TESTS=1    128 calls   1.62 h
+  with -race                     34 calls   0.86 h
+  top targets by time:
+      4.19 h   431 calls  (cwd)
+      1.64 h   280 calls  ./decoder/
+      1.57 h    90 calls  ./gpu/
+      1.40 h   214 calls  ./metal/
+      0.86 h    79 calls  metal:(cwd)
+      0.37 h    10 calls  aikit:./ann/
+      0.33 h    95 calls  ./internal/serveapp/
+      0.25 h    33 calls  ./metal
+      0.24 h    29 calls  aikit:(cwd)
+      0.20 h     1 calls  (cwd),./ann/,./audio/,./bm25/,./embed/,./encoder/
+      0.20 h    31 calls  ./decoder
+      0.19 h    15 calls  ./...
+      0.15 h    12 calls  aikit:./bm25/
+      0.14 h    25 calls  (cwd),./decoder/
+      0.13 h     9 calls  gpu:(cwd)
+
+## wait/poll: 297 calls,  35.95 h (call time; mostly background)
+   15.41 h    47  nobara: remote runs and its night queue
+   10.91 h    87  CI (gh pr checks / gh run)
+    5.01 h   119  other
+    3.04 h     2  a clock time
+    0.88 h    27  a local process
+    0.70 h    15  an idle or load gate
+
+## build/lint: 1252 calls,   8.44 h
+    4.41 h   336  other (compound)
+    2.51 h   215  staticcheck
+    0.84 h   337  go vet
+    0.40 h   164  gofmt
+    0.28 h   199  go build
+    0.00 h     1  go install
+
+## served gate: 638 calls,   7.92 h
+    1.99 h     1  run-als.sh
+    1.58 h     4  run-g3.sh
+    1.26 h     9  run-S-served.sh
+    0.70 h    13  run-g2r-night.sh
+    0.32 h     2  run-d2g3.sh
+    0.22 h     3  run-c1g0.sh
+    0.21 h   129  bench_peer.py
+    0.16 h     2  run-d4.sh
+    0.10 h     2  run-d1b.sh
+    0.09 h     6  run-tier1-whole-mac.sh
+
+## scripts/touched.py: 334 calls,  10.07 h; median 0.4 min, p90 4.8 min, p99 12.7 min, max 81.5 min; 29 at 5 min or more
+
+## gh pr checks --watch: 34 calls,   5.56 h; median 9.3 min, p90 14.2 min, p99 23.9 min, max 23.9 min; 29 at 5 min or more
+
+## refresh_parity_hashes.sh: 159 calls,   1.69 h; median 0.4 min, p90 0.8 min, p99 8.8 min, max 10.6 min; 4 at 5 min or more
+
+## staticcheck: 280 calls,   3.30 h; median 0.2 min, p90 2.1 min, p99 5.8 min, max 13.1 min; 7 at 5 min or more
