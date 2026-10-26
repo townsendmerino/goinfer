@@ -77,6 +77,8 @@ SCANS = [
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
     Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),
     Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json")),
+    # Two computations of one key over the same files: only the two implementations or the manifest can split them.
+    Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity_manifest.json") + NT("internal/paritykey")),
     # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),

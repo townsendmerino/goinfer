@@ -1,0 +1,403 @@
+{
+  "Before": "6aeee6793413722dc6762534cbed8bfbb4fd1b47",
+  "After": "37daa9918660486f30ae6a093410c3538655b8f5",
+  "Outcome": "OK",
+  "Config": "arm64[dotprod]",
+  "PinBefore": "v1.74.1-0.20261024180951-0df4c98b97f2",
+  "PinAfter": "v1.75.0",
+  "DigestBefore": "sha256:4087015ad28e1f1daea192ddae44d6a5808201e15fb3d12022ea475561cd755c",
+  "DigestAfter": "sha256:4087015ad28e1f1daea192ddae44d6a5808201e15fb3d12022ea475561cd755c",
+  "ChangedKernels": null,
+  "Counts": {
+    "old-only": 43
+  },
+  "Verdicts": [
+    {
+      "family": "bailing_hybrid",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "cohere",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "cohere2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "deepseek_v2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "deepseek_v3",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "gemma",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "gemma2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "gemma3",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "gemma4",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "glm4_moe",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "glm_ocr",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "gpt-oss",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "gpt2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "granite",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "granitemoehybrid",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "internlm2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "kimi_k2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "laguna",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "lfm2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "llama",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "llama4_text",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "mellum",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "mistral",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "mistral3",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "mixtral",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "nemotron_h",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "olmo3",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "olmo_hybrid",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "phi3",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen2",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen2_5_vl",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen2_moe",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3_5",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3_5_moe",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3_asr",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3_moe",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3_next",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3_vl",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "qwen3_vl_moe",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "smollm3",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "spark2_5",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    },
+    {
+      "family": "voxtral",
+      "class": "old-only",
+      "moved": [
+        "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0"
+      ],
+      "explained": true,
+      "reason": "aikit v1.74.1-0.20261024180951-0df4c98b97f2 -\u003e v1.75.0 changed no kernel fingerprint"
+    }
+  ]
+}

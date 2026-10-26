@@ -37,7 +37,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | open | either box: one file per family adapter out of `decoder/registry.go`; `decoder/model.go`'s numeric helpers into a numeric file; `core` narrowed to numeric code; S–M | §5.5 |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
 | VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
-| VK5 | active | mac-vk01, branch `vk5-shadow-2026-10`: shadow mode with the kernel fingerprint in place of `aikit_version` (VK4's program fingerprint joins when it exists); gates P1–P4 registered in §5.8 before the code; SD6's week starts at the workflow's first run; M | §5.8 |
+| VK5 | active | mac-vk01: shadow mode built (`internal/paritykey`, `gate shadow`, `.github/workflows/vk-shadow.yml`); P1–P3 PASS, P4 pending the workflow's first run on main, when SD6's week starts; the switch is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
