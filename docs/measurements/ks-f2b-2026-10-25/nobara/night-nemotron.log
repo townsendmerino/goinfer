@@ -1,0 +1,67 @@
+=== night job ksf2b-nobara-nemotron-2
+=== cmd      bash docs/measurements/ks-f2b-2026-10-25/run-nobara.sh nemotron
+=== cwd      /home/francis/goinfer-bench/ks-f2b-nobara
+=== rev      queued at de6e61e43, now de6e61e43
+=== host     nobara-pc
+=== est      125.0 min, timeout 150.0 min
+=== by       kv4b-grade, KS-F2b nobara, Nemotron attempt 2 with the idle gate (Francis 14:01)
+=== doc      docs/measurements/ks-f2b-2026-10-25/README.md
+=== START    2026-10-25 20:06:54 PDT  loadavg 0.93
+== 2026-10-25 20:06:54 PDT KS-F2b nemotron: nemotron-h-4b-instruct-128k, need 17 GiB; load 0.93 5.10 7.35
+57488963795fe84f139227c03bab775f88a40774e42190246ed745196f244173  /home/francis/goinfer-logs/ks-f2b-nobara-2026-10-25/bins/decoder-A.test
+460366ca204f8981c93717b81e55d073d4af5201176d229790cc9eab8562c7dd  /home/francis/goinfer-logs/ks-f2b-nobara-2026-10-25/bins/decoder-B.test
+== 20:06:54 depth 128
+[20:07:27] warm A 164.66 ms/token prefill 19.0 s load 0.93 avail 58.21 GiB VmHWM 16367 MiB swap 0 KiB ok
+[20:08:11] warm B 162.16 ms/token prefill 18.8 s load 3.8 avail 58.21 GiB VmHWM 16442 MiB swap 0 KiB ok
+[20:09:26] warm A 164.43 ms/token prefill 18.9 s load 3.93 avail 58.22 GiB VmHWM 16534 MiB swap 0 KiB ok
+[20:10:35] warm B 162.82 ms/token prefill 18.9 s load 3.88 avail 58.25 GiB VmHWM 16472 MiB swap 0 KiB ok
+[20:11:45] pair0 A 163.96 ms/token prefill 18.9 s load 3.83 avail 58.25 GiB VmHWM 16545 MiB swap 0 KiB ok
+[20:12:59] pair0 B 162.63 ms/token prefill 18.8 s load 3.72 avail 58.23 GiB VmHWM 16535 MiB swap 0 KiB ok
+[20:14:08] pair1 B 161.99 ms/token prefill 18.8 s load 3.87 avail 58.23 GiB VmHWM 16494 MiB swap 0 KiB ok
+[20:15:13] pair1 A 163.35 ms/token prefill 18.8 s load 3.83 avail 58.28 GiB VmHWM 16662 MiB swap 0 KiB ok
+[20:15:57] pair2 A 164.55 ms/token prefill 18.9 s load 3.86 avail 58.28 GiB VmHWM 16561 MiB swap 0 KiB ok
+[20:16:52] pair2 B 162.56 ms/token prefill 18.8 s load 3.98 avail 58.29 GiB VmHWM 16450 MiB swap 0 KiB ok
+[20:18:01] pair3 B 162.85 ms/token prefill 19.0 s load 3.87 avail 58.25 GiB VmHWM 16557 MiB swap 0 KiB ok
+[20:19:11] pair3 A 164.14 ms/token prefill 18.9 s load 3.84 avail 58.24 GiB VmHWM 16413 MiB swap 0 KiB ok
+[20:20:11] pair4 A 164.25 ms/token prefill 19.0 s load 3.91 avail 58.25 GiB VmHWM 16561 MiB swap 0 KiB ok
+[20:21:35] pair4 B 161.85 ms/token prefill 18.7 s load 3.8 avail 58.28 GiB VmHWM 16403 MiB swap 0 KiB ok
+[20:22:39] pair5 B 162.53 ms/token prefill 18.8 s load 3.91 avail 58.29 GiB VmHWM 16440 MiB swap 0 KiB ok
+[20:23:43] pair5 A 163.82 ms/token prefill 18.8 s load 3.79 avail 58.3 GiB VmHWM 16426 MiB swap 0 KiB ok
+[20:24:48] pair6 A 163.53 ms/token prefill 18.8 s load 3.77 avail 58.31 GiB VmHWM 16508 MiB swap 0 KiB ok
+[20:25:57] pair6 B 162.17 ms/token prefill 18.8 s load 3.75 avail 58.3 GiB VmHWM 16450 MiB swap 0 KiB ok
+[20:27:06] pair7 B 161.99 ms/token prefill 18.7 s load 3.86 avail 58.32 GiB VmHWM 16460 MiB swap 0 KiB ok
+[20:28:20] pair7 A 163.19 ms/token prefill 18.8 s load 3.72 avail 58.32 GiB VmHWM 16485 MiB swap 0 KiB ok
+[20:29:09] pair8 A 162.86 ms/token prefill 18.7 s load 3.96 avail 58.32 GiB VmHWM 16667 MiB swap 0 KiB ok
+[20:30:09] pair8 B 162.31 ms/token prefill 18.9 s load 3.96 avail 58.27 GiB VmHWM 16531 MiB swap 0 KiB ok
+[20:31:04] pair9 B 164.41 ms/token prefill 18.9 s load 3.73 avail 58.22 GiB VmHWM 16503 MiB swap 0 KiB ok
+[20:32:14] pair9 A 173.05 ms/token prefill 19.4 s load 3.82 avail 58.2 GiB VmHWM 16497 MiB swap 0 KiB ok
+{"tag": "grade", "model": "/home/francis/models/nemotron-h-4b-instruct-128k", "depth": 128, "median_speedup": 1.0083, "min": 1.0034, "max": 1.0526, "faster": 10, "voids": 0, "grade": "below the merge rule", "slower_than_old": false}
+== 20:32:14 depth 1024
+[20:35:39] warm A 185.26 ms/token prefill 163.9 s load 3.92 avail 58.16 GiB VmHWM 16392 MiB swap 0 KiB ok
+[20:39:09] warm B 169.75 ms/token prefill 154.5 s load 3.8 avail 58.22 GiB VmHWM 16528 MiB swap 0 KiB ok
+[20:42:52] warm A 184.70 ms/token prefill 161.9 s load 3.76 avail 58.24 GiB VmHWM 16439 MiB swap 0 KiB ok
+[20:46:23] warm B 169.35 ms/token prefill 154.6 s load 3.99 avail 58.2 GiB VmHWM 16379 MiB swap 0 KiB ok
+[20:50:29] pair0 A 184.56 ms/token prefill 160.6 s load 3.82 avail 58.26 GiB VmHWM 16451 MiB swap 0 KiB ok
+[20:54:04] pair0 B 168.71 ms/token prefill 153.6 s load 3.7 avail 58.27 GiB VmHWM 16503 MiB swap 0 KiB ok
+[20:57:48] pair1 B 168.58 ms/token prefill 153.7 s load 3.74 avail 58.28 GiB VmHWM 16414 MiB swap 0 KiB ok
+[21:01:30] pair1 A 184.14 ms/token prefill 160.9 s load 3.98 avail 58.3 GiB VmHWM 16463 MiB swap 0 KiB ok
+[21:05:18] pair2 A 184.23 ms/token prefill 161.1 s load 3.87 avail 58.3 GiB VmHWM 16617 MiB swap 0 KiB ok
+[21:08:57] pair2 B 168.46 ms/token prefill 153.7 s load 3.71 avail 58.3 GiB VmHWM 16449 MiB swap 0 KiB ok
+[21:12:47] pair3 B 169.21 ms/token prefill 153.9 s load 3.83 avail 58.34 GiB VmHWM 16538 MiB swap 0 KiB ok
+[21:16:29] pair3 A 184.21 ms/token prefill 161.0 s load 3.87 avail 58.35 GiB VmHWM 16523 MiB swap 0 KiB ok
+[21:20:26] pair4 A 184.90 ms/token prefill 161.0 s load 3.72 avail 58.35 GiB VmHWM 16487 MiB swap 0 KiB ok
+[21:24:11] pair4 B 169.50 ms/token prefill 153.8 s load 4.0 avail 58.34 GiB VmHWM 16476 MiB swap 0 KiB ok
+[21:27:55] pair5 B 169.26 ms/token prefill 153.5 s load 3.94 avail 58.34 GiB VmHWM 16492 MiB swap 0 KiB ok
+[21:31:52] pair5 A 184.27 ms/token prefill 160.8 s load 3.76 avail 58.34 GiB VmHWM 16529 MiB swap 0 KiB ok
+[21:35:45] pair6 A 184.04 ms/token prefill 161.0 s load 3.74 avail 58.35 GiB VmHWM 16580 MiB swap 0 KiB ok
+[21:39:25] pair6 B 168.23 ms/token prefill 154.3 s load 3.99 avail 58.35 GiB VmHWM 16481 MiB swap 0 KiB ok
+[21:43:20] pair7 B 169.19 ms/token prefill 153.8 s load 3.84 avail 58.23 GiB VmHWM 16553 MiB swap 0 KiB ok
+[21:47:01] pair7 A 183.70 ms/token prefill 160.6 s load 3.9 avail 58.25 GiB VmHWM 16550 MiB swap 0 KiB ok
+[21:50:43] pair8 A 184.23 ms/token prefill 160.7 s load 3.96 avail 58.24 GiB VmHWM 16427 MiB swap 0 KiB ok
+[21:54:22] pair8 B 168.57 ms/token prefill 153.6 s load 3.71 avail 58.25 GiB VmHWM 16483 MiB swap 0 KiB ok
+[21:58:07] pair9 B 168.66 ms/token prefill 153.8 s load 3.96 avail 58.26 GiB VmHWM 16530 MiB swap 0 KiB ok
+[22:02:10] pair9 A 184.66 ms/token prefill 160.9 s load 3.75 avail 58.25 GiB VmHWM 16469 MiB swap 0 KiB ok
+{"tag": "grade", "model": "/home/francis/models/nemotron-h-4b-instruct-128k", "depth": 1024, "median_speedup": 1.0926, "min": 1.0858, "max": 1.0949, "faster": 10, "voids": 0, "grade": "MEETS the merge rule", "slower_than_old": false}
+== 2026-10-25 22:02:10 PDT end, rc 0
+
+=== END      2026-10-25 22:02:10 PDT  rc=0
