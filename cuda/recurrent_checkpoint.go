@@ -45,7 +45,7 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	if bytes == 0 {
 		return
 	}
-	reserve := r.extraBytes + ctxCapMarginBytes + 2*r.prefillPassBytes(prefillDefaultChunk)
+	reserve := r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk)
 	if r.cacheExperts {
 		reserve += r.expertCacheFloorBytes()
 	}

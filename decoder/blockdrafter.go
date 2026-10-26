@@ -166,7 +166,7 @@ var (
 // nothing beside the matrices.
 //
 // Not included: the verify and capture buffers NewBlockSpec allocates (a few MB at the default verify width, which the
-// ctxCapMarginBytes and slotMarginBytes margins in cuda/resident.go absorb), and the drafter's own K/V, which scales
+// CUDA context margin's decode allowance and slotMarginBytes absorb, cuda/margin.go and cuda/resident.go), and the drafter's own K/V, which scales
 // with the target's context: see DrafterKVBytesPerPosition.
 //
 // Call it before a held drafter's release (ReleaseHostWeights): its matrix accessors then panic with ErrDrafterReleased. A

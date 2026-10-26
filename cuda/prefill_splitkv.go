@@ -35,7 +35,17 @@ func (r *cudaResident) loadPrefillSplitKV() {
 }
 
 func (r *cudaResident) prefillSplitKVReady() bool {
-	return r.psScores != (Pipeline{}) && r.psSoftmax != (Pipeline{}) && r.psVsum != (Pipeline{})
+	return r.planning || (r.psScores != (Pipeline{}) && r.psSoftmax != (Pipeline{}) && r.psVsum != (Pipeline{}))
+}
+
+// fusedLoadedFor reports whether the fused prefill attention is loaded for head dim hd. While planning (before any module loads)
+// it answers as a build whose modules load: under fastAttn, head dims 64 and 128 (attnFusedFor).
+func (r *cudaResident) fusedLoadedFor(hd int) bool {
+	if r.planning {
+		return r.fastAttn && (hd == 64 || hd == 128)
+	}
+	p, _ := r.attnFusedFor(hd)
+	return p != (Pipeline{})
 }
 
 // prefillSplitKVServes reports whether an exact-attention layer whose widest row attends maxNWin keys takes the row-batched
@@ -62,7 +72,7 @@ func (r *cudaResident) prefillPastBoundExact(keys int) bool {
 		if !splitKVRequired(maxNWin) {
 			continue
 		}
-		if p, _ := r.attnFusedFor(Ly.hd); !r.fastAttn || p == (Pipeline{}) {
+		if !r.fastAttn || !r.fusedLoadedFor(Ly.hd) {
 			return true
 		}
 	}
@@ -122,8 +132,7 @@ func (r *cudaResident) prefillSpanScratchPass(rows, keys int) int64 {
 			keys < fastPrefillFloorFor(r.knobValue("GOINFER_CUDA_FAST_PREFILL_FLOOR")) {
 			return false
 		}
-		p, _ := r.attnFusedFor(hd)
-		return p != (Pipeline{})
+		return r.fusedLoadedFor(hd)
 	}
 	stride, R := r.prefillSplitKVPlan(rows, keys, fused, nil)
 	if stride == 0 {

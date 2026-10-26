@@ -1,0 +1,486 @@
+03:20:03 KS-H6 gates at 26da8c2ca (before-figures at f6ca0966c), log /home/francis/goinfer-logs/ks-h6c-2026-10/h6c-2026-10-26-0320.log; driver 595.91.07
+== s123 03:20:51: load 1.44 3.16 3.63; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestGPUProbe_declinesAWrongResidentThroughLoad
+[resident] startup self-test declined this backend: qwen35vl-tiny decode, 264 positions: worst cosine -0.2149 (floor 0.995, at position 93), worst relative L2 1.007 (ceiling 0.10); llama-tiny decode, 100 positions: worst cosine -0.1636 (floor 0.995, at position 25), worst relative L2 1.136 (ceiling 0.10); gemma3-vl-tiny decode, 48 positions: worst cosine -0.1389 (floor 0.995, at position 20), worst relative L2 1.126 (ceiling 0.10); qwen35-tiny decode, 48 positions: worst cosine -0.1186 (floor 0.995, at position 38), worst relative L2 1.111 (ceiling 0.10) — continuing on the CPU/staged path
+[resident] startup self-test declined this backend: qwen35vl-tiny decode, 264 positions: worst cosine -0.2149 (floor 0.995, at position 93), worst relative L2 1.007 (ceiling 0.10); llama-tiny decode, 100 positions: worst cosine -0.1636 (floor 0.995, at position 25), worst relative L2 1.136 (ceiling 0.10); gemma3-vl-tiny decode, 48 positions: worst cosine -0.1389 (floor 0.995, at position 20), worst relative L2 1.126 (ceiling 0.10); qwen35-tiny decode, 48 positions: worst cosine -0.1186 (floor 0.995, at position 38), worst relative L2 1.111 (ceiling 0.10) — continuing on the CPU/staged path
+--- PASS: TestGPUProbe_declinesAWrongResidentThroughLoad (0.19s)
+=== RUN   TestGPUProbe_runsBeforeTheBuild
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+--- PASS: TestGPUProbe_runsBeforeTheBuild (0.01s)
+=== RUN   TestGPUProbe_aBackendWithNoResidentIsSkippedNotPassed
+--- PASS: TestGPUProbe_aBackendWithNoResidentIsSkippedNotPassed (0.00s)
+=== RUN   TestGPUProbe_anUnmeasuredBackendIsNotProbed
+--- PASS: TestGPUProbe_anUnmeasuredBackendIsNotProbed (0.00s)
+=== RUN   TestGPUProbe_normalizesTheBackendNameAndHonoursIneligibility
+--- PASS: TestGPUProbe_normalizesTheBackendNameAndHonoursIneligibility (0.00s)
+=== RUN   TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant
+=== RUN   TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant/reports_int4
+=== RUN   TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant/reports_int8int8
+[resident] startup self-test declined this backend: qwen35vl-tiny decode, 264 positions: worst cosine -0.2154 (floor 0.995, at position 93), worst relative L2 1.007 (ceiling 0.10); llama-tiny decode, 100 positions: worst cosine -0.1404 (floor 0.995, at position 25), worst relative L2 1.127 (ceiling 0.10); gemma3-vl-tiny decode, 48 positions: worst cosine -0.1283 (floor 0.995, at position 20), worst relative L2 1.126 (ceiling 0.10); qwen35-tiny decode, 48 positions: worst cosine -0.1217 (floor 0.995, at position 38), worst relative L2 1.113 (ceiling 0.10) — continuing on the CPU/staged path
+--- PASS: TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant (0.14s)
+    --- PASS: TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant/reports_int4 (0.01s)
+    --- PASS: TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant/reports_int8int8 (0.13s)
+PASS
+== g1 03:20:51: load 1.44 3.16 3.63; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKernelLocalMemoryCensus
+    kernel_local_memory_test.go:78: device: 40 SMs x 1024 max threads/SM = 40960 resident threads
+    kernel_local_memory_test.go:125: module                 kernel                        local/thr   SMs*maxT*local
+    kernel_local_memory_test.go:132: gptoss_act.ptx         route_gptoss                       4608        188743680  (180.0 MiB)
+    kernel_local_memory_test.go:132: moe.ptx                moe_route                          4416        180879360  (172.5 MiB)
+    kernel_local_memory_test.go:132: deltanet.ptx           delta_rule_rows_128                  96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:132: deltanet.ptx           delta_rule_rows_128_spec             96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:132: mamba.ptx              mamba_conv                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla.ptx                mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_kv16_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched_kv16.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: gemv_fwd_kv16.ptx      rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla_kv16.ptx           mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla_kv16.ptx           mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: mla.ptx                mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_mrope_prefill.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: prefill_batched.ptx    rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: gemv_fwd.ptx           rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise_kv16.ptx rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise_kv16.ptx rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise_kv16.ptx rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_pairwise.ptx      rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:132: rope_mrope_prefill_kv16.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:135: 272 entry points across 56 modules; 23 declare per-thread local memory
+    kernel_local_memory_test.go:145: EXAMINED: 56 module(s) — gemv_fwd.ptx gemv_w8a8_batched.ptx prefill_batched.ptx decode_splitkv.ptx prefill_splitkv.ptx deltanet.ptx gptoss_act.ptx actgroup.ptx gemv_w4a8_rn.ptx glue.ptx argmax.ptx moe_fold.ptx moe_rows.ptx audio_encoder.ptx topk.ptx gumbel.ptx decode_fa.ptx lora.ptx attn_block.ptx attn_img_prefill.ptx attn_img_prefill_kv16.ptx rope_mrope_prefill.ptx rope_mrope_prefill_kv16.ptx rope_pairwise.ptx rope_pairwise_kv16.ptx layernorm_quant.ptx gelu_quant.ptx attn_fused.ptx attn_fused_bm.ptx attn_fused_vit.ptx tower_base.ptx gemm_w4a8_mma.ptx moe.ptx router_f32.ptx gemv_w4f32.ptx fused_qkv.ptx fused_qkv_rows.ptx fused_gu_rows.ptx mla.ptx mla_kv16.ptx gemv_fwd_kv16.ptx glue_kv16.ptx prefill_batched_kv16.ptx decode_splitkv_kv16.ptx prefill_splitkv_kv16.ptx decode_fa_kv16.ptx attn_fused_kv16.ptx attn_fused_bm_kv16.ptx glue_cap.ptx glue_kv16_cap.ptx prefill_batched_cap.ptx prefill_batched_kv16_cap.ptx decode_splitkv_cap.ptx decode_splitkv_kv16_cap.ptx mamba.ptx nongated_act.ptx. Derived straight from kernels.go's //go:embed list, so this line names exactly what that list currently contains.
+    kernel_local_memory_test.go:153: SUM of per-kernel backing stores at full occupancy: 402391040 B (383.8 MiB) — an UPPER BOUND on the deferred cost, not a prediction: the driver may share or reuse a backing store across kernels, and nothing here shows that it allocates them all simultaneously
+    kernel_local_memory_test.go:263: moe_route: local 4416 B/thread, naive form predicts 180879360 B, MEASURED 138412032 B (ratio 0.7652)
+    kernel_local_memory_test.go:266:   => the naive multiplier does NOT reproduce the measurement. The occupancy factor is not SMs x maxThreadsPerSM (40 x 1024); proportionality in local-bytes is therefore UNVERIFIED, and any 'halving MOE_MAX_E halves the cost' claim must be measured by building at 256 rather than derived from this form.
+--- PASS: TestKernelLocalMemoryCensus (0.36s)
+=== RUN   TestKSH6C_chargedKVArithmetic
+--- PASS: TestKSH6C_chargedKVArithmetic (0.00s)
+=== RUN   TestKSH6C_marginParts
+--- PASS: TestKSH6C_marginParts (0.00s)
+=== RUN   TestResolveCtxCapFit_shortcuts
+=== RUN   TestResolveCtxCapFit_shortcuts/genuine_pin_bypasses_fit_entirely
+=== RUN   TestResolveCtxCapFit_shortcuts/genuine_pin_bypasses_fit_even_with_the_env_var_set
+=== RUN   TestResolveCtxCapFit_shortcuts/genuine_pin_below_cudaCtxCapDefault_is_still_untouched
+=== RUN   TestResolveCtxCapFit_shortcuts/GOINFER_NO_FIT_DEFAULT_restores_the_historical_default
+=== RUN   TestResolveCtxCapFit_shortcuts/Options.DisableFit_(--fit=off)_restores_the_historical_default
+=== RUN   TestResolveCtxCapFit_shortcuts/model_window_at_the_historical_default_has_nothing_to_gain
+=== RUN   TestResolveCtxCapFit_shortcuts/model_window_below_the_historical_default_has_nothing_to_gain
+=== RUN   TestResolveCtxCapFit_shortcuts/Options.MoECacheExperts_restores_the_historical_default,_same_as_DisableFit
+=== RUN   TestResolveCtxCapFit_shortcuts/genuine_pin_still_bypasses_fit_with_MoECacheExperts_set
+=== RUN   TestResolveCtxCapFit_shortcuts/guard_pin_(unpinned_m)_at_cudaCtxCapDefault:_fit-by-default_still_runs,_clamped_to_it
+=== RUN   TestResolveCtxCapFit_shortcuts/guard_pin_(unpinned_m)_BELOW_cudaCtxCapDefault:_floor_follows_it_down,_not_back_up
+--- PASS: TestResolveCtxCapFit_shortcuts (0.02s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/genuine_pin_bypasses_fit_entirely (0.01s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/genuine_pin_bypasses_fit_even_with_the_env_var_set (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/genuine_pin_below_cudaCtxCapDefault_is_still_untouched (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/GOINFER_NO_FIT_DEFAULT_restores_the_historical_default (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/Options.DisableFit_(--fit=off)_restores_the_historical_default (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/model_window_at_the_historical_default_has_nothing_to_gain (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/model_window_below_the_historical_default_has_nothing_to_gain (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/Options.MoECacheExperts_restores_the_historical_default,_same_as_DisableFit (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/genuine_pin_still_bypasses_fit_with_MoECacheExperts_set (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/guard_pin_(unpinned_m)_at_cudaCtxCapDefault:_fit-by-default_still_runs,_clamped_to_it (0.00s)
+    --- PASS: TestResolveCtxCapFit_shortcuts/guard_pin_(unpinned_m)_BELOW_cudaCtxCapDefault:_floor_follows_it_down,_not_back_up (0.00s)
+=== RUN   TestKVBytesForCap
+--- PASS: TestKVBytesForCap (0.00s)
+=== RUN   TestFitsWeightsBudget
+--- PASS: TestFitsWeightsBudget (0.00s)
+=== RUN   TestCheckPrefillShmem_declinesPastTheLimit
+--- PASS: TestCheckPrefillShmem_declinesPastTheLimit (0.00s)
+PASS
+== tiny 03:20:52: load 1.44 3.16 3.63; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestCUDAKVSlots_clampedBuild
+cuda: recurrent checkpoint: none kept (0.0 MiB needed beside a 390 MiB reserve, 179 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: recurrent checkpoint: none kept (0.0 MiB needed beside a 385 MiB reserve, 175 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: 2 resident KV slots of 4 requested — one slot's pools cost 4 MB at the resident context 4096, and free VRAM beside the weights (184 MB, less 174 MB reserved) allows 2
+--- PASS: TestCUDAKVSlots_clampedBuild (1.78s)
+=== RUN   TestCUDAKVSlots_pricedAgainstWhatIsLeft
+cuda: 2 resident KV slots of 3 requested — one slot's pools cost 4 MB at the resident context 4096, and free VRAM beside the weights (184 MB, less 174 MB reserved) allows 2
+    kv_slots_test.go:336: pre-KV bytes 4194304 (calibration) / 4194304 (this build), one slot 4260352 B, probe returned 193438976 B: 2 of 3 slots granted
+--- PASS: TestCUDAKVSlots_pricedAgainstWhatIsLeft (0.23s)
+=== RUN   TestResolveCtxCapFit_slotsShrinkTheContext
+=== RUN   TestResolveCtxCapFit_slotsShrinkTheContext/interior:_4_slots_fit_at_~5000
+cuda: resident context 4928, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+    kv_slots_test.go:408: one slot: ctx 16384; 4 slots: ctx 4928 (target 5000); explicit 8192 with 4 slots: 8192
+cuda: resident context 4096, trimmed from 4928 at the build, so the 4 requested KV slots fit beside the weights (7277 MB free, less 7257 MB reserved)
+cuda: 3 resident KV slots of 4 requested — one slot's pools cost 4 MB at the resident context 4096, and free VRAM beside the weights (7277 MB, less 7257 MB reserved) allows 3
+    kv_slots_test.go:434: at the chosen ctx 4928 checkKVFits grants 3 slots, want 4
+    kv_slots_test.go:429: checkKVFits at ctx 16384: cuda: resident context 16384 positions needs 0.03 GB of KV (2.0 KB/position across 4 layers) plus 7.21 GB reserved for a companion attach (--drafter) but only 7.63 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model
+=== RUN   TestResolveCtxCapFit_slotsShrinkTheContext/not_even_the_floor_holds_4:_the_floor,_and_the_build_clamps
+cuda: resident context 4096 (the floor), not 11904, for the 4 requested KV slots (--kv-sessions); the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots
+    kv_slots_test.go:408: one slot: ctx 11904; 4 slots: ctx 4096 (target 3000); explicit 8192 with 4 slots: 8192
+cuda: 2 resident KV slots of 4 requested — one slot's pools cost 4 MB at the resident context 4096, and free VRAM beside the weights (7277 MB, less 7265 MB reserved) allows 2
+cuda: 1 resident KV slots of 4 requested — one slot's pools cost 12 MB at the resident context 11904, and free VRAM beside the weights (7277 MB, less 7265 MB reserved) allows 1
+cuda: resident context 4096, trimmed from 11904 at the build, so the 4 requested KV slots fit beside the weights (7277 MB free, less 7265 MB reserved)
+cuda: 2 resident KV slots of 4 requested — one slot's pools cost 4 MB at the resident context 4096, and free VRAM beside the weights (7277 MB, less 7265 MB reserved) allows 2
+--- FAIL: TestResolveCtxCapFit_slotsShrinkTheContext (0.01s)
+    --- FAIL: TestResolveCtxCapFit_slotsShrinkTheContext/interior:_4_slots_fit_at_~5000 (0.00s)
+    --- PASS: TestResolveCtxCapFit_slotsShrinkTheContext/not_even_the_floor_holds_4:_the_floor,_and_the_build_clamps (0.00s)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/llama-tiny
+    kv_slots_test.go:525: device before KV 4 MB; Plan's CUDA dense 0 MB (all dense, host tables included, 0 MB) + allocation slack 0 MB; under by 4 MB (margin 174 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    kv_slots_test.go:525: device before KV 466 MB; Plan's CUDA dense 322 MB (all dense, host tables included, 453 MB) + allocation slack 139 MB; under by 5 MB (margin 214 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    kv_slots_test.go:525: device before KV 1054 MB; Plan's CUDA dense 926 MB (all dense, host tables included, 1149 MB) + allocation slack 122 MB; under by 6 MB (margin 248 MB)
+--- PASS: TestResidentDenseBytes_matchesCUDADevice (6.76s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/llama-tiny (0.03s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.83s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (4.87s)
+=== RUN   TestCUDAKVSlots_buildTrimsTheContext
+=== RUN   TestCUDAKVSlots_buildTrimsTheContext/unpinned:_trimmed_to_fit_all_4
+cuda: resident context 5056, trimmed from 16384 at the build, so the 4 requested KV slots fit beside the weights (694 MB free, less 214 MB reserved)
+cuda: KV pool: 20224 positions (316 blocks of 64) for 4 conversations; one conversation can use up to 20224 positions, and each is guaranteed 5056
+    kv_slots_test.go:584: share 5056, cap 20224, 4 slots
+=== RUN   TestCUDAKVSlots_buildTrimsTheContext/explicit_-ctx_8192:_kept,_slots_clamped
+cuda: 2 resident KV slots of 4 requested — one slot's pools cost 288 MB at the resident context 8192, and free VRAM beside the weights (694 MB, less 214 MB reserved) allows 2
+    kv_slots_test.go:584: share 8192, cap 8192, 2 slots
+--- PASS: TestCUDAKVSlots_buildTrimsTheContext (3.32s)
+    --- PASS: TestCUDAKVSlots_buildTrimsTheContext/unpinned:_trimmed_to_fit_all_4 (1.67s)
+    --- PASS: TestCUDAKVSlots_buildTrimsTheContext/explicit_-ctx_8192:_kept,_slots_clamped (1.65s)
+=== RUN   TestCUDAKVSlots_oomKeepsTheSlotsThatFit
+cuda: 2 of 3 resident KV slots granted: the device ran out of memory allocating the KV pools beside the build's own scratch
+--- PASS: TestCUDAKVSlots_oomKeepsTheSlotsThatFit (0.12s)
+=== RUN   TestWindowedKV_grantArithmetic
+--- PASS: TestWindowedKV_grantArithmetic (0.00s)
+=== RUN   TestWindowedKV_expertCacheGetsTheGrant
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7273 MB free); a follow-up may now diverge 64 before the newest
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7271 MB free); a follow-up may now diverge 64 before the newest
+=== RUN   TestWindowedKV_expertCacheGetsTheGrant/routed_experts
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7119 MB free); a follow-up may now diverge 64 before the newest
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_expertCacheGetsTheGrant (0.12s)
+    --- PASS: TestWindowedKV_expertCacheGetsTheGrant/routed_experts (0.03s)
+=== RUN   TestWindowedKV_grant
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7141 MB free); a follow-up may now diverge 64 before the newest
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7111 MB free); a follow-up may now diverge 64 before the newest
+--- PASS: TestWindowedKV_grant (0.22s)
+=== RUN   TestResolveCtxCapFit_agreesWithCheckKVFits
+=== RUN   TestResolveCtxCapFit_agreesWithCheckKVFits/interior_branch,_no_companion
+    resident_cap_test.go:225: chosen ctx=5952 (floor 4096, forced-interior target 6000, ceiling 16384)
+=== RUN   TestResolveCtxCapFit_agreesWithCheckKVFits/interior_branch,_with_a_drafter-sized_companion_K/V_rate
+    resident_cap_test.go:225: chosen ctx=5952 (floor 4096, forced-interior target 6000, ceiling 16384)
+--- PASS: TestResolveCtxCapFit_agreesWithCheckKVFits (0.00s)
+    --- PASS: TestResolveCtxCapFit_agreesWithCheckKVFits/interior_branch,_no_companion (0.00s)
+    --- PASS: TestResolveCtxCapFit_agreesWithCheckKVFits/interior_branch,_with_a_drafter-sized_companion_K/V_rate (0.00s)
+=== RUN   TestCheckKVFits_realDevice_explicitRefusesWithNumbers
+--- PASS: TestCheckKVFits_realDevice_explicitRefusesWithNumbers (0.00s)
+=== RUN   TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers
+--- PASS: TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers (0.00s)
+=== RUN   TestCheckKVFits_explicitFailsHard_defaultDeclines
+--- PASS: TestCheckKVFits_explicitFailsHard_defaultDeclines (0.00s)
+FAIL
+FAILED: tiny rc 1
+== s4 qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 self-test skipped '' 03:21:04: load 1.93 3.20 3.64; MemAvailable 58.2 GB; GPU 403 MiB
+--- FAIL: TestKSH6C_postPoolBreakdown (14.32s)
+FAIL
+== s4 qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 self-test skipped '1' 03:21:19: load 1.88 3.13 3.61; MemAvailable 58.2 GB; GPU 403 MiB
+[H6C] /home/francis/models/qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.8 MiB, charged by allocRoundSlack 0.8 MiB; the card's drop from the first of them to the end of the load 2.0 MiB; unaccounted 1.2 MiB
+[H6C] /home/francis/models/qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf self-test skipped true: the fit check read 2843.1 MiB free
+[H6C]        49152 B requested, the card's drop across it 2.00 MiB
+[H6C]     at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:75 < allocSeen resident.go:983 < (*cudaResident).af resident.go:943 < (*cudaBackend).BuildResident.func8 backend.go:1787 < runJob resident.go:2053 < (*cudaBackend).BuildResident.func7 backend.go:853
+[H6C]     next allocation at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:75 < allocSeen resident.go:983 < (*cudaResident).ai resident.go:969 < (*cudaBackend).BuildResident.func8 backend.go:1787 < runJob resident.go:2053 < (*cudaBackend).BuildResident.func7 backend.go:853
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]        49152 B requested, the card's drop across it 0.00 MiB
+[H6C]        49152 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        12288 B requested, the card's drop across it 0.00 MiB
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]       607744 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (11.44s)
+== s4 qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 self-test skipped '' 03:21:30: load 3.01 3.33 3.67; MemAvailable 58.3 GB; GPU 403 MiB
+[H6C] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.9 MiB, charged by allocRoundSlack 0.9 MiB; the card's drop from the first of them to the end of the load 0.0 MiB; unaccounted -0.9 MiB
+[H6C] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf self-test skipped false: the fit check read 7273.1 MiB free
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         3584 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         3584 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]        18944 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]       608256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (10.96s)
+== s4 qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 self-test skipped '1' 03:21:42: load 3.24 3.37 3.68; MemAvailable 58.2 GB; GPU 403 MiB
+[H6C] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.9 MiB, charged by allocRoundSlack 0.9 MiB; the card's drop from the first of them to the end of the load 0.0 MiB; unaccounted -0.9 MiB
+[H6C] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf self-test skipped true: the fit check read 2831.1 MiB free
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         3584 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         3584 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]        18944 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]       608256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (7.92s)
+== s4 qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 0 self-test skipped '' 03:21:50: load 3.12 3.34 3.67; MemAvailable 58.2 GB; GPU 403 MiB
+[H6C] /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.8 MiB, charged by allocRoundSlack 0.8 MiB; the card's drop from the first of them to the end of the load 0.0 MiB; unaccounted -0.8 MiB
+[H6C] /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf self-test skipped false: the fit check read 7273.1 MiB free
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         1536 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         1536 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]         8960 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]       607744 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (5.81s)
+== s4 qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 0 self-test skipped '1' 03:21:56: load 3.43 3.40 3.68; MemAvailable 58.2 GB; GPU 403 MiB
+[H6C] /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.8 MiB, charged by allocRoundSlack 0.8 MiB; the card's drop from the first of them to the end of the load 0.0 MiB; unaccounted -0.8 MiB
+[H6C] /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf self-test skipped true: the fit check read 6223.1 MiB free
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         1536 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         1536 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]         8960 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]       607744 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (5.16s)
+== s5 03:22:01: load 3.24 3.36 3.67; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestKSH6C_moeModelPaysItsPool
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6C-S5] plant false: free 7277.1 MiB before the load, 7141.1 at the fit check, 7141.1 at the end of the load, 7141.1 after a prefill and 8 tokens: the drop across serving 0.0 MiB
+--- PASS: TestKSH6C_moeModelPaysItsPool (0.23s)
+PASS
+== s5plant 03:22:01: load 3.24 3.36 3.67; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_moeModelPaysItsPool
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6C-S5] plant true: free 7277.1 MiB before the load, 7273.1 at the fit check, 7273.1 at the end of the load, 7141.1 after a prefill and 8 tokens: the drop across serving 132.0 MiB
+--- PASS: TestKSH6C_moeModelPaysItsPool (0.23s)
+PASS
+== g2small 03:22:02: load 3.24 3.36 3.67; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_marginPriced
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestKSH6C_marginPriced/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+[H6C-G2] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 49 buffers, 480.00 MiB charged against kvChargedBytes 480.00 MiB; margin 214.1 MiB planned, 214.1 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 214.1 MiB
+[H6C-G3] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 4181 positions, Plan's dense residual 217 positions; 0 below, 4245 allowed
+=== RUN   TestKSH6C_marginPriced/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[H6C-G2] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 57 buffers, 1008.00 MiB charged against kvChargedBytes 1008.00 MiB; margin 248.3 MiB planned, 248.3 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 248.3 MiB
+[H6C-G3] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 2085 positions, Plan's dense residual 107 positions; 0 below, 2149 allowed
+=== RUN   TestKSH6C_marginPriced/gemma-3-4b-it
+[H6C-G2] gemma-3-4b-it: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 69 buffers, 4080.00 MiB charged against kvChargedBytes 4080.00 MiB; margin 330.5 MiB planned, 330.5 MiB on the built resident (at 16384 positions)
+[H6C-G5] gemma-3-4b-it: context 15168 (planned 15168), 1 KV slots, margin 330.5 MiB
+[H6C-G3] gemma-3-4b-it: planned 15168, the build's exact figure allows 15296 (ceiling 16384); the rounding bound 520 positions, Plan's dense residual 259 positions; 128 below, 584 allowed
+=== RUN   TestKSH6C_marginPriced/qwen25vl-3b-instruct
+[H6C-G2] qwen25vl-3b-instruct: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 73 buffers, 1296.00 MiB charged against kvChargedBytes 1296.00 MiB; margin 261.0 MiB planned, 261.0 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen25vl-3b-instruct: context 16384 (planned 16384), 1 KV slots, margin 261.0 MiB
+[H6C-G3] qwen25vl-3b-instruct: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 2076 positions, Plan's dense residual 513 positions; 0 below, 2140 allowed
+=== RUN   TestKSH6C_marginPriced/gemma-4-E2B_q4_0-it.gguf
+[H6C-G2] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: post-pool 26 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 31 buffers, 636.00 MiB charged against kvChargedBytes 636.00 MiB; margin 363.0 MiB planned, 363.0 MiB on the built resident (at 16384 positions)
+[H6C-G5] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: context 16384 (planned 16384), 1 KV slots, margin 363.0 MiB
+[H6C-G3] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 1764 positions, Plan's dense residual 1652 positions; 0 below, 1828 allowed
+--- PASS: TestKSH6C_marginPriced (42.52s)
+    --- PASS: TestKSH6C_marginPriced/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.76s)
+    --- PASS: TestKSH6C_marginPriced/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (4.68s)
+    --- PASS: TestKSH6C_marginPriced/gemma-3-4b-it (14.28s)
+    --- PASS: TestKSH6C_marginPriced/qwen25vl-3b-instruct (12.45s)
+    --- PASS: TestKSH6C_marginPriced/gemma-4-E2B_q4_0-it.gguf (8.50s)
+PASS
+== g2large 03:22:44: load 4.94 3.82 3.81; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestKSH6C_marginPriced7B8B
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestKSH6C_marginPriced7B8B/qwen2.5-7b-instruct-q4_k_m.gguf
+[H6C-G2] qwen2.5-7b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 57 buffers, 1904.00 MiB charged against kvChargedBytes 1904.00 MiB; margin 328.3 MiB planned, 328.3 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-7b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 328.3 MiB
+[H6C-G3] qwen2.5-7b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 1042 positions, Plan's dense residual 178 positions; 0 below, 1106 allowed
+=== RUN   TestKSH6C_marginPriced7B8B/Qwen3-8B-Q4_K_M.gguf
+[resident] BuildResident declined (ok=false err=cuda: resident context 16384 positions needs 4.98 GB of KV (297.0 KB/position across 36 layers) but only 2.84 GB is free on the device beside the weights (plus 285 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model) — continuing on the CPU/staged path
+    ksh6c_margin_test.go:171: not CUDA-resident: backend failed to build a resident path: cuda: resident context 16384 positions needs 4.98 GB of KV (297.0 KB/position across 36 layers) but only 2.84 GB is free on the device beside the weights (plus 285 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model
+--- FAIL: TestKSH6C_marginPriced7B8B (20.43s)
+    --- PASS: TestKSH6C_marginPriced7B8B/qwen2.5-7b-instruct-q4_k_m.gguf (7.90s)
+    --- FAIL: TestKSH6C_marginPriced7B8B/Qwen3-8B-Q4_K_M.gguf (11.69s)
+FAIL
+FAILED: g2large rc 1
+== g2moe 03:23:05: load 4.18 3.74 3.79; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6C_marginPriced26B
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestKSH6C_marginPriced26B/gemma4-26b-q4_k_m.gguf
+decoder: fit is tight — gemma4-26b-q4_k_m.gguf needs ~38.4 GB of host memory while building the CUDA expert cache (13.2 GB weights + 13.2 GB packed copy + 12.0 GB pinned copy of the experts); this machine currently has 58.2 GB of memory available (budget 40.7 GB = 70% of that) (94% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.5 GB free — capping to 30 (3.1 GB)
+[H6C-G2] gemma4-26b-q4_k_m.gguf: post-pool 40 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 61 buffers, 1880.00 MiB charged against kvChargedBytes 1880.00 MiB; margin 250.8 MiB planned, 250.8 MiB on the built resident (at 4096 positions)
+[H6C-G5] gemma4-26b-q4_k_m.gguf: context 4096 (planned 4096), 1 KV slots, margin 250.8 MiB
+--- PASS: TestKSH6C_marginPriced26B (30.91s)
+    --- PASS: TestKSH6C_marginPriced26B/gemma4-26b-q4_k_m.gguf (30.13s)
+PASS
+== g4 03:23:37: load 5.24 4.11 3.91; MemAvailable 57.1 GB; GPU 403 MiB
+=== RUN   TestKSH6C_headroomQwen3
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6] Qwen3-8B q4_k_m, unpinned: context 16384, KV f16 true, expert cache false (0 slots); free after the load 393.1 MiB (cuMemGetInfo); nvidia-smi used 403 → 7392 MiB over the load; a 512-row pass 112.0 MiB of scratch at 15872 keys
+[H6] Qwen3-8B q4_k_m, unpinned: a 15872-token prefill (17.193s, passes of 512 rows, learned cap 0) and 64 decode tokens: nvidia-smi peak used 7504 MiB over 1024 samples, 112 MiB above the post-load figure; the run's minimum free ≈ 281.1 MiB (cuMemGetInfo after the load less that peak rise); free at the end 393.1 MiB
+[H6C-G4] the run's minimum free 281.1 MiB against the bar 167 MiB
+--- PASS: TestKSH6C_headroomQwen3 (34.92s)
+PASS
+== g5before 03:24:12: load 3.58 3.83 3.82; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestBuildScratchAccounting
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf    device before KV   466 MiB | Plan   322 + slack  139 -> residual    5 MiB | ctx planned 16384 final 16384 (1 slots, KV   384 MiB) | post-KV scratch   96, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV  1054 MiB | Plan   926 + slack  122 -> residual    6 MiB | ctx planned 16384 final 16384 (1 slots, KV   896 MiB) | post-KV scratch  112, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4446 MiB | Plan  4021 + slack  406 -> residual   19 MiB | ctx planned 16384 final 16384 (1 slots, KV  1792 MiB) | post-KV scratch  112, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/gemma-3-4b-it
+cuda: resident context 15232, trimmed from 15488 at the build, so one KV slot fits beside the weights (4457 MB free, less 384 MB reserved)
+    build_scratch_accounting_test.go:35: [margin accounting] gemma-3-4b-it                              device before KV  2688 MiB | Plan  2362 + slack  257 -> residual   69 MiB | ctx planned 15488 final 15232 (1 slots, KV  4046 MiB) | post-KV scratch   36, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen25vl-3b-instruct
+    build_scratch_accounting_test.go:35: [margin accounting] qwen25vl-3b-instruct                       device before KV  1958 MiB | Plan  1786 + slack  136 -> residual   36 MiB | ctx planned 16384 final 16384 (1 slots, KV  1152 MiB) | post-KV scratch  144, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/gemma-4-E2B_q4_0-it.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] gemma-4-E2B_q4_0-it.gguf                   device before KV  1584 MiB | Plan  1384 + slack  142 -> residual   58 MiB | ctx planned 16384 final 16384 (1 slots, KV   576 MiB) | post-KV scratch   60, first-use    0 MiB, against the 384 MiB margin
+--- PASS: TestBuildScratchAccounting (57.52s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.80s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.59s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf (10.48s)
+    --- PASS: TestBuildScratchAccounting/gemma-3-4b-it (14.88s)
+    --- PASS: TestBuildScratchAccounting/qwen25vl-3b-instruct (12.66s)
+    --- PASS: TestBuildScratchAccounting/gemma-4-E2B_q4_0-it.gguf (9.40s)
+PASS
+== g5after 03:25:10: load 5.87 4.45 4.04; MemAvailable 58.2 GB; GPU 403 MiB
+=== RUN   TestBuildScratchAccounting
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf    device before KV   466 MiB | Plan   322 + slack  139 -> residual    5 MiB | ctx planned 16384 final 16384 (1 slots, KV   480 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 214 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV  1054 MiB | Plan   926 + slack  122 -> residual    6 MiB | ctx planned 16384 final 16384 (1 slots, KV  1008 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 248 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4446 MiB | Plan  4021 + slack  406 -> residual   19 MiB | ctx planned 16384 final 16384 (1 slots, KV  1904 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 328 MiB margin
+=== RUN   TestBuildScratchAccounting/gemma-3-4b-it
+    build_scratch_accounting_test.go:35: [margin accounting] gemma-3-4b-it                              device before KV  2688 MiB | Plan  2362 + slack  257 -> residual   69 MiB | ctx planned 15168 final 15168 (1 slots, KV  4080 MiB) | post-KV scratch    2, first-use    0 MiB, against the 331 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen25vl-3b-instruct
+    build_scratch_accounting_test.go:35: [margin accounting] qwen25vl-3b-instruct                       device before KV  1958 MiB | Plan  1786 + slack  136 -> residual   36 MiB | ctx planned 16384 final 16384 (1 slots, KV  1296 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 261 MiB margin
+=== RUN   TestBuildScratchAccounting/gemma-4-E2B_q4_0-it.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] gemma-4-E2B_q4_0-it.gguf                   device before KV  1584 MiB | Plan  1384 + slack  142 -> residual   58 MiB | ctx planned 16384 final 16384 (1 slots, KV   636 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 363 MiB margin
+--- PASS: TestBuildScratchAccounting (52.65s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.74s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.24s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf (9.15s)
+    --- PASS: TestBuildScratchAccounting/gemma-3-4b-it (14.24s)
+    --- PASS: TestBuildScratchAccounting/qwen25vl-3b-instruct (11.78s)
+    --- PASS: TestBuildScratchAccounting/gemma-4-E2B_q4_0-it.gguf (7.74s)
+=== RUN   TestBuildScratchAccounting_plantedDefect
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV  1054 MiB | Plan   926 + slack  122 -> residual    6 MiB | ctx planned 16384 final 16384 (1 slots, KV  1008 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 248 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV  1054 MiB | Plan   926 + slack    0 -> residual  128 MiB | ctx planned 16384 final 16384 (1 slots, KV  1008 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 248 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4446 MiB | Plan  4021 + slack  406 -> residual   19 MiB | ctx planned 16384 final 16384 (1 slots, KV  1904 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 328 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4446 MiB | Plan  4021 + slack    0 -> residual  425 MiB | ctx planned 16384 final 16384 (1 slots, KV  1904 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 328 MiB margin
+cuda: resident context 15296, trimmed from 16128 at the build, so one KV slot fits beside the weights (4457 MB free, less 331 MB reserved)
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] gemma-3-4b-it                              device before KV  2688 MiB | Plan  2362 + slack  257 -> residual   69 MiB | ctx planned 15168 final 15168 (1 slots, KV  4080 MiB) | post-KV scratch    2, first-use    0 MiB, against the 331 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] gemma-3-4b-it                              device before KV  2688 MiB | Plan  2362 + slack    0 -> residual  326 MiB | ctx planned 16128 final 15296 (1 slots, KV  4080 MiB) | post-KV scratch    2, first-use    0 MiB, against the 331 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] qwen25vl-3b-instruct                       device before KV  1958 MiB | Plan  1786 + slack  136 -> residual   36 MiB | ctx planned 16384 final 16384 (1 slots, KV  1296 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 261 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] qwen25vl-3b-instruct                       device before KV  1958 MiB | Plan  1786 + slack    0 -> residual  172 MiB | ctx planned 16384 final 16384 (1 slots, KV  1296 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 261 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] gemma-4-E2B_q4_0-it.gguf                   device before KV  1584 MiB | Plan  1384 + slack  142 -> residual   58 MiB | ctx planned 16384 final 16384 (1 slots, KV   636 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 363 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] gemma-4-E2B_q4_0-it.gguf                   device before KV  1584 MiB | Plan  1384 + slack    0 -> residual  200 MiB | ctx planned 16384 final 16384 (1 slots, KV   636 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 363 MiB margin
+--- PASS: TestBuildScratchAccounting_plantedDefect (93.20s)
+PASS
+== g5before8b 03:27:36: load 6.03 4.93 4.27; MemAvailable 58.3 GB; GPU 403 MiB
+=== RUN   TestKSH6_marginPartsQwen3
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[H6] Qwen3-8B q4_k_m: context 16384, KV f16 true, expert cache false (0 slots); free after the load 261.1 MiB (cuMemGetInfo); nvidia-smi used 403 → 7524 MiB over the load; a 512-row pass 112.0 MiB of scratch at 15000 keys
+[H6] Qwen3-8B q4_k_m: a 15000-token prefill (16.032s, passes of 512 rows, learned cap 0) and 64 decode tokens: nvidia-smi peak used 7636 MiB over 958 samples, 112 MiB above the post-load figure; the run's minimum free ≈ 149.1 MiB (cuMemGetInfo after the load less that peak rise); free at the end 261.1 MiB
+--- PASS: TestKSH6_marginPartsQwen3 (32.70s)
+PASS
+03:28:08 DONE fail=1

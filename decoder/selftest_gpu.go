@@ -14,9 +14,9 @@ import (
 
 // The resident self-test (docs/tasks/task-hardware-coverage-2026-10.md, H2): for a GPU backend, run tiny committed checkpoints through the RESIDENT path and through the CPU path already in this
 // binary, and hold the resident logits to the CPU's with the numeric bars the resident-vs-CPU parity gates already use. It exercises the kernels the real model is about to use (the same resident
-// build, not reimplementations), on a fixed deterministic input, and it runs once per backend and quant per process, after the real model's resident is built (so the device context is already held and
-// the cost is the tiny models' own, not a context creation). On a mismatch the real model's resident is dropped and the model continues on the CPU path with the reason on its decode path,
-// the existing decline route, instead of producing wrong numbers silently.
+// build, not reimplementations), on a fixed deterministic input, and it runs once per backend and quant per process, before the real model's resident is built, so the device memory its
+// fixture builds take is released (on CUDA the context goes with the last fixture, and its pool with it) or already held when the real build plans and fit-checks. On a mismatch the real
+// model's resident is not built and the model continues on the CPU path with the reason on its decode path, instead of producing wrong numbers silently.
 //
 // The fixtures are four tiny random-weight checkpoints, chosen for the kernels they reach: qwen35vl-tiny (a 512-position
 // window, so attention runs past 256 keys, beyond both softmax reduction widths, beside DeltaNet layers), llama-tiny (the
@@ -57,8 +57,9 @@ var (
 // (residentPrecision). Add a backend here with its margins.
 var probeMeasured = map[string]bool{"cuda": true, "webgpu": true, "metal": true}
 
-// gpuProbeAfterResident is called by withResidency once a resident is attached. It returns the (cached) result for this model's backend and quant, and whether a probe applies at all.
-func gpuProbeAfterResident(m *Model) (SelfTestResult, bool) {
+// gpuProbeBeforeResident is called by withResidency after residencyGate admits the backend and before it builds the resident. It returns the (cached) result for this model's backend and quant,
+// and whether a probe applies at all.
+func gpuProbeBeforeResident(m *Model) (SelfTestResult, bool) {
 	backend := probeBackendName(m.be)
 	if !probeMeasured[backend] || m.noSelfTest || SelfTestsSkipped() {
 		return SelfTestResult{}, false

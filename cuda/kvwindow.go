@@ -106,7 +106,7 @@ func (r *cudaResident) kvGrantRollback(holdBack int64) {
 			perPos += int64(slots) * 2 * int64(Ly.kvDim) * elem
 		}
 	}
-	reserve := r.extraBytes + ctxCapMarginBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + holdBack
+	reserve := r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + holdBack
 	maxExtra := min(kvWindowRollbackMax-r.kvRollback(), r.ctxCap-1-r.kvWindow-r.kvSlack)
 	extra := kvWindowGrant(int64(free), reserve, perPos, kvWindowStep, maxExtra)
 	if extra == 0 || !r.kvReallocWindowed(r.kvSlack+extra) {

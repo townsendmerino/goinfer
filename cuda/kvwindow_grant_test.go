@@ -102,7 +102,7 @@ func TestWindowedKV_expertCacheGetsTheGrant(t *testing.T) {
 	orig := kvGrantFreeVRAM
 	t.Cleanup(func() { kvGrantFreeVRAM = orig })
 	kvGrantFreeVRAM = func(r *cudaResident) (uint64, error) {
-		return uint64(r.extraBytes + ctxCapMarginBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + r.expertCacheFloorBytes() + 1), nil
+		return uint64(r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + r.expertCacheFloorBytes() + 1), nil
 	}
 	_, poor := loadResident(t, "mistral-tiny-window", decoder.Options{ResidentWindowedKV: true, MoECacheExperts: true})
 	kvGrantFreeVRAM = orig
@@ -171,7 +171,7 @@ func TestWindowedKV_grant(t *testing.T) {
 	orig := kvGrantFreeVRAM
 	t.Cleanup(func() { kvGrantFreeVRAM = orig })
 	kvGrantFreeVRAM = func(r *cudaResident) (uint64, error) {
-		return uint64(r.extraBytes + ctxCapMarginBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + 1), nil
+		return uint64(r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + 1), nil
 	}
 	_, poor := loadResident(t, "mistral-tiny-window", opts)
 	kvGrantFreeVRAM = orig

@@ -1,0 +1,87 @@
+== qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 noselftest 22:22:56
+[H6C] /home/francis/models/qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.8 MiB, charged by allocRoundSlack 0.8 MiB; the card's drop from the first of them to the end of the load 2.0 MiB; unaccounted 1.2 MiB
+[H6C]        49152 B requested, the card's drop across it 2.00 MiB
+[H6C]     at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:75 < allocSeen resident.go:1004 < (*cudaResident).af resident.go:964 < (*cudaBackend).BuildResident.func7 backend.go:1765 < runJob resident.go:2074 < (*cudaBackend).BuildResident.func6 backend.go:837
+[H6C]     next allocation at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:75 < allocSeen resident.go:1004 < (*cudaResident).ai resident.go:990 < (*cudaBackend).BuildResident.func7 backend.go:1765 < runJob resident.go:2074 < (*cudaBackend).BuildResident.func6 backend.go:837
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]        49152 B requested, the card's drop across it 0.00 MiB
+[H6C]        49152 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        12288 B requested, the card's drop across it 0.00 MiB
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]       607744 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (11.52s)
+== qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 noselftest 22:23:08
+[H6C] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.9 MiB, charged by allocRoundSlack 0.9 MiB; the card's drop from the first of them to the end of the load 0.0 MiB; unaccounted -0.9 MiB
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         3584 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         3584 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        75776 B requested, the card's drop across it 0.00 MiB
+[H6C]        18944 B requested, the card's drop across it 0.00 MiB
+[H6C]        14336 B requested, the card's drop across it 0.00 MiB
+[H6C]       608256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (8.02s)
+== qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 0 noselftest 22:23:16
+[H6C] /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 26 allocations after the pools, requested 0.8 MiB, charged by allocRoundSlack 0.8 MiB; the card's drop from the first of them to the end of the load 0.0 MiB; unaccounted -0.8 MiB
+[H6C]         2048 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         1536 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         1536 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]        35840 B requested, the card's drop across it 0.00 MiB
+[H6C]         8960 B requested, the card's drop across it 0.00 MiB
+[H6C]         6144 B requested, the card's drop across it 0.00 MiB
+[H6C]       607744 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         8200 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]        16384 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]         4096 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+[H6C]          596 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (5.06s)
+DONE

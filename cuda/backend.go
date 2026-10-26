@@ -67,14 +67,68 @@ func layerFusable(qkvInt4, moe, guInt4 bool) bool {
 	return qkvInt4 && (moe || guInt4)
 }
 
-// BuildResident builds a resident CUDA decoder from a loaded Model: host-packs the int4/int8/f32 projections, spawns a
-// LockOSThread-pinned CUDA executor, and uploads weights and KV scratch once, returning a *cudaResident. It declines
-// (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
-// uses the staged/CPU path.
 // kquantKeepInt8ForTest makes BuildResident upload every native Q5_K / Q6_K weight's int8 copy beside it (cudaResident.kquantAlt),
 // so one resident can run both arms of KS-O1's A/B. Set only by a test, before the load.
 var kquantKeepInt8ForTest bool
 
+// hlayer is one layer's host plan in BuildResident: its packed weights and side tables, and the layer kind.
+type hlayer struct {
+	q, k, v, o, g, u, d       hostW
+	pleGate, pleProj          hostW     // Gemma 4 E-model per-layer embedding branch (S1 on CUDA); zero unless pleP > 0
+	postPLENorm               []float32 // the PLE branch's post-norm weight [hidden]
+	qb, kb, vb                []float32
+	ob                        []float32 // attention output-projection bias (GPT-2 / gpt-oss)
+	preNorm, postNorm         []float32
+	qNorm, kNorm              []float32
+	postAttnNorm, postMLPNorm []float32 // Gemma sandwich (nil unless the arch declares it)
+	invFreq                   []float32 // per-layer RoPE table
+	window                    int32
+	hasBias                   bool
+	hasOBias                  bool
+
+	// MoE, per layer: GLM/DeepSeek run dense for the first FirstKDense layers and route
+	// after, so this is keyed off the layer's own Experts (as decoder/mlp.go does), not
+	// off the arch.
+	isMoE            bool
+	expGU, expDown   hostW
+	router, routerBs []float32
+	hasShared        bool
+	shGU, shDown     hostW
+	shGate           hostW // [1, hidden] sigmoid gate (Qwen-MoE); empty ⇒ ungated (GLM/DeepSeek)
+
+	// Gemma-4 enable_moe_block (parallel dense‖MoE). g4moe routes the upload to gemma4MoeMLP's
+	// fields: the dense branch reuses g/u/d (packed from mlpGate/up/down), the router reuses
+	// router (RouterProjScaled, f32) + routerBs (zeros), the experts reuse expGU/expDown.
+	g4moe                                               bool
+	g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4post []float32
+	perExpertScale                                      []float32
+	layerScalar                                         float32
+
+	// mixer and ffn are this layer's operations from decoder.Model.ResidentLayerOps: its sequence mixer, then a feed-forward block when ffn.
+	// Nothing else decides which kind of layer this is.
+	mixer decoder.ResidentMixer
+	ffn   bool
+
+	// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
+	// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
+	// qGate marks the family's SOFTMAX layers, whose q_proj is double width.
+	qGate                                 bool
+	dnQKV, dnZ, dnOut, dnB, dnA           hostW
+	dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
+
+	// MLA (DeepSeek / Kimi, FeatMLA)
+	mlaQA, mlaQB, mlaQ, mlaKVA hostW
+	mlaQANorm, mlaKVANorm      []float32
+	mlaWUK, mlaWUV             []float32
+
+	// Mamba-2 (Nemotron-H, OP2b): the packed projections and small tables of a MixerMamba layer.
+	mamba hostMamba
+}
+
+// BuildResident builds a resident CUDA decoder from a loaded Model: host-packs the int4/int8/f32 projections, spawns a
+// LockOSThread-pinned CUDA executor, and uploads weights and KV scratch once, returning a *cudaResident. It declines
+// (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
+// uses the staged/CPU path.
 func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
@@ -192,58 +246,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
-	type hlayer struct {
-		q, k, v, o, g, u, d       hostW
-		pleGate, pleProj          hostW     // Gemma 4 E-model per-layer embedding branch (S1 on CUDA); zero unless pleP > 0
-		postPLENorm               []float32 // the PLE branch's post-norm weight [hidden]
-		qb, kb, vb                []float32
-		ob                        []float32 // attention output-projection bias (GPT-2 / gpt-oss)
-		preNorm, postNorm         []float32
-		qNorm, kNorm              []float32
-		postAttnNorm, postMLPNorm []float32 // Gemma sandwich (nil unless the arch declares it)
-		invFreq                   []float32 // per-layer RoPE table
-		window                    int32
-		hasBias                   bool
-		hasOBias                  bool
-
-		// MoE, per layer: GLM/DeepSeek run dense for the first FirstKDense layers and route
-		// after, so this is keyed off the layer's own Experts (as decoder/mlp.go does), not
-		// off the arch.
-		isMoE            bool
-		expGU, expDown   hostW
-		router, routerBs []float32
-		hasShared        bool
-		shGU, shDown     hostW
-		shGate           hostW // [1, hidden] sigmoid gate (Qwen-MoE); empty ⇒ ungated (GLM/DeepSeek)
-
-		// Gemma-4 enable_moe_block (parallel dense‖MoE). g4moe routes the upload to gemma4MoeMLP's
-		// fields: the dense branch reuses g/u/d (packed from mlpGate/up/down), the router reuses
-		// router (RouterProjScaled, f32) + routerBs (zeros), the experts reuse expGU/expDown.
-		g4moe                                               bool
-		g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4post []float32
-		perExpertScale                                      []float32
-		layerScalar                                         float32
-
-		// mixer and ffn are this layer's operations from decoder.Model.ResidentLayerOps: its sequence mixer, then a feed-forward block when ffn.
-		// Nothing else decides which kind of layer this is.
-		mixer decoder.ResidentMixer
-		ffn   bool
-
-		// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
-		// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
-		// qGate marks the family's SOFTMAX layers, whose q_proj is double width.
-		qGate                                 bool
-		dnQKV, dnZ, dnOut, dnB, dnA           hostW
-		dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
-
-		// MLA (DeepSeek / Kimi, FeatMLA)
-		mlaQA, mlaQB, mlaQ, mlaKVA hostW
-		mlaQANorm, mlaKVANorm      []float32
-		mlaWUK, mlaWUV             []float32
-
-		// Mamba-2 (Nemotron-H, OP2b): the packed projections and small tables of a MixerMamba layer.
-		mamba hostMamba
-	}
 	// MLA geometry (DeepSeek / Kimi).
 	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
 
@@ -728,7 +730,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			nMamba++
 		}
 	}
-	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack+mambaStateBytes(mambaP, nMamba))
 	attnCap := m.AttnLogitSoftcapResident()
 	if attnSoftcapDropForTest {
 		attnCap = 0
@@ -759,14 +760,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		isMLA:        mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
-		mlaRopeScale: float32(mlaRopeScale),
-		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
-		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
-		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
-		// cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who
-		// did not ask allocates exactly what they always did.
-		ctxCap:          residentCtxCap,
-		ctxPlanned:      residentCtxCap,
+		mlaRopeScale:    float32(mlaRopeScale),
 		allocSlackBytes: allocSlack,
 		ctxExplicit:     m.ResidentContextRequest() > 0,
 		// One conversation may use the whole KV pool (KV4a-3) unless a context was asked for or pinned by the fit guard, or a companion's
@@ -774,10 +768,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		kvRaise:    m.ResidentContextRequest() <= 0 && m.ExtraResidentKVPerPosition() == 0,
 		modelCtx:   m.Config().MaxPositions,
 		kvSlotsReq: kvSlotsReq,
-		// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate,
-		// the widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller
-		// price than the one planned against; checkKVFits enforces it.
-		extraBytes: m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(residentCtxCap),
 	}
 	if moeSig {
 		r.moeSigmoid = 1
@@ -840,11 +830,53 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// (runJob — the executor's panic boundary — is defined below.)
 
+	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
+	// and the fused-attention flags are set again where the modules load.
+	r.layers = planLayerGeometry(m, hls, nH, r)
+	r.pleP, r.eModel = pleP, pleP > 0
+	for l := range r.layers {
+		r.eModel = r.eModel || r.layers[l].kvShared
+	}
+	r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
+	if m.ExactPrefill() {
+		r.fastAttn, r.fastGemm = false, false
+	}
+	r.planning = true
+	// A MoE build whose context is planned opens its device and pays moe_route's local-memory pool (payRoutePool) before the plan
+	// reads free VRAM, on the context it keeps: the startup self-test's pool is released with its own context before the build, so
+	// nothing else has paid it (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). It checks the weights
+	// first, against the margin at the floor, so a model that does not fit gets checkWeightsFit's decline rather than a warm-up's
+	// failure. The setup job keeps this device and stream, and checks the weights again against the margin it plans.
+	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
+		r.ctxMarginBytes = r.ctxMarginFor(floor)
+		if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
+			r.Close()
+			return declined(e)
+		}
+	}
+	owners, mlaPools := kvLayerCounts(r.layers)
+	// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site: several buffers are sized from it
+	// earlier (the split-KV score scratch among them), and a zero-value ctxCap makes those 0-byte allocations that fail the whole
+	// resident build. cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who did not ask
+	// allocates exactly what they always did.
+	// The plan reads free VRAM: a MoE build has paid its local-memory pool above, on the context it keeps.
+	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
+		allocSlack+mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
+		kvRoundingBound(owners, mlaPools))
+	r.planning, r.layers = false, nil
+	r.ctxPlanned = r.ctxCap
+	// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate, the
+	// widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller price than the
+	// one planned against; checkKVFits enforces it.
+	r.extraBytes = m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(r.ctxCap)
+
 	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
 	setupErr := r.do(func() error {
 		var e error
-		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
-			return e
+		if r.dev == nil { // a MoE build opened it before the plan (openForPlan)
+			if r.dev, e = CreateSystemDefaultDevice(); e != nil {
+				return e
+			}
 		}
 		// launch issues kernels from this thread (Queue.LaunchDirect), which needs the context current here.
 		if e := r.dev.BindCurrentThread(); e != nil {
@@ -1321,7 +1353,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		r.stream = r.dev.NewCommandQueue()
+		if !r.openedForPlan {
+			r.stream = r.dev.NewCommandQueue()
+		}
 
 		// gpt-oss per-layer device state: the attention sinks and the per-expert gate‖up
 		// bias table. Uploaded once here rather than per token — they are weights, not
@@ -1700,6 +1734,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
 		// belongs HERE, though: it needs the per-layer kvDims, and running it immediately before the
 		// caches are allocated is what makes `free` mean "what is actually left for KV".
+		if e := r.payRoutePool(); e != nil {
+			return e
+		}
 		if e := r.checkKVFits(); e != nil {
 			return e
 		}
@@ -1727,6 +1764,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// instead of dropping the whole resident to the CPU; one slot that does not fit still declines.
 		if e := r.kvAllocPoolsFit(); e != nil {
 			return e
+		}
+		if kvPoolsDoneForTest != nil {
+			kvPoolsDoneForTest()
 		}
 		if r.actG32 && maxQDim%32 != 0 {
 			return fmt.Errorf("per-32 activations need the attention width (%d) to be a multiple of 32", maxQDim)
@@ -1831,44 +1871,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		} else {
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
 		}
-		// Pay moe_route's deferred first-launch local-memory reservation BEFORE the free reading that sizes the cache, so the
-		// cap is correct by construction rather than covered by a margin. moe_route declares per-thread local scratch, and the
-		// driver backs it for the device's occupancy the first time the kernel runs, not at module load; the launch demands
-		// about 289 MB and retains about 138 MB on the RTX 2070 SUPER, invisible to allocSlots, which reads free VRAM before any
-		// kernel has run. Forcing it here beats enlarging slotMarginBytes: the peak is transient, so paying it now means the
-		// reading below sees only what is retained, and a margin would bury a named consumer in an unnamed constant.
-		//
-		// Naming moe_route is safe because the backing store is shared and sized by the largest kernel, and
-		// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if
-		// another kernel declares more. route_gptoss does (4608 B/thread against 4416), so it is forced below wherever it is
-		// bound (TestRouteGptOssGrowsPoolPastMoERoute). This was measured with sequential single-stream launches, which is what
-		// goinfer does; concurrent streams would reopen whether the bound is the max or a sum.
-		if r.moe && r.cacheExperts {
-			// nE=1, k=1, nGroup=1 does the least work the kernel can do. Its outputs are discarded (rIdx/rWgt are overwritten by
-			// every real token before being read, and rLogits is read uninitialised as logits and bias): only the allocation side
-			// effect is wanted.
-			if e := r.stream.Launch(r.fRoute, onecfg(1, 0),
-				Arg(r.rLogits), Arg(r.rLogits), Arg(r.rIdx), Arg(r.rWgt),
-				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)),
-				gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
-				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
-				return fmt.Errorf("pre-sizing warm-up of moe_route failed: %w", e)
-			}
-			if r.gptOssRoute != (Pipeline{}) {
-				// nE=1, k=1, with the same discarded outputs and rLogits as the bias.
-				if e := r.stream.Launch(r.gptOssRoute, onecfg(1, 0),
-					Arg(r.rLogits), Arg(r.rLogits), Arg(r.rIdx), Arg(r.rWgt),
-					gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
-					return fmt.Errorf("pre-sizing warm-up of route_gptoss failed: %w", e)
-				}
-			}
-			// Synchronise: the reservation must be a fact before free VRAM is read, and an async
-			// launch would let allocSlots read the pre-launch figure and reproduce the whole defect.
-			if e := r.stream.Sync(); e != nil {
-				return fmt.Errorf("pre-sizing warm-up of moe_route failed to complete: %w", e)
-			}
-		}
 		// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
+		if postPoolDoneForTest != nil {
+			postPoolDoneForTest()
+		}
 		r.allocRecurrentCheckpoint()
 		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
 		// cache to what actually fits (cap-and-log, never OOM) and allocate it.
@@ -1972,6 +1978,100 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	b.resident = r
 	return r, true, nil
 }
+
+// kvPoolsDoneForTest and postPoolDoneForTest, when set (tests only), are called after the KV pools are allocated and before the
+// self-sizing grants (the recurrent checkpoint, the expert slots, the windowed grant), so a test can hold postPoolBytes to what the
+// build allocates between them (TestKSH6C_marginPriced).
+var kvPoolsDoneForTest, postPoolDoneForTest func()
+
+// routePoolOffForTest, when set (tests only), skips payRoutePool: H6C-S5's plant.
+var routePoolOffForTest bool
+
+// payRoutePool pays moe_route's deferred first-launch local-memory reservation before checkKVFits and allocSlots read free VRAM,
+// so the context and the expert cache are sized net of it by construction rather than covered by a margin. moe_route declares
+// per-thread local scratch, and the driver backs it for the device's occupancy the first time the kernel runs, not at module
+// load: on the RTX 2070 SUPER the launch demands about 289 MB and retains about 138 MB. A MoE build whose context is planned pays
+// it before the plan (openForPlan); every MoE build pays it here before the fit check, where, once the pool exists, it costs one
+// launch and no memory. The startup self-test's own pool goes with its context, so it does not count
+// (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment").
+//
+// Naming moe_route is safe because the backing store is shared and sized by the largest kernel launched, and
+// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if another kernel
+// declares more. route_gptoss does (4608 B/thread against 4416), so it is forced too wherever it is bound
+// (TestRouteGptOssGrowsPoolPastMoERoute). This was measured with sequential single-stream launches, which is what goinfer does;
+// concurrent streams would reopen whether the bound is the max or a sum. A dense build binds neither and pays nothing.
+func (r *cudaResident) payRoutePool() error {
+	if r.fRoute == (Pipeline{}) || routePoolOffForTest {
+		return nil
+	}
+	// nE=1, k=1, nGroup=1 does the least work the kernel can do, on scratch released below: only the allocation side effect is
+	// wanted (logits and bias are read uninitialised, the index and weight outputs discarded).
+	lg, idx, wgt := gpu.NewBufferLenOf[float32](r.dev, 1), gpu.NewBufferLenOf[uint32](r.dev, 1), gpu.NewBufferLenOf[float32](r.dev, 1)
+	defer func() { r.dev.ReleaseBuf(lg); r.dev.ReleaseBuf(idx); r.dev.ReleaseBuf(wgt) }()
+	if e := r.stream.Launch(r.fRoute, onecfg(1, 0),
+		Arg(lg), Arg(lg), Arg(idx), Arg(wgt),
+		gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)),
+		gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
+		gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+		return fmt.Errorf("pre-sizing warm-up of moe_route failed: %w", e)
+	}
+	if r.gptOssRoute != (Pipeline{}) {
+		// nE=1, k=1, with the same discarded outputs and the logits as the bias.
+		if e := r.stream.Launch(r.gptOssRoute, onecfg(1, 0),
+			Arg(lg), Arg(lg), Arg(idx), Arg(wgt),
+			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+			return fmt.Errorf("pre-sizing warm-up of route_gptoss failed: %w", e)
+		}
+	}
+	// Synchronise: the reservation must be a fact before free VRAM is read, and an async launch would let the fit check read the
+	// pre-launch figure.
+	if e := r.stream.Sync(); e != nil {
+		return fmt.Errorf("pre-sizing warm-up of moe_route failed to complete: %w", e)
+	}
+	return nil
+}
+
+// openForPlan is a MoE build's step before its plan, on the executor thread: it creates the build's device and stream, checks the
+// weights fit (checkWeightsFit, against the margin set before it), binds moe_route (and route_gptoss on gpt-oss) from their own
+// modules, and pays the local-memory pool (payRoutePool), so the plan's free reading is net of it. The setup job compiles those
+// modules again with the rest of their kernels.
+func (r *cudaResident) openForPlan(m *decoder.Model) error {
+	var e error
+	if r.dev, e = CreateSystemDefaultDevice(); e != nil {
+		return e
+	}
+	if e := r.dev.BindCurrentThread(); e != nil {
+		return e
+	}
+	r.stream, r.openedForPlan = r.dev.NewCommandQueue(), true
+	if e := r.checkWeightsFit(m); e != nil {
+		return e
+	}
+	if prePlanPoolOffForTest {
+		return nil
+	}
+	mod, e := r.dev.CompileLibrary(moePTX)
+	if e != nil {
+		return e
+	}
+	if r.fRoute, e = r.dev.NewComputePipeline(mod, "moe_route"); e != nil {
+		return e
+	}
+	if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+		gmod, ge := r.dev.CompileLibrary(gptOssActPTX)
+		if ge != nil {
+			return ge
+		}
+		if r.gptOssRoute, e = r.dev.NewComputePipeline(gmod, "route_gptoss"); e != nil {
+			return e
+		}
+	}
+	return r.payRoutePool()
+}
+
+// prePlanPoolOffForTest, when set (tests only), makes openForPlan skip the warm-up: H6C-S6's plant, the pool paid only before the
+// fit check, after the plan has read free VRAM.
+var prePlanPoolOffForTest bool
 
 // cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for: the model's request
 // (decoder.Model.ResidentKVSlotsRequest, already 1 for a family with recurrent state), forced to 1 in two cases the

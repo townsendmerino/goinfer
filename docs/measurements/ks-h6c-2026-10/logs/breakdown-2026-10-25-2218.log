@@ -1,0 +1,91 @@
+== qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 22:18:21
+[H6C] /home/francis/models/qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf ctx 16384 kvF16 true: 70 allocations after the pools, requested 0.3 MiB, charged by allocRoundSlack 0.3 MiB; the card's drop from the first of them to the end of the load 130.0 MiB; unaccounted 129.7 MiB
+[H6C]         4096 B requested, the card's drop across it 132.00 MiB
+[H6C]     at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:71 < allocSeen resident.go:1004 < (*cudaResident).af resident.go:964 < (*cudaResident).allocCheckpointCopies recurrent_checkpoint.go:90 < (*cudaResident).allocRecurrentCheckpoint recurrent_checkpoint.go:61 < (*cudaBackend).BuildResident.func7 backend.go:1872
+[H6C]     next allocation at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:71 < allocSeen resident.go:1004 < (*cudaResident).af resident.go:964 < (*cudaResident).prefillCore.func1.4 prefill.go:1101 < (*cudaResident).prefillCore.func1 prefill.go:1114 < runJob resident.go:2074
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]           64 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]           64 B requested, the card's drop across it 0.00 MiB
+[H6C]           16 B requested, the card's drop across it 0.00 MiB
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          128 B requested, the card's drop across it 0.00 MiB
+[H6C]           32 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          128 B requested, the card's drop across it 0.00 MiB
+[H6C]           32 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]         1024 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (12.02s)
+== qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 22:18:33
+[H6C] /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 70 allocations after the pools, requested 0.3 MiB, charged by allocRoundSlack 0.3 MiB; the card's drop from the first of them to the end of the load 130.0 MiB; unaccounted 129.7 MiB
+[H6C]         4096 B requested, the card's drop across it 132.00 MiB
+[H6C]     at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:71 < allocSeen resident.go:1004 < (*cudaResident).af resident.go:964 < (*cudaResident).allocCheckpointCopies recurrent_checkpoint.go:90 < (*cudaResident).allocRecurrentCheckpoint recurrent_checkpoint.go:61 < (*cudaBackend).BuildResident.func7 backend.go:1872
+[H6C]     next allocation at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:71 < allocSeen resident.go:1004 < (*cudaResident).af resident.go:964 < (*cudaResident).prefillCore.func1.4 prefill.go:1101 < (*cudaResident).prefillCore.func1 prefill.go:1114 < runJob resident.go:2074
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]           64 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]           64 B requested, the card's drop across it 0.00 MiB
+[H6C]           16 B requested, the card's drop across it 0.00 MiB
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          128 B requested, the card's drop across it 0.00 MiB
+[H6C]           32 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          128 B requested, the card's drop across it 0.00 MiB
+[H6C]           32 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]         1024 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (8.26s)
+== qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 0 22:18:42
+[H6C] /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf ctx 16384 kvF16 true: 70 allocations after the pools, requested 0.3 MiB, charged by allocRoundSlack 0.3 MiB; the card's drop from the first of them to the end of the load 130.0 MiB; unaccounted 129.7 MiB
+[H6C]         4096 B requested, the card's drop across it 132.00 MiB
+[H6C]     at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:71 < allocSeen resident.go:1004 < (*cudaResident).af resident.go:964 < (*cudaResident).allocCheckpointCopies recurrent_checkpoint.go:90 < (*cudaResident).allocRecurrentCheckpoint recurrent_checkpoint.go:61 < (*cudaBackend).BuildResident.func7 backend.go:1872
+[H6C]     next allocation at TestKSH6C_postPoolBreakdown.func3 ksh6c_breakdown_test.go:71 < allocSeen resident.go:1004 < (*cudaResident).af resident.go:964 < (*cudaResident).prefillCore.func1.4 prefill.go:1101 < (*cudaResident).prefillCore.func1 prefill.go:1114 < runJob resident.go:2074
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]           64 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]           64 B requested, the card's drop across it 0.00 MiB
+[H6C]           16 B requested, the card's drop across it 0.00 MiB
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]            8 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          128 B requested, the card's drop across it 0.00 MiB
+[H6C]           32 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          128 B requested, the card's drop across it 0.00 MiB
+[H6C]           32 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]          256 B requested, the card's drop across it 0.00 MiB
+[H6C]         1024 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+[H6C]            4 B requested, the card's drop across it 0.00 MiB
+--- PASS: TestKSH6C_postPoolBreakdown (5.39s)
+DONE

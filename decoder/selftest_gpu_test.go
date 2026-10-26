@@ -81,8 +81,9 @@ func TestSelfTestFixtures_matchTestdataAndFitTheirWindow(t *testing.T) {
 	}
 }
 
-// The calling convention under test is withResidency's: the probe is reached from a real Load, runs once per backend and quant, and a decline drops that model's resident. A resident that
-// answers with a one-hot row (fakeResident) cannot agree with the CPU's logits on any fixture.
+// The calling convention under test is withResidency's: the probe is reached from a real Load, runs once per backend and quant before the model's own build, and a decline skips that
+// build (H6C-S2, docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, amendment"). A resident that answers with a one-hot row (fakeResident) cannot agree with the CPU's logits on any
+// fixture.
 func TestGPUProbe_declinesAWrongResidentThroughLoad(t *testing.T) {
 	t.Cleanup(resetSelfTestCaches)
 	var warns []string
@@ -117,8 +118,8 @@ func TestGPUProbe_declinesAWrongResidentThroughLoad(t *testing.T) {
 	if d := m.ResidentDecline(); !strings.Contains(d, "startup self-test declined") {
 		t.Errorf("decline reason %q does not name the self-test", d)
 	}
-	if got := int64(len(selfTestFixtures)) + 1; builds.Load() != got {
-		t.Errorf("%d resident builds on first load; want the real model's plus one per fixture (%d)", builds.Load(), got)
+	if got := int64(len(selfTestFixtures)); builds.Load() != got {
+		t.Errorf("%d resident builds on first load; want one per fixture (%d) and none for the model the probe declined", builds.Load(), got)
 	}
 	var rec *SelfTestResult
 	for _, r := range SelfTestResults() {
@@ -137,15 +138,15 @@ func TestGPUProbe_declinesAWrongResidentThroughLoad(t *testing.T) {
 		t.Error("no WARN line for a declined backend")
 	}
 
-	// Cached: a second model on the same backend and quant adds exactly its own resident build and is declined from the cache.
+	// Cached: a second model on the same backend and quant is declined from the cache, building nothing.
 	before := builds.Load()
 	m2, err := Load(tinyFixture(t), Options{Backend: name, Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m2.Close()
-	if builds.Load()-before != 1 || m2.resident != nil {
-		t.Errorf("second load: %d builds (want 1: no re-probe), resident attached = %v", builds.Load()-before, m2.resident != nil)
+	if builds.Load()-before != 0 || m2.resident != nil || !strings.Contains(m2.ResidentDecline(), "startup self-test declined") {
+		t.Errorf("second load: %d builds (want 0: no re-probe, no build), resident attached = %v, decline %q", builds.Load()-before, m2.resident != nil, m2.ResidentDecline())
 	}
 
 	// -no-selftest: nothing is checked, so the (wrong) resident stays, which is exactly what the flag trades away.
@@ -159,6 +160,86 @@ func TestGPUProbe_declinesAWrongResidentThroughLoad(t *testing.T) {
 	if m3.resident == nil {
 		t.Error("with self-tests skipped the resident was still dropped")
 	}
+}
+
+// TestGPUProbe_runsBeforeTheBuild is H6C-S1 and H6C-S3 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, amendment"): on a first load
+// the probe's fixture builds all come before the model's own, a probe that does not decline keeps the model's resident, a second load builds the
+// model once and no fixture, and with self-tests skipped no fixture is built. The fixtures decline to go resident here, so the probe reads
+// skipped, not declined, and the order is all that is under test.
+func TestGPUProbe_runsBeforeTheBuild(t *testing.T) {
+	t.Cleanup(resetSelfTestCaches)
+	resetSelfTestCaches()
+	const name = "fake-order-gpu"
+	probeMeasured[name] = true
+	t.Cleanup(func() { delete(probeMeasured, name) })
+	var mu sync.Mutex
+	var seq []bool // true: a fixture's build; false: a model's own
+	RegisterBackend(name, func() (Backend, error) {
+		cpu, err := NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be := &fakeNamedResidency{name: name}
+		be.Backend = cpu
+		return &orderedBuild{fakeNamedResidency: be, seq: &seq, mu: &mu}, nil
+	})
+	load := func(q string) *Model {
+		t.Helper()
+		m, err := Load(tinyFixture(t), Options{Backend: name, Quant: q})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = m.Close() })
+		return m
+	}
+	m := load("int4")
+	mu.Lock()
+	first := append([]bool(nil), seq...)
+	mu.Unlock()
+	if len(first) != len(selfTestFixtures)+1 || first[len(first)-1] {
+		t.Fatalf("first load built %v (true: a fixture); want %d fixtures, then the model", first, len(selfTestFixtures))
+	}
+	for i, fx := range first[:len(first)-1] {
+		if !fx {
+			t.Errorf("build %d of the first load was a model's, before the probe finished: %v", i, first)
+		}
+	}
+	if m.resident == nil {
+		t.Errorf("a probe that did not decline dropped the resident: %s", m.ResidentDecline())
+	}
+	m2 := load("int4")
+	mu.Lock()
+	second := append([]bool(nil), seq[len(first):]...)
+	mu.Unlock()
+	if len(second) != 1 || second[0] || m2.resident == nil {
+		t.Errorf("second load built %v (want one model build, no fixture), resident attached %v", second, m2.resident != nil)
+	}
+	t.Cleanup(func() { selfTestSkipped.Store(false) })
+	SkipSelfTests()
+	m3 := load("int8")
+	mu.Lock()
+	third := append([]bool(nil), seq[len(first)+len(second):]...)
+	mu.Unlock()
+	if len(third) != 1 || third[0] || m3.resident == nil {
+		t.Errorf("with self-tests skipped the load built %v (want one model build, no fixture), resident attached %v", third, m3.resident != nil)
+	}
+}
+
+// orderedBuild records each build in order (true for a self-test fixture's) and declines the fixtures, so the probe reads skipped.
+type orderedBuild struct {
+	*fakeNamedResidency
+	seq *[]bool
+	mu  *sync.Mutex
+}
+
+func (o *orderedBuild) BuildResident(m *Model) (ResidentForward, bool, error) {
+	o.mu.Lock()
+	*o.seq = append(*o.seq, m.noSelfTest)
+	o.mu.Unlock()
+	if m.noSelfTest {
+		return nil, false, nil
+	}
+	return o.fakeNamedResidency.BuildResident(m)
 }
 
 type countingBuild struct {

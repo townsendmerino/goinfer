@@ -37,11 +37,6 @@ var (
 // error to find a deployment's real ceiling.
 const cudaCtxCapDefault = 4096
 
-// ctxCapMarginBytes is the VRAM left free beside weights+KV at the load-time fit check: driver
-// overhead plus the transient allocations decode makes (logits readback, split-KV scratch). Same
-// margin the C′ expert cache uses, for the same reason.
-const ctxCapMarginBytes = 384 << 20
-
 // resolveCtxCap turns a request into the effective resident KV capacity:
 //
 //	cap = min(model context window, request)   — request 0 ⇒ cudaCtxCapDefault
@@ -91,23 +86,71 @@ const fitDefaultCtx = 16384
 // decision. A guard pin gets fit-by-default and the slots rule too, with its ceiling and floor both following
 // it down, never up: decoder.ctxFloor (2048) can sit under cudaCtxCapDefault, and raising a guard-shrunk
 // context back to cudaCtxCapDefault is exactly the regression the guard pinned it to prevent.
-func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int) int {
-	return resolveCtxCapFitSlack(m, request, modelCtx, slots, 0)
+//
+// margin is the context margin at a context (cudaResident.ctxMarginFor): the plan subtracts it at the widest context it asks for,
+// and the figure at the context returned is returned beside it, for checkKVFits to keep.
+func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int, margin func(ctx int) int64) (int, int64) {
+	return resolveCtxCapFitSlack(m, request, modelCtx, slots, 0, margin, 0)
 }
 
 // resolveCtxCapFitSlack is resolveCtxCapFit for a build that knows its packed weight buffers: allocSlack is the
 // device memory the driver's allocation rounding adds to them (packedAllocSlack), which Plan's dense figure -- the
 // requested bytes -- cannot see. It is priced as ExtraBytes here and NOT in checkKVFits, whose probe is read after the
 // weights are on the device and is already net of it. 0 for a caller without the packed weights.
-func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, allocSlack int64) int {
-	if (request > 0 && m.ResidentContextPinned()) || m.FitDisabled() || m.MoECacheExperts() {
-		return resolveCtxCap(request, modelCtx) // a genuine explicit -ctx is untouched either way
+//
+// kvRound bounds what the device's rounding of the KV pools adds to Plan's linear KV figure (kvRoundingBound): the plan reserves
+// it beside the margin, so the context it picks fits the build's exact, charged figure (checkKVFits).
+func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, allocSlack int64, margin func(ctx int) int64, kvRound int64) (int, int64) {
+	candidate, floor, plans := ctxPlanRange(m, request, modelCtx)
+	if !plans {
+		c := floor
+		if candidate == 0 {
+			c = resolveCtxCap(request, modelCtx) // a genuine explicit -ctx is untouched either way
+		}
+		return c, margin(c)
 	}
-	candidate := fitDefaultCtx
+	// The margin at candidate, the widest context this call asks Plan for; the build keeps the figure at the context returned.
+	mb := margin(candidate)
+	free, ok := decoder.FreeBytesFor("cuda")
+	if !ok {
+		return floor, margin(floor) // unknown ⇒ the safe floor, never guess
+	}
+	if planFreeSeenForTest != nil {
+		planFreeSeenForTest(free)
+	}
+	// Plan's chooseCtx reserves NO margin, but checkKVFits requires the margin beyond dense+KV+extra. Subtracting the same
+	// margin here, with the KV pools' rounding bound, before Plan sees the free bytes, makes the two checks agree: whatever ctx
+	// Plan picks already leaves room for it (otherwise an interior choice failed checkKVFits and the whole build declined to
+	// CPU-only). Floored at 0 on a tiny probe; Plan declines an unfittable budget cleanly.
+	marginedFree := max(free-mb-kvRound, 0)
+	// ExtraBytes prices what attaches after BuildResident (m.ExtraResidentBytes: a --drafter) so the context Plan
+	// chooses leaves it room; zero when nothing attaches. The drafter's device K/V is priced at candidate, the widest
+	// ctx this call asks of Plan: Plan only shrinks from the value it is given (fitplan.go, "never GROW past what was
+	// asked"), so that can over-estimate the real cost but never under-price it.
+	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate) + allocSlack
+	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
+	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
+		return floor, margin(floor) // Plan could not confidently improve on the floor
+	}
+	c := p.Ctx
+	if slots > 1 {
+		c = ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots, floor)
+	}
+	return c, margin(c)
+}
+
+// ctxPlanRange is resolveCtxCapFitSlack's context range: the widest context it asks Plan for and the floor, and whether it asks
+// Plan at all (and so reads free VRAM). candidate is 0 when the context is not planned (a genuine pin, fit disabled, the expert
+// cache): resolveCtxCap decides it. A MoE build pays its local-memory pool before the plan only when plans is true (openForPlan).
+func ctxPlanRange(m *decoder.Model, request, modelCtx int) (candidate, floor int, plans bool) {
+	if (request > 0 && m.ResidentContextPinned()) || m.FitDisabled() || m.MoECacheExperts() {
+		return 0, 0, false
+	}
+	candidate = fitDefaultCtx
 	if modelCtx > 0 && candidate > modelCtx {
 		candidate = modelCtx
 	}
-	floor := cudaCtxCapDefault
+	floor = cudaCtxCapDefault
 	if request > 0 {
 		// A guard pin (request>0, not ResidentContextPinned — the branch above already returned
 		// otherwise): the ceiling AND the floor both follow it down, never up. Growing past it
@@ -120,32 +163,11 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 			floor = request
 		}
 	}
-	if candidate <= floor {
-		return floor // nothing to gain from asking Plan: already at or below the real floor
-	}
-	free, ok := decoder.FreeBytesFor("cuda")
-	if !ok {
-		return floor // unknown ⇒ the safe floor, never guess
-	}
-	// Plan's chooseCtx reserves NO margin, but checkKVFits requires an ADDITIONAL ctxCapMarginBytes beyond
-	// dense+KV+extra. Subtracting the same margin here, before Plan sees the free bytes, makes the two checks agree:
-	// whatever ctx Plan picks already leaves room for it (otherwise an interior choice failed checkKVFits and the
-	// whole build declined to CPU-only). Floored at 0 on a tiny probe; Plan declines an unfittable budget cleanly.
-	marginedFree := max(free-ctxCapMarginBytes, 0)
-	// ExtraBytes prices what attaches after BuildResident (m.ExtraResidentBytes: a --drafter) so the context Plan
-	// chooses leaves it room; zero when nothing attaches. The drafter's device K/V is priced at candidate, the widest
-	// ctx this call asks of Plan: Plan only shrinks from the value it is given (fitplan.go, "never GROW past what was
-	// asked"), so that can over-estimate the real cost but never under-price it.
-	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate) + allocSlack
-	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
-	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
-		return floor // Plan could not confidently improve on the floor
-	}
-	if slots <= 1 {
-		return p.Ctx
-	}
-	return ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots, floor)
+	return candidate, floor, candidate > floor // at or below the floor there is nothing to gain from asking Plan
 }
+
+// planFreeSeenForTest, when set (tests only), is told the free VRAM resolveCtxCapFitSlack hands Plan.
+var planFreeSeenForTest func(free int64)
 
 // ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested
 // (docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
@@ -212,37 +234,6 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 		}
 	}
 	return perBlock*blocks + windowed + kvGroups*4*blocks
-}
-
-// kvCapForBytes is the largest capacity in [lo, hi] whose slot occupies at most budget bytes (ok=false when even lo does not fit). kvBytesForCap is
-// non-decreasing in the capacity (a step every kvBlock positions), so a search finds the edge.
-func kvCapForBytes(budget int64, lo, hi int, layers []cudaLayer) (c int, ok bool) {
-	if hi < lo || kvBytesForCap(lo, layers) > budget {
-		return lo, false
-	}
-	for hi > lo {
-		mid := lo + (hi-lo+1)/2
-		if kvBytesForCap(mid, layers) <= budget {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	return lo, true
-}
-
-// kvSlotsFit is MC1's slot arithmetic on CUDA (docs/tasks/task-concurrency-2026-09.md): the largest n in [1, want]
-// whose n resident KV slots, perSlot bytes each, fit free VRAM beside reserve (a companion attach plus
-// ctxCapMarginBytes). Never below 1: the first slot is checkKVFits' own and is refused there, not clamped here.
-//
-// free is read AFTER the weights are on the device and perSlot counts KV only, so both sides price the same
-// thing. Do not compare a weights-inclusive base with that live figure: it counts the weights twice.
-func kvSlotsFit(want int, free, perSlot, reserve int64) int {
-	n := max(1, want)
-	for n > 1 && int64(n)*perSlot+reserve > free {
-		n--
-	}
-	return n
 }
 
 // kvSlotAllocFailAtForTest, when > 0, makes the KV pools fail as a device OOM when sized for more than that many slots (test seam;
@@ -723,6 +714,12 @@ type cudaResident struct {
 	bGemmMMA Pipeline
 	// Per-lever selection (§5 attribution): fastAttn drives L2, fastGemm drives L3.
 	fastAttn, fastGemm bool
+
+	// planning is set while BuildResident prices the margin on the planned geometry, before any module loads: the span routing then
+	// assumes the row-batched kernels and, under fastAttn, the fused attention for head dims 64 and 128 (fusedLoadedFor).
+	planning bool
+	// openedForPlan is set when a MoE build opened its device and stream before the plan (openForPlan); the setup job keeps them.
+	openedForPlan bool
 	// Gated-DeltaNet mixer (deltanet.ptx, its own module). Loaded only for that family; every other model leaves
 	// these zero and never dispatches them.
 	dnConv, dnGates, dnNorm, dnRule, dnGNorm Pipeline
@@ -864,6 +861,8 @@ type cudaResident struct {
 	ctxPlanned      int           // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
 	deepPlan        *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
 	allocSlackBytes int64         // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
+	ctxMarginBytes  int64         // the context margin at load (ctxMarginFor at ctxMarginCtx), read by checkKVFits, checkWeightsFit and their declines
+	ctxMarginCtx    int           // the context the margin is priced at: the one the plan returned
 	kvSlotsN        int           // what checkKVFits granted (>= 1)
 	kvSlot          int
 	kvTabSlot       int
@@ -2109,11 +2108,11 @@ func reservedBudget(free, extraBytes int64) int64 {
 // reasoning as metal/backend.go's fitsResidentBudget, which this mirrors. Unknown inputs (need or
 // free <= 0) always fit: the guard's failure mode must be letting a doomed load through, never
 // refusing one that would have run.
-func fitsWeightsBudget(need, free int64) bool {
+func fitsWeightsBudget(need, free, margin int64) bool {
 	if need <= 0 || free <= 0 {
 		return true
 	}
-	return need+ctxCapMarginBytes <= free
+	return need+margin <= free
 }
 
 // checkWeightsFit fails the load EARLY, right after the device exists and before any kernel compile or weight
@@ -2137,19 +2136,19 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 		// itself still errors if it truly cannot fit.
 		return nil
 	}
-	if fitsWeightsBudget(need+extra, int64(free)) {
+	if fitsWeightsBudget(need+extra, int64(free), r.ctxMargin()) {
 		return nil
 	}
 	if extra > 0 {
 		return fmt.Errorf("cuda: dense weights need %.2f GB plus %.2f GB reserved for a companion "+
 			"attach (--drafter) but only %.2f GB is free on the device (plus %.0f MB reserved for "+
 			"driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path",
-			float64(need)/1e9, float64(extra)/1e9, float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
+			float64(need)/1e9, float64(extra)/1e9, float64(free)/1e9, float64(r.ctxMargin())/(1<<20))
 	}
 	return fmt.Errorf("cuda: dense weights need %.2f GB but only %.2f GB is free on the device "+
 		"(plus %.0f MB reserved for driver and decode scratch) — use a smaller/more-quantized "+
 		"model, or the staged/CPU path",
-		float64(need)/1e9, float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
+		float64(need)/1e9, float64(free)/1e9, float64(r.ctxMargin())/(1<<20))
 }
 
 // checkKVFits fails the LOAD if the KV the configured cap implies does not fit beside what is already on the device.
@@ -2159,11 +2158,12 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 // ready. Naming the number at startup turns a production incident into a config error: the message states what was
 // asked for, what it costs, and what is actually free.
 //
-// It also sets r.kvSlotsN, MC1's slot count: the request, clamped (kvSlotsFit) to the slots whose KV fits the same
+// The KV is priced as the card charges the pools (kvChargedBytes), and the margin is the build's (ctxMargin).
+//
+// It also sets r.kvSlotsN, MC1's slot count: the request, clamped (kvChargedSlotsFit) to the slots whose pools fit the same
 // budget, and logged when clamped. The first slot is the one this check refuses; further ones only shrink.
 func (r *cudaResident) checkKVFits() error {
-	need := kvBytesForCap(r.ctxCap, r.layers)
-	null := kvPoolNullBytes(r.layers) // once per build, beside the slots
+	need := kvChargedBytes(r.ctxCap, 1, r.layers)
 	r.kvSlotsN = 1
 	free, err := cudaFreeVRAM(r)
 	if err != nil {
@@ -2175,6 +2175,7 @@ func (r *cudaResident) checkKVFits() error {
 	}
 	// r.extraBytes reserves room for a companion attach (--drafter) coming after this build —
 	// see the field's own doc comment. 0 for every load without one, so this is unchanged then.
+	reserve := r.extraBytes + r.ctxMargin()
 	if !r.ctxExplicit && r.ctxCap > cudaCtxCapDefault {
 		// An unpinned context that even ONE slot of KV overshoots (by the build's own scratch, which ctxForSlots cannot
 		// see) gives up positions, never below cudaCtxCapDefault, instead of declining the whole resident path to the CPU
@@ -2182,42 +2183,40 @@ func (r *cudaResident) checkKVFits() error {
 		// a 7B or Gemma-3 on an 8 GB card fell to the CPU (docs/code-notes/cuda.md#checkKVFits.trim). serve plans its own
 		// context and never hit it.
 		c, ok := 0, false
-		if need+null+r.extraBytes+ctxCapMarginBytes > int64(free) {
-			c, ok = kvCapForBytes(int64(free)-null-r.extraBytes-ctxCapMarginBytes, cudaCtxCapDefault, r.ctxCap-1, r.layers)
+		if need+reserve > int64(free) {
+			c, ok = kvChargedCapForBytes(int64(free)-reserve, 1, cudaCtxCapDefault, r.ctxCap-1, r.layers)
 		}
 		if ok {
 			fmt.Fprintf(os.Stderr, "cuda: resident context %d, trimmed from %d at the build, so one KV slot fits beside the weights (%.0f MB free, less %.0f MB reserved)\n",
-				c, r.ctxCap, float64(free)/(1<<20), float64(r.extraBytes+ctxCapMarginBytes)/(1<<20))
-			r.ctxCap, need = c, kvBytesForCap(c, r.layers)
+				c, r.ctxCap, float64(free)/(1<<20), float64(reserve)/(1<<20))
+			r.ctxCap, need = c, kvChargedBytes(c, 1, r.layers)
 		}
 	}
-	if need+null+r.extraBytes+ctxCapMarginBytes <= int64(free) {
-		// MC1: as many of the requested KV slots as fit the same budget, each another `need`.
-		reserve := null + r.extraBytes + ctxCapMarginBytes
-		r.kvSlotsN = kvSlotsFit(r.kvSlotsReq, int64(free), need, reserve)
+	if need+reserve <= int64(free) {
+		// MC1: as many of the requested KV slots as fit the same budget; the slots share each layer's pool buffer.
+		r.kvSlotsN = kvChargedSlotsFit(r.kvSlotsReq, int64(free), r.ctxCap, r.layers, reserve)
 		if r.kvSlotsN < r.kvSlotsReq && !r.ctxExplicit && r.ctxCap > cudaCtxCapDefault {
 			// Slots before context (owner decision): an unpinned context gives up positions, never below cudaCtxCapDefault,
-			// until every requested slot fits. ctxForSlots planned this with Plan, which cannot see the build's own scratch and
-			// kernel modules (TestResidentDenseBytes_matchesCUDADevice), so its choice can be a few dozen positions long; this
-			// trims it against the real free VRAM, before any KV exists. Nothing allocated so far depends on ctxCap exactly:
-			// the split-KV score scratch is indexed by the attended span, so a smaller cap uses less of it.
+			// until every requested slot fits. ctxForSlots planned this with Plan, which prices the KV linearly, so its choice can
+			// be a few positions long; this trims it against the real free VRAM, before any KV exists. Nothing allocated so far
+			// depends on ctxCap exactly: the split-KV score scratch is indexed by the attended span, so a smaller cap uses less of it.
 			c := cudaCtxCapDefault
-			if cc, fits := kvCapForBytes((int64(free)-reserve)/int64(r.kvSlotsReq), cudaCtxCapDefault, r.ctxCap, r.layers); fits {
+			if cc, fits := kvChargedCapForBytes(int64(free)-reserve, r.kvSlotsReq, cudaCtxCapDefault, r.ctxCap, r.layers); fits {
 				c = cc
 			}
 			if c < r.ctxCap {
 				fmt.Fprintf(os.Stderr, "cuda: resident context %d, trimmed from %d at the build, so the %d requested KV slots "+
 					"fit beside the weights (%.0f MB free, less %.0f MB reserved)\n",
 					c, r.ctxCap, r.kvSlotsReq, float64(free)/(1<<20), float64(reserve)/(1<<20))
-				r.ctxCap, need = c, kvBytesForCap(c, r.layers)
-				r.kvSlotsN = kvSlotsFit(r.kvSlotsReq, int64(free), need, reserve)
+				r.ctxCap, need = c, kvChargedBytes(c, 1, r.layers)
+				r.kvSlotsN = kvChargedSlotsFit(r.kvSlotsReq, int64(free), r.ctxCap, r.layers, reserve)
 			}
 		}
 		if r.kvSlotsN < r.kvSlotsReq {
-			fmt.Fprintf(os.Stderr, "cuda: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident "+
+			fmt.Fprintf(os.Stderr, "cuda: %d resident KV slots of %d requested — one slot's pools cost %.0f MB at the resident "+
 				"context %d, and free VRAM beside the weights (%.0f MB, less %.0f MB reserved) allows %d\n",
 				r.kvSlotsN, r.kvSlotsReq, float64(need)/(1<<20), r.ctxCap, float64(free)/(1<<20),
-				float64(r.extraBytes+ctxCapMarginBytes)/(1<<20), r.kvSlotsN)
+				float64(reserve)/(1<<20), r.kvSlotsN)
 		}
 		return nil
 	}
@@ -2226,7 +2225,7 @@ func (r *cudaResident) checkKVFits() error {
 		"(%.1f KB/position across %d layers) but only %.2f GB is free on the device beside the weights "+
 		"(plus %.0f MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), "+
 		"or use a smaller/more-quantized model",
-		r.ctxCap, float64(need)/1e9, perPos, len(r.layers), float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
+		r.ctxCap, float64(need)/1e9, perPos, len(r.layers), float64(free)/1e9, float64(r.ctxMargin())/(1<<20))
 	if r.extraBytes > 0 {
 		msg = fmt.Sprintf("cuda: resident context %d positions needs %.2f GB of KV "+
 			"(%.1f KB/position across %d layers) plus %.2f GB reserved for a companion attach "+
@@ -2234,7 +2233,7 @@ func (r *cudaResident) checkKVFits() error {
 			"reserved for driver and decode scratch) — lower the serve context setting (-ctx), or "+
 			"use a smaller/more-quantized model",
 			r.ctxCap, float64(need)/1e9, perPos, len(r.layers), float64(r.extraBytes)/1e9,
-			float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
+			float64(free)/1e9, float64(r.ctxMargin())/(1<<20))
 	}
 	e := &kvWontFitError{msg: msg}
 	if !r.ctxExplicit {

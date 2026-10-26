@@ -21,7 +21,7 @@ import (
 func TestKSB8_widthChooser(t *testing.T) {
 	const MiB = int64(1 << 20)
 	pass := func(rows int) int64 { return int64(rows) * 135 * MiB / 1000 } // ~1.5B: 138 / 276 MiB at 1,024 / 2,048
-	margin := int64(ctxCapMarginBytes)
+	margin := testCtxMargin
 	for _, c := range []struct {
 		name         string
 		free, attach int64
@@ -194,7 +194,7 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 	path := ksb8Model(t)
 	type built struct {
 		width, reported int
-		free            int64
+		free, keep      int64
 		pass            func(int) int64
 		seen            int64
 	}
@@ -219,7 +219,7 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 			t.Fatalf("no CUDA resident (extra %d): %s", extra, m.ResidentDecline())
 		}
 		free = last[r]
-		b := built{width: r.prefillWidth, reported: r.PrefillChunkRows(), free: free}
+		b := built{width: r.prefillWidth, reported: r.PrefillChunkRows(), free: free, keep: r.marginBesidePass()}
 		b.pass = func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
 		var widest int64
 		prefillScratchSeenForTest = func(n int64) { b.seen += n + allocRoundSlack(n); widest = max(widest, n) }
@@ -248,14 +248,14 @@ func TestKSB8_buildPricesThePass(t *testing.T) {
 		return b
 	}
 	b0 := load(0)
-	room := b0.free - ctxCapMarginBytes
+	room := b0.free - b0.keep
 	cases := []struct {
 		extra int64
 		want  int
 	}{
 		{0, 2048},
 		{room - (b0.pass(1024)+b0.pass(2048))/2, 1024},
-		{room - b0.pass(1024)/2, 512},
+		{room - (b0.pass(512)+b0.pass(1024))/2, 512}, // room for 512 but not 1,024: the context margin holds the 512-row pass
 	}
 	for i, c := range cases {
 		b := b0
