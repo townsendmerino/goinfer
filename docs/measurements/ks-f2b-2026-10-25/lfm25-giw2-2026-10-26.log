@@ -1,0 +1,52 @@
+== start 01:51:46 reclaimable 8153939968
+[01:52:01] warm A 95.22 ms/token load 1.54 recl 7.59 paged 20 ok
+[01:52:16] warm B 92.57 ms/token load 1.71 recl 7.68 paged 0 ok
+[01:52:31] warm A 94.88 ms/token load 1.99 recl 7.68 paged 0 ok
+[01:52:45] warm B 91.98 ms/token load 2.28 recl 7.71 paged 26 ok
+[01:53:00] pair0 A 94.62 ms/token load 2.88 recl 7.7 paged 0 ok
+[01:53:15] pair0 B 93.67 ms/token load 2.91 recl 7.7 paged 0 ok
+[01:53:30] pair1 B 92.32 ms/token load 2.63 recl 7.68 paged 1 ok
+[01:53:45] pair1 A 95.29 ms/token load 2.77 recl 7.71 paged 20 ok
+[01:54:00] pair2 A 95.81 ms/token load 2.69 recl 7.69 paged 0 ok
+[01:54:15] pair2 B 92.49 ms/token load 2.67 recl 7.67 paged 2 ok
+[01:54:30] pair3 B 95.20 ms/token load 2.44 recl 7.7 paged 24 ok
+[01:54:45] pair3 A 98.33 ms/token load 2.71 recl 7.64 paged 53 ok
+[01:55:00] pair4 A 95.95 ms/token load 2.63 recl 7.54 paged 0 ok
+[01:55:15] pair4 B 92.70 ms/token load 2.93 recl 7.48 paged 0 ok
+[01:55:30] pair5 B 93.14 ms/token load 2.65 recl 7.48 paged 0 ok
+[01:55:45] pair5 A 95.78 ms/token load 2.73 recl 7.52 paged 0 ok
+[01:56:00] pair6 A 95.53 ms/token load 2.87 recl 7.58 paged 0 ok
+[01:56:15] pair6 B 93.26 ms/token load 3.02 recl 7.5 paged 2 ok
+[01:56:29] pair7 B 93.57 ms/token load 2.88 recl 7.52 paged 0 ok
+[01:56:44] pair7 A 96.01 ms/token load 2.91 recl 7.52 paged 0 ok
+[01:56:59] pair8 A 95.80 ms/token load 2.63 recl 7.53 paged 0 ok
+[01:57:14] pair8 B 93.32 ms/token load 2.65 recl 7.51 paged 22 ok
+[01:57:29] pair9 B 94.60 ms/token load 3.82 recl 7.51 paged 0 ok
+[01:57:45] pair9 A 96.50 ms/token load 3.48 recl 7.45 paged 0 ok
+{"tag": "grade", "model": "/Users/francistownsend-merino/goinfer-bench/lfm-giw/lfm2.5-2.6b.int4.cpu-arm64.v17.giw", "depth": 128, "median_speedup": 1.0275, "min": 1.0101, "max": 1.036, "faster": 10, "voids": 0, "grade": "below the merge rule"}
+[01:59:35] warm A 116.63 ms/token load 3.42 recl 7.47 paged 0 ok
+[02:01:12] warm B 95.72 ms/token load 2.39 recl 7.47 paged 0 ok
+[02:03:01] warm A 116.87 ms/token load 2.94 recl 7.45 paged 0 ok
+[02:04:38] warm B 95.81 ms/token load 2.75 recl 7.43 paged 0 ok
+[02:06:27] pair0 A 116.89 ms/token load 2.43 recl 7.43 paged 0 ok
+[02:08:05] pair0 B 96.05 ms/token load 2.33 recl 7.33 paged 0 ok
+[02:09:43] pair1 B 96.01 ms/token load 2.51 recl 7.36 paged 0 ok
+[02:11:32] pair1 A 116.96 ms/token load 2.32 recl 7.31 paged 0 ok
+[02:13:20] pair2 A 116.17 ms/token load 3.06 recl 7.2 paged 0 ok
+[02:14:58] pair2 B 96.01 ms/token load 2.36 recl 7.23 paged 0 ok
+[02:16:36] pair3 B 96.41 ms/token load 3.17 recl 7.22 paged 0 ok
+[02:18:25] pair3 A 116.61 ms/token load 2.2 recl 7.08 paged 0 ok
+[02:20:14] pair4 A 117.11 ms/token load 2.4 recl 7.21 paged 0 ok
+[02:21:51] pair4 B 95.93 ms/token load 2.87 recl 7.2 paged 0 ok
+[02:23:29] pair5 B 95.81 ms/token load 2.53 recl 7.09 paged 0 ok
+[02:25:18] pair5 A 116.49 ms/token load 2.59 recl 7.19 paged 0 ok
+[02:27:07] pair6 A 116.68 ms/token load 3.58 recl 6.99 paged 0 ok
+[02:28:45] pair6 B 95.83 ms/token load 2.17 recl 6.85 paged 0 ok
+[02:30:23] pair7 B 96.52 ms/token load 2.45 recl 6.99 paged 0 ok
+[02:32:12] pair7 A 117.10 ms/token load 3.58 recl 6.97 paged 0 ok
+[02:34:00] pair8 A 117.20 ms/token load 2.71 recl 6.89 paged 0 ok
+[02:35:38] pair8 B 96.32 ms/token load 2.13 recl 6.95 paged 0 ok
+[02:37:16] pair9 B 96.01 ms/token load 3.15 recl 6.96 paged 0 ok
+[02:39:05] pair9 A 117.07 ms/token load 3.19 recl 6.95 paged 0 ok
+{"tag": "grade", "model": "/Users/francistownsend-merino/goinfer-bench/lfm-giw/lfm2.5-2.6b.int4.cpu-arm64.v17.giw", "depth": 1024, "median_speedup": 1.2168, "min": 1.2096, "max": 1.2208, "faster": 10, "voids": 0, "grade": "MEETS the merge rule"}
+== end 02:39:05 rc=0

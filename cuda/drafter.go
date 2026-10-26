@@ -105,7 +105,9 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 	// rather than clearing it.
 	setupBefore := r.setupErr
 	err := r.do(func() error {
-		fcw, e := packWeight(w.DrafterFC())
+		// Every matrix is planned and streamed (planWeight, upW): a bf16 drafter's rows are widened and quantized one staging block
+		// at a time, so the host never holds a widened or packed copy of a whole matrix; the device bytes are packWeight's.
+		fcw, e := planWeight(w.DrafterFC())
 		if e != nil {
 			return fmt.Errorf("cuda drafter: pack fc: %w", e)
 		}
@@ -138,7 +140,7 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 				{&d.layers[i].gate, lw.Gate, "gate"}, {&d.layers[i].up, lw.Up, "up"},
 				{&d.layers[i].down, lw.Down, "down"},
 			} {
-				h, e := packWeight(m.src)
+				h, e := planWeight(m.src)
 				if e != nil {
 					return fmt.Errorf("cuda drafter: layer %d %s: %w", i, m.nm, e)
 				}
@@ -149,6 +151,7 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 			d.layers[i].inputNorm = r.up32(lw.InputNorm)
 			d.layers[i].postAttnNorm = r.up32(lw.PostAttnNorm)
 		}
+		r.pk = nil // the staging blocks, as the build releases them
 		return r.stream.Sync()
 	})
 	if err != nil {

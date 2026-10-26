@@ -395,3 +395,71 @@ cell (`raw/served-ab-2026-10-25.json`, `counts.phases` and `counts.rss_peak_kb`)
   provenance records it), and later runs set `PATH`.
 - **The 3.4 MB of swap-in in a depth-4096 cell** is the system's counter over a 6-minute cell, with zero swap growth; the
   registered rule has no swap term (the harness's swap voids are off unless set), so it voids nothing.
+
+## The served A/B on code and math, under G4's conditions (registered 2026-10-25, before the run)
+
+On the owner's decision (Francis, 2026-10-25 13:01, option C): #238 merges on its own, and this follow-up record asks the question
+the essay A/B could not: does the served path deliver G4's speedup on G4's prompts?
+
+- **Instrument:** `scripts/bench_peer.py` as in the essay A/B, one CUDA `serve` binary (built at `a6e9b8c7`), two arms: `goinfer`
+  plain, `goinfer_old` with `-drafter ~/models/qwen35-9b-dflash -drafter-width 4`; `BENCH_GOINFER_ARGS="-thinking off"` (G4 rendered
+  thinking off; this GGUF's template default is off already); `BENCH_MODELS=Q9`, `BENCH_BACKENDS=cuda`, `BENCH_PHASES=B`,
+  `BENCH_NGEN=256`, `BENCH_CTX=4608`, `BENCH_ABBA=5` (5 mirrored quads per depth, 10 pairs).
+- **Prompts: G4's own,** `BENCH_PROMPTS=scripts/prompts-sp2-codemath.json`. Two prompt sets of SP0's 12 code and math prompts:
+  - `Q9:32`: the prompts as they are, rendered 23–36 tokens;
+  - `Q9:3840`: the same behind G4's preamble (the leading lines of `docs/benchmarks.md` at `721cce5e`, G4's commit, about 3,800
+    tokens), rendered 3,816–3,829 tokens.
+  - The depth keys are bucket labels. Each cell cycles through its set, one prompt per completion (a harness addition on this
+    branch: an entry's `"texts"`); the warm-up takes the first prompt and the 16 timed completions start again from the first, so
+    every cell of both arms sends the same sequence, prompts 1–4 twice.
+- **Bands, per depth: the owner's merge rule.** A median of 1.05× or more with at least 9 of 10 pairs faster → the served path
+  delivers G4's speedup on G4's prompts at that depth; anything less → it does not.
+- **What each outcome means:** delivering backs the record's claim, "about 1.0× on prose, up to 1.46× on code and math", on the served
+  path. Not delivering on these prompts would be a served-path gap to find, since the essay A/B showed the served and in-process paths
+  agree on prose. Nothing changes `serve`'s default width.
+- **Void cells:** the harness's gates (its load cap, memory and swap voids) and the registered rule (load above 8.0 at a cell's start,
+  or available memory under 2 GB with the model loaded); a void cell is re-run in order.
+- **Cost:** the essay A/B took 2 h 22 min, mostly its 4,096-token cells; the long set here is a little shorter, so about 2 h. By day
+  under the timing lock, after the 35B fairness check (done, below); the night queue if the day is taken.
+- **A correction to G4's record:** it described the short context as "about 100–250 tokens". SP0's prompts render to 23–36 tokens.
+  G4's readings are unchanged; only that description was wrong.
+
+### The 35B expert-cache fairness check (2026-10-25, 13:03 PDT; a check, not a gate)
+
+Qwen3.6-35B-A3B (`.int4.e4h.cuda.v17.giw`, experts streamed), resident context 4,608, f32 KV, in one process under the exclusive
+timing lock: loaded once without and once with its DFlash drafter attached, plain greedy decode of 128 tokens on SP0's first code
+prompt, 3 timed runs after a warm-up.
+
+| load | expert cache | free VRAM after load | plain decode, median of 3 |
+|---|---|---|---|
+| no drafter | 64 slots per layer | 1.41 GB | 42.36 tok/s |
+| drafter attached (arena 79,151,104 B) | 64 slots per layer | 0.94 GB | 42.29 tok/s |
+
+Attaching the drafter leaves the expert cache at 64 slots per layer at this context, and plain decode moves 0.2%: the drafter's
+reserve does not slow the 35B's plain decode here, so it does not sink a speedup measured against it. Real decode runs 23.6 ms a
+token, where SP0's step arm read 17.6 ms on a repeated token at one position (the same experts every time), so SP0's 35B projection
+needs a real measurement of its verify cost too.
+
+### The served A/B on code and math, read (2026-10-25, 13:06–14:28 PDT): stopped on the owner's call, deemed successful
+
+The owner stopped it at 14:27 (Francis: "I deem this successful without finishing"), with the short depth complete and the long
+depth at 4 of its 10 pairs. Cells as run (`raw/served-ab-codemath-2026-10-25-cells.json`; serve logs on nobara under
+`~/goinfer-logs/sp2-2026-10/served-codemath/`). Every cell started at load 1.0 or below; no error.
+
+| depth | prompts | plain decode | `--drafter -drafter-width 4` | median of the pairs | pairs faster | spread | wall of 16 completions, plain / drafter | prefill + TTFT a request, plain / drafter | peak RSS, plain / drafter |
+|---|---|---|---|---|---|---|---|---|---|
+| 32 | SP0's 12 as they are (23–36 tokens) | 65.6 tok/s | 98.5 tok/s | **1.501×** | 10 of 10 | 1.477–1.505 | 60.4 / 41.8 s | 0.11 / 0.13 s | 4.7 / 12.8 GB |
+| 3840 | the same behind G4's preamble (3,816–3,829) | 62.6 tok/s | 79.1 tok/s | 1.264× (4 pairs) | 4 of 4 | 1.263–1.265 | 80.2 / 323.4 s | 1.13 / 17.06 s | 5.1 / 13.9 GB |
+
+- **Short depth: the served path delivers G4's speedup on G4's prompts.** 1.501× against G4's in-process 1.462×, faster in all 10
+  pairs; under the merge rule it delivers. End to end it is faster too (0.69 of plain's wall).
+- **Long depth: incomplete.** 4 of 10 pairs, so the registered rule cannot be applied to it; the pairs it has are all faster in decode
+  (1.26×). End to end it is 4.0× slower, the missing prefix reuse again (17.06 s a request against plain's 1.13 s; SP2b).
+- **The owner's verdict: successful.** The record keeps the long depth as partial.
+- **Memory term of the void rule:** not recorded here either (Go was not on the harness's `PATH`, as in the essay run); this box's
+  `MemAvailable` stayed about 60 GB against a 14 GB peak, so no cell neared the 2 GB floor.
+- **An overlap at the stop, recorded:** the drafter arm's last `serve` (6.9 GB of VRAM) was still exiting at 14:28:47 when another
+  session's timed job (`ks-h2-h3-readings`) took the lock; it was gone a few seconds later.
+- **Summary across the served A/Bs:** on code and math `--drafter` delivers about 1.5× in decode at short context and about 1.26×
+  behind a long preamble; on essay prose about 1.0× (the guard caps the loss); and on any prompt it cannot reuse, the cold prefill
+  with the capture costs wall time that SP2b addresses.
