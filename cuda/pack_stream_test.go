@@ -293,7 +293,7 @@ func TestPackStream_rowSourceBytesIdenticalToPackWeight(t *testing.T) {
 	if r.setupErr != nil {
 		t.Fatalf("upload error: %v", r.setupErr)
 	}
-	// a reader that fails only on a later block: one block of all 8 rows, then blocks of 2 rows (16-word stage, 4 words a row)
+	// a reader that fails only on a later block: one block of all 8 rows, then blocks of 2 rows (an 8-word stage, 4 words a row)
 	failing, err := planRows(decoder.DrafterRows{Rows: 8, Cols: 16, Read: func(r0, n int, _ []float32) error {
 		if r0+n > 4 {
 			return errors.New("read failed")
