@@ -48,7 +48,7 @@ type DFlashDrafter struct {
 	d2t        []int32          // draft index → target id OFFSET
 	draftVocab int
 
-	st *embed.SafetensorsFile // retained: the WeightMats alias its mmap
+	st *embed.SafetensorsFile // retained: the WeightMats alias its mmap; nil on a streamed drafter once loaded
 	sf *stFile                // a streamed drafter's row readers' file (OpenDFlashDrafter); nil otherwise
 }
 
@@ -222,7 +222,7 @@ func openSTFile(path string) (*stFile, error) {
 		return fail(err)
 	}
 	hl := int64(binary.LittleEndian.Uint64(n[:]))
-	if hl <= 0 || 8+hl > fi.Size() {
+	if hl <= 0 || hl > fi.Size()-8 {
 		return fail(fmt.Errorf("safetensors header of %d bytes in a %d-byte file", hl, fi.Size()))
 	}
 	hdr := make([]byte, hl)
@@ -416,10 +416,10 @@ type dflashConfig struct {
 func LoadDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, false) }
 
 // OpenDFlashDrafter is LoadDFlashDrafter for a drafter a resident backend will hold: it reads the config and the safetensors
-// header, checks every tensor as LoadDFlashDrafter does, and holds the norms and d2t, but no matrix. Each matrix is a row reader
-// over the file (stRows, StreamedDrafterWeights), which the backend's attach streams to the device, so the host never holds the
-// drafter, however its file is aligned. Only a resident that streams drafter rows takes it (StreamingDrafterHost); it cannot
-// draft on the host (ErrDrafterStreamed).
+// header, checks every tensor as LoadDFlashDrafter does, and holds the norms and d2t, but no matrix and no mapping. Each matrix
+// is a row reader over the file (stRows, StreamedDrafterWeights), which the backend's attach streams to the device, so the host
+// never holds the drafter, however its file is aligned. Only a resident that streams drafter rows takes it
+// (StreamingDrafterHost); it cannot draft on the host (ErrDrafterStreamed).
 func OpenDFlashDrafter(dir string) (*DFlashDrafter, error) { return loadDFlashDrafter(dir, true) }
 
 func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
@@ -545,6 +545,9 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 		if err != nil {
 			return fmt.Errorf("dflash: %w", err)
 		}
+		if streamed {
+			v = slices.Clone(v) // an F32 vector is a view of the mapping, which a streamed drafter closes once loaded
+		}
 		*dst = v
 		return nil
 	}
@@ -630,6 +633,14 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 				return nil, err
 			}
 		}
+	}
+	if streamed {
+		// Nothing the drafter keeps is a view of the mapping now (its rows read through d.sf), so close it: an opened drafter
+		// holds one file and no mapping.
+		if err := st.Close(); err != nil {
+			return nil, fmt.Errorf("dflash: %w", err)
+		}
+		d.st = nil
 	}
 	loaded = true
 	return d, nil
