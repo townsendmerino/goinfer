@@ -12,7 +12,7 @@ mac-ax01, on the MacBook (arm64, Metal), Go 1.27.3. Everything here is tier 0: n
 | `gpu` (the device module) | `gpu/v0.35.0` (`0fd8325c`) | split by backend, package `gpudev`: `cuda/internal/gpudev` (the Linux files, the `.cu` sources, PTX and its tooling) and `metal/internal/gpudev` (the darwin files); untagged and `darwin \|\| linux` files in both |
 | `gpu/qwencuda`, `gpu/visioncuda` | `gpu/v0.35.0` | `cuda/internal/qwencuda`, `cuda/internal/visioncuda` |
 | `gpu/qwenmetal`, `gpu/visionmetal` | `gpu/v0.35.0` | `metal/internal/qwenmetal`, `metal/internal/visionmetal` |
-| `gpu/webgpu` | — | not copied: nothing imports it, and the `gpu` module has its own WGSL (retirement proposed) |
+| `gpu/webgpu` | — | retired, not copied (owner, 2026-10-26): nothing imports it, and the `gpu` module has its own WGSL |
 
 Both are the newest aikit tags on 2026-10-26, and aikit main (`3e7c479`) matches them on every copied path (only the
 four sub-module `go.mod` pins differ). aikit's README freezes these paths at the same tags (aikit PR #21).
