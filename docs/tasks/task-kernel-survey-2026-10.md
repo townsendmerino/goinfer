@@ -3130,6 +3130,28 @@ its own PR, and it gets a Gemini review before merge.
 - **Part 1's rounding:** the buffers after the pools that are under 2 MiB come from the driver's 2 MiB pages, so their sum is
   rounded up to whole pages, and each larger buffer is rounded up to 2 MiB. G2 applies the same rule to the observed buffers.
 
+**KS-H6 build, review amendment (Gemini round 1 on #264), registered 2026-10-26 before the code it covers (H6C-S6, G1b, G1c).**
+- **The plan sees a MoE build's own pool.** The self-test's pool is released with its context (S4), so an unpinned MoE build's
+  plan used to read free VRAM with no pool yet allocated. `payRoutePool` then took about 132–144 MiB before the fit check, which
+  trims or refuses what the plan chose.
+  - Change: the executor starts before the plan. A MoE build opens its device and pays the pool there, on the context it keeps,
+    before the plan reads free VRAM.
+  - The warm-up before `checkKVFits` stays as it is; once the pool exists, it is a no-op.
+- **The margin at the context the plan returns.** `resolveCtxCapFitSlack` prices Plan at the widest candidate, as before, but
+  returns `ctxMarginFor` at the context it chose. Without this, a plan that falls back to the 4,096 floor would leave the build
+  requiring a 16k pass's span scratch for a 4k resident.
+- **The rounding bound, kept.** Plan's CUDA KV figure (`decoder/residentneed.go`, `cudaKVBytes`) already includes the null
+  blocks and the slot tables. So the charged figure exceeds it by under one 2 MiB page per pool buffer, plus one for the tables,
+  which is `kvRoundingBound`. G1b checks that over a sweep.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| H6C-S6 the plan sees the pool | 1 | `qwen35-tiny` with its window raised to 32,768 (so the plan runs), the self-test skipped, unpinned, through `decoder.Load`; the plan's free reading (a test hook) against the fit check's | the plan reads at most 64 MiB more than the fit check (the weights and the pre-KV buffers; not the pool). Plant: with the warm-up before the plan skipped, it reads at least 130 MiB more |
+| H6C-G1b the bound | 0 | synthetic layers: kvDim 64–1,024 in steps of 64, f32 and f16, MLA and K/V; contexts 64–20,000 in steps of 64 and around every 2 MiB boundary; 1–4 slots; Gemini's case (kvDim 768, f32, context 640) | the charged pools never exceed Plan's figure (blocks, tables and null blocks, linear) by more than `kvRoundingBound` |
+| H6C-G1c the margin's context | 0 | `resolveCtxCapFit` on `llama-tiny` with a margin that names its context | every return, the shortcuts and the floor included, gives the margin at the context it returns |
+
+- **Then:** H6C-S5, G2, G3 and G4 are re-read on the changed build.
+
 **KS-H6 build read 2026-10-26, by day.**
 - **Setup:** run by `night.py serve` (the timing lock held exclusively; memory, not time, is read). NVIDIA driver 595.91.07,
   the desktop compositor's context only.
