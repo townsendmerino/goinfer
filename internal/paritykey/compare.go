@@ -92,8 +92,8 @@ func Compare(before, after Side) []Verdict {
 			v.Class = AgreeFresh
 		case oldStale:
 			v.Class = OldOnly
-			pinOnly := len(v.Moved) == 1 && strings.HasPrefix(v.Moved[0], "aikit ")
-			v.Explained = pinOnly && before.Digest == after.Digest
+			// The pin is the only moved input; a moved fingerprint digest would be a second entry in v.Moved.
+			v.Explained = len(v.Moved) == 1 && strings.HasPrefix(v.Moved[0], "aikit ")
 			if v.Explained {
 				v.Reason = fmt.Sprintf("aikit %s -> %s changed no kernel fingerprint", before.Pin, after.Pin)
 			} else {

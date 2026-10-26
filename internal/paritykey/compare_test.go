@@ -27,6 +27,8 @@ func TestCompare_classes(t *testing.T) {
 		{"today moved on a file, shadow did not", side("v1", "d1", "t2", "s1", "c2"), OldOnly, false},
 		{"aikit and a file moved, shadow did not", side("v2", "d1", "t2", "s1", "c2"), OldOnly, false},
 		{"kernels moved, aikit did not", side("v1", "d2", "t1", "s2", "c1"), NewOnly, false},
+		// Not producible by real keys (a moved digest moves the shadow key); it pins that the fingerprints must not have moved.
+		{"aikit and kernels moved, shadow did not", side("v2", "d2", "t2", "s1", "c1"), OldOnly, false},
 	}
 	for _, c := range cases {
 		v := Compare(base, c.after)
