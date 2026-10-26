@@ -84,3 +84,38 @@ The CUDA code builds on Linux only. It compiled here with `GOOS=linux`; its devi
 
 Each against aikit at `gpu/v0.35.0` with the same flags as the baseline, compared with `ax1_compare.py`.
 The `goexperiment.simd` vision files were vetted for linux/amd64, not run.
+
+## nobara device run (2026-10-26)
+
+The three CUDA packages above, run on nobara: NVIDIA GeForce RTX 2070 SUPER (8 GB), driver 595.91.07, Go 1.27.3
+linux/amd64, NVRTC 12.9.86 for `TestPTXReproducible`. goinfer at `origin/main` `f8e248b77` (a detached worktree, with a
+`go.work` naming the repo's own modules and aikit at its `go.mod` pin, v1.75.0); the baseline is a `git archive` of aikit
+`gpu/v0.35.0` (`0fd8325c`), run with `GOWORK=off` (its sub-modules' `replace` lines point inside the snapshot). Each
+`go test -v -count=1 -timeout 20m`, one package per call, aikit then goinfer, under the exclusive timing lock, 15:29 to
+15:30 PDT. Load average 0.14, 60 GB available; the timing lock and the night queue were idle.
+
+| package | aikit PASS | goinfer PASS | result |
+|---|---:|---:|---|
+| `visioncuda` | 4 | 4 | PASS, 0 regressions: `TestVisionCUDA_parityWithCPU`, `_registersBackend`, `_repeatable`, `_graphCapture` |
+| `qwencuda` | 4 | 4 | PASS, 0 regressions: `TestQwenCUDA_parityWithCPU`, `_fixtureExercisesBothAttentionKinds`, `_repeatable`, `_allocationFailureIsAnErrorAndTheEncoderRecovers` |
+| `gpudev`, as registered | 18 | 18 | **both crash** in `TestCUDA_launchDirect` (`signal: segmentation fault (core dumped)`), so each run stops after the same 18 passes; `ax1_compare.py` reads 0 regressions |
+| `gpudev`, `-skip '^TestCUDA_launchDirect$'` | 68 | 65 | `ok` on both sides; the 3 tests absent in goinfer are by design (below) |
+
+No test skipped on either side; no test failed.
+
+**`TestCUDA_launchDirect` segfaults in aikit at the tag as well as in goinfer**, the same way, alone (`-run` of that one
+test, with `GOTRACEBACK=all`: the process dies with no Go traceback, so the fault is outside Go code). It is not a
+difference the copy introduced, and it was not localized or fixed here. It is the device test of `Queue.LaunchDirect`, which
+the CUDA resident's launch path calls (`docs/measurements/ks-a2-2026-10/README.md`), so a crash in it on the one CUDA card
+is worth its own look.
+
+The three tests aikit passes that goinfer's `cuda/internal/gpudev` does not run:
+
+- `TestOutputContract_newBufferDocsAgreeWithBackends` and `TestOutputContract_hostWritersStateTheirs` live in the Metal
+  half (`metal/internal/gpudev/outputcontract_doc_test.go`), as the split section above says.
+- `TestPTXReproducible/gemv_w8a8` rebuilds `anncuda`'s PTX; `anncuda` stays in aikit (SD2,
+  `docs/tasks/task-subsystems-2026-10.md`). The other four PTX files (`gemv_quant`, `roofline`, `smoke`, `vit`) reproduce
+  byte for byte on both sides.
+
+Logs: `logs/nobara-aikit-*.log` and `logs/nobara-goinfer-cuda-internal-*.log`; `*-skip-launchDirect.log` are the reruns
+without that test, `*-launchDirect.log` the single-test runs.
