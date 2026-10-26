@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,7 +16,10 @@ import (
 
 // writeTinyDFlash writes a BF16 DFlash v1 checkpoint (2 layers, hidden 8) to a temp dir and returns the dir. With ownHead it
 // also ships a reduced-vocab head, an embedding and d2t, as poolside's Laguna drafters do.
-func writeTinyDFlash(t *testing.T, ownHead bool) string {
+func writeTinyDFlash(t *testing.T, ownHead bool) string { return writeTinyDFlashAs(t, ownHead, "BF16") }
+
+// writeTinyDFlashAs is writeTinyDFlash with every weight stored as dtype (BF16, F16 or F32); the values, k/16, are exact in each.
+func writeTinyDFlashAs(t *testing.T, ownHead bool, dtype string) string {
 	t.Helper()
 	const h, heads, kv, hd, inter, layers, vocab, draftVocab = 8, 2, 1, 4, 16, 2, 32, 6
 	dir := t.TempDir()
@@ -35,13 +39,20 @@ func writeTinyDFlash(t *testing.T, ownHead bool) string {
 		for _, d := range shape {
 			n *= d
 		}
-		raw := make([]byte, 2*n)
-		for i := range n {
+		var raw []byte
+		for range n {
 			seed++
-			u := linalg.F32ToBF16(float32(seed%13+1) / 16)
-			raw[2*i], raw[2*i+1] = byte(u), byte(u>>8)
+			v := float32(seed%13+1) / 16
+			switch dtype {
+			case "F32":
+				raw = binary.LittleEndian.AppendUint32(raw, math.Float32bits(v))
+			case "F16":
+				raw = binary.LittleEndian.AppendUint16(raw, linalg.F32ToF16(v))
+			default:
+				raw = binary.LittleEndian.AppendUint16(raw, linalg.F32ToBF16(v))
+			}
 		}
-		return stTyped{"BF16", shape, raw}
+		return stTyped{dtype, shape, raw}
 	}
 	ts := map[string]stTyped{"fc.weight": bf(h, 2*h), "hidden_norm.weight": bf(h), "norm.weight": bf(h)}
 	if ownHead {

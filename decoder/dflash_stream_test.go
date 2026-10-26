@@ -33,12 +33,17 @@ func repadSafetensors(t *testing.T, path string, odd bool) {
 }
 
 // TestOpenDFlashDrafter_matchesLoad: a drafter opened to stream (OpenDFlashDrafter) reads every matrix row for row, bit for bit,
-// as LoadDFlashDrafter holds it, whether the file's data is aligned or at an odd offset; its norms, device-byte estimate and K/V
-// size are the held drafter's; it refuses host drafting and its matrix accessors (ErrDrafterStreamed); and a read after Close
-// fails.
+// as LoadDFlashDrafter holds it, for each dtype the reader decodes (BF16, F16, F32) and whether the file's data is aligned or at
+// an odd offset; it holds no mapping; its norms, device-byte estimate and K/V size are the held drafter's; it refuses host
+// drafting and its matrix accessors (ErrDrafterStreamed); and a read after Close fails.
 func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
-	for _, odd := range []bool{false, true} {
-		dir := writeTinyDFlash(t, false)
+	for _, c := range []struct {
+		dtype string
+		odd   bool
+	}{{"BF16", false}, {"BF16", true}, {"F16", false}, {"F16", true}, {"F32", false}, {"F32", true}} {
+		odd := c.odd
+		t.Logf("dtype %s, odd offset %v", c.dtype, odd)
+		dir := writeTinyDFlashAs(t, false, c.dtype)
 		repadSafetensors(t, filepath.Join(dir, "model.safetensors"), odd)
 		held, err := LoadDFlashDrafter(dir)
 		if err != nil {
@@ -47,7 +52,9 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		defer held.Close()
 		if ten, err := held.st.Tensor("fc.weight"); err != nil {
 			t.Fatal(err)
-		} else if _, err := ten.Uint16s(); (err != nil) != odd {
+		} else if ten.DType != c.dtype {
+			t.Fatalf("the fixture's dtype is %s, want %s", ten.DType, c.dtype)
+		} else if _, err := ten.Uint16s(); c.dtype != "F32" && (err != nil) != odd {
 			t.Fatalf("odd=%v: the fixture's payload alignment is not what the case needs (Uint16s: %v)", odd, err)
 		}
 		s, err := OpenDFlashDrafter(dir)
@@ -56,6 +63,9 @@ func TestOpenDFlashDrafter_matchesLoad(t *testing.T) {
 		}
 		if !s.Streamed() || held.Streamed() {
 			t.Fatalf("odd=%v: Streamed is %v opened and %v loaded", odd, s.Streamed(), held.Streamed())
+		}
+		if s.st != nil {
+			t.Errorf("%s odd=%v: the opened drafter still holds its mapping", c.dtype, odd)
 		}
 		same := func(what string, m *linalg.WeightMat, r DrafterRows) {
 			if r.Rows != m.Rows() || r.Cols != m.Cols() {
