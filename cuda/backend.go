@@ -67,14 +67,68 @@ func layerFusable(qkvInt4, moe, guInt4 bool) bool {
 	return qkvInt4 && (moe || guInt4)
 }
 
-// BuildResident builds a resident CUDA decoder from a loaded Model: host-packs the int4/int8/f32 projections, spawns a
-// LockOSThread-pinned CUDA executor, and uploads weights and KV scratch once, returning a *cudaResident. It declines
-// (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
-// uses the staged/CPU path.
 // kquantKeepInt8ForTest makes BuildResident upload every native Q5_K / Q6_K weight's int8 copy beside it (cudaResident.kquantAlt),
 // so one resident can run both arms of KS-O1's A/B. Set only by a test, before the load.
 var kquantKeepInt8ForTest bool
 
+// hlayer is one layer's host plan in BuildResident: its packed weights and side tables, and the layer kind.
+type hlayer struct {
+	q, k, v, o, g, u, d       hostW
+	pleGate, pleProj          hostW     // Gemma 4 E-model per-layer embedding branch (S1 on CUDA); zero unless pleP > 0
+	postPLENorm               []float32 // the PLE branch's post-norm weight [hidden]
+	qb, kb, vb                []float32
+	ob                        []float32 // attention output-projection bias (GPT-2 / gpt-oss)
+	preNorm, postNorm         []float32
+	qNorm, kNorm              []float32
+	postAttnNorm, postMLPNorm []float32 // Gemma sandwich (nil unless the arch declares it)
+	invFreq                   []float32 // per-layer RoPE table
+	window                    int32
+	hasBias                   bool
+	hasOBias                  bool
+
+	// MoE, per layer: GLM/DeepSeek run dense for the first FirstKDense layers and route
+	// after, so this is keyed off the layer's own Experts (as decoder/mlp.go does), not
+	// off the arch.
+	isMoE            bool
+	expGU, expDown   hostW
+	router, routerBs []float32
+	hasShared        bool
+	shGU, shDown     hostW
+	shGate           hostW // [1, hidden] sigmoid gate (Qwen-MoE); empty ⇒ ungated (GLM/DeepSeek)
+
+	// Gemma-4 enable_moe_block (parallel dense‖MoE). g4moe routes the upload to gemma4MoeMLP's
+	// fields: the dense branch reuses g/u/d (packed from mlpGate/up/down), the router reuses
+	// router (RouterProjScaled, f32) + routerBs (zeros), the experts reuse expGU/expDown.
+	g4moe                                               bool
+	g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4post []float32
+	perExpertScale                                      []float32
+	layerScalar                                         float32
+
+	// mixer and ffn are this layer's operations from decoder.Model.ResidentLayerOps: its sequence mixer, then a feed-forward block when ffn.
+	// Nothing else decides which kind of layer this is.
+	mixer decoder.ResidentMixer
+	ffn   bool
+
+	// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
+	// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
+	// qGate marks the family's SOFTMAX layers, whose q_proj is double width.
+	qGate                                 bool
+	dnQKV, dnZ, dnOut, dnB, dnA           hostW
+	dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
+
+	// MLA (DeepSeek / Kimi, FeatMLA)
+	mlaQA, mlaQB, mlaQ, mlaKVA hostW
+	mlaQANorm, mlaKVANorm      []float32
+	mlaWUK, mlaWUV             []float32
+
+	// Mamba-2 (Nemotron-H, OP2b): the packed projections and small tables of a MixerMamba layer.
+	mamba hostMamba
+}
+
+// BuildResident builds a resident CUDA decoder from a loaded Model: host-packs the int4/int8/f32 projections, spawns a
+// LockOSThread-pinned CUDA executor, and uploads weights and KV scratch once, returning a *cudaResident. It declines
+// (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
+// uses the staged/CPU path.
 func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
@@ -192,58 +246,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
-	type hlayer struct {
-		q, k, v, o, g, u, d       hostW
-		pleGate, pleProj          hostW     // Gemma 4 E-model per-layer embedding branch (S1 on CUDA); zero unless pleP > 0
-		postPLENorm               []float32 // the PLE branch's post-norm weight [hidden]
-		qb, kb, vb                []float32
-		ob                        []float32 // attention output-projection bias (GPT-2 / gpt-oss)
-		preNorm, postNorm         []float32
-		qNorm, kNorm              []float32
-		postAttnNorm, postMLPNorm []float32 // Gemma sandwich (nil unless the arch declares it)
-		invFreq                   []float32 // per-layer RoPE table
-		window                    int32
-		hasBias                   bool
-		hasOBias                  bool
-
-		// MoE, per layer: GLM/DeepSeek run dense for the first FirstKDense layers and route
-		// after, so this is keyed off the layer's own Experts (as decoder/mlp.go does), not
-		// off the arch.
-		isMoE            bool
-		expGU, expDown   hostW
-		router, routerBs []float32
-		hasShared        bool
-		shGU, shDown     hostW
-		shGate           hostW // [1, hidden] sigmoid gate (Qwen-MoE); empty ⇒ ungated (GLM/DeepSeek)
-
-		// Gemma-4 enable_moe_block (parallel dense‖MoE). g4moe routes the upload to gemma4MoeMLP's
-		// fields: the dense branch reuses g/u/d (packed from mlpGate/up/down), the router reuses
-		// router (RouterProjScaled, f32) + routerBs (zeros), the experts reuse expGU/expDown.
-		g4moe                                               bool
-		g4preFFN, g4postFFN1, g4preFFN2, g4postFFN2, g4post []float32
-		perExpertScale                                      []float32
-		layerScalar                                         float32
-
-		// mixer and ffn are this layer's operations from decoder.Model.ResidentLayerOps: its sequence mixer, then a feed-forward block when ffn.
-		// Nothing else decides which kind of layer this is.
-		mixer decoder.ResidentMixer
-		ffn   bool
-
-		// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
-		// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
-		// qGate marks the family's SOFTMAX layers, whose q_proj is double width.
-		qGate                                 bool
-		dnQKV, dnZ, dnOut, dnB, dnA           hostW
-		dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
-
-		// MLA (DeepSeek / Kimi, FeatMLA)
-		mlaQA, mlaQB, mlaQ, mlaKVA hostW
-		mlaQANorm, mlaKVANorm      []float32
-		mlaWUK, mlaWUV             []float32
-
-		// Mamba-2 (Nemotron-H, OP2b): the packed projections and small tables of a MixerMamba layer.
-		mamba hostMamba
-	}
 	// MLA geometry (DeepSeek / Kimi).
 	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
 
