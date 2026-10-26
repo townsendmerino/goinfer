@@ -59,8 +59,8 @@ func ksh6cPageCharged(bufs []int) int64 {
 }
 
 // ksh6cMarginPriced is H6C-G2 and H6C-G3, with H6C-G5's after-figures. Each model loads through decoder.Load as serve loads it,
-// after a warm-up load that runs the startup self-test (whose pool the plan then sees), with every device allocation the build makes
-// recorded in order.
+// after a warm-up load that runs the startup self-test (its context, and the pool its fixtures take, are released before the next
+// load), with every device allocation the build makes recorded in order. Free VRAM is read as serve reads it, holding no context.
 //   - G2: the buffers between the pools and the self-sizing grants, rounded by postPoolBytes' rule, equal postPoolBytes on the built
 //     resident; the pools' buffers, each charged, equal kvChargedBytes at the built context and slots; and the margin recomputed on
 //     the built resident at the context the plan priced it at equals the one the plan kept (the planned geometry was the built one).
@@ -153,15 +153,16 @@ func ksh6cMarginPriced(t *testing.T, models []ksh6cModel) {
 			before = free()
 			m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: c.ctx, MoECacheExperts: c.moeCache})
 			allocSeenForTest, kvAllocSeenForTest, kvPoolsDoneForTest, postPoolDoneForTest, cudaFreeVRAM = nil, nil, nil, nil, saved
-			if err != nil && c.ctx > 0 && strings.Contains(err.Error(), "GB of KV") {
-				fmt.Fprintf(os.Stderr, "[H6C-G5] %s at -ctx %d: REFUSED after the change: %v\n", c.rel, c.ctx, err)
-				return
-			}
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
 			defer m.Close()
 			r, ok := m.ResidentForwardForTest().(*cudaResident)
+			if !ok && c.ctx > 0 && strings.Contains(m.ResidentDecline(), "GB of KV") {
+				// A refused build declines to the CPU path, so Load itself succeeds.
+				fmt.Fprintf(os.Stderr, "[H6C-G5] %s at -ctx %d: REFUSED after the change: %s\n", c.rel, c.ctx, m.ResidentDecline())
+				return
+			}
 			if !ok {
 				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
 			}

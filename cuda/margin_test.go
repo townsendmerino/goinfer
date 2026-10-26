@@ -127,3 +127,39 @@ func TestKSH6C_marginParts(t *testing.T) {
 		t.Error("plant: a margin without the allocation floor equals the margin; the check cannot see it")
 	}
 }
+
+// TestKSH6C_roundingBoundHolds is H6C-G1b: over a sweep of synthetic layer sets, the pools as charged (kvChargedBytes) never exceed
+// Plan's linear figure (decoder's cudaKVBytes: the slots' blocks and tables plus the null blocks, which kvBytesForCap and
+// kvPoolNullBytes mirror) by more than kvRoundingBound. Gemini's case, kvDim 768 at f32 and context 640, a buffer whose null
+// block carries it past a 2 MiB boundary, is in the sweep.
+func TestKSH6C_roundingBoundHolds(t *testing.T) {
+	worst, checked := int64(-1<<62), 0
+	for kvDim := 64; kvDim <= 1024; kvDim += 64 {
+		for _, half := range []bool{false, true} {
+			for _, mla := range []bool{false, true} {
+				layers := make([]cudaLayer, 4)
+				for i := range layers {
+					layers[i] = cudaLayer{mixer: decoder.MixerAttention, kvDim: kvDim, kvHalf: half}
+					if mla {
+						layers[i].mixer = decoder.MixerMLA
+					}
+				}
+				owners, nMLA := kvLayerCounts(layers)
+				bound := kvRoundingBound(owners, nMLA)
+				for cap := kvBlock; cap <= 20000; cap += kvBlock {
+					for slots := 1; slots <= 4; slots++ {
+						linear := int64(slots)*kvBytesForCap(cap, layers) + kvPoolNullBytes(layers)
+						over := kvChargedBytes(cap, slots, layers) - linear
+						worst = max(worst, over-bound)
+						checked++
+						if over > bound {
+							t.Fatalf("kvDim %d half %v mla %v cap %d slots %d: the charged pools exceed Plan's figure by %d B, past the bound %d B",
+								kvDim, half, mla, cap, slots, over, bound)
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("%d configurations; the closest came %d B under the bound", checked, -worst)
+}

@@ -3,8 +3,9 @@
 # lock held: memory is read, so nothing else may load the card). Builds the decoder and cuda test binaries at <rev>, and the cuda
 # binary at <base> for H6C-G5's before-figures, each in a detached worktree. A skip counts as a failure, except in the readings.
 set -u
-REV=${1:?usage: run-h6c.sh <rev> <base>}
-BASE=${2:?usage: run-h6c.sh <rev> <base>}
+REV=${1:?usage: run-h6c.sh <rev> <base> [all|review]}
+BASE=${2:?usage: run-h6c.sh <rev> <base> [all|review]}
+PHASE=${3:-all}
 LOG=$HOME/goinfer-logs/ks-h6c-2026-10/h6c-$(date +%Y-%m-%d-%H%M).log
 export PATH=/usr/local/go/bin:$PATH
 mkdir -p "$(dirname "$LOG")"
@@ -38,6 +39,18 @@ gate() {
 	fi
 }
 H=GOINFER_HEAVY_TESTS=1
+if [ "$PHASE" = review ]; then
+	# The review amendment's tier-1 re-reads (H6C-S5, S6, G2, G3, G4), each in its own process.
+	gate s5 "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_moeModelPaysItsPool$' gate KSH6C_S5=1
+	gate s6 "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_planSeesTheMoEPool$' gate KSH6C_S6=1
+	gate s6plant "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_planSeesTheMoEPool$' gate KSH6C_S6=1 KSH6C_S6_PLANT=1
+	gate g2small "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_marginPriced$' gate $H KSH6C_MARGIN=1
+	gate g2large "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_marginPriced7B8B$' gate $H KSH6C_MARGIN=1
+	gate g2moe "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_marginPriced26B$' gate $H KSH6C_MARGIN=1
+	gate g4 "$NEW/cuda.test" "$NEW/cuda" '^TestKSH6C_headroomQwen3$' gate $H
+	echo "$(date '+%H:%M:%S') DONE fail=$fail"
+	exit $fail
+fi
 gate s123 "$NEW/decoder.test" "$NEW/decoder" '^TestGPUProbe_' gate
 gate g1 "$NEW/cuda.test" "$NEW/cuda" '^(TestKSH6C_chargedKVArithmetic|TestKSH6C_marginParts|TestFitsWeightsBudget|TestResolveCtxCapFit_shortcuts|TestKernelLocalMemoryCensus|TestKVBytesForCap|TestCheckPrefillShmem_declinesPastTheLimit)$' gate
 gate tiny "$NEW/cuda.test" "$NEW/cuda" '^(TestResolveCtxCapFit_agreesWithCheckKVFits|TestCUDAKVSlots_clampedBuild|TestCUDAKVSlots_pricedAgainstWhatIsLeft|TestResolveCtxCapFit_slotsShrinkTheContext|TestCUDAKVSlots_buildTrimsTheContext|TestCUDAKVSlots_oomKeepsTheSlotsThatFit|TestWindowedKV_grantArithmetic|TestWindowedKV_grant|TestWindowedKV_expertCacheGetsTheGrant|TestCheckKVFits_realDevice_explicitRefusesWithNumbers|TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers|TestCheckKVFits_explicitFailsHard_defaultDeclines|TestResidentDenseBytes_matchesCUDADevice)$' gate

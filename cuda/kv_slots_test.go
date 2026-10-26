@@ -476,8 +476,8 @@ const planOverPriceToleranceBytes = 16 << 20
 // fall in free VRAM from before the load to checkKVFits' probe. That fall is the weights plus the build's scratch and
 // kernel modules, so the estimate must not exceed it by more than an allocation quantum per matrix-ish slack, and it
 // must fall short of it by less than the build's context margin (ctxMarginFor), which Plan and checkKVFits both reserve. The
-// startup self-test runs before the first build in a process and leaves the context's local-memory pool behind, after the
-// free reading the drop starts from, so a warm-up load pays it first. The untied 7B's host-side embedding table must not be priced as device weights
+// test holds the primary context for its readings, so the startup self-test's pool, which serve releases with the fixtures'
+// context, survives here: a warm-up load pays it before the first drop is read. The untied 7B's host-side embedding table must not be priced as device weights
 // (docs/measurements/concurrency-mc1-cuda-2026-09-27.md). GOINFER_HEAVY_TESTS adds the 7B, the one untied model here.
 func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 	requireCUDADevice(t)

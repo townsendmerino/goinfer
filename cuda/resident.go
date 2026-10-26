@@ -87,8 +87,8 @@ const fitDefaultCtx = 16384
 // it down, never up: decoder.ctxFloor (2048) can sit under cudaCtxCapDefault, and raising a guard-shrunk
 // context back to cudaCtxCapDefault is exactly the regression the guard pinned it to prevent.
 //
-// margin is the context margin at a context (cudaResident.ctxMarginFor): the plan subtracts it at the widest context it asks for.
-// The figure is returned beside the context, for checkKVFits to keep.
+// margin is the context margin at a context (cudaResident.ctxMarginFor): the plan subtracts it at the widest context it asks for,
+// and the figure at the context returned is returned beside it, for checkKVFits to keep.
 func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int, margin func(ctx int) int64) (int, int64) {
 	return resolveCtxCapFitSlack(m, request, modelCtx, slots, 0, margin, 0)
 }
@@ -125,11 +125,14 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 	if candidate <= floor {
 		return floor, margin(floor) // nothing to gain from asking Plan: already at or below the real floor
 	}
-	// The margin at candidate, the widest context this call asks Plan for. The build keeps this same figure (checkKVFits).
+	// The margin at candidate, the widest context this call asks Plan for; the build keeps the figure at the context returned.
 	mb := margin(candidate)
 	free, ok := decoder.FreeBytesFor("cuda")
 	if !ok {
-		return floor, mb // unknown ⇒ the safe floor, never guess
+		return floor, margin(floor) // unknown ⇒ the safe floor, never guess
+	}
+	if planFreeSeenForTest != nil {
+		planFreeSeenForTest(free)
 	}
 	// Plan's chooseCtx reserves NO margin, but checkKVFits requires the margin beyond dense+KV+extra. Subtracting the same
 	// margin here, with the KV pools' rounding bound, before Plan sees the free bytes, makes the two checks agree: whatever ctx
@@ -143,13 +146,17 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate) + allocSlack
 	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
 	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
-		return floor, mb // Plan could not confidently improve on the floor
+		return floor, margin(floor) // Plan could not confidently improve on the floor
 	}
-	if slots <= 1 {
-		return p.Ctx, mb
+	c := p.Ctx
+	if slots > 1 {
+		c = ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots, floor)
 	}
-	return ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots, floor), mb
+	return c, margin(c)
 }
+
+// planFreeSeenForTest, when set (tests only), is told the free VRAM resolveCtxCapFitSlack hands Plan.
+var planFreeSeenForTest func(free int64)
 
 // ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested
 // (docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
@@ -700,6 +707,8 @@ type cudaResident struct {
 	// planning is set while BuildResident prices the margin on the planned geometry, before any module loads: the span routing then
 	// assumes the row-batched kernels and, under fastAttn, the fused attention for head dims 64 and 128 (fusedLoadedFor).
 	planning bool
+	// openedForPlan is set when a MoE build opened its device and stream before the plan (openForPlan); the setup job keeps them.
+	openedForPlan bool
 	// Gated-DeltaNet mixer (deltanet.ptx, its own module). Loaded only for that family; every other model leaves
 	// these zero and never dispatches them.
 	dnConv, dnGates, dnNorm, dnRule, dnGNorm Pipeline

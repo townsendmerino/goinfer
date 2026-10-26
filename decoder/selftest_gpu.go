@@ -14,9 +14,9 @@ import (
 
 // The resident self-test (docs/tasks/task-hardware-coverage-2026-10.md, H2): for a GPU backend, run tiny committed checkpoints through the RESIDENT path and through the CPU path already in this
 // binary, and hold the resident logits to the CPU's with the numeric bars the resident-vs-CPU parity gates already use. It exercises the kernels the real model is about to use (the same resident
-// build, not reimplementations), on a fixed deterministic input, and it runs once per backend and quant per process, before the real model's resident is built: the backend already holds the
-// device context, so the cost is the tiny models' own, and the deferred device memory their builds reserve on that context is already taken when the real build plans and fit-checks. On a
-// mismatch the real model's resident is not built and the model continues on the CPU path with the reason on its decode path, instead of producing wrong numbers silently.
+// build, not reimplementations), on a fixed deterministic input, and it runs once per backend and quant per process, before the real model's resident is built, so the device memory its
+// fixture builds take is released (on CUDA the context goes with the last fixture, and its pool with it) or already held when the real build plans and fit-checks. On a mismatch the real
+// model's resident is not built and the model continues on the CPU path with the reason on its decode path, instead of producing wrong numbers silently.
 //
 // The fixtures are four tiny random-weight checkpoints, chosen for the kernels they reach: qwen35vl-tiny (a 512-position
 // window, so attention runs past 256 keys, beyond both softmax reduction widths, beside DeltaNet layers), llama-tiny (the

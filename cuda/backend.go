@@ -769,32 +769,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		modelCtx:   m.Config().MaxPositions,
 		kvSlotsReq: kvSlotsReq,
 	}
-	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
-	// and the fused-attention flags are set again where the modules load.
-	r.layers = planLayerGeometry(m, hls, nH, r)
-	r.pleP, r.eModel = pleP, pleP > 0
-	for l := range r.layers {
-		r.eModel = r.eModel || r.layers[l].kvShared
-	}
-	r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
-	if m.ExactPrefill() {
-		r.fastAttn, r.fastGemm = false, false
-	}
-	r.planning = true
-	owners, mlaPools := kvLayerCounts(r.layers)
-	// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site: several buffers are sized from it
-	// earlier (the split-KV score scratch among them), and a zero-value ctxCap makes those 0-byte allocations that fail the whole
-	// resident build. cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who did not ask
-	// allocates exactly what they always did.
-	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
-		allocSlack+mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
-		kvRoundingBound(owners, mlaPools))
-	r.planning, r.layers = false, nil
-	r.ctxPlanned = r.ctxCap
-	// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate, the
-	// widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller price than the
-	// one planned against; checkKVFits enforces it.
-	r.extraBytes = m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(r.ctxCap)
 	if moeSig {
 		r.moeSigmoid = 1
 	}
@@ -856,11 +830,50 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// (runJob — the executor's panic boundary — is defined below.)
 
+	// A MoE build opens its device and pays moe_route's local-memory pool (payRoutePool) before the plan reads free VRAM, on the
+	// context it keeps: the startup self-test's pool is released with its own context before the build, so nothing else has paid
+	// it (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). The setup job keeps this device and stream.
+	if r.moe {
+		if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
+			r.Close()
+			return declined(e)
+		}
+	}
+	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
+	// and the fused-attention flags are set again where the modules load.
+	r.layers = planLayerGeometry(m, hls, nH, r)
+	r.pleP, r.eModel = pleP, pleP > 0
+	for l := range r.layers {
+		r.eModel = r.eModel || r.layers[l].kvShared
+	}
+	r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
+	if m.ExactPrefill() {
+		r.fastAttn, r.fastGemm = false, false
+	}
+	r.planning = true
+	owners, mlaPools := kvLayerCounts(r.layers)
+	// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site: several buffers are sized from it
+	// earlier (the split-KV score scratch among them), and a zero-value ctxCap makes those 0-byte allocations that fail the whole
+	// resident build. cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who did not ask
+	// allocates exactly what they always did.
+	// The plan reads free VRAM: a MoE build has paid its local-memory pool above, on the context it keeps.
+	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
+		allocSlack+mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
+		kvRoundingBound(owners, mlaPools))
+	r.planning, r.layers = false, nil
+	r.ctxPlanned = r.ctxCap
+	// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate, the
+	// widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller price than the
+	// one planned against; checkKVFits enforces it.
+	r.extraBytes = m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(r.ctxCap)
+
 	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
 	setupErr := r.do(func() error {
 		var e error
-		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
-			return e
+		if r.dev == nil { // a MoE build opened it before the plan (openForPlan)
+			if r.dev, e = CreateSystemDefaultDevice(); e != nil {
+				return e
+			}
 		}
 		// launch issues kernels from this thread (Queue.LaunchDirect), which needs the context current here.
 		if e := r.dev.BindCurrentThread(); e != nil {
@@ -1337,7 +1350,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		r.stream = r.dev.NewCommandQueue()
+		if !r.openedForPlan {
+			r.stream = r.dev.NewCommandQueue()
+		}
 
 		// gpt-oss per-layer device state: the attention sinks and the per-expert gate‖up
 		// bias table. Uploaded once here rather than per token — they are weights, not
@@ -1965,9 +1980,9 @@ var routePoolOffForTest bool
 // payRoutePool pays moe_route's deferred first-launch local-memory reservation before checkKVFits and allocSlots read free VRAM,
 // so the context and the expert cache are sized net of it by construction rather than covered by a margin. moe_route declares
 // per-thread local scratch, and the driver backs it for the device's occupancy the first time the kernel runs, not at module
-// load: on the RTX 2070 SUPER the launch demands about 289 MB and retains about 138 MB. The startup self-test pays it too when
-// its MoE fixture runs, before the build (decoder.gpuProbeBeforeResident); this covers a load with the self-test skipped
-// (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, amendment").
+// load: on the RTX 2070 SUPER the launch demands about 289 MB and retains about 138 MB. A MoE build pays it before the plan
+// (openForPlan), and here again before the fit check, a no-op once the pool exists. The startup self-test's own pool goes with
+// its context, so it does not count (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment").
 //
 // Naming moe_route is safe because the backing store is shared and sized by the largest kernel launched, and
 // TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if another kernel
@@ -2004,6 +2019,44 @@ func (r *cudaResident) payRoutePool() error {
 	}
 	return nil
 }
+
+// openForPlan is a MoE build's step before the plan, on the executor thread: it creates the build's device and stream, binds
+// moe_route (and route_gptoss on gpt-oss) from their own modules, and pays the local-memory pool (payRoutePool), so the plan's free
+// reading is net of it. The setup job binds the routed kernels again with the rest of their modules.
+func (r *cudaResident) openForPlan(m *decoder.Model) error {
+	var e error
+	if r.dev, e = CreateSystemDefaultDevice(); e != nil {
+		return e
+	}
+	if e := r.dev.BindCurrentThread(); e != nil {
+		return e
+	}
+	r.stream, r.openedForPlan = r.dev.NewCommandQueue(), true
+	if prePlanPoolOffForTest {
+		return nil
+	}
+	mod, e := r.dev.CompileLibrary(moePTX)
+	if e != nil {
+		return e
+	}
+	if r.fRoute, e = r.dev.NewComputePipeline(mod, "moe_route"); e != nil {
+		return e
+	}
+	if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+		gmod, ge := r.dev.CompileLibrary(gptOssActPTX)
+		if ge != nil {
+			return ge
+		}
+		if r.gptOssRoute, e = r.dev.NewComputePipeline(gmod, "route_gptoss"); e != nil {
+			return e
+		}
+	}
+	return r.payRoutePool()
+}
+
+// prePlanPoolOffForTest, when set (tests only), makes openForPlan skip the warm-up: H6C-S6's plant, the pool paid only before the
+// fit check, after the plan has read free VRAM.
+var prePlanPoolOffForTest bool
 
 // cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for: the model's request
 // (decoder.Model.ResidentKVSlotsRequest, already 1 for a family with recurrent state), forced to 1 in two cases the
