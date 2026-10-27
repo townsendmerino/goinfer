@@ -1884,6 +1884,9 @@ decisions:
   fixtures × 9 option cells × cpu, cuda, metal, webgpu; the 15 that are not decoder checkpoints, towers and encoders,
   record their load error). Only fixtures whose weights git tracks are read, so a checkout with local-only fixtures
   censuses what CI does. Shown red: dropping the q4k condition from the ActQuantGroup gate changes 145 cells (reverted).
+  The arm64 golden was recorded from CI's own run of the census at `343630740` (the test prints an unrecorded
+  architecture's census and fails): root-linux-arm64, root-darwin and root-windows-arm64 printed the same 2,711 lines,
+  and they differ from amd64's in 212 cells, every one only in the CPU's int4 layout note (a repack on arm64).
 
 ### SB3 — family adapters
 
