@@ -1307,6 +1307,31 @@ that stated; Francis decides whether it stands.**
   it now says expert-cached (8/128 at context 11,264; 4/60 at 15,104), as the CUDA build runs them.
 - G-MA-5: listed in the PR.
 
+**G-MA-1 re-registered, 2026-10-27 (Francis's option C of 10:36), before the re-run.** The rule above is replaced by this
+one. The census is computed with and without the change: "without" is this branch with `internal/mem/placement.go` taken from
+main. The diff is graded as before: placements and classes at every reading either run records, contexts only at readings
+both runs record.
+- **Pass:**
+  - D1, D2, D5, D6 and D7 are byte-identical;
+  - every changed group is in D3 or D4 and on an MoE fixture (one whose D3 groups price experts above 0 in the base census);
+  - **no move is downward anywhere**: no placement moves down the order (decline < weight-paged < expert-cached < resident),
+    no Metal fit falls to the floor from above it, and no context is smaller at a reading both runs record within the same
+    placement or class. A decline's context is excluded, because it only echoes the attempt.
+- **A D4 move is allowed only when it is upward on an MoE fixture.** Any downward move, or any move on a non-MoE fixture, is
+  still a failure.
+- **Expected, from the mechanism (not from the earlier run):**
+  - D1, D2, D5–D7: 0 groups change. They do not call `SolvePlacement`'s MoE path.
+  - Non-MoE groups: 0. The reserve is 0 without experts.
+  - Downward: 0. The reserve only moves the context choice toward where the placement's experts fit. Where the old planner
+    placed an MoE at context c, the experts already fit at c, so the new context at the same placement is at least c, and a
+    placement it reached it still reaches.
+  - D3: at most the 4,592 MoE groups, all upward.
+  - D4: at most the 168 Metal-fit groups that can leave the floor in the base census (an MoE fixture, unpaged, known memory,
+    a context above the floor at some reading; 14 fixtures, `lower` 0 and 8192, 84 each). A group with `lower=2048`, paged
+    experts or unknown memory never leaves the floor, so it cannot move.
+- **Then:** the device tests (G-MA-4) re-run on nobara's card. On a pass, auto-merge is set on #321. On a failure of this rule:
+  stop, DECISION NEEDED.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
