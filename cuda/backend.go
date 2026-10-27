@@ -134,6 +134,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	return b.buildResident(m, false)
 }
 
+// moeActG32DeclineOffForTest lets a MoE model with per-32 activations past its decline (the planted defect of
+// TestBackendAdmissionCensus_cuda_plant).
+var moeActG32DeclineOffForTest bool
+
 // planOnlySlack is buildResident's answer in plan-only mode: the allocation rounding over the buffers the build would hold for
 // its weights, computed by the build's own planning before any allocation.
 type planOnlySlack int64
@@ -301,7 +305,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 	actG32 := m.ActQuantGroup() == 32
 	if actG32 {
 		switch {
-		case isMoE:
+		case isMoE && !moeActG32DeclineOffForTest:
 			return declined(fmt.Errorf("per-32 activations: the MoE expert/router kernels read per-vector activation scales"))
 		case mlaOK:
 			return declined(fmt.Errorf("per-32 activations: the MLA path is not implemented"))
