@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // ThresholdBytes parses GOINFER_SWAP_GUARD once, shared by both halves of the guard so
@@ -53,8 +54,8 @@ func StartLoad(loadPath string, opts decoder.Options, advice string) (abort <-ch
 	if testing.Testing() && os.Getenv("GOINFER_SWAP_GUARD") == "" {
 		return nil, func(err error) error { return err }, func() {}
 	}
-	own, why := decoder.SelfSwapReader()
-	srcs, banner, on := Select(own, why, decoder.SwapUsedBytes)
+	own, why := probe.SelfSwapReader()
+	srcs, banner, on := Select(own, why, probe.SwapUsed)
 	if !on {
 		return nil, func(err error) error { return err }, func() {}
 	}

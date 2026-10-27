@@ -3,25 +3,19 @@ package decoder
 import (
 	"context"
 	"time"
-)
 
-// The swap tripwire (docs/tasks/task-never-swap-2026-09.md, S3): goinfer notices swap growing during its own run and
-// acts, instead of leaving "kill at swap-used baseline + 500 MB" to a human watching `free -m` or `sysctl
-// vm.swapusage` in another terminal.
-//
-// It keys on swap-used, never RSS: darwin RSS reports what survived reclaim under memory pressure (CLAUDE.md, "a guard
-// that INVERTS under the condition it exists for"), so it can fall while the machine is losing memory. Swap-used only
-// grows when the machine is actually losing memory, the one figure this guard can trust. The run that showed it:
-// docs/code-notes/decoder.md#swapwatch.
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
+)
 
 // SwapReader samples the machine's current swap-used bytes. ok is false when the figure could
 // not be determined (no swap concept on this platform, or a probe that failed this tick) — the
 // watcher treats "unknown" as "do nothing and try again next tick", never as a guess in either
-// direction. SwapUsedBytes (memwatch_{darwin,linux,other}.go) is the real probe; tests inject a
-// scripted fake.
+// direction. SwapUsedBytes is the real probe; tests inject a scripted fake.
 type SwapReader func() (usedBytes int64, ok bool)
 
-// SwapWatchOptions configures StartSwapWatch. Read is required; every other field defaults.
+// SwapWatchOptions configures StartSwapWatch. Read is required; every other field defaults. The watch keys on swap-used,
+// never RSS: darwin RSS reports what survived reclaim under memory pressure, so it can fall while the machine is losing
+// memory (docs/code-notes/decoder.md#swapwatch).
 type SwapWatchOptions struct {
 	Read SwapReader
 
@@ -51,11 +45,7 @@ type SwapWatchOptions struct {
 
 // SwapWatch is a running background sampler. The zero value is not usable — obtain one from
 // StartSwapWatch.
-type SwapWatch struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	rebase chan struct{} // a request to take the next reading as the new baseline (Rebaseline)
-}
+type SwapWatch struct{ w *probe.Watch }
 
 // Rebaseline asks the watch to take its next successful reading as the new baseline and forget a trip: swap-used at that moment is the new
 // zero, and if the watch was tripped it calls OnResume (when set) once. A serving watch armed before a model load calls it when the load
@@ -66,10 +56,7 @@ func (w *SwapWatch) Rebaseline() {
 	if w == nil {
 		return
 	}
-	select {
-	case w.rebase <- struct{}{}:
-	default: // one request already pending covers this one
-	}
+	w.w.Rebaseline()
 }
 
 // Stop ends the watch and blocks until its goroutine has actually exited (so a caller that also
@@ -79,8 +66,7 @@ func (w *SwapWatch) Stop() {
 	if w == nil {
 		return
 	}
-	w.cancel()
-	<-w.done
+	w.w.Stop()
 }
 
 // StartSwapWatch starts sampling in a background goroutine and returns immediately; ctx ending is
@@ -89,92 +75,12 @@ func (w *SwapWatch) Stop() {
 // around every call site; GOINFER_SWAP_GUARD=off (consulted by callers, not here — this is the
 // portable primitive, not the env-var policy) is expected to pass a nil Read to get this shape.
 func StartSwapWatch(ctx context.Context, opts SwapWatchOptions) *SwapWatch {
-	if opts.PollInterval <= 0 {
-		opts.PollInterval = 2 * time.Second
-	}
-	if opts.Threshold <= 0 {
-		opts.Threshold = 512 * 1024 * 1024
-	}
-	watchCtx, cancel := context.WithCancel(ctx)
-	w := &SwapWatch{cancel: cancel, done: make(chan struct{}), rebase: make(chan struct{}, 1)}
-	if opts.Read == nil {
-		close(w.done)
-		return w
-	}
-	go runSwapWatch(watchCtx, opts, w.done, w.rebase)
-	return w
-}
-
-func runSwapWatch(ctx context.Context, opts SwapWatchOptions, done chan<- struct{}, rebase <-chan struct{}) {
-	defer close(done)
-	t := time.NewTicker(opts.PollInterval)
-	defer t.Stop()
-
-	var baseline int64
-	haveBaseline := false
-	tripped := false
-	var withinSince time.Time // zero = the hysteresis clock is not currently running
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-		used, ok := opts.Read()
-		if !ok {
-			continue // unknown this tick — try again next tick, never substitute a guess
-		}
-		select {
-		case <-rebase:
-			baseline, haveBaseline = used, true
-			withinSince = time.Time{}
-			if tripped {
-				tripped = false
-				if opts.OnResume != nil {
-					opts.OnResume()
-				}
-			}
-			continue
-		default:
-		}
-		if !haveBaseline {
-			// The FIRST successful reading, whatever it is, becomes the baseline — including on
-			// a machine already deep in swap from something else. Everything below is a delta
-			// over THIS, not an absolute figure.
-			baseline = used
-			haveBaseline = true
-			continue
-		}
-		delta := used - baseline
-		within := delta <= opts.Threshold
-
-		if !tripped {
-			if !within {
-				tripped = true
-				if opts.OnTrip != nil {
-					opts.OnTrip(used, delta)
-				}
-			}
-			continue
-		}
-
-		// Already tripped: track the hysteresis window toward OnResume, if the caller asked for one.
-		if opts.ResumeAfter <= 0 || opts.OnResume == nil {
-			continue
-		}
-		if !within {
-			withinSince = time.Time{} // still above threshold (or grew again) — reset the clock
-			continue
-		}
-		if withinSince.IsZero() {
-			withinSince = time.Now()
-			continue
-		}
-		if time.Since(withinSince) >= opts.ResumeAfter {
-			tripped = false
-			withinSince = time.Time{}
-			opts.OnResume()
-		}
-	}
+	return &SwapWatch{w: probe.StartWatch(ctx, probe.WatchOptions{
+		Read:         opts.Read,
+		PollInterval: opts.PollInterval,
+		Threshold:    opts.Threshold,
+		ResumeAfter:  opts.ResumeAfter,
+		OnTrip:       opts.OnTrip,
+		OnResume:     opts.OnResume,
+	})}
 }

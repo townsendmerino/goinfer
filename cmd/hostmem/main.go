@@ -1,4 +1,4 @@
-// Command hostmem prints this machine's memory as internal/hostmem reads it, so every reader uses one number: the available
+// Command hostmem prints this machine's memory as internal/mem/probe reads it, so every reader uses one number: the available
 // figure the fit guard decides loads by, or with -reclaimable the figure the timed runs' start checks (scripts/night.py,
 // scripts/bench_peer.py) and the void rule decide validity by.
 //
@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	oracle := flag.Bool("oracle", false, "print the reading with the kernel's jetsam figure before and after it")
 	flag.Parse()
 	if *oracle {
-		o, ok := hostmem.ReadWithOracle()
+		o, ok := probe.ReadWithOracle()
 		if !ok {
 			fmt.Fprintln(os.Stderr, "hostmem: no oracle on this platform")
 			os.Exit(1)
@@ -43,7 +43,7 @@ func main() {
 		return
 	}
 	if *pid > 0 {
-		t, ok := hostmem.ReadTask(*pid)
+		t, ok := probe.ReadTask(*pid)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "hostmem: no task_info for pid %d\n", *pid)
 			os.Exit(1)
@@ -52,7 +52,7 @@ func main() {
 			t.CompressedPeak, t.PhysFootprint)
 		return
 	}
-	r, ok := hostmem.Read()
+	r, ok := probe.Read()
 	if !ok {
 		fmt.Fprintln(os.Stderr, "hostmem: no reading on this platform")
 		os.Exit(1)
@@ -69,7 +69,7 @@ func main() {
 }
 
 // figure is the one number hostmem prints without -v: Reclaimable with -reclaimable, else Available; in MiB, rounded down, with -mb.
-func figure(r hostmem.Reading, reclaimable, mb bool) int64 {
+func figure(r probe.Reading, reclaimable, mb bool) int64 {
 	v := r.Available
 	if reclaimable {
 		v = r.Reclaimable

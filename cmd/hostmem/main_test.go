@@ -3,13 +3,13 @@ package main
 import (
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // TestFigure: -reclaimable picks Reclaimable and the default Available, each in bytes or with -mb in MiB rounded down.
 func TestFigure(t *testing.T) {
 	// Each figure is one byte short of the next MiB, so -mb must round down (to 3072 and 1024); to nearest would read one higher.
-	r := hostmem.Reading{Available: 3<<30 + 1<<20 - 1, Reclaimable: 1<<30 + 1<<20 - 1}
+	r := probe.Reading{Available: 3<<30 + 1<<20 - 1, Reclaimable: 1<<30 + 1<<20 - 1}
 	for _, c := range []struct {
 		recl, mb bool
 		want     int64

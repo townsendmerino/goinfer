@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // TestColdLoad_darwinProbesAndActions runs the real kernel calls on a real file: a file written and dropped from
@@ -34,7 +36,7 @@ func TestColdLoad_darwinProbesAndActions(t *testing.T) {
 	if _, _, errno := syscall.Syscall(syscall.SYS_MSYNC, uintptr(unsafe.Pointer(&mapping[0])), uintptr(len(mapping)), msInvalidate); errno != 0 {
 		t.Skipf("msync(MS_INVALIDATE): %v", errno)
 	}
-	cold := giwResidentFraction(mapping)
+	cold := probe.ResidentFraction(mapping)
 	if cold >= coldResidentWarm {
 		t.Skipf("the file still samples %.0f%% resident after the drop: this filesystem cannot show a cold file", 100*cold)
 	}
@@ -43,7 +45,7 @@ func TestColdLoad_darwinProbesAndActions(t *testing.T) {
 	giwReadThrough(mapping)
 	warm, deadline := 0.0, time.Now().Add(10*time.Second)
 	for {
-		if warm = giwResidentFraction(mapping); warm >= 0.99 || time.Now().After(deadline) {
+		if warm = probe.ResidentFraction(mapping); warm >= 0.99 || time.Now().After(deadline) {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
