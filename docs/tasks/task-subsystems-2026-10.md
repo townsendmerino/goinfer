@@ -72,7 +72,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW3 | open | the shared hot files sharded or generated; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
+| PW5 | active | gates PW5-G1–G5 registered 2026-10-27 (§12.2); building (mac-vk01, branch `pw5-cache-2026-10`); S | §12 |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -2104,6 +2104,49 @@ review and a session never routes around a denial.
 **Amended 2026-10-26 evening (Francis, 13:04 and 21:42).** A session's own `gh pr merge --auto`, run as a bare command
 while the checks are pending, passes the classifier (every PR from #274 on merged this way), so the session sets auto-merge
 itself right after `gh pr create`; only a plain merge without `--auto` stays forbidden. `CLAUDE.md` says so.
+
+### 12.2 PW5's gates (registered 2026-10-27 before the code; mac-vk01; Francis, 11:08)
+
+**Why Go's test cache cannot be trusted everywhere.** Go replays a cached test result when the test binary, its cacheable
+flags, the environment variables it read through `os.Getenv`, and the files inside its module that it opened are all
+unchanged (`go help test`; `computeTestInputsID` re-checks no file outside the module root). Anything else a test
+depends on is a hidden input, and a replayed pass would hide a change in it.
+
+**The hidden inputs, each found by a source scan:**
+
+| hidden input | how the scan finds it |
+|---|---|
+| OS memory | an import of `internal/mem/probe`, the only OS memory reader since MM0 |
+| a device | `metal`, `cuda` or `gpu` code, or an aikit `gpu` import |
+| a subprocess | `exec.Command`; its environment and its reads are untracked |
+| the whole environment | `os.Environ()`, which `testlog` does not record |
+| files outside the module | the home directory, the asset registry's checkpoints, absolute `/Users`, `/home`, `/proc`, `/sys`, `/tmp` or `/dev` paths, and `"../` in a nested module |
+| the network | `net.Dial` or `http.Get` |
+| timing | a test that reads the clock: `time.Since` or `testing.Benchmark` |
+
+**Where a scan looks.** A package has a hidden input when one of these is found in any of:
+- its own files, tests included;
+- the non-test files of any goinfer package its code or tests import, transitively over `internal/layout/imports.json`'s
+  arrows.
+
+Most packages that import `decoder` are therefore not cacheable, because `Load`'s fit guard reads the probe.
+
+**The data and how touched.py uses it.**
+- The classification is data, `internal/layout/test_cache.json`: every package in the seven modules, cacheable or not,
+  with its reasons.
+- A `declared` section holds reasons a scan cannot see, added by hand; nothing is in it at the start.
+- `TestTestCache_classified` regenerates the classification and fails on any difference (`-update` rewrites it), so a
+  cacheable package that gains a hidden read goes red in the change that adds it.
+- `touched.py` drops `-count=1` only for a package the data marks cacheable. An unlisted package, or a missing or
+  unreadable data file, keeps it.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW5-G1 complete and true | `TestTestCache_classified` passes; every directory holding a Go file in the seven modules has an entry; every non-cacheable entry names at least one reason | never | one run | seconds |
+| PW5-G2 the scan bites | three `gate mutation` plants turn it red, naming the package and the reason: `exec.Command` in a test of `internal/f16`; `time.Since` in a test of `internal/giw`; an import of `decoder` in a test of `internal/towerid` ("OS memory", reached through `decoder`) | never | one run each | seconds |
+| PW5-G3 touched.py honors it | `scripts/test_touched.py`: a cacheable package's `go test` has no `-count=1`; a non-cacheable one, an unlisted one, and every package when the data file is missing or malformed all keep it | never | one run | seconds |
+| PW5-G4 the cache replays only what it should | in G5's second run, every package the data marks cacheable whose inputs the edit did not touch prints `(cached)`, and no non-cacheable package does | the edit touches every cacheable package | one run | from G5 |
+| PW5-G5 the measurement | `touched.py`'s wall time on the diff `0158bdc0..3d01e4a3` (`decoder` 3 files, `internal/mem` 3, `metal` 1, and the scan tests they trigger), on the PW5 branch, under a private `GOCACHE` warmed once by an untimed run. Sequence: before A1, then a one-line comment edit to one `decoder` file in the diff, A2, a run with no change A3; the edit reverted; after B1, the same edit, B2, B3. Each run records its wall time, the packages that ran and replayed, and the 1-minute load average at its start. Reported as measured, with no pass bar: Francis asked for the number | a run starts with the load average above 4.0 (re-run it, and list it) | one sequence | about 6 runs × a minute or two |
 
 ## 13. Order, sizes, and what each step is worth alone
 
