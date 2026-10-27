@@ -8,7 +8,7 @@
     "decoder/arch_voxtral.go",
     "decoder/arch_llama.go"
   ],
-  "deps_hash": "sha256:c9c0b5bd90492b7939d77fdb2eff2281852c440b399e92b98d25fb2c598c242f",
+  "deps_hash": "sha256:caa93364ea5a027f89c6746b2ef9240fd53605d5c585eb7e90e5addac6409f56",
   "status": "validated",
   "validated_at": "8494de25",
   "date": "2026-10-09",

@@ -9,7 +9,7 @@
     "decoder/forward_llama4.go",
     "decoder/arch_llama4_text.go"
   ],
-  "deps_hash": "sha256:8a33eec05cbba779590905439a2d6a982f9d9f74c9148a9a35663438bb338713",
+  "deps_hash": "sha256:c79a13bf27e9ebdd26fe309c4cb600760e43b63e8bf5d9093309e54ac9637099",
   "status": "experimental",
   "validated_at": "3f23c96",
   "date": "2026-06-16",

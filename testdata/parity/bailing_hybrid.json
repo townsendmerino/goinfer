@@ -5,7 +5,7 @@
     "decoder/kda.go",
     "decoder/kda_rehearsal.go"
   ],
-  "deps_hash": "sha256:7cdd684c0addac631983e915918f6f5d227bf8457306d762c14462bcd6889665",
+  "deps_hash": "sha256:7cb005df6c5d5987c08b0812d6848e836b37779634d65043b66fbdaecdb22dde",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

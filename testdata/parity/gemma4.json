@@ -9,7 +9,7 @@
     "decoder/arch_gemma4.go",
     "decoder/forward_gemma4_moe.go"
   ],
-  "deps_hash": "sha256:8a3d3a18e574cda322c6a7f57a2372facf246829244bbfc36eaf0b8b296904ab",
+  "deps_hash": "sha256:613d6ff56d8e404baf45a765b4cc068bd7e89dd453870af73edce1fed035f532",
   "status": "validated",
   "validated_at": "310a2e44",
   "date": "2026-09-28",

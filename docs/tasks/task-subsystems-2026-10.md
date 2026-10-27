@@ -37,7 +37,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | shadow week 1 (SD6) runs from the workflow's first run on main, 2026-10-26, and grades the aikit-pin → kernel-fingerprint swap alone; week 2 then grades the key built from program fingerprints (VK4) plus kernel fingerprints, with the forward source files out of it (Francis 16:27: option 1); the switch after each week is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS (mac-vk01, branch `vk5-switch-2026-10`); week 2 (programs plus kernels, forward sources out) next, gates first; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -556,6 +556,49 @@ pin for the kernel fingerprints. When it ends, week 2 grades the key built from 
 kernel fingerprints, with the forward's source files out of it. Each week then explains its disagreements by one
 change. Week 2's gates are registered before its code, like week 1's.
 
+**Week 1 graded (Francis, 22:40: end it early once a real aikit bump has gone through).**
+- **The runs.** 31 `vk-shadow` runs on main, from the workflow's first at 15:01 PDT (2026-10-26) to 23:20. All green,
+  none VOID. 17 ran on AVX2 runners and 14 on AVX-512 runners.
+- **The one aikit bump** (#305, v1.75.0 → v1.76.0, comments, docs and tools only, on an AVX-512 runner): today's key
+  re-staled all 43 families and the kernel-fingerprint key none. All 43 verdicts were old-only, each explained "aikit
+  v1.75.0 -> v1.76.0 changed no kernel fingerprint".
+- **No other disagreement in the week.** Two pushes (VK2's two parts) re-staled all 43 under both keys; the other 28
+  left every family fresh under both.
+- **Caveat.** This bump changed no kernel, so the week shows the key carrying a validation over, not catching a change.
+  That the fingerprint catches a one-ULP kernel change rests on VK1's K2 mutation test.
+
+Run by run: `docs/measurements/vk5-2026-10/week1-runs-2026-10-27.txt`.
+
+#### The switch's gates, registered 2026-10-27 before the code (mac-vk01)
+
+The switch puts the kernel fingerprints in today's key in place of `aikit_version`. The digest has to be the same on
+every runner, so the key mixes in a committed table, not the runner's own fingerprints.
+- **The table.** `testdata/kernel_fingerprints.json` holds every kernel's fingerprint per dispatch configuration, for
+  the three CI runs on:
+  - `arm64[dotprod]`, generated on this Mac;
+  - `amd64[avx2,f16c,popcnt]`, generated under Rosetta. Its digest equals the one 17 week-1 runs on AVX2 runners
+    recorded;
+  - `amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]`, #303's SDE table. Its digest equals the one 14 week-1 runs on
+    AVX-512 runners recorded, so the emulation matched the hardware.
+- **The key.** `freshDepsHash` and `paritykey`'s today key end in `kernel_fingerprints=<digest of the table>`.
+- **The table's own check.** `internal/kernelprint`'s `TestCompute_table` compares the runner's own fingerprints with
+  its configuration's entry, and reports a configuration with no entry as not checked. `-update` writes the entry.
+- **The shadow job.** `gate shadow` gains one explained reason: the key's definition changed at this commit.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| S1 the table | `TestCompute_table` passes here on arm64 and amd64-AVX2; the AVX-512 entry's digest equals the real AVX-512 runners' | never | one run each | seconds |
+| S2 a one-time re-stale | the goldens-gated refresh changes the 43 `deps_hash` lines and nothing else; P1 (`TestParityKey_matchesFreshDepsHash`) still holds | a golden red before the change | one run | about a minute |
+| S3 the pin is out of the key | on a throwaway commit that changes only the aikit requirement, `TestParityManifest_fresh` stays green and `gate shadow` classes every family agree-fresh | — | one run | about a minute |
+| S4 a kernel change re-stales | `gate mutation` changing one fingerprint in the table turns `TestCompute_table` red (this config's entry) and `TestParityManifest_fresh` red (every family; VK4's per-family narrowing is week 2's) | — | one run each | seconds |
+| S5 the shadow job across the switch | `gate shadow` on the switch commit classes all 43 old-only, each explained by the key's change of definition, with none unexplained | — | one run | about a minute |
+
+**The switch, graded 2026-10-27: S1–S5 all PASS** (`docs/measurements/vk5-2026-10.md` §5). The table's three digests
+equal week 1's per configuration; the one-time refresh moved only the 43 `deps_hash` lines, with goldens 33/31/0; an
+aikit-only commit leaves every family fresh; one changed fingerprint re-stales all 43; the shadow job explains all 43
+across the switch by the change of definition. Added beyond the registration: the shadow job also explains an old-only
+family when the table moved only for configurations other than the runner's own.
+
 ### 5.9 VK6 — the daily canary and the coverage audit
 
 - **The canary.** Each day, re-validate a rotating sample of carried-over (family, backend) pairs on real checkpoints,
@@ -910,6 +953,65 @@ module's `ResolveKV` test. G-MM1c-3: `TestNoGuardThresholdOutsideMem` reads 726 
 (`gpu/kv_slots.go` 2, `metal/backend.go` 3) and counts a planted reference. G-MM1c-4: vet on three systems and with the
 module tags, the pinned staticcheck, gofmt, `test_touched.py`; the parity manifest stayed fresh. MM1 is done with this:
 D1–D7 run through `internal/mem`, and the census holds byte for byte.
+
+#### MM6's gates, registered 2026-10-26 before the code (nobara-mm01; Francis's answers of 22:37)
+
+**Francis's decision (22:37):**
+- 1a: refuse at queue time, with an override flag.
+- 1b: the idle profile prices night jobs, the apps-open profile day jobs.
+- 1c: new repeatable `--fit-model PATH --fit-opts "..."` flags, priced through `goinfer fit`. A job queued without them is not
+  checked and gets a warning.
+
+**What is built.**
+- **`fit -profile FILE`** prices a checkpoint as `Load`'s own memory check would on that recorded machine, without loading it.
+  It is `decoder.FitQueryAvailable`, which is `FitQuery` with the available reading taken from the profile instead of the
+  probe. It prints one line (or `-json`) and exits 0 when the load proceeds (fits, auto-pins, or cannot be priced), or 4 when
+  it would be refused.
+- **`night.py add --fit-model PATH [--fit-opts "..."]`**, repeatable, runs that check for each declared load:
+  - the profile is the box's night profile for a job with `--not-before`, else its day profile;
+  - the binary is the chat build for the job's `-backend` (`cuda/cmd/chat`, `metal/cmd/chat`, else `demo/chat`), because
+    what `Load` prices depends on the backends linked in;
+  - a refusal stops the queueing unless `--fit-override REASON`, which the job records;
+  - a job with no `--fit-model`, or a box with no recorded profile, is queued with a warning.
+- The box-to-profile table: `nobara-pc` uses `nobara-no-desktop` at night and `nobara-desktop` by day; `macbookpro.lan` uses
+  `m1pro-near-idle` and `m1pro-apps-open`.
+- **Out of scope here:** Metal's own resident guard (`metal/backend.go`, against physical RAM) and CUDA's device-side
+  context fit, which run in the backend at build time.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM6-1 the profile check | on tracked tiny fixtures, `fit -profile` against generated profiles answers as `decoder.FitQueryAvailable` does: exit 0 and `fits` at ample memory, exit 0 and `capped` at the auto-pin edge (long-context copy), exit 4 with `Load`'s own refusal text below it, exit 0 and `unpriced` at an unknown reading; and `FitQueryAvailable` at the probe's reading equals `FitQuery` | — | runs to completion | seconds |
+| G-MM6-2 `night.py add` | with a scripted checker: a refused load is not queued and the message names the model, the profile and the refusal; `--fit-override` queues it and records the reason; a job without `--fit-model` queues with a warning; a `--not-before` job is priced on the night profile, any other on the day profile; an unknown host queues with a warning; the backend picks the binary | the tests do not reach `cmd_add` (they must queue into a temp queue dir) | runs to completion | seconds |
+| G-MM6-3 end to end | `night.py add` with its real checker on nobara: a tracked tiny checkpoint against a profile too small for it is refused, and against `nobara-no-desktop` is queued (into a temp queue dir), through `go run ./demo/chat fit` | the build fails (that is a red run, not a void) | runs to completion | about a minute (the build) |
+| G-MM6-4 the census | `TestDecisionCensus` passes without `-census.update` (`FitQuery` is refactored, not changed) | as G-MM1-S1 | runs to completion | 8 s |
+| G-MM6-5 the replay (the Mac) | every night job on the Mac refused by the fit or swap guard from 2026-10-06 to 10-26, re-checked with `fit -profile` on the night profile for its model and options as queued, is refused (exit 4). A job whose refusal was the swap guard's (not priced by `FitQuery`) is listed apart, not counted against the rule. The commands are in the PR; the result follows the PR. | the job's model is no longer on the Mac's local disk (listed, not counted) | every refused job | the Mac session's estimate, minutes |
+| G-MM6-6 builds | as G-MM1-S6, and `python3 scripts/test_night.py` | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM6 read, 2026-10-26 (nobara): G-MM6-1, 2, 3, 4 and 6 pass; G-MM6-5, the Mac's replay, follows the PR.**
+- G-MM6-1: `TestProfile_answersAsFitQueryAvailable` reaches all four verdicts, each with its exit code and with
+  `FitQueryAvailable`'s answer. `TestFitQueryAvailable_isFitQueryAtThatReading` holds it equal to `FitQuery` at the probe's
+  reading, for a directory and a `.gguf`.
+- G-MM6-2: eight `FitCheckAtQueueTime` tests pass, and the whole `test_night.py` (62).
+- G-MM6-3: through the real `go run ./demo/chat fit`, llama-tiny is refused on a 64 KiB profile and fits on
+  `nobara-no-desktop`. The first try found that `go run` exits 1 for the program's exit 4, so `night.py` reads the JSON
+  verdict, not the exit code. The scripted checker in G-MM6-2 now exits 1 as `go run` does.
+- G-MM6-4: `TestDecisionCensus` passes without `-census.update`.
+- G-MM6-6: vet on three systems, the chat builds' vet with their tags, the pinned staticcheck (untagged and `realckpt`),
+  gofmt, the parity manifest fresh.
+- The replay's commands and its pass rule are in the PR. Because the night profile is the idle Mac, the replay also
+  measures whether the Mac's nights are idle: a refusal that printed about 7 GB available would not be refused on a 12.2 GB
+  profile. That would be a finding about which profile prices night jobs (Francis's 1b), and it is reported as one.
+
+**G-MM6-5 read, 2026-10-27 (mac-vk01, the Mac, `origin/main` `014cbd54`): FAIL by its rule. The finding is about the
+night profile, not the code** (`docs/measurements/mm6-replay-2026-10-27.md`).
+- Nine fit-guard refusals in the window. One model is no longer on local disk, so 8 are counted. No `.giw` or swap-guard
+  refusals.
+- `m1pro-near-idle` refuses 1 of the 8 (the 7B at 12.6 GB). It fits the other 7, which need 2.7–6.7 GB against its 8.5 GB
+  budget.
+- `fit -profile` prices each load within 0.1 GB of the need the real refusal logged (rows 2–8). The real refusals printed
+  2.9–7.7 GB available, median 6.6, against the profile's 12.2: the Mac's nights were not idle.
+- `m1pro-apps-open` refuses 7 of the 8. The 1.5B fits there; its night had 2.9 GB.
+- **DECISION for Francis (1b):** which profile prices the Mac's night jobs, given these readings.
 
 #### MM2a's gates (backends report their build demand), registered 2026-10-26 before the code (nobara-mm01; Francis's answers of 22:40)
 

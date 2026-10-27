@@ -3,11 +3,12 @@ package paritykey
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func side(pin, digest string, today, shadow string, content string) Side {
-	return Side{Pin: pin, Digest: digest,
+	return Side{Pin: pin, Tail: AikitTailPrefix + pin, Digest: digest,
 		Today: map[string]string{"f": today}, Shadow: map[string]string{"f": shadow},
 		Files: map[string][]string{"f": {"decoder/model.go"}}, Content: map[string]string{"decoder/model.go": content}}
 }
@@ -37,6 +38,39 @@ func TestCompare_classes(t *testing.T) {
 			t.Errorf("%s: got %+v, want class %s explained %v", c.name, v, c.class, c.explained)
 		}
 	}
+
+	// The kernel table in place of the pin. The runner here is configuration "a".
+	table := func(a, b string) Side {
+		s := side("v1", "d1", "t1", "s1", "c1")
+		s.Table = map[string]map[string]string{"a": {"k": a}, "b": {"k": b}}
+		s.Tail, s.Config = KernelTailPrefix+KernelTableDigest(s.Table), "a"
+		return s
+	}
+	tbase := table("x", "y")
+	withToday := func(s Side, today, shadow string) Side {
+		s.Today, s.Shadow = map[string]string{"f": today}, map[string]string{"f": shadow}
+		return s
+	}
+	tcases := []struct {
+		name          string
+		before, after Side
+		class         Class
+		explained     bool
+		reason        string
+	}{
+		{"the key's definition changed", base, withToday(table("x", "y"), "t2", "s1"), OldOnly, true, "the key's definition changed (aikit_version -> kernel_fingerprints); no input it reads moved"},
+		{"the table moved for another configuration", tbase, withToday(table("x", "z"), "t2", "s1"), OldOnly, true, "the kernel table moved for configurations this machine does not run (b)"},
+		{"the table moved for this configuration, the kernels did not", tbase, withToday(table("w", "y"), "t2", "s1"), OldOnly, false, ""},
+		{"the kernels moved, the table did not", tbase, func() Side { s := withToday(table("x", "y"), "t1", "s2"); s.Digest = "d2"; return s }(), NewOnly, false, ""},
+		{"an aikit bump under the table, no kernel moved", tbase, func() Side { s := table("x", "y"); s.Pin = "v2"; return s }(), AgreeFresh, true, ""},
+	}
+	for _, c := range tcases {
+		v := Compare(c.before, c.after)
+		if len(v) != 1 || v[0].Class != c.class || v[0].Explained != c.explained || (c.reason != "" && v[0].Reason != c.reason) {
+			t.Errorf("%s: got %+v, want class %s explained %v reason %q", c.name, v, c.class, c.explained, c.reason)
+		}
+	}
+
 	after := base
 	after.Today = map[string]string{"g": "t"}
 	got := Compare(base, after)
@@ -52,9 +86,12 @@ func TestKey_onTheTree(t *testing.T) {
 	if _, err := ManifestJSON(src); err != nil {
 		t.Fatal(err)
 	}
-	s, err := LoadSide(src, "digest")
+	s, err := LoadSide(src, "cfg", "digest")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(s.Tail, KernelTailPrefix) || len(s.Table) == 0 {
+		t.Errorf("today's tail %q, %d table configurations: the tree's key is not on its kernel table", s.Tail, len(s.Table))
 	}
 	if len(s.Today) == 0 {
 		t.Fatal("no families")

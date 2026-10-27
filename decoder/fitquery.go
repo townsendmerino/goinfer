@@ -44,13 +44,25 @@ type FitAnswer struct {
 // FitQuery answers FitAnswer for path and opts. An error is a load that would fail before its memory check, for a reason
 // other than memory (an unreadable .giw, an unknown quant).
 func FitQuery(path string, opts Options) (FitAnswer, error) {
+	return fitQueryAt(path, opts, hostRAMAvailable)
+}
+
+// FitQueryAvailable is FitQuery against a recorded machine instead of this one: the available host memory is availableBytes
+// (0 for unknown, which proceeds unpriced) rather than the probe's reading. `fit -profile` and the night queue's check use it to
+// price a load before the box it will run on is in the state it will run in.
+func FitQueryAvailable(path string, opts Options, availableBytes int64) (FitAnswer, error) {
+	return fitQueryAt(path, opts, func() int64 { return availableBytes })
+}
+
+// fitQueryAt is FitQuery with the available-memory reading passed in.
+func fitQueryAt(path string, opts Options, read func() int64) (FitAnswer, error) {
 	opts = opts.withAutoBackend()
 	if strings.HasSuffix(path, ".giw") {
 		cfg, baked, err := readGIWConfig(path)
 		if err != nil {
 			return FitAnswer{}, err
 		}
-		d := decideGIWFit(cfg, opts)
+		d := decideGIWFitAt(cfg, opts, read)
 		a := FitAnswer{Guard: "giw", Fits: d.err == nil, Ctx: d.ctx, CtxPinned: d.pinned, CtxCapped: d.pinCtx > 0,
 			MaxCtx: cfg.MaxPositions, NeedBytes: d.need, BudgetBytes: d.budget, KVBytes: max(d.need-d.pinnedExperts-prefillAttnScratchBudget, 0), PinnedExpertBytes: d.pinnedExperts, AvailBytes: d.avail}
 		if !d.known {
@@ -73,7 +85,7 @@ func FitQuery(path string, opts Options) (FitAnswer, error) {
 	if err := checkHalf16Load(quant, path, opts.Backend); err != nil {
 		return FitAnswer{}, err
 	}
-	f := fitCheckFor(path, opts.Quant, quant, opts)
+	f := fitCheckForAt(path, opts.Quant, quant, opts, read)
 	pin, decline := f.decide()
 	a := FitAnswer{Guard: "resident", Fits: decline == nil, Ctx: f.effCtx, CtxPinned: f.pinned, NeedBytes: f.need(),
 		BudgetBytes: f.budget(), WeightBytes: f.weightBytes, KVBytes: f.kvBytes, AvailBytes: f.availBytes}

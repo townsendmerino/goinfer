@@ -13,7 +13,7 @@
     "scripts/pin_olmo_hybrid_tiny.py",
     "decoder/arch_olmo_hybrid.go"
   ],
-  "deps_hash": "sha256:1a9eb4ded8ac84116d3b13b60c941137349e1de88ce37daf9e3f94b43623aa3d",
+  "deps_hash": "sha256:be0c50bdb1263ef37457e85479f694c78a40b91f94adb59d37b77786d02e865c",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

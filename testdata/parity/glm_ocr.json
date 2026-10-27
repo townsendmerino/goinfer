@@ -9,7 +9,7 @@
     "scripts/pin_glm_ocr_tiny.py",
     "decoder/arch_glm_ocr.go"
   ],
-  "deps_hash": "sha256:c4d8bcf9de5f847bc7ca6b942498aab59e67f56ecb3a2bf0ea372173c7e94f6a",
+  "deps_hash": "sha256:5d64c634407ee6059a3d82c610a2fdece46b4468a64b532bc2906ddeafe88989",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

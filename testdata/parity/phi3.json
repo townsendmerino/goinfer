@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_phi3.go"
   ],
-  "deps_hash": "sha256:748e3114797f6e5a41d5c2a9828a1bbe5a66888c081fa4a1065b367eb76f5303",
+  "deps_hash": "sha256:d01df92d045bae9cbe59e3059bd80575955ba565b3ec3674d2a7ada0b55f002b",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

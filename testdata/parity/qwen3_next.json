@@ -16,7 +16,7 @@
     "scripts/pin_slice_oracle.py",
     "decoder/arch_qwen3_next.go"
   ],
-  "deps_hash": "sha256:5e0a28ee162347bf33ed6acf5c0d4aa7e3b156ac7c2a9ea9edf42d500d6a105c",
+  "deps_hash": "sha256:b42e97052b046939540520590bd8fc5de926c47dc4d5bca97cfe00a0c5b31bf9",
   "status": "validated",
   "validated_at": "426ca57d",
   "date": "2026-09-29",

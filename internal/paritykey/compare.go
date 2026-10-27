@@ -7,9 +7,13 @@ import (
 )
 
 // Side is one end of a push, as Compare needs it: each family's two keys and dependency files, the content digest of
-// every dependency path, the aikit pin, and the kernel fingerprints' digest.
+// every dependency path, the aikit pin, today's tail, the kernel table's entries, and this machine's configuration and
+// kernel fingerprints' digest.
 type Side struct {
 	Pin     string
+	Tail    string
+	Table   map[string]map[string]string // nil in a tree from before the table
+	Config  string
 	Digest  string
 	Today   map[string]string
 	Shadow  map[string]string
@@ -17,8 +21,9 @@ type Side struct {
 	Content map[string]string
 }
 
-// LoadSide reads a Side from src. digest is the kernel fingerprints' digest for src's aikit pin.
-func LoadSide(src Source, digest string) (Side, error) {
+// LoadSide reads a Side from src. config and digest are this machine's dispatch configuration and its kernel
+// fingerprints' digest for src's aikit pin.
+func LoadSide(src Source, config, digest string) (Side, error) {
 	m, err := ReadManifest(src)
 	if err != nil {
 		return Side{}, err
@@ -27,10 +32,19 @@ func LoadSide(src Source, digest string) (Side, error) {
 	if err != nil {
 		return Side{}, err
 	}
-	s := Side{Pin: pin, Digest: digest, Today: map[string]string{}, Shadow: map[string]string{},
+	tail, err := TodayTail(src)
+	if err != nil {
+		return Side{}, err
+	}
+	s := Side{Pin: pin, Tail: tail, Config: config, Digest: digest, Today: map[string]string{}, Shadow: map[string]string{},
 		Files: map[string][]string{}, Content: map[string]string{}}
+	if strings.HasPrefix(tail, KernelTailPrefix) {
+		if s.Table, err = ReadKernelTable(src); err != nil {
+			return Side{}, err
+		}
+	}
 	for name, fam := range m.Families {
-		if s.Today[name], err = Key(src, m, fam, TodayTail(pin)); err != nil {
+		if s.Today[name], err = Key(src, m, fam, tail); err != nil {
 			return Side{}, fmt.Errorf("%s: %w", name, err)
 		}
 		if s.Shadow[name], err = Key(src, m, fam, ShadowTail(digest)); err != nil {
@@ -69,10 +83,11 @@ type Verdict struct {
 	Reason    string   `json:"reason,omitempty"`
 }
 
-// Compare classes every family across a push from before to after. An old-only verdict is explained only when the aikit
-// pin is the one input of today's key that moved and the kernel fingerprints did not; a new-only verdict is never
-// explained here, because with one suite and one toolchain the shadow key cannot move while today's does not unless an
-// input neither key names moved.
+// Compare classes every family across a push from before to after. An old-only verdict is explained when the one input
+// of today's key that moved is the aikit pin (the fingerprints did not move), the key's definition (the switch from the
+// pin to the kernel table), or the kernel table's entries for configurations other than after.Config, which this machine
+// cannot check. A new-only verdict is never explained here: with one suite and one toolchain the shadow key cannot move
+// while today's does not unless the table missed a kernel change, or an input neither key names moved.
 func Compare(before, after Side) []Verdict {
 	var out []Verdict
 	for name, ak := range after.Today {
@@ -92,12 +107,20 @@ func Compare(before, after Side) []Verdict {
 			v.Class = AgreeFresh
 		case oldStale:
 			v.Class = OldOnly
-			// The pin is the only moved input; a moved fingerprint digest would be a second entry in v.Moved.
-			v.Explained = len(v.Moved) == 1 && strings.HasPrefix(v.Moved[0], "aikit ")
-			if v.Explained {
-				v.Reason = fmt.Sprintf("aikit %s -> %s changed no kernel fingerprint", before.Pin, after.Pin)
-			} else {
+			// One moved input only; a moved fingerprint digest would be a second entry in v.Moved.
+			v.Explained = len(v.Moved) == 1
+			switch m := v.Moved[0]; {
+			case !v.Explained:
 				v.Reason = "today's key moved on inputs the shadow key also reads, or the fingerprints moved"
+			case strings.HasPrefix(m, "aikit "):
+				v.Reason = fmt.Sprintf("aikit %s -> %s changed no kernel fingerprint", before.Pin, after.Pin)
+			case strings.HasPrefix(m, "key definition "):
+				v.Reason = "the key's definition changed (" + strings.TrimPrefix(m, "key definition ") + "); no input it reads moved"
+			case strings.HasPrefix(m, "kernel table: ") && !tableMoved(before, after, after.Config):
+				v.Reason = "the kernel table moved for configurations this machine does not run (" + strings.TrimPrefix(m, "kernel table: ") + ")"
+			default:
+				v.Explained = false
+				v.Reason = "today's key moved on an input the shadow key should have seen move"
 			}
 		default:
 			v.Class = NewOnly
@@ -115,8 +138,8 @@ func Compare(before, after Side) []Verdict {
 	return out
 }
 
-// moved names the inputs of a family's keys that differ between the sides: a dependency path, the file list, the aikit
-// pin, the kernel fingerprints.
+// moved names the inputs of a family's keys that differ between the sides: a dependency path, the file list, today's
+// tail (the aikit pin, the kernel table's moved configurations, or the key's definition), the kernel fingerprints.
 func moved(before, after Side, name string) []string {
 	var out []string
 	if strings.Join(before.Files[name], "\x00") != strings.Join(after.Files[name], "\x00") {
@@ -127,11 +150,51 @@ func moved(before, after Side, name string) []string {
 			out = append(out, p)
 		}
 	}
-	if before.Pin != after.Pin {
-		out = append(out, "aikit "+before.Pin+" -> "+after.Pin)
+	if before.Tail != after.Tail {
+		bk, ak := tailKind(before.Tail), tailKind(after.Tail)
+		switch {
+		case bk != ak:
+			out = append(out, "key definition "+bk+" -> "+ak)
+		case ak == tailKind(AikitTailPrefix):
+			out = append(out, "aikit "+before.Pin+" -> "+after.Pin)
+		default:
+			var cfgs []string
+			for _, c := range sortedKeys(union(before.Table, after.Table)) {
+				if tableMoved(before, after, c) {
+					cfgs = append(cfgs, c)
+				}
+			}
+			out = append(out, "kernel table: "+strings.Join(cfgs, ", "))
+		}
 	}
 	if before.Digest != after.Digest {
 		out = append(out, "kernel fingerprints")
+	}
+	return out
+}
+
+// tailKind names the definition a tail belongs to: "aikit_version" or "kernel_fingerprints".
+func tailKind(tail string) string {
+	if strings.HasPrefix(tail, KernelTailPrefix) {
+		return strings.TrimSuffix(KernelTailPrefix, "=")
+	}
+	return strings.TrimSuffix(AikitTailPrefix, "=")
+}
+
+// tableMoved reports whether the kernel table's entry for cfg differs between the sides (added and removed included).
+func tableMoved(before, after Side, cfg string) bool {
+	b, bok := before.Table[cfg]
+	a, aok := after.Table[cfg]
+	return bok != aok || kernelLines(b) != kernelLines(a)
+}
+
+func union(a, b map[string]map[string]string) map[string]bool {
+	out := map[string]bool{}
+	for k := range a {
+		out[k] = true
+	}
+	for k := range b {
+		out[k] = true
 	}
 	return out
 }

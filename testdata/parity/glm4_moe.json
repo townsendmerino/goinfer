@@ -8,7 +8,7 @@
   "own": [
     "decoder/arch_glm4_moe.go"
   ],
-  "deps_hash": "sha256:82b2ab0e7cbc16200cda13547469e58e527baf1edae9a87487b01baf9fba013e",
+  "deps_hash": "sha256:bf63da11236c209e23c49181eccab75084e29b0979e5ee1f6993bd3108c58b07",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

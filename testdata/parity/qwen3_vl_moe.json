@@ -11,7 +11,7 @@
     "decoder/arch_qwen3_moe.go",
     "decoder/arch_qwen3_vl.go"
   ],
-  "deps_hash": "sha256:12cbb14e55ac5abe39a0d47bb422263b9f2182596b67df51ab98f2f6fb95a881",
+  "deps_hash": "sha256:bcc6fb6cfa16a36739e8e5f5f365e57f3967be83da7c5aa1ccf28384dde79b2f",
   "status": "experimental",
   "validated_at": "936d2f49",
   "date": "2026-10-09",

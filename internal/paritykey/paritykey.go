@@ -1,10 +1,11 @@
 // Package paritykey computes a parity family's validation key from a tree: today's key, which is
-// decoder/parity_manifest_test.go:freshDepsHash as a library, and the shadow key VK5 logs beside it, which replaces the
-// aikit pin with a digest of the kernel fingerprints (internal/kernelprint).
+// decoder/parity_manifest_test.go:freshDepsHash as a library, and the shadow key VK5 logs beside it, whose tail is the
+// digest of the kernel fingerprints this machine computes (internal/kernelprint).
 //
 // Contract. Key hashes, in sorted order, each dependency path, a NUL, its content (a Go file's token stream, comments and
 // layout dropped, directives kept; any other file's bytes) and a NUL, then the tail. TodayTail and ShadowTail are the two
-// tails. A tree is read through a Source, so the same code hashes a working tree and any commit.
+// tails: today's is the committed kernel fingerprint table's digest, or the aikit pin in a tree from before the table. A
+// tree is read through a Source, so the same code hashes a working tree and any commit.
 // decoder's TestParityKey_matchesFreshDepsHash holds today's key equal to freshDepsHash for every family.
 //
 // Imports: the standard library only.
@@ -168,8 +169,76 @@ func AikitPin(src Source) (string, error) {
 	return string(m[1]), nil
 }
 
-// TodayTail is the tail of today's key: the aikit pin.
-func TodayTail(pin string) string { return "aikit_version=" + pin }
+// KernelTablePath is the committed kernel fingerprint table: configuration -> kernel -> fingerprint. internal/kernelprint's
+// TestCompute_table holds each runner's own entry to the suite.
+const KernelTablePath = "testdata/kernel_fingerprints.json"
+
+// ReadKernelTable reads src's kernel fingerprint table. A tree without one gives an error wrapping os.ErrNotExist.
+func ReadKernelTable(src Source) (map[string]map[string]string, error) {
+	b, err := src.ReadFile(KernelTablePath)
+	if err != nil {
+		return nil, err
+	}
+	var tab map[string]map[string]string
+	if err := json.Unmarshal(b, &tab); err != nil {
+		return nil, fmt.Errorf("%s: %w", KernelTablePath, err)
+	}
+	if len(tab) == 0 {
+		return nil, fmt.Errorf("%s has no configuration", KernelTablePath)
+	}
+	return tab, nil
+}
+
+// KernelTableDigest is the table's digest, independent of its layout: each configuration in sorted order, a newline,
+// then its kernels as "name=fingerprint" lines in sorted order.
+func KernelTableDigest(tab map[string]map[string]string) string {
+	h := sha256.New()
+	for _, cfg := range sortedKeys(tab) {
+		h.Write([]byte(cfg + "\n"))
+		h.Write([]byte(kernelLines(tab[cfg])))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func kernelLines(kernels map[string]string) string {
+	var b strings.Builder
+	for _, k := range sortedKeys(kernels) {
+		b.WriteString(k + "=" + kernels[k] + "\n")
+	}
+	return b.String()
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TodayTail is the tail of today's key in src: "kernel_fingerprints=" and the kernel table's digest, or, in a tree from
+// before the table, "aikit_version=" and the aikit pin.
+func TodayTail(src Source) (string, error) {
+	tab, err := ReadKernelTable(src)
+	if errors.Is(err, os.ErrNotExist) {
+		pin, err := AikitPin(src)
+		if err != nil {
+			return "", err
+		}
+		return AikitTailPrefix + pin, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return KernelTailPrefix + KernelTableDigest(tab), nil
+}
+
+// The two definitions of today's tail, before and after the kernel table replaced the aikit pin.
+const (
+	AikitTailPrefix  = "aikit_version="
+	KernelTailPrefix = "kernel_fingerprints="
+)
 
 // ShadowTail is the tail of the shadow key: the digest of the kernel fingerprints (kernelprint.Report.Digest).
 func ShadowTail(digest string) string { return "kernelprint=" + digest }
