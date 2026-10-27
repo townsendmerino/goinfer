@@ -71,7 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW3 | open | the shared hot files sharded or generated; S–M | §12 |
-| PW4 | open | `night.py wait <job>`, so a session on the other box gets one completion instead of polling; S | §12 |
+| PW4 | active | mac-vk01, branch `pw4-night-wait-2026-10` (Francis 21:42): `night.py wait NAME`, gates W1–W3 registered in §12 before the code; S | §12 |
 | PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
@@ -1384,6 +1384,24 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   `scripts/task_docs.py`, which already recounts them (on 2026-10-26 it found the design-record count one short).
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
+
+  **PW4's gates, registered 2026-10-26 before the code (mac-vk01; Francis 21:42, relayed).** `night.py wait NAME`
+  [`--timeout MIN`] follows one queued instance of the job: the one it finds queued or running, by its `seq`, through
+  its re-queues (a retry or a stop) until its final record. It then prints one line with the job's outcome and log, and
+  exits:
+  - 0 when the outcome is `ok`;
+  - 1 for any other final outcome (FAILED, timeout, VOID-refused);
+  - 2 when no such job is queued, running or finished;
+  - 124 when its own `--timeout` passes first.
+
+  A job already finished when `wait` starts returns its newest record at once. Nothing else in `night.py` changes, and
+  the tests run in a temporary `NIGHT_DIR`, never either box's live queue.
+
+  | gate | rule | void when | stopping rule | cost basis |
+  |---|---|---|---|---|
+  | W1 backward-compatible | `scripts/test_night.py`'s existing tests pass unchanged; no other subcommand's output or file changes | never | one run | seconds |
+  | W2 the semantics | new tests drive the real `Runner` in a thread under a temporary `NIGHT_DIR`: a job that ends ok → 0; one that fails → 1; one that exits 75 and is re-queued, then ends ok → `wait` waits through the retry and returns 0; one already finished → its status at once; an unknown name → 2; `--timeout` → 124 | never | one run | seconds |
+  | W3 the command line | `python3 scripts/night.py wait NAME` run as a subprocess under a temporary `NIGHT_DIR` exits with the job's status while a runner in the test runs it: what a session on the other box runs as its one `ssh` | never | one run | seconds |
 - **PW5 (after MM0).** `scripts/touched.py` drops `-count=1` for packages with no hidden inputs. A package whose tests
   read a probe, a device or a file outside the module is listed as such, and a source scan keeps the list true.
 - **PW6.** Re-run §1's census 30 days after the first VK, MM and PW items land.
