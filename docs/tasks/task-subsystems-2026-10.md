@@ -2364,7 +2364,13 @@ backend it is asked about.
     context fit, which reads the same eligibility) or `testdata/nemotron3nano-tiny` at int4 on webgpu (D3).
   - Every one of them is in the plant's disagreement set, so nothing outside it moved. The amd64 golden is regenerated; it is the
     only class the golden records.
-- **Gate 2** (webgpu with the KV request, against `staticResidentDecline`) follows once SB2 step 2 (#344) is on main.
+- **Gate 2.** `gpu/sb2_census_test.go:TestPlanAgreesWithLoad_webgpu` passes: Plan's webgpu verdict, with each cell's KV
+  request, agrees with the load (the decoder's admission, then `staticResidentDecline`) on all 630 cells. 135 of those cells have
+  no CPU model, and none of them reached the build.
+  - With main's old `planIneligible` in place, the same test is red on 113 cells.
+  - Plan's KV request is the serving flag's precision (`KVPrecision`). The census's `kv-i8` cell sets `KVQuant` alone, which
+    webgpu does not deliver, so no cell asks Plan for `--kv i8` and that branch of the mirror is not compared here. The mirror
+    itself did not change.
 
 ### SB3 — family adapters
 

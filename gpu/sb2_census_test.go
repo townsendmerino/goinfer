@@ -164,3 +164,66 @@ func TestBackendAdmissionCensus_webgpu_plant(t *testing.T) {
 	}
 	t.Logf("planted quantized-KV decline off: %d of %d cells red, as expected", len(diffs), len(clean))
 }
+
+// TestPlanAgreesWithLoad_webgpu holds Plan's webgpu verdict, with each cell's KV request, to what the load does on webgpu: the
+// decoder's admission and then staticResidentDecline (docs/tasks/task-subsystems-2026-10.md, "SB2 — Plan asks Admit", gate 2).
+// Plan reads a CPU load of the cell without its KV request, priced against far more memory than any fixture needs, so only its
+// eligibility can decline. A cell with no CPU model must not reach the build.
+func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	be := &censusBackend{}
+	const reg = "sb2-plan-webgpu"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	d, err := sb2census.ReadLayerD("..", "webgpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diffs []string
+	cells, noModel := 0, 0
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			cells++
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			if m, err := decoder.Load(path, o); err == nil {
+				m.Close()
+			}
+			reached, ans := be.take()
+			loads := reached && ans == "static ok"
+			o.Backend, o.KVPrecision, o.KVQuant = "cpu", "", ""
+			cpuM, err := decoder.Load(path, o)
+			if err != nil {
+				noModel++
+				if reached {
+					diffs = append(diffs, fmt.Sprintf("%s %s: no CPU model for Plan (%v), but the load reached the build", f, c.Name, err))
+				}
+				continue
+			}
+			// Plan's KV request is the serving flag's precision (KVPrecision); the census's kv-i8 cell sets KVQuant alone, which webgpu
+			// does not deliver, so it plans f32 as the load does.
+			p := cpuM.Plan("webgpu", 64<<30, decoder.PlanRequest{Ctx: 4096, KVF16: c.KVPrec == "f16", KVI8: c.KVPrec == "i8"})
+			cpuM.Close()
+			if planned := p.Placement != decoder.PlacementDecline; planned != loads {
+				diffs = append(diffs, fmt.Sprintf("%s %s: Plan places=%v (%s), the load goes resident=%v (%s)", f, c.Name, planned, p.Reason, loads, ans))
+			}
+		}
+	}
+	if len(diffs) > 0 {
+		t.Errorf("Plan disagrees with the webgpu load in %d of %d cells:\n%s", len(diffs), cells, strings.Join(diffs[:min(len(diffs), 30)], "\n"))
+	}
+	t.Logf("%d cells: Plan and the webgpu load agree (%d with no CPU model)", cells, noModel)
+}
