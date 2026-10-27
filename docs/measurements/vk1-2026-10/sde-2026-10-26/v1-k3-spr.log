@@ -1,0 +1,9 @@
+=== RUN   TestCompute_reachesCensus
+    census_test.go:143: configuration amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt], tags [], aikit at /home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.75.0
+    census_test.go:189: unreached: linalg/quant_i8_amd64.go|dotI8|hasAVX512VNNI (true here, line 17): then side not executed
+    census_test.go:189: unreached: linalg/weightmat_splithalf_amd64.go|(*WeightMat).RepackInt4SplitHalf|w.q4 == nil || !hasAVX2 || hasAVX512VNNIVL (true here, line 42): then side not executed
+    census_test.go:191: 41 census sites: 24 reached, 15 excluded as unreached by goinfer, 2 unreached
+--- FAIL: TestCompute_reachesCensus (7.77s)
+FAIL
+[PIND]: (2302577) Error: signal received: 15, about to exit
+[PIND]: (2302558) Error: signal received: 15, about to exit

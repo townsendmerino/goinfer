@@ -1,0 +1,18 @@
+### 2026-10-26T21:45:15-07:00 +0s build test binaries natively | load 2.87
+### 2026-10-26T21:45:16-07:00 +1s warm the K3 child's build cache natively (no tags, then aikit_noavx512) | load 2.87
+### 2026-10-26T21:45:22-07:00 +7s warm done rc=0 | load 2.80
+### 2026-10-26T21:45:22-07:00 +7s start icx: K1 (TestCompute_stable) + fingerprints (TestCompute_child) under -icx | load 2.80
+### 2026-10-26T21:46:05-07:00 +50s end icx K1 rc=0 2 pass 0 fail | load 4.49
+### 2026-10-26T21:46:05-07:00 +50s start icx: K3 (TestCompute_reachesCensus) under -icx | load 4.49
+### 2026-10-26T21:46:42-07:00 +87s end icx K3 rc=0 --- PASS: TestCompute_reachesCensus (35.89s)  41 census sites: 25 reached, 16 excluded as unreached by goinfer, 0 unreached | load 3.28
+### 2026-10-26T21:46:42-07:00 +87s start spr: K1 (TestCompute_stable) + fingerprints (TestCompute_child) under -spr | load 3.28
+### 2026-10-26T21:47:26-07:00 +131s end spr K1 rc=0 2 pass 0 fail | load 2.27
+### 2026-10-26T21:47:26-07:00 +131s start spr: K3 (TestCompute_reachesCensus) under -spr | load 2.27
+### 2026-10-26T21:47:35-07:00 +140s end spr K3 rc=1 --- FAIL: TestCompute_reachesCensus (7.77s)  41 census sites: 24 reached, 15 excluded as unreached by goinfer, 2 unreached | load 2.15
+### 2026-10-26T21:47:35-07:00 +140s start icx-noavx512: K1 (TestCompute_stable) + fingerprints (TestCompute_child) under -icx | load 2.15
+### 2026-10-26T21:48:19-07:00 +184s end icx-noavx512 K1 rc=0 2 pass 0 fail | load 2.13
+### 2026-10-26T21:48:19-07:00 +184s start icx-noavx512: K3 (TestCompute_reachesCensus) under -icx | load 2.13
+### 2026-10-26T21:48:30-07:00 +195s end icx-noavx512 K3 rc=0 --- PASS: TestCompute_reachesCensus (9.57s)  41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 2.10
+### 2026-10-26T21:48:30-07:00 +195s start spr-noavx512: K1 (TestCompute_stable) + fingerprints (TestCompute_child) under -spr | load 2.10
+### 2026-10-26T21:49:13-07:00 +238s end spr-noavx512 K1 rc=0 2 pass 0 fail | load 3.63
+### 2026-10-26T21:49:13-07:00 +238s start spr-noavx512: K3 (TestCompute_reachesCensus) under -spr | load 3.63
