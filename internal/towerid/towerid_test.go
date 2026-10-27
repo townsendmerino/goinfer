@@ -3,6 +3,8 @@ package towerid
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestTowerIdentity_cpu is AX2a-T for the CPU: every tower family's record, twice, agreeing.
@@ -26,5 +28,32 @@ func TestRun_unregisteredDeviceIsAnError(t *testing.T) {
 		} else {
 			t.Logf("%s: %v", backend, err)
 		}
+	}
+}
+
+// TestRun_whisperDeclaredButUnregisteredIsAnError: CUDA serves the Whisper encoders, and with no CUDA registration linked
+// into this binary the Whisper and Voxtral families must error, not be skipped (a skip would let the CUDA record pass
+// without them).
+func TestRun_whisperDeclaredButUnregisteredIsAnError(t *testing.T) {
+	for _, run := range []func(*runner) error{(*runner).whisper, (*runner).voxtral} {
+		r := &runner{root: "../..", backend: "cuda"}
+		if err := run(r); err == nil {
+			t.Errorf("a Whisper-family tower ran (or was skipped) on cuda with no cuda Whisper registration: cases %v", r.cases)
+		} else {
+			t.Logf("%v", err)
+		}
+	}
+}
+
+// TestRun_siglipResidentFactoryReturningNothingIsAnError: a resident factory that returns no encoder and no error leaves
+// the tower on the CPU; siglip must say so rather than record a device case.
+func TestRun_siglipResidentFactoryReturningNothingIsAnError(t *testing.T) {
+	vision.RegisterResident(func(*vision.Encoder) (vision.ResidentEncoder, error) { return nil, nil })
+	defer vision.RegisterResident(nil)
+	r := &runner{root: "../..", backend: "metal"}
+	if err := r.siglip(); err == nil {
+		t.Errorf("siglip recorded %v with a resident factory that attached nothing", r.cases)
+	} else {
+		t.Logf("%v", err)
 	}
 }

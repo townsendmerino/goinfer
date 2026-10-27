@@ -36,6 +36,9 @@ func (e *Encoder) EnableResident() error {
 	return nil
 }
 
+// ResidentEnabled reports whether Forward runs on a device backend.
+func (e *Encoder) ResidentEnabled() bool { return e.resident != nil }
+
 // Close releases a resident backend if one is attached and the checkpoint mappings the block weights alias (aliasQMat); the
 // encoder's forwards and exports return an error afterward. Idempotent.
 func (e *Encoder) Close() {
