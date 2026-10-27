@@ -70,6 +70,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
+| PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW3 | active | `docs/README.md`'s counts no longer stored (PW3-R1/R2 PASS); `docs/citation-index.md` left as is (2 commits since CC0); `testdata/parity_manifest.json` split by VK3; left: `CHANGELOG.md`, a decision for Francis (fragments change how it reads between releases); S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
@@ -2125,6 +2126,10 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
 - **PW2.** Run `root-darwin`, `root-windows`, `root-windows-arm64`, `root-linux-arm64`, `gpu-darwin` and
   `metal-darwin` after merge, or only when their paths change, and keep them out of the required checks. The
   40–45-minute runs were these runners queueing (§1.4). They still gate tags through `gate release`.
+- **PW2a (2026-10-27, Francis 11:14).** `test-decoder-tail` finished 19–22 minutes into a PR run, against 11–12 for the
+  Windows jobs: MM1's two census tests (`TestDecisionCensus`, `TestDecisionCensus_secondProcess`) landed in it and take
+  658 s of its 1,130 s under -race (`docs/measurements/ci-tail-2026-10-27.md`). They move to their own steps in
+  `test-decoder-a` and `test-decoder-d`, whose sampling tests take one to three minutes. Gates in §12.2.
 - **PW3.** Shard or generate the hot files. The citation index records each cited commit's subject in one file, and
   every new citation edits it: keep the check, and store the expected subjects per citing doc. CHANGELOG fragments per
   change, assembled at release. Parity records per family (VK3). The `docs/README.md` counts written by
@@ -2231,6 +2236,40 @@ review and a session never routes around a denial.
 **Amended 2026-10-26 evening (Francis, 13:04 and 21:42).** A session's own `gh pr merge --auto`, run as a bare command
 while the checks are pending, passes the classifier (every PR from #274 on merged this way), so the session sets auto-merge
 itself right after `gh pr create`; only a plain merge without `--auto` stays forbidden. `CLAUDE.md` says so.
+
+### 12.2 PW2a's gates (registered 2026-10-27 11:55 PDT by nobara-ci01, before `ci.yml` changes)
+
+The measurement that sets the target is `docs/measurements/ci-tail-2026-10-27.md`: on the slow runner class the tail's
+`go test` step is 1,169 s over a 1,130 s package, of which the two census tests are 364 s and 295 s and the rest 472 s.
+The change: the tail's `-skip` adds both census names; `test-decoder-a` gains a step running `^TestDecisionCensus$` on
+`./decoder/` and `test-decoder-d` one running `^TestDecisionCensus_secondProcess$`, each under the same
+`go test -race -timeout 25m -tags goinfer_testhooks -json` line as every other shard, each with the zero-match guard
+and the summary step the other shards carry. No test's content changes, no job is added or renamed.
+
+Purity, for the -race clause: neither census test is pure. `buildCensus` runs D1, D2 and the loads through
+`parallelEach`, which starts `runtime.NumCPU()` goroutines (read in `decoder/mm1_census_build_test.go`, confirmed by
+`grep -n 'go func' decoder/mm1_census*_test.go`), and the census's own mutex guards their writes. So both keep -race.
+
+| gate | rule (PASS iff) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW2a-G1 every test still runs, by name | `docs/measurements/ci-tail-2026-10-27/shard_cover.py` reads every `go test` line of the five decoder shards and `test-rest` in `ci.yml` at `origin/main` and at the branch, lists the top-level tests of `./decoder` and `./internal/sampling` (`go test -list`, `-tags goinfer_testhooks`), and maps each to the steps that select it, applying `-run`, `-skip` and the package list. PASS iff, on both sides, every listed test is selected by exactly one -race step; the two sides select the same tests (counts printed, equal); the only tests whose step changed are the two census tests; and the no-race sampler-gates step selects the same tests on both sides | the two sides' test lists differ (main moved under the branch: re-run on a merged tree) | one run | `go test -list` compiles two packages, under a minute |
+| PW2a-G2 -race kept | in G1's map, every test that ran under -race on `origin/main` runs under -race on the branch, the census tests included (no exception is claimed: they are not pure, above) | as G1 | one run | in G1 |
+| PW2a-G3 check names | the set of job ids and of job `name:`s in `ci.yml` (loaded as YAML) is identical at `origin/main` and the branch, so the 19 required checks keep existing and branch protection needs no change | — | one run | a second |
+| PW2a-G4 the census steps ran their tests | in the first PR run, each new census step's summary lists its test with an elapsed time over 60 s (a skip or a zero-match reads near 0 s), and the tail's top-level test count plus the two census steps' counts equals the count main's tail reported at the PR's merge base | a decoder test was added or removed between the merge base and the PR head (then compare against `go test -list` on the PR head) | the first PR run | read from its logs |
+| PW2a-G5 the slowest required job | in the first uncontended PR run, every one of the 19 required jobs finishes under 12.0 minutes from the run's first job creation; recorded with each job's duration, the tail's and shards a and d's step times, and the runner class (`TestPrefillChunked_bitIdentical` reads about 50 s on the fast class and 85 s on the slow one). 12.0–13.0 is ambiguous: read the next run (the merge run on `main`) and record both | any required job started more than 2 minutes after the run's first job was created (runner queueing, not our jobs), or the run is a re-run attempt; then the next run is read | the first non-void run; if it is on the fast class, the next slow-class run on `main` is also read when it arrives, not triggered | read from `gh api .../jobs` |
+| PW2a-G6 the scans that read `ci.yml` | `python3 scripts/touched.py` on the branch passes, which runs every source scan reading `ci.yml` (the sampler sweep-coverage check, the multimodal and kvmgr race-subset checks, the release-CI check), and `python3 -B scripts/test_touched.py` passes | the timing lock is held by a timed run (wait for it) | one run | seconds to a minute |
+
+**Results, 2026-10-27** (`docs/measurements/ci-tail-2026-10-27.md` §3–4). G1 PASS: 1,252 tests, each in exactly one -race
+step on both sides, only the two census tests moved; two plants red. G2 PASS: none lost -race. G3 PASS: 20 jobs identical,
+so protection is unchanged. G4 PASS: the census steps ran 230.4 s and 228.1 s, and the tail's 1,202 plus 2 equals main's
+1,204 at the merge base. G5 PASS on PR run 40560349006, slow runner class, not void: the slowest required job, `test-rest`,
+finished 10.1 minutes in. G6 PASS by name only: `touched.py` ran none of the four scans that read `ci.yml`, because
+`scripts/touched_scans.py` has no row for it, so they were run directly; the missing row was then added (below).
+
+**Amended 2026-10-27, after the review of #325 (relayed 11:49).** G6's route is corrected: `scripts/touched_scans.py` lists the
+four `ci.yml` readers, and `touched.py --base origin/main` runs them, each `ok`. The census guards list with
+`-tags goinfer_testhooks` and report a failed listing as a build failure; their summaries skip when the test step did not
+run. G1–G3 re-run on the fixed head: PASS. The review's other points and what held are in the record's §5.
 
 ## 13. Order, sizes, and what each step is worth alone
 

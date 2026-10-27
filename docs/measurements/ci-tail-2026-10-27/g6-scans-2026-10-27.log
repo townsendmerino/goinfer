@@ -1,0 +1,30 @@
+== go test -count=1 -v -run '^TestSweepCoverage_fullSweepRunsSomewhere$' ./internal/sampling/
+=== RUN   TestSweepCoverage_fullSweepRunsSomewhere
+--- PASS: TestSweepCoverage_fullSweepRunsSomewhere (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/sampling	0.002s
+exit 0
+== go test -count=1 -v -run '^TestRaceSubset_runsInFullSomewhere$' ./multimodal/
+=== RUN   TestRaceSubset_runsInFullSomewhere
+--- PASS: TestRaceSubset_runsInFullSomewhere (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/multimodal	0.006s
+exit 0
+== go test -count=1 -v -run '^TestOracle_runsInFullSomewhere$' ./internal/kvmgr/
+=== RUN   TestOracle_runsInFullSomewhere
+--- PASS: TestOracle_runsInFullSomewhere (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/kvmgr	0.003s
+exit 0
+== go test -count=1 -v -run '^TestReleasing_standaloneBuildGateExists$' ./chat/
+=== RUN   TestReleasing_standaloneBuildGateExists
+--- PASS: TestReleasing_standaloneBuildGateExists (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/chat	0.003s
+exit 0
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 1.197s
+
+OK
+test_touched exit 0

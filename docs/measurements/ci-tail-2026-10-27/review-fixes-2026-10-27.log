@@ -1,0 +1,36 @@
+== shard_cover.py origin/main d88ade120dd5ef28f25a313e234050179028174f
+tests listed: 1252 (1205 decoder, 47 sampling)
+G1 before: 1252 of 1252 tests selected by a -race step; 0 not by exactly one
+G1 after: 1252 of 1252 tests selected by a -race step; 0 not by exactly one
+G1 selected before 1252, after 1252, equal True
+G1 tests whose -race step changed: 2
+   decoder.TestDecisionCensus: [('test-decoder-tail', 'test (decoder shard tail)')] -> [('test-decoder-a', 'test (decoder census)')]
+   decoder.TestDecisionCensus_secondProcess: [('test-decoder-tail', 'test (decoder shard tail)')] -> [('test-decoder-d', 'test (decoder census)')]
+G1 no-race step selects 5 before, 5 after, equal True
+G2 tests that lost -race: 0
+G3 jobs before 20, after 20, identical True
+PASS
+exit 0
+== touched.py --base origin/main
+touched: 0 .go file(s), 10 changed path(s), 1 module(s), base ad534134
+  ok   test chat -run ^(TestReleasing_standaloneBuildGateExist (0.2s)
+  ok   test internal/kvmgr -run ^(TestOracle_runsInFullSomewhere)$ (0.2s)
+  ok   test internal/sampling -run ^(TestSweepCoverage_fullSweepRunsSomewhe (0.1s)
+  ok   test multimodal -run ^(TestRaceSubset_runsInFullSomewhere)$ (0.2s)
+touched: green (CI runs the rest on push)
+exit 0
+== the census guard (test-decoder-a's step, read from ci.yml as YAML) with target ./decoder/, pattern '^TestDecisionCensus$'
+exit 0
+== the census guard (test-decoder-a's step, read from ci.yml as YAML) with target ./decoder/, pattern '^TestDecisionCensusRenamed$'
+::error::pattern '^TestDecisionCensusRenamed$' matched NO test in ./decoder/ — renamed or deleted? the next step would silently run nothing
+exit 1
+== the census guard (test-decoder-a's step, read from ci.yml as YAML) with target ./decoder/nonexistent/, pattern '^TestDecisionCensus$'
+::error::go test -list failed on ./decoder/nonexistent/: a build failure, not a missing test
+stat /home/francis/goinfer-bench/nobara-ci01-wt/decoder/nonexistent: directory not found
+FAIL	./decoder/nonexistent [setup failed]
+exit 1
+== the census guard with target ./internal/zzbrokenplant/ (a throwaway package whose TestDecisionCensus calls an undefined function; removed after)
+::error::go test -list failed on ./internal/zzbrokenplant/: a build failure, not a missing test
+internal/zzbrokenplant/x_test.go:5:41: undefined: undefinedName
+FAIL	github.com/townsendmerino/goinfer/internal/zzbrokenplant [build failed]
+exit 1
