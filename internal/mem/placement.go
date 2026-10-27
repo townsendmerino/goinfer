@@ -26,6 +26,9 @@ type DeviceLoad struct {
 	HostFixed int64
 	HostAll   func() int64
 	KV        KVCurve // the backend's KV allocation at a context
+	// FixedSlack is what the backend's allocator adds over the buffers of the fixed terms (CUDA rounds every buffer of 2 MiB or
+	// more up to 2 MiB); it is priced wherever the dense weights are.
+	FixedSlack int64
 
 	CtxCeiling int // a fixed context cap past which the backend allocates nothing more (0 for none)
 	// CtxStep is the grid a shrunk context stays on (Metal allocates KV in 8-position steps; 1 elsewhere). CtxSearch makes the
@@ -55,6 +58,14 @@ type DevicePlan struct {
 
 func gbf(b int64) float64 { return float64(b) / (1 << 30) }
 
+// slackNote names the allocator's rounding in a reason when there is any.
+func slackNote(b int64) string {
+	if b <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" + allocation rounding %.2f GB", gbf(b))
+}
+
 func hostCopyNote(b int64) string {
 	if b <= 0 {
 		return ""
@@ -79,7 +90,7 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 	}
 	tryCtx := func(ctx int) (kv int64, fits bool) {
 		kv = l.KV(ctx)
-		fits = l.DenseBytes+l.HostFixed+kv+req.ExtraBytes <= free
+		fits = l.DenseBytes+l.FixedSlack+l.HostFixed+kv+req.ExtraBytes <= free
 		if l.CtxCeiling > 0 && ctx > l.CtxCeiling {
 			fits = false
 		}
@@ -115,7 +126,7 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 		if perPos <= 0 {
 			return req.Ctx, 0, false
 		}
-		budget := free - l.DenseBytes - l.HostFixed - req.ExtraBytes
+		budget := free - l.DenseBytes - l.FixedSlack - l.HostFixed - req.ExtraBytes
 		fitCtx := int(budget/perPos) / step * step
 		if l.CtxCeiling > 0 && fitCtx > l.CtxCeiling {
 			fitCtx = l.CtxCeiling // a fixed cap, not a byte budget: never grow past it either
@@ -140,12 +151,12 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 				req.Ctx, l.CtxCeiling)
 		}
 		return decline("context %d does not fit even at the %d-position floor: dense %.2f GB%s + KV %.2f GB exceeds %.2f GB free",
-			req.Ctx, floor, gbf(l.DenseBytes), hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
+			req.Ctx, floor, gbf(l.DenseBytes), slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
 	}
 	if l.NExperts == 0 {
 		p.Placement = Resident
 		p.HostCopyBytes = l.HostFixed
-		p.Reason = fmt.Sprintf("dense %.2f GB%s + KV@%d %.2f GB fits %.2f GB free", gbf(l.DenseBytes), hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
+		p.Reason = fmt.Sprintf("dense %.2f GB%s + KV@%d %.2f GB fits %.2f GB free", gbf(l.DenseBytes), slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 		return p
 	}
 	// Every expert resident, at the context just chosen; unpaged experts carry a host copy too on Metal.
@@ -153,19 +164,19 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 	if l.HostAll != nil {
 		hostAll = l.HostAll()
 	}
-	if l.DenseBytes+l.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= free {
+	if l.DenseBytes+l.FixedSlack+l.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= free {
 		p.Placement = Resident
 		p.ExpertBytesUsed = l.ExpertBytesFull
 		p.HostCopyBytes = hostAll
 		p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
-			gbf(l.DenseBytes), gbf(l.ExpertBytesFull), hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
+			gbf(l.DenseBytes), gbf(l.ExpertBytesFull), slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
 		return p
 	}
 	// The largest slot count whose bytes fit beside the fixed terms. A layer's experts are uniform in shape, so this is arithmetic.
-	remaining := free - l.DenseBytes - l.HostFixed - kv - req.ExtraBytes
+	remaining := free - l.DenseBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
 	if remaining <= 0 {
 		return decline("dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
-			gbf(l.DenseBytes), hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
+			gbf(l.DenseBytes), slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 	}
 	perExpert := l.ExpertBytesFull / int64(l.NExperts)
 	slots := int(remaining / perExpert)
@@ -184,6 +195,6 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 	p.ExpertBytesUsed = int64(slots) * perExpert
 	p.HostCopyBytes = l.HostFixed
 	p.Reason = fmt.Sprintf("dense %.2f GB%s + %d/%d experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",
-		gbf(l.DenseBytes), hostCopyNote(l.HostFixed), slots, l.NExperts, gbf(p.ExpertBytesUsed), ctx, gbf(kv), gbf(free))
+		gbf(l.DenseBytes), slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), slots, l.NExperts, gbf(p.ExpertBytesUsed), ctx, gbf(kv), gbf(free))
 	return p
 }

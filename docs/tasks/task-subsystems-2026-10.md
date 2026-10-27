@@ -1085,6 +1085,21 @@ the models are absent.
 | G-MM2b-2 the device check | on nobara's RTX 2070 SUPER, for 0.5B and 1.5B: `Plan("cuda").AllocSlackBytes` equals the real build's `packedAllocSlack` to the byte, and plan dense plus slack equals the build's dense plus slack. `TestResidentDenseBytes_matchesCUDADevice` still holds. The CUDA KV-slot and margin tests (`TestCUDAKVSlots_*`, `TestKSH6C_marginAtTheReturnedContext`, `TestKSB8_widthChooser`) still pass | a timed run holds the card (the run takes the timing lock) | runs to completion | about two minutes |
 | G-MM2b-3 one copy | the build no longer adds the slack beside the plan: a source test finds `packedAllocSlack` called only inside `buildResident`, and `resolveCtxCapFitSlack` takes no slack argument. The MM2a agreement test (`TestBuildDemand_matchesDecoderDefault`) gains the slack report: CUDA's equals decoder's default (0) on every tracked tiny fixture | — | runs to completion | seconds |
 | G-MM2b-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM2b read, 2026-10-27 (nobara): all four pass.**
+- G-MM2b-1, the real-size diff (`docs/measurements/mm2b-rounding-2026-10-27/README.md`): rounding 138.5 MB (0.5B), 122.2 MB
+  (1.5B) and 405.8 MB (7B). All 63 groups change. At nobara's two real readings, no cell moves to a decline, and only the 7B's
+  unpinned 32,768 cells shrink (29,696 to 25,984 at 7.63 GB). 462 cells move to a decline, all inside the band one rounding
+  wide below the old fit edge; the README lists them by group. The real-size golden (`cuda/testdata/mm2b_realsize.json.gz`)
+  was written after that review. The decoder census passes without `-census.update`.
+- G-MM2b-2: the plan's slack equals the real build's `packedAllocSlack` to the byte (145,276,928 and 128,122,880), as does
+  dense plus slack. `TestResidentDenseBytes_matchesCUDADevice`, the `TestCUDAKVSlots_` tests,
+  `TestKSH6C_marginAtTheReturnedContext` and `TestKSB8_widthChooser` pass, and so do `TestBuildScratchAccounting` (six models)
+  and its planted defect with `GOINFER_HEAVY_TESTS=1`.
+- G-MM2b-3: `TestPlanSlack_oneCopy`; the agreement test's slack report is 0 against decoder's 0 on every tracked family. The
+  new tests live in existing test files, because SB13's ratchet counts every test file of a package that reaches decoder.
+- G-MM2b-4: vet on three systems and with the module tags, the pinned staticcheck (untagged, `realckpt`, cuda), gofmt,
+  `touched.py`, the citation lint.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
