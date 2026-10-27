@@ -67,7 +67,7 @@ func (c *Context) NewVisionEncoderF32(w vision.SiglipWeights) (*VisionEncoder, e
 			return nil
 		}
 		var d *DeviceBuffer
-		d, err = c.UploadF32(x)
+		d, err = c.UploadF32On(mem.LineCompanion, x)
 		return d
 	}
 	upP := func(name string, p vision.VisionProj, out, in int) (*DeviceBuffer, *DeviceBuffer) {
@@ -127,7 +127,7 @@ func (c *Context) NewVisionEncoder(w vision.GPUWeights) (*VisionEncoder, error) 
 			return nil
 		}
 		var d *DeviceBuffer
-		d, err = c.UploadF32(x)
+		d, err = c.UploadF32On(mem.LineCompanion, x)
 		return d
 	}
 	upW := func(m vision.GPUMat) *ResidentW8A8 {
@@ -233,7 +233,7 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 
 	// Patch embed: h = patches·patchWᵀ + patchB + posEmb. h is the resident
 	// residual stream for the whole forward.
-	pd, err := c.UploadF32(patches)
+	pd, err := c.UploadF32On(mem.LineCompanion, patches)
 	if err != nil {
 		return nil, err
 	}

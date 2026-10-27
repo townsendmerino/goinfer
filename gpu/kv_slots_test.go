@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
-	"github.com/townsendmerino/goinfer/internal/mem"
 	"io"
 	"math/rand"
 	"os"
@@ -730,14 +729,14 @@ func webgpuRealClampScenario(t *testing.T, path string) {
 
 var (
 	ledgerMu     sync.Mutex
-	ledgerClosed []*mem.Ledger
+	ledgerClosed []*kernels.Context
 )
 
 // TestMain runs the ledger's check (I1, I2) on every Context this package's tests close, once, after the tests.
 func TestMain(m *testing.M) {
 	kernels.ClosedForTest = func(c *kernels.Context) {
 		ledgerMu.Lock()
-		ledgerClosed = append(ledgerClosed, c.Ledger())
+		ledgerClosed = append(ledgerClosed, c)
 		ledgerMu.Unlock()
 	}
 	code := m.Run()

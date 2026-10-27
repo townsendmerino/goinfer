@@ -61,7 +61,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
-| SB8 | open | the conversation codec (templates, tokenizer, tool calls), golden per template; S–M | §8 |
+| SB8 | decision | census done (#338); the move to one package waits on its package shape (owner); nobara owes the Llama 3, Mellum 2 and Harmony token IDs; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
@@ -73,7 +73,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | done | 14 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
+| PW5 | decision | 14 of 82 packages cacheable; Gemini's third look fixed (§12.3); retire, allowlist or keep the deny-list is Francis's call; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -1577,6 +1577,8 @@ If I3 misses its band, the finding is reported first and the band is not widened
   - `dense`: the weight uploads;
   - `experts`: the stacked experts;
   - `companion`: vision, towers and LoRA;
+  - `state`: Mamba's state;
+  - `test`: the test hooks;
   - `scratch`: the per-call ops and the runners' buffers.
 - **`liveBufferBytes` stays as it is**, a separate gauge.
 - **Nothing reads the ledger to decide.**
@@ -1623,6 +1625,66 @@ If I3 misses its band, the finding is reported first and the band is not widened
   - gofmt, `touched.py`, `test_touched.py` (the scan listed in `touched_scans.py`) and the citation lint pass.
   - The layout tests pass, with `imports.json` and the ARCHITECTURE appendix regenerated for the `→ internal/mem` arrows.
 - Logs: `~/goinfer-logs/mm1/` on nobara (mm3b-kernels3, mm3b-gpu2, and main's baseline mm3b-baseline-main).
+
+#### MM3b follow-up: Gemini's review of #334, registered 2026-10-27 before the code (nobara-mm01; coordinator, 14:18)
+
+**Findings checked against main.**
+- **Lines (real).**
+  - `UploadF32` charged `dense`, but its callers upload per-call activations (scratch) and vision inputs (companion); only the
+    resident's `up32` uploads weights.
+  - The `kvslot-headroom` probe is created and freed at once, but leased on `kv`.
+  - `MLALatentStore` is a synchronous op that frees its buffers before returning, but leased them on `kv`.
+- **The dynamic I2 check can pass vacuously (real).** A collection cleanup closes any lease whose buffer the GC frees, and the
+  check runs after the tests, when every test's locals are unreachable. A buffer that production code forgets to release is
+  then counted as closed.
+- **The typed scan ignores `CgoFiles` (real in principle).** No kernels file has `import "C"` today.
+- **`destroyBuf` and `ReleaseDestroyBuffer` are dead (real).** Nothing destroys a buffer, and a destroy before a release would
+  break I3's count. The line lists in the PR and the doc omit `state` and `test`.
+
+**What changes.**
+- `UploadF32` leases `scratch`. A lined `UploadF32On` is used by the vision paths (`companion`) and the resident's weights
+  (`dense`). The probe and `MLALatentStore` lease `scratch`.
+- The collection cleanup counts what it closes. A lease closed by the GC, rather than by `releaseBuf`, is a buffer production
+  code never released, and the I2 check reports it with its count and bytes. Before any change, the cleanup's count on the kernels
+  suite and the gpu selection is measured, with the creation sites of what it closed. That measurement decides the rule:
+  - if every one comes from test code, the check fails on a count above 0 from production code;
+  - otherwise, the production sites are listed, and each is fixed (an explicit release) or, if it is by design, named in an
+    allow-list with why. No such entry is added without saying so in the PR.
+- The scan reads `CgoFiles` too. `destroyBuf` and `ReleaseDestroyBuffer` go. The doc's line list gets `state` and `test`.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3bf-1 lines | the three sites lease as above; the census unchanged | — | runs to completion | seconds |
+| G-MM3bf-2 I2 not vacuous | the kernels suite and the gpu selection pass with the collection count checked by the rule above. A planted buffer that production code leaves unreleased is reported (a unit test creates one, drops the reference, and sees the count) | a timed run holds the card | one run | about four minutes |
+| G-MM3bf-3 the scan | `TestLedger_everyBufferIsLeased` reads `GoFiles` and `CgoFiles`; its plant still gives 4 | — | runs to completion | seconds |
+| G-MM3bf-4 builds | as G-MM3b-6 | — | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara, RTX 2070 SUPER over Vulkan; exclusive timing lock): all four pass, after the measurement found three
+real faults.**
+- **The measurement.** My first count of GC-closed leases ran without `-v`. `go test` discards a passing package's output, so
+  it reported none, and that reading was wrong. Run with `-v`, it found 625 in the kernels suite and 448 in the gpu package:
+  - **Production, `FusedMLP`.** It kept three raw buffers in a `[]interface{ Release() }`. Their `Release` reached wgpu by
+    interface dispatch, bypassing `releaseBuf`, which the typed scan did not see. They are now `leasedBuf`, whose `Release`
+    goes through `releaseBuf`. The scan also flags any `*wgpu.Buffer` converted to an interface with a `Release` method (an
+    append, a slice literal or an argument); on the old `FusedMLP` it reports all three.
+  - **Production, `DecodeRunner.release`.** It freed the runner's buffers but not a LoRA adapter still bound (four buffers and
+    two bind groups per projection). They were left to the GC. The runner now frees them with itself.
+  - **Tests.** The two Context-close reproducers leak a matrix per round on purpose, and they already set `leakExempt`. A
+    Context closed while it is set is not judged; my plant sets it too.
+- **G-MM3bf-1:** `UploadF32` leases `scratch`. `UploadF32On` takes `companion` in the vision paths and `dense` for the
+  resident's weights. The headroom probe and `MLALatentStore` lease `scratch`. The census is unchanged.
+- **G-MM3bf-2:** `LedgerBreaks` counts a buffer the GC freed with its lease open as a break. Both suites pass with none:
+  - the kernels suite passes all 112 tests, judging 103 Contexts (the reproducers' 600 and the plant are exempt);
+  - the whole gpu package passes, with 251 Contexts.
+  - `TestLedger_anUnreleasedBufferIsCounted` sees its one dropped buffer, 512 bytes.
+  - I3 stays exact: 196 against 196.
+- **G-MM3bf-3:** the scan reads `GoFiles` and `CgoFiles`, and its plant now gives 5.
+- **G-MM3bf-4:**
+  - The pinned staticcheck passes with the gpu and testhooks tags, as do `touched.py` (the whole gpu package) and the
+    citation lint.
+  - The layout tests pass; the arrow data drops a test import the tree no longer makes.
+  - `destroyBuf` and `ReleaseDestroyBuffer` are removed.
+  - The doc's line list is now `kv`, `dense`, `experts`, `companion`, `state`, `test` and `scratch`.
 
 #### MM3c's gates (leases in Metal's allocator), registered 2026-10-27 (nobara-mm01; Francis's go of 11:08)
 
@@ -2271,6 +2333,61 @@ a program fingerprint, and nothing shared changes.
 - **Fast check:** golden renders and round trips per template. Its open contract question is
   `docs/tasks/task-tool-grammar-union-2026-09.md`'s: two or more tools under `tool_choice` auto. S–M.
 
+#### SB8 — the codec census, registered 2026-10-27 14:25 PDT before the code (mac-ax01)
+
+Francis's decision (14:16): census first, recorded at `origin/main`; the move to one package must reproduce every golden
+byte for byte; tool-call parsing gets its own table of model outputs and parsed calls, malformed ones included; nothing
+about what a model sees may change (a change stops the work with DECISION NEEDED).
+
+The census is a test in `chat` (it pins the clock Llama 3's and Harmony's date lines read, which only the package can) that
+calls only the API the serving routes call, in the order they call it. It adds test files and goldens under
+`chat/testdata/codec/` and changes no other file, so what it records is `origin/main`'s code.
+
+- **Template sources.** Every distinct chat template the repository tracks (`testdata/chat_goldens/` and
+  `testdata/chat_think_goldens/`), every chat template a local model under `~/models` carries that `Detect` accepts
+  (snapshotted into the census's testdata, so CI renders them too), and each family's constructor as the bare-checkpoint
+  fallback returns it. Each source is resolved through `Detect` exactly as a load does.
+- **Variants per source:** each `ThinkMode` where the template has a reasoning spec, each `ToolFormat` where it declares a
+  native tool form, each reasoning effort for Harmony.
+- **Conversations,** fixed: system plus user; user alone; multi-turn with non-ASCII text; a replayed assistant reasoning
+  turn; tools offered; a tool call and its result; two calls and two results; a finished tool loop and a follow-up; a user
+  message carrying the family's own control-token text (it must stay text); an image placeholder where the family has a
+  block (Gemma 3, Gemma 4, Qwen-VL ChatML, GLM-OCR, Pixtral, LFM2-VL) and an audio placeholder for Gemma 4, built and
+  spliced as `serveapp` builds them.
+- **Recorded per case:** the segments (text and the Special flag), the rendered string's equality with their concatenation,
+  the family name, its stop strings, its tool-call opener, whether the prompt opens a think block; and, with the source's
+  tokenizer, the token IDs (`EncodeSegments`, no added BOS, as the routes encode), the stop strings' IDs, and whether the IDs
+  decode back to the rendered text.
+- **Tokenizers.** Tracked ones (Qwen2.5-Coder's GGUF metadata, Mistral v0.3's `tokenizer.json`) are checked everywhere; a
+  local one is named by its `~/models` path and SHA-256: present with that hash, its IDs are checked; present with another,
+  the test fails; absent, the test logs a named skip and prints how many ID checks ran and how many were skipped. Llama 3,
+  Mellum 2 and Harmony tokenizers are not on the Mac: their IDs are recorded on nobara by the same `-update`, which keeps
+  recorded IDs whose tokenizer is absent, and that commit's diff must add IDs only.
+- **Tool-call parse table** (its own golden): about 40 model outputs across every family's dialect (Hermes JSON, Qwen 3.5
+  XML, Mistral, Llama 3, Gemma 4, Harmony, fenced, bare), well-formed and malformed (bad JSON, unterminated, unknown tool,
+  arguments of the wrong type or not an object, a call inside a think block, prose that mentions the opener), each through
+  `ParseToolCalls` and `ParseToolCallsFor` with a fixed tool list, for each family and tool format, lenient off and on.
+- **Tier 0 throughout.** The goldens are JSON, gzipped if one exceeds 1 MB. **Void:** none (deterministic). **Shown red:** a
+  planted one-byte change to a template and to a parser must fail the census, then be reverted. **Stopping rule:** a census
+  that differs from its golden after the move stops with DECISION NEEDED; there is no tolerance. **Cost basis:** seconds;
+  the Gemma tokenizers load in about a second each.
+- **The move** (one package for the codec) is registered after the census lands, with its package shape; `chat`,
+  `tokenizer` and `constrain` are in apidiff's Hard tier, so a shape that changes their exported API is the owner's call.
+- **Census recorded (2026-10-27, the Mac, at `origin/main` `92a64e92`).** `chat/codec_census_test.go`:
+  `TestCodecCensus`, one golden per source under `chat/testdata/codec/sources/` (gzipped JSON, 4.8 MB as text, 0.2 MB
+  stored), and `TestToolCallParseCensus`, `chat/testdata/codec/tool_call_parse.json`. 55 sources: 19 tracked templates,
+  5 tracked tokenizers, 20 local models, 11 constructors; 1,780 render cases and 715 token-ID checks on the Mac, of which
+  40 (the tracked tokenizers) run anywhere, the rest only where the model is on disk. Without the local models every
+  render is still checked: Detect and the renderers ask the vocabulary about 6 to 13 markers per source, and the answers are
+  recorded with it. The vocabulary fingerprint is a SHA-256 over every token's text in ID order, not the file's hash: a
+  GGUF is the weights too. It takes about 3 s with the local tokenizers and under 1 s without. Recording twice gives
+  identical files. **Shown red:** a one-byte change to Gemma 3's generation prompt fails 5 sources (the tracked template,
+  the constructor, 3 local models); dropping the lead's trim in the Hermes parser fails the parse table. Both reverted.
+  What the census shows today, recorded as it is, unchanged: Phi-3's GGUF tokenizer does not round-trip (its IDs decode
+  without the newline after each control token); `granite-dbrx-meta.gguf`'s template is declined (raw-completion
+  fallback). **Owed:** the Llama 3, Mellum 2 and Harmony token IDs, recorded on nobara by
+  `go test ./chat -run TestCodecCensus -codec.update`, whose diff must only add sources and IDs.
+
 ### SB9 — the towers
 
 After AX2: each image and audio tower with per-tower goldens (output bytes on fixed inputs), and later its blocks
@@ -2677,6 +2794,12 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 - Clock reads count in every file, not only in tests, failing safe; the registered "a test that reads the clock" is
   widened.
 - Paths are judged on string literal values, and a climb past the module root counts in any module.
+
+**PW5 after Gemini's third look (2026-10-27, `docs/measurements/pw5-2026-10.md` §6):**
+- Climbs are counted on cleaned literals and summed per package. A declaration counts only once applied.
+- The patterns are wider, and randomness is a hidden input.
+- **DECISION NEEDED (Francis): retire the cache (A), flip to an allowlist (B), or keep the deny-list (C).** The record
+  recommends A.
 
 ## 13. Order, sizes, and what each step is worth alone
 

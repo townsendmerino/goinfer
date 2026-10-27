@@ -222,7 +222,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident(), hidden: hidden, inter: inter, nH: nH, vocab: vocab}
 	keepF := func(f func()) { rd.keep = append(rd.keep, f) }
 	up32 := func(v []float32) (*wgpu.Buffer, error) {
-		d, err := c.UploadF32(v)
+		d, err := c.UploadF32On(mem.LineDense, v)
 		if err != nil {
 			return nil, err
 		}

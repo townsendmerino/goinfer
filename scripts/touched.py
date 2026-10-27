@@ -53,10 +53,12 @@ def cacheable_packages(path=TEST_CACHE):
             data = json.load(fh)
         declared = data.get("declared") or {}
         packages = data["packages"]
-        # A declared package still marked cacheable means the data was edited without -update, so its importers' entries
-        # are stale too: trust none of them.
-        if any(packages.get(d, {}).get("cacheable") is True for d in declared):
-            return set()
+        # A declaration is applied only once -update has written each declared reason into its package's entry (and from
+        # there into its importers'). One not yet applied means every importer's entry is stale too: trust none of them.
+        for d, reasons in declared.items():
+            entry = packages.get(d)
+            if not isinstance(entry, dict) or entry.get("cacheable") is not False or not set(reasons) <= set(entry.get("reasons") or []):
+                return set()
         return {d for d, e in packages.items() if e.get("cacheable") is True and d not in declared}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return set()
