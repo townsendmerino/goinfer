@@ -57,6 +57,7 @@ func (b *censusBackend) take() (bool, string) {
 func buildWebGPUCensus(t *testing.T) []string {
 	t.Helper()
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
 	// The fit guard's host reading is fixed, so no reading of this machine decides a line; the fake's registered name has no
 	// memory probe or build demand of its own, as in layer D.
 	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
@@ -70,6 +71,7 @@ func buildWebGPUCensus(t *testing.T) []string {
 		be.Backend = cpu
 		return be, nil
 	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
 	d, err := sb2census.ReadLayerD("..", "webgpu")
 	if err != nil {
 		t.Fatal(err)
@@ -163,4 +165,92 @@ func TestBackendAdmissionCensus_webgpu_plant(t *testing.T) {
 		t.Fatalf("planted quantized-KV decline off: %d cell(s) differ from the golden, want %d", len(diffs), wantRed)
 	}
 	t.Logf("planted quantized-KV decline off: %d of %d cells red, as expected", len(diffs), len(clean))
+}
+
+// planCells is layer D's option cells plus the serving flag --kv=i8, which sets both KV options; layer D's kv-i8 cell sets
+// KVQuant alone, which webgpu does not deliver.
+var planCells = append(append([]sb2census.Cell(nil), sb2census.Cells...), sb2census.Cell{Name: "int4/kv=i8", Quant: "int4", KVPrec: "i8", KVQuant: "i8"})
+
+// planVsLoadWebGPU compares Plan's webgpu verdict, with the request req builds for each cell, to what the load does on webgpu:
+// the decoder's admission, then staticResidentDecline. Plan reads a CPU load of the cell without its KV options, priced against
+// far more memory than any fixture needs, so only its eligibility can decline. A cell with no CPU model must not reach the build.
+func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) decoder.PlanRequest) (diffs []string, cells, noModel int) {
+	t.Helper()
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	be := &censusBackend{}
+	const reg = "sb2-plan-webgpu"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	d, err := sb2census.ReadLayerD("..", "webgpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range planCells {
+			cells++
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			if m, err := decoder.Load(path, o); err == nil {
+				m.Close()
+			}
+			reached, ans := be.take()
+			loads := reached && ans == "static ok"
+			o.Backend, o.KVPrecision, o.KVQuant = "cpu", "", ""
+			cpuM, err := decoder.Load(path, o)
+			if err != nil {
+				noModel++
+				if reached {
+					diffs = append(diffs, fmt.Sprintf("%s %s: no CPU model for Plan (%v), but the load reached the build", f, c.Name, err))
+				}
+				continue
+			}
+			p := cpuM.Plan("webgpu", 64<<30, req(c))
+			cpuM.Close()
+			if planned := p.Placement != decoder.PlacementDecline; planned != loads {
+				diffs = append(diffs, fmt.Sprintf("%s %s: Plan places=%v (%s), the load goes resident=%v (%s)", f, c.Name, planned, p.Reason, loads, ans))
+			}
+		}
+	}
+	return diffs, cells, noModel
+}
+
+// TestPlanAgreesWithLoad_webgpu holds Plan's webgpu verdict, with each cell's KV request, to what the load does on webgpu
+// (docs/tasks/task-subsystems-2026-10.md, "SB2 — Plan asks Admit", gate 2), and shows the comparison goes red on a Plan that
+// ignores the KV request.
+func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
+	// Plan's KV request is the serving flag's precision (KVPrecision).
+	diffs, cells, noModel := planVsLoadWebGPU(t, func(c sb2census.Cell) decoder.PlanRequest {
+		return decoder.PlanRequest{Ctx: 4096, KVF16: c.KVPrec == "f16", KVI8: c.KVPrec == "i8"}
+	})
+	if len(diffs) > 0 {
+		t.Errorf("Plan disagrees with the webgpu load in %d of %d cells:\n%s", len(diffs), cells, strings.Join(diffs[:min(len(diffs), 30)], "\n"))
+	}
+	t.Logf("%d cells: Plan and the webgpu load agree (%d with no CPU model)", cells, noModel)
+
+	// The plant: a Plan asked without the KV request must disagree on the lossy-KV cells of the families webgpu declines, and only there.
+	planted, _, _ := planVsLoadWebGPU(t, func(sb2census.Cell) decoder.PlanRequest { return decoder.PlanRequest{Ctx: 4096} })
+	if len(planted) == 0 {
+		t.Fatal("a Plan that ignores the KV request agrees everywhere: the comparison cannot go red")
+	}
+	for _, d := range planted {
+		if !strings.Contains(d, " int4/kv-f16: ") && !strings.Contains(d, " int4/kv=i8: ") {
+			t.Errorf("planted KV-blind Plan: a cell outside the lossy-KV cells disagrees: %s", d)
+		}
+	}
+	t.Logf("planted KV-blind Plan: %d cells red", len(planted))
 }

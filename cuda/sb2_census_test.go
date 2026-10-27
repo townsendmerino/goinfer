@@ -64,6 +64,7 @@ func (b *censusBackend) take() (bool, string) {
 func buildCUDACensus(t *testing.T) []string {
 	t.Helper()
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
 	// The fit guard's host reading is fixed, so no reading of this machine decides a line; the fake's registered name has no
 	// memory probe or build demand of its own, as in layer D.
 	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
@@ -77,6 +78,7 @@ func buildCUDACensus(t *testing.T) []string {
 		be.Backend = cpu
 		return be, nil
 	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
 	d, err := sb2census.ReadLayerD("..", "cuda")
 	if err != nil {
 		t.Fatal(err)

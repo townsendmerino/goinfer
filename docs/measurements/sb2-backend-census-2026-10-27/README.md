@@ -41,6 +41,13 @@ nobara's device (RTX 2070 SUPER, driver 595.91.07, Vulkan), through the real `Bu
 - After main's buffer-lease change to the upload code (`c200a84de`, `94b301608`) was merged in, the probe gave the same file
   again.
 
+## The routed-expert kind check (review of #348)
+
+WebGPU's check that routed experts are int8 or int4 moved from the upload into `staticResidentDecline`. I re-ran the device probe
+(`webgpu_before_test.go.txt`) on that tree. Against `webgpu-before.txt`, it differs on exactly the 16 f32 MoE cells:
+`err gpu: MoE residency expert kind "f32" (int8/int4 only)` became `err resident path declined: the routed experts are f32, ...`.
+Both fall back to the CPU, and the other 202 answers are byte-identical. Layer B-webgpu's golden changes on the same 16 cells.
+
 ## Not yet censused
 
 - Each backend's memory and device reads inside the build: CUDA's weight and KV fit checks, expert slots, prefill width and SM

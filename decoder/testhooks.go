@@ -802,3 +802,10 @@ func RegisteredBuildDemandForTest(backend string) BuildDemandFunc {
 func (m *Model) PlanWithoutSlackForTest(backend string, freeBytes int64, req PlanRequest) Plan {
 	return m.plan(backend, freeBytes, req, false)
 }
+
+// UnregisterBackendForTest removes a backend a test registered (RegisterBackend), so it does not outlive the test.
+func UnregisterBackendForTest(name string) {
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	delete(backendRegistry, name)
+}
