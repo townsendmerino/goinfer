@@ -69,11 +69,11 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
-| PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
+| PW2 | done | decided 2026-10-27: OS jobs stay required; revisit if one job becomes the long pole by several minutes (Francis 13:19; after PW2a the slowest PR job was about 14 minutes and spread across Windows, `test-rest`, `test-decoder-d` and `gpu-darwin`, so moving Windows to nightly would save 0–2 minutes); S | §12; `docs/measurements/ci-tail-2026-10-27.md` §4a |
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
+| PW5 | done | 14 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -2091,7 +2091,7 @@ item is parked until Francis picks one.
 
 ### SB2 — admission and routing
 
-- **Today:** `decoder/residency.go:Model.residentAdmission`: the runner shape (`Model.decodeRunnerDecline`), then
+- **Today:** `decoder/admit.go:Admit`: the runner shape (`Model.decodeRunnerDecline`), then
   `decoder/features.go:residentGateReason` against `ResidentBackendFeatures`, then the backend's own build through
   `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
   The owner's note of 2026-10-21 in the forward-architecture doc: 20 of the 71 registration and bound findings counted on
@@ -2147,6 +2147,13 @@ decisions:
   The arm64 golden was recorded from CI's own run of the census at `343630740` (the test prints an unrecorded
   architecture's census and fails): root-linux-arm64, root-darwin and root-windows-arm64 printed the same 2,711 lines,
   and they differ from amd64's in 212 cells, every one only in the CPU's int4 layout note (a repack on arm64).
+- **Step 1 landed (2026-10-27): `Admit`.** `decoder/admit.go:Admit` is the decoder's resident admission as a pure function
+  of `AdmitFacts` (the arch, the backend's name and whether it can build residents, the quant, -backend auto, the
+  activation group, whether the projections are int4, the SSM knob): the residency, precision, runner-shape,
+  activation-group and capability gates in the order the load applied them. `Model.residencyGate` gathers the facts and
+  calls it; `DecodeRunnerEligible` and `ResidentEligible` read its pieces, and the hardware matrix prints its runner shape
+  and capability gates. The census is unchanged on both architectures' goldens, and both matrices regenerate byte for
+  byte (`-update` leaves no diff).
 
 ### SB3 — family adapters
 
@@ -2339,6 +2346,10 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
 - **PW2.** Run `root-darwin`, `root-windows`, `root-windows-arm64`, `root-linux-arm64`, `gpu-darwin` and
   `metal-darwin` after merge, or only when their paths change, and keep them out of the required checks. The
   40–45-minute runs were these runners queueing (§1.4). They still gate tags through `gate release`.
+  **Decided 2026-10-27 (Francis, 13:19): the OS jobs stay required; revisit if one job becomes the long pole by several
+  minutes.** After PW2a, the five PR runs' last jobs finished 11.5–17.1 minutes in (median 14.6), with the last job
+  varying between `root-windows`, `test-rest`, `test-decoder-d` and `gpu-darwin` according to which runners queued,
+  so taking the Windows jobs out would save 0–2 minutes (`docs/measurements/ci-tail-2026-10-27.md` §4a).
 - **PW2a (2026-10-27, Francis 11:14).** `test-decoder-tail` finished 19–22 minutes into a PR run, against 11–12 for the
   Windows jobs: MM1's two census tests (`TestDecisionCensus`, `TestDecisionCensus_secondProcess`) landed in it and take
   658 s of its 1,130 s under -race (`docs/measurements/ci-tail-2026-10-27.md`). They move to their own steps in
@@ -2541,6 +2552,59 @@ finished 10.1 minutes in. G6 PASS by name only: `touched.py` ran none of the fou
 four `ci.yml` readers, and `touched.py --base origin/main` runs them, each `ok`. The census guards list with
 `-tags goinfer_testhooks` and report a failed listing as a build failure; their summaries skip when the test step did not
 run. G1–G3 re-run on the fixed head: PASS. The review's other points and what held are in the record's §5.
+
+### 12.3 PW5's gates (registered 2026-10-27 before the code; mac-vk01; Francis, 11:08)
+
+**Why Go's test cache cannot be trusted everywhere.** Go replays a cached test result when the test binary, its cacheable
+flags, the environment variables it read through `os.Getenv`, and the files inside its module that it opened are all
+unchanged (`go help test`; `computeTestInputsID` re-checks no file outside the module root). Anything else a test
+depends on is a hidden input, and a replayed pass would hide a change in it.
+
+**The hidden inputs, each found by a source scan:**
+
+| hidden input | how the scan finds it |
+|---|---|
+| OS memory | an import of `internal/mem/probe`, the only OS memory reader since MM0 |
+| a device | `metal`, `cuda` or `gpu` code, or an aikit `gpu` import |
+| a subprocess | `exec.Command`; its environment and its reads are untracked |
+| the whole environment | `os.Environ()`, which `testlog` does not record |
+| files outside the module | the home directory, the asset registry's checkpoints, absolute `/Users`, `/home`, `/proc`, `/sys`, `/tmp` or `/dev` paths, and `"../` in a nested module |
+| the network | `net.Dial` or `http.Get` |
+| timing | a test that reads the clock: `time.Since` or `testing.Benchmark` |
+
+**Where a scan looks.** A package has a hidden input when one of these is found in any of:
+- its own files, tests included;
+- the non-test files of any goinfer package its code or tests import, transitively over `internal/layout/imports.json`'s
+  arrows.
+
+Most packages that import `decoder` are therefore not cacheable, because `Load`'s fit guard reads the probe.
+
+**The data and how touched.py uses it.**
+- The classification is data, `internal/layout/test_cache.json`: every package in the seven modules, cacheable or not,
+  with its reasons.
+- A `declared` section holds reasons a scan cannot see, added by hand; nothing is in it at the start.
+- `TestTestCache_classified` regenerates the classification and fails on any difference (`-update` rewrites it), so a
+  cacheable package that gains a hidden read goes red in the change that adds it.
+- `touched.py` drops `-count=1` only for a package the data marks cacheable. An unlisted package, or a missing or
+  unreadable data file, keeps it.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW5-G1 complete and true | `TestTestCache_classified` passes; every directory holding a Go file in the seven modules has an entry; every non-cacheable entry names at least one reason | never | one run | seconds |
+| PW5-G2 the scan bites | three `gate mutation` plants turn it red, naming the package and the reason: `exec.Command` in a test of `internal/f16`; `time.Since` in a test of `internal/giw`; an import of `decoder` in a test of `internal/towerid` ("OS memory", reached through `decoder`) | never | one run each | seconds |
+| PW5-G3 touched.py honors it | `scripts/test_touched.py`: a cacheable package's `go test` has no `-count=1`; a non-cacheable one, an unlisted one, and every package when the data file is missing or malformed all keep it | never | one run | seconds |
+| PW5-G4 the cache replays only what it should | in G5's second run, every package the data marks cacheable whose inputs the edit did not touch prints `(cached)`, and no non-cacheable package does | the edit touches every cacheable package | one run | from G5 |
+| PW5-G5 the measurement | `touched.py`'s wall time on the diff `0158bdc0..3d01e4a3` (`decoder` 3 files, `internal/mem` 3, `metal` 1, and the scan tests they trigger), on the PW5 branch, under a private `GOCACHE` warmed once by an untimed run. Sequence: before A1, then a one-line comment edit to one `decoder` file in the diff, A2, a run with no change A3; the edit reverted; after B1, the same edit, B2, B3. Each run records its wall time, the packages that ran and replayed, and the 1-minute load average at its start. Reported as measured, with no pass bar: Francis asked for the number | a run starts with the load average above 4.0 (re-run it, and list it) | one sequence | about 6 runs × a minute or two |
+
+**PW5 graded, 2026-10-27: G1–G3 PASS, G4 VOID in its registered run and shown by B3, G5 measured**
+(`docs/measurements/pw5-2026-10.md`).
+- 14 of 82 packages are cacheable (16 before Gemini's review of #327 widened the scan); touched.py drops `-count=1` for
+  those only.
+- On `0158bdc0..3d01e4a3`, a re-run with nothing changed fell from about 133 s to 124.3 s. Three cacheable tests
+  replayed, saving about 9 s. Most of the time is `metal`'s device suite (about 100 s) and `decoder` (13–18 s), both
+  uncached by their hidden inputs.
+- G2's first plant moved to `internal/kvmgr` (`internal/f16` has no test), and timing counts only test files, as
+  registered. Both are recorded there.
 
 ## 13. Order, sizes, and what each step is worth alone
 

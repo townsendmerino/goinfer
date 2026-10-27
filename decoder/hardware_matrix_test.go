@@ -41,10 +41,11 @@ type hwRow struct {
 // reads both checks whatever the first says, because a reason the first refusal hides is still in the way once the first is lifted.
 func hwDeclineReasons(arch *Architecture, backend string) string {
 	var parts []string
-	if why := arch.runnerShapeDecline(); why != "" {
-		parts = append(parts, "runner shape: "+why)
+	ad := Admit(AdmitFacts{Arch: arch, Backend: backend, Residency: true})
+	if ad.Shape != "" {
+		parts = append(parts, "runner shape: "+ad.Shape)
 	}
-	for _, g := range residentGateReasons(arch, backend, false) {
+	for _, g := range ad.Gates {
 		switch g.Kind {
 		case residentGateFeatures:
 			names := make([]string, len(g.Missing))

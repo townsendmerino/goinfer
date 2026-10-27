@@ -265,7 +265,7 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 }
 
 // ResidentEligible reports whether backend can run architecture a on its resident (GPU) decode path: the capability predicate, from arch
-// flags alone. It composes the two gates every resident admission applies: the arch is a shape the runner supports
+// flags alone, read from Admit's runner shape and capability gates with the default activations. It composes the two gates every resident admission applies: the arch is a shape the runner supports
 // (decodeRunnerEligible) and the backend implements every feature the arch needs (residentGateReason). The runtime and the
 // hardware-matrix generator derive from the same pieces, so the published table cannot disagree with what a backend can run.
 //
@@ -278,12 +278,13 @@ func ResidentEligible(a *Architecture, backend string) bool {
 	if _, ok := residentBackendFeatures[backend]; !ok {
 		return false
 	}
-	return a.decodeRunnerEligible() && residentGateReason(a, backend) == ""
+	ad := Admit(AdmitFacts{Arch: a, Backend: backend, Residency: true})
+	return ad.Shape == "" && len(ad.Gates) == 0
 }
 
 // residentGateReason is ResidentEligible's gates after the runner-shape one: the backend implements every feature the arch needs, its MoE
 // router is big enough, and it has the per-layer geometry and Gemma 4 MoE seams the arch uses. It returns why it declines, "" when all
-// admit. One implementation serves the model-free predicate (the hardware matrix) and the load path (Model.residentAdmission), so the
+// admit. One implementation serves the model-free predicate (the hardware matrix) and the load path (Admit, admit.go), so the
 // table and the runtime cannot disagree and a decline reaches `serve check` / DecodePath with its real cause.
 func residentGateReason(a *Architecture, backend string) string {
 	return residentGateReasonAct(a, backend, false)
@@ -291,7 +292,7 @@ func residentGateReason(a *Architecture, backend string) string {
 
 // residentGateReasonAct is residentGateReason for a model whose resident projections run W8A8 with per-32 activation scales (actSafe):
 // that clears ActivationQuantHazard on a backend that implements it (cuda, actgroup.cu), since the hazard is the per-vector activation
-// scale. The hardware matrix passes false (the default configuration); residentAdmission passes the model's own.
+// scale. The hardware matrix passes false (the default configuration); Admit passes the model's own.
 func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string {
 	if g := residentGateReasons(a, backend, actSafe); len(g) > 0 {
 		return g[0].Reason
