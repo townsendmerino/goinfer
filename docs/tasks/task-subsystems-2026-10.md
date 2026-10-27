@@ -2153,9 +2153,9 @@ item is parked until Francis picks one.
 
 ### SB2 — admission and routing
 
-- **Today:** `decoder/admit.go:Admit`: the runner shape (`Model.decodeRunnerDecline`), then
-  `decoder/features.go:residentGateReason` against `ResidentBackendFeatures`, then the backend's own build through
-  `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
+- **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
+  (`admitRunner`), the activation-group gate, then `decoder/features.go:residentGateReasons` against `ResidentBackendFeatures`;
+  then the backend's own build through `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
   The owner's note of 2026-10-21 in the forward-architecture doc: 20 of the 71 registration and bound findings counted on
   2026-10-08 were one family that one path did not know about, six of them Critical.
 - **Contract:** `Admit(program, request shape, options, backend op set, plan) → Route or Decline`, pure.
@@ -2660,13 +2660,18 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 
 **PW5 graded, 2026-10-27: G1–G3 PASS, G4 VOID in its registered run and shown by B3, G5 measured**
 (`docs/measurements/pw5-2026-10.md`).
-- 14 of 82 packages are cacheable (16 before Gemini's review of #327 widened the scan); touched.py drops `-count=1` for
-  those only.
+- 14 of 82 packages are cacheable (16 as first built; Gemini's two reviews of #327 widened the scan); touched.py drops
+  `-count=1` for those only.
 - On `0158bdc0..3d01e4a3`, a re-run with nothing changed fell from about 133 s to 124.3 s. Three cacheable tests
   replayed, saving about 9 s. Most of the time is `metal`'s device suite (about 100 s) and `decoder` (13–18 s), both
   uncached by their hidden inputs.
 - G2's first plant moved to `internal/kvmgr` (`internal/f16` has no test), and timing counts only test files, as
   registered. Both are recorded there.
+
+**Amended 2026-10-27, after Gemini's second look at #327** (`docs/measurements/pw5-2026-10.md` §5):
+- Clock reads count in every file, not only in tests, failing safe; the registered "a test that reads the clock" is
+  widened.
+- Paths are judged on string literal values, and a climb past the module root counts in any module.
 
 ## 13. Order, sizes, and what each step is worth alone
 
