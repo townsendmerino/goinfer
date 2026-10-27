@@ -910,6 +910,35 @@ module's `ResolveKV` test. G-MM1c-3: `TestNoGuardThresholdOutsideMem` reads 726 
 (`gpu/kv_slots.go` 2, `metal/backend.go` 3) and counts a planted reference. G-MM1c-4: vet on three systems and with the
 module tags, the pinned staticcheck, gofmt, `test_touched.py`; the parity manifest stayed fresh. MM1 is done with this:
 D1–D7 run through `internal/mem`, and the census holds byte for byte.
+
+#### MM2a's gates (backends report their build demand), registered 2026-10-26 before the code (nobara-mm01; Francis's answers of 22:40)
+
+**Francis's decision (22:40):**
+- 2a: decoder keeps a default copy of each backend's demand report, and each backend registers its own at init, replacing
+  it (the `ResolveKV` pattern), with a tier-0 test in each backend module that its report equals decoder's default.
+- 2b: CUDA's 2 MiB allocation rounding stays out of MM2. MM2 is a pure move held to "census unchanged"; the rounding is
+  proposed afterward as its own census-changing step, with a DECISION NEEDED and the census diff.
+
+**What moves.** `cudaWillBeResident` and `metalWillBeResident` go. In their place is a registered report:
+`RegisterBuildDemand(backend, func(BuildQuery) BuildDemand)`, with `DefaultBuildDemand(backend, q)` as decoder's copy. A
+`BuildDemand` says:
+- whether the build goes resident;
+- whether its KV is device memory (the host fit then prices none);
+- the host the build adds while it packs (CUDA: one packed layer and the staging blocks);
+- the host peak of building an expert cache from a `.gguf` (CUDA C': weights, a packed copy, a pinned expert copy);
+- the pinned expert copy a `.giw` load holds.
+
+The fit guard (`kvPricingFor`, `fitCheckFor`, `priceCtxAndKV`, `giwPinnedExpertBytes`) and `FitQuery`'s decode path read the
+report for the load's backend. The `cuda` module registers its report with its own staging constant and expert packing; the
+`metal` module registers Metal's. Which architectures a backend runs resident stays decoder's feature table (SB1's to move),
+read through an exported `ResidentFeaturesCover(cfg, backend)`.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM2a-1 the census | `TestDecisionCensus` passes without `-census.update` | as G-MM1-S1 | runs to completion | 8 s |
+| G-MM2a-2 the reports agree | in `cuda` (tag `cuda`) and in `metal` (darwin), a tier-0 test loads tracked tiny fixtures on the CPU, and for each config × the option cells (backend, expert cache, stream-weights) × a weight/expert ladder, the registered report equals `DefaultBuildDemand`. It goes red when a planted change moves one term. Metal's test runs in CI's darwin job (no Mac here); nobara vets it for darwin | the test compares fewer than 10 configs | runs to completion | seconds |
+| G-MM2a-3 the existing tests | the decoder's fit tests pass, with the two predicate calls in `fitguard_cuda_test.go` and `fitguard_metal_test.go` read through the report (mechanical); `cuda`, `metal` and `gpu` vet with their tags | — | runs to completion | about a minute |
+| G-MM2a-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
