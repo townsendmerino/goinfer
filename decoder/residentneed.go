@@ -1,5 +1,7 @@
 package decoder
 
+import "github.com/townsendmerino/goinfer/internal/mem"
+
 // One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
 //
 // ResidentNeedBytes is the single definition that Plan("metal") (what `fit` reports) and Metal's own pre-build guard
@@ -18,7 +20,7 @@ package decoder
 // WeightsMemFraction is the share of a memory figure the weights (and the rest of a resident build)
 // may occupy before a load is refused — the load-time fit guard applies it to available host memory,
 // Metal's resident guard to physical RAM. One constant, so the two cannot drift.
-const WeightsMemFraction = 0.70
+const WeightsMemFraction = mem.WeightsFraction
 
 // metalKVPad is the position granularity Metal rounds each KV buffer up to (metal/model.go: attention_prefill_fused
 // reads whole 8-row tiles).

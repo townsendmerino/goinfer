@@ -66,7 +66,8 @@ SCANS = [
     # MM1's decision census pins every fit decision: a change to the fit code or the machine zoo runs it.
     Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
-                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz")),
+                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz") +
+         NT("internal/mem")),
     # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
     Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity/*.json")),
     # VK2's forward census: every file the forward reaches is in a hash set or an own list.
@@ -128,6 +129,8 @@ SCANS = [
     Scan("internal/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/fitcmd/fit.go")),
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
+    Scan("internal/mem", "TestImports", NT("internal/mem")),
+    Scan("internal/mem", "TestSolve_pure", NT("internal/mem")),
     Scan("internal/mem/probe", "TestProbeImports", NT("internal/mem/probe")),
     Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.

@@ -805,6 +805,43 @@ golden. The keys now use forward slashes on every OS, and the long variants hard
 against 5 s on nobara. The fix belongs to the next MM1 step: once `Solve` takes the available reading as data, D2 no longer
 goes through the shared probe seam and runs in parallel like D1, D3 and D4.
 
+#### MM1's `Solve`, registered 2026-10-26 before the code (nobara-mm01; Francis approved all of MM1 at 17:35)
+
+**What moves, in three PRs, each held to the census.**
+- **MM1a, this PR: the host guards.** D1, D2, D5 and D6 move into a new `internal/mem`: the resident guard's need, budget,
+  ratio, auto-pin search, refusal, warning and cap lines, the `.giw` guard, request admission, the load banner's budget, and
+  the weight-cache budget. `mem` takes numbers and returns decisions with their lines. A load's KV comes in as a curve, the
+  bytes at a context, because KV is not linear in the context (sliding windows flatten it). Machine state comes in as a
+  `mem.Machine`. The thresholds come in as a `mem.Policy` whose default holds today's values (0.70, 0.75, the 2,048 floor, the
+  1 GB `.giw` margin, the 256 MiB attention scratch); no value changes. The decoder keeps the reads: tensor headers, configs,
+  the probe. It also keeps the types its tests and callers use (`fitCheck`, `giwFit`, `FitDeclineError`), as adapters over
+  `mem`. I7's approval stamp is not added here: only Francis writes it, and no threshold moves.
+- **MM1b: device planning.** D3 (`Plan`) and D4 (`MetalFitCtx`), with the byte counts they read (`weightbytes.go`,
+  `residentneed.go`) handed in as numbers.
+- **MM1c: the KV precision rules.** D7 (`ResolveKV`), and I6's source scan: no estimate of a load's memory outside `mem`.
+
+**MM1a's gates.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM1-S1 the census | `TestDecisionCensus` passes without `-census.update`, on nobara and on CI's amd64 jobs (linux and windows): every group byte for byte | the census reports a capture run on an amd64 host (the golden's class not found) | runs to completion | 16 s on nobara |
+| G-MM1-S2 imports | `internal/mem` imports the standard library only (an import test, as `internal/mem/probe` has) | the test reads no source file | runs to completion | seconds |
+| G-MM1-S3 pure (I4) | each `mem` decision, on 10,000 generated inputs, gives the same answer twice in one goroutine and once each in 16 concurrent ones; `mem` holds no package-level variable | — | runs to completion | seconds |
+| G-MM1-S4 monotone (I5) | on the same inputs, more available memory never makes the resident or `.giw` guard's outcome worse (refusal, then auto-pin, then fits) or its pinned context smaller, and never turns an admitted request into a refusal | — | runs to completion | seconds |
+| G-MM1-S5 the existing tests | the decoder's fit tests pass unchanged: `fitguard*_test.go`, `giwfitguard_test.go`, `fitguard_giw_pinned_test.go`, `prefill_budget_test.go`, `memprobe_test.go`, `fitquery*_test.go`; the `cuda`, `metal` and `gpu` modules build and vet with their tags | — | runs to completion | about a minute |
+| G-MM1-S6 builds | build and vet for linux, darwin and windows; CI's pinned staticcheck after its canary goes red; gofmt; `touched.py`; the parity manifest stays fresh, or is refreshed once with its goldens before the push | the staticcheck canary does not go red | runs to completion | about two minutes |
+
+**MM1a read, 2026-10-26 (nobara): all six pass.** G-MM1-S1: `TestDecisionCensus` passes without `-census.update`, every group
+byte for byte, and so does the second-process test (16.5 and 16.8 s). G-MM1-S2: `internal/mem` imports the standard library only.
+G-MM1-S3: 10,000 generated inputs give the same answers twice in one goroutine and in each of 16 at once, and the package
+declares no variable. G-MM1-S4: over a 13-reading ladder, no decision gets worse with more memory. It goes red on a planted
+defect (a refusal above 64 GiB), on its first input. G-MM1-S5: the 59 decoder fit tests named in the gate pass unchanged, as do
+`internal/fitcmd` and `internal/swapguard`; `cuda`, `metal` and `gpu` vet with their tags. G-MM1-S6: vet on linux, darwin and
+windows; the pinned staticcheck after its canary went red (it found `fitCheck.remedy` left unused, now removed); gofmt;
+`touched.py`; the citation lint. The parity manifest stayed fresh. The decoder keeps `fitCheck`, `giwFit` and
+`FitDeclineError` as adapters: a `fitCheck` becomes a `mem.HostCheck` (its KV as a curve over `estimateKVBytes`), and
+`guardFit`, `decideGIWFit`, `AdmitPrefillMemoryShare`, `FitBudgetSummary` and `resolveWeightCacheBudget` call `mem`.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
