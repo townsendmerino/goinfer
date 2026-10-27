@@ -123,6 +123,8 @@ SCANS = [
     Scan("internal/fitcmd", "TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn", F("cuda/resident.go", "internal/fitcmd/fit.go")),
     Scan("internal/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/fitcmd/fit.go")),
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
+    Scan("internal/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
+    Scan("internal/mem/probe", "TestProbeImports", NT("internal/mem/probe")),
     Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
     Scan("internal/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
     Scan("internal/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),

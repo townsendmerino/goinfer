@@ -15,7 +15,7 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // kse2Run compiles code and dispatches it over wg workgroups with the bindings in order: ins (read storage, as words), then
@@ -359,7 +359,7 @@ func TestKSE2_decodeSpeed(t *testing.T) {
 		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
 	}
 	// The void rule's memory term is read before the cell's loads: about 4 GB (the host model and a resident) plus 2 GB.
-	if r, ok := hostmem.Read(); !ok || r.Reclaimable < 6<<30 {
+	if r, ok := probe.Read(); !ok || r.Reclaimable < 6<<30 {
 		t.Fatalf("reclaimable %.2f GiB before the loads, under 6 GiB: the cell would be void", float64(r.Reclaimable)/(1<<30))
 	}
 	newOrSkipHW(t).Close()

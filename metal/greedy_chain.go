@@ -7,8 +7,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-
-	"golang.org/x/sys/unix"
 )
 
 // The greedy chain (docs/audit-metal-2026-09-30.md, C-B01; docs/tasks/task-metal-audit-2026-10.md, Phase 3 item 5).
@@ -115,7 +113,7 @@ func (r *resident) buildChainEmbed() (w, s Buffer, why string) {
 	need := int64(len(q8) + 4*len(sc))
 	const mb = 1 << 20
 	if !r.chainEmbGuardOff {
-		if ram, err := unix.SysctlUint64("hw.memsize"); err == nil && ram > 0 {
+		if ram, err := physicalRAM(); err == nil && ram > 0 {
 			if ceil := metalStaticCeiling(ram); r.chainEmbBase+need > ceil {
 				return Buffer{}, Buffer{}, fmt.Sprintf("the untied head's device embedding table (%.0f MB) would take this resident (%.0f MB) over the memory guard's %.0f MB",
 					float64(need)/mb, float64(r.chainEmbBase)/mb, float64(ceil)/mb)

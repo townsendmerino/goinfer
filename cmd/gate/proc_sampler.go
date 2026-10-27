@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // procPeak is a test binary's memory as read from /proc/<pid>/status while it ran. The never-swap rule judges a test
@@ -39,20 +41,19 @@ func startProcSampler(root int, inFlight func() (string, time.Duration, bool)) (
 				return
 			}
 		}
-		b, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(p.PID), "status"))
-		if err != nil {
+		st, ok := probe.ReadProcMemory(p.PID)
+		if !ok {
 			return
 		}
-		st := parseProcStatus(string(b))
 		mu.Lock()
 		defer mu.Unlock()
 		p.Samples++
-		p.HWMKB = max(p.HWMKB, st["VmHWM"])
-		p.SwapPeakKB = max(p.SwapPeakKB, st["VmSwap"])
+		p.HWMKB = max(p.HWMKB, st.HWMKB)
+		p.SwapPeakKB = max(p.SwapPeakKB, st.SwapKB)
 		if inFlight != nil {
 			if name, _, ok := inFlight(); ok {
 				if top, _, _ := strings.Cut(name, "/"); top != "" {
-					p.ByTest[top] = max(p.ByTest[top], st["VmRSS"])
+					p.ByTest[top] = max(p.ByTest[top], st.RSSKB)
 				}
 			}
 		}
@@ -77,24 +78,6 @@ func startProcSampler(root int, inFlight func() (string, time.Duration, bool)) (
 		defer mu.Unlock()
 		return p
 	}
-}
-
-// parseProcStatus reads the kB fields of a /proc/<pid>/status text.
-func parseProcStatus(s string) map[string]int64 {
-	out := map[string]int64{}
-	for ln := range strings.SplitSeq(s, "\n") {
-		k, v, ok := strings.Cut(ln, ":")
-		if !ok {
-			continue
-		}
-		f := strings.Fields(v)
-		if len(f) == 2 && f[1] == "kB" {
-			if n, err := strconv.ParseInt(f[0], 10, 64); err == nil {
-				out[k] = n
-			}
-		}
-	}
-	return out
 }
 
 // findTestBinary returns the first descendant of root whose process name ends in ".test", or 0.

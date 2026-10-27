@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // TestR06_speed is R-06's re-measure on the current tree (docs/measurements/r06-arm64-2026-10-25.md): w4a8BatchEnabled on
@@ -52,7 +52,7 @@ func TestR06_speed(t *testing.T) {
 				margin = 0
 			}
 			if fi, err := os.Stat(path); err == nil {
-				if r, ok := hostmem.Read(); !ok || r.Reclaimable < fi.Size()+margin {
+				if r, ok := probe.Read(); !ok || r.Reclaimable < fi.Size()+margin {
 					t.Fatalf("R06-VOID-MEMORY: reclaimable %.2f GiB before loading %s (%.2f GiB), under its size plus %.0f GiB",
 						float64(r.Reclaimable)/(1<<30), mc.name, float64(fi.Size())/(1<<30), float64(margin)/(1<<30))
 				}
@@ -84,10 +84,10 @@ func TestR06_speed(t *testing.T) {
 				if !slices.Equal(toks, ref) {
 					t.Fatalf("arm on=%v: the greedy stream differs from the reference: not bit-identical", on)
 				}
-				busy, ok := hostmem.BusyCores(c0, c1, runtime.NumCPU())
+				busy, ok := probe.BusyCores(c0, c1, runtime.NumCPU())
 				own := (u1 - u0).Seconds() / t1.Sub(t0).Seconds()
 				others := busy - own
-				gib := func(r hostmem.Reading) float64 { return float64(r.Reclaimable) / (1 << 30) }
+				gib := func(r probe.Reading) float64 { return float64(r.Reclaimable) / (1 << 30) }
 				paged := p1 - p0
 				memOK := paged == 0 && (waived || min(r0.Reclaimable, r1.Reclaimable) >= 2<<30)
 				valid = ok && others <= 1.0 && memOK
@@ -177,10 +177,10 @@ func r06Paging(t *testing.T) int64 {
 
 // r06Sample reads the machine's CPU ticks, reclaimable memory, this process's CPU time and the wall clock; the test fails if a
 // reading cannot be taken.
-func r06Sample(t *testing.T) (hostmem.CPUTicks, hostmem.Reading, time.Duration, time.Time) {
+func r06Sample(t *testing.T) (probe.CPUTicks, probe.Reading, time.Duration, time.Time) {
 	t.Helper()
-	c, cok := hostmem.ReadCPU()
-	r, rok := hostmem.Read()
+	c, cok := probe.ReadCPU()
+	r, rok := probe.Read()
 	var ru syscall.Rusage
 	if !cok || !rok || syscall.Getrusage(syscall.RUSAGE_SELF, &ru) != nil {
 		t.Fatalf("no CPU, memory or rusage reading (cpu %v, memory %v)", cok, rok)

@@ -118,7 +118,7 @@ func TestSwapGuard_tripsAndResumesThroughHaltGate(t *testing.T) {
 	// Overriding GOINFER_SWAP_GUARD's ResumeAfter isn't exposed — armSwapGuard hardcodes 30s,
 	// which this test cannot wait out. Confirm the FLAG mechanism directly instead: manually
 	// simulate what OnResume does, since testing the full 30s hysteresis belongs to
-	// decoder/swapwatch_test.go's TestSwapWatch_hysteresis (already covers it against the pure
+	// internal/mem/probe's TestWatch_hysteresis (already covers it against the pure
 	// watch) — this test's job is proving the wiring (trip -> 503, flag -> gate), not re-timing
 	// the hysteresis window a second time.
 	s.swapGuardTripped.Store(false)
