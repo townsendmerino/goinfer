@@ -1,0 +1,12 @@
+== mutation[w2-retry-is-not-final] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: w2-retry-is-not-final is falsifiable
+== mutation[w2-follows-the-instance] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: w2-follows-the-instance is falsifiable
+== mutation[w2-exit-code] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: w2-exit-code is falsifiable

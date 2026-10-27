@@ -71,7 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW3 | open | the shared hot files sharded or generated; S–M | §12 |
-| PW4 | active | mac-vk01, branch `pw4-night-wait-2026-10` (Francis 21:42): `night.py wait NAME`, gates W1–W3 registered in §12 before the code; S | §12 |
+| PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
