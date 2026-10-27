@@ -66,7 +66,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
 | SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
-| SB13 | active | mac-vk01, branch `sb13-layout-2026-10` (Francis 19:52): every goinfer→goinfer import as data (`internal/layout/imports.json`) with the protected separations as rules; gates L1–L3 registered in §8 before the code; S | §9 |
+| SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | open | the doc-drift test: every invariant a `doc.go` lists names a test that exists, and `docs/ARCHITECTURE.md`'s import table equals SB13's data; S | §4.1 |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |

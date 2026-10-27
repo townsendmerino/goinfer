@@ -1,0 +1,35 @@
+## L2a
+== mutation[l2a-kernels-import-decoder] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: l2a-kernels-import-decoder is falsifiable
+## L2b
+== mutation[l2b-new-arrow] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: l2b-new-arrow is falsifiable
+## L3a
+== mutation[l3a-drop-recorded-arrow] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: l3a-drop-recorded-arrow is falsifiable
+## L3b
+== mutation[l3b-record-unmade-arrow] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: l3b-record-unmade-arrow is falsifiable
+## L3c
+== mutation[l3c-record-forbidden-arrow] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: l3c-record-forbidden-arrow is falsifiable
