@@ -6,7 +6,8 @@ each top-level test of ./decoder and ./internal/sampling to the steps that selec
 
   G1: on both sides every test is selected by exactly one -race step; both sides select the same tests; only the named
       movers change step; the no-race sampler-gates step selects the same tests on both sides.
-  G2: every test that ran under -race before runs under -race after.
+  G2: every test that ran under -race before runs under -race after. G1's exactly-one rule on the after side already
+      implies it; it is printed on its own so a red run names the cause.
   G3: the set of job ids and job names is identical.
 
 Usage (from the repository root, go on PATH):
@@ -53,6 +54,11 @@ def go_test_lines(wf):
 def selector(argv):
     """race, run regex, skip regex, the packages of ours it covers."""
     race, run, skip, pkgs = False, None, None, set()
+    flat = []
+    for a in argv[2:]:  # -run=X reads as -run X; a -race=<bool> form is refused rather than guessed
+        assert not a.startswith("-race="), a
+        flat += a.split("=", 1) if a.split("=", 1)[0] in ("-run", "-skip", "-timeout", "-tags") else [a]
+    argv = argv[:2] + flat
     i = 2
     while i < len(argv):
         a = argv[i]

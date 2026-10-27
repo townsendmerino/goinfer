@@ -385,15 +385,21 @@ jobs:
       - name: census exists (zero-match guard)
         run: |
           pattern='^TestDecisionCensus$'
-          matched=$(go test -list "$pattern" ./decoder/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if ! listed=$(go test -list "$pattern" -tags goinfer_testhooks ./decoder/ 2>&1); then
+            echo "::error::go test -list failed on ./decoder/: a build failure, not a missing test"
+            echo "$listed"
+            exit 1
+          fi
+          matched=$(echo "$listed" | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
             echo "::error::pattern '$pattern' matched NO test in ./decoder/ — renamed or deleted? the next step would silently run nothing"
             exit 1
           fi
       - name: test (decoder census)
+        id: census
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -run '^TestDecisionCensus$' ./decoder/ > test-census.json
       - name: test summary (decoder census)
-        if: always()
+        if: always() && steps.census.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test-census.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
@@ -566,15 +572,21 @@ jobs:
       - name: census exists (zero-match guard)
         run: |
           pattern='^TestDecisionCensus_secondProcess$'
-          matched=$(go test -list "$pattern" ./decoder/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if ! listed=$(go test -list "$pattern" -tags goinfer_testhooks ./decoder/ 2>&1); then
+            echo "::error::go test -list failed on ./decoder/: a build failure, not a missing test"
+            echo "$listed"
+            exit 1
+          fi
+          matched=$(echo "$listed" | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
             echo "::error::pattern '$pattern' matched NO test in ./decoder/ — renamed or deleted? the next step would silently run nothing"
             exit 1
           fi
       - name: test (decoder census)
+        id: census
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -run '^TestDecisionCensus_secondProcess$' ./decoder/ > test-census.json
       - name: test summary (decoder census)
-        if: always()
+        if: always() && steps.census.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test-census.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
