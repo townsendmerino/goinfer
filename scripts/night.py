@@ -33,6 +33,10 @@ usage:
                                      kills the running job, which is re-queued)
   night.py update-runner             move the runner's pinned checkout (~/goinfer-runner) to origin/main; serve restarts on it
                                      when idle
+  night.py wait NAME [--timeout MIN] block until the queued or running job NAME ends (through its retries), print its outcome
+                                     and log, and exit 0 for ok, 1 for any other outcome, 2 for no such job, 124 on --timeout.
+                                     From the other box: one background `ssh <box> 'cd <repo> && python3 scripts/night.py wait
+                                     NAME'` is one completion, in place of sleeping and polling (PW4)
 
 serve starts a job when: its --not-before HH:MM has passed and its estimate ends by the deadline after it (a night-only job);
 its retry time has passed; the box is not under heavy load (1-min load at most half the cores, free memory at least the job's
@@ -1465,6 +1469,73 @@ def cmd_stop(a):
         print("the runner stops after the current job (`night.py stop --now` to kill that too)")
 
 
+WAIT_POLL_S = float(os.environ.get("NIGHT_WAIT_POLL_S", "15"))
+WAIT_GONE_S = float(os.environ.get("NIGHT_WAIT_GONE_S", "60"))  # how long a job may be neither queued, running nor recorded
+
+
+def job_record(seq, name):
+    """The newest finished record of the queued job (seq, name) in any run directory, or None."""
+    best = None
+    for f in RUNS.glob(f"*/jobs/{seq}-{name}.json") if RUNS.exists() else []:
+        r = read_json(f)
+        if r and (best is None or r.get("ended", "") > best.get("ended", "")):
+            best = r
+    return best
+
+
+def latest_record(name):
+    """The newest finished record of any job named name, or None."""
+    best = None
+    for f in RUNS.glob(f"*/jobs/*-{name}.json") if RUNS.exists() else []:
+        r = read_json(f)
+        if r and r.get("name") == name and (best is None or r.get("ended", "") > best.get("ended", "")):
+            best = r
+    return best
+
+
+def wait_job(name, timeout_min=None, poll_s=None):
+    """Blocks until the job named name ends and returns (exit code, line). It follows the instance it finds queued or running
+    (its seq) through re-queues, and returns the newest record of a job that already finished when it starts."""
+    poll_s = WAIT_POLL_S if poll_s is None else poll_s
+    deadline = time.monotonic() + timeout_min * 60 if timeout_min else None
+
+    def live():
+        return [j for j in queued() + running() if j.get("name") == name]
+
+    def done(r):
+        code = 0 if r.get("outcome") == "ok" else 1
+        return code, f"{name}: {r.get('outcome')} after {fmt_min(r.get('ran_min', 0))} (log: {r.get('log')})"
+
+    js = live()
+    if not js:
+        r = latest_record(name)
+        if r:
+            return done(r)
+        return 2, f"{name}: no such job queued, running or finished under {ROOT}"
+    seq = js[0].get("seq")
+    gone_since = None
+    while True:
+        if not [j for j in live() if j.get("seq") == seq]:
+            r = job_record(seq, name)
+            if r and not str(r.get("outcome", "")).startswith(("retry ", "stopped")):
+                return done(r)
+            # Between the runner's move and its record, or dropped: give it WAIT_GONE_S before calling it gone.
+            gone_since = gone_since or time.monotonic()
+            if time.monotonic() - gone_since > WAIT_GONE_S:
+                return 2, f"{name}: left the queue with no final record (dropped?)"
+        else:
+            gone_since = None
+        if deadline and time.monotonic() > deadline:
+            return 124, f"{name}: still not finished after {fmt_min(timeout_min)} (--timeout)"
+        time.sleep(poll_s)
+
+
+def cmd_wait(a):
+    code, line = wait_job(a.name, a.timeout)
+    print(line, flush=True)
+    sys.exit(code)
+
+
 def cmd_morning(a):
     d = latest_run_dir()
     if not d or not (d / "SUMMARY.md").exists():
@@ -1532,6 +1603,10 @@ def main():
     s.set_defaults(fn=cmd_stop)
 
     sp.add_parser("morning", help="print the latest SUMMARY.md").set_defaults(fn=cmd_morning)
+    s = sp.add_parser("wait", help="block until a queued or running job ends; exit with its status")
+    s.add_argument("name")
+    s.add_argument("--timeout", type=float, default=None, help="minutes to wait before giving up (exit 124)")
+    s.set_defaults(fn=cmd_wait)
 
     s = sp.add_parser("drop", help="remove a queued job")
     s.add_argument("name")

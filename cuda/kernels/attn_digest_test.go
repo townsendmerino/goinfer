@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"encoding/json"
@@ -319,10 +319,10 @@ func adCasesFlash() []adCase {
 									part, ctx := r.zeros(faMaxRows*nH*U*(hd+4)), r.zeros(nRows*nH*hd)
 									R := faRowsPerCTA(hd, G)
 									for _, run := range faRowRuns(n0, nRows, window, nSplit) {
-										r.launch(m, fmt.Sprintf("fa_partial_rows_%d_g%d", hd, G), adCfg(nKV, nSplit, (run.n+R-1)/R, faWarps*32, (R*G*hd+faWarps*R*64)*4),
-											gc.Arg(q), kc, vc, r.kvt(nTot), adI(nH), adI(nKV), adI(run.winStart), adI(run.nKeys0), adI(run.per), gc.ArgValue(adScale(hd)),
-											adI(nSplit), adI(run.n), adI(run.row0), gc.Arg(part))
-										r.launch(m, "fa_combine_rows", adCfg(nH, run.n, 1, hd, 3*U*4), gc.Arg(part), adI(nH), adI(hd), adI(U), adI(run.row0), gc.Arg(ctx))
+										r.launch(m, fmt.Sprintf("fa_partial_rows_%d_g%d", hd, G), adCfg(nKV, nSplit, (run.N+R-1)/R, faWarps*32, (R*G*hd+faWarps*R*64)*4),
+											gc.Arg(q), kc, vc, r.kvt(nTot), adI(nH), adI(nKV), adI(run.WinStart), adI(run.NKeys0), adI(run.Per), gc.ArgValue(adScale(hd)),
+											adI(nSplit), adI(run.N), adI(run.Row0), gc.Arg(part))
+										r.launch(m, "fa_combine_rows", adCfg(nH, run.N, 1, hd, 3*U*4), gc.Arg(part), adI(nH), adI(hd), adI(U), adI(run.Row0), gc.Arg(ctx))
 									}
 									return [][]float32{r.read(ctx, nRows*nH*hd)}
 								}})

@@ -1,0 +1,6 @@
+=== RUN   TestCompute_stable
+    kernelprint_test.go:24: 69 kernels under amd64[avx2,f16c,popcnt] forced=noavx512; one Compute took 14.554s
+--- PASS: TestCompute_stable (28.23s)
+=== RUN   TestCompute_child
+--- PASS: TestCompute_child (14.24s)
+PASS

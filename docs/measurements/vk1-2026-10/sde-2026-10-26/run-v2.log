@@ -1,0 +1,46 @@
+### 2026-10-26T22:08:54-07:00 +0s build: plain and coverage test binaries, no tags and aikit_noavx512 | load 4.19
+### 2026-10-26T22:08:56-07:00 +2s native control: K1 + K3 by the committed path (go test child) | load 4.19
+### 2026-10-26T22:09:07-07:00 +13s end native rc=0 --- PASS: TestCompute_reachesCensus (3.01s) --- PASS: TestCompute_stable (5.33s) --- PASS: TestCompute_child (2.56s)  41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 3.85
+### 2026-10-26T22:09:07-07:00 +13s start K3 hsw-control run 1 (-hsw) | load 3.85
+### 2026-10-26T22:09:20-07:00 +26s end K3 hsw-control run 1 rc=0 --- PASS: TestCompute_reachesCensus (11.74s)  | child config: amd64[avx2,f16c,popcnt] (69 kernels) | 41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 4.95
+### 2026-10-26T22:09:20-07:00 +26s start K1 icx run 1 (-icx) | load 4.95
+### 2026-10-26T22:10:00-07:00 +66s end K1 icx run 1 rc=0 --- PASS: TestCompute_stable (25.74s) --- PASS: TestCompute_child (12.93s)  69 kernels under amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]; one Compute took 13.24s | load 6.47
+### 2026-10-26T22:10:00-07:00 +66s start K3 icx run 1 (-icx) | load 6.47
+### 2026-10-26T22:10:19-07:00 +85s end K3 icx run 1 rc=0 --- PASS: TestCompute_reachesCensus (17.62s)  | child config: amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] (69 kernels) | 41 census sites: 25 reached, 16 excluded as unreached by goinfer, 0 unreached | load 7.47
+### 2026-10-26T22:10:19-07:00 +85s start K1 spr run 1 (-spr) | load 7.47
+### 2026-10-26T22:11:00-07:00 +126s end K1 spr run 1 rc=0 --- PASS: TestCompute_stable (26.84s) --- PASS: TestCompute_child (13.47s)  69 kernels under amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]; one Compute took 13.236s | load 4.62
+### 2026-10-26T22:11:00-07:00 +126s start K3 spr run 1 (-spr) | load 4.62
+### 2026-10-26T22:11:19-07:00 +145s end K3 spr run 1 rc=0 --- PASS: TestCompute_reachesCensus (18.11s)  | child config: amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] (69 kernels) | 41 census sites: 25 reached, 16 excluded as unreached by goinfer, 0 unreached | load 5.02
+### 2026-10-26T22:11:19-07:00 +145s start K1 icx-noavx512 run 1 (-icx) | load 5.02
+### 2026-10-26T22:12:03-07:00 +189s end K1 icx-noavx512 run 1 rc=0 --- PASS: TestCompute_stable (28.23s) --- PASS: TestCompute_child (14.24s)  69 kernels under amd64[avx2,f16c,popcnt] forced=noavx512; one Compute took 14.554s | load 3.62
+### 2026-10-26T22:12:03-07:00 +189s start K3 icx-noavx512 run 1 (-icx) | load 3.62
+### 2026-10-26T22:12:22-07:00 +208s end K3 icx-noavx512 run 1 rc=0 --- PASS: TestCompute_reachesCensus (17.51s)  | child config: amd64[avx2,f16c,popcnt] forced=noavx512 (69 kernels) | 41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 3.02
+### 2026-10-26T22:12:22-07:00 +208s start K1 spr-noavx512 run 1 (-spr) | load 3.02
+### 2026-10-26T22:13:06-07:00 +252s end K1 spr-noavx512 run 1 rc=0 --- PASS: TestCompute_stable (28.45s) --- PASS: TestCompute_child (14.35s)  69 kernels under amd64[avx2,f16c,popcnt] forced=noavx512; one Compute took 14.342s | load 2.23
+### 2026-10-26T22:13:06-07:00 +252s start K3 spr-noavx512 run 1 (-spr) | load 2.23
+### 2026-10-26T22:13:25-07:00 +271s end K3 spr-noavx512 run 1 rc=0 --- PASS: TestCompute_reachesCensus (18.32s)  | child config: amd64[avx2,f16c,popcnt] forced=noavx512 (69 kernels) | 41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 2.03
+### 2026-10-26T22:13:25-07:00 +271s start K1 icx run 2 (-icx) | load 2.03
+### 2026-10-26T22:14:09-07:00 +315s end K1 icx run 2 rc=0 --- PASS: TestCompute_stable (27.40s) --- PASS: TestCompute_child (14.45s)  69 kernels under amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]; one Compute took 13.908s | load 2.68
+### 2026-10-26T22:14:09-07:00 +315s start K3 icx run 2 (-icx) | load 2.68
+### 2026-10-26T22:14:27-07:00 +333s end K3 icx run 2 rc=0 --- PASS: TestCompute_reachesCensus (17.55s)  | child config: amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] (69 kernels) | 41 census sites: 25 reached, 16 excluded as unreached by goinfer, 0 unreached | load 3.56
+### 2026-10-26T22:14:27-07:00 +333s start K1 spr run 2 (-spr) | load 3.56
+### 2026-10-26T22:15:10-07:00 +376s end K1 spr run 2 rc=0 --- PASS: TestCompute_stable (27.15s) --- PASS: TestCompute_child (14.19s)  69 kernels under amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]; one Compute took 13.271s | load 2.58
+### 2026-10-26T22:15:10-07:00 +376s start K3 spr run 2 (-spr) | load 2.58
+### 2026-10-26T22:15:29-07:00 +395s end K3 spr run 2 rc=0 --- PASS: TestCompute_reachesCensus (17.68s)  | child config: amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] (69 kernels) | 41 census sites: 25 reached, 16 excluded as unreached by goinfer, 0 unreached | load 2.21
+### 2026-10-26T22:15:29-07:00 +395s start K1 icx-noavx512 run 2 (-icx) | load 2.21
+### 2026-10-26T22:16:12-07:00 +438s end K1 icx-noavx512 run 2 rc=0 --- PASS: TestCompute_stable (28.15s) --- PASS: TestCompute_child (14.27s)  69 kernels under amd64[avx2,f16c,popcnt] forced=noavx512; one Compute took 14.552s | load 1.62
+### 2026-10-26T22:16:12-07:00 +438s start K3 icx-noavx512 run 2 (-icx) | load 1.62
+### 2026-10-26T22:16:32-07:00 +458s end K3 icx-noavx512 run 2 rc=0 --- PASS: TestCompute_reachesCensus (18.50s)  | child config: amd64[avx2,f16c,popcnt] forced=noavx512 (69 kernels) | 41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 4.17
+### 2026-10-26T22:16:32-07:00 +458s start K1 spr-noavx512 run 2 (-spr) | load 4.17
+### 2026-10-26T22:17:17-07:00 +503s end K1 spr-noavx512 run 2 rc=0 --- PASS: TestCompute_stable (28.73s) --- PASS: TestCompute_child (14.69s)  69 kernels under amd64[avx2,f16c,popcnt] forced=noavx512; one Compute took 14.198s | load 5.06
+### 2026-10-26T22:17:17-07:00 +503s start K3 spr-noavx512 run 2 (-spr) | load 5.06
+### 2026-10-26T22:17:40-07:00 +526s end K3 spr-noavx512 run 2 rc=0 --- PASS: TestCompute_reachesCensus (21.29s)  | child config: amd64[avx2,f16c,popcnt] forced=noavx512 (69 kernels) | 41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 5.86
+### 2026-10-26T22:17:40-07:00 +526s start K1 clx run 1 (-clx) | load 5.86
+### 2026-10-26T22:18:14-07:00 +560s end K1 clx run 1 rc=0 --- PASS: TestCompute_stable (21.33s) --- PASS: TestCompute_child (11.33s)  69 kernels under amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]; one Compute took 10.754s | load 7.26
+### 2026-10-26T22:18:14-07:00 +560s start K3 clx run 1 (-clx) | load 7.26
+### 2026-10-26T22:18:33-07:00 +579s end K3 clx run 1 rc=0 --- PASS: TestCompute_reachesCensus (17.60s)  | child config: amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] (69 kernels) | 41 census sites: 25 reached, 16 excluded as unreached by goinfer, 0 unreached | load 7.66
+### 2026-10-26T22:18:33-07:00 +579s start K1 skx run 1 (-skx) | load 7.66
+### 2026-10-26T22:19:02-07:00 +608s end K1 skx run 1 rc=0 --- PASS: TestCompute_stable (18.88s) --- PASS: TestCompute_child (8.91s)  69 kernels under amd64[avx2,f16c,popcnt]; one Compute took 9.815s | load 5.42
+### 2026-10-26T22:19:02-07:00 +608s start K3 skx run 1 (-skx) | load 5.42
+### 2026-10-26T22:19:16-07:00 +622s end K3 skx run 1 rc=0 --- PASS: TestCompute_reachesCensus (13.04s)  | child config: amd64[avx2,f16c,popcnt] (69 kernels) | 41 census sites: 24 reached, 17 excluded as unreached by goinfer, 0 unreached | load 4.59
+### 2026-10-26T22:19:16-07:00 +622s all done | load 4.59

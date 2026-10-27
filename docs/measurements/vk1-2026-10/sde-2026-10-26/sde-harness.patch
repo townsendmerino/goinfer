@@ -1,0 +1,41 @@
+diff --git a/internal/kernelprint/census_test.go b/internal/kernelprint/census_test.go
+index 6dd5b9cd2..9d6901a79 100644
+--- a/internal/kernelprint/census_test.go
++++ b/internal/kernelprint/census_test.go
+@@ -110,6 +110,8 @@ var validated = []string{
+ 	"amd64[avx2,f16c,popcnt]",
+ 	"amd64[f16c,popcnt] forced=noavx2",
+ 	"amd64[avx2,f16c] forced=nopopcnt",
++	"amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]", // SDE run only, not committed
++	"amd64[avx2,f16c,popcnt] forced=noavx512",         // SDE run only, not committed
+ }
+ 
+ // forcedTier is the tier each forcing tag turns off; a tag whose tier the CPU lacks forced nothing.
+@@ -163,6 +165,7 @@ func TestCompute_reachesCensus(t *testing.T) {
+ 						missing = append(missing, need.side)
+ 					}
+ 				}
++				t.Logf("SDEHARNESS site %s|%s missing=%v uncalled=%q unreachable=%q", key, s.verdict, missing, uncalled[pkg+"."+s.fn].reason, unreachableSide[key+"|"+s.verdict]) // not committed
+ 				switch {
+ 				case len(missing) == 0:
+ 					reached++
+@@ -316,10 +319,19 @@ func coverChild(t *testing.T, tags []string) coverProfile {
+ 		args = append(args, "-tags", strings.Join(tags, ","))
+ 	}
+ 	cmd := exec.Command("go", append(args, ".")...)
++	if bin := os.Getenv("SDEHARNESS_COVBIN"); bin != "" { // SDE harness only, not committed
++		cmd = exec.Command(os.Getenv("SDEHARNESS_SDE"), "-"+os.Getenv("SDEHARNESS_CHIP"), "--", bin, "-test.count=1", "-test.run", "^TestCompute_child$", "-test.coverprofile="+prof)
++	}
+ 	cmd.Env = append(os.Environ(), "GOINFER_KERNELPRINT_OUT="+filepath.Join(tmp, "report.json"))
+ 	if out, err := cmd.CombinedOutput(); err != nil {
+ 		t.Fatalf("coverage child: %v\n%s", err, out)
+ 	}
++	if b, err := os.ReadFile(filepath.Join(tmp, "report.json")); err == nil { // SDE harness only, not committed
++		var r Report
++		if json.Unmarshal(b, &r) == nil {
++			t.Logf("SDEHARNESS coverage child config: %s (%d kernels)", r.Config, len(r.Kernels))
++		}
++	}
+ 	return readProfile(t, prof)
+ }
+ 

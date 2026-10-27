@@ -103,3 +103,45 @@ func f16rne(x float32) float32 {
 	}
 	return math.Float32frombits(out)
 }
+
+// kvIdentityIDs is the block table that maps block i to block i, for a contiguous cache of positions rows.
+func kvIdentityIDs(positions int) []int32 {
+	ids := make([]int32, max(1, (positions+kvBlockRows-1)/kvBlockRows))
+	for i := range ids {
+		ids[i] = int32(i)
+	}
+	return ids
+}
+
+func itoa(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	for v > 0 {
+		i--
+		b[i] = byte('0' + v%10)
+		v /= 10
+	}
+	return string(b[i:])
+}
+
+// f16BitsToF32 widens a binary16 pattern (exact).
+func f16BitsToF32(h uint16) float32 {
+	sign := float32(1)
+	if h&0x8000 != 0 {
+		sign = -1
+	}
+	e, m := int(h>>10)&0x1F, float32(h&0x3FF)
+	switch e {
+	case 0:
+		return sign * m * float32(math.Ldexp(1, -24))
+	case 0x1F:
+		if m == 0 {
+			return float32(math.Inf(int(sign)))
+		}
+		return float32(math.NaN())
+	}
+	return sign * (1 + m/1024) * float32(math.Ldexp(1, e-15))
+}

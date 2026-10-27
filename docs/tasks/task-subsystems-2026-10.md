@@ -67,11 +67,11 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
 | SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
-| SB14 | open | the doc-drift test: every invariant a `doc.go` lists names a test that exists, and `docs/ARCHITECTURE.md`'s import table equals SB13's data; S | §4.1 |
+| SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW3 | open | the shared hot files sharded or generated; S–M | §12 |
-| PW4 | open | `night.py wait <job>`, so a session on the other box gets one completion instead of polling; S | §12 |
+| PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
@@ -1339,6 +1339,45 @@ on the packed output registered first; stop with DECISION NEEDED if the move nee
   reach 322 → 317. gpu has no test-only move (its kernels are package `gpu`'s production code); metal has 62 candidates
   that need a Mac run. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
 
+#### SB1 — launch geometry out of package cuda: the identity gate, registered 2026-10-26 before the code (nobara-sb01)
+
+Francis's decision (21:42), item 1. The relayed text names `decoder/prefill.go` and `decoder/flash_decode.go`; neither file
+exists, and no `decoder` file declares these constants. They are `cuda/prefill.go`'s and `cuda/flash_decode.go`'s, which the
+STOP POINT it answers named. This work reads it that way and touches no `decoder` file; its PR waits for Francis to confirm
+the reading before auto-merge is set.
+
+- **The move.** `cuda/internal/launchgeom` (standard library only) takes the launch geometry the attention-digest tests
+  need: `faWarps`, `faMaxRows`, `faRowsPerCTA`, `faRun` and `faRowRuns` (`flash_decode.go`); `attnFusedBM`,
+  `attnFusedThreads`, `attnFusedKPAD`, `attnFusedMinRows`, `imgBlockMaxNWin`, `imgBlocksMaxNWin` (`prefill.go`). The KV
+  cache's f16 converters `f32ToF16RNE` and `f32SliceToF16RNE` (`kvhalf.go`) go to `cuda/internal/wpack`. Package `cuda`
+  keeps every name, as a constant or a thin wrapper.
+- **Gate 1, values (tier 0).** `cuda`'s `TestLaunchGeometry_identity` hashes every moved constant's value and every moved
+  function's output over a grid (`faRowsPerCTA` over head dims 32-512 and GQA ratios 1-16; `faRowRuns` over n0, m,
+  window and S; `imgBlockMaxNWin` and `imgBlocksMaxNWin` over windows and blocks; `f32ToF16RNE` on all 2^32 float32 bit
+  patterns; `f32SliceToF16RNE` on a seeded slice), through package `cuda`'s names, into
+  `cuda/testdata/launchgeom_hashes.txt`, written before any code moves and committed; after the move the same test, with
+  no edit, must reproduce every hash.
+- **Gate 2, outputs (device, short, under the lock shared).** Before and after, by name with `-v`: the moved tests
+  (`TestAttnKernelDigests` compares every attention kernel's output digest with `cuda/testdata/attn_digests.json`), and
+  `gate gpu`'s 2b parity group (`go test -tags 'cuda goinfer_testhooks' ./cuda/`, the resident parity tests). Same outcome
+  for every test. Void: a run beside a timed holder (the shared lock refuses). Stopping rule: one run each side; a
+  difference stops the move with DECISION NEEDED.
+- **Then** the attention-digest family (`attn_digest_rig`, `attn_digest`, `attn_softcap_kernel`, `mamba_kernels`) and
+  `prefill_splitkv_img` move to `cuda/kernels`, and the ratchet falls.
+
+#### SB1 — gpu's kernel layer (item 2 of 21:42): parked, DECISION NEEDED (nobara-sb01, 2026-10-26)
+
+A type-checked declaration graph of package `gpu` (tags `gpu`) shows the shape the split would take. 15 declarations
+use `decoder` directly and 37 in all reach it; the other 557 of 594, the runners included, do not. So the cut that frees tests
+is everything clean into `gpu/kernels`, with package `gpu` keeping the residency glue (`residency.go`, `kv_slots.go`,
+`kvcopy.go`, `lora_resident.go`, `resident_sample.go`, `prefill_scratch.go`, `testhooks_kvscale.go`) and the backend
+registration. It would free 80 of the 152 in-package test files. Its cost: 129 files move; 111 unexported names the glue
+and the 72 remaining tests use must be exported (32 methods, and test seams such as `g4DropVNormForTest`); `gpu`'s public
+API needs a wrapper or alias per moved exported name, and a mutable exported var cannot be aliased without splitting its
+state; the four vision-tower files (AX's area) move too. A `metal/kernels`-style move (the WGSL sources only) is small but
+frees no test, because every gpu kernel test dispatches through `Context`. Both readings are in the DECISION below; the
+item is parked until Francis picks one.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/residency.go:Model.residentAdmission`: the runner shape (`Model.decodeRunnerDecline`), then
@@ -1431,6 +1470,25 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
 architecture doc's import table is the import gate's data. It is `CLAUDE.md`'s rule that a doc comment claiming coverage
 is not coverage, made mechanical. S.
+
+#### SB14's gates, registered 2026-10-26 before the code (mac-vk01)
+
+Francis (21:42, relayed): SB14, then PW4, overnight, tier 0. The test lives beside SB13's, in `internal/layout`, and
+reads every package doc comment in the tree, `doc.go` or not.
+- **Every test a package doc names must exist.** A name with a package before it ("decoder's TestDecisionCensus") must
+  be in that package; a bare name must be in the doc's own package.
+- **Every line of an "Invariants" block must name a test.**
+- **`docs/ARCHITECTURE.md` gains a generated appendix between markers,** built from `internal/layout/imports.json`: one
+  row per importing package with its imports and its test-only imports, then the protected rules. The test fails when
+  the appendix differs from the data; `-update` regenerates it.
+
+Measured before the code: 8 package docs name tests today, and every named test exists.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| D1 today's tree | the doc and table tests pass on main's tree once the appendix is generated | never | one run | seconds |
+| D2 drift in a doc | `gate mutation` renaming a test that a `doc.go` names turns it red, naming the doc and the test; one adding an invariant line that names no test turns it red; one naming a test in the wrong package ("decoder's TestSolve_pure") turns it red | never | one run each | seconds |
+| D3 the table is the data | `gate mutation` adding an arrow to `imports.json` without regenerating turns the table test red; one editing a row of the appendix by hand turns it red | never | one run each | seconds |
 
 ### SB13 — the package layout, as a test
 
@@ -1529,6 +1587,24 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   `scripts/task_docs.py`, which already recounts them (on 2026-10-26 it found the design-record count one short).
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
+
+  **PW4's gates, registered 2026-10-26 before the code (mac-vk01; Francis 21:42, relayed).** `night.py wait NAME`
+  [`--timeout MIN`] follows one queued instance of the job: the one it finds queued or running, by its `seq`, through
+  its re-queues (a retry or a stop) until its final record. It then prints one line with the job's outcome and log, and
+  exits:
+  - 0 when the outcome is `ok`;
+  - 1 for any other final outcome (FAILED, timeout, VOID-refused);
+  - 2 when no such job is queued, running or finished;
+  - 124 when its own `--timeout` passes first.
+
+  A job already finished when `wait` starts returns its newest record at once. Nothing else in `night.py` changes, and
+  the tests run in a temporary `NIGHT_DIR`, never either box's live queue.
+
+  | gate | rule | void when | stopping rule | cost basis |
+  |---|---|---|---|---|
+  | W1 backward-compatible | `scripts/test_night.py`'s existing tests pass unchanged; no other subcommand's output or file changes | never | one run | seconds |
+  | W2 the semantics | new tests drive the real `Runner` in a thread under a temporary `NIGHT_DIR`: a job that ends ok → 0; one that fails → 1; one that exits 75 and is re-queued, then ends ok → `wait` waits through the retry and returns 0; one already finished → its status at once; an unknown name → 2; `--timeout` → 124 | never | one run | seconds |
+  | W3 the command line | `python3 scripts/night.py wait NAME` run as a subprocess under a temporary `NIGHT_DIR` exits with the job's status while a runner in the test runs it: what a session on the other box runs as its one `ssh` | never | one run | seconds |
 - **PW5 (after MM0).** `scripts/touched.py` drops `-count=1` for packages with no hidden inputs. A package whose tests
   read a probe, a device or a file outside the module is listed as such, and a source scan keeps the list true.
 - **PW6.** Re-run §1's census 30 days after the first VK, MM and PW items land.
