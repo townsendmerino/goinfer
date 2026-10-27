@@ -2168,6 +2168,22 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
     archiving session to recount the README. That file is under `.claude`, which this session does not write.
   - **`CHANGELOG.md` waits for Francis** (DECISION NEEDED in mac-ax01's report).
 
+  **PW3, the CHANGELOG: fragments (Francis, 12:14: option 1; gates registered 2026-10-27 12:16 PDT by mac-ax01, before the code).**
+  - **Design.** Each change adds one file to `changelog.d/`, named `YYYY-MM-DD-<slug>.md`, holding its entry exactly as it
+    would have appeared in `[Unreleased]`. `CHANGELOG.md`'s `[Unreleased]` becomes one line pointing there.
+    - `scripts/changelog.py render` prints the entries, newest first (descending by file name), joined verbatim.
+    - `scripts/changelog.py release vX.Y.Z --date D` writes `## [vX.Y.Z] — D` with that text under `[Unreleased]` and
+      deletes the fragments: today's manual `[Unreleased]` → `[vX.Y.Z]` move, done by the script.
+    - `gate changelog` (and so `gate release`'s CHANGELOG row) reads `[Unreleased]` as the pointer line plus every fragment.
+    - RELEASING.md's step says to run the script. Today's 33 entries move into fragments whose names keep their order.
+
+  | gate | rule | void when | stopping rule | cost basis |
+  |---|---|---|---|---|
+  | PW3-C1 (today's text, byte for byte) | `scripts/changelog.py render` on the migrated fragments equals origin/main's `[Unreleased]` body byte for byte | — | complete | seconds |
+  | PW3-C2 (a release reads as today) | On a scratch copy, `release v0.24.0 --date 2026-10-27` gives a `[v0.24.0]` section whose body is origin/main's `[Unreleased]` body, byte for byte, under the header today's move writes. It leaves no fragment behind. `gate changelog -section v0.24.0` reports what origin/main's `gate changelog` reports for `[Unreleased]`, line for line after the section name. | — | complete | seconds |
+  | PW3-C3 (parallel adds merge) | Two branches off one base each add a fragment. Both merge cleanly, and `render` and `gate changelog` see both entries. At origin/main the same two adds, made in `CHANGELOG.md`, conflict. | — | once each side | seconds |
+  | PW3-C4 (nothing else moves) | `gate changelog` with no flags reads the same at this branch as at origin/main. `cmd/gate`'s changelog and release tests pass, as do the script's own tests (`scripts/test_changelog.py`), `touched.py`, the citation lint and `test_touched.py`. | — | complete | minutes |
+
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
 
