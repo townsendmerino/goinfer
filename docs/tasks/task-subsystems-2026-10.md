@@ -1590,6 +1590,20 @@ The device gates run on a Mac: their commands are in `/tmp/mm3-metal.md`, handed
 
 If I3 misses its band on the Mac, the finding is reported first and the band is not widened.
 
+**MM3c read on nobara, 2026-10-27 (a darwin type-check; the device gates follow from the Mac, `/tmp/mm3-metal.md`).**
+- **G-MM3c-1:**
+  - The typed rewrite found 546 calls: 147 to gpudev's methods, 36 to its generic constructors and 363 to the package's
+    helpers. 38 of them are inside the helpers themselves.
+  - Each call now names its line. Each helper has a lined twin, and an unlined wrapper where tests call it.
+  - staticcheck flagged the ten wrappers no test calls, and they were removed.
+  - A replay of the scan's logic on Linux reads all 71 non-test files and finds no unlined call.
+  - The scan joins CI's device-free metal-darwin step, behind its zero-match guard.
+- **G-MM3c-5 (the part that runs here):** `TestDecisionCensus` passes unchanged. Nothing outside tests reads the ledger.
+- **G-MM3c-6:** `go vet` for darwin passes, untagged and with `goinfer_testhooks`. The pinned staticcheck for darwin with the
+  test hooks is clean. Also pass: gofmt, `touched.py`, `test_touched.py` (the scan listed), the layout tests (`imports.json` and
+  the ARCHITECTURE appendix updated) and the citation lint.
+- **G-MM3c-2, 3 and 4:** to be run on the Mac.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

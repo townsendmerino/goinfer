@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -61,7 +62,7 @@ func int8Proj(d *Device, f []float32, rows, cols int, name string, l int) (Buffe
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: layer %d: MLA %s has %d values, want %d×%d", l, name, len(f), rows, cols)
 	}
 	wm := linalg.QuantizeInt8(f, rows, cols, false)
-	return int8Buf(d, &wm)
+	return int8BufOn(mem.LineDense, d, &wm)
 }
 
 // buildMLALayer uploads layer l's MLA weights.
@@ -71,7 +72,7 @@ func buildMLALayer(d *Device, m *decoder.Model, l, H int, p *mlaParams) (*mlaLay
 	// proj uploads a projection's int8 form when the load holds one (the codes int8Proj would make from the f32), else quantizes the f32.
 	proj := func(q *linalg.WeightMat, f []float32, rows, cols int, name string) (Buffer, Buffer, error) {
 		if q.Rows() > 0 {
-			return int8Buf(d, q)
+			return int8BufOn(mem.LineDense, d, q)
 		}
 		return int8Proj(d, f, rows, cols, name, l)
 	}
@@ -87,7 +88,7 @@ func buildMLALayer(d *Device, m *decoder.Model, l, H int, p *mlaParams) (*mlaLay
 		if len(qANorm) != p.qLoRA {
 			return nil, fmt.Errorf("metal: layer %d: MLA q_a_layernorm has %d values, want %d", l, len(qANorm), p.qLoRA)
 		}
-		L.qANorm = NewBufferFloats(d, qANorm)
+		L.qANorm = NewBufferFloatsOn(mem.LineDense, d, qANorm)
 	} else if L.qW, L.qS, err = proj(qQ, qProj, p.nH*p.qkHead, H, "q_proj"); err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func buildMLALayer(d *Device, m *decoder.Model, l, H int, p *mlaParams) (*mlaLay
 	if len(kvANorm) != p.rank {
 		return nil, fmt.Errorf("metal: layer %d: MLA kv_a_layernorm has %d values, want %d", l, len(kvANorm), p.rank)
 	}
-	L.kvANorm = NewBufferFloats(d, kvANorm)
+	L.kvANorm = NewBufferFloatsOn(mem.LineDense, d, kvANorm)
 	if L.oW, L.oS, err = proj(oQ, oProj, H, p.nH*p.vHead, "o_proj"); err != nil {
 		return nil, err
 	}
@@ -120,7 +121,7 @@ func buildMLALayer(d *Device, m *decoder.Model, l, H int, p *mlaParams) (*mlaLay
 			copy(wuv[(h*p.vHead+ev)*p.rank:(h*p.vHead+ev+1)*p.rank], kvB[(h*hRow+p.qkNope+ev)*p.rank:])
 		}
 	}
-	L.wuk, L.wuv = NewBufferFloats(d, wuk), NewBufferFloats(d, wuv)
+	L.wuk, L.wuv = NewBufferFloatsOn(mem.LineDense, d, wuk), NewBufferFloatsOn(mem.LineDense, d, wuv)
 	return L, nil
 }
 
@@ -140,18 +141,18 @@ func buildMLAScratch(d *Device, m *decoder.Model, p *mlaParams) *mlaScratch {
 		return 0
 	}
 	s := &mlaScratch{
-		qa: d.NewBufferLen(max(p.qLoRA, 1)), qaQ: byteBuf(d, max(p.qLoRA, 4)), qaSc: d.NewBufferLen(1),
-		q: d.NewBufferLen(p.nH * p.qkHead), kv: d.NewBufferLen(p.latDim), qAbs: d.NewBufferLen(p.nH * p.latDim),
-		wsum: d.NewBufferLen(p.nH * p.rank), ctx: d.NewBufferLen(p.nH * p.vHead), ctxQ: byteBuf(d, p.nH*p.vHead), ctxSc: d.NewBufferLen(1),
-		invf: NewBufferFloats(d, m.RopeInvFreq()),
+		qa: d.NewBufferLenOn(mem.LineScratch, max(p.qLoRA, 1)), qaQ: byteBufOn(mem.LineScratch, d, max(p.qLoRA, 4)), qaSc: d.NewBufferLenOn(mem.LineScratch, 1),
+		q: d.NewBufferLenOn(mem.LineScratch, p.nH*p.qkHead), kv: d.NewBufferLenOn(mem.LineScratch, p.latDim), qAbs: d.NewBufferLenOn(mem.LineScratch, p.nH*p.latDim),
+		wsum: d.NewBufferLenOn(mem.LineScratch, p.nH*p.rank), ctx: d.NewBufferLenOn(mem.LineScratch, p.nH*p.vHead), ctxQ: byteBufOn(mem.LineScratch, d, p.nH*p.vHead), ctxSc: d.NewBufferLenOn(mem.LineScratch, 1),
+		invf: NewBufferFloatsOn(mem.LineScratch, d, m.RopeInvFreq()),
 	}
-	s.uStore = NewBufferUint32s(d, []uint32{uint32(p.rank), uint32(p.qkRope), b(p.interleave)})
-	s.uAbsorb = NewBufferUint32s(d, []uint32{uint32(p.nH), uint32(p.rank), uint32(p.qkNope), uint32(p.qkHead), uint32(p.latDim)})
-	s.uLift = NewBufferUint32s(d, []uint32{uint32(p.nH), uint32(p.vHead), uint32(p.rank), uint32(p.rank), uint32(p.vHead)})
-	s.uQRope = NewBufferUint32s(d, []uint32{uint32(p.nH), uint32(p.qkHead), uint32(p.qkNope), uint32(p.qkRope), uint32(p.rank), uint32(p.latDim), b(p.interleave)})
-	s.uAttn = NewBufferUint32s(d, []uint32{uint32(p.nH), uint32(p.latDim), uint32(p.rank)})
-	s.uQLoRA, s.uOK, s.uZero = NewBufferU32(d, uint32(p.qLoRA)), NewBufferU32(d, uint32(p.nH*p.vHead)), NewBufferU32(d, 0)
-	s.uRopeScale, s.uScale = NewBufferFloats(d, []float32{p.ropeScale}), NewBufferFloats(d, []float32{p.attnScale})
+	s.uStore = NewBufferUint32sOn(mem.LineScratch, d, []uint32{uint32(p.rank), uint32(p.qkRope), b(p.interleave)})
+	s.uAbsorb = NewBufferUint32sOn(mem.LineScratch, d, []uint32{uint32(p.nH), uint32(p.rank), uint32(p.qkNope), uint32(p.qkHead), uint32(p.latDim)})
+	s.uLift = NewBufferUint32sOn(mem.LineScratch, d, []uint32{uint32(p.nH), uint32(p.vHead), uint32(p.rank), uint32(p.rank), uint32(p.vHead)})
+	s.uQRope = NewBufferUint32sOn(mem.LineScratch, d, []uint32{uint32(p.nH), uint32(p.qkHead), uint32(p.qkNope), uint32(p.qkRope), uint32(p.rank), uint32(p.latDim), b(p.interleave)})
+	s.uAttn = NewBufferUint32sOn(mem.LineScratch, d, []uint32{uint32(p.nH), uint32(p.latDim), uint32(p.rank)})
+	s.uQLoRA, s.uOK, s.uZero = NewBufferU32On(mem.LineScratch, d, uint32(p.qLoRA)), NewBufferU32On(mem.LineScratch, d, uint32(p.nH*p.vHead)), NewBufferU32On(mem.LineScratch, d, 0)
+	s.uRopeScale, s.uScale = NewBufferFloatsOn(mem.LineScratch, d, []float32{p.ropeScale}), NewBufferFloatsOn(mem.LineScratch, d, []float32{p.attnScale})
 	return s
 }
 

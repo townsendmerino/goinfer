@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -190,10 +191,10 @@ func newExpertPool(d *Device, N, nGuW, nGuS, nDW, nDS int, stage stageFn) *exper
 	p := &expertPool{
 		// Every slot is overwritten by its first stage before anything reads it, so allocate uninitialized (NewBufferLenOf) rather
 		// than zero-fill a Go slice just to copy it in.
-		guW:  gpu.NewBufferLenOf[uint32](d, N*nGuW),
-		guS:  gpu.NewBufferLenOf[uint16](d, N*nGuS),
-		dW:   gpu.NewBufferLenOf[uint32](d, N*nDW),
-		dS:   gpu.NewBufferLenOf[uint16](d, N*nDS),
+		guW:  gpu.NewBufferLenOfOn[uint32](d, mem.LineExperts, N*nGuW),
+		guS:  gpu.NewBufferLenOfOn[uint16](d, mem.LineExperts, N*nGuS),
+		dW:   gpu.NewBufferLenOfOn[uint32](d, mem.LineExperts, N*nDW),
+		dS:   gpu.NewBufferLenOfOn[uint16](d, mem.LineExperts, N*nDS),
 		nGuW: nGuW, nGuS: nGuS, nDW: nDW, nDS: nDS,
 		slotExpert: make([]int, N),
 		where:      make(map[int]int, N),

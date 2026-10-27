@@ -4,9 +4,16 @@ package metal
 
 import (
 	"errors"
+	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -366,4 +373,140 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		t.Errorf("the registered metal report differs from decoder's default on %d of %d queries", n, len(queries))
 	}
 	t.Logf("%d configs, %d queries", len(cfgs), len(queries))
+}
+
+var (
+	releasedMu  sync.Mutex
+	releasedBad []string
+	releasedN   int
+)
+
+// TestMain (G-MM3c-2): a test's own buffers lease on the test line, and every device the run releases must have had nothing
+// unplanned and must close to zero.
+func TestMain(m *testing.M) {
+	gpu.UnlinedLine = mem.LineTest
+	gpu.ReleasedForTest = func(d *Device) {
+		b := metalLedgerBreak(metalLedgerOf(d))
+		releasedMu.Lock()
+		defer releasedMu.Unlock()
+		releasedN++
+		if b != "" {
+			releasedBad = append(releasedBad, b)
+		}
+	}
+	code := m.Run()
+	releasedMu.Lock()
+	fmt.Fprintf(os.Stderr, "ledger: %d device(s) released in this run\n", releasedN)
+	if len(releasedBad) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: %d released device(s) broke the ledger's invariants (I1 nothing unplanned, I2 close to zero):\n", len(releasedBad))
+		for _, b := range releasedBad {
+			fmt.Fprintln(os.Stderr, "  "+b)
+		}
+		code = 1
+	}
+	releasedMu.Unlock()
+	os.Exit(code)
+}
+
+// metalLedgerOf is the ledger the metal package attached to d, or nil.
+func metalLedgerOf(d *Device) *mem.Ledger {
+	if l, ok := d.Leaser().(*deviceLedger); ok {
+		return &l.Ledger
+	}
+	return nil
+}
+
+// metalLedgerBreak says how a released device's ledger breaks I1 (an unplanned byte ever) or I2 (a lease open after release),
+// or "". A device with no ledger breaks I1.
+func metalLedgerBreak(l *mem.Ledger) string {
+	if l == nil {
+		return "a device with no ledger: its allocations were not leased"
+	}
+	if u := l.Usage(); u.PeakUnplannedCharged > 0 || u.Leases > 0 {
+		return fmt.Sprintf("unplanned peak %d bytes; %d leases (%d bytes) open after release, by line %v",
+			u.PeakUnplannedCharged, u.Leases, u.Charged, u.ByLine)
+	}
+	return ""
+}
+
+// unlinedMetal are the constructors that lease on gpu.UnlinedLine: gpudev's and this package's helpers. Each has a lined twin
+// (…On); the unlined name is a wrapper for tests.
+var unlinedMetal = map[string]bool{"NewBufferLen": true, "NewBufferBytes": true, "NewBufferNoCopy": true, "MustBuf": true, "NewBufferOf": true,
+	"NewBufferLenOf": true, "byteBuf": true, "NewBufferU32": true, "NewBufferFloats": true, "NewBufferInt8": true, "NewBufferU16s": true,
+	"NewBufferUint32s": true, "int4BufA": true, "int4Concat": true, "q4kLaneBuf": true, "scales16": true, "concatNibbles": true, "window": true,
+	"int4Buf": true, "int8Buf": true, "int8Concat": true, "q4kLaneProj": true, "int4ConcatA": true, "int8BufA": true, "int8Codes": true,
+	"nibbles": true, "f32Mat": true}
+
+// unlinedMetalCalls counts the calls in f to an unlined constructor (gpu.X, X, gpu.X[T], .X), outside the unlined wrappers' own
+// declarations.
+func unlinedMetalCalls(f *ast.File) int {
+	n := 0
+	ast.Inspect(f, func(x ast.Node) bool {
+		if fd, ok := x.(*ast.FuncDecl); ok && unlinedMetal[fd.Name.Name] {
+			return false
+		}
+		c, ok := x.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		fun := c.Fun
+		if ix, ok := fun.(*ast.IndexExpr); ok {
+			fun = ix.X
+		}
+		switch e := fun.(type) {
+		case *ast.SelectorExpr:
+			if unlinedMetal[e.Sel.Name] {
+				n++
+			}
+		case *ast.Ident:
+			if unlinedMetal[e.Name] {
+				n++
+			}
+		}
+		return true
+	})
+	return n
+}
+
+// TestLedger_everyMetalAllocationNamesALine (G-MM3c-1, I1 static): no non-test file of the metal module calls an unlined
+// constructor outside the unlined wrappers, so every production MTLBuffer names its plan line. It reads every file and counts
+// a planted call of each form. Device-free: CI's metal job runs it.
+func TestLedger_everyMetalAllocationNamesALine(t *testing.T) {
+	plant := "package x\nfunc f() { _ = d.NewBufferLen(4); _ = gpu.NewBufferLenOf[float32](d, 4); _ = NewBufferU32(d, 1); _ = d.NewBufferLenOn(\"kv\", 4) }\n" +
+		"func NewBufferU32(d *Device, v uint32) Buffer { return NewBufferU32On(gpu.UnlinedLine, d, v) }\n"
+	pf, err := parser.ParseFile(token.NewFileSet(), "plant.go", plant, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unlinedMetalCalls(pf); got != 3 {
+		t.Fatalf("the planted file counts %d unlined calls, want 3", got)
+	}
+	read := 0
+	err = filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == "testdata" {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			return err
+		}
+		read++
+		if n := unlinedMetalCalls(f); n > 0 {
+			t.Errorf("%s calls an unlined constructor %d time(s): name the plan line (the …On twin)", path, n)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read < 60 { // 71 non-test files, gpudev's included, when written: far fewer means the walk is mis-scoped
+		t.Fatalf("read %d source files", read)
+	}
+	t.Logf("read %d non-test files", read)
 }

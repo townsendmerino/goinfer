@@ -2,6 +2,8 @@
 
 package metal
 
+import "github.com/townsendmerino/goinfer/internal/mem"
+
 // KS-D8 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D8 design and gates"): a Mamba-2 layer in the batched prefill pass, in
 // D-B01's shape. in_proj and out_proj run as int8 prefill GEMMs over all M rows (gemm_w8f16_*, on the int8 codes and per-row
 // scales the layer already holds), on f16 activations like every other batched layer; the mixer between them runs as one
@@ -29,8 +31,8 @@ func (r *resident) newPrefillMamba(M, Mpad int) *prefillMamba {
 	// projF's and gatedH's pad rows M..Mpad rely on Metal's zero-fill of a new buffer, as prefillDelta's do.
 	s := &prefillMamba{
 		projF: prefillScratchU16(d, Mpad*p.projDim), gatedH: prefillScratchU16(d, Mpad*p.dInner),
-		conv: d.NewBufferLen(M * p.convDim), y: d.NewBufferLen(M * p.dInner), gated: d.NewBufferLen(M * p.dInner),
-		uM: NewBufferU32(d, uint32(M)), uProjDim: NewBufferU32(d, uint32(p.projDim)),
+		conv: d.NewBufferLenOn(mem.LineScratch, M*p.convDim), y: d.NewBufferLenOn(mem.LineScratch, M*p.dInner), gated: d.NewBufferLenOn(mem.LineScratch, M*p.dInner),
+		uM: NewBufferU32On(mem.LineScratch, d, uint32(M)), uProjDim: NewBufferU32On(mem.LineScratch, d, uint32(p.projDim)),
 	}
 	prefillScratchSeen.Add(int64(4 * M * (p.convDim + 2*p.dInner)))
 	s.bufs = []Buffer{s.projF, s.gatedH, s.conv, s.y, s.gated, s.uM, s.uProjDim}

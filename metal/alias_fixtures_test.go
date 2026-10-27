@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 	"io"
 	"math"
 	"os"
@@ -385,5 +387,95 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 	if f := decoder.RegisteredBuildDemandForTest("metal"); f == nil || ptr(f) != ptr(buildDemand) {
 		t.Fatal("decoder's registry does not hold this package's metal report")
+	}
+}
+
+// TestLedger_metalAgreesWithTheDevice (G-MM3c-3, G-MM3c-4): on llama-tiny resident on Metal, the device's CurrentAllocatedSize
+// just after the resident's device is created, against after the build and three identical requests, is at least the ledger's
+// charged Unified bytes and at most 64 MiB above them (pipelines, libraries, the command queue). The charged bytes do not grow
+// from one request to the next (I2), and after Close the ledger holds no lease. FileMapped leases are logged apart.
+func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
+	const band = 64 << 20
+	real := CreateSystemDefaultDevice
+	defer func() { CreateSystemDefaultDevice = real }()
+	created := map[*Device]uint64{}
+	CreateSystemDefaultDevice = func() (*Device, error) {
+		d, err := real()
+		if err == nil {
+			created[d] = d.CurrentAllocatedSize()
+		}
+		return d, err
+	}
+	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
+	if err != nil {
+		t.Skipf("no metal: %v", err)
+	}
+	rf := m.ResidentForwardForTest()
+	if rf == nil {
+		m.Close()
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	d := rf.(*metalResident).r.d
+	l := metalLedgerOf(d)
+	var after []int64
+	for range 3 {
+		ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 8, decoder.SamplingParams{})
+		for range ch {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatal(err)
+		}
+		after = append(after, l.Usage().Charged)
+	}
+	if after[1] != after[0] || after[2] != after[0] {
+		t.Errorf("the charged bytes grow across identical requests: %v", after)
+	}
+	base, seen := created[d]
+	if !seen {
+		t.Fatal("the resident's device was not created through CreateSystemDefaultDevice")
+	}
+	u := l.Usage()
+	measured, charged := int64(d.CurrentAllocatedSize())-int64(base), u.ByTier[mem.Unified]
+	t.Logf("measured %d bytes, the ledger charges %d on Unified (requested %d), %d on FileMapped; gap %d; by line %v",
+		measured, charged, u.Requested, u.ByTier[mem.FileMapped], measured-charged, u.ByLine)
+	if measured < charged || measured > charged+band {
+		t.Errorf("measured %d, charged %d: outside [charged, charged+%d]", measured, charged, band)
+	}
+	m.Close()
+	if u := l.Usage(); u.Leases != 0 || u.Charged != 0 {
+		t.Errorf("after Close the ledger holds %d leases, %d bytes, by line %v", u.Leases, u.Charged, u.ByLine)
+	}
+}
+
+// TestLedger_metalUnplannedIsReported (G-MM3c-2's plant): an allocation on the empty line, and a buffer never released, are each
+// what the suite's release check reports; a clean device reports nothing.
+func TestLedger_metalUnplannedIsReported(t *testing.T) {
+	real := gpu.ReleasedForTest
+	defer func() { gpu.ReleasedForTest = real }()
+	var got *mem.Ledger
+	gpu.ReleasedForTest = func(d *Device) { got = metalLedgerOf(d) }
+	for _, plant := range []string{"unplanned", "open", "clean"} {
+		d, err := CreateSystemDefaultDevice()
+		if err != nil {
+			t.Skip(err)
+		}
+		_ = d.NewBufferLenOn(mem.LineKV, 1024)
+		switch plant {
+		case "unplanned":
+			_ = d.NewBufferLenOn("", 1024)
+		case "open":
+			metalLedgerOf(d).Reserve(mem.Unified, mem.LineScratch, 4096, 4096) // never released
+		}
+		d.ReleaseAll()
+		d.ReleaseObjects()
+		b := metalLedgerBreak(got)
+		switch {
+		case plant == "unplanned" && !strings.Contains(b, "unplanned peak"):
+			t.Errorf("an unplanned buffer gives %q", b)
+		case plant == "open" && !strings.Contains(b, "1 leases (4096 bytes) open"):
+			t.Errorf("an open lease gives %q", b)
+		case plant == "clean" && b != "":
+			t.Errorf("a clean device gives %q", b)
+		}
 	}
 }

@@ -5,7 +5,25 @@
 // bit-identical across it (the Metal device-parity suite is the tripwire).
 package metal
 
-import gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
+import (
+	"github.com/townsendmerino/goinfer/internal/mem"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
+)
+
+// Every device created in a process that links this package leases its MTLBuffers to a mem.Ledger (MM3), whichever package
+// creates it.
+func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
+
+// deviceLedger is a device's mem.Ledger: MTLBuffers on Unified, a no-copy alias of caller memory on FileMapped.
+type deviceLedger struct{ mem.Ledger }
+
+func (l *deviceLedger) Lease(fileMapped bool, line string, requested, charged int64) func() {
+	tier := mem.Unified
+	if fileMapped {
+		tier = mem.FileMapped
+	}
+	return l.Reserve(tier, mem.LineID(line), requested, charged).Release
+}
 
 type (
 	Device       = gpu.Device
@@ -28,8 +46,43 @@ var (
 // Thin re-wraps of aikit gpu's generic NewBufferOf[T]. Go has no generic methods, so it is a free function taking the
 // device first; these keep this package's many call sites at their original shape. History:
 // docs/code-notes/metal.md#NewBufferFloats.
-func NewBufferFloats(d *Device, data []float32) Buffer { return gpu.NewBufferOf(d, data) }
-func NewBufferInt8(d *Device, data []int8) Buffer      { return gpu.NewBufferOf(d, data) }
-func NewBufferUint32s(d *Device, data []uint32) Buffer { return gpu.NewBufferOf(d, data) }
-func NewBufferU16s(d *Device, data []uint16) Buffer    { return gpu.NewBufferOf(d, data) }
-func NewBufferU32(d *Device, v uint32) Buffer          { return gpu.NewBufferOf(d, []uint32{v}) }
+func NewBufferFloatsOn(line string, d *Device, data []float32) Buffer {
+	return gpu.NewBufferOfOn(d, line, data)
+}
+
+// NewBufferFloats is NewBufferFloatsOn on gpu.UnlinedLine: tests call it; production code names its plan line.
+func NewBufferFloats(d *Device, data []float32) Buffer {
+	return NewBufferFloatsOn(gpu.UnlinedLine, d, data)
+}
+func NewBufferInt8On(line string, d *Device, data []int8) Buffer {
+	return gpu.NewBufferOfOn(d, line, data)
+}
+
+// NewBufferInt8 is NewBufferInt8On on gpu.UnlinedLine: tests call it; production code names its plan line.
+func NewBufferInt8(d *Device, data []int8) Buffer {
+	return NewBufferInt8On(gpu.UnlinedLine, d, data)
+}
+func NewBufferUint32sOn(line string, d *Device, data []uint32) Buffer {
+	return gpu.NewBufferOfOn(d, line, data)
+}
+
+// NewBufferUint32s is NewBufferUint32sOn on gpu.UnlinedLine: tests call it; production code names its plan line.
+func NewBufferUint32s(d *Device, data []uint32) Buffer {
+	return NewBufferUint32sOn(gpu.UnlinedLine, d, data)
+}
+func NewBufferU16sOn(line string, d *Device, data []uint16) Buffer {
+	return gpu.NewBufferOfOn(d, line, data)
+}
+
+// NewBufferU16s is NewBufferU16sOn on gpu.UnlinedLine: tests call it; production code names its plan line.
+func NewBufferU16s(d *Device, data []uint16) Buffer {
+	return NewBufferU16sOn(gpu.UnlinedLine, d, data)
+}
+func NewBufferU32On(line string, d *Device, v uint32) Buffer {
+	return gpu.NewBufferOfOn(d, line, []uint32{v})
+}
+
+// NewBufferU32 is NewBufferU32On on gpu.UnlinedLine: tests call it; production code names its plan line.
+func NewBufferU32(d *Device, v uint32) Buffer {
+	return NewBufferU32On(gpu.UnlinedLine, d, v)
+}

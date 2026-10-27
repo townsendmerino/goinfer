@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"runtime"
 )
 
@@ -103,9 +104,9 @@ func (r *resident) emodelRows(embs [][]float32, start int, head bool) []float32 
 	for i := range rows {
 		rw := &rows[i]
 		rw.pos = start + i
-		rw.x, rw.ple = nb(NewBufferFloats(d, embs[i][:r.H])), nb(NewBufferFloats(d, embs[i][r.H:]))
-		rw.u = posUniforms{nb(NewBufferU32(d, 0)), nb(NewBufferU32(d, 0)), nb(NewBufferU32(d, 0)),
-			nb(NewBufferFloats(d, []float32{1})), nb(NewBufferU32(d, 0))}
+		rw.x, rw.ple = nb(NewBufferFloatsOn(mem.LineScratch, d, embs[i][:r.H])), nb(NewBufferFloatsOn(mem.LineScratch, d, embs[i][r.H:]))
+		rw.u = posUniforms{nb(NewBufferU32On(mem.LineScratch, d, 0)), nb(NewBufferU32On(mem.LineScratch, d, 0)), nb(NewBufferU32On(mem.LineScratch, d, 0)),
+			nb(NewBufferFloatsOn(mem.LineScratch, d, []float32{1})), nb(NewBufferU32On(mem.LineScratch, d, 0))}
 		if emodelPlant.posShift {
 			rw.pos++ // G-S9b (3)
 		}
