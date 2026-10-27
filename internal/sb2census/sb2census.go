@@ -24,6 +24,7 @@ type Cell struct {
 	KVPrec, KVQuant string // Options.KVPrecision and Options.KVQuant
 }
 
+// Cells is layer D's option cells, in its order.
 var Cells = []Cell{
 	{"int4", "int4", 0, "", "", ""}, {"int4/g32", "int4", 32, "", "", ""},
 	{"int8int8", "int8int8", 0, "", "", ""}, {"int8int8/g32", "int8int8", 32, "", "", ""},

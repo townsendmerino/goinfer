@@ -2106,6 +2106,18 @@ The static gates are censused now, on the same fixtures and option cells as laye
   WebGPU refactor must leave layer D unchanged and its own census equal to the same census run on the code before it.
   **Cost basis:** measured on the first run; tiny loads, seconds.
 
+**Step 2 read (2026-10-27, nobara-sb01).** Record: `docs/measurements/sb2-backend-census-2026-10-27/README.md`.
+
+- **B-cuda.** 412 cells reach the build, including every cell layer D builds resident. 279 plan and 133 decline. Both builds agree,
+  in 1.7 s for the two. The planted MoE per-32 decline turns exactly its 42 cells red.
+- **B-webgpu.** The static gates are now `gpu/residency.go:staticResidentDecline`. 218 cells reach it: 207 pass and 11 take the
+  quantized-KV decline. The plant turns exactly those 11 red. The census before the refactor (the real build on nobara's device)
+  agrees with the one after it on all 218 cells, and the real build gives byte-identical answers before and after.
+- **B-metal.** The Mac session's commands are in `/tmp/sb2-metal.md`.
+- **Open: the ratchet.** `internal/layout:TestBackendTests_decoderImportsOnlyFall` refuses each layer's test file, since it
+  reaches decoder by design. The choice is Francis's.
+- **Next layer.** The builds' memory and device reads, fed from the machine profiles.
+
 ### SB3 — family adapters
 
 Moved to VK2 (one file each) and VK4 (program fingerprints). With SB1 and SB2, adding a family is a file, a fixture and
