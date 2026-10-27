@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -103,9 +104,9 @@ func newEncoder(w vision.GPUWeights) (enc *encoder, err error) {
 	cpp := w.NumChannels * w.PatchSize * w.PatchSize
 
 	e := &encoder{dev: dev, q: dev.NewCommandQueue(), k: kern, w: w, cpp: cpp}
-	up := func(x []float32) gpu.Buffer { return gpu.NewBufferOf(dev, x) }
+	up := func(x []float32) gpu.Buffer { return gpu.NewBufferOfOn(dev, mem.LineCompanion, x) }
 	upMat := func(m vision.GPUMat) mat {
-		return mat{q: gpu.NewBufferOf(dev, m.Q), s: gpu.NewBufferOf(dev, m.Scales), rows: m.Rows, cols: m.Cols}
+		return mat{q: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Q), s: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Scales), rows: m.Rows, cols: m.Cols}
 	}
 	e.patchW, e.patchB, e.posEmb = up(w.PatchW), up(w.PatchB), up(w.PosEmb)
 	e.postLNw, e.postLNb = up(w.PostLNw), up(w.PostLNb)
@@ -120,14 +121,14 @@ func newEncoder(w vision.GPUWeights) (enc *encoder, err error) {
 		}
 	}
 	// scratch
-	f32 := func(n int) gpu.Buffer { return gpu.NewBufferLenOf[float32](dev, n) }
+	f32 := func(n int) gpu.Buffer { return gpu.NewBufferLenOfOn[float32](dev, mem.LineCompanion, n) }
 	e.patches = f32(np * cpp)
 	e.h, e.n1, e.n2 = f32(np*hidden), f32(np*hidden), f32(np*hidden)
 	e.qa, e.ka, e.va = f32(np*hidden), f32(np*hidden), f32(np*hidden)
 	e.att, e.o, e.mlp, e.out = f32(np*hidden), f32(np*hidden), f32(np*hidden), f32(np*hidden)
 	e.mid = f32(np * inter)
 	wide := max(inter, hidden)
-	e.qi8 = gpu.NewBufferLenOf[int8](dev, np*wide)
+	e.qi8 = gpu.NewBufferLenOfOn[int8](dev, mem.LineCompanion, np*wide)
 	e.qs = f32(np)
 
 	// Capture the entire static forward tower into a CUDA Graph.

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // Windowed KV (docs/tasks/task-cuda-windowed-kv-2026-10.md). A sliding-window layer reads only the last `window` positions, so with
@@ -124,6 +125,7 @@ var kvGrantFreeVRAM = func(r *cudaResident) (uint64, error) { return cudaFreeVRA
 // the new buffers are released and the old ones kept. Nothing may be mapped in the window group yet (kvGrantRollback runs once the build
 // is done, before any write). KV-shared layers re-alias their sources.
 func (r *cudaResident) kvReallocWindowed(slack int) (ok bool) {
+	defer r.onLine(mem.LineKV)()
 	for s := range r.kvTabs {
 		for _, id := range r.kvTabs[s].ids[kvGroupWin] {
 			if id != 0 {

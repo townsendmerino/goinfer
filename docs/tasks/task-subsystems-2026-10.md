@@ -1403,6 +1403,39 @@ I1 … and I2 … per backend at tier 0; I3 … with one tiny model per backend,
 
 If I3 misses its band, the finding is reported first and the band is not widened.
 
+**Two changes to the design, made before any gate ran.**
+- `gpudev` may not import goinfer (SB13's rule "gpudev-standalone"). So `gpudev` defines a `Leaser` interface and takes plan
+  lines as strings, and the cuda package attaches a `mem.Ledger` adapter when it creates a device (`createDevice`). The plan
+  lines are untyped constants, so they pass as strings unconverted.
+- The I1 hook reads the ledger through that adapter.
+
+**MM3a read, 2026-10-27 (nobara, RTX 2070 SUPER, driver 595.91.07, kwin_wayland's 16 MiB context present): all seven pass.**
+- **G-MM3a-1:** `TestLedger_everyAllocationNamesALine` reads all 58 non-test files outside `gpudev` and finds no unlined call. It
+  counts the planted file's 2.
+- **G-MM3a-2 and G-MM3a-3:** in the device run (tags `cuda goinfer_testhooks`, `GOINFER_HEAVY_TESTS=1`, exclusive timing lock,
+  `-v`), 96 devices are released, none with an unplanned byte and none with an open lease. 27 tests pass; 7 skip on their own
+  gates (KS-B8's timing and KS-H6C's breakdown and margin, which need their variables). `TestLedger_unplannedIsReported` sees
+  the planted 3 MiB, charged as 4, and the planted open lease. `internal/mem`'s ledger tests pass under `-race`.
+  - `touched.py`'s wider selection first found 4 devices with unplanned bytes: three pack-stream tests and
+    `TestWindowedKV_view`, which drive the build's helpers outside a build. A stack per unplanned lease showed every one came
+    from those tests and none from production. They now name the test line, and the selection passes.
+- **G-MM3a-4, I3 (inside the band):**
+
+  | model | measured | charged | gap |
+  |---|---:|---:|---:|
+  | llama-tiny | 8,388,608 | 4,479,240 | 3.9 MB |
+  | Qwen2.5-Coder-0.5B | 991,952,896 | 988,562,064 | 3.4 MB |
+
+  By line, the 0.5B is dense 483.6 MB, kv 503.3 MB and scratch 2.3 MB. Both ledgers hold no lease after `Close`.
+- **G-MM3a-5:** `allocRoundSlack` is `gpu.ChargedBytes(n) - n`, and the 2 MiB constant is defined once
+  (`gpu.AllocQuantumBytes`). `TestPlanSlack_oneCopy` and `TestPlanSlack_matchesTheBuild` pass (145,276,928 and 128,122,880
+  again).
+- **G-MM3a-6:** `TestDecisionCensus` passes unchanged. The only non-test reader of the ledger is the test seam's call site.
+- **G-MM3a-7:** vet (cuda with and without testhooks, gpu, darwin metal); the pinned staticcheck with its canary red, clean;
+  gofmt; the layout tests, with `imports.json` and the ARCHITECTURE appendix regenerated for the new `→ internal/mem`
+  arrows; `touched.py`; the citation lint.
+- Logs: `~/goinfer-logs/mm1/` on nobara (mm3a-device2).
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

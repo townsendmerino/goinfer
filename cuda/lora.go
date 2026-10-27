@@ -8,6 +8,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // Compute-time LoRA on the resident path (docs/tasks/task-gpu-paths-2026-09.md). Like Metal and unlike WebGPU:
@@ -108,6 +109,7 @@ func sameLoraKey(x, y [][7]loraProjKey) bool {
 // re-upload; a different adapter evicts them. The cache holds one adapter, the most recently uploaded, so it adds no
 // VRAM beyond what a bound adapter already costs.
 func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
+	defer r.onLine(mem.LineCompanion)()
 	if r.actG32 && layers != nil {
 		return fmt.Errorf("cuda: compute-time LoRA reads per-vector activation scales; not implemented for a per-32 activation model")
 	}

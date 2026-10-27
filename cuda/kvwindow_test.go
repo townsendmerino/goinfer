@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"path/filepath"
 	"testing"
@@ -100,6 +101,7 @@ func TestWindowedKV_view(t *testing.T) {
 	for i := range sentinel {
 		sentinel[i] = -7
 	}
+	defer r.onLine(mem.LineTest)() // the test allocates through the build's helpers on the executor (r.do orders the write)
 	read := func(b Buffer) []float32 {
 		out := make([]float32, total)
 		if err := r.do(func() error {

@@ -21,6 +21,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -186,7 +187,7 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 }
 
 func (r *VisionEncoder) up32(v []float32) Buffer {
-	b := gpu.NewBufferLenOf[float32](r.dev, len(v))
+	b := gpu.NewBufferLenOfOn[float32](r.dev, mem.LineCompanion, len(v))
 	if err := gpu.Upload(b, v); err != nil {
 		panic(err) // caught by NewVisionEncoder's recover; setup-time only
 	}
@@ -195,7 +196,7 @@ func (r *VisionEncoder) up32(v []float32) Buffer {
 
 func (r *VisionEncoder) upW8(q8 []int8, scales []float32, N, K int) cudaWQ {
 	wpk := packI8(q8, N, K)
-	b := gpu.NewBufferLenOf[uint32](r.dev, len(wpk))
+	b := gpu.NewBufferLenOfOn[uint32](r.dev, mem.LineCompanion, len(wpk))
 	if err := gpu.Upload(b, wpk); err != nil {
 		panic(err)
 	}
@@ -207,8 +208,12 @@ func (r *VisionEncoder) upGPUMat(m vision.GPUMat) cudaWQ {
 }
 
 // af allocates an M*n float32 device buffer (scratch — no upload).
-func (r *VisionEncoder) af(n int) Buffer { return gpu.NewBufferLenOf[float32](r.dev, n) }
-func (r *VisionEncoder) ai(n int) Buffer { return gpu.NewBufferLenOf[int32](r.dev, n) }
+func (r *VisionEncoder) af(n int) Buffer {
+	return gpu.NewBufferLenOfOn[float32](r.dev, mem.LineCompanion, n)
+}
+func (r *VisionEncoder) ai(n int) Buffer {
+	return gpu.NewBufferLenOfOn[int32](r.dev, mem.LineCompanion, n)
+}
 
 // bGemv projects a[M,K] (already int8-quantized, scale as) through wt[N,K] + bias into dst[M,N].
 // The plain int8 half of cuda/prefill.go's bGemvB — this tower never needs int4.

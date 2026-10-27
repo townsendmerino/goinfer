@@ -15,6 +15,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // errPrefillDeclined marks an arch or geometry decline from the batched path, which covers the plain dense unfused
@@ -924,6 +925,7 @@ func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
 // row through decode's own gap (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row
 // head is decode's, and a row with a draw ends in ForwardSample's pick.
 func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
+	defer r.onLine(mem.LineScratch)()
 	M := len(embeddings)
 	if M == 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -1810,6 +1812,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 // Buffers are allocated lazily here because af/ai need r.dev's context current, which holds on the executor thread this
 // runs on. They are sized to M and reused; a wider block releases the old ones and reallocates.
 func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error {
+	defer r.onLine(mem.LineScratch)()
 	if M > r.logitsBCap {
 		// Release before growing: abandoning the old buffer to the device ledger would strand each shorter prompt's M x vocab
 		// logits.
@@ -1849,6 +1852,7 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 // other row is downloaded to the pinned host buffer (r.logitsPinned/r.logitsHost) one at a time. The rows it returns are
 // raw head output: prefillCore applies the softcap and logit scale to every logits row after the job.
 func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepRow) (outs [][]float32, ids []int, err error) {
+	defer r.onLine(mem.LineScratch)()
 	if M > r.logitsBCap {
 		if r.logitsBCap > 0 {
 			r.dev.ReleaseBuf(r.logitsB)
@@ -1899,6 +1903,7 @@ func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepR
 // family without an attention temperature gets a NULL argument, which the kernel reads as scale 1. The table is rebuilt
 // only when (startPos, M) changes, so every layer of one prefill shares one upload.
 func (r *cudaResident) attnTempRows(startPos, M int) (gpu.KernelArg, error) {
+	defer r.onLine(mem.LineScratch)()
 	if r.attnTempBeta == 0 {
 		return ArgNull(), nil
 	}

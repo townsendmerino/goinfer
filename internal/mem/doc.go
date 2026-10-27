@@ -1,7 +1,9 @@
 // Package mem decides whether a load or a request fits the machine's memory, and says why in the lines the load banner and
 // the refusals print. It is pure: every decision takes numbers (what the load will allocate, as the caller priced it from
 // the checkpoint), a Machine (the readings, as data) and a Policy (the thresholds), and returns the same answer for the same
-// inputs. It reads nothing: internal/mem/probe reads the OS, and the caller reads the checkpoint.
+// inputs. It reads nothing: internal/mem/probe reads the OS, and the caller reads the checkpoint. Ledger is its one stateful
+// type: an allocator's account of what it handed out, each allocation a lease naming its plan line (LineID). It records what it
+// is told; nothing reads it to decide.
 //
 // Contract. SolveHost is the resident load guard, SolveGIW the guard for a .giw load (file-backed weights), AdmitRequest the
 // per-request check, HostBudget and WeightCacheBudget the budgets the banner and the expert pager size by. SolvePlacement
@@ -17,6 +19,9 @@
 //	I4 the planner is pure                             TestSolvePlacement_pure
 //	I5 more memory never gives a worse decision        TestSolve_monotone
 //	I5 more memory never gives a worse dense placement TestSolvePlacement_monotone; also a placed context never shrinks
+//	I1 nothing is allocated without a plan line        TestLedger_unplanned; cuda's TestLedger_everyAllocationNamesALine
+//	I2 every lifetime closes to zero                   TestLedger_closesToZero; cuda's TestLedger_closesAgainstDevice
+//	I3 the ledger agrees with the device               cuda's TestLedger_closesAgainstDevice
 //	I6 no guard threshold is applied outside mem       TestNoGuardThresholdOutsideMem (the backends' own guards ratcheted)
 //	the decisions are today's, byte for byte           decoder's TestDecisionCensus
 //

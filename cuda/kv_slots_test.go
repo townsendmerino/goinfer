@@ -4,6 +4,8 @@ package cuda
 
 import (
 	"context"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -923,5 +925,94 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 	if f := decoder.RegisteredBuildDemandForTest("cuda"); f == nil || ptr(f) != ptr(buildDemand) {
 		t.Fatal("decoder's registry does not hold this package's cuda report")
+	}
+}
+
+// TestLedger_closesAgainstDevice (G-MM3a-4, I3): for a tiny model and a real 0.5B, the device's free VRAM just after the
+// resident's device is created, less its free VRAM after the build and an 8-token generate, is at least the ledger's charged
+// VRAM and at most 64 MiB above it (modules, streams and the driver's shared pages for small buffers). After Close the device's
+// ledger holds no lease (I2).
+func TestLedger_closesAgainstDevice(t *testing.T) {
+	requireCUDADevice(t)
+	models := append([]string{filepath.Join("..", "testdata", "llama-tiny")}, realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")...)
+	if len(models) < 2 {
+		t.Skip("the 0.5B checkpoint is not on this box")
+	}
+	const band = 64 << 20
+	real := CreateSystemDefaultDevice
+	defer func() { CreateSystemDefaultDevice = real }()
+	created := map[*Device]uint64{}
+	CreateSystemDefaultDevice = func() (*Device, error) {
+		d, err := real()
+		if err == nil {
+			free, _, e := d.Context().MemInfo()
+			if e != nil {
+				return nil, e
+			}
+			created[d] = free
+		}
+		return d, err
+	}
+	for _, p := range models {
+		m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			t.Fatalf("%s: not resident: %s", p, m.ResidentDecline())
+		}
+		ch, gen := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 8, decoder.SamplingParams{})
+		for range ch {
+		}
+		if err := gen.Err(); err != nil {
+			t.Fatalf("%s: generate: %v", p, err)
+		}
+		free0, seen := created[r.dev]
+		if !seen {
+			t.Fatalf("%s: the resident's device was not created through CreateSystemDefaultDevice", p)
+		}
+		var free1 uint64
+		if err := r.do(func() error { f, _, e := r.dev.Context().MemInfo(); free1 = f; return e }); err != nil {
+			t.Fatalf("%s: free VRAM: %v", p, err)
+		}
+		u := ledgerOf(r.dev).Usage()
+		measured, charged := int64(free0)-int64(free1), u.ByTier[mem.VRAM]
+		t.Logf("%s: measured %d bytes on the device, the ledger charges %d (requested %d); gap %d; by line %v", filepath.Base(p),
+			measured, charged, u.Requested, measured-charged, u.ByLine)
+		if measured < charged || measured > charged+band {
+			t.Errorf("%s: measured %d, charged %d: outside [charged, charged+%d]", filepath.Base(p), measured, charged, band)
+		}
+		dev := r.dev
+		_ = m.Close()
+		if u := ledgerOf(dev).Usage(); u.Leases != 0 || u.Charged != 0 {
+			t.Errorf("%s: after Close the ledger holds %d leases, %d bytes, by line %v", filepath.Base(p), u.Leases, u.Charged, u.ByLine)
+		}
+	}
+}
+
+// TestLedger_unplannedIsReported (G-MM3a-2's plant): an allocation on the empty line, and a lease left open, are both what the
+// release hook reports; a tracked pinned host buffer closes with the device.
+func TestLedger_unplannedIsReported(t *testing.T) {
+	requireCUDADevice(t)
+	real := gpu.ReleasedForTest
+	defer func() { gpu.ReleasedForTest = real }()
+	var got mem.Usage
+	gpu.ReleasedForTest = func(d *Device) { got = ledgerOf(d).Usage() }
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skip(err)
+	}
+	_ = d.MustBufOn("", 3<<20, 3<<20, "planted")
+	if _, err := gpu.NewHostBufferOn[float32](d, mem.LineScratch, 16); err != nil {
+		t.Fatal(err)
+	}
+	ledgerOf(d).Reserve(mem.HostAnon, mem.LinePinnedExperts, 4096, 4096) // never released
+	d.ReleaseObjects()
+	if got.PeakUnplannedCharged != 4<<20 {
+		t.Errorf("unplanned peak %d, want %d (3 MiB charged as 4)", got.PeakUnplannedCharged, 4<<20)
+	}
+	if got.Leases != 1 || got.ByLine[mem.LinePinnedExperts] != 4096 || len(got.ByLine) != 1 {
+		t.Errorf("after release: %d leases, by line %v; want only the planted lease open", got.Leases, got.ByLine)
 	}
 }

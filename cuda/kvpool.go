@@ -9,6 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // Paged KV storage (docs/tasks/task-kv-architecture-2026-10.md §5.3, KV4). Every layer that keeps K/V holds them in a pool of
@@ -269,6 +270,7 @@ func (r *cudaResident) kvTabBuf(s, g int) Buffer {
 // kvAllocPools allocates every owning layer's pools and every slot's tables for slots slots, and zeroes the null blocks. It replaces the
 // per-slot buffers MC1 used to allocate; the caller has run checkKVFits and kvWindowSetup.
 func (r *cudaResident) kvAllocPools(slots int) error {
+	defer r.onLine(mem.LineKV)()
 	r.kvPools = [kvGroups]kvPool{newKVPool(r.kvPoolBlocks(kvGroupFull, slots)), newKVPool(r.kvPoolBlocks(kvGroupWin, slots))}
 	for l := range r.layers {
 		Ly := &r.layers[l]
@@ -295,7 +297,7 @@ func (r *cudaResident) kvAllocPools(slots int) error {
 	}
 	r.kvTabDev = r.ai(slots * kvGroups * r.kvMaxBlocks())
 	if r.kvTabStage == nil {
-		stage, e := gpu.NewHostBuffer[uint8](r.dev, kvTabRing*r.kvMaxBlocks()*4)
+		stage, e := gpu.NewHostBufferOn[uint8](r.dev, mem.LineKV, kvTabRing*r.kvMaxBlocks()*4)
 		if e != nil {
 			return e
 		}
@@ -613,6 +615,7 @@ func (r *cudaResident) kvReleasePools() {
 // kvAfterRaise follows a per-conversation cap past the planned per-slot context: the split-KV score scratch, sized by the cap, grows with
 // it, and the load says what the pool holds (the task doc's §5.16 banner).
 func (r *cudaResident) kvAfterRaise() error {
+	defer r.onLine(mem.LineKV)()
 	if r.ctxCap == r.kvShareCtx {
 		return nil
 	}

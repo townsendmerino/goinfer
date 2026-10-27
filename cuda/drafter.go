@@ -9,6 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 )
 
@@ -77,6 +78,7 @@ type drafterLayer struct {
 // against the target, not trusted: a drafter reads the target's residual stream, so a hidden-dim mismatch is the wrong
 // pairing, and the failure mode is a drafter that runs and drafts noise (docs/spec/08).
 func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDrafter, error) {
+	defer r.onLine(mem.LineCompanion)()
 	if rel, ok := w.(decoder.ReleasableDrafterWeights); ok && rel.HostWeightsReleased() {
 		return nil, fmt.Errorf("cuda drafter: the drafter's host weights were released after an earlier attach; load it again")
 	}
@@ -200,6 +202,7 @@ func (s drafterSrc) plan() (hostW, error) {
 // target's own activations are, so the result is not bit-identical to the CPU f32 path; the parity gate compares by
 // cosine.
 func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
+	defer d.r.onLine(mem.LineCompanion)()
 	n := len(rows)
 	if n == 0 {
 		return nil, fmt.Errorf("cuda drafter: empty context")
@@ -283,6 +286,7 @@ func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 // It is incremental by construction: it appends at ctxLen rather than rebuilding, which would re-prefill the whole
 // context on every block (TestDFlashDraftScaling).
 func (d *residentDrafter) ExtendContext(fused [][]float32) error {
+	defer d.r.onLine(mem.LineCompanion)()
 	n := len(fused)
 	if n == 0 {
 		return nil
@@ -444,6 +448,7 @@ func checkDrafterShmem(ctxLen, M int) error {
 // speculative verify accepts or rejects each draft token against the target's real logits whichever kernel drafted it;
 // it can only shift acceptance.
 func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
+	defer d.r.onLine(mem.LineCompanion)()
 	M := len(blockIn)
 	if M == 0 {
 		return nil, fmt.Errorf("cuda drafter: empty block")
@@ -637,6 +642,7 @@ func (r *cudaResident) BatchedCapture() [][]float32 { return r.capBOut }
 // own, which is why the pairing is fixed. The trunk's final norm is already applied, so this is head + argmax only,
 // batched (one read of the head's weights for all M rows).
 func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
+	defer d.r.onLine(mem.LineCompanion)()
 	M := len(trunk)
 	if M == 0 {
 		return nil, nil

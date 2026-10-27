@@ -72,9 +72,71 @@ type Device struct {
 	dev *gc.Device
 
 	mu     sync.Mutex
-	allocs []*gc.Buffer[uint8] // every device allocation handed out, for ReleaseAll
-	objs   []closer            // modules + streams, for ReleaseObjects
+	allocs []devAlloc // every device allocation handed out, for ReleaseAll
+	objs   []closer   // modules + streams, for ReleaseObjects
+	hosts  map[closer]func()
+	leaser Leaser // every allocation's lease (MM3); nil leases nothing
 }
+
+// devAlloc is one device allocation and its lease's release.
+type devAlloc struct {
+	b       *gc.Buffer[uint8]
+	release func()
+}
+
+// Leaser is told of every allocation the device makes (a device buffer, or pinned host memory when onDevice is false): its plan
+// line, the bytes asked for and the bytes the allocator takes. It returns the release, called once when the memory is freed. The
+// backend attaches it (SetLeaser) when it creates the device; this package keeps no account of its own.
+type Leaser interface {
+	Lease(onDevice bool, line string, requested, charged int64) (release func())
+}
+
+// SetLeaser attaches l; allocations after it are leased to it.
+func (d *Device) SetLeaser(l Leaser) {
+	d.mu.Lock()
+	d.leaser = l
+	d.mu.Unlock()
+}
+
+// Leaser is the attached leaser, or nil.
+func (d *Device) Leaser() Leaser {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.leaser
+}
+
+func (d *Device) lease(onDevice bool, line string, requested, charged int64) func() {
+	d.mu.Lock()
+	l := d.leaser
+	d.mu.Unlock()
+	if l == nil {
+		return func() {}
+	}
+	return l.Lease(onDevice, line, requested, charged)
+}
+
+// AllocQuantumBytes is the driver's allocation granularity, MEASURED (cuda/allocgran_test.go: 5 MiB -> 6, 6 -> 6, 9 -> 10, so
+// 2 MiB granular and not next-power-of-two).
+const AllocQuantumBytes = 2 << 20
+
+// ChargedBytes is what cuMemAlloc takes for a buffer of n bytes: one of a quantum or more rounds up to the next quantum; a smaller
+// one is charged at its size (the driver packs it into a shared page; docs/code-notes/cuda.md#allocRoundSlack). The plan's
+// rounding slack is this rule's excess, so the plan and the ledger price one figure.
+func ChargedBytes(n int64) int64 {
+	if n < AllocQuantumBytes {
+		return n
+	}
+	return (n + AllocQuantumBytes - 1) / AllocQuantumBytes * AllocQuantumBytes
+}
+
+// UnlinedLine is the plan line an allocation through an unlined constructor (MustBuf, NewBufferLenOf, NewHostBuffer, …) leases
+// on: empty, so unplanned. Production code calls the lined constructors (a source scan in the cuda module holds that); a test
+// package may set it to its test line for its own buffers.
+var UnlinedLine string
+
+// ReleasedForTest, when set, is called by ReleaseObjects after everything the device tracked is freed, so a test can read the
+// leaser's account then (I1, I2). A test seam, nil in production.
+var ReleasedForTest func(*Device)
 
 // closer is the shared shape of the non-buffer resources the Device tracks
 // (gc.Module, gc.Stream): both free driver-owned handles at Close.
@@ -162,6 +224,10 @@ func (d *Device) TrackObj(c closer) {
 func (d *Device) untrackObj(c closer) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if rel := d.hosts[c]; rel != nil {
+		rel()
+		delete(d.hosts, c)
+	}
 	for i, o := range d.objs {
 		if o == c {
 			d.objs[i] = d.objs[len(d.objs)-1]
@@ -179,8 +245,9 @@ func (d *Device) ReleaseAll() {
 	bufs := d.allocs
 	d.allocs = nil
 	d.mu.Unlock()
-	for _, b := range bufs {
-		_ = b.Close()
+	for _, a := range bufs {
+		_ = a.b.Close()
+		a.release()
 	}
 }
 
@@ -197,16 +264,22 @@ func (d *Device) ReleaseAll() {
 func (d *Device) ReleaseObjects() {
 	d.ReleaseAll()
 	d.mu.Lock()
-	objs := d.objs
-	d.objs = nil
+	objs, hosts := d.objs, d.hosts
+	d.objs, d.hosts = nil, nil
 	cx := d.cx
 	d.cx = nil
 	d.mu.Unlock()
 	for _, o := range objs {
 		_ = o.Close()
+		if rel := hosts[o]; rel != nil {
+			rel()
+		}
 	}
 	if cx != nil {
 		_ = cx.Close()
+	}
+	if ReleasedForTest != nil && cx != nil {
+		ReleasedForTest(d)
 	}
 }
 
@@ -221,7 +294,8 @@ func (d *Device) ReleaseBuf(b Buffer) {
 	}
 	d.mu.Lock()
 	for i, x := range d.allocs {
-		if x == b.b {
+		if x.b == b.b {
+			x.release()
 			d.allocs[i] = d.allocs[len(d.allocs)-1]
 			d.allocs = d.allocs[:len(d.allocs)-1]
 			break
@@ -340,6 +414,11 @@ func (b Buffer) Len() int { return b.n }
 // verbatim: an OOM must not surface downstream as garbage numerics. Consumers that
 // can degrade (a backend's init, an EnableGPU) recover the panic and fall back to CPU.
 func (d *Device) MustBuf(nBytes, n int, what string) Buffer {
+	return d.MustBufOn(UnlinedLine, nBytes, n, what)
+}
+
+// MustBufOn is MustBuf leasing the bytes on plan line line.
+func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	if d.cx == nil {
 		panic(fmt.Sprintf("cuda: allocation on a released device (%s, %d bytes)", what, nBytes))
 	}
@@ -347,8 +426,9 @@ func (d *Device) MustBuf(nBytes, n int, what string) Buffer {
 	if err != nil {
 		panic(fmt.Sprintf("cuda: device allocation failed (%s, %d bytes): %v", what, nBytes, err))
 	}
+	release := d.lease(true, line, int64(nBytes), ChargedBytes(int64(nBytes)))
 	d.mu.Lock()
-	d.allocs = append(d.allocs, buf)
+	d.allocs = append(d.allocs, devAlloc{b: buf, release: release})
 	d.mu.Unlock()
 	return Buffer{b: buf, cx: d.cx, n: n}
 }
@@ -447,6 +527,11 @@ func (d *Device) NewBufferLen(nFloats int) Buffer { return d.MustBuf(nFloats*4, 
 // size in raw bytes rather than float32s.
 func (d *Device) NewBufferBytes(n int) Buffer { return d.MustBuf(n, n, "bytes") }
 
+// NewBufferBytesOn is NewBufferBytes leasing the bytes on plan line line.
+func (d *Device) NewBufferBytesOn(line string, n int) Buffer {
+	return d.MustBufOn(line, n, n, "bytes")
+}
+
 // SetU32 overwrites a 1-word uniform buffer (per-call: rope pos, nKeys, a row count).
 func (b Buffer) SetU32(v uint32) error { return b.upload(asBytes([]uint32{v})) }
 
@@ -464,9 +549,12 @@ func (b Buffer) SetU32(v uint32) error { return b.upload(asBytes([]uint32{v})) }
 // NewBufferOf allocates a device buffer sized to data and uploads it. n for the
 // returned Buffer is len(data), in elements of T. Panics on allocation failure
 // (see MustBuf).
-func NewBufferOf[T Scalar](d *Device, data []T) Buffer {
+func NewBufferOf[T Scalar](d *Device, data []T) Buffer { return NewBufferOfOn(d, UnlinedLine, data) }
+
+// NewBufferOfOn is NewBufferOf leasing the bytes on plan line line.
+func NewBufferOfOn[T Scalar](d *Device, line string, data []T) Buffer {
 	var z T
-	b := d.MustBuf(len(data)*int(unsafe.Sizeof(z)), len(data), "typed")
+	b := d.MustBufOn(line, len(data)*int(unsafe.Sizeof(z)), len(data), "typed")
 	if err := b.upload(asBytes(data)); err != nil {
 		panic(fmt.Sprintf("cuda: NewBufferOf upload: %v", err))
 	}
@@ -476,9 +564,12 @@ func NewBufferOf[T Scalar](d *Device, data []T) Buffer {
 
 // NewBufferLenOf allocates an UNINITIALIZED device buffer of n elements of T (Metal's NewBufferLenOf is zero-filled; code shared across backends must not
 // rely on zeros).
-func NewBufferLenOf[T Scalar](d *Device, n int) Buffer {
+func NewBufferLenOf[T Scalar](d *Device, n int) Buffer { return NewBufferLenOfOn[T](d, UnlinedLine, n) }
+
+// NewBufferLenOfOn is NewBufferLenOf leasing the bytes on plan line line.
+func NewBufferLenOfOn[T Scalar](d *Device, line string, n int) Buffer {
 	var z T
-	return d.MustBuf(n*int(unsafe.Sizeof(z)), n, "typed-len")
+	return d.MustBufOn(line, n*int(unsafe.Sizeof(z)), n, "typed-len")
 }
 
 // Upload copies src into the buffer at its bind offset (host → device).
@@ -533,6 +624,11 @@ type HostBuffer[T Scalar] struct {
 // methods — Device.NewHostBuffer[T](n) is not expressible. Call it as
 // gpu.NewHostBuffer[float32](dev, vocab).
 func NewHostBuffer[T Scalar](d *Device, n int) (*HostBuffer[T], error) {
+	return NewHostBufferOn[T](d, UnlinedLine, n)
+}
+
+// NewHostBufferOn is NewHostBuffer leasing the bytes on plan line line, as host memory.
+func NewHostBufferOn[T Scalar](d *Device, line string, n int) (*HostBuffer[T], error) {
 	if d == nil || d.cx == nil {
 		return nil, fmt.Errorf("cuda: NewHostBuffer on a released device")
 	}
@@ -541,6 +637,15 @@ func NewHostBuffer[T Scalar](d *Device, n int) (*HostBuffer[T], error) {
 		return nil, fmt.Errorf("cuda: AllocHost(%d): %w", n, err)
 	}
 	d.TrackObj(h)
+	var z T
+	bytes := int64(n) * int64(unsafe.Sizeof(z))
+	release := d.lease(false, line, bytes, bytes)
+	d.mu.Lock()
+	if d.hosts == nil {
+		d.hosts = map[closer]func(){}
+	}
+	d.hosts[h] = release
+	d.mu.Unlock()
 	return &HostBuffer[T]{d: d, h: h}, nil
 }
 
@@ -582,9 +687,10 @@ func (h *HostBuffer[T]) Close() error {
 // kernels and dispatch are unchanged; only where the tensor is allocated differs. Close before the
 // owning Device.
 type MappedHostBuffer struct {
-	hb  *HostBuffer[uint8]        // origin: NewMappedHostBuffer (allocates, caller fills after)
-	rh  *gc.RegisteredHost[uint8] // origin: RegisterMappedHostBuffer (caller already filled, this pins in place)
-	buf Buffer
+	hb      *HostBuffer[uint8]        // origin: NewMappedHostBuffer (allocates, caller fills after)
+	rh      *gc.RegisteredHost[uint8] // origin: RegisterMappedHostBuffer (caller already filled, this pins in place)
+	buf     Buffer
+	release func() // RegisterMappedHostBuffer's pin's lease (NewMappedHostBuffer's is its HostBuffer's)
 }
 
 // NewMappedHostBuffer allocates nBytes of pinned, device-mapped host memory. Bytes() is the
@@ -601,6 +707,11 @@ type MappedHostBuffer struct {
 // (same bytes, same launch) before trusting them; a passing isolation test does not prove the
 // composed use.
 func (d *Device) NewMappedHostBuffer(nBytes int) (*MappedHostBuffer, error) {
+	return d.NewMappedHostBufferOn(UnlinedLine, nBytes)
+}
+
+// NewMappedHostBufferOn is NewMappedHostBuffer leasing the bytes on plan line line.
+func (d *Device) NewMappedHostBufferOn(line string, nBytes int) (*MappedHostBuffer, error) {
 	if d.cx == nil {
 		return nil, fmt.Errorf("cuda: NewMappedHostBuffer on a released device")
 	}
@@ -614,7 +725,7 @@ func (d *Device) NewMappedHostBuffer(nBytes int) (*MappedHostBuffer, error) {
 			return nil, fmt.Errorf("cuda: NewMappedHostBuffer needs UNIFIED_ADDRESSING (zero-copy host reads)")
 		}
 	}
-	hb, err := NewHostBuffer[uint8](d, nBytes)
+	hb, err := NewHostBufferOn[uint8](d, line, nBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -645,6 +756,12 @@ func (d *Device) NewMappedHostBuffer(nBytes int) (*MappedHostBuffer, error) {
 //
 // Errors (not panics) so a caller can fall back to NewMappedHostBuffer, same convention as it.
 func (d *Device) RegisterMappedHostBuffer(data []byte) (*MappedHostBuffer, error) {
+	return d.RegisterMappedHostBufferOn(UnlinedLine, data)
+}
+
+// RegisterMappedHostBufferOn is RegisterMappedHostBuffer leasing the pinned bytes on plan line line, as host memory. The pin is not
+// tracked by the device, so its lease stays open until Close: a pin left open past ReleaseObjects shows as an open lease there.
+func (d *Device) RegisterMappedHostBufferOn(line string, data []byte) (*MappedHostBuffer, error) {
 	if d.cx == nil {
 		return nil, fmt.Errorf("cuda: RegisterMappedHostBuffer on a released device")
 	}
@@ -661,7 +778,8 @@ func (d *Device) RegisterMappedHostBuffer(data []byte) (*MappedHostBuffer, error
 		return nil, fmt.Errorf("cuda: RegisterHost(%d bytes): %w", len(data), err)
 	}
 	dptr := cudasys.CUdeviceptr(uintptr(unsafe.Pointer(&data[0])))
-	return &MappedHostBuffer{rh: rh, buf: Buffer{cx: d.cx, n: len(data), raw: dptr}}, nil
+	release := d.lease(false, line, int64(len(data)), int64(len(data)))
+	return &MappedHostBuffer{rh: rh, buf: Buffer{cx: d.cx, n: len(data), raw: dptr}, release: release}, nil
 }
 
 // Bytes is the host-writable backing memory — fill it with the tensor's bytes before launch.
@@ -694,6 +812,10 @@ func (m *MappedHostBuffer) Close() error {
 		return nil
 	}
 	if m.rh != nil {
+		if m.release != nil {
+			m.release()
+			m.release = nil
+		}
 		return m.rh.Close()
 	}
 	return m.hb.Close()

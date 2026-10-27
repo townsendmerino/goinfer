@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
@@ -91,6 +92,7 @@ func (r *cudaResident) prefillMoEExpertMajorEligible(Ly *cudaLayer) bool {
 // an error rather than declining (loadRoutedExperts's propagate-don't-swallow convention): a mid-chunk failure has
 // nowhere safe to fall back to without redoing routing.
 func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly *cudaLayer, xB Buffer, M, hidden int) error {
+	defer r.onLine(mem.LineScratch)()
 	st := &moeExpertMajorState{M: M, hidden: hidden, moeInter: r.moeInter, topK: r.topK}
 	var scratch []Buffer
 	af := func(n int) Buffer { b := r.af(n); scratch = append(scratch, b); return b }

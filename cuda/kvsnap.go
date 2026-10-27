@@ -8,6 +8,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 var (
@@ -216,7 +217,7 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	if err := r.stream.Sync(); err != nil { // the prefill that wrote the rows has finished
 		return nil, err
 	}
-	host, err := gpu.NewHostBuffer[float32](r.dev, words)
+	host, err := gpu.NewHostBufferOn[float32](r.dev, mem.LineKV, words)
 	if err != nil {
 		return nil, &decoder.KVCopyDecline{Reason: fmt.Sprintf("no pinned host memory for %d MiB: %v", int64(words)*4>>20, err)}
 	}
