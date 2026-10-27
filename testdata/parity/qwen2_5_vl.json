@@ -8,6 +8,9 @@
     "decoder/arch_qwen2_5_vl.go",
     "decoder/arch_qwen2.go"
   ],
+  "programs": [
+    "testdata/qwen25vl-tiny"
+  ],
   "deps_hash": "sha256:c0e9050eeba029ca696d002847798d8b7591463a6d328b02b11279d827b2f993",
   "status": "validated",
   "validated_at": "7b50947a",

@@ -8,6 +8,9 @@
   "own": [
     "decoder/arch_mixtral.go"
   ],
+  "programs": [
+    "testdata/mixtral-tiny"
+  ],
   "deps_hash": "sha256:90d5a991b163043831deb73a5e387fe34f024a1cc83a969ae0096d35a410e134",
   "status": "experimental",
   "validated_at": "7b50947a",

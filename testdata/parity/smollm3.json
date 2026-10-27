@@ -7,6 +7,9 @@
   "own": [
     "decoder/arch_smollm3.go"
   ],
+  "programs": [
+    "testdata/smollm3-tiny"
+  ],
   "deps_hash": "sha256:648ec95d3fd4d6f9b99926c681a446a99e5b758af0998380a96ed700c1e4949e",
   "status": "validated",
   "validated_at": "7b50947a",

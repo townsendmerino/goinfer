@@ -9,6 +9,10 @@
     "decoder/arch_gemma4.go",
     "decoder/forward_gemma4_moe.go"
   ],
+  "programs": [
+    "testdata/gemma4-moe-kv-tiny",
+    "testdata/gemma4-moe-kv-tiny32"
+  ],
   "deps_hash": "sha256:613d6ff56d8e404baf45a765b4cc068bd7e89dd453870af73edce1fed035f532",
   "status": "validated",
   "validated_at": "310a2e44",

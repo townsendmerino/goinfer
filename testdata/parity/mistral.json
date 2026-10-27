@@ -7,6 +7,9 @@
   "own": [
     "decoder/arch_mistral.go"
   ],
+  "programs": [
+    "testdata/mistral-tiny-window"
+  ],
   "deps_hash": "sha256:5aed0019eabf27128791625cef4cfd77077d42d1a178fedf446a6899da0039d9",
   "status": "validated",
   "validated_at": "7b50947a",

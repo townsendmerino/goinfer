@@ -8,6 +8,9 @@
     "decoder/arch_qwen3_asr.go",
     "decoder/arch_qwen3.go"
   ],
+  "programs": [
+    "testdata/qwen3asr-tiny"
+  ],
   "deps_hash": "sha256:0df32d67c6701f863dfdade3e467f6b86cbfe3e4d78cd1485c9b75f06a7ac859",
   "status": "validated",
   "validated_at": "4f84f2c1",
