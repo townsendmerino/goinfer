@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -53,20 +54,22 @@ var hiddenCalls = []struct {
 	kind string
 	re   *regexp.Regexp
 }{
-	{hiddenExec, regexp.MustCompile(`\bexec\.Command(Context)?\(|\bos\.StartProcess\(|\bsyscall\.(Exec|ForkExec)\(`)},
-	{hiddenEnviron, regexp.MustCompile(`\bos\.Environ\(|\bsyscall\.(Getenv|Environ)\(`)},
-	{hiddenFiles, regexp.MustCompile(`\bos\.(UserHomeDir|UserCacheDir|UserConfigDir|TempDir|Hostname|Executable)\(|\bAssetPathForTest\(`)},
-	{hiddenNet, regexp.MustCompile(`\bnet\.(Dial|Listen)|\bhttp\.(Get|Post|Head|PostForm)\(|\bhttp\.(Client|DefaultClient)\b`)},
-	{hiddenTiming, regexp.MustCompile(`\btime\.(Since|Until|Now|After|AfterFunc|NewTimer|NewTicker|Tick|Sleep)\b|\bcontext\.With(Timeout|Deadline)\b|\btesting\.Benchmark\b`)},
+	{hiddenExec, regexp.MustCompile(`\bexec\.\w|\bos\.(StartProcess|FindProcess)\b|\bsyscall\.(Exec|ForkExec|StartProcess)\b`)},
+	{hiddenEnviron, regexp.MustCompile(`\bos\.Environ\b|\bsyscall\.(Getenv|Environ)\b`)},
+	{hiddenFiles, regexp.MustCompile(`\bos\.(UserHomeDir|UserCacheDir|UserConfigDir|TempDir|Hostname|Executable)\b|\bAssetPathForTest\b`)},
+	{hiddenNet, regexp.MustCompile(`\bnet\.(Dial|Listen)\w*|\bhttp\.(Get|Post|Head|PostForm|Client|DefaultClient)\b`)},
+	{hiddenTiming, regexp.MustCompile(`\btime\.(Since|Until|Now|After|AfterFunc|NewTimer|NewTicker|Tick|Sleep)\b|\bcontext\.With(Timeout|Deadline)\w*|\btesting\.Benchmark\b`)},
 }
 
 // systemDirs names the absolute roots, below "/", that a string literal may name and that lie outside any module. They are
 // written without the slash so that this list does not read as such a path itself.
-var systemDirs = []string{"Users", "home", "proc", "sys", "tmp", "dev", "var", "private", "opt", "etc", "Library", "Volumes", "srv", "mnt"}
+var systemDirs = []string{"Users", "home", "proc", "sys", "tmp", "dev", "var", "private", "opt", "etc", "Library", "Volumes", "srv",
+	"mnt", "System", "usr", "bin", "sbin", "run", "root", "Applications", "lib", "cores", "nix", "snap", "media"}
 
-// fileHidden returns a file's hidden reads; how many directories its relative paths can climb (the leading "../"
-// segments of a string literal, summed over literals passed together as Join's arguments are); and whether it locates
-// files by runtime.Caller, which yields paths in its own module.
+// fileHidden returns a file's hidden reads; how many directories its relative paths can climb; and whether it locates files
+// by runtime's caller frames, which yield paths in its own module. The climb is the sum, over every string literal, of the
+// leading ".." segments of its cleaned value: an upper bound on any path the file builds from its literals, however they
+// are joined, concatenated or passed through variables.
 func fileHidden(name string, src []byte) (kinds map[string]bool, climb int, caller bool) {
 	kinds = map[string]bool{}
 	code := compactCode(name, src)
@@ -75,46 +78,35 @@ func fileHidden(name string, src []byte) (kinds map[string]bool, climb int, call
 			kinds[h.kind] = true
 		}
 	}
-	caller = strings.Contains(code, "runtime.Caller(")
+	caller = regexp.MustCompile(`\bruntime\.Caller`).MatchString(code)
 	fset := token.NewFileSet()
 	var sc scanner.Scanner
 	sc.Init(fset.AddFile(name, -1, len(src)), src, nil, 0)
-	run := 0 // the climb of the literals passed together so far, as Join("..", "..", "x") takes them
+	parent := strings.Repeat(".", 2) // written so that this file's own literals do not count as a climb
 	for {
 		_, tok, lit := sc.Scan()
 		if tok == token.EOF {
 			break
 		}
-		if tok == token.COMMA {
-			continue
-		}
 		if tok != token.STRING {
-			run = 0
 			continue
 		}
 		v, err := strconv.Unquote(lit)
-		if err != nil {
-			run = 0
+		if err != nil || v == "" {
 			continue
 		}
+		c := path.Clean(v)
 		for _, d := range systemDirs {
-			if v == "/"+d || strings.HasPrefix(v, "/"+d+"/") {
+			if c == "/"+d || strings.HasPrefix(c, "/"+d+"/") {
 				kinds[hiddenFiles] = true
 			}
 		}
-		n, rest := 0, strings.TrimPrefix(v, "./")
-		for ; strings.HasPrefix(rest, "../"); rest = rest[3:] {
-			n++
+		for _, seg := range strings.Split(c, "/") {
+			if seg != parent {
+				break
+			}
+			climb++
 		}
-		if rest == ".." {
-			n++
-		}
-		if n == 0 {
-			run = 0
-			continue
-		}
-		run += n
-		climb = max(climb, run)
 	}
 	return kinds, climb, caller
 }
@@ -166,7 +158,7 @@ type pkgScan struct {
 	imports          map[string]bool
 	testImports      map[string]bool
 	depth            int  // directories from its module's root to it
-	climb, climbProd int  // the most its relative paths can climb (fileHidden), in all its files / its non-test files
+	climb, climbProd int  // the most its relative paths can climb (fileHidden's bound, summed over files), in all its files / its non-test files
 	callerProd       bool // a non-test file locates files by runtime.Caller
 }
 
@@ -229,9 +221,10 @@ func scanTestCacheAt(t *testing.T, repoRoot string) map[string]*pkgScan {
 		for kind := range kinds {
 			mark(kind)
 		}
-		p.climb = max(p.climb, climb)
+		// Summed across the package's files: a path constant in one file can be joined in another.
+		p.climb += climb
 		if !test {
-			p.climbProd = max(p.climbProd, climb)
+			p.climbProd += climb
 			p.callerProd = p.callerProd || caller
 		}
 		for _, im := range f.Imports {
@@ -471,14 +464,26 @@ func TestFileHidden_markers(t *testing.T) {
 		climb  int
 		caller bool
 	}{
-		{`_ = filepath.Join("..", "x")`, "", 1, false},
-		{`_ = filepath.Join("..", "..", "x")`, "", 2, false},
-		{`_ = filepath.Join("..", "../..", "x")`, "", 3, false},
-		{`if v == ".." || w == ".." { }`, "", 1, false},
-		{`_, _ = os.Open("..")`, "", 1, false},
-		{"_ = `../../a`", "", 2, false},
-		{`_ = "./../b"`, "", 1, false},
-		{`const repoRoot = "../../.."`, "", 3, false},
+		{`_ = filepath.Join("UP", "x")`, "", 1, false},
+		{`_ = filepath.Join("UP", "UP", "x")`, "", 2, false},
+		{`_ = filepath.Join("UP", "UP/UP", "x")`, "", 3, false},
+		{`if v == "UP" || w == "UP" { }`, "", 2, false},
+		{`_ = "a/UP/UP/b"`, "", 1, false},
+		{`_ = "././UP/b"`, "", 1, false},
+		{`_ = filepath.Join("UP", ".", "UP")`, "", 2, false},
+		{`_ = filepath.Join("UP", "UP", "a", "UP", "UP")`, "", 4, false},
+		{`_ = "UP/" + "UP/x"`, "", 2, false},
+		{`base := "UP/UP"; _ = filepath.Join(base, "UP")`, "", 3, false},
+		{`_ = "/./proc/meminfo"`, hiddenFiles, 0, false},
+		{`_ = "/System/Library/x"`, hiddenFiles, 0, false},
+		{`_, _ = context.WithTimeoutCause(nil, 1, nil)`, hiddenTiming, 0, false},
+		{`f := exec.Command; _ = f`, hiddenExec, 0, false},
+		{`_ = runtime.Callers(0, nil)`, "", 0, true},
+		{`f := runtime.Caller; _ = f`, "", 0, true},
+		{`_, _ = os.Open("UP")`, "", 1, false},
+		{"_ = `UP/UP/a`", "", 2, false},
+		{`_ = "./UP/b"`, "", 1, false},
+		{`const repoRoot = "UP/UP/UP"`, "", 3, false},
 		{"_ = \"time.Now() exec.Command(\\\"x\\\")\"", "", 0, false},
 		{`_ = filepath.Join("/proc", "meminfo")`, hiddenFiles, 0, false},
 		{`_, _ = os.ReadDir("/tmp")`, hiddenFiles, 0, false},
@@ -493,10 +498,11 @@ func TestFileHidden_markers(t *testing.T) {
 		{`_, _ = exec.Command("git").Output()`, hiddenExec, 0, false},
 		{`_, _, _, _ = runtime.Caller(0)`, "", 0, true},
 		{`_, _ = os.ReadFile("testdata/x.json")`, "", 0, false},
-		{`_ = "a/../b"`, "", 0, false},
+		{`_ = "a/UP/b"`, "", 0, false},
 	}
 	for _, c := range cases {
-		src := []byte("package x\n\nfunc f() {\n\t" + c.code + "\n}\n")
+		// The table writes each ".." as UP, so that its own literals do not read as climbing paths to the scan of this package.
+		src := []byte("package x\n\nfunc f() {\n\t" + strings.ReplaceAll(c.code, "UP", strings.Repeat(".", 2)) + "\n}\n")
 		kinds, climb, caller := fileHidden("x.go", src)
 		if c.kind != "" && !kinds[c.kind] {
 			t.Errorf("%s: kinds %v, want %q", c.code, kinds, c.kind)

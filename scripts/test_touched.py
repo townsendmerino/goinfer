@@ -46,6 +46,17 @@ class CountFlagFollowsTheTestCacheData(unittest.TestCase):
         c = self.data('{"declared": {"internal/f16": ["timing"]}, "packages": {"internal/f16": {"cacheable": true}}}')
         self.assertEqual(touched.count_flag("internal/f16", c), ["-count=1"])
 
+    def test_a_declaration_on_an_already_uncacheable_package_not_yet_applied_keeps_it_everywhere(self):
+        # internal/f16 was already non-cacheable for its own test file; its importer's entry predates the declaration.
+        c = self.data('{"declared": {"internal/f16": ["timing"]}, "packages": {"internal/f16": {"cacheable": false, "reasons": ["a subprocess"]}, "internal/towerid": {"cacheable": true}}}')
+        self.assertEqual(c, set())
+        c = self.data('{"declared": {"internal/gone": ["timing"]}, "packages": {"internal/towerid": {"cacheable": true}}}')
+        self.assertEqual(c, set())
+
+    def test_an_applied_declaration_is_trusted(self):
+        c = self.data('{"declared": {"internal/f16": ["timing"]}, "packages": {"internal/f16": {"cacheable": false, "reasons": ["timing"]}, "internal/towerid": {"cacheable": false, "reasons": ["timing (through internal/f16)"]}, "internal/giw": {"cacheable": true}}}')
+        self.assertEqual(c, {"internal/giw"})
+
     def test_a_declared_reason_not_yet_applied_keeps_it_everywhere(self):
         # internal/towerid may import internal/f16; the data was not regenerated after the declaration, so trust no entry.
         c = self.data('{"declared": {"internal/f16": ["timing"]}, "packages": {"internal/f16": {"cacheable": true}, "internal/towerid": {"cacheable": true}}}')
