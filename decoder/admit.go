@@ -1,10 +1,8 @@
 package decoder
 
-// AdmitFacts is everything the decoder's resident admission reads. Admit reads nothing else: no device and no Model. One input
-// is the arch's own: granite's bring-up gate reads GOINFER_SSM_RESIDENT through the arch's knob snapshot, and an arch built
-// without one (the matrices') falls back to the environment, which their generators pin empty
-// (docs/code-notes/decoder.md#ResidentEligible). A Model supplies the facts with admitFacts; the hardware and capability matrices
-// supply the arch and the backend alone.
+// AdmitFacts is everything the decoder's resident admission reads. Admit reads nothing else: no device, no Model and no
+// environment. A Model supplies the facts with admitFacts; the hardware and capability matrices supply them with archAdmitFacts,
+// from the arch and the backend alone.
 type AdmitFacts struct {
 	Arch        *Architecture
 	Backend     string // the backend's name, as Backend.Name reports it
@@ -14,10 +12,12 @@ type AdmitFacts struct {
 	BackendAuto bool   // the backend was chosen by -backend auto
 	ActGroup    int    // Options.ActQuantGroup
 	ProjsInt4   bool   // the resident projections load as int4 (Model.residentProjsInt4)
-	SSMResident bool   // the GOINFER_SSM_RESIDENT knob is set for this load
+	SSMResident bool   // the GOINFER_SSM_RESIDENT knob is set for this load: Granite's bring-up gate, Nemotron-H's int8 opt-in
 }
 
 // Admission is Admit's answer: whether the backend may build its resident path, and the gates the published matrices print.
+// Why is the load's answer and reads every fact; Shape and Gates are the arch's and the backend's, and read neither the precision
+// policy nor a backend's override of the runner shape. A model-free caller (the matrices) reads Shape and Gates, not Why.
 type Admission struct {
 	// Why is "" when the backend may build; otherwise the first refusal, in the order the load applies the gates.
 	Why string
@@ -36,7 +36,7 @@ func Admit(f AdmitFacts) Admission {
 	if isWebGPUBackend(key) {
 		key = "webgpu"
 	}
-	ad := Admission{Shape: f.Arch.runnerShapeDecline()}
+	ad := Admission{Shape: f.Arch.runnerShapeDeclineSSM(f.SSMResident)}
 	if _, declared := residentBackendFeatures[key]; declared {
 		ad.Gates = residentGateReasons(f.Arch, key, admitActSafe(f, key))
 	}
@@ -117,6 +117,12 @@ func admitRunner(f AdmitFacts, shape string) string {
 		return "Nemotron-H runs resident with int4 projections only by default (load with Quant int4, or set GOINFER_SSM_RESIDENT to allow int8)"
 	}
 	return ""
+}
+
+// archAdmitFacts is the facts of a model-free question, from the arch and the backend alone: a load with the default options on
+// a backend that builds residents, and the GOINFER_SSM_RESIDENT knob as the arch reads it.
+func archAdmitFacts(a *Architecture, backend string) AdmitFacts {
+	return AdmitFacts{Arch: a, Backend: backend, Residency: true, SSMResident: a.ssmResidentKnob()}
 }
 
 // admitFacts gathers the facts Admit reads from a loaded model.

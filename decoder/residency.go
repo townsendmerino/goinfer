@@ -568,7 +568,7 @@ func (m *Model) DecodeRunnerEligible() bool { return m.decodeRunnerDecline() == 
 // runner supports and the load-time precision policy admits it.
 func (m *Model) decodeRunnerDecline() string {
 	f := m.admitFacts()
-	return admitRunner(f, f.Arch.runnerShapeDecline())
+	return admitRunner(f, f.Arch.runnerShapeDeclineSSM(f.SSMResident))
 }
 
 // actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
@@ -623,8 +623,18 @@ const (
 
 // runnerShapeDecline is decodeRunnerEligible with its reason: "" when the uniform-layer resident runners can express
 // the arch's shape. It is the first of the admission gates and says nothing about the later ones, so a caller that
-// reports why a model is not resident reads residentGateReasons as well.
+// reports why a model is not resident reads residentGateReasons as well. It reads GOINFER_SSM_RESIDENT from the arch's knob
+// snapshot, or the environment for an arch built without one.
 func (a *Architecture) runnerShapeDecline() string {
+	return a.runnerShapeDeclineSSM(a.ssmResidentKnob())
+}
+
+// ssmResidentKnob reports whether GOINFER_SSM_RESIDENT is set for this arch: its knob snapshot, or the environment for an arch
+// built without one.
+func (a *Architecture) ssmResidentKnob() bool { return a.knobs.get(knobSSMResident) != "" }
+
+// runnerShapeDeclineSSM is runnerShapeDecline with the GOINFER_SSM_RESIDENT knob given (ssmResident), not read: Admit's form.
+func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
 	// Own-forward families (their non-uniform forward the uniform-layer runners can't express).
 	// Only Gemma 4 (dense, env-gated) is bridged so far; the rest keep the staged path. A
 	// bridged family does NOT early-return true — it FALLS THROUGH to the common feature/shape
@@ -663,7 +673,7 @@ func (a *Architecture) runnerShapeDecline() string {
 	// attention), so it bypasses the standard GQA gates below. Guarded during the
 	// parity bring-up (P5b.3/P5b.4); P6 makes this unconditional.
 	if a.granite != nil {
-		if a.knobs.get(knobSSMResident) == "" {
+		if !ssmResident {
 			return runnerShapeBringUp
 		}
 		return ""
