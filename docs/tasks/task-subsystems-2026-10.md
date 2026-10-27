@@ -2036,6 +2036,29 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   every new citation edits it: keep the check, and store the expected subjects per citing doc. CHANGELOG fragments per
   change, assembled at release. Parity records per family (VK3). The `docs/README.md` counts written by
   `scripts/task_docs.py`, which already recounts them (on 2026-10-26 it found the design-record count one short).
+  **PW3, measured and gated (registered 2026-10-27 11:11 PDT by mac-ax01, before PW3's code; Francis 11:08: "next for you is PW3"):**
+
+  | file | commits, last 30 days | last 7 days | what drives them now |
+  |---|---:|---:|---|
+  | `docs/citation-index.md` | 240 | 1 | since CC0 closed the door (2026-10-09) it holds only `docs/QUEUE.md`'s commit and bare-file citations: 2 commits since |
+  | `CHANGELOG.md` | 280 | 12 | an entry per user-visible change |
+  | `docs/README.md` | 90 | 9 | a doc's entry and the two counts `task_docs.py` rewrites |
+  | `testdata/parity_manifest.json` | — | — | gone: VK3 split it into `testdata/parity/` |
+
+  - **`docs/citation-index.md`: no change.** It stopped being hot when the path index went (CC0); sharding it would add
+    machinery for two commits a fortnight.
+  - **`CHANGELOG.md`: a decision for Francis.** Fragments per change, assembled at release, change how the file reads on
+    `main` between releases.
+  - **`docs/README.md`'s counts: removed from the file.** Two PRs that each add a task doc both rewrite the count to N+1.
+    Git merges that without a conflict, because the edits are identical, and the result is one short. An add beside an
+    archive conflicts. The two headings drop their numbers, and `task_docs.py check` reports the counts from the tree
+    instead of comparing them with the README.
+
+  | gate | rule | void when | stopping rule | cost basis |
+  |---|---|---|---|---|
+  | PW3-R1 (parallel adds merge) | In a scratch clone, two branches off the same base each add a design record the way a session does (the doc, then `task_docs.py`'s recount where it applies). Merged one after the other: at the base, the README's count comes out wrong (or the merge conflicts). After the change, both merges are clean and `task_docs.py check` is clean. | — | once each side | seconds |
+  | PW3-R2 (nothing else moves) | `task_docs.py check` exits 0 and prints the counts it used to compare. The README's only diff is the two headings' numbers. `archive` still runs. The citation and book-link lints pass. | — | complete | seconds |
+
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
 
