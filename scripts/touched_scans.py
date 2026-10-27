@@ -191,7 +191,7 @@ SCANS = [
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # K3 checks that no production file names an entry point its exclusions call uncalled, against the census's predicates.
     Scan("internal/kernelprint", "TestCompute_reachesCensus", TREE_NT + F("docs/hardware-coverage.json")),
-    Scan("internal/kernelprint", "TestCompute_table", F("testdata/kernel_fingerprints.json")),
+    Scan("internal/kernelprint", "TestCompute_table", F("testdata/kernel_fingerprints.json", "go.mod", "go.sum")),
 ]
 
 # Tests that read Go source but are not selected here, each with the reason. A new reader goes in SCANS or here.
