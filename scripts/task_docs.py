@@ -8,7 +8,7 @@
 
 WHY THIS EXISTS. Closing a task doc is half judgment (is every item shipped, killed or owned elsewhere?) and half
 ritual (`.claude/skills/doc-review/SKILL.md` §3: the ARCHIVED header copied verbatim, a dated status block, `git mv`,
-every live reference re-pointed or a pointer stub left, `docs/README.md` recounted, the citation lint run). The ritual
+every live reference re-pointed or a pointer stub left, the citation lint run). The ritual
 is where the slips are. On 2026-10-21, 11 of the 136 archived docs had no ARCHIVED header, among them the five most
 recent archives (2026-10-04 to 2026-10-11), each done by hand by a careful agent; and the README's design-record count
 was kept by incrementing, not counting. This script does the ritual and leaves the judgment to the reviewer:
@@ -74,8 +74,6 @@ REFDEF_RE = re.compile(r"^(\s*\[[^\]\n]+\]:\s*)(\S+)", re.M)  # [label]: target
 TICK_RE = re.compile(r"`([^`\n]+\.md(?:#[^`\n]*)?)`")  # `path/to/doc.md` in prose
 GENERATED_RE = re.compile(r"(?i)generated(\*\*)? (by|from)|do not edit")  # in a doc's first lines
 REGEN_RE = re.compile(r"go test [^`\n—]*?-update")
-DESIGN_RE = re.compile(r"^(## Design records — `task-\*\.md` \()(\d+): (\d+) in `tasks/`, (\d+) in `tasks/parked/`\)", re.M)
-ARCHIVE_RE = re.compile(r"^(## Archive — `completed/` \()(\d+)\)", re.M)
 
 
 def git(*args: str, check: bool = True) -> str:
@@ -314,12 +312,6 @@ def archive_count() -> int:
     return len(list((ROOT / COMPLETED).iterdir()))  # the skill's `ls docs/completed | wc -l`
 
 
-def recount_readme(text: str) -> str:
-    total, in_tasks, in_parked = actual_counts()
-    text = DESIGN_RE.sub(lambda m: f"{m.group(1)}{total}: {in_tasks} in `tasks/`, {in_parked} in `tasks/parked/`)", text)
-    return ARCHIVE_RE.sub(lambda m: f"{m.group(1)}{archive_count()})", text)
-
-
 def references(rel: str) -> list[str]:
     """Tracked text files, frozen records excluded, that point at rel by repo path or by a relative link."""
     out = []
@@ -363,18 +355,12 @@ def cmd_check(a) -> int:
             print(f"  {ledger_summary(read(p)):34}  {p}")
     print(f"  {without} of {len(live)} live docs have no ledger")
 
-    text = read("docs/README.md")
-    print("\ndocs/README.md counts (recounted from the tree; pointer stubs are not design records):")
-    m = DESIGN_RE.search(text)
-    if m:
-        claimed, actual = tuple(map(int, m.groups()[1:])), actual_counts()
-        problems += claimed != actual
-        print(f"  design records: README says {claimed[0]} ({claimed[1]} + {claimed[2]}), tree has {actual[0]} "
-              f"({actual[1]} + {actual[2]}), plus {len(stubs_on_disk())} pointer stubs" + ("" if claimed == actual else "  <- recount"))
-    m = ARCHIVE_RE.search(text)
-    if m:
-        problems += int(m.group(2)) != archive_count()
-        print(f"  archive: README says {m.group(2)}, tree has {archive_count()}" + ("" if int(m.group(2)) == archive_count() else "  <- recount"))
+    # The counts are printed, not stored: docs/README.md carried them, and two PRs that each added a doc merged to a
+    # count one short with no conflict (task-subsystems-2026-10.md, PW3).
+    total, in_tasks, in_parked = actual_counts()
+    print("\nDesign records and the archive, counted from the tree (pointer stubs are not design records):")
+    print(f"  design records: {total} ({in_tasks} in tasks/, {in_parked} in tasks/parked/), plus {len(stubs_on_disk())} pointer stubs")
+    print(f"  archive: {archive_count()} in completed/")
 
     print("\nPointer stubs, and how many live files still use the old path:")
     for rel in stubs_on_disk():
@@ -582,9 +568,7 @@ def cmd_archive(a) -> int:
     subprocess.run(["git", "mv", old, new], cwd=ROOT, check=True)
     for f, out in planned.items():
         (ROOT / f).write_text(out, encoding="utf-8")
-    readme = read("docs/README.md")
-    (ROOT / "docs/README.md").write_text(recount_readme(readme), encoding="utf-8")
-    changed = sorted(set(planned) | {"docs/README.md"} | ({old} if keep_stub else set()))
+    changed = sorted(set(planned) | ({old} if keep_stub else set()))
     lint = subprocess.run([sys.executable, "scripts/queue_citation_lint.py"], cwd=ROOT)
     print(f"\ncitation lint exit {lint.returncode}" + ("" if lint.returncode == 0 else
           " — read it; rows keyed to the moved doc are refreshed by `--update`, never by deleting a citation"))
