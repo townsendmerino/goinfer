@@ -69,7 +69,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
-| PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
+| PW2 | done | decided 2026-10-27: OS jobs stay required; revisit if one job becomes the long pole by several minutes (Francis 13:19; after PW2a the slowest PR job was about 14 minutes and spread across Windows, `test-rest`, `test-decoder-d` and `gpu-darwin`, so moving Windows to nightly would save 0–2 minutes); S | §12; `docs/measurements/ci-tail-2026-10-27.md` §4a |
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
@@ -2272,6 +2272,10 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
 - **PW2.** Run `root-darwin`, `root-windows`, `root-windows-arm64`, `root-linux-arm64`, `gpu-darwin` and
   `metal-darwin` after merge, or only when their paths change, and keep them out of the required checks. The
   40–45-minute runs were these runners queueing (§1.4). They still gate tags through `gate release`.
+  **Decided 2026-10-27 (Francis, 13:19): the OS jobs stay required; revisit if one job becomes the long pole by several
+  minutes.** After PW2a, the five PR runs' last jobs finished 11.5–17.1 minutes in (median 14.6), with the last job
+  varying between `root-windows`, `test-rest`, `test-decoder-d` and `gpu-darwin` according to which runners queued,
+  so taking the Windows jobs out would save 0–2 minutes (`docs/measurements/ci-tail-2026-10-27.md` §4a).
 - **PW2a (2026-10-27, Francis 11:14).** `test-decoder-tail` finished 19–22 minutes into a PR run, against 11–12 for the
   Windows jobs: MM1's two census tests (`TestDecisionCensus`, `TestDecisionCensus_secondProcess`) landed in it and take
   658 s of its 1,130 s under -race (`docs/measurements/ci-tail-2026-10-27.md`). They move to their own steps in
