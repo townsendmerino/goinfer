@@ -1860,27 +1860,30 @@ decisions:
   - **per tiny fixture × option cell × backend:** the outcome of a real `Load` with that backend name, a fake resident
     backend standing in for cuda, metal and webgpu that builds whatever it is asked to, so the record is the decoder's
     own decision: the load's error or success, whether the resident build was reached (admitted) or the decline's
-    reason, and `DecodePath`; on cpu also `PrefillPath`, `canBatchN(2)`, the CPU-batch model eligibility,
-    `CPUConcurrentSafe`, `specRollbackSafe` and the KV precision reports. Option cells: Quant int4, int8int8 and f32,
-    each with ActQuantGroup 0 and 32, and int4 with the `GOINFER_SSM_RESIDENT` knob set;
+    reason, `DecodePath` and the KV precision reports; on cpu also `PrefillPath`, `canBatchN(2)`, the CPU-batch model
+    eligibility, `CPUConcurrentSafe` and `specRollbackSafe`. Option cells: Quant int4, int8int8 and f32, each with
+    ActQuantGroup 0 and 32; int4 with the `GOINFER_SSM_RESIDENT` knob set; int4 with KVPrecision f16; int4 with KVQuant
+    i8. The startup self-test is off for these loads (it runs a backend's kernels on its device: layer B);
   - **backend choice:** `autoBackend` for each `testdata/machines` profile (its own goarch and free bytes) × each
-    linked set (cpu; cpu+cuda; cpu+metal; cpu+cuda+metal).
-  The golden is the full text, gzipped (`testdata/sb2_admission_census.txt.gz`), so a diff names the cell; the run is
-  repeated in-process and must agree with itself. Host-independent by construction: every machine reading and goarch
-  comes from the profile, and nothing reads `runtime.GOOS`.
+    linked set (cpu; cpu+cuda; cpu+metal; cpu+cuda+metal; cpu+webgpu).
+  The golden is the full text, gzipped, one per architecture (`testdata/sb2_admission_census.<goarch>.txt.gz`: the
+  CPU's int4 layout is a repack on arm64, a decision that differs by GOARCH), so a diff names the cell; the run is
+  repeated in-process and must agree with itself; an architecture with no golden fails and prints its census for
+  recording. No reading of the machine enters a line: backend choice reads the profile's goarch and free bytes, and the
+  loads read a fixed fake probe (64 GiB, 48 GiB available), so the fit guards proceed.
 - **Layers B (later steps, in the backend modules):** each backend's `BuildResident` decisions and device routes, with
   every live read replaced by a profile input through the backend's existing seams: CUDA and WebGPU on nobara, Metal on
   the Mac. Registered here; each gets its own registration of cells before its code.
 - **Then the pure function.** `Admit` must reproduce layer D with the census unchanged, and `docs/hardware-matrix.md` and
   `docs/capability-matrix.json` generated from it must equal the committed files byte for byte. **Void:** none
   (deterministic). **Stopping rule:** any change to a recorded decision stops with DECISION NEEDED. **Cost basis:**
-  measured: about 6 s for the census built twice (1,746 lines).
-- **Layer D landed (2026-10-27).** `decoder`'s `TestAdmissionCensus`, golden `testdata/sb2_admission_census.txt.gz`:
-  156 model-free lines (52 registered families × webgpu, cuda, metal), 35 backend-choice lines (7 machine profiles × 5
-  linked sets), 1,540 load lines (55 committed decoder fixtures × 7 option cells × cpu, cuda, metal, webgpu: 646 reach a
-  resident build, 894 decline before it), and 15 fixtures recorded once as not decoder checkpoints (towers, encoders).
-  Only fixtures whose weights git tracks are read, so a checkout with local-only fixtures censuses what CI does. Shown red:
-  dropping the q4k condition from the ActQuantGroup gate changes 290 lines (reverted).
+  measured: about 9 s for the census built twice (2,711 lines).
+- **Layer D landed (2026-10-27).** `decoder`'s `TestAdmissionCensus`, goldens
+  `testdata/sb2_admission_census.<goarch>.txt.gz` (amd64 and arm64): 156 model-free lines (52 registered families ×
+  webgpu, cuda, metal), 35 backend-choice lines (7 machine profiles × 5 linked sets), and 2,520 load lines (70 committed
+  fixtures × 9 option cells × cpu, cuda, metal, webgpu; the 15 that are not decoder checkpoints, towers and encoders,
+  record their load error). Only fixtures whose weights git tracks are read, so a checkout with local-only fixtures
+  censuses what CI does. Shown red: dropping the q4k condition from the ActQuantGroup gate changes 145 cells (reverted).
 
 ### SB3 — family adapters
 
