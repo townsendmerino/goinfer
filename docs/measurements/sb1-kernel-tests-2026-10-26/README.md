@@ -136,3 +136,33 @@ Ratchet, cuda: direct 246 (unchanged), reach 322 → 317 (six files out, the ide
   rmsnorm, rope2_bench, rope2_kv, rope2, rope_pairwise, rope_partial, rope, s17_gemm_probe, sa_largek, sa_outlier,
   scale_roundtrip, simdsum_tree_mc3, swiglu_massive, swiglu_quant_bench, swiglu_quant_gptoss_bench, swiglu, tax, vnorm,
   window (each `<name>_test.go`).
+
+# metal: the 62 files, on the Mac (2026-10-26, 21:40–21:50 PDT, mac-ax01)
+
+The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1 — metal's batches". Box: the MacBook
+(M1 Pro, Metal), Go 1.27.3; about 13 GB available at each run; every run held the timing lock shared; nothing timed (the 20
+benchmarks were not run, and the 12 skipped tests are env-gated probes, skipped on both sides for the same reason).
+
+- **What moved:** all 62 files of nobara-sb01's list, from `metal/` to `metal/kernels/`, with 67 `Test` and 20 `Benchmark`
+  functions, in four batches. `layer_test.go` went in batch 1 with `cpulayer_test.go`, which declares the `cpuLayer` and `q8row`
+  it calls. A `go/ast` reference scan over the list found no other edge between a moved file and one that stays; its three
+  other hits were local variables sharing a name.
+- **Edits beyond `package kernels`:** `mla_kernels_test.go` imported `metal/kernels`, a cycle inside the package, so the
+  import and its three `kernels.` qualifiers went. `metal/kernels/moved_helpers_test.go` gives the moved tests package
+  `metal`'s lowercase names for this package's MSL sources (`allKernels`, `prefillKernels`, …) and `packW4A8Row` and
+  `f32ToF16`. The copies of `metal`'s pure helpers turned out unused (U1000) and were dropped. Build lines are unchanged.
+- **No `decoder` change**, and no test deleted: each of the 87 functions is declared in `metal/kernels` after the move.
+
+| batch | files | tests | after the move (before: the same) | metal reach |
+|---|---:|---:|---|---|
+| 1 | 17 | 18 | 10 PASS, 8 SKIP | 395 → 378 |
+| 2 | 15 | 19 | 18 PASS, 1 SKIP | 378 → 363 |
+| 3 | 15 | 14 | 13 PASS, 1 SKIP | 363 → 348 |
+| 4 | 15 | 16 | 14 PASS, 2 SKIP | 348 → 333 |
+| all, after the helper prune | 62 | 67 | 55 PASS, 12 SKIP, 0 FAIL | 333 |
+
+The before-run took 14.5 s for all 67 tests in `./metal` (tags `goinfer_testhooks`). Each after-run ran its batch by name in
+`./metal/kernels` with the same tags and was compared test by test, skip reasons included. `go list -deps -test
+./metal/kernels/` names no `goinfer/decoder`. The metal module builds and vets with and without `goinfer_testhooks`.
+staticcheck finds the same 12 items in package `metal` as on origin/main, and none in `metal/kernels`. metal's direct count
+stays 245: none of the moved files imported `decoder`. Logs: `metal-logs/`.
