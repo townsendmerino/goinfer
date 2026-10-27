@@ -17,8 +17,8 @@ import (
 )
 
 // gate shadow: VK5's shadow mode (docs/tasks/task-subsystems-2026-10.md §5.8). For one push, from before to after, it
-// classes every parity family by today's key and by the shadow key (the kernel fingerprints' digest in place of the
-// aikit pin) and gives each disagreement its reason. Both sides' fingerprints come from this tree's kernelprint suite,
+// classes every parity family by today's key and by the shadow key (whose tail is the kernel fingerprints' digest this
+// machine computes) and gives each disagreement its reason. Both sides' fingerprints come from this tree's kernelprint suite,
 // built against each side's aikit pin on this machine, so they differ only where the kernels do.
 //
 // Exit: 0 no unexplained disagreement (or VOID, which it prints), 1 an unexplained one, 2 misuse.
@@ -109,11 +109,11 @@ func shadow(root string, rec *shadowRecord) int {
 		}
 	}
 	sort.Strings(rec.ChangedKernels)
-	before, err := paritykey.LoadSide(g.At(rec.Before), rec.DigestBefore)
+	before, err := paritykey.LoadSide(g.At(rec.Before), rec.Config, rec.DigestBefore)
 	if err != nil {
 		return void("before: " + err.Error())
 	}
-	after, err := paritykey.LoadSide(g.At(rec.After), rec.DigestAfter)
+	after, err := paritykey.LoadSide(g.At(rec.After), rec.Config, rec.DigestAfter)
 	if err != nil {
 		return void("after: " + err.Error())
 	}

@@ -10,7 +10,7 @@
     "scripts/pin_slice_oracle.py",
     "decoder/arch_mellum.go"
   ],
-  "deps_hash": "sha256:9efd55a6bcf71998a23c7bbc9059a27df041734b5c55bc8318d424d638089490",
+  "deps_hash": "sha256:44853c3ab0fbcdcdada2016535d571fef53595c461d3efe342fb3666fa681907",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

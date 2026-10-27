@@ -17239,7 +17239,10 @@ be wrong the way a remembered hostname can; it is less pretty than "mac" or
 
 ## rootAikitVersion
 
-Moved from `decoder/parity_manifest_test.go` (the comment above `rootAikitVersion`) on 2026-10-09.
+Moved from `decoder/parity_manifest_test.go` (the comment above `rootAikitVersion`) on 2026-10-09. Removed, with
+`TestRootAikitVersion_readsFromGoMod`, on 2026-10-27: `freshDepsHash` now mixes in the digest of the committed kernel
+fingerprint table (`testdata/kernel_fingerprints.json`) in place of the aikit pin
+(`docs/measurements/vk5-2026-10.md` §5), so the key no longer reads go.mod.
 
 ```text
 rootAikitVersion reads the ROOT go.mod's aikit require directly (G-01, audit-2026-09-10) —

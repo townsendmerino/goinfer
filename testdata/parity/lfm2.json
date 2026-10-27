@@ -8,7 +8,7 @@
     "decoder/forward_lfm2.go",
     "decoder/arch_lfm2.go"
   ],
-  "deps_hash": "sha256:4cd87d84148a342743da14204d593f181dcd587cf27ef4052c2a4d6fe4778bf0",
+  "deps_hash": "sha256:91f5c8b3e215ca84b6b493623242d200ff510ab5ffdda59179a5aeee0a1cc94c",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

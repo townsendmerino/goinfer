@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_gemma3.go"
   ],
-  "deps_hash": "sha256:acd09b8b13fc3f8228d0fa5bac034188e9db8accf2bc1c3d31c8fc8a53b748e2",
+  "deps_hash": "sha256:8d16c98486fd3462255cc6c8b9667ad2bf9860435603e8386650ba5b18f77146",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
