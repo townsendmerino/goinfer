@@ -9,7 +9,7 @@
 // load's context with it. ResolveKV is the KV precision a backend's cache holds. In the guards (SolveHost, SolveGIW,
 // AdmitRequest) every unknown proceeds: a Machine whose reading is 0, or a load whose weights could not be priced, gets no
 // verdict, never a refusal. The planner is told the free bytes and places against them: a 0 reading declines (the CPU pages),
-// and experts that could not be priced cost nothing.
+// and so does an expert cache whose experts could not be priced.
 //
 // Invariants, each with the test that holds it:
 //

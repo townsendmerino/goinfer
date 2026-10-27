@@ -186,6 +186,12 @@ const (
 // MissingResidentFeatures alone, which passes a feature-free arch on any name. webgpu's declines mirror gpu/residency.go's BuildResident
 // (the Nemotron/Qwen3.5/MLA combination with KVF16/KVI8, and WebGPUCtxCeiling).
 func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
+	return m.plan(backend, freeBytes, req, true)
+}
+
+// plan is Plan, pricing the backend's allocation rounding (PlanSlack) only when slack is set: a test's before side passes false
+// per call, so no other Plan sees it.
+func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack bool) Plan {
 	p := Plan{Backend: backend, FreeBytes: freeBytes, ExtraBytes: req.ExtraBytes}
 	if reason := m.planIneligible(backend, req); reason != "" {
 		p.Placement = PlacementDecline
@@ -193,6 +199,9 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		return p
 	}
 	l := m.deviceLoad(backend, req.KVF16, req.KVI8, req.CtxPinned)
+	if !slack {
+		l.FixedSlack = 0
+	}
 	p.DenseBytes, p.ExpertBytesFull, p.AllocSlackBytes = l.DenseBytes, l.ExpertBytesFull, l.FixedSlack
 	d := mem.SolvePlacement(l, mem.PlanRequest{Ctx: req.Ctx, CtxPinned: req.CtxPinned, Slots: req.Slots, ExtraBytes: req.ExtraBytes},
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())

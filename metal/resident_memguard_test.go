@@ -348,8 +348,7 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		}
 		return n
 	}
-	// One planted change per field (a flag flipped, a byte count doubled): each must be seen, so each field is exercised, a
-	// byte count nonzero somewhere in the corpus.
+	// One planted change per field Metal's report sets (a flag flipped): each must be seen. Metal reports no byte counts.
 	for name, plant := range map[string]func(*decoder.BuildDemand){
 		"Resident":   func(d *decoder.BuildDemand) { d.Resident = !d.Resident },
 		"KVOnDevice": func(d *decoder.BuildDemand) { d.KVOnDevice = !d.KVOnDevice },

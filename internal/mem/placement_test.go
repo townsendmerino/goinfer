@@ -116,9 +116,9 @@ func placementRank(p Placement) int {
 // monotoneBreak walks n generated loads over free memory in 16 MiB steps to 64 GiB through solve and SolveMetalCtx and returns
 // the first break of G-MM1b-2 as amended (I5 as far as it holds), or "": a dense plan's placement never moves down the order; a
 // placed context (resident or expert-cached) never shrinks, MoE included; the slots never fall at the same context and
-// placement; and the Metal context never shrinks. It does not hold an MoE plan's placement: the context grows first,
-// and a step of it can leave no room for the top-k experts (expert-cached, then declined; docs/tasks/task-subsystems-2026-10.md,
-// "MM1 follow-up"). searched counts the Metal draws whose answer passed the floor.
+// placement; an MoE plan's placement never worsens at the same context; and a dense load's Metal context never shrinks. It does
+// not hold an MoE plan's placement as the context grows, nor an MoE Metal context: the context grows first, and a step of it can
+// leave no room for the top-k experts (docs/tasks/task-subsystems-2026-10.md, "MM1 follow-up"). searched counts the Metal draws whose answer passed the floor.
 func monotoneBreak(n int, solve func(DeviceLoad, PlanRequest, Machine, Policy) DevicePlan) (brk string, searched int) {
 	r := rand.New(rand.NewPCG(13, 7))
 	p := DefaultPolicy()
@@ -139,11 +139,13 @@ func monotoneBreak(n int, solve func(DeviceLoad, PlanRequest, Machine, Policy) D
 			case j == 0:
 			case l.NExperts == 0 && placementRank(d.Placement) < placementRank(prev.Placement):
 				return fmt.Sprintf("input %d: a dense plan got worse from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
+			case l.NExperts > 0 && placed(prev) && d.Ctx == prev.Ctx && placementRank(d.Placement) < placementRank(prev.Placement):
+				return fmt.Sprintf("input %d: an MoE plan got worse at the same context from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
 			case placed(d) && placed(prev) && d.Ctx < prev.Ctx:
 				return fmt.Sprintf("input %d: a placed context shrank from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
 			case d.Placement == prev.Placement && d.Ctx == prev.Ctx && d.Slots < prev.Slots:
 				return fmt.Sprintf("input %d: slots fell at the same context from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
-			case a.Ctx < prevM.Ctx:
+			case mc.Load.NExperts == 0 && a.Ctx < prevM.Ctx:
 				return fmt.Sprintf("input %d: the Metal context fell from %d to %d free: %s -> %s", i, f-step, f, metalAnswer(prevM), metalAnswer(a)), searched
 			}
 			prev, prevM = d, a
@@ -175,5 +177,18 @@ func TestSolvePlacement_monotone(t *testing.T) {
 	}
 	if brk, _ := monotoneBreak(50, planted); brk == "" {
 		t.Fatal("a planted refusal above 32 GiB free went unseen")
+	}
+}
+
+// TestSolvePlacement_unpricedExperts: an MoE load whose experts could not be priced (under a byte each) declines the expert cache
+// with a reason instead of sizing slots on unknown bytes, and never panics.
+func TestSolvePlacement_unpricedExperts(t *testing.T) {
+	for _, full := range []int64{0, 7} {
+		l := DeviceLoad{Backend: "cuda", Tier: VRAM, DenseBytes: 1 << 30, CtxStep: 1, KV: func(c int) int64 { return int64(c) << 10 },
+			NExperts: 8, TopK: 2, ExpertBytesFull: full, HostFixed: 1 << 30, HostAll: func() int64 { return 2 << 30 }}
+		d := SolvePlacement(l, PlanRequest{Ctx: 4096, CtxPinned: true}, Machine{Free: map[Tier]int64{VRAM: 3 << 30}}, DefaultPolicy())
+		if d.Placement != Declined || !strings.Contains(d.Reason, "could not be priced") {
+			t.Errorf("ExpertBytesFull %d over 8 experts: %s, want a decline naming the unpriced experts", full, planAnswer(d))
+		}
 	}
 }
