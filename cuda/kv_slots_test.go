@@ -186,7 +186,8 @@ func TestCUDAKVSlots_recurrentKeepsOne(t *testing.T) {
 
 // kvSlotsProbe is one armed cudaFreeVRAM stub of TestCUDAKVSlots_pricedAgainstWhatIsLeft: it reports live minus
 // the real bytes the device has allocated since it was armed (or the real free figure, live == 0), and records what
-// it saw at the call.
+// it saw at the build's first read, checkKVFits'. A later read (the prefill width, after the KV) is answered the same
+// way and recorded only in calls.
 type kvSlotsProbe struct {
 	free0   uint64   // the real free VRAM when the probe was armed
 	live    int64    // the fictional free figure the probe falls from; 0: report the real one
@@ -298,6 +299,12 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 		cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
 			p.calls++
 			now := realFree()
+			if p.calls > 1 {
+				if p.live > 0 {
+					return uint64(p.live - (int64(p.free0) - int64(now))), nil
+				}
+				return now, nil
+			}
 			p.sawNeed, p.sawDrop = kvChargedBytes(r.ctxCap, 1, r.layers), int64(p.free0)-int64(now)
 			for n := 1; n < len(p.sawKV); n++ {
 				p.sawKV[n] = kvChargedBytes(r.ctxCap, n, r.layers)
@@ -318,8 +325,8 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 		if !ok {
 			t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
 		}
-		if p.calls != 1 {
-			t.Fatalf("the free-VRAM probe ran %d times during the build, want once (at checkKVFits)", p.calls)
+		if p.calls == 0 {
+			t.Fatal("the free-VRAM probe never ran during the build; checkKVFits reads it first")
 		}
 		return r.KVSlots(), p
 	}
@@ -516,11 +523,11 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 			if _, err := os.Stat(p); err != nil {
 				t.Skipf("no model at %s", p)
 			}
-			var atKV int64
+			var reads []int64 // every probe read in the build: checkKVFits' first, before the KV
 			free0 := realFree()
 			cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
 				f, _, err := r.dev.Context().MemInfo()
-				atKV = int64(f)
+				reads = append(reads, int64(f))
 				return f, err
 			}
 			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4"})
@@ -529,11 +536,15 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 			}
 			defer m.Close()
 			res, ok := m.ResidentForwardForTest().(*cudaResident)
-			if !ok || atKV == 0 {
+			if !ok || len(reads) == 0 {
 				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
 			}
 			ran++
-			drop := free0 - atKV
+			drop := free0 - reads[0]
+			for i, f := range reads[1:] {
+				t.Logf("probe read %d: %.0f MB more on the device than at checkKVFits; the KV pools charge %.0f MB (%d slots at context %d)",
+					i+2, mb(reads[0]-f), mb(kvChargedBytes(res.ctxCap, res.KVSlots(), res.layers)), res.KVSlots(), res.ctxCap)
+			}
 			est, all := m.ResidentDenseWeightBytesFor("cuda"), m.ResidentDenseWeightBytes()
 			// Plan prices the requested bytes; the driver rounds each buffer of a quantum or more up (allocRoundSlack), which the build prices into the plan on its own
 			// (res.allocSlackBytes). The margin is for what neither knows, so the bound below is on Plan + that slack, not on Plan alone: the rounding alone can exceed the whole margin on the 7B

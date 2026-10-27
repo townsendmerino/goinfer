@@ -722,6 +722,14 @@ and no fit decision or default moves. So the fix is to the tests: each records t
 If G-CU-1 fails (the second read does not account for the surplus), the cause is something else and the fix is not made: the
 finding is reported first.
 
+**Read, 2026-10-26 (nobara, RTX 2070 SUPER, driver 595.91.07; kwin_wayland's 17 MiB context present; timing lock held): both pass.**
+G-CU-1: the build reads the probe twice, and the second read sits 480 MB (0.5B) and 1,008 MB (1.5B) above the first, exactly
+the KV pools' charged bytes (one slot at context 16,384). That accounts for main's 479 MB and 998 MB surplus. At the first read
+the device holds 466 MB and 1,054 MB, 5 and 6 MB above Plan + slack, inside the 214 and 248 MB margins. G-CU-2: both tests pass
+on llama-tiny, the 0.5B and the 1.5B, with every `TestCUDAKVSlots_` test. With `GOINFER_HEAVY_TESTS=1`, `TestBuildScratchAccounting`
+(six models), its planted-defect test and the three KS-B8 build tests pass too. Logs: `~/goinfer-logs/mm1/` on nobara
+(cuda-probe-tests and cuda-probe-heavy, 2026-10-26).
+
 ## 7. Track AX — the towers and GPU backends move into goinfer (SD1, decided 2026-10-26)
 
 ### 7.1 What moves (aikit main on 2026-10-26)
