@@ -61,6 +61,7 @@ GOINFER_FIXTURES = ["gemma4-vision-tiny"]
 EDITED_AFTER_COPY = {
     "metal/internal/gpudev/residencyset_test.go": "skips when the device makes no residency set (hosted CI runner)",
     "cuda/internal/visioncuda/encoder_test.go": "graphCapture skips when there is no CUDA device (GPU-less CI runner)",
+    "internal/vision/resident.go": "Encoder.ResidentEnabled, so towerid can check a SigLIP device attach (review of #282)",
 }
 
 IMPORTS = [

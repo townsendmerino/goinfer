@@ -10,8 +10,8 @@ import (
 // internal). Its output is the tower's last hidden state, the input Projector.Forward takes.
 type SiglipTower struct{ enc *vision.Encoder }
 
-// LoadSiglipTower loads the tower from a Gemma 3 checkpoint directory. quant selects int8 (W8A8) matmul weights. resident
-// attaches the device tower a linked backend registered, and fails if none did; the WebGPU tower needs quant.
+// LoadSiglipTower loads the tower from a Gemma 3 checkpoint directory. quant selects int8 (W8A8) matmul weights, else
+// float32. resident attaches the device tower a linked backend registered, and fails if none did.
 func LoadSiglipTower(dir string, quant, resident bool) (*SiglipTower, error) {
 	enc, err := vision.LoadEncoder(dir, quant)
 	if err != nil {

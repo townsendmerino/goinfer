@@ -64,12 +64,17 @@ type runner struct {
 	cases         []Case
 }
 
+// whisperBackends are the backends that serve the Whisper encoders. The support table does not list them, so they are
+// declared here rather than read from the registry: a backend whose registration went missing must fail its record, and
+// the registry would just omit it.
+var whisperBackends = []string{"cuda"}
+
 func (r *runner) device(family string) bool {
 	if r.backend == "cpu" {
 		return false
 	}
 	if family == FamilyWhisper || family == FamilyVoxtral {
-		return slices.Contains(multimodal.WhisperDevices(), r.backend)
+		return slices.Contains(whisperBackends, r.backend)
 	}
 	return multimodal.DeclaredTower(r.backend, family)
 }
@@ -140,6 +145,9 @@ func (r *runner) siglip() error {
 	if dev {
 		if err := enc.EnableResident(); err != nil {
 			return fmt.Errorf("siglip on %s: %w", r.backend, err)
+		}
+		if !enc.ResidentEnabled() {
+			return fmt.Errorf("siglip on %s: EnableResident returned no error but the tower is not resident", r.backend)
 		}
 	}
 	c := enc.Cfg
