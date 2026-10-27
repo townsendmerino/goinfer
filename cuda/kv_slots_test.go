@@ -928,19 +928,19 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 }
 
-// TestLedger_closesAgainstDevice (G-MM3a-4, I3): for a tiny model and a real 0.5B, the device's free VRAM just after the
-// resident's device is created, less its free VRAM after the build and an 8-token generate, is at least the ledger's charged
-// VRAM and at most 64 MiB above it (modules, streams and the driver's shared pages for small buffers). After Close the device's
-// ledger holds no lease (I2).
+// TestLedger_closesAgainstDevice (G-MM3a-4, I3): for a tiny model and a real 0.5B (where it is on disk), the device's free VRAM
+// just after the resident's device is created, less its free VRAM after the build and three identical 8-token requests, is at
+// least the ledger's charged VRAM and at most 64 MiB above it (modules, streams and the driver's shared pages for small buffers).
+// I2: the charged bytes do not grow from one request to the next, and after Close the ledger holds no lease.
 func TestLedger_closesAgainstDevice(t *testing.T) {
 	requireCUDADevice(t)
 	models := append([]string{filepath.Join("..", "testdata", "llama-tiny")}, realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")...)
 	if len(models) < 2 {
-		t.Skip("the 0.5B checkpoint is not on this box")
+		t.Log("the 0.5B checkpoint is not on this box: llama-tiny only")
 	}
 	const band = 64 << 20
 	real := CreateSystemDefaultDevice
-	defer func() { CreateSystemDefaultDevice = real }()
+	defer func() { CreateSystemDefaultDevice = real }() // the probe below reads free VRAM as each device is created
 	created := map[*Device]uint64{}
 	CreateSystemDefaultDevice = func() (*Device, error) {
 		d, err := real()
@@ -962,11 +962,20 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: not resident: %s", p, m.ResidentDecline())
 		}
-		ch, gen := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 8, decoder.SamplingParams{})
-		for range ch {
+		// I2 within the model's life: a request leaves nothing behind, so the charged bytes after a second and a third identical
+		// request equal those after the first (a buffer leaked per request grows them; the sweep at Close would hide it).
+		var after []int64
+		for range 3 {
+			ch, gen := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 8, decoder.SamplingParams{})
+			for range ch {
+			}
+			if err := gen.Err(); err != nil {
+				t.Fatalf("%s: generate: %v", p, err)
+			}
+			after = append(after, ledgerOf(r.dev).Usage().Charged)
 		}
-		if err := gen.Err(); err != nil {
-			t.Fatalf("%s: generate: %v", p, err)
+		if after[1] != after[0] || after[2] != after[0] {
+			t.Errorf("%s: the charged bytes grow across identical requests: %v", filepath.Base(p), after)
 		}
 		free0, seen := created[r.dev]
 		if !seen {
@@ -991,28 +1000,41 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 	}
 }
 
-// TestLedger_unplannedIsReported (G-MM3a-2's plant): an allocation on the empty line, and a lease left open, are both what the
-// release hook reports; a tracked pinned host buffer closes with the device.
+// TestLedger_unplannedIsReported (G-MM3a-2's plant): an allocation on the empty line, and a lease left open, are each what the
+// suite's release check (ledgerBreak) reports; a tracked pinned host buffer closes with the device; a clean device reports nothing.
 func TestLedger_unplannedIsReported(t *testing.T) {
 	requireCUDADevice(t)
 	real := gpu.ReleasedForTest
 	defer func() { gpu.ReleasedForTest = real }()
-	var got mem.Usage
-	gpu.ReleasedForTest = func(d *Device) { got = ledgerOf(d).Usage() }
-	d, err := CreateSystemDefaultDevice()
-	if err != nil {
-		t.Skip(err)
+	var got *mem.Ledger
+	gpu.ReleasedForTest = func(d *Device) { got = ledgerOf(d) }
+	for _, plant := range []string{"unplanned", "open", "clean"} {
+		d, err := CreateSystemDefaultDevice()
+		if err != nil {
+			t.Skip(err)
+		}
+		if _, err := gpu.NewHostBufferOn[float32](d, mem.LineScratch, 16); err != nil {
+			t.Fatal(err)
+		}
+		_ = d.NewBufferLenOn(mem.LineKV, 1<<20)
+		switch plant {
+		case "unplanned":
+			_ = d.MustBufOn("", 3<<20, 3<<20, "planted")
+		case "open":
+			ledgerOf(d).Reserve(mem.HostAnon, mem.LinePinnedExperts, 4096, 4096) // never released
+		}
+		d.ReleaseObjects()
+		b := ledgerBreak(got)
+		switch {
+		case plant == "unplanned" && !strings.Contains(b, "unplanned peak 4194304"):
+			t.Errorf("an unplanned 3 MiB (charged 4) gives %q", b)
+		case plant == "open" && !strings.Contains(b, "1 leases (4096 bytes) open"):
+			t.Errorf("an open lease gives %q", b)
+		case plant == "clean" && b != "":
+			t.Errorf("a clean device gives %q", b)
+		}
 	}
-	_ = d.MustBufOn("", 3<<20, 3<<20, "planted")
-	if _, err := gpu.NewHostBufferOn[float32](d, mem.LineScratch, 16); err != nil {
-		t.Fatal(err)
-	}
-	ledgerOf(d).Reserve(mem.HostAnon, mem.LinePinnedExperts, 4096, 4096) // never released
-	d.ReleaseObjects()
-	if got.PeakUnplannedCharged != 4<<20 {
-		t.Errorf("unplanned peak %d, want %d (3 MiB charged as 4)", got.PeakUnplannedCharged, 4<<20)
-	}
-	if got.Leases != 1 || got.ByLine[mem.LinePinnedExperts] != 4096 || len(got.ByLine) != 1 {
-		t.Errorf("after release: %d leases, by line %v; want only the planted lease open", got.Leases, got.ByLine)
+	if b := ledgerBreak(nil); b == "" {
+		t.Error("a device with no ledger is not reported")
 	}
 }

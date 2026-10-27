@@ -101,10 +101,9 @@ func TestWindowedKV_view(t *testing.T) {
 	for i := range sentinel {
 		sentinel[i] = -7
 	}
-	defer r.onLine(mem.LineTest)() // the test allocates through the build's helpers on the executor (r.do orders the write)
 	read := func(b Buffer) []float32 {
 		out := make([]float32, total)
-		if err := r.do(func() error {
+		if err := r.doOn(mem.LineTest, func() error {
 			if e := r.stream.Sync(); e != nil {
 				return e
 			}
@@ -115,7 +114,7 @@ func TestWindowedKV_view(t *testing.T) {
 		return out
 	}
 	var s, d Buffer
-	if err := r.do(func() error {
+	if err := r.doOn(mem.LineTest, func() error {
 		s, d = r.af(n), r.af(total)
 		if e := gpu.Upload(s, src); e != nil {
 			return e
@@ -145,7 +144,7 @@ func TestWindowedKV_view(t *testing.T) {
 		idx[i] = float32(i)
 	}
 	var scratch Buffer
-	if err := r.do(func() error {
+	if err := r.doOn(mem.LineTest, func() error {
 		scratch = r.af(n)
 		if e := gpu.Upload(d, idx); e != nil {
 			return e

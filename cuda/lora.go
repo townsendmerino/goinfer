@@ -109,7 +109,6 @@ func sameLoraKey(x, y [][7]loraProjKey) bool {
 // re-upload; a different adapter evicts them. The cache holds one adapter, the most recently uploaded, so it adds no
 // VRAM beyond what a bound adapter already costs.
 func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
-	defer r.onLine(mem.LineCompanion)()
 	if r.actG32 && layers != nil {
 		return fmt.Errorf("cuda: compute-time LoRA reads per-vector activation scales; not implemented for a per-32 activation model")
 	}
@@ -119,7 +118,7 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	if r.eModel && layers != nil {
 		return fmt.Errorf("cuda: compute-time LoRA is not implemented for a Gemma 4 E-model (KV-shared layers have no k/v projections to adapt, the PLE branch no hook point, and the FFN width varies by layer)")
 	}
-	return r.do(func() error {
+	return r.doOn(mem.LineCompanion, func() error {
 		r.loraLayers = nil // unbind first: every error below leaves NO adapter bound
 		if layers == nil {
 			if r.loraCacheDisabled() {

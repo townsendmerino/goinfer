@@ -63,21 +63,29 @@ var (
 	releasedBad  []string
 )
 
-// recordReleased is gpu.ReleasedForTest in this package's tests: it keeps any released device whose ledger had unplanned bytes
-// or still holds a lease. A device made without the cuda package's ledger (gpu.CreateSystemDefaultDevice directly) has none.
+// recordReleased is gpu.ReleasedForTest in this package's tests: it keeps every released device whose ledger breaks I1 or I2.
 func recordReleased(d *Device) {
-	l := ledgerOf(d)
-	if l == nil {
-		return
-	}
-	u := l.Usage()
+	b := ledgerBreak(ledgerOf(d))
 	releasedMu.Lock()
 	defer releasedMu.Unlock()
 	releasedSeen++
-	if u.PeakUnplannedCharged > 0 || u.Leases > 0 {
-		releasedBad = append(releasedBad, fmt.Sprintf("unplanned peak %d bytes; %d leases (%d bytes) open after release, by line %v",
-			u.PeakUnplannedCharged, u.Leases, u.Charged, u.ByLine))
+	if b != "" {
+		releasedBad = append(releasedBad, b)
 	}
+}
+
+// ledgerBreak says how a released device's ledger breaks I1 (an unplanned byte ever) or I2 (a lease open after release), or "".
+// A device with no ledger breaks I1: nothing it allocated was leased.
+func ledgerBreak(l *mem.Ledger) string {
+	if l == nil {
+		return "a device with no ledger: its allocations were not leased"
+	}
+	u := l.Usage()
+	if u.PeakUnplannedCharged > 0 || u.Leases > 0 {
+		return fmt.Sprintf("unplanned peak %d bytes; %d leases (%d bytes) open after release, by line %v",
+			u.PeakUnplannedCharged, u.Leases, u.Charged, u.ByLine)
+	}
+	return ""
 }
 
 // ledgerOf is the ledger createDevice attached to d, or nil.

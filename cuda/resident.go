@@ -971,8 +971,8 @@ func (r *cudaResident) af(n int) Buffer {
 	return gpu.NewBufferLenOfOn[float32](r.dev, r.line, n)
 }
 
-// onLine sets the plan line the allocation helpers lease on, until the returned func restores the one before. The build and
-// request paths run on the resident's executor goroutine, so the line needs no lock.
+// onLine sets the plan line the allocation helpers lease on, until the returned func restores the one before. Call it only on the
+// resident's executor goroutine (inside a job; doOn from outside one), where the helpers read it, so the line needs no lock.
 func (r *cudaResident) onLine(line string) func() {
 	prev := r.line
 	r.line = line
@@ -2070,6 +2070,14 @@ func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
 }
 
 func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh }
+
+// doOn is do with the allocation helpers on plan line line for the job: the line is set on the executor, where they read it.
+func (r *cudaResident) doOn(line string, j func() error) error {
+	return r.do(func() error {
+		defer r.onLine(line)()
+		return j()
+	})
+}
 
 // runJob is the executor goroutine's PANIC BOUNDARY: it runs one job and converts a panic into an ordinary error,
 // so the pinned thread survives and `do` returns to its caller. It has to live here and not at a call site: every

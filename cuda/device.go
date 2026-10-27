@@ -31,21 +31,16 @@ type (
 type HostBuffer[T Scalar] = gpu.HostBuffer[T]
 
 var (
-	CreateSystemDefaultDevice = createDevice
+	CreateSystemDefaultDevice = gpu.CreateSystemDefaultDevice
 	Arg                       = gpu.Arg
 	ArgNull                   = gpu.ArgNull // null device-ptr arg for an absent optional buffer (was gc.ArgDevicePtr(0))
 	Grid1D                    = gpu.Grid1D
 	GridOne                   = gpu.GridOne
 )
 
-// createDevice creates the device with a mem.Ledger attached, so every allocation it makes is a lease naming its plan line (MM3).
-func createDevice() (*Device, error) {
-	d, err := gpu.CreateSystemDefaultDevice()
-	if err == nil {
-		d.SetLeaser(&deviceLedger{})
-	}
-	return d, err
-}
+// Every device created in a process that links this package leases its allocations to a mem.Ledger (MM3), whichever package
+// creates it.
+func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
 
 // deviceLedger is a device's mem.Ledger: device buffers on VRAM, pinned host memory on HostAnon.
 type deviceLedger struct{ mem.Ledger }

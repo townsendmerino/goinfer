@@ -925,7 +925,6 @@ func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
 // row through decode's own gap (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row
 // head is decode's, and a row with a draw ends in ForwardSample's pick.
 func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
-	defer r.onLine(mem.LineScratch)()
 	M := len(embeddings)
 	if M == 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -1018,7 +1017,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 
 	var outs [][]float32
 	var ids []int
-	err := r.do(func() error {
+	err := r.doOn(mem.LineScratch, func() error {
 		defer func() { r.forceExactKernels = false }()
 		r.launchErr = nil // clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.

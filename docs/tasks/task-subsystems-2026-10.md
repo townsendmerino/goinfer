@@ -1529,6 +1529,33 @@ If I3 misses its band, the finding is reported first and the band is not widened
   arrows; `touched.py`; the citation lint.
 - Logs: `~/goinfer-logs/mm1/` on nobara (mm3a-device2).
 
+**Fixed before merge, 2026-10-27 (coordinator, 12:01; CI's lint and Gemini's review of #328).**
+- **CI lint:** the new source-scan test was not in `scripts/touched_scans.py`. It is listed now.
+- **Leases where none were made (Gemini 1, real).** A device created other than through the cuda package's wrapper (the
+  `qwencuda` and `visioncuda` towers call `gpu.CreateSystemDefaultDevice` directly) had no leaser, and the release check skipped
+  it. `gpudev.NewLeaser` is now set by the cuda package at init, so every device a process with cuda linked creates is leased.
+  A released device with no ledger is now a break. Only a test (`cuda/s4siglip`) imports those two towers today.
+- **I2 after release was nearly tautological (Gemini 2, real).** `ReleaseObjects` frees and releases everything it tracked
+  before the check, so only an untracked pin could show there. I2 is now also held within a model's life: the charged bytes
+  after a second and a third identical request equal those after the first, which a buffer leaked per request would grow.
+  Passes on llama-tiny and the 0.5B.
+- **The plants did not exercise the suite's check (Gemini 3, real).** `TestLedger_unplannedIsReported` now runs the suite's
+  own `ledgerBreak` on an unplanned allocation, an open lease, a clean device and a device with no ledger. The static scan
+  now reads `gpudev` too (68 files), counting any unlined call outside the unlined constructors' own chain. `UnlinedLine =
+  test` in the tests stays: production's unlined calls are excluded statically, which is what the static gate is for.
+- **`onLine` off the executor (Gemini 4, real).** `prefillCore`, `SetAdapter`, `AttachDrafter` and the drafter's four
+  methods set the line on the caller's goroutine before their `r.do`. They now pass it to `r.doOn`, which sets it inside the
+  job. Every remaining `onLine` is in a function that allocates directly, so it already runs on the executor (allocation needs
+  the context current there).
+- **llama-tiny was skipped without the 0.5B (Gemini 5, real).** It runs alone now.
+- **Gemini 6:**
+  - A `NewBufferLenOn` twin is added.
+  - `slack` and `staging` stay as lines: they name plan terms, though CUDA leases neither. Its rounding is in each buffer's
+    charged bytes, and its pack staging is Go memory the allocator never sees.
+  - `ByLine` summing tiers is by design; `ByTier` splits them.
+- **Re-run:** the device suite under the exclusive lock (34 pass, 102 devices released, no break; I3 unchanged at 3.9 MB and
+  3.4 MB), `touched.py`, the pinned staticcheck, `test_touched.py` and the citation lint. Log: mm3a-device3.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

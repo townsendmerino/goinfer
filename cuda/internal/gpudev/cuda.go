@@ -91,6 +91,10 @@ type Leaser interface {
 	Lease(onDevice bool, line string, requested, charged int64) (release func())
 }
 
+// NewLeaser, when set, gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init, so a device
+// any package creates is leased.
+var NewLeaser func() Leaser
+
 // SetLeaser attaches l; allocations after it are leased to it.
 func (d *Device) SetLeaser(l Leaser) {
 	d.mu.Lock()
@@ -158,7 +162,11 @@ func CreateSystemDefaultDevice() (*Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cuda: retain primary context: %w", err)
 	}
-	return &Device{cx: cx, dev: dev}, nil
+	d := &Device{cx: cx, dev: dev}
+	if NewLeaser != nil {
+		d.leaser = NewLeaser()
+	}
+	return d, nil
 }
 
 // Name is the device's product name (e.g. "NVIDIA GeForce RTX 2070 SUPER"), or ""
@@ -521,6 +529,11 @@ func (b Buffer) download(dst []byte) error {
 // allocation last held until the first write. Metal's NewBufferLen is zero-filled, so the two backends differ here by design; code shared across
 // backends must not rely on zeros from either. Zero a buffer that needs it explicitly (Queue.ZeroAsync).
 func (d *Device) NewBufferLen(nFloats int) Buffer { return d.MustBuf(nFloats*4, nFloats, "len") }
+
+// NewBufferLenOn is NewBufferLen leasing the bytes on plan line line.
+func (d *Device) NewBufferLenOn(line string, nFloats int) Buffer {
+	return d.MustBufOn(line, nFloats*4, nFloats, "len")
+}
 
 // NewBufferBytes allocates an UNINITIALIZED device buffer of n BYTES (n is also
 // the element count for the returned Buffer; Metal's NewBufferBytes is zero-filled, so shared code must not rely on zeros) — the primitive for consumers that
