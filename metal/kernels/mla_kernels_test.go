@@ -1,14 +1,12 @@
 //go:build darwin && goinfer_testhooks
 
-package metal
+package kernels
 
 import (
 	"math"
 	"math/rand"
 	"strings"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/metal/kernels"
 )
 
 // kmlaGeom is K-MLA's synthetic geometry: wider than the tiny fixtures', with a rope slice large enough to matter.
@@ -131,12 +129,12 @@ func TestMLAKernels_rope(t *testing.T) {
 		"uint qbase = h * qkHead + qkNope;", "uint qbase = h * qkHead;",
 		"if (interleave == 1u) { a = kvDown[rank + 2u*i]; b = kvDown[rank + 2u*i + 1u]; }", "if (interleave == 1u) { a = kvDown[2u*i]; b = kvDown[2u*i + 1u]; }",
 		"else { a = kvDown[rank + i]; b = kvDown[rank + hr + i]; }", "else { a = kvDown[i]; b = kvDown[hr + i]; }",
-	).Replace(kernels.AllKernels)
-	if plant == kernels.AllKernels {
+	).Replace(AllKernels)
+	if plant == AllKernels {
 		t.Fatal("the plant's targets are not in the MLA kernels")
 	}
 	for _, il := range []bool{false, true} {
-		s, q := kmlaWorst(t, kernels.AllKernels, il)
+		s, q := kmlaWorst(t, AllKernels, il)
 		ps, pq := kmlaWorst(t, plant, il)
 		t.Logf("interleave %v: mla_store %.2e, mla_qrope %.2e (bar %.0e); planted %.2e, %.2e", il, s, q, bar, ps, pq)
 		if s > bar || q > bar {

@@ -1,6 +1,6 @@
 //go:build darwin && goinfer_testhooks
 
-package metal
+package kernels
 
 import (
 	"math"
@@ -9,20 +9,20 @@ import (
 	"time"
 )
 
-// TestRmsnormQuant_cpuParity gates rmsnorm_quant (metal/kernels.go) sourced from the real
-// allKernels -- the default norm+quant kernel for GPT-2/Cohere/Gemma's GEMV inputs (model.go:
-// r.pRms, launch shape (256, 256), dispatched every layer). Unlike TestLayerB_rmsnormQuantParity
-// (rmsnorm_test.go), which compiles a private inline copy, this compiles the REAL shipped source.
-func TestRmsnormQuant_cpuParity(t *testing.T) {
+// TestRmsnormQuantF16_cpuParity gates rmsnorm_quant_f16 (metal/prefill.go) sourced from the real
+// prefillKernels -- prefill's fused norm+quant of the LAST token's f16 activation feeding the
+// int8-pinned LM head (prefill.go: pf.pRmsQ, launch shape (256, 256), dispatched once per prefill
+// call).
+func TestRmsnormQuantF16_cpuParity(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	lib, err := d.CompileLibrary(prefillKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	pipe, err := d.NewComputePipeline(lib, "rmsnorm_quant")
+	pipe, err := d.NewComputePipeline(lib, "rmsnorm_quant_f16")
 	if err != nil {
 		t.Fatalf("pipeline: %v", err)
 	}
@@ -30,11 +30,14 @@ func TestRmsnormQuant_cpuParity(t *testing.T) {
 	const rqH = 4096
 	const eps = 1e-6
 	const addOne = 1
-	rng := rand.New(rand.NewSource(41))
+	rng := rand.New(rand.NewSource(53))
+	xf16 := make([]uint16, rqH)
 	x := make([]float32, rqH)
 	w := make([]float32, rqH)
 	for i := range x {
-		x[i] = rng.Float32()*2 - 1
+		v := rng.Float32()*2 - 1
+		xf16[i] = f32ToF16(v)
+		x[i] = f16ToF32(xf16[i]) // round-trip so the CPU ref matches the f16 input exactly
 		w[i] = 0.5 + rng.Float32()
 	}
 
@@ -66,7 +69,7 @@ func TestRmsnormQuant_cpuParity(t *testing.T) {
 	aqBuf := d.NewBufferBytes(rqH)
 	ascBuf := d.NewBufferLen(1)
 	q.Run1D(pipe, 256, 256,
-		NewBufferFloats(d, x),
+		NewBufferU16s(d, xf16),
 		NewBufferFloats(d, w),
 		aqBuf,
 		ascBuf,
@@ -90,30 +93,38 @@ func TestRmsnormQuant_cpuParity(t *testing.T) {
 		nb += r * r
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
-	mustFinite(t, "rmsnorm_quant cosine", cos)
+	mustFinite(t, "rmsnorm_quant_f16 cosine", cos)
 	if cos < 0.99999 || mism > rqH/100 {
-		t.Fatalf("rmsnorm_quant drifts from CPU reference: cosine=%.7f int8-mismatch=%d/%d", cos, mism, rqH)
+		t.Fatalf("rmsnorm_quant_f16 drifts from CPU reference: cosine=%.7f int8-mismatch=%d/%d", cos, mism, rqH)
 	}
-	t.Logf("rmsnorm_quant H=%d vs CPU: cosine=%.9f, int8 exact=%d/%d", rqH, cos, rqH-mism, rqH)
+	t.Logf("rmsnorm_quant_f16 H=%d vs CPU: cosine=%.9f, int8 exact=%d/%d", rqH, cos, rqH-mism, rqH)
 }
 
-// BenchmarkRmsnormQuant isolates rmsnorm_quant's own throughput at a realistic dispatch shape.
-func BenchmarkRmsnormQuant(b *testing.B) {
+// BenchmarkRmsnormQuantF16 isolates rmsnorm_quant_f16's own throughput at a realistic dispatch
+// shape.
+func BenchmarkRmsnormQuantF16(b *testing.B) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		b.Skipf("no metal device: %v", err)
 	}
-	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	lib, err := d.CompileLibrary(prefillKernels, MSL3_1)
 	if err != nil {
 		b.Fatalf("compile: %v", err)
 	}
-	pipe, err := d.NewComputePipeline(lib, "rmsnorm_quant")
+	pipe, err := d.NewComputePipeline(lib, "rmsnorm_quant_f16")
 	if err != nil {
 		b.Fatalf("pipeline: %v", err)
 	}
 
 	const rqH = 4096
-	rng := rand.New(rand.NewSource(41))
+	rng := rand.New(rand.NewSource(53))
+	rndf16 := func(n int) []uint16 {
+		s := make([]uint16, n)
+		for i := range s {
+			s[i] = f32ToF16(rng.Float32()*2 - 1)
+		}
+		return s
+	}
 	rndf := func(n int) []float32 {
 		s := make([]float32, n)
 		for i := range s {
@@ -121,7 +132,7 @@ func BenchmarkRmsnormQuant(b *testing.B) {
 		}
 		return s
 	}
-	dX := NewBufferFloats(d, rndf(rqH))
+	dX := NewBufferU16s(d, rndf16(rqH))
 	dW := NewBufferFloats(d, rndf(rqH))
 	dAq := d.NewBufferBytes(rqH)
 	dAsc := d.NewBufferLen(1)
