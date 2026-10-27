@@ -1,0 +1,6 @@
+== mutation[vk5-w4] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: vk5-w4 is falsifiable

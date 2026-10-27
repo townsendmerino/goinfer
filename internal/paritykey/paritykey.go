@@ -8,7 +8,7 @@
 // programs hashes its files less the builders, with "programs=<digest>" and today's tail as its tail; a family with no
 // programs keeps today's key. A tree is read through a Source, so the same code hashes a working tree and any commit.
 // decoder's TestParityKey_matchesFreshDepsHash holds today's key equal to freshDepsHash, and
-// TestParityKey_shadowMatchesDecoder holds the shadow key to decoder's own computation.
+// decoder's TestParityKey_shadowMatchesDecoder holds the shadow key to decoder's own computation.
 //
 // Imports: the standard library only.
 //

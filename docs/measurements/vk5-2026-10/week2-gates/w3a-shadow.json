@@ -1,0 +1,383 @@
+{
+  "Before": "a3efe8448b5ce856a41315c7b26ce9140db49b9c",
+  "After": "2eee43780d0e774ea848f91ec735cb227186cd33",
+  "Outcome": "OK",
+  "Counts": {
+    "agree-fresh": 1,
+    "agree-stale": 12,
+    "old-only": 30
+  },
+  "Verdicts": [
+    {
+      "family": "bailing_hybrid",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "cohere",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "cohere2",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "deepseek_v2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "deepseek_v3",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "gemma",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "gemma2",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "gemma3",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "gemma4",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "glm4_moe",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "glm_ocr",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "gpt-oss",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gpt2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "granite",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "granitemoehybrid",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "internlm2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "kimi_k2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "laguna",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "lfm2",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "llama",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "llama4_text",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "mellum",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "mistral",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "mistral3",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "mixtral",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "nemotron_h",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "olmo3",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "olmo_hybrid",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "phi3",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "qwen2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen2_5_vl",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "qwen2_moe",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_5",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "qwen3_5_moe",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "qwen3_asr",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "qwen3_moe",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "qwen3_next",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "qwen3_vl",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl_moe",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "smollm3",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "spark2_5",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "voxtral",
+      "class": "old-only",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    }
+  ]
+}

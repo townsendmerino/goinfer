@@ -1,11 +1,11 @@
 name: vk-shadow
 
 # VK5's shadow mode (docs/tasks/task-subsystems-2026-10.md §5.8): on every push to main, every parity family judged by
-# today's key and by the shadow key (the kernel fingerprints in place of the aikit pin), each disagreement with its
-# reason. Not a required check. No concurrency group, so a push that lands while another runs is not collapsed away.
+# today's key and by the shadow key (week 2: the program builders out, the family's program fingerprints in), each
+# disagreement with its reason. Not a required check. No concurrency group, so a push that lands while another runs is not collapsed away.
 # The comparison goes to the job summary and to an artifact; read them with
 # `gh run list --workflow vk-shadow.yml` and `gh run download <id>`. The run goes red only on an unexplained
-# disagreement; a VOID push (a new branch, a force push, a pin the suite cannot build) is green and says VOID.
+# disagreement; a VOID push (a new branch, a force push, a tree the keys cannot read) is green and says VOID.
 on:
   push:
     branches: [main]
