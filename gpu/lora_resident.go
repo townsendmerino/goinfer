@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/adapter"
 )
 
 // loraRMax bounds the LoRA rank this backend accepts — generous against real adapters
@@ -52,7 +52,7 @@ func (l *loraRunLayer) fieldFor(kind loraProjKind) **loraRunProj {
 	}
 }
 
-func projFor(kind loraProjKind, l *decoder.ResidentAdapterLayer) *decoder.ResidentAdapterProj {
+func projFor(kind loraProjKind, l *adapter.ResidentAdapterLayer) *adapter.ResidentAdapterProj {
 	switch kind {
 	case loraQ:
 		return l.Q
@@ -103,7 +103,7 @@ func releaseLoraLayers(layers []loraRunLayer) {
 // adapter is REBUILDING that list from the pristine r.baseSteps plus this call's LoRA steps
 // spliced in at the hook points r.loraHooks recorded during construction, not a per-token
 // decision the way Metal's re-encoded-every-token trunk can make with a plain `if`.
-func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
+func (r *DecodeRunner) SetAdapter(layers []adapter.ResidentAdapterLayer) error {
 	r.dropPending() // the steps are rebuilt below
 	releaseLoraLayers(r.loraLayers)
 	r.loraLayers = nil
@@ -119,7 +119,7 @@ func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		h := &r.loraHooks[i]
 		hookByLayerKind[[2]int{h.layer, int(h.kind)}] = h
 	}
-	mk := func(layer int, kind loraProjKind, proj *decoder.ResidentAdapterProj) (*loraRunProj, error) {
+	mk := func(layer int, kind loraProjKind, proj *adapter.ResidentAdapterProj) (*loraRunProj, error) {
 		if proj == nil {
 			return nil, nil
 		}

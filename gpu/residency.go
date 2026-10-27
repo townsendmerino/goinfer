@@ -21,7 +21,7 @@ import (
 // uploadProj uploads one projection to the device at its native precision and returns a decodeWeight the DecodeRunner can
 // GEMV. int4 and int8 upload as they are; an f32 projection is quantized row-wise to int8. It reads the projection through
 // linalg.WeightMat's exported accessors (Kind/Rows/Cols/Int4/Int8).
-func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
+func uploadProj(c *Context, w *linalg.WeightMat) (decodeWeight, error) {
 	N, K := w.Rows(), w.Cols()
 	switch w.Kind() {
 	case "int4":
@@ -226,7 +226,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return d.buf, nil
 	}
 	proj := func(pw *linalg.WeightMat) (decodeWeight, error) {
-		dw, err := c.uploadProj(pw)
+		dw, err := uploadProj(c, pw)
 		if err != nil {
 			return nil, err
 		}
