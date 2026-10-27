@@ -943,6 +943,21 @@ D1–D7 run through `internal/mem`, and the census holds byte for byte.
 | G-MM6-4 the census | `TestDecisionCensus` passes without `-census.update` (`FitQuery` is refactored, not changed) | as G-MM1-S1 | runs to completion | 8 s |
 | G-MM6-5 the replay (the Mac) | every night job on the Mac refused by the fit or swap guard from 2026-10-06 to 10-26, re-checked with `fit -profile` on the night profile for its model and options as queued, is refused (exit 4). A job whose refusal was the swap guard's (not priced by `FitQuery`) is listed apart, not counted against the rule. The commands are in the PR; the result follows the PR. | the job's model is no longer on the Mac's local disk (listed, not counted) | every refused job | the Mac session's estimate, minutes |
 | G-MM6-6 builds | as G-MM1-S6, and `python3 scripts/test_night.py` | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM6 read, 2026-10-26 (nobara): G-MM6-1, 2, 3, 4 and 6 pass; G-MM6-5, the Mac's replay, follows the PR.**
+- G-MM6-1: `TestProfile_answersAsFitQueryAvailable` reaches all four verdicts, each with its exit code and with
+  `FitQueryAvailable`'s answer. `TestFitQueryAvailable_isFitQueryAtThatReading` holds it equal to `FitQuery` at the probe's
+  reading, for a directory and a `.gguf`.
+- G-MM6-2: eight `FitCheckAtQueueTime` tests pass, and the whole `test_night.py` (62).
+- G-MM6-3: through the real `go run ./demo/chat fit`, llama-tiny is refused on a 64 KiB profile and fits on
+  `nobara-no-desktop`. The first try found that `go run` exits 1 for the program's exit 4, so `night.py` reads the JSON
+  verdict, not the exit code. The scripted checker in G-MM6-2 now exits 1 as `go run` does.
+- G-MM6-4: `TestDecisionCensus` passes without `-census.update`.
+- G-MM6-6: vet on three systems, the chat builds' vet with their tags, the pinned staticcheck (untagged and `realckpt`),
+  gofmt, the parity manifest fresh.
+- The replay's commands and its pass rule are in the PR. Because the night profile is the idle Mac, the replay also
+  measures whether the Mac's nights are idle: a refusal that printed about 7 GB available would not be refused on a 12.2 GB
+  profile. That would be a finding about which profile prices night jobs (Francis's 1b), and it is reported as one.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

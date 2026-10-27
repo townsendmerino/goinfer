@@ -5,6 +5,7 @@ import datetime as dt
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -811,6 +812,109 @@ class NightStart(unittest.TestCase):
         self.assertEqual(night.night_start("22:00", self.at(7)), self.at(22))
         self.assertEqual(night.night_start("22:00", self.at(2)), self.at(22) - dt.timedelta(days=1))
         self.assertEqual(night.night_end(self.at(22)), self.at(6, 30) + dt.timedelta(days=1))
+
+
+class FitCheckAtQueueTime(unittest.TestCase):
+    """MM6 gate G-MM6-2: night.py add prices each declared load on the box's recorded profile (night for --not-before, day
+    otherwise), refuses a load the profile refuses unless --fit-override, and warns when nothing is declared or the box has no
+    profile."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(dir=_tmp))
+        for d in (night.QUEUE,):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+        self.calls = []
+        self.verdict = "fits"
+        self.real = night.fit_check
+
+    def tearDown(self):
+        night.fit_check = self.real
+
+    def fake_run(self, cmd, cwd=None, capture_output=None, text=None):
+        self.calls.append(cmd)
+        rc = 1 if self.verdict == "refused" else 0  # what `go run` exits with when the program exits 4
+        out = json.dumps({"profile": Path(cmd[cmd.index("-profile") + 1]).stem, "verdict": self.verdict,
+                          "answer": {"Decline": "decoder: x needs ~9 GB; this machine currently has 5 GB" if rc else ""}})
+        return subprocess.CompletedProcess(cmd, rc, stdout=out + "\n", stderr="")
+
+    def add(self, name, host="nobara-pc", **kw):
+        night.fit_check = lambda *args, **k: self.real(args[0], args[1], args[2], host, args[4], run=self.fake_run)
+        a = type("A", (), dict(name=name, cmd=["true"], est=5, force=False, allow_duplicate=True, cwd=str(self.dir), timeout=None,
+                               priority=50, by="", doc="", note="", **kw))()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            night.cmd_add(a)
+        return err.getvalue()
+
+    def queued(self, name):
+        return [json.loads(f.read_text()) for f in night.QUEUE.glob(f"*-{name}.json")]
+
+    def test_a_refused_load_is_not_queued(self):
+        self.verdict = "refused"
+        err = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(err):
+            self.add("refused", fit_model=["m.gguf"], fit_opts=["-quant int4"])
+        self.assertEqual(self.queued("refused"), [])
+
+    def test_the_refusal_names_the_model_the_profile_and_the_reason(self):
+        self.verdict = "refused"
+        err = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(err):
+            a = type("A", (), dict(name="named", cmd=["true"], est=5, force=False, allow_duplicate=True, cwd=str(self.dir),
+                                   timeout=None, priority=50, by="", doc="", note="", fit_model=["m.gguf"], fit_opts=["-quant int4"]))()
+            night.fit_check = lambda *args, **k: self.real(args[0], args[1], args[2], "nobara-pc", args[4], run=self.fake_run)
+            night.cmd_add(a)
+        msg = err.getvalue()
+        for want in ("m.gguf", "nobara-desktop", "needs ~9 GB", "--fit-override"):
+            self.assertIn(want, msg)
+
+    def test_an_override_queues_it_and_records_the_reason(self):
+        self.verdict = "refused"
+        self.add("override", fit_model=["m.gguf"], fit_override="Francis asked for it tonight")
+        [job] = self.queued("override")
+        self.assertEqual(job["fit_override"], "Francis asked for it tonight")
+        self.assertEqual(job["fit_check"][0]["verdict"], "refused")
+
+    def test_no_fit_model_queues_with_a_warning(self):
+        err = self.add("undeclared")
+        self.assertEqual(len(self.queued("undeclared")), 1)
+        self.assertIn("not checked at queue time", err)
+        self.assertEqual(self.calls, [])
+
+    def test_a_night_job_is_priced_on_the_night_profile_and_a_day_job_on_the_day_one(self):
+        self.add("dayjob", fit_model=["m.gguf"])
+        self.add("nightjob", fit_model=["m.gguf"], not_before="22:00")
+        self.assertEqual(self.queued("dayjob")[0]["fit_check"][0]["profile"], "nobara-desktop")
+        self.assertEqual(self.queued("nightjob")[0]["fit_check"][0]["profile"], "nobara-no-desktop")
+        self.add("macnight", host="macbookpro.lan", fit_model=["m.gguf"], not_before="22:00")
+        self.assertEqual(self.queued("macnight")[0]["fit_check"][0]["profile"], "m1pro-near-idle")
+
+    def test_an_unknown_host_queues_with_a_warning(self):
+        err = self.add("elsewhere", host="some-other-box", fit_model=["m.gguf"])
+        self.assertEqual(len(self.queued("elsewhere")), 1)
+        self.assertIn("no recorded machine profile", err)
+        self.assertEqual(self.calls, [])
+
+    def test_the_backend_picks_the_binary_and_each_load_is_priced(self):
+        self.add("two", fit_model=["a.gguf", "b.giw"], fit_opts=["-backend cuda -quant int4", "-backend metal"])
+        self.assertEqual(self.calls[0][:5], ["go", "run", "-tags", "cuda", "./cuda/cmd/chat"])
+        self.assertEqual(self.calls[1][:3], ["go", "run", "./metal/cmd/chat"])
+        self.assertEqual(night.fit_binary(""), ["go", "run", "./demo/chat"])
+        self.assertEqual(len(self.queued("two")[0]["fit_check"]), 2)
+
+    def test_a_check_that_cannot_run_refuses_unless_overridden(self):
+        def broken(cmd, cwd=None, capture_output=None, text=None):
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="go: not found")
+        night.fit_check = lambda *args, **k: self.real(args[0], args[1], args[2], "nobara-pc", args[4], run=broken)
+        a = type("A", (), dict(name="broken", cmd=["true"], est=5, force=False, allow_duplicate=True, cwd=str(self.dir),
+                               timeout=None, priority=50, by="", doc="", note="", fit_model=["m.gguf"]))()
+        err = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            night.cmd_add(a)
+        self.assertIn("could not run", err.getvalue())
+        self.assertEqual(self.queued("broken"), [])
 
 
 if __name__ == "__main__":

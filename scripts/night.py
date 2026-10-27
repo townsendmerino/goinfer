@@ -303,6 +303,71 @@ def check_job_plans(cmd, cwd):
     return [m for m in (check_plan(p, cwd) for p in plan_files(cmd, cwd)) if m]
 
 
+# ---------------------------------------------------------------- the queue-time fit check (MM6)
+
+# FIT_PROFILES is each box's recorded machine profile (testdata/machines/<name>.json) for pricing a job's loads at queue time:
+# the night profile for a job with --not-before, the day profile for any other (Francis's decision of 2026-10-26, MM6 1b).
+FIT_PROFILES = {
+    "nobara-pc": {"night": "nobara-no-desktop", "day": "nobara-desktop"},
+    "macbookpro.lan": {"night": "m1pro-near-idle", "day": "m1pro-apps-open"},
+}
+
+
+def fit_binary(opts):
+    """The `go run` of the chat build a job's load runs through: what Load prices depends on the backends linked in."""
+    toks = shlex.split(opts or "")
+    backend = ""
+    for i, t in enumerate(toks):
+        if t in ("-backend", "--backend") and i + 1 < len(toks):
+            backend = toks[i + 1]
+        elif t.startswith(("-backend=", "--backend=")):
+            backend = t.split("=", 1)[1]
+    if backend == "cuda":
+        return ["go", "run", "-tags", "cuda", "./cuda/cmd/chat"]
+    if backend == "metal":
+        return ["go", "run", "./metal/cmd/chat"]
+    return ["go", "run", "./demo/chat"]
+
+
+def fit_check(models, opts_list, night_job, host, cwd, run=subprocess.run, profiles_dir=None):
+    """Prices each declared load (`fit -profile`) on host's recorded profile for the job's hour. Returns (checks, refusals,
+    warnings): checks are recorded in the job, a refusal stops the queueing unless overridden, a warning is printed."""
+    if not models:
+        return [], [], ["no --fit-model: this job's loads are not checked at queue time"]
+    profiles = FIT_PROFILES.get(host)
+    if not profiles:
+        return [], [], [f"no recorded machine profile for {host!r} (night.py FIT_PROFILES): this job's loads are not checked"]
+    which = "night" if night_job else "day"
+    repo = Path(__file__).resolve().parents[1]
+    profile = Path(profiles_dir or repo / "testdata" / "machines") / f"{profiles[which]}.json"
+    checks, refusals = [], []
+    for i, model in enumerate(models):
+        opts = opts_list[i] if i < len(opts_list) else ""
+        path = str((Path(cwd) / model).resolve()) if not str(model).startswith(("hf:", "demo:")) else str(model)
+        cmd = fit_binary(opts) + ["fit", path, "-profile", str(profile), "-json"] + shlex.split(opts or "")
+        r = run(cmd, cwd=repo, capture_output=True, text=True)
+        # The verdict is read from the JSON line, not the exit code: `go run` exits 1 for any non-zero exit of the program it
+        # ran, so fit -profile's refusal exit (4, internal/fitcmd.ExitRefused) reaches only a caller of the built binary.
+        answer, verdict = {}, "error"
+        for ln in reversed((r.stdout or "").strip().splitlines()):
+            try:
+                answer = json.loads(ln)
+                verdict = answer["verdict"]
+                break
+            except (ValueError, KeyError, TypeError):
+                continue
+        if verdict not in ("fits", "capped", "unpriced", "refused"):
+            verdict = "error"
+        checks.append({"model": model, "opts": opts, "profile": profiles[which], "verdict": verdict})
+        if verdict == "refused":
+            why = answer.get("answer", {}).get("Decline", "")
+            refusals.append(f"{model} ({opts or 'no options'}) would be refused on {profiles[which]}: {why.splitlines()[0] if why else 'refused'}")
+        elif verdict == "error":
+            tail = " ".join(((r.stderr or "") + (r.stdout or "")).strip().splitlines()[-2:])
+            refusals.append(f"the fit check for {model} could not run (exit {r.returncode}): {tail}")
+    return checks, refusals, []
+
+
 # ---------------------------------------------------------------- add / list / drop
 
 def cmd_add(a):
@@ -322,6 +387,13 @@ def cmd_add(a):
     cwd = Path(a.cwd or os.getcwd()).resolve()
     if problems := check_job_plans(cmd, cwd):
         die("refusing to queue: " + " | ".join(problems))
+    fit_checks, fit_refusals, fit_warnings = fit_check(getattr(a, "fit_model", None) or [], getattr(a, "fit_opts", None) or [],
+                                                       bool(getattr(a, "not_before", None)), platform.node(), cwd)
+    for w in fit_warnings:
+        print(f"night: warning: {w}", file=sys.stderr)
+    override = getattr(a, "fit_override", None)
+    if fit_refusals and not override:
+        die("refusing to queue: " + " | ".join(fit_refusals) + " (--fit-override REASON queues it anyway)")
     # ONE COPY OF EACH RUN. The same command from the same directory is the same run tonight, whatever rev each
     # session was on when it queued it: a tree-relative command runs on tonight's tree, and a run-*.sh runs
     # whatever that script says tonight. Two sessions queueing the same gate is the case this exists for.
@@ -340,6 +412,10 @@ def cmd_add(a):
         extra["retry_until"] = parse_deadline(a.retry_until, t).isoformat(timespec="seconds")
     if getattr(a, "fit_need_gb", None):
         extra["fit_need_gb"] = a.fit_need_gb
+    if fit_checks:
+        extra["fit_check"] = fit_checks
+    if override:
+        extra["fit_override"] = override
     seq = int(time.time() * 1000)
     job = {
         "name": a.name,
@@ -1419,6 +1495,12 @@ def main():
     s.add_argument("--not-before", metavar="HH:MM", help="night-only: start no earlier than this, and end by the deadline after it")
     s.add_argument("--retry-until", metavar="HH:MM", help=f"an exit {RETRY_RC} (the job's own check refused) re-queues it until then")
     s.add_argument("--fit-need-gb", type=float, help="memory the job needs; serve starts it only with this plus 2 GB free")
+    s.add_argument("--fit-model", action="append", metavar="PATH",
+                   help="a checkpoint the job loads (repeatable): priced at queue time with `fit -profile` on this box's recorded "
+                        "profile (night for --not-before, else day); a load it would refuse is not queued")
+    s.add_argument("--fit-opts", action="append", metavar="'FLAGS'",
+                   help="fit flags for the --fit-model in the same position, e.g. '-backend cuda -quant int4 -ctx 8192'")
+    s.add_argument("--fit-override", metavar="REASON", help="queue a job whose load the fit check refuses; the reason is recorded")
     s.set_defaults(fn=cmd_add)
 
     s = sp.add_parser("list", help="the queue, in run order")
