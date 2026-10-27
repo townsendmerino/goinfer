@@ -906,8 +906,16 @@ class FitCheckAtQueueTime(unittest.TestCase):
             self.add("nightjob", fit_model=["m.gguf"], not_before="22:00")
             self.assertEqual(self.queued("dayjob")[0]["fit_check"][0]["profile"], "nobara-desktop")
             self.assertEqual(self.queued("nightjob")[0]["fit_check"][0]["profile"], "nobara-pc-night")
-            self.add("macnight", host="macbookpro.lan", fit_model=["m.gguf"], not_before="22:00")
-            self.assertEqual(self.queued("macnight")[0]["fit_check"][0]["profile"], "macbookpro.lan-night")
+            # Another box is never priced from this box's readings: the Mac has none here, so it falls back to its day profile,
+            # and this box's night profile file is not overwritten with the Mac's name.
+            written = (readings.parent / "profile-night.json").read_text()
+            err = self.add("macnight", host="macbookpro.lan", fit_model=["m.gguf"], not_before="22:00")
+            self.assertEqual(self.queued("macnight")[0]["fit_check"][0]["profile"], "m1pro-apps-open")
+            self.assertIn("only 0 night readings", err)
+            self.assertEqual((readings.parent / "profile-night.json").read_text(), written)
+            # A --not-before outside the night window is a day job, priced on the day profile.
+            self.add("afternoon", fit_model=["m.gguf"], not_before="14:00")
+            self.assertEqual(self.queued("afternoon")[0]["fit_check"][0]["profile"], "nobara-desktop")
         finally:
             self.real = real  # tearDown restores night.fit_check from it
 
@@ -1093,9 +1101,9 @@ class NightProfile(unittest.TestCase):
         # The window is the 14 nights ending with tonight's (the 26th): the nights of the 13th to the 26th. 13 nights ago is
         # the 13th, inside; 14 nights ago is the 12th, outside.
         for d, h, mb in inside:
-            night.record_reading(self.at(d, h), "j", True, mb, path=self.readings)
-        night.record_reading(self.at(14, 23), "old", True, 100, path=self.readings)  # the night of the 12th: outside
-        night.record_reading(self.at(2, 2), "day", False, 50, path=self.readings)    # a day job: excluded
+            night.record_reading(self.at(d, h), "j", True, mb, path=self.readings, host="box")
+        night.record_reading(self.at(14, 23), "old", True, 100, path=self.readings, host="box")  # the night of the 12th: outside
+        night.record_reading(self.at(2, 2), "day", False, 50, path=self.readings, host="box")    # a day job: excluded
         prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
         self.assertIsNotNone(prof, why)
         vals = sorted(mb for _, _, mb in inside)
@@ -1111,7 +1119,7 @@ class NightProfile(unittest.TestCase):
         """G-NP-2: under 5 readings or 3 nights, a night job is priced on the apps-open profile, and add says why."""
         for d in range(2):
             for mb in (5000, 6000, 7000):
-                night.record_reading(self.at(d, 23), "j", True, mb, path=self.readings)  # 6 readings, 2 nights
+                night.record_reading(self.at(d, 23), "j", True, mb, path=self.readings, host="box")  # 6 readings, 2 nights
         prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
         self.assertIsNone(prof)
         self.assertIn("6 night readings over 2 nights", why)
@@ -1120,6 +1128,9 @@ class NightProfile(unittest.TestCase):
         def fake(cmd, cwd=None, capture_output=None, text=None):
             calls.append(cmd)
             return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"verdict": "fits", "answer": {}}) + "\n", stderr="")
+        for d in range(2):
+            for mb in (5000, 6000, 7000):
+                night.record_reading(self.at(d, 23), "j", True, mb, path=self.readings, host="macbookpro.lan")
         checks, refusals, warnings = night.fit_check(["m.gguf"], [""], True, "macbookpro.lan", self.dir, run=fake,
                                                      readings_path=self.readings, night_profile_path=self.dir / "p.json")
         self.assertEqual(checks[0]["profile"], "m1pro-apps-open")
@@ -1146,6 +1157,61 @@ class NightProfile(unittest.TestCase):
         self.assertRegex(logs[0].read_text(), r"=== START .* available 4321 MB")
         recs = night.memory_readings()[before:]
         self.assertEqual([(r["job"], r["available_mb"], r["night"]) for r in recs], [("np-start", 4321, False)])
+
+    def test_a_night_reading_is_by_the_window(self):
+        """The night flag and the window: a --not-before in the night window is a night job, a 14:00 one is not; the window is the
+        14 nights that have begun, so between noon and 22:00 tonight's (not yet begun) is not in it."""
+        at = lambda h, m=0: dt.datetime(2026, 10, 27, h, m).astimezone()
+        self.assertTrue(night.is_night_job(at(22).isoformat()))
+        self.assertTrue(night.is_night_job(at(2)))
+        self.assertFalse(night.is_night_job(at(14).isoformat()))
+        self.assertFalse(night.is_night_job(None))
+        self.assertEqual(night.last_night_begun(at(15)), dt.date(2026, 10, 26))
+        self.assertEqual(night.last_night_begun(at(23)), dt.date(2026, 10, 27))
+        self.assertEqual(night.last_night_begun(at(3)), dt.date(2026, 10, 26))
+        for d in range(14):
+            night.record_reading(self.at(d, 23), "j", True, 5000 + d, path=self.readings, host="box")
+        prof, why = night.night_profile("box", at(15), night.memory_readings(self.readings))
+        self.assertIsNotNone(prof, why)
+        self.assertEqual((prof["readings"], prof["from"], prof["to"]), (14, "2026-10-13", "2026-10-26"))
+
+    def test_a_zero_reading_counts_and_another_host_does_not(self):
+        """A 0 MB reading is the worst night, not a missing one; a reading recorded by another host is never this one's."""
+        for d in range(5):
+            night.record_reading(self.at(d, 23), "j", True, 0 if d == 0 else 6000, path=self.readings, host="box")
+            night.record_reading(self.at(d, 23), "j", True, 1, path=self.readings, host="other")
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        self.assertIsNotNone(prof, why)
+        self.assertEqual(prof["readings"], 5)
+        self.assertEqual(prof["available_bytes"], int(night.percentile([0, 6000, 6000, 6000, 6000], 25) * (1 << 20)))
+
+    def test_backfill_reads_real_job_logs(self):
+        """--backfill finds the START line after the job's header lines (a real log's shape), takes the fit guard's figure in a
+        night job's log, skips a day job's, and adds nothing on a second run."""
+        runs = self.dir / "runs" / "2026-10-20"
+        runs.mkdir(parents=True)
+        hdr = "=== night job {n}\n=== cmd      bash run.sh\n=== by       x\n=== doc      y\n=== START    {t} PDT  loadavg 0.50  available ? MB\n"
+        fit = "decoder: m needs ~5.1 GB; this machine currently has 6.6 GB of memory available (budget 5.0 GB = 75% of that)\n"
+        (runs / "nightjob.log").write_text(hdr.format(n="nightjob", t="2026-10-20 23:05:00") + fit)
+        (runs / "dayjob.log").write_text(hdr.format(n="dayjob", t="2026-10-20 14:05:00") + fit)
+        mem = self.dir / "bf.jsonl"
+        self.assertEqual(night.backfill_readings(runs=self.dir / "runs", path=mem), 1)
+        self.assertEqual(night.backfill_readings(runs=self.dir / "runs", path=mem), 0)
+        r = night.memory_readings(mem)
+        self.assertEqual([(x["job"], x["available_mb"], x["night"], x["source"]) for x in r], [("nightjob", int(6.6 * 1024), True, "backfill")])
+
+    def test_the_real_reading_never_raises(self):
+        """night.Runner.avail_mb (not the test Runner's stand-in) returns MiB or None, and None when hostmem fails."""
+        r = night.Runner.__new__(night.Runner)
+        got = r.avail_mb()
+        self.assertTrue(got is None or (isinstance(got, int) and got >= 0), got)
+        import hostmem
+        real = hostmem.available_mb
+        hostmem.available_mb = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no hostmem"))
+        try:
+            self.assertIsNone(r.avail_mb())
+        finally:
+            hostmem.available_mb = real
 
 
 if __name__ == "__main__":

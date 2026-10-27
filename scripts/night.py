@@ -324,9 +324,30 @@ MEMORY_LOG = ROOT / "memory.jsonl"           # every job start's available readi
 NIGHT_PROFILE = ROOT / "profile-night.json"  # the night profile, rewritten whenever a night job is priced or `profile` runs
 
 
+NIGHT_FROM = "22:00"  # a night window opens here and closes at DEFAULT_DEADLINE (CLAUDE.md: a night case adds --not-before 22:00)
+
+
 def night_of(t):
     """The night a reading at t belongs to: the one that began at or before it, so 02:00 counts with the evening before."""
     return (t - dt.timedelta(hours=12)).date()
+
+
+def in_night(t, deadline=DEFAULT_DEADLINE):
+    """Whether t falls in a night window, NIGHT_FROM to the deadline the next morning."""
+    h, m = (int(x) for x in NIGHT_FROM.split(":"))
+    dh, dm = (int(x) for x in deadline.split(":"))
+    return (t.hour, t.minute) >= (h, m) or (t.hour, t.minute) < (dh, dm)
+
+
+def last_night_begun(t):
+    """The latest night that has begun by t: between noon and NIGHT_FROM, night_of(t) has not begun yet, so it is the one before."""
+    n = night_of(t)
+    return n - dt.timedelta(days=1) if t.hour >= 12 and not in_night(t) else n
+
+
+def is_night_job(not_before):
+    """A job is priced and recorded as a night job when its --not-before start falls in a night window: a 14:00 start is a day job."""
+    return bool(not_before) and in_night(not_before if isinstance(not_before, dt.datetime) else dt.datetime.fromisoformat(not_before))
 
 
 def percentile(vals, pct):
@@ -355,11 +376,13 @@ def memory_readings(path=None):
 
 
 def night_profile(host, t, readings):
-    """The night profile at t from readings, or (None, why) when there are too few: a dict in testdata/machines' form, with
-    the percentile, window and counts it was computed from."""
-    tonight = night_of(t)
-    first = tonight - dt.timedelta(days=NIGHT_WINDOW - 1)
-    use = [r for r in readings if r.get("night") and r.get("available_mb") and first <= night_of(r["t"]) <= tonight]
+    """host's night profile at t from readings, or (None, why) when there are too few: a dict in testdata/machines' form, with
+    the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t."""
+    last = last_night_begun(t)
+    first = last - dt.timedelta(days=NIGHT_WINDOW - 1)
+    # Only host's own readings: a box's memory log is its own, so pricing another box from it would price the wrong machine.
+    use = [r for r in readings if r.get("night") and r.get("available_mb") is not None and r.get("host") == host
+           and first <= night_of(r["t"]) <= last]
     nights = sorted({night_of(r["t"]) for r in use})
     if len(use) < NIGHT_MIN_READINGS or len(nights) < NIGHT_MIN_NIGHTS:
         return None, (f"only {len(use)} night readings over {len(nights)} nights in the last {NIGHT_WINDOW} "
@@ -373,13 +396,13 @@ def night_profile(host, t, readings):
             "source": "night.py: the fit guard's available reading at each night job's start"}, ""
 
 
-def record_reading(t, job, night, available_mb, source="start", path=None):
-    """Appends one start reading to this box's memory log."""
+def record_reading(t, job, night, available_mb, source="start", path=None, host=None):
+    """Appends one start reading to this box's memory log (host: this box, unless a test names another)."""
     path = Path(path or MEMORY_LOG)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:
         f.write(json.dumps({"t": t.isoformat(timespec="seconds"), "job": job, "night": bool(night),
-                            "available_mb": available_mb, "host": platform.node(), "source": source}) + "\n")
+                            "available_mb": available_mb, "host": host or platform.node(), "source": source}) + "\n")
 
 
 def fit_binary(opts):
@@ -466,7 +489,8 @@ def cmd_add(a):
     if problems := check_job_plans(cmd, cwd):
         die("refusing to queue: " + " | ".join(problems))
     fit_checks, fit_refusals, fit_warnings = fit_check(getattr(a, "fit_model", None) or [], getattr(a, "fit_opts", None) or [],
-                                                       bool(getattr(a, "not_before", None)), platform.node(), cwd)
+                                                       is_night_job(night_start(a.not_before, now()) if getattr(a, "not_before", None) else None),
+                                                       platform.node(), cwd)
     for w in fit_warnings:
         print(f"night: warning: {w}", file=sys.stderr)
     override = getattr(a, "fit_override", None)
@@ -771,6 +795,15 @@ class Runner:
         self.retries = False  # serve: an exit of RETRY_RC re-queues the job (finish) instead of failing it
         self.slept = []  # serve: the sleeps it saw (note_sleep)
 
+
+    def avail_mb(self):
+        """The fit guard's available reading (cmd/hostmem), recorded at each job start for the night profile; None when unreadable."""
+        try:
+            import hostmem
+            return hostmem.available_mb()
+        except Exception:
+            return None
+
     def log(self, msg):
         print(f"[{now().strftime('%F %T %Z')}] {msg}", flush=True)
 
@@ -922,7 +955,7 @@ class Runner:
             f.write(f"=== START    {t0.strftime('%F %T %Z')}  loadavg {os.getloadavg()[0]:.2f}"
                     f"  available {avail if avail is not None else '?'} MB\n")
             if avail is not None:
-                record_reading(t0, name, bool(j.get("not_before")), avail)
+                record_reading(t0, name, is_night_job(j.get("not_before")) and in_night(t0), avail)
             f.flush()
             j["_out_from"] = f.tell()  # where the job's own output starts: the header above (its note, its cmd) is not scanned
             # TE9: the job holds the timing lock, and its children (a run-*.sh, bench_peer.py) inherit it through the
@@ -1198,10 +1231,6 @@ class Server(Runner):
     def free_mb(self):
         return free_mem_mb()
 
-    def avail_mb(self):
-        """The fit guard's available reading (cmd/hostmem), recorded at each job start for the night profile; None when unreadable."""
-        import hostmem
-        return hostmem.available_mb()
 
     def heavy(self, j):
         """Why the box is under heavy load for job j now (the 2026-10-19 rule), or None."""
@@ -1483,7 +1512,7 @@ def cmd_update_runner(a):
 
 # The fit guard's own line: "... this machine currently has 6.6 GB of memory available ...".
 FIT_AVAIL_RE = re.compile(r"currently has ([0-9.]+) GB of memory available")
-START_RE = re.compile(r"^=== START\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)")
+START_RE = re.compile(r"^=== START\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", re.M)  # after the job's header lines
 
 
 def backfill_readings(runs=None, path=None):
@@ -1492,7 +1521,6 @@ def backfill_readings(runs=None, path=None):
     sample is biased low; each is marked "backfill", and a log already backfilled is skipped. Returns how many it added."""
     runs = Path(runs or ROOT / "runs")
     have = {(r.get("job"), r["t"].isoformat(timespec="seconds")) for r in memory_readings(path) if r.get("source") == "backfill"}
-    dh, dm = (int(x) for x in DEFAULT_DEADLINE.split(":"))
     added = 0
     for log in sorted(runs.glob("*/*.log")):
         try:
@@ -1503,7 +1531,7 @@ def backfill_readings(runs=None, path=None):
         if not m:
             continue
         t = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").astimezone()
-        if not (t.hour >= 22 or (t.hour, t.minute) < (dh, dm)):
+        if not in_night(t):
             continue
         a = FIT_AVAIL_RE.search(text[m.end():])
         if not a or (log.stem, t.isoformat(timespec="seconds")) in have:
