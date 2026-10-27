@@ -15,7 +15,7 @@ code are the truth for *what runs where*, and this page does not restate them.
 |---|---|
 | [capability-matrix.md](capability-matrix.md) — `go test ./decoder -run CapabilityMatrix -update` | every model family (37 at this rewrite) and what it supports |
 | [hardware-matrix.md](hardware-matrix.md) — `go test ./decoder -run HardwareMatrix -update` | which family runs resident on which GPU backend |
-| `testdata/parity_manifest.json`, kept by `cmd/gate` | each family's strongest validation against Hugging Face |
+| `testdata/parity/` (one record per family), kept by `cmd/gate` and `scripts/refresh_parity_hashes.sh` | each family's strongest validation against Hugging Face |
 | [env-vars.md](env-vars.md), checked by `TestEnvVars_docAndCodeAgree` | every environment variable goinfer reads |
 | [benchmarks.md](benchmarks.md) | every performance number, with its provenance |
 | [api-tiers.md](api-tiers.md) | what v1.0 promises not to break |
@@ -1042,3 +1042,78 @@ Experimental explicitly, so "still moving" is a stated exclusion rather than an 
 
 That is also why a `.giw` carries a format version. A stale bundle is a typed error, never a crash:
 a sidecar rebuilds itself, and a bundle you named refuses to start and says to rebuild it.
+
+<!-- imports:begin (generated from internal/layout/imports.json; go test -run TestArchitecture_importAppendix ./internal/layout/ -update) -->
+
+## Appendix: which package imports which
+
+Every import from one goinfer package to another, by repository-relative directory, from `internal/layout/imports.json`. `TestLayout_arrows` holds the data against the tree; this table is generated from it, and `TestArchitecture_importAppendix` fails when they differ.
+
+| package | imports | its tests also import |
+|---|---|---|
+| `chat` | `tokenizer` |  |
+| `cmd/gate` | `internal/kernelprint`, `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
+| `cmd/hostmem` | `internal/mem/probe` |  |
+| `cmd/prequant` | `decoder`, `internal/prequant` |  |
+| `cmd/serve` | `internal/serveapp` |  |
+| `constrain` |  | `tokenizer` |
+| `cuda` | `cuda/internal/gpudev`, `cuda/internal/wpack`, `decoder`, `internal/audio`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/clef`, `internal/giw`, `internal/loadflags`, `internal/mem/probe`, `internal/modelload`, `internal/towerid`, `internal/whisper`, `tokenizer` |
+| `cuda/cmd/chat` | `cuda`, `internal/chatapp` |  |
+| `cuda/cmd/serve` | `cuda`, `internal/serveapp` |  |
+| `cuda/internal/qwencuda` | `cuda/internal/gpudev`, `internal/vision` |  |
+| `cuda/internal/visioncuda` | `cuda/internal/gpudev`, `internal/vision` |  |
+| `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/wpack` |
+| `cuda/s4siglip` |  | `cuda/internal/visioncuda`, `internal/vision` |
+| `decoder` | `chat`, `constrain`, `internal/f16`, `internal/giw`, `internal/kvmgr`, `internal/mem`, `internal/mem/probe`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
+| `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
+| `demo/agent/cmd/agent-web` | `demo/agent/agent`, `demo/agent/internal/embedmodel`, `gpu` |  |
+| `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
+| `demo/chat` | `internal/chatapp` |  |
+| `embeddinggemma2` | `internal/audio`, `internal/vision`, `multimodal`, `tokenizer` |  |
+| `examples/confidence` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
+| `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
+| `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
+| `examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
+| `gpu` | `decoder`, `internal/vision`, `multimodal` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `tokenizer` |
+| `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
+| `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
+| `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
+| `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
+| `internal/decide` | `chat`, `decoder`, `internal/confidence`, `tokenizer` |  |
+| `internal/decidecmd` | `decoder`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant` |  |
+| `internal/fitcmd` | `decoder`, `internal/modelload`, `internal/prequant` | `internal/giw` |
+| `internal/hwreport` | `decoder`, `internal/fitcmd` |  |
+| `internal/loadflags` | `decoder`, `internal/cliutil` |  |
+| `internal/modelload` | `decoder`, `internal/giw`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
+| `internal/prequant` | `decoder` |  |
+| `internal/pullcmd` | `pull` |  |
+| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
+| `internal/servecheck` | `decoder`, `internal/hwreport` |  |
+| `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
+| `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/vision`, `multimodal` |  |
+| `internal/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
+| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/f16`, `internal/mem/probe`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/towerid`, `tokenizer` |
+| `metal/cmd/chat` | `internal/chatapp`, `metal` |  |
+| `metal/cmd/serve` | `internal/serveapp`, `metal` |  |
+| `metal/internal/qwenmetal` | `internal/vision`, `metal/internal/gpudev` |  |
+| `metal/internal/visionmetal` | `internal/vision`, `metal/internal/gpudev` |  |
+| `metal/kernels` | `internal/f16` | `metal/internal/gpudev` |
+| `multimodal` | `internal/audio`, `internal/vision`, `tokenizer` |  |
+| `pull` |  | `decoder`, `tokenizer` |
+| `sdktest` |  | `server` |
+| `server` | `internal/inproc`, `internal/serveapp` |  |
+| `site/cmd/build` | `site/internal/site` |  |
+
+### The protected separations
+
+No import, made or recorded, may break one; they are edited by hand in `imports.json`.
+
+| rule | packages | may not import | why |
+|---|---|---|---|
+| towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. |
+| gpudev-standalone | `cuda/internal/gpudev`, `metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
+| kernels-free-of-decoder | `cuda/kernels`, `metal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
+| probe-standalone | `internal/mem/probe`, tests included | any goinfer package | The one reader of the OS's memory account (MM0) imports no goinfer package; that it is the only reader is TestOnlyProbeReadsOSMemory. |
+| root-free-of-backends | `module:root`, tests included | `cuda`; `metal`; `gpu`; `github.com/townsendmerino/aikit/gpu`; `github.com/ebitengine/purego`; `github.com/eitamring/gocudrv`; (the root go.mod requires none of them) | The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse. |
+
+<!-- imports:end -->

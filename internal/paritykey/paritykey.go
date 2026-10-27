@@ -4,8 +4,8 @@
 //
 // Contract. Key hashes, in sorted order, each dependency path, a NUL, its content (a Go file's token stream, comments and
 // layout dropped, directives kept; any other file's bytes) and a NUL, then the tail. TodayTail and ShadowTail are the two
-// tails. A tree is read through a Source, so the same code hashes a working tree and any commit. TestParityKey_matchesFreshDepsHash
-// (decoder) holds today's key equal to freshDepsHash for every family.
+// tails. A tree is read through a Source, so the same code hashes a working tree and any commit.
+// decoder's TestParityKey_matchesFreshDepsHash holds today's key equal to freshDepsHash for every family.
 //
 // Imports: the standard library only.
 //
