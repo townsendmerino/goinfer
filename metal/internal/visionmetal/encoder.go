@@ -20,6 +20,7 @@ package visionmetal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"runtime"
 	"sync"
@@ -131,9 +132,9 @@ func newEncoder(w vision.GPUWeights) (enc *encoder, err error) {
 	cpp := w.NumChannels * w.PatchSize * w.PatchSize
 
 	e := &encoder{dev: dev, q: dev.NewCommandQueue(), k: kern, w: w, cpp: cpp}
-	up := func(x []float32) gpu.Buffer { return gpu.NewBufferOf(dev, x) }
+	up := func(x []float32) gpu.Buffer { return gpu.NewBufferOfOn(dev, mem.LineCompanion, x) }
 	upMat := func(m vision.GPUMat) mat {
-		return mat{q: gpu.NewBufferOf(dev, m.Q), s: gpu.NewBufferOf(dev, m.Scales), rows: m.Rows, cols: m.Cols}
+		return mat{q: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Q), s: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Scales), rows: m.Rows, cols: m.Cols}
 	}
 	e.patchW, e.patchB, e.posEmb = up(w.PatchW), up(w.PatchB), up(w.PosEmb)
 	e.postLNw, e.postLNb = up(w.PostLNw), up(w.PostLNb)
@@ -147,14 +148,14 @@ func newEncoder(w vision.GPUWeights) (enc *encoder, err error) {
 			fc1w: upMat(L.FC1w), fc2w: upMat(L.FC2w),
 		}
 	}
-	f32 := func(n int) gpu.Buffer { return dev.NewBufferLen(n) }
+	f32 := func(n int) gpu.Buffer { return dev.NewBufferLenOn(mem.LineCompanion, n) }
 	e.patches = f32(np * cpp)
 	e.h, e.n1, e.n2 = f32(np*hidden), f32(np*hidden), f32(np*hidden)
 	e.qa, e.ka, e.va = f32(np*hidden), f32(np*hidden), f32(np*hidden)
 	e.att, e.o, e.mlp, e.out = f32(np*hidden), f32(np*hidden), f32(np*hidden), f32(np*hidden)
 	e.mid = f32(np * inter)
 	wide := max(inter, hidden)
-	e.qi8 = gpu.NewBufferOf(dev, make([]int8, np*wide))
+	e.qi8 = gpu.NewBufferOfOn(dev, mem.LineCompanion, make([]int8, np*wide))
 	e.qs = f32(np)
 	// Enough slots for a whole batched layer: ~24 dispatches x up to 3 ints each,
 	// plus headroom. Reset per command buffer, so this is a ceiling on ONE
@@ -162,11 +163,11 @@ func newEncoder(w vision.GPUWeights) (enc *encoder, err error) {
 	const ivSlots, fvSlots = 128, 16
 	e.iv = make([]gpu.Buffer, ivSlots)
 	for i := range e.iv {
-		e.iv[i] = gpu.NewBufferOf(dev, []uint32{0})
+		e.iv[i] = gpu.NewBufferOfOn(dev, mem.LineCompanion, []uint32{0})
 	}
 	e.fv = make([]gpu.Buffer, fvSlots)
 	for i := range e.fv {
-		e.fv[i] = gpu.NewBufferOf(dev, []float32{0})
+		e.fv[i] = gpu.NewBufferOfOn(dev, mem.LineCompanion, []float32{0})
 	}
 	return e, nil
 }

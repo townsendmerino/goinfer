@@ -86,7 +86,7 @@ func newWeightAlias(m *decoder.Model) *weightAlias {
 // nibbles returns w's canonical packed int4 array as a Metal buffer bound at its offset in the mapping,
 // or ok=false when it cannot be aliased (not a canonical group-32 int4, not in the mapping, or not
 // 16-byte aligned) — the caller then takes the copy path unchanged.
-func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {
+func (a *weightAlias) nibblesOn(line string, d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	if a == nil {
 		return Buffer{}, false
 	}
@@ -94,12 +94,12 @@ func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	if !ok || group != 32 || len(q4) == 0 {
 		return Buffer{}, false
 	}
-	return a.window(d, q4)
+	return a.windowOn(line, d, q4)
 }
 
 // int8Codes is nibbles for an int8 (W8A8) matrix, the LM head: its codes are one contiguous array in the .giw, 16-byte aligned
 // since weights format v12, and the kernels read them as the same signed bytes, so they bind in place like int4 nibbles.
-func (a *weightAlias) int8Codes(d *Device, w *linalg.WeightMat) (Buffer, bool) {
+func (a *weightAlias) int8CodesOn(line string, d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	if a == nil {
 		return Buffer{}, false
 	}
@@ -107,7 +107,7 @@ func (a *weightAlias) int8Codes(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	if !ok || len(q8) == 0 {
 		return Buffer{}, false
 	}
-	buf, ok := a.window(d, unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8)))
+	buf, ok := a.windowOn(line, d, unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8)))
 	if ok {
 		a.int8Tensors++
 		a.int8Bytes += int64(len(q8))
@@ -119,7 +119,7 @@ func (a *weightAlias) int8Codes(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 
 // window binds b in place: ONE no-copy buffer over b's page-aligned window of the mapping, bound at b's
 // offset in it. ok=false (and the caller copies) when b is not in the mapping or not 16-byte aligned.
-func (a *weightAlias) window(d *Device, b []byte) (Buffer, bool) {
+func (a *weightAlias) windowOn(line string, d *Device, b []byte) (Buffer, bool) {
 	base, n, off, ok := a.m.MmapAliasWindow(b, a.page)
 	if !ok {
 		a.copied++
@@ -132,21 +132,21 @@ func (a *weightAlias) window(d *Device, b []byte) (Buffer, bool) {
 	}
 	a.tensors++
 	a.aliased += int64(len(b))
-	return d.NewBufferNoCopy(base, n).At(off), true
+	return d.NewBufferNoCopyOn(line, base, n).At(off), true
 }
 
 // int8BufA is int8Buf with the alias: the int8 codes bound in place when they are in the mapping, the
 // per-row f32 scales (a few hundred KB) copied as before.
-func int8BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, error) {
-	if codes, ok := a.int8Codes(d, w); ok {
+func int8BufAOn(line string, d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, error) {
+	if codes, ok := a.int8CodesOn(line, d, w); ok {
 		_, sc, _, _ := w.Int8()
 		a.addCopy(int64(4 * len(sc))) // the per-row f32 scales are still built
-		return codes, NewBufferFloats(d, sc), nil
+		return codes, NewBufferFloatsOn(line, d, sc), nil
 	}
 	if q8, sc, _, ok := w.Int8(); ok {
 		a.addCopy(int64(len(q8) + 4*len(sc)))
 	}
-	return int8Buf(d, w)
+	return int8BufOn(line, d, w)
 }
 
 // concatNibbles is nibbles for a FUSED group: it returns ONE buffer bound over the members' nibble bytes
@@ -156,7 +156,7 @@ func int8BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, e
 // member or a heap-backed one all fail the check and the caller takes the copy path unchanged. The bytes
 // are the same as int4Concat's concatenation (row-major nibbles, member after member), so the kernel
 // cannot tell the difference.
-func (a *weightAlias) concatNibbles(d *Device, wms []*linalg.WeightMat) (Buffer, bool) {
+func (a *weightAlias) concatNibblesOn(line string, d *Device, wms []*linalg.WeightMat) (Buffer, bool) {
 	if a == nil || len(wms) == 0 {
 		return Buffer{}, false
 	}
@@ -198,14 +198,14 @@ func (a *weightAlias) concatNibbles(d *Device, wms []*linalg.WeightMat) (Buffer,
 	a.groups++
 	a.groupBytes += int64(total)
 	a.aliased += int64(total)
-	return d.NewBufferNoCopy(base, n).At(off), true
+	return d.NewBufferNoCopyOn(line, base, n).At(off), true
 }
 
 // scales16 binds the binary16 group scales of wms (one tensor, or a fused group in member order) in place, when they
 // form one contiguous, 16-aligned run in the model's mapping. A .giw gives that to every single int4 tensor, and to a
 // fused group written for the Metal target; a group from a file for another target has its members' scales apart, and
 // a heap-built weight has none in the mapping. ok=false then, and the caller copies them into a buffer.
-func (a *weightAlias) scales16(d *Device, wms []*linalg.WeightMat) (Buffer, bool) {
+func (a *weightAlias) scales16On(line string, d *Device, wms []*linalg.WeightMat) (Buffer, bool) {
 	if a == nil || len(wms) == 0 {
 		return Buffer{}, false
 	}
@@ -231,24 +231,24 @@ func (a *weightAlias) scales16(d *Device, wms []*linalg.WeightMat) (Buffer, bool
 		return Buffer{}, false
 	}
 	a.scaleBytes += int64(2 * total)
-	return d.NewBufferNoCopy(base, n).At(off), true
+	return d.NewBufferNoCopyOn(line, base, n).At(off), true
 }
 
 // int4ConcatA is int4Concat with the fused-group alias: when the members' nibbles are one contiguous run in
 // the mapping the nibbles are bound in place and only the f16 scales (concatenated in member order, converted
 // exactly as int4Concat converts them) are built; otherwise it is int4Concat unchanged.
-func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, Buffer) {
+func int4ConcatAOn(line string, d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	for _, w := range wms {
 		if w.Cols()%32 != 0 { // int4Concat owns the K%32 panic
-			return int4Concat(d, wms...)
+			return int4ConcatOn(line, d, wms...)
 		}
 	}
-	nib, ok := a.concatNibbles(d, wms)
+	nib, ok := a.concatNibblesOn(line, d, wms)
 	if !ok {
 		a.addCopy(int4ConcatBytes(wms))
-		return int4Concat(d, wms...)
+		return int4ConcatOn(line, d, wms...)
 	}
-	if sc, ok := a.scales16(d, wms); ok { // a metal-target file: the members' f16 scales are one run too
+	if sc, ok := a.scales16On(line, d, wms); ok { // a metal-target file: the members' f16 scales are one run too
 		return nib, sc
 	}
 	nScales := 0
@@ -265,7 +265,7 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 	}
 	a.addCopy(int64(2 * len(scales)))
 	a.f16Converted++
-	return nib, NewBufferU16s(d, scales)
+	return nib, NewBufferU16sOn(line, d, scales)
 }
 
 // summary is the banner line: how much of the weights is served from the file and how much the build still copied into anonymous

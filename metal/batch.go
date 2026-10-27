@@ -5,6 +5,7 @@ package metal
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"os"
 	"runtime"
@@ -167,39 +168,39 @@ func (r *resident) buildBatch() {
 	b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), p("mc3_btd_fb2"), p("mc3_lm_fb4")
 	const B = batchMaxSeqs
 	maxK := max(r.H, b.nHhd, r.I)
-	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLen(B*r.H), d.NewBufferLen(B*b.qkvRows), d.NewBufferLen(B*2*r.I), d.NewBufferLen(B*r.V)
-	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytes(B*r.H), d.NewBufferBytes(B*b.nHhd), d.NewBufferBytes(B*r.H), d.NewBufferBytes(B*r.I)
-	b.aScB, b.cScB, b.mScB, b.dScB = d.NewBufferLen(B), d.NewBufferLen(B), d.NewBufferLen(B), d.NewBufferLen(B)
-	b.aT, b.aTp = NewBufferU16s(d, make([]uint16, maxK*8)), NewBufferU16s(d, make([]uint16, r.H*8))
-	b.uM = NewBufferU32(d, 1)
-	b.uQKV, b.uGU, b.uV = NewBufferU32(d, uint32(b.qkvRows)), NewBufferU32(d, uint32(2*r.I)), NewBufferU32(d, uint32(r.V))
-	b.uMode = [3]Buffer{NewBufferU32(d, 0), NewBufferU32(d, 1), NewBufferU32(d, 2)}
-	b.noBias = d.NewBufferLen(max(r.H, 2*r.I))
+	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*b.qkvRows), d.NewBufferLenOn(mem.LineScratch, B*2*r.I), d.NewBufferLenOn(mem.LineScratch, B*r.V)
+	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*b.nHhd), d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*r.I)
+	b.aScB, b.cScB, b.mScB, b.dScB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
+	b.aT, b.aTp = NewBufferU16sOn(mem.LineScratch, d, make([]uint16, maxK*8)), NewBufferU16sOn(mem.LineScratch, d, make([]uint16, r.H*8))
+	b.uM = NewBufferU32On(mem.LineScratch, d, 1)
+	b.uQKV, b.uGU, b.uV = NewBufferU32On(mem.LineScratch, d, uint32(b.qkvRows)), NewBufferU32On(mem.LineScratch, d, uint32(2*r.I)), NewBufferU32On(mem.LineScratch, d, uint32(r.V))
+	b.uMode = [3]Buffer{NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1), NewBufferU32On(mem.LineScratch, d, 2)}
+	b.noBias = d.NewBufferLenOn(mem.LineScratch, max(r.H, 2*r.I))
 	for range B {
-		b.uPos = append(b.uPos, NewBufferU32(d, 0))
-		b.uNKeys = append(b.uNKeys, NewBufferU32(d, 1))
-		b.uQTemp = append(b.uQTemp, NewBufferFloats(d, []float32{1}))
-		b.uFANSplit = append(b.uFANSplit, NewBufferU32(d, 1))
-		b.uGInvT = append(b.uGInvT, NewBufferFloats(d, []float32{1}))
-		b.uGK0, b.uGK1 = append(b.uGK0, NewBufferU32(d, 0)), append(b.uGK1, NewBufferU32(d, 0))
-		b.uGD0, b.uGD1 = append(b.uGD0, NewBufferU32(d, 0)), append(b.uGD1, NewBufferU32(d, 0))
+		b.uPos = append(b.uPos, NewBufferU32On(mem.LineScratch, d, 0))
+		b.uNKeys = append(b.uNKeys, NewBufferU32On(mem.LineScratch, d, 1))
+		b.uQTemp = append(b.uQTemp, NewBufferFloatsOn(mem.LineScratch, d, []float32{1}))
+		b.uFANSplit = append(b.uFANSplit, NewBufferU32On(mem.LineScratch, d, 1))
+		b.uGInvT = append(b.uGInvT, NewBufferFloatsOn(mem.LineScratch, d, []float32{1}))
+		b.uGK0, b.uGK1 = append(b.uGK0, NewBufferU32On(mem.LineScratch, d, 0)), append(b.uGK1, NewBufferU32On(mem.LineScratch, d, 0))
+		b.uGD0, b.uGD1 = append(b.uGD0, NewBufferU32On(mem.LineScratch, d, 0)), append(b.uGD1, NewBufferU32On(mem.LineScratch, d, 0))
 	}
-	b.gOut = d.NewBufferLen(B)
-	b.amaxPart, b.amaxTok, b.uAmaxP = d.NewBufferLen(2*B*batchArgmaxParts), d.NewBufferLen(B), NewBufferU32(d, batchArgmaxParts)
-	b.posB, b.qtB, b.ctxB = d.NewBufferLen(B), NewBufferFloats(d, make([]float32, B)), d.NewBufferLen(B*b.nHhd)
-	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLen(B), d.NewBufferLen(B), d.NewBufferLen(B)
-	b.nSplitB, b.rowmapFA, b.uMaxS = d.NewBufferLen(B), d.NewBufferLen(B), NewBufferU32(d, 1)
+	b.gOut = d.NewBufferLenOn(mem.LineScratch, B)
+	b.amaxPart, b.amaxTok, b.uAmaxP = d.NewBufferLenOn(mem.LineScratch, 2*B*batchArgmaxParts), d.NewBufferLenOn(mem.LineScratch, B), NewBufferU32On(mem.LineScratch, d, batchArgmaxParts)
+	b.posB, b.qtB, b.ctxB = d.NewBufferLenOn(mem.LineScratch, B), NewBufferFloatsOn(mem.LineScratch, d, make([]float32, B)), d.NewBufferLenOn(mem.LineScratch, B*b.nHhd)
+	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
+	b.nSplitB, b.rowmapFA, b.uMaxS = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), NewBufferU32On(mem.LineScratch, d, 1)
 	if r.attnFAPartialLen > 0 {
-		b.faPartB, b.uPartStride = d.NewBufferLen(B*r.attnFAPartialLen), NewBufferU32(d, uint32(r.attnFAPartialLen))
+		b.faPartB, b.uPartStride = d.NewBufferLenOn(mem.LineScratch, B*r.attnFAPartialLen), NewBufferU32On(mem.LineScratch, d, uint32(r.attnFAPartialLen))
 	}
 	for k := 0; k <= B; k++ {
-		b.uCount = append(b.uCount, NewBufferU32(d, uint32(k)))
+		b.uCount = append(b.uCount, NewBufferU32On(mem.LineScratch, d, uint32(k)))
 	}
 	if r.q4kLane {
-		b.axB, b.swB = d.NewBufferLen(B*r.H), d.NewBufferLen(B*r.I)
+		b.axB, b.swB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*r.I)
 		b.uLd = map[int]Buffer{}
 		for _, n := range []int{r.H, b.nHhd, r.I, 2 * r.I, b.qkvRows} {
-			b.uLd[n] = NewBufferU32(d, uint32(n))
+			b.uLd[n] = NewBufferU32On(mem.LineScratch, d, uint32(n))
 		}
 		r.batch = b // calibrateRows picks between int4 kernels the lane does not run
 		return
@@ -359,7 +360,7 @@ func batchSimdSumTreeOK(d *Device, p Pipeline) bool {
 		m := float64(rnd())/float64(1<<32) - 0.5
 		in[i] = float32(math.Ldexp(m, int(rnd()%24)-12))
 	}
-	ib, ob := NewBufferFloats(d, in), d.NewBufferLen(W*2)
+	ib, ob := NewBufferFloatsOn(mem.LineScratch, d, in), d.NewBufferLenOn(mem.LineScratch, W*2)
 	q := d.NewCommandQueue()
 	e := q.Begin()
 	e.DispatchTG(p, W*32, 256, 0, ib, ob)

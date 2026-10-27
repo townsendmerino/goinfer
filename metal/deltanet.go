@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"strconv"
 
@@ -111,19 +112,19 @@ func buildDeltaNetLayer(d *Device, m *decoder.Model, l int, dnet *dnetParams, mk
 	bWM := linalg.QuantizeInt8(inB, dnet.nv, len(inB)/dnet.nv, false)
 	aWM := linalg.QuantizeInt8(inA, dnet.nv, len(inA)/dnet.nv, false)
 	var e1, e2 error
-	if L.bW, L.bS, e1 = int8Buf(d, &bWM); e1 != nil {
+	if L.bW, L.bS, e1 = int8BufOn(mem.LineDense, d, &bWM); e1 != nil {
 		return nil, e1
 	}
-	if L.aW, L.aS, e2 = int8Buf(d, &aWM); e2 != nil {
+	if L.aW, L.aS, e2 = int8BufOn(mem.LineDense, d, &aWM); e2 != nil {
 		return nil, e2
 	}
-	L.convW = NewBufferFloats(d, convW)
-	L.dtBias = NewBufferFloats(d, dtBias)
-	L.negExpA = NewBufferFloats(d, negExpA)
-	L.normW = NewBufferFloats(d, normW)
+	L.convW = NewBufferFloatsOn(mem.LineDense, d, convW)
+	L.dtBias = NewBufferFloatsOn(mem.LineDense, d, dtBias)
+	L.negExpA = NewBufferFloatsOn(mem.LineDense, d, negExpA)
+	L.normW = NewBufferFloatsOn(mem.LineDense, d, normW)
 	// PERSISTENT, zeroed — matching newDeltaState (decoder/deltanet.go) and cuda's up(make(...)).
-	L.win = NewBufferFloats(d, make([]float32, (dnet.convK-1)*dnet.convDim))
-	L.state = NewBufferFloats(d, make([]float32, dnet.stateElems))
+	L.win = NewBufferFloatsOn(mem.LineState, d, make([]float32, (dnet.convK-1)*dnet.convDim))
+	L.state = NewBufferFloatsOn(mem.LineState, d, make([]float32, dnet.stateElems))
 	return L, nil
 }
 

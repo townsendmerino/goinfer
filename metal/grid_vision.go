@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"sync"
 	"time"
@@ -164,7 +165,7 @@ func (a *gridVAccel) up(v []float32) Buffer {
 	if len(v) == 0 {
 		return Buffer{}
 	}
-	return NewBufferFloats(a.d, v)
+	return NewBufferFloatsOn(mem.LineCompanion, a.d, v)
 }
 
 func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
@@ -176,14 +177,14 @@ func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
 func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
 	if a.int8W {
 		q, sc := quantG32(w, p.out, p.in)
-		p.w8, p.ws = NewBufferInt8(a.d, q), NewBufferFloats(a.d, sc)
+		p.w8, p.ws = NewBufferInt8On(mem.LineCompanion, a.d, q), NewBufferFloatsOn(mem.LineCompanion, a.d, sc)
 		return p
 	}
 	h := make([]uint16, len(w))
 	for i, v := range w {
 		h[i] = f32ToF16(v)
 	}
-	p.wh = NewBufferU16s(a.d, h)
+	p.wh = NewBufferU16sOn(mem.LineCompanion, a.d, h)
 	if gvKeepF32ForAB {
 		p.w = a.up(w)
 	}
@@ -277,7 +278,7 @@ func (a *gridVAccel) grow(np, maxSeg int) error {
 		}
 		a.release(&a.x, &a.xn, &a.pt, &a.pos, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.f1, &a.f2, &a.ropeCos, &a.ropeSin)
 		H, I := a.hidden, a.inter
-		n := func(cols int) Buffer { return a.d.NewBufferLen(np * cols) }
+		n := func(cols int) Buffer { return a.d.NewBufferLenOn(mem.LineCompanion, np*cols) }
 		a.x, a.xn, a.pos = n(H), n(H), n(H)
 		a.q, a.k, a.v, a.ctx, a.o = n(H), n(H), n(H), n(H), n(H)
 		a.f1 = n(I)
@@ -299,8 +300,8 @@ func (a *gridVAccel) grow(np, maxSeg int) error {
 	if unfused && (maxSeg > a.segCap || a.qh == (Buffer{})) {
 		a.release(&a.qh, &a.kh, &a.vh, &a.sc, &a.vt, &a.ob)
 		H, B := a.hidden, min(eg2Block, maxSeg)
-		a.qh, a.kh, a.vh = a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H), a.d.NewBufferLen(maxSeg*H)
-		a.sc, a.vt, a.ob = a.d.NewBufferLen(B*maxSeg), a.d.NewBufferLen(a.hd*maxSeg), a.d.NewBufferLen(B*a.hd)
+		a.qh, a.kh, a.vh = a.d.NewBufferLenOn(mem.LineCompanion, maxSeg*H), a.d.NewBufferLenOn(mem.LineCompanion, maxSeg*H), a.d.NewBufferLenOn(mem.LineCompanion, maxSeg*H)
+		a.sc, a.vt, a.ob = a.d.NewBufferLenOn(mem.LineCompanion, B*maxSeg), a.d.NewBufferLenOn(mem.LineCompanion, a.hd*maxSeg), a.d.NewBufferLenOn(mem.LineCompanion, B*a.hd)
 		a.segCap = maxSeg
 	}
 	return nil

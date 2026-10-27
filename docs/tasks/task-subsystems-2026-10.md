@@ -1686,6 +1686,73 @@ real faults.**
   - `destroyBuf` and `ReleaseDestroyBuffer` are removed.
   - The doc's line list is now `kv`, `dense`, `experts`, `companion`, `state`, `test` and `scratch`.
 
+#### MM3c's gates (leases in Metal's allocator), registered 2026-10-27 (nobara-mm01; Francis's go of 11:08)
+
+The lease code in `metal/internal/gpudev` (the `Leaser`, `MustBufOn`, the lined constructors) was written before this
+section, while surveying, and is not yet committed. Everything else is written after it, and every gate is graded after it.
+The device gates run on a Mac: their commands are in `/tmp/mm3-metal.md`, handed to a Mac session by the coordinator.
+
+**The design (CUDA's, with Metal's differences).**
+- **gpudev leases every MTLBuffer** through a `Leaser` that the metal package installs at init (`gpudev.NewLeaser`). gpudev
+  imports nothing of goinfer's ("gpudev-standalone").
+  - A buffer's requested bytes are its `length`, its charged bytes its `allocatedSize`.
+  - It leases on `Unified`; a `NewBufferNoCopy` alias leases on `FileMapped` (Francis's go).
+- **The metal package has no allocation chokepoint.** Model code calls gpudev's constructors and the package's own helpers
+  (`NewBufferU32`, `NewBufferFloats`, `byteBuf`, the int4, int8 and q4k packers, the alias helpers) at 546 sites.
+  - Each helper gets a lined twin (`…On(line, …)`); the unlined name stays as a wrapper on `gpudev.UnlinedLine` for the 826
+    test call sites.
+  - Every production call site names its line, chosen by its enclosing function (with per-line overrides where a function
+    mixes lines), by a typed rewrite (go/types, darwin).
+  - Lines: `dense` (weights, norms, RoPE tables), `experts` (expert stacks and their biases, the expert pool), `kv`, `state`
+    (recurrent and conv state, checkpoints), `companion` (towers, encoders, LoRA), `test` (test hooks), `scratch` (the
+    rest: activations and the per-op uniforms).
+- **Nothing reads the ledger to decide.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3c-1 I1, static | a scan over every non-test file of the metal module finds no call to an unlined gpudev constructor (`NewBufferLen`, `NewBufferBytes`, `NewBufferNoCopy`, `MustBuf`, `NewBufferOf`, `NewBufferLenOf`) or an unlined metal helper outside its own wrapper; it reads every file and goes red on a planted call. It runs on darwin; the metal-darwin CI job runs it, and it is also run from Linux with a darwin type-check before the push | it reads fewer files than the module holds | runs to completion | seconds |
+| G-MM3c-2 I1 and I2, dynamic (Mac) | a release hook in the metal package's `TestMain` fails the run if any released device had an unplanned byte, or a lease open after release; run with the Mac's device suite (the commands name the tests) | the Mac's apps hold the GPU (the run notes `CurrentAllocatedSize` at its start) | one run | the Mac session's estimate |
+| G-MM3c-3 I2 per request (Mac) | on llama-tiny resident on Metal, the charged bytes after a second and a third identical request equal those after the first | as G-MM3c-2 | one run | seconds |
+| G-MM3c-4 I3 (Mac) | `CurrentAllocatedSize` just after the resident's device is created, against after the build and one request on llama-tiny: **charged (Unified) ≤ measured ≤ charged + 64 MiB** (pipelines, libraries, the command queue). The FileMapped leases are reported apart, with whether the measured delta includes them | another Metal allocation in the process during the cell | one run | seconds |
+| G-MM3c-5 no guard change | `TestDecisionCensus` passes unchanged; the Mac's Metal fit tests (`MetalFitCtx`, the memory guard) pass unchanged; nothing outside tests reads the ledger | — | runs to completion | about a minute |
+| G-MM3c-6 builds | vet for darwin (untagged and `goinfer_testhooks`), the pinned staticcheck for darwin with its canary, gofmt, `touched.py`, the layout tests, the citation lint | — | runs to completion | about two minutes |
+
+If I3 misses its band on the Mac, the finding is reported first and the band is not widened.
+
+**MM3c read on nobara, 2026-10-27 (a darwin type-check; the device gates follow from the Mac, `/tmp/mm3-metal.md`).**
+- **G-MM3c-1:**
+  - The typed rewrite found 546 calls: 147 to gpudev's methods, 36 to its generic constructors and 363 to the package's
+    helpers. 38 of them are inside the helpers themselves.
+  - Each call now names its line. Each helper has a lined twin, and an unlined wrapper where tests call it.
+  - staticcheck flagged the ten wrappers no test calls, and they were removed.
+  - A replay of the scan's logic on Linux reads all 71 non-test files and finds no unlined call.
+  - The scan joins CI's device-free metal-darwin step, behind its zero-match guard.
+- **G-MM3c-5 (the part that runs here):** `TestDecisionCensus` passes unchanged. Nothing outside tests reads the ledger.
+- **G-MM3c-6:** `go vet` for darwin passes, untagged and with `goinfer_testhooks`. The pinned staticcheck for darwin with the
+  test hooks is clean. Also pass: gofmt, `touched.py`, `test_touched.py` (the scan listed), the layout tests (`imports.json` and
+  the ARCHITECTURE appendix updated) and the citation lint.
+- **G-MM3c-2, 3 and 4:** to be run on the Mac.
+
+**Amended before merge and before the Mac run (coordinator, 14:28, Gemini's review of #335).**
+- **G-MM3c-1's scan is tightened.** It now also flags a lined call handed `UnlinedLine` or `""` as its line, and it skips only
+  true wrappers: a function whose body hands `UnlinedLine` to its own `…On` twin. Before, it skipped any function with a listed
+  name. `newBufferLenUntracked`, a probe allocator with no production caller, takes its line from its caller.
+- **G-MM3c-4 gets an aliasing cell, because llama-tiny never aliases.** `gemma4-dense-scaled` is transcoded to a Metal `.giw`
+  and loaded with `GOINFER_METAL_ALIAS=1`, about 53 MB of no-copy windows. Pass:
+  - its FileMapped leases are above 0 (aliasing was exercised); and
+  - measured is within [U, U+64 MiB], or within [U+F, U+F+64 MiB], where U is charged Unified and F is charged FileMapped.
+  - The record says which of the two held, which answers whether `CurrentAllocatedSize` counts no-copy buffers.
+  - A FileMapped charge counts each window's pages, so a page shared by two adjacent windows is counted twice (at most a page
+    per tensor). That is stated, not changed.
+  - Each I3 cell runs in its own process (`-run` per cell), because the system device is shared and earlier tests' frees can
+    land during a cell.
+- **#2 holds as designed.** `ReleaseAll` at `Close` is how a Metal resident frees its buffers, so a lease closed there is not a
+  leak. The leak check within a model's life is G-MM3c-3: charged bytes do not grow across identical requests.
+- **#1 holds.** `UnlinedLine = test` makes a test's own unlined calls planned. Production's unlined calls are excluded by the
+  static scan, which is what I1's static half is for.
+- **Lines (#5):** MLA's RoPE table leases `dense`; the q4k segment counts and `uHasSink` (uniforms) lease `scratch`. The counts
+  in this section read 546 calls throughout.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
@@ -2320,6 +2387,23 @@ calls only the API the serving routes call, in the order they call it. It adds t
   without the newline after each control token); `granite-dbrx-meta.gguf`'s template is declined (raw-completion
   fallback). **Owed:** the Llama 3, Mellum 2 and Harmony token IDs, recorded on nobara by
   `go test ./chat -run TestCodecCensus -codec.update`, whose diff must only add sources and IDs.
+  Each source renders the nine conversations above plus its family's image and audio placeholders, 9 to 11 cases per
+  variant. Token IDs are on the 24 sources whose tokenizer is there and whose template `Detect` accepts (the tracked
+  tokenizers but `granite-dbrx-meta`, and the local models); the tracked templates and the constructors carry renders only.
+- **Gemini's review of #338, answered (2026-10-27, mac-ax01).** The vocabulary probes are now checked and recorded on
+  every return, including a template `Detect` declines. `-codec.update` runs the local-model guard (vocabulary hash and
+  chat template) on a model recorded before, so a different quant or template at the same `~/models` path fails instead
+  of replacing another machine's record. A tokenizer that fails to load for any reason but a missing file fails the
+  census. Both guards were shown red in check and update mode, with a corrupt `tokenizer.json` and another model's
+  tokenizer under a recorded name, and no golden was rewritten. The parse table adds the five tracked templates that
+  declare a native tool form, each under the three tool formats (37 entries, from 22). It records `supports_tools` and
+  asserts the contract directly: a family without tool support reads no call from anything (Gemma 3, GLM-OCR, both
+  Phi-3s, and Ministral, whose `[TOOL_CALLS]name[ARGS]` form `Ministral()` documents as not wired); each family with it
+  reads every well-formed call of its own dialect; no family reads a call from prose, a malformed call, an empty or
+  missing name, a Harmony final answer, or Ministral's form; and the tool format does not change a parse. The 22 earlier
+  entries are unchanged, row for row. **Shown red:** dropping `mistral` from `SupportsTools` fails the contract;
+  accepting an empty name fails it for ChatML and Llama 3. That second plant passed before the review, because no output
+  had an empty name, so the table gained one (43 outputs). Both reverted.
 
 ### SB9 — the towers
 

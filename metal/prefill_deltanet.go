@@ -2,6 +2,8 @@
 
 package metal
 
+import "github.com/townsendmerino/goinfer/internal/mem"
+
 // D-B01 (docs/audit-metal-2026-09-30.md, docs/tasks/task-metal-audit-2026-10.md): a Gated-DeltaNet layer in the batched
 // prefill pass. The projections (qkv, z, out) run as prefill GEMMs over all M rows, and in_proj_b / in_proj_a as a small
 // rows kernel, on f16 activations like every other batched layer. The mixer between them runs as one dispatch per
@@ -36,11 +38,11 @@ func (r *resident) newPrefillDelta(M, Mpad int) *prefillDelta {
 		mixedF: prefillScratchU16(d, Mpad*dp.convDim),
 		zF:     prefillScratchU16(d, Mpad*dp.valueDim),
 		gatedH: prefillScratchU16(d, Mpad*dp.valueDim),
-		bt:     d.NewBufferLen(M * dp.nv), at: d.NewBufferLen(M * dp.nv),
-		conv: d.NewBufferLen(M * dp.convDim), headP: d.NewBufferLen(M * dp.nv * 2),
-		qn: d.NewBufferLen(M * dp.keyDim), kn: d.NewBufferLen(M * dp.keyDim),
-		core: d.NewBufferLen(M * dp.valueDim), gated: d.NewBufferLen(M * dp.valueDim),
-		uM: NewBufferU32(d, uint32(M)), uConvDim: NewBufferU32(d, uint32(dp.convDim)), uValueDim: NewBufferU32(d, uint32(dp.valueDim)),
+		bt:     d.NewBufferLenOn(mem.LineScratch, M*dp.nv), at: d.NewBufferLenOn(mem.LineScratch, M*dp.nv),
+		conv: d.NewBufferLenOn(mem.LineScratch, M*dp.convDim), headP: d.NewBufferLenOn(mem.LineScratch, M*dp.nv*2),
+		qn: d.NewBufferLenOn(mem.LineScratch, M*dp.keyDim), kn: d.NewBufferLenOn(mem.LineScratch, M*dp.keyDim),
+		core: d.NewBufferLenOn(mem.LineScratch, M*dp.valueDim), gated: d.NewBufferLenOn(mem.LineScratch, M*dp.valueDim),
+		uM: NewBufferU32On(mem.LineScratch, d, uint32(M)), uConvDim: NewBufferU32On(mem.LineScratch, d, uint32(dp.convDim)), uValueDim: NewBufferU32On(mem.LineScratch, d, uint32(dp.valueDim)),
 	}
 	prefillScratchSeen.Add(int64(4 * M * (4*dp.nv + dp.convDim + 2*dp.keyDim + 2*dp.valueDim)))
 	s.bufs = []Buffer{s.mixedF, s.zF, s.gatedH, s.bt, s.at, s.conv, s.headP, s.qn, s.kn, s.core, s.gated, s.uM, s.uConvDim, s.uValueDim}

@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"runtime"
 	"slices"
 	"time"
@@ -73,12 +74,12 @@ func (r *resident) g4LayerMajorRows(embs [][]float32, start int, head bool) []fl
 	for i := range rows {
 		rw := &rows[i]
 		rw.pos = start + i
-		rw.x, rw.x1 = nb(NewBufferFloats(d, embs[i])), nb(d.NewBufferLen(r.H))
-		rw.mq, rw.mSc = nb(byteBuf(d, r.H)), nb(d.NewBufferLen(1))
-		rw.rIdx, rw.rWgt = nb(NewBufferUint32s(d, make([]uint32, g.topK))), nb(d.NewBufferLen(g.topK))
-		rw.slotIdx = nb(NewBufferUint32s(d, make([]uint32, g.topK)))
-		rw.u = posUniforms{nb(NewBufferU32(d, 0)), nb(NewBufferU32(d, 0)), nb(NewBufferU32(d, 0)),
-			nb(NewBufferFloats(d, []float32{1})), nb(NewBufferU32(d, 0))}
+		rw.x, rw.x1 = nb(NewBufferFloatsOn(mem.LineScratch, d, embs[i])), nb(d.NewBufferLenOn(mem.LineScratch, r.H))
+		rw.mq, rw.mSc = nb(byteBufOn(mem.LineScratch, d, r.H)), nb(d.NewBufferLenOn(mem.LineScratch, 1))
+		rw.rIdx, rw.rWgt = nb(NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, g.topK))), nb(d.NewBufferLenOn(mem.LineScratch, g.topK))
+		rw.slotIdx = nb(NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, g.topK)))
+		rw.u = posUniforms{nb(NewBufferU32On(mem.LineScratch, d, 0)), nb(NewBufferU32On(mem.LineScratch, d, 0)), nb(NewBufferU32On(mem.LineScratch, d, 0)),
+			nb(NewBufferFloatsOn(mem.LineScratch, d, []float32{1})), nb(NewBufferU32On(mem.LineScratch, d, 0))}
 		r.writePosUniforms(rw.u, rw.pos, rw.pos)
 	}
 	// Each row's encodes bind its own buffers: the encoders read these fields at encode time.
@@ -284,11 +285,11 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 	for i := range rows {
 		rw := &rows[i]
 		rw.pos = start + i
-		rw.x, rw.mq, rw.mSc = nb(NewBufferFloats(d, embs[i])), nb(byteBuf(d, r.H)), nb(d.NewBufferLen(1))
-		rw.rIdx, rw.rWgt = nb(NewBufferUint32s(d, make([]uint32, mo.k))), nb(d.NewBufferLen(mo.k))
-		rw.slot = nb(NewBufferUint32s(d, make([]uint32, mo.k)))
-		rw.u = posUniforms{nb(NewBufferU32(d, 0)), nb(NewBufferU32(d, 0)), nb(NewBufferU32(d, 0)),
-			nb(NewBufferFloats(d, []float32{1})), nb(NewBufferU32(d, 0))}
+		rw.x, rw.mq, rw.mSc = nb(NewBufferFloatsOn(mem.LineScratch, d, embs[i])), nb(byteBufOn(mem.LineScratch, d, r.H)), nb(d.NewBufferLenOn(mem.LineScratch, 1))
+		rw.rIdx, rw.rWgt = nb(NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, mo.k))), nb(d.NewBufferLenOn(mem.LineScratch, mo.k))
+		rw.slot = nb(NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, mo.k)))
+		rw.u = posUniforms{nb(NewBufferU32On(mem.LineScratch, d, 0)), nb(NewBufferU32On(mem.LineScratch, d, 0)), nb(NewBufferU32On(mem.LineScratch, d, 0)),
+			nb(NewBufferFloatsOn(mem.LineScratch, d, []float32{1})), nb(NewBufferU32On(mem.LineScratch, d, 0))}
 		r.writePosUniforms(rw.u, rw.pos, rw.pos)
 	}
 	sx, smq, smSc, sIdx, sWgt, sSlot := r.x, r.mq, r.mSc, mo.rIdx, mo.rWgt, mo.slotIdx

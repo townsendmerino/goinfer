@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
 	"slices"
 	"strconv"
@@ -120,22 +121,22 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		nE: b.NE, topK: b.TopK, denseInter: b.DenseInter, moeInter: b.MoeInter,
 	}
 	g.pGU, g.pDownWacc, g.guR, g.downR = moeExpertRows(pipe, 2*b.MoeInter, H, true)
-	g.uNE, g.uK = NewBufferU32(d, uint32(b.NE)), NewBufferU32(d, uint32(b.TopK))
-	g.uHidden = NewBufferU32(d, uint32(H))
-	g.uDenseInter, g.uMoeInter = NewBufferU32(d, uint32(b.DenseInter)), NewBufferU32(d, uint32(b.MoeInter))
-	g.uMoeGU = NewBufferU32(d, uint32(2*b.MoeInter))
-	g.uSig0, g.uNorm1 = NewBufferU32(d, 0), NewBufferU32(d, 1)
-	g.uScale1 = NewBufferFloats(d, []float32{1})
-	g.uOne = NewBufferU32(d, 1)
+	g.uNE, g.uK = NewBufferU32On(mem.LineScratch, d, uint32(b.NE)), NewBufferU32On(mem.LineScratch, d, uint32(b.TopK))
+	g.uHidden = NewBufferU32On(mem.LineScratch, d, uint32(H))
+	g.uDenseInter, g.uMoeInter = NewBufferU32On(mem.LineScratch, d, uint32(b.DenseInter)), NewBufferU32On(mem.LineScratch, d, uint32(b.MoeInter))
+	g.uMoeGU = NewBufferU32On(mem.LineScratch, d, uint32(2*b.MoeInter))
+	g.uSig0, g.uNorm1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1)
+	g.uScale1 = NewBufferFloatsOn(mem.LineScratch, d, []float32{1})
+	g.uOne = NewBufferU32On(mem.LineScratch, d, 1)
 	g.uSlot = make([]Buffer, b.TopK)
 	for j := range g.uSlot {
-		g.uSlot[j] = NewBufferU32(d, uint32(j))
+		g.uSlot[j] = NewBufferU32On(mem.LineScratch, d, uint32(j))
 	}
-	g.rLogits = d.NewBufferLen(b.NE)
-	g.rIdx = NewBufferUint32s(d, make([]uint32, b.TopK))
-	g.rWgt = d.NewBufferLen(b.TopK)
-	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLen(H), d.NewBufferLen(H), d.NewBufferLen(H)
-	g.rLogitsP, g.rIdxP, g.rWgtP, g.g4rnP = d.NewBufferLen(b.NE), NewBufferUint32s(d, make([]uint32, b.TopK)), d.NewBufferLen(b.TopK), d.NewBufferLen(H)
+	g.rLogits = d.NewBufferLenOn(mem.LineScratch, b.NE)
+	g.rIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, b.TopK))
+	g.rWgt = d.NewBufferLenOn(mem.LineScratch, b.TopK)
+	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLenOn(mem.LineScratch, H), d.NewBufferLenOn(mem.LineScratch, H), d.NewBufferLenOn(mem.LineScratch, H)
+	g.rLogitsP, g.rIdxP, g.rWgtP, g.g4rnP = d.NewBufferLenOn(mem.LineScratch, b.NE), NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, b.TopK)), d.NewBufferLenOn(mem.LineScratch, b.TopK), d.NewBufferLenOn(mem.LineScratch, H)
 
 	// Synchronous paging: --moe-cache-slots (GOINFER_METAL_MOE_SLOTS is the deprecated fallback; metalMoESlotsRequest) keeps only N
 	// experts per layer resident and stages the routed top-k in per token. N must be >= topK (a token's own top-k must fit); N==0 or
@@ -147,7 +148,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		}
 		if n < b.NE { // n>=nE would hold every expert — no paging, just build the stacked path
 			g.paged, g.slots = true, n
-			g.slotIdx = NewBufferUint32s(d, make([]uint32, b.TopK))
+			g.slotIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, b.TopK))
 			g.fence = newPagedFence(d, nL, b.TopK)
 			for l := range nL {
 				if skipPagedInt4CheckForTest {
@@ -193,12 +194,12 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 // gemv_f32_f32(RouterProjScaled) — the algebraic dual of the CPU's scaled-rn · raw-proj.
 func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEResidentBundle, g *gemma4MoeResident) *gemma4MoeLayer {
 	ml := &gemma4MoeLayer{}
-	ml.routerW = NewBufferFloats(d, b.RouterProjScaled)
-	ml.routerBias = NewBufferFloats(d, make([]float32, b.NE)) // zeros → sel = score (no e_score_correction_bias)
-	ml.perExpertScale = NewBufferFloats(d, b.PerExpertScale)
-	ml.denseGuW, ml.denseGuS = int4ConcatA(d, g.alias, b.MlpGate, b.MlpUp)
+	ml.routerW = NewBufferFloatsOn(mem.LineDense, d, b.RouterProjScaled)
+	ml.routerBias = NewBufferFloatsOn(mem.LineDense, d, make([]float32, b.NE)) // zeros → sel = score (no e_score_correction_bias)
+	ml.perExpertScale = NewBufferFloatsOn(mem.LineDense, d, b.PerExpertScale)
+	ml.denseGuW, ml.denseGuS = int4ConcatAOn(mem.LineDense, d, g.alias, b.MlpGate, b.MlpUp)
 	var e error
-	if ml.denseDW, ml.denseDS, e = int4BufA(d, g.alias, b.MlpDown); e != nil {
+	if ml.denseDW, ml.denseDS, e = int4BufAOn(mem.LineDense, d, g.alias, b.MlpDown); e != nil {
 		panic(e)
 	}
 	if g.paged {
@@ -303,15 +304,15 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 			}
 		}
 	} else {
-		ml.expGuW, ml.expGuS = int4Concat(d, b.ExpertsGateUp...) // per expert already fused [2*moeInter, hidden]
-		ml.expDW, ml.expDS = int4Concat(d, b.ExpertsDown...)
+		ml.expGuW, ml.expGuS = int4ConcatOn(mem.LineExperts, d, b.ExpertsGateUp...) // per expert already fused [2*moeInter, hidden]
+		ml.expDW, ml.expDS = int4ConcatOn(mem.LineExperts, d, b.ExpertsDown...)
 	}
-	ml.preFFN = NewBufferFloats(d, b.PreFFNNorm)
-	ml.postFFN1 = NewBufferFloats(d, b.PostFFNNorm1)
-	ml.preFFN2 = NewBufferFloats(d, b.PreFFNNorm2)
-	ml.postFFN2 = NewBufferFloats(d, b.PostFFNNorm2)
-	ml.postFFN = NewBufferFloats(d, b.PostFFNNorm)
-	ml.uLayerScalar = NewBufferFloats(d, []float32{b.LayerScalar})
+	ml.preFFN = NewBufferFloatsOn(mem.LineDense, d, b.PreFFNNorm)
+	ml.postFFN1 = NewBufferFloatsOn(mem.LineDense, d, b.PostFFNNorm1)
+	ml.preFFN2 = NewBufferFloatsOn(mem.LineDense, d, b.PreFFNNorm2)
+	ml.postFFN2 = NewBufferFloatsOn(mem.LineDense, d, b.PostFFNNorm2)
+	ml.postFFN = NewBufferFloatsOn(mem.LineDense, d, b.PostFFNNorm)
+	ml.uLayerScalar = NewBufferFloatsOn(mem.LineDense, d, []float32{b.LayerScalar})
 	return ml
 }
 

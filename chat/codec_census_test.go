@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -291,6 +293,21 @@ func discoverLocalSources(t *testing.T) []*censusSource {
 	return out
 }
 
+// sameLocalModel reports whether tk is the tokenizer, with the chat template, that rec was recorded from; a mismatch is a
+// test error, not a re-recording.
+func sameLocalModel(t *testing.T, name string, rec *censusSource, tk *tokenizer.Tokenizer) bool {
+	t.Helper()
+	if vocabHash(tk) != rec.Tokenizer.Vocab {
+		t.Errorf("%s: %s is not the tokenizer the census recorded (vocabulary hash differs)", name, rec.Tokenizer.Path)
+		return false
+	}
+	if tk.ChatTemplate() != rec.Template {
+		t.Errorf("%s: %s carries a different chat template from the one the census recorded", name, rec.Tokenizer.Path)
+		return false
+	}
+	return true
+}
+
 func loadCensusTokenizer(path string) (*tokenizer.Tokenizer, error) {
 	switch {
 	case strings.HasSuffix(path, ".gguf"):
@@ -457,6 +474,14 @@ func (s *censusSource) run(t *testing.T, recorded *censusGolden) (*censusGolden,
 	}
 	g := &censusGolden{censusSource: *s}
 	g.censusSource.tk = nil
+	defer func() { // on every return, a template Detect declines included: its probes are part of the record
+		if p != nil {
+			if len(p.missing) > 0 {
+				t.Errorf("%s: the renders asked the vocabulary %q, which the census did not record; re-record with the tokenizer present", s.Name, p.missing)
+			}
+			g.Probes = p.asked
+		}
+	}()
 	base, err := s.base(p)
 	if err != nil {
 		g.Detect = "error: " + err.Error()
@@ -567,12 +592,6 @@ func (s *censusSource) run(t *testing.T, recorded *censusGolden) (*censusGolden,
 		}
 		g.Variants = append(g.Variants, cv)
 	}
-	if p != nil {
-		if len(p.missing) > 0 {
-			t.Errorf("%s: the renders asked the vocabulary %q, which the census did not record; re-record with the tokenizer present", s.Name, p.missing)
-		}
-		g.Probes = p.asked
-	}
 	return g, idsRun, idsSkipped
 }
 
@@ -618,10 +637,16 @@ func TestCodecCensus(t *testing.T) {
 	}
 	if *codecUpdate {
 		for _, s := range discoverLocalSources(t) {
-			if _, dup := byName[s.Name]; !dup {
-				byName[s.Name] = s
-				sources = append(sources, s)
+			if _, dup := byName[s.Name]; dup {
+				continue
 			}
+			// A model recorded before must still be the one on disk: re-recording a different quant or template under the
+			// same path would replace another machine's record instead of failing.
+			if rec := recorded[s.Name]; rec != nil && !sameLocalModel(t, s.Name, &rec.censusSource, s.tk) {
+				continue
+			}
+			byName[s.Name] = s
+			sources = append(sources, s)
 		}
 	}
 	for name, g := range recorded {
@@ -630,15 +655,15 @@ func TestCodecCensus(t *testing.T) {
 		}
 		s := g.censusSource
 		s.Probes = g.Probes
-		if tk, err := loadCensusTokenizer(resolveTokenizerPath(s.Tokenizer.Path)); err == nil {
-			if vocabHash(tk) != s.Tokenizer.Vocab {
-				t.Errorf("%s: %s is not the tokenizer the census recorded (vocabulary hash differs)", name, s.Tokenizer.Path)
-				continue
-			}
-			if tk.ChatTemplate() != s.Template {
-				t.Errorf("%s: %s carries a different chat template from the one the census recorded", name, s.Tokenizer.Path)
-				continue
-			}
+		tk, err := loadCensusTokenizer(resolveTokenizerPath(s.Tokenizer.Path))
+		switch {
+		case errors.Is(err, fs.ErrNotExist): // not on this machine: its IDs are kept, its renders still checked
+		case err != nil:
+			t.Errorf("%s: %s does not load: %v", name, s.Tokenizer.Path, err)
+			continue
+		case !sameLocalModel(t, name, &s, tk):
+			continue
+		default:
 			s.tk = tk
 		}
 		sources = append(sources, &s)
@@ -699,6 +724,7 @@ var parseOutputs = []struct{ name, text string }{
 	{"hermes_bad_json", "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"\n</tool_call>"},
 	{"hermes_unterminated", "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"},
 	{"hermes_no_name", "<tool_call>{\"arguments\": {\"location\": \"Paris\"}}</tool_call>"},
+	{"hermes_empty_name", "<tool_call>{\"name\": \"\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"},
 	{"hermes_unknown_tool", "<tool_call>{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}</tool_call>"},
 	{"hermes_args_array", "<tool_call>{\"name\": \"get_weather\", \"arguments\": [\"Paris\"]}</tool_call>"},
 	{"hermes_nested_braces", "<tool_call>{\"name\": \"search_web\", \"arguments\": {\"query\": \"{json} and </tool_call> in text\"}}</tool_call>"},
@@ -744,27 +770,62 @@ type parseRow struct {
 }
 
 type parseFamily struct {
-	Family      string     `json:"family"`
-	Lenient     bool       `json:"lenient"`
-	AcceptsBare bool       `json:"accepts_bare"`
-	Rows        []parseRow `json:"rows"`
+	Family        string     `json:"family"`
+	Source        string     `json:"source"`                // the constructor, or a tracked template that declares a native tool form
+	ToolFormat    string     `json:"tool_format,omitempty"` // set for the native-tool sources, one entry per format
+	Lenient       bool       `json:"lenient"`
+	SupportsTools bool       `json:"supports_tools"`
+	AcceptsBare   bool       `json:"accepts_bare"`
+	Rows          []parseRow `json:"rows"`
+}
+
+// ownDialect is, per family that SupportsTools, the well-formed outputs in its own call format: each must parse to a call.
+var ownDialect = map[string][]string{
+	"chatml":  {"hermes_one", "hermes_two", "qwen_xml"},
+	"mellum2": {"hermes_one", "hermes_two", "qwen_xml"},
+	"mistral": {"mistral_v3", "mistral_two"},
+	"llama3":  {"llama3_json", "llama3_python_tag"},
+	"gemma4":  {"gemma4_one", "gemma4_two"},
+	"harmony": {"harmony_call", "harmony_analysis_then_call"},
+}
+
+// neverACall are outputs no family may read a call from: prose, malformed calls, a Harmony final answer, and Ministral 3's
+// [TOOL_CALLS]name[ARGS] form, which Ministral() deliberately does not parse (its doc comment) and the "mistral" dialect must not.
+var neverACall = []string{"prose", "empty", "prose_mentions_opener", "hermes_bad_json", "hermes_no_name", "hermes_empty_name", "llama3_bad_json",
+	"mistral_bad_json", "harmony_bad_json", "harmony_final", "mistral_v11"}
+
+// parseTable runs every output through tm; lenient is the WithLenientToolCalls setting asked for, which a family that takes
+// no bare call ignores.
+func parseTable(tm *Template, source, format string, lenient bool) parseFamily {
+	pf := parseFamily{Family: tm.Name(), Source: source, ToolFormat: format, Lenient: lenient,
+		SupportsTools: tm.SupportsTools(), AcceptsBare: tm.AcceptsBareToolCall()}
+	for _, o := range parseOutputs {
+		c1, l1 := tm.ParseToolCalls(o.text)
+		c2, l2 := tm.ParseToolCallsFor(o.text, censusTools)
+		pf.Rows = append(pf.Rows, parseRow{Output: o.name, Parse: parseResult{c1, l1}, ParseFor: parseResult{c2, l2}})
+	}
+	return pf
 }
 
 func TestToolCallParseCensus(t *testing.T) {
 	var fams []parseFamily
-	ctors := slices.Sorted(maps.Keys(constructors))
-	for _, k := range ctors {
+	for _, k := range slices.Sorted(maps.Keys(constructors)) {
 		for _, lenient := range []bool{false, true} {
-			tm := constructors[k]().WithLenientToolCalls(lenient)
-			pf := parseFamily{Family: tm.Name(), Lenient: lenient, AcceptsBare: tm.AcceptsBareToolCall()}
-			for _, o := range parseOutputs {
-				c1, l1 := tm.ParseToolCalls(o.text)
-				c2, l2 := tm.ParseToolCallsFor(o.text, censusTools)
-				pf.Rows = append(pf.Rows, parseRow{Output: o.name, Parse: parseResult{c1, l1}, ParseFor: parseResult{c2, l2}})
-			}
-			fams = append(fams, pf)
+			fams = append(fams, parseTable(constructors[k]().WithLenientToolCalls(lenient), k, "", lenient))
 		}
 	}
+	// The templates that declare a native tool form, under each format WithToolFormat selects.
+	for _, s := range trackedTemplateSources(t) {
+		base, err := s.base(nil)
+		if err != nil || !base.DeclaresNativeTools() {
+			continue
+		}
+		for _, f := range []ToolFormat{ToolFormatAuto, ToolFormatHermes, ToolFormatTemplate} {
+			fams = append(fams, parseTable(base.WithToolFormat(f), s.Name, f.String(), false))
+		}
+	}
+	checkParseContract(t, fams)
+
 	doc := struct {
 		Tools    []Tool            `json:"tools"`
 		Outputs  map[string]string `json:"outputs"`
@@ -785,6 +846,55 @@ func TestToolCallParseCensus(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Errorf("the tool-call parse census differs from %s:\n%s", path, firstDiff(want, got))
+	}
+}
+
+// checkParseContract asserts what the parse table must show whatever was recorded: a family without tool support reads no
+// call from anything; one with it reads each well-formed call of its own dialect; nothing reads a call from neverACall; and
+// the tool format, which selects a prompt, does not change what a reply parses to.
+func checkParseContract(t *testing.T, fams []parseFamily) {
+	t.Helper()
+	calls := func(pf parseFamily, out string) bool {
+		for _, r := range pf.Rows {
+			if r.Output == out {
+				return len(r.Parse.Calls) > 0 || len(r.ParseFor.Calls) > 0
+			}
+		}
+		t.Fatalf("no output named %q", out)
+		return false
+	}
+	byFormat := map[string]parseFamily{}
+	for _, pf := range fams {
+		label := fmt.Sprintf("%s (%s, format %q, lenient %v)", pf.Family, pf.Source, pf.ToolFormat, pf.Lenient)
+		own, listed := ownDialect[pf.Family]
+		if pf.SupportsTools != listed {
+			t.Errorf("%s: SupportsTools is %v but ownDialect lists it %v; list its dialect's outputs", label, pf.SupportsTools, listed)
+		}
+		for _, o := range own {
+			if !calls(pf, o) {
+				t.Errorf("%s: reads no call from %s, a well-formed call in its own dialect", label, o)
+			}
+		}
+		for _, o := range parseOutputs {
+			if !pf.SupportsTools && calls(pf, o.name) {
+				t.Errorf("%s: has no tool support but reads a call from %s", label, o.name)
+			}
+		}
+		for _, o := range neverACall {
+			if calls(pf, o) {
+				t.Errorf("%s: reads a call from %s", label, o)
+			}
+		}
+		if pf.ToolFormat != "" {
+			if prev, ok := byFormat[pf.Source]; ok && !slices.EqualFunc(prev.Rows, pf.Rows, func(a, b parseRow) bool {
+				ja, _ := json.Marshal(a)
+				jb, _ := json.Marshal(b)
+				return bytes.Equal(ja, jb)
+			}) {
+				t.Errorf("%s: parses differently from format %q", label, prev.ToolFormat)
+			}
+			byFormat[pf.Source] = pf
+		}
 	}
 }
 
