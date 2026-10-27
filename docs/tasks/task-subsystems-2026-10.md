@@ -2361,7 +2361,7 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   The checks: `cmd/gate`'s tests, `scripts/test_changelog.py`, `touched.py` and the lints. Cost: seconds. Stopping rule: complete.
 
   **PW3-R330 results (2026-10-27, mac-ax01): all four PASS, each shown red first.**
-  - (1) `quickRecordVoidedBy` read `changelog.d/…` as voiding; now inert, and `TestQuick_whatVoidsARun` has the case. RELEASING.md
+  - (1) `quickRecordVoidedBy` read `changelog.d/…` as voiding; now inert, and `TestQuickRecord_whatVoidsARun` has the case. RELEASING.md
     names the path.
   - (2) A stray entry under `[Unreleased]` now owes in `gate changelog`. A plant in the real CHANGELOG read `OWED entry - **a
     planted stray entry**`, and `TestUnreleasedStray` holds the rule. `release` refuses one too
