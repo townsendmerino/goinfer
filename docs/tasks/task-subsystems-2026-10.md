@@ -2296,6 +2296,23 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
     - `touched.py` is green, `cmd/gate`'s 79 s run included.
     - `scripts/test_changelog.py` passes 6 tests and runs in CI. The citation lint and `test_touched.py` pass.
 
+  **PW3 review of #330 (Gemini; coordinator 12:49; registered 2026-10-27 12:50 PDT by mac-ax01, before the code).** Four
+  findings, all real.
+  - (1) A `changelog.d/` change voids a quick-full record: `quickRecordVoidedBy` treats every path with a `/` as voiding.
+  - (2) An entry under `CHANGELOG.md`'s `[Unreleased]` passes `gate changelog` and is stranded at release.
+  - (3) Only a synthetic repo exercises `render`'s name and format rules; the live `changelog.d/` never meets them before a
+    release.
+  - (4) `render` accepts a file holding two entries.
+
+  Gate PW3-R330, one rule per finding, each shown red first and green after, with a test or a planted input:
+  - (1) `quickRecordVoidedBy("changelog.d/x.md")` is false, and `decoder/x.go` still voids.
+  - (2) `gate changelog` (and so `gate release`'s row) owes an entry left under `[Unreleased]`, and `scripts/changelog.py
+    release` refuses one.
+  - (3) CI runs `render` on the live tree.
+  - (4) `render` refuses a two-entry file.
+
+  The checks: `cmd/gate`'s tests, `scripts/test_changelog.py`, `touched.py` and the lints. Cost: seconds. Stopping rule: complete.
+
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
 
