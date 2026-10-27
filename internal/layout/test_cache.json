@@ -55,6 +55,7 @@
         "a device",
         "a subprocess",
         "files outside the module",
+        "the network (through pull)",
         "the whole environment",
         "timing"
       ]
@@ -65,7 +66,8 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through decoder)"
+        "files outside the module (through cuda)",
+        "the network (through pull)"
       ]
     },
     "cuda/cmd/serve": {
@@ -74,7 +76,7 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/pullcmd)",
-        "files outside the module (through internal/serveapp)",
+        "files outside the module (through cuda)",
         "the network (through internal/serveapp)"
       ]
     },
@@ -155,7 +157,7 @@
         "OS memory (through internal/mem/probe)",
         "a device (through gpu)",
         "a subprocess (through demo/agent/agent)",
-        "files outside the module (through decoder)"
+        "files outside the module (through demo/agent/agent)"
       ]
     },
     "demo/agent/cmd/ken-stub": {
@@ -166,7 +168,7 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess (through demo/agent/agent)",
-        "files outside the module (through decoder)"
+        "files outside the module (through demo/agent/agent)"
       ]
     },
     "demo/agent/internal/embedmodel": {
@@ -177,7 +179,8 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through decoder)"
+        "files outside the module (through decoder)",
+        "the network (through pull)"
       ]
     },
     "embeddinggemma2": {
@@ -236,7 +239,8 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through decoder)"
+        "files outside the module (through gpu)",
+        "the network (through pull)"
       ]
     },
     "gpu/cmd/serve": {
@@ -245,7 +249,7 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/pullcmd)",
-        "files outside the module (through internal/serveapp)",
+        "files outside the module (through gpu)",
         "the network (through internal/serveapp)"
       ]
     },
@@ -274,7 +278,8 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess",
-        "files outside the module (through decoder)"
+        "files outside the module (through decoder)",
+        "the network (through pull)"
       ]
     },
     "internal/clef": {
@@ -282,6 +287,7 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "files outside the module",
+        "the network (through pull)",
         "timing"
       ]
     },
@@ -294,7 +300,8 @@
     "internal/connect": {
       "cacheable": false,
       "reasons": [
-        "files outside the module"
+        "files outside the module",
+        "the network"
       ]
     },
     "internal/decide": {
@@ -309,7 +316,8 @@
       "cacheable": false,
       "reasons": [
         "OS memory (through internal/mem/probe)",
-        "files outside the module (through decoder)"
+        "files outside the module (through decoder)",
+        "the network (through pull)"
       ]
     },
     "internal/f16": {
@@ -322,7 +330,9 @@
       "cacheable": false,
       "reasons": [
         "OS memory (through internal/mem/probe)",
-        "files outside the module (through decoder)"
+        "files outside the module (through decoder)",
+        "the network (through pull)",
+        "timing"
       ]
     },
     "internal/giw": {
@@ -341,11 +351,16 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess",
-        "files outside the module"
+        "files outside the module",
+        "the network (through pull)"
       ]
     },
     "internal/inproc": {
-      "cacheable": true
+      "cacheable": false,
+      "reasons": [
+        "the network",
+        "timing"
+      ]
     },
     "internal/kernelprint": {
       "cacheable": false,
@@ -376,14 +391,16 @@
       "reasons": [
         "OS memory",
         "a subprocess",
-        "files outside the module"
+        "files outside the module",
+        "timing"
       ]
     },
     "internal/modelload": {
       "cacheable": false,
       "reasons": [
         "OS memory (through internal/mem/probe)",
-        "files outside the module"
+        "files outside the module",
+        "the network (through pull)"
       ]
     },
     "internal/movedpaths": {
@@ -411,7 +428,9 @@
     "internal/pullcmd": {
       "cacheable": false,
       "reasons": [
-        "a subprocess"
+        "a subprocess",
+        "files outside the module (through pull)",
+        "the network (through pull)"
       ]
     },
     "internal/sampling": {
@@ -436,14 +455,16 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through decoder)"
+        "files outside the module (through decoder)",
+        "the network"
       ]
     },
     "internal/swapguard": {
       "cacheable": false,
       "reasons": [
         "OS memory (through internal/mem/probe)",
-        "files outside the module (through decoder)"
+        "files outside the module (through decoder)",
+        "timing"
       ]
     },
     "internal/towerid": {
@@ -471,6 +492,7 @@
         "a device",
         "a subprocess",
         "files outside the module",
+        "the network (through pull)",
         "the whole environment",
         "timing"
       ]
@@ -481,7 +503,8 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through decoder)"
+        "files outside the module (through metal)",
+        "the network (through pull)"
       ]
     },
     "metal/cmd/serve": {
@@ -522,6 +545,7 @@
       "cacheable": false,
       "reasons": [
         "a device",
+        "files outside the module (through metal/internal/gpudev)",
         "timing"
       ]
     },
@@ -536,7 +560,9 @@
       "cacheable": false,
       "reasons": [
         "OS memory (through internal/mem/probe)",
-        "files outside the module"
+        "files outside the module",
+        "the network",
+        "timing"
       ]
     },
     "sdktest": {
@@ -545,7 +571,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/pullcmd)",
         "files outside the module (through internal/serveapp)",
-        "the network (through internal/serveapp)"
+        "the network"
       ]
     },
     "server": {
@@ -558,7 +584,10 @@
       ]
     },
     "site/cmd/build": {
-      "cacheable": true
+      "cacheable": false,
+      "reasons": [
+        "files outside the module (through site/internal/site)"
+      ]
     },
     "site/internal/site": {
       "cacheable": false,

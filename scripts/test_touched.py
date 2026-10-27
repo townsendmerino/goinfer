@@ -51,6 +51,11 @@ class CountFlagFollowsTheTestCacheData(unittest.TestCase):
         for body in ("{", "[]", '{"packages": 3}', '{"packages": {"x": "y"}}'):
             self.assertEqual(self.data(body), set(), body)
 
+    def test_cached_is_read_from_go_tests_summary_line_only(self):
+        self.assertTrue(touched.replayed_from_cache("ok  \tgithub.com/x/internal/mem\t(cached)\n"))
+        self.assertFalse(touched.replayed_from_cache("ok  \tgithub.com/x/internal/mem\t0.21s\n"))
+        self.assertFalse(touched.replayed_from_cache("--- PASS: TestX\n    x_test.go:9: (cached) in a log line\nok  \tgithub.com/x\t0.2s\n"))
+
     def test_the_committed_data_reads(self):
         c = touched.cacheable_packages()
         self.assertIn("internal/layout", c)

@@ -47,21 +47,25 @@ const (
 )
 
 // hiddenCalls finds hidden reads in a file's code, written as compactCode renders it (comments dropped, no spaces around
-// "." or before "(").
+// "." or before "("; a string literal keeps its quotes or backticks). The patterns are broad on purpose: a false match
+// costs a package its cache, a miss replays a stale pass. testOnly patterns count only in a _test.go file.
 var hiddenCalls = []struct {
-	kind string
-	re   *regexp.Regexp
+	kind     string
+	testOnly bool
+	re       *regexp.Regexp
 }{
-	{hiddenExec, regexp.MustCompile(`\bexec\.Command(Context)?\(`)},
-	{hiddenEnviron, regexp.MustCompile(`\bos\.Environ\(`)},
-	{hiddenFiles, regexp.MustCompile(`\bos\.UserHomeDir\(|\bAssetPathForTest\(|\bos\.Hostname\(|"/(Users|home|proc|sys|tmp|dev)/`)},
-	{hiddenNet, regexp.MustCompile(`\bnet\.Dial|\bhttp\.Get\(`)},
-	{hiddenTiming, regexp.MustCompile(`\btime\.Since\(|\btesting\.Benchmark\(`)},
+	{hiddenExec, false, regexp.MustCompile(`\bexec\.Command(Context)?\(|\bos\.StartProcess\(|\bsyscall\.(Exec|ForkExec)\(`)},
+	{hiddenEnviron, false, regexp.MustCompile(`\bos\.Environ\(|\bsyscall\.(Getenv|Environ)\(`)},
+	{hiddenFiles, false, regexp.MustCompile(`\bos\.(UserHomeDir|UserCacheDir|UserConfigDir|TempDir|Hostname|Executable)\(|\bAssetPathForTest\(|["\x60]/(Users|home|proc|sys|tmp|dev|var|private|opt|etc|Library|Volumes|srv|mnt)/`)},
+	{hiddenNet, false, regexp.MustCompile(`\bnet\.(Dial|Listen)|\bhttp\.(Get|Post|Head|PostForm)\(|\bhttp\.(Client|DefaultClient)\b`)},
+	{hiddenTiming, true, regexp.MustCompile(`\btime\.(Since|Until|Now)\(`)},
+	{hiddenTiming, false, regexp.MustCompile(`\btesting\.Benchmark\(`)},
 }
 
-// nestedEscape finds a relative path that climbs, in a package of a nested module: its module root is its own directory,
-// so a file above it is outside the module.
-var nestedEscape = regexp.MustCompile(`"\.\./`)
+// relativeUp finds a relative path that climbs ("../" in a quoted or raw string, or a Join starting at ".."). In a
+// nested module, whose root is its own directory, it can reach files outside the module, which Go's test cache does not
+// key on; and a root-module package's relative read, run from a nested module's test, resolves from that test's directory.
+var relativeUp = regexp.MustCompile(`["\x60]\.\./|\b(filepath|path)\.Join\("\.\."`)
 
 // hiddenImports maps an import to the hidden input it brings.
 var hiddenImports = map[string]string{
@@ -102,11 +106,11 @@ func compactCode(name string, src []byte) string {
 // pkgScan is one package's own hidden reads: in its non-test files (which its importers' tests can run) and in all of
 // its files; its module; and the goinfer packages its non-test and test files import.
 type pkgScan struct {
-	module       string
-	prod, all    map[string]bool
-	imports      map[string]bool
-	testImports  map[string]bool
-	prodExternal map[string]bool
+	module           string
+	prod, all        map[string]bool
+	imports          map[string]bool
+	testImports      map[string]bool
+	relUp, relUpProd bool // relativeUp matched in some file / in a non-test file
 }
 
 // scanTestCache scans the tree the way scanImports does and returns every package's own hidden reads.
@@ -148,14 +152,11 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 		dir := filepath.ToSlash(filepath.Dir(rel))
 		p := pkgs[dir]
 		if p == nil {
-			p = &pkgScan{prod: map[string]bool{}, all: map[string]bool{}, imports: map[string]bool{}, testImports: map[string]bool{}, prodExternal: map[string]bool{}}
+			p = &pkgScan{prod: map[string]bool{}, all: map[string]bool{}, imports: map[string]bool{}, testImports: map[string]bool{}}
 			pkgs[dir] = p
 		}
 		test := strings.HasSuffix(path, "_test.go")
 		mark := func(kind string) {
-			if kind == hiddenTiming && !test {
-				return // timing is a test that reads the clock; production code that times itself decides nothing a test checks
-			}
 			p.all[kind] = true
 			if !test {
 				p.prod[kind] = true
@@ -163,7 +164,8 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 		}
 		code := compactCode(path, src)
 		for _, h := range hiddenCalls {
-			if h.re.MatchString(code) {
+			// A clock read in production code times itself and decides nothing a test checks; one in a test can.
+			if (test || !h.testOnly) && h.re.MatchString(code) {
 				mark(h.kind)
 			}
 		}
@@ -183,9 +185,9 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 				}
 			}
 		}
-		// A literal "../" in a nested module may climb out of it; the root module's root is the repository's.
-		if nestedEscape.MatchString(code) {
-			p.prodExternal[path] = true
+		if relativeUp.MatchString(code) {
+			p.relUp = true
+			p.relUpProd = p.relUpProd || !test
 		}
 		return nil
 	})
@@ -202,14 +204,9 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 			d = filepath.ToSlash(filepath.Dir(d))
 		}
 		p.module = m
-		if m != "." && len(p.prodExternal) > 0 {
-			for path := range p.prodExternal {
-				if strings.HasSuffix(path, "_test.go") {
-					p.all[hiddenFiles] = true
-				} else {
-					p.prod[hiddenFiles], p.all[hiddenFiles] = true, true
-				}
-			}
+		if m != "." && p.relUp {
+			p.all[hiddenFiles] = true
+			p.prod[hiddenFiles] = p.prod[hiddenFiles] || p.relUpProd
 		}
 		if deviceModules[m] {
 			p.prod[hiddenDevice], p.all[hiddenDevice] = true, true
@@ -222,9 +219,18 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 	return pkgs
 }
 
-// classifyTestCache gives every package its reasons: its own hidden reads (tests included), then those of the non-test
-// files of every goinfer package it reaches, each named through the nearest such package (breadth first, ties by name).
-func classifyTestCache(pkgs map[string]*pkgScan) map[string]testCacheEntry {
+// classifyTestCache gives every package its reasons: its own hidden reads (tests included) and the reasons declared for
+// it by hand, then those of the non-test files and the declared reasons of every goinfer package it reaches, each named
+// through the nearest such package (breadth first, ties by name). A nested-module package also takes, as files outside
+// its module, any climbing relative read in the non-test files of a package it reaches.
+func classifyTestCache(pkgs map[string]*pkgScan, declared map[string][]string) map[string]testCacheEntry {
+	for dir, rs := range declared {
+		if p := pkgs[dir]; p != nil {
+			for _, r := range rs {
+				p.prod[r], p.all[r] = true, true
+			}
+		}
+	}
 	out := map[string]testCacheEntry{}
 	for dir, p := range pkgs {
 		reasons := map[string]string{}
@@ -254,6 +260,11 @@ func classifyTestCache(pkgs map[string]*pkgScan) map[string]testCacheEntry {
 				for kind := range q.prod {
 					if _, ok := reasons[kind]; !ok {
 						reasons[kind] = kind + " (through " + d + ")"
+					}
+				}
+				if p.module != "." && q.relUpProd {
+					if _, ok := reasons[hiddenFiles]; !ok {
+						reasons[hiddenFiles] = hiddenFiles + " (a relative read in " + d + ")"
 					}
 				}
 				for to := range q.imports {
@@ -288,7 +299,7 @@ func TestTestCache_classified(t *testing.T) {
 	case !*updateArrows || !os.IsNotExist(err):
 		t.Fatal(err)
 	}
-	got := classifyTestCache(scanTestCache(t))
+	got := classifyTestCache(scanTestCache(t), data.Declared)
 	if *updateArrows {
 		data.Packages = got
 		if data.Declared == nil {
@@ -339,4 +350,39 @@ func TestTestCache_classified(t *testing.T) {
 		}
 	}
 	t.Logf("%d packages, %d cacheable, %d declared by hand", len(got), cacheable, len(data.Declared))
+}
+
+// TestClassifyTestCache_propagates holds classifyTestCache's two rules a scan of today's tree cannot reach: a reason
+// declared by hand makes its package and every importer non-cacheable, and a nested-module package takes a climbing
+// relative read from the non-test files of a root-module package it reaches.
+func TestClassifyTestCache_propagates(t *testing.T) {
+	pkg := func(module string, imports ...string) *pkgScan {
+		p := &pkgScan{module: module, prod: map[string]bool{}, all: map[string]bool{}, imports: map[string]bool{}, testImports: map[string]bool{}}
+		for _, i := range imports {
+			p.imports[i] = true
+		}
+		return p
+	}
+	pkgs := map[string]*pkgScan{
+		"a":          pkg("."),
+		"b":          pkg(".", "a"),
+		"c":          pkg("."),
+		"nested/x":   pkg("nested", "r"),
+		"r":          pkg("."),
+		"plain":      pkg("."),
+		"nested/own": pkg("nested", "plain"),
+	}
+	pkgs["r"].relUp, pkgs["r"].relUpProd = true, true
+	got := classifyTestCache(pkgs, map[string][]string{"a": {"timing"}})
+	want := map[string][]string{
+		"a":        {"timing"},
+		"b":        {"timing (through a)"},
+		"nested/x": {"files outside the module (a relative read in r)"},
+	}
+	for dir, e := range got {
+		w := want[dir]
+		if strings.Join(e.Reasons, "|") != strings.Join(w, "|") || e.Cacheable != (len(w) == 0) {
+			t.Errorf("%s: got %+v, want reasons %v", dir, e, w)
+		}
+	}
 }

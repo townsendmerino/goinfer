@@ -142,7 +142,7 @@ SCANS = [
     # SB14: every package doc's named tests exist; docs/ARCHITECTURE.md's import appendix is imports.json, rendered.
     Scan("internal/layout", "TestPackageDocs_namedTestsExist", TREE_GO),
     Scan("internal/layout", "TestArchitecture_importAppendix", F("internal/layout/imports.json", "docs/ARCHITECTURE.md")),
-    Scan("internal/layout", "TestTestCache_classified", TREE_GO + F("internal/layout/test_cache.json")),
+    Scan("internal/layout", "TestTestCache_classified", TREE_GO + F("internal/layout/test_cache.json", "go.mod", "*/go.mod", "*/*/go.mod")),
     Scan("internal/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
     Scan("internal/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),

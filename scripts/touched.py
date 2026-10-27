@@ -29,10 +29,15 @@ def sh(*a, **k):
     return subprocess.run(a, text=True, capture_output=True, **k)
 
 
+def replayed_from_cache(out):
+    """True when go test's output says it replayed a package's result from its test cache: an "ok <pkg> (cached)" line."""
+    return re.search(r"^ok\s+\S+\s+\(cached\)", out, re.M) is not None
+
+
 def step(name, fn):
     t = time.time()
     ok, out = fn()
-    replayed = ", cached" if ok and "(cached)" in out else ""  # go test replayed the result from its test cache
+    replayed = ", cached" if ok and replayed_from_cache(out) else ""
     print(f"  {'ok  ' if ok else 'FAIL'} {name} ({time.time() - t:.1f}s{replayed})")
     if not ok:
         print("".join("      " + l + "\n" for l in out.strip().splitlines()[-25:]))
