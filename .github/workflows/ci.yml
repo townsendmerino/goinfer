@@ -380,6 +380,26 @@ jobs:
             grep -E '"Action":"(build-output|build-fail|fail)"' test.json | head -300
             exit 1
           }
+      # One of MM1's two census tests, on its own step: each takes minutes under -race, and the tail skips both. They keep
+      # -race because the census starts its own goroutines (parallelEach). PW2a, docs/tasks/task-subsystems-2026-10.md §12.2.
+      - name: census exists (zero-match guard)
+        run: |
+          pattern='^TestDecisionCensus$'
+          matched=$(go test -list "$pattern" ./decoder/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ -z "$matched" ]; then
+            echo "::error::pattern '$pattern' matched NO test in ./decoder/ — renamed or deleted? the next step would silently run nothing"
+            exit 1
+          fi
+      - name: test (decoder census)
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run '^TestDecisionCensus$' ./decoder/ > test-census.json
+      - name: test summary (decoder census)
+        if: always()
+        run: |
+          python3 scripts/ci_test_summary.py test-census.json --top 40 || {
+            echo "::error::ci_test_summary.py failed; raw build/fail events follow"
+            grep -E '"Action":"(build-output|build-fail|fail)"' test-census.json | head -300
+            exit 1
+          }
 
   test-decoder-b:
     needs: changes
@@ -541,6 +561,26 @@ jobs:
             grep -E '"Action":"(build-output|build-fail|fail)"' test.json | head -300
             exit 1
           }
+      # One of MM1's two census tests, on its own step: each takes minutes under -race, and the tail skips both. They keep
+      # -race because the census starts its own goroutines (parallelEach). PW2a, docs/tasks/task-subsystems-2026-10.md §12.2.
+      - name: census exists (zero-match guard)
+        run: |
+          pattern='^TestDecisionCensus_secondProcess$'
+          matched=$(go test -list "$pattern" ./decoder/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ -z "$matched" ]; then
+            echo "::error::pattern '$pattern' matched NO test in ./decoder/ — renamed or deleted? the next step would silently run nothing"
+            exit 1
+          fi
+      - name: test (decoder census)
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run '^TestDecisionCensus_secondProcess$' ./decoder/ > test-census.json
+      - name: test summary (decoder census)
+        if: always()
+        run: |
+          python3 scripts/ci_test_summary.py test-census.json --top 40 || {
+            echo "::error::ci_test_summary.py failed; raw build/fail events follow"
+            grep -E '"Action":"(build-output|build-fail|fail)"' test-census.json | head -300
+            exit 1
+          }
 
   test-decoder-tail:
     needs: changes
@@ -567,7 +607,7 @@ jobs:
       # can silently fall through a gap the way a `-run` typo could -- ~677 tests, ~27s combined
       # (measured: 562.0s package total minus the 14 named tests' own 534.6s).
       - name: test (decoder shard tail)
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws' ./decoder/ > test.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws|^TestDecisionCensus$|^TestDecisionCensus_secondProcess$' ./decoder/ > test.json
       - name: test summary
         if: always()
         run: |
