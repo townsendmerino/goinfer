@@ -71,7 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
-| PW3 | active | `docs/README.md`'s counts no longer stored (PW3-R1/R2 PASS); `docs/citation-index.md` left as is (2 commits since CC0); `testdata/parity_manifest.json` split by VK3; left: `CHANGELOG.md`, a decision for Francis (fragments change how it reads between releases); S–M | §12 |
+| PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
@@ -2183,6 +2183,19 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   | PW3-C2 (a release reads as today) | On a scratch copy, `release v0.24.0 --date 2026-10-27` gives a `[v0.24.0]` section whose body is origin/main's `[Unreleased]` body, byte for byte, under the header today's move writes. It leaves no fragment behind. `gate changelog -section v0.24.0` reports what origin/main's `gate changelog` reports for `[Unreleased]`, line for line after the section name. | — | complete | seconds |
   | PW3-C3 (parallel adds merge) | Two branches off one base each add a fragment. Both merge cleanly, and `render` and `gate changelog` see both entries. At origin/main the same two adds, made in `CHANGELOG.md`, conflict. | — | once each side | seconds |
   | PW3-C4 (nothing else moves) | `gate changelog` with no flags reads the same at this branch as at origin/main. `cmd/gate`'s changelog and release tests pass, as do the script's own tests (`scripts/test_changelog.py`), `touched.py`, the citation lint and `test_touched.py`. | — | complete | minutes |
+
+  **PW3 CHANGELOG results (2026-10-27, mac-ax01):**
+  - **PW3-C1 PASS:** `render` on the 33 migrated fragments equals origin/main's `[Unreleased]` body, 17,135 bytes.
+  - **PW3-C2 PASS:** in a scratch clone, `release v0.24.0 --date 2026-10-27` writes a `[v0.24.0]` section whose body is
+    that same text byte for byte, under `## [v0.24.0] — 2026-10-27`. It leaves no fragment, and `gate changelog
+    -section v0.24.0` reads as origin/main's `gate changelog` did (the same eight owed items).
+  - **PW3-C3 PASS:** two parallel fragment adds merge cleanly and `render` lists both; the same two adds made in
+    `CHANGELOG.md` conflict.
+  - **PW3-C4 PASS:**
+    - `gate changelog` reads identically to origin/main. With `changelog.d/` moved aside it would owe one more item
+      (`POST /admin/models/fit`), so it does read the fragments.
+    - `touched.py` is green, `cmd/gate`'s 79 s run included.
+    - `scripts/test_changelog.py` passes 6 tests and runs in CI. The citation lint and `test_touched.py` pass.
 
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
