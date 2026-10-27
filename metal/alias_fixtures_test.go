@@ -390,11 +390,13 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 }
 
-// TestLedger_metalAgreesWithTheDevice (G-MM3c-3, G-MM3c-4): on llama-tiny resident on Metal, the device's CurrentAllocatedSize
-// just after the resident's device is created, against after the build and three identical requests, is at least the ledger's
-// charged Unified bytes and at most 64 MiB above them (pipelines, libraries, the command queue). The charged bytes do not grow
-// from one request to the next (I2), and after Close the ledger holds no lease. FileMapped leases are logged apart.
-func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
+// metalI3 loads path on Metal with opts and checks G-MM3c-3 and G-MM3c-4 on it: the device's CurrentAllocatedSize just after the
+// resident's device is created, against after the build and three identical requests, is at least the ledger's charged Unified
+// bytes U and at most 64 MiB above them, or (if Metal counts no-copy buffers) within the same band above U plus the charged
+// FileMapped bytes F; the charged bytes do not grow from one request to the next (I2); after Close the ledger holds no lease. It
+// returns F. Run each cell in its own process: the system device is shared, and earlier tests' frees can land during a cell.
+func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64) {
+	t.Helper()
 	const band = 64 << 20
 	real := CreateSystemDefaultDevice
 	defer func() { CreateSystemDefaultDevice = real }()
@@ -406,7 +408,7 @@ func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
 		}
 		return d, err
 	}
-	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
+	m, err := decoder.Load(path, opts)
 	if err != nil {
 		t.Skipf("no metal: %v", err)
 	}
@@ -435,15 +437,45 @@ func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
 		t.Fatal("the resident's device was not created through CreateSystemDefaultDevice")
 	}
 	u := l.Usage()
-	measured, charged := int64(d.CurrentAllocatedSize())-int64(base), u.ByTier[mem.Unified]
-	t.Logf("measured %d bytes, the ledger charges %d on Unified (requested %d), %d on FileMapped; gap %d; by line %v",
-		measured, charged, u.Requested, u.ByTier[mem.FileMapped], measured-charged, u.ByLine)
-	if measured < charged || measured > charged+band {
-		t.Errorf("measured %d, charged %d: outside [charged, charged+%d]", measured, charged, band)
+	measured, un, fm := int64(d.CurrentAllocatedSize())-int64(base), u.ByTier[mem.Unified], u.ByTier[mem.FileMapped]
+	t.Logf("measured %d bytes; the ledger charges U=%d on Unified, F=%d on FileMapped (requested %d); measured-U %d, measured-(U+F) %d; by line %v",
+		measured, un, fm, u.Requested, measured-un, measured-un-fm, u.ByLine)
+	withoutF, withF := measured >= un && measured <= un+band, measured >= un+fm && measured <= un+fm+band
+	switch {
+	case withoutF && withF:
+		t.Logf("both bands hold: F is too small here to tell whether CurrentAllocatedSize counts no-copy buffers")
+	case withF:
+		t.Logf("CurrentAllocatedSize counts the no-copy buffers (measured is within the band above U+F)")
+	case withoutF:
+		t.Logf("CurrentAllocatedSize does not count the no-copy buffers (measured is within the band above U)")
+	default:
+		t.Errorf("measured %d is outside both [U, U+%d] and [U+F, U+F+%d] (U=%d, F=%d)", measured, band, band, un, fm)
 	}
 	m.Close()
 	if u := l.Usage(); u.Leases != 0 || u.Charged != 0 {
 		t.Errorf("after Close the ledger holds %d leases, %d bytes, by line %v", u.Leases, u.Charged, u.ByLine)
+	}
+	return fm
+}
+
+// TestLedger_metalAgreesWithTheDevice (G-MM3c-3, G-MM3c-4): metalI3 on llama-tiny, which copies its weights (no aliasing).
+func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
+	metalI3(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
+}
+
+// TestLedger_metalAgreesWithTheDevice_alias (G-MM3c-4's aliasing cell): metalI3 on gemma4-dense-scaled transcoded to a Metal .giw
+// and loaded with GOINFER_METAL_ALIAS, so its weights are no-copy windows (FileMapped); the cell must alias.
+func TestLedger_metalAgreesWithTheDevice_alias(t *testing.T) {
+	const fixture = "../testdata/gemma4-dense-scaled"
+	if _, err := os.Stat(filepath.Join(fixture, "model.safetensors")); err != nil {
+		t.Skipf("no fixture at %s", fixture)
+	}
+	giw := filepath.Join(t.TempDir(), "i3-alias.int4.metal.giw")
+	if err := prequant.Transcode(context.Background(), fixture, giw, "int4", false, decoder.GIWTargetMetal); err != nil {
+		t.Fatal(err)
+	}
+	if fm := metalI3(t, giw, decoder.Options{Backend: "metal", Quant: "int4", Knobs: &decoder.Knobs{"GOINFER_METAL_ALIAS": "1"}}); fm == 0 {
+		t.Error("the aliased load leased nothing on FileMapped: the cell did not alias")
 	}
 }
 

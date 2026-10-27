@@ -690,7 +690,7 @@ func q4kLaneProjOn(line string, d *Device, kq *decoder.KQuantReader, wms ...*lin
 			rows += w.Rows()
 		}
 		w, s := q4kLaneBufOn(line, d, kq, kind, wms[i:j]...)
-		segs = append(segs, q4kSeg{kind: kind, w: w, s: s, uN: NewBufferU32On(line, d, uint32(rows)), rows: rows, off: off})
+		segs = append(segs, q4kSeg{kind: kind, w: w, s: s, uN: NewBufferU32On(mem.LineScratch, d, uint32(rows)), rows: rows, off: off})
 		off += rows
 		i = j
 	}
@@ -1720,9 +1720,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// when the rope dispatch itself runs) — every family needs a VALID buffer bound, gated by
 			// the flag, so non-gpt-oss gets a real but unused 1-element dummy, not a zero Buffer.
 			if r.attnSink {
-				L.attnSinks, L.uHasSink = NewBufferFloatsOn(mem.LineDense, d, lw.AttnSinks), NewBufferU32On(mem.LineDense, d, 1)
+				L.attnSinks, L.uHasSink = NewBufferFloatsOn(mem.LineDense, d, lw.AttnSinks), NewBufferU32On(mem.LineScratch, d, 1)
 			} else {
-				L.attnSinks, L.uHasSink = NewBufferFloatsOn(mem.LineDense, d, []float32{0}), NewBufferU32On(mem.LineDense, d, 0)
+				L.attnSinks, L.uHasSink = NewBufferFloatsOn(mem.LineDense, d, []float32{0}), NewBufferU32On(mem.LineScratch, d, 0)
 			}
 		}
 		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false

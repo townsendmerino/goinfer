@@ -512,8 +512,8 @@ const mtlResourceHazardTrackingModeUntracked = 1 << 8
 // 99.6%/100.4%/100.4% across three runs — noise, not a lever. Kept unexported: it has no
 // consumer, and giving a proven-dead-end 0.4%-of-nothing lever permanent exported surface is worse
 // than re-adding two lines if this is ever revisited on different hardware.
-func (d *Device) newBufferLenUntracked(nFloats int) Buffer {
-	return d.MustBufOn(UnlinedLine, d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(mtlResourceHazardTrackingModeUntracked)), nFloats, "len-untracked")
+func (d *Device) newBufferLenUntracked(line string, nFloats int) Buffer {
+	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(mtlResourceHazardTrackingModeUntracked)), nFloats, "len-untracked")
 }
 
 // NewBufferBytes allocates a shared MTLBuffer of n BYTES (n is the

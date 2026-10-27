@@ -437,30 +437,73 @@ var unlinedMetal = map[string]bool{"NewBufferLen": true, "NewBufferBytes": true,
 	"int4Buf": true, "int8Buf": true, "int8Concat": true, "q4kLaneProj": true, "int4ConcatA": true, "int8BufA": true, "int8Codes": true,
 	"nibbles": true, "f32Mat": true}
 
-// unlinedMetalCalls counts the calls in f to an unlined constructor (gpu.X, X, gpu.X[T], .X), outside the unlined wrappers' own
-// declarations.
+// calleeName is the name a call's function is reached by (gpu.X, X, gpu.X[T], .X), or "".
+func calleeName(c *ast.CallExpr) string {
+	fun := c.Fun
+	if ix, ok := fun.(*ast.IndexExpr); ok {
+		fun = ix.X
+	}
+	switch e := fun.(type) {
+	case *ast.SelectorExpr:
+		return e.Sel.Name
+	case *ast.Ident:
+		return e.Name
+	}
+	return ""
+}
+
+// unlinedArg reports whether e is the unlined line: UnlinedLine (any qualifier) or the empty string.
+func unlinedArg(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name == "UnlinedLine"
+	case *ast.SelectorExpr:
+		return x.Sel.Name == "UnlinedLine"
+	case *ast.BasicLit:
+		return x.Value == `""`
+	}
+	return false
+}
+
+// isWrapper reports whether fd is an unlined wrapper: a listed name whose body hands UnlinedLine to its own …On twin.
+func isWrapper(fd *ast.FuncDecl) bool {
+	if !unlinedMetal[fd.Name.Name] || fd.Body == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fd.Body, func(x ast.Node) bool {
+		if c, ok := x.(*ast.CallExpr); ok && calleeName(c) == fd.Name.Name+"On" {
+			for _, a := range c.Args {
+				if unlinedArg(a) {
+					found = true
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// unlinedMetalCalls counts the calls in f that allocate on no plan line: a call to an unlined constructor, or a lined (…On) call
+// handed UnlinedLine or "", outside the unlined wrappers' own declarations.
 func unlinedMetalCalls(f *ast.File) int {
 	n := 0
 	ast.Inspect(f, func(x ast.Node) bool {
-		if fd, ok := x.(*ast.FuncDecl); ok && unlinedMetal[fd.Name.Name] {
+		if fd, ok := x.(*ast.FuncDecl); ok && isWrapper(fd) {
 			return false
 		}
 		c, ok := x.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		fun := c.Fun
-		if ix, ok := fun.(*ast.IndexExpr); ok {
-			fun = ix.X
-		}
-		switch e := fun.(type) {
-		case *ast.SelectorExpr:
-			if unlinedMetal[e.Sel.Name] {
-				n++
-			}
-		case *ast.Ident:
-			if unlinedMetal[e.Name] {
-				n++
+		name := calleeName(c)
+		if unlinedMetal[name] {
+			n++
+		} else if strings.HasSuffix(name, "On") && unlinedMetal[strings.TrimSuffix(name, "On")] {
+			for _, a := range c.Args {
+				if unlinedArg(a) {
+					n++
+				}
 			}
 		}
 		return true
@@ -472,14 +515,18 @@ func unlinedMetalCalls(f *ast.File) int {
 // constructor outside the unlined wrappers, so every production MTLBuffer names its plan line. It reads every file and counts
 // a planted call of each form. Device-free: CI's metal job runs it.
 func TestLedger_everyMetalAllocationNamesALine(t *testing.T) {
-	plant := "package x\nfunc f() { _ = d.NewBufferLen(4); _ = gpu.NewBufferLenOf[float32](d, 4); _ = NewBufferU32(d, 1); _ = d.NewBufferLenOn(\"kv\", 4) }\n" +
-		"func NewBufferU32(d *Device, v uint32) Buffer { return NewBufferU32On(gpu.UnlinedLine, d, v) }\n"
+	// Counted: the method, the generic, the helper, a lined call on UnlinedLine, a lined call on "", and a call inside a function
+	// that only shares a wrapper's name; not counted: a lined call on a real line, and the true wrapper's own call.
+	plant := "package x\nfunc f() { _ = d.NewBufferLen(4); _ = gpu.NewBufferLenOf[float32](d, 4); _ = NewBufferU32(d, 1); _ = d.NewBufferLenOn(\"kv\", 4)\n" +
+		"\t_ = d.MustBufOn(UnlinedLine, id, 4, \"x\"); _ = gpu.NewBufferLenOfOn[float32](d, \"\", 4) }\n" +
+		"func NewBufferU32(d *Device, v uint32) Buffer { return NewBufferU32On(gpu.UnlinedLine, d, v) }\n" +
+		"func (o *other) window(d *Device) Buffer { return d.NewBufferLen(1) }\n"
 	pf, err := parser.ParseFile(token.NewFileSet(), "plant.go", plant, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := unlinedMetalCalls(pf); got != 3 {
-		t.Fatalf("the planted file counts %d unlined calls, want 3", got)
+	if got := unlinedMetalCalls(pf); got != 6 {
+		t.Fatalf("the planted file counts %d unlined calls, want 6", got)
 	}
 	read := 0
 	err = filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {

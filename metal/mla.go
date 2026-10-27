@@ -144,7 +144,7 @@ func buildMLAScratch(d *Device, m *decoder.Model, p *mlaParams) *mlaScratch {
 		qa: d.NewBufferLenOn(mem.LineScratch, max(p.qLoRA, 1)), qaQ: byteBufOn(mem.LineScratch, d, max(p.qLoRA, 4)), qaSc: d.NewBufferLenOn(mem.LineScratch, 1),
 		q: d.NewBufferLenOn(mem.LineScratch, p.nH*p.qkHead), kv: d.NewBufferLenOn(mem.LineScratch, p.latDim), qAbs: d.NewBufferLenOn(mem.LineScratch, p.nH*p.latDim),
 		wsum: d.NewBufferLenOn(mem.LineScratch, p.nH*p.rank), ctx: d.NewBufferLenOn(mem.LineScratch, p.nH*p.vHead), ctxQ: byteBufOn(mem.LineScratch, d, p.nH*p.vHead), ctxSc: d.NewBufferLenOn(mem.LineScratch, 1),
-		invf: NewBufferFloatsOn(mem.LineScratch, d, m.RopeInvFreq()),
+		invf: NewBufferFloatsOn(mem.LineDense, d, m.RopeInvFreq()),
 	}
 	s.uStore = NewBufferUint32sOn(mem.LineScratch, d, []uint32{uint32(p.rank), uint32(p.qkRope), b(p.interleave)})
 	s.uAbsorb = NewBufferUint32sOn(mem.LineScratch, d, []uint32{uint32(p.nH), uint32(p.rank), uint32(p.qkNope), uint32(p.qkHead), uint32(p.latDim)})
