@@ -5,7 +5,7 @@
 // model.go's real dispatch. FeatOutBias's kernel (gemv_w4a8_sa_bias_resid) and FeatLearnedPos
 // (no per-layer kernel — it's a dispatch-skip + host-side embedding add) are the other two
 // pieces; see gemv_w4a8_sa_bias_resid_test.go and model.go respectively.
-package metal
+package kernels
 
 import (
 	"math"
