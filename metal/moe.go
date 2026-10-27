@@ -11,6 +11,7 @@ package metal
 import (
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
 	"strconv"
 	"sync"
@@ -166,8 +167,8 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		mo.pRouteGptOss = pipe("route_gptoss_sg")
 		mo.pActGptOss = pipe("swiglu_quant_gptoss")
 		mo.pDownWaccBias = pipe("gemv_w4a8_moe_wacc_bias")
-		mo.uAlpha, mo.uLimit = NewBufferFloats(d, []float32{alpha}), NewBufferFloats(d, []float32{limit})
-		mo.uHasBias = NewBufferU32(d, 1)
+		mo.uAlpha, mo.uLimit = NewBufferFloatsOn(mem.LineScratch, d, []float32{alpha}), NewBufferFloatsOn(mem.LineScratch, d, []float32{limit})
+		mo.uHasBias = NewBufferU32On(mem.LineScratch, d, 1)
 	}
 	b1 := func(b bool) uint32 {
 		if b {
@@ -175,26 +176,26 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		}
 		return 0
 	}
-	mo.uNE, mo.uK = NewBufferU32(d, uint32(nE)), NewBufferU32(d, uint32(k))
-	mo.uSigmoid, mo.uNorm = NewBufferU32(d, b1(sigmoid)), NewBufferU32(d, b1(norm))
-	mo.uScale = NewBufferFloats(d, []float32{float32(scale)})
-	mo.uNGroup, mo.uTopkGroup = NewBufferU32(d, uint32(nGroup)), NewBufferU32(d, uint32(topkGroup))
-	mo.uInter, mo.uInter2 = NewBufferU32(d, uint32(inter)), NewBufferU32(d, uint32(2*inter))
-	mo.uSharedInter = NewBufferU32(d, uint32(sharedInter))
+	mo.uNE, mo.uK = NewBufferU32On(mem.LineScratch, d, uint32(nE)), NewBufferU32On(mem.LineScratch, d, uint32(k))
+	mo.uSigmoid, mo.uNorm = NewBufferU32On(mem.LineScratch, d, b1(sigmoid)), NewBufferU32On(mem.LineScratch, d, b1(norm))
+	mo.uScale = NewBufferFloatsOn(mem.LineScratch, d, []float32{float32(scale)})
+	mo.uNGroup, mo.uTopkGroup = NewBufferU32On(mem.LineScratch, d, uint32(nGroup)), NewBufferU32On(mem.LineScratch, d, uint32(topkGroup))
+	mo.uInter, mo.uInter2 = NewBufferU32On(mem.LineScratch, d, uint32(inter)), NewBufferU32On(mem.LineScratch, d, uint32(2*inter))
+	mo.uSharedInter = NewBufferU32On(mem.LineScratch, d, uint32(sharedInter))
 	mo.uSlot = make([]Buffer, k)
 	for j := range mo.uSlot {
-		mo.uSlot[j] = NewBufferU32(d, uint32(j))
+		mo.uSlot[j] = NewBufferU32On(mem.LineScratch, d, uint32(j))
 	}
-	mo.rLogits = d.NewBufferLen(nE)
-	mo.rIdx = NewBufferUint32s(d, make([]uint32, k))
-	mo.rWgt = d.NewBufferLen(k)
-	mo.shGl, mo.shDown = d.NewBufferLen(1), d.NewBufferLen(H)
+	mo.rLogits = d.NewBufferLenOn(mem.LineScratch, nE)
+	mo.rIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, k))
+	mo.rWgt = d.NewBufferLenOn(mem.LineScratch, k)
+	mo.shGl, mo.shDown = d.NewBufferLenOn(mem.LineScratch, 1), d.NewBufferLenOn(mem.LineScratch, H)
 	if !isGptOss && (2*inter)%8 == 0 && H%8 == 0 { // 8 rows per 256-thread threadgroup, per slot
 		mo.kSlots = true
 		mo.pGUk, mo.pDownK = pipe("dp03_gemv_w4a8_moe_k"), pipe("dp03_gemv_w4a8_moe_down_k")
 		mo.pSwRows, mo.pCombine = pipe("mc3_swiglu_quant_rows"), pipe("moe_combine_k")
-		mo.guK, mo.dqK = d.NewBufferLen(k*2*inter), byteBuf(d, k*inter)
-		mo.dScK, mo.accK = d.NewBufferLen(k), d.NewBufferLen(k*H)
+		mo.guK, mo.dqK = d.NewBufferLenOn(mem.LineScratch, k*2*inter), byteBufOn(mem.LineScratch, d, k*inter)
+		mo.dScK, mo.accK = d.NewBufferLenOn(mem.LineScratch, k), d.NewBufferLenOn(mem.LineScratch, k*H)
 	}
 	// Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
 	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
@@ -207,7 +208,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		}
 		if n < nE || moePagedAllSlotsForTest { // n>=nE would hold every expert — no paging, just build the stacked path
 			mo.paged, mo.slots = true, n
-			mo.slotIdx = NewBufferUint32s(d, make([]uint32, k))
+			mo.slotIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, k))
 			w := m.Weights()
 			for l := range w.Layers {
 				if skipPagedInt4CheckForTest {
@@ -251,11 +252,11 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 // f32; the shared expert is packed like the dense FFN.
 func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights, mo *moeResident) *moeLayer {
 	ml := &moeLayer{}
-	ml.routerW = f32Mat(d, &lw.Router)
+	ml.routerW = f32MatOn(mem.LineDense, d, &lw.Router)
 	if len(lw.RouterBias) > 0 {
-		ml.routerBias = NewBufferFloats(d, lw.RouterBias)
+		ml.routerBias = NewBufferFloatsOn(mem.LineDense, d, lw.RouterBias)
 	} else {
-		ml.routerBias = NewBufferFloats(d, make([]float32, mo.nE)) // zeros → sel = score
+		ml.routerBias = NewBufferFloatsOn(mem.LineDense, d, make([]float32, mo.nE)) // zeros → sel = score
 	}
 	if mo.paged {
 		// Paged: do not stack the experts (the multi-GB set paging exists to avoid). Build a bounded LRU slot pool and
@@ -412,43 +413,43 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 			downMats = append(downMats, &lw.Experts[e].Down)
 		}
 		if mo.w8 { // slice 4: every expert's int8 rows stacked, one f32 scale a row
-			ml.expGuW, ml.expGuS = int8Concat(d, mo.alias, guMats...)
-			ml.expDW, ml.expDS = int8Concat(d, mo.alias, downMats...)
+			ml.expGuW, ml.expGuS = int8ConcatOn(mem.LineExperts, d, mo.alias, guMats...)
+			ml.expDW, ml.expDS = int8ConcatOn(mem.LineExperts, d, mo.alias, downMats...)
 		} else {
-			ml.expGuW, ml.expGuS = int4Concat(d, guMats...)
-			ml.expDW, ml.expDS = int4Concat(d, downMats...)
+			ml.expGuW, ml.expGuS = int4ConcatOn(mem.LineExperts, d, guMats...)
+			ml.expDW, ml.expDS = int4ConcatOn(mem.LineExperts, d, downMats...)
 		}
 	}
 	if mo.sharedInter > 0 {
 		var e error
 		if mo.w8 {
-			ml.shGuW, ml.shGuS = int8Concat(d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
-			ml.shDW, ml.shDS, e = int8BufA(d, mo.alias, &lw.SharedExpert.Down)
+			ml.shGuW, ml.shGuS = int8ConcatOn(mem.LineDense, d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
+			ml.shDW, ml.shDS, e = int8BufAOn(mem.LineDense, d, mo.alias, &lw.SharedExpert.Down)
 		} else {
-			ml.shGuW, ml.shGuS = int4ConcatA(d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
-			ml.shDW, ml.shDS, e = int4BufA(d, mo.alias, &lw.SharedExpert.Down)
+			ml.shGuW, ml.shGuS = int4ConcatAOn(mem.LineDense, d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
+			ml.shDW, ml.shDS, e = int4BufAOn(mem.LineDense, d, mo.alias, &lw.SharedExpert.Down)
 		}
 		if e != nil {
 			panic(e)
 		}
 		if !mo.sharedUngated {
-			ml.shGateW = f32Mat(d, &lw.SharedGate)
+			ml.shGateW = f32MatOn(mem.LineDense, d, &lw.SharedGate)
 		}
 	}
 	if mo.isGptOss {
-		ml.expGuBias = NewBufferFloats(d, m.GptOssExpertBiasResident(l))
-		ml.expDBias = NewBufferFloats(d, m.GptOssExpertDownBiasResident(l))
+		ml.expGuBias = NewBufferFloatsOn(mem.LineExperts, d, m.GptOssExpertBiasResident(l))
+		ml.expDBias = NewBufferFloatsOn(mem.LineExperts, d, m.GptOssExpertDownBiasResident(l))
 	}
 	return ml
 }
 
 // f32Mat uploads a full-precision WeightMat (router / shared-gate) to a Metal f32 buffer.
-func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
+func f32MatOn(line string, d *Device, w *linalg.WeightMat) Buffer {
 	f, ok := w.F32()
 	if !ok {
 		panic(fmt.Sprintf("metal MoE: weight kind %q is not f32 (router/shared-gate must be full precision)", w.Kind()))
 	}
-	return NewBufferFloats(d, f)
+	return NewBufferFloatsOn(line, d, f)
 }
 
 // encodeMoEFFNWithX records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down dispatches: post-attn

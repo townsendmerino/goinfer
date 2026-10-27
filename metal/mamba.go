@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -95,10 +96,10 @@ func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams)
 	}
 	L := &mambaLayer{}
 	var err error
-	if L.inW, L.inS, err = int8Buf(d, &inWM); err != nil {
+	if L.inW, L.inS, err = int8BufOn(mem.LineDense, d, &inWM); err != nil {
 		return nil, err
 	}
-	if L.outW, L.outS, err = int8Buf(d, &outWM); err != nil {
+	if L.outW, L.outS, err = int8BufOn(mem.LineDense, d, &outWM); err != nil {
 		return nil, err
 	}
 	headP := make([]float32, p.nHeads*3)
@@ -106,10 +107,10 @@ func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams)
 		headP[h*3] = float32(-math.Exp(float64(aLog[h])))
 		headP[h*3+1], headP[h*3+2] = dtBias[h], dW[h]
 	}
-	L.convW, L.convB = NewBufferFloats(d, convW), NewBufferFloats(d, convB)
-	L.headP, L.normW = NewBufferFloats(d, headP), NewBufferFloats(d, normW)
-	L.win = NewBufferFloats(d, make([]float32, (p.dConv-1)*p.convDim))
-	L.ssm = NewBufferFloats(d, make([]float32, p.nHeads*p.headDim*p.dState))
+	L.convW, L.convB = NewBufferFloatsOn(mem.LineDense, d, convW), NewBufferFloatsOn(mem.LineDense, d, convB)
+	L.headP, L.normW = NewBufferFloatsOn(mem.LineDense, d, headP), NewBufferFloatsOn(mem.LineDense, d, normW)
+	L.win = NewBufferFloatsOn(mem.LineState, d, make([]float32, (p.dConv-1)*p.convDim))
+	L.ssm = NewBufferFloatsOn(mem.LineState, d, make([]float32, p.nHeads*p.headDim*p.dState))
 	return L, nil
 }
 
@@ -118,14 +119,14 @@ func (r *resident) buildMambaScratch(d *Device, pipe func(string) Pipeline, eps 
 	p := r.mamba
 	r.pMbConv, r.pMbSSM, r.pMbGNorm = pipe("mamba_conv"), pipe("mamba_ssm"), pipe("mamba_gnorm")
 	r.pMbConvSeq, r.pMbSSMSeq, r.pMbGNormRows = pipe("mamba_conv_seq"), pipe("mamba_ssm_seq"), pipe("mamba_gnorm_rows")
-	r.mbProj, r.mbConv = d.NewBufferLen(p.projDim), d.NewBufferLen(p.convDim)
-	r.mbY, r.mbGated = d.NewBufferLen(p.dInner), d.NewBufferLen(p.dInner)
-	r.mbGq, r.mbGSc = d.NewBufferBytes(p.dInner), d.NewBufferLen(1)
-	u := func(v int) Buffer { return NewBufferU32(d, uint32(v)) }
+	r.mbProj, r.mbConv = d.NewBufferLenOn(mem.LineScratch, p.projDim), d.NewBufferLenOn(mem.LineScratch, p.convDim)
+	r.mbY, r.mbGated = d.NewBufferLenOn(mem.LineScratch, p.dInner), d.NewBufferLenOn(mem.LineScratch, p.dInner)
+	r.mbGq, r.mbGSc = d.NewBufferBytesOn(mem.LineScratch, p.dInner), d.NewBufferLenOn(mem.LineScratch, 1)
+	u := func(v int) Buffer { return NewBufferU32On(mem.LineScratch, d, uint32(v)) }
 	r.uMbConvDim, r.uMbK, r.uMbDInner = u(p.convDim), u(p.dConv), u(p.dInner)
 	r.uMbNH, r.uMbHD, r.uMbDS, r.uMbRep, r.uMbGSize = u(p.nHeads), u(p.headDim), u(p.dState), u(p.repeat), u(p.gSize)
 	r.uMbDtBase, r.uMbGroupSize, r.uMbZero = u(p.dInner+p.convDim), u(p.dInner/p.normGroups), u(0)
-	r.uMbEps = NewBufferFloats(d, []float32{eps})
+	r.uMbEps = NewBufferFloatsOn(mem.LineScratch, d, []float32{eps})
 	r.uMbNormGroups = u(p.normGroups)
 }
 

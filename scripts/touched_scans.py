@@ -174,6 +174,7 @@ SCANS = [
     Scan("gpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("gpu/residency.go")),
     # metal module
     Scan("metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("metal/moe.go")),
+    Scan("metal", "TestLedger_everyMetalAllocationNamesALine", NT("metal", "metal/internal/gpudev", "metal/internal/qwenmetal", "metal/internal/visionmetal")),
     Scan("metal/internal/gpudev", "TestOutputContract_newBufferDocsAgreeWithBackends",
          F("cuda/internal/gpudev/cuda.go", "metal/internal/gpudev/metal.go")),
     Scan("metal/internal/gpudev", "TestOutputContract_hostWritersStateTheirs",

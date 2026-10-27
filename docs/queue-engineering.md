@@ -493,7 +493,7 @@ used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need unti
     buffer; `gpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/model.go:Model.tryClaimResident`
     falls back to the CPU path when the resident is busy, and CUDA gathers token embeddings on the host. Nothing drops or advises the pages
     after the upload.
-  - **Metal aliases most of a `.giw` model:** `metal/alias.go:weightAlias.window` builds no-copy buffers over `Model.MmapAliasWindow`
+  - **Metal aliases most of a `.giw` model:** `metal/alias.go:weightAlias.windowOn` builds no-copy buffers over `Model.MmapAliasWindow`
     (default on; `GOINFER_METAL_ALIAS=0` turns it off) for the int4 and int8 codes and contiguous scales; norms, routers, non-contiguous
     scales and unpaged routed experts are copied. While a Metal resident serves, those file pages **are** its weights.
   - **The sidecar write** goes through the page cache: buffered writes, a read-back of the cached copy, then a self-check load of the new

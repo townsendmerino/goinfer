@@ -142,8 +142,8 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("a weight format; the session's cache does not depend on it"),
 		// Metal's resident needs an int8 embedding table; an int4 one is declined at build and runs on the CPU.
-		pathResidentDecode:  ogDeclinedAt("int8Buf", "TestOptionPathMetal_embedInt4Declines"),
-		pathResidentPrefill: ogDeclinedAt("int8Buf", "TestOptionPathMetal_embedInt4Declines"),
+		pathResidentDecode:  ogDeclinedAt("int8BufOn", "TestOptionPathMetal_embedInt4Declines"),
+		pathResidentPrefill: ogDeclinedAt("int8BufOn", "TestOptionPathMetal_embedInt4Declines"),
 	}, ogUntestedCell()),
 	"ActQuantGroup": ogFill(map[ogPath]ogCell{
 		pathCPUDecode: ogTestedBy("TestActQuantGroup_perModel"),

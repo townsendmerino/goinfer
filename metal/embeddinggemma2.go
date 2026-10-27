@@ -5,6 +5,7 @@ package metal
 import (
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"sync"
 
@@ -93,7 +94,7 @@ func newEG2Ops(extra string, more map[string]*Pipeline) (eg2Ops, error) {
 			return eg2Ops{}, err
 		}
 	}
-	o.arena = d.NewBufferBytes(eg2ArenaSlots * 256)
+	o.arena = d.NewBufferBytesOn(mem.LineCompanion, eg2ArenaSlots*256)
 	return o, nil
 }
 
@@ -169,7 +170,7 @@ func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 			return nil, fmt.Errorf("metal: EmbeddingGemma 2 head dim %d, over the attention kernel's 512", ly.HeadDim)
 		}
 	}
-	up := func(v []float32) Buffer { return NewBufferFloats(d, v) }
+	up := func(v []float32) Buffer { return NewBufferFloatsOn(mem.LineCompanion, d, v) }
 	ps := float32(1 / math.Sqrt(float64(a.cfg.Hidden)))
 	scaled := make([]float32, len(w.PLEProj))
 	for i, x := range w.PLEProj {
@@ -231,11 +232,11 @@ func (a *eg2Accel) grow(T int) error {
 		maxKVD = max(maxKVD, ly.w.KVHeads*ly.w.HeadDim)
 		maxHD = max(maxHD, ly.w.HeadDim)
 	}
-	n := func(cols int) Buffer { return a.d.NewBufferLen(T * cols) }
+	n := func(cols int) Buffer { return a.d.NewBufferLenOn(mem.LineCompanion, T*cols) }
 	a.scr = eg2Scratch{x: n(c.Hidden), xn: n(c.Hidden), q: n(maxQD), k: n(maxKVD), v: n(maxKVD), ctx: n(maxQD),
 		o: n(c.Hidden), g: n(c.Intermediate), u: n(c.Intermediate), f: n(c.Hidden), gg: n(c.PLEDim), pr: n(c.Hidden),
 		ple: n(c.Layers * c.PLEDim), out: n(c.EmbeddingDim), qh: n(maxQD), kh: n(maxKVD), vh: n(maxKVD),
-		sc: a.d.NewBufferLen(min(eg2Block, T) * T), vt: a.d.NewBufferLen(maxHD * T), ob: a.d.NewBufferLen(min(eg2Block, T) * maxHD)}
+		sc: a.d.NewBufferLenOn(mem.LineCompanion, min(eg2Block, T)*T), vt: a.d.NewBufferLenOn(mem.LineCompanion, maxHD*T), ob: a.d.NewBufferLenOn(mem.LineCompanion, min(eg2Block, T)*maxHD)}
 	a.cap = T
 	return nil
 }
@@ -404,7 +405,7 @@ func (a *eg2Accel) ropeTables(T, hd int, theta float64) (Buffer, Buffer) {
 		}
 	}
 	cs, sn := embeddinggemma2.RopeTables(T, hd, theta)
-	b := [2]Buffer{NewBufferFloats(a.d, cs), NewBufferFloats(a.d, sn)}
+	b := [2]Buffer{NewBufferFloatsOn(mem.LineCompanion, a.d, cs), NewBufferFloatsOn(mem.LineCompanion, a.d, sn)}
 	a.ropes[k] = b
 	return b[0], b[1]
 }

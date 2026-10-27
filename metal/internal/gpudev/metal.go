@@ -103,8 +103,41 @@ func goString(id objc.ID) string {
 type Device struct {
 	id     objc.ID
 	mu     sync.Mutex
-	allocs []objc.ID // every MTLBuffer handed out by this Device, for ReleaseAll
-	objs   []objc.ID // non-buffer +1-owned objc objects (command queue, pipelines, libraries) — M24
+	allocs []devAlloc // every MTLBuffer handed out by this Device, for ReleaseAll
+	objs   []objc.ID  // non-buffer +1-owned objc objects (command queue, pipelines, libraries) — M24
+	leaser Leaser     // every allocation's lease (MM3); nil leases nothing
+}
+
+// devAlloc is one MTLBuffer and its lease's release.
+type devAlloc struct {
+	id      objc.ID
+	release func()
+}
+
+// Leaser is told of every MTLBuffer the device hands out: whether it aliases caller memory (NewBufferNoCopy, fileMapped), its
+// plan line, its length (requested) and what Metal allocated for it (charged). It returns the release, called once when the
+// buffer is released. The backend attaches it; this package keeps no account of its own.
+type Leaser interface {
+	Lease(fileMapped bool, line string, requested, charged int64) (release func())
+}
+
+// NewLeaser, when set, gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init.
+var NewLeaser func() Leaser
+
+// UnlinedLine is the plan line an allocation through an unlined constructor (MustBuf, NewBufferLen, NewBufferLenOf, …) leases on:
+// empty, so unplanned. Production code calls the lined constructors (a source scan in the metal module holds that); a test
+// package may set it to its test line for its own buffers.
+var UnlinedLine string
+
+// ReleasedForTest, when set, is called by ReleaseObjects after everything the device tracked is released, so a test can read the
+// leaser's account then (I1, I2). A test seam, nil in production.
+var ReleasedForTest func(*Device)
+
+// Leaser is the attached leaser, or nil.
+func (d *Device) Leaser() Leaser {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.leaser
 }
 
 // TrackObj records a +1-owned objc object (command queue / pipeline / library) so ReleaseObjects
@@ -138,6 +171,9 @@ func (d *Device) ReleaseObjects() {
 	}
 	if id != 0 {
 		id.Send(selRelease)
+		if ReleasedForTest != nil {
+			ReleasedForTest(d)
+		}
 	}
 }
 
@@ -149,7 +185,11 @@ func CreateSystemDefaultDevice() (*Device, error) {
 	if p == 0 {
 		return nil, fmt.Errorf("metal: MTLCreateSystemDefaultDevice returned nil (no Metal GPU?)")
 	}
-	return &Device{id: objc.ID(p)}, nil
+	d := &Device{id: objc.ID(p)}
+	if NewLeaser != nil {
+		d.leaser = NewLeaser()
+	}
+	return d, nil
 }
 
 // Name is the device's product name (e.g. "Apple M1 Pro").
@@ -292,7 +332,8 @@ var (
 	selNewBufferNoCopy = objc.RegisterName("newBufferWithBytesNoCopy:length:options:deallocator:")
 	selNewBufferLen    = objc.RegisterName("newBufferWithLength:options:")
 	selContents        = objc.RegisterName("contents")
-	selLength          = objc.RegisterName("length") // MTLBuffer → NSUInteger, actual allocated bytes
+	selLength          = objc.RegisterName("length")        // MTLBuffer → NSUInteger, actual allocated bytes
+	selAllocatedSize   = objc.RegisterName("allocatedSize") // MTLResource → NSUInteger, what Metal allocated for it (the ledger's charge)
 	selCommandBuffer   = objc.RegisterName("commandBuffer")
 	selComputeEncoder  = objc.RegisterName("computeCommandEncoder")
 	selSetPipeline     = objc.RegisterName("setComputePipelineState:")
@@ -381,11 +422,24 @@ func (d *Device) NewComputePipeline(lib objc.ID, fn string) (Pipeline, error) {
 // numerics — an OOM wearing a parity bug's clothes. BuildResident recovers panics and declines
 // to the CPU path, which is the right answer for OOM.
 func (d *Device) MustBuf(id objc.ID, n int, what string) Buffer {
+	return d.MustBufOn(UnlinedLine, id, n, what)
+}
+
+// MustBufOn is MustBuf leasing the buffer on plan line line: its length requested, its allocatedSize charged.
+func (d *Device) MustBufOn(line string, id objc.ID, n int, what string) Buffer {
+	return d.mustBuf(line, false, id, n, what)
+}
+
+func (d *Device) mustBuf(line string, fileMapped bool, id objc.ID, n int, what string) Buffer {
 	if id == 0 {
 		panic(fmt.Sprintf("metal: MTLBuffer allocation failed (%s, %d bytes) — out of memory", what, n))
 	}
+	release := func() {}
+	if l := d.Leaser(); l != nil {
+		release = l.Lease(fileMapped, line, int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize)))
+	}
 	d.mu.Lock()
-	d.allocs = append(d.allocs, id)
+	d.allocs = append(d.allocs, devAlloc{id: id, release: release})
 	d.mu.Unlock()
 	return Buffer{id: id, n: n}
 }
@@ -395,11 +449,12 @@ func (d *Device) MustBuf(id objc.ID, n int, what string) Buffer {
 // first) — releasing a buffer a live command buffer references is a use-after-free.
 func (d *Device) ReleaseAll() {
 	d.mu.Lock()
-	ids := d.allocs
+	allocs := d.allocs
 	d.allocs = nil
 	d.mu.Unlock()
-	for _, id := range ids {
-		id.Send(selRelease)
+	for _, a := range allocs {
+		a.id.Send(selRelease)
+		a.release()
 	}
 }
 
@@ -422,8 +477,9 @@ func (d *Device) ReleaseBuf(b Buffer) {
 		return
 	}
 	d.mu.Lock()
-	for i, id := range d.allocs {
-		if id == b.id {
+	for i, a := range d.allocs {
+		if a.id == b.id {
+			a.release()
 			d.allocs[i] = d.allocs[len(d.allocs)-1]
 			d.allocs = d.allocs[:len(d.allocs)-1]
 			break
@@ -437,8 +493,11 @@ func (d *Device) ReleaseBuf(b Buffer) {
 // contents, so the buffer reads as zeros until written.
 //
 // Code shared across backends must NOT rely on this: zero-fill is a Metal property only (CUDA's NewBufferLen returns uninitialized memory), so a buffer that must start at zero is zeroed explicitly on every backend, not assumed.
-func (d *Device) NewBufferLen(nFloats int) Buffer {
-	return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "len")
+func (d *Device) NewBufferLen(nFloats int) Buffer { return d.NewBufferLenOn(UnlinedLine, nFloats) }
+
+// NewBufferLenOn is NewBufferLen leasing the buffer on plan line line.
+func (d *Device) NewBufferLenOn(line string, nFloats int) Buffer {
+	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "len")
 }
 
 // mtlResourceHazardTrackingModeUntracked is MTLResourceHazardTrackingModeUntracked (1<<8) —
@@ -453,8 +512,8 @@ const mtlResourceHazardTrackingModeUntracked = 1 << 8
 // 99.6%/100.4%/100.4% across three runs — noise, not a lever. Kept unexported: it has no
 // consumer, and giving a proven-dead-end 0.4%-of-nothing lever permanent exported surface is worse
 // than re-adding two lines if this is ever revisited on different hardware.
-func (d *Device) newBufferLenUntracked(nFloats int) Buffer {
-	return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(mtlResourceHazardTrackingModeUntracked)), nFloats, "len-untracked")
+func (d *Device) newBufferLenUntracked(line string, nFloats int) Buffer {
+	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(mtlResourceHazardTrackingModeUntracked)), nFloats, "len-untracked")
 }
 
 // NewBufferBytes allocates a shared MTLBuffer of n BYTES (n is the
@@ -462,8 +521,11 @@ func (d *Device) newBufferLenUntracked(nFloats int) Buffer {
 // is uninitialized). For consumers that size a buffer in raw
 // bytes rather than float32s — the device-layer primitive goinfer's kernels reach
 // for when re-pointed onto this substrate.
-func (d *Device) NewBufferBytes(n int) Buffer {
-	return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)), n, "bytes")
+func (d *Device) NewBufferBytes(n int) Buffer { return d.NewBufferBytesOn(UnlinedLine, n) }
+
+// NewBufferBytesOn is NewBufferBytes leasing the buffer on plan line line.
+func (d *Device) NewBufferBytesOn(line string, n int) Buffer {
+	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)), n, "bytes")
 }
 
 // NewBufferNoCopy wraps caller-owned memory in a shared MTLBuffer WITHOUT copying
@@ -474,8 +536,13 @@ func (d *Device) NewBufferBytes(n int) Buffer {
 // (AND must keep it mapped for the buffer's whole life). n counts BYTES, like NewBufferBytes. Bind
 // per-tensor sub-views with Buffer.At(byteOffset) over the single whole-mapping buffer.
 func (d *Device) NewBufferNoCopy(ptr unsafe.Pointer, nBytes int) Buffer {
+	return d.NewBufferNoCopyOn(UnlinedLine, ptr, nBytes)
+}
+
+// NewBufferNoCopyOn is NewBufferNoCopy leasing the alias on plan line line, as file-mapped memory: the mapping is the caller's.
+func (d *Device) NewBufferNoCopyOn(line string, ptr unsafe.Pointer, nBytes int) Buffer {
 	id := d.id.Send(selNewBufferNoCopy, ptr, uintptr(nBytes), uintptr(0), uintptr(0))
-	return d.MustBuf(id, nBytes, "nocopy")
+	return d.mustBuf(line, true, id, nBytes, "nocopy")
 }
 
 // ---- generic buffer verbs (any scalar element type) ----
@@ -517,22 +584,28 @@ func asBytes[T any](s []T) []byte {
 // NewBufferOf allocates a shared MTLBuffer sized to data and copies it in. n
 // for the returned Buffer is len(data), in elements of T. Panics on
 // allocation failure (see MustBuf).
-func NewBufferOf[T Scalar](d *Device, data []T) Buffer {
+func NewBufferOf[T Scalar](d *Device, data []T) Buffer { return NewBufferOfOn(d, UnlinedLine, data) }
+
+// NewBufferOfOn is NewBufferOf leasing the buffer on plan line line.
+func NewBufferOfOn[T Scalar](d *Device, line string, data []T) Buffer {
 	if len(data) == 0 {
-		return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(0), uintptr(0)), 0, "typed-empty")
+		return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(0), uintptr(0)), 0, "typed-empty")
 	}
 	b := asBytes(data)
 	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&b[0]), uintptr(len(b)), uintptr(0))
 	runtime.KeepAlive(data)
-	return d.MustBuf(id, len(data), "typed")
+	return d.MustBufOn(line, id, len(data), "typed")
 }
 
 // NewBufferLenOf allocates a shared MTLBuffer of n elements of T. Zero-filled on Metal, like NewBufferLen; backend-shared code must not rely on that
 // (CUDA's NewBufferLenOf is uninitialized).
-func NewBufferLenOf[T Scalar](d *Device, n int) Buffer {
+func NewBufferLenOf[T Scalar](d *Device, n int) Buffer { return NewBufferLenOfOn[T](d, UnlinedLine, n) }
+
+// NewBufferLenOfOn is NewBufferLenOf leasing the buffer on plan line line.
+func NewBufferLenOfOn[T Scalar](d *Device, line string, n int) Buffer {
 	var z T
 	nBytes := n * int(unsafe.Sizeof(z))
-	return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nBytes), uintptr(0)), n, "typed-len")
+	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(nBytes), uintptr(0)), n, "typed-len")
 }
 
 // capacityBytes queries the MTLBuffer's actual allocated byte length — the

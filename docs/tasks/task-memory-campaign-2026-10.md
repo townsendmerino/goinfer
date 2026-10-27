@@ -1234,7 +1234,7 @@ choice in aikit and a storage choice in ken (**D4**).
   CUDA, where `--embed-int4` already defaults on and both tables are int4. It changes only Metal, where the head pin keeps
   them int8, so it is a default precision change on Metal (§2 rule 1) and not plumbing. Two further facts bound it. Metal's
   greedy chain uploads an untied input embedding to the device as int8 (`metal/greedy_chain.go`, through `int8BufA` and
-  `metal/model.go:int8Buf`), so that table cannot leave int8 without Metal changes, in a file the unmerged
+  `metal/model.go:int8BufOn`), so that table cannot leave int8 without Metal changes, in a file the unmerged
   `kv8a-metal-2026-10` branch also edits. And the Metal `.giw` sidecar's name does not carry the per-layer table's
   precision, so existing sidecars and fresh loads would disagree unless a variant tag moves. Options: (a) Gemma 4's
   per-layer table only, int4 on Metal by default (E2B's on disk and at transcode 2.35 → 1.32 GB; CPU and CUDA already run

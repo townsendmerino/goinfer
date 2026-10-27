@@ -1178,5 +1178,11 @@ jobs:
             echo "::error::TestBuildDemand_matchesDecoderDefault matched NOTHING in ./metal/ — renamed or deleted?"
             exit 1
           fi
+          # MM3c: the source scan that every production MTLBuffer names its plan line; device-free.
+          matched=$(go test -list 'TestLedger_everyMetalAllocationNamesALine' ./metal/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ -z "$matched" ]; then
+            echo "::error::TestLedger_everyMetalAllocationNamesALine matched NOTHING in ./metal/ — renamed or deleted?"
+            exit 1
+          fi
       - name: test (device-free tests only — the runner's Metal layer SIGSEGVs)
-        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault' ./metal/...
+        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine' ./metal/...
