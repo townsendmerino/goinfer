@@ -1604,7 +1604,11 @@ registers through the same import, `hwinfo.go`, `kv_slots.go`, `kvcopy.go`, `pre
   difference stops the move with DECISION NEEDED. **Cost basis:** G1 seconds; G2 measured at the base run; G3 families ×
   steps, stated before it runs; G4 3 s (measured 2026-10-26).
 - **Then** the freed tests are already in `gpu/internal/kernels` (they move with the code they test, which keeps their
-  bodies unedited), and `internal/layout`'s gpu reach falls by the 78 moved test files.
+  bodies unedited), and `internal/layout`'s gpu reach falls by the moved test files.
+- **Done (2026-10-27):** G1 PASS (1141 declarations), G2 PASS (281 tests, every outcome and skip reason the same), G3
+  PASS (39 families byte-identical on WebGPU, 4 with no tiny checkpoint of their kind), G4 PASS on nobara (15 tower cases;
+  the Mac comparison with AX2a's record is mac-ax01's), G5 PASS (the 12 types' identity only). 48 non-test and 75 test
+  files moved; gpu reach 172 → 99. Record: `docs/measurements/sb1-gpu-split-2026-10-27/README.md`.
 
 #### SB1 — gpu's kernel layer (item 2 of 21:42): parked, DECISION NEEDED (nobara-sb01, 2026-10-26)
 
