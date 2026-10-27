@@ -180,15 +180,29 @@ func TestSolvePlacement_monotone(t *testing.T) {
 	}
 }
 
-// TestSolvePlacement_unpricedExperts: an MoE load whose experts could not be priced (under a byte each) declines the expert cache
-// with a reason instead of sizing slots on unknown bytes, and never panics.
+// TestSolvePlacement_unpricedExperts (G-NP2-3): an MoE whose experts could not be priced (under a byte each) is declined on a
+// device and paged on the CPU, at any slot count, with a reason naming them, on loads that keep DeviceLoad's invariants (no
+// host copy on CUDA; Metal's host copy is its experts').
 func TestSolvePlacement_unpricedExperts(t *testing.T) {
+	kv := func(c int) int64 { return int64(c) << 10 }
 	for _, full := range []int64{0, 7} {
-		l := DeviceLoad{Backend: "cuda", Tier: VRAM, DenseBytes: 1 << 30, CtxStep: 1, KV: func(c int) int64 { return int64(c) << 10 },
-			NExperts: 8, TopK: 2, ExpertBytesFull: full, HostFixed: 1 << 30, HostAll: func() int64 { return 2 << 30 }}
-		d := SolvePlacement(l, PlanRequest{Ctx: 4096, CtxPinned: true}, Machine{Free: map[Tier]int64{VRAM: 3 << 30}}, DefaultPolicy())
-		if d.Placement != Declined || !strings.Contains(d.Reason, "could not be priced") {
-			t.Errorf("ExpertBytesFull %d over 8 experts: %s, want a decline naming the unpriced experts", full, planAnswer(d))
+		for _, slots := range []int{0, 2} {
+			loads := map[string]DeviceLoad{
+				"cuda": {Backend: "cuda", Tier: VRAM, DenseBytes: 1 << 30, CtxStep: 1, KV: kv, NExperts: 8, TopK: 2, ExpertBytesFull: full},
+				"metal": {Backend: "metal", Tier: Unified, DenseBytes: 1 << 30, CtxStep: 8, CtxCeiling: 32768, KV: kv, NExperts: 8, TopK: 2,
+					ExpertBytesFull: full, HostFixed: 1 << 20, HostAll: func() int64 { return 1<<20 + full }},
+				"cpu": {Backend: "cpu", Tier: HostAnon, DenseBytes: 1 << 30, CtxStep: 1, KV: kv, NExperts: 8, TopK: 2, ExpertBytesFull: full},
+			}
+			for be, l := range loads {
+				d := SolvePlacement(l, PlanRequest{Ctx: 4096, Slots: slots}, Machine{Free: map[Tier]int64{l.Tier: 64 << 30}}, DefaultPolicy())
+				want := Declined
+				if be == "cpu" {
+					want = WeightPaged
+				}
+				if d.Placement != want || !strings.Contains(d.Reason, "could not be priced") {
+					t.Errorf("%s, ExpertBytesFull %d over 8 experts, slots %d: %s, want %v naming the unpriced experts", be, full, slots, planAnswer(d), want)
+				}
+			}
 		}
 	}
 }
