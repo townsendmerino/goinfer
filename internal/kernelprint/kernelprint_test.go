@@ -93,6 +93,7 @@ func TestCompute_table(t *testing.T) {
 	if len(diffs) > 0 {
 		t.Errorf("%s: %d kernel fingerprint(s) differ from %s; a kernel changed (or the suite did): every parity family's key moves with the table, so update it (-update) in the change that moves it:\n  %s",
 			cfg, len(diffs), tablePath, strings.Join(diffs, "\n  "))
+		return
 	}
 	t.Logf("%d kernels under %s match the table", len(r.Kernels), cfg)
 }

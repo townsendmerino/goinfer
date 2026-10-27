@@ -30,3 +30,4 @@
 2026-10-27T05:47 | 40457293489 | 59c3c124 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
 2026-10-27T05:54 | 40457976591 | 028e222b | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
 2026-10-27T06:09 | 40459439791 | c7a85e42 | OK | v1.75.0 -> v1.76.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | old-only=43 | 0
+2026-10-27T06:20 | 40460472498 | 7e911bc3 | OK | v1.76.0 -> v1.76.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0

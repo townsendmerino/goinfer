@@ -37,7 +37,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | week 1 graded 2026-10-27 (30 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key under gates S1–S5 (mac-vk01, branch `vk5-switch-2026-10`); week 2 (programs plus kernels, forward sources out) next, gates first; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS (mac-vk01, branch `vk5-switch-2026-10`); week 2 (programs plus kernels, forward sources out) next, gates first; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -557,12 +557,12 @@ kernel fingerprints, with the forward's source files out of it. Each week then e
 change. Week 2's gates are registered before its code, like week 1's.
 
 **Week 1 graded (Francis, 22:40: end it early once a real aikit bump has gone through).**
-- **The runs.** 30 `vk-shadow` runs on main, from the workflow's first at 15:01 PDT (2026-10-26) to 23:09. All green,
-  none VOID. 16 ran on AVX2 runners and 14 on AVX-512 runners.
+- **The runs.** 31 `vk-shadow` runs on main, from the workflow's first at 15:01 PDT (2026-10-26) to 23:20. All green,
+  none VOID. 17 ran on AVX2 runners and 14 on AVX-512 runners.
 - **The one aikit bump** (#305, v1.75.0 → v1.76.0, comments, docs and tools only, on an AVX-512 runner): today's key
   re-staled all 43 families and the kernel-fingerprint key none. All 43 verdicts were old-only, each explained "aikit
   v1.75.0 -> v1.76.0 changed no kernel fingerprint".
-- **No other disagreement in the week.** Two pushes (VK2's two parts) re-staled all 43 under both keys; the other 27
+- **No other disagreement in the week.** Two pushes (VK2's two parts) re-staled all 43 under both keys; the other 28
   left every family fresh under both.
 - **Caveat.** This bump changed no kernel, so the week shows the key carrying a validation over, not catching a change.
   That the fingerprint catches a one-ULP kernel change rests on VK1's K2 mutation test.
@@ -576,9 +576,9 @@ every runner, so the key mixes in a committed table, not the runner's own finger
 - **The table.** `testdata/kernel_fingerprints.json` holds every kernel's fingerprint per dispatch configuration, for
   the three CI runs on:
   - `arm64[dotprod]`, generated on this Mac;
-  - `amd64[avx2,f16c,popcnt]`, generated under Rosetta. Its digest equals the one 16 week-1 runs on AVX2 runners
+  - `amd64[avx2,f16c,popcnt]`, generated under Rosetta. Its digest equals the one 17 week-1 runs on AVX2 runners
     recorded;
-  - `amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]`, #303's SDE table. Its digest equals the one 13 week-1 runs on
+  - `amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]`, #303's SDE table. Its digest equals the one 14 week-1 runs on
     AVX-512 runners recorded, so the emulation matched the hardware.
 - **The key.** `freshDepsHash` and `paritykey`'s today key end in `kernel_fingerprints=<digest of the table>`.
 - **The table's own check.** `internal/kernelprint`'s `TestCompute_table` compares the runner's own fingerprints with
@@ -592,6 +592,12 @@ every runner, so the key mixes in a committed table, not the runner's own finger
 | S3 the pin is out of the key | on a throwaway commit that changes only the aikit requirement, `TestParityManifest_fresh` stays green and `gate shadow` classes every family agree-fresh | — | one run | about a minute |
 | S4 a kernel change re-stales | `gate mutation` changing one fingerprint in the table turns `TestCompute_table` red (this config's entry) and `TestParityManifest_fresh` red (every family; VK4's per-family narrowing is week 2's) | — | one run each | seconds |
 | S5 the shadow job across the switch | `gate shadow` on the switch commit classes all 43 old-only, each explained by the key's change of definition, with none unexplained | — | one run | about a minute |
+
+**The switch, graded 2026-10-27: S1–S5 all PASS** (`docs/measurements/vk5-2026-10.md` §5). The table's three digests
+equal week 1's per configuration; the one-time refresh moved only the 43 `deps_hash` lines, with goldens 33/31/0; an
+aikit-only commit leaves every family fresh; one changed fingerprint re-stales all 43; the shadow job explains all 43
+across the switch by the change of definition. Added beyond the registration: the shadow job also explains an old-only
+family when the table moved only for configurations other than the runner's own.
 
 ### 5.9 VK6 — the daily canary and the coverage audit
 
