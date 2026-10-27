@@ -724,6 +724,7 @@ var parseOutputs = []struct{ name, text string }{
 	{"hermes_bad_json", "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"\n</tool_call>"},
 	{"hermes_unterminated", "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"},
 	{"hermes_no_name", "<tool_call>{\"arguments\": {\"location\": \"Paris\"}}</tool_call>"},
+	{"hermes_empty_name", "<tool_call>{\"name\": \"\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"},
 	{"hermes_unknown_tool", "<tool_call>{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}</tool_call>"},
 	{"hermes_args_array", "<tool_call>{\"name\": \"get_weather\", \"arguments\": [\"Paris\"]}</tool_call>"},
 	{"hermes_nested_braces", "<tool_call>{\"name\": \"search_web\", \"arguments\": {\"query\": \"{json} and </tool_call> in text\"}}</tool_call>"},
@@ -790,7 +791,7 @@ var ownDialect = map[string][]string{
 
 // neverACall are outputs no family may read a call from: prose, malformed calls, a Harmony final answer, and Ministral 3's
 // [TOOL_CALLS]name[ARGS] form, which Ministral() deliberately does not parse (its doc comment) and the "mistral" dialect must not.
-var neverACall = []string{"prose", "empty", "prose_mentions_opener", "hermes_bad_json", "hermes_no_name", "llama3_bad_json",
+var neverACall = []string{"prose", "empty", "prose_mentions_opener", "hermes_bad_json", "hermes_no_name", "hermes_empty_name", "llama3_bad_json",
 	"mistral_bad_json", "harmony_bad_json", "harmony_final", "mistral_v11"}
 
 // parseTable runs every output through tm; lenient is the WithLenientToolCalls setting asked for, which a family that takes
