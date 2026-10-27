@@ -1082,7 +1082,9 @@ idle profile's 12.2.
 **The expected replay count, stated from the data before running.** The Mac's recorded night readings are the refusals'
 printed figures: 2.9, 3.9, 4.6, 6.4, 6.4, 6.6, 6.9, 7.0, 7.4, 7.5 and 7.7 GB. Their 25th percentile is about 5.5 GB, a budget
 of about 3.85 GB. The 8 counted jobs need 5.1, 12.6, 6.7, 5.5, 5.6, 5.1, 5.0 and 2.7 GB. So the night profile refuses rows
-1–7 and fits row 8: **expected 7 of 8**. Row 7 (5.0 GB) fits only if the 25th percentile reaches 7.2 GB.
+1–7 and fits row 8: **expected 7 of 8**. Row 7 (5.0 GB) fits only if the 25th percentile reaches 7.2 GB. Refined before any run, from
+the window rule: the 14 nights ending 2026-10-27 start on 10-14, so the 10-08 and 10-12 readings fall outside it. The
+in-window readings (2.9, 3.9, 4.6, 6.4, 6.6, 6.9, 7.0, 7.7) give about 4.4 GB, a 3.1 GB budget: still 7 of 8.
 
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
@@ -1091,6 +1093,17 @@ of about 3.85 GB. The 8 counted jobs need 5.1, 12.6, 6.7, 5.5, 5.6, 5.1, 5.0 and
 | G-NP-3 the record | a job start through the real runner writes the available reading to the START line and to `memory.jsonl`, with the night flag | — | runs to completion | seconds |
 | G-NP-4 the replay (the Mac) | with the profile computed from the Mac's backfilled readings, the 8 counted jobs re-priced on it: **at least 7 refused** (the expectation above); the profile's figure and count are reported beside it | the profile falls back (too few readings), which is reported as such | every counted job | minutes |
 | G-NP-5 builds | `python3 scripts/test_night.py`; `touched.py`; the citation lint | — | runs to completion | about a minute |
+
+**Night-profile read, 2026-10-27 (nobara): G-NP-1, 2, 3 and 5 pass; G-NP-4, the Mac's replay, follows the PR**
+(the commands are in the PR).
+- G-NP-1: the profile equals a hand computation of the 25th percentile over exactly the in-window night readings, and records
+  its percentile, window, readings and nights.
+- G-NP-2: 6 readings over 2 nights fall back to `m1pro-apps-open` with a warning naming the counts.
+- G-NP-3: a job through the real runner writes `available 4321 MB` to its START line and the reading to `memory.jsonl`.
+- G-NP-5: `test_night.py` (74 tests), `touched.py`, the citation lint.
+- nobara: a dry run of `--backfill` on its night logs finds no fit-guard availability lines (no refusals there). Its night
+  profile starts from the START readings, and its night jobs are priced on `nobara-desktop`, with the warning, until it has 5
+  readings over 3 nights.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

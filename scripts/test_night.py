@@ -38,9 +38,13 @@ class Runner(night.Runner):
     """The real runner with no keep-awake process and an instant settle that runs the test's hook once: the window
     between the pick and the move where a drop or re-add lands."""
     hook = None
+    avail = 6000  # the available reading a job start records, MiB
 
     def keep_awake(self):
         pass
+
+    def avail_mb(self):
+        return self.avail
 
     def settle(self):
         h, Runner.hook = Runner.hook, None
@@ -469,6 +473,9 @@ class FakeServer(night.Server):
     def free_mb(self):
         return self.free
 
+    def avail_mb(self):
+        return 6000
+
     def on_ac(self):
         return True
 
@@ -886,12 +893,23 @@ class FitCheckAtQueueTime(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_a_night_job_is_priced_on_the_night_profile_and_a_day_job_on_the_day_one(self):
-        self.add("dayjob", fit_model=["m.gguf"])
-        self.add("nightjob", fit_model=["m.gguf"], not_before="22:00")
-        self.assertEqual(self.queued("dayjob")[0]["fit_check"][0]["profile"], "nobara-desktop")
-        self.assertEqual(self.queued("nightjob")[0]["fit_check"][0]["profile"], "nobara-no-desktop")
-        self.add("macnight", host="macbookpro.lan", fit_model=["m.gguf"], not_before="22:00")
-        self.assertEqual(self.queued("macnight")[0]["fit_check"][0]["profile"], "m1pro-near-idle")
+        readings = Path(tempfile.mkdtemp(dir=_tmp)) / "memory.jsonl"
+        t = night.now().replace(hour=23, minute=0)
+        for d in range(4):
+            for mb in (5000, 6000):
+                night.record_reading(t - dt.timedelta(days=d), "j", True, mb, path=readings)
+        real = self.real
+        self.real = lambda *args, **k: real(*args, readings_path=readings,
+                                            night_profile_path=readings.parent / "profile-night.json", **k)
+        try:
+            self.add("dayjob", fit_model=["m.gguf"])
+            self.add("nightjob", fit_model=["m.gguf"], not_before="22:00")
+            self.assertEqual(self.queued("dayjob")[0]["fit_check"][0]["profile"], "nobara-desktop")
+            self.assertEqual(self.queued("nightjob")[0]["fit_check"][0]["profile"], "nobara-pc-night")
+            self.add("macnight", host="macbookpro.lan", fit_model=["m.gguf"], not_before="22:00")
+            self.assertEqual(self.queued("macnight")[0]["fit_check"][0]["profile"], "macbookpro.lan-night")
+        finally:
+            self.real = real  # tearDown restores night.fit_check from it
 
     def test_an_unknown_host_queues_with_a_warning(self):
         err = self.add("elsewhere", host="some-other-box", fit_model=["m.gguf"])
@@ -1052,6 +1070,82 @@ class WaitForAJob(unittest.TestCase):
         out, _ = p.communicate(timeout=30)
         self.assertEqual(p.returncode, 1, out)
         self.assertIn("w-cli: FAILED rc=4", out)
+
+
+class NightProfile(unittest.TestCase):
+    """MM6's night profile (Francis's option B of 2026-10-27): gates G-NP-1 to G-NP-3."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(dir=_tmp))
+        self.readings = self.dir / "memory.jsonl"
+        self.t = dt.datetime(2026, 10, 27, 3, 0).astimezone()  # 03:00: night of the 26th
+
+    def at(self, nights_ago, hour):
+        """A reading at hour during the night nights_ago before tonight (the night of the 26th): 23:00 is that evening, 03:00
+        the morning after."""
+        evening = dt.datetime(2026, 10, 26, 12, 0).astimezone() - dt.timedelta(days=nights_ago)
+        return evening + dt.timedelta(hours=(hour - 12) % 24)
+
+    def test_the_percentile_and_window_are_as_stated(self):
+        """G-NP-1: the 25th percentile, by linear interpolation, of exactly the night readings in the last 14 nights."""
+        inside = [(0, 1, 2900), (1, 23, 3900), (3, 2, 4600), (5, 22, 6400), (6, 23, 6400), (8, 1, 6600), (10, 23, 6900),
+                  (12, 0, 7000), (12, 23, 7400), (13, 1, 7500)]
+        # The window is the 14 nights ending with tonight's (the 26th): the nights of the 13th to the 26th. 13 nights ago is
+        # the 13th, inside; 14 nights ago is the 12th, outside.
+        for d, h, mb in inside:
+            night.record_reading(self.at(d, h), "j", True, mb, path=self.readings)
+        night.record_reading(self.at(14, 23), "old", True, 100, path=self.readings)  # the night of the 12th: outside
+        night.record_reading(self.at(2, 2), "day", False, 50, path=self.readings)    # a day job: excluded
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        self.assertIsNotNone(prof, why)
+        vals = sorted(mb for _, _, mb in inside)
+        pos = (len(vals) - 1) * 0.25  # 2.25: between the third and fourth values
+        want = vals[2] + (vals[3] - vals[2]) * (pos - 2)
+        self.assertEqual(prof["available_bytes"], int(want * (1 << 20)))
+        self.assertEqual((prof["percentile"], prof["window_nights"], prof["readings"]), (25, 14, len(inside)))
+        self.assertEqual(prof["nights"], len({night.night_of(self.at(d, h)) for d, h, _ in inside}))
+        self.assertEqual(prof["name"], "box-night")
+        self.assertEqual(night.percentile([2900, 3900, 4600, 6400, 6400, 6600, 6900, 7000, 7400, 7500, 7700], 25), 5500)
+
+    def test_too_few_readings_fall_back_to_the_day_profile_with_a_warning(self):
+        """G-NP-2: under 5 readings or 3 nights, a night job is priced on the apps-open profile, and add says why."""
+        for d in range(2):
+            for mb in (5000, 6000, 7000):
+                night.record_reading(self.at(d, 23), "j", True, mb, path=self.readings)  # 6 readings, 2 nights
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        self.assertIsNone(prof)
+        self.assertIn("6 night readings over 2 nights", why)
+        calls = []
+
+        def fake(cmd, cwd=None, capture_output=None, text=None):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"verdict": "fits", "answer": {}}) + "\n", stderr="")
+        checks, refusals, warnings = night.fit_check(["m.gguf"], [""], True, "macbookpro.lan", self.dir, run=fake,
+                                                     readings_path=self.readings, night_profile_path=self.dir / "p.json")
+        self.assertEqual(checks[0]["profile"], "m1pro-apps-open")
+        self.assertTrue(any("6 night readings over 2 nights" in w and "m1pro-apps-open" in w for w in warnings), warnings)
+        self.assertTrue(calls[0][calls[0].index("-profile") + 1].endswith("m1pro-apps-open.json"))
+
+    def test_a_job_start_records_its_reading(self):
+        """G-NP-3: the real runner writes the available reading into the START line and the memory log, with the night flag."""
+        for d in (night.QUEUE, night.RUNNING):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+        marker = self.dir / "ran"
+        queue_job("np-start", marker)
+        before = len(night.memory_readings())
+        Runner.avail = 4321
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                Runner(night.now() + dt.timedelta(hours=1), self.dir).run()
+        finally:
+            Runner.avail = 6000
+        logs = list(self.dir.glob("np-start*.log"))
+        self.assertTrue(logs, "the job did not run")
+        self.assertRegex(logs[0].read_text(), r"=== START .* available 4321 MB")
+        recs = night.memory_readings()[before:]
+        self.assertEqual([(r["job"], r["available_mb"], r["night"]) for r in recs], [("np-start", 4321, False)])
 
 
 if __name__ == "__main__":
