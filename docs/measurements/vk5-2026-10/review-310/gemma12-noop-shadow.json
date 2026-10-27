@@ -1,0 +1,234 @@
+{
+  "Before": "23f7898e5ff56d59b3fee518d6c4451f46052fd6",
+  "After": "17f048f9ad8aacbcdc454a4f99bb7e66d97f00c4",
+  "Outcome": "OK",
+  "Counts": {
+    "agree-fresh": 41,
+    "old-only": 2
+  },
+  "Verdicts": [
+    {
+      "family": "bailing_hybrid",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "cohere",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "cohere2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "deepseek_v2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "deepseek_v3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gemma",
+      "class": "old-only",
+      "moved": [
+        "decoder/gemma12.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "gemma2",
+      "class": "old-only",
+      "moved": [
+        "decoder/gemma12.go"
+      ],
+      "explained": true,
+      "reason": "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+    },
+    {
+      "family": "gemma3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gemma4",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "glm4_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "glm_ocr",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gpt-oss",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "gpt2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "granite",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "granitemoehybrid",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "internlm2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "kimi_k2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "laguna",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "lfm2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "llama",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "llama4_text",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mellum",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mistral",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mistral3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "mixtral",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "nemotron_h",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "olmo3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "olmo_hybrid",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "phi3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen2",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen2_5_vl",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen2_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_5",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_5_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_asr",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_next",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl_moe",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "smollm3",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "spark2_5",
+      "class": "agree-fresh",
+      "explained": true
+    },
+    {
+      "family": "voxtral",
+      "class": "agree-fresh",
+      "explained": true
+    }
+  ]
+}

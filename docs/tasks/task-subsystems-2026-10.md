@@ -37,7 +37,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS, its shadow starts when the PR merges (mac-vk01, branch `vk5-week2-2026-10`), graded a week later; a possible week 3 (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS (#310); amended after Gemini's review of #310 (§5.8), and the week starts at the first `vk-shadow` run after that fix merges (mac-vk01, branch `vk5-review310-2026-10`), graded a week later; a possible week 3 (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -646,6 +646,14 @@ Week 2 shadows a key in which the program builders leave and VK4's program finge
 - W2's test gained the registered tie-break before its plant was run; the record says why.
 
 The week starts at the first `vk-shadow` run on main after this PR merges.
+
+**Amended 2026-10-27 after Gemini's review of #310, before any week-2 run is graded** (`docs/measurements/vk5-2026-10.md` §8):
+- `decoder/gemma12.go`, the `gemma` and `gemma2` adapters, is a builder.
+- A fixture listed on both sides whose fingerprints moved is a moved input, even when the program list also changed.
+- An empty program table is an error.
+- `bailing_hybrid`'s record now names the core, loader, quant and MoE sets and deepseek's MLA forward, which its forward
+  runs through.
+- **Week 2 starts at the first `vk-shadow` run on main after that PR merges;** earlier runs are not graded.
 
 **Week 2's stopping rule** is SD6's: one week of pushes to main from the week-2 job's first run, with no unexplained
 disagreement. In addition, every push with an explained old-only verdict has its builder diff read in the record and
