@@ -842,6 +842,23 @@ windows; the pinned staticcheck after its canary went red (it found `fitCheck.re
 `FitDeclineError` as adapters: a `fitCheck` becomes a `mem.HostCheck` (its KV as a curve over `estimateKVBytes`), and
 `guardFit`, `decideGIWFit`, `AdmitPrefillMemoryShare`, `FitBudgetSummary` and `resolveWeightCacheBudget` call `mem`.
 
+
+#### MM1b's gates (`Plan` and `MetalFitCtx`), registered 2026-10-26 before the code (nobara-mm01)
+
+**What moves.** `Model.Plan`'s placement arithmetic (the context search toward the 4,096 floor, the resident and expert-cached
+fits, the slot count, every reason line, and the CPU's weight-paged fallback) becomes `mem.SolvePlacement`. `MetalFitCtx`'s
+search becomes `mem.SolveMetalCtx`, which calls `SolvePlacement` itself. The decoder keeps the eligibility checks: missing
+features, `ResidentEligible`, and WebGPU's decline of a KV flag on the families that do not implement it. Those read the
+model's architecture, not its bytes. The decoder also keeps the byte counts it hands in: dense, experts, the host copies, and
+KV as a curve per backend. `mem` gets its own `Placement`, which the decoder maps to its public one (§3 item 3: never an
+alias). `Policy` gains the plan floor (4,096) and Metal's fit margin (384 MiB) at today's values.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM1b-1 the census | `TestDecisionCensus` passes without `-census.update`, D3 and D4 included, byte for byte | the golden's class not found on an amd64 host | runs to completion | 16 s |
+| G-MM1b-2 pure and monotone | `TestSolve_pure` and `TestSolve_monotone` cover `SolvePlacement` and `SolveMetalCtx` on generated inputs. More free memory never moves a placement down the order decline, weight-paged, expert-cached, resident; never gives fewer slots at the same placement or a smaller context at the same placement; and never gives `MetalFitCtx` a smaller context. The monotone test goes red on a planted defect | — | runs to completion | seconds |
+| G-MM1b-3 the existing tests | the decoder's `Plan` and `MetalFitCtx` tests (`fitplan*_test.go`, `metal_fitctx*_test.go`, every test calling `.Plan(` or `MetalFitCtx(`) and `metal/`'s fit tests (vet on darwin) pass unchanged; `cuda`, `metal` and `gpu` vet with their tags | — | runs to completion | about a minute |
+| G-MM1b-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
