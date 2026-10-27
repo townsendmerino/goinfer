@@ -129,6 +129,7 @@
       "internal/f16",
       "internal/giw",
       "internal/kvmgr",
+      "internal/mem",
       "internal/mem/probe",
       "internal/sampling",
       "tokenizer"
