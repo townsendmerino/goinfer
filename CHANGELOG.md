@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`decoder.ResidentAdapterProj` and `decoder.ResidentAdapterLayer` are aliases now** of the same plain-data types in
+  `internal/adapter`, so a backend's kernel layer can take a LoRA delta without importing `decoder` (SB1). Every caller
+  compiles unchanged; apidiff reports the two Experimental-tier names (and `ResidentAdapter.SetAdapter`, which names one)
+  as a type-identity change, and `%T` and reflection print `adapter.ResidentAdapterLayer`.
 - **The vision and audio towers are goinfer's own code** (`internal/vision`, `internal/audio`: aikit v1.75.0's, unchanged).
   `multimodal` and `embeddinggemma2`'s Experimental functions that take a tower (`RegisterGemma4Tower`, `Qwen3TowerFeatures`,
   `RegisterWhisperDevice`, `NewAudioAccelerator` and the rest) now take goinfer's tower types instead of aikit's, which a program
