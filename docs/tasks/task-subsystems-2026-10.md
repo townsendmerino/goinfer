@@ -1122,6 +1122,74 @@ read through the `FeaturesCovered` field that `BuildQueryFor` fills.
 - The PR also regenerates `docs/ARCHITECTURE.md`'s import appendix. `TestArchitecture_importAppendix` is red on main since
   #301 added `cuda/internal/launchgeom`.
 
+#### MM6's night profile, registered 2026-10-27 before the code (nobara-mm01; Francis's option B of 05:56)
+
+**Francis's decision (05:56), replacing 1b after the replay:** option B. Each box gets a recorded "at night" profile, priced at
+the 25th percentile of real nights. On the Mac the memory in use at night is the setup itself: the Claude app, background
+sessions, their builds and tests. It persists. The replay's real refusals saw 2.9–7.7 GB available (median 6.6) against the
+idle profile's 12.2.
+
+**What is built.**
+- **Every job start records the fit guard's available reading.** It goes in the `=== START` line and in the box's
+  `memory.jsonl` under `~/goinfer-logs/night`, marked night or day by the job's `--not-before`. Today the runner logs only the
+  load average at a start, so this record starts now.
+- **The night profile is computed from those readings.** It is the 25th percentile (linear interpolation) of the night-job
+  readings in the last 14 nights. A reading belongs to the night that began at or before it, so 02:00 counts with the evening
+  before. The profile records its percentile, window, reading count, night count and dates. It is written to
+  `~/goinfer-logs/night/profile-night.json`, a per-box file, not committed. A committed profile would change the census's
+  machine zoo (`testdata/machines/*.json` is census input) and its golden every night, and each box's file is that box's own
+  data.
+- **Night jobs (`--not-before`) price against it; day jobs keep the apps-open profile.** With fewer than 5 readings or 3 nights
+  in the window, a night job falls back to the apps-open profile with a warning.
+- **`night.py profile`** prints the profile. `--backfill` seeds the history once from existing night logs: the fit guard's own
+  "currently has X GB of memory available" lines, in logs whose job started in a night window. That sample is biased low,
+  because those lines come from refusals and warnings, and it is marked `backfill` in the record.
+- **nobara is the same,** from its own readings.
+
+**The expected replay count, stated from the data before running.** The Mac's recorded night readings are the refusals'
+printed figures: 2.9, 3.9, 4.6, 6.4, 6.4, 6.6, 6.9, 7.0, 7.4, 7.5 and 7.7 GB. Their 25th percentile is about 5.5 GB, a budget
+of about 3.85 GB. The 8 counted jobs need 5.1, 12.6, 6.7, 5.5, 5.6, 5.1, 5.0 and 2.7 GB. So the night profile refuses rows
+1–7 and fits row 8: **expected 7 of 8**. Row 7 (5.0 GB) fits only if the 25th percentile reaches 7.2 GB. Refined before any run, from
+the window rule: the 14 nights ending 2026-10-27 start on 10-14, so the 10-08 and 10-12 readings fall outside it. The
+in-window readings (2.9, 3.9, 4.6, 6.4, 6.6, 6.9, 7.0, 7.7) give about 4.4 GB, a 3.1 GB budget: still 7 of 8.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-NP-1 the percentile and window | a fake-history test: the profile's figure is the 25th percentile of exactly the night readings in the last 14 nights (older readings and day readings excluded), with linear interpolation checked against a hand computation; the profile records percentile, window, count, nights and dates | — | runs to completion | seconds |
+| G-NP-2 the fallback | with fewer than 5 readings or 3 nights, a night job is priced on the apps-open profile and `add` prints a warning naming the count | — | runs to completion | seconds |
+| G-NP-3 the record | a job start through the real runner writes the available reading to the START line and to `memory.jsonl`, with the night flag | — | runs to completion | seconds |
+| G-NP-4 the replay (the Mac) | with the profile computed from the Mac's backfilled readings, the 8 counted jobs re-priced on it: **at least 7 refused** (the expectation above); the profile's figure and count are reported beside it | the profile falls back (too few readings), which is reported as such | every counted job | minutes |
+| G-NP-5 builds | `python3 scripts/test_night.py`; `touched.py`; the citation lint | — | runs to completion | about a minute |
+
+**Night-profile read, 2026-10-27 (nobara): G-NP-1, 2, 3 and 5 pass; G-NP-4, the Mac's replay, follows the PR**
+(the commands are in the PR).
+- G-NP-1: the profile equals a hand computation of the 25th percentile over exactly the in-window night readings, and records
+  its percentile, window, readings and nights.
+- G-NP-2: 6 readings over 2 nights fall back to `m1pro-apps-open` with a warning naming the counts.
+- G-NP-3: a job through the real runner writes `available 4321 MB` to its START line and the reading to `memory.jsonl`.
+- G-NP-5: `test_night.py` (74 tests), `touched.py`, the citation lint.
+- nobara: a dry run of `--backfill` on its night logs finds no fit-guard availability lines (no refusals there). Its night
+  profile starts from the START readings, and its night jobs are priced on `nobara-desktop`, with the warning, until it has 5
+  readings over 3 nights.
+
+**Fixed before merge, 2026-10-27 (nobara-mm01), from Gemini's review of #312 and the Mac's G-NP-4 (VOID: no profile).**
+- `--backfill` found nothing: `START_RE` anchored `^` without `re.M`, and every real log has header lines before `=== START`.
+  nobara's "no fit-guard lines" above was this bug, not an empty history. A test now backfills a log in the real shape.
+- A box is priced only on its own readings: `night_profile` keeps readings whose `host` is the box priced. A night job
+  queued for another box falls back to that box's day profile with the warning, and this box's `profile-night.json` is not
+  overwritten.
+- A 0 MB reading counts (it was dropped as false).
+- One definition of night: a window from 22:00 to the deadline. A job is a night job when its `--not-before` start falls in
+  it (a 14:00 start is a day job), and a start reading is a night reading only inside it, as backfill already required.
+- The window is the 14 nights that have begun. Before, between noon and 22:00 it counted tonight, which had not begun, and
+  so held 13. So the replay's "14 nights ending 2026-10-27, from 10-14" reads, before 22:00 on the 27th, as 10-13 to 10-26.
+- `avail_mb` lived on `Server` while `run_job` is the base `Runner`'s, so `night.py start` would have failed at every job
+  start; it is now on `Runner`, and it returns None when `hostmem` fails. A test runs the real one.
+- Not changed: Gemini's 1000-against-1024 point (the fit guard prints GiB, so backfill's `* 1024` is right; the test's
+  values are MB labels), and its import-time binding of `MEMORY_LOG` (the tests set `NIGHT_DIR` before importing `night`,
+  so they never touch the live log).
+- `test_night.py`: 78 tests pass. G-NP-4 is to be re-run on the Mac after the merge.
+
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
 **Francis's decision (05:50):** option A, "one set of numbers that is accurate". `Plan("cuda")` prices the driver's 2 MiB
