@@ -75,3 +75,64 @@ kernel against package `cuda`'s production packers (`packI8`, `packWeight`, `pac
 `nibblePosFast`, `permuteFast`). They can leave only with the packers, and `packWeight` calls `decoder.Int4F32` and
 returns the resident's `hostW`. The attention-digest tests need `prefill.go`'s and `flash_decode.go`'s launch geometry,
 and the tower tests need the tower code, both still in package `cuda`.
+
+# The packer move and batch 3 (2026-10-26, 17:40–18:10 PDT)
+
+Francis's decision (17:36): move cuda's weight packers into a decoder-free package behind a bit-identity gate, then free
+the kernel tests that needed them. The gate is registered in the task doc, "moving cuda's weight packers".
+
+- **What moved:** the packing bodies of `packWeight`, `packWeightStack`, `packI8`, `packI8Into`, `packInt4Into`,
+  `nibblePosFast`, `permuteFast` and `f32tof16`, into `cuda/internal/wpack` (imports aikit `linalg` only). Package `cuda`
+  keeps each name as a thin wrapper; `packWeight` and `packWeightStack` still run `planWeight` ahead of each pack, member by
+  member. `decoder.Int4F32`'s two calls (`Int4F16`, `linalg.F16ToF32Slice`) are made in `wpack`; no `decoder` file
+  changed. `hostW` stays in package `cuda`.
+- **Gate:** `cuda`'s `TestWeightPackers_bitIdentity`, 32 SHA-256 hashes (`cuda/testdata/wpack_hashes.txt`), written at
+  `91fe36e7b` before any code moved (28 s), reproduced on the unchanged tree (30 s), committed as `064c42989`, then run
+  unedited after the move: **all 32 match** (32 s). `packers-identity.log`.
+- **Shown red twice,** each plant reverted: rounding `F32ToF16` on bit 0x0800 instead of 0x1000 fails
+  `f32tof16/all-2^32` alone (the int4 scales go f16 → f32 → f16, so their low mantissa bits are zero and no rounding
+  change reaches them: only the 2^32 sweep pins the rounding); changing `NibblePos` fails all nine int4-layout hashes and
+  the two bit packers.
+- **Tests moved:** `gemv_w4f32`, `gemv_w8a8_batched`, `moe_gemv` and `shape_sweep` to `cuda/kernels` (device);
+  `moe_pack` and `f16_convert` to `cuda/internal/wpack` (they test the packer itself, need no device, and drop the `cuda`
+  tag). Each destination has a small test file giving package `cuda`'s names over `wpack`, so the moved bodies are
+  unchanged; `f16tof32` is copied into `actgroup_kernel_test.go`, its one remaining user in `cuda`.
+
+| run | result |
+|---|---|
+| before, `./cuda/`, tags `cuda goinfer_testhooks`, the 10 by name | 10 PASS (`batch3-before.log`) |
+| after, `./cuda/kernels/` and `./cuda/internal/wpack/`, tag `cuda` | 10 PASS (`batch3-after.log`) |
+| after, `./cuda/internal/wpack/` untagged | 4 PASS |
+
+Identical per test; all 10 names listed before and after. Build and vet of the cuda module pass under no tag, `cuda`,
+and `cuda goinfer_testhooks`; staticcheck is clean. Neither destination's test build reaches `decoder`.
+
+Ratchet, cuda: direct 246 (unchanged), reach 322 → 317 (six files out, the identity test in).
+
+**Still in package `cuda`, and why:** `gemv_rn` (its `rnCfg` must match `gemv_w4a8_rn.cu`'s `#define`s, and
+`gemm_mma_test.go` uses it); `actgroup_kernel`, `ks_a1` (their helpers feed `kso1c_kernels_test.go`, which loads models);
+`gemm_mma` and the attention-digest tests (launch geometry in `prefill.go` and `flash_decode.go`); the tower tests.
+
+# metal and gpu (2026-10-26)
+
+- **gpu:** no test-only move exists. Its WGSL kernels and their dispatch (`New`, `Context`, `ResidentW8A8`, ...) are
+  production code in package `gpu`, and every kernel test calls them; the few gpu test files that depend on nothing in
+  the package are infrastructure (closers, writable, voidrule). A gpu kernel package means moving the kernel layer
+  itself out of package `gpu`, a production split.
+- **metal:** 62 test files (67 tests, 20 benchmarks) qualify by the rule cuda's batches used: their only package-metal
+  dependencies are `metal/kernels` aliases (`msl.go`, `pack.go`), `device.go`'s aliases, and pure helpers in
+  `testshared_test.go` (`cosF`, `argmaxF`, `f16ToF32`, `mustFinite`, `parityStats`, `assertParity`), none imports
+  `decoder`, and no test that stays uses what they declare. They were not moved from nobara: metal tests build only for
+  darwin, and CI's `metal-darwin` runs one device-free test, so no run here or in CI can show the before and after. Left out
+  on purpose: `parity_falsify_test.go` (CI's one metal test), `tower_identity_test.go` (AX's towers),
+  `embeddinggemma2_real_test.go` (a real checkpoint). The list, for a Mac session:
+
+  act_quant_bench, attention_bench, attention_prefill_bench, attention, attn_kread_staged_probe, attn_kvwidth_probe,
+  attn_m3_probe, cpulayer, deltanet_seq, gemm_mma8_mc3, gemm_smallm_mc3, gemma4_moekernels, gemv, gemv_w4a8_coal_bench,
+  gemv_w4a8_moe_bench, gemv_w4a8_sa_bench, gemv_w4a8_sa_bias_resid, gemv_w4a8, gemv_w4f16, gemv_w8a8_amax_bench,
+  gemv_w8a8_body, gemv_w8a8_coal_bench, gpt2_kernels, gptoss_route_degenerate, ksd1_split, ksd2_steel, ksd3_timing,
+  ksd4_gemm, ksd7_dequant, layer, layernorm_f16, layernorm_quant_bench, metal, mla_kernels, moe_route_bench, moe_route_sg,
+  qknorm, qknorm_whole, quant_vec_bench, residency_probe, rmsnorm_f32_bench, rmsnorm_quant_bench, rmsnorm_quant_f16_bench,
+  rmsnorm, rope2_bench, rope2_kv, rope2, rope_pairwise, rope_partial, rope, s17_gemm_probe, sa_largek, sa_outlier,
+  scale_roundtrip, simdsum_tree_mc3, swiglu_massive, swiglu_quant_bench, swiglu_quant_gptoss_bench, swiglu, tax, vnorm,
+  window (each `<name>_test.go`).

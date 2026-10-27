@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -4129,13 +4130,7 @@ type hostW struct {
 	srcs []*linalg.WeightMat
 }
 
-func packI8(q8 []int8, N, K int) []uint32 {
-	p := make([]uint32, N*(K/4))
-	for i := range p {
-		p[i] = uint32(uint8(q8[i*4])) | uint32(uint8(q8[i*4+1]))<<8 | uint32(uint8(q8[i*4+2]))<<16 | uint32(uint8(q8[i*4+3]))<<24
-	}
-	return p
-}
+func packI8(q8 []int8, N, K int) []uint32 { return wpack.PackI8(q8, N, K) }
 
 // packWeight quantizes/repacks a projection into the resident device layout, or errors
 // (so BuildResident can decline gracefully → staged fallback) for shapes it can't handle.
@@ -4143,41 +4138,8 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 	if _, err := planWeight(w); err != nil {
 		return hostW{}, err
 	}
-	N, K := w.Rows(), w.Cols()
-	switch w.Kind() {
-	case "int4":
-		q4, sc, _, _ := decoder.Int4F32(w)
-		wpk := make([]uint32, N*(K/8))
-		for i := range wpk {
-			b := q4[i*4 : i*4+4]
-			wpk[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
-		}
-		gs := make([]uint16, len(sc))
-		for i, v := range sc {
-			gs[i] = f32tof16(v)
-		}
-		return hostW{kind: "int4", wpk: wpk, ws16: gs, N: N, K: K}, nil
-	case "int8":
-		q8, sc, _, _ := w.Int8()
-		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
-	case "q4k":
-		raw, _ := w.Q4K()
-		wpk := make([]uint32, len(raw)/4)
-		for i := range wpk {
-			wpk[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
-		}
-		return hostW{kind: "q4k", wpk: wpk, N: N, K: K}, nil
-	default: // "f32" or "bf16": planWeight has refused every other kind
-		f32, ok := w.F32()
-		if !ok { // bf16: widened row by row, so the bytes are the f32 weight's
-			f32 = make([]float32, N*K)
-			for i := range N {
-				w.Row(i, f32[i*K:(i+1)*K])
-			}
-		}
-		q8, sc := linalg.QuantizeRowsInt8(f32, N, K)
-		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
-	}
+	p, err := wpack.Pack(w)
+	return hostWOf(p), err
 }
 
 // packWeightStack row-stacks several same-K weights into ONE packed buffer, so a routed expert
@@ -4194,50 +4156,13 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 // Every input must share kind and K: the kernel derives its stride from one Kwords/Kgroups, so
 // a ragged stack would read across row boundaries.
 func packWeightStack(ws ...*linalg.WeightMat) (hostW, error) {
-	if len(ws) == 0 {
-		return hostW{}, fmt.Errorf("cuda: packWeightStack needs at least one weight")
-	}
-	var out hostW
-	for i, w := range ws {
-		h, err := packWeight(w)
-		if err != nil {
-			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: %w", i, err)
-		}
-		if i == 0 {
-			out.kind, out.K = h.kind, h.K
-			// Reserve the whole stack up front: without it the appends below regrow the slice geometrically and leave every
-			// outgrown copy as garbage, and across all layers' expert stacks the collector lets that garbage pile up
-			// (docs/code-notes/cuda.md#packWeightStack.reserve).
-			if h.N > 0 {
-				totalN := 0
-				for _, x := range ws {
-					totalN += x.Rows()
-				}
-				if n := len(h.wpk); n > 0 {
-					out.wpk = make([]uint32, 0, n/h.N*totalN)
-				}
-				if n := len(h.ws); n > 0 {
-					out.ws = make([]float32, 0, n/h.N*totalN)
-				}
-				if n := len(h.ws16); n > 0 {
-					out.ws16 = make([]uint16, 0, n/h.N*totalN)
-				}
-			}
-		}
-		if h.kind != out.kind {
-			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: kind %q != %q — a mixed-precision "+
-				"stack cannot share one kernel's unpack path", i, h.kind, out.kind)
-		}
-		if h.K != out.K {
-			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: K=%d != %d — the kernel strides by a "+
-				"single Kwords, so a ragged stack reads across row boundaries", i, h.K, out.K)
-		}
-		out.wpk = append(out.wpk, h.wpk...)
-		out.ws = append(out.ws, h.ws...)
-		out.ws16 = append(out.ws16, h.ws16...)
-		out.N += h.N
-	}
-	return out, nil
+	p, err := wpack.PackStack(func(w *linalg.WeightMat) error { _, err := planWeight(w); return err }, ws...)
+	return hostWOf(p), err
+}
+
+// hostWOf is a packed weight as the resident holds it.
+func hostWOf(p wpack.Packed) hostW {
+	return hostW{kind: p.Kind, wpk: p.Wpk, ws: p.Ws, ws16: p.Ws16, N: p.N, K: p.K}
 }
 
 // SetHiddenCapture arms the resident hidden-state seam for the given target layer indices (layer OUTPUTS,

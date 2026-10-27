@@ -1036,6 +1036,37 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
 - **Batch 2 (2026-10-26):** 5 files (6 tests) moved, outcomes the same; cuda reach 327 → 322. Same record. The next dozen
   kernel tests check kernels against package `cuda`'s production packers, so they wait for the packers to move.
 
+#### SB1 step 1 — moving cuda's weight packers: the bit-identity gate, registered 2026-10-26 before the code (nobara-sb01)
+
+Francis's decision (17:36): move `packWeight` and its packers into a small decoder-free package, with a bit-identity gate
+on the packed output registered first; stop with DECISION NEEDED if the move needs a `decoder` change or changes a byte.
+
+- **The move.** `cuda/internal/wpack` (imports aikit `linalg` only) takes the packing bodies: `packWeight`'s per-kind
+  packing, `packWeightStack`'s concatenation and its kind and K checks, `packI8`, `packI8Into`, `packInt4Into`,
+  `permuteFast`, `nibblePosFast`, `f32tof16`. `decoder.Int4F32` is not imported: its body (`Int4F16`, then
+  `linalg.F16ToF32Slice`) is the same two calls, made in `wpack`. Package `cuda` keeps every name as a thin wrapper, and
+  keeps `planWeight`'s admission ahead of each pack, member by member, so its errors come in the same order. `hostW`
+  stays in package `cuda`: it is the resident's plan (planned sizes, row readers, the int8 alternative, the stack's
+  sources), and only its packed fields come from `wpack`.
+- **Gate (tier 0, no device).** `cuda`'s `TestWeightPackers_bitIdentity` hashes (SHA-256) the output of every entry
+  point above, through package `cuda`'s names, on seeded inputs: `packWeight` on every kind `planWeight` admits (int4 from
+  `QuantizeInt4` and from `WrapInt4F16` with arbitrary f16 scales, subnormal and negative included; int8 with and without
+  W8A8; q4k from raw blocks; f32; bf16), at more than one shape; `packWeightStack` on stacks of each; `packI8`,
+  `packI8Into`, `packInt4Into` on random data; `nibblePosFast` on 0–7; `permuteFast` on 2^22 seeded words plus every
+  single-nibble word; `f32tof16` on every one of the 2^32 float32 bit patterns. Each hash covers the kind, N, K, the
+  three packed slices, and the error text where one is expected (a mixed-kind and a ragged-K stack, an unsupported
+  kind). The hashes are written from the tree before any code moves and committed; after the move the same test, with no
+  edit, must reproduce every one.
+- **Void:** none; it is deterministic. **Stopping rule:** one run before (writes the hashes), one after; any differing
+  hash stops the move with DECISION NEEDED. **Cost basis:** seconds, most of it the 2^32 sweep; measured: 28 s writing the
+  32 hashes at `91fe36e7b`, 30 s reproducing all 32 on an unchanged tree.
+- **Then** the kernel tests that needed only the packers move to `cuda/kernels` by batch 1's gate (each by name with
+  `-v` on the device, before and after), using `wpack` directly, and the ratchet falls.
+- **Done (2026-10-26):** all 32 hashes match after the move, and the gate went red on two planted changes (reverted). Six
+  test files left package `cuda` (four to `cuda/kernels`, two to `cuda/internal/wpack`), every outcome the same; cuda
+  reach 322 → 317. gpu has no test-only move (its kernels are package `gpu`'s production code); metal has 62 candidates
+  that need a Mac run. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/residency.go:Model.residentAdmission`: the runner shape (`Model.decodeRunnerDecline`), then

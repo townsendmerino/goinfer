@@ -1,6 +1,4 @@
-//go:build cuda
-
-package cuda
+package wpack
 
 import (
 	"math"

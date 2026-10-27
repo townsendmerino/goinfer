@@ -491,3 +491,15 @@ func TestActGroupKernels_fusedG32BitIdentical(t *testing.T) {
 		}
 	}
 }
+
+// f16tof32 expands an IEEE half for the test references (the f32→f16 direction, f32tof16, is the production
+// packer's, in package wpack).
+func f16tof32(h uint16) float32 {
+	s := uint32(h&0x8000) << 16
+	e := uint32((h >> 10) & 0x1f)
+	m := uint32(h & 0x3ff)
+	if e == 0 {
+		return math.Float32frombits(s)
+	}
+	return math.Float32frombits(s | (e-15+127)<<23 | m<<13)
+}

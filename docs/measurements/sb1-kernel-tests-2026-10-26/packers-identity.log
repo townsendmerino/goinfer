@@ -1,0 +1,38 @@
+----- before the move: write (-wpack.update) at 91fe36e7b -----
+=== RUN   TestWeightPackers_bitIdentity
+    wpack_identity_test.go:46: wrote 32 hashes to testdata/wpack_hashes.txt
+--- PASS: TestWeightPackers_bitIdentity (28.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	28.381s
+
+real	0m30.359s
+user	0m36.347s
+sys	0m1.218s
+----- after the move -----
+=== RUN   TestWeightPackers_bitIdentity
+    wpack_identity_test.go:79: 32 packer outputs match testdata/wpack_hashes.txt
+--- PASS: TestWeightPackers_bitIdentity (32.22s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	32.229s
+----- plant 1: F32ToF16 guard bit 0x1000 -> 0x0800 (reverted) -----
+--- FAIL: TestWeightPackers_bitIdentity (31.98s)
+    wpack_identity_test.go:71: f32tof16/all-2^32: packed bytes changed: hash 81f0931eab193ce4cb6bc89cd96f8f3b42ef966aad06c3bc748d259bea935351, want 37a1af6353680a63381f39bdde4b8ece0062f0f4301123197769a1b2f9204b32
+    wpack_identity_test.go:79: 32 packer outputs match testdata/wpack_hashes.txt
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	31.982s
+FAIL
+----- plant 2: NibblePos mapping changed (reverted) -----
+--- FAIL: TestWeightPackers_bitIdentity (32.16s)
+    wpack_identity_test.go:71: nibblePosFast: packed bytes changed: hash 0ca653b073fe93a681fbfd23aa6d052d517e23408c2268fe90856f1ae41b3c63, want 54a58bf24ac12d3b6aecd9f506ad5f0aa99441ff70b39d8b0a2f4f82754a6589
+    wpack_identity_test.go:71: packWeightStack/int4: packed bytes changed: hash c910b3de80c679914b41a1c89bf2df776c8321a64ec65c6f55eb804d1332d14b, want 513723ab4bc298477a3357d3c0640c379cfebe649c937020c97a4301713c90d0
+    wpack_identity_test.go:71: packWeight/int4f16/17x512: packed bytes changed: hash 9ae89c5c332337ed6a8555a3a133b03b8115754c2f120cddfa464a9fddaa6103, want 4a6b48e999e72aaedac7cc9815a6e3d16d417f22bb41602a19c408fc3fcec5f5
+    wpack_identity_test.go:71: packWeight/int4/3x256: packed bytes changed: hash 4393389692b51229309a1b7d588960b44302ed4b8ff22b9a6b76d44f74c71a90, want 3b0dc947b2c8331afcf7b442fa89e27e4a0c6990414d922cff43ecca6b4ded04
+    wpack_identity_test.go:71: packWeightStack/int4f16: packed bytes changed: hash a7be6cfdb3fedaf17ee85cc920a1d709685ebb8e465cde9859d6db11099de3d6, want 84815be2e21bcea6b737c62966da870ddc8cc59ca2b8bf8d0a591d3587d38855
+    wpack_identity_test.go:71: packInt4Into: packed bytes changed: hash a32993203bcf1dbb98b180a5084963348242ab9124b1eeba7140a43271e0e662, want c12c699e896bdbea23935dc476cfc7ce917ffe79b098cdff16027607bba87719
+    wpack_identity_test.go:71: packWeight/int4/17x512: packed bytes changed: hash dd6f278c34496d0e0ea882a87e8b31c9eb7bcb8df6801a53f201e8b7db659dc0, want a23c0669ee22003466c28a5a4c622ecdb99662d7498794ea68e199be86adebb7
+    wpack_identity_test.go:71: packWeight/int4f16/3x256: packed bytes changed: hash e331e0900b88bb16b74796fb31e9afb11f75b6b157e7e5b7cc22fe40d7be657a, want 050828c998dd7c3a7f33423af3b4342372a680e90520e6b96a41dd11e7c9fa0a
+    wpack_identity_test.go:71: permuteFast: packed bytes changed: hash c51bd51fed772dd966a0d684bf6acab4b4840958657096c8e0eb807768f99248, want cc74342fbaab76edf1b39e0e9494e20dec6c01159e65f2a08101dd13bebbf876
+    wpack_identity_test.go:79: 32 packer outputs match testdata/wpack_hashes.txt
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	32.166s
+FAIL

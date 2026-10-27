@@ -1,0 +1,101 @@
+=== RUN   TestGemvW4F32_matchesCPUFloat
+    gemv_w4f32_test.go:187: dense gate 2112x2816: max relative error 1.12e-07 (bar 1e-05)
+    gemv_w4f32_test.go:203:   planted nibble order not permuted : 1.26 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted -8 offset dropped         : 0.413 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted group scale one group off : 0.0454 (red above 1e-05: true)
+    gemv_w4f32_test.go:187: dense down 2816x2112: max relative error 9.86e-08 (bar 1e-05)
+    gemv_w4f32_test.go:203:   planted nibble order not permuted : 1.09 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted -8 offset dropped         : 0.392 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted group scale one group off : 0.0459 (red above 1e-05: true)
+    gemv_w4f32_test.go:234: expert gate|up 1408x2816 moe: max relative error 1.32e-07
+    gemv_w4f32_test.go:254: expert gate|up 1408x2816 wacc: max relative error 1.53e-07
+    gemv_w4f32_test.go:234: expert down 2816x704 moe: max relative error 1.47e-07
+    gemv_w4f32_test.go:254: expert down 2816x704 wacc: max relative error 1.18e-07
+--- PASS: TestGemvW4F32_matchesCPUFloat (0.89s)
+=== RUN   TestGluF32_matchesReference
+    gemv_w4f32_test.go:324: glu_f32 gelu-tanh: max relative error 3.02e-08
+    gemv_w4f32_test.go:324: glu_f32 silu: max relative error 2.19e-08
+--- PASS: TestGluF32_matchesReference (0.20s)
+=== RUN   TestGemvW8A8Batched_bitIdentical
+    gemv_w8a8_batched_test.go:166: M=1: 20 elements bit-identical to gemv_w8a8_fwd
+    gemv_w8a8_batched_test.go:166: M=8: 160 elements bit-identical to gemv_w8a8_fwd
+    gemv_w8a8_batched_test.go:166: M=45: 900 elements bit-identical to gemv_w8a8_fwd
+    gemv_w8a8_batched_test.go:166: M=100: 2000 elements bit-identical to gemv_w8a8_fwd
+--- PASS: TestGemvW8A8Batched_bitIdentical (0.34s)
+=== RUN   TestMoEIndexedGemv
+    moe_gemv_test.go:181: all 6 experts: indexed read == same expert packed alone, bit-exact
+    moe_gemv_test.go:222: wacc applies the routed weight (dst += wgt*result) and matches wgt*plain
+--- PASS: TestMoEIndexedGemv (0.20s)
+=== RUN   TestGemvShapeSweep
+=== RUN   TestGemvShapeSweep/qwen2.5-0.5B/attn-qkv
+    shape_sweep_test.go:247: N=896 K=896 Kwords=112 (Kwords%32=16): worst deviation 1.45e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-0.5B/ffn-up
+    shape_sweep_test.go:247: N=4864 K=896 Kwords=112 (Kwords%32=16): worst deviation 1.67e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-0.5B/ffn-down
+    shape_sweep_test.go:247: N=896 K=4864 Kwords=608 (Kwords%32=0): worst deviation 6.74e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-1.5B/attn-qkv
+    shape_sweep_test.go:247: N=1536 K=1536 Kwords=192 (Kwords%32=0): worst deviation 1.49e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-1.5B/ffn-up
+    shape_sweep_test.go:247: N=8960 K=1536 Kwords=192 (Kwords%32=0): worst deviation 1.41e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-1.5B/ffn-down
+    shape_sweep_test.go:247: N=1536 K=8960 Kwords=1120 (Kwords%32=0): worst deviation 5.14e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen3-1.7B/attn
+    shape_sweep_test.go:247: N=2048 K=2048 Kwords=256 (Kwords%32=0): worst deviation 1.03e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/gemma3-4B/attn-q
+    shape_sweep_test.go:247: N=2560 K=2560 Kwords=320 (Kwords%32=0): worst deviation 9.64e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/gemma3-4B/ffn-up
+    shape_sweep_test.go:247: N=10240 K=2560 Kwords=320 (Kwords%32=0): worst deviation 1.19e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/gemma3-4B/ffn-down
+    shape_sweep_test.go:247: N=2560 K=10240 Kwords=1280 (Kwords%32=0): worst deviation 7.02e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/phi3-mini/attn
+    shape_sweep_test.go:247: N=3072 K=3072 Kwords=384 (Kwords%32=0): worst deviation 8.70e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=1120
+    shape_sweep_test.go:247: N=512 K=1120 Kwords=140 (Kwords%32=12): worst deviation 1.65e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=288
+    shape_sweep_test.go:247: N=64 K=288 Kwords=36 (Kwords%32=4): worst deviation 1.10e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=160
+    shape_sweep_test.go:247: N=32 K=160 Kwords=20 (Kwords%32=20): worst deviation 1.56e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=2336
+    shape_sweep_test.go:247: N=128 K=2336 Kwords=292 (Kwords%32=4): worst deviation 6.54e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/single-row/N=1
+    shape_sweep_test.go:247: N=1 K=896 Kwords=112 (Kwords%32=16): worst deviation 5.77e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/odd-N/N=7
+    shape_sweep_test.go:247: N=7 K=1536 Kwords=192 (Kwords%32=0): worst deviation 3.60e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/odd-N/N=9
+    shape_sweep_test.go:247: N=9 K=896 Kwords=112 (Kwords%32=16): worst deviation 1.18e-08 of magnitude (bar 1e-05)
+--- PASS: TestGemvShapeSweep (1.01s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-0.5B/attn-qkv (0.01s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-0.5B/ffn-up (0.03s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-0.5B/ffn-down (0.03s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-1.5B/attn-qkv (0.02s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-1.5B/ffn-up (0.11s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-1.5B/ffn-down (0.12s)
+    --- PASS: TestGemvShapeSweep/qwen3-1.7B/attn (0.04s)
+    --- PASS: TestGemvShapeSweep/gemma3-4B/attn-q (0.06s)
+    --- PASS: TestGemvShapeSweep/gemma3-4B/ffn-up (0.17s)
+    --- PASS: TestGemvShapeSweep/gemma3-4B/ffn-down (0.16s)
+    --- PASS: TestGemvShapeSweep/phi3-mini/attn (0.06s)
+    --- PASS: TestGemvShapeSweep/tail/K=1120 (0.00s)
+    --- PASS: TestGemvShapeSweep/tail/K=288 (0.00s)
+    --- PASS: TestGemvShapeSweep/tail/K=160 (0.00s)
+    --- PASS: TestGemvShapeSweep/tail/K=2336 (0.00s)
+    --- PASS: TestGemvShapeSweep/single-row/N=1 (0.00s)
+    --- PASS: TestGemvShapeSweep/odd-N/N=7 (0.00s)
+    --- PASS: TestGemvShapeSweep/odd-N/N=9 (0.00s)
+=== RUN   TestGemvShapeSweep_coversTheOOBGeometry
+    shape_sweep_test.go:277: sweep covers 6 ragged-tail geometries: [K=896(Kwords=112) K=896(Kwords=112) K=1120(Kwords=140) K=288(Kwords=36) K=160(Kwords=20) K=2336(Kwords=292)]
+--- PASS: TestGemvShapeSweep_coversTheOOBGeometry (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	2.708s
+=== RUN   TestF32ToF16_C15
+--- PASS: TestF32ToF16_C15 (0.00s)
+=== RUN   TestPackWeightStack
+    moe_pack_test.go:76: 4 experts row-stacked: 256 words + 64 f16 scales; every expert byte-identical to the dense packer at offset e*64
+--- PASS: TestPackWeightStack (0.00s)
+=== RUN   TestPackWeightStack_rejectsRagged
+--- PASS: TestPackWeightStack_rejectsRagged (0.00s)
+=== RUN   TestPackWeightStack_reservesTheWholeStack
+    moe_pack_test.go:134: stack 294912 bytes, allocated 655360 (2.22x)
+--- PASS: TestPackWeightStack_reservesTheWholeStack (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/internal/wpack	0.005s
