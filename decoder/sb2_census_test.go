@@ -91,6 +91,10 @@ func buildSB2Census(t *testing.T) []string {
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
 	// Every machine reading the load path takes comes from this fake, so no reading of this machine enters a line.
 	useProbe(t, &probe.Fake{PhysicalBytes: 64 << 30, AvailableBytes: 48 << 30})
+	// The CUDA KV policy the root module resolves with (kvresolve.go's init), whatever an earlier test in the process left registered.
+	saved := kvPolicies["cuda"]
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline})
+	t.Cleanup(func() { kvPolicies["cuda"] = saved })
 	var lines []string
 
 	// Model-free, per registered family: the runner-shape decline and every resident gate.
