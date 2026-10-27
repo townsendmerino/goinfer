@@ -2240,7 +2240,7 @@ itself right after `gh pr create`; only a plain merge without `--auto` stays for
 ### 12.2 PW2a's gates (registered 2026-10-27 11:55 PDT by nobara-ci01, before `ci.yml` changes)
 
 The measurement that sets the target is `docs/measurements/ci-tail-2026-10-27.md`: on the slow runner class the tail's
-`go test` step is 1,169 s, of which the two census tests are 364 s and 295 s, and the rest of the package 472 s.
+`go test` step is 1,169 s over a 1,130 s package, of which the two census tests are 364 s and 295 s and the rest 472 s.
 The change: the tail's `-skip` adds both census names; `test-decoder-a` gains a step running `^TestDecisionCensus$` on
 `./decoder/` and `test-decoder-d` one running `^TestDecisionCensus_secondProcess$`, each under the same
 `go test -race -timeout 25m -tags goinfer_testhooks -json` line as every other shard, each with the zero-match guard
@@ -2264,7 +2264,12 @@ step on both sides, only the two census tests moved; two plants red. G2 PASS: no
 so protection is unchanged. G4 PASS: the census steps ran 230.4 s and 228.1 s, and the tail's 1,202 plus 2 equals main's
 1,204 at the merge base. G5 PASS on PR run 40560349006, slow runner class, not void: the slowest required job, `test-rest`,
 finished 10.1 minutes in. G6 PASS by name only: `touched.py` ran none of the four scans that read `ci.yml`, because
-`scripts/touched_scans.py` has no row for it, so they were run directly; the missing row is left as a follow-up.
+`scripts/touched_scans.py` has no row for it, so they were run directly; the missing row was then added (below).
+
+**Amended 2026-10-27, after the review of #325 (relayed 11:49).** G6's route is corrected: `scripts/touched_scans.py` lists the
+four `ci.yml` readers, and `touched.py --base origin/main` runs them, each `ok`. The census guards list with
+`-tags goinfer_testhooks` and report a failed listing as a build failure; their summaries skip when the test step did not
+run. G1–G3 re-run on the fixed head: PASS. The review's other points and what held are in the record's §5.
 
 ## 13. Order, sizes, and what each step is worth alone
 
