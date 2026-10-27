@@ -1,0 +1,218 @@
+internal/vision/testdata/qwen25vl-vision-tiny int4 built
+internal/vision/testdata/qwen25vl-vision-tiny int8int8 built
+internal/vision/testdata/qwen25vl-vision-tiny f32 built
+internal/vision/testdata/qwen25vl-vision-tiny int4/ssm built
+internal/vision/testdata/qwen25vl-vision-tiny int4/kv-f16 built
+internal/vision/testdata/qwen25vl-vision-tiny int4/kv-i8 built
+selftestdata/gemma3-vl-tiny int4 built
+selftestdata/gemma3-vl-tiny int8int8 built
+selftestdata/gemma3-vl-tiny f32 built
+selftestdata/gemma3-vl-tiny int4/ssm built
+selftestdata/gemma3-vl-tiny int4/kv-f16 built
+selftestdata/gemma3-vl-tiny int4/kv-i8 built
+selftestdata/llama-tiny int4 built
+selftestdata/llama-tiny int8int8 built
+selftestdata/llama-tiny f32 built
+selftestdata/llama-tiny int4/ssm built
+selftestdata/llama-tiny int4/kv-f16 built
+selftestdata/llama-tiny int4/kv-i8 built
+selftestdata/qwen35-tiny int4 built
+selftestdata/qwen35-tiny int8int8 built
+selftestdata/qwen35-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+selftestdata/qwen35-tiny int4/ssm built
+selftestdata/qwen35-tiny int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+selftestdata/qwen35-tiny int4/kv-i8 built
+selftestdata/qwen35vl-tiny int4 built
+selftestdata/qwen35vl-tiny int8int8 built
+selftestdata/qwen35vl-tiny f32 built
+selftestdata/qwen35vl-tiny int4/ssm built
+selftestdata/qwen35vl-tiny int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+selftestdata/qwen35vl-tiny int4/kv-i8 built
+testdata/deepseek-tiny int4 built
+testdata/deepseek-tiny int8int8 built
+testdata/deepseek-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/deepseek-tiny int4/ssm built
+testdata/deepseek-tiny int4/kv-f16 err resident path declined: mla does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/deepseek-tiny int4/kv-i8 built
+testdata/gemma1-tiny int4 built
+testdata/gemma1-tiny int8int8 built
+testdata/gemma1-tiny f32 built
+testdata/gemma1-tiny int4/ssm built
+testdata/gemma1-tiny int4/kv-f16 built
+testdata/gemma1-tiny int4/kv-i8 built
+testdata/gemma1-tiny.gguf int4 built
+testdata/gemma1-tiny.gguf int8int8 built
+testdata/gemma1-tiny.gguf f32 built
+testdata/gemma1-tiny.gguf int4/ssm built
+testdata/gemma1-tiny.gguf int4/kv-f16 built
+testdata/gemma1-tiny.gguf int4/kv-i8 built
+testdata/gemma3-vl-tiny int4 built
+testdata/gemma3-vl-tiny int8int8 built
+testdata/gemma3-vl-tiny f32 built
+testdata/gemma3-vl-tiny int4/ssm built
+testdata/gemma3-vl-tiny int4/kv-f16 built
+testdata/gemma3-vl-tiny int4/kv-i8 built
+testdata/gemma4-moe-kv-tiny int4 built
+testdata/gemma4-moe-kv-tiny int8int8 built
+testdata/gemma4-moe-kv-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/gemma4-moe-kv-tiny int4/ssm built
+testdata/gemma4-moe-kv-tiny int4/kv-f16 built
+testdata/gemma4-moe-kv-tiny int4/kv-i8 built
+testdata/gemma4-moe-kv-tiny32 int4 built
+testdata/gemma4-moe-kv-tiny32 int8int8 built
+testdata/gemma4-moe-kv-tiny32 f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/gemma4-moe-kv-tiny32 int4/ssm built
+testdata/gemma4-moe-kv-tiny32 int4/kv-f16 built
+testdata/gemma4-moe-kv-tiny32 int4/kv-i8 built
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4 built
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int8int8 built
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/ssm built
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/kv-f16 built
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/kv-i8 built
+testdata/glm-tiny int4 built
+testdata/glm-tiny int8int8 built
+testdata/glm-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/glm-tiny int4/ssm built
+testdata/glm-tiny int4/kv-f16 built
+testdata/glm-tiny int4/kv-i8 built
+testdata/glm-tiny-bias int4 built
+testdata/glm-tiny-bias int8int8 built
+testdata/glm-tiny-bias f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/glm-tiny-bias int4/ssm built
+testdata/glm-tiny-bias int4/kv-f16 built
+testdata/glm-tiny-bias int4/kv-i8 built
+testdata/glm-tiny.gguf int4 built
+testdata/glm-tiny.gguf int8int8 built
+testdata/glm-tiny.gguf f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/glm-tiny.gguf int4/ssm built
+testdata/glm-tiny.gguf int4/kv-f16 built
+testdata/glm-tiny.gguf int4/kv-i8 built
+testdata/gptoss_tiny.gguf int4 built
+testdata/gptoss_tiny.gguf int8int8 built
+testdata/gptoss_tiny.gguf f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/gptoss_tiny.gguf int4/ssm built
+testdata/gptoss_tiny.gguf int4/kv-f16 built
+testdata/gptoss_tiny.gguf int4/kv-i8 built
+testdata/granite-dense-tiny int4 built
+testdata/granite-dense-tiny int8int8 built
+testdata/granite-dense-tiny f32 built
+testdata/granite-dense-tiny int4/ssm built
+testdata/granite-dense-tiny int4/kv-f16 built
+testdata/granite-dense-tiny int4/kv-i8 built
+testdata/internlm2-tiny int4 built
+testdata/internlm2-tiny int8int8 built
+testdata/internlm2-tiny f32 built
+testdata/internlm2-tiny int4/ssm built
+testdata/internlm2-tiny int4/kv-f16 built
+testdata/internlm2-tiny int4/kv-i8 built
+testdata/internlm3-tiny int4 built
+testdata/internlm3-tiny int8int8 built
+testdata/internlm3-tiny f32 built
+testdata/internlm3-tiny int4/ssm built
+testdata/internlm3-tiny int4/kv-f16 built
+testdata/internlm3-tiny int4/kv-i8 built
+testdata/llama-attnfa-tiny int4 built
+testdata/llama-attnfa-tiny int8int8 built
+testdata/llama-attnfa-tiny f32 built
+testdata/llama-attnfa-tiny int4/ssm built
+testdata/llama-attnfa-tiny int4/kv-f16 built
+testdata/llama-attnfa-tiny int4/kv-i8 built
+testdata/llama-tiny int4 built
+testdata/llama-tiny int8int8 built
+testdata/llama-tiny f32 built
+testdata/llama-tiny int4/ssm built
+testdata/llama-tiny int4/kv-f16 built
+testdata/llama-tiny int4/kv-i8 built
+testdata/mistral-tiny-window int4 built
+testdata/mistral-tiny-window int8int8 built
+testdata/mistral-tiny-window f32 built
+testdata/mistral-tiny-window int4/ssm built
+testdata/mistral-tiny-window int4/kv-f16 built
+testdata/mistral-tiny-window int4/kv-i8 built
+testdata/mixtral-tiny int4 built
+testdata/mixtral-tiny int8int8 built
+testdata/mixtral-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/mixtral-tiny int4/ssm built
+testdata/mixtral-tiny int4/kv-f16 built
+testdata/mixtral-tiny int4/kv-i8 built
+testdata/nemotron-tiny int4 built
+testdata/nemotron-tiny int4/ssm built
+testdata/nemotron-tiny int4/kv-f16 err resident path declined: nemotron does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/nemotron-tiny int4/kv-i8 built
+testdata/nemotron3nano-tiny int4 built
+testdata/nemotron3nano-tiny int4/ssm built
+testdata/nemotron3nano-tiny int4/kv-f16 err resident path declined: nemotron does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/nemotron3nano-tiny int4/kv-i8 built
+testdata/qwen25vl-tiny int4 built
+testdata/qwen25vl-tiny int8int8 built
+testdata/qwen25vl-tiny f32 built
+testdata/qwen25vl-tiny int4/ssm built
+testdata/qwen25vl-tiny int4/kv-f16 built
+testdata/qwen25vl-tiny int4/kv-i8 built
+testdata/qwen35-tiny int4 built
+testdata/qwen35-tiny int8int8 built
+testdata/qwen35-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/qwen35-tiny int4/ssm built
+testdata/qwen35-tiny int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/qwen35-tiny int4/kv-i8 built
+testdata/qwen35vl-tiny int4 built
+testdata/qwen35vl-tiny int8int8 built
+testdata/qwen35vl-tiny f32 built
+testdata/qwen35vl-tiny int4/ssm built
+testdata/qwen35vl-tiny int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/qwen35vl-tiny int4/kv-i8 built
+testdata/qwen3_5-tiny int4 built
+testdata/qwen3_5-tiny int8int8 built
+testdata/qwen3_5-tiny f32 built
+testdata/qwen3_5-tiny int4/ssm built
+testdata/qwen3_5-tiny int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/qwen3_5-tiny int4/kv-i8 built
+testdata/qwen3_5-tiny-normw int4 built
+testdata/qwen3_5-tiny-normw int8int8 built
+testdata/qwen3_5-tiny-normw f32 built
+testdata/qwen3_5-tiny-normw int4/ssm built
+testdata/qwen3_5-tiny-normw int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/qwen3_5-tiny-normw int4/kv-i8 built
+testdata/qwen3_5_moe-tiny int4 built
+testdata/qwen3_5_moe-tiny int8int8 built
+testdata/qwen3_5_moe-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/qwen3_5_moe-tiny int4/ssm built
+testdata/qwen3_5_moe-tiny int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/qwen3_5_moe-tiny int4/kv-i8 built
+testdata/qwen3asr-tiny int4 built
+testdata/qwen3asr-tiny int8int8 built
+testdata/qwen3asr-tiny f32 built
+testdata/qwen3asr-tiny int4/ssm built
+testdata/qwen3asr-tiny int4/kv-f16 built
+testdata/qwen3asr-tiny int4/kv-i8 built
+testdata/qwen3moe-tiny int4 built
+testdata/qwen3moe-tiny int8int8 built
+testdata/qwen3moe-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/qwen3moe-tiny int4/ssm built
+testdata/qwen3moe-tiny int4/kv-f16 built
+testdata/qwen3moe-tiny int4/kv-i8 built
+testdata/qwen3moe-tiny-k3 int4 built
+testdata/qwen3moe-tiny-k3 int8int8 built
+testdata/qwen3moe-tiny-k3 f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/qwen3moe-tiny-k3 int4/ssm built
+testdata/qwen3moe-tiny-k3 int4/kv-f16 built
+testdata/qwen3moe-tiny-k3 int4/kv-i8 built
+testdata/qwen3next-tiny int4 built
+testdata/qwen3next-tiny int8int8 built
+testdata/qwen3next-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/qwen3next-tiny int4/ssm built
+testdata/qwen3next-tiny int4/kv-f16 err resident path declined: qwen3_5 does not implement --kv f16 KV on webgpu (only the generic GQA path does); drop the flag to use the resident path
+testdata/qwen3next-tiny int4/kv-i8 built
+testdata/qwen3vlmoe-tiny int4 built
+testdata/qwen3vlmoe-tiny int8int8 built
+testdata/qwen3vlmoe-tiny f32 err gpu: MoE residency expert kind "f32" (int8/int4 only)
+testdata/qwen3vlmoe-tiny int4/ssm built
+testdata/qwen3vlmoe-tiny int4/kv-f16 built
+testdata/qwen3vlmoe-tiny int4/kv-i8 built
+testdata/voxtral-tiny int4 built
+testdata/voxtral-tiny int8int8 built
+testdata/voxtral-tiny f32 built
+testdata/voxtral-tiny int4/ssm built
+testdata/voxtral-tiny int4/kv-f16 built
+testdata/voxtral-tiny int4/kv-i8 built
