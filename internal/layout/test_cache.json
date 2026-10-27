@@ -5,7 +5,8 @@
     "chat": {
       "cacheable": false,
       "reasons": [
-        "files outside the module"
+        "files outside the module",
+        "timing"
       ]
     },
     "cmd/gate": {
@@ -204,7 +205,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module",
-        "timing (through decoder)"
+        "timing (through chat)"
       ]
     },
     "examples/embed": {
@@ -213,7 +214,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module (through decoder)",
-        "timing (through decoder)"
+        "timing (through chat)"
       ]
     },
     "examples/invoice": {
@@ -222,7 +223,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module (through decoder)",
-        "timing (through decoder)"
+        "timing (through chat)"
       ]
     },
     "examples/structured": {
@@ -231,7 +232,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module",
-        "timing (through decoder)"
+        "timing (through chat)"
       ]
     },
     "gpu": {

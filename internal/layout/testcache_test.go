@@ -57,7 +57,7 @@ var hiddenCalls = []struct {
 	{hiddenEnviron, regexp.MustCompile(`\bos\.Environ\(|\bsyscall\.(Getenv|Environ)\(`)},
 	{hiddenFiles, regexp.MustCompile(`\bos\.(UserHomeDir|UserCacheDir|UserConfigDir|TempDir|Hostname|Executable)\(|\bAssetPathForTest\(`)},
 	{hiddenNet, regexp.MustCompile(`\bnet\.(Dial|Listen)|\bhttp\.(Get|Post|Head|PostForm)\(|\bhttp\.(Client|DefaultClient)\b`)},
-	{hiddenTiming, regexp.MustCompile(`\btime\.(Since|Until|Now|After|AfterFunc|NewTimer|NewTicker|Tick|Sleep)\(|\bcontext\.With(Timeout|Deadline)\(|\btesting\.Benchmark\(`)},
+	{hiddenTiming, regexp.MustCompile(`\btime\.(Since|Until|Now|After|AfterFunc|NewTimer|NewTicker|Tick|Sleep)\b|\bcontext\.With(Timeout|Deadline)\b|\btesting\.Benchmark\b`)},
 }
 
 // systemDirs names the absolute roots, below "/", that a string literal may name and that lie outside any module. They are
@@ -485,6 +485,7 @@ func TestFileHidden_markers(t *testing.T) {
 		{`<-time.After(time.Second)`, hiddenTiming, 0, false},
 		{`_, _ = context.WithTimeout(context.Background(), 1)`, hiddenTiming, 0, false},
 		{`_ = time.Now()`, hiddenTiming, 0, false},
+		{`f := time.After; _ = f`, hiddenTiming, 0, false},
 		{`_, _ = http.Post("u", "t", nil)`, hiddenNet, 0, false},
 		{`_, _ = net.Listen("tcp", ":0")`, hiddenNet, 0, false},
 		{`_, _ = exec.Command("git").Output()`, hiddenExec, 0, false},

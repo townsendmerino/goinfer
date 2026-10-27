@@ -1,0 +1,4 @@
+  PASS: r327b-join is falsifiable
+  PASS: r327b-proc is falsifiable
+ok  	github.com/townsendmerino/goinfer/internal/layout	3.444s
+  PASS: r327b-prodclock is falsifiable
