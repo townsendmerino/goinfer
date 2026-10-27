@@ -5,7 +5,7 @@ package cuda
 import (
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // TestCUDA_graphSharedMemHazard isolates the graph-replay-under-contention divergence to a KERNEL

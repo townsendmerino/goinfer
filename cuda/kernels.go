@@ -7,7 +7,7 @@ import (
 	"math"
 	"slices"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // The production decode kernels (NVRTC to PTX, go:embed, driver-JIT via cuModuleLoadDataEx), embedded in a non-test file

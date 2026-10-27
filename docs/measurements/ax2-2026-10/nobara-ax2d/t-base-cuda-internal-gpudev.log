@@ -1,0 +1,181 @@
+=== RUN   TestCoalesce_dispatchCount
+=== RUN   TestCoalesce_dispatchCount/fully_adjacent_collapses_to_one
+=== RUN   TestCoalesce_dispatchCount/a_gap_in_src_splits_the_run
+=== RUN   TestCoalesce_dispatchCount/a_gap_in_dst_splits_the_run
+=== RUN   TestCoalesce_dispatchCount/different_buffers_never_merge
+=== RUN   TestCoalesce_dispatchCount/zero-byte_pairs_drop_out
+=== RUN   TestCoalesce_dispatchCount/single_pair_is_returned_untouched
+=== RUN   TestCoalesce_dispatchCount/empty_stays_empty
+--- PASS: TestCoalesce_dispatchCount (0.26s)
+    --- PASS: TestCoalesce_dispatchCount/fully_adjacent_collapses_to_one (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/a_gap_in_src_splits_the_run (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/a_gap_in_dst_splits_the_run (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/different_buffers_never_merge (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/zero-byte_pairs_drop_out (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/single_pair_is_returned_untouched (0.00s)
+    --- PASS: TestCoalesce_dispatchCount/empty_stays_empty (0.00s)
+=== RUN   TestCoalesce_movesTheSameBytes
+--- PASS: TestCoalesce_movesTheSameBytes (0.20s)
+=== RUN   TestCopyDevice_rejectsBadPairs
+--- PASS: TestCopyDevice_rejectsBadPairs (0.19s)
+=== RUN   TestCopyDevice_bandwidthUnderPhysicalCeiling
+    cuda_copy_test.go:80: device NVIDIA GeForce RTX 2070 SUPER — derived peak 448.1 GB/s
+    cuda_copy_test.go:108: contiguous 20 MiB × 20: 0.138 ms/copy, 151.8 GB/s copied = 303.5 GB/s traffic (68% of 448.1 peak)
+--- PASS: TestCopyDevice_bandwidthUnderPhysicalCeiling (0.20s)
+=== RUN   TestCopyDeviceBatch_bandwidthUnderPhysicalCeiling
+    cuda_copy_test.go:185: batch 36 copies (19 MiB) × 20: 0.257 ms/batch, 78.8 GB/s copied = 157.6 GB/s traffic (35% of 448.1 peak)
+--- PASS: TestCopyDeviceBatch_bandwidthUnderPhysicalCeiling (0.20s)
+=== RUN   TestCUDA_maxDynamicSharedBytes
+    cuda_dynshared_test.go:127: opt-in maximum 65536 bytes (static plus dynamic); a launch at it runs only after the opt-in; beside 1 KiB static, 64512 dynamic
+--- PASS: TestCUDA_maxDynamicSharedBytes (0.20s)
+=== RUN   TestCUDA_gemvW8A8_exact
+    cuda_gemv_test.go:137: W8A8 GEMV ≡ exact int32 reference across 5 shapes; accum epilogue doubles
+--- PASS: TestCUDA_gemvW8A8_exact (0.20s)
+=== RUN   TestCUDA_gemvW8A8_nullBias
+    cuda_gemv_test.go:206: ArgNull bias ≡ explicit zero bias, on non-trivial output
+--- PASS: TestCUDA_gemvW8A8_nullBias (0.19s)
+=== RUN   TestCUDA_gemvW4A8_exact
+    cuda_gemv_test.go:332: W4A8 GEMV ≡ reference across 4 shapes (main loop + 32-stride tail)
+--- PASS: TestCUDA_gemvW4A8_exact (0.19s)
+=== RUN   TestCUDA_graphDependentChain
+    cuda_graph_test.go:79: dependent chain (N=64 ×200 reps): every replay serial and exact — intra-graph edges preserved
+--- PASS: TestCUDA_graphDependentChain (0.21s)
+=== RUN   TestCUDA_graphReplay
+    cuda_graph_test.go:153: Graph: captured vadd replays bit-identically and reads current buffer contents across replays
+--- PASS: TestCUDA_graphReplay (0.20s)
+=== RUN   TestCUDA_argNull
+--- PASS: TestCUDA_argNull (0.19s)
+=== RUN   TestCUDA_scalarArgs
+    cuda_launch_test.go:94: saxpy a=2.5: [12.5 25 37.5 50 62.5 75 87.5 100]
+--- PASS: TestCUDA_scalarArgs (0.19s)
+=== RUN   TestCUDA_explicitGeometrySharedMem
+    cuda_launch_test.go:155: blocksum(1..1000) in 1 block with 1024 B shared = 500500
+--- PASS: TestCUDA_explicitGeometrySharedMem (0.20s)
+=== RUN   TestCUDA_hostBufferRoundTrip
+    cuda_launch_test.go:211: pinned readback of 64 floats OK (head: [0 3 6 9])
+--- PASS: TestCUDA_hostBufferRoundTrip (0.19s)
+=== RUN   TestCUDA_asyncLaunchThenSync
+    cuda_launch_test.go:264: 12 async launches + 1 Sync: x = 4096 (= 2^12)
+--- PASS: TestCUDA_asyncLaunchThenSync (0.19s)
+=== RUN   TestCUDA_launchRejectsBadInput
+--- PASS: TestCUDA_launchRejectsBadInput (0.19s)
+=== RUN   TestCUDA_typedBufferVerbs
+=== RUN   TestCUDA_typedBufferVerbs/float32
+=== RUN   TestCUDA_typedBufferVerbs/int32
+=== RUN   TestCUDA_typedBufferVerbs/uint16
+=== RUN   TestCUDA_typedBufferVerbs/uint32-alloc-then-upload
+--- PASS: TestCUDA_typedBufferVerbs (0.19s)
+    --- PASS: TestCUDA_typedBufferVerbs/float32 (0.00s)
+    --- PASS: TestCUDA_typedBufferVerbs/int32 (0.00s)
+    --- PASS: TestCUDA_typedBufferVerbs/uint16 (0.00s)
+    --- PASS: TestCUDA_typedBufferVerbs/uint32-alloc-then-upload (0.00s)
+=== RUN   TestCUDA_mappedHostWeight_zeroCopy
+    cuda_mappedhost_test.go:81: W4A8 GEMV over 64×32 int4 weight: device-buffer == mapped-host-buffer, bit-identical — zero-copy host read verified
+--- PASS: TestCUDA_mappedHostWeight_zeroCopy (0.20s)
+=== RUN   TestCUDA_registerMappedHostWeight_zeroCopy
+    cuda_registermapped_test.go:77: W4A8 GEMV over 64×32 int4 weight: device-buffer == registered-in-place-host-buffer, bit-identical
+--- PASS: TestCUDA_registerMappedHostWeight_zeroCopy (0.19s)
+=== RUN   TestCUDA_smokeAdd
+    cuda_smoke_test.go:24: device: NVIDIA GeForce RTX 2070 SUPER
+    cuda_smoke_test.go:53: vadd result: [11 22 33 44 55]
+--- PASS: TestCUDA_smokeAdd (0.19s)
+=== RUN   TestCUDA_tailBlockGuard
+--- PASS: TestCUDA_tailBlockGuard (0.20s)
+=== RUN   TestCUDA_ledgerDrains
+--- PASS: TestCUDA_ledgerDrains (0.19s)
+=== RUN   TestCUDA_uploadAsyncAt_offsetsAndEvents
+--- PASS: TestCUDA_uploadAsyncAt_offsetsAndEvents (0.20s)
+=== RUN   TestCUDA_vitAttentionTiled
+    cuda_vit_attntiled_test.go:85: attention_tiled worst Δ 5.36e-07 vs double CPU (bound 1e-4)
+--- PASS: TestCUDA_vitAttentionTiled (0.23s)
+=== RUN   TestCUDA_vitAttentionTiled_matchesUntiled
+    cuda_vit_attntiled_test.go:140: attention_tiled vs untiled attention: worst Δ 5.36e-07
+--- PASS: TestCUDA_vitAttentionTiled_matchesUntiled (0.20s)
+=== RUN   TestCUDA_gemmW8A8Bias
+    cuda_vit_fused_test.go:143: gemm_w8a8_bias and gemm_w8a8_bias_add BIT-IDENTICAL to unfused gemm+bias and gemm+bias+add across all shapes
+--- PASS: TestCUDA_gemmW8A8Bias (0.32s)
+=== RUN   TestCUDA_gemmF32Bias
+    cuda_vit_fused_test.go:270: gemm_f32_bias and gemm_f32_bias_add match unfused gemm+bias and gemm+bias+add across all shapes
+--- PASS: TestCUDA_gemmF32Bias (0.27s)
+=== RUN   TestCUDA_vitLayerNorm
+    cuda_vit_test.go:105: layernorm ≡ CPU layerNormInto across 4 shapes
+--- PASS: TestCUDA_vitLayerNorm (0.19s)
+=== RUN   TestCUDA_vitGELU
+    cuda_vit_test.go:147: gelu_tanh ≡ CPU geluTanh; erf-GELU rejected at Δ 0.000473
+--- PASS: TestCUDA_vitGELU (0.20s)
+=== RUN   TestCUDA_vitQuantRows
+    cuda_vit_test.go:223: quant_rows byte-exact vs linalg quantizeRowInt8, incl. the all-zero row
+--- PASS: TestCUDA_vitQuantRows (0.20s)
+=== RUN   TestCUDA_vitGEMMs
+    cuda_vit_test.go:306: gemm_w8a8 ≡ exact int32 reference; gemm_f32 ≡ f32 reference (3 shapes each)
+--- PASS: TestCUDA_vitGEMMs (0.20s)
+=== RUN   TestCUDA_vitAttention
+    cuda_vit_test.go:377: attention ≡ CPU bidirectional MHA across 3 shapes
+--- PASS: TestCUDA_vitAttention (0.20s)
+=== RUN   TestCUDA_vitAddOps
+    cuda_vit_test.go:430: add_bias / add_vec ≡ CPU references
+--- PASS: TestCUDA_vitAddOps (0.19s)
+=== RUN   TestCUDA_vitRMSNorm
+    cuda_vit_test.go:476: rmsnorm ≡ CPU rmsNorm across 3 shapes
+--- PASS: TestCUDA_vitRMSNorm (0.19s)
+=== RUN   TestCUDA_vitGELUErf
+    cuda_vit_test.go:520: gelu_erf ≡ CPU geluErf; distinct from gelu_tanh by Δ 0.000473
+--- PASS: TestCUDA_vitGELUErf (0.19s)
+=== RUN   TestCUDA_vitSiLUMul
+    cuda_vit_test.go:548: silu_mul ≡ CPU silu+multiply
+--- PASS: TestCUDA_vitSiLUMul (0.19s)
+=== RUN   TestCUDA_vitRopeQK
+    cuda_vit_test.go:602: rope_qk ≡ CPU applyRotaryVision on q,k; v untouched
+--- PASS: TestCUDA_vitRopeQK (0.19s)
+=== RUN   TestCUDA_vitAttentionSeg
+    cuda_vit_test.go:716: attention_seg ≡ CPU per-segment MHA; full-attention differs (bounds enforced)
+--- PASS: TestCUDA_vitAttentionSeg (0.19s)
+=== RUN   TestCUDA_gemmTiledMatchesUntiled
+    cuda_vit_test.go:830: gemm_w8a8_tiled BIT-IDENTICAL to untiled across 5 shapes; gemm_f32_tiled ≡ float64 CPU reference
+--- PASS: TestCUDA_gemmTiledMatchesUntiled (0.21s)
+=== RUN   TestCUDA_gemmF32Reg
+    cuda_vit_test.go:911: gemm_f32_reg ≡ float64 CPU within 2e-4 across 4 aligned shapes; GEMMF32Plan routes correctly
+--- PASS: TestCUDA_gemmF32Reg (1.23s)
+=== RUN   TestCUDA_gemmW8A8Reg
+--- PASS: TestCUDA_gemmW8A8Reg (0.29s)
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:143: every float MAC is an explicit intrinsic in 1 contracted kernel(s): [gemv_quant.cu]
+    kernel_fma_lint_test.go:145: exempt (declared, not linted): [roofline.cu vit.cu]
+--- PASS: TestKernelFMALint (0.00s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:200: gemv_quant.cu                BIT-IDENTITY-CONTRACT (linted)
+    kernel_fma_lint_test.go:202: vit.cu                       BIT-IDENTITY-EXEMPT
+    kernel_fma_lint_test.go:211: smoke.cu                     test-only (embedded by cuda_smoke_test.go) — declaration not required
+    kernel_fma_lint_test.go:211: roofline.cu                  test-only (embedded by roofline_test.go) — declaration not required
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+=== RUN   TestPTXReproducible
+=== RUN   TestPTXReproducible/gemv_quant
+    ptx_reproducible_test.go:157: AGREE — gemv_quant.cu reproduces testdata/gemv_quant.ptx byte-for-byte at NVRTC 12.9.86 (20952 bytes)
+=== RUN   TestPTXReproducible/roofline
+    ptx_reproducible_test.go:157: AGREE — roofline.cu reproduces testdata/roofline.ptx byte-for-byte at NVRTC 12.9.86 (19555 bytes)
+=== RUN   TestPTXReproducible/smoke
+    ptx_reproducible_test.go:157: AGREE — smoke.cu reproduces testdata/smoke.ptx byte-for-byte at NVRTC 12.9.86 (5204 bytes)
+=== RUN   TestPTXReproducible/vit
+    ptx_reproducible_test.go:157: AGREE — vit.cu reproduces testdata/vit.ptx byte-for-byte at NVRTC 12.9.86 (403116 bytes)
+--- PASS: TestPTXReproducible (1.18s)
+    --- PASS: TestPTXReproducible/gemv_quant (0.12s)
+    --- PASS: TestPTXReproducible/roofline (0.09s)
+    --- PASS: TestPTXReproducible/smoke (0.07s)
+    --- PASS: TestPTXReproducible/vit (0.90s)
+=== RUN   TestGemvQuantFMAHistogram
+    ptx_reproducible_test.go:227: testdata/gemv_quant.ptx built by NVRTC 12.9.86
+    ptx_reproducible_test.go:250: gemv_quant.ptx: 13 fma.rn.f32 / 1 mul.f32 — no compiler discretion remains
+--- PASS: TestGemvQuantFMAHistogram (0.00s)
+=== RUN   TestDeviceCeilings
+    roofline_test.go:89: streaming read :   412.0 GB/s  (512 MiB in 1.303006ms)
+    roofline_test.go:110: int32 mul-add  :  3998.9 G instr/s ->   3998.9 GMAC/s (int8)
+    roofline_test.go:111: __dp4a         :  3999.8 G instr/s ->  15999.2 GMAC/s (int8)
+--- PASS: TestDeviceCeilings (0.29s)
+=== RUN   TestUploadBatch_movesTheSameBytes
+--- PASS: TestUploadBatch_movesTheSameBytes (0.21s)
+=== RUN   TestUploadBatch_matchesLoopedUpload
+--- PASS: TestUploadBatch_matchesLoopedUpload (0.20s)
+=== RUN   TestUploadBatch_rejectsBadPairs
+--- PASS: TestUploadBatch_rejectsBadPairs (0.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/internal/gpudev	11.801s

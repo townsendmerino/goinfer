@@ -11,7 +11,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // The CUDA vision-tower base against plain Go (S4 step 1, docs/tasks/task-multimodal-support-2026-10.md): every GEMM branch the towers reach (the register

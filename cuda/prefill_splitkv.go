@@ -2,7 +2,7 @@
 
 package cuda
 
-import "github.com/townsendmerino/aikit/gpu"
+import gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 
 // prefillSplitKVBudget bounds the score scratch of the row-batched exact attention: a launch group takes as many rows as fit
 // it (at least one), so the scratch does not grow with the pass's rows.

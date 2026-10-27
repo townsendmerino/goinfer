@@ -7,8 +7,8 @@ import (
 	"math/rand"
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
 

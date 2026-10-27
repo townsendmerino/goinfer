@@ -7,7 +7,7 @@ import (
 	"os"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // CUDA graph replay (r.graphs) is bit-exact to live launch only under EXCLUSIVE_PROCESS device tenancy or active CUDA

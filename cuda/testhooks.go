@@ -7,7 +7,7 @@
 package cuda
 
 import (
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 

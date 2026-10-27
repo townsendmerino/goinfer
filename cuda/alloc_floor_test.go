@@ -5,7 +5,7 @@ package cuda
 import (
 	"testing"
 
-	gpu "github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // TestAllocFloor measures how far cuMemAlloc will actually drain the device, against what cuMemGetInfo

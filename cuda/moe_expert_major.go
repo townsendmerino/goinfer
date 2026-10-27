@@ -5,7 +5,7 @@ package cuda
 import (
 	"slices"
 
-	"github.com/townsendmerino/aikit/gpu"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
 // CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/measurements/p20-expert-locality-2026-09-21.md).

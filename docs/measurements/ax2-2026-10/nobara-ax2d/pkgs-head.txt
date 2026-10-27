@@ -1,0 +1,5 @@
+github.com/townsendmerino/goinfer/cuda
+github.com/townsendmerino/goinfer/cuda/internal/gpudev
+github.com/townsendmerino/goinfer/cuda/internal/qwencuda
+github.com/townsendmerino/goinfer/cuda/internal/visioncuda
+github.com/townsendmerino/goinfer/cuda/s4siglip

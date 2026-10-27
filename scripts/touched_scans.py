@@ -125,6 +125,7 @@ SCANS = [
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
     Scan("internal/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
+    Scan("internal/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("examples/*/main.go", "docs/use-from-go.md")),
     Scan("cmd/gate", "TestGPU_metalPrefillCellChecksVacuous", F("cmd/gate/gpu.go")),
