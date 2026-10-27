@@ -255,3 +255,16 @@ func TestChangelogFragments(t *testing.T) {
 		t.Errorf("fragments = %q, want %q", got, want)
 	}
 }
+
+// TestUnreleasedStray: CHANGELOG.md's [Unreleased] holds only the pointer to changelog.d/; an entry written there instead
+// is named, so gate changelog owes it rather than letting the release strand it.
+func TestUnreleasedStray(t *testing.T) {
+	pointer := "\n" + unreleasedPointerPrefix + " [`changelog.d/`](changelog.d/), collected at release.\n\n"
+	if got := unreleasedStray(pointer); len(got) != 0 {
+		t.Errorf("the pointer alone: stray %v, want none", got)
+	}
+	got := unreleasedStray(pointer[:len(pointer)-1] + "- **a stray entry**\n  more\n\n")
+	if len(got) != 2 || got[0] != "- **a stray entry**" {
+		t.Errorf("stray = %q, want the entry's two lines", got)
+	}
+}

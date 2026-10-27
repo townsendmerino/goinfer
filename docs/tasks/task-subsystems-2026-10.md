@@ -2343,6 +2343,35 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
     - `touched.py` is green, `cmd/gate`'s 79 s run included.
     - `scripts/test_changelog.py` passes 6 tests and runs in CI. The citation lint and `test_touched.py` pass.
 
+  **PW3 review of #330 (Gemini; coordinator 12:49; registered 2026-10-27 12:50 PDT by mac-ax01, before the code).** Four
+  findings, all real.
+  - (1) A `changelog.d/` change voids a quick-full record: `quickRecordVoidedBy` treats every path with a `/` as voiding.
+  - (2) An entry under `CHANGELOG.md`'s `[Unreleased]` passes `gate changelog` and is stranded at release.
+  - (3) Only a synthetic repo exercises `render`'s name and format rules; the live `changelog.d/` never meets them before a
+    release.
+  - (4) `render` accepts a file holding two entries.
+
+  Gate PW3-R330, one rule per finding, each shown red first and green after, with a test or a planted input:
+  - (1) `quickRecordVoidedBy("changelog.d/x.md")` is false, and `decoder/x.go` still voids.
+  - (2) `gate changelog` (and so `gate release`'s row) owes an entry left under `[Unreleased]`, and `scripts/changelog.py
+    release` refuses one.
+  - (3) CI runs `render` on the live tree.
+  - (4) `render` refuses a two-entry file.
+
+  The checks: `cmd/gate`'s tests, `scripts/test_changelog.py`, `touched.py` and the lints. Cost: seconds. Stopping rule: complete.
+
+  **PW3-R330 results (2026-10-27, mac-ax01): all four PASS, each shown red first.**
+  - (1) `quickRecordVoidedBy` read `changelog.d/…` as voiding; now inert, and `TestQuickRecord_whatVoidsARun` has the case. RELEASING.md
+    names the path.
+  - (2) A stray entry under `[Unreleased]` now owes in `gate changelog`. A plant in the real CHANGELOG read `OWED entry - **a
+    planted stray entry**`, and `TestUnreleasedStray` holds the rule. `release` refuses one too
+    (`test_release_refuses_an_entry_left_under_unreleased`).
+  - (3) CI's step now runs `render` on the live tree.
+  - (4) `render` refuses a two-entry file (`test_a_fragment_with_two_entries_is_refused`).
+
+  `gate changelog` on the clean tree reads exactly as before. `touched.py` is green (`cmd/gate` 81 s), and the lints and
+  `test_touched.py` pass.
+
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
 

@@ -10,7 +10,8 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import changelog  # noqa: E402
 
-HEAD = "# Changelog\n\nintro\n\n## [Unreleased]\n\npointer\n\n## [v0.1.0] — 2026-01-01\n\n- old\n"
+POINTER = "Each unreleased change is a file in changelog.d/.\n"
+HEAD = "# Changelog\n\nintro\n\n## [Unreleased]\n\n" + POINTER + "\n## [v0.1.0] — 2026-01-01\n\n- old\n"
 
 
 def repo(frags):
@@ -42,6 +43,18 @@ class Render(unittest.TestCase):
     def test_a_fragment_must_be_one_entry(self):
         with self.assertRaises(SystemExit):
             changelog.render(repo({"2026-10-27-x.md": "not a bullet\n"}))
+
+
+class Rules(unittest.TestCase):
+    def test_a_fragment_with_two_entries_is_refused(self):
+        with self.assertRaises(SystemExit):
+            changelog.render(repo({"2026-10-27-x.md": "- one\n- two\n"}))
+
+    def test_release_refuses_an_entry_left_under_unreleased(self):
+        d = repo({"2026-10-27-b.md": "- b\n"})
+        (d / "CHANGELOG.md").write_text(HEAD.replace(POINTER, POINTER + "- **stray**\n"))
+        with self.assertRaises(SystemExit):
+            changelog.release(d, "v0.2.0", "2026-10-27")
 
 
 class Release(unittest.TestCase):

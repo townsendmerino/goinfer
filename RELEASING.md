@@ -89,7 +89,7 @@ survives to a tag unless caught here.
    package's real-checkpoint tests and, for a change that does not touch `metal/`, `gpu/` or `cuda/`, that module's long kernel tests; it prints each as
    `DEFERRED`. `-full` runs them all against everything since the last tag. About 10 minutes on the Mac; night-queue it with the GPU gate. Each run writes a
    record, `docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json`: **commit it**. `gate release` has a row for it: per box (darwin, linux),
-   the newest record made at the same code decides, and only a `-full` PASS on a clean tree counts. A change under `docs/`, `site/` or `.github/`,
+   the newest record made at the same code decides, and only a `-full` PASS on a clean tree counts. A change under `docs/`, `site/`, `.github/` or `changelog.d/`,
    or to a top-level `.md` file, does not void a run; any other change does.
 9. **The CHANGELOG names what changed**: `go run ./cmd/gate changelog -section vX.Y.Z` (or without `-section` before the release's section is written; it then reads the entries in `changelog.d/`). It compares the tree with the newest v* tag and lists each
    new HTTP route (read from `serve`'s registrations with `go/ast`), new or removed `serve` flag (`docs/flags.meta.json`), new model family (`docs/capability-matrix.json`) and a moved aikit pin that the

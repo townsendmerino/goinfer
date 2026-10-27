@@ -283,6 +283,21 @@ func clSection(doc, name string) (string, bool) {
 // it, and scripts/changelog.py moves them into a release's section.
 const changelogFragmentDir = "changelog.d"
 
+// unreleasedPointerPrefix begins the one line CHANGELOG.md's [Unreleased] section holds, the pointer to changelogFragmentDir.
+const unreleasedPointerPrefix = "Each unreleased change is a file in"
+
+// unreleasedStray returns the [Unreleased] body's lines other than the pointer: an entry written there instead of in
+// changelogFragmentDir, which a release would leave behind.
+func unreleasedStray(body string) []string {
+	var out []string
+	for _, ln := range strings.Split(body, "\n") {
+		if strings.TrimSpace(ln) != "" && !strings.HasPrefix(ln, unreleasedPointerPrefix) {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
 // changelogFragments returns every unreleased entry in changelogFragmentDir, newest first as the release renders them.
 // A tree without the directory has none.
 func changelogFragments(src clSource) (string, error) {
@@ -385,7 +400,9 @@ func runChangelog(args []string, w io.Writer) int {
 		fmt.Fprintf(w, "gate changelog: CHANGELOG.md has no `## [%s]` section\n", *section)
 		return 2
 	}
+	var stray []string
 	if *section == "Unreleased" {
+		stray = unreleasedStray(sec)
 		frags, err := changelogFragments(headSrc)
 		if err != nil {
 			fmt.Fprintf(w, "gate changelog: %v\n", err)
@@ -422,6 +439,10 @@ func runChangelog(args []string, w io.Writer) int {
 		return false
 	}
 	owed := changelogOwed(bs, hs, sec, waived)
+	if len(stray) > 0 {
+		owed = append(owed, owedItem{Kind: "entry", Name: strings.TrimSpace(stray[0]),
+			Why: fmt.Sprintf("%d line(s) under CHANGELOG.md's [Unreleased], which holds only the pointer; move the entry into %s/", len(stray), changelogFragmentDir)})
+	}
 	fmt.Fprintf(w, "CHANGELOG [%s] against %s: %d routes, %d flags, %d families, aikit %s (was %s)\n", *section, *base, len(hs.Routes), len(hs.Flags), len(hs.Families), hs.Pin, bs.Pin)
 	for _, k := range sortedKeysBool(used) {
 		fmt.Fprintf(w, "  waived %s: %s\n", k, waivers[k])
