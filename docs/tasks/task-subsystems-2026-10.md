@@ -57,7 +57,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
-| SB4 | decision | 2026-10-27 (mbp2-sb4): `loaderIdentity` and `testdata/loader_identity.json` (amd64: 39 fixtures, 234 fixture-mode pairs; arm64 is a Mac's `-update`), read by `paritykey.LoaderDigest` and no key; LI1–LI6 PASS, each test shown red once; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights. Waits on how the identity enters the key (VK; recommended: a week-3 shadow after week 2) | §8 SB4; `docs/measurements/sb4-2026-10.md` |
+| SB4 | decision | 2026-10-27 (mbp2-sb4): `loaderIdentity` and `testdata/loader_identity.json` (amd64: 39 fixtures, 234 fixture-mode pairs; arm64 is a Mac's `-update`), read by `paritykey.LoaderDigest` and no key; LI1–LI6 PASS, each test shown red once; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights. LI7: 4 of 12 measured, 8 VOID; the supplement: 486 → 331 re-stalings, all fixture coverage. Waits on how the identity enters the key (VK; recommended: a week-3 shadow after week 2) | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
@@ -2279,6 +2279,10 @@ fixture.
 - LI4: a Phi-3 final-norm change moves `phi3-tiny` alone.
 - LI5, LI6: the walk panics on an unknown kind; no key moved (43 agree-fresh).
 - Every test was shown red once by a mutation, listed in the record.
+- LI7: 12 loader-only commits in VK0's window, not 30. As registered, 4 were measured and 8 were VOID: trees before giw
+  v16 hold a map field the walk refuses. A supplement decided after seeing that, not graded, measured all 12. No
+  fixture identity moved, and option A's rule takes the window's 486 re-stalings to 331, every one from a family
+  without a loader or GGUF fixture.
 - How the identity enters the key is VK's decision (the record's §4: a week-3 shadow after week 2 is recommended).
 
 ### SB5 — engine policies (sessions, prefix reuse, speculative decoding, sampling, constraints)
