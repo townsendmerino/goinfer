@@ -1602,6 +1602,10 @@ The `CLAUDE.md` merge step also took the coordinator's correction of 11:52: a se
 coordinator or Francis sets auto-merge, because a background session's own `gh pr merge` is denied as a merge without
 review and a session never routes around a denial.
 
+**Amended 2026-10-26 evening (Francis, 13:04 and 21:42).** A session's own `gh pr merge --auto`, run as a bare command
+while the checks are pending, passes the classifier (every PR from #274 on merged this way), so the session sets auto-merge
+itself right after `gh pr create`; only a plain merge without `--auto` stays forbidden. `CLAUDE.md` says so.
+
 ## 13. Order, sizes, and what each step is worth alone
 
 | order | items | worth alone |
