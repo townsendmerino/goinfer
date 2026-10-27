@@ -1,6 +1,10 @@
 package decoder
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/townsendmerino/goinfer/internal/mem"
+)
 
 // The KV precision a load delivers (docs/tasks/task-kv-precision-everywhere-2026-10.md, phase 0). ResolveKV is the one answer every
 // backend's build, the fit guard's pricing, the banner and serve's request log read; an explicit precision it cannot deliver refuses the
@@ -8,11 +12,11 @@ import "fmt"
 
 // Precisions a KV cache can hold. kvPrecNone is a model that keeps no attention KV (Mamba-only), which accepts any request.
 const (
-	kvPrecF32  = "f32"
-	kvPrecF16  = "f16"
-	kvPrecI8   = "i8"
-	kvPrecNone = "n/a"
-	kvPrecAuto = "auto"
+	kvPrecF32  = mem.KVF32
+	kvPrecF16  = mem.KVF16
+	kvPrecI8   = mem.KVI8
+	kvPrecNone = mem.KVNone
+	kvPrecAuto = mem.KVAuto
 )
 
 // kvExplicit reports whether req names a precision rather than leaving the pick to the backend.
@@ -55,110 +59,22 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 			return got, why
 		}
 	}
-	if arch != nil && arch.keepsNoKV() {
-		return kvPrecNone, "this model keeps no attention KV"
-	}
-	if backend == "" || backend == "cpu" {
-		return resolveCPUKV(arch, opts)
-	}
-	req := gpuKVRequested(opts)
 	o := opts
-	o.Backend = backend
-	switch backend {
-	case "cuda":
-		return resolveCUDAKV(arch, o, req)
-	case "metal":
-		if arch != nil && arch.mla != nil {
-			return kvPrecF32, "an MLA model keeps its latent cache in f32 on Metal"
-		}
-		switch req {
-		case kvPrecF32:
-			return kvPrecF32, ""
-		case kvPrecI8:
-			return kvPrecI8, ""
-		case kvPrecAuto:
-			return kvPrecF16, "auto is f16 on Metal"
-		}
-		return kvPrecF16, ""
+	if backend != "" && backend != "cpu" {
+		o.Backend = backend
 	}
-	// WebGPU and any other resident backend build what is asked (its family and prefill coverage is phase 5's survey); auto is f32.
-	switch req {
-	case kvPrecF16, kvPrecI8, kvPrecF32:
-		return req, ""
-	}
-	return kvPrecF32, "auto is f32 here"
-}
-
-func resolveCUDAKV(arch *Architecture, o Options, req string) (string, string) {
-	if arch == nil {
-		return kvPrecF32, "no architecture"
-	}
-	p := kvPolicies["cuda"]
-	switch req {
-	case kvPrecF32:
-		return kvPrecF32, ""
-	case kvPrecI8:
-		return kvPrecF32, "CUDA has no int8 KV cache until phase 2"
-	case kvPrecF16:
-		if o.Drafter {
-			return kvPrecF32, "the drafter needs f32 KV until phase 6"
-		}
-		if why := p.Decline(arch.kvFacts(), o); why != "" {
-			return kvPrecF32, why
-		}
-		return kvPrecF16, ""
-	}
-	// auto
-	switch {
-	case o.Drafter:
-		return kvPrecF32, "the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels"
-	case !p.Auto():
-		return kvPrecF32, "auto is f32 on CUDA in this build"
-	}
-	if why := p.Decline(arch.kvFacts(), o); why != "" {
-		return kvPrecF32, why
-	}
-	if p.AutoDecline != nil {
-		if why := p.AutoDecline(arch.kvFacts(), o); why != "" {
-			return kvPrecF32, why
+	q := mem.KVQuery{Backend: backend, Request: gpuKVRequested(opts), CPURequest: cpuKVRequested(opts),
+		CPUBatchOn: opts.CPUBatchDecode == CPUBatchOn, Drafter: o.Drafter, HasArch: arch != nil}
+	if arch != nil {
+		q.NoKV, q.MLA, q.MoE, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.MoE != nil, arch.ownLoopFamily()
+		q.CPUF16OK, q.CPUI8OK = arch.kvF16OK(), arch.kvInt8OK()
+		p := kvPolicies["cuda"]
+		q.CUDAPolicy = mem.KVPolicy{Decline: func() string { return p.Decline(arch.kvFacts(), o) }, Auto: p.Auto}
+		if p.AutoDecline != nil {
+			q.CUDAPolicy.AutoDecline = func() string { return p.AutoDecline(arch.kvFacts(), o) }
 		}
 	}
-	return kvPrecF16, "auto is f16 on CUDA for this family"
-}
-
-func resolveCPUKV(arch *Architecture, o Options) (string, string) {
-	req := cpuKVRequested(o)
-	if (req == kvPrecF16 || req == kvPrecI8) && o.CPUBatchDecode == CPUBatchOn {
-		return "", "CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4"
-	}
-	switch req {
-	case kvPrecF16:
-		if arch != nil && arch.kvF16OK() {
-			return kvPrecF16, ""
-		}
-		return kvPrecF32, cpuKVDecline(arch)
-	case kvPrecI8:
-		if arch != nil && arch.kvInt8OK() {
-			return kvPrecI8, ""
-		}
-		return kvPrecF32, cpuKVDecline(arch)
-	case kvPrecF32:
-		return kvPrecF32, ""
-	}
-	return kvPrecF32, "auto is f32 on the CPU"
-}
-
-// cpuKVDecline is why the CPU cache holds this model at f32 whatever is asked: the families whose attention is not the batched kernel.
-func cpuKVDecline(arch *Architecture) string {
-	switch {
-	case arch == nil:
-		return "no architecture"
-	case arch.MoE != nil:
-		return "MoE families keep an f32 CPU cache until phase 4"
-	case arch.ownLoopFamily():
-		return "this family's own forward loop keeps an f32 CPU cache until phase 4"
-	}
-	return "this family's attention keeps an f32 CPU cache until phase 4"
+	return mem.ResolveKV(q)
 }
 
 // KVRefusal is Load's refusal of an explicit KV precision the path the load resolved to cannot deliver (D1 of the task doc).

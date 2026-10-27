@@ -131,6 +131,7 @@ SCANS = [
     Scan("internal/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
     Scan("internal/mem", "TestImports", NT("internal/mem")),
     Scan("internal/mem", "TestSolve_pure", NT("internal/mem")),
+    Scan("internal/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/mem/probe", "TestProbeImports", NT("internal/mem/probe")),
     Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.
