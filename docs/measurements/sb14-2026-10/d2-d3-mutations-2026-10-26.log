@@ -1,0 +1,20 @@
+== mutation[d2a-rename-named-test] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: d2a-rename-named-test is falsifiable
+== mutation[d2b-invariant-without-test] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: d2b-invariant-without-test is falsifiable
+== mutation[d2c-test-in-wrong-package] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: d2c-test-in-wrong-package is falsifiable
+== mutation[d3a-arrow-not-regenerated] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: d3a-arrow-not-regenerated is falsifiable
+== mutation[d3b-appendix-edited-by-hand] ==
+  red under mutation (exit 1)
+  green after restore
+  PASS: d3b-appendix-edited-by-hand is falsifiable
