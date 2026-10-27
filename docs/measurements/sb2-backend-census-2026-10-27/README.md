@@ -38,6 +38,8 @@ nobara's device (RTX 2070 SUPER, driver 595.91.07, Vulkan), through the real `Bu
   changes what `DecodePath` reports.
 - Layer D cannot change: the decoder package does not link the gpu module.
 - The same probe, re-run on the refactored tree, gives a byte-identical file: 218 answers, with the real build on the device.
+- After main's buffer-lease change to the upload code (`c200a84de`, `94b301608`) was merged in, the probe gave the same file
+  again.
 
 ## Not yet censused
 

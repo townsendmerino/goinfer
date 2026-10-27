@@ -2317,8 +2317,10 @@ The static gates are censused now, on the same fixtures and option cells as laye
   quantized-KV decline. The plant turns exactly those 11 red. The census before the refactor (the real build on nobara's device)
   agrees with the one after it on all 218 cells, and the real build gives byte-identical answers before and after.
 - **B-metal.** The Mac session's commands are in `/tmp/sb2-metal.md`.
-- **Open: the ratchet.** `internal/layout:TestBackendTests_decoderImportsOnlyFall` refuses each layer's test file, since it
-  reaches decoder by design. The choice is Francis's.
+- **The ratchet.** `internal/layout:TestBackendTests_decoderImportsOnlyFall` exempts the three census files by exact path
+  (`decoderRatchetExempt`), and every backend's limits stay where they were. This was Francis's decision of 2026-10-27, option 1
+  of three, the others being to raise each limit by one or to offset each file by moving out a kernel test. Under any other
+  name the same file turns the ratchet red.
 - **Next layer.** The builds' memory and device reads, fed from the machine profiles.
 
 ### SB3 — family adapters

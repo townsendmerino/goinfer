@@ -30,27 +30,33 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse residency.go: %v", err)
 	}
-	var fn *ast.FuncDecl
+	// The decline is staticResidentDecline's, which BuildResident calls first; the context request is BuildResident's own.
+	funcs := map[string]string{}
 	ast.Inspect(af, func(n ast.Node) bool {
-		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "BuildResident" {
-			fn = d
+		if d, ok := n.(*ast.FuncDecl); ok && (d.Name.Name == "BuildResident" || d.Name.Name == "staticResidentDecline") {
+			var b strings.Builder
+			if err := printer.Fprint(&b, fset, d); err != nil {
+				t.Fatalf("print: %v", err)
+			}
+			funcs[d.Name.Name] = b.String()
 		}
 		return true
 	})
-	if fn == nil {
-		t.Fatal("BuildResident not found — this guard is watching nothing")
+	for _, name := range []string{"BuildResident", "staticResidentDecline"} {
+		if funcs[name] == "" {
+			t.Fatalf("%s not found — this guard is watching nothing", name)
+		}
 	}
-	var body strings.Builder
-	if err := printer.Fprint(&body, fset, fn); err != nil {
-		t.Fatalf("print: %v", err)
+	if !strings.Contains(funcs["BuildResident"], "staticResidentDecline(m)") {
+		t.Fatal("BuildResident does not call staticResidentDecline: the KV-precision decline below is not on the build path")
 	}
-	src := body.String()
+	src := funcs["staticResidentDecline"]
 
 	// The decline must consult all three family probes, or a family it misses keeps the old
 	// silent-wrong behaviour.
 	for _, probe := range []string{"MLAResidentParams", "Qwen35ResidentParams", "nemoOK"} {
 		if !strings.Contains(src, probe) {
-			t.Errorf("BuildResident does not consult %s when deciding the KV-precision "+
+			t.Errorf("staticResidentDecline does not consult %s when deciding the KV-precision "+
 				"decline; that family still allocates f32 under --kv i8/f16 (M-32)", probe)
 		}
 	}
@@ -59,7 +65,7 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	}
 	// And the -ctx request must be consulted (ResidentContextRequest), or -ctx would not change the
 	// allocated cap.
-	if !strings.Contains(src, "ResidentContextRequest") {
+	if !strings.Contains(funcs["BuildResident"], "ResidentContextRequest") {
 		t.Error("BuildResident ignores ResidentContextRequest: `serve -ctx` is silently a no-op " +
 			"on webgpu (M-32)")
 	}
