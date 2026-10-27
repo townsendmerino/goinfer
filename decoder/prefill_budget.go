@@ -1,10 +1,12 @@
 package decoder
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // prefillEnters counts every call to (*Model).NewCache — the actual KV allocation a generation
@@ -16,7 +18,7 @@ var prefillEnters atomic.Int64
 // prefillAvailFraction is the share of currently available memory a request's own KV+scratch may consume. It has the same value as
 // fitguard.go's fitMemFraction, inherited rather than independently measured for this context (available-RAM headroom, not a
 // fraction of total RAM); it has no measurement of its own.
-const prefillAvailFraction = fitMemFraction
+const prefillAvailFraction = mem.WeightsFraction
 
 // availProbeTTL rate-limits the currently-available memory probe (hostRAMAvailable: a Mach call on darwin, a /proc/meminfo read on
 // linux), which AdmitPrefillMemory runs for every request that reaches prefill. Available memory changes on the timescale of other
@@ -83,7 +85,6 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 	if avail <= 0 {
 		return nil // unknown ⇒ proceed, the same principle the load-time guard uses
 	}
-	remaining := int64(float64(avail) * prefillAvailFraction / float64(max(1, share)))
 
 	cfg := m.Config()
 	positions := promptTokens + maxTokens
@@ -102,19 +103,12 @@ func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPat
 			scratch = own
 		}
 	}
-	need := kv + scratch
-	if need <= remaining {
+	msg := mem.AdmitRequest(mem.Request{KVBytes: kv, ScratchBytes: scratch, PromptTokens: promptTokens, MaxTokens: maxTokens, Share: share},
+		mem.HostMachine(avail), mem.DefaultPolicy())
+	if msg == "" {
 		return nil
 	}
-	return fmt.Errorf(
-		"decoder: this request needs ~%.2f GB (KV %.2f GB + prefill scratch %.2f GB for %d prompt + %d max_tokens positions) "+
-			"but only %.2f GB of this machine's %.2f GB currently-available memory would be left as a safety margin — "+
-			"rejected before prefill rather than paging.\n"+
-			"  Send a smaller prompt, lower max_tokens, pass -ctx to cap the context, close other "+
-			"applications to free memory, or -stream-weights to free more of the budget for KV.\n"+
-			"  Set GOINFER_NO_FIT_GUARD=1 to allow it anyway if this machine really has the room",
-		float64(need)/fitGB, float64(kv)/fitGB, float64(scratch)/fitGB, promptTokens, maxTokens,
-		float64(remaining)/fitGB, float64(avail)/fitGB)
+	return errors.New(msg)
 }
 
 // FitBudgetSummary reports the numbers the load banner states: the context KV is priced at (what the load-time guard actually
@@ -135,7 +129,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 		return 0, 0, 0, 0, false
 	}
 	cfg := m.Config()
-	budgetBytes = int64(float64(avail) * fitMemFraction)
+	budgetBytes = mem.HostBudget(mem.HostMachine(avail), mem.DefaultPolicy())
 	// A resident holds its own KV: its capacity, at the precision its backend allocates (Metal: f16 whatever -kv says), not the CPU's
 	// per-request ceiling over the model's whole window, which badly overstates it.
 	if capper, ok := m.resident.(ResidentCapped); ok && m.be != nil {

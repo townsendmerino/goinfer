@@ -13,6 +13,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // The load-time fit guard: refuse a model that cannot fit in RAM BEFORE allocating it, naming the numbers and the flag that fixes it (an
@@ -31,7 +33,7 @@ const fitMemFraction = WeightsMemFraction
 // fitWarnRatio is how close to the budget the load has to come before the banner prints the
 // arithmetic unasked. At 0.75 the message appears within 25% of the refusal, so the user sees the
 // cliff on the run BEFORE the one that steps off it.
-const fitWarnRatio = 0.75
+const fitWarnRatio = mem.WarnRatio
 
 // hostRAM is indirected so a test can inject a machine's worth of RAM instead of needing one.
 var hostRAM = HostRAMBytes
@@ -43,7 +45,7 @@ var hostRAMAvailable = HostRAMAvailableBytes
 // ctxFloor is the smallest context this guard will auto-pin down to when the caller did not pin one and the model's own maximum does not
 // fit; below it a context is not useful enough to hand a user silently, so refuse instead. A product choice, not a measured floor, and
 // separate from Plan's ctxPlanFloor.
-const ctxFloor = 2048
+const ctxFloor = mem.CtxFloor
 
 // fitCheck is the arithmetic, separated from every source of it so it can be driven with the
 // numbers from a measurement rather than a 21 GB checkpoint.
@@ -105,26 +107,31 @@ type fitCheck struct {
 	isGGUF bool
 }
 
-func (f fitCheck) need() int64 {
-	n := max(f.cudaBuildBytes, f.weightBytes+f.kvBytes+f.srcFileBytes)
-	if f.packBytes > 0 {
-		n = max(n, f.weightBytes+f.packBytes)
-	}
-	return n
-}
-func (f fitCheck) budget() int64 { return int64(float64(f.availBytes) * fitMemFraction) }
+func (f fitCheck) need() int64   { return f.check().Need() }
+func (f fitCheck) budget() int64 { return f.check().Budget() }
 
 // known reports whether both sides of the comparison are real numbers. Anything else proceeds.
-func (f fitCheck) known() bool { return f.availBytes > 0 && f.weightBytes > 0 }
+func (f fitCheck) known() bool { return f.check().Known() }
 
-func (f fitCheck) fits() bool { return !f.known() || f.need() <= f.budget() }
+func (f fitCheck) fits() bool { return f.check().Fits() }
 
 // ratio is need/budget — 1.0 is exactly at the refusal.
-func (f fitCheck) ratio() float64 {
-	if !f.known() || f.budget() <= 0 {
-		return 0
+func (f fitCheck) ratio() float64 { return f.check().Ratio() }
+
+// check is f as internal/mem's resident guard reads it: the priced terms, the machine's available memory and the policy.
+// The int4-against-int8 comparison a refusal's last line reads is measured only for a load not already at int4.
+func (f fitCheck) check() mem.HostCheck {
+	l := mem.HostLoad{Name: f.name, Quant: f.quant, WeightBytes: f.weightBytes, KVBytes: f.kvBytes, SourceBytes: f.srcFileBytes,
+		CUDABuildBytes: f.cudaBuildBytes, ExpertBytes: f.expertBytes, PackBytes: f.packBytes, DeviceKV: f.deviceKV,
+		Ctx: f.effCtx, Pinned: f.pinned, NoGuard: f.noGuard, GGUF: f.isGGUF, DenseStreamable: f.denseStreamable}
+	if f.quant != "int4" && f.quant != "int4mix" {
+		l.Int4Smaller = quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8)
 	}
-	return float64(f.need()) / float64(f.budget())
+	if cfg, f16, i8 := f.cfg, f.kvF16, f.kvI8; cfg != nil {
+		l.MaxCtx = cfg.MaxPositions
+		l.KV = func(ctx int) int64 { return estimateKVBytes(cfg, ctx, f16, i8) }
+	}
+	return mem.NewHostCheck(l, mem.HostMachine(f.availBytes), mem.DefaultPolicy())
 }
 
 const fitGB = 1 << 30
@@ -132,61 +139,11 @@ const fitGB = 1 << 30
 // cudaPackStageBytes is the staging memory cuda/pack_stream.go streams packed weights through: up to four blocks of 8 MiB of words with their scale scratch (20 MiB each).
 const cudaPackStageBytes = 80 << 20
 
-// arithmetic is the one line both the warning and the refusal share, so the two can never quote
-// different numbers for the same load.
-func (f fitCheck) arithmetic() string {
-	var b strings.Builder
-	if f.cudaBuildBytes > f.weightBytes+f.kvBytes+f.srcFileBytes {
-		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory while building the CUDA expert cache (%.1f GB weights + %.1f GB packed copy + %.1f GB pinned copy of the experts)",
-			f.name, float64(f.cudaBuildBytes)/fitGB, float64(f.weightBytes)/fitGB, float64(f.weightBytes)/fitGB, float64(f.expertBytes)/fitGB)
-		fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
-			float64(f.availBytes)/fitGB, float64(f.budget())/fitGB, fitMemFraction*100)
-		return b.String()
-	}
-	fmt.Fprintf(&b, "%s needs ~%.1f GB resident at quant %s", f.name, float64(f.weightBytes)/fitGB, f.quant)
-	if f.deviceKV {
-		b.WriteString(" (its KV is in VRAM, which the context plan sizes)")
-	}
-	if f.kvBytes > 0 {
-		fmt.Fprintf(&b, " + %.1f GB KV", float64(f.kvBytes)/fitGB)
-	}
-	if f.srcFileBytes > 0 {
-		// MEASURED (see srcFileBytes's own doc comment): the on-disk .gguf stays mmap-resident for
-		// the whole load, alongside the resident weights being built from it — named explicitly so
-		// this doesn't read as a doubled weight estimate.
-		fmt.Fprintf(&b, " + %.1f GB reading the checkpoint (the .gguf stays mapped resident for the whole load)", float64(f.srcFileBytes)/fitGB)
-	}
-	if f.kvBytes > 0 || f.srcFileBytes > 0 {
-		fmt.Fprintf(&b, " = %.1f GB", float64(f.need())/fitGB)
-	}
-	fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
-		float64(f.availBytes)/fitGB, float64(f.budget())/fitGB, fitMemFraction*100)
-	return b.String()
-}
+// arithmetic is the one line both the warning and the refusal share (mem.HostCheck.Arithmetic).
+func (f fitCheck) arithmetic() string { return f.check().Arithmetic() }
 
 // warning is what the banner prints when the load fits but only just.
-func (f fitCheck) warning() string {
-	return fmt.Sprintf("decoder: fit is tight — %s (%.0f%% of budget). %s",
-		f.arithmetic(), f.ratio()*100, f.remedy())
-}
-
-// remedy names the way out and what it will do, because the user who reads this message is by definition the one who did not know the
-// option existed: -stream-weights for a .gguf source. For a safetensors directory -stream-weights does nothing (serve's gates are
-// .gguf-suffix-only and decoder.Load ignores Options.StreamWeights for a directory), and recommending it gives an identical refusal after
-// the user did as told; the remedy there is a one-time .giw build with cmd/prequant, which streams one layer at a time
-// (StreamTranscodeDir) and no longer hits this guard. GOINFER_NO_FIT_GUARD=1 stays in that text for the case the 70% margin is being
-// conservative about.
-func (f fitCheck) remedy() string {
-	if f.isGGUF {
-		return "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, " +
-			"then pages weights out of it on demand instead of holding them all resident."
-	}
-	return "This is a safetensors checkpoint — -stream-weights only helps a .gguf source. Build a .giw " +
-		"from it once with cmd/prequant (-quant <q> -o <name>.giw <dir>), which streams one layer at a time " +
-		"and does not need this load's memory, then load the .giw (goinfer-serve and goinfer-chat do this " +
-		"for you unless --direct-load). If you believe this machine can hold it as it is (this guard's 70% " +
-		"margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway."
-}
+func (f fitCheck) warning() string { return f.check().Warning() }
 
 // ErrWontFitResident is wrapped into every load-time fit-guard refusal (declineErr), so a caller
 // can detect the refusal with errors.Is/errors.As instead of parsing the message text — e.g. to
@@ -225,23 +182,14 @@ func denseStreamable(cfg *Config) bool {
 
 // declineErr is the refusal. It is an error, not a warning, because the measured alternative is a
 // machine that stops responding: the user cannot read a warning on a box that is thrashing.
-func (f fitCheck) declineErr() *FitDeclineError {
-	// Suggesting a smaller quant to someone already at int4 is noise, and noise in a refusal is how the useful line gets skipped. And int4 is
-	// not always the smaller one: where the loader keeps a repacked second copy of the nibbles (arm64 with dotprod, AVX2 without VNNI) int4
-	// costs more resident memory than int8, so the line is derived from the same measured bytes-per-element as the arithmetic
-	// (quantBytesPerElem) rather than from the nominal bit width.
-	alt := "  Or run a smaller model.\n"
-	if f.quant != "int4" && f.quant != "int4mix" &&
-		quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8) {
-		alt = "  Or run a smaller model, or --quant int4, which is smaller on this machine.\n"
+func (f fitCheck) declineErr() *FitDeclineError { return fitDecline(f.check().Decline()) }
+
+// fitDecline is mem's refusal as the error Load returns.
+func fitDecline(d *mem.Decline) *FitDeclineError {
+	if d == nil {
+		return nil
 	}
-	msg := fmt.Sprintf("decoder: %s.\n"+
-		"  Loading it would page to swap rather than run, so it was NOT loaded.\n"+
-		"  %s\n"+
-		"%s"+
-		"  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it",
-		f.arithmetic(), f.remedy(), alt)
-	return &FitDeclineError{msg: msg, DenseStreamable: f.denseStreamable}
+	return &FitDeclineError{msg: d.Msg, DenseStreamable: d.DenseStreamable}
 }
 
 // guardFit runs the check. It returns the context to PIN (0 meaning leave the caller's request alone, nonzero meaning the guard chose this
@@ -253,35 +201,29 @@ func (f fitCheck) declineErr() *FitDeclineError {
 // auto-pinned to it, reported, and proceeds; an unpinned load that does not fit even at ctxFloor is refused. KV is always priced, at the
 // model's own maximum when nothing is pinned, because nothing else bounds the CPU cache's growth.
 func guardFit(f fitCheck) (int, error) {
-	ctx, decline := f.decide()
-	switch {
-	case decline != nil:
-		return 0, decline
-	case ctx > 0:
-		fmt.Fprintln(os.Stderr, f.capNote(ctx))
-	case f.known() && !f.noGuard && f.ratio() >= fitWarnRatio:
-		fmt.Fprintln(os.Stderr, f.warning())
+	c := f.check()
+	fit := mem.SolveHost(c.HostLoad, mem.HostMachine(c.Available), c.Policy)
+	if fit.Decline != nil {
+		return 0, fitDecline(fit.Decline)
 	}
-	return ctx, nil
+	if fit.Line != "" {
+		fmt.Fprintln(os.Stderr, fit.Line)
+	}
+	return fit.PinCtx, nil
 }
 
 // decide is guardFit's decision without its stderr lines, for a caller that reports it instead (FitQuery): the context to
 // pin (0 = leave the request alone), or the refusal.
 func (f fitCheck) decide() (pinCtx int, decline *FitDeclineError) {
-	if f.noGuard || !f.known() || f.fits() {
-		return 0, nil
-	}
-	if ctx, ok := f.smallerFittingContext(); ok {
-		return ctx, nil
-	}
-	return 0, f.declineErr()
+	pin, d := f.check().Decide()
+	return pin, fitDecline(d)
 }
 
 // giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/tasks/task-never-swap-2026-09.md, item 1).
 // A .giw load's weights are file-backed (zero-copy aliases, evictable under memory pressure), so it deliberately does not reuse
 // fitMemFraction's 70% conservatism, which is sized for a load that commits anonymous memory for its weights; only KV and scratch are real
 // anonymous cost here.
-const giwMemMargin = 1 << 30 // 1 GB
+const giwMemMargin = mem.GIWMargin // 1 GB
 
 // guardGIWFit is the load-time check for a .giw load: refuse, or auto-pin to a smaller context, when KV + scratch would exceed CURRENTLY
 // AVAILABLE memory minus giwMemMargin. Same return shape as guardFit (0 = no pin needed). Every unknown proceeds, as in guardFit: no
@@ -324,60 +266,16 @@ func decideGIWFit(cfg *Config, opts Options) giwFit {
 	if avail <= 0 {
 		return d
 	}
-	budget := max(avail-giwMemMargin, 0)
 	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling
 	if !ok {
 		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
-	pinned, effCtx, kvF16, kvI8 := p.pinned, p.ctx, p.kvF16, p.kvI8
-	pinnedExperts := giwPinnedExpertBytes(cfg, opts)
-	what := "KV + scratch"
-	if pinnedExperts > 0 {
-		what += " + the pinned MoE expert copy"
-	}
-	needAt := func(ctx int) int64 {
-		if p.deviceKV {
-			return pinnedExperts // CUDA-resident: the KV and the prefill scratch are VRAM, which the context plan sizes
-		}
-		return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget + pinnedExperts
-	}
-	need := needAt(effCtx)
-	d = giwFit{known: true, avail: avail, budget: budget, need: need, ctx: effCtx, pinned: pinned, pinnedExperts: pinnedExperts}
-	if need <= budget {
-		return d
-	}
-	if pinned {
-		d.err = fmt.Errorf(
-			"decoder: pinned context %d needs ~%.2f GB (%s) but only %.2f GB of this "+
-				"machine's %.2f GB currently-available memory would be left as a %.0f GB safety "+
-				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			effCtx, float64(need)/fitGB, what, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
-		return d
-	}
-	if floorNeed := needAt(ctxFloor); floorNeed > budget {
-		d.ctx, d.need = ctxFloor, floorNeed
-		d.err = fmt.Errorf(
-			"decoder: this model needs ~%.2f GB (%s) even at the %d-token floor, but only "+
-				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
-				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			float64(floorNeed)/fitGB, what, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
-		return d
-	}
-	lo, hi := ctxFloor, effCtx
-	for lo < hi {
-		mid := lo + (hi-lo+1)/2
-		if needAt(mid) <= budget {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	d.pinCtx, d.ctx, d.need = lo, lo, needAt(lo)
-	d.note = fmt.Sprintf(
-		"decoder: .giw context capped at %d (model allows %d) so that KV+scratch fits: needs ~%.2f GB "+
-			"of %.2f GB available (%.0f GB margin) — pass -ctx to choose, or free memory to lift\n",
-		lo, effCtx, float64(needAt(lo))/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
-	return d
+	kvF16, kvI8 := p.kvF16, p.kvI8
+	r := mem.SolveGIW(mem.GIWLoad{Ctx: p.ctx, Pinned: p.pinned, DeviceKV: p.deviceKV, Scratch: prefillAttnScratchBudget,
+		PinnedExperts: giwPinnedExpertBytes(cfg, opts), KV: func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) }},
+		mem.HostMachine(avail), mem.DefaultPolicy())
+	return giwFit{known: r.Known, avail: r.Avail, budget: r.Budget, need: r.Need, pinnedExperts: r.PinnedExperts, ctx: r.Ctx,
+		pinned: r.Pinned, pinCtx: r.PinCtx, err: r.Err, note: r.Note}
 }
 
 // giwPinnedExpertBytes is the host memory a CUDA C' expert cache (--moe-cache-experts) holds for a .giw load that will be resident: every routed
@@ -406,8 +304,8 @@ func resolveWeightCacheBudget(requested int64) int64 {
 	if requested > 0 {
 		return requested
 	}
-	if avail := hostRAMAvailable(); avail > 0 {
-		return avail / 2
+	if b := mem.WeightCacheBudget(0, mem.HostMachine(hostRAMAvailable())); b > 0 {
+		return b
 	}
 	fmt.Fprintln(os.Stderr, "decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)")
 	return 0
@@ -956,60 +854,13 @@ func cudaWillBeResident(cfg *Config, opts Options) bool {
 	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"])) == 0
 }
 
-// smallerFittingContext solves for the largest context <= f.effCtx whose weights+KV fit the budget, floored at ctxFloor. Only meaningful
-// when the caller did not pin a context: a pin is an explicit request and is refused outright (see guardFit). estimateKVBytes is not
-// exactly linear in ctx once a sliding-window layer's cost flattens past its window, but it is monotonic non-decreasing, so a binary
-// search finds the largest fitting ctx exactly.
-func (f fitCheck) smallerFittingContext() (int, bool) {
-	if f.pinned || f.cfg == nil {
-		return 0, false
-	}
-	// The CUDA build peak has no KV in it, so a smaller context cannot bring it under the budget.
-	if f.cudaBuildBytes > f.budget() {
-		return 0, false
-	}
-	// srcFileBytes is a fixed term like weightBytes: it does not shrink with ctx, so it comes out of the budget too, or a load whose
-	// weights+file already exceed the budget would be offered a smaller-context "fit" that only re-prices KV.
-	available := f.budget() - f.weightBytes - f.srcFileBytes
-	if available <= 0 {
-		return 0, false
-	}
-	fits := func(ctx int) bool { return estimateKVBytes(f.cfg, ctx, f.kvF16, f.kvI8) <= available }
-	if !fits(ctxFloor) {
-		return 0, false
-	}
-	if fits(f.effCtx) {
-		// KV genuinely costs nothing extra all the way to effCtx (e.g. an all-recurrent model with
-		// no attention layers at all) — the caller only reaches this function when the ORIGINAL
-		// fits() was false, so this is a defensive fallback, not the expected common case.
-		return f.effCtx, true
-	}
-	lo, hi := ctxFloor, f.effCtx
-	for lo < hi {
-		mid := lo + (hi-lo+1)/2
-		if fits(mid) {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	return lo, true
-}
+// smallerFittingContext is the largest context <= f.effCtx whose weights+KV fit the budget, floored at ctxFloor; false for a pin, an
+// unread config, or a load that does not fit even at the floor (mem.HostCheck.SmallerFittingContext).
+func (f fitCheck) smallerFittingContext() (int, bool) { return f.check().SmallerFittingContext() }
 
-// capNote is the banner line printed when the guard auto-pins a smaller context — the default
-// outcome for an unpinned load that would not fit at the model's own maximum, because it leaves
-// the user with a working server and a visible limit rather than a refusal on the model the
-// README told them to pull.
-func (f fitCheck) capNote(ctx int) string {
-	kv := estimateKVBytes(f.cfg, ctx, f.kvF16, f.kvI8)
-	maxCtx := 0
-	if f.cfg != nil {
-		maxCtx = f.cfg.MaxPositions
-	}
-	return fmt.Sprintf(
-		"decoder: context capped at %d (model allows %d) so that KV fits: weights %.1f GB + KV %.1f GB of budget %.1f GB — pass -ctx to choose, or -stream-weights to lift",
-		ctx, maxCtx, float64(f.weightBytes)/fitGB, float64(kv)/fitGB, float64(f.budget())/fitGB)
-}
+// capNote is the banner line printed when the guard auto-pins a smaller context: a working server and a visible limit, rather than
+// a refusal on the model the README told the user to pull.
+func (f fitCheck) capNote(ctx int) string { return f.check().CapNote(ctx) }
 
 // weightAllocs counts entries into loadWeights — the call that turns a checkpoint into resident
 // heap. It exists so "the guard refused BEFORE allocating" is an assertion rather than a

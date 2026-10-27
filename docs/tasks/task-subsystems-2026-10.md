@@ -831,6 +831,17 @@ goes through the shared probe seam and runs in parallel like D1, D3 and D4.
 | G-MM1-S5 the existing tests | the decoder's fit tests pass unchanged: `fitguard*_test.go`, `giwfitguard_test.go`, `fitguard_giw_pinned_test.go`, `prefill_budget_test.go`, `memprobe_test.go`, `fitquery*_test.go`; the `cuda`, `metal` and `gpu` modules build and vet with their tags | — | runs to completion | about a minute |
 | G-MM1-S6 builds | build and vet for linux, darwin and windows; CI's pinned staticcheck after its canary goes red; gofmt; `touched.py`; the parity manifest stays fresh, or is refreshed once with its goldens before the push | the staticcheck canary does not go red | runs to completion | about two minutes |
 
+**MM1a read, 2026-10-26 (nobara): all six pass.** G-MM1-S1: `TestDecisionCensus` passes without `-census.update`, every group
+byte for byte, and so does the second-process test (16.5 and 16.8 s). G-MM1-S2: `internal/mem` imports the standard library only.
+G-MM1-S3: 10,000 generated inputs give the same answers twice in one goroutine and in each of 16 at once, and the package
+declares no variable. G-MM1-S4: over a 13-reading ladder, no decision gets worse with more memory. It goes red on a planted
+defect (a refusal above 64 GiB), on its first input. G-MM1-S5: the 59 decoder fit tests named in the gate pass unchanged, as do
+`internal/fitcmd` and `internal/swapguard`; `cuda`, `metal` and `gpu` vet with their tags. G-MM1-S6: vet on linux, darwin and
+windows; the pinned staticcheck after its canary went red (it found `fitCheck.remedy` left unused, now removed); gofmt;
+`touched.py`; the citation lint. The parity manifest stayed fresh. The decoder keeps `fitCheck`, `giwFit` and
+`FitDeclineError` as adapters: a `fitCheck` becomes a `mem.HostCheck` (its KV as a curve over `estimateKVBytes`), and
+`guardFit`, `decideGIWFit`, `AdmitPrefillMemoryShare`, `FitBudgetSummary` and `resolveWeightCacheBudget` call `mem`.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
