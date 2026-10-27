@@ -322,9 +322,13 @@ func ReadLoaderTable(src Source) (map[string]map[string]map[string]string, error
 }
 
 // LoaderDigest is the digest of the fixtures' entries in the loader table, for every GOARCH in it: each GOARCH in sorted
-// order, then for each fixture in sorted order its "fixture mode=digest" lines in sorted mode order. A fixture with no
-// mode in a GOARCH, or a table with no GOARCH, is an error.
+// order, then for each fixture in sorted order its "fixture mode=digest" lines in sorted mode order. An empty fixture list,
+// a fixture with no mode in a GOARCH, or a table with no GOARCH, is an error. Which GOARCHes the table must hold is the
+// key's rule to set, not this digest's.
 func LoaderDigest(fixtures []string, tab map[string]map[string]map[string]string) (string, error) {
+	if len(fixtures) == 0 {
+		return "", fmt.Errorf("no fixtures: an empty list cannot stand for the loaders")
+	}
 	if len(tab) == 0 {
 		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the loaders", LoaderTablePath)
 	}

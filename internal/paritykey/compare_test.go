@@ -213,6 +213,9 @@ func TestLoaderDigest(t *testing.T) {
 	if _, err := LoaderDigest([]string{"a", "c"}, tab); err == nil {
 		t.Error("c has no arm64 entry, and the digest took it")
 	}
+	if _, err := LoaderDigest(nil, tab); err == nil {
+		t.Error("an empty fixture list gave a digest")
+	}
 	for _, empty := range []map[string]map[string]map[string]string{nil, {}} {
 		if _, err := LoaderDigest([]string{"a"}, empty); err == nil {
 			t.Error("an empty table gave a digest")
@@ -228,11 +231,16 @@ func TestLoaderDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	checked, gguf := 0, 0
 	for name, fam := range m.Families {
 		var withWeights []string
 		for _, p := range fam.Programs {
 			if _, err := os.Stat(filepath.Join("../..", p, "model.safetensors")); err == nil {
 				withWeights = append(withWeights, p)
+			}
+			if _, err := os.Stat(filepath.Join("../..", p+".gguf")); err == nil {
+				withWeights = append(withWeights, p+".gguf")
+				gguf++
 			}
 		}
 		if len(withWeights) == 0 {
@@ -241,5 +249,10 @@ func TestLoaderDigest(t *testing.T) {
 		if _, err := LoaderDigest(withWeights, real); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
+		checked++
 	}
+	if checked == 0 || gguf == 0 {
+		t.Fatalf("checked %d families, %d GGUF fixtures: the committed table was not exercised", checked, gguf)
+	}
+	t.Logf("%d families, %d of their fixtures GGUF", checked, gguf)
 }

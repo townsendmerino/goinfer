@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -15,33 +16,57 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 const loaderIdentityPath = "../testdata/loader_identity.json"
 
-// loaderModes is parseQuant's modes, by the names Options.Quant takes.
-var loaderModes = []string{"f32", "int8", "int8int8", "int4", "int4mix", "q4k", "bf16", "f16"}
+// loaderQuants is parseQuant's modes, by the names Options.Quant takes.
+var loaderQuants = []string{"f32", "int8", "int8int8", "int4", "int4mix", "q4k", "bf16", "f16"}
+
+// loaderFlags is the backend flag sets Load passes loadWeights (wantsCanonicalInt4, wantsRow4Fallback): the CPU backend's
+// (no canonical int4 kept, row4 allowed), a device backend's other than Metal (canonical kept), and Metal's (canonical
+// kept, no row4). A mode is a quant name, then the flag set's suffix.
+var loaderFlags = []struct {
+	suffix                  string
+	needCanonical, skipRow4 bool
+}{{"", false, false}, {"/canonical", true, false}, {"/canonical/norow4", true, true}}
+
+// loaderModes is every quant under every flag set.
+var loaderModes = func() []string {
+	var out []string
+	for _, q := range loaderQuants {
+		for _, f := range loaderFlags {
+			out = append(out, q+f.suffix)
+		}
+	}
+	return out
+}()
 
 // loaderFixtures lists every committed loader fixture, relative to the repository root: each testdata/*/ holding a
-// config.json and a model.safetensors, and each testdata/*.gguf.
+// config.json and a model.safetensors, and each testdata/*.gguf, as git ls-files names them.
 func loaderFixtures(t *testing.T) []string {
 	t.Helper()
-	st, _ := filepath.Glob("../testdata/*/model.safetensors")
-	gg, _ := filepath.Glob("../testdata/*.gguf")
+	ls, err := exec.Command("git", "ls-files", "../testdata").Output()
+	if err != nil {
+		t.Fatalf("git ls-files: %v", err)
+	}
+	files := map[string]bool{}
+	for _, f := range strings.Split(strings.TrimSpace(string(ls)), "\n") {
+		files["testdata/"+strings.TrimPrefix(f, "../testdata/")] = true
+	}
 	var out []string
-	for _, p := range append(st, gg...) {
-		if exec.Command("git", "check-ignore", "-q", p).Run() == nil {
-			continue
+	for f := range files {
+		dir, base := path.Split(f)
+		switch {
+		case dir == "testdata/" && strings.HasSuffix(base, ".gguf"):
+			out = append(out, f)
+		case base == "model.safetensors" && strings.Count(f, "/") == 2 && files[dir+"config.json"]:
+			out = append(out, strings.TrimSuffix(dir, "/"))
 		}
-		if strings.HasSuffix(p, ".safetensors") {
-			if _, err := os.Stat(filepath.Join(filepath.Dir(p), "config.json")); err != nil {
-				continue
-			}
-			p = filepath.Dir(p)
-		}
-		out = append(out, strings.TrimPrefix(filepath.ToSlash(p), "../"))
 	}
 	if len(out) == 0 {
 		t.Fatal("no loader fixture found: the walk covered nothing")
@@ -50,16 +75,25 @@ func loaderFixtures(t *testing.T) []string {
 	return out
 }
 
-// loadForIdentity loads path in mode with the CPU backend's flags: no canonical int4 kept, row4 allowed.
-func loadForIdentity(path, mode string) (*Weights, error) {
-	q, err := parseQuant(mode)
+// loadForIdentity loads p in mode (loaderModes) with that mode's backend flags.
+func loadForIdentity(p, mode string) (*Weights, error) {
+	name, suffix, _ := strings.Cut(mode, "/")
+	if suffix != "" {
+		suffix = "/" + suffix
+	}
+	q, err := parseQuant(name)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkHalf16Load(q, path, "cpu"); err != nil {
+	if err := checkHalf16Load(q, p, "cpu"); err != nil {
 		return nil, err
 	}
-	return loadWeights(path, q, false, false, false, nil, nil)
+	for _, f := range loaderFlags {
+		if f.suffix == suffix {
+			return loadWeights(p, q, false, f.needCanonical, f.skipRow4, nil, nil)
+		}
+	}
+	return nil, fmt.Errorf("no flag set %q", suffix)
 }
 
 // TestLoaderIdentity_table is SB4's LI1 and the table check: every fixture and mode that loads, loaded twice, gives
@@ -141,13 +175,15 @@ func TestLoaderIdentity_table(t *testing.T) {
 // TestLoaderIdentity_giwRoundTrip is SB4's LI3(a): for every fixture and every mode the .giw holds, the weights read back
 // from their .giw (a reader that shares no read path with the safetensors and GGUF loaders) have the direct load's
 // identity. bf16 and f16 are left out: the .giw has no form for them, and the entry points refuse them before writing
-// one (stream_dir.go, sidecar.go), while SerializeWeights itself writes a blob its reader then refuses.
+// one (stream_dir.go, sidecar.go), while SerializeWeights itself writes a blob its reader then refuses. Where the CPU
+// flags build an int4 tensor repacked-only (row4, off amd64), the writer refuses it by design; that refusal is accepted
+// only in a CPU-flag mode, and the same quant loaded with the canonical copy kept must then round-trip in its place.
 func TestLoaderIdentity_giwRoundTrip(t *testing.T) {
-	checked := 0
+	checked := map[string]bool{}
 	var refused []string
 	for _, fx := range loaderFixtures(t) {
 		for _, mode := range loaderModes {
-			if q, _ := parseQuant(mode); q.half16() {
+			if q, _ := parseQuant(strings.Split(mode, "/")[0]); q.half16() {
 				continue
 			}
 			w, err := loadForIdentity(filepath.Join("..", fx), mode)
@@ -156,8 +192,7 @@ func TestLoaderIdentity_giwRoundTrip(t *testing.T) {
 			}
 			b, err := SerializeWeights(w, "sb4")
 			if err != nil {
-				var se *SerializeError
-				if !errors.As(err, &se) {
+				if strings.Contains(mode, "/") || !strings.Contains(err.Error(), "holds only its row4 layout") {
 					t.Errorf("%s %s: serialize: %v", fx, mode, err)
 				}
 				refused = append(refused, fx+" "+mode)
@@ -171,13 +206,19 @@ func TestLoaderIdentity_giwRoundTrip(t *testing.T) {
 			if d := loaderIdentityDiff(loaderIdentity(w), loaderIdentity(w2)); len(d) > 0 {
 				t.Errorf("%s %s: the .giw round trip moved %v", fx, mode, d)
 			}
-			checked++
+			checked[fx+" "+mode] = true
 		}
 	}
-	if checked == 0 {
+	for _, r := range refused {
+		if !checked[r+"/canonical"] {
+			t.Errorf("%s: refused as row4-only, and its /canonical load did not round-trip in its place", r)
+		}
+	}
+	if len(checked) == 0 {
 		t.Fatal("no fixture round-tripped: nothing compared")
 	}
-	t.Logf("%d fixture-mode pairs round-tripped; %d refused by the .giw: %v", checked, len(refused), refused)
+	t.Logf("%d fixture-mode pairs round-tripped; %d CPU-flag pairs refused as row4-only, each covered by its /canonical load: %v",
+		len(checked), len(refused), refused)
 }
 
 // TestLoaderIdentity_oneByte is SB4's LI2: flipping the sign bit of one element of one source tensor moves, in every mode
@@ -196,7 +237,7 @@ func TestLoaderIdentity_oneByte(t *testing.T) {
 			dst := filepath.Join(t.TempDir(), c.fixture)
 			c.plant(t, src, dst, c.tensor)
 			n := 0
-			for _, mode := range loaderModes {
+			for _, mode := range loaderQuants {
 				a, err := loadForIdentity(src, mode)
 				if err != nil {
 					continue
@@ -295,13 +336,27 @@ func flipFirstNonzeroF32(t *testing.T, data []byte) {
 	t.Fatal("tensor is all zeros: no element to flip")
 }
 
+// walkValue is the walk loaderIdentity makes, over any struct v points to.
+func walkValue(v any) []tensorIdentity {
+	rv := reflect.ValueOf(v).Elem()
+	checkIdentType("x", rv.Type(), map[reflect.Type]bool{})
+	iw := &identWalker{}
+	iw.walk("x", rv)
+	return iw.out
+}
+
 // TestLoaderIdentity_walkTotal is SB4's LI5: a field of a kind the walk does not know panics instead of being skipped,
-// and every field loaderSkip names exists on Weights, so a rename cannot leave a skip entry that hides nothing.
+// even when it is nil; every field loaderSkip names exists on Weights, so a rename cannot leave a skip entry that hides
+// nothing; and a slice's length is part of its identity, zeros included.
 func TestLoaderIdentity_walkTotal(t *testing.T) {
 	for _, v := range []any{
 		&struct{ M map[string][]float32 }{M: map[string][]float32{"a": {1}}},
 		&struct{ F func() }{F: func() {}},
 		&struct{ I any }{I: 1},
+		&struct{ P *float32 }{},
+		&struct{ S []map[string]int }{},
+		&struct{ S []func() }{},
+		&struct{ S []struct{ I any } }{},
 	} {
 		func() {
 			defer func() {
@@ -309,14 +364,51 @@ func TestLoaderIdentity_walkTotal(t *testing.T) {
 					t.Errorf("%T: the walk skipped a field it does not know", v)
 				}
 			}()
-			var out []tensorIdentity
-			identWalk(&out, "x", reflect.ValueOf(v).Elem())
+			walkValue(v)
 		}()
+	}
+	type ints struct{ S []int }
+	type bools struct{ S []bool }
+	type arr struct{ A [2]float32 }
+	type nested struct{ S []struct{ X float32 } }
+	for _, pair := range [][2]any{
+		{&ints{[]int{0, 0}}, &ints{}},
+		{&ints{[]int{1, 0}}, &ints{[]int{1}}},
+		{&ints{[]int{}}, &ints{}},
+		{&bools{[]bool{false}}, &bools{[]bool{false, false}}},
+		{&arr{[2]float32{0, 1}}, &arr{[2]float32{1, 0}}},
+		{&nested{make([]struct{ X float32 }, 1)}, &nested{make([]struct{ X float32 }, 2)}},
+	} {
+		if a, b := walkValue(pair[0]), walkValue(pair[1]); loaderIdentityDigest(a) == loaderIdentityDigest(b) {
+			t.Errorf("%+v and %+v have one identity", pair[0], pair[1])
+		}
 	}
 	wt := reflect.TypeOf(Weights{})
 	for name := range loaderSkip {
 		if _, ok := wt.FieldByName(name); !ok {
 			t.Errorf("loaderSkip names %q, which Weights does not have", name)
 		}
+	}
+}
+
+// TestLoaderIdentity_kquant: a k-quant source entry is part of the identity of the WeightMat whose int8 copy it keys, so
+// changing it moves exactly that tensor, and an entry that keys no walked tensor is listed. No committed fixture holds a
+// k-quant tensor (the tiny GGUFs are F32, and Q4_K needs rows of 256), so this is the only check of the path.
+func TestLoaderIdentity_kquant(t *testing.T) {
+	mk := func(src kquantSrc, stray bool) []tensorIdentity {
+		w := &Weights{Embed: linalg.QuantizeInt8(make([]float32, 4*256), 4, 256, false), LMHead: linalg.QuantizeInt8(make([]float32, 4*256), 4, 256, false)}
+		q8, _, _, _ := w.Embed.Int8()
+		w.kquant = map[*int8]kquantSrc{unsafe.SliceData(q8): src}
+		if stray {
+			w.kquant[new(int8)] = src
+		}
+		return loaderIdentity(w)
+	}
+	base := mk(kquantSrc{tensor: "token_embd.weight", kind: "q5_k"}, false)
+	if d := loaderIdentityDiff(base, mk(kquantSrc{tensor: "token_embd.weight", kind: "q6_k"}, false)); !slices.Equal(d, []string{"Embed"}) {
+		t.Errorf("a changed k-quant source moved %v, want [Embed]", d)
+	}
+	if d := loaderIdentityDiff(base, mk(kquantSrc{tensor: "token_embd.weight", kind: "q5_k"}, true)); !slices.Equal(d, []string{"kquant"}) {
+		t.Errorf("a stray k-quant entry moved %v, want [kquant]", d)
 	}
 }
