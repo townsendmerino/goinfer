@@ -322,6 +322,12 @@
     "internal/cliutil": {
       "cacheable": true
     },
+    "internal/codec": {
+      "cacheable": false,
+      "reasons": [
+        "timing (through chat)"
+      ]
+    },
     "internal/confidence": {
       "cacheable": true
     },

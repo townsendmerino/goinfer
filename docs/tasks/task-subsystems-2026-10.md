@@ -2445,6 +2445,16 @@ Gates, per pull request:
 | G-CX-api | no non-test file under `chat/`, `tokenizer/` or `constrain/` changes; CI's `apidiff_check.sh` reports nothing new | none | a change stops with DECISION NEEDED | seconds |
 | G-CX-callers (C2, C3) | each replaced call site composes the same calls in the same order as before (read in review against the codec's body); `touched.py` green; CI's tests of `serveapp`, `chatapp` and `decide` pass unchanged, no golden of theirs in the diff | none | a red test is fixed in the move or the move is reverted, never a golden re-recorded | `touched.py` seconds; the rest is CI's |
 
+- **C1 landed on its branch (2026-10-27, the Mac).** `internal/codec/codec.go`: `Template`, `Segments`,
+  `ImageSegments`, `ImagesSegments`, `Encode`, `EncodePrompt`. The census's render, splice and encode steps go through a
+  `censusPath`; `directPath` makes the same calls as before, and `chat`'s `TestCodecCensus_throughCodec` (an external
+  test, `chat/census_through_codec_test.go`, reaching the census through `chat/export_test.go`) runs it through the codec.
+  **G-CX-goldens:** pass, no golden in the diff. **G-CX-arm:** pass on all 60 sources, with the local models (715 IDs)
+  and without (renders only); an added BOS in `codec.Encode` fails 16 sources (those whose tokenizer has a BOS token),
+  reverted. **G-CX-api:** no non-test file under `chat/`, `tokenizer/` or `constrain/` changed. The layout data records
+  the new arrows (`internal/codec` to `chat`, `multimodal`, `tokenizer`; `chat`'s test to `internal/codec`), and
+  `scripts/touched_scans.py` runs the arm when `internal/codec`, `tokenizer` or `multimodal` changes.
+
 ### SB9 — the towers
 
 After AX2: each image and audio tower with per-tower goldens (output bytes on fixed inputs), and later its blocks

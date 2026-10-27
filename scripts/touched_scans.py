@@ -200,6 +200,8 @@ SCANS = [
     # SB8's codec census renders through tokenizer and multimodal and reads the tracked templates and tokenizers.
     Scan("chat", "TestCodecCensus", NT("tokenizer", "multimodal") +
          F("testdata/chat_goldens/*.json", "testdata/chat_think_goldens/*.json", "tokenizer/testdata/*.gguf")),
+    Scan("chat", "TestCodecCensus_throughCodec", NT("internal/codec", "tokenizer", "multimodal") +
+         F("testdata/chat_goldens/*.json", "testdata/chat_think_goldens/*.json", "tokenizer/testdata/*.gguf")),
     Scan("chat", "TestReleasing_standaloneBuildGateExists", F(".github/workflows/ci.yml", ".github/workflows/standalone-build.yml")),
     # K3 checks that no production file names an entry point its exclusions call uncalled, against the census's predicates.
     Scan("internal/kernelprint", "TestCompute_reachesCensus", TREE_NT + F("docs/hardware-coverage.json")),

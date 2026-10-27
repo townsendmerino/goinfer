@@ -1070,7 +1070,7 @@ Every import from one goinfer package to another, by repository-relative directo
 
 | package | imports | its tests also import |
 |---|---|---|
-| `chat` | `tokenizer` | `multimodal` |
+| `chat` | `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/prequant` |  |
@@ -1099,6 +1099,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `gpu/internal/kernels` | `internal/adapter`, `internal/mem`, `internal/vision`, `multimodal` |  |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
+| `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
 | `internal/decide` | `chat`, `decoder`, `internal/confidence`, `tokenizer` |  |
 | `internal/decidecmd` | `decoder`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant` |  |
 | `internal/fitcmd` | `decoder`, `internal/modelload`, `internal/prequant` | `internal/giw` |

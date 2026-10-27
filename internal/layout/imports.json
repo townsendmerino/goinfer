@@ -230,6 +230,11 @@
       "decoder",
       "tokenizer"
     ],
+    "internal/codec": [
+      "chat",
+      "multimodal",
+      "tokenizer"
+    ],
     "internal/decide": [
       "chat",
       "decoder",
@@ -359,6 +364,7 @@
   },
   "test_arrows": {
     "chat": [
+      "internal/codec",
       "multimodal",
       "tokenizer"
     ],

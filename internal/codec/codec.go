@@ -7,8 +7,8 @@
 // template's control tokens are Special segments while everything a user, a tool or the model wrote is plain text, so a
 // marker typed into a message stays text instead of forging a turn.
 //
-// chat's codec census (chat/codec_census_test.go, TestCodecCensus_throughCodec) checks this package against the census
-// goldens byte for byte; docs/tasks/task-subsystems-2026-10.md §8 SB8 registers that gate.
+// chat's TestCodecCensus_throughCodec runs the codec census through this package and checks it against the census goldens
+// byte for byte; docs/tasks/task-subsystems-2026-10.md §8 SB8 registers that gate.
 package codec
 
 import (
