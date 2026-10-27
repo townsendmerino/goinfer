@@ -67,7 +67,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
 | SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
-| SB14 | open | the doc-drift test: every invariant a `doc.go` lists names a test that exists, and `docs/ARCHITECTURE.md`'s import table equals SB13's data; S | §4.1 |
+| SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW3 | open | the shared hot files sharded or generated; S–M | §12 |
@@ -1315,6 +1315,25 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
 architecture doc's import table is the import gate's data. It is `CLAUDE.md`'s rule that a doc comment claiming coverage
 is not coverage, made mechanical. S.
+
+#### SB14's gates, registered 2026-10-26 before the code (mac-vk01)
+
+Francis (21:42, relayed): SB14, then PW4, overnight, tier 0. The test lives beside SB13's, in `internal/layout`, and
+reads every package doc comment in the tree, `doc.go` or not.
+- **Every test a package doc names must exist.** A name with a package before it ("decoder's TestDecisionCensus") must
+  be in that package; a bare name must be in the doc's own package.
+- **Every line of an "Invariants" block must name a test.**
+- **`docs/ARCHITECTURE.md` gains a generated appendix between markers,** built from `internal/layout/imports.json`: one
+  row per importing package with its imports and its test-only imports, then the protected rules. The test fails when
+  the appendix differs from the data; `-update` regenerates it.
+
+Measured before the code: 8 package docs name tests today, and every named test exists.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| D1 today's tree | the doc and table tests pass on main's tree once the appendix is generated | never | one run | seconds |
+| D2 drift in a doc | `gate mutation` renaming a test that a `doc.go` names turns it red, naming the doc and the test; one adding an invariant line that names no test turns it red; one naming a test in the wrong package ("decoder's TestSolve_pure") turns it red | never | one run each | seconds |
+| D3 the table is the data | `gate mutation` adding an arrow to `imports.json` without regenerating turns the table test red; one editing a row of the appendix by hand turns it red | never | one run each | seconds |
 
 ### SB13 — the package layout, as a test
 

@@ -1,0 +1,8 @@
+## D2a
+    internal/mem/probe/doc.go names TestWatch_unavailableReadingsAreSkipped in its own package (internal/mem/probe), which declares no such test
+## D2b
+    internal/mem/doc.go: the invariant "I4 every decision is pure" names no test
+## D2c
+    internal/mem/doc.go names TestSolve_pure in decoder, which declares no such test
+## D3b
+    ../../docs/ARCHITECTURE.md's import appendix differs from imports.json: run with -update (it is generated; do not edit it by hand)

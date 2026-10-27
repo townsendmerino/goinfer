@@ -21,7 +21,7 @@ import (
 // SB14 and docs/ARCHITECTURE.md read it.
 const importsPath = "imports.json"
 
-var updateArrows = flag.Bool("update", false, "rewrite imports.json's arrows from the tree (the rules are hand-edited only)")
+var updateArrows = flag.Bool("update", false, "rewrite imports.json's arrows from the tree and docs/ARCHITECTURE.md's import appendix from the data (the rules are hand-edited only)")
 
 // layoutData is imports.json. Arrows and TestArrows map a package, by its directory relative to the repository root, to
 // the goinfer packages its non-test and test files import. Rules are the protected separations.
