@@ -2024,7 +2024,7 @@ item is parked until Francis picks one.
 
 ### SB2 — admission and routing
 
-- **Today:** `decoder/residency.go:Model.residentAdmission`: the runner shape (`Model.decodeRunnerDecline`), then
+- **Today:** `decoder/admit.go:Admit`: the runner shape (`Model.decodeRunnerDecline`), then
   `decoder/features.go:residentGateReason` against `ResidentBackendFeatures`, then the backend's own build through
   `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
   The owner's note of 2026-10-21 in the forward-architecture doc: 20 of the 71 registration and bound findings counted on
@@ -2080,6 +2080,13 @@ decisions:
   The arm64 golden was recorded from CI's own run of the census at `343630740` (the test prints an unrecorded
   architecture's census and fails): root-linux-arm64, root-darwin and root-windows-arm64 printed the same 2,711 lines,
   and they differ from amd64's in 212 cells, every one only in the CPU's int4 layout note (a repack on arm64).
+- **Step 1 landed (2026-10-27): `Admit`.** `decoder/admit.go:Admit` is the decoder's resident admission as a pure function
+  of `AdmitFacts` (the arch, the backend's name and whether it can build residents, the quant, -backend auto, the
+  activation group, whether the projections are int4, the SSM knob): the residency, precision, runner-shape,
+  activation-group and capability gates in the order the load applied them. `Model.residencyGate` gathers the facts and
+  calls it; `DecodeRunnerEligible` and `ResidentEligible` read its pieces, and the hardware matrix prints its runner shape
+  and capability gates. The census is unchanged on both architectures' goldens, and both matrices regenerate byte for
+  byte (`-update` leaves no diff).
 
 ### SB3 — family adapters
 
