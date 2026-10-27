@@ -77,7 +77,7 @@ type fitCheck struct {
 	cudaBuildBytes int64
 	expertBytes    int64
 
-	// deviceKV is true for a load that will be CUDA-resident (cudaWillBeResident): its KV is allocated in VRAM, which the VRAM plan sizes, so kvBytes stays 0
+	// deviceKV is true for a load that will be CUDA-resident (the backend's BuildDemand report): its KV is allocated in VRAM, which the VRAM plan sizes, so kvBytes stays 0
 	// here; the host pays only for the weights and the build. packBytes is the host the build adds beside the canonical weights on that path: one packed
 	// layer and the staging blocks cuda/pack_stream.go streams it through (BuildResident no longer holds a packed copy of the model). On the direct .gguf path weightBytes+srcFileBytes is the larger term (the
 	// load, with the source mapped, peaks above the build), so packBytes binds only where there is no source term. The measurement:
