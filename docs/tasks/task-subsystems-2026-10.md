@@ -1252,6 +1252,36 @@ passes; the unpriced-expert test goes red with the guard reverted. G-GF2-3: `Tes
 `TestPlanSlack_matchesTheBuild` passes on the RTX 2070 SUPER (exclusive timing lock). G-GF2-4: vet (testhooks, cuda, darwin
 metal), the pinned staticcheck with its canary red, gofmt, `touched.py`, the parity refresh, the citation lint.
 
+#### MM1's MoE reserve (option A), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 09:09)
+
+**Francis's decision (09:09):** "option A for the MoE planner. Reserve the top-k experts' bytes before growing the context in
+chooseCtx, so more memory never gives a worse MoE placement. Gate it as MM2b was." The question and the measured census effect
+are in the decision note (`MM1 follow-up 2` above names the cause).
+
+**The change.** `SolvePlacement`'s `chooseCtx` prices an MoE's top-k experts (top-k × the per-expert bytes) beside the dense
+weights, the slack and the host copy before it grows the context, on both its paths (the per-position rate and CUDA's block
+search). The expert-cache and resident fits after it are unchanged. A load whose experts could not be priced reserves nothing
+(it declines at the expert cache, as #320 made it).
+
+**Expected before the run.** The census moves in D3 only, on MoE fixtures: 984 of 29,637 groups, measured on a scratch copy at
+e934b8ce plus #320 (10,336 readings declined → expert-cached, 5,028 weight-paged → expert-cached, 80 declined → resident, 24
+resident → expert-cached). D1, D2 and D4–D7 do not move.
+
+**Pre-registered contingency.** Reserving top-k alone may leave a fall between resident and expert-cached, where every
+expert's extra bytes are under one KV step, and Metal's context fit needs a resident answer. If the monotone test finds either,
+the planner tries the resident placement first with every expert (and Metal's host copy of them) reserved, and the expert cache
+second with top-k reserved, each choosing its own context. That is the same rule (reserve what the placement needs before
+the context grows) one placement at a time. The census diff is then re-measured and listed the same way; the context invariant
+holds within a placement (G-MM1b-2 as amended), not across an upgrade from expert-cached to resident.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MA-1 the census diff | the census is computed with and without the change; the diff is listed in the PR body group by group (each changed group, its backend and family, and every reading whose placement moves, by direction), before `-census.update`. Any group outside D3, or any non-MoE group, that moves is a failure of the change, not a diff to bless | the golden's class not found on an amd64 host | runs to completion | about a minute |
+| G-MA-2 monotone, MoE included | `TestSolvePlacement_monotone` asserts, for every load, MoE included: the placement never moves down the order; within a placement the context never shrinks, nor the slots at the same context; the Metal context never shrinks. The walk adds a fine ladder (64 KiB steps across each draw's sawtooth window) to the 16 MiB one. A planted defect (the reserve removed) turns it red, and so does the planted refusal | — | runs to completion | under a minute |
+| G-MA-3 the probe | the constructed Metal MoE load of the follow-up (1,535 falls at 64 KiB steps) has none | — | runs to completion | seconds |
+| G-MA-4 real sizes and the device | `TestPlanSlack_realSizeDiff` holds its golden (dense models: no move expected), and the CUDA KV-slot tests pass on nobara's card | a timed run holds the card | runs to completion | about a minute |
+| G-MA-5 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
