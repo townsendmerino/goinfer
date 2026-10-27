@@ -1195,7 +1195,7 @@ plan was expert-cached at context 4,480 and declined at 4,608, at 16,160 MiB. Ch
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
 | G-GF-1 the census | `TestDecisionCensus` passes without `-census.update`, every group byte for byte | the golden's class not found on an amd64 host | runs to completion | 16 s |
-| G-GF-2 the planner tests | `TestSolvePlacement_pure`, `TestResolveKV_eachBranch`, `TestResolveKV_pure` and `TestSolvePlacement_monotone` pass. The monotone test walks free memory in 16 MiB steps to 64 GiB on generators that keep `DeviceLoad`'s invariants (tier per backend, a host copy only on Metal, Metal's linear KV), and asserts: a dense placement never worsens; a placed context never shrinks; slots never fall at the same context; the Metal context never shrinks (MoE included: a probe of 3,000 draws found no fall, so Gemini's Metal case did not reproduce). At least a third of Metal draws reach a context past the floor. A planted defect (a refusal above 32 GiB free) turns it red | — | runs to completion | under a minute |
+| G-GF-2 the planner tests | `TestSolvePlacement_pure`, `TestResolveKV_eachBranch`, `TestResolveKV_pure` and `TestSolvePlacement_monotone` pass. The monotone test walks free memory in 16 MiB steps to 64 GiB on generators that keep `DeviceLoad`'s invariants (tier per backend, a host copy only on Metal, Metal's linear KV), and asserts: a dense placement never worsens; a placed context never shrinks; slots never fall at the same context; the Metal context never shrinks (MoE included, as registered; withdrawn in the second follow-up below: an MoE Metal context does fall). At least a third of Metal draws reach a context past the floor. A planted defect (a refusal above 32 GiB free) turns it red | — | runs to completion | under a minute |
 | G-GF-3 the guard fixes | an unpriced-expert load and a zero `CUDAPolicy` return without a panic; the scan reads every non-test file and counts a planted `.RequestFraction` read and a planted cross-alias | the scan reads fewer files than the tree holds | runs to completion | seconds |
 | G-GF-4 the agreement tests | `TestBuildDemand_matchesDecoderDefault` (cuda, metal) has no duplicate backend; it asserts that a nonzero `HostPackBytes`, `HostBuildPeak` and (cuda) `PinnedExpertBytes` each occur in the corpus, or names the one that does not; a planted change per field turns it red; and decoder's registry returns the backend's own function | — | runs to completion | seconds |
 | G-GF-5 #311's items | the tautological dense-plus-slack check is removed with its claim; the archive guard resolves symlinks; `TestPlanSlack_oneCopy` checks the call site's argument; `planSlackOffForTest` is atomic; a plan-only build that stops early is not memoized | — | runs to completion | seconds; the device tests run once on nobara under the timing lock |
@@ -1206,8 +1206,10 @@ plan was expert-cached at context 4,480 and declined at 4,608, at 16,160 MiB. Ch
   every config, not the first eight, and holds.
 - G-GF-2: the planner tests pass. 919 of the 1,500 Metal draws reach a context past the floor, and the planted refusal is
   found.
-- G-GF-3: the unpriced-expert and zero-policy rows of `TestResolveKV_eachBranch` and the generators return; the scan reads
-  734 files and counts the planted cross-alias and `.RequestFraction` read (3).
+- G-GF-3: the zero-policy rows of `TestResolveKV_eachBranch` return; the scan reads 734 files and counts the planted
+  cross-alias and `.RequestFraction` read (3). The unpriced-expert half was not tested: no test drew such a load (the
+  generators price every expert at a byte or more), so this line first claimed a check that did not exist. The second
+  follow-up adds it.
 - G-GF-4: 36 configs and 6,912 queries, now with no duplicate backend. Every field's planted change is seen, so a nonzero
   `HostPackBytes`, `HostBuildPeak` and `PinnedExpertBytes` each occur. `TestBuildDemand_registered` passes on cuda. Its
   metal twin is vetted for darwin but runs only on a Mac with `goinfer_testhooks`, because CI's metal job runs untagged.
@@ -1217,6 +1219,38 @@ plan was expert-cached at context 4,480 and declined at 4,608, at 16,160 MiB. Ch
   gf-cuda-device).
 - G-GF-6: vet untagged and tagged (testhooks; cuda with testhooks; darwin metal both ways); the pinned staticcheck with its
   canary red (U1000) on the same variants, clean; gofmt.
+
+#### MM1 follow-up 2: Gemini's review of #316, registered 2026-10-27 (nobara-mm01)
+
+Relayed by the coordinator at 08:47. The code below was written before this section; the gates were registered before they
+ran.
+
+**Withdrawn from #316: "an MoE Metal context never falls".** #316 listed Gemini's Metal case as not holding, on a probe that
+stepped 16 MiB. The window it lives in is under one 8-position KV step (a few MiB), so the probe stepped over it. At a 64 KiB
+step a constructed Metal MoE load (8 experts, top-2, 512 KiB a KV step) falls from 4,104 to the 4,096 floor 1,535 times between
+5.6 and 9 GiB. The cause is the MoE planner's (context before experts), so it joins that decision
+(the decision note for Francis); the monotone test now checks the Metal context for dense loads only.
+
+**What changes.**
+- An expert cache whose experts could not be priced (`ExpertBytesFull` under a byte each) declines with a reason. #316
+  sized every slot on 0 bytes there; before #316 that line panicked, so no caller depended on either. Not changed: an unpriced
+  MoE load whose dense weights fit goes resident with 0 expert bytes, as `Model.Plan` did before MM1. Changing that moves a
+  placement, so it is in the decision note.
+- `PlanWithoutSlackForTest` passes "no slack" to one call (`Model.plan`'s argument) instead of setting a global, so a
+  concurrent `Plan` never sees it and two overlapping calls cannot restore it early.
+- The monotone test also holds an MoE plan's placement at an unchanged context; Metal's agreement comment says what it plants.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-GF2-1 the census | `TestDecisionCensus` passes without `-census.update` | the golden's class not found on an amd64 host | runs to completion | 16 s |
+| G-GF2-2 the planner | `go test ./internal/mem/` passes, with `TestSolvePlacement_unpricedExperts` (0 and 7 bytes over 8 experts decline naming the unpriced experts); reverting the guard turns it red | — | runs to completion | under a minute |
+| G-GF2-3 the slack hook | the rounding diff (`TestPlanSlack_realSizeDiff`) holds its golden on nobara's card; vet with the testhooks and cuda tags | a timed run holds the card | runs to completion | about a minute |
+| G-GF2-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara): all four pass.** G-GF2-1: the census and its second-process twin pass. G-GF2-2: `internal/mem`
+passes; the unpriced-expert test goes red with the guard reverted. G-GF2-3: `TestPlanSlack_realSizeDiff` holds its golden and
+`TestPlanSlack_matchesTheBuild` passes on the RTX 2070 SUPER (exclusive timing lock). G-GF2-4: vet (testhooks, cuda, darwin
+metal), the pinned staticcheck with its canary red, gofmt, `touched.py`, the parity refresh, the citation lint.
 
 ### 6.6 What it absorbs, and what stays outside
 

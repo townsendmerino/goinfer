@@ -800,7 +800,5 @@ func RegisteredBuildDemandForTest(backend string) BuildDemandFunc {
 
 // PlanWithoutSlackForTest is Plan with no allocation rounding priced: the before side of the rounding diff (MM2b gate 1).
 func (m *Model) PlanWithoutSlackForTest(backend string, freeBytes int64, req PlanRequest) Plan {
-	saved := planSlackOffForTest.Swap(true)
-	defer planSlackOffForTest.Store(saved)
-	return m.Plan(backend, freeBytes, req)
+	return m.plan(backend, freeBytes, req, false)
 }

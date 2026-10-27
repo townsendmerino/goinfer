@@ -3,7 +3,6 @@ package decoder
 import (
 	"slices"
 	"sync"
-	"sync/atomic"
 )
 
 // BuildQuery is a load as the fit guard sees it before the build: the options, the facts decoder resolves from the config,
@@ -162,7 +161,7 @@ type planSlackMemo struct {
 
 // planSlack is backend's rounding over m's weight buffers, asked once per model and backend.
 func (m *Model) planSlack(backend string) int64 {
-	if m == nil || planSlackOffForTest.Load() {
+	if m == nil {
 		return 0
 	}
 	ask := func() (int64, bool) {
@@ -198,6 +197,3 @@ func (m *Model) planSlack(backend string) int64 {
 // PlanSlack is backend's allocation rounding over this model's weight buffers, as Plan prices it (0 where the backend reports
 // none). The CUDA build reads it instead of pricing its own copy.
 func (m *Model) PlanSlack(backend string) int64 { return m.planSlack(backend) }
-
-// planSlackOffForTest prices no allocation rounding in any plan: the before side of a test's diff.
-var planSlackOffForTest atomic.Bool
