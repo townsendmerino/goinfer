@@ -61,7 +61,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
-| SB8 | decision | census done (#338, #341, and nobara's IDs for Llama 3, Mellum 2 and Harmony); the move to one package waits on its package shape (owner); mac-ax01 | §8 SB8 |
+| SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
@@ -2502,6 +2502,18 @@ Gates, per pull request:
   tools, overflow, carried IDs, think, prompt, image, audio, and the per-family image tests) pass, 167 run and 11
   skipped (real checkpoints or env-gated assets); no test or golden changed. **G-CX-api:** still no non-test change under
   `chat/`, `tokenizer/` or `constrain/`.
+- **C3 landed on its branch (2026-10-27, the Mac).** `internal/codec/reply.go`: `NewReplySplitter`, `SettleCalls`,
+  `ReconcileProse`, `ErrProseDiverged`. `serveapp`'s `settleCalls` and `reconcileProse` are one-line delegates (its tests
+  call them), `errProseDiverged` is the codec's error, and the three reply-splitter constructions (`newThinkOut`,
+  goinfer-chat's turn and batch) call the codec. `SettleCalls` takes the router's calls and reasoning as values: the
+  getters it replaces (`thinkOut.toolCalls`, `reasoningText`) return none for a nil router, which leaves the fallbacks
+  unreachable exactly as the `th != nil` test did. The census's reply and settle steps get the seam;
+  `TestToolCallParseCensus_throughCodec` checks the settle column through `codec.SettleCalls` with no router.
+  **G-CX-arm:** all four census tests pass, with the local models and without. Shown red, each reverted: settling without
+  the tool list fails the parse arm; no reply splitter fails the census arm; an untrimmed lead on a routed (Harmony) call
+  is outside the census (it has no router) and fails `serveapp`'s `TestSettleCalls_harmony`. **G-CX-callers:**
+  `touched.py` green; `serveapp`'s reply, tool, think and prose tests pass, 73 run and 5 skipped. **G-CX-api:** no
+  non-test change under `chat/`, `tokenizer/` or `constrain/`.
 
 ### SB9 — the towers
 

@@ -475,12 +475,14 @@ var censusReplies = []string{
 	"<|channel>thought\nThe user asks about France.<channel|>Paris.",
 }
 
-// censusPath is how the census renders, splices and encodes a prompt. directPath calls chat and tokenizer as the census
+// censusPath is how the census renders, splices and encodes a prompt, splits a reply and settles its tool calls. directPath calls chat and tokenizer as the census
 // always has; TestCodecCensus_throughCodec (census_through_codec_test.go) runs the same census through internal/codec instead.
 type censusPath struct {
 	segments func(tm *Template, system string, turns []Turn, tools []Tool) []Segment
 	image    func(tm *Template, system string, turns []Turn, block string) ([]Segment, error)
 	encode   func(tk *tokenizer.Tokenizer, segs []Segment) ([]int, error)
+	reply    func(tm *Template, turns []Turn) *ReplySplitter
+	parseFor func(tm *Template, out string, tools []Tool) ([]ToolCall, string)
 }
 
 var directPath = censusPath{
@@ -494,6 +496,10 @@ var directPath = censusPath{
 		return multimodal.SpliceImageBlock(tm.RenderSegments(system, turns), block)
 	},
 	encode: func(tk *tokenizer.Tokenizer, segs []Segment) ([]int, error) { return tk.EncodeSegments(segs, false) },
+	reply:  func(tm *Template, turns []Turn) *ReplySplitter { return tm.NewReplySplitter(turns) },
+	parseFor: func(tm *Template, out string, tools []Tool) ([]ToolCall, string) {
+		return tm.ParseToolCallsFor(out, tools)
+	},
 }
 
 func (s *censusSource) run(t *testing.T, path censusPath, recorded *censusGolden) (*censusGolden, int, int) {
@@ -606,7 +612,7 @@ func (s *censusSource) run(t *testing.T, path censusPath, recorded *censusGolden
 		if tm.Reasoning() != nil || tm.Name() == "harmony" {
 			turns := []Turn{{Role: "user", Content: "What is the capital of France?"}}
 			for _, out := range censusReplies {
-				rs := tm.NewReplySplitter(turns)
+				rs := path.reply(tm, turns)
 				if rs == nil {
 					break
 				}
@@ -831,22 +837,25 @@ var neverACall = []string{"prose", "empty", "prose_mentions_opener", "hermes_bad
 
 // parseTable runs every output through tm; lenient is the WithLenientToolCalls setting asked for, which a family that takes
 // no bare call ignores.
-func parseTable(tm *Template, source, format string, lenient bool) parseFamily {
+func parseTable(path censusPath, tm *Template, source, format string, lenient bool) parseFamily {
 	pf := parseFamily{Family: tm.Name(), Source: source, ToolFormat: format, Lenient: lenient,
 		SupportsTools: tm.SupportsTools(), AcceptsBare: tm.AcceptsBareToolCall()}
 	for _, o := range parseOutputs {
 		c1, l1 := tm.ParseToolCalls(o.text)
-		c2, l2 := tm.ParseToolCallsFor(o.text, censusTools)
+		c2, l2 := path.parseFor(tm, o.text, censusTools)
 		pf.Rows = append(pf.Rows, parseRow{Output: o.name, Parse: parseResult{c1, l1}, ParseFor: parseResult{c2, l2}})
 	}
 	return pf
 }
 
-func TestToolCallParseCensus(t *testing.T) {
+func TestToolCallParseCensus(t *testing.T) { toolCallParseCensus(t, directPath, *codecUpdate) }
+
+// toolCallParseCensus builds the parse table through path; update rewrites its golden instead of checking it.
+func toolCallParseCensus(t *testing.T, path censusPath, update bool) {
 	var fams []parseFamily
 	for _, k := range slices.Sorted(maps.Keys(constructors)) {
 		for _, lenient := range []bool{false, true} {
-			fams = append(fams, parseTable(constructors[k]().WithLenientToolCalls(lenient), k, "", lenient))
+			fams = append(fams, parseTable(path, constructors[k]().WithLenientToolCalls(lenient), k, "", lenient))
 		}
 	}
 	// The templates that declare a native tool form, under each format WithToolFormat selects.
@@ -856,7 +865,7 @@ func TestToolCallParseCensus(t *testing.T) {
 			continue
 		}
 		for _, f := range []ToolFormat{ToolFormatAuto, ToolFormatHermes, ToolFormatTemplate} {
-			fams = append(fams, parseTable(base.WithToolFormat(f), s.Name, f.String(), false))
+			fams = append(fams, parseTable(path, base.WithToolFormat(f), s.Name, f.String(), false))
 		}
 	}
 	checkParseContract(t, fams)
@@ -870,17 +879,17 @@ func TestToolCallParseCensus(t *testing.T) {
 		doc.Outputs[o.name] = o.text
 	}
 	got := encodeCensus(t, doc)
-	path := filepath.Join(codecDir, "tool_call_parse.json")
-	if *codecUpdate {
-		writeCensus(t, path, got)
+	golden := filepath.Join(codecDir, "tool_call_parse.json")
+	if update {
+		writeCensus(t, golden, got)
 		return
 	}
-	want, err := os.ReadFile(path)
+	want, err := os.ReadFile(golden)
 	if err != nil {
 		t.Fatalf("no golden (%v); record it with -codec.update", err)
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("the tool-call parse census differs from %s:\n%s", path, firstDiff(want, got))
+		t.Errorf("the tool-call parse census differs from %s:\n%s", golden, firstDiff(want, got))
 	}
 }
 

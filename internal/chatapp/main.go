@@ -684,7 +684,7 @@ func (s *session) generate() string {
 
 	// The reasoning, when the model has any, prints dimmed (or as a one-word marker with --show-thinking=false) and the answer
 	// follows in cyan; the two never mix, and only the answer goes into the conversation history.
-	rs := tm.NewReplySplitter(turns) // nil for a model with no recognised thinking control: everything is the answer
+	rs := codec.NewReplySplitter(tm, turns) // nil for a model with no recognised thinking control: everything is the answer
 	rp := &replyPrinter{s: s}
 	start := time.Now()
 	text, _, nTok, truncated := s.streamReply(stream, rs, rp.reasoning, rp.chunk)

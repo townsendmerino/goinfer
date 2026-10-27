@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 // toolTurn is the outcome of one tool-bearing generation. /v1/chat/completions, /v1/responses and /v1/messages share
@@ -24,16 +25,12 @@ type toolTurn struct {
 	fromReasoning bool
 }
 
-// errProseDiverged: bytes already streamed as prose are not a prefix of the prose the parser settled
-// on. Unreachable by construction — the prose streamer only releases bytes that precede the family's
-// call opener, and lead is the raw prefix before it — but streamed bytes cannot be recalled, so a
-// front end that ever sees it must say so rather than emit a stream that disagrees with itself.
 // errNoForcedCall is a post-checked must-call turn (genRequest.callPostCheck) whose reply holds no tool call.
 var errNoForcedCall = errors.New("tool_choice required a tool call and the model answered without one (this model's calls " +
 	"are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)")
 
-var errProseDiverged = errors.New("internal: streamed prose diverged from the parsed lead; the tool-call " +
-	"stream for this family is not prefix-safe (G21)")
+// errProseDiverged is codec.ErrProseDiverged: streamed prose that is not a prefix of the settled lead.
+var errProseDiverged = codec.ErrProseDiverged
 
 // runToolTurn runs one tool-bearing generation.
 //
@@ -99,52 +96,12 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	return turn, err
 }
 
-// reconcileProse settles a finished turn's prose against what already streamed. lead is the turn's prose for the
-// final message: the parser's lead when there are calls, the raw output when there are none. rest is what the front
-// end still has to send so the streamed prose adds up to the turn's prose.
-//
-// What streamed is held against the parser's lead, never the raw output: the prose streamer trims the leading
-// whitespace and withholds trailing whitespace exactly as every family's parser trims its lead (chat.ProseStreamer),
-// so a no-call answer that opens with a newline streams "Hello" where the raw text is "\nHello". Checking that
-// against the raw text reports a false divergence and ends the stream in an error. When nothing streamed (a family
-// that cannot stream prose, or a non-streaming request) rest is lead itself, unchanged.
+// reconcileProse is codec.ReconcileProse: a finished turn's prose, and what is still to send after what streamed.
 func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lead, rest string, err error) {
-	lead = raw
-	if hasCalls {
-		lead = parsedLead
-	}
-	if streamed == "" {
-		return lead, lead, nil
-	}
-	target := parsedLead // for a no-call turn this is raw as the parser trims it — what the streamer matches
-	if !strings.HasPrefix(target, streamed) {
-		return lead, "", errProseDiverged
-	}
-	return lead, target[len(streamed):], nil
+	return codec.ReconcileProse(raw, hasCalls, parsedLead, streamed)
 }
 
-// settleCalls reads a finished turn's tool calls and the prose before them.
-//
-// Every family but gpt-oss writes its call inline, so it is in the buffered text and the template's parser finds it.
-// A Harmony call is a message addressed to a function, which the reasoning router routes out of both the reasoning
-// and the answer, so the buffered text never contains it: with a router attached the calls are read from the router.
-// (With -reasoning-format none there is no router and the buffer holds the raw reply, markers included, which the
-// template's parser reads itself.) The prose is trimmed, as the parsers return it.
-//
-// A turn with no answer at all is read from its reasoning: a thinking model can write its call inside the block and end
-// its turn there, or close the block after the call, and the call is then the turn. A call drafted in the reasoning of a
-// turn that went on to answer in prose is not taken. fromReasoning reports a call read that way.
+// settleCalls is codec.SettleCalls with th's routed calls and reasoning (none for a nil router).
 func settleCalls(tmpl *chat.Template, raw string, tools []chat.Tool, th *thinkOut) (calls []chat.ToolCall, lead string, fromReasoning bool) {
-	calls, lead = tmpl.ParseToolCallsFor(raw, tools)
-	if len(calls) == 0 && th != nil {
-		if routed := th.toolCalls(); len(routed) > 0 {
-			return routed, strings.TrimSpace(raw), false
-		}
-		if strings.TrimSpace(raw) == "" && th.reasoning.Len() > 0 {
-			if inBlock, _ := tmpl.ParseToolCallsFor(th.reasoning.String(), tools); len(inBlock) > 0 {
-				return inBlock, "", true
-			}
-		}
-	}
-	return calls, lead, false
+	return codec.SettleCalls(tmpl, raw, tools, th.toolCalls(), th.reasoningText())
 }

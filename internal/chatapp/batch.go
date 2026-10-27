@@ -617,7 +617,7 @@ func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName str
 
 	var rs *chat.ReplySplitter
 	if splitReasoning {
-		rs = tm.NewReplySplitter(turns) // nil for a model with no recognised thinking control
+		rs = codec.NewReplySplitter(tm, turns) // nil for a model with no recognised thinking control
 	}
 	var answer, reasoning strings.Builder
 	maxStop := 0

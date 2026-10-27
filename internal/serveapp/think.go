@@ -212,7 +212,7 @@ func newThinkOut(tmpl *chat.Template, turns []chat.Turn, ts thinkSettings, onRea
 	if ts.format == rfNone {
 		return nil
 	}
-	rs := tmpl.NewReplySplitter(turns)
+	rs := codec.NewReplySplitter(tmpl, turns)
 	if rs == nil {
 		return nil
 	}
