@@ -2081,6 +2081,31 @@ decisions:
   architecture's census and fails): root-linux-arm64, root-darwin and root-windows-arm64 printed the same 2,711 lines,
   and they differ from amd64's in 212 cells, every one only in the CPU's int4 layout note (a repack on arm64).
 
+#### SB2 step 2 — the backend layers, registered 2026-10-27 before the code (nobara-sb01)
+
+Each backend's own `BuildResident` decides after the decoder admits. Its static gates (shapes, weight kinds, activation
+groups, KV layouts) read the model alone; its memory and device decisions read free VRAM, host RAM or device attributes.
+The static gates are censused now, on the same fixtures and option cells as layer D, with the machine out of the record:
+
+- **Layer B-cuda (`cuda` module, `-tags cuda`, no device).** `TestBackendAdmissionCensus_cuda`: per committed fixture ×
+  layer D's 9 option cells, a `Load` under a fake backend named `cuda` (the decoder's admission is the real one); where
+  the decoder admits, the fake runs CUDA's own build in plan-only mode (`cudaBackend.buildResident(m, true)`, which runs
+  every static decline and returns before it allocates) and records the decline or the planned allocation slack, then
+  declines so nothing is uploaded. Golden `cuda/testdata/sb2_cuda_census.<goarch>.txt.gz`. Runs on CI's deviceless cuda
+  job.
+- **Layer B-webgpu (`gpu` module, `-tags gpu`, no device).** WebGPU's static gates move, in their order, into one function
+  `BuildResident` calls first (a refactor: same checks, same reasons); `TestBackendAdmissionCensus_webgpu` records it the
+  same way. Golden `gpu/testdata/sb2_webgpu_census.<goarch>.txt.gz`.
+- **Layer B-metal (the Mac).** Commands in `/tmp/sb2-metal.md`: `residentPreBuild`'s static gates and its memory decisions
+  with `metalLiveAvailable` and `metalWorkingSetCap` set from each `testdata/machines` profile.
+- **Memory and device decisions on cuda and webgpu.** The context and slot plan is `Model.Plan`, which MM1's census already
+  records for cuda and webgpu across the machine zoo. The build's own reads (CUDA's `checkWeightsFit` and `checkKVFits`,
+  expert slots, prefill width, SM shape; WebGPU's slot probe) come after allocation and are the next layer: each has a pure
+  helper over a free-memory figure, to be fed the profiles' readings.
+- **Gate.** Each layer is deterministic (built twice, equal), shown red by a planted change, and changes no decision: the
+  WebGPU refactor must leave layer D unchanged and its own census equal to the same census run on the code before it.
+  **Cost basis:** measured on the first run; tiny loads, seconds.
+
 ### SB3 — family adapters
 
 Moved to VK2 (one file each) and VK4 (program fingerprints). With SB1 and SB2, adding a family is a file, a fixture and
