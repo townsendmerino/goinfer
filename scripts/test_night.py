@@ -912,6 +912,23 @@ class WaitForAJob(unittest.TestCase):
         self.assertEqual(code, 0, line)
         self.assertLess(time.monotonic() - t0, 1)
 
+    def test_dropped_job_exits_2(self):
+        """`night.py drop` while waiting: the job leaves the queue with no record, and wait says so after its grace."""
+        self.queue("w-drop", "true")
+        old = night.WAIT_GONE_S
+        night.WAIT_GONE_S = 0.2
+        got = {}
+        t = threading.Thread(target=lambda: got.update(r=night.wait_job("w-drop", timeout_min=1, poll_s=0.05)))
+        try:
+            t.start()
+            time.sleep(0.3)
+            next(night.QUEUE.glob("*-w-drop.json")).unlink()
+            t.join(10)
+        finally:
+            night.WAIT_GONE_S = old
+        self.assertEqual(got["r"][0], 2, got["r"][1])
+        self.assertIn("dropped", got["r"][1])
+
     def test_unknown_job_exits_2(self):
         code, line = night.wait_job("w-never-queued", poll_s=0.05)
         self.assertEqual(code, 2, line)
