@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -727,34 +728,14 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int, fused func(hd int) boo
 	return nil
 }
 
-// imgBlockMaxNWin widens a layer's causal shared-memory row count (causalMaxNWin) for a bidirectional image block
-// [imgStart,imgEnd). checkPrefillShmemImg and prefillCore's attn_img_batched launch both call it, so the check and the
-// allocation cannot drift apart. No block (imgEnd<=imgStart) returns causalMaxNWin. A query row inside the block sees
-// keys [max(pos-window+1,0), imgEnd) when windowed and [0, imgEnd) when not (decoder/kvcache.go's attendHi; derivation
-// in the header of cuda/attn_img_prefill.cu): the widest row is imgEnd when the block starts at or before window-1, else
-// imgLen+window-1. Unwindowed, the block never exceeds startPos+M, because imgEnd<=startPos+M (the whole prompt fits one
-// chunk).
+// imgBlockMaxNWin is launchgeom.ImgBlockMaxNWin.
 func imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd int) int {
-	if imgEnd <= imgStart {
-		return causalMaxNWin
-	}
-	blockMax := imgEnd
-	if window > 0 {
-		if imgStart > window-1 {
-			blockMax = (imgEnd - imgStart) + window - 1
-		}
-	}
-	return max(causalMaxNWin, blockMax)
+	return launchgeom.ImgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
 }
 
-// imgBlocksMaxNWin is imgBlockMaxNWin over several blocks: each row sees at most its own block, so the widest window is
-// the widest over the blocks.
+// imgBlocksMaxNWin is launchgeom.ImgBlocksMaxNWin.
 func imgBlocksMaxNWin(causalMaxNWin, window int, blocks [][2]int) int {
-	n := causalMaxNWin
-	for _, b := range blocks {
-		n = max(n, imgBlockMaxNWin(causalMaxNWin, window, b[0], b[1]))
-	}
-	return n
+	return launchgeom.ImgBlocksMaxNWin(causalMaxNWin, window, blocks)
 }
 
 // checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentImagePrefill): it sizes the check with
@@ -1987,16 +1968,12 @@ func (r *cudaResident) bNormF32B(x, w Buffer, H, M int) error {
 		Arg(x), Arg(w), gpu.ArgValue(int32(H)), gpu.ArgValue(r.eps), gpu.ArgValue(r.addOneArg()), gpu.ArgValue(int32(M)))
 }
 
-// attnFusedBM / attnFusedThreads / attnFusedKPAD MUST equal BM / (WARPS*32) / KPAD in
-// attn_fused.cu. BN equals BM there, so one constant serves both the query tile and the key tile.
+// The fused attention kernel's launch geometry (package launchgeom has the contracts).
 const (
-	attnFusedBM      = 64
-	attnFusedThreads = 128
-	attnFusedKPAD    = 8
-	// attnFusedMinRows: below a full warp-tile of query rows the fused kernel is doing 64 rows'
-	// worth of K/V staging for a handful of real ones, and attn_batched — which is ALSO the exact
-	// path — is both faster and bit-identical. 16 is one mma tile (m16n8k8's M).
-	attnFusedMinRows = 16
+	attnFusedBM      = launchgeom.AttnFusedBM
+	attnFusedThreads = launchgeom.AttnFusedThreads
+	attnFusedKPAD    = launchgeom.AttnFusedKPAD
+	attnFusedMinRows = launchgeom.AttnFusedMinRows
 )
 
 // fastPrefillFloor is the prompt length below which neither fast lever engages. It sits at a depth that was actually

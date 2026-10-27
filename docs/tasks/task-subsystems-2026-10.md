@@ -1288,6 +1288,45 @@ on the packed output registered first; stop with DECISION NEEDED if the move nee
   reach 322 → 317. gpu has no test-only move (its kernels are package `gpu`'s production code); metal has 62 candidates
   that need a Mac run. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
 
+#### SB1 — launch geometry out of package cuda: the identity gate, registered 2026-10-26 before the code (nobara-sb01)
+
+Francis's decision (21:42), item 1. The relayed text names `decoder/prefill.go` and `decoder/flash_decode.go`; neither file
+exists, and no `decoder` file declares these constants. They are `cuda/prefill.go`'s and `cuda/flash_decode.go`'s, which the
+STOP POINT it answers named. This work reads it that way and touches no `decoder` file; its PR waits for Francis to confirm
+the reading before auto-merge is set.
+
+- **The move.** `cuda/internal/launchgeom` (standard library only) takes the launch geometry the attention-digest tests
+  need: `faWarps`, `faMaxRows`, `faRowsPerCTA`, `faRun` and `faRowRuns` (`flash_decode.go`); `attnFusedBM`,
+  `attnFusedThreads`, `attnFusedKPAD`, `attnFusedMinRows`, `imgBlockMaxNWin`, `imgBlocksMaxNWin` (`prefill.go`). The KV
+  cache's f16 converters `f32ToF16RNE` and `f32SliceToF16RNE` (`kvhalf.go`) go to `cuda/internal/wpack`. Package `cuda`
+  keeps every name, as a constant or a thin wrapper.
+- **Gate 1, values (tier 0).** `cuda`'s `TestLaunchGeometry_identity` hashes every moved constant's value and every moved
+  function's output over a grid (`faRowsPerCTA` over head dims 32-512 and GQA ratios 1-16; `faRowRuns` over n0, m,
+  window and S; `imgBlockMaxNWin` and `imgBlocksMaxNWin` over windows and blocks; `f32ToF16RNE` on all 2^32 float32 bit
+  patterns; `f32SliceToF16RNE` on a seeded slice), through package `cuda`'s names, into
+  `cuda/testdata/launchgeom_hashes.txt`, written before any code moves and committed; after the move the same test, with
+  no edit, must reproduce every hash.
+- **Gate 2, outputs (device, short, under the lock shared).** Before and after, by name with `-v`: the moved tests
+  (`TestAttnKernelDigests` compares every attention kernel's output digest with `cuda/testdata/attn_digests.json`), and
+  `gate gpu`'s 2b parity group (`go test -tags 'cuda goinfer_testhooks' ./cuda/`, the resident parity tests). Same outcome
+  for every test. Void: a run beside a timed holder (the shared lock refuses). Stopping rule: one run each side; a
+  difference stops the move with DECISION NEEDED.
+- **Then** the attention-digest family (`attn_digest_rig`, `attn_digest`, `attn_softcap_kernel`, `mamba_kernels`) and
+  `prefill_splitkv_img` move to `cuda/kernels`, and the ratchet falls.
+
+#### SB1 — gpu's kernel layer (item 2 of 21:42): parked, DECISION NEEDED (nobara-sb01, 2026-10-26)
+
+A type-checked declaration graph of package `gpu` (tags `gpu`) shows the shape the split would take. 15 declarations
+use `decoder` directly and 37 in all reach it; the other 557 of 594, the runners included, do not. So the cut that frees tests
+is everything clean into `gpu/kernels`, with package `gpu` keeping the residency glue (`residency.go`, `kv_slots.go`,
+`kvcopy.go`, `lora_resident.go`, `resident_sample.go`, `prefill_scratch.go`, `testhooks_kvscale.go`) and the backend
+registration. It would free 80 of the 152 in-package test files. Its cost: 129 files move; 111 unexported names the glue
+and the 72 remaining tests use must be exported (32 methods, and test seams such as `g4DropVNormForTest`); `gpu`'s public
+API needs a wrapper or alias per moved exported name, and a mutable exported var cannot be aliased without splitting its
+state; the four vision-tower files (AX's area) move too. A `metal/kernels`-style move (the WGSL sources only) is small but
+frees no test, because every gpu kernel test dispatches through `Context`. Both readings are in the DECISION below; the
+item is parked until Francis picks one.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/residency.go:Model.residentAdmission`: the runner shape (`Model.decodeRunnerDecline`), then

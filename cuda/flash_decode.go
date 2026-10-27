@@ -9,16 +9,15 @@ import (
 	"strings"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// faWarps is fa_partial's warps per CTA (FA_WARPS in decode_fa.cu): the partial buffer holds nSplit*faWarps
-// units per head.
-const faWarps = 8
-
-// faMaxRows is the most verify rows one multi-row attention call covers (the partial buffer is sized for it); a longer
-// batch is processed in chunks of this many rows.
-const faMaxRows = 16
+// faWarps and faMaxRows are the flash-decode lane's launch geometry (package launchgeom has their contracts).
+const (
+	faWarps   = launchgeom.FaWarps
+	faMaxRows = launchgeom.FaMaxRows
+)
 
 // flashDecodeDefaultMinKeys is the attended-span floor for the lane: below it the exact path runs. 2048 is the lowest
 // floor with no measured regression on the served forced-on ladder
@@ -162,55 +161,32 @@ func (r *cudaResident) flashDecodeLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV, wi
 		Arg(r.faBuf), gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(r.faSplit*faWarps)), Arg(ctx))
 }
 
-// faRowsPerCTA mirrors FaRows<HD, G>::R in decode_fa.cu: rows handled per CTA, chosen so the R*G*(hd/32) accumulators stay near
-// 64 registers. The kernel and this function must agree (the grid's z extent is derived from it); TestFlashDecodeRowsBitIdentical
-// fails if they do not, because rows would be skipped.
-func faRowsPerCTA(hd, g int) int {
-	raw := 64 / ((hd / 32) * g)
-	return min(max(raw, 1), 8)
-}
+// faRowsPerCTA is launchgeom.FaRowsPerCTA.
+func faRowsPerCTA(hd, g int) int { return launchgeom.FaRowsPerCTA(hd, g) }
 
-// faRun is a maximal run of consecutive verify rows that share a chunk partition (equal winStart and per), so one multi-row launch
-// can serve them and each row still sees exactly the partition the M=1 kernel gives it.
-type faRun struct{ row0, n, nKeys0, winStart, per int }
+// faRun and faRowRuns group a verify batch's rows into runs one multi-row launch can serve (package launchgeom).
+type faRun = launchgeom.FaRun
 
-// faRowRuns groups rows i=0..m-1, with nKeys_i = n0+i and the layer's sliding window, into runs. per_i = ceil(span_i / S).
-func faRowRuns(n0, m, window, s int) []faRun {
-	var runs []faRun
-	for i := range m {
-		nk := n0 + i
-		ws := 0
-		if window > 0 && nk > window {
-			ws = nk - window
-		}
-		per := (nk - ws + s - 1) / s
-		if k := len(runs) - 1; k >= 0 && runs[k].winStart == ws && runs[k].per == per {
-			runs[k].n++
-			continue
-		}
-		runs = append(runs, faRun{row0: i, n: 1, nKeys0: nk, winStart: ws, per: per})
-	}
-	return runs
-}
+func faRowRuns(n0, m, window, s int) []faRun { return launchgeom.FaRowRuns(n0, m, window, s) }
 
 // flashDecodeRowsLaunch runs the multi-row lane over ONE run of rows: fa_partial_rows then fa_combine_rows. q, kc, vc, ctx are the
-// batch's buffers; q and ctx rows are [row][nH*hd]. Output row (run.row0+i) equals the M=1 lane's output at nKeys = run.nKeys0+i.
+// batch's buffers; q and ctx rows are [row][nH*hd]. Output row (run.Row0+i) equals the M=1 lane's output at nKeys = run.NKeys0+i.
 func (r *cudaResident) flashDecodeRowsLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV int, run faRun) error {
 	G := r.nH / nKV
 	which := map[int]int{64: 0, 128: 1, 256: 2}[hd]
 	R := faRowsPerCTA(hd, G)
 	shm := uint32((R*G*hd + faWarps*R*64) * 4)
-	grid := uint32((run.n + R - 1) / R)
+	grid := uint32((run.N + R - 1) / R)
 	if e := r.launch(r.faRows[which][G], LaunchConfig{GridX: uint32(nKV), GridY: uint32(r.faSplit), GridZ: grid, BlockX: faWarps * 32, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
-		Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(run.winStart)),
-		gpu.ArgValue(int32(run.nKeys0)), gpu.ArgValue(int32(run.per)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(r.faSplit)),
-		gpu.ArgValue(int32(run.n)), gpu.ArgValue(int32(run.row0)), Arg(r.faBuf)); e != nil {
+		Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(run.WinStart)),
+		gpu.ArgValue(int32(run.NKeys0)), gpu.ArgValue(int32(run.Per)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(r.faSplit)),
+		gpu.ArgValue(int32(run.N)), gpu.ArgValue(int32(run.Row0)), Arg(r.faBuf)); e != nil {
 		return e
 	}
 	r.faLaunches++
 	r.faRowLaunches++
-	return r.launch(r.faCombineRows, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(run.n), GridZ: 1, BlockX: uint32(hd), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(3 * r.faSplit * faWarps * 4)},
-		Arg(r.faBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(r.faSplit*faWarps)), gpu.ArgValue(int32(run.row0)), Arg(ctx))
+	return r.launch(r.faCombineRows, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(run.N), GridZ: 1, BlockX: uint32(hd), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(3 * r.faSplit * faWarps * 4)},
+		Arg(r.faBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(r.faSplit*faWarps)), gpu.ArgValue(int32(run.Row0)), Arg(ctx))
 }
 
 // verifyLaneFrom returns the first row of an M-row batch (rows at positions startPos..startPos+M-1) that the multi-row lane serves;
@@ -241,11 +217,11 @@ func (r *cudaResident) verifyLaneFrom(l, startPos, m, tail int, hasImage bool) i
 func (r *cudaResident) flashVerifyAttn(l, startPos, from, m int, q, ctx Buffer) error {
 	Ly := &r.layers[l]
 	for _, run := range faRowRuns(startPos+from+1, m-from, int(Ly.window), r.faSplit) {
-		for a := 0; a < run.n; a += faMaxRows {
+		for a := 0; a < run.N; a += faMaxRows {
 			sub := run
-			sub.row0 = from + run.row0 + a
-			sub.n = min(faMaxRows, run.n-a)
-			sub.nKeys0 = run.nKeys0 + a
+			sub.Row0 = from + run.Row0 + a
+			sub.N = min(faMaxRows, run.N-a)
+			sub.NKeys0 = run.NKeys0 + a
 			if e := r.flashDecodeRowsLaunch(q, r.kvK(l), r.kvV(l), r.kvT(l), ctx, Ly.hd, Ly.nKV, sub); e != nil {
 				return e
 			}
