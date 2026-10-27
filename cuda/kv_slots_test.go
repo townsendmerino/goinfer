@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -713,18 +714,20 @@ func realSizeModels(t *testing.T, names ...string) []string {
 	var out []string
 	for _, n := range names {
 		p := filepath.Join(home, "models", n)
-		if strings.HasPrefix(p, "/srv/models") || strings.HasPrefix(p, "/Volumes/") {
-			t.Fatalf("%s is the archive, not a bench path", p)
+		real, err := filepath.EvalSymlinks(p) // a link into the archive reads the archive
+		if err != nil {
+			continue
 		}
-		if _, err := os.Stat(p); err == nil {
-			out = append(out, p)
+		if strings.HasPrefix(real, "/srv/models") || strings.HasPrefix(real, "/Volumes/") {
+			t.Fatalf("%s resolves to %s, the archive, not a bench path", p, real)
 		}
+		out = append(out, p)
 	}
 	return out
 }
 
 // TestPlanSlack_matchesTheBuild (MM2b gate G-MM2b-2): on real models, the rounding the plan prices equals packedAllocSlack over
-// the real build's own buffers to the byte, and the plan's dense figure plus it equals the build's.
+// the real build's own buffers to the byte. The dense figure against the device is TestResidentDenseBytes_matchesCUDADevice's.
 func TestPlanSlack_matchesTheBuild(t *testing.T) {
 	requireCUDADevice(t)
 	models := realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
@@ -744,13 +747,9 @@ func TestPlanSlack_matchesTheBuild(t *testing.T) {
 			t.Fatalf("%s: not resident: %s", p, m.ResidentDecline())
 		}
 		plan := m.Plan("cuda", 64<<30, decoder.PlanRequest{Ctx: 4096})
-		t.Logf("%s: plan slack %d, build packedAllocSlack %d, build's slack %d; plan dense+slack %d, build dense+slack %d", filepath.Base(p),
-			planned, built, r.allocSlackBytes, plan.DenseBytes+plan.AllocSlackBytes, m.ResidentDenseWeightBytesFor("cuda")+r.allocSlackBytes)
+		t.Logf("%s: plan slack %d, build packedAllocSlack %d, build's slack %d", filepath.Base(p), planned, built, r.allocSlackBytes)
 		if planned != built || planned <= 0 || plan.AllocSlackBytes != built || r.allocSlackBytes != built {
 			t.Errorf("%s: the plan prices %d (Plan %d), the build's buffers round by %d", filepath.Base(p), planned, plan.AllocSlackBytes, built)
-		}
-		if plan.DenseBytes+plan.AllocSlackBytes != m.ResidentDenseWeightBytesFor("cuda")+r.allocSlackBytes {
-			t.Errorf("%s: plan dense+slack differs from the build's", filepath.Base(p))
 		}
 		_ = m.Close()
 	}
@@ -913,4 +912,16 @@ func changePointsOf(lo, hi int64, max int, outcome func(int64) string) []int64 {
 	}
 	walk(lo, hi, outcome(lo), outcome(hi))
 	return out
+}
+
+// TestBuildDemand_registered (G-GF-4): decoder's registry holds this package's report for cuda, not decoder's default copy, so the
+// agreement test's comparison is the one the fit guard reads. It first shows the check tells two registered reports apart.
+func TestBuildDemand_registered(t *testing.T) {
+	ptr := func(f decoder.BuildDemandFunc) uintptr { return reflect.ValueOf(f).Pointer() }
+	if o := decoder.RegisteredBuildDemandForTest("metal"); o == nil || ptr(o) == ptr(buildDemand) {
+		t.Fatal("the metal report is missing or is this package's: the identity check cannot tell reports apart")
+	}
+	if f := decoder.RegisteredBuildDemandForTest("cuda"); f == nil || ptr(f) != ptr(buildDemand) {
+		t.Fatal("decoder's registry does not hold this package's cuda report")
+	}
 }

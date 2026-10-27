@@ -1146,6 +1146,7 @@ func allocRoundSlack(n int64) int64 {
 }
 
 // allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
+// Set it before the model loads: the plan remembers a model's slack from its first ask.
 var allocSlackOffForTest bool
 
 // allocSlackSeenForTest, when set (tests only), is told at each real build the slack the plan priced and packedAllocSlack over the

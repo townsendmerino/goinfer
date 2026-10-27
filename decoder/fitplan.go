@@ -6,6 +6,21 @@ import (
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
+// Each Placement equals internal/mem's of the same name, so Plan converts one to the other; a compile error here means they
+// drifted.
+var (
+	_ [int(PlacementResident) - int(mem.Resident)]struct{}
+	_ [int(PlacementExpertCached) - int(mem.ExpertCached)]struct{}
+	_ [int(PlacementHostComputedExperts) - int(mem.HostComputedExperts)]struct{}
+	_ [int(PlacementWeightPaged) - int(mem.WeightPaged)]struct{}
+	_ [int(PlacementDecline) - int(mem.Declined)]struct{}
+	_ [int(mem.Resident) - int(PlacementResident)]struct{}
+	_ [int(mem.ExpertCached) - int(PlacementExpertCached)]struct{}
+	_ [int(mem.HostComputedExperts) - int(PlacementHostComputedExperts)]struct{}
+	_ [int(mem.WeightPaged) - int(PlacementWeightPaged)]struct{}
+	_ [int(mem.Declined) - int(PlacementDecline)]struct{}
+)
+
 // Placement is which of docs/tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend. PlacementHostComputedExperts is
 // reserved and never chosen, so adding it later does not rewrite the type.
 type Placement int

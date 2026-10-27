@@ -3,6 +3,7 @@ package decoder
 import (
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // BuildQuery is a load as the fit guard sees it before the build: the options, the facts decoder resolves from the config,
@@ -107,14 +108,13 @@ func defaultMetalBuildDemand(q BuildQuery) BuildDemand {
 
 // buildDemandFor is the report of opts's backend for a load of cfg (nil before the config is read) with the priced bytes.
 func buildDemandFor(cfg *Config, opts Options, weightBytes, expertBytes int64, gguf bool) BuildDemand {
-	q := BuildQueryFor(cfg, opts, weightBytes, expertBytes, gguf)
 	buildDemandMu.RLock()
 	f := buildDemands[opts.Backend]
 	buildDemandMu.RUnlock()
 	if f == nil {
-		return BuildDemand{}
+		return BuildDemand{} // no report for this backend: nothing to resolve the architecture for
 	}
-	return f(q)
+	return f(BuildQueryFor(cfg, opts, weightBytes, expertBytes, gguf))
 }
 
 // BuildQueryFor is the query the fit guard asks opts's backend for a load of cfg (nil before the config is read) with the
@@ -162,33 +162,35 @@ type planSlackMemo struct {
 
 // planSlack is backend's rounding over m's weight buffers, asked once per model and backend.
 func (m *Model) planSlack(backend string) int64 {
-	if m == nil || planSlackOffForTest {
+	if m == nil || planSlackOffForTest.Load() {
 		return 0
 	}
-	ask := func() int64 {
+	ask := func() (int64, bool) {
 		planSlackMu.RLock()
 		f := planSlacks[backend]
 		planSlackMu.RUnlock()
-		if f != nil {
-			if s, ok := f(m); ok {
-				return s
-			}
+		if f == nil {
+			return 0, true
 		}
-		return 0
+		return f(m)
 	}
 	memo := m.planSlackOf
 	if memo == nil {
-		return ask()
+		v, _ := ask()
+		return v
 	}
 	memo.mu.Lock()
 	defer memo.mu.Unlock()
 	if v, ok := memo.of[backend]; ok {
 		return v
 	}
+	v, ok := ask()
+	if !ok {
+		return 0 // unknown (a report that stopped early) is priced as 0 and asked again next time, never remembered
+	}
 	if memo.of == nil {
 		memo.of = map[string]int64{}
 	}
-	v := ask()
 	memo.of[backend] = v
 	return v
 }
@@ -198,4 +200,4 @@ func (m *Model) planSlack(backend string) int64 {
 func (m *Model) PlanSlack(backend string) int64 { return m.planSlack(backend) }
 
 // planSlackOffForTest prices no allocation rounding in any plan: the before side of a test's diff.
-var planSlackOffForTest bool
+var planSlackOffForTest atomic.Bool

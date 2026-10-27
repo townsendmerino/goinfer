@@ -77,6 +77,12 @@ func resolveCUDAKV(q KVQuery, req string) (string, string) {
 		return KVF32, "no architecture"
 	}
 	p := q.CUDAPolicy
+	if p.Decline == nil {
+		p.Decline = func() string { return "" } // no policy registered: nothing declines f16
+	}
+	if p.Auto == nil {
+		p.Auto = func() bool { return false } // and auto keeps f32
+	}
 	switch req {
 	case KVF32:
 		return KVF32, ""

@@ -68,8 +68,11 @@ func SolveMetalCtx(in MetalCtxLoad, m Machine, pol Policy) MetalCtx {
 		p := SolvePlacement(in.Load, PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extra + more}, budget, pol)
 		return p.Placement == Resident // an expert cache is a placement the Metal load does not take by itself
 	}
+	if in.Ineligible {
+		return answer(floor, "the default: a longer context does not fit this machine's memory")
+	}
 	one := SolvePlacement(in.Load, PlanRequest{Ctx: candidate, ExtraBytes: extra}, budget, pol)
-	if in.Ineligible || one.Placement != Resident || one.Ctx <= floor {
+	if one.Placement != Resident || one.Ctx <= floor {
 		return answer(floor, "the default: a longer context does not fit this machine's memory")
 	}
 	ctx := one.Ctx

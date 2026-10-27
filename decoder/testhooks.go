@@ -791,10 +791,16 @@ func (s *BlockSpec) GenerateStopAfterForTest(prompt []int, opt BlockSpecOptions,
 	return out, err
 }
 
+// RegisteredBuildDemandForTest is the report registered for backend, nil if none: a backend's test holds it to its own function.
+func RegisteredBuildDemandForTest(backend string) BuildDemandFunc {
+	buildDemandMu.RLock()
+	defer buildDemandMu.RUnlock()
+	return buildDemands[backend]
+}
+
 // PlanWithoutSlackForTest is Plan with no allocation rounding priced: the before side of the rounding diff (MM2b gate 1).
 func (m *Model) PlanWithoutSlackForTest(backend string, freeBytes int64, req PlanRequest) Plan {
-	saved := planSlackOffForTest
-	planSlackOffForTest = true
-	defer func() { planSlackOffForTest = saved }()
+	saved := planSlackOffForTest.Swap(true)
+	defer planSlackOffForTest.Store(saved)
 	return m.Plan(backend, freeBytes, req)
 }
