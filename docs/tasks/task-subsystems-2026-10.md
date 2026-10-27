@@ -1569,7 +1569,7 @@ The device gates run on a Mac: their commands are in `/tmp/mm3-metal.md`, handed
   - A buffer's requested bytes are its `length`, its charged bytes its `allocatedSize`.
   - It leases on `Unified`; a `NewBufferNoCopy` alias leases on `FileMapped` (Francis's go).
 - **The metal package has no allocation chokepoint.** Model code calls gpudev's constructors and the package's own helpers
-  (`NewBufferU32`, `NewBufferFloats`, `byteBuf`, the int4, int8 and q4k packers, the alias helpers) at 519 sites.
+  (`NewBufferU32`, `NewBufferFloats`, `byteBuf`, the int4, int8 and q4k packers, the alias helpers) at 546 sites.
   - Each helper gets a lined twin (`…On(line, …)`); the unlined name stays as a wrapper on `gpudev.UnlinedLine` for the 826
     test call sites.
   - Every production call site names its line, chosen by its enclosing function (with per-line overrides where a function
@@ -1603,6 +1603,26 @@ If I3 misses its band on the Mac, the finding is reported first and the band is 
   test hooks is clean. Also pass: gofmt, `touched.py`, `test_touched.py` (the scan listed), the layout tests (`imports.json` and
   the ARCHITECTURE appendix updated) and the citation lint.
 - **G-MM3c-2, 3 and 4:** to be run on the Mac.
+
+**Amended before merge and before the Mac run (coordinator, 14:28, Gemini's review of #335).**
+- **G-MM3c-1's scan is tightened.** It now also flags a lined call handed `UnlinedLine` or `""` as its line, and it skips only
+  true wrappers: a function whose body hands `UnlinedLine` to its own `…On` twin. Before, it skipped any function with a listed
+  name. `newBufferLenUntracked`, a probe allocator with no production caller, takes its line from its caller.
+- **G-MM3c-4 gets an aliasing cell, because llama-tiny never aliases.** `gemma4-dense-scaled` is transcoded to a Metal `.giw`
+  and loaded with `GOINFER_METAL_ALIAS=1`, about 53 MB of no-copy windows. Pass:
+  - its FileMapped leases are above 0 (aliasing was exercised); and
+  - measured is within [U, U+64 MiB], or within [U+F, U+F+64 MiB], where U is charged Unified and F is charged FileMapped.
+  - The record says which of the two held, which answers whether `CurrentAllocatedSize` counts no-copy buffers.
+  - A FileMapped charge counts each window's pages, so a page shared by two adjacent windows is counted twice (at most a page
+    per tensor). That is stated, not changed.
+  - Each I3 cell runs in its own process (`-run` per cell), because the system device is shared and earlier tests' frees can
+    land during a cell.
+- **#2 holds as designed.** `ReleaseAll` at `Close` is how a Metal resident frees its buffers, so a lease closed there is not a
+  leak. The leak check within a model's life is G-MM3c-3: charged bytes do not grow across identical requests.
+- **#1 holds.** `UnlinedLine = test` makes a test's own unlined calls planned. Production's unlined calls are excluded by the
+  static scan, which is what I1's static half is for.
+- **Lines (#5):** MLA's RoPE table leases `dense`; the q4k segment counts and `uHasSink` (uniforms) lease `scratch`. The counts
+  in this section read 546 calls throughout.
 
 ### 6.6 What it absorbs, and what stays outside
 
