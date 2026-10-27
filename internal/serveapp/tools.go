@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 // handleChatTools serves /v1/chat/completions when tools are present: it renders
@@ -52,7 +53,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 		tm = lm.constrainedTemplate(ts)
 	}
-	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // hardens the no-tools/content spans
+	ids, err := codec.EncodePrompt(lm.tk, tm, system, turns, tools) // hardens the no-tools/content spans
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return

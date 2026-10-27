@@ -41,6 +41,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/decidecmd"
 	"github.com/townsendmerino/goinfer/internal/fitcmd"
 	"github.com/townsendmerino/goinfer/internal/hwreport"
@@ -583,7 +584,7 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Opti
 	}
 	s := &session{tk: tk, model: model, special: tk.Special(), vocab: cfg.VocabSize}
 	s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)
-	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	tmpl, err := codec.Template(tk)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "note: no recognized chat template; replies may be raw completions")
 	} else {

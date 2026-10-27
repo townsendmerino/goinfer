@@ -37,6 +37,7 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/batchio"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 // apiDefaultMaxTokens is serve's default reply length for a request that names none (internal/serveapp defaultMaxTokens).
@@ -580,8 +581,8 @@ func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName str
 	var ids []int
 	var err error
 	if tm != nil {
-		// EncodeSegments, not Encode: text in a user message that spells a special token stays text, never a forged turn boundary.
-		ids, err = s.tk.EncodeSegments(tm.RenderSegments(system, turns), false)
+		// The codec, not Encode: text in a user message that spells a special token stays text, never a forged turn boundary.
+		ids, err = codec.EncodePrompt(s.tk, tm, system, turns, nil)
 	} else {
 		ids, err = s.tk.Encode(rawPrompt(system, turns), true)
 	}

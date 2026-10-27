@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 // idsCheck is what verifying one request's carriers needs: the server's key, the identity a blob must name, the request's
@@ -75,15 +76,10 @@ func (lm *loadedModel) encodePrompt(tm *chat.Template, system string, turns []ch
 		ids, err := lm.promptForT(nil, system, turns)
 		return ids, out, err
 	}
-	render := func(turns []chat.Turn) []chat.Segment {
-		if len(tools) > 0 {
-			return tm.RenderToolsSegments(system, turns, tools)
-		}
-		return tm.RenderSegments(system, turns)
-	}
+	render := func(turns []chat.Turn) []chat.Segment { return codec.Segments(tm, system, turns, tools) }
 	segs := render(turns)
 	if ck == nil {
-		ids, err := lm.tk.EncodeSegments(segs, false)
+		ids, err := codec.Encode(lm.tk, segs)
 		return ids, out, err
 	}
 	pl := newSegPlan(segs)

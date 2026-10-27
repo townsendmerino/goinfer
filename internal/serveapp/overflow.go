@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 // contextOverflowError is a prompt that fills or exceeds the context window it was sent to. It has two readings,
@@ -86,7 +87,7 @@ func (lm *loadedModel) fixedPromptTokens(tm *chat.Template, system string, tools
 	var ids []int
 	var err error
 	if len(tools) > 0 && tm != nil {
-		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, empty, tools), false)
+		ids, err = codec.EncodePrompt(lm.tk, tm, system, empty, tools)
 	} else {
 		ids, err = lm.promptForT(tm, system, empty)
 	}

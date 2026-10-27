@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 type reasoningFormat uint8
@@ -176,7 +177,7 @@ func (lm *loadedModel) constrainedTemplate(ts thinkSettings) *chat.Template {
 // Shared by every chat route, so they all encode prompts identically.
 func (lm *loadedModel) promptForT(tmpl *chat.Template, system string, turns []chat.Turn) ([]int, error) {
 	if tmpl != nil {
-		return lm.tk.EncodeSegments(tmpl.RenderSegments(system, turns), false)
+		return codec.EncodePrompt(lm.tk, tmpl, system, turns, nil)
 	}
 	return lm.encode(rawPrompt(system, turns))
 }

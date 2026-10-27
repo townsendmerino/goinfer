@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -221,11 +222,11 @@ func (s *session) imagePrompt(turns []chat.Turn) (ids []int, imgPos, imgLen, ima
 			break
 		}
 	}
-	segs, err := multimodal.SpliceImageBlock(s.tmpl.RenderSegments(s.imageSystem(), turns), block)
+	segs, err := codec.ImageSegments(s.tmpl, s.imageSystem(), turns, block)
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	ids, err = s.tk.EncodeSegments(segs, false)
+	ids, err = codec.Encode(s.tk, segs)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("encode: %w", err)
 	}

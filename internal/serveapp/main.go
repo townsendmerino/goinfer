@@ -50,6 +50,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/clef"
+	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
@@ -1739,7 +1740,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	if cfg.maxQueue > 0 {
 		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
 	}
-	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
+	if tmpl, derr := codec.Template(tk); derr == nil {
 		lm.tmpl = cfg.tuneTemplate(tmpl)
 		for _, str := range tmpl.Stops().Strings {
 			if id, ok := tk.TokenID(str); ok {

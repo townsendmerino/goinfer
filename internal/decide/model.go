@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -24,7 +25,7 @@ type PlainTokenizer struct {
 // serves bare-v1.
 func NewPlainTokenizer(tk *tokenizer.Tokenizer) PlainTokenizer {
 	p := PlainTokenizer{Tok: tk}
-	if t, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); err == nil {
+	if t, err := codec.Template(tk); err == nil {
 		p.tmpl = t
 	}
 	return p
@@ -53,7 +54,7 @@ func (p PlainTokenizer) EncodeChat(user string) ([]int, error) {
 	if p.tmpl == nil {
 		return nil, errors.New("decide: this model has no recognized chat template; use the bare-v1 template")
 	}
-	ids, err := p.Tok.EncodeSegments(p.tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: user}}), false)
+	ids, err := codec.EncodePrompt(p.Tok, p.tmpl, "", []chat.Turn{{Role: "user", Content: user}}, nil)
 	if err != nil {
 		return nil, err
 	}
