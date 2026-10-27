@@ -1,6 +1,6 @@
 //go:build darwin && goinfer_testhooks
 
-package metal
+package kernels
 
 import (
 	"math"

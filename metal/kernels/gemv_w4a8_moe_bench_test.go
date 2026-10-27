@@ -1,6 +1,6 @@
 //go:build darwin && goinfer_testhooks
 
-package metal
+package kernels
 
 import (
 	"math/rand"
@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// BenchmarkGemvW4A8Sa isolates gemv_w4a8_sa's (metal/kernels.go, SA_BODY macro) own throughput
-// at a realistic K=4096 (Mistral-7B-class QKV/O-proj/gate-up width, same geometry as
-// TestSAGemvLargeK), the highest-call-frequency int4 GEMV family (11 production call sites).
-func BenchmarkGemvW4A8Sa(b *testing.B) {
+// BenchmarkGemvW4A8Moe isolates gemv_w4a8_moe's (metal/moe.go, shares SA_BODY's UNP8-family
+// unpack) own throughput at a realistic gate|up-projection K (moe.go: mo.pGU, launch shape
+// (rowsPerExpert*32, 256), dispatched once per selected expert per layer).
+func BenchmarkGemvW4A8Moe(b *testing.B) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		b.Skipf("no metal device: %v", err)
@@ -20,13 +20,13 @@ func BenchmarkGemvW4A8Sa(b *testing.B) {
 	if err != nil {
 		b.Fatalf("compile: %v", err)
 	}
-	pipe, err := d.NewComputePipeline(lib, "gemv_w4a8_sa")
+	pipe, err := d.NewComputePipeline(lib, "gemv_w4a8_moe")
 	if err != nil {
 		b.Fatalf("pipeline: %v", err)
 	}
 
-	const N, K = 256, 4096
-	rng := rand.New(rand.NewSource(31))
+	const E, N, K = 8, 64, 4096
+	rng := rand.New(rand.NewSource(41))
 	rndWords := func(n int) []uint32 {
 		s := make([]uint32, n)
 		for i := range s {
@@ -48,19 +48,22 @@ func BenchmarkGemvW4A8Sa(b *testing.B) {
 		}
 		return s
 	}
-	dWq := NewBufferUint32s(d, rndWords(N*(K/8)))
-	dSct := NewBufferU16s(d, rndHalf(N*(K/32)))
+	dWq := NewBufferUint32s(d, rndWords(E*N*(K/8)))
+	dSct := NewBufferU16s(d, rndHalf(E*N*(K/32)))
 	dAq := NewBufferInt8(d, rnd8(K))
 	dAsc := NewBufferFloats(d, []float32{0.01})
 	dOut := d.NewBufferLen(N)
 	uK := NewBufferU32(d, uint32(K))
+	dIdx := NewBufferUint32s(d, []uint32{3})
+	uSlot := NewBufferU32(d, 0)
+	uRowsPerExpert := NewBufferU32(d, uint32(N))
 
 	q_ := d.NewCommandQueue()
 	const reps = 4
 	run := func() {
 		e := q_.Begin()
 		for range reps {
-			e.DispatchTG(pipe, N*32, 256, K*2, dWq, dSct, dAq, dAsc, dOut, uK)
+			e.DispatchTG(pipe, N*32, 256, K*2, dWq, dSct, dAq, dAsc, dOut, uK, dIdx, uSlot, uRowsPerExpert)
 		}
 		e.End()
 	}
