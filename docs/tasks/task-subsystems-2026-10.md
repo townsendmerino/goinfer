@@ -1577,6 +1577,8 @@ If I3 misses its band, the finding is reported first and the band is not widened
   - `dense`: the weight uploads;
   - `experts`: the stacked experts;
   - `companion`: vision, towers and LoRA;
+  - `state`: Mamba's state;
+  - `test`: the test hooks;
   - `scratch`: the per-call ops and the runners' buffers.
 - **`liveBufferBytes` stays as it is**, a separate gauge.
 - **Nothing reads the ledger to decide.**
@@ -1656,6 +1658,33 @@ If I3 misses its band, the finding is reported first and the band is not widened
 | G-MM3bf-2 I2 not vacuous | the kernels suite and the gpu selection pass with the collection count checked by the rule above. A planted buffer that production code leaves unreleased is reported (a unit test creates one, drops the reference, and sees the count) | a timed run holds the card | one run | about four minutes |
 | G-MM3bf-3 the scan | `TestLedger_everyBufferIsLeased` reads `GoFiles` and `CgoFiles`; its plant still gives 4 | — | runs to completion | seconds |
 | G-MM3bf-4 builds | as G-MM3b-6 | — | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara, RTX 2070 SUPER over Vulkan; exclusive timing lock): all four pass, after the measurement found three
+real faults.**
+- **The measurement.** My first count of GC-closed leases ran without `-v`. `go test` discards a passing package's output, so
+  it reported none, and that reading was wrong. Run with `-v`, it found 625 in the kernels suite and 448 in the gpu package:
+  - **Production, `FusedMLP`.** It kept three raw buffers in a `[]interface{ Release() }`. Their `Release` reached wgpu by
+    interface dispatch, bypassing `releaseBuf`, which the typed scan did not see. They are now `leasedBuf`, whose `Release`
+    goes through `releaseBuf`. The scan also flags any `*wgpu.Buffer` converted to an interface with a `Release` method (an
+    append, a slice literal or an argument); on the old `FusedMLP` it reports all three.
+  - **Production, `DecodeRunner.release`.** It freed the runner's buffers but not a LoRA adapter still bound (four buffers and
+    two bind groups per projection). They were left to the GC. The runner now frees them with itself.
+  - **Tests.** The two Context-close reproducers leak a matrix per round on purpose, and they already set `leakExempt`. A
+    Context closed while it is set is not judged; my plant sets it too.
+- **G-MM3bf-1:** `UploadF32` leases `scratch`. `UploadF32On` takes `companion` in the vision paths and `dense` for the
+  resident's weights. The headroom probe and `MLALatentStore` lease `scratch`. The census is unchanged.
+- **G-MM3bf-2:** `LedgerBreaks` counts a buffer the GC freed with its lease open as a break. Both suites pass with none:
+  - the kernels suite passes all 112 tests, judging 103 Contexts (the reproducers' 600 and the plant are exempt);
+  - the whole gpu package passes, with 251 Contexts.
+  - `TestLedger_anUnreleasedBufferIsCounted` sees its one dropped buffer, 512 bytes.
+  - I3 stays exact: 196 against 196.
+- **G-MM3bf-3:** the scan reads `GoFiles` and `CgoFiles`, and its plant now gives 5.
+- **G-MM3bf-4:**
+  - The pinned staticcheck passes with the gpu and testhooks tags, as do `touched.py` (the whole gpu package) and the
+    citation lint.
+  - The layout tests pass; the arrow data drops a test import the tree no longer makes.
+  - `destroyBuf` and `ReleaseDestroyBuffer` are removed.
+  - The doc's line list is now `kv`, `dense`, `experts`, `companion`, `state`, `test` and `scratch`.
 
 ### 6.6 What it absorbs, and what stays outside
 

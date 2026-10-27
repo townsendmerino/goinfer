@@ -440,7 +440,6 @@
       "gpu/internal/kernels",
       "internal/fidelity",
       "internal/giw",
-      "internal/mem",
       "internal/mem/probe",
       "internal/towerid",
       "internal/vision",

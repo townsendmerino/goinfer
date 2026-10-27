@@ -54,6 +54,8 @@ type Context struct {
 	instance *wgpu.Instance
 	adapter  *wgpu.Adapter
 	ledger   mem.Ledger // every buffer created on this Context (MM3; ledger.go)
+	// collected and collectedBytes count the leased buffers the GC freed with their lease open (ledger.go's Collected).
+	collected, collectedBytes atomic.Int64
 	// info is the adapter's GetInfo, read once in New; nothing calls GetInfo again. The binding fills a C struct on the Go stack,
 	// wgpu-native can leave Rust's dangling 0x1 in a string view's pointer, and a GC that shrinks the stack during the call aborts
 	// on it ("invalid pointer found on stack").

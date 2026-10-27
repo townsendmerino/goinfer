@@ -1871,6 +1871,8 @@ func RunBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 
 func (r *DecodeRunner) release() {
 	r.dropPending()
+	releaseLoraLayers(r.loraLayers) // an adapter still bound is the runner's too: freed with it, not left to the GC
+	r.loraLayers = nil
 	for _, f := range r.keep {
 		f()
 	}

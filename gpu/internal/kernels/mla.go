@@ -176,18 +176,18 @@ func (c *Context) MLALatentStore(kvDown, normW, invFreq []float32, rank, qkRope,
 		return nil, err
 	}
 	latDim := rank + qkRope
-	dBuf, _ := c.tryCreateBufferInit(mem.LineKV, &wgpu.BufferInitDescriptor{Label: "mla-kvdown", Contents: wgpu.ToBytes(kvDown), Usage: wgpu.BufferUsageStorage})
+	dBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-kvdown", Contents: wgpu.ToBytes(kvDown), Usage: wgpu.BufferUsageStorage})
 	defer releaseBuf(dBuf)
-	nBuf, _ := c.tryCreateBufferInit(mem.LineKV, &wgpu.BufferInitDescriptor{Label: "mla-normw", Contents: wgpu.ToBytes(normW), Usage: wgpu.BufferUsageStorage})
+	nBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-normw", Contents: wgpu.ToBytes(normW), Usage: wgpu.BufferUsageStorage})
 	defer releaseBuf(nBuf)
-	fBuf, _ := c.tryCreateBufferInit(mem.LineKV, &wgpu.BufferInitDescriptor{Label: "mla-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
+	fBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
 	defer releaseBuf(fBuf)
-	lBuf, err := c.tryCreateBuffer(mem.LineKV, &wgpu.BufferDescriptor{Label: "mla-latcache", Size: uint64(latDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	lBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "mla-latcache", Size: uint64(latDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer releaseBuf(lBuf)
-	pBuf, _ := c.tryCreateBufferInit(mem.LineKV, &wgpu.BufferInitDescriptor{Label: "mla-store-p", Contents: wgpu.ToBytes([]uint32{uint32(rank), uint32(qkRope), uint32(pos), F32bits(eps), 0, F32bits(ropeScale), BoolU32(interleave), 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-store-p", Contents: wgpu.ToBytes([]uint32{uint32(rank), uint32(qkRope), uint32(pos), F32bits(eps), 0, F32bits(ropeScale), BoolU32(interleave), 0}), Usage: wgpu.BufferUsageUniform})
 	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaStoreLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: dBuf, Size: dBuf.GetSize()},
