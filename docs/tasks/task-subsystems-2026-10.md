@@ -779,6 +779,35 @@ from today's code (`origin/main` at the commit this branch starts from) and comm
 - CUDA pinned host memory as its own tier, or `HostAnon` with a flag.
 - Whether the per-process `VmSwap` reading (owner, 2026-10-17) stays a guard or becomes I3's calibration input on Linux.
 
+#### MM1's first item: the two CUDA device tests that fail on main, registered 2026-10-26 before the fix (nobara-mm01)
+
+Francis put these in MM1's scope (2026-10-26 17:35): `TestCUDAKVSlots_pricedAgainstWhatIsLeft` (the free-VRAM probe runs twice,
+the test wants once) and `TestResidentDenseBytes_matchesCUDADevice` on the 0.5B and the 1.5B (479 MB and 998 MB more on the card
+than Plan expects). Both fail the same way at origin/main (the AX2d logs on nobara).
+
+**The cause, as found in the code before any run:** KS-B8's `choosePrefillWidth` (commit 1622062be) reads `cudaFreeVRAM` a second
+time, as the build's last step, after the KV pools are allocated. Both tests stub `cudaFreeVRAM` and treat every call as
+`checkKVFits`' read, which comes before the KV. The probe-count test fails on the count. The dense-bytes test keeps the last
+call's reading, so its "device before KV" figure includes the KV pools. That would explain its surplus: Qwen2.5's KV at the
+default context comes to roughly what is reported. Production is unaffected: `checkKVFits` still reads first and alone prices the KV,
+and no fit decision or default moves. So the fix is to the tests: each records the build's first read.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-CU-1 the cause | in the dense-bytes test on the 0.5B and the 1.5B, the second read's drop exceeds the first's by at least the KV pools' charged bytes (`kvChargedBytes` at the build's context and slots), and the first read is within Plan + slack + margin | a timed job holds the card (the run takes the timing lock), or the build reads the probe other than twice | one run | under a minute of GPU on nobara, both models from `~/models` |
+| G-CU-2 the fix | both tests pass at the fix on llama-tiny, the 0.5B and the 1.5B, with `-v` showing `--- PASS` for each case; the rest of `cuda`'s `cudaFreeVRAM`-stubbing tests (`TestCUDAKVSlots_`, `TestKSB8`, `TestKSH6`, `TestBuildScratch`) still pass | as G-CU-1 | one run | under two minutes |
+
+If G-CU-1 fails (the second read does not account for the surplus), the cause is something else and the fix is not made: the
+finding is reported first.
+
+**Read, 2026-10-26 (nobara, RTX 2070 SUPER, driver 595.91.07; kwin_wayland's 17 MiB context present; timing lock held): both pass.**
+G-CU-1: the build reads the probe twice, and the second read sits 480 MB (0.5B) and 1,008 MB (1.5B) above the first, exactly
+the KV pools' charged bytes (one slot at context 16,384). That accounts for main's 479 MB and 998 MB surplus. At the first read
+the device holds 466 MB and 1,054 MB, 5 and 6 MB above Plan + slack, inside the 214 and 248 MB margins. G-CU-2: both tests pass
+on llama-tiny, the 0.5B and the 1.5B, with every `TestCUDAKVSlots_` test. With `GOINFER_HEAVY_TESTS=1`, `TestBuildScratchAccounting`
+(six models), its planted-defect test and the three KS-B8 build tests pass too. Logs: `~/goinfer-logs/mm1/` on nobara
+(cuda-probe-tests and cuda-probe-heavy, 2026-10-26).
+
 ## 7. Track AX — the towers and GPU backends move into goinfer (SD1, decided 2026-10-26)
 
 ### 7.1 What moves (aikit main on 2026-10-26)
