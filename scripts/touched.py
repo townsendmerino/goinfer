@@ -52,7 +52,12 @@ def cacheable_packages(path=TEST_CACHE):
         with open(path) as fh:
             data = json.load(fh)
         declared = data.get("declared") or {}
-        return {d for d, e in data["packages"].items() if e.get("cacheable") is True and d not in declared}
+        packages = data["packages"]
+        # A declared package still marked cacheable means the data was edited without -update, so its importers' entries
+        # are stale too: trust none of them.
+        if any(packages.get(d, {}).get("cacheable") is True for d in declared):
+            return set()
+        return {d for d, e in packages.items() if e.get("cacheable") is True and d not in declared}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return set()
 
