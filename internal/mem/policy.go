@@ -34,6 +34,11 @@ const (
 	CtxFloor = 2048
 	// GIWMargin is the flat margin the .giw guard leaves under available memory.
 	GIWMargin = 1 << 30
+	// PlanCtxFloor is the smallest context a device plan shrinks to before it moves anything else; independent of CtxFloor.
+	PlanCtxFloor = 4096
+	// MetalFitMargin is what the Metal context fit leaves under its budget, so the load-time guard's re-read after the choice
+	// does not halve a context taken at the exact edge.
+	MetalFitMargin = 384 << 20
 )
 
 // Policy is the thresholds a decision applies. DefaultPolicy is the committed one.
@@ -43,11 +48,14 @@ type Policy struct {
 	CtxFloor        int     // the auto-pin floor
 	GIWMargin       int64   // the .giw guard's margin under available memory
 	RequestFraction float64 // share of available memory one request's KV and scratch may take
+	PlanCtxFloor    int     // the context a device plan shrinks to before giving up
+	MetalFitMargin  int64   // the Metal context fit's margin under its budget
 }
 
 // DefaultPolicy returns the thresholds in force.
 func DefaultPolicy() Policy {
-	return Policy{WeightsFraction: WeightsFraction, WarnRatio: WarnRatio, CtxFloor: CtxFloor, GIWMargin: GIWMargin, RequestFraction: WeightsFraction}
+	return Policy{WeightsFraction: WeightsFraction, WarnRatio: WarnRatio, CtxFloor: CtxFloor, GIWMargin: GIWMargin, RequestFraction: WeightsFraction,
+		PlanCtxFloor: PlanCtxFloor, MetalFitMargin: MetalFitMargin}
 }
 
 // gb is the guard's GB: 2^30 bytes.
