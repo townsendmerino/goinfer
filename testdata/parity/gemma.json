@@ -7,6 +7,9 @@
   "own": [
     "decoder/gemma12.go"
   ],
+  "programs": [
+    "testdata/gemma1-tiny"
+  ],
   "deps_hash": "sha256:ea4225de996b9ae8b8035f77975d9d73f38e8e24450f2244bc84a9194a0ec4ab",
   "status": "validated",
   "validated_at": "7b50947a",

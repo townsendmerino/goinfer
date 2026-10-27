@@ -84,7 +84,6 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/kernelprint",
       "internal/mem/probe",
       "internal/paritykey",
       "tokenizer"

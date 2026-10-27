@@ -16,6 +16,9 @@
     "scripts/pin_slice_oracle.py",
     "decoder/arch_qwen3_next.go"
   ],
+  "programs": [
+    "testdata/qwen3next-tiny"
+  ],
   "deps_hash": "sha256:b42e97052b046939540520590bd8fc5de926c47dc4d5bca97cfe00a0c5b31bf9",
   "status": "validated",
   "validated_at": "426ca57d",

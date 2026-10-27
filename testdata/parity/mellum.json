@@ -10,6 +10,9 @@
     "scripts/pin_slice_oracle.py",
     "decoder/arch_mellum.go"
   ],
+  "programs": [
+    "testdata/mellum21-config"
+  ],
   "deps_hash": "sha256:44853c3ab0fbcdcdada2016535d571fef53595c461d3efe342fb3666fa681907",
   "status": "validated",
   "validated_at": "7b50947a",

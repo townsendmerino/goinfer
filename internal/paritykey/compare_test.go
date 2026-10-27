@@ -7,70 +7,41 @@ import (
 	"testing"
 )
 
-func side(pin, digest string, today, shadow string, content string) Side {
-	return Side{Pin: pin, Tail: AikitTailPrefix + pin, Digest: digest,
+// side is one family "f" with dependency files decoder/arch.go (a builder) and decoder/attention.go (an executor),
+// whose contents are arch and attn, its program list progs, and its programs digest digest.
+func side(today, shadow, arch, attn, digest string, progs ...string) Side {
+	return Side{Tail: "kernel_fingerprints=t",
 		Today: map[string]string{"f": today}, Shadow: map[string]string{"f": shadow},
-		Files: map[string][]string{"f": {"decoder/model.go"}}, Content: map[string]string{"decoder/model.go": content}}
+		Files:    map[string][]string{"f": {"decoder/arch.go", "decoder/attention.go"}},
+		Programs: map[string][]string{"f": progs}, Digest: map[string]string{"f": digest},
+		Content: map[string]string{"decoder/arch.go": arch, "decoder/attention.go": attn}}
 }
 
-// TestCompare_classes is P2: every class and reason, from sides built by hand.
+// TestCompare_classes is W4: every class and reason, from sides built by hand.
 func TestCompare_classes(t *testing.T) {
-	base := side("v1", "d1", "t1", "s1", "c1")
+	base := side("t1", "s1", "a1", "x1", "p1", "fx")
 	cases := []struct {
-		name      string
-		after     Side
-		class     Class
-		explained bool
-	}{
-		{"nothing moved", side("v1", "d1", "t1", "s1", "c1"), AgreeFresh, true},
-		{"a dependency moved", side("v1", "d1", "t2", "s2", "c2"), AgreeStale, true},
-		{"aikit moved, kernels moved", side("v2", "d2", "t2", "s2", "c1"), AgreeStale, true},
-		{"aikit moved, kernels did not", side("v2", "d1", "t2", "s1", "c1"), OldOnly, true},
-		{"today moved on a file, shadow did not", side("v1", "d1", "t2", "s1", "c2"), OldOnly, false},
-		{"aikit and a file moved, shadow did not", side("v2", "d1", "t2", "s1", "c2"), OldOnly, false},
-		{"kernels moved, aikit did not", side("v1", "d2", "t1", "s2", "c1"), NewOnly, false},
-		// Not producible by real keys (a moved digest moves the shadow key); it pins that the fingerprints must not have moved.
-		{"aikit and kernels moved, shadow did not", side("v2", "d2", "t2", "s1", "c1"), OldOnly, false},
-	}
-	for _, c := range cases {
-		v := Compare(base, c.after)
-		if len(v) != 1 || v[0].Class != c.class || v[0].Explained != c.explained {
-			t.Errorf("%s: got %+v, want class %s explained %v", c.name, v, c.class, c.explained)
-		}
-	}
-
-	// The kernel table in place of the pin. The runner here is configuration "a".
-	table := func(a, b string) Side {
-		s := side("v1", "d1", "t1", "s1", "c1")
-		s.Table = map[string]map[string]string{"a": {"k": a}, "b": {"k": b}}
-		s.Tail, s.Config = KernelTailPrefix+KernelTableDigest(s.Table), "a"
-		return s
-	}
-	tbase := table("x", "y")
-	withToday := func(s Side, today, shadow string) Side {
-		s.Today, s.Shadow = map[string]string{"f": today}, map[string]string{"f": shadow}
-		return s
-	}
-	tcases := []struct {
 		name          string
 		before, after Side
 		class         Class
 		explained     bool
-		reason        string
 	}{
-		{"the key's definition changed", base, withToday(table("x", "y"), "t2", "s1"), OldOnly, true, "the key's definition changed (aikit_version -> kernel_fingerprints); no input it reads moved"},
-		{"the table moved for another configuration", tbase, withToday(table("x", "z"), "t2", "s1"), OldOnly, true, "the kernel table moved for configurations this machine does not run (b)"},
-		{"the table moved for this configuration, the kernels did not", tbase, withToday(table("w", "y"), "t2", "s1"), OldOnly, false, ""},
-		{"the kernels moved, the table did not", tbase, func() Side { s := withToday(table("x", "y"), "t1", "s2"); s.Digest = "d2"; return s }(), NewOnly, false, ""},
-		{"an aikit bump under the table, no kernel moved", tbase, func() Side { s := table("x", "y"); s.Pin = "v2"; return s }(), AgreeFresh, true, ""},
+		{"nothing moved", base, side("t1", "s1", "a1", "x1", "p1", "fx"), AgreeFresh, true},
+		{"an executor moved", base, side("t2", "s2", "a1", "x2", "p1", "fx"), AgreeStale, true},
+		{"a builder and its program moved", base, side("t2", "s2", "a2", "x1", "p2", "fx"), AgreeStale, true},
+		{"a builder moved, no program did", base, side("t2", "s1", "a2", "x1", "p1", "fx"), OldOnly, true},
+		{"a builder and an executor moved, the shadow key did not", base, side("t2", "s1", "a2", "x2", "p1", "fx"), OldOnly, false},
+		{"a program moved, no dependency did", base, side("t1", "s2", "a1", "x1", "p2", "fx"), NewOnly, false},
+		{"the program list changed", side("t1", "t1", "a1", "x1", ""), side("t1", "s2", "a1", "x1", "p1", "fx"), NewOnly, true},
+		{"the program list and a program changed", base, side("t1", "s2", "a1", "x1", "p2", "fx", "fy"), NewOnly, true},
+		{"today's tail moved, the shadow key did not", base, func() Side { s := side("t2", "s1", "a1", "x1", "p1", "fx"); s.Tail = "kernel_fingerprints=u"; return s }(), OldOnly, false},
 	}
-	for _, c := range tcases {
+	for _, c := range cases {
 		v := Compare(c.before, c.after)
-		if len(v) != 1 || v[0].Class != c.class || v[0].Explained != c.explained || (c.reason != "" && v[0].Reason != c.reason) {
-			t.Errorf("%s: got %+v, want class %s explained %v reason %q", c.name, v, c.class, c.explained, c.reason)
+		if len(v) != 1 || v[0].Class != c.class || v[0].Explained != c.explained {
+			t.Errorf("%s: got %+v, want class %s explained %v", c.name, v, c.class, c.explained)
 		}
 	}
-
 	after := base
 	after.Today = map[string]string{"g": "t"}
 	got := Compare(base, after)
@@ -79,27 +50,43 @@ func TestCompare_classes(t *testing.T) {
 	}
 }
 
-// TestKey_onTheTree hashes every family of the working tree with both tails, so a manifest the package cannot read
-// fails here rather than in the shadow job.
+// TestBuilderFile names the builders and keeps every other file in the key.
+func TestBuilderFile(t *testing.T) {
+	for _, p := range []string{"decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/arch_llama.go"} {
+		if !BuilderFile(p) {
+			t.Errorf("%s is a builder", p)
+		}
+	}
+	for _, p := range []string{"decoder/program_cpu.go", "decoder/attention.go", "decoder/arch_llama_test.go", "decoder/weights.go", "decoder/gemma12.go", "scripts/arch_x.go"} {
+		if BuilderFile(p) {
+			t.Errorf("%s is not a builder", p)
+		}
+	}
+}
+
+// TestKey_onTheTree hashes every family of the working tree with both keys, so a manifest or table the package cannot
+// read fails here rather than in the shadow job.
 func TestKey_onTheTree(t *testing.T) {
 	src := Dir("../..")
-	if _, err := ManifestJSON(src); err != nil {
-		t.Fatal(err)
-	}
-	s, err := LoadSide(src, "cfg", "digest")
+	s, err := LoadSide(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(s.Tail, KernelTailPrefix) || len(s.Table) == 0 {
-		t.Errorf("today's tail %q, %d table configurations: the tree's key is not on its kernel table", s.Tail, len(s.Table))
+	if !strings.HasPrefix(s.Tail, KernelTailPrefix) {
+		t.Errorf("today's tail %q: the tree's key is not on its kernel table", s.Tail)
 	}
-	if len(s.Today) == 0 {
-		t.Fatal("no families")
-	}
+	with := 0
 	for name := range s.Today {
-		if s.Today[name] == s.Shadow[name] {
-			t.Errorf("%s: today's key equals the shadow key", name)
+		has := len(s.Programs[name]) > 0
+		if has {
+			with++
 		}
+		if same := s.Today[name] == s.Shadow[name]; same == has {
+			t.Errorf("%s: %d programs, and today's key equal to the shadow key is %v", name, len(s.Programs[name]), same)
+		}
+	}
+	if with == 0 {
+		t.Fatal("no family has programs")
 	}
 }
 

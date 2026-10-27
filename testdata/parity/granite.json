@@ -8,6 +8,9 @@
   "own": [
     "decoder/arch_granite.go"
   ],
+  "programs": [
+    "testdata/granite-dense-tiny"
+  ],
   "deps_hash": "sha256:74f221f9026cd78e303b8bc168fbb3bbc8c8354f9a5c3ef813e00ed1ab6c2cf5",
   "status": "validated",
   "validated_at": "7b50947a",

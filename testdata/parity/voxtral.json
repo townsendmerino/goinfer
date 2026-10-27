@@ -8,6 +8,9 @@
     "decoder/arch_voxtral.go",
     "decoder/arch_llama.go"
   ],
+  "programs": [
+    "testdata/voxtral-tiny"
+  ],
   "deps_hash": "sha256:caa93364ea5a027f89c6746b2ef9240fd53605d5c585eb7e90e5addac6409f56",
   "status": "validated",
   "validated_at": "8494de25",

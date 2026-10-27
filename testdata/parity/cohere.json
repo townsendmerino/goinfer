@@ -7,6 +7,9 @@
   "own": [
     "decoder/arch_cohere.go"
   ],
+  "programs": [
+    "testdata/cohere-tiny"
+  ],
   "deps_hash": "sha256:b18d962c843530bec535f40b0e096127af7d46a6b407b7d6ea8f375d3ec24f22",
   "status": "validated",
   "validated_at": "7b50947a",

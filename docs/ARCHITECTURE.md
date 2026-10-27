@@ -1065,7 +1065,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | package | imports | its tests also import |
 |---|---|---|
 | `chat` | `tokenizer` |  |
-| `cmd/gate` | `internal/kernelprint`, `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
+| `cmd/gate` | `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/prequant` |  |
 | `cmd/serve` | `internal/serveapp` |  |

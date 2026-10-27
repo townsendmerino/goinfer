@@ -7,6 +7,9 @@
   "own": [
     "decoder/arch_mistral3.go"
   ],
+  "programs": [
+    "testdata/ministral3-tiny"
+  ],
   "deps_hash": "sha256:37e9a9aafee73cb72fe3d2c4a6a10399791a70caaab2d9722aaf9efe2bf468b3",
   "status": "validated",
   "validated_at": "7b50947a",
