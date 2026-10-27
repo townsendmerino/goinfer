@@ -101,6 +101,7 @@
     ],
     "cuda": [
       "cuda/internal/gpudev",
+      "cuda/internal/launchgeom",
       "cuda/internal/wpack",
       "decoder",
       "internal/audio",
@@ -382,6 +383,7 @@
     ],
     "cuda/kernels": [
       "cuda/internal/gpudev",
+      "cuda/internal/launchgeom",
       "cuda/internal/wpack"
     ],
     "cuda/s4siglip": [

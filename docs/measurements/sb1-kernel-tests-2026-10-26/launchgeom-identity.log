@@ -1,0 +1,27 @@
+----- write and recheck at b344ee030 -----
+=== RUN   TestLaunchGeometry_identity
+    launchgeom_identity_test.go:41: wrote 7 hashes to testdata/launchgeom_hashes.txt
+--- PASS: TestLaunchGeometry_identity (14.52s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	14.525s
+=== RUN   TestLaunchGeometry_identity
+    launchgeom_identity_test.go:74: 7 launch-geometry hashes match testdata/launchgeom_hashes.txt
+--- PASS: TestLaunchGeometry_identity (14.76s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	14.765s
+----- after the move (with the packer gate) -----
+=== RUN   TestLaunchGeometry_identity
+    launchgeom_identity_test.go:74: 7 launch-geometry hashes match testdata/launchgeom_hashes.txt
+--- PASS: TestLaunchGeometry_identity (14.73s)
+=== RUN   TestWeightPackers_bitIdentity
+    wpack_identity_test.go:79: 32 packer outputs match testdata/wpack_hashes.txt
+--- PASS: TestWeightPackers_bitIdentity (29.57s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	44.309s
+----- plant: AttnFusedKPAD 8 -> 16 (reverted) -----
+--- FAIL: TestLaunchGeometry_identity (14.90s)
+    launchgeom_identity_test.go:66: constants: changed: hash 388de6a0f8c198a73547831c8ffe2ad45f91cb6fc50a80808133b00e489e3a8b, want 78082a40bc067c4f5284907361a12087d500f5a66b3325d386c40083b376b370
+    launchgeom_identity_test.go:74: 7 launch-geometry hashes match testdata/launchgeom_hashes.txt
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	14.906s
+FAIL

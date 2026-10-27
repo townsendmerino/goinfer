@@ -136,3 +136,29 @@ Ratchet, cuda: direct 246 (unchanged), reach 322 → 317 (six files out, the ide
   rmsnorm, rope2_bench, rope2_kv, rope2, rope_pairwise, rope_partial, rope, s17_gemm_probe, sa_largek, sa_outlier,
   scale_roundtrip, simdsum_tree_mc3, swiglu_massive, swiglu_quant_bench, swiglu_quant_gptoss_bench, swiglu, tax, vnorm,
   window (each `<name>_test.go`).
+
+# Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
+
+Read as `cuda/prefill.go` and `cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch
+geometry out of package cuda"). No `decoder` file changed.
+
+- **What moved:** `faWarps`, `faMaxRows`, `faRowsPerCTA`, `faRun`, `faRowRuns`, `attnFusedBM`, `attnFusedThreads`,
+  `attnFusedKPAD`, `attnFusedMinRows`, `imgBlockMaxNWin` and `imgBlocksMaxNWin` into `cuda/internal/launchgeom` (standard
+  library only); `f32ToF16RNE` and `f32SliceToF16RNE` into `cuda/internal/wpack`. Package `cuda` keeps every name, as a
+  constant, an alias or a thin wrapper. `faRun`'s fields are exported now, so its readers in `flash_decode.go` and
+  `attn_digest_test.go` name them `Row0`, `N`, `NKeys0`, `WinStart`, `Per`.
+- **Gate 1:** `TestLaunchGeometry_identity`'s 7 hashes, written at `b344ee030` before any code moved (14.5 s) and
+  reproduced (14.8 s), match after the move with the test unedited; the packer gate's 32 hashes match too
+  (`launchgeom-identity.log`). Shown red: `AttnFusedKPAD` 8 → 16 fails the `constants` hash (reverted).
+- **Gate 2:** the whole `./cuda/` package under `cuda goinfer_testhooks` (`gate gpu`'s 2b group, which includes the digest
+  tests), before at `b344ee030` (302 PASS, 288 SKIP, 516 s) and after, with `./cuda/kernels/` (515.7 s and 38.1 s):
+  every one of the 590 tests the before-run reported has the same outcome after. The after-run's other 47 names are the
+  tests batches 1–3 had already put in `cuda/kernels`. `TestAttnKernelDigests` passes on both sides, so every attention
+  kernel's output digest still equals `cuda/testdata/attn_digests.json`. (`TestMoERouteFirstLaunchReservation` and
+  `TestRouteGptOssGrowsPoolPastMoERoute` skip in a whole-package run by design: each measures a first launch in its
+  process, and says to run it alone; batch 2 ran both alone.)
+- **Tests moved:** `attn_digest_rig`, `attn_digest`, `attn_softcap_kernel` and `prefill_splitkv_img` to `cuda/kernels`
+  (paths to `cuda/testdata` and the `.cu` sources now go through `..`). `mamba_kernels_test.go` stays in `cuda`: it loads
+  a model through `decoder` for its reference. It keeps a copy of the part of the digest rig it drives
+  (`mamba_kernels_rig_test.go`); a shared rig package would remove the copy, at the cost of renaming every rig call.
+- **Ratchet,** cuda: direct 246, reach 317 → 315 (four files out; the identity test and the rig copy in).

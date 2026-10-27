@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"flag"
 	"math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,8 +23,8 @@ import (
 // its output bytes are hashed, so a change to how a score is formed shows as a changed digest. The digests are committed in
 // testdata/attn_digests.json, recorded at base (the commit before step 1) and compared at every later commit.
 //
-//	go test -count=1 -tags cuda -run '^TestAttnKernelDigests' -v ./cuda/
-//	go test -count=1 -tags cuda -run '^TestAttnKernelDigests$' -update-attn-digests ./cuda/   # re-record, at base only
+//	go test -count=1 -tags cuda -run '^TestAttnKernelDigests' -v ./cuda/kernels/
+//	go test -count=1 -tags cuda -run '^TestAttnKernelDigests$' -update-attn-digests ./cuda/kernels/   # re-record, at base only
 //
 // The digests belong to one device and one driver: the driver JIT-compiles the PTX, so another driver can move a bit without any source
 // change. A run on another anchor FAILS as void and does not compare; re-anchoring is a deliberate act (CLAUDE.md, "CUDA rows are anchored
@@ -31,7 +32,7 @@ import (
 
 var updateAttnDigests = flag.Bool("update-attn-digests", false, "rewrite testdata/attn_digests.json from this run (at base only)")
 
-const attnDigestFile = "testdata/attn_digests.json"
+const attnDigestFile = "../testdata/attn_digests.json"
 
 type adAnchor struct {
 	Device       string `json:"device"`
@@ -225,7 +226,7 @@ func adDigest(outs [][]float32) string {
 // not exempted by accident.
 func adSourceKernels(t *testing.T) []string {
 	t.Helper()
-	files, err := os.ReadDir(".")
+	files, err := os.ReadDir("..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +237,7 @@ func adSourceKernels(t *testing.T) []string {
 		if !strings.HasSuffix(f.Name(), ".cu") {
 			continue
 		}
-		b, err := os.ReadFile(f.Name())
+		b, err := os.ReadFile(filepath.Join("..", f.Name()))
 		if err != nil {
 			t.Fatal(err)
 		}

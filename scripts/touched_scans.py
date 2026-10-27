@@ -180,7 +180,7 @@ SCANS = [
     Scan("cuda", "TestPrefillCoreCallsMropePosWindow", F("cuda/prefill.go")),
     Scan("cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("cuda/prefill.go")),
     Scan("cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("cuda/backend.go")),
-    Scan("cuda", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
+    Scan("cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # K3 checks that no production file names an entry point its exclusions call uncalled, against the census's predicates.
     Scan("internal/kernelprint", "TestCompute_reachesCensus", TREE_NT + F("docs/hardware-coverage.json")),
