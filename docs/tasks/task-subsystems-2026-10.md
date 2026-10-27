@@ -66,7 +66,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
 | SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
-| SB13 | open | the package layout as an import-direction test with ratchets; S | §9 |
+| SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | open | the doc-drift test: every invariant a `doc.go` lists names a test that exists, and `docs/ARCHITECTURE.md`'s import table equals SB13's data; S | §4.1 |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
@@ -1254,6 +1254,37 @@ is not coverage, made mechanical. S.
 
 §9's table as a test that reads `go list -deps` for every module and fails on a forbidden edge, with ratchets (backend
 test files importing `decoder` may only fall). S.
+
+#### SB13's gates, registered 2026-10-26 before the code (mac-vk01)
+
+Francis (19:52, relayed): SB13 while VK5's shadow week runs. The data is `internal/layout/imports.json`, which SB14
+and `docs/ARCHITECTURE.md` can read. It holds two things:
+- **The arrows.** Every import from one goinfer package to another, in every module, as repository-relative package
+  paths. Non-test and test files are kept as two lists.
+- **The protected separations, as rules:**
+  - `internal/vision` and `internal/audio` import no goinfer package and, outside the standard library, only aikit's
+    `linalg` and `embed`.
+  - The two gpudev halves (`cuda/internal/gpudev`, `metal/internal/gpudev`) import no goinfer package.
+  - `cuda/kernels` and `metal/kernels` never import `decoder`, in tests either.
+  - `internal/mem/probe` imports no goinfer package; that it is the only OS memory reader stays MM0's
+    `TestOnlyProbeReadsOSMemory`.
+  - No root-module package imports the `cuda`, `metal` or `gpu` modules or aikit's GPU modules, and the root `go.mod`
+    requires none of them.
+
+`TestLayout_arrows` parses imports the way the existing decoder ratchet in the same package does (no `go list`, so
+seconds, across all modules). It fails on:
+- an arrow the data lacks: a new arrow, named with the file that makes it;
+- an arrow the data has but the tree no longer makes: the data must be lowered to match;
+- any arrow, made or recorded, that breaks a rule.
+
+So an arrow, once removed from the data, comes back only through an edit to the data, and an arrow that breaks a rule
+cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is not touched.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| L1 today's tree | `TestLayout_arrows` passes on origin/main's tree with the data written from it; every protected rule holds today | never | one run | seconds |
+| L2 a planted forbidden import | `gate mutation` adding a `decoder` import to a `cuda/kernels` test file turns it red and the message names `cuda/kernels → decoder` and the rule; one adding an unrecorded but permitted arrow turns it red and names the arrow | never | one run each | seconds |
+| L3 the ratchet only falls | `gate mutation` deleting a recorded arrow from the data while the tree still makes it turns it red (a removed arrow cannot be re-added without editing the data); one recording an arrow the tree does not make turns it red; one recording `internal/vision → decoder` in the data turns it red as a rule violation even with no code making it | never | one run each | seconds |
 
 ## 9. The target layout
 
