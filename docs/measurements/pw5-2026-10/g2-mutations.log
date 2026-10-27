@@ -1,0 +1,19 @@
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: pw5-g2a is falsifiable
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: pw5-g2b is falsifiable
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: pw5-g2c is falsifiable
+    testcache_test.go:326: internal/giw is marked cacheable, but the scan finds timing: Go's test cache would replay a result that depends on it. Remove the read, or record it (-update) so touched.py keeps -count=1
+    testcache_test.go:326: internal/kvmgr is marked cacheable, but the scan finds a subprocess: Go's test cache would replay a result that depends on it. Remove the read, or record it (-update) so touched.py keeps -count=1
+    testcache_test.go:326: internal/towerid is marked cacheable, but the scan finds OS memory (through internal/mem/probe); files outside the module (through decoder): Go's test cache would replay a result that depends on it. Remove the read, or record it (-up
+    testcache_test.go:341: 82 packages, 13 cacheable, 0 declared by hand
