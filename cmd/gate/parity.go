@@ -532,13 +532,13 @@ func catchAllSkips(res *results, checks []gateCheck) []string {
 	return out
 }
 
-// mergeManifest folds the collected PARITY_ROW lines into testdata/parity_manifest.json, re-renders
+// mergeManifest folds the collected PARITY_ROW lines into the parity records (testdata/parity), re-renders
 // the capability matrix, and reports emitter coverage. Returns how many blockers it added.
 //
 // The emitter only writes a row for a gate that PASSED (its t.Failed guard), so this never records a
 // failed or skipped gate.
 func mergeManifest(w io.Writer, res *results, logDir string) int {
-	fmt.Fprintf(w, "\n-- EMIT_MANIFEST: merging measured PARITY_ROW lines into testdata/parity_manifest.json --\n")
+	fmt.Fprintf(w, "\n-- EMIT_MANIFEST: merging measured PARITY_ROW lines into the parity records (testdata/parity) --\n")
 	rows := res.parityRows
 	if len(rows) == 0 {
 		fmt.Fprintf(w, "   no PARITY_ROW lines emitted (no numeric-oracle gate ran with its asset)\n")

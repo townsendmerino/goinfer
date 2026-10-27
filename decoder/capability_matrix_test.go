@@ -673,7 +673,7 @@ type capabilityRow struct {
 	Loaders       string   `json:"loaders"`
 	Modality      string   `json:"modality"`
 	GPUResident   bool     `json:"gpu_residency_eligible"`
-	Parity        string   `json:"parity"` // joined from testdata/parity_manifest.json by Name
+	Parity        string   `json:"parity"` // joined from the parity records (testdata/parity) by Name
 
 	// Checkpoint is the recommended checkpoint for this family, if there is one: the row pull/registry.go reads to turn a
 	// short name into a repo + file + digest. It lives in the GENERATOR because docs/capability-matrix.json is generated
@@ -854,9 +854,9 @@ func parityColumn(fam familyParity) string {
 	return fmt.Sprintf("%s%s %.1f%%/%.5f%s", expPrefix, method, metrics.ArgmaxPct, metrics.CosineMin, suffix)
 }
 
-// loadParityManifest reads testdata/parity_manifest.json for the matrix join.
+// loadParityManifest reads the parity records (testdata/parity) for the matrix join.
 func loadParityManifest() (*parityManifest, error) {
-	raw, err := os.ReadFile(parityManifestPath)
+	raw, err := parityManifestJSON()
 	if err != nil {
 		return nil, err
 	}
@@ -1093,7 +1093,7 @@ func renderMarkdown(rows []capabilityRow) []byte {
 	b.WriteString("qualitatively; `coherent-gen` is a real-model coherence check with no numeric ")
 	b.WriteString("oracle; `shared-path: X` is an alias family riding X's oracle on the same forward ")
 	b.WriteString("file and the same `deps_hash` (so it carries no metrics of its own — X's are the ")
-	b.WriteString("measurement); `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.\n\n")
+	b.WriteString("measurement); `pending` is not yet recorded. Source: `testdata/parity/` (one record per family).\n\n")
 	// Rendered from the constant the CLI and the server load with, so the matrix cannot disagree with them.
 	b.WriteString("**Decision models.** A model with a trained decision head (`goinfer-chat decide --head`, ")
 	b.WriteString("`goinfer-serve`'s `head=`) loads at `" + DecisionHeadQuant + "` unless a quant is chosen. ")

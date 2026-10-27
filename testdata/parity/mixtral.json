@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe"
+  ],
+  "own": [
+    "decoder/arch_mixtral.go"
+  ],
+  "deps_hash": "sha256:8227bee31ec5fbd1f3d3de03cfdf6f3cebde2524abd24182f0dfbac541b2131f",
+  "status": "experimental",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (mixtral-tiny seeded fixture, 8x top-2)",
+  "machine": "linux-amd64",
+  "method": "tiny-golden",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

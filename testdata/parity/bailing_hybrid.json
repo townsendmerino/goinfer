@@ -1,0 +1,20 @@
+{
+  "uses": [],
+  "own": [
+    "decoder/arch_bailing_hybrid.go",
+    "decoder/kda.go",
+    "decoder/kda_rehearsal.go"
+  ],
+  "deps_hash": "sha256:7cdd684c0addac631983e915918f6f5d227bf8457306d762c14462bcd6889665",
+  "status": "experimental",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "hand-assembled f32 reference (bailing_hybrid-tiny fixture, MLA+KDA composition, KDA's per-channel-decay recurrence via fla-org's own naive reference)",
+  "machine": "linux-amd64",
+  "method": "tiny-golden",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

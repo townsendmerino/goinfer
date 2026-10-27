@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_qwen3_asr.go",
+    "decoder/arch_qwen3.go"
+  ],
+  "deps_hash": "sha256:0735f32a7bd735d73b9213f00b5831299ef1e27ac40594906bfc37711bf6ad31",
+  "status": "validated",
+  "validated_at": "4f84f2c1",
+  "date": "2026-10-08",
+  "reference": "HF f32 (Qwen/Qwen3-ASR-0.6B, converted by a pure rename because transformers 5.15.0 cannot read the shipped layout; the conversion is proved by its transcription of a LibriSpeech clip): the decoder's text path (TestQwen3ASRReal_gate c1) and a real clip through the Go front end, encoder, projector, soft-token splice and decoder (c3: prompt ids equal the processor's, 26 teacher-forced positions at logit cosine 1.000000000, the greedy transcription equal)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

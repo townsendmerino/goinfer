@@ -25,7 +25,7 @@ var forwardEntryFiles = map[string]bool{"decoder/model_forward.go": true, "decod
 // runs re-stales the families that run it. A reached file's other functions are not roots: a file that mixes forward and
 // plumbing code is covered for its forward code only. Calls through interfaces and func values are not followed.
 func TestParityManifest_coreClosed(t *testing.T) {
-	raw, err := os.ReadFile(parityManifestPath)
+	raw, err := parityManifestJSON()
 	if err != nil {
 		t.Fatal(err)
 	}

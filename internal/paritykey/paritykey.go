@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/scanner"
 	"go/token"
@@ -27,12 +28,19 @@ import (
 	"strings"
 )
 
-// ManifestPath is the parity manifest, relative to the repository root.
-const ManifestPath = "testdata/parity_manifest.json"
+// RecordsDir holds the parity records: SharedSetsFile and one <family>.json per family. LegacyManifestPath is the single
+// file they replaced (VK3); commits before the change carry it, and ManifestJSON still reads it there.
+const (
+	RecordsDir         = "testdata/parity"
+	SharedSetsFile     = RecordsDir + "/shared_sets.json"
+	LegacyManifestPath = "testdata/parity_manifest.json"
+)
 
-// Source reads a tree's files by repository-relative path. A missing file is an error wrapping os.ErrNotExist.
+// Source reads a tree's files by repository-relative path, and lists a directory's file names. A missing file or
+// directory is an error wrapping os.ErrNotExist.
 type Source interface {
 	ReadFile(path string) ([]byte, error)
+	ListDir(path string) ([]string, error)
 }
 
 // Dir is a Source over a working tree rooted at the named directory.
@@ -42,7 +50,64 @@ func (d Dir) ReadFile(path string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(string(d), path))
 }
 
-// Manifest is the part of testdata/parity_manifest.json a key reads.
+func (d Dir) ListDir(path string) ([]string, error) {
+	ents, err := os.ReadDir(filepath.Join(string(d), path))
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range ents {
+		if !e.IsDir() {
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil
+}
+
+// ManifestJSON assembles the parity manifest as one JSON object, {"shared_sets": {...}, "families": {"<name>": {...}}},
+// from src's records, each family's record carried verbatim. A tree without records (a commit before VK3) yields its
+// single manifest file unchanged. A tree with neither is an error, never an empty manifest.
+func ManifestJSON(src Source) ([]byte, error) {
+	sets, err := src.ReadFile(SharedSetsFile)
+	if errors.Is(err, os.ErrNotExist) {
+		if legacy, lerr := src.ReadFile(LegacyManifestPath); lerr == nil {
+			return legacy, nil
+		}
+		return nil, fmt.Errorf("no parity records (%s) and no %s: %w", SharedSetsFile, LegacyManifestPath, err)
+	} else if err != nil {
+		return nil, err
+	}
+	names, err := src.ListDir(RecordsDir)
+	if err != nil {
+		return nil, err
+	}
+	fams := map[string]json.RawMessage{}
+	for _, n := range names {
+		if !strings.HasSuffix(n, ".json") || RecordsDir+"/"+n == SharedSetsFile {
+			continue
+		}
+		b, err := src.ReadFile(RecordsDir + "/" + n)
+		if err != nil {
+			return nil, err
+		}
+		if !json.Valid(b) {
+			return nil, fmt.Errorf("%s/%s: not valid JSON", RecordsDir, n)
+		}
+		fams[strings.TrimSuffix(n, ".json")] = b
+	}
+	if len(fams) == 0 {
+		return nil, fmt.Errorf("%s holds no family record", RecordsDir)
+	}
+	if !json.Valid(sets) {
+		return nil, fmt.Errorf("%s: not valid JSON", SharedSetsFile)
+	}
+	return json.Marshal(struct {
+		SharedSets json.RawMessage            `json:"shared_sets"`
+		Families   map[string]json.RawMessage `json:"families"`
+	}{sets, fams})
+}
+
+// Manifest is the part of the parity manifest a key reads.
 type Manifest struct {
 	SharedSets map[string][]string `json:"shared_sets"`
 	Families   map[string]Family   `json:"families"`
@@ -56,15 +121,15 @@ type Family struct {
 	Status   string   `json:"status"`
 }
 
-// ReadManifest reads the parity manifest from src.
+// ReadManifest reads the parity manifest from src (ManifestJSON).
 func ReadManifest(src Source) (*Manifest, error) {
-	b, err := src.ReadFile(ManifestPath)
+	b, err := ManifestJSON(src)
 	if err != nil {
 		return nil, err
 	}
 	var m Manifest
 	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, fmt.Errorf("%s: %w", ManifestPath, err)
+		return nil, fmt.Errorf("parity manifest: %w", err)
 	}
 	return &m, nil
 }

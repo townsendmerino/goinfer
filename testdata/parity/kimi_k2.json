@@ -1,0 +1,21 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe"
+  ],
+  "own": [
+    "decoder/forward_deepseek.go",
+    "decoder/arch_deepseek.go",
+    "decoder/mla_int8.go"
+  ],
+  "deps_hash": "sha256:61c8d4a7c457e769ac9507f9c293d7d93387f950440f326e2aad9dfe09442792",
+  "status": "validated",
+  "validated_at": "d5c5a1d53",
+  "date": "2026-10-23",
+  "reference": "rides deepseek_v3's real-model oracle (HF bf16 Moonlight-16B-A3B; int8 resident) \u2014 same forward_deepseek.go, same deps_hash. Kimi's config-delta (64 heads, 384 experts top-8, sigmoid noaux_tc routing default) is covered by TestKimi_descriptor / TestKimi_routingDefault / TestKimi_textParity (tiny golden, cosine 1.000000)",
+  "machine": "linux-62gb",
+  "method": "shared-path (via deepseek_v3)",
+  "metrics": null
+}

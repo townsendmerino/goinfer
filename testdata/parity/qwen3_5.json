@@ -1,0 +1,27 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "deltanet"
+  ],
+  "own": [
+    "decoder/forward_qwen35.go",
+    "decoder/qwen3_5_test.go",
+    "scripts/pin_qwen3_5_forward.py",
+    "decoder/arch_qwen3_5.go",
+    "decoder/generate_vl_qwen35.go"
+  ],
+  "deps_hash": "sha256:d435ee050192fbdba2378c3826e6e72269181421fe7190d1eb9f943052af6392",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF bf16 (Qwen/Qwen3.8-27B, Qwen3_5ForConditionalGeneration text path; full model via accelerate disk offload; int8 weights, f32 activations)",
+  "machine": "linux-amd64",
+  "method": "real-model-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 0.99989,
+    "cosine_mean": 0.99989
+  }
+}

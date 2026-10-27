@@ -1,0 +1,24 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "mamba2"
+  ],
+  "own": [
+    "decoder/forward_nemotron.go",
+    "decoder/arch_nemotron_h.go"
+  ],
+  "deps_hash": "sha256:45cfce5445b9b83e5a2b43c4274a88826b1a349e759dc08cddcd14124e8a5d25",
+  "status": "validated",
+  "validated_at": "0b74e671",
+  "date": "2026-09-18",
+  "reference": "HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)",
+  "machine": "linux-amd64",
+  "method": "real-model-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 0.99574,
+    "cosine_mean": 0.99574
+  }
+}

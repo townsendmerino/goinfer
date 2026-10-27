@@ -87,7 +87,7 @@ type results struct {
 
 	// parityRows are `PARITY_ROW {json}` lines in stream order. The real-oracle gates emit them
 	// with fmt.Printf under GOINFER_MANIFEST_EMIT, so they arrive as ordinary output events; the
-	// sweep folds them into testdata/parity_manifest.json. Collected during the single parse rather
+	// sweep folds them into the parity records (testdata/parity). Collected during the single parse rather
 	// than by re-grepping a log, which is the whole point of consuming events.
 	parityRows []string
 

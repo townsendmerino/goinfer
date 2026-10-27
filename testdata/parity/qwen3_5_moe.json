@@ -1,0 +1,27 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe",
+    "deltanet"
+  ],
+  "own": [
+    "decoder/forward_qwen35.go",
+    "decoder/gguf_qwen35.go",
+    "decoder/arch_qwen3_5_moe.go",
+    "decoder/generate_vl_qwen35.go"
+  ],
+  "deps_hash": "sha256:9657b5b74990e9e491bd6705662e77af1b6420021eb22e3c668133b9d04a1cf3",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 77.5,
+    "cosine_min": 0.99069,
+    "cosine_mean": 0.99644
+  }
+}

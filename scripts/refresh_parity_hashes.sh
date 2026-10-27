@@ -54,9 +54,9 @@ fi
 # Requiring a clean start fixes both halves. It catches that case BEFORE the 4-minute goldens run
 # rather than after, and it makes the abort's automatic revert safe: with nothing uncommitted at
 # entry, `git checkout` can only discard what this script itself wrote.
-if ! git diff --quiet -- testdata/parity_manifest.json || ! git diff --cached --quiet -- testdata/parity_manifest.json; then
-	echo "ABORT: testdata/parity_manifest.json already has uncommitted changes."
-	git diff HEAD -- testdata/parity_manifest.json | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | sed 's/^/    /'
+if ! git diff --quiet -- testdata/parity || ! git diff --cached --quiet -- testdata/parity; then
+	echo "ABORT: the parity records (testdata/parity/) already have uncommitted changes."
+	git diff HEAD -- testdata/parity | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | sed 's/^/    /'
 	echo
 	echo "Commit or revert them first, THEN re-run. A refresh started from a dirty manifest cannot"
 	echo "tell its own output from yours, and this script's proof block would claim the goldens"
@@ -246,20 +246,20 @@ go test ./decoder/ -run TestParityManifest -update >/dev/null
 
 # Confirm the gate is now green and confirm we changed ONLY deps_hash lines.
 go test ./decoder/ -run TestParityManifest_fresh >/dev/null
-nonhash=$(git diff -- testdata/parity_manifest.json | grep -E '^[+-]' | grep -vE 'deps_hash|^(\+\+\+|---)' || true)
+nonhash=$(git diff -- testdata/parity | grep -E '^[+-]' | grep -vE 'deps_hash|^(\+\+\+|---)' || true)
 if [ -n "$nonhash" ]; then
 	echo
 	echo "ABORT: the update changed more than deps_hash — refusing to leave a mixed edit:"
 	printf '%s\n' "$nonhash" | sed 's/^/    /'
 	echo "The file has been REVERTED automatically — nothing is left on disk to commit by accident."
-	git checkout -- testdata/parity_manifest.json
+	git checkout -- testdata/parity
 	echo
 	echo "If the extra change is an intentional aikit_version bump, commit THAT alone first (it"
 	echo "re-stales the matrix), then re-run this script so it sees only deps_hash. That is the"
 	echo "shape of 278637f followed by 9624dd9."
 	exit 1
 fi
-changed=$(git diff --numstat -- testdata/parity_manifest.json | awk '{print $1}')
+changed=$(git diff --numstat -- testdata/parity | awk '{s += $1} END {print s + 0}')
 echo "    staleness gate green; ${changed:-0} deps_hash line(s) refreshed, nothing else."
 
 head=$(git rev-parse --short HEAD)
@@ -301,8 +301,8 @@ echo "     It is now documentation only — the recurrence counter reads the man
 # that directly — self-correcting over history, and immune to how anyone words a commit.
 count_refreshes() {
 	local n=0 d
-	for h in $(git log --format='%H' -- testdata/parity_manifest.json 2>/dev/null); do
-		d=$(git show --format= --unified=0 "$h" -- testdata/parity_manifest.json 2>/dev/null)
+	for h in $(git log --format='%H' -- testdata/parity testdata/parity_manifest.json 2>/dev/null); do
+		d=$(git show --format= --unified=0 "$h" -- testdata/parity testdata/parity_manifest.json 2>/dev/null)
 		printf '%s\n' "$d" | grep -q '^[+-].*deps_hash' || continue
 		printf '%s\n' "$d" | grep -q '^[+-].*validated_at' && continue
 		n=$((n + 1))

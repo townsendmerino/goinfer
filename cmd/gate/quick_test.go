@@ -34,20 +34,21 @@ import (
 // fxFiles is the scratch tree: leaf <- mid <- app in the root module, core as the "shared set",
 // other unrelated, and sub/ a second module whose test imports leaf.
 var fxFiles = map[string]string{
-	"go.mod":                        "module example.com/fx\n\ngo 1.21\n",
-	"leaf/leaf.go":                  "package leaf\n\nfunc Add(a, b int) int { return a + b }\n",
-	"leaf/leaf_test.go":             "package leaf\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(2, 3) != 5 {\n\t\tt.Fatal(\"Add(2,3) != 5\")\n\t}\n}\n",
-	"mid/mid.go":                    "package mid\n\nimport \"example.com/fx/leaf\"\n\nfunc Twice(x int) int { return leaf.Add(x, x) }\n",
-	"app/app.go":                    "package app\n\nimport \"example.com/fx/mid\"\n\nfunc Run() int { return mid.Twice(4) }\n",
-	"app/app_test.go":               "package app\n\nimport \"testing\"\n\nfunc TestRun(t *testing.T) {\n\tif Run() != 8 {\n\t\tt.Fatalf(\"Run() = %d, want 8\", Run())\n\t}\n}\n",
-	"other/other.go":                "package other\n\nfunc One() int { return 1 }\n",
-	"other/other_test.go":           "package other\n\nimport \"testing\"\n\nfunc TestOne(t *testing.T) {\n\tif One() != 1 {\n\t\tt.Fatal(\"One\")\n\t}\n}\n",
-	"core/core.go":                  "package core\n\nfunc Scale(x float64) float64 { return x * 2 }\n",
-	"core/core_test.go":             "package core\n\nimport \"testing\"\n\n// The golden: the forward numerics, which a numeric change breaks.\nfunc TestFx_forwardParity(t *testing.T) {\n\tif Scale(1.5) != 3 {\n\t\tt.Fatalf(\"Scale(1.5) = %v, want 3 (golden)\", Scale(1.5))\n\t}\n}\n\n// Blind to the scale factor, like most of a package's tests are to a 1-ulp change.\nfunc TestScaleZero(t *testing.T) {\n\tif Scale(0) != 0 {\n\t\tt.Fatal(\"Scale(0)\")\n\t}\n}\n",
-	"testdata/parity_manifest.json": `{"shared_sets": {"core": ["core/core.go"]}, "families": {}}` + "\n",
-	"sub/go.mod":                    "module example.com/fx/sub\n\ngo 1.21\n\nrequire example.com/fx v0.0.0\n",
-	"sub/s.go":                      "package sub\n",
-	"sub/s_test.go":                 "package sub\n\nimport (\n\t\"testing\"\n\n\t\"example.com/fx/leaf\"\n)\n\nfunc TestLeafFromSub(t *testing.T) {\n\tif leaf.Add(1, 1) != 2 {\n\t\tt.Fatal(\"leaf.Add(1,1) != 2 seen from module sub\")\n\t}\n}\n",
+	"go.mod":                           "module example.com/fx\n\ngo 1.21\n",
+	"leaf/leaf.go":                     "package leaf\n\nfunc Add(a, b int) int { return a + b }\n",
+	"leaf/leaf_test.go":                "package leaf\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(2, 3) != 5 {\n\t\tt.Fatal(\"Add(2,3) != 5\")\n\t}\n}\n",
+	"mid/mid.go":                       "package mid\n\nimport \"example.com/fx/leaf\"\n\nfunc Twice(x int) int { return leaf.Add(x, x) }\n",
+	"app/app.go":                       "package app\n\nimport \"example.com/fx/mid\"\n\nfunc Run() int { return mid.Twice(4) }\n",
+	"app/app_test.go":                  "package app\n\nimport \"testing\"\n\nfunc TestRun(t *testing.T) {\n\tif Run() != 8 {\n\t\tt.Fatalf(\"Run() = %d, want 8\", Run())\n\t}\n}\n",
+	"other/other.go":                   "package other\n\nfunc One() int { return 1 }\n",
+	"other/other_test.go":              "package other\n\nimport \"testing\"\n\nfunc TestOne(t *testing.T) {\n\tif One() != 1 {\n\t\tt.Fatal(\"One\")\n\t}\n}\n",
+	"core/core.go":                     "package core\n\nfunc Scale(x float64) float64 { return x * 2 }\n",
+	"core/core_test.go":                "package core\n\nimport \"testing\"\n\n// The golden: the forward numerics, which a numeric change breaks.\nfunc TestFx_forwardParity(t *testing.T) {\n\tif Scale(1.5) != 3 {\n\t\tt.Fatalf(\"Scale(1.5) = %v, want 3 (golden)\", Scale(1.5))\n\t}\n}\n\n// Blind to the scale factor, like most of a package's tests are to a 1-ulp change.\nfunc TestScaleZero(t *testing.T) {\n\tif Scale(0) != 0 {\n\t\tt.Fatal(\"Scale(0)\")\n\t}\n}\n",
+	"testdata/parity/shared_sets.json": `{"core": ["core/core.go"]}` + "\n",
+	"testdata/parity/fam.json":         `{"uses": ["core"], "own": []}` + "\n",
+	"sub/go.mod":                       "module example.com/fx/sub\n\ngo 1.21\n\nrequire example.com/fx v0.0.0\n",
+	"sub/s.go":                         "package sub\n",
+	"sub/s_test.go":                    "package sub\n\nimport (\n\t\"testing\"\n\n\t\"example.com/fx/leaf\"\n)\n\nfunc TestLeafFromSub(t *testing.T) {\n\tif leaf.Add(1, 1) != 2 {\n\t\tt.Fatal(\"leaf.Add(1,1) != 2 seen from module sub\")\n\t}\n}\n",
 }
 
 func needTools(t *testing.T) {
@@ -91,7 +92,7 @@ func fxRepo(t *testing.T) *quickConfig {
 		},
 		GoldenPkg: "example.com/fx/core",
 		GoldenRun: goldenRunRE,
-		Manifest:  "testdata/parity_manifest.json",
+		Manifest:  "testdata/parity",
 		StateDir:  t.TempDir(),
 	}
 	if err := qc.finish(); err != nil {

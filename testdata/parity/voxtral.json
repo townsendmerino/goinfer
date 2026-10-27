@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_voxtral.go",
+    "decoder/arch_llama.go"
+  ],
+  "deps_hash": "sha256:c9c0b5bd90492b7939d77fdb2eff2281852c440b399e92b98d25fb2c598c242f",
+  "status": "validated",
+  "validated_at": "8494de25",
+  "date": "2026-10-09",
+  "reference": "HF f32 (mistralai/Voxtral-Mini-3B-2507, transformers 5.15.0 loaded with no missing keys and proved real by transcribing the LibriSpeech clip): the real checkpoint's tower rows (1500), projector rows (375), prompt logits, the 23-token greedy transcription (byte-equal) and the teacher-forced logits at every generated position, goinfer float32 on the CPU; plus the tiny gates (G-S14e2)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}
