@@ -36,6 +36,7 @@ type MetalFit struct {
 // nothing larger fits. An explicit -ctx is not this function's business: the caller honours it as given.
 //
 // KV is priced as Metal allocates it for this model (ResidentKVBytes), and a companion's bytes (ExtraResidentBytes) as CUDA prices them.
+// The load carries the pinned ceiling (MetalCtxCeiling); the candidate, at most MetalFitDefaultCtx, bounds every context asked.
 func (m *Model) MetalFitCtx(in MetalFitInput) MetalFit {
 	candidate := MetalFitDefaultCtx
 	if w := m.Config().MaxPositions; w > 0 && candidate > w {

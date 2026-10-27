@@ -904,10 +904,11 @@ golden. The keys now use forward slashes on every OS, and the long variants hard
 (a symlink needs a privilege on Windows that the runner happened to have). **G-MM1-C4 is not met on Windows:**
 `TestDecisionCensus` took 166 s there, against a minute registered for CI. D2, serial, took 58 to 66 s of each build there,
 against 5 s on nobara. The fix belongs to the next MM1 step: once `Solve` takes the available reading as data, D2 no longer
-goes through the shared probe seam and runs in parallel like D1, D3 and D4. **Done 2026-10-26:** `decideGIWFit` delegates to `decideGIWFitAt`,
+goes through the shared probe seam and runs in parallel like D1, D3 and D4. **D2's part done 2026-10-26:** `decideGIWFit` delegates to `decideGIWFitAt`,
 which takes the reading as an argument, so D2 runs in parallel (1 s against 5 s on nobara; each census test 8 s against 16 s).
 The golden did not move, `-race` is clean, and a serial check holds `decideGIWFit` through the probe fake equal to
-`decideGIWFitAt` at the zoo's readings.
+`decideGIWFitAt` at the zoo's readings. G-MM1-C4 on Windows is still unmeasured: CI runs `go test` there without `-v`, so it
+reports only the decoder package's time (410 s on 2026-10-27, run 40520519837), not the census's.
 
 #### MM1's `Solve`, registered 2026-10-26 before the code (nobara-mm01; Francis approved all of MM1 at 17:35)
 
@@ -966,7 +967,7 @@ alias). `Policy` gains the plan floor (4,096) and Metal's fit margin (384 MiB) a
 
 **G-MM1b-2 amended before its pass, 2026-10-26 (nobara-mm01), with the evidence.** The registered rule ("never fewer slots at
 the same placement") fails on today's planner, by design: it takes context before experts. Measured on a generated MoE (8
-experts, top-8) at 16 GiB free, it was expert-cached at context 6,080 with 8 slots; at 32 GiB, expert-cached at context
+experts, top-2; first written as top-8, which is impossible with two slots) at 16 GiB free, it was expert-cached at context 6,080 with 8 slots; at 32 GiB, expert-cached at context
 83,328 with 2. The census shows the same arithmetic before and after the move, so the rule, not the move, was wrong. Holding
 slots monotone would change placements, which is Francis's call; it is not done here. The amended rule: placement never moves
 down the order; at the same resident or expert-cached placement, the context never shrinks, nor the slots at the same context;
@@ -1091,7 +1092,7 @@ night profile, not the code** (`docs/measurements/mm6-replay-2026-10-27.md`).
 The fit guard (`kvPricingFor`, `fitCheckFor`, `priceCtxAndKV`, `giwPinnedExpertBytes`) and `FitQuery`'s decode path read the
 report for the load's backend. The `cuda` module registers its report with its own staging constant and expert packing; the
 `metal` module registers Metal's. Which architectures a backend runs resident stays decoder's feature table (SB1's to move),
-read through an exported `ResidentFeaturesCover(cfg, backend)`.
+read through the `FeaturesCovered` field that `BuildQueryFor` fills.
 
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
@@ -1133,8 +1134,8 @@ MM6's queue-time check and the build all use that one figure.
 
 **Amended from the proposal, before the code.** Gate 1's "shape-only configs" assumed a path into `Plan` that decoder does not
 have: `Plan` reads a loaded model's matrices, and decoder has no shape-only model. Building one would re-implement `Plan`'s
-inputs, which is not today's code path. So the real-size cells use the real checkpoints on nobara's local disk, planned on the
-CPU through CUDA's report (no device needed). That is a tier-1 test in the `cuda` module, which skips as a capture run where
+inputs, which is not today's code path. So the real-size cells use the real checkpoints on nobara's local disk, planned through
+CUDA's report. The test that does it loads each model on the CUDA device, so it needs one. That is a tier-1 test in the `cuda` module, which skips as a capture run where
 the models are absent.
 
 | gate | rule (pass) | void if | stopping rule | cost basis |
@@ -1150,14 +1151,65 @@ the models are absent.
   unpinned 32,768 cells shrink (29,696 to 25,984 at 7.63 GB). 462 cells move to a decline, all inside the band one rounding
   wide below the old fit edge; the README lists them by group. The real-size golden (`cuda/testdata/mm2b_realsize.json.gz`)
   was written after that review. The decoder census passes without `-census.update`.
-- G-MM2b-2: the plan's slack equals the real build's `packedAllocSlack` to the byte (145,276,928 and 128,122,880), as does
-  dense plus slack. `TestResidentDenseBytes_matchesCUDADevice`, the `TestCUDAKVSlots_` tests,
+- G-MM2b-2: the plan's slack equals the real build's `packedAllocSlack` to the byte (145,276,928 and 128,122,880). (The
+  read first said "as does dense plus slack": that check compared the plan's figures with themselves and was removed in the
+  MM1 follow-up; the dense figure against the device is `TestResidentDenseBytes_matchesCUDADevice`'s.) `TestResidentDenseBytes_matchesCUDADevice`, the `TestCUDAKVSlots_` tests,
   `TestKSH6C_marginAtTheReturnedContext` and `TestKSB8_widthChooser` pass, and so do `TestBuildScratchAccounting` (six models)
   and its planted defect with `GOINFER_HEAVY_TESTS=1`.
 - G-MM2b-3: `TestPlanSlack_oneCopy`; the agreement test's slack report is 0 against decoder's 0 on every tracked family. The
   new tests live in existing test files, because SB13's ratchet counts every test file of a package that reaches decoder.
 - G-MM2b-4: vet on three systems and with the module tags, the pinned staticcheck (untagged, `realckpt`, cuda), gofmt,
   `touched.py`, the citation lint.
+#### MM1 follow-up: the Gemini review's findings, registered 2026-10-27 (nobara-mm01)
+
+Gemini reviewed #296, #300, #302, #307 and #311 (relayed by the coordinator, 2026-10-27 07:24). Each finding was checked
+against origin/main (a22bd928d). The guard fixes below (the divide, the nil policy, the enum sync, the scan, the lookup order)
+were written before this section; the gates were registered before the rest (the generators, the agreement tests, #311's
+items, the census build) and before any of it ran as a gate.
+
+**What changes, none of it a placement or a default.**
+- `SolvePlacement` no longer divides by an unpriced expert size (`NExperts` with `ExpertBytesFull` under a byte each): such
+  experts cost nothing, so every slot fits. Before, that load panicked; no caller hands it in today (the census holds).
+- `ResolveKV`'s CUDA branch treats a nil `Decline` as no decline and a nil `Auto` as false (before: a panic).
+- `decoder.Placement` and `mem.Placement` are held equal at compile time, all five values both ways.
+- I6's scan: `RequestFraction` joins the thresholds, and a constant that aliases a different threshold counts as a use.
+- `buildDemandFor` looks up the backend's report before building its query.
+- `doc.go`'s contract says what is true: the guards proceed on unknowns; the planner declines on a 0 reading. I5 is stated
+  as far as it holds (below).
+- Tests only: the generators, the monotone test, `ResolveKV`'s branch and purity tests, the agreement tests, #311's tests.
+
+**I5 does not hold for an MoE plan's placement, measured before any change.** `chooseCtx` grows the context before it prices
+the experts, so one more KV step can leave less than top-k experts' room: on a generated CUDA load (8 experts, top-2), the
+plan was expert-cached at context 4,480 and declined at 4,608, at 16,160 MiB. Changing that (reserving top-k experts in
+`chooseCtx`) moves placements, so it is Francis's call and is not in this PR. The task-doc example in G-MM1b-2's amendment
+(top-8, two slots) was misreported: the load was top-2.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-GF-1 the census | `TestDecisionCensus` passes without `-census.update`, every group byte for byte | the golden's class not found on an amd64 host | runs to completion | 16 s |
+| G-GF-2 the planner tests | `TestSolvePlacement_pure`, `TestResolveKV_eachBranch`, `TestResolveKV_pure` and `TestSolvePlacement_monotone` pass. The monotone test walks free memory in 16 MiB steps to 64 GiB on generators that keep `DeviceLoad`'s invariants (tier per backend, a host copy only on Metal, Metal's linear KV), and asserts: a dense placement never worsens; a placed context never shrinks; slots never fall at the same context; the Metal context never shrinks (MoE included: a probe of 3,000 draws found no fall, so Gemini's Metal case did not reproduce). At least a third of Metal draws reach a context past the floor. A planted defect (a refusal above 32 GiB free) turns it red | — | runs to completion | under a minute |
+| G-GF-3 the guard fixes | an unpriced-expert load and a zero `CUDAPolicy` return without a panic; the scan reads every non-test file and counts a planted `.RequestFraction` read and a planted cross-alias | the scan reads fewer files than the tree holds | runs to completion | seconds |
+| G-GF-4 the agreement tests | `TestBuildDemand_matchesDecoderDefault` (cuda, metal) has no duplicate backend; it asserts that a nonzero `HostPackBytes`, `HostBuildPeak` and (cuda) `PinnedExpertBytes` each occur in the corpus, or names the one that does not; a planted change per field turns it red; and decoder's registry returns the backend's own function | — | runs to completion | seconds |
+| G-GF-5 #311's items | the tautological dense-plus-slack check is removed with its claim; the archive guard resolves symlinks; `TestPlanSlack_oneCopy` checks the call site's argument; `planSlackOffForTest` is atomic; a plan-only build that stops early is not memoized | — | runs to completion | seconds; the device tests run once on nobara under the timing lock |
+| G-GF-6 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara): all six pass.**
+- G-GF-1: `TestDecisionCensus` and its second-process twin pass without `-census.update`. The serial probe check now covers
+  every config, not the first eight, and holds.
+- G-GF-2: the planner tests pass. 919 of the 1,500 Metal draws reach a context past the floor, and the planted refusal is
+  found.
+- G-GF-3: the unpriced-expert and zero-policy rows of `TestResolveKV_eachBranch` and the generators return; the scan reads
+  734 files and counts the planted cross-alias and `.RequestFraction` read (3).
+- G-GF-4: 36 configs and 6,912 queries, now with no duplicate backend. Every field's planted change is seen, so a nonzero
+  `HostPackBytes`, `HostBuildPeak` and `PinnedExpertBytes` each occur. `TestBuildDemand_registered` passes on cuda. Its
+  metal twin is vetted for darwin but runs only on a Mac with `goinfer_testhooks`, because CI's metal job runs untagged.
+- G-GF-5: `TestPlanSlack_oneCopy` goes red on a planted `+allocSlack` at the call site. On the RTX 2070 SUPER (timing lock
+  held) these pass: `TestPlanSlack_matchesTheBuild` (145,276,928 and 128,122,880 again), `TestPlanSlack_realSizeDiff`,
+  `TestResidentDenseBytes_matchesCUDADevice` and the `TestCUDAKVSlots_` tests (log: `~/goinfer-logs/mm1/` on nobara,
+  gf-cuda-device).
+- G-GF-6: vet untagged and tagged (testhooks; cuda with testhooks; darwin metal both ways); the pinned staticcheck with its
+  canary red (U1000) on the same variants, clean; gofmt.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

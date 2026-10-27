@@ -179,7 +179,10 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 			gbf(l.DenseBytes), slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 	}
 	perExpert := l.ExpertBytesFull / int64(l.NExperts)
-	slots := int(remaining / perExpert)
+	slots := l.NExperts // experts that could not be priced (under a byte each) cost nothing here: every slot fits
+	if perExpert > 0 {
+		slots = int(remaining / perExpert)
+	}
 	if req.Slots > 0 && req.Slots < slots {
 		slots = req.Slots // an explicit, smaller request is honoured even if more would fit
 	}

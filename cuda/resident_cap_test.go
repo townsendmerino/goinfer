@@ -461,7 +461,7 @@ func demandConfigs(t *testing.T) []*decoder.Config {
 
 // TestBuildDemand_matchesDecoderDefault (MM2a gate G-MM2a-2): this package's registered report equals decoder's default copy
 // on every tracked family's config, across the option cells and a ladder of priced bytes. It first shows the comparison sees a
-// one-term change.
+// change to each field.
 func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	cfgs := demandConfigs(t)
 	if len(cfgs) < 10 {
@@ -469,7 +469,7 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	}
 	var queries []decoder.BuildQuery
 	for _, cfg := range cfgs {
-		for _, be := range []string{"cuda", "cpu", "cuda", "metal"} {
+		for _, be := range []string{"cuda", "cpu", "metal", ""} {
 			for _, stream := range []bool{false, true} {
 				for _, moe := range []bool{false, true} {
 					for _, gguf := range []bool{false, true} {
@@ -493,13 +493,23 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		}
 		return n
 	}
-	planted := func(q decoder.BuildQuery) decoder.BuildDemand {
-		d := buildDemand(q)
-		d.Resident = !d.Resident
-		return d
-	}
-	if differs(planted) == 0 {
-		t.Fatal("a planted change to the report was not seen: the comparison checks nothing")
+	// One planted change per field (a flag flipped, a byte count doubled): each must be seen, so each field is exercised, a
+	// byte count nonzero somewhere in the corpus.
+	for name, plant := range map[string]func(*decoder.BuildDemand){
+		"Resident":          func(d *decoder.BuildDemand) { d.Resident = !d.Resident },
+		"KVOnDevice":        func(d *decoder.BuildDemand) { d.KVOnDevice = !d.KVOnDevice },
+		"HostPackBytes":     func(d *decoder.BuildDemand) { d.HostPackBytes *= 2 },
+		"HostBuildPeak":     func(d *decoder.BuildDemand) { d.HostBuildPeak *= 2 },
+		"PinnedExpertBytes": func(d *decoder.BuildDemand) { d.PinnedExpertBytes *= 2 },
+	} {
+		planted := func(q decoder.BuildQuery) decoder.BuildDemand {
+			d := buildDemand(q)
+			plant(&d)
+			return d
+		}
+		if differs(planted) == 0 {
+			t.Errorf("a planted change to %s was not seen: no query exercises it", name)
+		}
 	}
 	if n := differs(buildDemand); n > 0 {
 		t.Errorf("the registered cuda report differs from decoder's default on %d of %d queries", n, len(queries))
@@ -528,14 +538,14 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 }
 
 // TestPlanSlack_oneCopy (MM2b gate G-MM2b-3): the driver's rounding over the weight buffers has one copy. packedAllocSlack is
-// called only inside buildResident (plan-only, and the real build's test seam), and resolveCtxCapFitSlack takes no slack
-// argument, so the build cannot add the figure beside the plan's.
+// called only inside buildResident (plan-only, and the real build's test seam), and resolveCtxCapFitSlack neither takes a slack
+// parameter nor is handed one at a call site, so the build cannot add the figure beside the plan's.
 func TestPlanSlack_oneCopy(t *testing.T) {
 	ents, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	calls, read := map[string]int{}, 0
+	calls, read, sites := map[string]int{}, 0, 0
 	for _, e := range ents {
 		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 			continue
@@ -560,9 +570,23 @@ func TestPlanSlack_oneCopy(t *testing.T) {
 				}
 			}
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				if c, ok := n.(*ast.CallExpr); ok {
-					if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "packedAllocSlack" {
-						calls[fd.Name.Name]++
+				c, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				switch id, _ := c.Fun.(*ast.Ident); {
+				case id == nil:
+				case id.Name == "packedAllocSlack":
+					calls[fd.Name.Name]++
+				case id.Name == "resolveCtxCapFitSlack":
+					sites++
+					for _, a := range c.Args {
+						ast.Inspect(a, func(n ast.Node) bool {
+							if x, ok := n.(*ast.Ident); ok && (strings.Contains(strings.ToLower(x.Name), "slack") || x.Name == "PlanSlack") {
+								t.Errorf("%s hands resolveCtxCapFitSlack %q: the plan already prices the rounding", fd.Name.Name, x.Name)
+							}
+							return true
+						})
 					}
 				}
 				return true
@@ -579,5 +603,8 @@ func TestPlanSlack_oneCopy(t *testing.T) {
 	}
 	if calls["buildResident"] == 0 {
 		t.Error("buildResident no longer calls packedAllocSlack: the scan checks nothing")
+	}
+	if sites == 0 {
+		t.Error("no call of resolveCtxCapFitSlack found: the argument check checks nothing")
 	}
 }
