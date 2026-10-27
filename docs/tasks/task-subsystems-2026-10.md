@@ -1565,6 +1565,47 @@ the reading before auto-merge is set.
 - **Then** the attention-digest family (`attn_digest_rig`, `attn_digest`, `attn_softcap_kernel`, `mamba_kernels`) and
   `prefill_splitkv_img` move to `cuda/kernels`, and the ratchet falls.
 
+#### SB1 — gpu's kernel layer: decided, and its gates, registered 2026-10-27 before the code (nobara-sb01)
+
+Francis's decisions: the alias split (05:46), contained in `gpu/internal/kernels` (06:34), after `decoder`'s adapter types
+moved to `internal/adapter` (06:57, #314). The cut, from a type-checked declaration graph of package `gpu` with its tests
+(tags `gpu goinfer_testhooks`): a declaration stays in `gpu` if it uses `decoder`, uses a declaration that stays, or is a
+method of a type that stays; an exported method that stays keeps its type in `gpu`, and an unexported one becomes a
+function. That leaves in `gpu` the residency glue (`backend.go` with the `decoder.RegisterBackend` call, so WebGPU still
+registers through the same import, `hwinfo.go`, `kv_slots.go`, `kvcopy.go`, `prefill_scratch.go`, `residency.go`,
+`resident_sample.go`, `testhooks_kvscale.go`, `deprecated_release.go`'s backend check) and 75 test files; 48 non-test and
+78 test files move. Two in-package pre-steps first: `Context.uploadProj` becomes the function `uploadProj(c, w)`, and
+`deprecated_release.go`'s `Release` aliases move to `release_aliases.go`.
+
+- **Mechanics.** `gpu` keeps an alias for each of its 12 exported types and a wrapper for each of its 3 exported
+  functions, so callers compile unchanged. A name the staying code uses from the moved code is exported inside the internal
+  package, except a field or method of one of the 12 public types: that is reached through a package-level accessor in
+  `gpu/internal/kernels` (a field as `*kernels.ContextDevice(c)`, a method as `kernels.ContextEnsureAttn(c, ...)`), so no
+  name becomes public. A test helper used across the line is copied. A type-checked rewriting tool makes every edit; its
+  rename table is committed with the record.
+- **G1, declaration identity (tier 0, no device).** A standard-library tool compares the package at the base with `gpu`
+  plus `gpu/internal/kernels` at the head: every base declaration (functions, methods, types, vars, consts, `init`s and
+  `_` checks) appears exactly once, and its code, printed without comments, is identical after mapping back the rename
+  table, the `kernels.` qualifiers, the accessor calls and the two pre-step conversions. The only other declarations
+  allowed are the generated aliases, wrappers and accessors, each in its generated shape, and the copied test helpers,
+  each equal to its source. Any other difference fails it.
+- **G2, the gpu suite by name (WebGPU on Vulkan, under the lock shared).** `go test -count=1 -p 1 -v -tags 'gpu
+  goinfer_testhooks' ./gpu/...` at the base and at the head: every test the base reports has the same outcome (PASS,
+  FAIL, or SKIP with the same reason) at the head, wherever it now lives.
+- **G3, logits (`go run ./cmd/gate identity <base> <head> -backend webgpu -assets tiny`).** Every family the base runs
+  is byte-IDENTICAL; a family NOT RUN on both sides is listed with its reason.
+- **G4, towers.** `TestTowerIdentity_webgpu` with `GOINFER_TOWER_ID_OUT` at the base and the head: every case's hash
+  equal. The comparison with AX2a's Mac record (`docs/measurements/ax2-2026-10/records-ax2a/webgpu-darwin-arm64.json`)
+  is a Mac run; its commands go to mac-ax01.
+- **G5, API.** apidiff on package `gpu`: the only incompatible changes are the 12 types' identity (and the signatures
+  that name them); no name removed, none added. CHANGELOG names the moved types, the `%T` and reflection change, and no new
+  public package.
+- **Void:** a device run beside a timed holder (the shared lock refuses it). **Stopping rule:** one run each side; any
+  difference stops the move with DECISION NEEDED. **Cost basis:** G1 seconds; G2 measured at the base run; G3 families ×
+  steps, stated before it runs; G4 3 s (measured 2026-10-26).
+- **Then** the freed tests are already in `gpu/internal/kernels` (they move with the code they test, which keeps their
+  bodies unedited), and `internal/layout`'s gpu reach falls by the 78 moved test files.
+
 #### SB1 — gpu's kernel layer (item 2 of 21:42): parked, DECISION NEEDED (nobara-sb01, 2026-10-26)
 
 A type-checked declaration graph of package `gpu` (tags `gpu`) shows the shape the split would take. 15 declarations
