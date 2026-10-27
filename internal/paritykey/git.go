@@ -13,6 +13,7 @@ import (
 // Git reads commits' files through one `git cat-file --batch` process in the repository at Dir ("" is the current
 // directory). Close it when done.
 type Git struct {
+	dir string
 	cmd *exec.Cmd
 	in  io.WriteCloser
 	out *bufio.Reader
@@ -33,7 +34,7 @@ func OpenGit(dir string) (*Git, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	return &Git{cmd: cmd, in: in, out: bufio.NewReaderSize(out, 1<<20)}, nil
+	return &Git{dir: dir, cmd: cmd, in: in, out: bufio.NewReaderSize(out, 1<<20)}, nil
 }
 
 // Close stops the reader.
@@ -74,4 +75,14 @@ func (c gitCommit) ReadFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	return b[:n], nil
+}
+
+func (c gitCommit) ListDir(path string) ([]string, error) {
+	cmd := exec.Command("git", "ls-tree", "--name-only", c.commit+":"+path)
+	cmd.Dir = c.g.dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s:%s: %w", c.commit, path, os.ErrNotExist)
+	}
+	return strings.Fields(string(out)), nil
 }

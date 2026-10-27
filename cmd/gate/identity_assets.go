@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/townsendmerino/goinfer/internal/paritykey"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -145,7 +146,7 @@ type manifestFamily struct {
 }
 
 func readManifestFamilies(root string) (map[string]manifestFamily, error) {
-	b, err := os.ReadFile(filepath.Join(root, "testdata", "parity_manifest.json"))
+	b, err := paritykey.ManifestJSON(paritykey.Dir(root))
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +291,7 @@ func planIdentityCells(o *identityOpts, fams map[string]manifestFamily) ([]*iden
 	if len(o.Families) > 0 {
 		for _, f := range o.Families {
 			if _, ok := fams[f]; !ok {
-				return nil, nil, fmt.Errorf("family %q is not in testdata/parity_manifest.json", f)
+				return nil, nil, fmt.Errorf("family %q has no parity record (testdata/parity)", f)
 			}
 			selected = append(selected, f)
 		}

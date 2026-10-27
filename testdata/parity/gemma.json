@@ -1,0 +1,22 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/gemma12.go"
+  ],
+  "deps_hash": "sha256:8e21133a53c4e1101b7033293b2801c01d761ab490b25de82982171b28fb7d6e",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 eager (gemma-2b-it; codegemma-2b and the Q8_0 GGUFs also checked)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders"
+  ],
+  "own": [
+    "decoder/lfm2.go",
+    "decoder/forward_lfm2.go",
+    "decoder/arch_lfm2.go"
+  ],
+  "deps_hash": "sha256:f1494d902e52ba106d8ec90ce20e0b2e093da04fe1fedd23b2e9c8add9e327e6",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (LFM2.5-2.6B, Lfm2ForCausalLM)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

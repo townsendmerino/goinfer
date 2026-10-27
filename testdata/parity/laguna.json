@@ -1,0 +1,29 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe"
+  ],
+  "own": [
+    "decoder/laguna_config_test.go",
+    "decoder/laguna_test.go",
+    "decoder/laguna_slice_test.go",
+    "decoder/laguna_gguf_test.go",
+    "scripts/pin_laguna_tiny.py",
+    "scripts/pin_slice_oracle.py",
+    "decoder/arch_laguna.go"
+  ],
+  "deps_hash": "sha256:f56b3332e697751ec41aca062a4892d6a40650f8fb51d19d770d45d7fe084328",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF bf16 (poolside Laguna-XS.2, 33B-A3B; full model via accelerate disk offload; int8 weights, f32 activations)",
+  "machine": "linux-amd64",
+  "method": "real-model-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 0.99884,
+    "cosine_mean": 0.99884
+  }
+}

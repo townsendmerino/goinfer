@@ -1,0 +1,22 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_qwen2.go"
+  ],
+  "deps_hash": "sha256:1422aa6a9e336da73a5d92887a9958d23c58aaace65762a4e13cd3b3a290a66c",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (Qwen2.5-0.5B)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

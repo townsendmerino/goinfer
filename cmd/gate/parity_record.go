@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/paritykey"
 )
 
 // The parity sweep's record. `gate parity` prints a verdict and keeps its raw streams in the log directory; RELEASING.md's
@@ -21,8 +23,8 @@ import (
 // parityRecordDirDefault is where a sweep's record goes, relative to the repository root.
 const parityRecordDirDefault = "docs/measurements/parity-sweep"
 
-// parityManifestPath is the parity manifest, relative to the repository root.
-const parityManifestPath = "testdata/parity_manifest.json"
+// parityManifestPath names the parity records in messages (paritykey.RecordsDir).
+const parityManifestPath = paritykey.RecordsDir
 
 // parityQualifyingTrees are the directories whose every file a sweep vouches for, hashed by the manifest or not.
 var parityQualifyingTrees = []string{"decoder", "cuda", "metal", "gpu"}
@@ -263,7 +265,7 @@ func writeParityRecord(w io.Writer, root, recordDir string, run parityRun) {
 	for _, c := range run.Cells {
 		rec.Cells = append(rec.Cells, parityRecordCell{Name: c.Cell.Name, Pass: c.Pass, Skip: c.Skip, Fail: c.Fail, RC: c.RC})
 	}
-	if mb, err := os.ReadFile(filepath.Join(root, parityManifestPath)); err == nil {
+	if mb, err := paritykey.ManifestJSON(paritykey.Dir(root)); err == nil {
 		if paths, err := parityQualifyingPaths(mb); err == nil {
 			for _, p := range paths {
 				if id, err := gitObject(root, full, p); err == nil && id != "" {
@@ -294,7 +296,7 @@ func rowParity(e *relEnv) relRow {
 	if err != nil {
 		return owed(name, want, err.Error())
 	}
-	mb, err := os.ReadFile(filepath.Join(e.root, parityManifestPath))
+	mb, err := paritykey.ManifestJSON(paritykey.Dir(e.root))
 	if err != nil {
 		return owed(name, want, err.Error())
 	}

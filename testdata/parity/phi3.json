@@ -1,0 +1,22 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_phi3.go"
+  ],
+  "deps_hash": "sha256:748e3114797f6e5a41d5c2a9828a1bbe5a66888c081fa4a1065b367eb76f5303",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (Phi-3-mini-4k-instruct 3.8B)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

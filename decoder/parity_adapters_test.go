@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -20,7 +19,7 @@ import (
 // adapter reaches, so an edit to a family's adapter re-stales that family and an edit to another's does not reach it.
 // The adapter is found through the live registry map, the calls by parsing the adapters' files.
 func TestParityManifest_adapterFilesOwned(t *testing.T) {
-	raw, err := os.ReadFile(parityManifestPath)
+	raw, err := parityManifestJSON()
 	if err != nil {
 		t.Fatal(err)
 	}

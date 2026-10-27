@@ -1,0 +1,22 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_gemma3.go"
+  ],
+  "deps_hash": "sha256:9689857ab9bcd04766d5ea86a825c11a56e9007ce084eeb61a09f24539b6e077",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (gemma-3-4b-it, text)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 0.99972,
+    "cosine_mean": 0.99972
+  }
+}

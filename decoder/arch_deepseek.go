@@ -120,7 +120,7 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			TopkGroup:             cfg.TopkGroup,
 		},
 		// Plain qk_head_dim^-0.5: transformers (5.12) does not fold YaRN's mscale_all_dim² into the attention scale, unlike the old standalone
-		// modeling_deepseek. The real-model gates agree: testdata/parity_manifest.json's deepseek_v2/deepseek_v3 entries validate against HF bf16
+		// modeling_deepseek. The real-model gates agree: the deepseek_v2/deepseek_v3 parity records (testdata/parity) validate against HF bf16
 		// oracles (DeepSeek-V2-Lite, Moonlight-16B-A3B) at cosine_min 0.999+ with this scale, which a ~2x softmax error from a missing fold would
 		// not.
 		AttnScale:      math.Pow(float64(qk), -0.5),

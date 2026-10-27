@@ -1,0 +1,25 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe",
+    "mamba2"
+  ],
+  "own": [
+    "decoder/forward_granite.go",
+    "decoder/arch_granitemoehybrid.go"
+  ],
+  "deps_hash": "sha256:dfccb4d45054099b08b661282ef06e31e1c8d724319f244eb5012d78271cd3f3",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF bf16 (Granite-4.0-H-Tiny 7B-A1B; int8 resident)",
+  "machine": "linux-amd64",
+  "method": "real-model-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 0.99566,
+    "cosine_mean": 0.99566
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_llama.go"
+  ],
+  "deps_hash": "sha256:5e2044f8946c66db12dcae560423129e3e7540ae596d68e5afa9e0b9c08d748e",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (TinyLlama-1.1B-Chat)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

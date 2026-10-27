@@ -1,0 +1,22 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_cohere.go"
+  ],
+  "deps_hash": "sha256:2856c68c1b73d39575a13540034a28647b5a8fa0a65a4a29d6d8c1b1f9ecd688",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (Aya-Expanse-8B, CohereForCausalLM)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

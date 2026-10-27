@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe"
+  ],
+  "own": [
+    "decoder/arch_glm4_moe.go"
+  ],
+  "deps_hash": "sha256:82b2ab0e7cbc16200cda13547469e58e527baf1edae9a87487b01baf9fba013e",
+  "status": "experimental",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (glm-tiny seeded fixture)",
+  "machine": "linux-amd64",
+  "method": "tiny-golden",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}
