@@ -899,6 +899,14 @@ scan must go red on a planted reference.
 | G-MM1c-2 the existing tests | every decoder test that calls `ResolveKV`, `kvRefusal`, `KVPrecisionReports` or `KVDelivered`, and the `cuda` module's KV policy tests (vet with tags; the device ones run on nobara), pass unchanged | — | runs to completion | about a minute |
 | G-MM1c-3 I6's scan | `TestNoGuardThresholdOutsideMem` passes on the tree, reads every non-test file, and goes red on a planted reference | it reads fewer files than the tree holds | runs to completion | seconds |
 | G-MM1c-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM1c read, 2026-10-26 (nobara): all four pass.** G-MM1c-1: `TestDecisionCensus` passes without `-census.update`. G-MM1c-2: the
+decoder's six KV-resolution tests pass unchanged, the generated precision matrix among them. The `cuda` module's KV16 and KV4
+identity and default tests pass on the RTX 2070 SUPER under the timing lock (47 cases with subtests), and so does the `gpu`
+module's `ResolveKV` test. G-MM1c-3: `TestNoGuardThresholdOutsideMem` reads 726 non-test files. It finds exactly the ratchet
+(`gpu/kv_slots.go` 2, `metal/backend.go` 3) and counts a planted reference. G-MM1c-4: vet on three systems and with the
+module tags, the pinned staticcheck, gofmt, `test_touched.py`; the parity manifest stayed fresh. MM1 is done with this:
+D1–D7 run through `internal/mem`, and the census holds byte for byte.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
