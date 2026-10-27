@@ -8,7 +8,7 @@
   "own": [
     "decoder/arch_granite.go"
   ],
-  "deps_hash": "sha256:0a646a834526edd048e61129d6c389807322c17c4d70287a09081870b6612034",
+  "deps_hash": "sha256:f65b8550f093c2aee14767ca99066b9718dda2fe273de68a39882f6e05182a5a",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

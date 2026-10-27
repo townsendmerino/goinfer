@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_mistral.go"
   ],
-  "deps_hash": "sha256:a8bf3fd9e2f7678a6022b1c1eed6bf09bbce2530abb660b32c93b537e2cbac1e",
+  "deps_hash": "sha256:d2492124d08d8d086c488c1ca6a06a64077e49fdc70eccab4dae450ae056c8db",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

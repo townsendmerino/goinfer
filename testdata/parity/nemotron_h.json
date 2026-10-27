@@ -9,7 +9,7 @@
     "decoder/forward_nemotron.go",
     "decoder/arch_nemotron_h.go"
   ],
-  "deps_hash": "sha256:45cfce5445b9b83e5a2b43c4274a88826b1a349e759dc08cddcd14124e8a5d25",
+  "deps_hash": "sha256:eec733c715f7675acf17a0bdffc8992610b0d0293ee291afa05992ad7b61766e",
   "status": "validated",
   "validated_at": "0b74e671",
   "date": "2026-09-18",
