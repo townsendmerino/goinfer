@@ -953,6 +953,54 @@ module's `ResolveKV` test. G-MM1c-3: `TestNoGuardThresholdOutsideMem` reads 726 
 (`gpu/kv_slots.go` 2, `metal/backend.go` 3) and counts a planted reference. G-MM1c-4: vet on three systems and with the
 module tags, the pinned staticcheck, gofmt, `test_touched.py`; the parity manifest stayed fresh. MM1 is done with this:
 D1–D7 run through `internal/mem`, and the census holds byte for byte.
+
+#### MM6's gates, registered 2026-10-26 before the code (nobara-mm01; Francis's answers of 22:37)
+
+**Francis's decision (22:37):**
+- 1a: refuse at queue time, with an override flag.
+- 1b: the idle profile prices night jobs, the apps-open profile day jobs.
+- 1c: new repeatable `--fit-model PATH --fit-opts "..."` flags, priced through `goinfer fit`. A job queued without them is not
+  checked and gets a warning.
+
+**What is built.**
+- **`fit -profile FILE`** prices a checkpoint as `Load`'s own memory check would on that recorded machine, without loading it.
+  It is `decoder.FitQueryAvailable`, which is `FitQuery` with the available reading taken from the profile instead of the
+  probe. It prints one line (or `-json`) and exits 0 when the load proceeds (fits, auto-pins, or cannot be priced), or 4 when
+  it would be refused.
+- **`night.py add --fit-model PATH [--fit-opts "..."]`**, repeatable, runs that check for each declared load:
+  - the profile is the box's night profile for a job with `--not-before`, else its day profile;
+  - the binary is the chat build for the job's `-backend` (`cuda/cmd/chat`, `metal/cmd/chat`, else `demo/chat`), because
+    what `Load` prices depends on the backends linked in;
+  - a refusal stops the queueing unless `--fit-override REASON`, which the job records;
+  - a job with no `--fit-model`, or a box with no recorded profile, is queued with a warning.
+- The box-to-profile table: `nobara-pc` uses `nobara-no-desktop` at night and `nobara-desktop` by day; `macbookpro.lan` uses
+  `m1pro-near-idle` and `m1pro-apps-open`.
+- **Out of scope here:** Metal's own resident guard (`metal/backend.go`, against physical RAM) and CUDA's device-side
+  context fit, which run in the backend at build time.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM6-1 the profile check | on tracked tiny fixtures, `fit -profile` against generated profiles answers as `decoder.FitQueryAvailable` does: exit 0 and `fits` at ample memory, exit 0 and `capped` at the auto-pin edge (long-context copy), exit 4 with `Load`'s own refusal text below it, exit 0 and `unpriced` at an unknown reading; and `FitQueryAvailable` at the probe's reading equals `FitQuery` | — | runs to completion | seconds |
+| G-MM6-2 `night.py add` | with a scripted checker: a refused load is not queued and the message names the model, the profile and the refusal; `--fit-override` queues it and records the reason; a job without `--fit-model` queues with a warning; a `--not-before` job is priced on the night profile, any other on the day profile; an unknown host queues with a warning; the backend picks the binary | the tests do not reach `cmd_add` (they must queue into a temp queue dir) | runs to completion | seconds |
+| G-MM6-3 end to end | `night.py add` with its real checker on nobara: a tracked tiny checkpoint against a profile too small for it is refused, and against `nobara-no-desktop` is queued (into a temp queue dir), through `go run ./demo/chat fit` | the build fails (that is a red run, not a void) | runs to completion | about a minute (the build) |
+| G-MM6-4 the census | `TestDecisionCensus` passes without `-census.update` (`FitQuery` is refactored, not changed) | as G-MM1-S1 | runs to completion | 8 s |
+| G-MM6-5 the replay (the Mac) | every night job on the Mac refused by the fit or swap guard from 2026-10-06 to 10-26, re-checked with `fit -profile` on the night profile for its model and options as queued, is refused (exit 4). A job whose refusal was the swap guard's (not priced by `FitQuery`) is listed apart, not counted against the rule. The commands are in the PR; the result follows the PR. | the job's model is no longer on the Mac's local disk (listed, not counted) | every refused job | the Mac session's estimate, minutes |
+| G-MM6-6 builds | as G-MM1-S6, and `python3 scripts/test_night.py` | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM6 read, 2026-10-26 (nobara): G-MM6-1, 2, 3, 4 and 6 pass; G-MM6-5, the Mac's replay, follows the PR.**
+- G-MM6-1: `TestProfile_answersAsFitQueryAvailable` reaches all four verdicts, each with its exit code and with
+  `FitQueryAvailable`'s answer. `TestFitQueryAvailable_isFitQueryAtThatReading` holds it equal to `FitQuery` at the probe's
+  reading, for a directory and a `.gguf`.
+- G-MM6-2: eight `FitCheckAtQueueTime` tests pass, and the whole `test_night.py` (62).
+- G-MM6-3: through the real `go run ./demo/chat fit`, llama-tiny is refused on a 64 KiB profile and fits on
+  `nobara-no-desktop`. The first try found that `go run` exits 1 for the program's exit 4, so `night.py` reads the JSON
+  verdict, not the exit code. The scripted checker in G-MM6-2 now exits 1 as `go run` does.
+- G-MM6-4: `TestDecisionCensus` passes without `-census.update`.
+- G-MM6-6: vet on three systems, the chat builds' vet with their tags, the pinned staticcheck (untagged and `realckpt`),
+  gofmt, the parity manifest fresh.
+- The replay's commands and its pass rule are in the PR. Because the night profile is the idle Mac, the replay also
+  measures whether the Mac's nights are idle: a refusal that printed about 7 GB available would not be refused on a 12.2 GB
+  profile. That would be a finding about which profile prices night jobs (Francis's 1b), and it is reported as one.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

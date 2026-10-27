@@ -671,13 +671,18 @@ func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 // loadWeights (decoder/model.go): the weights this call is about to allocate are not yet resident, so the availability figure does not yet
 // reflect their cost.
 func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck {
+	return fitCheckForAt(path, quantName, quant, opts, hostRAMAvailable)
+}
+
+// fitCheckForAt is fitCheckFor with the available-memory reading passed in (read is called once, first).
+func fitCheckForAt(path, quantName string, quant quantMode, opts Options, read func() int64) fitCheck {
 	if quantName == "" {
 		quantName = "f32"
 	}
 	f := fitCheck{
 		name:       filepath.Base(path),
 		quant:      quantName,
-		availBytes: hostRAMAvailable(),
+		availBytes: read(),
 		noGuard:    loadKnob(opts, knobNoFitGuard) != "",
 	}
 	f.kvF16 = opts.KVPrecision == "f16"
