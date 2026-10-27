@@ -20,6 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 FRAGMENTS = "changelog.d"
 NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9._-]*\.md$")
 UNRELEASED = "## [Unreleased]\n"
+POINTER_PREFIX = "Each unreleased change is a file in"  # the one line [Unreleased] holds (gate changelog's unreleasedPointerPrefix)
 
 
 def fragments(root: pathlib.Path) -> list[pathlib.Path]:
@@ -42,7 +43,7 @@ def render(root: pathlib.Path) -> str:
     texts = []
     for p in fragments(root):
         t = p.read_text(encoding="utf-8")
-        if not t.startswith("- ") or not t.endswith("\n"):
+        if not t.startswith("- ") or not t.endswith("\n") or sum(ln.startswith("- ") for ln in t.splitlines()) != 1:
             sys.exit(f"changelog: {p.name}: a fragment is one `- ` entry ending in a newline")
         texts.append(t)
     return "\n" + "".join(texts) + "\n" if texts else ""
@@ -64,6 +65,10 @@ def release(root: pathlib.Path, version: str, date: str) -> None:
         sys.exit("changelog: CHANGELOG.md has no `## [Unreleased]` section")
     j = doc.find("\n## [", i + len(UNRELEASED))
     j = len(doc) if j < 0 else j + 1
+    stray = [ln for ln in doc[i + len(UNRELEASED):j].splitlines() if ln.strip() and not ln.startswith(POINTER_PREFIX)]
+    if stray:
+        sys.exit(f"changelog: CHANGELOG.md's [Unreleased] holds more than the pointer ({stray[0][:60]!r}); move each entry "
+                 "into changelog.d/ first, or the release would leave it behind")
     doc = doc[:j] + f"## [{version}] — {date}\n" + body + doc[j:]
     path.write_text(doc, encoding="utf-8")
     for p in fragments(root):

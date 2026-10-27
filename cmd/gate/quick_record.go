@@ -126,10 +126,10 @@ func (r quickRecord) valid() (bool, string) {
 }
 
 // quickRecordVoidedBy reports whether a change to path, since a run, voids the run. Everything a test can compile or
-// read does; the documentation tree, the website, the CI definitions and the top-level prose files do not, so a
-// release commit that edits the CHANGELOG and commits the records keeps its run.
+// read does; the documentation tree, the website, the CI definitions, the CHANGELOG's entries (changelog.d/) and the
+// top-level prose files do not, so a release commit that writes the CHANGELOG and commits the records keeps its run.
 func quickRecordVoidedBy(path string) bool {
-	for _, p := range []string{"docs/", "site/", ".github/"} {
+	for _, p := range []string{"docs/", "site/", ".github/", changelogFragmentDir + "/"} {
 		if strings.HasPrefix(path, p) {
 			return false
 		}
