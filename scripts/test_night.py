@@ -6,7 +6,10 @@ import io
 import json
 import os
 import sys
+import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -811,6 +814,98 @@ class NightStart(unittest.TestCase):
         self.assertEqual(night.night_start("22:00", self.at(7)), self.at(22))
         self.assertEqual(night.night_start("22:00", self.at(2)), self.at(22) - dt.timedelta(days=1))
         self.assertEqual(night.night_end(self.at(22)), self.at(6, 30) + dt.timedelta(days=1))
+
+
+class WaitForAJob(unittest.TestCase):
+    """PW4: `night.py wait NAME` follows one queued job to its final record and exits with its status (W2, W3). Every run is
+    the real Runner, in this file's temporary NIGHT_DIR."""
+
+    def setUp(self):
+        for d in (night.QUEUE, night.RUNNING):
+            if d.exists():
+                for f in d.glob("*"):
+                    f.unlink()
+        self.rundir = night.RUNS / f"wait-{self.id().rsplit('.', 1)[-1]}"
+        self.rundir.mkdir(parents=True, exist_ok=True)
+
+    def queue(self, name, script):
+        night.QUEUE.mkdir(parents=True, exist_ok=True)
+        _seq[0] += 1
+        seq = 2_000_000 + _seq[0]
+        (night.QUEUE / f"{seq}-{name}.json").write_text(json.dumps({
+            "name": name, "cmd": ["/bin/sh", "-c", script], "cwd": _tmp,
+            "est_min": 1.0, "timeout_min": 2.0, "priority": 50, "seq": seq}))
+
+    def run_queue(self, retries=False):
+        r = Runner(night.now() + dt.timedelta(hours=1), self.rundir)
+        r.retries = retries
+        with contextlib.redirect_stdout(io.StringIO()):
+            r.run()
+
+    def wait_while_running(self, name, retries=False):
+        """Starts wait_job in a thread, lets it find the job, runs the queue, and returns what wait_job returned."""
+        got = {}
+        t = threading.Thread(target=lambda: got.update(r=night.wait_job(name, timeout_min=1, poll_s=0.05)))
+        t.start()
+        time.sleep(0.3)
+        self.run_queue(retries)
+        t.join(30)
+        self.assertFalse(t.is_alive(), "wait did not return after the job ended")
+        return got["r"]
+
+    def test_ok_exits_0(self):
+        self.queue("w-ok", "true")
+        code, line = self.wait_while_running("w-ok")
+        self.assertEqual(code, 0, line)
+        self.assertIn("w-ok: ok", line)
+
+    def test_failure_exits_1(self):
+        self.queue("w-fail", "exit 3")
+        code, line = self.wait_while_running("w-fail")
+        self.assertEqual(code, 1, line)
+        self.assertIn("FAILED rc=3", line)
+
+    def test_waits_through_a_retry(self):
+        flag = Path(_tmp) / "w-retry.flag"
+        flag.unlink(missing_ok=True)
+        self.queue("w-retry", f"if [ -e {flag} ]; then exit 0; else touch {flag}; exit {night.RETRY_RC}; fi")
+        old = night.RETRY_BACKOFF_MIN
+        night.RETRY_BACKOFF_MIN = 0
+        try:
+            code, line = self.wait_while_running("w-retry", retries=True)
+        finally:
+            night.RETRY_BACKOFF_MIN = old
+        self.assertEqual(code, 0, line)
+        self.assertTrue(flag.exists(), "the job never ran its first, refused attempt")
+
+    def test_already_finished_returns_at_once(self):
+        self.queue("w-done", "true")
+        self.run_queue()
+        t0 = time.monotonic()
+        code, line = night.wait_job("w-done", poll_s=0.05)
+        self.assertEqual(code, 0, line)
+        self.assertLess(time.monotonic() - t0, 1)
+
+    def test_unknown_job_exits_2(self):
+        code, line = night.wait_job("w-never-queued", poll_s=0.05)
+        self.assertEqual(code, 2, line)
+
+    def test_timeout_exits_124(self):
+        self.queue("w-slow", "true")  # queued, never run
+        code, line = night.wait_job("w-slow", timeout_min=0.005, poll_s=0.05)
+        self.assertEqual(code, 124, line)
+
+    def test_command_line_exit_status(self):
+        """W3: the command a session on the other box runs over one ssh."""
+        self.queue("w-cli", "exit 4")
+        env = dict(os.environ, NIGHT_WAIT_POLL_S="0.05")
+        p = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "night.py"), "wait", "w-cli",
+                              "--timeout", "1"], env=env, stdout=subprocess.PIPE, text=True)
+        time.sleep(0.8)
+        self.run_queue()
+        out, _ = p.communicate(timeout=30)
+        self.assertEqual(p.returncode, 1, out)
+        self.assertIn("w-cli: FAILED rc=4", out)
 
 
 if __name__ == "__main__":
