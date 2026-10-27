@@ -1,0 +1,2 @@
+- The load-time swap watch now guards a `.giw` load, not only a direct `.gguf` build: the `.giw` loader and the CUDA resident build stop with a named error when the server's own swap grows past the threshold during the load. The serving swap watch re-baselines after a model loaded through the admin endpoint or the web UI, so swap that load left behind no longer shuts the server to requests for good.
+

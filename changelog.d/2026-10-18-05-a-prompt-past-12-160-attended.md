@@ -1,0 +1,1 @@
+- A prompt past 12,160 attended keys no longer falls to the sequential prefill on CUDA for a model whose attention the fused kernel does not serve (head dim other than 64 and 128: Gemma 2, 3 and 4, Phi-3, Qwen3.5): row-batched kernels run the exact attention, bit-identical to the single-block kernel and to the per-token path, for text and for an image-block pass.

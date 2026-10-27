@@ -1,0 +1,1 @@
+- The `.giw` fit guard prices the page-locked host copy of the routed experts that a CUDA expert cache (`--moe-cache-experts`) builds, 18.1 GB for Qwen3.6-35B-A3B, and refuses a load whose box cannot hold it. `FitQuery` reports it as `PinnedExpertBytes`.
