@@ -9,8 +9,8 @@ package decoder
 //   - STRUCTURE: every path in every shared set and every family's `own` list must exist on disk (catches renames).
 //   - COVERAGE: the manifest's family keys must equal the capability matrix's family set (a family added without a
 //     manifest row fails CI).
-//   - HASH/ENFORCEMENT: for each family, re-hash the SORTED, DEDUPED union of its dependency files plus the root
-//     go.mod's aikit pin; for VALIDATED families a mismatch against the recorded deps_hash fails ("parity stale"),
+//   - HASH/ENFORCEMENT: for each family, re-hash the SORTED, DEDUPED union of its dependency files plus the digest of
+//     the kernel fingerprint table (testdata/kernel_fingerprints.json); for VALIDATED families a mismatch against the recorded deps_hash fails ("parity stale"),
 //     pending families do not.
 //
 // Run `go test ./decoder -run ParityManifest -update` to fill/refresh deps_hash; the plain run is the staleness gate.
@@ -28,7 +28,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -48,8 +47,8 @@ var mergeRowsPath = flag.String("merge-rows", "", "merge collected PARITY_ROW li
 // preserve verbatim on -update (metrics, status, dates) while still reading and rewriting deps_hash and reading
 // uses/own/validated_at. Field order matches the on-disk schema so re-marshaling gives a zero-diff layout.
 //
-// There is deliberately no AikitVersion field: freshDepsHash reads the root go.mod's aikit require at hash time
-// (rootAikitVersion), so no stored value can drift from the pin. History: docs/code-notes/decoder.md#parityManifest.
+// There is deliberately no aikit or kernel field: freshDepsHash reads the kernel fingerprint table at hash time, so no
+// stored value can drift from it. History: docs/code-notes/decoder.md#parityManifest.
 type parityManifest struct {
 	SharedSets map[string][]string     `json:"shared_sets"`
 	Families   map[string]familyParity `json:"families"`
@@ -229,54 +228,9 @@ func familyDepFiles(m *parityManifest, fam familyParity) []string {
 	return out
 }
 
-// aikitVersionRE matches the aikit require line in a go.mod file — the same pattern
-// TestAikitPinsAgree (aikit_pin_test.go) uses per-module; rootAikitVersion below is its
-// root-go.mod-only twin.
-var aikitVersionRE = regexp.MustCompile(`(?m)^\s*github\.com/townsendmerino/aikit (v[0-9][^\s]*)`)
-
-// rootAikitVersion reads the ROOT go.mod's aikit require directly. freshDepsHash mixes in whatever go.mod pins at the
-// moment it hashes, so the manifest holds no hand-typed aikit version that could drift.
-func rootAikitVersion() (string, error) {
-	b, err := os.ReadFile(repoPath("go.mod"))
-	if err != nil {
-		return "", err
-	}
-	m := aikitVersionRE.FindStringSubmatch(string(b))
-	if m == nil {
-		return "", fmt.Errorf("root go.mod does not require github.com/townsendmerino/aikit")
-	}
-	return m[1], nil
-}
-
-// TestRootAikitVersion_readsFromGoMod pins that rootAikitVersion actually reads go.mod rather than returning a stale or
-// hardcoded value. It deliberately asserts no specific version string (a second place to bump on every aikit release);
-// it re-parses go.mod with a SEPARATE regexp match, not rootAikitVersion's own machinery, and requires exact agreement,
-// so a bug in the function (wrong path, wrong pattern) cannot pass by coincidence.
-func TestRootAikitVersion_readsFromGoMod(t *testing.T) {
-	got, err := rootAikitVersion()
-	if err != nil {
-		t.Fatalf("rootAikitVersion: %v", err)
-	}
-	if !strings.HasPrefix(got, "v") {
-		t.Errorf("rootAikitVersion() = %q, want a v-prefixed version", got)
-	}
-
-	b, err := os.ReadFile(repoPath("go.mod"))
-	if err != nil {
-		t.Fatalf("read go.mod: %v", err)
-	}
-	want := regexp.MustCompile(`(?m)^\tgithub\.com/townsendmerino/aikit (v\S+)$`).FindStringSubmatch(string(b))
-	if want == nil {
-		t.Fatal("go.mod has no tab-indented aikit require line — test setup assumption broke")
-	}
-	if got != want[1] {
-		t.Errorf("rootAikitVersion() = %q, want %q (go.mod's own require line, independently parsed)", got, want[1])
-	}
-}
-
 // freshDepsHash computes the deterministic content hash over a family's
 // dependency set: for each path (sorted) write path + NUL + file bytes + NUL,
-// then mix in the aikit_version. Returns "sha256:" + hex.
+// then mix in the kernel fingerprint table's digest. Returns "sha256:" + hex.
 // goCodeTokens reduces a Go source file to what the compiler reads: its token stream with
 // ordinary comments and layout dropped, so an edit to a comment or to formatting does not
 // re-stale a validated family. Directive comments (`//go:…`, `// +build`) are kept, because
@@ -328,11 +282,11 @@ func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {
 		h.Write(b)
 		h.Write([]byte{0})
 	}
-	aikitVer, err := rootAikitVersion()
+	tab, err := paritykey.ReadKernelTable(paritykey.Dir(repoPath(".")))
 	if err != nil {
 		return "", err
 	}
-	h.Write([]byte("aikit_version=" + aikitVer))
+	h.Write([]byte("kernel_fingerprints=" + paritykey.KernelTableDigest(tab)))
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
@@ -425,7 +379,7 @@ func TestParityManifest_fresh(t *testing.T) {
 			continue
 		}
 		enforced++
-		// A validated family whose uses/own sets name no files hashes only the aikit pin, so no edit to its forward can ever
+		// A validated family whose uses/own sets name no files hashes only the kernel table, so no edit to its forward can ever
 		// restale it and its green covers nothing. Keyed on status, not validated_at: an experimental family can carry a
 		// validated_at without claiming validation, and gets its sets when it is promoted.
 		if f.Status == "validated" && len(familyDepFiles(&m, f)) == 0 {

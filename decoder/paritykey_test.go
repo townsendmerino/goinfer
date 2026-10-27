@@ -23,7 +23,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pin, err := paritykey.AikitPin(src)
+	tail, err := paritykey.TodayTail(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := paritykey.Key(src, pm, pm.Families[name], paritykey.TodayTail(pin))
+		got, err := paritykey.Key(src, pm, pm.Families[name], tail)
 		if err != nil {
 			t.Fatal(err)
 		}
