@@ -126,6 +126,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "internal/adapter",
       "internal/f16",
       "internal/giw",
       "internal/kvmgr",
