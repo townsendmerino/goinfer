@@ -32,7 +32,8 @@ def sh(*a, **k):
 def step(name, fn):
     t = time.time()
     ok, out = fn()
-    print(f"  {'ok  ' if ok else 'FAIL'} {name} ({time.time() - t:.1f}s)")
+    replayed = ", cached" if ok and "(cached)" in out else ""  # go test replayed the result from its test cache
+    print(f"  {'ok  ' if ok else 'FAIL'} {name} ({time.time() - t:.1f}s{replayed})")
     if not ok:
         print("".join("      " + l + "\n" for l in out.strip().splitlines()[-25:]))
     return ok
