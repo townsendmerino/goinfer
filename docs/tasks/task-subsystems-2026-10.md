@@ -2284,6 +2284,32 @@ decisions:
   and capability gates. The census is unchanged on both architectures' goldens, and both matrices regenerate byte for
   byte (`-update` leaves no diff).
 
+#### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
+
+Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
+which is the arch's answer. It reads neither the precision policy nor WebGPU's Nemotron-MoE override, so Plan called Nemotron 3
+Nano "not eligible" on webgpu while the load builds it resident. Plan will ask `Admit` with the model's own facts, and the
+backend it is asked about.
+
+- **What may change.** Plan's eligibility verdict, only where it disagreed with the decoder's admission. Its pricing does not
+  change. WebGPU's lossy-KV mirror (Nemotron, Qwen3.5 and MLA at `--kv f16` or `--kv i8`) is unchanged. The `fit:` message for a
+  declined backend names `Admit`'s refusal.
+- **Gate 1 (decoder, tier 0).** `TestPlanAgreesWithAdmission` runs on layer D's fixtures and option cells, on cuda, metal and
+  webgpu:
+  - Plan's verdict comes from a CPU load with the cell's options and the KV request dropped (admission does not read the KV).
+  - It must equal whether the decoder's admission let the load reach the backend's build, under layer D's fake backend.
+  - Every census line is compared, and a disagreement is red.
+- **Gate 2 (gpu, tier 0).** For each cell layer B-webgpu records, Plan's webgpu verdict with the cell's KV request must equal
+  `staticResidentDecline`'s.
+- **Plant.** The same comparison, fed the old verdict (`MissingResidentFeatures` plus `ResidentEligible`), must go red. It must
+  name the Nemotron 3 Nano webgpu cells among its disagreements.
+- **MM1's census.** It records Plan, so its golden moves. Every changed line must be a backend and cell where the old Plan
+  disagreed with the decoder's admission, and the record lists them. A changed line outside that set stops the work with
+  DECISION NEEDED.
+- **Out of scope, reported.** CUDA's own build-time declines (`buildResident` in plan-only mode) are not the decoder's admission,
+  and Plan does not read them. Layer B-cuda counts the cells where they decline. Closing that is a separate decision.
+- **Cost basis:** tiny loads, seconds; the MM1 census is about a minute.
+
 ### SB3 — family adapters
 
 Moved to VK2 (one file each) and VK4 (program fingerprints). With SB1 and SB2, adding a family is a file, a fixture and
