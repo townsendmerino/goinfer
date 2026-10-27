@@ -8,12 +8,16 @@ import (
 )
 
 // side is one family "f" with dependency files decoder/arch.go (a builder) and decoder/attention.go (an executor),
-// whose contents are arch and attn, its program list progs, and its programs digest digest.
-func side(today, shadow, arch, attn, digest string, progs ...string) Side {
+// whose contents are arch and attn, and its program list progs, every listed fixture's fingerprints being fp.
+func side(today, shadow, arch, attn, fp string, progs ...string) Side {
+	fx := map[string]string{}
+	for _, p := range progs {
+		fx[p] = fp
+	}
 	return Side{Tail: "kernel_fingerprints=t",
 		Today: map[string]string{"f": today}, Shadow: map[string]string{"f": shadow},
 		Files:    map[string][]string{"f": {"decoder/arch.go", "decoder/attention.go"}},
-		Programs: map[string][]string{"f": progs}, Digest: map[string]string{"f": digest},
+		Programs: map[string][]string{"f": progs}, Fixture: fx,
 		Content: map[string]string{"decoder/arch.go": arch, "decoder/attention.go": attn}}
 }
 
@@ -33,7 +37,8 @@ func TestCompare_classes(t *testing.T) {
 		{"a builder and an executor moved, the shadow key did not", base, side("t2", "s1", "a2", "x2", "p1", "fx"), OldOnly, false},
 		{"a program moved, no dependency did", base, side("t1", "s2", "a1", "x1", "p2", "fx"), NewOnly, false},
 		{"the program list changed", side("t1", "t1", "a1", "x1", ""), side("t1", "s2", "a1", "x1", "p1", "fx"), NewOnly, true},
-		{"the program list and a program changed", base, side("t1", "s2", "a1", "x1", "p2", "fx", "fy"), NewOnly, true},
+		{"a fixture added to the list, the listed one unchanged", base, func() Side { s := side("t1", "s2", "a1", "x1", "p1", "fx", "fy"); s.Fixture["fy"] = "p9"; return s }(), NewOnly, true},
+		{"a fixture added to the list while the listed one's program moved", base, side("t1", "s2", "a1", "x1", "p2", "fx", "fy"), NewOnly, false},
 		{"today's tail moved, the shadow key did not", base, func() Side { s := side("t2", "s1", "a1", "x1", "p1", "fx"); s.Tail = "kernel_fingerprints=u"; return s }(), OldOnly, false},
 		{"today's key moved, no tracked input did", base, side("t2", "s1", "a1", "x1", "p1", "fx"), OldOnly, false},
 	}
@@ -53,12 +58,12 @@ func TestCompare_classes(t *testing.T) {
 
 // TestBuilderFile names the builders and keeps every other file in the key.
 func TestBuilderFile(t *testing.T) {
-	for _, p := range []string{"decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/arch_llama.go"} {
+	for _, p := range []string{"decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/arch_llama.go", "decoder/gemma12.go"} {
 		if !BuilderFile(p) {
 			t.Errorf("%s is a builder", p)
 		}
 	}
-	for _, p := range []string{"decoder/program_cpu.go", "decoder/attention.go", "decoder/arch_llama_test.go", "decoder/weights.go", "decoder/gemma12.go", "scripts/arch_x.go"} {
+	for _, p := range []string{"decoder/program_cpu.go", "decoder/attention.go", "decoder/arch_llama_test.go", "decoder/weights.go", "decoder/lfm2.go", "scripts/arch_x.go"} {
 		if BuilderFile(p) {
 			t.Errorf("%s is not a builder", p)
 		}
@@ -169,5 +174,15 @@ func TestTodayTail_pinOutOfKey(t *testing.T) {
 	gomod("v3.0.0")
 	if key() == k2 {
 		t.Error("in a tree without the kernel table, changing the aikit pin left today's key unchanged")
+	}
+}
+
+// TestProgramsDigest_needsATable: a family with programs and no table to read them from is an error, never the digest of
+// nothing.
+func TestProgramsDigest_needsATable(t *testing.T) {
+	for _, tab := range []map[string]map[string]string{nil, {}} {
+		if d, err := ProgramsDigest([]string{"testdata/llama-tiny"}, tab); err == nil {
+			t.Errorf("table %v: digest %q, want an error", tab, d)
+		}
 	}
 }

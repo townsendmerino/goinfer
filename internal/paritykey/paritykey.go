@@ -252,7 +252,8 @@ const ProgramTablePath = "testdata/program_fingerprints.json"
 // which the program fingerprints cover. The executors, which compute each op, are not builders and stay in every key.
 func BuilderFile(path string) bool {
 	switch path {
-	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go":
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go",
+		"decoder/gemma12.go": // gemma's and gemma2's adapters, under another name
 		return true
 	}
 	return strings.HasPrefix(path, "decoder/arch_") && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")
@@ -275,8 +276,12 @@ func ReadProgramTable(src Source) (map[string]map[string]string, error) {
 }
 
 // ProgramsDigest is the digest of the fixtures' entries in the program table, for every GOARCH in it: each GOARCH in
-// sorted order, then "fixture=fingerprint" lines in sorted fixture order. A fixture missing from a GOARCH is an error.
+// sorted order, then "fixture=fingerprint" lines in sorted fixture order. A fixture missing from a GOARCH, or a table
+// with no GOARCH, is an error.
 func ProgramsDigest(fixtures []string, tab map[string]map[string]string) (string, error) {
+	if len(tab) == 0 {
+		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the builders", ProgramTablePath)
+	}
 	fx := append([]string(nil), fixtures...)
 	sort.Strings(fx)
 	h := sha256.New()
