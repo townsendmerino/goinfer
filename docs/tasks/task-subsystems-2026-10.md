@@ -1874,7 +1874,13 @@ decisions:
 - **Then the pure function.** `Admit` must reproduce layer D with the census unchanged, and `docs/hardware-matrix.md` and
   `docs/capability-matrix.json` generated from it must equal the committed files byte for byte. **Void:** none
   (deterministic). **Stopping rule:** any change to a recorded decision stops with DECISION NEEDED. **Cost basis:**
-  measured on the first run and recorded here; expected under a minute (tiny loads).
+  measured: about 6 s for the census built twice (1,746 lines).
+- **Layer D landed (2026-10-27).** `decoder`'s `TestAdmissionCensus`, golden `testdata/sb2_admission_census.txt.gz`:
+  156 model-free lines (52 registered families × webgpu, cuda, metal), 35 backend-choice lines (7 machine profiles × 5
+  linked sets), 1,540 load lines (55 committed decoder fixtures × 7 option cells × cpu, cuda, metal, webgpu: 646 reach a
+  resident build, 894 decline before it), and 15 fixtures recorded once as not decoder checkpoints (towers, encoders).
+  Only fixtures whose weights git tracks are read, so a checkout with local-only fixtures censuses what CI does. Shown red:
+  dropping the q4k condition from the ActQuantGroup gate changes 290 lines (reverted).
 
 ### SB3 — family adapters
 
