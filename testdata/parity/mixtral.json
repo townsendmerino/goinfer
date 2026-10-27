@@ -8,7 +8,7 @@
   "own": [
     "decoder/arch_mixtral.go"
   ],
-  "deps_hash": "sha256:70b575ec2e272b26d1e9181f4eb54ace1bec6342078daedb6fc533e151aed8d2",
+  "deps_hash": "sha256:90d5a991b163043831deb73a5e387fe34f024a1cc83a969ae0096d35a410e134",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

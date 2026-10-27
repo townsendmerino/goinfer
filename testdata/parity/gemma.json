@@ -7,7 +7,7 @@
   "own": [
     "decoder/gemma12.go"
   ],
-  "deps_hash": "sha256:ed25cc7714f4f3ad0410852a5f8d77db676a5f730c2f9167861a2a45e9714a0d",
+  "deps_hash": "sha256:ea4225de996b9ae8b8035f77975d9d73f38e8e24450f2244bc84a9194a0ec4ab",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

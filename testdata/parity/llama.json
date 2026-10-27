@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_llama.go"
   ],
-  "deps_hash": "sha256:3797236f45c71c3121f483020d38a4467e7c35086f05e6f7ce1a56a4451edba9",
+  "deps_hash": "sha256:df987d480c1f396cd8131b352bb1af0e9ecd2e4decdb3507308d41e4f785b539",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
