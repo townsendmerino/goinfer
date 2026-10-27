@@ -505,6 +505,9 @@
     "internal/swapguard": [
       "decoder"
     ],
+    "internal/towerid": [
+      "internal/vision"
+    ],
     "internal/whisper": [
       "internal/audio",
       "multimodal"

@@ -128,3 +128,23 @@ live document resolves a citation through `aikit/gpu`. A pinned record's older `
 
 One import was left behind by AX2d: `cuda/kernels/ptx_test.go` arrived with SB1's batch 1 after AX2d's rewrite ran. A
 mechanical commit at AX3's start switched it. From AX3 on, `internal/movedpaths` catches the next one.
+
+## Review of #282 (Gemini, relayed 2026-10-27)
+
+Four findings. Two [test] findings held on origin/main; each got a test that was red there and is green after the fix.
+
+- **Whisper and Voxtral could pass vacuously on CUDA.** `towerid`'s `device()` read the runtime Whisper registry, so a CUDA
+  build whose Whisper registration went missing would skip both families and still pass. The backends that serve the
+  Whisper encoders are now declared in `towerid` (`whisperBackends`), so a missing registration errors in
+  `multimodal.UseWhisperDevice`. `TestRun_whisperDeclaredButUnregisteredIsAnError` holds it.
+- **`siglip()` did not check residency after `EnableResident`.** A factory returning `(nil, nil)` recorded `device: true` with
+  the CPU's bits; the red run recorded hash `2040d686…`, the CPU record's. `vision.Encoder` gains `ResidentEnabled()`, as
+  Qwen's encoder has, and `siglip()` checks it. `TestRun_siglipResidentFactoryReturningNothingIsAnError` holds it.
+- **[nit] `LoadSiglipTower`'s comment said the WebGPU tower needs quant.** It does not: unquantized, WebGPU builds the f32
+  tower (towerid's WebGPU SigLIP case runs it). Corrected.
+- **[nit] the ARCHITECTURE package table's dependency column.** Already gone on main: SB13 and SB14 replaced it with the table
+  generated from `internal/layout/imports.json`, which lists `internal/audio` and `internal/vision` correctly.
+
+The records still equal AX2b's on the CPU (22 cases), Metal (17) and WebGPU (15); the fixes change no tower code. The CUDA
+change compiles here (`GOOS=linux`); nobara's `TestTowerIdentity_cuda` run follows, and it should now record the Whisper
+and Voxtral cases (17, as at AX2d) or fail.
