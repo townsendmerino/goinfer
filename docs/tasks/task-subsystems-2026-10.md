@@ -734,6 +734,77 @@ G-MM0-4: builds and vets clean on all three systems and the tagged modules; the 
 the touched packages were clean on all three systems (Metal's untagged run lists unused test hooks in files this change does
 not touch; CI does not run staticcheck on Metal). The parity manifest stayed fresh: no moved file is in a family's deps.
 
+#### MM1's decision census, registered 2026-10-26 before any code (nobara-mm01)
+
+MM1 moves the fit arithmetic into `mem.Solve`. Its bar: every decision today's code makes, on every cell below, comes out the
+same from `Solve` and its callers, byte for byte, the printed and returned lines included. This step records the census
+from today's code (`origin/main` at the commit this branch starts from) and commits it. It changes no product code.
+
+**The decisions** (each with every line it prints or returns):
+
+| id | decision | outputs recorded |
+|---|---|---|
+| D1 | the load-time resident guard: `fitCheckFor` and `decide`, as `guardFit` and `FitQuery` use them | the pin, the refusal and its text, `DenseStreamable`, need, budget, weight, KV and source bytes, `known`, `ratio`, the line `guardFit` would print (cap note or warning), `arithmetic()` |
+| D2 | the `.giw` guard: `decideGIWFit` | every `giwFit` field, the refusal text, the note |
+| D3 | `Model.Plan`, for cpu, cuda, metal and webgpu | every `Plan` field, `Reason`, `NeedBytes()` |
+| D4 | `Model.MetalFitCtx` | every `MetalFit` field |
+| D5 | request-time admission: `AdmitPrefillMemoryShare`, and `FitBudgetSummary` | the error text (or none), the summary's five values |
+| D6 | `resolveWeightCacheBudget` | the budget |
+| D7 | `ResolveKV` for cpu, cuda, metal and webgpu, and `WebGPUCtxCeiling` | delivered precision and reason; the ceiling |
+
+**The cells.**
+- **Families:** every tracked tiny checkpoint that loads on the CPU in the plain test binary (directories with a `config.json`
+  and tracked weights, and tracked `.gguf` files), each at its own window and, for directories, at a long variant (a temp
+  copy with `max_position_embeddings` 131,072) so the auto-pin and floor branches are reachable. D2 and D7 also take the tracked
+  real-shape configs (`decoder/testdata/laguna_configs/`, `testdata/nemotron-h-configs/`, `testdata/glm_ocr_real_config.json`),
+  which need no weights.
+- **Options:** for D1 and D2, backend cpu, cuda or metal, with the GPU backend linked or not (a stub in the registry, as
+  `withFakeCUDACompiled` does), × quant int4, int8, f32, int4mix (D1) × context unpinned, 4,096 or 32,768 × KV f32, f16 or i8
+  × stream-weights off or on (D1) × the CUDA expert cache off or on (cuda only) × the no-fit-guard knob off or on (one cell
+  each). D3–D5 run on each family loaded at int4 and at f32, over a request grid named in the test.
+- **Machines:** a zoo of recorded snapshots in `testdata/machines/*.json`. Each names its source, and an entry not read from
+  a log is marked as an assumption: the M1 Pro with Francis's apps open (7.0 GB available, the 2026-10-15 G2-R log); the M1 Pro
+  under the 2026-10-20 load (a 5.1 GB budget); the M1 Pro near idle (`kern.memorystatus_level` 79%, the B41 record); nobara
+  with and without `kwin_wayland`'s CUDA context (host and VRAM read on 2026-10-26); a GitHub runner with no GPU; and a
+  machine that reads unknown. Every cell also runs at its own edges: for each decision that changes with free memory, the
+  lowest reading at which each outcome holds, and one byte under it, found by search and stored as plain numbers.
+- **The host class.** Weight bytes depend on the CPU, because the loader repacks int4 differently on AVX2, AVX-512 VNNI and
+  arm64. So the census is keyed by host class (GOARCH plus the measured bytes-per-element table), as `parityWantInt4ByArch` is
+  keyed by architecture. This step records nobara's class natively and the VNNI class under Intel SDE, as the int4 parity
+  golden was (the read below: they are one class). A class with no entry, arm64 included, is a capture run: the test logs the census hash and skips the comparison.
+  The Mac records arm64 when a session there takes it.
+
+**Gates.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM1-C1 coverage | every outcome of every decision is reached by at least one cell. D1 and D2: proceed unpriced, fits, warns, auto-pins, refuses a pin, refuses at the floor (D1 also a refusal with `DenseStreamable`, and a CUDA build-peak need). D3: each `Placement` the code can return for each backend. D4: each `Why`. D5: admitted and refused, at least once each. A missing outcome fails the test, naming it | fewer families load than the tracked fixture count less the ones named as not loadable on the CPU (a census that loaded nothing covers nothing) | runs to completion | seconds |
+| G-MM1-C2 determinism | two runs in one process, and a run in a second process, give the same census hash | the probe fake is not installed (a live reading leaked in) | runs to completion | seconds |
+| G-MM1-C3 the golden | the census equals `testdata/mm1_census.json.gz` for this host class, cell for cell and byte for byte. It is written once by `-update` in this PR and then frozen: MM1's `Solve` PRs reproduce it without `-update`. A cell added, removed or changed is a red run, and the PR that changes it says why | the host class has no entry (a capture run, reported as such, not a pass) | runs to completion | seconds |
+| G-MM1-C4 tier | the census test runs in under 30 s on nobara and under a minute in CI, with no model asset, no device and no network | — | — | measured on the first run and recorded here |
+
+**MM1 census read, 2026-10-26 (nobara, Ryzen 7 3700X; timing lock free, shared hold): all four pass.** The census is 29,637
+groups. Per decision: D1 8,435, D2 3,948, D3 11,760, D4 2,310, D5 2,730, D6 2 and D7 451, plus the loads group. It covers 105
+family variants, and 210 family loads succeeded. The loads that fail are the towers, encoders and ASR models, which the loads
+group lists (a family that stops loading is a red run). G-MM1-C1: every listed outcome is reached. G-MM1-C2: two in-process runs
+and a second process agree (`cce976c3…`). The first run did not agree: the long variants' temp-dir names reached the fit guard's
+line, and they now keep the fixture's name. G-MM1-C3: the golden is written for the amd64 class (bytes per element f32 4,
+int8 1.015625, int4 0.5625). Under SDE `-hsw` the census matches it, and under `-icx` the class and the census hash are the
+same, so VNNI and AVX2 hosts share it. arm64 is a capture run until the Mac records it. G-MM1-C4: `TestDecisionCensus` takes 16.3 s
+and the second-process test 16.6 s. One build of the census took 37 s on the first run and 22 s after the cuts below, and takes 8 s with D1, D3 and D4 in parallel
+(D2 stays serial at 5 s, because `decideGIWFit` reads the probe seam on every evaluation; `-race` is clean). Two cuts to the registered grid came first, and they change no
+decision's reach: stream-weights only for a `.gguf` (it moves nothing for a directory), and the CPU's KV f16 cell dropped (the
+CPU's precision is `KVQuant`'s). The golden holds a 16-hex SHA-256 prefix per group (199 KB); `-census.dump` writes the full text
+(92 MB) to diff a red run against its base.
+
+**CI on the PR, root-windows (run 40433980269): red, then fixed on the branch.** Every group differed because Windows built the
+keys from OS paths (`..\internal\vision\…`), which the golden holds as `internal/vision/…`. The host class matched the
+golden. The keys now use forward slashes on every OS, and the long variants hard-link their weights, falling back to a copy
+(a symlink needs a privilege on Windows that the runner happened to have). **G-MM1-C4 is not met on Windows:**
+`TestDecisionCensus` took 166 s there, against a minute registered for CI. D2, serial, took 58 to 66 s of each build there,
+against 5 s on nobara. The fix belongs to the next MM1 step: once `Solve` takes the available reading as data, D2 no longer
+goes through the shared probe seam and runs in parallel like D1, D3 and D4.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

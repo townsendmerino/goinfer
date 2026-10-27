@@ -1,0 +1,10 @@
+{
+ "name": "m1pro-apps-open",
+ "source": "the 2026-10-15 G2-R log (docs/tasks/task-forward-architecture-2026-10.md): 7.0 GB available, a 4.9 GB budget; physical is the M1 Pro's 16 GiB. Available is the logged figure, two significant digits, in the guard's GB (2^30 bytes).",
+ "assumed": "",
+ "goarch": "arm64",
+ "physical_bytes": 17179869184,
+ "available_bytes": 7516192768,
+ "cuda_free_bytes": null,
+ "metal_budget_bytes": 7516192768
+}

@@ -1,0 +1,10 @@
+{
+ "name": "nobara-no-desktop",
+ "source": "nobara-desktop with kwin_wayland's CUDA context released.",
+ "assumed": "cuda free is nobara-desktop's plus kwin_wayland's 17 MiB (nvidia-smi), not read with the desktop stopped",
+ "goarch": "amd64",
+ "physical_bytes": 67358625792,
+ "available_bytes": 62566936084,
+ "cuda_free_bytes": 7648378880,
+ "metal_budget_bytes": null
+}

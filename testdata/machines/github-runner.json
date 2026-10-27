@@ -1,0 +1,10 @@
+{
+ "name": "github-runner",
+ "source": "GitHub's ubuntu-24.04 standard runner for public repositories: 16 GB of RAM, no GPU (GitHub's runner documentation).",
+ "assumed": "available is assumed at 14 GiB; no reading from a runner is recorded",
+ "goarch": "amd64",
+ "physical_bytes": 17179869184,
+ "available_bytes": 15032385536,
+ "cuda_free_bytes": null,
+ "metal_budget_bytes": null
+}
