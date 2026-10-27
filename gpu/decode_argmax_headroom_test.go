@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -96,7 +97,7 @@ func TestDecodeArgmaxHeadroom(t *testing.T) {
 				return e
 			}
 			pos++
-			c.device.Poll(true, nil)
+			(*kernels.ContextDevice(c)).Poll(true, nil)
 			return nil
 		})...)
 	}
@@ -114,12 +115,12 @@ func TestDecodeArgmaxHeadroom(t *testing.T) {
 	// removes, vs the GEMV cost it does NOT (a real kernel still runs the GEMV; only the reduction and
 	// the readback size change).
 	copyMapOnly := timeIt(perRound*rounds, func() error {
-		enc, e := c.device.TryCreateCommandEncoder(nil)
+		enc, e := (*kernels.ContextDevice(c)).TryCreateCommandEncoder(nil)
 		if e != nil {
 			return e
 		}
 		defer enc.Release()
-		if e := enc.TryCopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4)); e != nil {
+		if e := enc.TryCopyBufferToBuffer((*kernels.DecodeRunnerLastLogits(r)), 0, (*kernels.DecodeRunnerStag(r)), 0, uint64((*kernels.DecodeRunnerVocab(r))*4)); e != nil {
 			return e
 		}
 		cmd, e := enc.TryFinish(nil)
@@ -127,23 +128,23 @@ func TestDecodeArgmaxHeadroom(t *testing.T) {
 			return e
 		}
 		defer cmd.Release()
-		c.queue.Submit(cmd)
+		(*kernels.ContextQueue(c)).Submit(cmd)
 		var st wgpu.MapAsyncStatus
-		if e := r.stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(s wgpu.MapAsyncStatus) { st = s }); e != nil {
+		if e := (*kernels.DecodeRunnerStag(r)).TryMapAsync(wgpu.MapModeRead, 0, uint64((*kernels.DecodeRunnerVocab(r))*4), func(s wgpu.MapAsyncStatus) { st = s }); e != nil {
 			return e
 		}
-		c.device.Poll(true, nil)
+		(*kernels.ContextDevice(c)).Poll(true, nil)
 		if st != wgpu.MapAsyncStatusSuccess {
 			return fmt.Errorf("map failed: %v", st)
 		}
 		best, bi := float32(math.Inf(-1)), 0
-		for i, v := range wgpu.FromBytes[float32](r.stag.GetMappedRange(0, uint(r.vocab*4))) {
+		for i, v := range wgpu.FromBytes[float32]((*kernels.DecodeRunnerStag(r)).GetMappedRange(0, uint((*kernels.DecodeRunnerVocab(r))*4))) {
 			if v > best {
 				best, bi = v, i
 			}
 		}
 		_ = bi
-		r.stag.TryUnmap()
+		(*kernels.DecodeRunnerStag(r)).TryUnmap()
 		return nil
 	})
 	mCopyMap := median(copyMapOnly)

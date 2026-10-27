@@ -1,0 +1,336 @@
+//go:build gpu
+
+package kernels
+
+import (
+	"fmt"
+
+	"github.com/oliverbestmann/webgpu/wgpu"
+)
+
+// Stage 2: device-resident activations. At M=1 decode the activation is a few KB, so the per-token cost is not data movement
+// but LATENCY: the Stage-1 MatmulW8A8 calls Poll(true) to map its readback, so a token is hundreds of synchronous
+// round-trips. Keeping activations in device buffers lets a chain of matmuls submit back-to-back and sync ONCE.
+//
+// Chaining W8A8→W8A8 needs the one glue op that was on the CPU, int8 re-quantization of a matmul's f32 output, on the GPU.
+// quantizeShader does it: one workgroup per row computes the row max-abs (a 64-lane tree reduce), then all lanes
+// quantize+pack to the same 4×int8/u32 layout MatmulW8A8 consumes. The reduce must stay a parallel tree: decode is M=1, so
+// there is one row and nothing else to run in parallel, and a serial scan on lane 0 idles 63 lanes in a single-workgroup
+// dispatch (TestDecode_dispatchProfile). History: docs/code-notes/gpu.md#Stage 2: device-resident activations.
+
+const QuantizeShaderWGSL = `
+struct QDims { m: u32, n: u32, np: u32, _p: u32 };  // np = N padded to mult of 4
+
+@group(0) @binding(0) var<storage, read>       src:    array<f32>;  // [M, N]
+@group(0) @binding(1) var<storage, read_write> qout:   array<u32>;  // [M, np/4] packed int8
+@group(0) @binding(2) var<storage, read_write> scales: array<f32>;  // [M]
+@group(0) @binding(3) var<uniform>             d:      QDims;
+
+var<workgroup> sh: array<f32, 64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let m = wid.x;
+    if (m >= d.m) { return; }   // uniform across the workgroup ⇒ the barriers below stay uniform
+    let t = lid.x;
+    let base = m * d.n;
+    // max-abs over the row on all 64 lanes, then a tree reduce — the same shape
+    // rmsnormQuantWGSL already uses. BIT-IDENTICAL to the old serial lane-0 scan:
+    // f32 max is exact and order-independent (no rounding, associative, commutative),
+    // so every reduction order yields the same mx, hence the same scale and the same
+    // packed int8. The old version's "trivial at decode; the rows run in parallel"
+    // premise only holds for M>1 — at decode M IS 1, so one lane did the whole
+    // N-element scan while 63 idled at the barrier.
+    var mx: f32 = 0.0;
+    for (var i: u32 = t; i < d.n; i = i + 64u) { mx = max(mx, abs(src[base + i])); }
+    sh[t] = mx;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { sh[t] = max(sh[t], sh[t + stride]); }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    var s: f32 = sh[0] / 127.0;
+    if (s == 0.0) { s = 1.0; }
+    if (t == 0u) { scales[m] = s; }
+    let inv = 1.0 / s;
+    let nw = d.np / 4u;
+    let obase = m * nw;
+    for (var w: u32 = t; w < nw; w = w + 64u) {
+        var word: u32 = 0u;
+        for (var j: u32 = 0u; j < 4u; j = j + 1u) {
+            let k = w * 4u + j;
+            var q: i32 = 0;
+            if (k < d.n) {
+                q = i32(round(src[base + k] * inv));
+                if (q > 127) { q = 127; } else if (q < -127) { q = -127; }
+            }
+            word = word | ((u32(q) & 0xffu) << (8u * j));
+        }
+        qout[obase + w] = word;
+    }
+}
+`
+
+// DeviceBuffer is a GPU storage buffer that stays resident between ops (an
+// activation flowing through a layer). n is its element count (f32 or u32
+// depending on the producer). Release frees it.
+type DeviceBuffer struct {
+	bytes int64 // accounted in liveBufferBytes until Close (bufaccount.go)
+	buf   *wgpu.Buffer
+	n     int
+}
+
+func (d *DeviceBuffer) Close() error {
+	if d != nil && d.buf != nil {
+		d.buf.Release()
+		d.buf = nil
+		accountFree(d.bytes)
+		traceFree(d)
+		d.bytes = 0
+	}
+	return nil
+}
+
+func (c *Context) ensureQuantize() error {
+	if c.quantizePipeline != nil {
+		return nil
+	}
+	code, err := c.quantSrc("quantizeRowsInt8", QuantizeShaderWGSL)
+	if err != nil {
+		return err
+	}
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "quantizeRowsInt8",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
+	})
+	if err != nil {
+		return fmt.Errorf("gpu: compile quantize shader: %w", err)
+	}
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label:   "quantizeRowsInt8",
+		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return fmt.Errorf("gpu: create quantize pipeline: %w", err)
+	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.quantizeShader = sh
+	c.quantizePipeline = pl
+	c.quantizeLayout = c.bgl(pl)
+	return nil
+}
+
+// UploadF32 puts a host f32 slice into a resident device buffer (the chain's
+// input activation). The caller Releases it.
+func (c *Context) UploadF32(a []float32) (*DeviceBuffer, error) {
+	buf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "act-f32", Contents: wgpu.ToBytes(a), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: UploadF32: %w", err)
+	}
+	return NewDeviceBuffer(buf, len(a)), nil
+}
+
+// quantizeDevice quantizes an f32 device activation [M,K] to packed int8 + per-row
+// scales, both resident. It only Submits (no Poll) so it pipelines with the
+// matmul that consumes it.
+func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *DeviceBuffer, error) {
+	if err := c.ensureQuantize(); err != nil {
+		return nil, nil, err
+	}
+	kp := padK(K)
+	qWords := M * (kp / 4)
+	qBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "act-q8", Size: uint64(qWords * 4), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("gpu: quantizeDevice q buffer: %w", err)
+	}
+	scBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "act-scales", Size: uint64(M * 4), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		qBuf.Release()
+		return nil, nil, fmt.Errorf("gpu: quantizeDevice scales buffer: %w", err)
+	}
+	dims := []uint32{uint32(M), uint32(K), uint32(kp), 0}
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "qdims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
+	})
+	if err != nil {
+		qBuf.Release()
+		scBuf.Release()
+		return nil, nil, fmt.Errorf("gpu: quantizeDevice dims: %w", err)
+	}
+	defer dimsBuf.Release()
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.quantizeLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: src.buf, Size: src.buf.GetSize()},
+			{Binding: 1, Buffer: qBuf, Size: qBuf.GetSize()},
+			{Binding: 2, Buffer: scBuf, Size: scBuf.GetSize()},
+			{Binding: 3, Buffer: dimsBuf, Size: dimsBuf.GetSize()},
+		},
+	})
+	if err != nil {
+		qBuf.Release()
+		scBuf.Release()
+		return nil, nil, fmt.Errorf("gpu: quantizeDevice bind: %w", err)
+	}
+	defer bg.Release()
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.quantizePipeline)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups(uint32(M), 1, 1) // one workgroup per row
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		qBuf.Release()
+		scBuf.Release()
+		return nil, nil, fmt.Errorf("gpu: quantizeDevice pass: %w", err)
+	}
+	pass.Release()
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd) // no Poll — pipelines with the consumer
+	return NewDeviceBuffer(qBuf, qWords), NewDeviceBuffer(scBuf, M), nil
+}
+
+// matmulW8A8Device computes dst = (int8 act) · rmᵀ into a resident f32 device
+// buffer, Submitting only (no Poll). The output feeds the next layer's quantize.
+func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, M int) (*DeviceBuffer, error) {
+	if err := c.ensureQuant(); err != nil {
+		return nil, err
+	}
+	N := rm.rows
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "mm-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: matmulW8A8Device dst: %w", err)
+	}
+	dims := []uint32{uint32(M), uint32(rm.kp), uint32(N), 0}
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "mm-dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
+	})
+	if err != nil {
+		dstBuf.Release()
+		return nil, fmt.Errorf("gpu: matmulW8A8Device dims: %w", err)
+	}
+	defer dimsBuf.Release()
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.quantLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: aq.buf, Size: aq.buf.GetSize()},
+			{Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
+			{Binding: 2, Buffer: aScales.buf, Size: aScales.buf.GetSize()},
+			{Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
+			{Binding: 4, Buffer: dstBuf, Size: dstBuf.GetSize()},
+			{Binding: 5, Buffer: dimsBuf, Size: dimsBuf.GetSize()},
+		},
+	})
+	if err != nil {
+		dstBuf.Release()
+		return nil, fmt.Errorf("gpu: matmulW8A8Device bind: %w", err)
+	}
+	defer bg.Release()
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.quantPipeline)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		dstBuf.Release()
+		return nil, fmt.Errorf("gpu: matmulW8A8Device pass: %w", err)
+	}
+	pass.Release()
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd) // no Poll
+	return NewDeviceBuffer(dstBuf, M*N), nil
+}
+
+// readbackRaw reads n f32 elements from a raw *wgpu.Buffer whose REAL release stays exactly where it already was: a
+// `defer buf.Release()` in the caller. This function only fixes the ACCOUNTING: newDeviceBuffer's accountAlloc is paired with
+// accountFree before returning, WITHOUT calling Close/Release on buf itself. Calling db.Close() here would double-release a
+// buffer the caller's own defer owns and corrupt the allocator (a SIGTRAP inside wgpu-native on a later, unrelated
+// CreateBuffer), which is worse than the accounting leak it would fix. History: docs/code-notes/gpu.md#readbackRaw.
+func (c *Context) readbackRaw(buf *wgpu.Buffer, n int) ([]float32, error) {
+	db := NewDeviceBuffer(buf, n)
+	out, err := c.Readback(db)
+	accountFree(db.bytes) // balances newDeviceBuffer's accountAlloc; buf itself is untouched
+	traceFree(db)
+	return out, err
+}
+
+// Readback copies a device f32 buffer to the host — the single sync point at the
+// end of a chain.
+func (c *Context) Readback(db *DeviceBuffer) ([]float32, error) {
+	size := uint64(db.n * 4)
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "readback", Size: size, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: Readback staging: %w", err)
+	}
+	defer stage.Release()
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	if err := enc.TryCopyBufferToBuffer(db.buf, 0, stage, 0, size); err != nil {
+		return nil, fmt.Errorf("gpu: Readback copy: %w", err)
+	}
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	status := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, size, func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
+		return nil, fmt.Errorf("gpu: Readback map: %w", err)
+	}
+	c.device.Poll(true, nil) // the one sync
+	if status != wgpu.MapAsyncStatusSuccess {
+		return nil, fmt.Errorf("gpu: Readback map failed: %v", status)
+	}
+	out := make([]float32, db.n)
+	copy(out, wgpu.FromBytes[float32](stage.GetMappedRange(0, uint(size))))
+	if err := stage.TryUnmap(); err != nil {
+		return nil, fmt.Errorf("gpu: Readback unmap: %w", err)
+	}
+	return out, nil
+}
+
+// ChainW8A8 runs act through a sequence of resident W8A8 weights — each step
+// quantizes the running activation on-device and matmuls — keeping everything
+// resident and syncing only once at the end. weights[i] must have cols == the
+// output width of weights[i-1] (square, in the proof). This is the Stage-2 path:
+// one Poll for the whole chain instead of one per matmul.
+func (c *Context) ChainW8A8(act []float32, M int, weights []*ResidentW8A8) ([]float32, error) {
+	cur, err := c.UploadF32(act)
+	if err != nil {
+		return nil, err
+	}
+	for _, rm := range weights {
+		qb, sb, err := c.quantizeDevice(cur, M, rm.cols)
+		if err != nil {
+			cur.Close()
+			return nil, err
+		}
+		out, err := c.matmulW8A8Device(qb, sb, rm, M)
+		qb.Close()
+		sb.Close()
+		cur.Close()
+		if err != nil {
+			return nil, err
+		}
+		cur = out
+	}
+	defer cur.Close()
+	return c.Readback(cur)
+}

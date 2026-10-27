@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -89,7 +90,7 @@ func TestDecodeTWE_split(t *testing.T) {
 
 	// device-timestamp GPU portion (true on-GPU ns), if the resident device exposes
 	// timestamp queries; else report TSync as the GPU-blocked wall and note poll cost.
-	gpuMs := gpuTimePlanTWE(rd.c, rd.runner.steps)
+	gpuMs := gpuTimePlanTWE(rd.c, (*kernels.DecodeRunnerSteps(rd.runner)))
 
 	// batched ForwardN (RunN): K tokens in one Submit/Poll → per-token fence amortization.
 	runNPerTok := func(K int) float64 {
@@ -140,35 +141,35 @@ func TestDecodeTWE_split(t *testing.T) {
 // gpuTimePlanTWE returns the min/30 on-GPU ms for the runner's dispatch plan via a timestamp
 // query on the pass descriptor (TimestampWrites), or -1 if the device lacks the timestamp
 // feature, so the harness degrades to TSync wall-clock.
-func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
+func gpuTimePlanTWE(c *Context, steps []kernels.RunStep) float64 {
 	bestTicks := math.MaxFloat64
 	for range 30 {
-		qset, e := c.device.TryCreateQuerySet(&wgpu.QuerySetDescriptor{Label: "ts", Type: wgpu.QueryTypeTimestamp, Count: 2})
+		qset, e := (*kernels.ContextDevice(c)).TryCreateQuerySet(&wgpu.QuerySetDescriptor{Label: "ts", Type: wgpu.QueryTypeTimestamp, Count: 2})
 		if e != nil || qset == nil {
 			return -1
 		}
-		resolve, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-resolve", Size: 16, Usage: wgpu.BufferUsageQueryResolve | wgpu.BufferUsageCopySrc})
-		readback, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-rb", Size: 16, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-		enc, _ := c.device.TryCreateCommandEncoder(nil)
+		resolve, _ := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-resolve", Size: 16, Usage: wgpu.BufferUsageQueryResolve | wgpu.BufferUsageCopySrc})
+		readback, _ := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-rb", Size: 16, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		enc, _ := (*kernels.ContextDevice(c)).TryCreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(&wgpu.ComputePassDescriptor{
 			TimestampWrites: &wgpu.PassTimestampWrites{QuerySet: qset, BeginningOfPassWriteIndex: 0, EndOfPassWriteIndex: 1},
 		})
 		for _, s := range steps {
-			pass.SetPipeline(s.pl)
-			pass.SetBindGroup(0, s.bg, nil)
-			pass.DispatchWorkgroups(s.gx, s.gy, 1)
+			pass.SetPipeline(s.Pl)
+			pass.SetBindGroup(0, s.Bg, nil)
+			pass.DispatchWorkgroups(s.Gx, s.Gy, 1)
 		}
 		pass.TryEnd()
 		pass.Release()
 		_ = enc.TryResolveQuerySet(qset, 0, 2, resolve, 0)
 		enc.TryCopyBufferToBuffer(resolve, 0, readback, 0, 16)
 		cmd, _ := enc.TryFinish(nil)
-		c.queue.Submit(cmd)
+		(*kernels.ContextQueue(c)).Submit(cmd)
 		cmd.Release()
 		enc.Release()
 		st := wgpu.MapAsyncStatus(0)
 		readback.TryMapAsync(wgpu.MapModeRead, 0, 16, func(s wgpu.MapAsyncStatus) { st = s })
-		c.device.Poll(true, nil)
+		(*kernels.ContextDevice(c)).Poll(true, nil)
 		if st == wgpu.MapAsyncStatusSuccess {
 			tsv := wgpu.FromBytes[uint64](readback.GetMappedRange(0, 16))
 			if d := float64(tsv[1] - tsv[0]); d < bestTicks {

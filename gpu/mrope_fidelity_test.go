@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"os"
 	"path/filepath"
@@ -348,13 +349,13 @@ func TestS12MRoPEFidelity(t *testing.T) {
 			return l, mA.ResidentUploadPrefillForTest(cA)
 		})
 		if defect {
-			prefillDefectForTest = 13
+			kernels.PrefillDefectForTest = 13
 		}
 		line.Candidate = arm(func() ([]float32, error) {
 			l, _, err := mA.ResidentMRoPEPrefillForTest(ctx, rd, ids, feats[key], start, nImg, mrope)
 			return l, err
 		})
-		prefillDefectForTest = 0
+		kernels.PrefillDefectForTest = 0
 		b, _ := json.Marshal(line)
 		if _, err := live.Write(append(b, '\n')); err != nil {
 			t.Fatal(err)

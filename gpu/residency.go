@@ -1,10 +1,13 @@
 //go:build gpu
 
+//lint:file-ignore SA1019 Release is Close's deprecated alias, called here as before; it is deprecated for new code only.
+
 package gpu
 
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"slices"
 
@@ -21,17 +24,17 @@ import (
 // uploadProj uploads one projection to the device at its native precision and returns a decodeWeight the DecodeRunner can
 // GEMV. int4 and int8 upload as they are; an f32 projection is quantized row-wise to int8. It reads the projection through
 // linalg.WeightMat's exported accessors (Kind/Rows/Cols/Int4/Int8).
-func uploadProj(c *Context, w *linalg.WeightMat) (decodeWeight, error) {
+func uploadProj(c *Context, w *linalg.WeightMat) (kernels.DecodeWeight, error) {
 	N, K := w.Rows(), w.Cols()
 	switch w.Kind() {
 	case "int4":
 		q4, q4s, group, _ := decoder.Int4F32(w)
-		if group != w4a8GroupSize {
-			return nil, fmt.Errorf("gpu: residency int4 group %d != %d", group, w4a8GroupSize)
+		if group != kernels.W4a8GroupSize {
+			return nil, fmt.Errorf("gpu: residency int4 group %d != %d", group, kernels.W4a8GroupSize)
 		}
 		// Fast path: when K%32==0 the decoder's 2-nibble/byte int4 is byte-identical to the GPU packed layout
 		// (TestInt4LayoutMatch), so upload the bytes straight, with no per-element unpack and re-pack.
-		if K%w4a8GroupSize == 0 {
+		if K%kernels.W4a8GroupSize == 0 {
 			return c.UploadW4A8Packed(q4, q4s, N, K)
 		}
 		// Fallback (K not a multiple of 32 → row padding differs): unpack 2-nibble/byte to
@@ -79,7 +82,7 @@ var (
 type residentDecoder struct {
 	c                        *Context
 	runner                   *DecodeRunner
-	rm                       runModel
+	rm                       kernels.RunModel
 	nKV, hd                  int      // KV grouping — UploadKV needs it to per-head quantize int8
 	hidden, inter, nH, vocab int      // the shape PrefillScratchBytes prices a pass by
 	ctxCap                   int      // resident KV capacity in positions; writes past it corrupt
@@ -97,7 +100,7 @@ type residentDecoder struct {
 
 	// runnerFor builds a DecodeRunner over a given runModel (newRunner is runnerFor(rd.rm)); buildKVSlots uses it for
 	// the slots beyond the first, whose runModels share rd.rm's weights and own their KV.
-	runnerFor func(rm runModel) (*DecodeRunner, error)
+	runnerFor func(rm kernels.RunModel) (*DecodeRunner, error)
 
 	// slots holds the resident KV slots (gpu/kv_slots.go), nil with one. slots[kvSlot] is the bound slot, and rm / runner /
 	// batch above are always ITS, so binding a slot swaps the three. adapter is what SetAdapter last bound, so a switch can
@@ -223,9 +226,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			return nil, err
 		}
 		keepF(d.Release)
-		return d.buf, nil
+		return (*kernels.DeviceBufferBuf(d)), nil
 	}
-	proj := func(pw *linalg.WeightMat) (decodeWeight, error) {
+	proj := func(pw *linalg.WeightMat) (kernels.DecodeWeight, error) {
 		dw, err := uploadProj(c, pw)
 		if err != nil {
 			return nil, err
@@ -240,7 +243,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	// projF32 quantizes a raw f32 [N,K] weight to int8 row-wise and uploads it (the MLA
 	// projections are stored f32 in the decoder; the resident GEMVs are W8A8).
-	projF32 := func(w []float32, N, K int) (decodeWeight, error) {
+	projF32 := func(w []float32, N, K int) (kernels.DecodeWeight, error) {
 		q8, scales := linalg.QuantizeRowsInt8(w, N, K)
 		rm, err := c.UploadW8A8(q8, scales, N, K)
 		if err != nil {
@@ -251,7 +254,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 
 	// projInt8 uploads an already-int8 weight matrix (per-row scales) as projF32 uploads its quantized f32.
-	projInt8 := func(w *linalg.WeightMat, N, K int) (decodeWeight, error) {
+	projInt8 := func(w *linalg.WeightMat, N, K int) (kernels.DecodeWeight, error) {
 		q8, scales, _, ok := w.Int8()
 		if !ok || w.Rows() != N || w.Cols() != K {
 			return nil, fmt.Errorf("gpu: an int8 projection of %d×%d (int8 %v), want %d×%d", w.Rows(), w.Cols(), ok, N, K)
@@ -274,7 +277,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 		return out
 	}
-	projMul := func(pw *linalg.WeightMat, mult float32) (decodeWeight, error) {
+	projMul := func(pw *linalg.WeightMat, mult float32) (kernels.DecodeWeight, error) {
 		if mult == 1 {
 			return proj(pw)
 		}
@@ -300,7 +303,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		keepF(rm.Release)
 		return rm, nil
 	}
-	projF32Mul := func(w []float32, N, K int, mult float32) (decodeWeight, error) {
+	projF32Mul := func(w []float32, N, K int, mult float32) (kernels.DecodeWeight, error) {
 		q8, scales := linalg.QuantizeRowsInt8(w, N, K)
 		if mult != 1 {
 			scales = scaleCopy(scales, mult)
@@ -315,11 +318,11 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// stateBuf allocates a build-once, zeroed, in-place-updatable Mamba state buffer
 	// (Storage|CopyDst so Reset can re-zero it per generation).
 	stateBuf := func(n int) (*wgpu.Buffer, error) {
-		b2, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		b2, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			return nil, err
 		}
-		c.queue.TryWriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
+		(*kernels.ContextQueue(c)).TryWriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
 		keepF(b2.Release)
 		return b2, nil
 	}
@@ -366,10 +369,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			lmMult = 1 / gLogitScale
 		}
 		gIn := gNH * gHd
-		rd.rm.mamba = &mambaRunParams{
-			nHeads: gNH, hp: gHd, dn: gDS, nGroups: gNG, dConv: gK,
-			dInner: gIn, convDim: gIn + 2*gNG*gDS, projDim: 2*gIn + 2*gNG*gDS + gNH,
-			gSize: gNG * gDS, repeat: gNH / gNG, normGroups: 1,
+		rd.rm.Mamba = &kernels.MambaRunParams{
+			NHeads: gNH, Hp: gHd, Dn: gDS, NGroups: gNG, DConv: gK,
+			DInner: gIn, ConvDim: gIn + 2*gNG*gDS, ProjDim: 2*gIn + 2*gNG*gDS + gNH,
+			GSize: gNG * gDS, Repeat: gNH / gNG, NormGroups: 1,
 		}
 	}
 	// Nemotron-H (dense squared-ReLU hybrid): the same Mamba-2 geometry but the gated RMSNorm
@@ -378,10 +381,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	var nemoZeroInvFreq *wgpu.Buffer // NoPE: a zeroed invFreq makes the rope kernel an identity
 	if nemoOK {
 		nIn := nNH * nHd
-		rd.rm.mamba = &mambaRunParams{
-			nHeads: nNH, hp: nHd, dn: nDS, nGroups: nNG, dConv: nK,
-			dInner: nIn, convDim: nIn + 2*nNG*nDS, projDim: 2*nIn + 2*nNG*nDS + nNH,
-			gSize: nNG * nDS, repeat: nNH / nNG, normGroups: nNormG,
+		rd.rm.Mamba = &kernels.MambaRunParams{
+			NHeads: nNH, Hp: nHd, Dn: nDS, NGroups: nNG, DConv: nK,
+			DInner: nIn, ConvDim: nIn + 2*nNG*nDS, ProjDim: 2*nIn + 2*nNG*nDS + nNH,
+			GSize: nNG * nDS, Repeat: nNH / nNG, NormGroups: nNormG,
 		}
 		var ze error
 		if nemoZeroInvFreq, ze = up32(make([]float32, hd/2)); ze != nil {
@@ -399,28 +402,28 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	// ropeHalf = len(invFreq) = rotaryDim/2 drives the rope dispatch (partial RoPE rotates only the first rotaryDim dims of
 	// each head).
-	rd.rm.finalNorm, rd.rm.lmHead, rd.rm.ropeHalf, rd.rm.slidingWindow = finalNorm, lmHead, len(invFreq), m.SlidingWindowResident()
+	rd.rm.FinalNorm, rd.rm.LmHead, rd.rm.RopeHalf, rd.rm.SlidingWindow = finalNorm, lmHead, len(invFreq), m.SlidingWindowResident()
 
 	// MoE: models route to stacked experts on-device. moeOK gates the per-layer FFN build below; the params are model-level.
 	nExp, topK, moeInter, shInter, sig, normTopK, shUngated, rScale, nGroup, topkGroup, moeOK := m.MoEResidentParams()
 	if moeOK {
-		rd.rm.moe = &moeRunParams{
-			nE: nExp, k: topK, inter: moeInter, sigmoid: sig, norm: normTopK, scale: float32(rScale),
-			sharedInter: shInter, sharedUngated: shUngated, nGroup: nGroup, topkGroup: topkGroup,
+		rd.rm.Moe = &kernels.MoeRunParams{
+			NE: nExp, K: topK, Inter: moeInter, Sigmoid: sig, Norm: normTopK, Scale: float32(rScale),
+			SharedInter: shInter, SharedUngated: shUngated, NGroup: nGroup, TopkGroup: topkGroup,
 		}
 		// gpt-oss's clamped-SwiGLU constants, uniform across every gpt-oss layer.
 		if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
-			rd.rm.moe.gptoss = true
-			rd.rm.moe.gptossAlpha, rd.rm.moe.gptossLimit = alpha, limit
+			rd.rm.Moe.Gptoss = true
+			rd.rm.Moe.GptossAlpha, rd.rm.Moe.GptossLimit = alpha, limit
 		}
 	}
 	// MLA: latent attention replaces the q/k/v/o block. mlaOK gates the per-layer MLA build below; the geometry is
 	// model-level. attnScale overrides the GQA 1/√HeadDim with the resolved qk_head_dim score scale.
 	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
 	if mlaOK {
-		rd.rm.mla = &mlaRunParams{
-			qLoRARank: qLoRA, kvLoRARank: kvLoRA, qkNope: qkNope, qkRope: qkRope,
-			vHead: vHead, interleave: interleave, ropeScale: float32(mlaRopeScale),
+		rd.rm.Mla = &kernels.MlaRunParams{
+			QLoRARank: qLoRA, KvLoRARank: kvLoRA, QkNope: qkNope, QkRope: qkRope,
+			VHead: vHead, Interleave: interleave, RopeScale: float32(mlaRopeScale),
 		}
 	}
 	// Gated-DeltaNet hybrid. Two things make this family its own branch rather than a flag on the generic one: most layers are
@@ -431,13 +434,13 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	var dnZeroConvB *wgpu.Buffer // DeltaNet's causal conv is bias-free; mambaConv binds a bias
 	if dnetOK {
 		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV
-		rd.rm.dnet = &dnetRunParams{
-			convK: dnConvK, hk: dnHK, hv: dnHV, nk: dnNK, nv: dnNV, rep: dnNV / dnNK,
-			keyDim: keyDim, valueDim: valueDim, convDim: 2*keyDim + valueDim,
-			stateElems: dnNV * dnHV * dnHK, eps: float32(eps),
+		rd.rm.Dnet = &kernels.DnetRunParams{
+			ConvK: dnConvK, Hk: dnHK, Hv: dnHV, Nk: dnNK, Nv: dnNV, Rep: dnNV / dnNK,
+			KeyDim: keyDim, ValueDim: valueDim, ConvDim: 2*keyDim + valueDim,
+			StateElems: dnNV * dnHV * dnHK, Eps: float32(eps),
 		}
 		var ze error
-		if dnZeroConvB, ze = up32(make([]float32, rd.rm.dnet.convDim)); ze != nil {
+		if dnZeroConvB, ze = up32(make([]float32, rd.rm.Dnet.ConvDim)); ze != nil {
 			return fail(ze)
 		}
 	}
@@ -488,7 +491,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			// int4 stacked experts (W4A8) fit VRAM where int8 would spill. Fast path (K%32==0): the decoder's 2-nibble/byte int4 is
 			// byte-identical to the GPU packed layout, so its bytes go straight to the Packed upload, with no per-element unpack and
 			// re-pack.
-			if K%w4a8GroupSize == 0 {
+			if K%kernels.W4a8GroupSize == 0 {
 				q4s := make([][]byte, nE)
 				scs := make([][]float32, nE)
 				for e := range nE {
@@ -497,8 +500,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 						return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int4)", e, w.Kind())
 					}
 					q4, q4sc, group, _ := decoder.Int4F32(w)
-					if group != w4a8GroupSize {
-						return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)
+					if group != kernels.W4a8GroupSize {
+						return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, kernels.W4a8GroupSize)
 					}
 					s := q4sc
 					if mult != 1 { // Granite ResidMul fold (no-op for Mellum)
@@ -517,8 +520,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int4)", e, w.Kind())
 				}
 				q4, q4s, group, _ := decoder.Int4F32(w)
-				if group != w4a8GroupSize {
-					return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)
+				if group != kernels.W4a8GroupSize {
+					return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, kernels.W4a8GroupSize)
 				}
 				un := make([]uint8, N*K)
 				for r := range N {
@@ -545,7 +548,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 	}
 
-	rd.rm.pleDim = m.Gemma4PLEDimResident()
+	rd.rm.PleDim = m.Gemma4PLEDimResident()
 	for i := range w.Layers {
 		lw := &w.Layers[i]
 		lhd := m.HeadDimAtResident(i)
@@ -553,20 +556,20 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		lrot := m.RotaryDimAtResident(i)
 		lrhalf := lrot / 2
 		kEqV := m.VFromKResident(i)
-		rl := runLayer{
-			isLocal:     m.LayerIsLocalResident(i),     // sliding-window layer
-			ropeScale:   float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale
-			layerScalar: m.Gemma4DenseLayerScalarAtResident(i),
-			vNorm:       m.IsGemma4Resident() && !g4DropVNormForTest,
+		rl := kernels.RunLayer{
+			IsLocal:     m.LayerIsLocalResident(i),     // sliding-window layer
+			RopeScale:   float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale
+			LayerScalar: m.Gemma4DenseLayerScalarAtResident(i),
+			VNorm:       m.IsGemma4Resident() && !kernels.G4DropVNormForTest,
 		}
-		if g4DropLayerScalarForTest {
-			rl.layerScalar = 1
+		if kernels.G4DropLayerScalarForTest {
+			rl.LayerScalar = 1
 		}
 		if lhd != hd || lnKV != nKV || lrhalf != half || kEqV {
-			rl.ghd = lhd
-			rl.gnKV = lnKV
-			rl.ghalf = lrhalf
-			rl.gKEqV = kEqV
+			rl.Ghd = lhd
+			rl.GnKV = lnKV
+			rl.Ghalf = lrhalf
+			rl.GKEqV = kEqV
 		}
 		var e error
 		if nemoOK {
@@ -574,58 +577,58 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			// residual. No FFN pairing, no multipliers. The resident layer-loop branches on
 			// rl.nemoKind (mamba / NoPE-attn / relu²-MLP). int8 mamba projections (projF32);
 			// attn/MLP projections take the model's native precision via proj (W8A8 or W4A8).
-			if rl.attnNorm, e = up32(lw.PreAttnNorm); e != nil {
+			if rl.AttnNorm, e = up32(lw.PreAttnNorm); e != nil {
 				return fail(e)
 			}
-			rl.mlpNorm = rl.attnNorm // the relu²-MLP block reuses the single pre-norm
-			mp := rd.rm.mamba
+			rl.MlpNorm = rl.AttnNorm // the relu²-MLP block reuses the single pre-norm
+			mp := rd.rm.Mamba
 			switch m.NemotronBlockKind(i) {
 			case 0: // Mamba-2 mixer
-				rl.nemoKind = nemoKMamba
-				rl.isMamba = true
+				rl.NemoKind = kernels.NemoKMamba
+				rl.IsMamba = true
 				inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
 				if inQ, outQ := m.MambaProjInt8(i); inQ != nil { // a quantized load holds them as int8: projF32's codes
-					if rl.mambaInProj, e = projInt8(inQ, mp.projDim, hidden); e != nil {
+					if rl.MambaInProj, e = projInt8(inQ, mp.ProjDim, hidden); e != nil {
 						return fail(e)
 					}
-					if rl.mambaOutProj, e = projInt8(outQ, hidden, mp.dInner); e != nil {
+					if rl.MambaOutProj, e = projInt8(outQ, hidden, mp.DInner); e != nil {
 						return fail(e)
 					}
 				} else {
-					if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
+					if rl.MambaInProj, e = projF32(inP, mp.ProjDim, hidden); e != nil {
 						return fail(e)
 					}
-					if rl.mambaOutProj, e = projF32(outP, hidden, mp.dInner); e != nil {
+					if rl.MambaOutProj, e = projF32(outP, hidden, mp.DInner); e != nil {
 						return fail(e)
 					}
 				}
-				if rl.mambaConvW, e = up32(cW); e != nil {
+				if rl.MambaConvW, e = up32(cW); e != nil {
 					return fail(e)
 				}
-				if rl.mambaConvB, e = up32(cB); e != nil {
+				if rl.MambaConvB, e = up32(cB); e != nil {
 					return fail(e)
 				}
-				headP := make([]float32, mp.nHeads*3)
-				for h := 0; h < mp.nHeads; h++ {
+				headP := make([]float32, mp.NHeads*3)
+				for h := 0; h < mp.NHeads; h++ {
 					headP[h*3+0] = float32(-math.Exp(float64(aLog[h])))
 					headP[h*3+1] = dtB[h]
 					headP[h*3+2] = dW[h]
 				}
-				if rl.mambaHeadP, e = up32(headP); e != nil {
+				if rl.MambaHeadP, e = up32(headP); e != nil {
 					return fail(e)
 				}
-				if rl.mambaNormW, e = up32(nW); e != nil {
+				if rl.MambaNormW, e = up32(nW); e != nil {
 					return fail(e)
 				}
-				if rl.mambaWin, e = stateBuf((mp.dConv - 1) * mp.convDim); e != nil {
+				if rl.MambaWin, e = stateBuf((mp.DConv - 1) * mp.ConvDim); e != nil {
 					return fail(e)
 				}
-				if rl.mambaSSM, e = stateBuf(mp.nHeads * mp.hp * mp.dn); e != nil {
+				if rl.MambaSSM, e = stateBuf(mp.NHeads * mp.Hp * mp.Dn); e != nil {
 					return fail(e)
 				}
 			case 1: // NoPE GQA attention (identity rope via the zeroed invFreq)
-				rl.nemoKind = nemoKAttn
-				rl.invFreq = nemoZeroInvFreq
+				rl.NemoKind = kernels.NemoKAttn
+				rl.InvFreq = nemoZeroInvFreq
 				kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
 				vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
 				if e1 != nil || e2 != nil {
@@ -633,58 +636,58 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				}
 				keepF(kc.Release)
 				keepF(vc.Release)
-				rl.kCache, rl.vCache = kc.buf, vc.buf
-				if rl.q, e = proj(&lw.QProj); e != nil {
+				rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
+				if rl.Q, e = proj(&lw.QProj); e != nil {
 					return fail(e)
 				}
-				if rl.k, e = proj(&lw.KProj); e != nil {
+				if rl.K, e = proj(&lw.KProj); e != nil {
 					return fail(e)
 				}
-				if rl.v, e = proj(&lw.VProj); e != nil {
+				if rl.V, e = proj(&lw.VProj); e != nil {
 					return fail(e)
 				}
-				if rl.o, e = proj(&lw.OProj); e != nil {
+				if rl.O, e = proj(&lw.OProj); e != nil {
 					return fail(e)
 				}
 			case 2: // non-gated relu² MLP
-				rl.nemoKind = nemoKMLP
-				if rl.up, e = proj(&lw.UpProj); e != nil {
+				rl.NemoKind = kernels.NemoKMLP
+				if rl.Up, e = proj(&lw.UpProj); e != nil {
 					return fail(e)
 				}
-				if rl.down, e = proj(&lw.DownProj); e != nil {
+				if rl.Down, e = proj(&lw.DownProj); e != nil {
 					return fail(e)
 				}
 			case 3: // MoE FFN
 				// rd.rm.moe is already populated MODEL-level by MoEResidentParams (it reads arch.MoE generically, which Nemotron also sets);
 				// this is the PER-LAYER weight build. There is no expGate/shGate/shGateW: this family's experts, and its shared expert, have
 				// only up_proj/down_proj (see decoder/forward_nemotron.go).
-				rl.nemoKind = nemoKMoE
-				rl.isMoE = true
-				if rl.router, e = proj(&lw.Router); e != nil {
+				rl.NemoKind = kernels.NemoKMoE
+				rl.IsMoE = true
+				if rl.Router, e = proj(&lw.Router); e != nil {
 					return fail(e)
 				}
 				if len(lw.RouterBias) > 0 {
-					if rl.routerBias, e = up32(lw.RouterBias); e != nil {
+					if rl.RouterBias, e = up32(lw.RouterBias); e != nil {
 						return fail(e)
 					}
 				}
-				if rl.expUp, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
+				if rl.ExpUp, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
 					return fail(e)
 				}
-				keepF(rl.expUp.Release)
-				if rl.expDown, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, 1); e != nil {
+				keepF(rl.ExpUp.Release)
+				if rl.ExpDown, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, 1); e != nil {
 					return fail(e)
 				}
-				keepF(rl.expDown.Release)
+				keepF(rl.ExpDown.Release)
 				// Gated on shInter > 0, like the generic branch below: n_shared_experts == 0 is a valid config (validateNemotron in
 				// decoder/config.go rejects only the opposite combination), and the CPU path in decoder/forward_nemotron.go gates the add on
 				// moe.SharedIntermediateDim > 0. Projecting a zero-value SharedExpert would fail with "unsupported projection precision" and
 				// fall back to CPU with the wrong stated reason.
 				if shInter > 0 {
-					if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {
+					if rl.ShUp, e = proj(&lw.SharedExpert.Up); e != nil {
 						return fail(e)
 					}
-					if rl.shDown, e = proj(&lw.SharedExpert.Down); e != nil {
+					if rl.ShDown, e = proj(&lw.SharedExpert.Down); e != nil {
 						return fail(e)
 					}
 				}
@@ -696,19 +699,19 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(fmt.Errorf("gpu: nemotron block kind %d at layer %d is not "+
 					"implemented by this runner", m.NemotronBlockKind(i), i))
 			}
-			rd.rm.layers = append(rd.rm.layers, rl)
+			rd.rm.Layers = append(rd.rm.Layers, rl)
 			continue
 		}
-		if rl.attnNorm, e = up32(lw.PreAttnNorm); e != nil {
+		if rl.AttnNorm, e = up32(lw.PreAttnNorm); e != nil {
 			return fail(e)
 		}
 		g4b, isG4MoE := m.Gemma4MoEResidentLayer(i)
 		if !isG4MoE { // a Gemma 4 MoE layer's feed-forward norms are its block's own
-			if rl.mlpNorm, e = up32(lw.PreMLPNorm); e != nil {
+			if rl.MlpNorm, e = up32(lw.PreMLPNorm); e != nil {
 				return fail(e)
 			}
 		}
-		if rl.invFreq, e = ropeInvBuf(i); e != nil {
+		if rl.InvFreq, e = ropeInvBuf(i); e != nil {
 			return fail(e)
 		}
 		if dnetOK && m.Qwen35LinearLayer(i) {
@@ -716,52 +719,52 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			// position-truncatable (which is why this family declines prefix reuse and batched ForwardN). The conv reuses the Mamba-2
 			// ring window; DeltaNet's conv is bias-free, so every layer binds one shared zeroed convB rather than allocating an
 			// all-zero bias per layer.
-			rl.isDeltaNet = true
-			dp := rd.rm.dnet
+			rl.IsDeltaNet = true
+			dp := rd.rm.Dnet
 			qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(i)
-			if rl.dnQKV, e = proj(qkv); e != nil {
+			if rl.DnQKV, e = proj(qkv); e != nil {
 				return fail(e)
 			}
-			if rl.dnZ, e = proj(z); e != nil {
+			if rl.DnZ, e = proj(z); e != nil {
 				return fail(e)
 			}
-			if rl.dnOut, e = proj(outP); e != nil {
+			if rl.DnOut, e = proj(outP); e != nil {
 				return fail(e)
 			}
 			// inB/inA are f32 on the CPU by deliberate choice (they feed the write/decay gates,
 			// where the recurrence is most precision-sensitive). projF32 quantizes them to W8A8
 			// for the resident path — the one place this port is coarser than the reference, and
 			// the reason the parity gate scores the gates as their own stage.
-			if rl.dnB, e = projF32(inB, dp.nv, hidden); e != nil {
+			if rl.DnB, e = projF32(inB, dp.Nv, hidden); e != nil {
 				return fail(e)
 			}
-			if rl.dnA, e = projF32(inA, dp.nv, hidden); e != nil {
+			if rl.DnA, e = projF32(inA, dp.Nv, hidden); e != nil {
 				return fail(e)
 			}
-			rl.mambaConvB = dnZeroConvB
-			if rl.mambaConvW, e = up32(cW); e != nil {
+			rl.MambaConvB = dnZeroConvB
+			if rl.MambaConvW, e = up32(cW); e != nil {
 				return fail(e)
 			}
-			if rl.dnDtBias, e = up32(dtB); e != nil {
+			if rl.DnDtBias, e = up32(dtB); e != nil {
 				return fail(e)
 			}
-			if rl.dnNegExpA, e = up32(negA); e != nil { // ALREADY -exp(A_log); do not re-exp
+			if rl.DnNegExpA, e = up32(negA); e != nil { // ALREADY -exp(A_log); do not re-exp
 				return fail(e)
 			}
-			if rl.dnNormW, e = up32(nW); e != nil {
+			if rl.DnNormW, e = up32(nW); e != nil {
 				return fail(e)
 			}
-			if rl.mambaWin, e = stateBuf((dp.convK - 1) * dp.convDim); e != nil {
+			if rl.MambaWin, e = stateBuf((dp.ConvK - 1) * dp.ConvDim); e != nil {
 				return fail(e)
 			}
-			if rl.dnState, e = stateBuf(dp.stateElems); e != nil {
+			if rl.DnState, e = stateBuf(dp.StateElems); e != nil {
 				return fail(e)
 			}
 		} else if dnetOK {
 			// Gated SOFTMAX attention layer of the same family: ordinary GQA + per-head QK-norm
 			// + partial RoPE, plus the output gate. q_proj stays fused at double width because it
 			// is quantized; the runner splits the activation (runLayer.qGate).
-			rl.qGate = dnAttnGate
+			rl.QGate = dnAttnGate
 			kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
 			vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
 			if e1 != nil || e2 != nil {
@@ -769,63 +772,63 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			}
 			keepF(kc.Release)
 			keepF(vc.Release)
-			rl.kCache, rl.vCache = kc.buf, vc.buf
+			rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
 			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(i)
-			if rl.q, e = proj(qP); e != nil {
+			if rl.Q, e = proj(qP); e != nil {
 				return fail(e)
 			}
-			if rl.k, e = proj(kP); e != nil {
+			if rl.K, e = proj(kP); e != nil {
 				return fail(e)
 			}
-			if rl.v, e = proj(vP); e != nil {
+			if rl.V, e = proj(vP); e != nil {
 				return fail(e)
 			}
-			if rl.o, e = proj(oP); e != nil {
+			if rl.O, e = proj(oP); e != nil {
 				return fail(e)
 			}
-			if rl.qNorm, e = up32(qN); e != nil {
+			if rl.QNorm, e = up32(qN); e != nil {
 				return fail(e)
 			}
-			if rl.kNorm, e = up32(kN); e != nil {
+			if rl.KNorm, e = up32(kN); e != nil {
 				return fail(e)
 			}
 		} else if granOK && m.GraniteMambaLayer(i) {
 			// Mamba-2 SSM mixer layer: in/out_proj W8A8, conv/headP/normW f32, build-once {win, ssm} state. headP interleaves the
 			// per-head [Aexp=-exp(aLog), dtBias, D]. ResidMul folds into out_proj. No KV cache, no q/k/v/o (the plan branches on
 			// isMamba).
-			rl.isMamba = true
-			mp := rd.rm.mamba
+			rl.IsMamba = true
+			mp := rd.rm.Mamba
 			inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
 			// int8 projections: f16 projections do not recover the quality lost to the SSM's f32 (vs f64) exp feeding the router
 			// (docs/ssm-int8-quality.md).
-			if rl.mambaInProj, e = projF32(inP, mp.projDim, hidden); e != nil {
+			if rl.MambaInProj, e = projF32(inP, mp.ProjDim, hidden); e != nil {
 				return fail(e)
 			}
-			if rl.mambaOutProj, e = projF32Mul(outP, hidden, mp.dInner, rmul); e != nil {
+			if rl.MambaOutProj, e = projF32Mul(outP, hidden, mp.DInner, rmul); e != nil {
 				return fail(e)
 			}
-			if rl.mambaConvW, e = up32(cW); e != nil {
+			if rl.MambaConvW, e = up32(cW); e != nil {
 				return fail(e)
 			}
-			if rl.mambaConvB, e = up32(cB); e != nil {
+			if rl.MambaConvB, e = up32(cB); e != nil {
 				return fail(e)
 			}
-			headP := make([]float32, mp.nHeads*3)
-			for h := 0; h < mp.nHeads; h++ {
+			headP := make([]float32, mp.NHeads*3)
+			for h := 0; h < mp.NHeads; h++ {
 				headP[h*3+0] = float32(-math.Exp(float64(aLog[h])))
 				headP[h*3+1] = dtB[h]
 				headP[h*3+2] = dW[h]
 			}
-			if rl.mambaHeadP, e = up32(headP); e != nil {
+			if rl.MambaHeadP, e = up32(headP); e != nil {
 				return fail(e)
 			}
-			if rl.mambaNormW, e = up32(nW); e != nil {
+			if rl.MambaNormW, e = up32(nW); e != nil {
 				return fail(e)
 			}
-			if rl.mambaWin, e = stateBuf((mp.dConv - 1) * mp.convDim); e != nil {
+			if rl.MambaWin, e = stateBuf((mp.DConv - 1) * mp.ConvDim); e != nil {
 				return fail(e)
 			}
-			if rl.mambaSSM, e = stateBuf(mp.nHeads * mp.hp * mp.dn); e != nil {
+			if rl.MambaSSM, e = stateBuf(mp.NHeads * mp.Hp * mp.Dn); e != nil {
 				return fail(e)
 			}
 		} else if mlaOK {
@@ -837,38 +840,38 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(fmt.Errorf("gpu: residency latent alloc (layer %d): %v", i, e1))
 			}
 			keepF(lc.Release)
-			rl.latCache = lc.buf
+			rl.LatCache = (*kernels.DeviceBufferBuf(lc))
 			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(i)
 			qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(i)
 			// mlaProj uploads a projection's int8 form when the load holds one (the codes projF32 makes from the f32), else the f32.
-			mlaProj := func(q *linalg.WeightMat, f []float32, N, K int) (decodeWeight, error) {
+			mlaProj := func(q *linalg.WeightMat, f []float32, N, K int) (kernels.DecodeWeight, error) {
 				if q.Rows() > 0 {
 					return projInt8(q, N, K)
 				}
 				return projF32(f, N, K)
 			}
 			if qLoRA > 0 { // q_a → norm → q_b LoRA bottleneck
-				if rl.mlaQA, e = mlaProj(qAQ, qA, qLoRA, hidden); e != nil {
+				if rl.MlaQA, e = mlaProj(qAQ, qA, qLoRA, hidden); e != nil {
 					return fail(e)
 				}
-				if rl.mlaQB, e = mlaProj(qBQ, qB, nH*(qkNope+qkRope), qLoRA); e != nil {
+				if rl.MlaQB, e = mlaProj(qBQ, qB, nH*(qkNope+qkRope), qLoRA); e != nil {
 					return fail(e)
 				}
-				if rl.mlaQANorm, e = up32(qANorm); e != nil {
+				if rl.MlaQANorm, e = up32(qANorm); e != nil {
 					return fail(e)
 				}
 			} else { // direct q_proj (V2-Lite)
-				if rl.mlaQ, e = mlaProj(qQ, qProj, nH*(qkNope+qkRope), hidden); e != nil {
+				if rl.MlaQ, e = mlaProj(qQ, qProj, nH*(qkNope+qkRope), hidden); e != nil {
 					return fail(e)
 				}
 			}
-			if rl.mlaKVA, e = mlaProj(kvAQ, kvA, latDim, hidden); e != nil {
+			if rl.MlaKVA, e = mlaProj(kvAQ, kvA, latDim, hidden); e != nil {
 				return fail(e)
 			}
-			if rl.mlaKVANorm, e = up32(kvANorm); e != nil {
+			if rl.MlaKVANorm, e = up32(kvANorm); e != nil {
 				return fail(e)
 			}
-			if rl.mlaO, e = mlaProj(oQ, oProj, hidden, nH*vHead); e != nil {
+			if rl.MlaO, e = mlaProj(oQ, oProj, hidden, nH*vHead); e != nil {
 				return fail(e)
 			}
 			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows).
@@ -888,23 +891,23 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					copy(wuv[(h*vHead+ev)*kvLoRA:(h*vHead+ev)*kvLoRA+kvLoRA], kvB[(h*hRow+qkNope+ev)*kvLoRA:(h*hRow+qkNope+ev)*kvLoRA+kvLoRA])
 				}
 			}
-			if rl.mlaWUK, e = up32(wuk); e != nil {
+			if rl.MlaWUK, e = up32(wuk); e != nil {
 				return fail(e)
 			}
-			if rl.mlaWUV, e = up32(wuv); e != nil {
+			if rl.MlaWUV, e = up32(wuv); e != nil {
 				return fail(e)
 			}
 		} else {
 			// Per-layer KV geometry: each layer's cache is sized by its own nKV·hd, not a model-level kvDim. A layer without a
 			// geometry override (rl.ghd == 0) falls back to the model values.
 			lnKV, lhd, lkvDim := nKV, hd, kvDim
-			if rl.ghd != 0 {
-				lnKV, lhd, lkvDim = rl.gnKV, rl.ghd, rl.gnKV*rl.ghd
+			if rl.Ghd != 0 {
+				lnKV, lhd, lkvDim = rl.GnKV, rl.Ghd, rl.GnKV*rl.Ghd
 			}
 			// A Gemma 4 E-model's tail layers attend over an earlier layer's K/V (Model.KVSrcAtResident): such a layer owns no
 			// cache, binds its source's, and projects Q only.
 			kvSrc := m.KVSrcAtResident(i)
-			if g4KVSrcOffForTest && kvSrc != i {
+			if kernels.G4KVSrcOffForTest && kvSrc != i {
 				for j := kvSrc - 1; j >= 0; j-- {
 					if m.LayerIsLocalResident(j) == m.LayerIsLocalResident(i) {
 						kvSrc = j
@@ -913,15 +916,15 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				}
 			}
 			if kvSrc != i {
-				if kvSrc < 0 || kvSrc >= len(rd.rm.layers) {
+				if kvSrc < 0 || kvSrc >= len(rd.rm.Layers) {
 					return fail(fmt.Errorf("gpu: layer %d shares the K/V of layer %d, which is not built before it", i, kvSrc))
 				}
-				sl := rd.rm.layers[kvSrc]
-				if sl.kCache == nil || sl.ghd != rl.ghd || sl.gnKV != rl.gnKV || sl.gKEqV != rl.gKEqV {
+				sl := rd.rm.Layers[kvSrc]
+				if sl.KCache == nil || sl.Ghd != rl.Ghd || sl.GnKV != rl.GnKV || sl.GKEqV != rl.GKEqV {
 					return fail(fmt.Errorf("gpu: layer %d shares the K/V of layer %d, whose attention geometry differs", i, kvSrc))
 				}
-				rl.kCache, rl.vCache, rl.kScale, rl.vScale = sl.kCache, sl.vCache, sl.kScale, sl.vScale
-				rl.kvShared = true
+				rl.KCache, rl.VCache, rl.KScale, rl.VScale = sl.KCache, sl.VCache, sl.KScale, sl.VScale
+				rl.KvShared = true
 			} else {
 				var kc, vc *DeviceBuffer
 				var e1, e2 error
@@ -933,7 +936,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					if e1 == nil && e2 == nil {
 						keepF(ks.Release)
 						keepF(vs.Release)
-						rl.kScale, rl.vScale = ks.buf, vs.buf
+						rl.KScale, rl.VScale = (*kernels.DeviceBufferBuf(ks)), (*kernels.DeviceBufferBuf(vs))
 					}
 				case kvF16:
 					kc, e1 = c.NewKVCacheF16(nil, ctxCap*lkvDim)
@@ -949,32 +952,32 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				// positions. The alloc above derives lkvDim from the same tuple, so this holds by construction; a builder that sized the
 				// cache from an independent source would index off the end into garbage output, not a panic, so assert it here, loudly, at
 				// plan time.
-				if want := ctxCap * lkvDim; kc.n < want || vc.n < want {
-					return fail(fmt.Errorf("gpu: layer %d KV cache too small for its geometry: have k=%d v=%d elems, need ctxCap·nKV·hd = %d·%d·%d = %d", i, kc.n, vc.n, ctxCap, lnKV, lhd, want))
+				if want := ctxCap * lkvDim; (*kernels.DeviceBufferN(kc)) < want || (*kernels.DeviceBufferN(vc)) < want {
+					return fail(fmt.Errorf("gpu: layer %d KV cache too small for its geometry: have k=%d v=%d elems, need ctxCap·nKV·hd = %d·%d·%d = %d", i, (*kernels.DeviceBufferN(kc)), (*kernels.DeviceBufferN(vc)), ctxCap, lnKV, lhd, want))
 				}
 				keepF(kc.Release)
 				keepF(vc.Release)
-				rl.kCache, rl.vCache = kc.buf, vc.buf
+				rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
 			}
-			if rl.q, e = proj(&lw.QProj); e != nil {
+			if rl.Q, e = proj(&lw.QProj); e != nil {
 				return fail(e)
 			}
-			if !rl.kvShared {
-				if rl.k, e = proj(&lw.KProj); e != nil {
+			if !rl.KvShared {
+				if rl.K, e = proj(&lw.KProj); e != nil {
 					return fail(e)
 				}
-				if !rl.gKEqV {
-					if rl.v, e = proj(&lw.VProj); e != nil {
+				if !rl.GKEqV {
+					if rl.V, e = proj(&lw.VProj); e != nil {
 						return fail(e)
 					}
 				}
 			}
-			if rl.o, e = projMul(&lw.OProj, rmul); e != nil {
+			if rl.O, e = projMul(&lw.OProj, rmul); e != nil {
 				return fail(e)
 			}
 		}
 		if isG4MoE { // Gemma 4's parallel dense and MoE block (decoder's gemma4MoEFFN)
-			g := &g4MoELayer{nE: g4b.NE, topK: g4b.TopK, denseInter: g4b.DenseInter, moeInter: g4b.MoeInter}
+			g := &kernels.G4MoELayer{NE: g4b.NE, TopK: g4b.TopK, DenseInter: g4b.DenseInter, MoeInter: g4b.MoeInter}
 			if g4b.NE <= 0 || g4b.TopK <= 0 || g4b.TopK > g4b.NE || len(g4b.ExpertsGateUp) != g4b.NE || len(g4b.ExpertsDown) != g4b.NE ||
 				len(g4b.RouterProjScaled) != g4b.NE*hidden || len(g4b.PerExpertScale) != g4b.NE {
 				return fail(fmt.Errorf("gpu: layer %d: Gemma 4 MoE block with %d experts (top %d), router %d values, %d per-expert scales, %d/%d expert projections",
@@ -983,8 +986,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			for _, nb := range []struct {
 				dst *(*wgpu.Buffer)
 				v   []float32
-			}{{&g.preFFNNorm, g4b.PreFFNNorm}, {&g.postFFNNorm1, g4b.PostFFNNorm1}, {&g.preFFNNorm2, g4b.PreFFNNorm2},
-				{&g.postFFNNorm2, g4b.PostFFNNorm2}, {&g.postFFNNorm, g4b.PostFFNNorm}} {
+			}{{&g.PreFFNNorm, g4b.PreFFNNorm}, {&g.PostFFNNorm1, g4b.PostFFNNorm1}, {&g.PreFFNNorm2, g4b.PreFFNNorm2},
+				{&g.PostFFNNorm2, g4b.PostFFNNorm2}, {&g.PostFFNNorm, g4b.PostFFNNorm}} {
 				if len(nb.v) != hidden {
 					return fail(fmt.Errorf("gpu: layer %d: a Gemma 4 MoE block norm has %d weights, want %d", i, len(nb.v), hidden))
 				}
@@ -1000,145 +1003,145 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					flat[j] = 1
 				}
 			}
-			if g.routerNorm, e = up32(flat); e != nil {
+			if g.RouterNorm, e = up32(flat); e != nil {
 				return fail(e)
 			}
-			if g.router, e = up32(g4b.RouterProjScaled); e != nil {
+			if g.Router, e = up32(g4b.RouterProjScaled); e != nil {
 				return fail(e)
 			}
-			if g.perExpertScale, e = up32(g4b.PerExpertScale); e != nil {
+			if g.PerExpertScale, e = up32(g4b.PerExpertScale); e != nil {
 				return fail(e)
 			}
-			if g.zeroBias, e = up32(make([]float32, g4b.NE)); e != nil {
+			if g.ZeroBias, e = up32(make([]float32, g4b.NE)); e != nil {
 				return fail(e)
 			}
-			if g.gate, e = proj(g4b.MlpGate); e != nil {
+			if g.Gate, e = proj(g4b.MlpGate); e != nil {
 				return fail(e)
 			}
-			if g.up, e = proj(g4b.MlpUp); e != nil {
+			if g.Up, e = proj(g4b.MlpUp); e != nil {
 				return fail(e)
 			}
-			if g.down, e = proj(g4b.MlpDown); e != nil {
+			if g.Down, e = proj(g4b.MlpDown); e != nil {
 				return fail(e)
 			}
-			if g.expGateUp, e = buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsGateUp[x] }, 1); e != nil {
+			if g.ExpGateUp, e = buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsGateUp[x] }, 1); e != nil {
 				return fail(e)
 			}
-			keepF(g.expGateUp.Release)
-			if g.expDown, e = buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsDown[x] }, 1); e != nil {
+			keepF(g.ExpGateUp.Release)
+			if g.ExpDown, e = buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsDown[x] }, 1); e != nil {
 				return fail(e)
 			}
-			keepF(g.expDown.Release)
-			if g.expGateUp.rows != 2*g4b.MoeInter || g.expDown.rows != hidden {
-				return fail(fmt.Errorf("gpu: layer %d: Gemma 4 expert projections have %d and %d rows, want %d and %d", i, g.expGateUp.rows, g.expDown.rows, 2*g4b.MoeInter, hidden))
+			keepF(g.ExpDown.Release)
+			if (*kernels.ResidentStackedW8A8Rows(g.ExpGateUp)) != 2*g4b.MoeInter || (*kernels.ResidentStackedW8A8Rows(g.ExpDown)) != hidden {
+				return fail(fmt.Errorf("gpu: layer %d: Gemma 4 expert projections have %d and %d rows, want %d and %d", i, (*kernels.ResidentStackedW8A8Rows(g.ExpGateUp)), (*kernels.ResidentStackedW8A8Rows(g.ExpDown)), 2*g4b.MoeInter, hidden))
 			}
-			rl.g4moe, rd.rm.g4moe = g, true
-			rl.layerScalar = g4b.LayerScalar
-			if g4DropLayerScalarForTest {
-				rl.layerScalar = 1
+			rl.G4moe, rd.rm.G4moe = g, true
+			rl.LayerScalar = g4b.LayerScalar
+			if kernels.G4DropLayerScalarForTest {
+				rl.LayerScalar = 1
 			}
 		} else if moeOK && len(lw.Experts) > 0 { // Mixtral-class sparse MoE FFN
-			rl.isMoE = true
-			if rl.router, e = proj(&lw.Router); e != nil {
+			rl.IsMoE = true
+			if rl.Router, e = proj(&lw.Router); e != nil {
 				return fail(e)
 			}
 			if len(lw.RouterBias) > 0 {
-				if rl.routerBias, e = up32(lw.RouterBias); e != nil {
+				if rl.RouterBias, e = up32(lw.RouterBias); e != nil {
 					return fail(e)
 				}
 			}
-			if rl.expGate, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }, 1); e != nil {
+			if rl.ExpGate, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }, 1); e != nil {
 				return fail(e)
 			}
-			keepF(rl.expGate.Release)
-			if rl.expUp, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
+			keepF(rl.ExpGate.Release)
+			if rl.ExpUp, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
 				return fail(e)
 			}
-			keepF(rl.expUp.Release)
-			if rl.expDown, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, rmul); e != nil {
+			keepF(rl.ExpUp.Release)
+			if rl.ExpDown, e = buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, rmul); e != nil {
 				return fail(e)
 			}
-			keepF(rl.expDown.Release)
+			keepF(rl.ExpDown.Release)
 			// gpt-oss (FeatAttnSink): expert-major gate‖up and down bias tables.
-			if rd.rm.moe != nil && rd.rm.moe.gptoss {
-				if rl.gateUpBias, e = up32(m.GptOssExpertBiasResident(i)); e != nil {
+			if rd.rm.Moe != nil && rd.rm.Moe.Gptoss {
+				if rl.GateUpBias, e = up32(m.GptOssExpertBiasResident(i)); e != nil {
 					return fail(e)
 				}
-				if rl.downBias, e = up32(m.GptOssExpertDownBiasResident(i)); e != nil {
+				if rl.DownBias, e = up32(m.GptOssExpertDownBiasResident(i)); e != nil {
 					return fail(e)
 				}
 			}
 			if shInter > 0 { // always-on shared expert (qwen2_moe gated / GLM ungated)
-				if rl.shGate, e = proj(&lw.SharedExpert.Gate); e != nil {
+				if rl.ShGate, e = proj(&lw.SharedExpert.Gate); e != nil {
 					return fail(e)
 				}
-				if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {
+				if rl.ShUp, e = proj(&lw.SharedExpert.Up); e != nil {
 					return fail(e)
 				}
-				if rl.shDown, e = projMul(&lw.SharedExpert.Down, rmul); e != nil {
+				if rl.ShDown, e = projMul(&lw.SharedExpert.Down, rmul); e != nil {
 					return fail(e)
 				}
 				if !shUngated { // qwen2_moe: the [1,hidden] sigmoid gate
-					if rl.shGateW, e = proj(&lw.SharedGate); e != nil {
+					if rl.ShGateW, e = proj(&lw.SharedGate); e != nil {
 						return fail(e)
 					}
 				}
 			}
 		} else {
-			if rl.gate, e = proj(&lw.GateProj); e != nil {
+			if rl.Gate, e = proj(&lw.GateProj); e != nil {
 				return fail(e)
 			}
-			if rl.up, e = proj(&lw.UpProj); e != nil {
+			if rl.Up, e = proj(&lw.UpProj); e != nil {
 				return fail(e)
 			}
-			if rl.down, e = projMul(&lw.DownProj, rmul); e != nil {
+			if rl.Down, e = projMul(&lw.DownProj, rmul); e != nil {
 				return fail(e)
 			}
 			// Gemma 4 E-model: the per-layer-embedding branch's two projections and its norm.
-			if rd.rm.pleDim > 0 {
-				if rl.pleGate, e = proj(&lw.PLEGate); e != nil {
+			if rd.rm.PleDim > 0 {
+				if rl.PleGate, e = proj(&lw.PLEGate); e != nil {
 					return fail(e)
 				}
-				if rl.pleProj, e = proj(&lw.PLEProj); e != nil {
+				if rl.PleProj, e = proj(&lw.PLEProj); e != nil {
 					return fail(e)
 				}
-				if rl.postPLENorm, e = up32(lw.PostPLENorm); e != nil {
+				if rl.PostPLENorm, e = up32(lw.PostPLENorm); e != nil {
 					return fail(e)
 				}
 			}
 		}
 		if len(lw.QBias) > 0 { // Qwen2 q/k/v bias
-			if rl.qBias, e = up32(lw.QBias); e != nil {
+			if rl.QBias, e = up32(lw.QBias); e != nil {
 				return fail(e)
 			}
-			if rl.kBias, e = up32(lw.KBias); e != nil {
+			if rl.KBias, e = up32(lw.KBias); e != nil {
 				return fail(e)
 			}
-			if rl.vBias, e = up32(lw.VBias); e != nil {
+			if rl.VBias, e = up32(lw.VBias); e != nil {
 				return fail(e)
 			}
 		}
 		if len(lw.QNorm) > 0 { // Qwen3/GLM per-head QK-norm (applied before RoPE)
-			if rl.qNorm, e = up32(lw.QNorm); e != nil {
+			if rl.QNorm, e = up32(lw.QNorm); e != nil {
 				return fail(e)
 			}
-			if rl.kNorm, e = up32(lw.KNorm); e != nil {
+			if rl.KNorm, e = up32(lw.KNorm); e != nil {
 				return fail(e)
 			}
 		}
 		// FeatOutBias (gpt-oss o_proj bias) and FeatSandwichNorm (Gemma's post-sublayer norms): the same "len>0, else leave nil"
 		// gate as QBias/QNorm above.
 		if len(lw.OBias) > 0 {
-			if rl.oBias, e = up32(lw.OBias); e != nil {
+			if rl.OBias, e = up32(lw.OBias); e != nil {
 				return fail(e)
 			}
 		}
 		if sandwichOK { // both present together (SandwichNormResident requires both non-empty)
-			if rl.postAttnNorm, e = up32(lw.PostAttnNorm); e != nil {
+			if rl.PostAttnNorm, e = up32(lw.PostAttnNorm); e != nil {
 				return fail(e)
 			}
 			if !isG4MoE {
-				if rl.postMLPNorm, e = up32(lw.PostMLPNorm); e != nil {
+				if rl.PostMLPNorm, e = up32(lw.PostMLPNorm); e != nil {
 					return fail(e)
 				}
 			}
@@ -1148,34 +1151,34 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		// separate runner-local fallback for hand-built test fixtures that skip BuildResident. The two buffers have different owners
 		// and lifetimes (resident, shared across runners, vs per-runner), so they are deliberately not unified.
 		if sinks := m.GptOssSinksResident(i); len(sinks) > 0 {
-			if rl.attnSinks, e = up32(sinks); e != nil {
+			if rl.AttnSinks, e = up32(sinks); e != nil {
 				return fail(e)
 			}
-			rl.hasSink = true
+			rl.HasSink = true
 		} else {
-			if rl.attnSinks, e = up32([]float32{0}); e != nil {
+			if rl.AttnSinks, e = up32([]float32{0}); e != nil {
 				return fail(e)
 			}
 		}
-		rd.rm.layers = append(rd.rm.layers, rl)
+		rd.rm.Layers = append(rd.rm.Layers, rl)
 	}
 	_ = vocab // logits length is lmHead.nRows()
 
-	rd.rm.kvF16 = kvF16                         // the runner picks the f16 attn/store kernels off this
-	rd.rm.kvI8 = kvI8                           // …or the int8 kernels + scale binds
-	rd.rm.gatedGELU = m.GatedActResident() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
+	rd.rm.KvF16 = kvF16                         // the runner picks the f16 attn/store kernels off this
+	rd.rm.KvI8 = kvI8                           // …or the int8 kernels + scale binds
+	rd.rm.GatedGELU = m.GatedActResident() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
 	scale, addOne := m.AttnScale(), m.RMSAddOne()
 	if mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(mlaAttnScale)
 	}
-	rd.runnerFor = func(rm runModel) (*DecodeRunner, error) {
-		return c.newDecodeRunner(rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
+	rd.runnerFor = func(rm kernels.RunModel) (*DecodeRunner, error) {
+		return kernels.ContextNewDecodeRunner(c, rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
 	}
 	rd.newRunner = func() (*DecodeRunner, error) { return rd.runnerFor(rd.rm) }
 	rd.mropeAxis = m.MRopeAxisResident
 	rd.prefillLast = func(xs [][]float32, startPos int, mrope [][3]int) ([]float32, error) {
-		mw, pp, ok := runModelToPrefill(&rd.rm, hd)
-		pp.mropeAxis = rd.mropeAxis
+		mw, pp, ok := kernels.RunModelToPrefill(&rd.rm, hd)
+		pp.MropeAxis = rd.mropeAxis
 		if !ok {
 			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/…)")
 		}
@@ -1185,17 +1188,17 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		// on it, or a check against the real ship gate (docs/completed/task-prefill-gap.md §3.2);
 		// docs/code-notes/gpu.md#webgpuBackend.BuildResident.biasgate has the measurements. An int4 projection adds its bias in
 		// a separate step, as decode does, and is not behind this gate.
-		if pp.int4() && !w4MultiVerified[c.Backend()] {
+		if pp.Int4() && !kernels.W4MultiVerified[c.Backend()] {
 			return nil, fmt.Errorf("gpu: PrefillLast declines — the multi-row int4 kernels are not yet verified bit-exact on backend %q", c.Backend())
 		}
-		if pp.int8Bias(mw) && c.Backend() != "vulkan" {
+		if pp.Int8Bias(mw) && c.Backend() != "vulkan" {
 			return nil, fmt.Errorf("gpu: PrefillLast declines — q/k/v bias on backend %q is not yet verified bit-exact (Vulkan only for now)", c.Backend())
 		}
 		positions := make([]int, len(xs))
 		for i := range positions {
 			positions[i] = startPos + i
 		}
-		return c.prefillLastRows(xs, mw, pp, mrope, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
+		return kernels.ContextPrefillLastRows(c, xs, mw, pp, mrope, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
 	}
 	runner, err := rd.newRunner()
 	if err != nil {
@@ -1241,7 +1244,7 @@ func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, err
 	if err != nil {
 		return nil, err
 	}
-	applySoftcap(logits, rd.finalSoftcap)
+	kernels.ApplySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
 }
 
@@ -1263,7 +1266,7 @@ func (rd *residentDecoder) ForwardMRoPE(embedding []float32, pos, ropePos int) (
 	if err != nil {
 		return nil, err
 	}
-	applySoftcap(logits, rd.finalSoftcap)
+	kernels.ApplySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
 }
 
@@ -1300,7 +1303,7 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	// would decode from over-advanced state, silently wrong. decoder.specRollbackSafe already refuses the recurrent families;
 	// the guard is also HERE because the invariant is a property of this runner's own state, and the other check could be
 	// relaxed without anyone reading this function. Decline (the callers fall back to plain decode); n==1 stays allowed.
-	if n > 1 && (rd.rm.mamba != nil || rd.rm.dnet != nil) {
+	if n > 1 && (rd.rm.Mamba != nil || rd.rm.Dnet != nil) {
 		return nil, fmt.Errorf("gpu: batched ForwardN (K=%d) declines on a recurrent model — its mixer state is not positional and cannot be rolled back after a partial accept", n)
 	}
 	if startPos == 0 {
@@ -1319,13 +1322,13 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 		}
 		rd.batch = append(rd.batch, r)
 	}
-	out, err := runBatch(rd.c, rd.batch, embeddings, startPos)
+	out, err := kernels.RunBatch(rd.c, rd.batch, embeddings, startPos)
 	if err != nil {
 		return nil, err
 	}
 	if rd.finalSoftcap > 0 {
 		for _, logits := range out {
-			applySoftcap(logits, rd.finalSoftcap)
+			kernels.ApplySoftcap(logits, rd.finalSoftcap)
 		}
 	}
 	return out, nil
@@ -1367,7 +1370,7 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 		}
 	}
 	logits, err := rd.prefillBlocks(ctx, embeddings, startPos, nil)
-	if err != nil && (rd.rm.pleDim > 0 || rd.rm.g4moe) && ctx.Err() == nil {
+	if err != nil && (rd.rm.PleDim > 0 || rd.rm.G4moe) && ctx.Err() == nil {
 		// A Gemma 4 E-model or a Gemma 4 MoE model that the pass declines is still prefilled here: the rows are walked in
 		// order, which is the sequential forward and overwrites whatever a declined pass stored. Their image turns count
 		// on a resident prefill (decoder's gemma4VLResidentPrefill).
@@ -1384,7 +1387,7 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 	if err != nil {
 		return nil, err
 	}
-	applySoftcap(logits, rd.finalSoftcap)
+	kernels.ApplySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
 }
 
@@ -1451,7 +1454,7 @@ func (rd *residentDecoder) PrefillMRoPELast(ctx context.Context, embeddings [][]
 	if err != nil {
 		return nil, err
 	}
-	applySoftcap(logits, rd.finalSoftcap)
+	kernels.ApplySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
 }
 
@@ -1485,16 +1488,16 @@ func (rd *residentDecoder) SetAdapter(layers []decoder.ResidentAdapterLayer) err
 // B/elem; f16 (2 values/u32) = 2 B/elem; int8 (4 values/u32) = 1 B/elem for the KV buffers, and nKV f32 scales per
 // position (4 B/elem) for the scale buffers.
 func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error {
-	if layer < 0 || layer >= len(rd.rm.layers) {
+	if layer < 0 || layer >= len(rd.rm.Layers) {
 		return fmt.Errorf("gpu: UploadKV layer %d out of range", layer)
 	}
 	// A layer with its own attention geometry (runLayer.ghd != 0) stores rows of its own width and head grouping.
-	l := rd.rm.layers[layer]
+	l := rd.rm.Layers[layer]
 	nKV, hd := rd.nKV, rd.hd
-	if l.ghd != 0 {
-		nKV, hd = l.gnKV, l.ghd
+	if l.Ghd != 0 {
+		nKV, hd = l.GnKV, l.Ghd
 	}
-	if uploadKVModelGeomForTest {
+	if kernels.UploadKVModelGeomForTest {
 		nKV, hd = rd.nKV, rd.hd
 	}
 	kvDim := nKV * hd
@@ -1507,33 +1510,33 @@ func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error
 		}
 	}
 	switch {
-	case rd.rm.kvI8:
-		kw, ks := packKVInt8(keys, nKV, hd)
-		vw, vs := packKVInt8(vals, nKV, hd)
+	case rd.rm.KvI8:
+		kw, ks := kernels.PackKVInt8(keys, nKV, hd)
+		vw, vs := kernels.PackKVInt8(vals, nKV, hd)
 		kvOff := uint64(base) * uint64(kvDim)
 		scOff := uint64(base) * uint64(nKV) * 4
-		if err := rd.c.queue.TryWriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
+		if err := (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.KCache, kvOff, wgpu.ToBytes(kw)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.TryWriteBuffer(l.kScale, scOff, wgpu.ToBytes(ks)); err != nil {
+		if err := (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.KScale, scOff, wgpu.ToBytes(ks)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.TryWriteBuffer(l.vCache, kvOff, wgpu.ToBytes(vw)); err != nil {
+		if err := (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.VCache, kvOff, wgpu.ToBytes(vw)); err != nil {
 			return err
 		}
-		return rd.c.queue.TryWriteBuffer(l.vScale, scOff, wgpu.ToBytes(vs))
-	case rd.rm.kvF16:
+		return (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.VScale, scOff, wgpu.ToBytes(vs))
+	case rd.rm.KvF16:
 		off := uint64(base) * uint64(kvDim) * 2
-		if err := rd.c.queue.TryWriteBuffer(l.kCache, off, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
+		if err := (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.KCache, off, wgpu.ToBytes(kernels.PackF16Pairs(keys))); err != nil {
 			return err
 		}
-		return rd.c.queue.TryWriteBuffer(l.vCache, off, wgpu.ToBytes(packF16Pairs(vals)))
+		return (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.VCache, off, wgpu.ToBytes(kernels.PackF16Pairs(vals)))
 	default:
 		off := uint64(base) * uint64(kvDim) * 4
-		if err := rd.c.queue.TryWriteBuffer(l.kCache, off, wgpu.ToBytes(keys)); err != nil {
+		if err := (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.KCache, off, wgpu.ToBytes(keys)); err != nil {
 			return err
 		}
-		return rd.c.queue.TryWriteBuffer(l.vCache, off, wgpu.ToBytes(vals))
+		return (*kernels.ContextQueue(rd.c)).TryWriteBuffer(l.VCache, off, wgpu.ToBytes(vals))
 	}
 }
 
@@ -1546,33 +1549,33 @@ func (rd *residentDecoder) Reset() {
 	// resident, and the next generation would continue from it with no sign anything went wrong.
 	rd.resetErr = nil
 	wr := func(b *wgpu.Buffer, data []byte) {
-		if err := rd.c.queue.TryWriteBuffer(b, 0, data); err != nil && rd.resetErr == nil {
+		if err := (*kernels.ContextQueue(rd.c)).TryWriteBuffer(b, 0, data); err != nil && rd.resetErr == nil {
 			rd.resetErr = fmt.Errorf("gpu: resident Reset failed to re-zero recurrent state: %w", err)
 		}
 	}
-	if mp := rd.rm.mamba; mp != nil {
-		winZ := make([]float32, (mp.dConv-1)*mp.convDim)
-		ssmZ := make([]float32, mp.nHeads*mp.hp*mp.dn)
-		for i := range rd.rm.layers {
-			if lw := &rd.rm.layers[i]; lw.isMamba {
-				wr(lw.mambaWin, wgpu.ToBytes(winZ))
-				wr(lw.mambaSSM, wgpu.ToBytes(ssmZ))
+	if mp := rd.rm.Mamba; mp != nil {
+		winZ := make([]float32, (mp.DConv-1)*mp.ConvDim)
+		ssmZ := make([]float32, mp.NHeads*mp.Hp*mp.Dn)
+		for i := range rd.rm.Layers {
+			if lw := &rd.rm.Layers[i]; lw.IsMamba {
+				wr(lw.MambaWin, wgpu.ToBytes(winZ))
+				wr(lw.MambaSSM, wgpu.ToBytes(ssmZ))
 			}
 		}
 	}
-	if dp := rd.rm.dnet; dp != nil {
-		winZ := make([]float32, (dp.convK-1)*dp.convDim)
-		stZ := make([]float32, dp.stateElems)
-		for i := range rd.rm.layers {
-			if lw := &rd.rm.layers[i]; lw.isDeltaNet {
-				wr(lw.mambaWin, wgpu.ToBytes(winZ))
-				wr(lw.dnState, wgpu.ToBytes(stZ))
+	if dp := rd.rm.Dnet; dp != nil {
+		winZ := make([]float32, (dp.ConvK-1)*dp.ConvDim)
+		stZ := make([]float32, dp.StateElems)
+		for i := range rd.rm.Layers {
+			if lw := &rd.rm.Layers[i]; lw.IsDeltaNet {
+				wr(lw.MambaWin, wgpu.ToBytes(winZ))
+				wr(lw.DnState, wgpu.ToBytes(stZ))
 			}
 		}
 	}
 }
 
-func (rd *residentDecoder) Close() error { rd.c.releaseOwned(rd.release); return nil }
+func (rd *residentDecoder) Close() error { kernels.ContextReleaseOwned(rd.c, rd.release); return nil }
 
 func (rd *residentDecoder) release() {
 	// Every KV slot's runner and verify pool (MC1); the bound slot's are rd.runner / rd.batch.

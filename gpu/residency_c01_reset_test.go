@@ -47,7 +47,7 @@ func TestResident_C01_pos0ResetsRecurrent(t *testing.T) {
 	if !ok {
 		t.Fatalf("resident forward is %T, not *residentDecoder", m.ResidentForwardForTest())
 	}
-	if rd.rm.mamba == nil {
+	if rd.rm.Mamba == nil {
 		t.Skip("model has no Mamba-2 state — C-01 resident leak does not apply")
 	}
 

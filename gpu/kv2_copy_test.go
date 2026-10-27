@@ -18,15 +18,15 @@ import (
 // per position.
 func kv2Slot(rd *residentDecoder, s int) (bufs [][]uint32, rowWords []int) {
 	seen := map[any]bool{}
-	for l := range rd.slots[s].rm.layers {
-		for _, p := range slotKVBuffers(&rd.slots[s].rm.layers[l]) {
+	for l := range rd.slots[s].rm.Layers {
+		for _, p := range slotKVBuffers(&rd.slots[s].rm.Layers[l]) {
 			b := *p
 			if b == nil || seen[b] {
 				continue
 			}
 			seen[b] = true
 			words := int(b.GetSize() / 4)
-			bufs = append(bufs, rd.c.readWords(b, words))
+			bufs = append(bufs, readWords(rd.c, b, words))
 			rowWords = append(rowWords, words/rd.ctxCap)
 		}
 	}

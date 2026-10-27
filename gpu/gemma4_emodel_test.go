@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"os"
 	"strings"
@@ -70,20 +71,20 @@ func runEModelG1(t *testing.T) eModelG1 {
 		t.Fatalf("the resident is a %T, want *residentDecoder", rf)
 	}
 	shared := 0
-	for i, l := range rd.rm.layers {
-		if !l.kvShared {
+	for i, l := range rd.rm.Layers {
+		if !l.KvShared {
 			continue
 		}
 		shared++
 		// The registered defect (5), a shared layer storing its own K and V, cannot be planted here: such a layer is built
 		// with no K or V projection, so the plan has nothing to store. This is that statement, checked.
-		if l.k != nil || l.v != nil {
+		if l.K != nil || l.V != nil {
 			t.Fatalf("shared layer %d carries a K or V projection", i)
 		}
 	}
-	if rd.rm.pleDim != 32 || shared != 2 || rd.rm.layers[4].gate.nRows() != 512 || rd.rm.layers[0].gate.nRows() != 256 {
+	if rd.rm.PleDim != 32 || shared != 2 || kernels.DecodeWeightNRows(rd.rm.Layers[4].Gate) != 512 || kernels.DecodeWeightNRows(rd.rm.Layers[0].Gate) != 256 {
 		t.Fatalf("the resident did not take the E-model shape: pleDim %d, %d shared layers, FFN widths %d and %d",
-			rd.rm.pleDim, shared, rd.rm.layers[0].gate.nRows(), rd.rm.layers[4].gate.nRows())
+			rd.rm.PleDim, shared, kernels.DecodeWeightNRows(rd.rm.Layers[0].Gate), kernels.DecodeWeightNRows(rd.rm.Layers[4].Gate))
 	}
 	mc4, err := decoder.Load(eModelDir, decoder.Options{Quant: "int4"})
 	if err != nil {
@@ -170,13 +171,13 @@ func TestGemma4EModel_webgpuPlantedDefects(t *testing.T) {
 		name string
 		set  func(bool)
 	}{
-		{"(1) PLE branch skipped", func(on bool) { g4SkipPLEForTest = on }},
+		{"(1) PLE branch skipped", func(on bool) { kernels.G4SkipPLEForTest = on }},
 		{"(2) PLE token-identity term zeroed", decoder.SetGemma4PLEDropTokenForTest},
-		{"(3) shared-KV source one owning layer off", func(on bool) { g4KVSrcOffForTest = on }},
-		{"(4) one FFN width for the model", func(on bool) { g4OneFFNWidthForTest = on }},
-		{"(6) layer scalar dropped", func(on bool) { g4DropLayerScalarForTest = on }},
-		{"(7) v_norm dropped", func(on bool) { g4DropVNormForTest = on }},
-		{"(8) PLE inputs one layer off", func(on bool) { g4PLEOffByOneForTest = on }},
+		{"(3) shared-KV source one owning layer off", func(on bool) { kernels.G4KVSrcOffForTest = on }},
+		{"(4) one FFN width for the model", func(on bool) { kernels.G4OneFFNWidthForTest = on }},
+		{"(6) layer scalar dropped", func(on bool) { kernels.G4DropLayerScalarForTest = on }},
+		{"(7) v_norm dropped", func(on bool) { kernels.G4DropVNormForTest = on }},
+		{"(8) PLE inputs one layer off", func(on bool) { kernels.G4PLEOffByOneForTest = on }},
 	}
 	for _, d := range defects {
 		t.Run(d.name, func(t *testing.T) {

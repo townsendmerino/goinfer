@@ -222,7 +222,7 @@ func TestWebGPUKVSlots_recurrentKeepsOne(t *testing.T) {
 		t.Run(f, func(t *testing.T) {
 			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", f), decoder.Options{Quant: "int4"}, 4)
 			defer m.Close()
-			if rd.rm.dnet == nil && rd.rm.mamba == nil {
+			if rd.rm.Dnet == nil && rd.rm.Mamba == nil {
 				t.Fatalf("%s built without recurrent layers — this test no longer covers a recurrent family", f)
 			}
 			if len(rd.slots) != 0 || rd.KVSlots() != 1 || m.ResidentKVSlots() != 1 {
@@ -252,8 +252,8 @@ func TestWebGPUKVSlots_slotOwnsItsKV(t *testing.T) {
 			s0 := rd.slots[0].rm
 			for s := 1; s < 3; s++ {
 				rm := rd.slots[s].rm
-				for l := range s0.layers {
-					a, b := &s0.layers[l], &rm.layers[l]
+				for l := range s0.Layers {
+					a, b := &s0.Layers[l], &rm.Layers[l]
 					kv0, kv := slotKVBuffers(a), slotKVBuffers(b)
 					nKV := 0
 					for i := range kv0 {
@@ -274,11 +274,11 @@ func TestWebGPUKVSlots_slotOwnsItsKV(t *testing.T) {
 					if nKV == 0 {
 						t.Fatalf("layer %d has no KV buffer — the fixture no longer exercises this", l)
 					}
-					if a.attnNorm != b.attnNorm || a.mlpNorm != b.mlpNorm || a.invFreq != b.invFreq {
+					if a.AttnNorm != b.AttnNorm || a.MlpNorm != b.MlpNorm || a.InvFreq != b.InvFreq {
 						t.Errorf("slot %d layer %d does not share slot 0's norms / RoPE table", s, l)
 					}
 				}
-				if rm.finalNorm != s0.finalNorm {
+				if rm.FinalNorm != s0.FinalNorm {
 					t.Errorf("slot %d does not share slot 0's final norm", s)
 				}
 				if kvBytesPerSlot(&rm) != kvBytesPerSlot(&s0) {

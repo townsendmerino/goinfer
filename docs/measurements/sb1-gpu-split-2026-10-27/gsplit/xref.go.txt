@@ -1,0 +1,91 @@
+// xref: for one package (with its in-package tests), every use site: file, and the used object's kind/name/declaring file,
+// for package-level objects, methods and struct fields declared in the package.
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/types"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"golang.org/x/tools/go/packages"
+)
+
+func main() {
+	dir, tags := os.Args[1], os.Args[2]
+	cfg := &packages.Config{Mode: packages.LoadAllSyntax, Dir: dir, BuildFlags: []string{"-tags", tags}, Tests: true}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		panic(err)
+	}
+	var p *packages.Package
+	for _, q := range pkgs {
+		if strings.HasSuffix(q.ID, ".test]") && !strings.HasSuffix(q.Name, "_test") {
+			p = q
+		}
+	}
+	if len(p.Errors) > 0 {
+		fmt.Fprintln(os.Stderr, p.Errors)
+	}
+	declFile := func(o types.Object) string { return filepath.Base(p.Fset.Position(o.Pos()).Filename) }
+	owner := func(o types.Object) string {
+		switch o := o.(type) {
+		case *types.Func:
+			if r := o.Type().(*types.Signature).Recv(); r != nil {
+				t := r.Type()
+				if pt, ok := t.(*types.Pointer); ok {
+					t = pt.Elem()
+				}
+				if n, ok := t.(*types.Named); ok {
+					return "method " + n.Obj().Name() + "." + o.Name()
+				}
+			}
+		case *types.Var:
+			if o.IsField() {
+				return "field ?." + o.Name()
+			}
+		}
+		return "obj " + o.Name()
+	}
+	for i, f := range p.Syntax {
+		fn := filepath.Base(p.CompiledGoFiles[i])
+		// fields: resolve owner via selections
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.SelectorExpr:
+				if s, ok := p.TypesInfo.Selections[n]; ok && s.Obj().Pkg() == p.Types {
+					o := s.Obj()
+					if v, ok := o.(*types.Var); ok && v.IsField() {
+						rt := s.Recv()
+						for {
+							if pt, ok := rt.(*types.Pointer); ok {
+								rt = pt.Elem()
+								continue
+							}
+							break
+						}
+						name := "?"
+						if nt, ok := rt.(*types.Named); ok {
+							name = nt.Obj().Name()
+						}
+						fmt.Printf("%s\tfield %s.%s\t%s\n", fn, name, o.Name(), declFile(o))
+					}
+				}
+			case *ast.Ident:
+				o := p.TypesInfo.Uses[n]
+				if o == nil || o.Pkg() != p.Types {
+					return true
+				}
+				if v, ok := o.(*types.Var); ok && v.IsField() {
+					return true // handled via selectors (composite literal keys too: those are Uses of the field)
+				}
+				if o.Parent() == p.Types.Scope() || strings.HasPrefix(owner(o), "method") {
+					fmt.Printf("%s\t%s\t%s\n", fn, owner(o), declFile(o))
+				}
+			}
+			return true
+		})
+	}
+}

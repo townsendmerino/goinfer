@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"os"
 	"path/filepath"
@@ -236,10 +237,10 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 		src = sc
 	}
 	// A resident's decode kernels are chosen when it is built, so each arm is its own resident, built under its switch.
-	keysWas := attnKeysDisabled
-	defer func() { attnKeysDisabled = keysWas }()
+	keysWas := kernels.AttnKeysDisabled
+	defer func() { kernels.AttnKeysDisabled = keysWas }()
 	build := func(disabled bool) (*decoder.Model, *residentDecoder) {
-		attnKeysDisabled = disabled
+		kernels.AttnKeysDisabled = disabled
 		m, err := decoder.Load(src, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 2048})
 		if err != nil {
 			t.Fatalf("the int4 resident (key-split off: %v): %v", disabled, err)
@@ -254,7 +255,7 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 	defer mOld.Close()
 	mNew, rdNew := build(false)
 	defer mNew.Close()
-	if _, _, _, _, hd, _, _ := mNew.Dims(); hd <= attnWG {
+	if _, _, _, _, hd, _, _ := mNew.Dims(); hd <= kernels.AttnWG {
 		t.Fatalf("this model's heads are %d wide: the two arms would run the same kernel", hd)
 	}
 	defect := os.Getenv("GOINFER_S12_ATTN_FIDELITY_DEFECT") == "1"
@@ -284,7 +285,7 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 			toks = append(toks, argmax(l))
 		}
 		arm := func(m *decoder.Model, rd *residentDecoder, disabled, stale bool) ([]fidelity.Position, [][]float32) {
-			attnKeysDisabled = disabled // the batched pass reads the switch when it runs
+			kernels.AttnKeysDisabled = disabled // the batched pass reads the switch when it runs
 			rd.Reset()
 			embs := make([][]float32, n)
 			for r, id := range ids {

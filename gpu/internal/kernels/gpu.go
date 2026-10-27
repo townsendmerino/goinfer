@@ -1,0 +1,914 @@
+//go:build gpu
+
+package kernels
+
+import (
+	"fmt"
+	"runtime"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/oliverbestmann/webgpu/wgpu"
+)
+
+// matmulShaderWGSL computes dst[m,n] = Σ_k a[m,k]·b[n,k], i.e. dst = a·bᵀ — the encoder's matmulBT contract: a is [M,K]
+// row-major, b is [N,K] row-major (the PyTorch [out,in] weight layout, so no transpose is needed), dst is [M,N] row-major.
+//
+// One invocation per output element, 16×16 workgroup. This is the naive kernel (no shared-memory tiling): every invocation
+// streams a full a-row and b-row from global memory. The tiled kernels are in gemm.go. History: docs/code-notes/gpu.md#matmulShaderWGSL.
+const matmulShaderWGSL = `
+struct Dims { m: u32, k: u32, n: u32, _pad: u32 };
+
+@group(0) @binding(0) var<storage, read>       a:    array<f32>;
+@group(0) @binding(1) var<storage, read>       b:    array<f32>;
+@group(0) @binding(2) var<storage, read_write> dst:  array<f32>;
+@group(0) @binding(3) var<uniform>             dims: Dims;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let row = gid.x;
+    let col = gid.y;
+    if (row >= dims.m || col >= dims.n) {
+        return;
+    }
+    let K = dims.k;
+    let aBase = row * K;
+    let bBase = col * K;
+    var acc: f32 = 0.0;
+    for (var i: u32 = 0u; i < K; i = i + 1u) {
+        acc = acc + a[aBase + i] * b[bBase + i];
+    }
+    dst[row * dims.n + col] = acc;
+}
+`
+
+// Context holds the persistent WebGPU objects (device, queue, compiled
+// pipeline). Create one with New and reuse it across MatmulBT calls —
+// device/pipeline creation is expensive, per-call buffer allocation is
+// not. Not safe for concurrent use by multiple goroutines; wrap in your
+// own mutex or use one Context per worker if you need that.
+type Context struct {
+	instance *wgpu.Instance
+	adapter  *wgpu.Adapter
+	// info is the adapter's GetInfo, read once in New; nothing calls GetInfo again. The binding fills a C struct on the Go stack,
+	// wgpu-native can leave Rust's dangling 0x1 in a string view's pointer, and a GC that shrinks the stack during the call aborts
+	// on it ("invalid pointer found on stack").
+	info     wgpu.AdapterInfo
+	device   *wgpu.Device
+	queue    *wgpu.Queue
+	shader   *wgpu.ShaderModule
+	pipeline *wgpu.ComputePipeline
+	layout   *wgpu.BindGroupLayout
+
+	// releases holds one closure per lazily-created device object (shader module + compute pipeline), registered AT CREATION
+	// by mkPipeline/track and drained LIFO by Close. Do not keep a hand-maintained release list in Close: it is edited in a
+	// different file from the code that allocates and cannot stay correct; registering at the allocation site is what keeps
+	// teardown complete for pipelines that do not exist yet. History: docs/code-notes/gpu.md#Context.releases.
+	releases []func()
+	// prefillProf, when non-nil, accumulates per-category wall time in PrefillLastW8A8
+	// (prefill_prof.go) — nil by default, zero cost (one nil check per category boundary) when off.
+	prefillProf *PrefillProf
+	// closed makes Close idempotent: `defer m.Close()` beside an explicit m.Close() is ordinary Go and decoder.Model.Close calls
+	// m.be.Close() unconditionally, and a second release of the wgpu handles is a use-after-free in the native layer.
+	// History: docs/code-notes/gpu.md#Context.closed.
+	closed   atomic.Bool // set by Close; read from other goroutines by releaseOwned
+	liveBase int64       // LiveBufferBytes() when this Context was created: the leak report at Close compares against it
+	allocSeq int64       // the allocation trace's sequence number when this Context was created (leak_report_test.go)
+
+	// hasDP4A records whether this adapter's WGSL compiler accepts dot4I8Packed, probed once in New and never re-checked:
+	// reachability depends on the vendored wgpu-native build, so it cannot be assumed from the backend or OS. ensureTiled uses
+	// it to pick the DP4A kernel over the scalar-unpack fallback every backend accepts.
+	// History: docs/code-notes/gpu.md#Context.hasDP4A.
+	hasDP4A bool
+	// quantNarrow keeps the single-workgroup quantizers at 64 lanes (quantNarrowForTest, read at New); quantSrc.
+	quantNarrow bool
+
+	// W8A8 (int8×int8) pipeline, compiled lazily by ensureQuant (quant.go).
+	quantShader   *wgpu.ShaderModule
+	quantPipeline *wgpu.ComputePipeline
+	quantLayout   *wgpu.BindGroupLayout
+
+	// On-GPU activation int8 quantize pipeline, lazy via ensureQuantize (device.go).
+	quantizeShader   *wgpu.ShaderModule
+	quantizePipeline *wgpu.ComputePipeline
+	quantizeLayout   *wgpu.BindGroupLayout
+
+	// Coalesced W8A8 GEMV (decode) pipeline, lazy via ensureGEMV (gemv.go).
+	gemvShader   *wgpu.ShaderModule
+	gemvPipeline *wgpu.ComputePipeline
+	gemvLayout   *wgpu.BindGroupLayout
+	// W8A8 GEMV with a per-output bias folded into the epilogue (ensureGEMVBias):
+	// dst[n] = scale·acc + bias[n], for the q/k/v projections of bias models (Qwen2).
+	gemvBiasShader   *wgpu.ShaderModule
+	gemvBiasPipeline *wgpu.ComputePipeline
+	gemvBiasLayout   *wgpu.BindGroupLayout
+
+	// Tiled W8A8 GEMM (prefill) pipeline, lazy via ensureTiled (gemm.go). tiledPipeline/tiledLayout are the ACTIVE variant for
+	// gemmTile (16: the 16×16 kernel; 64: the register-blocked kernel, gemm_rb.go); every compiled variant is kept in
+	// tiledByTile so an A/B can flip between them on one loaded model.
+	gemmTile      int
+	tiledShader   *wgpu.ShaderModule
+	tiledPipeline *wgpu.ComputePipeline
+	tiledLayout   *wgpu.BindGroupLayout
+	tiledByTile   map[int]tiledPipes
+	// Tiled W8A8 GEMM with a fused per-column bias epilogue (Qwen2 q/k/v bias),
+	// lazy via ensureTiledBias (gemm.go) — a separate pipeline/layout from the
+	// plain tiled GEMM's (7 bindings, not 6).
+	tiledBiasShader   *wgpu.ShaderModule
+	tiledBiasPipeline *wgpu.ComputePipeline
+	tiledBiasLayout   *wgpu.BindGroupLayout
+	tiledBiasByTile   map[int]tiledPipes
+
+	// Thin-M (multi-row GEMV) W8A8 GEMM for the Stage-B verify (gemm_rows.go): one
+	// workgroup per output column, each weight word read once and reused across all
+	// M rows. Beats the 16×16 tiled GEMM at the small M (≈K+1) of a verify block.
+	gemmRowShader   *wgpu.ShaderModule
+	gemmRowPipeline *wgpu.ComputePipeline
+	gemmRowLayout   *wgpu.BindGroupLayout
+
+	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md), lazy via ensureLora (lora.go).
+	loraDownShader   *wgpu.ShaderModule
+	loraDownPipeline *wgpu.ComputePipeline
+	loraDownLayout   *wgpu.BindGroupLayout
+	loraUpShader     *wgpu.ShaderModule
+	loraUpPipeline   *wgpu.ComputePipeline
+	loraUpLayout     *wgpu.BindGroupLayout
+
+	// Elementwise/norm pipelines for the fused MLP, lazy via ensureLayer (layer.go).
+	rmsnormShader   *wgpu.ShaderModule
+	rmsnormPipeline *wgpu.ComputePipeline
+	rmsnormLayout   *wgpu.BindGroupLayout
+	// M-row batched RMSNorm (the batched prefill pass only, lazy via ensurePrefillBatched): one dispatch over all M rows,
+	// grid (1, M), in place of M (1,1) dispatches of rmsnormPipeline.
+	rmsnormBatchedShader   *wgpu.ShaderModule
+	rmsnormBatchedPipeline *wgpu.ComputePipeline
+	rmsnormBatchedLayout   *wgpu.BindGroupLayout
+	swigluShader           *wgpu.ShaderModule
+	swigluPipeline         *wgpu.ComputePipeline
+	swigluLayout           *wgpu.BindGroupLayout
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
+	// twin, plain (un-quantized-output) variant.
+	gegluShader      *wgpu.ShaderModule
+	gegluPipeline    *wgpu.ComputePipeline
+	gegluLayout      *wgpu.BindGroupLayout
+	residualShader   *wgpu.ShaderModule
+	residualPipeline *wgpu.ComputePipeline
+	residualLayout   *wgpu.BindGroupLayout
+
+	// Resident vision-encoder pipelines, lazy via ensureVision (vision.go).
+	lnRowsPipeline   *wgpu.ComputePipeline
+	lnRowsLayout     *wgpu.BindGroupLayout
+	geluPipeline     *wgpu.ComputePipeline
+	geluLayout       *wgpu.BindGroupLayout
+	softmaxPipeline  *wgpu.ComputePipeline
+	softmaxLayout    *wgpu.BindGroupLayout
+	addRowsPipeline  *wgpu.ComputePipeline
+	addRowsLayout    *wgpu.BindGroupLayout
+	copyHeadPipeline *wgpu.ComputePipeline
+	// The tiled float32 matmul the vision tower's activation-by-weight and activation-by-activation products run on
+	// (vision.go); built with the other vision kernels.
+	mmTiledF32Pipeline *wgpu.ComputePipeline
+	mmTiledF32Layout   *wgpu.BindGroupLayout
+	mmRB64F32Pipeline  *wgpu.ComputePipeline
+	mmRB64F32Layout    *wgpu.BindGroupLayout
+	copyHeadLayout     *wgpu.BindGroupLayout
+
+	// RoPE + single-query attention pipelines, lazy via ensureAttn (attention.go).
+	ropeShader   *wgpu.ShaderModule
+	ropePipeline *wgpu.ComputePipeline
+	ropeLayout   *wgpu.BindGroupLayout
+	// M-row batched RoPE (PrefillLastW8A8 only, lazy via ensurePrefillBatched): one dispatch over all M rows, grid
+	// (heads*half, M); see ropeBatchedShaderWGSL. TestRoPEBatched_parity.
+	ropeBatchedShader   *wgpu.ShaderModule
+	ropeBatchedPipeline *wgpu.ComputePipeline
+	ropeBatchedLayout   *wgpu.BindGroupLayout
+	// Batched causal attention (PrefillLastW8A8 only, lazy via ensurePrefillBatched; design in
+	// docs/completed/task-gpu-batched-prefill.md): grid (nH, M), one dispatch for all M query rows against the shared resident
+	// K/V cache. attnKeysBatched mirrors attnKeysShaderWGSL's key-split decomposition and attnBatched mirrors the plain
+	// attnShaderWGSL, matching attnKernel's own selection. Neither is bit-identical to the single-query kernel (reduction
+	// order): gated on cosine/maxAbs in TestAttnKeysBatched_parity / TestAttnBatched_parity, not bit-exact.
+	// History: docs/code-notes/gpu.md#Context.attnBatchedShader.
+	attnBatchedShader       *wgpu.ShaderModule
+	attnBatchedPipeline     *wgpu.ComputePipeline
+	attnBatchedLayout       *wgpu.BindGroupLayout
+	attnKeysBatchedShader   *wgpu.ShaderModule
+	attnKeysBatchedPipeline *wgpu.ComputePipeline
+	attnKeysBatchedLayout   *wgpu.BindGroupLayout
+	attnBatchedF16Shader    *wgpu.ShaderModule
+	attnBatchedF16Pipeline  *wgpu.ComputePipeline
+	attnBatchedF16Layout    *wgpu.BindGroupLayout
+	// Fused q-rope + k-rope-store + v-store (decode fusion, f32 KV): one dispatch for the
+	// three post-projection KV ops, cutting two dispatches/layer off the decode chain.
+	qkvFinShader   *wgpu.ShaderModule
+	qkvFinPipeline *wgpu.ComputePipeline
+	qkvFinLayout   *wgpu.BindGroupLayout
+	// 256-lane variants of the three single-query attention kernels, generated from the same source by widenAttnWGSL and
+	// compiled lazily (ensureAttnWide) only for a plan whose head_dim exceeds attnWG. Nil otherwise.
+	attnWideShader      *wgpu.ShaderModule
+	attnWidePipeline    *wgpu.ComputePipeline
+	attnWideLayout      *wgpu.BindGroupLayout
+	attnF16WideShader   *wgpu.ShaderModule
+	attnF16WidePipeline *wgpu.ComputePipeline
+	attnF16WideLayout   *wgpu.BindGroupLayout
+	attnI8WideShader    *wgpu.ShaderModule
+	attnI8WidePipeline  *wgpu.ComputePipeline
+	attnI8WideLayout    *wgpu.BindGroupLayout
+
+	attnShader   *wgpu.ShaderModule
+	attnPipeline *wgpu.ComputePipeline
+	attnLayout   *wgpu.BindGroupLayout
+
+	// attnKeys: the key-split decode attention kernel (attention.go). Same bindings as attn,
+	// but its own auto-derived layout — the shader views q/keys as array<vec4<f32>>, so the
+	// minBindingSize the two layouts derive is not the same and they must not be swapped.
+	attnKeysShader   *wgpu.ShaderModule
+	attnKeysPipeline *wgpu.ComputePipeline
+	attnKeysLayout   *wgpu.BindGroupLayout
+
+	// KV-cache writers (ensureAttn): rope-and-store K into KCache, store V into
+	// VCache — both at pos*kvDim via a per-token uniform base, so the decode token
+	// is a single compute pass with no CopyBufferToBuffer to break it.
+	ropeStoreShader   *wgpu.ShaderModule
+	ropeStorePipeline *wgpu.ComputePipeline
+	ropeStoreLayout   *wgpu.BindGroupLayout
+	kvStoreShader     *wgpu.ShaderModule
+	kvStorePipeline   *wgpu.ComputePipeline
+	kvStoreLayout     *wgpu.BindGroupLayout
+
+	// f16-KV variants of the three above (ensureAttn; layout in attention.go's f16-KV header). Opt-in
+	// precision knob; the f32 path above is untouched and stays bit-exact. See task-gpu-f16-kv.md.
+	attnF16Shader        *wgpu.ShaderModule
+	attnF16Pipeline      *wgpu.ComputePipeline
+	attnF16Layout        *wgpu.BindGroupLayout
+	ropeStoreF16Shader   *wgpu.ShaderModule
+	ropeStoreF16Pipeline *wgpu.ComputePipeline
+	ropeStoreF16Layout   *wgpu.BindGroupLayout
+	kvStoreF16Shader     *wgpu.ShaderModule
+	kvStoreF16Pipeline   *wgpu.ComputePipeline
+	kvStoreF16Layout     *wgpu.BindGroupLayout
+
+	// int8-KV variants (ensureAttn; layout in attention.go's int8-KV header): write kernels ropeStoreI8 /
+	// kvStoreI8 quantize per KV head, the read kernel attnI8 unpacks and scales. Opt-in; f32 + f16 paths
+	// untouched. See task-gpu-kv-i8.md.
+	attnI8Shader        *wgpu.ShaderModule
+	attnI8Pipeline      *wgpu.ComputePipeline
+	attnI8Layout        *wgpu.BindGroupLayout
+	ropeStoreI8Shader   *wgpu.ShaderModule
+	ropeStoreI8Pipeline *wgpu.ComputePipeline
+	ropeStoreI8Layout   *wgpu.BindGroupLayout
+	kvStoreI8Shader     *wgpu.ShaderModule
+	kvStoreI8Pipeline   *wgpu.ComputePipeline
+	kvStoreI8Layout     *wgpu.BindGroupLayout
+
+	// §2 fused glue kernels (ensureFuse, decodefuse.go): fold quantize into its
+	// producer to shorten the serialized decode dependency chain.
+	rmsQuantShader      *wgpu.ShaderModule
+	rmsQuantPipeline    *wgpu.ComputePipeline
+	rmsQuantLayout      *wgpu.BindGroupLayout
+	swigluQuantShader   *wgpu.ShaderModule
+	swigluQuantPipeline *wgpu.ComputePipeline
+	swigluQuantLayout   *wgpu.BindGroupLayout
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) fused quantized variant.
+	gegluQuantShader   *wgpu.ShaderModule
+	gegluQuantPipeline *wgpu.ComputePipeline
+	gegluQuantLayout   *wgpu.BindGroupLayout
+
+	// Per-head QK-norm (Lever C, qknorm.go): in-place RMSNorm of each q/k head over
+	// headDim before RoPE (Qwen3 / GLM / Mellum). One workgroup per head.
+	qkNormShader   *wgpu.ShaderModule
+	qkNormPipeline *wgpu.ComputePipeline
+	qkNormLayout   *wgpu.BindGroupLayout
+
+	// Gemma 4 scale-less v_norm (qknorm.go): derives V from raw pre-RoPE K for K=V global layers.
+	vNormShader   *wgpu.ShaderModule
+	vNormPipeline *wgpu.ComputePipeline
+	vNormLayout   *wgpu.BindGroupLayout
+
+	// Gemma 4 dense per-layer output scalar (qknorm.go): multiplies xd by layerScalar after MLP residual add.
+	scaleVecShader   *wgpu.ShaderModule
+	scaleVecPipeline *wgpu.ComputePipeline
+	scaleVecLayout   *wgpu.BindGroupLayout
+
+	// Resident Mamba-2 SSM decode (mamba.go): the hybrid mixer as a bounded per-token
+	// recurrence — mambaConv (causal-conv ring), mambaSSM (selective state update),
+	// mambaGatedNorm (gated grouped RMSNorm). Granite-4.0-H / Nemotron-H.
+	mambaSSMShader   *wgpu.ShaderModule
+	mambaSSMPipeline *wgpu.ComputePipeline
+	mambaSSMLayout   *wgpu.BindGroupLayout
+
+	// Gated-DeltaNet resident decode (deltanet.go): the delta-rule recurrence, its q/k norm, gates and gated norm.
+	deltaRuleShader    *wgpu.ShaderModule
+	deltaRulePipeline  *wgpu.ComputePipeline
+	deltaRuleLayout    *wgpu.BindGroupLayout
+	deltaNormShader    *wgpu.ShaderModule
+	deltaNormPipeline  *wgpu.ComputePipeline
+	deltaNormLayout    *wgpu.BindGroupLayout
+	deltaGatesShader   *wgpu.ShaderModule
+	deltaGatesPipeline *wgpu.ComputePipeline
+	deltaGatesLayout   *wgpu.BindGroupLayout
+	deltaGNormShader   *wgpu.ShaderModule
+	deltaGNormPipeline *wgpu.ComputePipeline
+	deltaGNormLayout   *wgpu.BindGroupLayout
+
+	deltaQSplitShader     *wgpu.ShaderModule
+	deltaQSplitPipeline   *wgpu.ComputePipeline
+	deltaQSplitLayout     *wgpu.BindGroupLayout
+	deltaAttnGateShader   *wgpu.ShaderModule
+	deltaAttnGatePipeline *wgpu.ComputePipeline
+	deltaAttnGateLayout   *wgpu.BindGroupLayout
+	mambaConvShader       *wgpu.ShaderModule
+	mambaConvPipeline     *wgpu.ComputePipeline
+	mambaConvLayout       *wgpu.BindGroupLayout
+	mambaGNormShader      *wgpu.ShaderModule
+	mambaGNormPipeline    *wgpu.ComputePipeline
+	mambaGNormLayout      *wgpu.BindGroupLayout
+	// Nemotron-H squared-ReLU FFN (relu2.go): fused relu²(up)→int8 for the non-gated MLP block.
+	relu2Shader   *wgpu.ShaderModule
+	relu2Pipeline *wgpu.ComputePipeline
+	relu2Layout   *wgpu.BindGroupLayout
+
+	// MoE residency (Lever C3, moe.go): router top-k selection (moeRoute) feeding the
+	// indexed sparse-expert GEMV — Mixtral / Qwen2-MoE / GLM / DeepSeek on the resident path.
+	moeRouteShader   *wgpu.ShaderModule
+	moeRoutePipeline *wgpu.ComputePipeline
+	moeRouteLayout   *wgpu.BindGroupLayout
+	// Gemma 4's parallel dense and MoE feed-forward (gemma4_moe.go).
+	g4RouteScalePipeline *wgpu.ComputePipeline
+	g4RouteScaleLayout   *wgpu.BindGroupLayout
+	g4TailCopyPipeline   *wgpu.ComputePipeline
+	g4TailCopyLayout     *wgpu.BindGroupLayout
+	moeExpertShader      *wgpu.ShaderModule
+	moeExpertPipeline    *wgpu.ComputePipeline
+	moeExpertLayout      *wgpu.BindGroupLayout
+	// Indexed stacked-expert GEMV at int4 (W4A8) — the int4 twin of moeExpert*.
+	moeExpertW4Shader   *wgpu.ShaderModule
+	moeExpertW4Pipeline *wgpu.ComputePipeline
+	moeExpertW4Layout   *wgpu.BindGroupLayout
+	// gpt-oss's three MoE kernels (FeatAttnSink, docs/tasks/task-gpu-paths-2026-09.md): own router, own
+	// clamped-gated activation, own biased down-projection combine. Separate from the generic MoE set
+	// above because gpt-oss disagrees with it on what the router bias means and what the activation clamps.
+	routeGptOssShader           *wgpu.ShaderModule
+	routeGptOssPipeline         *wgpu.ComputePipeline
+	routeGptOssLayout           *wgpu.BindGroupLayout
+	gptossGluQuantShader        *wgpu.ShaderModule
+	gptossGluQuantPipeline      *wgpu.ComputePipeline
+	gptossGluQuantLayout        *wgpu.BindGroupLayout
+	moeExpertGptOssDownShader   *wgpu.ShaderModule
+	moeExpertGptOssDownPipeline *wgpu.ComputePipeline
+	moeExpertGptOssDownLayout   *wgpu.BindGroupLayout
+	// moeExpertGptOssDownW4*: the int4 twin, for Quant "int4" expert stacks (audit C-06).
+	moeExpertGptOssDownW4Shader   *wgpu.ShaderModule
+	moeExpertGptOssDownW4Pipeline *wgpu.ComputePipeline
+	moeExpertGptOssDownW4Layout   *wgpu.BindGroupLayout
+	// Gated shared-expert combine (Lever C3d, qwen2_moe): xd[n] += sigmoid(gl[0])·src[n].
+	sharedGateShader   *wgpu.ShaderModule
+	sharedGatePipeline *wgpu.ComputePipeline
+	sharedGateLayout   *wgpu.BindGroupLayout
+
+	// W4A8 decode GEMV (ensureGEMVW4, gemv_w4a8.go): int4 group-wise weights.
+	gemvW4Shader   *wgpu.ShaderModule
+	gemvW4Pipeline *wgpu.ComputePipeline
+	gemvW4Layout   *wgpu.BindGroupLayout
+	// w4Multi holds the multi-row int4 projection kernels, indexed by w4MultiKind (ensureW4Multi).
+	w4Multi [2]tiledPipes
+	// fusedRows holds the batched pass's rows forms of decode's fused quantizing kernels, indexed by fusedRowsKind
+	// (ensureFusedRows).
+	fusedRows [fusedRowsKinds]tiledPipes
+	// attnKeysWide is the key-split attention kernel for a head of 129 to 256 (ensureAttnWide, attn_keys_wide.go).
+	attnKeysWide tiledPipes
+	// attnKeysRows are the rows forms of the key-split attention kernels, the narrow one then the wide one, for the
+	// batched pass (ensureAttnKeysRows, attn_keys_rows.go).
+	attnKeysRows [2]tiledPipes
+	// ropeMRoPERows is the batched pass's rotary kernel for rows that carry three positions (ensureMRoPERows).
+	ropeMRoPERows tiledPipes
+	// w4MultiPin, when not 0, makes the batched pass run every int4 projection with kernel w4MultiPin-1, whatever the
+	// row count. Tests only.
+	w4MultiPin int
+	// The batched pass's per-column bias add for an int4 projection (prefillLastRows).
+	biasRowsPipeline *wgpu.ComputePipeline
+	biasRowsLayout   *wgpu.BindGroupLayout
+
+	// MLA absorb-path attention (Lever C4, mla.go): rank-space single-query attention
+	// over the compressed latent cache (DeepSeek/Kimi). wsum[h] = Σ_j softmax_j·cn_j.
+	mlaAttnShader   *wgpu.ShaderModule
+	mlaAttnPipeline *wgpu.ComputePipeline
+	mlaAttnLayout   *wgpu.BindGroupLayout
+	// MLA latent store (Lever C4b): kvA-norm the rank latent + decoupled-RoPE the key,
+	// written into the latent cache at the token's position (the append).
+	mlaStoreShader   *wgpu.ShaderModule
+	mlaStorePipeline *wgpu.ComputePipeline
+	mlaStoreLayout   *wgpu.BindGroupLayout
+	// MLA per-head f32 matvec (Lever C4b): the W_UK absorb (q_nope→rank) and W_UV lift
+	// (rank→v) — block-diagonal per head, so a dedicated batched matvec, not a GEMV.
+	mlaHeadMVShader   *wgpu.ShaderModule
+	mlaHeadMVPipeline *wgpu.ComputePipeline
+	mlaHeadMVLayout   *wgpu.BindGroupLayout
+	// MLA query RoPE (Lever C4c): gather + decoupled-RoPE the qk_rope query slice into
+	// the combined qAbs buffer, after the absorbed qNopeAbs.
+	mlaQRopeShader   *wgpu.ShaderModule
+	mlaQRopePipeline *wgpu.ComputePipeline
+	mlaQRopeLayout   *wgpu.BindGroupLayout
+}
+
+// New initializes a GPU context: instance → adapter (high-performance
+// preference) → device → compiled matmul pipeline. Returns an error if
+// no adapter/device is available (e.g. a headless box with no GPU), so
+// callers can fall back to the CPU path or skip GPU tests cleanly.
+// liveContexts counts Contexts that have been created and not yet Closed. A WebGPU device is a scarce driver resource with
+// a hard cap on live devices: past it every later New() fails with "failed to request device", and in a test binary that
+// silently converts gates into skips. So a leaked Context is a cliff, not a slow drain. Exposed to tests through
+// liveContexts.Load(); see TestDeviceExhaustion_repro and docs/code-notes/gpu.md#liveContexts.
+var LiveContexts atomic.Int64
+
+// gpuEverAvailable records that a Context was successfully created at least once in this
+// process. Tests use it to tell "this machine has no GPU" (skip) from "this process ran out
+// of one" (a defect that must fail loudly) — see GPUEverAvailable.
+var gpuEverAvailable atomic.Bool
+
+func New() (*Context, error) {
+	// Quiet wgpu-native's benign warnings ("No windowing system present. Using surfaceless
+	// platform", "No config found!") — pure noise on a headless/server box. Errors still log.
+	wgpu.SetLogLevel(wgpu.LogLevelError)
+	inst := wgpu.CreateInstance(nil)
+	adapter, err := inst.RequestAdapter(&wgpu.RequestAdapterOptions{
+		PowerPreference: wgpu.PowerPreferenceHighPerformance,
+	})
+	if err != nil {
+		inst.Release()
+		return nil, fmt.Errorf("gpu: request adapter: %w", err)
+	}
+	// Raise the storage-buffer binding limit: the DEFAULT device caps it at 128 MB, smaller than a real model's LM head or
+	// embedding at int8. Start from the valid default limit set and bump only the two size limits to the adapter's max
+	// (requiring the adapter's full limit set verbatim fails: some advertised limits, e.g. maxBufferSize, are not valid as
+	// required limits). maxBufferSize must be ≥ the binding size.
+	lim := wgpu.DefaultLimits()
+	al := adapter.GetLimits()
+	lim.MaxStorageBufferBindingSize = al.MaxStorageBufferBindingSize
+	// Raise MaxBufferSize to the binding max so large single weights fit (past the 256 MB WebGPU default). Set
+	// unconditionally: DefaultLimits() leaves MaxBufferSize at the u64-max "unset" sentinel, so a `<` guard never fires and the
+	// device silently keeps the 256 MB default (it must be a concrete value to take).
+	lim.MaxBufferSize = al.MaxStorageBufferBindingSize
+	// The default cap (65535) is below a vocab-sized GEMV (one workgroup per output
+	// column → 152k for the LM head); raise it to the adapter's max.
+	if al.MaxComputeWorkgroupsPerDimension > lim.MaxComputeWorkgroupsPerDimension {
+		lim.MaxComputeWorkgroupsPerDimension = al.MaxComputeWorkgroupsPerDimension
+	}
+	device, err := adapter.RequestDevice(&wgpu.DeviceDescriptor{
+		RequiredLimits: &lim,
+	})
+	if err != nil {
+		adapter.Release()
+		inst.Release()
+		return nil, fmt.Errorf("gpu: request device (%d goinfer Contexts already live; this driver allows ~63): %w", LiveContexts.Load(), err)
+	}
+	shader, err := device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "matmulBT",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: matmulShaderWGSL},
+	})
+	if err != nil {
+		device.Release()
+		adapter.Release()
+		inst.Release()
+		return nil, fmt.Errorf("gpu: compile shader: %w", err)
+	}
+	pipeline, err := device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label:   "matmulBT",
+		Compute: wgpu.ProgrammableStageDescriptor{Module: shader, EntryPoint: "main"},
+		// Layout nil ⇒ auto layout inferred from the shader bindings.
+	})
+	if err != nil {
+		shader.Release()
+		device.Release()
+		adapter.Release()
+		inst.Release()
+		return nil, fmt.Errorf("gpu: create pipeline: %w", err)
+	}
+	LiveContexts.Add(1)
+	gpuEverAvailable.Store(true)
+	return &Context{
+		liveBase:    liveBufferBytes.Load(),
+		allocSeq:    allocSeqNow(),
+		instance:    inst,
+		adapter:     adapter,
+		info:        adapter.GetInfo(),
+		device:      device,
+		queue:       device.GetQueue(),
+		shader:      shader,
+		pipeline:    pipeline,
+		layout:      pipeline.GetBindGroupLayout(0),
+		hasDP4A:     probeDP4A(device),
+		quantNarrow: QuantNarrowForTest.Load(),
+		gemmTile:    gemmTileDefault(),
+	}, nil
+}
+
+// probeDP4A tries to compile a one-line dot4I8Packed shader — success means the WGSL
+// compiler this binding vendors accepts the builtin (same probe as
+// TestSpike_capabilities, just live instead of test-only). A failed probe is an
+// expected outcome on backends/drivers that haven't caught up, not an error.
+const dp4aProbeShaderWGSL = `
+@group(0) @binding(0) var<storage, read_write> out: array<i32>;
+@compute @workgroup_size(1)
+fn main() {
+    out[0] = dot4I8Packed(0x01020304u, 0x05060708u);
+}`
+
+func probeDP4A(device *wgpu.Device) bool {
+	sm, err := device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "dot4I8Packed-probe",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: dp4aProbeShaderWGSL},
+	})
+	if err != nil {
+		return false
+	}
+	sm.Release()
+	return true
+}
+
+// Backend reports the underlying graphics backend ("Metal", "Vulkan",
+// "D3D12", …) — useful for test logging to confirm which GPU API is in
+// play.
+func (c *Context) Backend() string {
+	return c.info.BackendType.String()
+}
+
+// track registers release closures to be run by Close, LIFO. Call it at the ALLOCATION site —
+// that is the whole point (see Context.releases): a teardown list maintained anywhere else drifts
+// out of date the first time someone adds a pipeline without reading Close.
+func (c *Context) track(fs ...func()) { c.releases = append(c.releases, fs...) }
+
+// bgl captures a pipeline's group-0 bind-group layout AND registers its Release, so the c.*Layout fields built outside
+// mkPipeline do not leak a native BGL (each holding a device ref) per Context. GetBindGroupLayout returns a NEW object per
+// call, so it must be captured once: never call it again for the same field.
+func (c *Context) bgl(pl *wgpu.ComputePipeline) *wgpu.BindGroupLayout {
+	lay := pl.GetBindGroupLayout(0)
+	c.track(lay.Release)
+	return lay
+}
+
+// mkPipeline compiles one WGSL shader into a compute pipeline, registers BOTH objects for release, and returns them plus the
+// auto bind-group layout. It is the single tracked constructor the ensure* builders share; an ensure* that discards the
+// shader module instead of registering it can never release it.
+//
+// On pipeline-creation failure the shader is released immediately and NOTHING is registered, so a failed ensure* leaves the
+// Context exactly as it found it. History: docs/code-notes/gpu.md#Context.mkPipeline.
+func (c *Context) mkPipeline(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: label, WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
+	}
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
+	}
+	// Track the bind-group layout for release too: GetBindGroupLayout returns a new native BGL object (holding a device ref)
+	// that every caller keeps in a c.*Layout field for the Context's lifetime; untracked, it leaks per Context.
+	lay := pl.GetBindGroupLayout(0)
+	c.track(sh.Release, pl.Release, lay.Release)
+	return sh, pl, lay, nil
+}
+
+// Close releases all GPU resources. Safe to call once; the Context must
+// not be used afterward.
+func (c *Context) Close() error {
+	if !c.closed.CompareAndSwap(false, true) {
+		return nil // idempotent: `defer m.Close()` + an explicit Close must not double-release (C-26b)
+	}
+	LiveContexts.Add(-1)
+	if h := leakAtClose; h != nil {
+		h(c) // on the caller's goroutine, where the stack names the test; the releases below run elsewhere
+	}
+	// The releases run on the runtime's finalizer goroutine, the one thread that also drops the device reference a leaked buffer holds (finalizerSerial's comment: two
+	// device drops at once deadlock wgpu-native).
+	finalizerSerial(c.release)
+	return nil
+}
+
+// release is Close's body: drain the pipelines and shaders, then the base objects.
+func (c *Context) release() {
+	// Drain every lazily-created pipeline/shader, newest first. Registered at the allocation site (mkPipeline / track), so this
+	// stays complete as new ensure* builders are added.
+	for _, v := range slices.Backward(c.releases) {
+		v()
+	}
+	c.releases = nil
+	// The base objects created by New, released last (pipelines depend on the device). Each is
+	// nil-checked: New releases what it built and returns nil on a mid-construction failure, and
+	// the nil-out below means a Context is only ever partially populated OR already drained.
+	// Nil each handle after release so a use-after-free is a nil dereference at the Go boundary —
+	// a stack trace pointing at the bug — rather than undefined behaviour inside the native layer.
+	if c.layout != nil { // the primary pipeline's group-0 BGL (New's struct literal), never released (audit R-17)
+		c.layout.Release()
+	}
+	if c.pipeline != nil {
+		c.pipeline.Release()
+	}
+	if c.shader != nil {
+		c.shader.Release()
+	}
+	if c.queue != nil {
+		c.queue.Release()
+	}
+	if c.device != nil {
+		c.device.Release()
+	}
+	if c.adapter != nil {
+		c.adapter.Release()
+	}
+	if c.instance != nil {
+		c.instance.Release()
+	}
+	c.layout, c.pipeline, c.shader, c.queue, c.device, c.adapter, c.instance = nil, nil, nil, nil, nil, nil, nil
+}
+
+// leakAtClose, when non-nil, is called by Context.Close on the caller's goroutine before anything is released. nil in production; the package's tests set it to report device buffers a test left
+// live (leak_report_test.go).
+var leakAtClose func(*Context)
+
+// releaseOwned runs f, a wrapper's release of its device buffers: in place while the Context is live, on the finalizer goroutine once it is closed. A wrapper closed AFTER its Context may hold the
+// last reference on the device, and that drop must not overlap another device's destruction (finalizerSerial). A nil Context (a wrapper built by hand in a test) runs f in place.
+func (c *Context) releaseOwned(f func()) {
+	if c != nil && !releaseOwnedHopOff && c.closed.Load() && serialGID.Load() != curGID() { // already on the serializing goroutine (a Close that closes other wrappers): run in place
+		finalizerSerial(f)
+		return
+	}
+	f()
+}
+
+// releaseOwnedHopOff turns the hop off (a wrapper closed after its Context releases in place, as before): the planted defect of TestContextClose_lateWrapperClose.
+var releaseOwnedHopOff bool
+
+// serialGID is the goroutine id of the finalizer goroutine while finalizerSerial's f runs on it, else 0.
+var serialGID atomic.Int64
+
+// curGID is the calling goroutine's id, parsed from its stack header. Only the release path of an already-closed Context calls it, so its cost does not matter.
+func curGID() int64 {
+	var b [48]byte
+	n := runtime.Stack(b[:], false)
+	var id int64
+	for _, ch := range b[len("goroutine "):n] {
+		if ch < '0' || ch > '9' {
+			break
+		}
+		id = id*10 + int64(ch-'0')
+	}
+	return id
+}
+
+type finalizerToken struct{ _ [64]byte } // not a tiny allocation: tiny objects are batched and their finalizers can be delayed
+
+// finalizerSerial runs f on the runtime's finalizer goroutine and waits for it.
+//
+// Why: the wgpu bindings give every wrapper (Buffer, CommandEncoder, ...) its own reference on the device and release it from
+// a finalizer. A buffer a caller leaks after its Context was closed therefore holds the LAST reference on that device, and
+// the garbage collector drops it on the finalizer goroutine at an arbitrary moment. If that lands while another
+// Context.Close is releasing its own device on a test goroutine, two devices are destroyed at once inside wgpu-native and
+// both threads park in wgpuDeviceRelease for good (TestContextClose_finalizerRace reproduces it). Every finalizer runs on
+// one goroutine, so running Close's releases there serializes them with all of those. It does not serialize an explicit
+// Release from another goroutine (a caller closing a matrix after its Context), which stays the caller's ordering.
+//
+// If the finalizer goroutine does not take the job within about a second (it is blocked), f runs in place.
+// History: docs/code-notes/gpu.md#finalizerSerial.
+func finalizerSerial(f func()) {
+	var once sync.Once // the fallback below and a late finalizer must not both run f
+	done := make(chan struct{})
+	tok := new(finalizerToken)
+	runtime.SetFinalizer(tok, func(*finalizerToken) {
+		serialGID.Store(curGID())
+		once.Do(f)
+		serialGID.Store(0)
+		close(done)
+	})
+	tok = nil
+	for range 50 {
+		runtime.GC() // makes the unreachable token due; the finalizer goroutine runs it
+		select {
+		case <-done:
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	once.Do(f) // never reached the finalizer goroutine
+}
+
+// ResidentMatrix is a weight matrix [rows, cols] uploaded to a GPU storage
+// buffer once and reused across many MatmulBTResident calls — the fix for the
+// per-call weight re-upload. The decoder uploads each constant weight matrix
+// once at first use and keeps the handle for every subsequent token. Release
+// frees the GPU buffer.
+type ResidentMatrix struct {
+	ctx  *Context
+	buf  *wgpu.Buffer
+	rows int // N (out features)
+	cols int // K (in features)
+}
+
+// Close frees the resident GPU buffer. Idempotent; after its Context is closed the release runs on the finalizer goroutine (releaseOwned).
+func (rm *ResidentMatrix) Close() error {
+	rm.ctx.releaseOwned(func() {
+		if rm.buf != nil {
+			accountFree(int64(rm.buf.GetSize()))
+			traceFree(rm)
+			rm.buf.Release()
+			rm.buf = nil
+		}
+	})
+	return nil
+}
+
+// UploadMatrix copies a [rows, cols] f32 matrix to a resident GPU storage
+// buffer. b must hold ≥ rows*cols f32s. The returned ResidentMatrix is reused
+// by MatmulBTResident; the caller owns it and must Release it.
+func (c *Context) UploadMatrix(b []float32, rows, cols int) (*ResidentMatrix, error) {
+	if rows <= 0 || cols <= 0 {
+		return nil, fmt.Errorf("gpu: UploadMatrix non-positive dim rows=%d cols=%d", rows, cols)
+	}
+	if len(b) < rows*cols {
+		return nil, fmt.Errorf("gpu: UploadMatrix input too small: len(b)=%d need %d", len(b), rows*cols)
+	}
+	buf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "resident-b", Contents: wgpu.ToBytes(b[:rows*cols]), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create resident buffer: %w", err)
+	}
+	accountAlloc(int64(buf.GetSize()))
+	return traced(&ResidentMatrix{ctx: c, buf: buf, rows: rows, cols: cols}, int64(buf.GetSize())), nil
+}
+
+// MatmulBTResident computes dst = a · rm.bᵀ ([M, rm.rows]), uploading only the
+// (small) activation a and reading back the result — the weight rm stays
+// resident. This removes the dominant transfer cost for repeated matmuls
+// against a constant weight (the decoder's per-token projections + LM head).
+func (c *Context) MatmulBTResident(a []float32, rm *ResidentMatrix, M int) ([]float32, error) {
+	K, N := rm.cols, rm.rows
+	if M <= 0 {
+		return nil, fmt.Errorf("gpu: MatmulBTResident non-positive M=%d", M)
+	}
+	if len(a) < M*K {
+		return nil, fmt.Errorf("gpu: MatmulBTResident input too small: len(a)=%d need %d", len(a), M*K)
+	}
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "a", Contents: wgpu.ToBytes(a[:M*K]), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create a buffer: %w", err)
+	}
+	defer aBuf.Release()
+	return c.run(aBuf, rm.buf, M, K, N)
+}
+
+// MatmulBT computes dst = a·bᵀ on the GPU and returns the [M,N] result.
+// a must hold ≥ M*K f32s, b ≥ N*K. This allocates fresh GPU buffers,
+// uploads a and b, dispatches the kernel, and reads the result back —
+// so it pays full host↔device transfer on every call. Use UploadMatrix +
+// MatmulBTResident when b is constant across calls (the decoder's weights).
+func (c *Context) MatmulBT(a, b []float32, M, K, N int) ([]float32, error) {
+	if M <= 0 || K <= 0 || N <= 0 {
+		return nil, fmt.Errorf("gpu: matmulBT non-positive dim M=%d K=%d N=%d", M, K, N)
+	}
+	if len(a) < M*K || len(b) < N*K {
+		return nil, fmt.Errorf("gpu: matmulBT input too small: len(a)=%d need %d, len(b)=%d need %d",
+			len(a), M*K, len(b), N*K)
+	}
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "a", Contents: wgpu.ToBytes(a[:M*K]), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create a buffer: %w", err)
+	}
+	defer aBuf.Release()
+
+	bBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "b", Contents: wgpu.ToBytes(b[:N*K]), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create b buffer: %w", err)
+	}
+	defer bBuf.Release()
+	return c.run(aBuf, bBuf, M, K, N)
+}
+
+// run dispatches the matmul pipeline against already-created a and b buffers:
+// allocate dst+dims+staging, bind, dispatch the M×N grid, copy dst→staging,
+// submit, and block on the readback. Shared by MatmulBT (fresh b) and
+// MatmulBTResident (resident b).
+func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
+	dstSize := uint64(M * N * 4)
+
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "dst", Size: dstSize,
+		Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create dst buffer: %w", err)
+	}
+	defer dstBuf.Release()
+
+	// Dims uniform: 3 u32 + 1 pad word (uniform buffers need 16-byte size).
+	dims := []uint32{uint32(M), uint32(K), uint32(N), 0}
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create dims buffer: %w", err)
+	}
+	defer dimsBuf.Release()
+
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "stage", Size: dstSize,
+		Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create staging buffer: %w", err)
+	}
+	defer stage.Release()
+
+	bindGroup, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.layout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
+			{Binding: 1, Buffer: bBuf, Size: bBuf.GetSize()},
+			{Binding: 2, Buffer: dstBuf, Size: dstBuf.GetSize()},
+			{Binding: 3, Buffer: dimsBuf, Size: dimsBuf.GetSize()},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create bind group: %w", err)
+	}
+	defer bindGroup.Release()
+
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: create command encoder: %w", err)
+	}
+	defer enc.Release()
+
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.pipeline)
+	pass.SetBindGroup(0, bindGroup, nil)
+	// global_invocation_id.x ranges over rows (M), .y over cols (N);
+	// 16×16 threads per workgroup, so ceil-divide the counts.
+	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
+	}
+	pass.Release()
+
+	if err := enc.TryCopyBufferToBuffer(dstBuf, 0, stage, 0, dstSize); err != nil {
+		return nil, fmt.Errorf("gpu: copy dst→stage: %w", err)
+	}
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: finish encoder: %w", err)
+	}
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+
+	// Map the staging buffer and block until the GPU work + map complete.
+	mapStatus := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, dstSize, func(s wgpu.MapAsyncStatus) {
+		mapStatus = s
+	}); err != nil {
+		return nil, fmt.Errorf("gpu: map async: %w", err)
+	}
+	c.device.Poll(true, nil) // wait=true: flush queue + fire map callback
+	if mapStatus != wgpu.MapAsyncStatusSuccess {
+		return nil, fmt.Errorf("gpu: staging map failed: %v", mapStatus)
+	}
+
+	raw := stage.GetMappedRange(0, uint(dstSize))
+	out := make([]float32, M*N)
+	copy(out, wgpu.FromBytes[float32](raw))
+	if err := stage.TryUnmap(); err != nil {
+		return nil, fmt.Errorf("gpu: unmap staging: %w", err)
+	}
+	return out, nil
+}
+
+// buildCompute compiles a WGSL compute shader → (module, pipeline, group-0 layout).
+func (c *Context) buildCompute(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: label, WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
+	}
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
+	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	return sh, pl, c.bgl(pl), nil
+}

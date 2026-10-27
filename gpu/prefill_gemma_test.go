@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -82,7 +83,7 @@ func TestPrefillGemma_plantedDefects(t *testing.T) {
 	if _, err := New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
-	defer func() { prefillDefectForTest = 0 }()
+	defer func() { kernels.PrefillDefectForTest = 0 }()
 	defects := []struct {
 		d      int
 		name   string
@@ -101,9 +102,9 @@ func TestPrefillGemma_plantedDefects(t *testing.T) {
 	for _, d := range defects {
 		t.Run(d.name, func(t *testing.T) {
 			dir := prefillGemmaDir(t, d.dir)
-			prefillDefectForTest = d.d
+			kernels.PrefillDefectForTest = d.d
 			want, got := prefillRowsRun(t, dir, decoder.Options{ResidentContext: 64}, 40, w4MultiAuto, d.mkRows)
-			prefillDefectForTest = 0
+			kernels.PrefillDefectForTest = 0
 			why := prefillInt4Grade(want, got)
 			if why == "" {
 				t.Errorf("the gate stayed green")
