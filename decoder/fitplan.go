@@ -1,6 +1,10 @@
 package decoder
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/townsendmerino/goinfer/internal/mem"
+)
 
 // Placement is which of docs/tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend. PlacementHostComputedExperts is
 // reserved and never chosen, so adding it later does not rewrite the type.
@@ -34,7 +38,7 @@ func (p Placement) String() string {
 // ctxPlanFloor is the smallest context Plan will shrink to before giving up (docs/tasks/task-fit-to-hardware.md §2: shrink context
 // toward a floor before moving anything else). It is not fitguard.go's ctxFloor, the CPU staged-load guard's own floor: the two guards are
 // independent by design, so a change to one floor must not silently move the other's.
-const ctxPlanFloor = 4096
+const ctxPlanFloor = mem.PlanCtxFloor
 
 // PlanRequest is what the user asked for, with every default already resolved by the CALLER (docs/tasks/task-fit-to-hardware.md §2).
 // Plan itself invents no defaults, so a caller (goinfer-chat fit, the startup banner, a table test) can see and vary exactly what it asked
@@ -167,214 +171,84 @@ const (
 // (the Nemotron/Qwen3.5/MLA combination with KVF16/KVI8, and WebGPUCtxCeiling).
 func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	p := Plan{Backend: backend, FreeBytes: freeBytes, ExtraBytes: req.ExtraBytes}
+	if reason := m.planIneligible(backend, req); reason != "" {
+		p.Placement = PlacementDecline
+		p.Reason = reason
+		return p
+	}
+	l := m.deviceLoad(backend, req.KVF16, req.KVI8, req.CtxPinned)
+	p.DenseBytes, p.ExpertBytesFull = l.DenseBytes, l.ExpertBytesFull
+	d := mem.SolvePlacement(l, mem.PlanRequest{Ctx: req.Ctx, CtxPinned: req.CtxPinned, Slots: req.Slots, ExtraBytes: req.ExtraBytes},
+		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
+	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
+	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
+	return p
+}
 
+// planIneligible is why backend has no resident path for this model at all, before any byte is priced ("" when it has one):
+// a feature the backend does not implement, the runner's shape, MoE router capacity or per-layer geometry (ResidentEligible),
+// and on webgpu a lossy KV flag on a family whose kernels allocate f32 KV regardless (gpu/residency.go's own decline).
+func (m *Model) planIneligible(backend string, req PlanRequest) string {
 	if backend != "cpu" {
 		if missing := m.MissingResidentFeatures(ResidentBackendFeatures(backend)); len(missing) > 0 {
-			p.Placement = PlacementDecline
-			p.Reason = fmt.Sprintf("%s does not implement %v for this architecture — use the staged/CPU path", backend, missing)
-			return p
+			return fmt.Sprintf("%s does not implement %v for this architecture — use the staged/CPU path", backend, missing)
 		}
-		// MissingResidentFeatures alone is not admission: ResidentEligible also checks that the backend is a registered one (an unrecognised name
-		// plus a feature-free arch passes the check above vacuously), that the arch's own forward is bridged to the resident runner
-		// (decodeRunnerEligible), that its MoE router fits the backend's fixed-size scoreboard, and per-layer attention geometry.
+		// MissingResidentFeatures alone is not admission: an unrecognised name plus a feature-free arch passes it vacuously.
 		if !ResidentEligible(m.w.arch, backend) {
-			p.Placement = PlacementDecline
-			p.Reason = fmt.Sprintf("%s: not eligible for this architecture's resident path (unrecognised backend, "+
+			return fmt.Sprintf("%s: not eligible for this architecture's resident path (unrecognised backend, "+
 				"an own-forward shape the runner does not bridge, MoE router capacity, or per-layer attention "+
 				"geometry) — use the staged/CPU path", backend)
-			return p
 		}
 	}
-
-	// webgpu only: the Nemotron, Qwen3.5 and MLA branches always allocate f32 KV regardless of the flag. This mirrors gpu/residency.go's own
-	// decline exactly (same three eligibility checks, same combination), so Plan never promises a KV precision BuildResident will not honour.
-	var ctxCeiling int
-	if backend == "metal" {
-		// An unpinned Metal load takes at most MetalFitDefaultCtx positions (MetalFitCtx); only an explicit -ctx reaches past it, up to
-		// MetalCtxCeiling, above which Metal refuses.
-		ctxCeiling = MetalCtxCeiling
-		if !req.CtxPinned {
-			ctxCeiling = MetalFitDefaultCtx
+	if backend == "webgpu" && (req.KVF16 || req.KVI8) {
+		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
+		_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+		_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
+			map[bool]string{true: "mla"}[mlaOK]; family != "" {
+			flag := map[bool]string{true: "--kv-i8"}[req.KVI8] + map[bool]string{true: "--kv-f16"}[req.KVF16]
+			return fmt.Sprintf("webgpu: %s does not implement %s KV (only the generic GQA path does) — drop the flag to plan the resident path", family, flag)
 		}
 	}
-	if backend == "webgpu" {
-		ctxCeiling = WebGPUCtxCeiling(req.KVF16, req.KVI8)
-		if req.KVF16 || req.KVI8 {
-			_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-			_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
-			_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
-			if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
-				map[bool]string{true: "mla"}[mlaOK]; family != "" {
-				flag := map[bool]string{true: "--kv-i8"}[req.KVI8] + map[bool]string{true: "--kv-f16"}[req.KVF16]
-				p.Placement = PlacementDecline
-				p.Reason = fmt.Sprintf("webgpu: %s does not implement %s KV (only the generic GQA path does) — drop the flag to plan the resident path", family, flag)
-				return p
-			}
-		}
-	}
-
-	p.DenseBytes = m.ResidentDenseWeightBytesFor(backend) // less what backend keeps host-side (CUDA: an untied embedding table)
-	nExperts, topK, isMoE := m.moeGeometry()
-	if isMoE {
-		p.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
-	}
-
-	// tryCtx computes KV bytes at ctx and reports whether dense+KV+extra alone (a model with no experts, or one whose experts this attempt
-	// ignores) fits, and on webgpu whether ctx is within WebGPUCtxCeiling: bytes fitting is not enough there, since the fixed per-precision cap
-	// refuses positions past it regardless of free VRAM. hostFixed is the host copy that stays whatever the expert cache does: the dense
-	// weights' (paged experts stream and hold no host copy, so slots=1 prices exactly that). Zero off Metal.
-	hostFixed := m.residentHostCopyFor(backend, 1)
-	kvF16 := req.KVF16
-	if backend == "cuda" {
-		kvF16 = m.kvF16 // CUDA's precision is the load's own resolution (kv16_cuda.go), not a flag the planner is handed
-	}
-	kvAt := func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, kvF16, req.KVI8) }
-	tryCtx := func(ctx int) (kv int64, fits bool) {
-		kv = kvAt(ctx)
-		fits = p.DenseBytes+hostFixed+kv+req.ExtraBytes <= freeBytes
-		if ctxCeiling > 0 && ctx > ctxCeiling {
-			fits = false
-		}
-		return kv, fits
-	}
-
-	// chooseCtx applies the priority order's first step: the requested ctx if it fits (with dense
-	// weights and extras, ignoring experts for now — the CHEAPEST possible fixed-term check, since
-	// if even this fails no expert cap will save it), else the largest multiple-free ctx down to
-	// ctxPlanFloor. Pinned requests never shrink. Off CUDA, KV bytes are linear in ctx (on Metal's
-	// 8-position grid), so this is arithmetic; CUDA's are a step function plus a constant (whole
-	// 64-row blocks, the null blocks, the tables), so it searches.
-	chooseCtx := func() (ctx int, kv int64, ok bool) {
-		if kv, fits := tryCtx(req.Ctx); fits {
-			return req.Ctx, kv, true
-		}
-		if req.CtxPinned {
-			kv, _ := tryCtx(req.Ctx)
-			return req.Ctx, kv, false
-		}
-		if backend == "cuda" {
-			// KV bytes are not linear in ctx here: the pools hold whole 64-row blocks beside a constant (the null blocks), and a windowed
-			// layer flattens at window+slack. A rate read off one position prices a whole block for it, so search for the largest context
-			// that fits (tryCtx is monotone in ctx). Same floor and same "never grow past what was asked" as the arithmetic path.
-			if _, fits := tryCtx(ctxPlanFloor); !fits {
-				return req.Ctx, kvAt(req.Ctx), false
-			}
-			lo, hi := ctxPlanFloor, req.Ctx // fits(lo), !fits(hi)
-			for hi-lo > 1 {
-				if mid := lo + (hi-lo)/2; func() bool { _, ok := tryCtx(mid); return ok }() {
-					lo = mid
-				} else {
-					hi = mid
-				}
-			}
-			return lo, kvAt(lo), true
-		}
-		// Metal allocates KV in 8-position steps, so evaluate the rate over one step and keep the
-		// shrunk ctx on that grid: then kvAt(fitCtx) is exactly perPos*fitCtx, what Metal allocates.
-		step := 1
-		if backend == "metal" {
-			step = metalKVPad
-		}
-		perPos := kvAt(step) / int64(step)
-		if perPos <= 0 {
-			return req.Ctx, 0, false
-		}
-		budget := freeBytes - p.DenseBytes - hostFixed - req.ExtraBytes
-		fitCtx := int(budget/perPos) / step * step
-		if ctxCeiling > 0 && fitCtx > ctxCeiling {
-			fitCtx = ctxCeiling // the fixed per-precision cap, not a byte budget — never grow past it either
-		}
-		if fitCtx < ctxPlanFloor {
-			return req.Ctx, kvAt(req.Ctx), false
-		}
-		if fitCtx > req.Ctx {
-			fitCtx = req.Ctx // never GROW past what was asked
-		}
-		return fitCtx, kvAt(fitCtx), true
-	}
-
-	ctx, kv, ctxOK := chooseCtx()
-	p.Ctx, p.KVBytes = ctx, kv
-
-	if !ctxOK {
-		if ctxCeiling > 0 && req.Ctx > ctxCeiling {
-			if backend == "metal" {
-				return p.decline(backend, "context %d exceeds metal's %d-position ceiling — pass a smaller -ctx", req.Ctx, ctxCeiling)
-			}
-			return p.decline(backend, "context %d exceeds webgpu's fixed %d-position ceiling at this KV precision (M-32) — pass a smaller -ctx or drop --kv-f16/--kv-i8",
-				req.Ctx, ctxCeiling)
-		}
-		return p.decline(backend, "context %d does not fit even at the %d-position floor: dense %.2f GB%s + KV %.2f GB exceeds %.2f GB free",
-			req.Ctx, ctxPlanFloor, gb(p.DenseBytes), hostCopyNote(hostFixed), gb(kv), gb(freeBytes))
-	}
-
-	if !isMoE {
-		p.Placement = PlacementResident
-		p.HostCopyBytes = hostFixed
-		p.Reason = fmt.Sprintf("dense %.2f GB%s + KV@%d %.2f GB fits %.2f GB free", gb(p.DenseBytes), hostCopyNote(hostFixed), ctx, gb(kv), gb(freeBytes))
-		return p
-	}
-
-	// MoE: try fully resident first (every expert, unpaged) at the ctx just chosen. Unpaged experts
-	// carry a host copy too on Metal (slots=0 prices it).
-	if hostAll := m.residentHostCopyFor(backend, 0); p.DenseBytes+p.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= freeBytes {
-		p.Placement = PlacementResident
-		p.ExpertBytesUsed = p.ExpertBytesFull
-		p.HostCopyBytes = hostAll
-		p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
-			gb(p.DenseBytes), gb(p.ExpertBytesFull), hostCopyNote(hostAll), ctx, gb(kv), gb(freeBytes))
-		return p
-	}
-
-	// Cache the routed experts: the largest slot count whose bytes fit beside the fixed terms.
-	// A layer's experts are uniform in shape (same assumption ResidentWeightBytesPaged makes), so
-	// per-expert bytes = full/nExperts exactly and the slot count is arithmetic, not a search.
-	remaining := freeBytes - p.DenseBytes - hostFixed - kv - req.ExtraBytes
-	if remaining <= 0 {
-		return p.decline(backend, "dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
-			gb(p.DenseBytes), hostCopyNote(hostFixed), ctx, gb(kv), gb(freeBytes))
-	}
-	perExpert := p.ExpertBytesFull / int64(nExperts)
-	slots := int(remaining / perExpert)
-	if req.Slots > 0 && req.Slots < slots {
-		slots = req.Slots // an explicit, smaller request is honoured even if more would fit
-	}
-	if slots > nExperts {
-		slots = nExperts
-	}
-	if slots < topK {
-		return p.decline(backend, "expert-cached needs at least top-k=%d slots/layer (%.2f GB) but only %.2f GB is free beside dense+KV",
-			topK, gb(int64(topK)*perExpert), gb(remaining))
-	}
-
-	p.Placement = PlacementExpertCached
-	p.Slots = slots
-	p.ExpertBytesUsed = int64(slots) * perExpert
-	p.HostCopyBytes = hostFixed
-	p.Reason = fmt.Sprintf("dense %.2f GB%s + %d/%d experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",
-		gb(p.DenseBytes), hostCopyNote(hostFixed), slots, nExperts, gb(p.ExpertBytesUsed), ctx, gb(kv), gb(freeBytes))
-	return p
+	return ""
 }
 
-// hostCopyNote names Metal's host-copy term in a Plan reason when there is one.
-func hostCopyNote(b int64) string {
-	if b <= 0 {
-		return ""
+// deviceLoad is this model on backend as internal/mem's planner prices it: the dense weights less what the backend keeps on the
+// host, the routed experts, Metal's host copies, the backend's KV at a context (CUDA at the load's own KV precision, not a flag
+// the planner is handed), and the backend's context grid and ceiling: Metal's is MetalCtxCeiling for a pinned request and
+// MetalFitDefaultCtx for an unpinned one (MetalFitCtx), WebGPU's its fixed per-precision cap.
+func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceLoad {
+	l := mem.DeviceLoad{Backend: backend, Tier: planTier(backend), DenseBytes: m.ResidentDenseWeightBytesFor(backend), CtxStep: 1}
+	if nExperts, topK, isMoE := m.moeGeometry(); isMoE {
+		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
+		l.NExperts, l.TopK = nExperts, topK
 	}
-	return fmt.Sprintf(" + host copy %.2f GB", gb(b))
+	l.HostFixed = m.residentHostCopyFor(backend, 1)
+	l.HostAll = func() int64 { return m.residentHostCopyFor(backend, 0) }
+	switch backend {
+	case "metal":
+		l.CtxStep, l.CtxCeiling = metalKVPad, MetalCtxCeiling
+		if !pinned {
+			l.CtxCeiling = MetalFitDefaultCtx
+		}
+	case "webgpu":
+		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
+	case "cuda":
+		kvF16 = m.kvF16
+		l.CtxSearch = true
+	}
+	l.KV = func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) }
+	return l
 }
 
-// decline finishes Plan on the non-fitting path. CPU alone never declines outright: it can always fall back to weight-paging from disk
-// (docs/tasks/task-fit-to-hardware.md §1: -weight-cache 0 is auto, about half of available RAM), just slower, so a CPU decline reads as
-// weight-paged with the same numbers instead of a hard refusal.
-func (p Plan) decline(backend, format string, args ...any) Plan {
-	p.Reason = fmt.Sprintf(format, args...)
-	if backend == "cpu" {
-		p.Placement = PlacementWeightPaged
-	} else {
-		p.Placement = PlacementDecline
+// planTier is the internal/mem tier whose reading is backend's free memory.
+func planTier(backend string) mem.Tier {
+	switch backend {
+	case "cuda", "webgpu":
+		return mem.VRAM
+	case "metal":
+		return mem.Unified
+	default:
+		return mem.HostAnon
 	}
-	return p
 }
-
-func gb(b int64) float64 { return float64(b) / (1 << 30) }

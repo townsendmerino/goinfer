@@ -842,6 +842,71 @@ windows; the pinned staticcheck after its canary went red (it found `fitCheck.re
 `FitDeclineError` as adapters: a `fitCheck` becomes a `mem.HostCheck` (its KV as a curve over `estimateKVBytes`), and
 `guardFit`, `decideGIWFit`, `AdmitPrefillMemoryShare`, `FitBudgetSummary` and `resolveWeightCacheBudget` call `mem`.
 
+
+#### MM1b's gates (`Plan` and `MetalFitCtx`), registered 2026-10-26 before the code (nobara-mm01)
+
+**What moves.** `Model.Plan`'s placement arithmetic (the context search toward the 4,096 floor, the resident and expert-cached
+fits, the slot count, every reason line, and the CPU's weight-paged fallback) becomes `mem.SolvePlacement`. `MetalFitCtx`'s
+search becomes `mem.SolveMetalCtx`, which calls `SolvePlacement` itself. The decoder keeps the eligibility checks: missing
+features, `ResidentEligible`, and WebGPU's decline of a KV flag on the families that do not implement it. Those read the
+model's architecture, not its bytes. The decoder also keeps the byte counts it hands in: dense, experts, the host copies, and
+KV as a curve per backend. `mem` gets its own `Placement`, which the decoder maps to its public one (§3 item 3: never an
+alias). `Policy` gains the plan floor (4,096) and Metal's fit margin (384 MiB) at today's values.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM1b-1 the census | `TestDecisionCensus` passes without `-census.update`, D3 and D4 included, byte for byte | the golden's class not found on an amd64 host | runs to completion | 16 s |
+| G-MM1b-2 pure and monotone | `TestSolve_pure` and `TestSolve_monotone` cover `SolvePlacement` and `SolveMetalCtx` on generated inputs. More free memory never moves a placement down the order decline, weight-paged, expert-cached, resident; never gives fewer slots at the same placement or a smaller context at the same placement; and never gives `MetalFitCtx` a smaller context. The monotone test goes red on a planted defect | — | runs to completion | seconds |
+| G-MM1b-3 the existing tests | the decoder's `Plan` and `MetalFitCtx` tests (`fitplan*_test.go`, `metal_fitctx*_test.go`, every test calling `.Plan(` or `MetalFitCtx(`) and `metal/`'s fit tests (vet on darwin) pass unchanged; `cuda`, `metal` and `gpu` vet with their tags | — | runs to completion | about a minute |
+| G-MM1b-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**G-MM1b-2 amended before its pass, 2026-10-26 (nobara-mm01), with the evidence.** The registered rule ("never fewer slots at
+the same placement") fails on today's planner, by design: it takes context before experts. Measured on a generated MoE (8
+experts, top-8) at 16 GiB free, it was expert-cached at context 6,080 with 8 slots; at 32 GiB, expert-cached at context
+83,328 with 2. The census shows the same arithmetic before and after the move, so the rule, not the move, was wrong. Holding
+slots monotone would change placements, which is Francis's call; it is not done here. The amended rule: placement never moves
+down the order; at the same resident or expert-cached placement, the context never shrinks, nor the slots at the same context;
+`MetalFitCtx`'s context never shrinks. A refusal's context only echoes the attempt and is not compared. It goes red on a
+planted defect (a refusal above 32 GiB free).
+
+**MM1b read, 2026-10-26 (nobara): all four pass, G-MM1b-2 as amended.** G-MM1b-1: `TestDecisionCensus` passes without
+`-census.update`, D3 and D4 included, every group byte for byte. G-MM1b-2: `TestSolvePlacement_pure` (10,000 inputs, twice and
+in 16 goroutines) and `TestSolvePlacement_monotone` pass. G-MM1b-3: the 18 decoder `Plan` and `MetalFitCtx` tests pass
+unchanged. `TestPlan_extraBytesReservedAheadOfExperts` skips for want of `testdata/gemma4-moe-tiny`, as it does on main. `cuda`,
+`metal` and `gpu` vet with their tags. G-MM1b-4: vet on three systems, the pinned staticcheck (it found `gb` left unused, now
+removed), gofmt, the layout test, the citation lint; the parity manifest stayed fresh.
+
+#### MM1c's gates (`ResolveKV`, and I6's scan), registered 2026-10-26 before the code (nobara-mm01)
+
+**What moves.** `ResolveKV`'s resolution order becomes `mem.ResolveKV`: no KV for a model without attention; the CPU cache's
+rules (batched decode reads f32 only; f16 and i8 where the family allows it); Metal's (MLA keeps f32; auto is f16); CUDA's
+(int8 not yet; the drafter keeps f32; a family the policy declines keeps f32; auto per the policy); and the rest (auto is
+f32). The decoder keeps the policy registry and its public types (`KVFacts`, `KVF16Policy`, `RegisterKVF16Policy`,
+`CUDAKVF16Decline`, `CUDAKVF16AutoDecline`), because the cuda module registers against them. The policy reaches `mem` as
+closures bound to the load's options. The decoder also keeps `resolveKVHook`, a test seam, and the architecture predicates,
+which `mem` takes as booleans.
+
+**I6, as far as MM1 reaches.** A source scan over every non-test Go file outside `internal/mem` finds each reference to a
+guard threshold: `WeightsMemFraction`, `fitMemFraction`, `prefillAvailFraction`, `giwMemMargin`, `residentMemFraction`,
+`MetalFitMarginBytes`, `ctxPlanFloor`, `fitWarnRatio`, `ctxFloor`, and `mem`'s own constant names. Each must be a constant
+declaration that aliases `mem` (directly or through one decoder alias), or a site on a ratchet list whose per-file count may
+only fall. The list today: `gpu/kv_slots.go` 2 and `metal/backend.go` 3, the backends' own guards, which MM2 removes. The
+scan must go red on a planted reference.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM1c-1 the census | `TestDecisionCensus` passes without `-census.update`, D7 and every decision that reads `ResolveKV` (D1, D2 through `kvPricingFor`) included | the golden's class not found on an amd64 host | runs to completion | 16 s |
+| G-MM1c-2 the existing tests | every decoder test that calls `ResolveKV`, `kvRefusal`, `KVPrecisionReports` or `KVDelivered`, and the `cuda` module's KV policy tests (vet with tags; the device ones run on nobara), pass unchanged | — | runs to completion | about a minute |
+| G-MM1c-3 I6's scan | `TestNoGuardThresholdOutsideMem` passes on the tree, reads every non-test file, and goes red on a planted reference | it reads fewer files than the tree holds | runs to completion | seconds |
+| G-MM1c-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM1c read, 2026-10-26 (nobara): all four pass.** G-MM1c-1: `TestDecisionCensus` passes without `-census.update`. G-MM1c-2: the
+decoder's six KV-resolution tests pass unchanged, the generated precision matrix among them. The `cuda` module's KV16 and KV4
+identity and default tests pass on the RTX 2070 SUPER under the timing lock (47 cases with subtests), and so does the `gpu`
+module's `ResolveKV` test. G-MM1c-3: `TestNoGuardThresholdOutsideMem` reads 726 non-test files. It finds exactly the ratchet
+(`gpu/kv_slots.go` 2, `metal/backend.go` 3) and counts a planted reference. G-MM1c-4: vet on three systems and with the
+module tags, the pinned staticcheck, gofmt, `test_touched.py`; the parity manifest stayed fresh. MM1 is done with this:
+D1–D7 run through `internal/mem`, and the census holds byte for byte.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

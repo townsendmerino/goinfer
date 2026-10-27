@@ -541,8 +541,13 @@ backends").
 
 Two mechanisms, easily confused:
 
-**The fit guard** runs inside every `decoder.Load` (`decoder/fitguard.go`). It exists so that a load
-refuses instead of swapping. It prices a load against `WeightsMemFraction` (0.70) of available RAM:
+**Where the decisions live.** Every memory decision is a pure function in `internal/mem`, which
+takes its inputs as numbers and its machine state as data. `internal/mem/probe` is the one package that
+reads the OS's account of memory. The decoder reads the checkpoint and the probe, then hands `mem` the
+numbers. `TestDecisionCensus` holds the decisions to a committed golden, byte for byte.
+
+**The fit guard** runs inside every `decoder.Load` (`decoder/fitguard.go`, deciding in `mem.SolveHost` and
+`mem.SolveGIW`). It exists so that a load refuses instead of swapping. It prices a load against `WeightsMemFraction` (0.70) of available RAM:
 - **a direct load**: the weights, KV at the model's maximum context, and the mapped source;
 - **a `.giw` load**: only KV and scratch, since the weights are mapped.
 
@@ -555,8 +560,8 @@ In either case it pins the context to what fits, or returns a `*FitDeclineError`
 
 `--fit=off` keeps the flat defaults.
 
-**The planner** is `Model.Plan(backend, free, req)` (`decoder/fitplan.go`). For a backend and a
-memory budget it returns a placement (resident, expert-cached, weight-paged or decline) and the terms
+**The planner** is `Model.Plan(backend, free, req)` (`decoder/fitplan.go`, deciding in
+`mem.SolvePlacement`). For a backend and a memory budget it returns a placement (resident, expert-cached, weight-paged or decline) and the terms
 it priced. The **`fit` subcommand** (`goinfer-chat fit <model>`) loads the model and prints that
 placement for every backend compiled into the binary. `-measure` also times decode on the best one.
 
@@ -572,7 +577,12 @@ placement for every backend compiled into the binary. `-measure` also times deco
 - `decoder.WeightsMemFraction`: the single 0.70.
 - `RegisterMemoryProbe`: how a backend tells `Plan` and `fit` how much device memory is free.
 
-serve also admits each request's KV and scratch before its prefill (`AdmitPrefillMemory`).
+serve also admits each request's KV and scratch before its prefill (`AdmitPrefillMemory`, deciding in
+`mem.AdmitRequest`).
+
+The plan's context cap and KV slot count size the backend's KV pools. `internal/kvmgr` manages that many
+slots, and its block manager has no limit of its own. Planned (MM4, KV11): an arbiter in `internal/mem`
+becomes the one budget for KV blocks, expert slots and the prefix cache, and kvmgr asks it for blocks.
 
 ### Running bigger than RAM
 

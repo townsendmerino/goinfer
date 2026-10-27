@@ -5,6 +5,10 @@
 //
 // It imports nothing from decoder, so its tests run apart from decoder's; decoder derives the Geometry from an
 // Architecture and re-exports the types a backend needs.
+//
+// Its size comes from the load's memory plan (internal/mem): decoder creates it with NewSlots(the resident's KV slot count),
+// and its Manager has no block limit (New(0)), because the backend's pools, sized by the plan, bound the bytes. Planned (MM4,
+// KV11): the Manager asks internal/mem's arbiter for blocks instead, and keeps choosing which block an eviction takes.
 package kvmgr
 
 import (
