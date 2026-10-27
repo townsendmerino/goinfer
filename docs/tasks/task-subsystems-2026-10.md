@@ -1557,6 +1557,39 @@ If I3 misses its band, the finding is reported first and the band is not widened
 - **Re-run:** the device suite under the exclusive lock (34 pass, 102 devices released, no break; I3 unchanged at 3.9 MB and
   3.4 MB), `touched.py`, the pinned staticcheck, `test_touched.py` and the citation lint. Log: mm3a-device3.
 
+#### MM3c's gates (leases in Metal's allocator), registered 2026-10-27 (nobara-mm01; Francis's go of 11:08)
+
+The lease code in `metal/internal/gpudev` (the `Leaser`, `MustBufOn`, the lined constructors) was written before this
+section, while surveying, and is not yet committed. Everything else is written after it, and every gate is graded after it.
+The device gates run on a Mac: their commands are in `/tmp/mm3-metal.md`, handed to a Mac session by the coordinator.
+
+**The design (CUDA's, with Metal's differences).**
+- **gpudev leases every MTLBuffer** through a `Leaser` that the metal package installs at init (`gpudev.NewLeaser`). gpudev
+  imports nothing of goinfer's ("gpudev-standalone").
+  - A buffer's requested bytes are its `length`, its charged bytes its `allocatedSize`.
+  - It leases on `Unified`; a `NewBufferNoCopy` alias leases on `FileMapped` (Francis's go).
+- **The metal package has no allocation chokepoint.** Model code calls gpudev's constructors and the package's own helpers
+  (`NewBufferU32`, `NewBufferFloats`, `byteBuf`, the int4, int8 and q4k packers, the alias helpers) at 519 sites.
+  - Each helper gets a lined twin (`…On(line, …)`); the unlined name stays as a wrapper on `gpudev.UnlinedLine` for the 826
+    test call sites.
+  - Every production call site names its line, chosen by its enclosing function (with per-line overrides where a function
+    mixes lines), by a typed rewrite (go/types, darwin).
+  - Lines: `dense` (weights, norms, RoPE tables), `experts` (expert stacks and their biases, the expert pool), `kv`, `state`
+    (recurrent and conv state, checkpoints), `companion` (towers, encoders, LoRA), `test` (test hooks), `scratch` (the
+    rest: activations and the per-op uniforms).
+- **Nothing reads the ledger to decide.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3c-1 I1, static | a scan over every non-test file of the metal module finds no call to an unlined gpudev constructor (`NewBufferLen`, `NewBufferBytes`, `NewBufferNoCopy`, `MustBuf`, `NewBufferOf`, `NewBufferLenOf`) or an unlined metal helper outside its own wrapper; it reads every file and goes red on a planted call. It runs on darwin; the metal-darwin CI job runs it, and it is also run from Linux with a darwin type-check before the push | it reads fewer files than the module holds | runs to completion | seconds |
+| G-MM3c-2 I1 and I2, dynamic (Mac) | a release hook in the metal package's `TestMain` fails the run if any released device had an unplanned byte, or a lease open after release; run with the Mac's device suite (the commands name the tests) | the Mac's apps hold the GPU (the run notes `CurrentAllocatedSize` at its start) | one run | the Mac session's estimate |
+| G-MM3c-3 I2 per request (Mac) | on llama-tiny resident on Metal, the charged bytes after a second and a third identical request equal those after the first | as G-MM3c-2 | one run | seconds |
+| G-MM3c-4 I3 (Mac) | `CurrentAllocatedSize` just after the resident's device is created, against after the build and one request on llama-tiny: **charged (Unified) ≤ measured ≤ charged + 64 MiB** (pipelines, libraries, the command queue). The FileMapped leases are reported apart, with whether the measured delta includes them | another Metal allocation in the process during the cell | one run | seconds |
+| G-MM3c-5 no guard change | `TestDecisionCensus` passes unchanged; the Mac's Metal fit tests (`MetalFitCtx`, the memory guard) pass unchanged; nothing outside tests reads the ledger | — | runs to completion | about a minute |
+| G-MM3c-6 builds | vet for darwin (untagged and `goinfer_testhooks`), the pinned staticcheck for darwin with its canary, gofmt, `touched.py`, the layout tests, the citation lint | — | runs to completion | about two minutes |
+
+If I3 misses its band on the Mac, the finding is reported first and the band is not widened.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
