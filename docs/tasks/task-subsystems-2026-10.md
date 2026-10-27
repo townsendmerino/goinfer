@@ -57,7 +57,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
-| SB4 | active | mbp2-sb4, branch `sb4-loader-identity-2026-10`: the loader identity by per-tensor hashes, a shadow input only; gates LI1–LI7 registered 2026-10-27; M | §8 SB4 |
+| SB4 | decision | 2026-10-27 (mbp2-sb4): `loaderIdentity` and `testdata/loader_identity.json` (amd64: 39 fixtures, 234 fixture-mode pairs; arm64 is a Mac's `-update`), read by `paritykey.LoaderDigest` and no key; LI1–LI6 PASS, each test shown red once; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights. Waits on how the identity enters the key (VK; recommended: a week-3 shadow after week 2) | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
@@ -2269,6 +2269,17 @@ how it enters the key. This item changes no key. Every gate below is tier 0: tin
 load: a loader change on a path no fixture takes (GPTQ, AWQ, a sharded set, a GGUF quant type no tiny GGUF holds)
 leaves every identity unchanged and reads as a refactor. `decoder/gguf.go` is covered only for the families with a GGUF
 fixture.
+
+**Graded 2026-10-27: LI1–LI6 PASS** (`docs/measurements/sb4-2026-10.md`).
+- LI1: 234 fixture-mode pairs on amd64, each stable across two loads and two processes.
+- LI2: one flipped sign bit moves exactly `Layers[0].KProj`, in 6 modes for `llama-tiny` and 6 for `glm-tiny.gguf`.
+- LI3: 162 `.giw` round trips leave every identity unchanged (bf16 and f16 left out: the `.giw` has no form for them,
+  and `SerializeWeights` writes a blob its reader refuses, a finding); a `weights.go` refactor leaves the table green
+  while today's key re-stales all 43 families.
+- LI4: a Phi-3 final-norm change moves `phi3-tiny` alone.
+- LI5, LI6: the walk panics on an unknown kind; no key moved (43 agree-fresh).
+- Every test was shown red once by a mutation, listed in the record.
+- How the identity enters the key is VK's decision (the record's §4: a week-3 shadow after week 2 is recommended).
 
 ### SB5 — engine policies (sessions, prefix reuse, speculative decoding, sampling, constraints)
 
