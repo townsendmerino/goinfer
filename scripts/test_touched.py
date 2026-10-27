@@ -46,6 +46,11 @@ class CountFlagFollowsTheTestCacheData(unittest.TestCase):
         c = self.data('{"declared": {"internal/f16": ["timing"]}, "packages": {"internal/f16": {"cacheable": true}}}')
         self.assertEqual(touched.count_flag("internal/f16", c), ["-count=1"])
 
+    def test_a_declared_reason_not_yet_applied_keeps_it_everywhere(self):
+        # internal/towerid may import internal/f16; the data was not regenerated after the declaration, so trust no entry.
+        c = self.data('{"declared": {"internal/f16": ["timing"]}, "packages": {"internal/f16": {"cacheable": true}, "internal/towerid": {"cacheable": true}}}')
+        self.assertEqual(c, set())
+
     def test_a_missing_or_malformed_file_keeps_it_everywhere(self):
         self.assertEqual(touched.cacheable_packages("/nonexistent/test_cache.json"), set())
         for body in ("{", "[]", '{"packages": 3}', '{"packages": {"x": "y"}}'):
@@ -106,6 +111,8 @@ READS = re.compile(r'parser\.Parse(File|Dir)\(|"\*\.go"|"\*\.cu"|\.go"\)|\.cu"\)
 # go.mod or fixtures.
 NOT_SOURCE_READERS = {
     "TestCommentsOnly_gitCommitGreenAndRed": "a synthetic repo in a temp dir",
+    "TestFileHidden_markers": "Go snippets in the test itself",
+    "TestScanTestCache_tree": "a synthetic tree in a temp dir",
     "TestCommentsOnly_worktreeMode": "a synthetic repo in a temp dir",
     "TestIdentityDumperTemplate_isGoAndHasItsMarkers": "parses the embedded dumper template",
     "TestLedger_classifyOutcomes": "a scratch tree (ledgerScratch)",

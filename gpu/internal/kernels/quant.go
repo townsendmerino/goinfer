@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -102,12 +103,12 @@ func (rm *ResidentW8A8) Close() error {
 		traceFree(rm)
 		if rm.bq != nil {
 			accountFree(int64(rm.bq.GetSize()))
-			rm.bq.Release()
+			releaseBuf(rm.bq)
 			rm.bq = nil
 		}
 		if rm.bScales != nil {
 			accountFree(int64(rm.bScales.GetSize()))
-			rm.bScales.Release()
+			releaseBuf(rm.bScales)
 			rm.bScales = nil
 		}
 	})
@@ -151,17 +152,17 @@ func (c *Context) UploadW8A8(q8 []int8, scales []float32, N, K int) (*ResidentW8
 		return nil, fmt.Errorf("gpu: UploadW8A8 input too small: q8=%d (need %d) scales=%d (need %d)", len(q8), N*K, len(scales), N)
 	}
 	packed := packInt8(q8, N, K)
-	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	bq, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
 		Label: "w8a8-weight", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 weight buffer: %w", err)
 	}
-	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	sc, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
 		Label: "w8a8-bscales", Contents: wgpu.ToBytes(scales[:N]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
-		bq.Release()
+		releaseBuf(bq)
 		return nil, fmt.Errorf("gpu: create W8A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
@@ -183,50 +184,50 @@ func (c *Context) MatmulW8A8(aq []int8, aScales []float32, rm *ResidentW8A8, M i
 		return nil, fmt.Errorf("gpu: MatmulW8A8 input too small: aq=%d (need %d) aScales=%d (need %d)", len(aq), M*K, len(aScales), M)
 	}
 	packed := packInt8(aq, M, K)
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "w8a8-act", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 act buffer: %w", err)
 	}
-	defer aBuf.Release()
-	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	defer releaseBuf(aBuf)
+	asBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "w8a8-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 ascales buffer: %w", err)
 	}
-	defer asBuf.Release()
+	defer releaseBuf(asBuf)
 	return c.runQuant(aBuf, asBuf, rm, M, N)
 }
 
 // runQuant dispatches the W8A8 pipeline and reads back the [M,N] f32 result.
 func (c *Context) runQuant(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, M, N int) ([]float32, error) {
 	dstSize := uint64(M * N * 4)
-	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "w8a8-dst", Size: dstSize, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 dst buffer: %w", err)
 	}
-	defer dstBuf.Release()
+	defer releaseBuf(dstBuf)
 
 	dims := []uint32{uint32(M), uint32(rm.kp), uint32(N), 0}
-	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "w8a8-dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 dims buffer: %w", err)
 	}
-	defer dimsBuf.Release()
+	defer releaseBuf(dimsBuf)
 
-	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	stage, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "w8a8-stage", Size: dstSize, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 staging buffer: %w", err)
 	}
-	defer stage.Release()
+	defer releaseBuf(stage)
 
 	bindGroup, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.quantLayout,

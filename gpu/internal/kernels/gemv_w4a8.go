@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -103,12 +104,12 @@ func (rm *ResidentW4A8) Close() error {
 		traceFree(rm)
 		if rm.bq != nil {
 			accountFree(int64(rm.bq.GetSize()))
-			rm.bq.Release()
+			releaseBuf(rm.bq)
 			rm.bq = nil
 		}
 		if rm.bScales != nil {
 			accountFree(int64(rm.bScales.GetSize()))
-			rm.bScales.Release()
+			releaseBuf(rm.bScales)
 			rm.bScales = nil
 		}
 	})
@@ -195,7 +196,7 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 		return nil, fmt.Errorf("gpu: UploadW4A8 scales too small: %d < %d", len(scales), N*nGroups)
 	}
 	packed := packNibbles(nib, N, K)
-	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	bq, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
 		Label: "w4a8-weight", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -207,11 +208,11 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 	for r := range N {
 		copy(sc[r*nGroups:(r+1)*nGroups], scales[r*nGroups:(r+1)*nGroups])
 	}
-	bs, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	bs, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
 		Label: "w4a8-bscales", Contents: wgpu.ToBytes(PackF16Pairs(sc)), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
-		bq.Release()
+		releaseBuf(bq)
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))
@@ -240,17 +241,17 @@ func (c *Context) UploadW4A8Packed(q4 []byte, scales []float32, N, K int) (*Resi
 	if len(scales) < N*nGroups {
 		return nil, fmt.Errorf("gpu: UploadW4A8Packed scales too small: %d < %d", len(scales), N*nGroups)
 	}
-	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	bq, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
 		Label: "w4a8-weight", Contents: q4[:wantBytes], Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W4A8 weight buffer: %w", err)
 	}
-	bs, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	bs, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
 		Label: "w4a8-bscales", Contents: wgpu.ToBytes(PackF16Pairs(scales[:N*nGroups])), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
-		bq.Release()
+		releaseBuf(bq)
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))

@@ -1557,6 +1557,73 @@ If I3 misses its band, the finding is reported first and the band is not widened
 - **Re-run:** the device suite under the exclusive lock (34 pass, 102 devices released, no break; I3 unchanged at 3.9 MB and
   3.4 MB), `touched.py`, the pinned staticcheck, `test_touched.py` and the citation lint. Log: mm3a-device3.
 
+#### MM3b's gates (leases in WebGPU's allocator), registered 2026-10-27 before the code (nobara-mm01; Francis's go of 11:08)
+
+**What is different from CUDA.**
+- WebGPU has no allocation chokepoint. The kernels package calls `wgpu.Device.(Try)CreateBuffer(Init)` directly at 133 sites,
+  and the gpu package at 3 more. Buffers are freed by `Release` or `Destroy` at 168 sites, mixed in with releases of
+  pipelines, bind groups and encoders.
+- The existing `liveBufferBytes` counts only the caller-owned wrapper types, process-wide.
+
+**The design.**
+- **Every creation goes through a lined Context wrapper** (`c.createBuffer(line, …)` and its siblings, exported as
+  `kernels.CreateBufferOn` for the gpu package). It leases the buffer's `GetSize()` bytes on the Context's `mem.Ledger`
+  (tier VRAM) and records the lease against the buffer.
+- **Every buffer release goes through `releaseBuf` (or `destroyBuf`)**, which closes the lease.
+- **The rewrite is mechanical.** A typed scan (go/types) found the release sites, so only `*wgpu.Buffer` releases are
+  rewritten. Pipelines and bind groups are untouched.
+- **Lines by enclosing function:**
+  - `kv`: the KV caches and MLA's latent store;
+  - `dense`: the weight uploads;
+  - `experts`: the stacked experts;
+  - `companion`: vision, towers and LoRA;
+  - `scratch`: the per-call ops and the runners' buffers.
+- **`liveBufferBytes` stays as it is**, a separate gauge.
+- **Nothing reads the ledger to decide.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3b-1 I1, static | a typed scan over the gpu module's non-test code (`gpu` and `gpu/internal/kernels`, tags `gpu goinfer_testhooks`) finds no `CreateBuffer`, `CreateBufferInit`, `TryCreateBuffer` or `TryCreateBufferInit` call outside the lined wrappers, and no `Release` or `Destroy` of a `*wgpu.Buffer` outside `releaseBuf` and `destroyBuf`. It goes red on a planted call of each kind | it reads fewer files than the packages hold | runs to completion | seconds |
+| G-MM3b-2 I1 and I2, dynamic | a release check on every Context the gpu module's tests close: no unplanned byte ever, and no open lease after `Close`. Run once on nobara's card (Vulkan; tags `gpu goinfer_testhooks`; the KV-slot, residency, leak and parity tests), with `-v` | a timed run holds the card | one run | minutes |
+| G-MM3b-3 I2 per request | on llama-tiny, the charged bytes after a second and a third identical request equal those after the first | as G-MM3b-2 | one run | seconds |
+| G-MM3b-4 I3 | after the build and one request on llama-tiny (resident on WebGPU), the ledger's open VRAM leases equal wgpu-native's registry count of buffers the user holds (`GenerateReport().Hub.Buffers.NumKeptFromUser`), exactly. The bytes are reported beside the process's VRAM from `nvidia-smi`; that comparison is context only, not graded, because the Vulkan allocator sub-allocates buffers from large blocks | the registry's count is shown to include buffers the runtime holds for itself: reported, not re-banded | one run | seconds |
+| G-MM3b-5 no guard change | `TestDecisionCensus` passes unchanged; the WebGPU KV-slot and fit tests pass unchanged; nothing outside tests reads the ledger | — | runs to completion | about a minute |
+| G-MM3b-6 builds | vet with the gpu tags, the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests (`imports.json` updated for any new arrow), the citation lint | — | runs to completion | about two minutes |
+
+**Found while building, before the gates' read.**
+- **Freeing by method value.** The runners keep buffer releases as method values (`r.keep = append(r.keep, b.Release)`), and
+  so do 16 other sites, which free a buffer later without a call at the site. The typed scan counts a method value as a free,
+  and those sites take `releaser(b)`, which binds `b` when it is evaluated, as the method value did.
+- **The ledger must not keep a buffer alive.** Some buffers are never released explicitly; the binding's finalizer frees them
+  when the GC collects them. A first version keyed leases by the buffer itself. That kept those buffers, and the Vulkan devices
+  they pin, alive, and the kernels suite ran out of devices ("Not enough memory left"; main passes all 110). Leases are now
+  keyed by a weak pointer, and a `runtime.AddCleanup` closes a collected buffer's lease.
+- **The check must not force collection inside `Close`.** A first version of the check ran the GC inside `Close` and so started
+  finalizer-driven device releases beside the caller's. `TestContextClose_lateWrapperClose` deadlocked. The hooks now keep each
+  closed Context's ledger, and `LedgerBreaks` judges them once after the run, letting the GC collect first.
+
+**MM3b read, 2026-10-27 (nobara, RTX 2070 SUPER over Vulkan; exclusive timing lock): all six pass.**
+- **G-MM3b-1:** `TestLedger_everyBufferIsLeased` type-checks the 61 non-test files of `gpu` and `gpu/internal/kernels` and
+  finds no create, release or destroy outside the wrappers. The plant gives 4: a create, a release, a destroy and a method
+  value; a pipeline's `Release` is not counted.
+- **G-MM3b-2:**
+  - The kernels suite passes all 111 tests (main's 110 and the scan) in 227 s, against main's 216 s. 703 Contexts closed, and
+    none broke the ledger.
+  - The gpu package's selection (KV slots, residency, parity, ledger) passes: 24 pass, and 30 skip on their own gates (heavy
+    checkpoints, opt-in variables, missing fixtures, darwin-only). 81 Contexts closed with no break.
+- **G-MM3b-3:** the charged bytes after a second and a third identical request equal the first.
+- **G-MM3b-4, I3 (exact):** 196 open leases against wgpu-native's 196 held buffers. The ledger charges 246,568 bytes (dense
+  102,704, kv 131,072, scratch 12,792). The process's VRAM from `nvidia-smi` is 202–212 MiB, for context only.
+- **G-MM3b-5:** `TestDecisionCensus` passes unchanged. Nothing outside tests reads the ledger, except `BuffersHeld`, a
+  diagnostic.
+- **G-MM3b-6:**
+  - vet passes with the gpu and testhooks tags.
+  - The pinned staticcheck is clean with those tags (CI's variant), and its canary goes red. It flagged two wrappers nothing
+    called, which are removed.
+  - gofmt, `touched.py`, `test_touched.py` (the scan listed in `touched_scans.py`) and the citation lint pass.
+  - The layout tests pass, with `imports.json` and the ARCHITECTURE appendix regenerated for the `→ internal/mem` arrows.
+- Logs: `~/goinfer-logs/mm1/` on nobara (mm3b-kernels3, mm3b-gpu2, and main's baseline mm3b-baseline-main).
+
 #### MM3c's gates (leases in Metal's allocator), registered 2026-10-27 (nobara-mm01; Francis's go of 11:08)
 
 The lease code in `metal/internal/gpudev` (the `Leaser`, `MustBufOn`, the lined constructors) was written before this
@@ -2091,9 +2158,9 @@ item is parked until Francis picks one.
 
 ### SB2 — admission and routing
 
-- **Today:** `decoder/admit.go:Admit`: the runner shape (`Model.decodeRunnerDecline`), then
-  `decoder/features.go:residentGateReason` against `ResidentBackendFeatures`, then the backend's own build through
-  `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
+- **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
+  (`admitRunner`), the activation-group gate, then `decoder/features.go:residentGateReasons` against `ResidentBackendFeatures`;
+  then the backend's own build through `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
   The owner's note of 2026-10-21 in the forward-architecture doc: 20 of the 71 registration and bound findings counted on
   2026-10-08 were one family that one path did not know about, six of them Critical.
 - **Contract:** `Admit(program, request shape, options, backend op set, plan) → Route or Decline`, pure.
@@ -2598,13 +2665,18 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 
 **PW5 graded, 2026-10-27: G1–G3 PASS, G4 VOID in its registered run and shown by B3, G5 measured**
 (`docs/measurements/pw5-2026-10.md`).
-- 14 of 82 packages are cacheable (16 before Gemini's review of #327 widened the scan); touched.py drops `-count=1` for
-  those only.
+- 14 of 82 packages are cacheable (16 as first built; Gemini's two reviews of #327 widened the scan); touched.py drops
+  `-count=1` for those only.
 - On `0158bdc0..3d01e4a3`, a re-run with nothing changed fell from about 133 s to 124.3 s. Three cacheable tests
   replayed, saving about 9 s. Most of the time is `metal`'s device suite (about 100 s) and `decoder` (13–18 s), both
   uncached by their hidden inputs.
 - G2's first plant moved to `internal/kvmgr` (`internal/f16` has no test), and timing counts only test files, as
   registered. Both are recorded there.
+
+**Amended 2026-10-27, after Gemini's second look at #327** (`docs/measurements/pw5-2026-10.md` §5):
+- Clock reads count in every file, not only in tests, failing safe; the registered "a test that reads the clock" is
+  widened.
+- Paths are judged on string literal values, and a climb past the module root counts in any module.
 
 ## 13. Order, sizes, and what each step is worth alone
 

@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -682,7 +683,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 		if PrefillBufSeenForTest != nil {
 			PrefillBufSeenForTest(int64(b.GetSize()))
 		}
-		keep = append(keep, b.Release)
+		keep = append(keep, releaser(b))
 	}
 	keepBG := func(b *wgpu.BindGroup) { keep = append(keep, b.Release) }
 
@@ -726,7 +727,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 					for i := range fill {
 						fill[i] = 0xFFFFFFFF
 					}
-					p, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(fill), Usage: wgpu.BufferUsageCopySrc})
+					p, e := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(fill), Usage: wgpu.BufferUsageCopySrc})
 					if e != nil {
 						buildErr = e
 						return nil
@@ -743,7 +744,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 			prefillBufReused.Add(1)
 			return b
 		}
-		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		b, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -756,7 +757,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		b, e := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -942,7 +943,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 				tab[d] = []uint32{0, 2, 1}[ax[d]]
 			}
 		}
-		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(tab), Usage: wgpu.BufferUsageStorage})
+		b, e := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(tab), Usage: wgpu.BufferUsageStorage})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -960,7 +961,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 			}
 			flat = append(flat, uint32(src[0]), uint32(src[1]), uint32(src[2]))
 		}
-		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(flat), Usage: wgpu.BufferUsageStorage})
+		b, e := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(flat), Usage: wgpu.BufferUsageStorage})
 		if e != nil {
 			return nil, e
 		}
@@ -1111,7 +1112,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 		}
 		xdFlat = append(xdFlat, xs[r][:hidden]...)
 	}
-	xd, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xdFlat), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+	xd, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xdFlat), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
 	}
@@ -1132,7 +1133,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 				copy(flat[l*pleStride+r*pp.pleDim:], xs[src][off:off+pp.pleDim])
 			}
 		}
-		if pleIn, err = c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(flat), Usage: wgpu.BufferUsageStorage}); err != nil {
+		if pleIn, err = c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(flat), Usage: wgpu.BufferUsageStorage}); err != nil {
 			return nil, err
 		}
 		keepBuf(pleIn)
@@ -1263,7 +1264,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 			}
 			if sinks0 == nil && buildErr == nil {
 				var e error
-				if sinks0, e = c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(make([]float32, max(nH, 4))), Usage: wgpu.BufferUsageStorage}); e != nil {
+				if sinks0, e = c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(make([]float32, max(nH, 4))), Usage: wgpu.BufferUsageStorage}); e != nil {
 					buildErr = e
 				} else {
 					keepBuf(sinks0)
@@ -1284,7 +1285,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 			pl, ly := c.attnKernel(lhd, lkvDim, m.KVF16)
 			if sinks0 == nil && buildErr == nil {
 				var e error
-				if sinks0, e = c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(make([]float32, max(nH, 4))), Usage: wgpu.BufferUsageStorage}); e != nil {
+				if sinks0, e = c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(make([]float32, max(nH, 4))), Usage: wgpu.BufferUsageStorage}); e != nil {
 					buildErr = e
 				} else {
 					keepBuf(sinks0)
@@ -1372,7 +1373,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 	}
 
 	vocab := pp.lmHead.rows()
-	stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stag, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
 	}

@@ -660,22 +660,28 @@ WebGPU implements it on the device for its staged path (below).
 ### Admission: which models run resident
 
 At the end of every load, `withResidency` decides whether to build a resident runner. Since
-`507cc06c`, it applies the same gates the published matrix does, in this order
-(`Admit`, `decoder/admit.go`):
+`507cc06c`, it applies the same gates the published matrix does. They are one pure function of the
+load's facts, `Admit` (`decoder/admit.go`), which applies them in this order:
 
-1. **Runner shape and precision policy** (`decodeRunnerDecline`). The architecture must be one the
+1. **The load's backend and precision.**
+   - The backend can build residents at all.
+   - Native Q4_K has a resident kernel (CUDA and Metal).
+   - `-backend auto` on Metal keeps a non-int4 model on the CPU.
+   - Nemotron-H's MoE block is named as a gap on CUDA and Metal.
+2. **Runner shape and precision policy** (`admitRunner`). The architecture must be one the
    uniform-layer runners can express.
    - An own-forward family passes only once it has been bridged. Gemma 4, gpt-oss and the DeltaNet
      hybrids have been; Llama 4 and LFM2 have not.
    - Granite-4.0-H needs `GOINFER_SSM_RESIDENT`.
    - Nemotron-H runs resident by default at int4 only.
-2. **What the backend implements** (`residentGateReason`).
+3. **Per-32 activations**, on a backend that declares its features: only CUDA implements them.
+4. **What the backend implements** (`residentGateReasons`).
    - Every `ResidentFeature` the architecture needs must be in the backend's declared set
      (`residentBackendFeatures`, in `decoder/features.go`). Features include QK-norm, sliding
      window, the softcaps, MoE, MLA, SSM, DeltaNet, KDA and sinks.
    - Then come the MoE router's capacity, per-layer geometry, and Gemma 4's MoE.
    - A decline names its gate: *"metal does not implement [kda mla], which this model needs"*.
-3. **The backend's own build** (`BuildResident`) can still decline, above all for memory. It does so
+5. **The backend's own build** (`BuildResident`) can still decline, above all for memory. It does so
    with a typed reason (`DeclineResident`), which becomes the model's `ResidentDecline()`. Any other
    error is a failure, not a decline.
 
@@ -1087,10 +1093,10 @@ Every import from one goinfer package to another, by repository-relative directo
 | `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
 | `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
-| `gpu` | `decoder`, `gpu/internal/kernels` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
+| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
-| `gpu/internal/kernels` | `internal/adapter`, `internal/vision`, `multimodal` |  |
+| `gpu/internal/kernels` | `internal/adapter`, `internal/mem`, `internal/vision`, `multimodal` |  |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/decide` | `chat`, `decoder`, `internal/confidence`, `tokenizer` |  |

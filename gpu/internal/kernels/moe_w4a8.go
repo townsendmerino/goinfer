@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -225,13 +226,13 @@ func (c *Context) UploadStackedExpertsInt4(nib [][]uint8, scales [][]float32, nE
 		copy(packed[e*N*wpr:(e+1)*N*wpr], packNibbles(nib[e], N, K))
 		copy(allScales[e*N*ng:(e+1)*N*ng], scales[e][:N*ng])
 	}
-	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
+	bq, err := c.tryCreateBufferInit(mem.LineExperts, &wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: stacked w4 experts buffer: %w", err)
 	}
-	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(PackF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
+	sc, err := c.tryCreateBufferInit(mem.LineExperts, &wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(PackF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
-		bq.Release()
+		releaseBuf(bq)
 		return nil, fmt.Errorf("gpu: stacked w4 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
@@ -262,13 +263,13 @@ func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32
 		copy(packed[e*bpe:(e+1)*bpe], q4[e][:bpe])
 		copy(allScales[e*N*ng:(e+1)*N*ng], scales[e][:N*ng])
 	}
-	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: packed, Usage: wgpu.BufferUsageStorage})
+	bq, err := c.tryCreateBufferInit(mem.LineExperts, &wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: packed, Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: stacked w4 experts buffer: %w", err)
 	}
-	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(PackF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
+	sc, err := c.tryCreateBufferInit(mem.LineExperts, &wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(PackF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
-		bq.Release()
+		releaseBuf(bq)
 		return nil, fmt.Errorf("gpu: stacked w4 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))

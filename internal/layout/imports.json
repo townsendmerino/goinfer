@@ -190,7 +190,8 @@
     ],
     "gpu": [
       "decoder",
-      "gpu/internal/kernels"
+      "gpu/internal/kernels",
+      "internal/mem"
     ],
     "gpu/cmd/chat": [
       "gpu",
@@ -202,6 +203,7 @@
     ],
     "gpu/internal/kernels": [
       "internal/adapter",
+      "internal/mem",
       "internal/vision",
       "multimodal"
     ],
@@ -441,6 +443,7 @@
       "gpu/internal/kernels",
       "internal/fidelity",
       "internal/giw",
+      "internal/mem",
       "internal/mem/probe",
       "internal/towerid",
       "internal/vision",
@@ -448,6 +451,7 @@
       "tokenizer"
     ],
     "gpu/internal/kernels": [
+      "internal/mem",
       "internal/vision",
       "multimodal"
     ],

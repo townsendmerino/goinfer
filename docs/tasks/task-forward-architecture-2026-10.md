@@ -113,10 +113,12 @@
 2. **Hand-written kernels stay.** This is not a graph compiler. Fusions stay explicit and per backend, each gated against the
    unfused operations it replaces.
 3. **A backend that cannot run something declines by name, and never runs it wrong.** Admission is
-   `decoder/admit.go:Admit`, in three steps:
-   1. the runner shape (`decoder/residency.go:Model.decodeRunnerDecline`);
-   2. `decoder/features.go:residentGateReason`;
-   3. the backend's own build, which declines through `decoder/residency.go:DeclineResident`.
+   `decoder/admit.go:Admit`, a pure function of the load's facts, then the backend's build:
+   1. the backend and precision checks;
+   2. the runner shape with its precision policy (`decoder/admit.go:admitRunner`);
+   3. the activation-group gate;
+   4. `decoder/features.go:residentGateReasons`;
+   5. the backend's own build, which declines through `decoder/residency.go:DeclineResident`.
 4. **The CPU stays the reference.** The descriptor-driven loop and the own-forward families are the oracle. The layer program
    reproduces them exactly before anything else moves.
 5. **The Hard API tier and the two-step tag.** The backends are separate modules, so every seam change lands with

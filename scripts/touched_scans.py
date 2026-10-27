@@ -168,6 +168,7 @@ SCANS = [
     Scan("site/internal/site", "TestHome_heroCodeIsFromTheExample", F("examples/structured/main.go")),
     # gpu module
     Scan("gpu", "TestNemotronBlockKind_hasADefault", F("gpu/residency.go")),
+    Scan("gpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("gpu", "gpu/internal/kernels")),
     Scan("gpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("gpu/attention.go")),
     Scan("gpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("gpu/decoderunner.go", "gpu/residency.go")),
     Scan("gpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("gpu/residency.go")),

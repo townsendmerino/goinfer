@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/internal/adapter"
@@ -82,10 +83,10 @@ func releaseLoraLayers(layers []loraRunLayer) {
 			if p == nil {
 				continue
 			}
-			p.a.Release()
-			p.b.Release()
-			p.uDown.Release()
-			p.uUp.Release()
+			releaseBuf(p.a)
+			releaseBuf(p.b)
+			releaseBuf(p.uDown)
+			releaseBuf(p.uUp)
 			p.bgDown.Release()
 			p.bgUp.Release()
 		}
@@ -131,32 +132,32 @@ func (r *DecodeRunner) SetAdapter(layers []adapter.ResidentAdapterLayer) error {
 			return nil, fmt.Errorf("gpu: SetAdapter: no dispatch hook for layer %d projection %d "+
 				"(arch shape mismatch — LoadAdapter should have rejected this model)", layer, kind)
 		}
-		aBuf, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		aBuf, err := r.c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{
 			Label: "lora-A", Contents: wgpu.ToBytes(proj.A), Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			return nil, err
 		}
-		bBuf, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		bBuf, err := r.c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{
 			Label: "lora-B", Contents: wgpu.ToBytes(proj.B), Usage: wgpu.BufferUsageStorage})
 		if err != nil {
-			aBuf.Release()
+			releaseBuf(aBuf)
 			return nil, err
 		}
-		uDown, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		uDown, err := r.c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{
 			Label: "lora-uDown", Contents: wgpu.ToBytes([]uint32{uint32(h.k), uint32(proj.R), 0, 0}),
 			Usage: wgpu.BufferUsageUniform})
 		if err != nil {
-			aBuf.Release()
-			bBuf.Release()
+			releaseBuf(aBuf)
+			releaseBuf(bBuf)
 			return nil, err
 		}
-		uUp, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		uUp, err := r.c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{
 			Label: "lora-uUp", Contents: wgpu.ToBytes([]uint32{uint32(proj.R), uint32(proj.Out), F32bits(proj.Scale), 0}),
 			Usage: wgpu.BufferUsageUniform})
 		if err != nil {
-			aBuf.Release()
-			bBuf.Release()
-			uDown.Release()
+			releaseBuf(aBuf)
+			releaseBuf(bBuf)
+			releaseBuf(uDown)
 			return nil, err
 		}
 		bgDown, err := r.c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: r.c.loraDownLayout, Entries: []wgpu.BindGroupEntry{
@@ -167,10 +168,10 @@ func (r *DecodeRunner) SetAdapter(layers []adapter.ResidentAdapterLayer) error {
 			{Binding: 4, Buffer: uDown, Size: uDown.GetSize()},
 		}})
 		if err != nil {
-			aBuf.Release()
-			bBuf.Release()
-			uDown.Release()
-			uUp.Release()
+			releaseBuf(aBuf)
+			releaseBuf(bBuf)
+			releaseBuf(uDown)
+			releaseBuf(uUp)
 			return nil, err
 		}
 		bgUp, err := r.c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: r.c.loraUpLayout, Entries: []wgpu.BindGroupEntry{
@@ -180,10 +181,10 @@ func (r *DecodeRunner) SetAdapter(layers []adapter.ResidentAdapterLayer) error {
 			{Binding: 3, Buffer: uUp, Size: uUp.GetSize()},
 		}})
 		if err != nil {
-			aBuf.Release()
-			bBuf.Release()
-			uDown.Release()
-			uUp.Release()
+			releaseBuf(aBuf)
+			releaseBuf(bBuf)
+			releaseBuf(uDown)
+			releaseBuf(uUp)
 			bgDown.Release()
 			return nil, err
 		}
