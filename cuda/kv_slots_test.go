@@ -9,8 +9,16 @@ import (
 	"slices"
 	"testing"
 
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"flag"
+	"fmt"
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/decoder"
+	"sort"
+	"strings"
 )
 
 // kvSlotTurn is one generation of the MC1 identity scenario: its token ids and PrefillReused.
@@ -690,4 +698,219 @@ func TestCUDAKVSlots_oomKeepsTheSlotsThatFit(t *testing.T) {
 	if got := gen(md); !slices.Equal(got, want) {
 		t.Errorf("degraded build generated %v, a plain two-slot build %v", got, want)
 	}
+}
+
+var (
+	planSlackUpdate = flag.Bool("planslack.update", false, "rewrite testdata/mm2b_realsize.json.gz from this run")
+	planSlackOut    = flag.String("planslack.out", "", "write the real-size before/after lines and the diff summary into this directory")
+)
+
+// realSizeModels are the real checkpoints the rounding diff and the device check read, from this box's local disk (CLAUDE.md:
+// never the archive).
+func realSizeModels(t *testing.T, names ...string) []string {
+	t.Helper()
+	home, _ := os.UserHomeDir()
+	var out []string
+	for _, n := range names {
+		p := filepath.Join(home, "models", n)
+		if strings.HasPrefix(p, "/srv/models") || strings.HasPrefix(p, "/Volumes/") {
+			t.Fatalf("%s is the archive, not a bench path", p)
+		}
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// TestPlanSlack_matchesTheBuild (MM2b gate G-MM2b-2): on real models, the rounding the plan prices equals packedAllocSlack over
+// the real build's own buffers to the byte, and the plan's dense figure plus it equals the build's.
+func TestPlanSlack_matchesTheBuild(t *testing.T) {
+	requireCUDADevice(t)
+	models := realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	if len(models) < 2 {
+		t.Skip("the 0.5B and 1.5B checkpoints are not on this box")
+	}
+	defer func() { allocSlackSeenForTest = nil }()
+	for _, p := range models {
+		var planned, built int64 = -1, -1
+		allocSlackSeenForTest = func(pl, b int64) { planned, built = pl, b }
+		m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			t.Fatalf("%s: not resident: %s", p, m.ResidentDecline())
+		}
+		plan := m.Plan("cuda", 64<<30, decoder.PlanRequest{Ctx: 4096})
+		t.Logf("%s: plan slack %d, build packedAllocSlack %d, build's slack %d; plan dense+slack %d, build dense+slack %d", filepath.Base(p),
+			planned, built, r.allocSlackBytes, plan.DenseBytes+plan.AllocSlackBytes, m.ResidentDenseWeightBytesFor("cuda")+r.allocSlackBytes)
+		if planned != built || planned <= 0 || plan.AllocSlackBytes != built || r.allocSlackBytes != built {
+			t.Errorf("%s: the plan prices %d (Plan %d), the build's buffers round by %d", filepath.Base(p), planned, plan.AllocSlackBytes, built)
+		}
+		if plan.DenseBytes+plan.AllocSlackBytes != m.ResidentDenseWeightBytesFor("cuda")+r.allocSlackBytes {
+			t.Errorf("%s: plan dense+slack differs from the build's", filepath.Base(p))
+		}
+		_ = m.Close()
+	}
+}
+
+// TestPlanSlack_realSizeDiff (MM2b gate G-MM2b-1): D3's Plan("cuda") cells on real-size models, with the rounding priced and with
+// it forced to 0. It writes both and the diff with -planslack.out, and holds the priced side to its golden.
+func TestPlanSlack_realSizeDiff(t *testing.T) {
+	requireCUDADevice(t)
+	models := realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "qwen2.5-7b-instruct-q4_k_m.gguf")
+	if len(models) < 3 {
+		t.Skip("the real-size checkpoints are not on this box: a capture run")
+	}
+	frees := []int64{7630553088, 7630553088 + 17<<20} // nobara's cuda probe with and without the desktop's context (testdata/machines)
+	type cell struct{ group, line string }
+	var before, after []cell
+	var summary []string
+	groups, changed, toDecline := 0, 0, 0
+	for _, p := range models {
+		m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		name := filepath.Base(p)
+		summary = append(summary, fmt.Sprintf("%s: rounding %d bytes (%.1f MB)", name, m.PlanSlack("cuda"), float64(m.PlanSlack("cuda"))/(1<<20)))
+		for _, ctx := range []int{4096, 16384, 32768} {
+			for _, pinned := range []bool{false, true} {
+				for _, kv := range []string{"f32", "f16", "i8"} {
+					for _, extra := range []int64{0, 256 << 20} {
+						if extra > 0 && (pinned || kv != "f32") {
+							continue
+						}
+						req := decoder.PlanRequest{Ctx: ctx, CtxPinned: pinned, KVF16: kv == "f16", KVI8: kv == "i8", ExtraBytes: extra}
+						g := fmt.Sprintf("D3 %s | cuda ctx=%d pinned=%v kv=%s extra=%d", name, ctx, pinned, kv, extra)
+						groups++
+						sum := func(pl decoder.Plan) string { return fmt.Sprintf("%s %d %d", pl.Placement, pl.Ctx, pl.Slots) }
+						edges := map[int64]bool{}
+						for _, f := range frees {
+							edges[f] = true
+						}
+						for _, side := range []func(int64) decoder.Plan{
+							func(f int64) decoder.Plan { return m.PlanWithoutSlackForTest("cuda", f, req) },
+							func(f int64) decoder.Plan { return m.Plan("cuda", f, req) },
+						} {
+							for _, e := range changePointsOf(0, 1<<36, 8, func(f int64) string { return sum(side(f)) }) {
+								edges[e], edges[e-1] = true, true
+							}
+						}
+						var fs []int64
+						for f := range edges {
+							fs = append(fs, f)
+						}
+						sort.Slice(fs, func(i, j int) bool { return fs[i] < fs[j] })
+						diff := false
+						for _, f := range fs {
+							b, a := m.PlanWithoutSlackForTest("cuda", f, req), m.Plan("cuda", f, req)
+							bl, al := fmt.Sprintf("free %d: %s", f, planLineOf(b)), fmt.Sprintf("free %d: %s", f, planLineOf(a))
+							before, after = append(before, cell{g, bl}), append(after, cell{g, al})
+							if bl != al {
+								diff = true
+							}
+							if a.Placement == decoder.PlacementDecline && b.Placement != decoder.PlacementDecline {
+								toDecline++
+								summary = append(summary, fmt.Sprintf("TO DECLINE: %s at free %d: was %s ctx %d, now %s", g, f, b.Placement, b.Ctx, a.Reason))
+							}
+						}
+						if diff {
+							changed++
+						}
+					}
+				}
+			}
+		}
+		_ = m.Close()
+	}
+	summary = append([]string{fmt.Sprintf("%d groups, %d changed, %d cells move to a decline (a cell is a group at one free reading; the readings are nobara's two and each side's change points)", groups, changed, toDecline)}, summary...)
+	t.Log(strings.Join(summary, "\n"))
+	if *planSlackOut != "" {
+		write := func(name string, cs []cell) {
+			var sb strings.Builder
+			for _, c := range cs {
+				sb.WriteString(c.group + " || " + c.line + "\n")
+			}
+			if err := os.WriteFile(filepath.Join(*planSlackOut, name), []byte(sb.String()), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write("before.txt", before)
+		write("after.txt", after)
+		if err := os.WriteFile(filepath.Join(*planSlackOut, "summary.txt"), []byte(strings.Join(summary, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byGroup := map[string][]string{}
+	for _, c := range after {
+		byGroup[c.group] = append(byGroup[c.group], c.line)
+	}
+	hashes := map[string]string{}
+	for g, ls := range byGroup {
+		h := sha256.Sum256([]byte(strings.Join(ls, "\n")))
+		hashes[g] = hex.EncodeToString(h[:8])
+	}
+	golden := filepath.Join("testdata", "mm2b_realsize.json.gz")
+	if *planSlackUpdate {
+		f, err := os.Create(golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zw := gzip.NewWriter(f)
+		b, _ := json.MarshalIndent(hashes, "", " ")
+		_, _ = zw.Write(b)
+		_ = zw.Close()
+		_ = f.Close()
+		return
+	}
+	f, err := os.Open(golden)
+	if err != nil {
+		t.Skipf("no golden yet (%v): a capture run", err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want map[string]string
+	if err := json.NewDecoder(zr).Decode(&want); err != nil {
+		t.Fatal(err)
+	}
+	for g, h := range hashes {
+		if want[g] != h {
+			t.Errorf("real-size group changed: %s", g)
+		}
+	}
+	if len(want) != len(hashes) {
+		t.Errorf("the golden has %d groups, this run %d", len(want), len(hashes))
+	}
+}
+
+func planLineOf(p decoder.Plan) string {
+	return fmt.Sprintf("%s ctx %d slots %d dense %d slack %d expertUsed %d kv %d extra %d free %d need %d | %s",
+		p.Placement, p.Ctx, p.Slots, p.DenseBytes, p.AllocSlackBytes, p.ExpertBytesUsed, p.KVBytes, p.ExtraBytes, p.FreeBytes, p.NeedBytes(), p.Reason)
+}
+
+// changePointsOf is the readings in [lo, hi] at which outcome changes, by bisection, at most max of them.
+func changePointsOf(lo, hi int64, max int, outcome func(int64) string) []int64 {
+	var out []int64
+	var walk func(a, b int64, oa, ob string)
+	walk = func(a, b int64, oa, ob string) {
+		if oa == ob || len(out) >= max {
+			return
+		}
+		if b-a <= 1 {
+			out = append(out, b)
+			return
+		}
+		mid := a + (b-a)/2
+		om := outcome(mid)
+		walk(a, mid, oa, om)
+		walk(mid, b, om, ob)
+	}
+	walk(lo, hi, outcome(lo), outcome(hi))
+	return out
 }

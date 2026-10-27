@@ -790,3 +790,11 @@ func (s *BlockSpec) GenerateStopAfterForTest(prompt []int, opt BlockSpecOptions,
 	out, _, err := s.generate(prompt, opt, func([]int) bool { n++; return n < emits })
 	return out, err
 }
+
+// PlanWithoutSlackForTest is Plan with no allocation rounding priced: the before side of the rounding diff (MM2b gate 1).
+func (m *Model) PlanWithoutSlackForTest(backend string, freeBytes int64, req PlanRequest) Plan {
+	saved := planSlackOffForTest
+	planSlackOffForTest = true
+	defer func() { planSlackOffForTest = saved }()
+	return m.Plan(backend, freeBytes, req)
+}

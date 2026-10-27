@@ -135,3 +135,67 @@ func BuildQueryFor(cfg *Config, opts Options, weightBytes, expertBytes int64, gg
 	}
 	return q
 }
+
+// PlanSlackFunc is a backend's allocation rounding over the buffers a resident build of the loaded model m allocates for its
+// weights: what Plan prices beside them so the dry run and the build agree. ok false is unknown, priced as 0.
+type PlanSlackFunc func(m *Model) (slackBytes int64, ok bool)
+
+var (
+	planSlackMu sync.RWMutex
+	planSlacks  = map[string]PlanSlackFunc{}
+)
+
+// RegisterPlanSlack installs backend's rounding report. Decoder keeps no default copy of it: the rounding follows the backend's
+// own buffer layout, so its one copy is the backend's; without it the slack is 0, the true figure for every buffer under the
+// allocator's quantum.
+func RegisterPlanSlack(backend string, f PlanSlackFunc) {
+	planSlackMu.Lock()
+	defer planSlackMu.Unlock()
+	planSlacks[backend] = f
+}
+
+// planSlackMemo remembers each backend's PlanSlack for one model: it is a property of the loaded weights.
+type planSlackMemo struct {
+	mu sync.Mutex
+	of map[string]int64
+}
+
+// planSlack is backend's rounding over m's weight buffers, asked once per model and backend.
+func (m *Model) planSlack(backend string) int64 {
+	if m == nil || planSlackOffForTest {
+		return 0
+	}
+	ask := func() int64 {
+		planSlackMu.RLock()
+		f := planSlacks[backend]
+		planSlackMu.RUnlock()
+		if f != nil {
+			if s, ok := f(m); ok {
+				return s
+			}
+		}
+		return 0
+	}
+	memo := m.planSlackOf
+	if memo == nil {
+		return ask()
+	}
+	memo.mu.Lock()
+	defer memo.mu.Unlock()
+	if v, ok := memo.of[backend]; ok {
+		return v
+	}
+	if memo.of == nil {
+		memo.of = map[string]int64{}
+	}
+	v := ask()
+	memo.of[backend] = v
+	return v
+}
+
+// PlanSlack is backend's allocation rounding over this model's weight buffers, as Plan prices it (0 where the backend reports
+// none). The CUDA build reads it instead of pricing its own copy.
+func (m *Model) PlanSlack(backend string) int64 { return m.planSlack(backend) }
+
+// planSlackOffForTest prices no allocation rounding in any plan: the before side of a test's diff.
+var planSlackOffForTest bool

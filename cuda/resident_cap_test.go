@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 )
 
@@ -429,16 +432,23 @@ func TestCheckKVFits_explicitFailsHard_defaultDeclines(t *testing.T) {
 	}
 }
 
+// demandDirs are the tracked tiny checkpoint directories.
+func demandDirs() []string {
+	cfgs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "config.json"))
+	var dirs []string
+	for _, c := range cfgs {
+		if ws, _ := filepath.Glob(filepath.Join(filepath.Dir(c), "*.safetensors")); len(ws) > 0 {
+			dirs = append(dirs, filepath.Dir(c))
+		}
+	}
+	return dirs
+}
+
 // demandConfigs are the configs of the tracked tiny checkpoints that load on the CPU.
 func demandConfigs(t *testing.T) []*decoder.Config {
 	t.Helper()
-	dirs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "config.json"))
 	var cfgs []*decoder.Config
-	for _, c := range dirs {
-		dir := filepath.Dir(c)
-		if ws, _ := filepath.Glob(filepath.Join(dir, "*.safetensors")); len(ws) == 0 {
-			continue
-		}
+	for _, dir := range demandDirs() {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cpu"})
 		if err != nil {
 			continue // a tower or an encoder, not a decoder family
@@ -494,5 +504,80 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	if n := differs(buildDemand); n > 0 {
 		t.Errorf("the registered cuda report differs from decoder's default on %d of %d queries", n, len(queries))
 	}
+	// The rounding report (MM2b): decoder keeps no copy of CUDA's buffer layout, so its default is 0, and CUDA's own planner must
+	// agree on every tracked family, whose buffers are all under the 2 MiB quantum. Loaded at f32 on the CPU, the planner runs
+	// without the device.
+	planned := 0
+	for _, dir := range demandDirs() {
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cpu", Quant: "f32"})
+		if err != nil {
+			continue
+		}
+		if s, ok := planSlack(m); ok {
+			planned++
+			if s != 0 {
+				t.Errorf("%s: CUDA's rounding report is %d bytes, decoder's default 0", dir, s)
+			}
+		}
+		_ = m.Close()
+	}
+	if planned < 10 {
+		t.Errorf("CUDA's planner priced only %d tracked families: the comparison covers little", planned)
+	}
 	t.Logf("%d configs, %d queries", len(cfgs), len(queries))
+}
+
+// TestPlanSlack_oneCopy (MM2b gate G-MM2b-3): the driver's rounding over the weight buffers has one copy. packedAllocSlack is
+// called only inside buildResident (plan-only, and the real build's test seam), and resolveCtxCapFitSlack takes no slack
+// argument, so the build cannot add the figure beside the plan's.
+func TestPlanSlack_oneCopy(t *testing.T) {
+	ents, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, read := map[string]int{}, 0
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), e.Name(), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read++
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			if fd.Name.Name == "resolveCtxCapFitSlack" {
+				for _, p := range fd.Type.Params.List {
+					for _, n := range p.Names {
+						if strings.Contains(strings.ToLower(n.Name), "slack") {
+							t.Errorf("resolveCtxCapFitSlack takes %q: the plan already prices the rounding", n.Name)
+						}
+					}
+				}
+			}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				if c, ok := n.(*ast.CallExpr); ok {
+					if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "packedAllocSlack" {
+						calls[fd.Name.Name]++
+					}
+				}
+				return true
+			})
+		}
+	}
+	if read < 20 {
+		t.Fatalf("read %d source files", read)
+	}
+	for fn, n := range calls {
+		if fn != "buildResident" {
+			t.Errorf("%s calls packedAllocSlack %d time(s): a second copy of the plan's rounding", fn, n)
+		}
+	}
+	if calls["buildResident"] == 0 {
+		t.Error("buildResident no longer calls packedAllocSlack: the scan checks nothing")
+	}
 }

@@ -130,6 +130,7 @@ SCANS = [
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
     Scan("internal/mem", "TestImports", NT("internal/mem")),
+    Scan("cuda", "TestPlanSlack_oneCopy", NT("cuda")),
     Scan("internal/mem", "TestSolve_pure", NT("internal/mem")),
     Scan("internal/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/mem/probe", "TestProbeImports", NT("internal/mem/probe")),

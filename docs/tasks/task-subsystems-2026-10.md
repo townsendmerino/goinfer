@@ -1054,6 +1054,52 @@ read through an exported `ResidentFeaturesCover(cfg, backend)`.
   testhooks), gofmt, the layout tests, the citation lint.
 - The PR also regenerates `docs/ARCHITECTURE.md`'s import appendix. `TestArchitecture_importAppendix` is red on main since
   #301 added `cuda/internal/launchgeom`.
+
+#### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
+
+**Francis's decision (05:50):** option A, "one set of numbers that is accurate". `Plan("cuda")` prices the driver's 2 MiB
+rounding through CUDA's report. The CUDA build reads the slack from the plan instead of adding its own copy. `goinfer fit`,
+MM6's queue-time check and the build all use that one figure.
+
+**The design: one copy.**
+- **The computation.** It is the CUDA build's own planner. `BuildResident` becomes `buildResident(m, planOnly)`. Plan-only
+  stops right after `packedAllocSlack` over the planned buffers, before any device allocation, and validates experts instead
+  of packing them, so it holds no host copy.
+- **The report.** `RegisterPlanSlack` is a per-model report, memoized on the model. Through it, CUDA hands that figure to
+  decoder's `Plan`, which prices it as a fixed term beside the dense weights: `Plan.AllocSlackBytes`, in `NeedBytes()` and in
+  every fit check.
+- **The build.** `resolveCtxCapFitSlack` stops adding the slack to the extra bytes it hands `Plan`; `Plan` already holds it.
+- **No mirror.** Decoder keeps no mirror of CUDA's buffer layout, which would be a second copy. Its default slack is 0, which
+  is the true figure on every tracked tiny fixture (measured 2026-10-26: 60 resident builds, all 0).
+- **Out of scope.** The KV pools' rounding is priced by the build already (`kvRoundingBound`); it is not part of this step.
+
+**Amended from the proposal, before the code.** Gate 1's "shape-only configs" assumed a path into `Plan` that decoder does not
+have: `Plan` reads a loaded model's matrices, and decoder has no shape-only model. Building one would re-implement `Plan`'s
+inputs, which is not today's code path. So the real-size cells use the real checkpoints on nobara's local disk, planned on the
+CPU through CUDA's report (no device needed). That is a tier-1 test in the `cuda` module, which skips as a capture run where
+the models are absent.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM2b-1 the real-size diff | for Qwen2.5-Coder 0.5B and 1.5B and Qwen2.5-7B (int4, from `~/models`), D3's `Plan("cuda")` cells (the request grid and a free ladder with each cell's change points) are computed with the slack and with it forced to 0. The diff is reviewed group by group and listed in the PR body (groups changed, placements moved, every cell that moves to a decline). Then their golden is written. The decoder census passes without `-census.update`, all of its cells' slack being 0 | a model path under `/srv/models` or `/Volumes/` (CLAUDE.md), or a model absent | runs to completion | about a minute on nobara |
+| G-MM2b-2 the device check | on nobara's RTX 2070 SUPER, for 0.5B and 1.5B: `Plan("cuda").AllocSlackBytes` equals the real build's `packedAllocSlack` to the byte, and plan dense plus slack equals the build's dense plus slack. `TestResidentDenseBytes_matchesCUDADevice` still holds. The CUDA KV-slot and margin tests (`TestCUDAKVSlots_*`, `TestKSH6C_marginAtTheReturnedContext`, `TestKSB8_widthChooser`) still pass | a timed run holds the card (the run takes the timing lock) | runs to completion | about two minutes |
+| G-MM2b-3 one copy | the build no longer adds the slack beside the plan: a source test finds `packedAllocSlack` called only inside `buildResident`, and `resolveCtxCapFitSlack` takes no slack argument. The MM2a agreement test (`TestBuildDemand_matchesDecoderDefault`) gains the slack report: CUDA's equals decoder's default (0) on every tracked tiny fixture | — | runs to completion | seconds |
+| G-MM2b-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM2b read, 2026-10-27 (nobara): all four pass.**
+- G-MM2b-1, the real-size diff (`docs/measurements/mm2b-rounding-2026-10-27/README.md`): rounding 138.5 MB (0.5B), 122.2 MB
+  (1.5B) and 405.8 MB (7B). All 63 groups change. At nobara's two real readings, no cell moves to a decline, and only the 7B's
+  unpinned 32,768 cells shrink (29,696 to 25,984 at 7.63 GB). 462 cells move to a decline, all inside the band one rounding
+  wide below the old fit edge; the README lists them by group. The real-size golden (`cuda/testdata/mm2b_realsize.json.gz`)
+  was written after that review. The decoder census passes without `-census.update`.
+- G-MM2b-2: the plan's slack equals the real build's `packedAllocSlack` to the byte (145,276,928 and 128,122,880), as does
+  dense plus slack. `TestResidentDenseBytes_matchesCUDADevice`, the `TestCUDAKVSlots_` tests,
+  `TestKSH6C_marginAtTheReturnedContext` and `TestKSB8_widthChooser` pass, and so do `TestBuildScratchAccounting` (six models)
+  and its planted defect with `GOINFER_HEAVY_TESTS=1`.
+- G-MM2b-3: `TestPlanSlack_oneCopy`; the agreement test's slack report is 0 against decoder's 0 on every tracked family. The
+  new tests live in existing test files, because SB13's ratchet counts every test file of a package that reaches decoder.
+- G-MM2b-4: vet on three systems and with the module tags, the pinned staticcheck (untagged, `realckpt`, cuda), gofmt,
+  `touched.py`, the citation lint.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

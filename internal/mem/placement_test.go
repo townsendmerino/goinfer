@@ -18,7 +18,7 @@ func genDevice(r *rand.Rand) (DeviceLoad, PlanRequest) {
 	switch be {
 	case "cuda":
 		base := r.Int64N(64 << 20)
-		l.CtxSearch = true
+		l.CtxSearch, l.FixedSlack = true, r.Int64N(256<<20)
 		l.KV = func(ctx int) int64 { return base + perPos*64*int64((ctx+63)/64) }
 	case "metal":
 		l.CtxStep, l.CtxCeiling = 8, []int{16384, 32768}[r.IntN(2)]
