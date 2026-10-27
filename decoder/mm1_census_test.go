@@ -199,9 +199,9 @@ func censusFamilies(t *testing.T) []censusFamily {
 				if _, err := os.Stat(filepath.Join(p, "config.json")); err != nil || len(ws) == 0 {
 					continue
 				}
-				fams = append(fams, censusFamily{name: strings.TrimPrefix(p, "../"), path: p, dir: true})
+				fams = append(fams, censusFamily{name: censusName(p), path: p, dir: true})
 			case strings.HasSuffix(e.Name(), ".gguf"):
-				fams = append(fams, censusFamily{name: strings.TrimPrefix(p, "../"), path: p})
+				fams = append(fams, censusFamily{name: censusName(p), path: p})
 			}
 		}
 	}
@@ -213,8 +213,24 @@ func censusFamilies(t *testing.T) []censusFamily {
 	return fams
 }
 
+// censusName is a fixture's name in a group key: its path from the repository root, with forward slashes on every OS.
+func censusName(p string) string { return strings.TrimPrefix(filepath.ToSlash(p), "../") }
+
+// linkOrCopy hard-links src at dst (no privilege needed on Windows, unlike a symlink), and copies it where the filesystem
+// refuses the link.
+func linkOrCopy(src, dst string) error {
+	if err := os.Link(src, dst); err == nil {
+		return nil
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o644)
+}
+
 // longVariant copies a checkpoint directory into a temp dir with its window raised to 131,072 positions, so the auto-pin and floor
-// branches are reachable on a tiny model. The weights are linked, not copied. The copy keeps the directory's own name, which the
+// branches are reachable on a tiny model. The weights are hard-linked where the filesystem allows it, else copied. The copy keeps the directory's own name, which the
 // fit guard's lines print.
 func longVariant(t *testing.T, dir string) string {
 	t.Helper()
@@ -229,7 +245,7 @@ func longVariant(t *testing.T, dir string) string {
 	for _, e := range ents {
 		src, _ := filepath.Abs(filepath.Join(dir, e.Name()))
 		if e.Name() != "config.json" {
-			if err := os.Symlink(src, filepath.Join(out, e.Name())); err != nil {
+			if err := linkOrCopy(src, filepath.Join(out, e.Name())); err != nil {
 				t.Fatal(err)
 			}
 			continue

@@ -272,7 +272,7 @@ func censusRealShapeConfigs(t *testing.T) []censusVariant {
 		if err != nil {
 			t.Fatalf("%s: %v", p, err)
 		}
-		out = append(out, censusVariant{name: strings.TrimPrefix(p, "../") + " (config only)", cfg: cfg})
+		out = append(out, censusVariant{name: censusName(p) + " (config only)", cfg: cfg})
 	}
 	if len(out) == 0 {
 		t.Fatal("no real-shape configs")

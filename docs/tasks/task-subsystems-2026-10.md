@@ -797,6 +797,14 @@ decision's reach: stream-weights only for a `.gguf` (it moves nothing for a dire
 CPU's precision is `KVQuant`'s). The golden holds a 16-hex SHA-256 prefix per group (199 KB); `-census.dump` writes the full text
 (92 MB) to diff a red run against its base.
 
+**CI on the PR, root-windows (run 40433980269): red, then fixed on the branch.** Every group differed because Windows built the
+keys from OS paths (`..\internal\vision\…`), which the golden holds as `internal/vision/…`. The host class matched the
+golden. The keys now use forward slashes on every OS, and the long variants hard-link their weights, falling back to a copy
+(a symlink needs a privilege on Windows that the runner happened to have). **G-MM1-C4 is not met on Windows:**
+`TestDecisionCensus` took 166 s there, against a minute registered for CI. D2, serial, took 58 to 66 s of each build there,
+against 5 s on nobara. The fix belongs to the next MM1 step: once `Solve` takes the available reading as data, D2 no longer
+goes through the shared probe seam and runs in parallel like D1, D3 and D4.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
