@@ -1,0 +1,26 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/spark25_test.go",
+    "decoder/spark25_real_test.go",
+    "scripts/pin_spark2_5_tiny.py",
+    "scripts/pin_spark2_5_real.py",
+    "decoder/arch_spark2_5.go"
+  ],
+  "deps_hash": "sha256:0e30a3a35674b3461691109a323d09f9733f9d6aa7cdd344a0ba7a24ae1986ed",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-06",
+  "reference": "HF f32 (Spark-X2.5-1.7B, Spark2_5ForCausalLM)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

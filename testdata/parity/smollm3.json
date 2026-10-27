@@ -1,0 +1,22 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_smollm3.go"
+  ],
+  "deps_hash": "sha256:c12de21c4bdf43e0159a1d2af186b5f2ef0c18e26db50dffabc763ddad0d5e8f",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-06",
+  "reference": "HF f32 (SmolLM3-3B, SmolLM3ForCausalLM)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

@@ -7025,7 +7025,7 @@ engaged (DeviceSampled == 0), so it cannot pass vacuously.
 
 ## TestGemvShapeSweep
 
-Moved from `cuda/shape_sweep_test.go` (the comment above `TestGemvShapeSweep`) on 2026-10-09.
+Moved from `cuda/kernels/shape_sweep_test.go` (the comment above `TestGemvShapeSweep`) on 2026-10-09.
 
 ```text
 and that shape SATISFIES the precondition the shipped kernel assumed. packWeight guarded
@@ -7038,7 +7038,7 @@ out-of-bounds read on the 0.5B, which is the model the README's headline number 
 
 ## TestGemvShapeSweep.scales
 
-Moved from `cuda/shape_sweep_test.go` (the comment above `TestGemvShapeSweep.scales`) on 2026-10-09.
+Moved from `cuda/kernels/shape_sweep_test.go` (the comment above `TestGemvShapeSweep.scales`) on 2026-10-09.
 
 ```text
 The kernel reads __half group scales, so the reference must read the SAME rounded
@@ -7831,7 +7831,7 @@ the verdict is, so they do not go stale a second time.
 
 ## TestGemvShapeSweep.cheap
 
-Moved from `cuda/shape_sweep_test.go` (the comment above `TestGemvShapeSweep.cheap`) on 2026-10-09.
+Moved from `cuda/kernels/shape_sweep_test.go` (the comment above `TestGemvShapeSweep.cheap`) on 2026-10-09.
 
 ```text
 TestGemvShapeSweep sweeps the PRODUCTION forward GEMVs across the geometries the real model

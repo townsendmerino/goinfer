@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe"
+  ],
+  "own": [
+    "decoder/arch_qwen2_moe.go"
+  ],
+  "deps_hash": "sha256:c525f531b8faf34398db720dc038f52b4e413ca3b5ef57b103951e6d1c1b869f",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF bf16 (Qwen/Qwen1.5-MoE-A2.7B; int8 weights, f32 activations)",
+  "machine": "linux-amd64",
+  "method": "real-model-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 0.99954,
+    "cosine_mean": 0.99954
+  }
+}

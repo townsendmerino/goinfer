@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_qwen2_5_vl.go",
+    "decoder/arch_qwen2.go"
+  ],
+  "deps_hash": "sha256:1dae2e0be4072c68190967a76ceaccfc69a9624fa56076652a55e59baeac1f96",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (Qwen/Qwen2.5-VL-3B-Instruct, real image, prefill forward only)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 0.99946,
+    "cosine_mean": 0.99946
+  }
+}

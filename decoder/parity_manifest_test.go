@@ -1,7 +1,7 @@
 package decoder
 
 // Parity validation manifest and staleness detector (docs/completed/task-parity-coverage.md). The manifest
-// testdata/parity_manifest.json records, per family, the source files its numerics depend on (shared sets via `uses`
+// The parity records, testdata/parity (one <family>.json each, and shared_sets.json), record, per family, the source files its numerics depend on (shared sets via `uses`
 // plus per-family `own`), a content hash of that set, and the validation metrics.
 //
 // TestParityManifest_fresh is model-free (no assets) and runs every push:
@@ -34,6 +34,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/paritykey"
 )
 
 // mergeRowsPath, when set, makes TestParityManifest_merge fold the collected
@@ -42,7 +44,7 @@ import (
 // validation fields. Driven by EMIT_MANIFEST=1 go run ./cmd/gate parity.
 var mergeRowsPath = flag.String("merge-rows", "", "merge collected PARITY_ROW lines from this file into the parity manifest")
 
-// parityManifest mirrors testdata/parity_manifest.json. familyParity uses json.RawMessage for fields the test must
+// parityManifest mirrors the parity records, assembled into one object (parityManifestJSON). familyParity uses json.RawMessage for fields the test must
 // preserve verbatim on -update (metrics, status, dates) while still reading and rewriting deps_hash and reading
 // uses/own/validated_at. Field order matches the on-disk schema so re-marshaling gives a zero-diff layout.
 //
@@ -66,21 +68,61 @@ type familyParity struct {
 	Metrics     json.RawMessage `json:"metrics"`
 }
 
-const parityManifestPath = "../testdata/parity_manifest.json"
+// parityRecordsPath is the parity records' directory (paritykey.RecordsDir), from the decoder package.
+const parityRecordsPath = "../" + paritykey.RecordsDir
 
-// writeManifest serialises the manifest back to disk faithfully: no HTML escaping (a ">" inside a `reference` string
-// stays ">") and a JSON `null` Method stays null (Method is a RawMessage). scripts/refresh_parity_hashes.sh aborts when
-// the update changes more than deps_hash, so a lossy round trip reads as a real edit; fix the writer, do not loosen that
-// guard. History: docs/code-notes/decoder.md#writeManifest.
+// parityManifestJSON is the parity manifest assembled from the records (paritykey.ManifestJSON), in the single-object
+// shape parityManifest decodes.
+func parityManifestJSON() ([]byte, error) { return paritykey.ManifestJSON(paritykey.Dir("..")) }
+
+// writeManifest writes m back as records: the shared sets and one file per family, each only when its bytes change, so
+// a refresh touches the records of the families it changed and no other. A record whose family m no longer has is
+// removed. No HTML escaping (a ">" inside a `reference` string stays ">"), and a JSON `null` Method stays null (Method is a
+// RawMessage). scripts/refresh_parity_hashes.sh aborts when the update changes more than deps_hash, so a lossy round trip
+// reads as a real edit; fix the writer, do not loosen that guard. History: docs/code-notes/decoder.md#writeManifest.
 func writeManifest(m *parityManifest) error {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(m); err != nil {
+	encode := func(v any) ([]byte, error) {
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		err := enc.Encode(v)
+		return buf.Bytes(), err
+	}
+	put := func(path string, v any) error {
+		b, err := encode(v)
+		if err != nil {
+			return err
+		}
+		if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, b) {
+			return nil
+		}
+		return os.WriteFile(path, b, 0o644)
+	}
+	if err := os.MkdirAll(parityRecordsPath, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(parityManifestPath, buf.Bytes(), 0o644)
+	if err := put(filepath.Join("..", paritykey.SharedSetsFile), m.SharedSets); err != nil {
+		return err
+	}
+	for name, fam := range m.Families {
+		if err := put(filepath.Join(parityRecordsPath, name+".json"), fam); err != nil {
+			return err
+		}
+	}
+	ents, err := os.ReadDir(parityRecordsPath)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		name := strings.TrimSuffix(e.Name(), ".json")
+		if _, ok := m.Families[name]; !ok && filepath.Join("..", paritykey.SharedSetsFile) != filepath.Join(parityRecordsPath, e.Name()) {
+			if err := os.Remove(filepath.Join(parityRecordsPath, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // methodString reads Method's JSON literal as a string; a null or absent value reads as "".
@@ -123,13 +165,13 @@ func TestParityManifest_merge(t *testing.T) {
 	if *mergeRowsPath == "" {
 		t.Skip("set -merge-rows <file> to merge collected PARITY_ROW lines")
 	}
-	raw, err := os.ReadFile(parityManifestPath)
+	raw, err := parityManifestJSON()
 	if err != nil {
-		t.Fatalf("read %s: %v", parityManifestPath, err)
+		t.Fatalf("read %s: %v", parityRecordsPath, err)
 	}
 	var m parityManifest
 	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatalf("unmarshal %s: %v", parityManifestPath, err)
+		t.Fatalf("unmarshal %s: %v", parityRecordsPath, err)
 	}
 	rowsRaw, err := os.ReadFile(*mergeRowsPath)
 	if err != nil {
@@ -164,7 +206,7 @@ func TestParityManifest_merge(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 	sort.Strings(applied)
-	t.Logf("merged %d row(s) into %s at %s (%s): %v", len(applied), parityManifestPath, sha, date, applied)
+	t.Logf("merged %d row(s) into %s at %s (%s): %v", len(applied), parityRecordsPath, sha, date, applied)
 }
 
 // familyDepFiles returns the sorted, deduped union of all files reachable from a
@@ -295,13 +337,13 @@ func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {
 }
 
 func TestParityManifest_fresh(t *testing.T) {
-	raw, err := os.ReadFile(parityManifestPath)
+	raw, err := parityManifestJSON()
 	if err != nil {
-		t.Fatalf("read %s: %v", parityManifestPath, err)
+		t.Fatalf("read %s: %v", parityRecordsPath, err)
 	}
 	var m parityManifest
 	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatalf("unmarshal %s: %v", parityManifestPath, err)
+		t.Fatalf("unmarshal %s: %v", parityRecordsPath, err)
 	}
 
 	// STRUCTURE: every referenced source path must exist on disk.
@@ -349,7 +391,7 @@ func TestParityManifest_fresh(t *testing.T) {
 	if len(inManifestNotMatrix) > 0 || len(inMatrixNotManifest) > 0 {
 		sort.Strings(inManifestNotMatrix)
 		sort.Strings(inMatrixNotManifest)
-		t.Fatalf("parity manifest / capability matrix family mismatch:\n  in manifest but not matrix: %v\n  in matrix but not manifest: %v (add a parity_manifest.json row)",
+		t.Fatalf("parity manifest / capability matrix family mismatch:\n  in manifest but not matrix: %v\n  in matrix but not manifest: %v (add a testdata/parity/<family>.json record)",
 			inManifestNotMatrix, inMatrixNotManifest)
 	}
 
@@ -428,7 +470,7 @@ func TestParityManifest_fresh(t *testing.T) {
 		if err := writeManifest(&m); err != nil {
 			t.Fatalf("write manifest: %v", err)
 		}
-		t.Logf("wrote %s", parityManifestPath)
+		t.Logf("wrote %s", parityRecordsPath)
 	}
 }
 
@@ -546,7 +588,7 @@ func applyParityRows(m *parityManifest, rows, sha, date, machine string) ([]stri
 		}
 		f, ok := m.Families[row.Family]
 		if !ok {
-			return nil, fmt.Errorf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityManifestPath)
+			return nil, fmt.Errorf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityRecordsPath)
 		}
 		// Status is DERIVED FROM THE METHOD, not asserted: a T3 method means validated, anything else experimental. A row can
 		// therefore demote a family whose evidence was downgraded, and a sweep with EMIT_MANIFEST=1 cannot promote a

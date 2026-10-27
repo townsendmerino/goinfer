@@ -6,7 +6,6 @@ package decoder
 
 import (
 	"encoding/json"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -42,7 +41,7 @@ func TestParityEmit_methodVocabulary(t *testing.T) {
 // function the -merge-rows tool calls) and asserts the exact defect: a sub-T3 row must not
 // leave the family at "validated".
 func TestParityMerge_noPromotionWithoutMethod(t *testing.T) {
-	raw, err := os.ReadFile(parityManifestPath)
+	raw, err := parityManifestJSON()
 	if err != nil {
 		t.Fatalf("read manifest: %v", err)
 	}

@@ -1,0 +1,57 @@
+{
+  "core": [
+    "decoder/model_forward.go",
+    "decoder/forwardn.go",
+    "decoder/attention.go",
+    "decoder/mlp.go",
+    "decoder/kvcache.go",
+    "decoder/rope.go",
+    "decoder/ropescale.go",
+    "decoder/rmsnorm.go",
+    "decoder/registry.go",
+    "decoder/arch.go",
+    "decoder/config.go",
+    "decoder/backend.go",
+    "decoder/blockspec.go",
+    "decoder/cpu_gateup_fused.go",
+    "decoder/fusedattn.go",
+    "decoder/image_spans.go",
+    "decoder/int4_floatact.go",
+    "decoder/knobs.go",
+    "decoder/knobs_drift_prod.go",
+    "decoder/kvdequant_parallel.go",
+    "decoder/layerpaging.go",
+    "decoder/lifecycle.go",
+    "decoder/lora.go",
+    "decoder/moepaging.go",
+    "decoder/moepool.go",
+    "decoder/program.go",
+    "decoder/program_cpu.go",
+    "decoder/program_cpu_n.go",
+    "decoder/routercapture.go",
+    "decoder/scratch.go"
+  ],
+  "deltanet": [
+    "decoder/deltanet.go",
+    "decoder/deltanet_n.go",
+    "decoder/forward_qwen35_n.go"
+  ],
+  "loaders": [
+    "decoder/weights.go",
+    "decoder/gguf.go"
+  ],
+  "mamba2": [
+    "decoder/mamba2.go"
+  ],
+  "moe": [
+    "decoder/mlp.go"
+  ],
+  "quant": [
+    "decoder/weightmat.go",
+    "decoder/gptq.go",
+    "decoder/awq.go"
+  ],
+  "serialize": [
+    "decoder/serialize.go"
+  ]
+}

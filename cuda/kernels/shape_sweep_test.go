@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
@@ -281,8 +281,8 @@ func TestGemvShapeSweep_coversTheOOBGeometry(t *testing.T) {
 // out-of-bounds __dp4a against it yields a large wrong contribution rather than a silent zero.
 const func32Poison int32 = 0x5A5A5A5A
 
-// f16tof32 expands an IEEE half for the test references (the f32→f16 direction, f32tof16, lives in
-// kernels.go with the production packer).
+// f16tof32 expands an IEEE half for the test references (the f32→f16 direction, f32tof16, is the production
+// packer's, in package wpack).
 func f16tof32(h uint16) float32 {
 	s := uint32(h&0x8000) << 16
 	e := uint32((h >> 10) & 0x1f)

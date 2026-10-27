@@ -2,6 +2,7 @@ package paritykey
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -48,7 +49,7 @@ func TestCompare_classes(t *testing.T) {
 // fails here rather than in the shadow job.
 func TestKey_onTheTree(t *testing.T) {
 	src := Dir("../..")
-	if _, err := os.Stat("../../" + ManifestPath); err != nil {
+	if _, err := ManifestJSON(src); err != nil {
 		t.Fatal(err)
 	}
 	s, err := LoadSide(src, "digest")
@@ -62,5 +63,25 @@ func TestKey_onTheTree(t *testing.T) {
 		if s.Today[name] == s.Shadow[name] {
 			t.Errorf("%s: today's key equals the shadow key", name)
 		}
+	}
+}
+
+// TestManifestJSON_legacyTree reads a tree from before the records (one testdata/parity_manifest.json) unchanged, so
+// gate shadow and the VK0 replay still compare a push that crosses the change.
+func TestManifestJSON_legacyTree(t *testing.T) {
+	dir := t.TempDir()
+	legacy := []byte(`{"shared_sets": {"core": ["a.go"]}, "families": {"f": {"uses": ["core"]}}}`)
+	if err := os.MkdirAll(filepath.Join(dir, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, LegacyManifestPath), legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ManifestJSON(Dir(dir))
+	if err != nil || string(got) != string(legacy) {
+		t.Fatalf("legacy tree: %q, %v", got, err)
+	}
+	if _, err := ManifestJSON(Dir(t.TempDir())); err == nil {
+		t.Fatal("a tree with neither layout read as a manifest")
 	}
 }

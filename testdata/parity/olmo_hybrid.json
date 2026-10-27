@@ -1,0 +1,28 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "deltanet"
+  ],
+  "own": [
+    "decoder/forward_qwen35.go",
+    "decoder/olmo_hybrid_real_test.go",
+    "decoder/olmo_hybrid_test.go",
+    "scripts/pin_olmo_hybrid_real.py",
+    "scripts/pin_olmo_hybrid_tiny.py",
+    "decoder/arch_olmo_hybrid.go"
+  ],
+  "deps_hash": "sha256:1a9eb4ded8ac84116d3b13b60c941137349e1de88ce37daf9e3f94b43623aa3d",
+  "status": "validated",
+  "validated_at": "7b50947a",
+  "date": "2026-10-05",
+  "reference": "HF f32 (allenai/Olmo-Hybrid-7B, OlmoHybridForCausalLM)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

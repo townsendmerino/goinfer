@@ -1,0 +1,23 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant"
+  ],
+  "own": [
+    "decoder/arch_qwen3_vl.go",
+    "decoder/arch_qwen3.go"
+  ],
+  "deps_hash": "sha256:22b57bf8a676840a8a53d09fb23176bcd5ae60cb4b7ca14aeb2db22ce69bf4f9",
+  "status": "validated",
+  "validated_at": "7ee05f0a",
+  "date": "2026-10-08",
+  "reference": "HF f32 (Qwen/Qwen3-VL-2B-Instruct): the text forward (TestQwen3VLReal_gate: logit cosine 1.000000, argmax and a 6-token continuation equal) and a real image prompt through the tower with DeepStack (TestQwen3VLImageReal, table.png: last-position cosine 1.000000, argmax equal, 15/15 text positions after the image; three planted defects red)",
+  "machine": "linux-amd64",
+  "method": "full-forward-oracle",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

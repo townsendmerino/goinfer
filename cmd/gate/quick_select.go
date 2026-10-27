@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/townsendmerino/goinfer/internal/paritykey"
 )
 
 // `gate quick`'s SELECTION (docs/tasks/task-test-efficiency-2026-09.md, TE7(a)): changed files -> their
@@ -103,7 +105,7 @@ type quickConfig struct {
 	GoVersion string // the go line for the generated workspace files
 	GoldenPkg string // import path holding the forward goldens
 	GoldenRun string // -run regex selecting them
-	Manifest  string // repo-relative parity manifest ("" = none)
+	Manifest  string // the parity records' directory, repo-relative, read through paritykey.ManifestJSON ("" = none)
 	// StateDir holds the generated go.work files and the per-cell duration history. It is OUTSIDE
 	// the repo on purpose: a file written inside it would change the directory listings the
 	// tree-walking tests read, and invalidate their cached results on every run.
@@ -125,7 +127,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 	qc := &quickConfig{
 		Root:      root,
 		GoldenRun: goldenRunRE,
-		Manifest:  "testdata/parity_manifest.json",
+		Manifest:  paritykey.RecordsDir,
 		StateDir:  filepath.Join(cache, "goinfer-gate-quick", hex.EncodeToString(short[:6])),
 	}
 	testhooks := []string{"goinfer_testhooks"}
@@ -1000,7 +1002,7 @@ func (r *testRoot) names(name string) string {
 }
 
 // needle is what a source must contain to "name" a changed file: its base name for data (fixtures
-// are referenced by name — "config.json", "parity_manifest.json"), and parent/base for a Go file,
+// are referenced by name — "config.json", "shared_sets.json"), and parent/base for a Go file,
 // whose base name alone ("main.go", "model.go") is mentioned in half the tree's comments.
 func needle(rel string) string {
 	if strings.HasSuffix(rel, ".go") {
@@ -1298,10 +1300,8 @@ func goldenFiles(qc *quickConfig) (map[string]string, error) {
 	if qc.Manifest == "" {
 		return out, nil
 	}
-	b, err := os.ReadFile(filepath.Join(qc.Root, qc.Manifest))
-	if os.IsNotExist(err) {
-		return out, nil
-	} else if err != nil {
+	b, err := paritykey.ManifestJSON(paritykey.Dir(qc.Root))
+	if err != nil {
 		return nil, err
 	}
 	var m struct {

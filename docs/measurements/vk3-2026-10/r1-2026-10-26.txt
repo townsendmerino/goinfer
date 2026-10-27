@@ -1,0 +1,2 @@
+families old 43 records 43; differing 0; shared sets equal true
+R1 PASS

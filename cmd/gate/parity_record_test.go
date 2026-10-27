@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/paritykey"
 )
 
 // The parity sweep's record and the release row that reads it (parity_record.go), registered here before the code: no
@@ -21,14 +23,29 @@ import (
 const parityTestManifest = `{"shared_sets": {"core": ["decoder/a.go", "scripts/pin.py"]},
  "families": {"fam": {"uses": ["core"], "own": ["decoder/b.go", "scripts/own.py"], "deps_hash": "sha256:x"}}}`
 
+// parityRecordsTree is a manifest in the single-object shape, written as records (paritykey.RecordsDir).
+func parityRecordsTree(t *testing.T, manifest string) map[string]string {
+	t.Helper()
+	var m struct {
+		SharedSets json.RawMessage            `json:"shared_sets"`
+		Families   map[string]json.RawMessage `json:"families"`
+	}
+	if err := json.Unmarshal([]byte(manifest), &m); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{paritykey.SharedSetsFile: string(m.SharedSets)}
+	for name, f := range m.Families {
+		out[paritykey.RecordsDir+"/"+name+".json"] = string(f)
+	}
+	return out
+}
+
 // parityTestRepo is gpuTestRepo plus a parity manifest, the two scripts it hashes and one it does not.
 func parityTestRepo(t *testing.T) (dir string, commit func(file, content string) string) {
 	t.Helper()
 	dir, commit = gpuTestRepo(t)
-	writeTree(t, dir, map[string]string{
-		parityManifestPath: parityTestManifest,
-		"scripts/pin.py":   "pin v0", "scripts/own.py": "own v0", "scripts/unrelated.py": "u v0",
-	})
+	writeTree(t, dir, parityRecordsTree(t, parityTestManifest))
+	writeTree(t, dir, map[string]string{"scripts/pin.py": "pin v0", "scripts/own.py": "own v0", "scripts/unrelated.py": "u v0"})
 	gitIn(t, dir, "add", ".")
 	gitIn(t, dir, "commit", "-q", "-m", "manifest and scripts")
 	return dir, commit
@@ -36,7 +53,7 @@ func parityTestRepo(t *testing.T) (dir string, commit func(file, content string)
 
 func parityPathsIn(t *testing.T, dir string) []string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(dir, parityManifestPath))
+	b, err := paritykey.ManifestJSON(paritykey.Dir(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +98,7 @@ func TestParityRecord_readsTheCommittedManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(root, parityManifestPath))
+	b, err := paritykey.ManifestJSON(paritykey.Dir(root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +169,7 @@ func TestParityRecord_aHashedFileAddedSinceTheSweepVoidsIt(t *testing.T) {
 	dir, commit := parityTestRepo(t)
 	ran := gitIn(t, dir, "rev-parse", "HEAD")
 	commit("scripts/new.py", "new")
-	writeTree(t, dir, map[string]string{parityManifestPath: strings.Replace(parityTestManifest, `"scripts/pin.py"]`, `"scripts/pin.py", "scripts/new.py"]`, 1)})
+	writeTree(t, dir, parityRecordsTree(t, strings.Replace(parityTestManifest, `"scripts/pin.py"]`, `"scripts/pin.py", "scripts/new.py"]`, 1)))
 	gitIn(t, dir, "add", ".")
 	gitIn(t, dir, "commit", "-q", "-m", "the manifest hashes a new file")
 	head := gitIn(t, dir, "rev-parse", "HEAD")

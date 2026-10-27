@@ -1,0 +1,96 @@
+==> Running forward goldens (the numeric proof a core refresh is non-numeric)…
+    heavy checkpoints ENABLED — the int8 goldens participate (GOINFER_REFRESH_HEAVY=0 to skip)
+    forward goldens: 33 passed, 0 failed, 31 skipped
+    of those, 1 drive a QUANTIZED path (int4/int8/int8int8); the rest are f32.
+
+    ran green:
+      TestBailingHybrid_forwardParity
+      TestCohere2_forwardParity
+      TestCohere_forwardParity
+      TestDeepseek_textParity
+      TestGemma12_forwardParity
+      TestGemma3VL_textParity
+      TestGemma4MoEKV_forwardParity
+      TestGlm4Moe_textParity
+      TestGlmOcr_forwardParity
+      TestGraniteDense_forwardParity
+      TestInt4_forwardParity
+      TestInternLM2_textParity
+      TestInternLM3_textParity
+      TestLaguna_textParity
+      TestLFM2_textParity
+      TestLlama4_textParity
+      TestLlamaTiny_textParity
+      TestLongPromptFast_forwardParity
+      TestLoRACompute_forwardParity
+      TestMinistral3_forwardParity
+      TestMixtral_forwardParity
+      TestNemotron3NanoMoE_textParity
+      TestNemotron_textParity
+      TestOlmo3_forwardParity
+      TestOlmoHybrid_forwardParity
+      TestPhi3_textParity
+      TestQwen25VL_textParity
+      TestQwen35_forwardParity
+      TestQwen3_5_textParity
+      TestQwen3Moe_forwardParity
+      TestQwen3Next_textParity
+      TestSmolLM3_forwardParity
+      TestSpark25Tiny_textParity
+    skipped (no local fixture — NOT covered by this proof; regenerate if your change touches them):
+      TestForward_logitParity
+      TestGemma4_12B_logitParity
+      TestGemma4MoE_forwardParity
+      TestGemma4MoEUnified_forwardParity
+      TestGemma4DenseTwoGeom_forwardParity
+      TestGemma4DenseScaled_forwardParity
+      TestGemma4_logitParity
+      TestGemma4VLBidir_textParity
+      TestGemma4VL_textParity
+      TestGGUF_Q8_0_parity
+      TestGGUF_gemma3_parity
+      TestGGUF_qwen3_parity
+      TestGGUF_qwen2_parity
+      TestGGUF_Q4_0_parity
+      TestGGUF_Q4_K_M_parity
+      TestGGUF_Q5_K_M_parity
+      TestGGUF_Q3_K_M_parity
+      TestGGUF_Q2_K_parity
+      TestGGUF_Q6_K_parity
+      TestGGUF_Q4_K_S_parity
+      TestGPT2_forwardParity
+      TestGranite_textParity
+      TestKimi_textParity
+      TestLlama32_forwardParity
+      TestLlama_forwardParity
+      TestMellum2_logitParity
+      TestMistral_forwardParity
+      TestQwen2_forwardParity
+      TestQwen2Moe_forwardParity
+      TestQwen3_forwardParity
+      TestQwen3VL_textParity
+
+==> Refreshing deps_hash (deps_hash ONLY; validated_at / metrics / dates preserved)…
+    staleness gate green; 1 deps_hash line(s) refreshed, nothing else.
+
+==> PROOF (paste into the commit body — makes the exception auditable):
+    non-numeric core refresh; validated_at preserved.
+    forward goldens green at 487668f9 on arch=arm64: 33 passed / 31 skipped / 0 failed.
+
+    Deps-Hash-Refresh: 487668f9 goldens=33 arch=arm64
+
+    (Trailer renamed from Parity-Deps-Refresh, which had been used for dependency bumps too.
+     It is now documentation only — the recurrence counter reads the manifest diff, not this.)
+
+==> 368 prior non-numeric deps_hash refreshes (deps_hash moved, validated_at preserved).
+    Counted from the manifest history, not from commit trailers — see the note above.
+
+    This is EXPECTED, not a defect to fix by building option C. The classification in
+    docs/completed/task-parity-staleness-diagnostic-seams.md found most refreshes are ordinary
+    non-numeric edits to shared core files, NOT the inert diagnostic seams option C targets —
+    and the recorded verdict was: DON'T build option C (it addresses a small minority while
+    adding an invisible channel for a genuine numeric change to slip through), keep paying
+    this small tax, and make the counter honest. The counter is now honest.
+
+    Re-open option C only if the CLASSIFICATION shifts — i.e. refreshes start being dominated
+    by inert diagnostic seams. The raw count alone is not that signal and never was.

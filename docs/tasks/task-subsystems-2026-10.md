@@ -35,7 +35,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK0 | done | 2026-10-26 (mac-vk01): 234 of 4,052 commits re-staled 8,895 family validations in 30 days; 8,775 (98.7%) came with no moved golden and no changed recorded metric, an upper bound on what a behavior key saves | §5.3; `docs/measurements/vk0-2026-10.md` |
 | VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
-| VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
+| VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
 | VK5 | active | shadow week 1 (SD6) runs from the workflow's first run on main, 2026-10-26, and grades the aikit-pin → kernel-fingerprint swap alone; week 2 then grades the key built from program fingerprints (VK4) plus kernel fingerprints, with the forward source files out of it (Francis 16:27: option 1); the switch after each week is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
@@ -477,6 +477,25 @@ Francis's wording, "forward-path code". Under it, 26 files were uncovered (`conf
 
 `testdata/parity/<family>.json`, plus one file for the shared sets; `TestParityManifest_fresh` reads the directory. Two
 sessions working on different families stop colliding, and a refresh touches only the records it changes. S.
+
+#### VK3's gates, registered 2026-10-26 before the code (mac-vk01)
+
+Francis (17:37, relayed): VK3 while VK5's shadow week runs. The layout:
+- `testdata/parity/shared_sets.json` holds the shared sets.
+- `testdata/parity/<family>.json` holds one family's row, with the same fields and values as today.
+- `testdata/parity_manifest.json` is removed.
+
+Every reader goes through one function, `paritykey.ManifestJSON`. It assembles the manifest's shape from the records,
+or from the old single file at a commit that predates them. That keeps `gate shadow` and the VK0 replay working across
+the change, and it errors where the day-loop selector would silently find no manifest. The decoder writes only the
+records whose content changed.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| R1 carried unchanged | the records, assembled, equal the old manifest: every family's fields (`uses`, `own`, `deps_hash`, `status`, `validated_at`, `date`, `reference`, `machine`, `method`, `metrics`) and the shared sets, as JSON values; `TestParityManifest_fresh` passes with no refresh | never | one run | seconds |
+| R2 the readers read the records | no Go, script or workflow outside history tools names `testdata/parity_manifest.json`; the decoder's parity tests, `gate quick`'s golden-file map, `gate parity`'s qualifying paths, `gate identity`'s families and `scripts/refresh_parity_hashes.sh` all run on the records; the refresh, run on a planted stale family, rewrites that family's record and nothing else | — | one run | the refresh's goldens, about 20 s warm |
+| R3 the same families re-stale | `gate shadow` across the layout change itself (before: the single file; after: the records) classes every family agree-fresh; on a throwaway commit after it, a token planted in `arch_phi3.go` stales exactly `{phi3}`, as VK2's A3 did on the single file | — | one run each | about a minute |
+| R4 parallel refreshes touch different files | two families made stale on two branches and refreshed separately change disjoint files (`phi3.json`, `llama4_text.json`), and the branches merge with no conflict | — | one run | two refreshes, under a minute |
 
 ### 5.7 VK4 — a program fingerprint
 
@@ -1098,6 +1117,37 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
   heavy-gated bandwidth tests stay in it. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
 - **Batch 2 (2026-10-26):** 5 files (6 tests) moved, outcomes the same; cuda reach 327 → 322. Same record. The next dozen
   kernel tests check kernels against package `cuda`'s production packers, so they wait for the packers to move.
+
+#### SB1 step 1 — moving cuda's weight packers: the bit-identity gate, registered 2026-10-26 before the code (nobara-sb01)
+
+Francis's decision (17:36): move `packWeight` and its packers into a small decoder-free package, with a bit-identity gate
+on the packed output registered first; stop with DECISION NEEDED if the move needs a `decoder` change or changes a byte.
+
+- **The move.** `cuda/internal/wpack` (imports aikit `linalg` only) takes the packing bodies: `packWeight`'s per-kind
+  packing, `packWeightStack`'s concatenation and its kind and K checks, `packI8`, `packI8Into`, `packInt4Into`,
+  `permuteFast`, `nibblePosFast`, `f32tof16`. `decoder.Int4F32` is not imported: its body (`Int4F16`, then
+  `linalg.F16ToF32Slice`) is the same two calls, made in `wpack`. Package `cuda` keeps every name as a thin wrapper, and
+  keeps `planWeight`'s admission ahead of each pack, member by member, so its errors come in the same order. `hostW`
+  stays in package `cuda`: it is the resident's plan (planned sizes, row readers, the int8 alternative, the stack's
+  sources), and only its packed fields come from `wpack`.
+- **Gate (tier 0, no device).** `cuda`'s `TestWeightPackers_bitIdentity` hashes (SHA-256) the output of every entry
+  point above, through package `cuda`'s names, on seeded inputs: `packWeight` on every kind `planWeight` admits (int4 from
+  `QuantizeInt4` and from `WrapInt4F16` with arbitrary f16 scales, subnormal and negative included; int8 with and without
+  W8A8; q4k from raw blocks; f32; bf16), at more than one shape; `packWeightStack` on stacks of each; `packI8`,
+  `packI8Into`, `packInt4Into` on random data; `nibblePosFast` on 0–7; `permuteFast` on 2^22 seeded words plus every
+  single-nibble word; `f32tof16` on every one of the 2^32 float32 bit patterns. Each hash covers the kind, N, K, the
+  three packed slices, and the error text where one is expected (a mixed-kind and a ragged-K stack, an unsupported
+  kind). The hashes are written from the tree before any code moves and committed; after the move the same test, with no
+  edit, must reproduce every one.
+- **Void:** none; it is deterministic. **Stopping rule:** one run before (writes the hashes), one after; any differing
+  hash stops the move with DECISION NEEDED. **Cost basis:** seconds, most of it the 2^32 sweep; measured: 28 s writing the
+  32 hashes at `91fe36e7b`, 30 s reproducing all 32 on an unchanged tree.
+- **Then** the kernel tests that needed only the packers move to `cuda/kernels` by batch 1's gate (each by name with
+  `-v` on the device, before and after), using `wpack` directly, and the ratchet falls.
+- **Done (2026-10-26):** all 32 hashes match after the move, and the gate went red on two planted changes (reverted). Six
+  test files left package `cuda` (four to `cuda/kernels`, two to `cuda/internal/wpack`), every outcome the same; cuda
+  reach 322 → 317. gpu has no test-only move (its kernels are package `gpu`'s production code); metal has 62 candidates
+  that need a Mac run. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
 
 ### SB2 — admission and routing
 

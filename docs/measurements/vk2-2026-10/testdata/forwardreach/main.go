@@ -14,10 +14,11 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/paritykey"
 )
 
 func main() {
@@ -80,7 +81,7 @@ func main() {
 		SharedSets map[string][]string                     `json:"shared_sets"`
 		Families   map[string]struct{ Uses, Own []string } `json:"families"`
 	}
-	b, _ := os.ReadFile("testdata/parity_manifest.json")
+	b, _ := paritykey.ManifestJSON(paritykey.Dir("."))
 	json.Unmarshal(b, &m)
 	inSet := map[string]string{}
 	for s, fs := range m.SharedSets {

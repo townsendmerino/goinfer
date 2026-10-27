@@ -937,7 +937,7 @@ subnormal range (so an int4 group scale below 2^-14 read as all-zero on WebGPU o
 one used round-to-nearest-EVEN in the normal range where every other backend rounds half up —
 so identical inputs could produce different halves on exact ties. One converter now, and
 TestF32ToF16_N04 pins it against a local copy of the canonical algorithm, the same way
-cuda/f16_convert_test.go does for C-15.
+cuda/internal/wpack/f16_convert_test.go does for C-15.
 
 NOT RNE: a lone RNE here would re-introduce the divergence C-15 closed.
 ```
@@ -3538,7 +3538,7 @@ canonF32ToF16 is a local copy of decoder.f32ToF16bits (unexported, another modul
 Moved from `gpu/f16_convert_test.go` (the comment at old line 13, reworded in place; the comment above `canonF32ToF16` keeps the contract) on 2026-10-09.
 
 ```text
-cuda/f16_convert_test.go's copy, which gates the identical property for C-15.
+cuda/internal/wpack/f16_convert_test.go's copy, which gates the identical property for C-15.
 ```
 
 ## TestTiledDP4A_microbench.prior
