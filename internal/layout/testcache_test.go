@@ -153,6 +153,9 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 		}
 		test := strings.HasSuffix(path, "_test.go")
 		mark := func(kind string) {
+			if kind == hiddenTiming && !test {
+				return // timing is a test that reads the clock; production code that times itself decides nothing a test checks
+			}
 			p.all[kind] = true
 			if !test {
 				p.prod[kind] = true
