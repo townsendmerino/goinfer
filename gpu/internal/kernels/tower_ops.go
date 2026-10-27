@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -113,11 +114,11 @@ func (o *towerOps) close(bufs []*DeviceBuffer) error {
 // kernelN runs k over bufs (bindings 0 to len(bufs)-1) and a uniform holding p (the next binding), gx by gy
 // workgroups. No Poll.
 func (c *Context) kernelN(k towerPipe, bufs []*wgpu.Buffer, p []uint32, gx, gy int) error {
-	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "kn-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "kn-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return err
 	}
-	defer pbuf.Release()
+	defer releaseBuf(pbuf)
 	entries := make([]wgpu.BindGroupEntry, 0, len(bufs)+1)
 	for i, b := range bufs {
 		entries = append(entries, wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()})

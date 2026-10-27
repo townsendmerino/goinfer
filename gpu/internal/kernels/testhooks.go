@@ -9,6 +9,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -22,11 +23,11 @@ func (c *Context) RouteExpertsForTest(logits, bias []float32, k int, sigmoid, no
 		return nil, nil, err
 	}
 	nE := len(logits)
-	lb, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-logits", Contents: wgpu.ToBytes(logits), Usage: wgpu.BufferUsageStorage})
+	lb, err := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "moe-logits", Contents: wgpu.ToBytes(logits), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, nil, err
 	}
-	defer lb.Release()
+	defer releaseBuf(lb)
 	hasBias := uint32(0)
 	bb := bias
 	if bb == nil {
@@ -34,15 +35,15 @@ func (c *Context) RouteExpertsForTest(logits, bias []float32, k int, sigmoid, no
 	} else {
 		hasBias = 1
 	}
-	bbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-bias", Contents: wgpu.ToBytes(bb), Usage: wgpu.BufferUsageStorage})
+	bbuf, err := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "moe-bias", Contents: wgpu.ToBytes(bb), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, nil, err
 	}
-	defer bbuf.Release()
-	idxBuf, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "moe-idx", Size: uint64(k * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
-	defer idxBuf.Release()
-	wgtBuf, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "moe-wgt", Size: uint64(k * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
-	defer wgtBuf.Release()
+	defer releaseBuf(bbuf)
+	idxBuf, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Label: "moe-idx", Size: uint64(k * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer releaseBuf(idxBuf)
+	wgtBuf, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Label: "moe-wgt", Size: uint64(k * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer releaseBuf(wgtBuf)
 	sig, nrm := uint32(0), uint32(0)
 	if sigmoid {
 		sig = 1
@@ -50,8 +51,8 @@ func (c *Context) RouteExpertsForTest(logits, bias []float32, k int, sigmoid, no
 	if norm {
 		nrm = 1
 	}
-	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-p", Contents: wgpu.ToBytes([]uint32{uint32(nE), uint32(k), sig, nrm, F32bits(scale), hasBias, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	defer pbuf.Release()
+	pbuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "moe-p", Contents: wgpu.ToBytes([]uint32{uint32(nE), uint32(k), sig, nrm, F32bits(scale), hasBias, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(pbuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.moeRouteLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: lb, Size: lb.GetSize()}, {Binding: 1, Buffer: bbuf, Size: bbuf.GetSize()},
 		{Binding: 2, Buffer: idxBuf, Size: idxBuf.GetSize()}, {Binding: 3, Buffer: wgtBuf, Size: wgtBuf.GetSize()},
@@ -69,10 +70,10 @@ func (c *Context) RouteExpertsForTest(logits, bias []float32, k int, sigmoid, no
 	pass.DispatchWorkgroups(1, 1, 1)
 	pass.TryEnd()
 	pass.Release()
-	idxStg, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(k * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	defer idxStg.Release()
-	wgtStg, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(k * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	defer wgtStg.Release()
+	idxStg, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Size: uint64(k * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer releaseBuf(idxStg)
+	wgtStg, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Size: uint64(k * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer releaseBuf(wgtStg)
 	enc.TryCopyBufferToBuffer(idxBuf, 0, idxStg, 0, uint64(k*4))
 	enc.TryCopyBufferToBuffer(wgtBuf, 0, wgtStg, 0, uint64(k*4))
 	cmd, _ := enc.TryFinish(nil)
@@ -108,25 +109,25 @@ func (c *Context) IndexedGEMVForTest(s *ResidentStackedW8A8, aq []int8, aScale f
 		return nil, err
 	}
 	N := s.rows
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
-	defer aBuf.Release()
-	asBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
-	defer asBuf.Release()
+	defer releaseBuf(aBuf)
+	asBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(asBuf)
 	idxU := make([]uint32, len(idx))
 	for i, v := range idx {
 		idxU[i] = uint32(v)
 	}
-	idxBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
-	defer idxBuf.Release()
-	wgtBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-wgt", Contents: wgpu.ToBytes(make([]float32, len(idx))), Usage: wgpu.BufferUsageStorage})
-	defer wgtBuf.Release()
-	dstBuf, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ig-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
-	defer dstBuf.Release()
-	dims, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
-	defer dims.Release()
+	idxBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(idxBuf)
+	wgtBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig-wgt", Contents: wgpu.ToBytes(make([]float32, len(idx))), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(wgtBuf)
+	dstBuf, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Label: "ig-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer releaseBuf(dstBuf)
+	dims, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(dims)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.moeExpertLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: s.bq, Size: s.bq.GetSize()},
 		{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: s.bScales, Size: s.bScales.GetSize()},
@@ -146,8 +147,8 @@ func (c *Context) IndexedGEMVForTest(s *ResidentStackedW8A8, aq []int8, aScale f
 	pass.DispatchWorkgroups(gx, gy, 1)
 	pass.TryEnd()
 	pass.Release()
-	stg, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	defer stg.Release()
+	stg, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer releaseBuf(stg)
 	enc.TryCopyBufferToBuffer(dstBuf, 0, stg, 0, uint64(N*4))
 	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
@@ -177,25 +178,25 @@ func (c *Context) IndexedGEMVForTestInt4(s *ResidentStackedW8A8, aq []int8, aSca
 		return nil, err
 	}
 	N := s.rows
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig4-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig4-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
-	defer aBuf.Release()
-	asBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig4-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
-	defer asBuf.Release()
+	defer releaseBuf(aBuf)
+	asBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig4-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(asBuf)
 	idxU := make([]uint32, len(idx))
 	for i, v := range idx {
 		idxU[i] = uint32(v)
 	}
-	idxBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig4-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
-	defer idxBuf.Release()
-	wgtBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig4-wgt", Contents: wgpu.ToBytes(make([]float32, len(idx))), Usage: wgpu.BufferUsageStorage})
-	defer wgtBuf.Release()
-	dstBuf, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ig4-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
-	defer dstBuf.Release()
-	dims, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ig4-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
-	defer dims.Release()
+	idxBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig4-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(idxBuf)
+	wgtBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig4-wgt", Contents: wgpu.ToBytes(make([]float32, len(idx))), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(wgtBuf)
+	dstBuf, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Label: "ig4-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer releaseBuf(dstBuf)
+	dims, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "ig4-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(dims)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.moeExpertW4Layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: s.bq, Size: s.bq.GetSize()},
 		{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: s.bScales, Size: s.bScales.GetSize()},
@@ -215,8 +216,8 @@ func (c *Context) IndexedGEMVForTestInt4(s *ResidentStackedW8A8, aq []int8, aSca
 	pass.DispatchWorkgroups(gx, gy, 1)
 	pass.TryEnd()
 	pass.Release()
-	stg, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	defer stg.Release()
+	stg, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer releaseBuf(stg)
 	enc.TryCopyBufferToBuffer(dstBuf, 0, stg, 0, uint64(N*4))
 	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
@@ -248,27 +249,27 @@ func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale fl
 	}
 	N := s.rows
 	pl, ly := c.gptOssDownPipelineFor(s)
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "gd-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
-	defer aBuf.Release()
-	asBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
-	defer asBuf.Release()
+	defer releaseBuf(aBuf)
+	asBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "gd-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(asBuf)
 	idxU := make([]uint32, len(idx))
 	for i, v := range idx {
 		idxU[i] = uint32(v)
 	}
-	idxBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
-	defer idxBuf.Release()
-	wgtBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-wgt", Contents: wgpu.ToBytes(wgt), Usage: wgpu.BufferUsageStorage})
-	defer wgtBuf.Release()
-	dbBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-dbias", Contents: wgpu.ToBytes(dbias), Usage: wgpu.BufferUsageStorage})
-	defer dbBuf.Release()
-	dstBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-dst", Contents: wgpu.ToBytes(dstInit), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
-	defer dstBuf.Release()
-	dims, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
-	defer dims.Release()
+	idxBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "gd-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(idxBuf)
+	wgtBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "gd-wgt", Contents: wgpu.ToBytes(wgt), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(wgtBuf)
+	dbBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "gd-dbias", Contents: wgpu.ToBytes(dbias), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(dbBuf)
+	dstBuf, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "gd-dst", Contents: wgpu.ToBytes(dstInit), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer releaseBuf(dstBuf)
+	dims, _ := c.tryCreateBufferInit(mem.LineTest, &wgpu.BufferInitDescriptor{Label: "gd-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(dims)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: s.bq, Size: s.bq.GetSize()},
 		{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: s.bScales, Size: s.bScales.GetSize()},
@@ -289,8 +290,8 @@ func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale fl
 	pass.DispatchWorkgroups(gx, gy, 1)
 	pass.TryEnd()
 	pass.Release()
-	stg, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	defer stg.Release()
+	stg, _ := c.tryCreateBuffer(mem.LineTest, &wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer releaseBuf(stg)
 	enc.TryCopyBufferToBuffer(dstBuf, 0, stg, 0, uint64(N*4))
 	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()

@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"runtime"
 	"slices"
 	"sync"
@@ -52,6 +53,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 type Context struct {
 	instance *wgpu.Instance
 	adapter  *wgpu.Adapter
+	ledger   mem.Ledger // every buffer created on this Context (MM3; ledger.go)
 	// info is the adapter's GetInfo, read once in New; nothing calls GetInfo again. The binding fills a C struct on the Go stack,
 	// wgpu-native can leave Rust's dangling 0x1 in a string view's pointer, and a GC that shrinks the stack during the call aborts
 	// on it ("invalid pointer found on stack").
@@ -588,6 +590,9 @@ func (c *Context) Close() error {
 	// The releases run on the runtime's finalizer goroutine, the one thread that also drops the device reference a leaked buffer holds (finalizerSerial's comment: two
 	// device drops at once deadlock wgpu-native).
 	finalizerSerial(c.release)
+	if h := ClosedForTest; h != nil {
+		h(c)
+	}
 	return nil
 }
 
@@ -716,7 +721,7 @@ func (rm *ResidentMatrix) Close() error {
 		if rm.buf != nil {
 			accountFree(int64(rm.buf.GetSize()))
 			traceFree(rm)
-			rm.buf.Release()
+			releaseBuf(rm.buf)
 			rm.buf = nil
 		}
 	})
@@ -733,7 +738,7 @@ func (c *Context) UploadMatrix(b []float32, rows, cols int) (*ResidentMatrix, er
 	if len(b) < rows*cols {
 		return nil, fmt.Errorf("gpu: UploadMatrix input too small: len(b)=%d need %d", len(b), rows*cols)
 	}
-	buf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	buf, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
 		Label: "resident-b", Contents: wgpu.ToBytes(b[:rows*cols]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -755,13 +760,13 @@ func (c *Context) MatmulBTResident(a []float32, rm *ResidentMatrix, M int) ([]fl
 	if len(a) < M*K {
 		return nil, fmt.Errorf("gpu: MatmulBTResident input too small: len(a)=%d need %d", len(a), M*K)
 	}
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "a", Contents: wgpu.ToBytes(a[:M*K]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create a buffer: %w", err)
 	}
-	defer aBuf.Release()
+	defer releaseBuf(aBuf)
 	return c.run(aBuf, rm.buf, M, K, N)
 }
 
@@ -778,21 +783,21 @@ func (c *Context) MatmulBT(a, b []float32, M, K, N int) ([]float32, error) {
 		return nil, fmt.Errorf("gpu: matmulBT input too small: len(a)=%d need %d, len(b)=%d need %d",
 			len(a), M*K, len(b), N*K)
 	}
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "a", Contents: wgpu.ToBytes(a[:M*K]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create a buffer: %w", err)
 	}
-	defer aBuf.Release()
+	defer releaseBuf(aBuf)
 
-	bBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	bBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "b", Contents: wgpu.ToBytes(b[:N*K]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create b buffer: %w", err)
 	}
-	defer bBuf.Release()
+	defer releaseBuf(bBuf)
 	return c.run(aBuf, bBuf, M, K, N)
 }
 
@@ -803,33 +808,33 @@ func (c *Context) MatmulBT(a, b []float32, M, K, N int) ([]float32, error) {
 func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 	dstSize := uint64(M * N * 4)
 
-	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "dst", Size: dstSize,
 		Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create dst buffer: %w", err)
 	}
-	defer dstBuf.Release()
+	defer releaseBuf(dstBuf)
 
 	// Dims uniform: 3 u32 + 1 pad word (uniform buffers need 16-byte size).
 	dims := []uint32{uint32(M), uint32(K), uint32(N), 0}
-	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create dims buffer: %w", err)
 	}
-	defer dimsBuf.Release()
+	defer releaseBuf(dimsBuf)
 
-	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	stage, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "stage", Size: dstSize,
 		Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create staging buffer: %w", err)
 	}
-	defer stage.Release()
+	defer releaseBuf(stage)
 
 	bindGroup, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.layout,

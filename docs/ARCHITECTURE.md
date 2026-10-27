@@ -1087,10 +1087,10 @@ Every import from one goinfer package to another, by repository-relative directo
 | `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
 | `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
-| `gpu` | `decoder`, `gpu/internal/kernels` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
+| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
-| `gpu/internal/kernels` | `internal/adapter`, `internal/vision`, `multimodal` |  |
+| `gpu/internal/kernels` | `internal/adapter`, `internal/mem`, `internal/vision`, `multimodal` |  |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/decide` | `chat`, `decoder`, `internal/confidence`, `tokenizer` |  |

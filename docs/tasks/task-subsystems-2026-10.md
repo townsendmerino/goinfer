@@ -1590,6 +1590,40 @@ If I3 misses its band, the finding is reported first and the band is not widened
 | G-MM3b-5 no guard change | `TestDecisionCensus` passes unchanged; the WebGPU KV-slot and fit tests pass unchanged; nothing outside tests reads the ledger | — | runs to completion | about a minute |
 | G-MM3b-6 builds | vet with the gpu tags, the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests (`imports.json` updated for any new arrow), the citation lint | — | runs to completion | about two minutes |
 
+**Found while building, before the gates' read.**
+- **Freeing by method value.** The runners keep buffer releases as method values (`r.keep = append(r.keep, b.Release)`), and
+  so do 16 other sites, which free a buffer later without a call at the site. The typed scan counts a method value as a free,
+  and those sites take `releaser(b)`, which binds `b` when it is evaluated, as the method value did.
+- **The ledger must not keep a buffer alive.** Some buffers are never released explicitly; the binding's finalizer frees them
+  when the GC collects them. A first version keyed leases by the buffer itself. That kept those buffers, and the Vulkan devices
+  they pin, alive, and the kernels suite ran out of devices ("Not enough memory left"; main passes all 110). Leases are now
+  keyed by a weak pointer, and a `runtime.AddCleanup` closes a collected buffer's lease.
+- **The check must not force collection inside `Close`.** A first version of the check ran the GC inside `Close` and so started
+  finalizer-driven device releases beside the caller's. `TestContextClose_lateWrapperClose` deadlocked. The hooks now keep each
+  closed Context's ledger, and `LedgerBreaks` judges them once after the run, letting the GC collect first.
+
+**MM3b read, 2026-10-27 (nobara, RTX 2070 SUPER over Vulkan; exclusive timing lock): all six pass.**
+- **G-MM3b-1:** `TestLedger_everyBufferIsLeased` type-checks the 61 non-test files of `gpu` and `gpu/internal/kernels` and
+  finds no create, release or destroy outside the wrappers. The plant gives 4: a create, a release, a destroy and a method
+  value; a pipeline's `Release` is not counted.
+- **G-MM3b-2:**
+  - The kernels suite passes all 111 tests (main's 110 and the scan) in 227 s, against main's 216 s. 703 Contexts closed, and
+    none broke the ledger.
+  - The gpu package's selection (KV slots, residency, parity, ledger) passes: 24 pass, and 30 skip on their own gates (heavy
+    checkpoints, opt-in variables, missing fixtures, darwin-only). 81 Contexts closed with no break.
+- **G-MM3b-3:** the charged bytes after a second and a third identical request equal the first.
+- **G-MM3b-4, I3 (exact):** 196 open leases against wgpu-native's 196 held buffers. The ledger charges 246,568 bytes (dense
+  102,704, kv 131,072, scratch 12,792). The process's VRAM from `nvidia-smi` is 202–212 MiB, for context only.
+- **G-MM3b-5:** `TestDecisionCensus` passes unchanged. Nothing outside tests reads the ledger, except `BuffersHeld`, a
+  diagnostic.
+- **G-MM3b-6:**
+  - vet passes with the gpu and testhooks tags.
+  - The pinned staticcheck is clean with those tags (CI's variant), and its canary goes red. It flagged two wrappers nothing
+    called, which are removed.
+  - gofmt, `touched.py`, `test_touched.py` (the scan listed in `touched_scans.py`) and the citation lint pass.
+  - The layout tests pass, with `imports.json` and the ARCHITECTURE appendix regenerated for the `→ internal/mem` arrows.
+- Logs: `~/goinfer-logs/mm1/` on nobara (mm3b-kernels3, mm3b-gpu2, and main's baseline mm3b-baseline-main).
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
