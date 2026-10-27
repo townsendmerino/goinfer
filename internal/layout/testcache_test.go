@@ -274,7 +274,9 @@ func scanTestCacheAt(t *testing.T, repoRoot string) map[string]*pkgScan {
 		// A test runs in its package's directory, so a relative path that climbs past the module's root leaves it.
 		if p.climb > p.depth {
 			p.all[hiddenFiles] = true
-			p.prod[hiddenFiles] = p.prod[hiddenFiles] || p.climbProd > p.depth
+		}
+		if p.climbProd > p.depth {
+			p.prod[hiddenFiles] = true
 		}
 		if deviceModules[m] {
 			p.prod[hiddenDevice], p.all[hiddenDevice] = true, true
@@ -510,7 +512,8 @@ func TestFileHidden_markers(t *testing.T) {
 
 // TestScanTestCache_tree scans a small tree with a nested module through scanTestCacheAt and classifyTestCache: a
 // relative read that climbs past its own module root, one that climbs past an importer's in another module, and
-// runtime.Caller paths reached from another module are files outside the module; the same reads inside a module are not.
+// runtime.Caller paths reached from another module are files outside the module; the same reads inside a module are not,
+// and a climb in a test file stays with its own package.
 func TestScanTestCache_tree(t *testing.T) {
 	root := t.TempDir()
 	write := func(path, body string) {
@@ -535,6 +538,9 @@ func TestScanTestCache_tree(t *testing.T) {
 	write("a/c/c.go", pkg("c", "", `_ = filepath.Join("..", "..", "x")`))
 	write("a/d/d.go", pkg("d", "", `_, _, _, _ = runtime.Caller(0)`))
 	write("a/e/e.go", pkg("e", "a/d", ``))
+	write("a/f/f.go", pkg("f", "", ``))
+	write("a/f/f_test.go", pkg("f", "", `_ = filepath.Join("..", "..", "..", "x")`))
+	write("a/g/g.go", pkg("g", "a/f", ``))
 	write("n/go.mod", "module "+modulePath+"/n\n")
 	write("n/p/p.go", pkg("p", "a/c", ``))
 	write("n/q/q.go", pkg("q", "a/d", ``))
@@ -544,6 +550,8 @@ func TestScanTestCache_tree(t *testing.T) {
 		"a/c": "",
 		"a/d": "",
 		"a/e": "",
+		"a/f": hiddenFiles,
+		"a/g": "",
 		"n/p": hiddenFiles + " (a relative read in a/c)",
 		"n/q": hiddenFiles + " (runtime.Caller paths in a/d)",
 	}

@@ -70,7 +70,7 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through cuda)",
+        "files outside the module (through decoder)",
         "the network (through pull)",
         "timing (through cuda)"
       ]
@@ -81,7 +81,7 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/pullcmd)",
-        "files outside the module (through cuda)",
+        "files outside the module (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through cuda)"
       ]
@@ -163,7 +163,7 @@
         "OS memory (through internal/mem/probe)",
         "a device (through gpu)",
         "a subprocess (through demo/agent/agent)",
-        "files outside the module (through demo/agent/agent)",
+        "files outside the module (through decoder)",
         "timing (through demo/agent/agent)"
       ]
     },
@@ -175,7 +175,7 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess (through demo/agent/agent)",
-        "files outside the module (through demo/agent/agent)",
+        "files outside the module (through decoder)",
         "timing"
       ]
     },
@@ -252,7 +252,7 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through gpu)",
+        "files outside the module (through decoder)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -263,7 +263,7 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/pullcmd)",
-        "files outside the module (through gpu)",
+        "files outside the module (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
@@ -494,7 +494,6 @@
     "internal/towerid": {
       "cacheable": false,
       "reasons": [
-        "files outside the module (through tokenizer)",
         "timing (through embeddinggemma2)"
       ]
     },
@@ -531,7 +530,7 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through metal)",
+        "files outside the module (through decoder)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -575,7 +574,6 @@
       "cacheable": false,
       "reasons": [
         "a device",
-        "files outside the module (through metal/internal/gpudev)",
         "timing"
       ]
     },
@@ -616,10 +614,7 @@
       ]
     },
     "site/cmd/build": {
-      "cacheable": false,
-      "reasons": [
-        "files outside the module (through site/internal/site)"
-      ]
+      "cacheable": true
     },
     "site/internal/site": {
       "cacheable": false,
