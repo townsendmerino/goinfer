@@ -186,3 +186,60 @@ func TestProgramsDigest_needsATable(t *testing.T) {
 		}
 	}
 }
+
+// TestLoaderDigest is SB4's shadow input: the digest reads every GOARCH and mode of the listed fixtures, in any order,
+// moves when one mode's entry moves, ignores fixtures not listed, and refuses an empty table or a missing fixture. The
+// committed table holds every program fixture that has weights.
+func TestLoaderDigest(t *testing.T) {
+	tab := map[string]map[string]map[string]string{
+		"amd64": {"a": {"f32": "1", "int8": "2"}, "b": {"f32": "3"}, "c": {"f32": "9"}},
+		"arm64": {"a": {"f32": "1", "int8": "2"}, "b": {"f32": "3"}},
+	}
+	d1, err := LoaderDigest([]string{"a", "b"}, tab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d2, _ := LoaderDigest([]string{"b", "a"}, tab); d2 != d1 {
+		t.Error("the digest depends on the fixtures' order")
+	}
+	tab["amd64"]["c"]["f32"] = "10"
+	if d2, _ := LoaderDigest([]string{"a", "b"}, tab); d2 != d1 {
+		t.Error("a fixture not listed moved the digest")
+	}
+	tab["arm64"]["a"]["int8"] = "4"
+	if d2, _ := LoaderDigest([]string{"a", "b"}, tab); d2 == d1 {
+		t.Error("one mode's entry moved and the digest did not")
+	}
+	if _, err := LoaderDigest([]string{"a", "c"}, tab); err == nil {
+		t.Error("c has no arm64 entry, and the digest took it")
+	}
+	for _, empty := range []map[string]map[string]map[string]string{nil, {}} {
+		if _, err := LoaderDigest([]string{"a"}, empty); err == nil {
+			t.Error("an empty table gave a digest")
+		}
+	}
+
+	src := Dir("../..")
+	real, err := ReadLoaderTable(src)
+	if err != nil || real == nil {
+		t.Fatalf("read %s: %v", LoaderTablePath, err)
+	}
+	m, err := ReadManifest(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, fam := range m.Families {
+		var withWeights []string
+		for _, p := range fam.Programs {
+			if _, err := os.Stat(filepath.Join("../..", p, "model.safetensors")); err == nil {
+				withWeights = append(withWeights, p)
+			}
+		}
+		if len(withWeights) == 0 {
+			continue
+		}
+		if _, err := LoaderDigest(withWeights, real); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
