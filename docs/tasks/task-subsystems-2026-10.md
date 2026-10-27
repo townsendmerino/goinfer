@@ -73,7 +73,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | done | 14 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
+| PW5 | decision | 14 of 82 packages cacheable; Gemini's third look fixed (§12.3); retire, allowlist or keep the deny-list is Francis's call; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -2727,6 +2727,12 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 - Clock reads count in every file, not only in tests, failing safe; the registered "a test that reads the clock" is
   widened.
 - Paths are judged on string literal values, and a climb past the module root counts in any module.
+
+**PW5 after Gemini's third look (2026-10-27, `docs/measurements/pw5-2026-10.md` §6):**
+- Climbs are counted on cleaned literals and summed per package. A declaration counts only once applied.
+- The patterns are wider, and randomness is a hidden input.
+- **DECISION NEEDED (Francis): retire the cache (A), flip to an allowlist (B), or keep the deny-list (C).** The record
+  recommends A.
 
 ## 13. Order, sizes, and what each step is worth alone
 

@@ -41,6 +41,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
@@ -69,8 +70,9 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a device",
-        "a subprocess (through internal/hwreport)",
+        "a subprocess (through cuda/internal/gpudev)",
         "files outside the module (through decoder)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through cuda)"
       ]
@@ -80,8 +82,9 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a device",
-        "a subprocess (through internal/pullcmd)",
+        "a subprocess (through cuda/internal/gpudev)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through cuda)"
       ]
@@ -91,6 +94,7 @@
       "reasons": [
         "a device",
         "a subprocess",
+        "files outside the module",
         "the whole environment",
         "timing"
       ]
@@ -105,6 +109,7 @@
       "cacheable": false,
       "reasons": [
         "a device",
+        "a subprocess (through cuda/internal/gpudev)",
         "files outside the module"
       ]
     },
@@ -112,6 +117,7 @@
       "cacheable": false,
       "reasons": [
         "a device",
+        "a subprocess (through cuda/internal/gpudev)",
         "files outside the module"
       ]
     },
@@ -134,6 +140,7 @@
       "cacheable": false,
       "reasons": [
         "a device",
+        "a subprocess (through cuda/internal/gpudev)",
         "files outside the module",
         "timing"
       ]
@@ -188,6 +195,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/hwreport)",
         "files outside the module (through decoder)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -213,7 +221,7 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess",
-        "files outside the module (through decoder)",
+        "files outside the module",
         "timing (through chat)"
       ]
     },
@@ -222,7 +230,7 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess",
-        "files outside the module (through decoder)",
+        "files outside the module",
         "timing (through chat)"
       ]
     },
@@ -253,6 +261,7 @@
         "a device",
         "a subprocess (through internal/hwreport)",
         "files outside the module (through decoder)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -264,6 +273,7 @@
         "a device",
         "a subprocess (through internal/pullcmd)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
@@ -294,7 +304,8 @@
       "reasons": [
         "OS memory (through internal/mem/probe)",
         "a subprocess",
-        "files outside the module (through decoder)",
+        "files outside the module",
+        "randomness",
         "the network (through pull)",
         "timing"
       ]
@@ -349,7 +360,7 @@
       "cacheable": false,
       "reasons": [
         "OS memory (through internal/mem/probe)",
-        "files outside the module (through decoder)",
+        "files outside the module",
         "the network (through pull)",
         "timing"
       ]
@@ -361,6 +372,7 @@
       "cacheable": false,
       "reasons": [
         "a subprocess",
+        "files outside the module",
         "the whole environment",
         "timing"
       ]
@@ -386,6 +398,7 @@
       "cacheable": false,
       "reasons": [
         "a subprocess",
+        "files outside the module",
         "the whole environment",
         "timing"
       ]
@@ -469,6 +482,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module",
+        "randomness",
         "the network",
         "the whole environment",
         "timing"
@@ -495,6 +509,7 @@
     "internal/towerid": {
       "cacheable": false,
       "reasons": [
+        "files outside the module",
         "timing (through embeddinggemma2)"
       ]
     },
@@ -531,7 +546,8 @@
         "OS memory (through internal/mem/probe)",
         "a device",
         "a subprocess (through internal/hwreport)",
-        "files outside the module (through decoder)",
+        "files outside the module (through metal)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -543,6 +559,7 @@
         "a device",
         "a subprocess (through internal/pullcmd)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
@@ -575,6 +592,7 @@
       "cacheable": false,
       "reasons": [
         "a device",
+        "files outside the module (through metal/internal/gpudev)",
         "timing"
       ]
     },
@@ -600,6 +618,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/pullcmd)",
         "files outside the module",
+        "randomness (through internal/serveapp)",
         "the network",
         "timing (through internal/serveapp)"
       ]
@@ -610,6 +629,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/pullcmd)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
