@@ -37,7 +37,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS (mac-vk01, branch `vk5-switch-2026-10`); week 2 (programs plus kernels, forward sources out) next, gates first; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in) gates W1–W5 registered, building (mac-vk01, branch `vk5-week2-2026-10`); a possible week 3 (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -598,6 +598,53 @@ equal week 1's per configuration; the one-time refresh moved only the 43 `deps_h
 aikit-only commit leaves every family fresh; one changed fingerprint re-stales all 43; the shadow job explains all 43
 across the switch by the change of definition. Added beyond the registration: the shadow job also explains an old-only
 family when the table moved only for configurations other than the runner's own.
+
+#### Week 2's gates, registered 2026-10-27 before the code (mac-vk01; Francis, 05:52: option A)
+
+Week 2 shadows a key in which the program builders leave and VK4's program fingerprints take their place.
+- **Builders, out:** `decoder/program.go`, `blockspec.go`, `arch.go`, `config.go`, `registry.go` and every
+  `decoder/arch_*.go` adapter.
+- **Kept in:** the executor, loader/quant/serialize and supporting files, and the kernel table's digest (today's tail).
+  The program fingerprint cannot see an executor, so executors stay (the brief's option B is rejected for that reason).
+- **The shadow key** for a family with programs is its dependency files less the builders, then
+  `programs=<digest>`, then today's tail. The digest is over the family's fixtures' entries in
+  `testdata/program_fingerprints.json`, for every GOARCH in it, so every runner computes the same key.
+- **A family with no program keeps today's key, unchanged.**
+- **The family's programs are a new `programs` field in its parity record:** the fixture directories whose config's
+  adapter is defined in that family's own adapter file. Where one adapter file serves several families (`arch_deepseek.go`,
+  `gemma12.go`, `arch_llama.go`, `arch_qwen3_moe.go`), the family the fixture's `model_type` names takes it. That gives
+  31 families with programs and 12 without: `deepseek_v2`, `kimi_k2`, `gpt-oss`, `gpt2`, `granitemoehybrid`,
+  `internlm2`, `laguna`, `qwen2`, `qwen2_moe`, `qwen3`, `qwen3_vl`, `spark2_5`.
+- **The shadow job** compares the two keys from the committed tables, so it no longer builds the kernel suite. The
+  kernel table moves both keys alike.
+- **Explained disagreements:**
+  - an old-only family whose every moved input is a builder file;
+  - a new-only family whose only moved input is its program list (fixtures added to its key, as at this PR).
+- **Unexplained:** every other disagreement. In particular, a family whose programs move while today's key does not
+  means a file outside its dependencies changed a program.
+- **The limit, stated before the week.** A builder change on a path no fixture exercises leaves every program
+  unchanged, so it reads as an explained old-only verdict, exactly like a refactor. Week 2's grade therefore reads
+  each such push's builder diff.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| W1 equivalence | a decoder test computes the week-2 key itself (`familyDepFiles` less the builders, the program table, the kernel table) and finds it equal to `paritykey`'s for all 43 families; for the 12 without programs it equals today's key | never | one run | seconds |
+| W2 the mapping | every fixture in the program table is in exactly one family's `programs`; each listed fixture has an entry for every GOARCH; its config's adapter is defined in a file of that family's `own` list. Mutation: moving `testdata/llama-tiny` to `voxtral`'s list turns it red | never | one run each | seconds |
+| W3a refactor-blind | a throwaway commit adding an unused constant to `decoder/arch.go`: today's key re-stales all 43; `gate shadow` gives 31 old-only, each explained by `decoder/arch.go`, and 12 agree-stale | — | one run | under a minute |
+| W3b change-sensitive | a throwaway commit changing one parameter in `arch_gemma3.go` (with the program table's `-update`): `gemma3` agree-stale, the other 42 agree-fresh | — | one run | under a minute |
+| W3c a program moved from outside | a throwaway commit changing only `testdata/llama-tiny`'s entry in the program table: `llama` new-only, unexplained, exit 1 | — | one run | seconds |
+| W4 classifier | `TestCompare_classes` covers every week-2 case; `gate mutation` dropping the "every moved input is a builder" condition turns it red | never | one run | seconds |
+| W5 the job across this PR | `gate shadow origin/main <this PR's head>`: 31 new-only, each explained by its program list; 12 agree-fresh; none unexplained | — | one run | under a minute |
+
+**Week 2's stopping rule** is SD6's: one week of pushes to main from the week-2 job's first run, with no unexplained
+disagreement. In addition, every push with an explained old-only verdict has its builder diff read in the record and
+classed either as a refactor or as a behavior change on a path no fixture exercises. A behavior change of the second
+kind is a finding: the switch waits until a fixture covers that path. The switch is its own PR and its own decision.
+
+**Possible week 3 (option C), not started.** A numerics fingerprint of decoder's own ops (a VK1-style suite over the
+executor's op kinds on fixed inputs) would let the executor files leave the key the way the kernel table let the aikit pin
+leave it. The hand-written forwards are whole-model paths, so they would need family-level fixtures. It needs its own
+gates (reach, mutation). Size L.
 
 ### 5.9 VK6 — the daily canary and the coverage audit
 
