@@ -144,37 +144,7 @@ func buildSB2Census(t *testing.T) []string {
 
 	// Per tiny fixture, option cell and backend: the decoder's decision on a real Load.
 	fakes := sb2Fakes(t)
-	// Only committed fixtures: a checkout with local-only weights (the .safetensors ignore keeps many out of git) would otherwise
-	// census more than CI does.
-	out, err := exec.Command("git", "ls-files", "--", "..").Output()
-	if err != nil {
-		t.Fatalf("the census needs git to tell committed fixtures from local ones: %v", err)
-	}
-	committed := map[string]bool{}
-	for _, l := range strings.Split(string(out), "\n") {
-		committed[filepath.Clean(l)] = true
-	}
-	var fixtures []censusFamily
-	for _, f := range censusFamilies(t) {
-		w := f.path
-		if f.dir {
-			ws, _ := filepath.Glob(filepath.Join(f.path, "*.safetensors"))
-			if len(ws) == 0 {
-				continue
-			}
-			sort.Strings(ws)
-			w = ws[0]
-		}
-		if !committed[filepath.Clean(w)] { // ls-files prints paths relative to the package directory, as w is
-			continue
-		}
-		if _, err := censusConfig(f.path, f.dir); err == nil {
-			fixtures = append(fixtures, f)
-		}
-	}
-	if len(fixtures) < 20 {
-		t.Fatalf("only %d fixtures resolved a config: a census that read little covers little", len(fixtures))
-	}
+	fixtures := sb2Fixtures(t)
 	for _, f := range fixtures {
 		for _, cell := range sb2Cells {
 			for _, be := range []string{"cpu", "cuda", "metal", "webgpu"} {
@@ -369,4 +339,40 @@ func readSB2Golden(path string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// sb2Fixtures is layer D's fixtures: the census families with committed weights and a config that resolves. Only committed
+// ones, so a checkout with local-only weights (the .safetensors ignore keeps many out of git) censuses what CI does.
+func sb2Fixtures(t *testing.T) []censusFamily {
+	t.Helper()
+	out, err := exec.Command("git", "ls-files", "--", "..").Output()
+	if err != nil {
+		t.Fatalf("the census needs git to tell committed fixtures from local ones: %v", err)
+	}
+	committed := map[string]bool{}
+	for _, l := range strings.Split(string(out), "\n") {
+		committed[filepath.Clean(l)] = true
+	}
+	var fixtures []censusFamily
+	for _, f := range censusFamilies(t) {
+		w := f.path
+		if f.dir {
+			ws, _ := filepath.Glob(filepath.Join(f.path, "*.safetensors"))
+			if len(ws) == 0 {
+				continue
+			}
+			sort.Strings(ws)
+			w = ws[0]
+		}
+		if !committed[filepath.Clean(w)] { // ls-files prints paths relative to the package directory, as w is
+			continue
+		}
+		if _, err := censusConfig(f.path, f.dir); err == nil {
+			fixtures = append(fixtures, f)
+		}
+	}
+	if len(fixtures) < 20 {
+		t.Fatalf("only %d fixtures resolved a config: a census that read little covers little", len(fixtures))
+	}
+	return fixtures
 }

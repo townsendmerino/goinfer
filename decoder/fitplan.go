@@ -182,9 +182,9 @@ const (
 // resident; CPU alone falls to weight-paging rather than ever declining.
 //
 // No I/O, no side effects, and no defaults invented (see PlanRequest). backend is "cuda", "metal", "cpu" or "webgpu"; an unrecognised name
-// gets the same feature-eligibility decline an unsupported arch would, enforced by the ResidentEligible check below rather than by
-// MissingResidentFeatures alone, which passes a feature-free arch on any name. webgpu's declines mirror gpu/residency.go's BuildResident
-// (the Nemotron/Qwen3.5/MLA combination with KVF16/KVI8, and WebGPUCtxCeiling).
+// declines. Whether backend may run this model resident is the load's own admission (Admit, with this model's facts), so Plan and the
+// load agree. webgpu's declines mirror gpu/residency.go's BuildResident (the Nemotron/Qwen3.5/MLA combination with KVF16/KVI8, and
+// WebGPUCtxCeiling).
 func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	return m.plan(backend, freeBytes, req, true)
 }
@@ -211,18 +211,17 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 }
 
 // planIneligible is why backend has no resident path for this model at all, before any byte is priced ("" when it has one):
-// a feature the backend does not implement, the runner's shape, MoE router capacity or per-layer geometry (ResidentEligible),
-// and on webgpu a lossy KV flag on a family whose kernels allocate f32 KV regardless (gpu/residency.go's own decline).
+// the decoder's admission (Admit) with this model's own facts on backend, and on webgpu a lossy KV flag on a family whose kernels
+// allocate f32 KV regardless (gpu/residency.go's own decline). A name with no declared resident features is never eligible.
 func (m *Model) planIneligible(backend string, req PlanRequest) string {
 	if backend != "cpu" {
-		if missing := m.MissingResidentFeatures(ResidentBackendFeatures(backend)); len(missing) > 0 {
-			return fmt.Sprintf("%s does not implement %v for this architecture — use the staged/CPU path", backend, missing)
+		if _, declared := residentBackendFeatures[backend]; !declared {
+			return fmt.Sprintf("%s: no resident path is declared for this backend — use the staged/CPU path", backend)
 		}
-		// MissingResidentFeatures alone is not admission: an unrecognised name plus a feature-free arch passes it vacuously.
-		if !ResidentEligible(m.w.arch, backend) {
-			return fmt.Sprintf("%s: not eligible for this architecture's resident path (unrecognised backend, "+
-				"an own-forward shape the runner does not bridge, MoE router capacity, or per-layer attention "+
-				"geometry) — use the staged/CPU path", backend)
+		f := m.admitFacts()
+		f.Backend, f.Residency = backend, true
+		if why := Admit(f).Why; why != "" {
+			return fmt.Sprintf("%s: %s — use the staged/CPU path", backend, why)
 		}
 	}
 	if backend == "webgpu" && (req.KVF16 || req.KVI8) {

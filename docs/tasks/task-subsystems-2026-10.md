@@ -2310,6 +2310,23 @@ backend it is asked about.
   and Plan does not read them. Layer B-cuda counts the cells where they decline. Closing that is a separate decision.
 - **Cost basis:** tiny loads, seconds; the MM1 census is about a minute.
 
+**Read (2026-10-27, nobara-sb01).**
+- **Gate 1.** `decoder/plan_admit_test.go:TestPlanAgreesWithAdmission` passes: Plan and the load's admission agree on all 1,890
+  cells (70 fixtures × 9 cells × 3 backends). 405 of those cells have no CPU model. They are fixtures no backend loads, and none of
+  them reached a build.
+- **Plant.** The old arch-only verdict disagrees with the load on 260 cells:
+  - 216: per-32 activations on metal and webgpu, where Plan said eligible and the load declines;
+  - 8: dense Nemotron-H at int8 or f32 without the knob, where Plan said eligible and the load declines;
+  - 4: Nemotron 3 Nano on webgpu, where Plan said not eligible and the load builds it;
+  - 2: Phi-3 at per-32 W8A8 on cuda, where the activation hazard is cleared, Plan said not eligible and the load builds it.
+- **MM1's census.** It was dumped on main and on this branch and compared group by group.
+  - 2,520 lines are wording only: a decline that stays a decline and now quotes `Admit`'s sentence.
+  - The groups whose verdict changed are all `testdata/nemotron-tiny` at f32 (D3 on cuda, metal and webgpu, and D4, Metal's
+    context fit, which reads the same eligibility) or `testdata/nemotron3nano-tiny` at int4 on webgpu (D3).
+  - Every one of them is in the plant's disagreement set, so nothing outside it moved. The amd64 golden is regenerated; it is the
+    only class the golden records.
+- **Gate 2** (webgpu with the KV request, against `staticResidentDecline`) follows once SB2 step 2 (#344) is on main.
+
 ### SB3 — family adapters
 
 Moved to VK2 (one file each) and VK4 (program fingerprints). With SB1 and SB2, adding a family is a file, a fixture and
