@@ -32,6 +32,9 @@ const fitUsage = `%[1]s fit <path> — show how this checkpoint would be placed 
   fit <file.gguf|dir> -ctx 32768 report at a specific context (refused if it doesn't fit, not
                                   silently shrunk — pass a smaller -ctx to see what DOES fit)
   fit <file.gguf|dir> -quant int8int8
+  fit <file.gguf|dir> -profile testdata/machines/<box>.json [-backend B] [-json]
+                                 price it against a recorded machine as Load's own check would,
+                                 without loading it; exit 0 when it proceeds, 4 when refused
   fit <file.gguf|dir> -measure   also self-measure decode rate on the best admitted backend
                                   (tasks/task-fit-to-hardware.md §5) — a REAL load + a short decode,
                                   not free like the report above; off by default
@@ -57,6 +60,11 @@ func Run(args []string) int {
 	kvF16 := fs.Bool("kv-f16", false, "plan KV at f16 instead of f32 (halves KV bytes; a lossy precision choice, never chosen silently)")
 	kvI8 := fs.Bool("kv-i8", false, "plan KV at int8 instead of f32 (further shrinks KV bytes; lossy)")
 	slots := fs.Int("moe-cache-slots", 0, "an explicit expert-cache slot count to plan against instead of letting Plan choose the largest that fits")
+	profile := fs.String("profile", "", "price the load against a recorded machine (a testdata/machines/*.json entry) as Load's own memory check would, without loading it; exit 4 when it would be refused")
+	backend := fs.String("backend", "", "with -profile: the backend the load will use (cpu, cuda, metal, webgpu); what Load prices depends on it and on the backends linked into this binary")
+	moeCache := fs.Bool("moe-cache-experts", false, "with -profile: the load builds a CUDA expert cache")
+	stream := fs.Bool("stream-weights", false, "with -profile: the load streams its weights")
+	asJSON := fs.Bool("json", false, "with -profile: print the answer as one line of JSON")
 	measure := fs.Bool("measure", false, "self-measure decode rate on the best admitted backend (tasks/task-fit-to-hardware.md §5) — a real load + short decode, not free")
 
 	var path string
@@ -71,6 +79,21 @@ func Run(args []string) int {
 		fmt.Fprintf(os.Stderr, "%s: fit needs a checkpoint path\n\n", self())
 		fs.Usage()
 		return 2
+	}
+	if *profile != "" {
+		opts := decoder.Options{Quant: *quant, Backend: *backend, MoECacheExperts: *moeCache, StreamWeights: *stream}
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "ctx" {
+				opts.ResidentContext = *ctx // an explicit -ctx is a pin, as it is for Load
+			}
+		})
+		if *kvF16 {
+			opts.KVPrecision = "f16"
+		}
+		if *kvI8 {
+			opts.KVQuant = "i8"
+		}
+		return runProfile(os.Stdout, path, *profile, opts, *asJSON)
 	}
 	// An hf:/demo: reference resolves exactly as serve's and chat's --model does (internal/modelload):
 	// fetched, or found in the cache, before anything is measured. A plain path is untouched.
