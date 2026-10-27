@@ -213,6 +213,7 @@
       "decoder",
       "internal/batchio",
       "internal/cliutil",
+      "internal/codec",
       "internal/decidecmd",
       "internal/fitcmd",
       "internal/giw",
@@ -238,6 +239,7 @@
     "internal/decide": [
       "chat",
       "decoder",
+      "internal/codec",
       "internal/confidence",
       "tokenizer"
     ],
@@ -284,6 +286,7 @@
       "internal/batchio",
       "internal/clef",
       "internal/cliutil",
+      "internal/codec",
       "internal/connect",
       "internal/decide",
       "internal/loadflags",

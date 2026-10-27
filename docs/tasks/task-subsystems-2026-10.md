@@ -2454,6 +2454,15 @@ Gates, per pull request:
   reverted. **G-CX-api:** no non-test file under `chat/`, `tokenizer/` or `constrain/` changed. The layout data records
   the new arrows (`internal/codec` to `chat`, `multimodal`, `tokenizer`; `chat`'s test to `internal/codec`), and
   `scripts/touched_scans.py` runs the arm when `internal/codec`, `tokenizer` or `multimodal` changes.
+- **C2 landed on its branch (2026-10-27, the Mac).** Eleven sites call the codec. In `serveapp`: `promptForT`,
+  `encodePrompt`'s render and whole-prompt encode, the tools route, `fixedPromptTokens`, `encodeVisionSegments`,
+  `imagesPrompt` and the model load's `Detect`. In `chatapp`: the session's `Detect`, the batch encode and the image
+  prompt. In `decide`: `NewPlainTokenizer` and `EncodeChat`. Each replaced expression is the codec function's body
+  (`RenderToolsSegments` with no tools delegates to `RenderSegments`, so `Segments` is the same call where the tools
+  route passed none). **G-CX-callers:** `touched.py` green; the `serveapp` tests named for the changed paths (vision,
+  tools, overflow, carried IDs, think, prompt, image, audio, and the per-family image tests) pass, 167 run and 11
+  skipped (real checkpoints or env-gated assets); no test or golden changed. **G-CX-api:** still no non-test change under
+  `chat/`, `tokenizer/` or `constrain/`.
 
 ### SB9 — the towers
 
