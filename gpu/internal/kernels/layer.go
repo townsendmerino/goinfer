@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -148,12 +149,12 @@ func (c *Context) submitUnary(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, n in
 }
 
 func (c *Context) newF32(label string, n int) (*wgpu.Buffer, error) {
-	return c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	return c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 }
 
 func (c *Context) dims4(label string, a uint32, bf float32) (*wgpu.Buffer, error) {
 	// pack {a, bf-as-bits-or-0, 0, 0}; for rmsnorm bf is eps, else unused.
-	return c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes([]uint32{a, math.Float32bits(bf), 0, 0}), Usage: wgpu.BufferUsageUniform})
+	return c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes([]uint32{a, math.Float32bits(bf), 0, 0}), Usage: wgpu.BufferUsageUniform})
 }
 
 // FusedMLP runs RMSNorm → gate/up → SwiGLU → down → residual entirely on-device,
@@ -187,7 +188,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	// the same buffer's bytes in liveBufferBytes, since only the wrapper kept here ever gets Close()d by rel().
 	xnDB := NewDeviceBuffer(xn, H)
 	keep = append(keep, xnDB)
-	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rms-p", Contents: wgpu.ToBytes([]uint32{uint32(H), math.Float32bits(eps), BoolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rms-p", Contents: wgpu.ToBytes([]uint32{uint32(H), math.Float32bits(eps), BoolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}

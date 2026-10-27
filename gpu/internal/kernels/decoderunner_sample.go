@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -40,11 +41,11 @@ func NewGumbelState(c *Context, logits *wgpu.Buffer, vocab int, keep func(releas
 	}
 	s := &gumbelState{pl1: pl1, pl2: pl2, nb: nb}
 	mk := func(size uint64, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
-		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: size, Usage: usage})
+		b, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: size, Usage: usage})
 		if e != nil {
 			return nil, fmt.Errorf("gpu: gumbel sampler buffer: %w", e)
 		}
-		keep(b.Release)
+		keep(releaser(b))
 		return b, nil
 	}
 	if s.prm, err = mk(uint64(len(s.scratch)*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst); err != nil {

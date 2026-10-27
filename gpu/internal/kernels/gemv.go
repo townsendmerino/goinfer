@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -205,20 +206,20 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []DecodeWeight) ([][]
 			}
 		}
 	}
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "batch-act", Contents: wgpu.ToBytes(packInt8(aq, 1, len(aq))), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: BatchGEMV act: %w", err)
 	}
-	defer aBuf.Release()
-	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	defer releaseBuf(aBuf)
+	asBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "batch-ascale", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: BatchGEMV ascale: %w", err)
 	}
-	defer asBuf.Release()
+	defer releaseBuf(asBuf)
 
 	type perOp struct {
 		dst, dims, stag *wgpu.Buffer
@@ -229,13 +230,13 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []DecodeWeight) ([][]
 	release := func() {
 		for _, p := range pops {
 			if p.dst != nil {
-				p.dst.Release()
+				releaseBuf(p.dst)
 			}
 			if p.dims != nil {
-				p.dims.Release()
+				releaseBuf(p.dims)
 			}
 			if p.stag != nil {
-				p.stag.Release()
+				releaseBuf(p.stag)
 			}
 			if p.bg != nil {
 				p.bg.Release()
@@ -248,15 +249,15 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []DecodeWeight) ([][]
 	pass := enc.BeginComputePass(nil)
 	for i, rm := range rms {
 		N := rm.nRows()
-		dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "batch-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		dst, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "batch-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if err != nil {
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchGEMV dst: %w", err)
 		}
-		dims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kPad()), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		dims, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kPad()), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
-			dst.Release()
+			releaseBuf(dst)
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchGEMV dims: %w", err)
@@ -273,8 +274,8 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []DecodeWeight) ([][]
 			},
 		})
 		if err != nil {
-			dst.Release()
-			dims.Release()
+			releaseBuf(dst)
+			releaseBuf(dims)
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchGEMV bind: %w", err)
@@ -292,7 +293,7 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []DecodeWeight) ([][]
 	}
 	pass.Release()
 	for i := range pops {
-		stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "batch-stage", Size: uint64(pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "batch-stage", Size: uint64(pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			release()
 			return nil, fmt.Errorf("gpu: BatchGEMV stage: %w", err)
@@ -365,7 +366,7 @@ func (c *Context) NewGEMVRunner(rm DecodeWeight) (*GEMVRunner, error) {
 	N := rm.nRows()
 	kp := rm.kPad()
 	mk := func(label string, size uint64, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
-		return c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: size, Usage: usage})
+		return c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: label, Size: size, Usage: usage})
 	}
 	aBuf, err := mk("gemvr-act", uint64(kp/4*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
 	if err != nil {
@@ -375,30 +376,30 @@ func (c *Context) NewGEMVRunner(rm DecodeWeight) (*GEMVRunner, error) {
 	// error-cleanup Release() below. Release the already-allocated buffers on the way out.
 	asBuf, err := mk("gemvr-ascale", 4, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
 	if err != nil {
-		aBuf.Release()
+		releaseBuf(aBuf)
 		return nil, err
 	}
 	dstBuf, err := mk("gemvr-dst", uint64(N*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
 	if err != nil {
-		aBuf.Release()
-		asBuf.Release()
+		releaseBuf(aBuf)
+		releaseBuf(asBuf)
 		return nil, err
 	}
 	stag, err := mk("gemvr-stage", uint64(N*4), wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
 	if err != nil {
-		aBuf.Release()
-		asBuf.Release()
-		dstBuf.Release()
+		releaseBuf(aBuf)
+		releaseBuf(asBuf)
+		releaseBuf(dstBuf)
 		return nil, err
 	}
-	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "gemvr-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
-		aBuf.Release()
-		asBuf.Release()
-		dstBuf.Release()
-		stag.Release()
+		releaseBuf(aBuf)
+		releaseBuf(asBuf)
+		releaseBuf(dstBuf)
+		releaseBuf(stag)
 		return nil, err
 	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
@@ -413,11 +414,11 @@ func (c *Context) NewGEMVRunner(rm DecodeWeight) (*GEMVRunner, error) {
 		},
 	})
 	if err != nil {
-		aBuf.Release()
-		asBuf.Release()
-		dstBuf.Release()
-		stag.Release()
-		dimsBuf.Release()
+		releaseBuf(aBuf)
+		releaseBuf(asBuf)
+		releaseBuf(dstBuf)
+		releaseBuf(stag)
+		releaseBuf(dimsBuf)
 		return nil, err
 	}
 	return &GEMVRunner{c: c, rm: rm, aBuf: aBuf, asBuf: asBuf, dstBuf: dstBuf, dimsBuf: dimsBuf, stag: stag, bg: bg, n: N}, nil
@@ -472,11 +473,11 @@ func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
 // Release frees the runner's buffers (not the resident weight).
 func (r *GEMVRunner) Close() error {
 	r.c.releaseOwned(func() {
-		r.aBuf.Release()
-		r.asBuf.Release()
-		r.dstBuf.Release()
-		r.dimsBuf.Release()
-		r.stag.Release()
+		releaseBuf(r.aBuf)
+		releaseBuf(r.asBuf)
+		releaseBuf(r.dstBuf)
+		releaseBuf(r.dimsBuf)
+		releaseBuf(r.stag)
 		r.bg.Release()
 	})
 	return nil
@@ -504,43 +505,43 @@ func (c *Context) MatmulW8A8GEMV(aq []int8, aScale float32, rm *ResidentW8A8) ([
 		return nil, fmt.Errorf("gpu: MatmulW8A8GEMV act too small: %d < %d", len(aq), K)
 	}
 	packed := packInt8(aq, 1, K)
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "gemv-act", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: GEMV act buffer: %w", err)
 	}
-	defer aBuf.Release()
-	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	defer releaseBuf(aBuf)
+	asBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "gemv-ascale", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: GEMV ascale buffer: %w", err)
 	}
-	defer asBuf.Release()
+	defer releaseBuf(asBuf)
 
-	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "gemv-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: GEMV dst buffer: %w", err)
 	}
-	defer dstBuf.Release()
+	defer releaseBuf(dstBuf)
 	dims := []uint32{1, uint32(rm.kp), uint32(N), 0}
-	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "gemv-dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: GEMV dims buffer: %w", err)
 	}
-	defer dimsBuf.Release()
-	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	defer releaseBuf(dimsBuf)
+	stage, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "gemv-stage", Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: GEMV staging: %w", err)
 	}
-	defer stage.Release()
+	defer releaseBuf(stage)
 
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.gemvLayout,

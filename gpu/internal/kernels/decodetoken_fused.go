@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -34,7 +35,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		}
 	}
 	defer rel()
-	keepBuf := func(b *wgpu.Buffer) { keep = append(keep, b.Release) }
+	keepBuf := func(b *wgpu.Buffer) { keep = append(keep, releaser(b)) }
 	keepBG := func(b *wgpu.BindGroup) { keep = append(keep, b.Release) }
 
 	enc, err := c.device.TryCreateCommandEncoder(nil)
@@ -52,7 +53,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		b, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -64,7 +65,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		b, e := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -144,7 +145,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		enc.TryCopyBufferToBuffer(src, 0, cache, uint64(pos*kvDim*4), uint64(kvDim*4))
 	}
 
-	xd, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	xd, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
@@ -197,11 +198,11 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		return nil, buildErr
 	}
 
-	stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(m.LMHead.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stag, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(m.LMHead.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
 	}
-	defer stag.Release()
+	defer releaseBuf(stag)
 	enc.TryCopyBufferToBuffer(logits, 0, stag, 0, uint64(m.LMHead.rows*4))
 	cmd, err := enc.TryFinish(nil)
 	if err != nil {

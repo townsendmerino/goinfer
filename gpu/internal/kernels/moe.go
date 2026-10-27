@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -398,12 +399,12 @@ func (s *ResidentStackedW8A8) Close() error {
 		traceFree(s)
 		if s.bq != nil {
 			accountFree(int64(s.bq.GetSize()))
-			s.bq.Release()
+			releaseBuf(s.bq)
 			s.bq = nil // a second Close must not release again
 		}
 		if s.bScales != nil {
 			accountFree(int64(s.bScales.GetSize()))
-			s.bScales.Release()
+			releaseBuf(s.bScales)
 			s.bScales = nil
 		}
 	})
@@ -428,13 +429,13 @@ func (c *Context) UploadStackedExperts(q8 [][]int8, scales [][]float32, nE, N, K
 		copy(packed[e*N*words:(e+1)*N*words], packInt8(q8[e], N, K))
 		copy(allScales[e*N:(e+1)*N], scales[e][:N])
 	}
-	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
+	bq, err := c.tryCreateBufferInit(mem.LineExperts, &wgpu.BufferInitDescriptor{Label: "moe-experts", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: stacked experts buffer: %w", err)
 	}
-	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-scales", Contents: wgpu.ToBytes(allScales), Usage: wgpu.BufferUsageStorage})
+	sc, err := c.tryCreateBufferInit(mem.LineExperts, &wgpu.BufferInitDescriptor{Label: "moe-expert-scales", Contents: wgpu.ToBytes(allScales), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
-		bq.Release()
+		releaseBuf(bq)
 		return nil, fmt.Errorf("gpu: stacked expert scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))

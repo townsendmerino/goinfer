@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -117,31 +118,31 @@ func (c *Context) MatmulW8A8GemmRow(aq []int8, aScales []float32, rm *ResidentW8
 	if err := c.ensureGemmRow(); err != nil {
 		return nil, err
 	}
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "gemmrow-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
-	defer aBuf.Release()
-	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-ascale", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(aBuf)
+	asBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "gemmrow-ascale", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
-	defer asBuf.Release()
-	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "gemmrow-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer releaseBuf(asBuf)
+	dstBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "gemmrow-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
-	defer dstBuf.Release()
-	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(dstBuf)
+	dimsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "gemmrow-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}
-	defer dimsBuf.Release()
-	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "gemmrow-stage", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer releaseBuf(dimsBuf)
+	stage, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "gemmrow-stage", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
 	}
-	defer stage.Release()
+	defer releaseBuf(stage)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.gemmRowLayout,
 		Entries: []wgpu.BindGroupEntry{
