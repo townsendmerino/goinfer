@@ -1000,8 +1000,8 @@ on the packed output registered first; stop with DECISION NEEDED if the move nee
   kind). The hashes are written from the tree before any code moves and committed; after the move the same test, with no
   edit, must reproduce every one.
 - **Void:** none; it is deterministic. **Stopping rule:** one run before (writes the hashes), one after; any differing
-  hash stops the move with DECISION NEEDED. **Cost basis:** seconds, most of it the 2^32 sweep; measured on the first run
-  and recorded here.
+  hash stops the move with DECISION NEEDED. **Cost basis:** seconds, most of it the 2^32 sweep; measured: 28 s writing the
+  32 hashes at `91fe36e7b`, 30 s reproducing all 32 on an unchanged tree.
 - **Then** the kernel tests that needed only the packers move to `cuda/kernels` by batch 1's gate (each by name with
   `-v` on the device, before and after), using `wpack` directly, and the ratchet falls.
 
