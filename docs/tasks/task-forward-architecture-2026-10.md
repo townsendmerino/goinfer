@@ -113,7 +113,7 @@
 2. **Hand-written kernels stay.** This is not a graph compiler. Fusions stay explicit and per backend, each gated against the
    unfused operations it replaces.
 3. **A backend that cannot run something declines by name, and never runs it wrong.** Admission is
-   `decoder/residency.go:Model.residentAdmission`, in three steps:
+   `decoder/admit.go:Admit`, in three steps:
    1. the runner shape (`decoder/residency.go:Model.decodeRunnerDecline`);
    2. `decoder/features.go:residentGateReason`;
    3. the backend's own build, which declines through `decoder/residency.go:DeclineResident`.
@@ -3030,7 +3030,7 @@ Code, read at `9593bd70`:
 - **The descriptor and admission:**
   - `decoder/registry.go:resolveArchitecture`, `decoder/registry.go:Architecture.validateResolved`;
   - `decoder/arch.go:Architecture`, `ownForwardFamily` (removed in OP3z);
-  - `decoder/residency.go:Model.residentAdmission`, `decoder/residency.go:Model.decodeRunnerDecline`,
+  - `decoder/admit.go:Admit`, `decoder/residency.go:Model.decodeRunnerDecline`,
     `decoder/residency.go:Architecture.decodeRunnerEligible`, `decoder/residency.go:Architecture.ropeResidentCompatible`,
     `decoder/residency.go:DeclineResident`;
   - `decoder/features.go:ResidentEligible`, `decoder/features.go:residentGateReason`,

@@ -516,7 +516,7 @@ below — own-forward families only once bridged, Granite-4.0-H behind GOINFER_S
 Nemotron-H's MoE block only on webgpu) and the load-time precision policy admits it
 (Nemotron-H is int4-only by default). It is not the whole answer: the per-backend gates —
 implemented features, MoE router capacity, per-layer geometry, Gemma 4 MoE — are
-residentGateReason's (features.go), and residentAdmission runs both. A decline → CPU (or
+residentGateReason's (features.go), and Admit (admit.go) runs both. A decline → CPU (or
 webgpu's staged path).
 ```
 
