@@ -72,7 +72,7 @@ survives to a tag unless caught here.
    A gate in `awaitingFirstConfirmation` may ride through one release unconfirmed, never two: a
    failure in a pending gate reads as an item, not a blocker. The previous release is the newest
    dated CHANGELOG header that is not vX.Y.Z, so it gives the same answer before or after the
-   `[Unreleased]` move. A red names each gate. Run it and promote it
+   release's section is written. A red names each gate. Run it and promote it
    (`go run ./cmd/gate ledger promote --gate <gate> --value PASS --by <you>`), or move it to
    `neverConfirmed` in `cmd/gate/parity.go` with the reason it will never be confirmed. Between
    releases nothing is enforced, and `release-assets.yml` runs the same check as a backstop.
@@ -91,7 +91,7 @@ survives to a tag unless caught here.
    record, `docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json`: **commit it**. `gate release` has a row for it: per box (darwin, linux),
    the newest record made at the same code decides, and only a `-full` PASS on a clean tree counts. A change under `docs/`, `site/` or `.github/`,
    or to a top-level `.md` file, does not void a run; any other change does.
-9. **The CHANGELOG names what changed**: `go run ./cmd/gate changelog -section vX.Y.Z` (or without `-section` before the `[Unreleased]` move). It compares the tree with the newest v* tag and lists each
+9. **The CHANGELOG names what changed**: `go run ./cmd/gate changelog -section vX.Y.Z` (or without `-section` before the release's section is written; it then reads the entries in `changelog.d/`). It compares the tree with the newest v* tag and lists each
    new HTTP route (read from `serve`'s registrations with `go/ast`), new or removed `serve` flag (`docs/flags.meta.json`), new model family (`docs/capability-matrix.json`) and a moved aikit pin that the
    section does not name; exit 1 means something is owed. A whole-string match (a route's `{id}` placeholders read as `{}`, a new route's sub-routes ride with it); anything that is not release-note material
    goes in `docs/changelog-waivers.txt` as `<kind> <name> <reason>` (a route's name is its method and path), the reason mandatory. aikit has the same rule for exported API
@@ -113,7 +113,9 @@ git push origin main v0.10.1        # published BEFORE any submodule go-gets it
 ```
 
 > **If `git commit -am` says "nothing to commit", that is expected — tag HEAD instead.** This step
-> assumes the `[Unreleased]` → `[vX]` CHANGELOG move happens *here*. When that move already landed
+> assumes the CHANGELOG's `[vX]` section is written *here*: `python3 scripts/changelog.py release vX --date YYYY-MM-DD`
+> collects the entries in `changelog.d/` (one file per change since the last release) into it, under `[Unreleased]`, and
+> removes them; the Highlights are then rewritten by the tagger as before. When that move already landed
 > in an earlier commit (it usually has, if the release was staged over more than one sitting) and
 > `go mod tidy` is a no-op, there is nothing left for a release commit. Do **not** force an empty
 > one: `git tag vX` on the current HEAD and push. Observed on the v0.10.3 run.
