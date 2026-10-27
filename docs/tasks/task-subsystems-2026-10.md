@@ -61,7 +61,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
-| SB8 | open | the conversation codec (templates, tokenizer, tool calls), golden per template; S–M | §8 |
+| SB8 | active | census (golden per template source, tool-call parse table), then the move to one package; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
@@ -2203,6 +2203,47 @@ a program fingerprint, and nothing shared changes.
 - **Contract:** messages to tokens to tool calls and back, per family template.
 - **Fast check:** golden renders and round trips per template. Its open contract question is
   `docs/tasks/task-tool-grammar-union-2026-09.md`'s: two or more tools under `tool_choice` auto. S–M.
+
+#### SB8 — the codec census, registered 2026-10-27 14:25 PDT before the code (mac-ax01)
+
+Francis's decision (14:16): census first, recorded at `origin/main`; the move to one package must reproduce every golden
+byte for byte; tool-call parsing gets its own table of model outputs and parsed calls, malformed ones included; nothing
+about what a model sees may change (a change stops the work with DECISION NEEDED).
+
+The census is a test in `chat` (it pins the clock Llama 3's and Harmony's date lines read, which only the package can) that
+calls only the API the serving routes call, in the order they call it. It adds test files and goldens under
+`chat/testdata/codec/` and changes no other file, so what it records is `origin/main`'s code.
+
+- **Template sources.** Every distinct chat template the repository tracks (`testdata/chat_goldens/` and
+  `testdata/chat_think_goldens/`), every chat template a local model under `~/models` carries that `Detect` accepts
+  (snapshotted into the census's testdata, so CI renders them too), and each family's constructor as the bare-checkpoint
+  fallback returns it. Each source is resolved through `Detect` exactly as a load does.
+- **Variants per source:** each `ThinkMode` where the template has a reasoning spec, each `ToolFormat` where it declares a
+  native tool form, each reasoning effort for Harmony.
+- **Conversations,** fixed: system plus user; user alone; multi-turn with non-ASCII text; a replayed assistant reasoning
+  turn; tools offered; a tool call and its result; two calls and two results; a finished tool loop and a follow-up; a user
+  message carrying the family's own control-token text (it must stay text); an image placeholder where the family has a
+  block (Gemma 3, Gemma 4, Qwen-VL ChatML, GLM-OCR, Pixtral, LFM2-VL) and an audio placeholder for Gemma 4, built and
+  spliced as `serveapp` builds them.
+- **Recorded per case:** the segments (text and the Special flag), the rendered string's equality with their concatenation,
+  the family name, its stop strings, its tool-call opener, whether the prompt opens a think block; and, with the source's
+  tokenizer, the token IDs (`EncodeSegments`, no added BOS, as the routes encode), the stop strings' IDs, and whether the IDs
+  decode back to the rendered text.
+- **Tokenizers.** Tracked ones (Qwen2.5-Coder's GGUF metadata, Mistral v0.3's `tokenizer.json`) are checked everywhere; a
+  local one is named by its `~/models` path and SHA-256: present with that hash, its IDs are checked; present with another,
+  the test fails; absent, the test logs a named skip and prints how many ID checks ran and how many were skipped. Llama 3,
+  Mellum 2 and Harmony tokenizers are not on the Mac: their IDs are recorded on nobara by the same `-update`, which keeps
+  recorded IDs whose tokenizer is absent, and that commit's diff must add IDs only.
+- **Tool-call parse table** (its own golden): about 40 model outputs across every family's dialect (Hermes JSON, Qwen 3.5
+  XML, Mistral, Llama 3, Gemma 4, Harmony, fenced, bare), well-formed and malformed (bad JSON, unterminated, unknown tool,
+  arguments of the wrong type or not an object, a call inside a think block, prose that mentions the opener), each through
+  `ParseToolCalls` and `ParseToolCallsFor` with a fixed tool list, for each family and tool format, lenient off and on.
+- **Tier 0 throughout.** The goldens are JSON, gzipped if one exceeds 1 MB. **Void:** none (deterministic). **Shown red:** a
+  planted one-byte change to a template and to a parser must fail the census, then be reverted. **Stopping rule:** a census
+  that differs from its golden after the move stops with DECISION NEEDED; there is no tolerance. **Cost basis:** seconds;
+  the Gemma tokenizers load in about a second each.
+- **The move** (one package for the codec) is registered after the census lands, with its package shape; `chat`,
+  `tokenizer` and `constrain` are in apidiff's Hard tier, so a shape that changes their exported API is the owner's call.
 
 ### SB9 — the towers
 
