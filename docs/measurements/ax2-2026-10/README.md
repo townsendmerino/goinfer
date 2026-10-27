@@ -109,3 +109,22 @@ free in the same command.
   `TestResidentDenseBytes_matchesCUDADevice` with its 0.5B and 1.5B subtests (the build's device bytes exceed Plan's
   figure plus the scratch margin). **They are red on origin/main on nobara's card**, independent of Track AX.
   `TestCUDA_launchDirect` segfaults on both sides, as at AX1.
+
+## AX3: no goinfer module requires aikit's gpu module
+
+Gates registered in the task doc's §7.11 (16:54) before the code.
+
+| gate | result |
+|---|---|
+| AX3-S (the scan) | **PASS**: `internal/movedpaths`'s `TestNoMovedAikitPath` is green on the tree. Before the requires were dropped it listed exactly the `go.mod`/`go.sum` lines AX3 removes. A planted aikit `gpu` import in a test file and a planted `aikit/gpu` require in `metal/go.mod` each turned it red with the file and line; green after each removal. Listed in `scripts/touched_scans.py` |
+| AX3-M (the module graphs) | **PASS**: no `go.mod` or `go.sum` names `aikit/gpu` or `aikit/gpu/visioncuda`; `go list -m all` in `metal` and in `cuda` (`GOOS=linux`) names neither |
+| AX3-B | **PASS**: build, vet and staticcheck of all five modules under their tags; the root cleanliness guard 0; `TestHardwareCensus` 31 predicates, 31 entries; `cmd/gate`'s `TestModRequire` and `TestRowPins`; `decoder`'s `TestAikitPinsAgree`; `test_touched.py`; the citation lint, exit 0 both with the sibling aikit checkout and as CI runs it (module cache only); `TestTowerIdentity_metal` equal to AX2c's record |
+| AX3-G | deferred to the next release tag (`standalone-build.yml`), as registered |
+
+**The citation lint needed no fallback**, contrary to what §7.11 registered. As CI runs it, with only the module cache, the
+lint answered 23 lookups from aikit's root module and none from `aikit/gpu`, at origin/main and on this branch alike. No
+live document resolves a citation through `aikit/gpu`. A pinned record's older `aikit/gpu` still comes through CI's
+`--pinned-modules` step, which reads each pinned commit's own `cuda/go.mod`.
+
+One import was left behind by AX2d: `cuda/kernels/ptx_test.go` arrived with SB1's batch 1 after AX2d's rewrite ran. A
+mechanical commit at AX3's start switched it. From AX3 on, `internal/movedpaths` catches the next one.
