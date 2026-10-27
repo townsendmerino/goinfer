@@ -1,9 +1,16 @@
 {
-  "uses": [],
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe"
+  ],
   "own": [
     "decoder/arch_bailing_hybrid.go",
     "decoder/kda.go",
-    "decoder/kda_rehearsal.go"
+    "decoder/kda_rehearsal.go",
+    "decoder/forward_deepseek.go",
+    "decoder/mla_int8.go"
   ],
   "programs": [
     "testdata/bailing_hybrid-tiny"

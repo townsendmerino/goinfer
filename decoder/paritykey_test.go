@@ -55,10 +55,10 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 
 // isBuilder is the decoder's own statement of which files build programs (paritykey.BuilderFile's list, written again so
 // W1 compares two computations): the program builder, the block spec, the architecture and config types, the registry,
-// and every architecture adapter.
+// and every architecture adapter (gemma12.go holds gemma's and gemma2's).
 func isBuilder(p string) bool {
 	switch p {
-	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go":
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/gemma12.go":
 		return true
 	}
 	base := filepath.Base(p)
@@ -86,11 +86,34 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 	if err := json.Unmarshal(b, &progs); err != nil {
 		t.Fatal(err)
 	}
-	kt, err := paritykey.ReadKernelTable(paritykey.Dir(repoPath(".")))
+	// The kernel table's digest, computed here: each configuration in sorted order and a newline, then its kernels as
+	// sorted "name=fingerprint" lines.
+	var kt map[string]map[string]string
+	kb, err := os.ReadFile(repoPath("testdata/kernel_fingerprints.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	tail := "kernel_fingerprints=" + paritykey.KernelTableDigest(kt)
+	if err := json.Unmarshal(kb, &kt); err != nil {
+		t.Fatal(err)
+	}
+	kd := sha256.New()
+	cfgs := make([]string, 0, len(kt))
+	for c := range kt {
+		cfgs = append(cfgs, c)
+	}
+	sort.Strings(cfgs)
+	for _, c := range cfgs {
+		kd.Write([]byte(c + "\n"))
+		names := make([]string, 0, len(kt[c]))
+		for k := range kt[c] {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			kd.Write([]byte(k + "=" + kt[c][k] + "\n"))
+		}
+	}
+	tail := "kernel_fingerprints=" + hex.EncodeToString(kd.Sum(nil))
 	src := paritykey.Dir("..")
 	pm, err := paritykey.ReadManifest(src)
 	if err != nil {

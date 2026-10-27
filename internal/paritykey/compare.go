@@ -2,19 +2,20 @@ package paritykey
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
 
-// Side is one end of a push, as Compare needs it: each family's two keys, dependency files, program list and programs
-// digest, the content digest of every dependency path, and today's tail.
+// Side is one end of a push, as Compare needs it: each family's two keys, dependency files and program list, each listed
+// fixture's fingerprints, the content digest of every dependency path, and today's tail.
 type Side struct {
 	Tail     string
 	Today    map[string]string
 	Shadow   map[string]string
 	Files    map[string][]string
 	Programs map[string][]string
-	Digest   map[string]string // the family's ProgramsDigest; "" for a family with no programs
+	Fixture  map[string]string // fixture directory -> its entries in the program table, every GOARCH
 	Content  map[string]string
 }
 
@@ -33,7 +34,7 @@ func LoadSide(src Source) (Side, error) {
 		return Side{}, err
 	}
 	s := Side{Tail: tail, Today: map[string]string{}, Shadow: map[string]string{}, Files: map[string][]string{},
-		Programs: map[string][]string{}, Digest: map[string]string{}, Content: map[string]string{}}
+		Programs: map[string][]string{}, Fixture: map[string]string{}, Content: map[string]string{}}
 	for name, fam := range m.Families {
 		if s.Today[name], err = Key(src, m, fam, tail); err != nil {
 			return Side{}, fmt.Errorf("%s: %w", name, err)
@@ -44,8 +45,8 @@ func LoadSide(src Source) (Side, error) {
 		s.Files[name] = DepFiles(m, fam)
 		s.Programs[name] = append([]string(nil), fam.Programs...)
 		sort.Strings(s.Programs[name])
-		if len(fam.Programs) > 0 {
-			if s.Digest[name], err = ProgramsDigest(fam.Programs, progs); err != nil {
+		for _, f := range fam.Programs {
+			if s.Fixture[f], err = ProgramsDigest([]string{f}, progs); err != nil {
 				return Side{}, fmt.Errorf("%s: %w", name, err)
 			}
 		}
@@ -136,7 +137,7 @@ func Compare(before, after Side) []Verdict {
 }
 
 // moved names the inputs of a family's keys that differ between the sides: the file list, a dependency path, today's
-// tail, the program list, the programs.
+// tail, the program list, and the fingerprints of a fixture listed on both sides.
 func moved(before, after Side, name string) []string {
 	var out []string
 	if strings.Join(before.Files[name], "\x00") != strings.Join(after.Files[name], "\x00") {
@@ -152,8 +153,13 @@ func moved(before, after Side, name string) []string {
 	}
 	if strings.Join(before.Programs[name], "\x00") != strings.Join(after.Programs[name], "\x00") {
 		out = append(out, "program list")
-	} else if before.Digest[name] != after.Digest[name] {
-		out = append(out, "programs")
+	}
+	// A fixture on both sides whose fingerprints moved, whether or not the list also changed.
+	for _, f := range after.Programs[name] {
+		if b, ok := before.Fixture[f]; ok && slices.Contains(before.Programs[name], f) && b != after.Fixture[f] {
+			out = append(out, "programs")
+			break
+		}
 	}
 	return out
 }
