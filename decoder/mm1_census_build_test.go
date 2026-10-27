@@ -284,9 +284,12 @@ func censusD2(t *testing.T, c *census, fake *probe.Fake, zoo []censusMachine, va
 	t.Helper()
 	cfgs := append(append([]censusVariant(nil), variants...), censusRealShapeConfigs(t)...)
 	backends := []censusBackend{{"cpu", "cpu", false}, {"cuda", "cuda", true}, {"cuda-unlinked", "cuda", false}, {"metal", "metal", true}}
-	for _, v := range cfgs {
-		for _, be := range backends {
-			restore := setCompiled(be.name, be.linked)
+	for _, be := range backends {
+		restore := setCompiled(be.name, be.linked)
+		// decideGIWFitAt takes the reading as an argument, so the cells run in parallel; decideGIWFit itself, through the probe
+		// fake, is checked against it at the zoo's readings below.
+		parallelEach(len(cfgs), func(i int) {
+			v := cfgs[i]
 			moes := []bool{false}
 			if be.label == "cuda" {
 				moes = []bool{false, true}
@@ -306,29 +309,42 @@ func censusD2(t *testing.T, c *census, fake *probe.Fake, zoo []censusMachine, va
 							o.KVQuant = "i8"
 						}
 						run := func(avail int64) giwFit {
-							censusSetAvail(fake, 0, avail)
 							cc := *v.cfg
-							return decideGIWFit(&cc, o)
+							return decideGIWFitAt(&cc, o, func() int64 { return avail })
 						}
 						edges := changePointsBelow(0, 2*(run(censusTop).need+giwMemMargin)+1, 8, func(a int64) string { return d2Outcome(run(a)) })
 						var lines []string
 						for _, a := range edgeReadings(zooAvail(zoo), edges) {
-							d := run(a)
-							errText := ""
-							if d.err != nil {
-								errText = d.err.Error()
-							}
-							lines = append(lines, fmt.Sprintf("avail %d: %s known %v avail %d budget %d need %d pinnedExperts %d ctx %d pinned %v pinCtx %d | err: %s | note: %s",
-								a, d2Outcome(d), d.known, d.avail, d.budget, d.need, d.pinnedExperts, d.ctx, d.pinned, d.pinCtx, errText, d.note))
-							c.reached("D2", d2Outcome(d))
+							lines = append(lines, d2Line(a, run(a)))
+							c.reached("D2", d2Outcome(run(a)))
 						}
 						c.add(fmt.Sprintf("D2 %s | %s ctx=%d kv=%s moecache=%v", v.name, be.label, ctx, kv, moe), lines)
 					}
 				}
 			}
-			restore()
+		})
+		// The probe seam: decideGIWFit reads the fake's reading and answers as decideGIWFitAt does with it.
+		for _, z := range zoo {
+			censusSetAvail(fake, z.PhysicalBytes, z.AvailableBytes)
+			for _, v := range cfgs[:min(len(cfgs), 8)] {
+				o := Options{Backend: be.name}
+				c1, c2 := *v.cfg, *v.cfg
+				if got, want := d2Line(z.AvailableBytes, decideGIWFit(&c1, o)), d2Line(z.AvailableBytes, decideGIWFitAt(&c2, o, func() int64 { return z.AvailableBytes })); got != want {
+					t.Errorf("D2 %s on %s: decideGIWFit through the probe answers %q, decideGIWFitAt %q", v.name, z.Name, got, want)
+				}
+			}
 		}
+		restore()
 	}
+}
+
+func d2Line(a int64, d giwFit) string {
+	errText := ""
+	if d.err != nil {
+		errText = d.err.Error()
+	}
+	return fmt.Sprintf("avail %d: %s known %v avail %d budget %d need %d pinnedExperts %d ctx %d pinned %v pinCtx %d | err: %s | note: %s",
+		a, d2Outcome(d), d.known, d.avail, d.budget, d.need, d.pinnedExperts, d.ctx, d.pinned, d.pinCtx, errText, d.note)
 }
 
 // censusModel is a family variant loaded at one quant.

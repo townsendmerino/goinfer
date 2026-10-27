@@ -258,11 +258,17 @@ type giwFit struct {
 
 // decideGIWFit is guardGIWFit without its stderr line, for a caller that reports it instead (FitQuery).
 func decideGIWFit(cfg *Config, opts Options) giwFit {
+	return decideGIWFitAt(cfg, opts, hostRAMAvailable)
+}
+
+// decideGIWFitAt is decideGIWFit with the available-memory reading passed in: read is called once, after the knob and config
+// checks, as decideGIWFit reads the probe.
+func decideGIWFitAt(cfg *Config, opts Options, read func() int64) giwFit {
 	var d giwFit
 	if loadKnob(opts, knobNoFitGuard) != "" || cfg == nil {
 		return d
 	}
-	avail := hostRAMAvailable()
+	avail := read()
 	if avail <= 0 {
 		return d
 	}

@@ -803,7 +803,10 @@ golden. The keys now use forward slashes on every OS, and the long variants hard
 (a symlink needs a privilege on Windows that the runner happened to have). **G-MM1-C4 is not met on Windows:**
 `TestDecisionCensus` took 166 s there, against a minute registered for CI. D2, serial, took 58 to 66 s of each build there,
 against 5 s on nobara. The fix belongs to the next MM1 step: once `Solve` takes the available reading as data, D2 no longer
-goes through the shared probe seam and runs in parallel like D1, D3 and D4.
+goes through the shared probe seam and runs in parallel like D1, D3 and D4. **Done 2026-10-26:** `decideGIWFit` delegates to `decideGIWFitAt`,
+which takes the reading as an argument, so D2 runs in parallel (1 s against 5 s on nobara; each census test 8 s against 16 s).
+The golden did not move, `-race` is clean, and a serial check holds `decideGIWFit` through the probe fake equal to
+`decideGIWFitAt` at the zoo's readings.
 
 #### MM1's `Solve`, registered 2026-10-26 before the code (nobara-mm01; Francis approved all of MM1 at 17:35)
 
