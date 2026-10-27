@@ -897,7 +897,7 @@ class FitCheckAtQueueTime(unittest.TestCase):
         t = night.now().replace(hour=23, minute=0)
         for d in range(4):
             for mb in (5000, 6000):
-                night.record_reading(t - dt.timedelta(days=d), "j", True, mb, path=readings)
+                night.record_reading(t - dt.timedelta(days=d), "j", True, mb, path=readings, host="nobara-pc")
         real = self.real
         self.real = lambda *args, **k: real(*args, readings_path=readings,
                                             night_profile_path=readings.parent / "profile-night.json", **k)
