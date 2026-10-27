@@ -356,6 +356,7 @@
   },
   "test_arrows": {
     "chat": [
+      "multimodal",
       "tokenizer"
     ],
     "cmd/gate": [

@@ -2244,6 +2244,20 @@ calls only the API the serving routes call, in the order they call it. It adds t
   the Gemma tokenizers load in about a second each.
 - **The move** (one package for the codec) is registered after the census lands, with its package shape; `chat`,
   `tokenizer` and `constrain` are in apidiff's Hard tier, so a shape that changes their exported API is the owner's call.
+- **Census recorded (2026-10-27, the Mac, at `origin/main` `92a64e92`).** `chat/codec_census_test.go`:
+  `TestCodecCensus`, one golden per source under `chat/testdata/codec/sources/` (gzipped JSON, 4.8 MB as text, 0.2 MB
+  stored), and `TestToolCallParseCensus`, `chat/testdata/codec/tool_call_parse.json`. 55 sources: 19 tracked templates,
+  5 tracked tokenizers, 20 local models, 11 constructors; 1,780 render cases and 715 token-ID checks on the Mac, of which
+  40 (the tracked tokenizers) run anywhere, the rest only where the model is on disk. Without the local models every
+  render is still checked: Detect and the renderers ask the vocabulary about 6 to 13 markers per source, and the answers are
+  recorded with it. The vocabulary fingerprint is a SHA-256 over every token's text in ID order, not the file's hash: a
+  GGUF is the weights too. It takes about 3 s with the local tokenizers and under 1 s without. Recording twice gives
+  identical files. **Shown red:** a one-byte change to Gemma 3's generation prompt fails 5 sources (the tracked template,
+  the constructor, 3 local models); dropping the lead's trim in the Hermes parser fails the parse table. Both reverted.
+  What the census shows today, recorded as it is, unchanged: Phi-3's GGUF tokenizer does not round-trip (its IDs decode
+  without the newline after each control token); `granite-dbrx-meta.gguf`'s template is declined (raw-completion
+  fallback). **Owed:** the Llama 3, Mellum 2 and Harmony token IDs, recorded on nobara by
+  `go test ./chat -run TestCodecCensus -codec.update`, whose diff must only add sources and IDs.
 
 ### SB9 — the towers
 
