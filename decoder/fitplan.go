@@ -210,18 +210,36 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 	return p
 }
 
+// planAdmitDecline is the decoder's admission of this model on backend, with its own facts (Admit): "" when the load would reach
+// the backend's build. The CPU always admits; a name with no declared resident features never does.
+func (m *Model) planAdmitDecline(backend string) string {
+	if backend == "cpu" {
+		return ""
+	}
+	if _, declared := residentBackendFeatures[backend]; !declared {
+		return fmt.Sprintf("%s: no resident path is declared for this backend — use the staged/CPU path", backend)
+	}
+	f := m.admitFacts()
+	f.Backend, f.Residency = backend, true
+	if why := Admit(f).Why; why != "" {
+		return fmt.Sprintf("%s: %s — use the staged/CPU path", backend, why)
+	}
+	return ""
+}
+
 // planIneligible is why backend has no resident path for this model at all, before any byte is priced ("" when it has one):
-// the decoder's admission (Admit) with this model's own facts on backend, and on webgpu a lossy KV flag on a family whose kernels
-// allocate f32 KV regardless (gpu/residency.go's own decline). A name with no declared resident features is never eligible.
+// the decoder's admission (planAdmitDecline), then webgpu's own model-only declines, which it mirrors from
+// gpu/residency.go:staticResidentDecline: routed experts of a kind its MoE kernels do not take, and a lossy KV flag on a family
+// whose kernels allocate f32 KV regardless.
 func (m *Model) planIneligible(backend string, req PlanRequest) string {
-	if backend != "cpu" {
-		if _, declared := residentBackendFeatures[backend]; !declared {
-			return fmt.Sprintf("%s: no resident path is declared for this backend — use the staged/CPU path", backend)
-		}
-		f := m.admitFacts()
-		f.Backend, f.Residency = backend, true
-		if why := Admit(f).Why; why != "" {
-			return fmt.Sprintf("%s: %s — use the staged/CPU path", backend, why)
+	if why := m.planAdmitDecline(backend); why != "" {
+		return why
+	}
+	if backend == "webgpu" {
+		// webgpu's stacked-expert kernels take int8 or int4 (gpu/residency.go:staticResidentDecline).
+		if k := m.MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
+			return fmt.Sprintf("webgpu: the routed experts are %s, and webgpu's MoE kernels take int8 or int4 — load with --quant int4 "+
+				"or int8int8 to plan the resident path", k)
 		}
 	}
 	if backend == "webgpu" && (req.KVF16 || req.KVI8) {

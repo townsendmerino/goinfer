@@ -761,6 +761,27 @@ type Gemma4MoEResidentBundle struct {
 	DenseInter, MoeInter, NE, TopK                                   int
 }
 
+// MoEExpertKind is the precision of the routed experts' weights as a resident build stacks them (the first routed expert's
+// first projection: Gemma 4's fused gate‖up, else gate, up or down), or "" when the model has no routed experts. A backend
+// whose stacked-expert kernels take only some kinds declines a model by it before uploading anything, and Plan mirrors that.
+func (m *Model) MoEExpertKind() string {
+	for i := range m.w.Layers {
+		lw := &m.w.Layers[i]
+		if gm := lw.gemma4moe; gm != nil && len(gm.expertsGateUp) > 0 {
+			return gm.expertsGateUp[0].Kind()
+		}
+		if len(lw.Experts) > 0 {
+			e := &lw.Experts[0]
+			for _, w := range []*linalg.WeightMat{&e.Gate, &e.Up, &e.Down} {
+				if w.Rows() > 0 {
+					return w.Kind()
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // Gemma4MoEResidentLayer returns the build bundle for gemma4 MoE layer l, or ok=false for a
 // non-gemma4 model / dense layer. Used by the CUDA backend's resident build (task 2c).
 func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok bool) {

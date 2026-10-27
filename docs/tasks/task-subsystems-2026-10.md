@@ -2290,13 +2290,13 @@ Each backend's own `BuildResident` decides after the decoder admits. Its static 
 groups, KV layouts) read the model alone; its memory and device decisions read free VRAM, host RAM or device attributes.
 The static gates are censused now, on the same fixtures and option cells as layer D, with the machine out of the record:
 
-- **Layer B-cuda (`cuda` module, `-tags cuda`, no device).** `TestBackendAdmissionCensus_cuda`: per committed fixture ×
+- **Layer B-cuda (`cuda` module, `-tags 'cuda goinfer_testhooks'`, no device; without `goinfer_testhooks` the file is not built).** `TestBackendAdmissionCensus_cuda`: per committed fixture ×
   layer D's 9 option cells, a `Load` under a fake backend named `cuda` (the decoder's admission is the real one); where
   the decoder admits, the fake runs CUDA's own build in plan-only mode (`cudaBackend.buildResident(m, true)`, which runs
   every static decline and returns before it allocates) and records the decline or the planned allocation slack, then
   declines so nothing is uploaded. Golden `cuda/testdata/sb2_cuda_census.<goarch>.txt.gz`. Runs on CI's deviceless cuda
   job.
-- **Layer B-webgpu (`gpu` module, `-tags gpu`, no device).** WebGPU's static gates move, in their order, into one function
+- **Layer B-webgpu (`gpu` module, `-tags 'gpu goinfer_testhooks'`, no device; likewise).** WebGPU's static gates move, in their order, into one function
   `BuildResident` calls first (a refactor: same checks, same reasons); `TestBackendAdmissionCensus_webgpu` records it the
   same way. Golden `gpu/testdata/sb2_webgpu_census.<goarch>.txt.gz`.
 - **Layer B-metal (the Mac).** Commands in `/tmp/sb2-metal.md`: `residentPreBuild`'s static gates and its memory decisions
@@ -2369,8 +2369,23 @@ backend it is asked about.
   no CPU model, and none of them reached the build.
   - With main's old `planIneligible` in place, the same test is red on 113 cells.
   - Plan's KV request is the serving flag's precision (`KVPrecision`). The census's `kv-i8` cell sets `KVQuant` alone, which
-    webgpu does not deliver, so no cell asks Plan for `--kv i8` and that branch of the mirror is not compared here. The mirror
-    itself did not change.
+    webgpu does not deliver.
+- **Amendment after Gemini's review of #348 (2026-10-27, the coordinator's relay).** These are within Francis's decision that
+  Plan agrees with the load.
+  - WebGPU's routed-expert kind check (int8 or int4 only) read the weights alone but ran mid-upload. 16 f32 MoE cells passed
+    `staticResidentDecline`, so Plan placed them while the build failed.
+    - The check moves into `staticResidentDecline` as a typed decline, reading the new `decoder.Model.MoEExpertKind`. Plan's
+      webgpu check mirrors it.
+    - Layer B-webgpu's golden changes on exactly those 16 cells.
+    - The real build on nobara's device changes on exactly those 16 cells too, from `gpu: MoE residency expert kind "f32"` to
+      the decline. Both fall back to the CPU, and every other answer is byte-identical.
+    - MM1's census changes in 297 groups, all D3 webgpu at f32 on those 16 fixtures, and all now the expert-kind decline.
+  - Gate 1 now holds Plan's admission step (`Model.planAdmitDecline`) to the admission on all three backends. On cuda and metal
+    it also checks that Plan's whole eligibility check equals that step. webgpu's mirrors are gate 2's.
+  - Gate 2 adds the serving flag `--kv=i8` (both KV options) as a tenth cell, and passes on all 700 cells. Its in-test plant, a
+    Plan asked without the KV request, turns 22 cells red, all lossy-KV cells of the families webgpu declines.
+  - Both census builders and gate 2 clear `GOINFER_GEMMA4_RESIDENT` too, and unregister their fake backends
+    (`decoder.UnregisterBackendForTest`).
 
 ### SB3 — family adapters
 

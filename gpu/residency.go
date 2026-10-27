@@ -130,8 +130,9 @@ var quantKVDeclineOffForTest bool
 
 // staticResidentDecline is every decline BuildResident makes from the model alone, in its order, before it reads memory or
 // touches the device: the runner's eligibility, the shared feature taxonomy, per-layer geometry, the router-kernel cap, Gemma 4's
-// MoE FFN and the layouts without a quantized KV cache. It returns a typed decline (decoder.DeclineResident) or nil. SB2's
-// layer B-webgpu census (gpu/sb2_census_test.go) records it per fixture and option cell.
+// MoE FFN, the layouts without a quantized KV cache and the routed experts' weight kind. It returns a typed decline
+// (decoder.DeclineResident) or nil. SB2's layer B-webgpu census (gpu/sb2_census_test.go) records it per fixture and option
+// cell, and Plan's webgpu check (decoder.Model.Plan) mirrors the last two.
 func staticResidentDecline(m *decoder.Model) error {
 	// The Granite-4.0-H and Nemotron-H SSM hybrids are buildable independent of DecodeRunnerEligible (Granite's admission
 	// there is knob-gated), so they can be parity-gated first. Production routing still goes through withResidency()'s
@@ -184,6 +185,10 @@ func staticResidentDecline(m *decoder.Model) error {
 			return decoder.DeclineResident("%s does not implement %s KV on webgpu (only the generic GQA path does); "+
 				"drop the flag to use the resident path", family, flag)
 		}
+	}
+	// The stacked-expert kernels take int8 or int4 (buildStacked); an f32 or other expert kind would fail mid-upload.
+	if k := m.MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
+		return decoder.DeclineResident("the routed experts are %s, and webgpu's MoE kernels take int8 or int4 (load with Quant int4 or int8int8)", k)
 	}
 	return nil
 }

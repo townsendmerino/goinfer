@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-// Cell is one option set of layer D (decoder's TestAdmissionCensus), whose table this must match: Fixtures checks it.
+// Cell is one option set of layer D (decoder's TestAdmissionCensus), whose table this must match: ReadLayerD checks it.
 type Cell struct {
 	Name, Quant     string
 	ActGroup        int

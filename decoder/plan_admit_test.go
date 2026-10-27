@@ -87,7 +87,15 @@ func planAgreement(t *testing.T, verdict planVerdict) (diffs []string, cells, no
 // before it asked Admit.
 func TestPlanAgreesWithAdmission(t *testing.T) {
 	slowTest(t)
-	diffs, cells, noModel := planAgreement(t, func(m *Model, be string) bool { return m.planIneligible(be, PlanRequest{}) != "" })
+	// Plan's admission step on every backend; on cuda and metal it is the whole eligibility check. webgpu's model-only declines,
+	// which Plan mirrors on top, are held to the load in gpu's TestPlanAgreesWithLoad_webgpu.
+	diffs, cells, noModel := planAgreement(t, func(m *Model, be string) bool {
+		why := m.planAdmitDecline(be)
+		if full := m.planIneligible(be, PlanRequest{}); be != "webgpu" && full != why {
+			t.Errorf("on %s: Plan's eligibility %q is not its admission step %q", be, full, why)
+		}
+		return why != ""
+	})
 	if len(diffs) > 0 {
 		t.Errorf("Plan disagrees with the load's admission in %d of %d cells:\n%s", len(diffs), cells, strings.Join(diffs[:min(len(diffs), 30)], "\n"))
 	}
