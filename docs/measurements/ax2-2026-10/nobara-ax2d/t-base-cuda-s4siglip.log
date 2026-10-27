@@ -1,0 +1,5 @@
+=== RUN   TestVisionCUDA_real
+    siglip_test.go:52: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower)
+--- SKIP: TestVisionCUDA_real (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/s4siglip	0.003s

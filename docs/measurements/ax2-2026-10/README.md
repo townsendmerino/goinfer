@@ -56,3 +56,75 @@ Seven `metal` tests fail at the base and at the head alike, all for a gitignored
 registered: `TestGPT2ResidentParityMetal`, `TestHiddenLastResidentParityMetal`, `TestI8_exactKernelModelIsSplit`,
 `TestMLAResident_routingForced`, `TestMLAResident_tinyAgainstControl`, `TestMambaKernels_cpuParity`,
 `TestMambaKernels_plantsAreRed`. Logs: `logs-ax2c/`.
+
+## AX2d: the cuda module on cuda/internal/gpudev (Mac side)
+
+One mechanical commit (`ax2cd_rewrite.py cuda`): 83 files, the import path only.
+
+| gate | result |
+|---|---|
+| AX2d-N | **PASS**: `ax2cd_rewrite.py cuda check` reproduces the 83 files, 0 problems |
+| AX2d-S | **PASS**: `GOOS=linux go list -deps -test -tags 'cuda goinfer_testhooks' ./...` in `cuda` names nothing under `aikit/gpu` |
+| AX2d-B | **PASS**: build and vet for linux/amd64 with `cuda` and `cuda goinfer_testhooks`; staticcheck with CI's `cuda goinfer_testhooks` clean. With plain `cuda` it reports 10 unused helpers (used only under `goinfer_testhooks`), the same 10 as origin/main's, so none is this commit's |
+| AX2d-ID, AX2d-T | on nobara (relayed): the commands are below |
+
+### What nobara runs (by day, in its own session, under its timing lock shared)
+
+From a checkout of this branch, with a `go.work` covering `.` and `./cuda`. `B` is AX2b's base (AX2a's head, `7d0727c0`),
+`H2` AX2b's head (`67bcf5d4`), `C` AX2c's head (`3367cb58`, the commit before AX2d's mechanical one) and `D` AX2d's
+PR head; check each out in turn:
+
+- AX2b-ID and AX2d-ID, at `B`, `H2` and `D`:
+  `GOINFER_TOWER_ID_OUT=<dir>/<rev>-cpu-linux-amd64.json go test -count=1 -v -run '^TestTowerIdentity_cpu$' ./internal/towerid/`
+  and from `cuda/`: `GOINFER_TOWER_ID_OUT=<dir>/<rev>-cuda-linux-amd64.json go test -count=1 -v -tags cuda -run '^TestTowerIdentity_cuda$' .`;
+  then `python3 docs/measurements/ax2-2026-10/ax2_compare.py` on each pair (B against H2, H2 against D).
+- AX2d-T, at `C` and at `D`: from `cuda/`, one package per call, `go test -v -count=1 -timeout 60m -tags 'cuda goinfer_testhooks' -skip '^TestCUDA_launchDirect$' <pkg>`
+  for every package with tests (`go list -tags 'cuda goinfer_testhooks' -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...`),
+  plus `-run '^TestCUDA_launchDirect$' ./internal/gpudev/` alone; compare each package's two logs with
+  `python3 docs/measurements/ax1-2026-10/ax1_compare.py`.
+
+## AX2b-ID and AX2d on nobara (2026-10-26, nobara-ax1-cuda, relayed)
+
+**Verdict: PASS, identical before and after.** RTX 2070 SUPER, driver 595.91.07, Go 1.27.3 linux/amd64. The runs held the
+timing lock exclusively, from 16:23 to 16:41 PDT. At every start the load average was 0.9 to 3.5 and 58 GB was available.
+`kwin_wayland` held a 17 MiB CUDA context, so a desktop session was logged in. Nobara's own write-up is
+`nobara-ax2d/pr284-comment.txt`; its records and logs are beside it, copied read-only from nobara with its lock checked
+free in the same command.
+
+- **AX2b-ID and AX2d-ID:** the CPU (22 cases) and CUDA (17 cases) records at `7d0727c0`, `67bcf5d4`, origin/main and
+  `528ced85` agree, 0 differ in every pair. All 17 CUDA cases record the device path at all four revisions. Re-checked
+  here with `ax2_compare.py` on the copied records.
+- **AX2d-T:** the before and after results match by name.
+
+  | package | PASS | FAIL | SKIP |
+  |---|---:|---:|---:|
+  | `cuda` | 792 | 4 | 338 |
+  | `cuda/internal/gpudev` | 65 | 0 | 0 |
+  | `qwencuda` | 4 | 0 | 0 |
+  | `visioncuda` | 4 | 0 | 0 |
+  | `s4siglip` | 0 | 0 | 1 (real checkpoint) |
+
+  The four `cuda` failures are the same on both sides, with the same messages and figures, so they are listed and
+  excluded as registered: `TestCUDAKVSlots_pricedAgainstWhatIsLeft` (the free-VRAM probe ran twice during the build) and
+  `TestResidentDenseBytes_matchesCUDADevice` with its 0.5B and 1.5B subtests (the build's device bytes exceed Plan's
+  figure plus the scratch margin). **They are red on origin/main on nobara's card**, independent of Track AX.
+  `TestCUDA_launchDirect` segfaults on both sides, as at AX1.
+
+## AX3: no goinfer module requires aikit's gpu module
+
+Gates registered in the task doc's §7.11 (16:54) before the code.
+
+| gate | result |
+|---|---|
+| AX3-S (the scan) | **PASS**: `internal/movedpaths`'s `TestNoMovedAikitPath` is green on the tree. Before the requires were dropped it listed exactly the `go.mod`/`go.sum` lines AX3 removes. A planted aikit `gpu` import in a test file and a planted `aikit/gpu` require in `metal/go.mod` each turned it red with the file and line; green after each removal. Listed in `scripts/touched_scans.py` |
+| AX3-M (the module graphs) | **PASS**: no `go.mod` or `go.sum` names `aikit/gpu` or `aikit/gpu/visioncuda`; `go list -m all` in `metal` and in `cuda` (`GOOS=linux`) names neither |
+| AX3-B | **PASS**: build, vet and staticcheck of all five modules under their tags; the root cleanliness guard 0; `TestHardwareCensus` 31 predicates, 31 entries; `cmd/gate`'s `TestModRequire` and `TestRowPins`; `decoder`'s `TestAikitPinsAgree`; `test_touched.py`; the citation lint, exit 0 both with the sibling aikit checkout and as CI runs it (module cache only); `TestTowerIdentity_metal` equal to AX2c's record |
+| AX3-G | deferred to the next release tag (`standalone-build.yml`), as registered |
+
+**The citation lint needed no fallback**, contrary to what §7.11 registered. As CI runs it, with only the module cache, the
+lint answered 23 lookups from aikit's root module and none from `aikit/gpu`, at origin/main and on this branch alike. No
+live document resolves a citation through `aikit/gpu`. A pinned record's older `aikit/gpu` still comes through CI's
+`--pinned-modules` step, which reads each pinned commit's own `cuda/go.mod`.
+
+One import was left behind by AX2d: `cuda/kernels/ptx_test.go` arrived with SB1's batch 1 after AX2d's rewrite ran. A
+mechanical commit at AX3's start switched it. From AX3 on, `internal/movedpaths` catches the next one.

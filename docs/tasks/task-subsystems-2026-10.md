@@ -36,8 +36,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | open | either box: one parity record per family in place of one shared manifest; S | §5.6 |
-| VK4 | open | either box: a program fingerprint per family config, built from the config with no weights; M | §5.7 |
-| VK5 | active | mac-vk01: shadow mode built (`internal/paritykey`, `gate shadow`, `.github/workflows/vk-shadow.yml`); P1–P3 PASS, P4 pending the workflow's first run on main, when SD6's week starts; the switch is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
+| VK5 | active | shadow week 1 (SD6) runs from the workflow's first run on main, 2026-10-26, and grades the aikit-pin → kernel-fingerprint swap alone; week 2 then grades the key built from program fingerprints (VK4) plus kernel fingerprints, with the forward source files out of it (Francis 16:27: option 1); the switch after each week is its own PR and decision; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -48,9 +48,9 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM6 | blocked | MM1; `night.py add` and `goinfer fit` call `Solve` against the box's recorded profile at queue time; S | §6.5 |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
-| AX2 | active | AX2a (`internal/towerid`) in PR #278; AX2b (the import switch) on branch `ax2b-import-switch-2026-10`, Mac gates PASS (§7.8); left: nobara's CUDA and CPU identity records for AX2b, then AX2c (metal to `metal/internal/gpudev`) and AX2d (cuda to `cuda/internal/gpudev`); M | §7.7, §7.8 |
-| AX3 | blocked | AX2; drop the `aikit/gpu` requires and add a source scan that keeps them out; S | §7.3 |
-| AX4 | blocked | AX3; aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
+| AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
+| AX3 | active | on branch `ax3-drop-aikit-gpu-2026-10`: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS on the Mac except AX3-G, which waits for the next release tag; the citation lint needed no fallback; S | §7.3, §7.11 |
+| AX4 | open | aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
 | AX5 | open | SD2 decided 2026-10-26: the ANN and text-encoder GPU backends stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops bumping them; S | §7.3, §14 |
 | AX6 | open | SD3 decided 2026-10-26: goinfer's main may require an aikit pseudo-version between weekly tags; a goinfer release requires a tagged aikit; S | §7.3, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
@@ -485,7 +485,23 @@ built from a config alone. Serialize the op kinds and their parameters and hash 
 config and per real checkpoint config in `testdata/assets.json`. A refactor that leaves every program unchanged leaves
 every family's key unchanged. M.
 
-### 5.8 VK5 — the key, in shadow mode first
+#### VK4's gates, registered 2026-10-26 before the code (mac-vk01)
+
+Francis (15:55, relayed): VK4 next. Nothing in `program.go` or `program_cpu*.go` changes; the code is new files, so the
+nobara sessions working near the program walker see no collision. `programFingerprint` hashes a program by a
+reflection walk of its operations and their parameters: kinds, registers, every parameter field by name and value, and
+floats by their bits. It writes no type names, so renaming a type is not a program change. `programForConfig` builds
+the program from a `config.json` alone. Its experts predicate is the config's: layers `[FirstKDense, NumLayers)` of an
+MoE architecture, or Llama 4's own per-layer MoE flags. Every committed fixture `config.json` that resolves to an
+architecture gets a fingerprint in `testdata/program_fingerprints.json`; each real-checkpoint directory in
+`testdata/assets.json` gets one in the record, computed where its `config.json` is present.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| F1 the table | `TestProgramFingerprint_table` recomputes every committed fixture's fingerprint and fails on any difference from the table (`-update` rewrites it); two computations in one process agree | never | one run | seconds |
+| F2 config equals weights | for every fixture whose weights are present on the machine, the program built from its config has the same fingerprint as the program `Load` builds from its weights | — | one run (fixtures absent are listed, not counted) | a few seconds per tiny fixture |
+| F3 refactor-blind, change-sensitive | (a) VK2's moves left every program unchanged: the table computed at `f8e248b7` (before part 2) equals the one at this branch; (b) `gate mutation` changing one parameter in one family's layer ops (`gemma4LayerOps`' v-norm epsilon) turns F1 red, and the diff names only Gemma 4 fixtures | — | one run each | seconds |
+ — the key, in shadow mode first
 
 On every push to main, compute both today's staleness and the new key, and log every disagreement with its reason.
 Switch after one week (SD6, decided 2026-10-26) with no disagreement left unexplained. M.
@@ -515,6 +531,11 @@ does not see moved, so every new-only is **unexplained** until someone explains 
 
 The shadow period's stopping rule is SD6's: one week of pushes to main from the workflow's first run, with no
 unexplained disagreement. The switch is its own PR and its own decision.
+
+**Two shadow weeks (Francis, 2026-10-26 16:27, option 1).** Week 1, the one running, grades only the swap of the aikit
+pin for the kernel fingerprints. When it ends, week 2 grades the key built from VK4's program fingerprints plus the
+kernel fingerprints, with the forward's source files out of it. Each week then explains its disagreements by one
+change. Week 2's gates are registered before its code, like week 1's.
 
 ### 5.9 VK6 — the daily canary and the coverage audit
 
@@ -884,6 +905,31 @@ by day, through nobara's own session (relayed), never over ssh from the Mac.
 | AX2d-ID (nobara) | `TestTowerIdentity_cuda` and `TestTowerIdentity_cpu` records at AX2b's base, AX2b's head and AX2d's head, equal case by case (one nobara session covers AX2b-ID's CUDA leg too). | no CUDA device answers | once each | seconds each |
 | AX2d-T (nobara) | The `cuda` module's tests (`-tags 'cuda goinfer_testhooks'`, one package per `go test -v -count=1` call) at AX2c's head (the base) and at AX2d's head, compared by name with `ax1_compare.py`. **Pass:** every base PASS is a PASS at the head, and no FAIL at the head. `TestCUDA_launchDirect` segfaults on both sides at AX1 (#279), so it runs alone and the rest with `-skip '^TestCUDA_launchDirect$'`; a test failing at the base is listed and excluded, not fixed here. | a desktop session holds a CUDA context (`kwin_wayland`), which shifts plans and skips the drain-group tests (`CLAUDE.md`, "Testing tiers"): the record notes it, and drain-group skips on both sides are not counted as passes | each side once, to completion | nobara's session states the estimate from its last CUDA suite record before starting |
 
+**AX2c and AX2d results, 2026-10-26 (mac-ax01):** AX2c-N, -S, -ID, -T (775 base passes, 0 regressions) and -B PASS on
+the Mac. AX2d-N, -S and -B PASS on the Mac (compiled for linux/amd64); AX2d-ID and -T wait for nobara. Detail in the record.
+
+### 7.11 AX3 gates (registered 2026-10-26 16:54 PDT by mac-ax01, before AX3's code)
+
+AX3 drops `github.com/townsendmerino/aikit/gpu` and `…/gpu/visioncuda` from every goinfer `go.mod`. A test then keeps the
+moved paths out: it fails on a `.go` file importing aikit's `vision`, `audio` or `gpu` (or anything under it), and on a
+`go.mod` requiring the `gpu` module or one under it. Three things outside the imports move with it.
+
+- **`internal/hwcensus`'s census** scans goinfer's two `gpudev` halves in place of the aikit module.
+- **`cmd/gate release`'s row 2 and `decoder/aikit_pin_test.go`** stop pinning `aikit/gpu`; no module requires it.
+- **The citation lint.** It resolves aikit `gpu/...` citations through `cuda/go.mod`'s require. With the require gone,
+  it falls back to the frozen tag `gpu/v0.35.0`, which aikit keeps (SD2, AX0), so those citations stay valid. §7.5
+  expected every citation to be re-pointed instead. CI's cache step downloads that tag.
+
+One mechanical commit first: `cuda/kernels/ptx_test.go` (SB1's batch 1, merged after AX2d's rewrite) still imports aikit's
+`gpu`, and `ax2cd_rewrite.py cuda` switches it.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX3-S (the scan) | The new scan passes on the tree. Planted once, it reads red twice: an aikit `gpu` import added to a test file, then an `aikit/gpu` require added to `metal/go.mod`. It reads green again after each plant is removed. It is listed in `scripts/touched_scans.py`. | — | complete | seconds |
+| AX3-M (the module graphs) | No goinfer `go.mod` or `go.sum` names `aikit/gpu` or `aikit/gpu/visioncuda`. `go list -m all` names neither in `metal` (workspace), nor in `cuda` (workspace, `GOOS=linux`). | — | complete | seconds |
+| AX3-B (builds and the moved checks) | Build, vet and staticcheck of every module under its tags. The root cleanliness guard. `TestHardwareCensus`, `cmd/gate`'s release tests and `decoder`'s pin test, by name with `-v`. `test_touched.py` and the citation lint, exit code read directly, with every aikit `gpu/...` citation resolving. `TestTowerIdentity_metal` against AX2c's record, as a smoke check. | — | complete | minutes |
+| AX3-G (standalone builds) | §7.3's `GOWORK=off` build of each module. It needs the two-step tag, so it is deferred to the next release, where `standalone-build.yml` runs it; nothing here grades it. | — | — | — |
+
 ## 8. The other subsystems (SB1–SB13)
 
 Each: what it is today, its contract, its fast check, what stops re-running, its first step and size.
@@ -919,6 +965,47 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
   `decoder` (240, 245 and 87 today) may only fall.
 - **Then** OP4 (residents walk the program) and RF1 (one call shape) land with the kit as their gate. L in all; the
   first step S–M.
+
+#### SB1 step 1 — gates, registered 2026-10-26 before the code (nobara-sb01)
+
+- **What a file-level count misses.** Package `cuda`'s own non-test files import `decoder` (21 of them), so every test in
+  package `cuda` is rebuilt and re-run on a decoder edit whether or not its own file imports `decoder`. The same holds
+  for `metal` and `gpu`. So the ratchet counts two things per backend module: **direct**, the test files whose own
+  imports name `decoder` (the §6 census figure: 240, 245, 87), and **reach**, the test files in a directory whose test
+  build reaches `decoder` through any chain of goinfer imports. Reach is the one a decoder edit invalidates; a kernel
+  test leaves it only by leaving the package, as `metal/kernels` did.
+- **Ratchet (tier 0).** `internal/layout`'s `TestBackendTests_decoderImportsOnlyFall` parses the imports of every Go
+  file in the tree (build tags ignored, so a count is the union over tags; `//go:build ignore` files skipped) and fails
+  when either count of any of the three modules differs from the committed figure: above it is a regression; below it,
+  the figure is lowered in the same commit. It lands at the counts of `origin/main` at `bc365a837`, in its own commit:
+  direct 246, 245 and 87, reach 352, 395 and 172 for `cuda`, `metal` and `gpu`.
+  `-v` prints the census. Cost: milliseconds; no device, no model. Void: none (it is deterministic over the tree).
+- **Each batch of moved tests (tier 0 on the device, seconds).** The batch's files move from `cuda/` to `cuda/kernels/`,
+  a package that imports nothing from goinfer (aikit `gpu` and gocudrv only); it reads the PTX the moved tests load
+  from `cuda/testdata/*.ptx`, the same files `cuda/kernels.go` embeds. A moved file's `goinfer_testhooks` constraint is
+  dropped: it gates package `cuda`'s test seams, which a moved test does not use, so the moved test runs under `-tags
+  cuda` alone, in `gate gpu`'s 2a suite.
+  - **Rule:** every moved `Test`/`Benchmark` function is listed before the move and found after it (no test deleted);
+    each moved test is run by name with `-v` on nobara's RTX 2070 SUPER before the move (in `./cuda/`, under `cuda
+    goinfer_testhooks`) and after (in `./cuda/kernels/`, under `cuda`), and its outcome (PASS, FAIL or SKIP with the same reason) is the same in both;
+    `go build` and `go vet` of the cuda module pass under each of no tag, `cuda`, and `cuda goinfer_testhooks`;
+    `go list -deps -test ./cuda/kernels/` contains no `goinfer/decoder`; the ratchet's reach count for `cuda` falls by
+    the number of moved files, and is lowered.
+  - **Void:** a run while `timing_lock.py status` shows a timed holder (the runs hold the lock shared, so they refuse
+    instead); a run on a card with another process's context (`nvidia-smi` names it), which can fail a test on memory
+    for reasons not in the test.
+  - **Stopping rule:** one before-run and one after-run per batch; a mismatch stops the batch and is reported, not
+    re-run until it agrees.
+  - **Cost basis:** the kernel tests in `gate gpu`'s 2a suite take about 12 s together
+    (`docs/measurements/cuda-device-suite-2026-10-18/run-cuda-device-suite.sh`'s header); a batch is a fraction of it.
+    Heavy-gated (`GOINFER_HEAVY_TESTS`) and env-gated (`GOINFER_A13_*`) tests skip in both runs, and the record says so.
+- `gate gpu`'s 2a kernel-level suite lists `./cuda/kernels/` beside `./cuda/`, so the moved tests stay in it; the night
+  `cuda-device-suite` and CI's cuda job run `./cuda/...` and need no change.
+- **Batch 1 (2026-10-26):** 25 files (35 tests, 16 benchmarks) moved to `cuda/kernels/`, every outcome the same before
+  and after; cuda reach 352 → 327. `gate gpu`'s heavy tier also runs `./cuda/kernels/` as one more process, so its two
+  heavy-gated bandwidth tests stay in it. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
+- **Batch 2 (2026-10-26):** 5 files (6 tests) moved, outcomes the same; cuda reach 327 → 322. Same record. The next dozen
+  kernel tests check kernels against package `cuda`'s production packers, so they wait for the packers to move.
 
 ### SB2 — admission and routing
 

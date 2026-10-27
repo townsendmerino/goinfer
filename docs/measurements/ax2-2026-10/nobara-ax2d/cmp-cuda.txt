@@ -1,0 +1,681 @@
+FAIL in goinfer: TestCUDAKVSlots_pricedAgainstWhatIsLeft
+FAIL in goinfer: TestResidentDenseBytes_matchesCUDADevice
+FAIL in goinfer: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+FAIL in goinfer: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+skip [baseline] TestA10CtxHolder: alloc_reporting_gap_test.go:227: helper for TestA10FloorIsPerProcessOrPerDevice
+skip [baseline] TestA10FloorIsPerProcessOrPerDevice: alloc_reporting_gap_test.go:96: DRAIN-GROUP-SKIP: spawns a child that holds the device near the floor while this context works — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its o
+skip [baseline] TestA10ReportingGap: alloc_reporting_gap_test.go:23: DRAIN-GROUP-SKIP: drains to refusal in-process to measure the reported-vs-obtained shortfall — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its own
+skip [baseline] TestA13_LoadModuleOnResidentExecutor: a13_cell_test.go:28: set GOINFER_A13_CELL=1 — A13 probe, deliberately not part of the tier
+skip [baseline] TestA13_MultiModelUnloadPoisons: a13_multimodel_test.go:26: set GOINFER_A13_MULTI=1 — A13 probe, deliberately not part of the tier
+skip [baseline] TestA13_PrefillChurnPoisons: a13_prefillchurn_test.go:32: set GOINFER_A13_CHURN=1 — A13 probe, deliberately not part of the tier
+skip [baseline] TestA13_SingleFailedAllocPoisons: a13_singlefail_test.go:28: set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier
+skip [baseline] TestActGroup_phi3ResidentMatchesCPU: actgroup_phi3_resident_test.go:38: set GOINFER_PHI3_MINI_GGUF
+skip [baseline] TestAllocFloor: alloc_floor_test.go:17: DRAIN-GROUP-SKIP: drains the device in shrinking chunks until a 1 MiB request is refused — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its own process so 
+skip [baseline] TestArgmaxTieBreak: argmax_tiebreak_test.go:21: set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the compiled argmax kernel)
+skip [baseline] TestAttnBatchedBandwidth: attn_bw_test.go:22: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestAttnBlockFull_cost: attn_block_test.go:171: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnBlockFull_nonCausal: attn_block_test.go:35: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnFusedTile_32x64BitIdentical/128x64: attn_fused_tile_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnFusedTile_32x64BitIdentical/32x64: attn_fused_tile_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnFusedTile_defaultBitIdenticalWholeModel: attn_fused_tile_model_test.go:21: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestAttnFusedTile_smallMSweep: attn_fused_tile_sweep_test.go:22: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnFused_attendsKeysBeforeStartPos: attn_fused_test.go:252: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnFused_vsExact: attn_fused_test.go:52: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnFused_vsF16Reference: attn_fused_test.go:399: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal: attn_img_batched_test.go:72: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestAttnImgBatched_windowDecoupled: attn_img_batched_test.go:203: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestB2DenseFlagship: b2_flagship_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a 7B model)
+skip [baseline] TestBackendResidentWired: backend_wired_test.go:22: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestBatchedCapture_matchesPerToken: drafter_test.go:362: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestBatchedVsDecodeGap: batched_decode_gap_test.go:29: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestBlockSpecStream: blockspec_test.go:119: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestBlockSpec_twoTurnsMatchPlain: spec_twoturn_test.go:170: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestBuildScratchAccounting: build_scratch_accounting_test.go:113: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestBuildScratchAccounting_plantedDefect: build_scratch_accounting_test.go:154: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny: batchstep_test.go:50: no fixture at ../testdata/gemma4-dense-twogeom-tiny
+skip [baseline] TestCUDA_graphLiveNoSyncOrdering: graph_nosync_test.go:30: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestCUDA_graphReplayBound: graph_bound_test.go:27: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestCUDA_graphSegAIsolated: graph_segisolate_test.go:26: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestCUDA_graphSharedMemHazard: graph_sharedmem_test.go:24: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestCUDA_launchCost: launch_cost_test.go:23: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestClefFidelityCUDA_run: clef_fidelity_test.go:35: CLEF_FIDELITY_ARM unset: this is a run harness, not a gate
+skip [baseline] TestCohereRealResidentParityCUDA: cohere_real_resident_test.go:42: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashCaptureSeamCost: dflash_dispatch_test.go:143: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashCompositionResidual: dflash_dispatch_test.go:342: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashDispatchAmortization: dflash_dispatch_test.go:30: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashDraftCostProbe: dflash_draftcost_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashLoop_gate3: drafter_loop_test.go:215: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashLoop_lossless: drafter_loop_test.go:138: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashRoundComposition: dflash_dispatch_test.go:233: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDFlashVerifyHeadCost: dflash_dispatch_test.go:458: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDecodeAttn2048Probe: decode_attn_probe_test.go:24: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestDecodeDepthThroughput: decode_depth_throughput_test.go:22: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestDefaultVerifyWidth_sweep: default_width_sweep_test.go:70: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDenseResidentParity: gemma_parity_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestDrafterVsOff_perSuite: drafter_vs_off_test.go:110: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestEmbedInt4_residentDecisionDoesNotChange/gpt2: embed_int4_resident_test.go:27: EmbedInt4=false: decoder: read config.json: open config.json: no such file or directory
+skip [baseline] TestEmbedInt4_residentDecisionDoesNotChange/granite-tiny: embed_int4_resident_test.go:27: EmbedInt4=false: decoder: read config.json: open config.json: no such file or directory
+skip [baseline] TestFlashDecodeBlockSpecLane: flash_decode_spec_test.go:363: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestFlashDecodeEndToEnd: flash_decode_test.go:175: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints)
+skip [baseline] TestFlashDecodeForwardNBitIdentical: flash_decode_spec_test.go:269: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestFlashDecodeGateVsReference: flash_decode_gate_test.go:199: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's set-B reference files)
+skip [baseline] TestFlashDecodeKernelLadder: flash_decode_ladder_test.go:29: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestFlashDecodeOracleRealKV: flash_decode_gate_test.go:37: set GOINFER_HEAVY_TESTS=1 (D7 checkpoint, K=8000 prefill)
+skip [baseline] TestFlashDecodeOracleRealKVGemma: flash_decode_gate_test.go:53: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestFlashDecodeRowsBitIdentical: flash_decode_rows_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints for their geometry)
+skip [baseline] TestFlashDecodeSpecVerifyLane: flash_decode_spec_test.go:159: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestFlashDecodeSpeculativeScope: flash_decode_spec_test.go:34: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestFlashDecodeTwoModelSpecLane: flash_decode_spec_test.go:459: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B target and a 0.5B draft)
+skip [baseline] TestFlashDecodeVsF64: flash_decode_test.go:58: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints for their geometry)
+skip [baseline] TestFlashDecode_defaultOnRealResident: flash_decode_default_hw_test.go:19: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on the GPU)
+skip [baseline] TestForwardMRoPE_constantShiftInvariance: forwardmrope_parity_test.go:42: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestForwardMRoPE_equalArgsMatchesForward: forwardmrope_parity_test.go:114: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestFusedGUBench: fused_qkv_rows_test.go:281: set GOINFER_HEAVY_TESTS=1 GOINFER_FGU_BENCH=1
+skip [baseline] TestFusedGURowsBitIdentical: fused_qkv_rows_test.go:251: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestFusedQKVRowsBench: fused_qkv_rows_test.go:145: set GOINFER_HEAVY_TESTS=1 GOINFER_FQKV_BENCH=1
+skip [baseline] TestFusedQKVRowsBitIdentical: fused_qkv_rows_test.go:100: set GOINFER_HEAVY_TESTS=1 (loads a small model for a device context)
+skip [baseline] TestG2R_cuda: g2r_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestG2R_fitCheck: g2r_test.go:243: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestG4VCUDA_gemma4E2B: gemma4_vision_test.go:280: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma3ImgPrefillResidentReal_gate: gemma3_img_prefill_resident_real_test.go:41: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma3ResidentParity: gemma_parity_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma3ResidentReal_gate: gemma3_resident_real_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma3ResidentReal_imageBlockAtomicity: resident_reuse_vl_parity_test.go:42: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma3VisionResidentReal_gate: gemma3_vision_resident_real_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma4BidirSpanPrefill_matchesCPU: gemma4_bidir_span_prefill_test.go:144: no fixture (../testdata/gemma4-vl-bidir-tiny): run scripts/pin_gemma4_vl_bidir_tiny.py / pin_gemma4_vl_bidir_scaled.py
+skip [baseline] TestGemma4BidirSpanPrefill_plantedDefects: gemma4_bidir_span_prefill_test.go:218: no fixture (../testdata/gemma4-vl-bidir-tiny): run scripts/pin_gemma4_vl_bidir_tiny.py / pin_gemma4_vl_bidir_scaled.py
+skip [baseline] TestGemma4BidirSpanPrefill_real26B: gemma4_bidir_span_real_test.go:33: GOINFER_HEAVY_TESTS unset: real 26B
+skip [baseline] TestGemma4BidirSpanPrefill_real26BDecode: gemma4_bidir_span_real_test.go:149: GOINFER_HEAVY_TESTS unset: real 26B
+skip [baseline] TestGemma4DenseScaled_residentParity: gemma4_dense_scaled_test.go:28: no fixture (../testdata/gemma4-dense-scaled) — run scripts/pin_gemma4_dense_scaled.py
+skip [baseline] TestGemma4DenseTwoGeom_residentParity: gemma4_twogeom_parity_test.go:23: no fixture (../testdata/gemma4-dense-twogeom-tiny) — run scripts/pin_gemma4_dense_twogeom.py or scripts/dbg_twogeom_variants.py
+skip [baseline] TestGemma4EModelImage_batchedPrefillMatchesCPU: gemma4_emodel_image_test.go:125: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [baseline] TestGemma4EModelImage_generateTakesTheResidentPath: gemma4_emodel_image_test.go:172: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [baseline] TestGemma4EModelImage_plantedDefects/(1)_image_tail_built_from_the_placeholder_id,_not_the_pad_id: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [baseline] TestGemma4EModelImage_plantedDefects/(2)_image_feature_scaled_by_the_embed_scale: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [baseline] TestGemma4EModelImage_plantedDefects/(3)_image_tail_zero: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [baseline] TestGemma4EModelImage_plantedDefects/(4)_image_positions_built_as_text_rows: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [baseline] TestGemma4EModelPrefill_batchedBitIdentical/18rows: gemma4_emodel_prefill_test.go:94: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_
+skip [baseline] TestGemma4EModelPrefill_batchedBitIdentical/96rows: gemma4_emodel_prefill_test.go:94: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_
+skip [baseline] TestGemma4EModelPrefill_exactKernelsAboveTheFloor: gemma4_emodel_prefill_test.go:192: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4
+skip [baseline] TestGemma4EModelPrefill_plantedDefects: gemma4_emodel_prefill_test.go:168: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4
+skip [baseline] TestGemma4EModel_cudaResidentParity: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_declinesAndFallbacks: gemma4_emodel_test.go:267: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_
+skip [baseline] TestGemma4EModel_plantedDefects/(1)_PLE_branch_skipped: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_plantedDefects/(2)_PLE_token-identity_term_zeroed: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_plantedDefects/(3)_shared-KV_source_one_owning_layer_off: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_plantedDefects/(4)_one_FFN_width_for_the_model: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_plantedDefects/(5)_K/V_store_not_skipped_on_a_shared_layer: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_plantedDefects/(6)_layer_scalar_dropped: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_plantedDefects/(7)_v_norm_dropped_on_non-K=V_layers: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_plantedDefects/(8)_PLE_per-layer_input_offset_off_by_one_layer: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [baseline] TestGemma4EModel_realE2BNonInferiority: gemma4_emodel_real_test.go:191: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma4EModel_realE2BPLEHostCost: gemma4_emodel_real_test.go:218: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma4EModel_realE4BAnchorDump: gemma4_emodel_real_test.go:290: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma4EModel_realE4BF32Dump: gemma4_emodel_real_test.go:399: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma4EModel_realE4BNonInferiority: gemma4_emodel_real_test.go:260: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemma4Expert_geluTanhChain: gemma4_router_parity_test.go:226: no fixture (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+skip [baseline] TestGemma4Graphs_bitExact_emodel: gemma4_emodel_test.go:245: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_
+skip [baseline] TestGemma4Graphs_bitExact_scaled: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-scaled)
+skip [baseline] TestGemma4Graphs_bitExact_tiny: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-tiny)
+skip [baseline] TestGemma4Graphs_bitExact_tinyCache: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-tiny)
+skip [baseline] TestGemma4Graphs_bitExact_tinyCacheReuse: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-tiny)
+skip [baseline] TestGemma4Graphs_locateDivergence: graph_locate_test.go:16: no fixture (../testdata/gemma4-moe-tiny)
+skip [baseline] TestGemma4Graphs_offVsOffControl: gemma4_graphs_test.go:176: no fixture (../testdata/gemma4-moe-tiny)
+skip [baseline] TestGemma4Graphs_sameModelUnderLoad: gemma4_graphs_test.go:132: no fixture (../testdata/gemma4-moe-tiny)
+skip [baseline] TestGemma4MoEScaled_residentParity: gemma4_moe_scaled_parity_test.go:55: no fixture weights (../testdata/gemma4-moe-scaled/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestGemma4MoE_cacheExpertsBitExact_scaled: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-scaled/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestGemma4MoE_cacheExpertsBitExact_tiny: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestGemma4MoE_cacheResizeBitExact_tiny: gemma4_moe_cache_test.go:159: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestGemma4MoE_cacheReuse_scaled: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-scaled/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestGemma4MoE_cacheReuse_tiny: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestGemma4MoE_floatParity: floatact_test.go:21: no fixture (../testdata/gemma4-moe-tiny): run scripts/pin_gemma4_moe_forward.py
+skip [baseline] TestGemma4MoE_localize: gemma4_moe_localize_test.go:28: no fixture (../testdata/gemma4-moe-tiny)
+skip [baseline] TestGemma4MoE_residentParity: gemma4_moe_resident_test.go:38: no fixture (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+skip [baseline] TestGemma4Router_residentIdxParity: gemma4_router_parity_test.go:34: no fixture (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+skip [baseline] TestGemma4VLResident_bidirParity: gemma4_vl_resident_parity_test.go:45: no fixture (../testdata/gemma4-vl-bidir-scaled) — run scripts/pin_gemma4_vl_bidir_scaled.py
+skip [baseline] TestGemma4_26BActQuantSensitivity: gemma4_bidir_span_real_test.go:489: GOINFER_HEAVY_TESTS unset: real 26B
+skip [baseline] TestGemma4_26BDecodeLocalize: gemma4_bidir_span_real_test.go:311: GOINFER_HEAVY_TESTS unset: real 26B
+skip [baseline] TestGemma4_26B_1bBound: gemma4_26b_bound_test.go:25: GOINFER_HEAVY_TESTS unset — real 26B micro-bench
+skip [baseline] TestGemma4_26B_cache_B: gemma4_26b_cache_test.go:48: ISOLATED-RUN: the 26B's resident declined (4.00 GB free beside the weights) in the one-process heavy tier; passes alone
+skip [baseline] TestGemma4_26B_s10DumpCUDA: gemma4_26b_s10dump_cuda_test.go:25: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestGemmaBOSBuild: gemma_bos_build_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemmaContextCUDA: gemma_sublayer_cuda_test.go:141: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemmaOutlierTrace: gemma_outlier_trace_test.go:59: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemmaSublayerCUDA: gemma_sublayer_cuda_test.go:40: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGemvRNBandwidth: gemv_rn_test.go:165: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestGenerateBlockSpec_production: blockspec_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGeometryPortIsLive: geometry_port_test.go:26: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGlmOcrCUDAContextFit: glm_ocr_real_image_test.go:58: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGlmOcrCUDAResidentFullBudget: glm_ocr_real_image_test.go:231: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGlmOcrCUDAResidentRealImage: glm_ocr_real_image_test.go:76: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGluQuantBlockSizeInvariant: glu_quant_blocksize_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a small model for a device context)
+skip [baseline] TestGptOssResidentParityCUDA: gptoss_real20b_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model)
+skip [baseline] TestGraphsDecode26B: graphs_speed_test.go:98: set GOINFER_HEAVY_TESTS=1 (loads the real 26B four times)
+skip [baseline] TestGraphsDecodeSpeedup: graphs_speed_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestGreedyFastPathIdentical: backend_wired_test.go:198: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGridVisionCUDA_deepstackReal: grid_vision_deepstack_test.go:115: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestGridVisionCUDA_real: grid_vision_test.go:237: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestGumbelDeviceAgreesWithHost: gumbel_test.go:29: set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the compiled gumbel kernels)
+skip [baseline] TestKEqVCopy_bitIdenticalToTheDoubleProjection: keqv_copy_test.go:198: no fixture (../testdata/gemma4-dense-scaled)
+skip [baseline] TestKSA1_gemvTiming: ks_a1_test.go:193: A1-G0 is a timed reading: set GOINFER_KSA1_TIMING=1 and run under the timing lock
+skip [baseline] TestKSB8_admissionPricesTheChosenPass: ksb8_test.go:363: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestKSB8_bitsAcrossWidths: ksb8_test.go:111: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestKSB8_buildPricesThePass: ksb8_test.go:194: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestKSB8_speed: ksb8_test.go:277: set GOINFER_KSB8_TIMING=1 (a timed run under the timing lock)
+skip [baseline] TestKSH6C_headroomQwen3: ksh6_test.go:90: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSH6C_marginPriced: ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+skip [baseline] TestKSH6C_marginPriced26B: ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+skip [baseline] TestKSH6C_marginPriced7B8B: ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+skip [baseline] TestKSH6C_moeModelPaysItsPool: ksh6c_s5_test.go:22: set KSH6C_S5=1 (it needs a fresh process: the context keeps the pool once paid)
+skip [baseline] TestKSH6C_planSeesTheMoEPool: ksh6c_review_test.go:55: set KSH6C_S6=1 (it needs a fresh process: the context keeps the pool once paid)
+skip [baseline] TestKSH6C_postPoolBreakdown: ksh6c_breakdown_test.go:26: set KSH6C_MODEL
+skip [baseline] TestKSH6_marginParts26B: ksh6_test.go:90: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSH6_marginPartsQwen3: ksh6_test.go:90: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSO1C_fillerDiagnostic: kso1c_fidelity_test.go:315: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSO1C_laneBytes: kso1c_resident_test.go:62: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSO1C_longContextQuality: kso1c_fidelity_test.go:237: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSO1C_realPhi3NonInferiority: kso1c_fidelity_test.go:150: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSO1C_speed: kso1c_speed_test.go:191: set GOINFER_KSO1C_TIMING=1 (a timed run under the timing lock)
+skip [baseline] TestKSO1C_towardTheFile: kso1c_fidelity_test.go:49: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestKSO1C_untouchedKernelsBitIdentical: kso1c_kernels_test.go:275: set GOINFER_KSO1C_OLD_ACTGROUP_PTX to origin/main's cuda/testdata/actgroup.ptx
+skip [baseline] TestKV0_continuationEffect_real1p5B: kv0_invariance_test.go:548: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV0_prefillInvariance_real1p5B: kv0_invariance_test.go:359: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV16GateVsReference: kv16_gate_test.go:33: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [baseline] TestKV16_profileSteps: kv16_speed_test.go:127: set KV16_ARM, KV16_DEPTH, KV16_AB_MODELS
+skip [baseline] TestKV16_readerKernelTime: kv16_speed_test.go:162: set KV16_ARM, KV16_DEPTH, KV16_AB_MODELS
+skip [baseline] TestKV16_singleArmDecode: kv16_speed_test.go:81: set KV16_ARM=f32|f16 and KV16_AB_MODELS
+skip [baseline] TestKV16_wholeTokenDecodeAB: kv16_speed_test.go:28: set KV16_AB=1
+skip [baseline] TestKV2_copyCost_real: kv2_cost_test.go:57: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B, and the 7B with GOINFER_KV2_COPYCOST_7B=1)
+skip [baseline] TestKV2_copyExact_otherLayouts/gemma4-emodel-tiny: kv2_copy_test.go:320: no fixture at ../testdata/gemma4-emodel-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [baseline] TestKV2_copyExact_real1p5B: kv2_copy_test.go:343: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV2_exactPrefillIsDecode_real1p5B: kv2_classes_test.go:345: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV2_hitCap_real1p5B: kv2_classes_test.go:181: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV2_recordedClass_real1p5B: kv2_classes_test.go:134: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV2_scheduleIndependence_real1p5B: kv2_schedule_test.go:281: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-scaled: kv3_families_test.go:35: no fixture at ../testdata/gemma4-dense-scaled (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [baseline] TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-twogeom-tiny: kv3_families_test.go:35: no fixture at ../testdata/gemma4-dense-twogeom-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [baseline] TestKV3Families_pastBoundBatchedEqualsPerToken/gemma4-dense-twogeom-tiny: kv3_families_test.go:77: no fixture at ../testdata/gemma4-dense-twogeom-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [baseline] TestKV3Tiled_batchedEqualsPerToken_real: kv3_tiled_test.go:298: set GOINFER_HEAVY_TESTS=1 and KV3_TILED_REAL=1
+skip [baseline] TestKV3Tiled_forcedRouteOnGemma3: kv3_tiled_test.go:248: set GOINFER_HEAVY_TESTS=1 and KV3_TILED_SPEED=1
+skip [baseline] TestKV3_admissionPricesTheChunk: kv3_longprefill_test.go:272: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV3_batchedPrefillPastTheSpanBound_real1p5B: kv3_longprefill_test.go:188: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [baseline] TestKV3_prefillDigest: kv3_digest_test.go:29: set GOINFER_HEAVY_TESTS=1 and KV3_DIGEST=1
+skip [baseline] TestKV4bGate_CR7B: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [baseline] TestKV4bGate_DSV2L: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [baseline] TestKV4bGate_G34B: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [baseline] TestKV4bGate_Q359: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [baseline] TestKV4bGate_QMOE: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [baseline] TestKV4bGate_QVL3: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [baseline] TestKV4b_deliveredBytes/hybrid/gemma4-dense-twogeom-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/gemma4-dense-twogeom-tiny: no such file or directory
+skip [baseline] TestKV4b_deliveredBytes/hybrid/gemma4-moe-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/gemma4-moe-tiny: no such file or directory
+skip [baseline] TestKV4b_deliveredBytes/m-rope/qwen3vl-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/qwen3vl-tiny: no such file or directory
+skip [baseline] TestKV4b_deliveredBytes/mla/kimi-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/kimi-tiny: no such file or directory
+skip [baseline] TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-dense-twogeom-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/gemma4-dense-twogeom-tiny: no such file or directory
+skip [baseline] TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-moe-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/gemma4-moe-tiny: no such file or directory
+skip [baseline] TestKV4b_layer0StoreIsTheRoundedF32Store/m-rope/qwen3vl-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/qwen3vl-tiny: no such file or directory
+skip [baseline] TestKV4b_layer0StoreIsTheRoundedF32Store/mla/kimi-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/kimi-tiny: no such file or directory
+skip [baseline] TestKV4b_mropePrefillStoreIsTheRoundedF32Store/qwen3vl-tiny: kv4b_groups_test.go:302: no fixture: stat ../testdata/qwen3vl-tiny: no such file or directory
+skip [baseline] TestKVOnlyPrefill_byteIdentical_tiny: kvonly_prefill_test.go:29: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [baseline] TestLead3_pinOrderMicrobench: lead3_pin_order_bench_test.go:29: GOINFER_HEAVY_TESTS unset — allocates ~11 GB of pinned host memory
+skip [baseline] TestLead3_realLoadTime: lead3_realload_time_test.go:27: GOINFER_HEAVY_TESTS unset — loads the real 26B
+skip [baseline] TestMC3CUDAS0_batchedRowsVsDecode: mc3_cuda_s0_test.go:33: set GOINFER_HEAVY_TESTS=1 (loads a real model)
+skip [baseline] TestMambaKernels_cpuParity: mamba_kernels_test.go:167: nemotron-tiny: 72 steps, nHeads=8 headDim=8 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 1.19e-07
+skip [baseline] TestMellumResidentParityCUDA: mellum_real_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestMoEDMAOverlapAB: moe_dma_overlap_ab_test.go:27: GOINFER_HEAVY_TESTS unset — real 26B decode
+skip [baseline] TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny: moe_expert_major_residual_test.go:77: no fixture at ../testdata/gemma4-moe-tiny: stat ../testdata/gemma4-moe-tiny: no such file or directory
+skip [baseline] TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3: moe_expert_major_residual_test.go:77: no fixture at ../testdata/gemma4-moe-tiny-k3: stat ../testdata/gemma4-moe-tiny-k3: no such file or directory
+skip [baseline] TestMoEExpertMajorGemma4CUDA_bitIdentical: moe_expert_major_gemma4_test.go:27: no fixture at ../testdata/gemma4-moe-tiny-k3: stat ../testdata/gemma4-moe-tiny-k3: no such file or directory
+skip [baseline] TestMoEPerLayerHitRate: moe_perlayer_hitrate_test.go:31: GOINFER_HEAVY_TESTS unset — real 26B decode
+skip [baseline] TestMoERouteDemandThreshold: moe_route_demand_test.go:234: DRAIN-GROUP-SKIP: bisects by ballooning the device to as little as 64 MiB free, refusals included — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its 
+skip [baseline] TestMoERouteDemandThresholdChild: moe_route_demand_test.go:31: GOINFER_A9_LEAVE_FREE unset — this is the worker half of TestMoERouteDemandThreshold
+skip [baseline] TestMoERouteFirstLaunchReservation: moe_route_reservation_test.go:39: CUDA_MODULE_LOADING="" (empty = driver default LAZY)
+skip [baseline] TestMoERows_realMellumIdentityAndAB: moe_rows_real_test.go:58: set GOINFER_HEAVY_TESTS=1 (loads Mellum2.1)
+skip [baseline] TestMoEStreamingDecodeProfile: moe_streaming_decode_profile_test.go:25: GOINFER_HEAVY_TESTS unset — real 26B decode
+skip [baseline] TestNemotronResidentCUDA_fitPlan: mamba_fit_test.go:22: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestNemotronResidentCUDA_tier1: mamba_fit_test.go:151: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestNgramSpec_twoTurnsMatchPlain: spec_twoturn_test.go:252: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestOptFwd_bitIdenticalStream: optfwd_test.go:55: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestOptFwd_hitRateLadder: optfwd_test.go:157: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestOptFwd_lowTempHighHitRate: optfwd_test.go:116: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestP20ExpertLocality: p20_expert_locality_test.go:32: ISOLATED-RUN: the 26B needs 3.69 GB of KV + reserve against 3.98 GB free; declined in the one-process heavy tier, passes alone
+skip [baseline] TestPagerDeterminism: pager_determinism_test.go:43: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestParityFloorControl: parity_floor_control_test.go:26: measurement harness, no assertion — set GOINFER_HEAVY_TESTS=1 GOINFER_PARITY_FLOOR_CONTROL=1
+skip [baseline] TestPrefillCancel: prefill_cancel_test.go:34: no fixture (../testdata/gemma4-moe-scaled)
+skip [baseline] TestPrefillCancel_dense: prefill_cancel_test.go:122: no fixture (../testdata/gemma4-dense-scaled)
+skip [baseline] TestPrefillChunked_bitIdentical: prefill_chunked_test.go:29: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestPrefillChunked_fastKernelsOnEveryChunk: prefill_chunk_fast_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestPrefillCrossover: prefill_crossover_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestPrefillDecomp: prefill_decomp_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestPrefillDivergenceRate: prefill_divergence_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestPrefillGateVsReferenceCUDA: prefill_gate_ref_test.go:50: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's reference files)
+skip [baseline] TestPrefillLastNArgmax_matchesPerRow: dflash_dispatch_test.go:528: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestPrefillLast_gemma3: prefill_gemma3_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads Gemma-3-4B)
+skip [baseline] TestPrefillLast_qwen3: prefill_qwen3_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads Qwen3-1.7B)
+skip [baseline] TestPrefillLongPrompt: prefill_longprompt_test.go:28: ISOLATED-RUN: the 7B needs 0.94 GB of KV + 384 MB reserve against 1.29 GB free, 30 MB short in the one-process heavy tier; passes alone
+skip [baseline] TestPrefillMoE_bitIdentical/gemma4-moe-kv-tiny: prefill_moe_test.go:81: not CUDA-resident (<nil>)
+skip [baseline] TestPrefillMoE_bitIdentical/gemma4-moe-scaled: prefill_moe_test.go:63: no fixture (../testdata/gemma4-moe-scaled)
+skip [baseline] TestPrefillMoE_real26B: prefill_moe_test.go:54: set GOINFER_HEAVY_TESTS=1 (loads the 26B, ~2m11s)
+skip [baseline] TestPrefillNonUniform_bitIdentical: prefill_nonuniform_test.go:34: no fixture (../testdata/gemma4-dense-scaled) — run scripts/pin_gemma4_dense_scaled.py
+skip [baseline] TestPrefillStartOffset: prefill_startoffset_test.go:32: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestPrefillTTFT: prefill_ttft_test.go:42: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestPrefillTails_bitIdenticalToTheRecordedBaseline: prefill_tails_identity_test.go:162: no fixture (../testdata/gemma4-dense-scaled)
+skip [baseline] TestProdThroughput: backend_wired_test.go:119: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestQ4K_phi3ResidentMatchesCPU: q4k_phi3_resident_test.go:30: set GOINFER_PHI3_MINI_GGUF
+skip [baseline] TestQwen25CUDA_real: qwen25_vision_test.go:125: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower)
+skip [baseline] TestQwen25VLMRoPEPrefillResidentReal_gate: qwen25vl_mrope_prefill_resident_real_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestQwen25VLResidentReal_gate: qwen25vl_resident_real_test.go:31: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestQwen35ResidentDecodeRateCUDA: qwen35_resident_speed_test.go:27: qwen3.5 resident decode rate (set GOINFER_DNET_SPEED_CUDA=1)
+skip [baseline] TestQwen35ResidentParityCUDA: qwen35_resident_parity_test.go:28: qwen3.5 DeltaNet resident parity (set GOINFER_DNET_PARITY_CUDA=1)
+skip [baseline] TestQwen35VLReal_residentImagePrefillMatchesCPU: qwen35vl_real_resident_test.go:39: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestQwen36_35B_cache: qwen35moe_35b_cache_test.go:37: GOINFER_HEAVY_TESTS unset — real 35B decode
+skip [baseline] TestQwen3VLMoe_cudaLogits: qwen3vlmoe_logits_real_test.go:47: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestR14DrafterArgmaxAB: r14_drafter_argmax_ab_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=26) in the one-process heavy tier; passes alone
+skip [baseline] TestR14DrafterArgmaxProfile: r14_drafter_argmax_profile_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=23) in the one-process heavy tier; passes alone
+skip [baseline] TestRealForwardParity: realforward_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestRecurrentSpec_arenaPriced/qwen3.5-0.8b: recurrent_spec_test.go:509: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [baseline] TestRecurrentSpec_commitAgreesWithKVManager/qwen3.5-0.8b: recurrent_spec_test.go:413: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [baseline] TestRecurrentSpec_earlyExitLeavesNothingToFold/qwen3.5-0.8b: recurrent_spec_test.go:605: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [baseline] TestRecurrentSpec_scriptedLoop/qwen3.5-0.8b: recurrent_spec_test.go:378: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [baseline] TestRecurrentSpec_verifyFoldMatchesPrefill/qwen3.5-0.8b: recurrent_spec_test.go:256: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [baseline] TestResidentCloseFreesVRAM: lifecycle_test.go:26: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentCloseFreesVRAM_7B: lifecycle7b_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentCloseSettleTime: closesettle_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentDrafter_blockParity: drafter_test.go:274: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentDrafter_extendContext: drafter_test.go:144: ISOLATED-RUN: AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+skip [baseline] TestResidentDrafter_fuseContextReleasesScratch: drafter_leak_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentDrafter_fuseParity: drafter_test.go:41: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentDrafter_streamedAttachMatchesHeld: drafter_test.go:484: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentHiddenCapture: hidden_capture_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny: kvbytes_agreement_test.go:49: no fixture at ../testdata/gemma4-dense-twogeom-tiny
+skip [baseline] TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny: kvbytes_agreement_test.go:49: no fixture at ../testdata/gemma4-emodel-tiny
+skip [baseline] TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny: kvbytes_agreement_test.go:49: no fixture at ../testdata/gemma4-moe-tiny
+skip [baseline] TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny: kvbytes_agreement_test.go:58: not CUDA-resident: every resident cuda projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale 
+skip [baseline] TestResidentLaunchVRAMProbe: resident_vram_probe_test.go:24: GOINFER_HEAVY_TESTS unset — loads the real 26B (~5 min, 11.4 GB pinned host)
+skip [baseline] TestResidentSlotConsumption: resident_vram_probe_test.go:110: set GOINFER_MOE_SCALED_FIXTURE
+skip [baseline] TestResidentSpecServe: resident_spec_serve_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel: rope_kv_mrope_batched_test.go:71: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestRopeKVMRoPEBatched_matchesCPUReference: rope_kv_mrope_batched_test.go:213: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestRouteGptOssGrowsPoolPastMoERoute: route_gptoss_reservation_test.go:60:   moe_route (the old warm-up)                  cost           0 B (0.0 MiB)
+skip [baseline] TestS10DeepstackPrefillCUDA_anchorDump: s10_anchor_dump_test.go:40: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS10DeepstackPrefillCUDA_diag: s10_deepstack_prefill_test.go:427: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS10DeepstackPrefillCUDA_real: s10_deepstack_prefill_test.go:225: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS10DeepstackPrefillCUDA_speed: s10_deepstack_prefill_test.go:544: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS10DeepstackPrefillCUDA_tiny: s10_deepstack_prefill_test.go:74: no fixture at ../testdata/qwen3vl-tiny
+skip [baseline] TestS17LeverA_wholeTower: s17_profile_test.go:218: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS17ProfileCUDA: s17_profile_test.go:120: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS17ProfileQwen25CUDA: s17_profile_test.go:337: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS4Towers_real/qwen2.5-vl: s4_towers_test.go:125: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower)
+skip [baseline] TestS896_gateDump: s896_gate_test.go:36: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestS896_layerDump: s896_layerdump_test.go:32: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSP0_prize: sp0_prize_test.go:35: set SP0_TARGET, SP0_KIND and SP0_OUT
+skip [baseline] TestSP2_foldCost: recurrent_spec_real_test.go:364: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestSP2_identity: recurrent_spec_real_test.go:189: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestSP2_speed: recurrent_spec_real_test.go:487: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestSampledDecodeLadder: sampled_decode_ladder_test.go:33: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSampledGumbelStreamIdentity: sampled_gumbel_identity_test.go:27: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSampledTopKStreamIdentity: sampled_topk_identity_test.go:30: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSiglipCUDA_fusedAttentionKernelDefectsReal: siglip_vision_test.go:419: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSiglipCUDA_int8VRAM: siglip_vision_test.go:376: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSiglipCUDA_int8VsFloat32: siglip_vision_test.go:242: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower twice)
+skip [baseline] TestSiglipCUDA_real: siglip_vision_test.go:186: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower)
+skip [baseline] TestSiglipCUDA_speed: siglip_vision_test.go:311: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSlotAllocation_matchesGranularityForm: slot_granularity_test.go:41: no MoE fixture weights at ../testdata/gemma4-moe-scaled/model.safetensors — run scripts/pin_gemma4_moe_scaled.py (weights are gitignored; the fixture pins its own sha256)
+skip [baseline] TestSpecDecode: specdecode_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestSpecDecodeCurve: spec_curve_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestSpecNonCopyLane: spec_noncopy_lane_test.go:30: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestSpecPagerInteraction: spec_pager_interaction_test.go:157: ISOLATED-RUN: NewBlockSpec hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+skip [baseline] TestSpecResidentPrefillRegression: spec_prefill_regression_test.go:36: set GOINFER_HEAVY_TESTS=1 GOINFER_SPEC_PREFILL_REGRESSION=1
+skip [baseline] TestSpecVerifyCeiling: spec_verify_ceiling_test.go:26: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestSplitKVCrossover: splitkv_crossover_test.go:31: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestSplitKV_bitIdentical: splitkv_bitident_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [baseline] TestSplitKV_bitIdentical_gemma3: splitkv_bitident_test.go:125: set GOINFER_HEAVY_TESTS=1 (loads Gemma-3-4B)
+skip [baseline] TestThetaAB: theta_ab_test.go:35: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_AB=1
+skip [baseline] TestThetaProbe_CUDA: theta_probe_test.go:36: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_PROBE=1
+skip [baseline] TestTopKSelect_matchesReference: topk_test.go:26: set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the compiled topk kernel)
+skip [baseline] TestTowerAttn_speed: tower_attn_test.go:207: heavy: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestUploadKV_matchesSequentialForward: uploadkv_parity_test.go:41: set GOINFER_HEAVY_TESTS=1
+skip [baseline] TestVisionEncoder_forwardPatchesReleasesDeviceScratch: vision_encoder_leak_test.go:23: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestVisionTowerTiming: vision_tower_timing_test.go:31: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestVsumMechanism: vsum_mechanism_test.go:35: set GOINFER_HEAVY_TESTS=1 (real checkpoint; needs Phase A's reference files)
+skip [baseline] TestVsumSplitFidelity: vsum_split_fidelity_test.go:35: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [baseline] TestVsumSplitGateVsReference: vsum_split_gate_test.go:71: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's reference files)
+skip [baseline] TestWindowedKV_offsetsFastClass_real1p5B: kvwindow_offsets_test.go:205: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestA10CtxHolder: alloc_reporting_gap_test.go:227: helper for TestA10FloorIsPerProcessOrPerDevice
+skip [goinfer] TestA10FloorIsPerProcessOrPerDevice: alloc_reporting_gap_test.go:96: DRAIN-GROUP-SKIP: spawns a child that holds the device near the floor while this context works — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its o
+skip [goinfer] TestA10ReportingGap: alloc_reporting_gap_test.go:23: DRAIN-GROUP-SKIP: drains to refusal in-process to measure the reported-vs-obtained shortfall — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its own
+skip [goinfer] TestA13_LoadModuleOnResidentExecutor: a13_cell_test.go:28: set GOINFER_A13_CELL=1 — A13 probe, deliberately not part of the tier
+skip [goinfer] TestA13_MultiModelUnloadPoisons: a13_multimodel_test.go:26: set GOINFER_A13_MULTI=1 — A13 probe, deliberately not part of the tier
+skip [goinfer] TestA13_PrefillChurnPoisons: a13_prefillchurn_test.go:32: set GOINFER_A13_CHURN=1 — A13 probe, deliberately not part of the tier
+skip [goinfer] TestA13_SingleFailedAllocPoisons: a13_singlefail_test.go:28: set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier
+skip [goinfer] TestActGroup_phi3ResidentMatchesCPU: actgroup_phi3_resident_test.go:38: set GOINFER_PHI3_MINI_GGUF
+skip [goinfer] TestAllocFloor: alloc_floor_test.go:17: DRAIN-GROUP-SKIP: drains the device in shrinking chunks until a 1 MiB request is refused — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its own process so 
+skip [goinfer] TestArgmaxTieBreak: argmax_tiebreak_test.go:21: set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the compiled argmax kernel)
+skip [goinfer] TestAttnBatchedBandwidth: attn_bw_test.go:22: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestAttnBlockFull_cost: attn_block_test.go:171: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnBlockFull_nonCausal: attn_block_test.go:35: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnFusedTile_32x64BitIdentical/128x64: attn_fused_tile_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnFusedTile_32x64BitIdentical/32x64: attn_fused_tile_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnFusedTile_defaultBitIdenticalWholeModel: attn_fused_tile_model_test.go:21: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestAttnFusedTile_smallMSweep: attn_fused_tile_sweep_test.go:22: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnFused_attendsKeysBeforeStartPos: attn_fused_test.go:252: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnFused_vsExact: attn_fused_test.go:52: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnFused_vsF16Reference: attn_fused_test.go:399: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal: attn_img_batched_test.go:72: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestAttnImgBatched_windowDecoupled: attn_img_batched_test.go:203: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestB2DenseFlagship: b2_flagship_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a 7B model)
+skip [goinfer] TestBackendResidentWired: backend_wired_test.go:22: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestBatchedCapture_matchesPerToken: drafter_test.go:362: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestBatchedVsDecodeGap: batched_decode_gap_test.go:29: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestBlockSpecStream: blockspec_test.go:119: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestBlockSpec_twoTurnsMatchPlain: spec_twoturn_test.go:170: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestBuildScratchAccounting: build_scratch_accounting_test.go:113: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestBuildScratchAccounting_plantedDefect: build_scratch_accounting_test.go:154: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny: batchstep_test.go:50: no fixture at ../testdata/gemma4-dense-twogeom-tiny
+skip [goinfer] TestCUDA_graphLiveNoSyncOrdering: graph_nosync_test.go:30: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestCUDA_graphReplayBound: graph_bound_test.go:27: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestCUDA_graphSegAIsolated: graph_segisolate_test.go:26: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestCUDA_graphSharedMemHazard: graph_sharedmem_test.go:24: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestCUDA_launchCost: launch_cost_test.go:23: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestClefFidelityCUDA_run: clef_fidelity_test.go:35: CLEF_FIDELITY_ARM unset: this is a run harness, not a gate
+skip [goinfer] TestCohereRealResidentParityCUDA: cohere_real_resident_test.go:42: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashCaptureSeamCost: dflash_dispatch_test.go:143: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashCompositionResidual: dflash_dispatch_test.go:342: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashDispatchAmortization: dflash_dispatch_test.go:30: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashDraftCostProbe: dflash_draftcost_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashLoop_gate3: drafter_loop_test.go:215: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashLoop_lossless: drafter_loop_test.go:138: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashRoundComposition: dflash_dispatch_test.go:233: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDFlashVerifyHeadCost: dflash_dispatch_test.go:458: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDecodeAttn2048Probe: decode_attn_probe_test.go:24: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestDecodeDepthThroughput: decode_depth_throughput_test.go:22: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestDefaultVerifyWidth_sweep: default_width_sweep_test.go:70: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDenseResidentParity: gemma_parity_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestDrafterVsOff_perSuite: drafter_vs_off_test.go:110: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestEmbedInt4_residentDecisionDoesNotChange/gpt2: embed_int4_resident_test.go:27: EmbedInt4=false: decoder: read config.json: open config.json: no such file or directory
+skip [goinfer] TestEmbedInt4_residentDecisionDoesNotChange/granite-tiny: embed_int4_resident_test.go:27: EmbedInt4=false: decoder: read config.json: open config.json: no such file or directory
+skip [goinfer] TestFlashDecodeBlockSpecLane: flash_decode_spec_test.go:363: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestFlashDecodeEndToEnd: flash_decode_test.go:175: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints)
+skip [goinfer] TestFlashDecodeForwardNBitIdentical: flash_decode_spec_test.go:269: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestFlashDecodeGateVsReference: flash_decode_gate_test.go:199: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's set-B reference files)
+skip [goinfer] TestFlashDecodeKernelLadder: flash_decode_ladder_test.go:29: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestFlashDecodeOracleRealKV: flash_decode_gate_test.go:37: set GOINFER_HEAVY_TESTS=1 (D7 checkpoint, K=8000 prefill)
+skip [goinfer] TestFlashDecodeOracleRealKVGemma: flash_decode_gate_test.go:53: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestFlashDecodeRowsBitIdentical: flash_decode_rows_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints for their geometry)
+skip [goinfer] TestFlashDecodeSpecVerifyLane: flash_decode_spec_test.go:159: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestFlashDecodeSpeculativeScope: flash_decode_spec_test.go:34: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestFlashDecodeTwoModelSpecLane: flash_decode_spec_test.go:459: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B target and a 0.5B draft)
+skip [goinfer] TestFlashDecodeVsF64: flash_decode_test.go:58: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints for their geometry)
+skip [goinfer] TestFlashDecode_defaultOnRealResident: flash_decode_default_hw_test.go:19: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on the GPU)
+skip [goinfer] TestForwardMRoPE_constantShiftInvariance: forwardmrope_parity_test.go:42: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestForwardMRoPE_equalArgsMatchesForward: forwardmrope_parity_test.go:114: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestFusedGUBench: fused_qkv_rows_test.go:281: set GOINFER_HEAVY_TESTS=1 GOINFER_FGU_BENCH=1
+skip [goinfer] TestFusedGURowsBitIdentical: fused_qkv_rows_test.go:251: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestFusedQKVRowsBench: fused_qkv_rows_test.go:145: set GOINFER_HEAVY_TESTS=1 GOINFER_FQKV_BENCH=1
+skip [goinfer] TestFusedQKVRowsBitIdentical: fused_qkv_rows_test.go:100: set GOINFER_HEAVY_TESTS=1 (loads a small model for a device context)
+skip [goinfer] TestG2R_cuda: g2r_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestG2R_fitCheck: g2r_test.go:243: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestG4VCUDA_gemma4E2B: gemma4_vision_test.go:280: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma3ImgPrefillResidentReal_gate: gemma3_img_prefill_resident_real_test.go:41: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma3ResidentParity: gemma_parity_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma3ResidentReal_gate: gemma3_resident_real_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma3ResidentReal_imageBlockAtomicity: resident_reuse_vl_parity_test.go:42: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma3VisionResidentReal_gate: gemma3_vision_resident_real_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma4BidirSpanPrefill_matchesCPU: gemma4_bidir_span_prefill_test.go:144: no fixture (../testdata/gemma4-vl-bidir-tiny): run scripts/pin_gemma4_vl_bidir_tiny.py / pin_gemma4_vl_bidir_scaled.py
+skip [goinfer] TestGemma4BidirSpanPrefill_plantedDefects: gemma4_bidir_span_prefill_test.go:218: no fixture (../testdata/gemma4-vl-bidir-tiny): run scripts/pin_gemma4_vl_bidir_tiny.py / pin_gemma4_vl_bidir_scaled.py
+skip [goinfer] TestGemma4BidirSpanPrefill_real26B: gemma4_bidir_span_real_test.go:33: GOINFER_HEAVY_TESTS unset: real 26B
+skip [goinfer] TestGemma4BidirSpanPrefill_real26BDecode: gemma4_bidir_span_real_test.go:149: GOINFER_HEAVY_TESTS unset: real 26B
+skip [goinfer] TestGemma4DenseScaled_residentParity: gemma4_dense_scaled_test.go:28: no fixture (../testdata/gemma4-dense-scaled) — run scripts/pin_gemma4_dense_scaled.py
+skip [goinfer] TestGemma4DenseTwoGeom_residentParity: gemma4_twogeom_parity_test.go:23: no fixture (../testdata/gemma4-dense-twogeom-tiny) — run scripts/pin_gemma4_dense_twogeom.py or scripts/dbg_twogeom_variants.py
+skip [goinfer] TestGemma4EModelImage_batchedPrefillMatchesCPU: gemma4_emodel_image_test.go:125: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [goinfer] TestGemma4EModelImage_generateTakesTheResidentPath: gemma4_emodel_image_test.go:172: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [goinfer] TestGemma4EModelImage_plantedDefects/(1)_image_tail_built_from_the_placeholder_id,_not_the_pad_id: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [goinfer] TestGemma4EModelImage_plantedDefects/(2)_image_feature_scaled_by_the_embed_scale: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [goinfer] TestGemma4EModelImage_plantedDefects/(3)_image_tail_zero: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [goinfer] TestGemma4EModelImage_plantedDefects/(4)_image_positions_built_as_text_rows: gemma4_emodel_image_test.go:154: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_e
+skip [goinfer] TestGemma4EModelPrefill_batchedBitIdentical/18rows: gemma4_emodel_prefill_test.go:94: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_
+skip [goinfer] TestGemma4EModelPrefill_batchedBitIdentical/96rows: gemma4_emodel_prefill_test.go:94: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_
+skip [goinfer] TestGemma4EModelPrefill_exactKernelsAboveTheFloor: gemma4_emodel_prefill_test.go:192: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4
+skip [goinfer] TestGemma4EModelPrefill_plantedDefects: gemma4_emodel_prefill_test.go:168: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4
+skip [goinfer] TestGemma4EModel_cudaResidentParity: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_declinesAndFallbacks: gemma4_emodel_test.go:267: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_
+skip [goinfer] TestGemma4EModel_plantedDefects/(1)_PLE_branch_skipped: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_plantedDefects/(2)_PLE_token-identity_term_zeroed: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_plantedDefects/(3)_shared-KV_source_one_owning_layer_off: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_plantedDefects/(4)_one_FFN_width_for_the_model: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_plantedDefects/(5)_K/V_store_not_skipped_on_a_shared_layer: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_plantedDefects/(6)_layer_scalar_dropped: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_plantedDefects/(7)_v_norm_dropped_on_non-K=V_layers: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_plantedDefects/(8)_PLE_per-layer_input_offset_off_by_one_layer: gemma4_emodel_test.go:65: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_t
+skip [goinfer] TestGemma4EModel_realE2BNonInferiority: gemma4_emodel_real_test.go:191: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma4EModel_realE2BPLEHostCost: gemma4_emodel_real_test.go:218: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma4EModel_realE4BAnchorDump: gemma4_emodel_real_test.go:290: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma4EModel_realE4BF32Dump: gemma4_emodel_real_test.go:399: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma4EModel_realE4BNonInferiority: gemma4_emodel_real_test.go:260: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemma4Expert_geluTanhChain: gemma4_router_parity_test.go:226: no fixture (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+skip [goinfer] TestGemma4Graphs_bitExact_emodel: gemma4_emodel_test.go:245: no complete fixture (../testdata/gemma4-emodel-tiny/config.json: stat ../testdata/gemma4-emodel-tiny/config.json: no such file or directory) — run scripts/pin_gemma4_emodel_
+skip [goinfer] TestGemma4Graphs_bitExact_scaled: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-scaled)
+skip [goinfer] TestGemma4Graphs_bitExact_tiny: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-tiny)
+skip [goinfer] TestGemma4Graphs_bitExact_tinyCache: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-tiny)
+skip [goinfer] TestGemma4Graphs_bitExact_tinyCacheReuse: gemma4_graphs_test.go:62: no fixture (../testdata/gemma4-moe-tiny)
+skip [goinfer] TestGemma4Graphs_locateDivergence: graph_locate_test.go:16: no fixture (../testdata/gemma4-moe-tiny)
+skip [goinfer] TestGemma4Graphs_offVsOffControl: gemma4_graphs_test.go:176: no fixture (../testdata/gemma4-moe-tiny)
+skip [goinfer] TestGemma4Graphs_sameModelUnderLoad: gemma4_graphs_test.go:132: no fixture (../testdata/gemma4-moe-tiny)
+skip [goinfer] TestGemma4MoEScaled_residentParity: gemma4_moe_scaled_parity_test.go:55: no fixture weights (../testdata/gemma4-moe-scaled/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestGemma4MoE_cacheExpertsBitExact_scaled: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-scaled/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestGemma4MoE_cacheExpertsBitExact_tiny: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestGemma4MoE_cacheResizeBitExact_tiny: gemma4_moe_cache_test.go:159: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestGemma4MoE_cacheReuse_scaled: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-scaled/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestGemma4MoE_cacheReuse_tiny: gemma4_moe_cache_test.go:81: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestGemma4MoE_floatParity: floatact_test.go:21: no fixture (../testdata/gemma4-moe-tiny): run scripts/pin_gemma4_moe_forward.py
+skip [goinfer] TestGemma4MoE_localize: gemma4_moe_localize_test.go:28: no fixture (../testdata/gemma4-moe-tiny)
+skip [goinfer] TestGemma4MoE_residentParity: gemma4_moe_resident_test.go:38: no fixture (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+skip [goinfer] TestGemma4Router_residentIdxParity: gemma4_router_parity_test.go:34: no fixture (../testdata/gemma4-moe-tiny) — run scripts/pin_gemma4_moe_forward.py
+skip [goinfer] TestGemma4VLResident_bidirParity: gemma4_vl_resident_parity_test.go:45: no fixture (../testdata/gemma4-vl-bidir-scaled) — run scripts/pin_gemma4_vl_bidir_scaled.py
+skip [goinfer] TestGemma4_26BActQuantSensitivity: gemma4_bidir_span_real_test.go:489: GOINFER_HEAVY_TESTS unset: real 26B
+skip [goinfer] TestGemma4_26BDecodeLocalize: gemma4_bidir_span_real_test.go:311: GOINFER_HEAVY_TESTS unset: real 26B
+skip [goinfer] TestGemma4_26B_1bBound: gemma4_26b_bound_test.go:25: GOINFER_HEAVY_TESTS unset — real 26B micro-bench
+skip [goinfer] TestGemma4_26B_cache_B: gemma4_26b_cache_test.go:48: ISOLATED-RUN: the 26B's resident declined (4.00 GB free beside the weights) in the one-process heavy tier; passes alone
+skip [goinfer] TestGemma4_26B_s10DumpCUDA: gemma4_26b_s10dump_cuda_test.go:25: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestGemmaBOSBuild: gemma_bos_build_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemmaContextCUDA: gemma_sublayer_cuda_test.go:141: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemmaOutlierTrace: gemma_outlier_trace_test.go:59: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemmaSublayerCUDA: gemma_sublayer_cuda_test.go:40: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGemvRNBandwidth: gemv_rn_test.go:165: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestGenerateBlockSpec_production: blockspec_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGeometryPortIsLive: geometry_port_test.go:26: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGlmOcrCUDAContextFit: glm_ocr_real_image_test.go:58: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGlmOcrCUDAResidentFullBudget: glm_ocr_real_image_test.go:231: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGlmOcrCUDAResidentRealImage: glm_ocr_real_image_test.go:76: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGluQuantBlockSizeInvariant: glu_quant_blocksize_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a small model for a device context)
+skip [goinfer] TestGptOssResidentParityCUDA: gptoss_real20b_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model)
+skip [goinfer] TestGraphsDecode26B: graphs_speed_test.go:98: set GOINFER_HEAVY_TESTS=1 (loads the real 26B four times)
+skip [goinfer] TestGraphsDecodeSpeedup: graphs_speed_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestGreedyFastPathIdentical: backend_wired_test.go:198: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGridVisionCUDA_deepstackReal: grid_vision_deepstack_test.go:115: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestGridVisionCUDA_real: grid_vision_test.go:237: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestGumbelDeviceAgreesWithHost: gumbel_test.go:29: set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the compiled gumbel kernels)
+skip [goinfer] TestKEqVCopy_bitIdenticalToTheDoubleProjection: keqv_copy_test.go:198: no fixture (../testdata/gemma4-dense-scaled)
+skip [goinfer] TestKSA1_gemvTiming: ks_a1_test.go:193: A1-G0 is a timed reading: set GOINFER_KSA1_TIMING=1 and run under the timing lock
+skip [goinfer] TestKSB8_admissionPricesTheChosenPass: ksb8_test.go:363: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestKSB8_bitsAcrossWidths: ksb8_test.go:111: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestKSB8_buildPricesThePass: ksb8_test.go:194: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestKSB8_speed: ksb8_test.go:277: set GOINFER_KSB8_TIMING=1 (a timed run under the timing lock)
+skip [goinfer] TestKSH6C_headroomQwen3: ksh6_test.go:90: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSH6C_marginPriced: ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+skip [goinfer] TestKSH6C_marginPriced26B: ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+skip [goinfer] TestKSH6C_marginPriced7B8B: ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+skip [goinfer] TestKSH6C_moeModelPaysItsPool: ksh6c_s5_test.go:22: set KSH6C_S5=1 (it needs a fresh process: the context keeps the pool once paid)
+skip [goinfer] TestKSH6C_planSeesTheMoEPool: ksh6c_review_test.go:55: set KSH6C_S6=1 (it needs a fresh process: the context keeps the pool once paid)
+skip [goinfer] TestKSH6C_postPoolBreakdown: ksh6c_breakdown_test.go:26: set KSH6C_MODEL
+skip [goinfer] TestKSH6_marginParts26B: ksh6_test.go:90: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSH6_marginPartsQwen3: ksh6_test.go:90: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSO1C_fillerDiagnostic: kso1c_fidelity_test.go:315: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSO1C_laneBytes: kso1c_resident_test.go:62: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSO1C_longContextQuality: kso1c_fidelity_test.go:237: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSO1C_realPhi3NonInferiority: kso1c_fidelity_test.go:150: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSO1C_speed: kso1c_speed_test.go:191: set GOINFER_KSO1C_TIMING=1 (a timed run under the timing lock)
+skip [goinfer] TestKSO1C_towardTheFile: kso1c_fidelity_test.go:49: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestKSO1C_untouchedKernelsBitIdentical: kso1c_kernels_test.go:275: set GOINFER_KSO1C_OLD_ACTGROUP_PTX to origin/main's cuda/testdata/actgroup.ptx
+skip [goinfer] TestKV0_continuationEffect_real1p5B: kv0_invariance_test.go:548: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV0_prefillInvariance_real1p5B: kv0_invariance_test.go:359: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV16GateVsReference: kv16_gate_test.go:33: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [goinfer] TestKV16_profileSteps: kv16_speed_test.go:127: set KV16_ARM, KV16_DEPTH, KV16_AB_MODELS
+skip [goinfer] TestKV16_readerKernelTime: kv16_speed_test.go:162: set KV16_ARM, KV16_DEPTH, KV16_AB_MODELS
+skip [goinfer] TestKV16_singleArmDecode: kv16_speed_test.go:81: set KV16_ARM=f32|f16 and KV16_AB_MODELS
+skip [goinfer] TestKV16_wholeTokenDecodeAB: kv16_speed_test.go:28: set KV16_AB=1
+skip [goinfer] TestKV2_copyCost_real: kv2_cost_test.go:57: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B, and the 7B with GOINFER_KV2_COPYCOST_7B=1)
+skip [goinfer] TestKV2_copyExact_otherLayouts/gemma4-emodel-tiny: kv2_copy_test.go:320: no fixture at ../testdata/gemma4-emodel-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [goinfer] TestKV2_copyExact_real1p5B: kv2_copy_test.go:343: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV2_exactPrefillIsDecode_real1p5B: kv2_classes_test.go:345: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV2_hitCap_real1p5B: kv2_classes_test.go:181: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV2_recordedClass_real1p5B: kv2_classes_test.go:134: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV2_scheduleIndependence_real1p5B: kv2_schedule_test.go:281: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-scaled: kv3_families_test.go:35: no fixture at ../testdata/gemma4-dense-scaled (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [goinfer] TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-twogeom-tiny: kv3_families_test.go:35: no fixture at ../testdata/gemma4-dense-twogeom-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [goinfer] TestKV3Families_pastBoundBatchedEqualsPerToken/gemma4-dense-twogeom-tiny: kv3_families_test.go:77: no fixture at ../testdata/gemma4-dense-twogeom-tiny (uncommitted; regenerate with the matching scripts/pin_*.py)
+skip [goinfer] TestKV3Tiled_batchedEqualsPerToken_real: kv3_tiled_test.go:298: set GOINFER_HEAVY_TESTS=1 and KV3_TILED_REAL=1
+skip [goinfer] TestKV3Tiled_forcedRouteOnGemma3: kv3_tiled_test.go:248: set GOINFER_HEAVY_TESTS=1 and KV3_TILED_SPEED=1
+skip [goinfer] TestKV3_admissionPricesTheChunk: kv3_longprefill_test.go:272: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV3_batchedPrefillPastTheSpanBound_real1p5B: kv3_longprefill_test.go:188: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+skip [goinfer] TestKV3_prefillDigest: kv3_digest_test.go:29: set GOINFER_HEAVY_TESTS=1 and KV3_DIGEST=1
+skip [goinfer] TestKV4bGate_CR7B: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [goinfer] TestKV4bGate_DSV2L: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [goinfer] TestKV4bGate_G34B: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [goinfer] TestKV4bGate_Q359: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [goinfer] TestKV4bGate_QMOE: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [goinfer] TestKV4bGate_QVL3: kv4b_gate_test.go:48: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)
+skip [goinfer] TestKV4b_deliveredBytes/hybrid/gemma4-dense-twogeom-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/gemma4-dense-twogeom-tiny: no such file or directory
+skip [goinfer] TestKV4b_deliveredBytes/hybrid/gemma4-moe-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/gemma4-moe-tiny: no such file or directory
+skip [goinfer] TestKV4b_deliveredBytes/m-rope/qwen3vl-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/qwen3vl-tiny: no such file or directory
+skip [goinfer] TestKV4b_deliveredBytes/mla/kimi-tiny: kv4b_groups_test.go:97: no fixture: stat ../testdata/kimi-tiny: no such file or directory
+skip [goinfer] TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-dense-twogeom-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/gemma4-dense-twogeom-tiny: no such file or directory
+skip [goinfer] TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-moe-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/gemma4-moe-tiny: no such file or directory
+skip [goinfer] TestKV4b_layer0StoreIsTheRoundedF32Store/m-rope/qwen3vl-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/qwen3vl-tiny: no such file or directory
+skip [goinfer] TestKV4b_layer0StoreIsTheRoundedF32Store/mla/kimi-tiny: kv4b_groups_test.go:156: no fixture: stat ../testdata/kimi-tiny: no such file or directory
+skip [goinfer] TestKV4b_mropePrefillStoreIsTheRoundedF32Store/qwen3vl-tiny: kv4b_groups_test.go:302: no fixture: stat ../testdata/qwen3vl-tiny: no such file or directory
+skip [goinfer] TestKVOnlyPrefill_byteIdentical_tiny: kvonly_prefill_test.go:29: no fixture weights (../testdata/gemma4-moe-tiny/model.safetensors) — run scripts/pin_gemma4_moe_scaled.py
+skip [goinfer] TestLead3_pinOrderMicrobench: lead3_pin_order_bench_test.go:29: GOINFER_HEAVY_TESTS unset — allocates ~11 GB of pinned host memory
+skip [goinfer] TestLead3_realLoadTime: lead3_realload_time_test.go:27: GOINFER_HEAVY_TESTS unset — loads the real 26B
+skip [goinfer] TestMC3CUDAS0_batchedRowsVsDecode: mc3_cuda_s0_test.go:33: set GOINFER_HEAVY_TESTS=1 (loads a real model)
+skip [goinfer] TestMambaKernels_cpuParity: mamba_kernels_test.go:167: nemotron-tiny: 72 steps, nHeads=8 headDim=8 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 1.19e-07
+skip [goinfer] TestMellumResidentParityCUDA: mellum_real_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestMoEDMAOverlapAB: moe_dma_overlap_ab_test.go:27: GOINFER_HEAVY_TESTS unset — real 26B decode
+skip [goinfer] TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny: moe_expert_major_residual_test.go:77: no fixture at ../testdata/gemma4-moe-tiny: stat ../testdata/gemma4-moe-tiny: no such file or directory
+skip [goinfer] TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3: moe_expert_major_residual_test.go:77: no fixture at ../testdata/gemma4-moe-tiny-k3: stat ../testdata/gemma4-moe-tiny-k3: no such file or directory
+skip [goinfer] TestMoEExpertMajorGemma4CUDA_bitIdentical: moe_expert_major_gemma4_test.go:27: no fixture at ../testdata/gemma4-moe-tiny-k3: stat ../testdata/gemma4-moe-tiny-k3: no such file or directory
+skip [goinfer] TestMoEPerLayerHitRate: moe_perlayer_hitrate_test.go:31: GOINFER_HEAVY_TESTS unset — real 26B decode
+skip [goinfer] TestMoERouteDemandThreshold: moe_route_demand_test.go:234: DRAIN-GROUP-SKIP: bisects by ballooning the device to as little as 64 MiB free, refusals included — deferred to the drain tier (GOINFER_DRAIN_GROUP=1), which runs in its 
+skip [goinfer] TestMoERouteDemandThresholdChild: moe_route_demand_test.go:31: GOINFER_A9_LEAVE_FREE unset — this is the worker half of TestMoERouteDemandThreshold
+skip [goinfer] TestMoERouteFirstLaunchReservation: moe_route_reservation_test.go:39: CUDA_MODULE_LOADING="" (empty = driver default LAZY)
+skip [goinfer] TestMoERows_realMellumIdentityAndAB: moe_rows_real_test.go:58: set GOINFER_HEAVY_TESTS=1 (loads Mellum2.1)
+skip [goinfer] TestMoEStreamingDecodeProfile: moe_streaming_decode_profile_test.go:25: GOINFER_HEAVY_TESTS unset — real 26B decode
+skip [goinfer] TestNemotronResidentCUDA_fitPlan: mamba_fit_test.go:22: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestNemotronResidentCUDA_tier1: mamba_fit_test.go:151: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestNgramSpec_twoTurnsMatchPlain: spec_twoturn_test.go:252: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestOptFwd_bitIdenticalStream: optfwd_test.go:55: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestOptFwd_hitRateLadder: optfwd_test.go:157: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestOptFwd_lowTempHighHitRate: optfwd_test.go:116: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestP20ExpertLocality: p20_expert_locality_test.go:32: ISOLATED-RUN: the 26B needs 3.69 GB of KV + reserve against 3.98 GB free; declined in the one-process heavy tier, passes alone
+skip [goinfer] TestPagerDeterminism: pager_determinism_test.go:43: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestParityFloorControl: parity_floor_control_test.go:26: measurement harness, no assertion — set GOINFER_HEAVY_TESTS=1 GOINFER_PARITY_FLOOR_CONTROL=1
+skip [goinfer] TestPrefillCancel: prefill_cancel_test.go:34: no fixture (../testdata/gemma4-moe-scaled)
+skip [goinfer] TestPrefillCancel_dense: prefill_cancel_test.go:122: no fixture (../testdata/gemma4-dense-scaled)
+skip [goinfer] TestPrefillChunked_bitIdentical: prefill_chunked_test.go:29: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestPrefillChunked_fastKernelsOnEveryChunk: prefill_chunk_fast_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestPrefillCrossover: prefill_crossover_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestPrefillDecomp: prefill_decomp_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestPrefillDivergenceRate: prefill_divergence_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestPrefillGateVsReferenceCUDA: prefill_gate_ref_test.go:50: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's reference files)
+skip [goinfer] TestPrefillLastNArgmax_matchesPerRow: dflash_dispatch_test.go:528: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestPrefillLast_gemma3: prefill_gemma3_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads Gemma-3-4B)
+skip [goinfer] TestPrefillLast_qwen3: prefill_qwen3_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads Qwen3-1.7B)
+skip [goinfer] TestPrefillLongPrompt: prefill_longprompt_test.go:28: ISOLATED-RUN: the 7B needs 0.94 GB of KV + 384 MB reserve against 1.29 GB free, 30 MB short in the one-process heavy tier; passes alone
+skip [goinfer] TestPrefillMoE_bitIdentical/gemma4-moe-kv-tiny: prefill_moe_test.go:81: not CUDA-resident (<nil>)
+skip [goinfer] TestPrefillMoE_bitIdentical/gemma4-moe-scaled: prefill_moe_test.go:63: no fixture (../testdata/gemma4-moe-scaled)
+skip [goinfer] TestPrefillMoE_real26B: prefill_moe_test.go:54: set GOINFER_HEAVY_TESTS=1 (loads the 26B, ~2m11s)
+skip [goinfer] TestPrefillNonUniform_bitIdentical: prefill_nonuniform_test.go:34: no fixture (../testdata/gemma4-dense-scaled) — run scripts/pin_gemma4_dense_scaled.py
+skip [goinfer] TestPrefillStartOffset: prefill_startoffset_test.go:32: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestPrefillTTFT: prefill_ttft_test.go:42: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestPrefillTails_bitIdenticalToTheRecordedBaseline: prefill_tails_identity_test.go:162: no fixture (../testdata/gemma4-dense-scaled)
+skip [goinfer] TestProdThroughput: backend_wired_test.go:119: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestQ4K_phi3ResidentMatchesCPU: q4k_phi3_resident_test.go:30: set GOINFER_PHI3_MINI_GGUF
+skip [goinfer] TestQwen25CUDA_real: qwen25_vision_test.go:125: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower)
+skip [goinfer] TestQwen25VLMRoPEPrefillResidentReal_gate: qwen25vl_mrope_prefill_resident_real_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestQwen25VLResidentReal_gate: qwen25vl_resident_real_test.go:31: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestQwen35ResidentDecodeRateCUDA: qwen35_resident_speed_test.go:27: qwen3.5 resident decode rate (set GOINFER_DNET_SPEED_CUDA=1)
+skip [goinfer] TestQwen35ResidentParityCUDA: qwen35_resident_parity_test.go:28: qwen3.5 DeltaNet resident parity (set GOINFER_DNET_PARITY_CUDA=1)
+skip [goinfer] TestQwen35VLReal_residentImagePrefillMatchesCPU: qwen35vl_real_resident_test.go:39: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestQwen36_35B_cache: qwen35moe_35b_cache_test.go:37: GOINFER_HEAVY_TESTS unset — real 35B decode
+skip [goinfer] TestQwen3VLMoe_cudaLogits: qwen3vlmoe_logits_real_test.go:47: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestR14DrafterArgmaxAB: r14_drafter_argmax_ab_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=26) in the one-process heavy tier; passes alone
+skip [goinfer] TestR14DrafterArgmaxProfile: r14_drafter_argmax_profile_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=23) in the one-process heavy tier; passes alone
+skip [goinfer] TestRealForwardParity: realforward_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestRecurrentSpec_arenaPriced/qwen3.5-0.8b: recurrent_spec_test.go:509: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [goinfer] TestRecurrentSpec_commitAgreesWithKVManager/qwen3.5-0.8b: recurrent_spec_test.go:413: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [goinfer] TestRecurrentSpec_earlyExitLeavesNothingToFold/qwen3.5-0.8b: recurrent_spec_test.go:605: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [goinfer] TestRecurrentSpec_scriptedLoop/qwen3.5-0.8b: recurrent_spec_test.go:378: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [goinfer] TestRecurrentSpec_verifyFoldMatchesPrefill/qwen3.5-0.8b: recurrent_spec_test.go:256: set GOINFER_HEAVY_TESTS=1 for the 0.8B
+skip [goinfer] TestResidentCloseFreesVRAM: lifecycle_test.go:26: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentCloseFreesVRAM_7B: lifecycle7b_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentCloseSettleTime: closesettle_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentDrafter_blockParity: drafter_test.go:274: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentDrafter_extendContext: drafter_test.go:144: ISOLATED-RUN: AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+skip [goinfer] TestResidentDrafter_fuseContextReleasesScratch: drafter_leak_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentDrafter_fuseParity: drafter_test.go:41: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentDrafter_streamedAttachMatchesHeld: drafter_test.go:484: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentHiddenCapture: hidden_capture_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny: kvbytes_agreement_test.go:49: no fixture at ../testdata/gemma4-dense-twogeom-tiny
+skip [goinfer] TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny: kvbytes_agreement_test.go:49: no fixture at ../testdata/gemma4-emodel-tiny
+skip [goinfer] TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny: kvbytes_agreement_test.go:49: no fixture at ../testdata/gemma4-moe-tiny
+skip [goinfer] TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny: kvbytes_agreement_test.go:58: not CUDA-resident: every resident cuda projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale 
+skip [goinfer] TestResidentLaunchVRAMProbe: resident_vram_probe_test.go:24: GOINFER_HEAVY_TESTS unset — loads the real 26B (~5 min, 11.4 GB pinned host)
+skip [goinfer] TestResidentSlotConsumption: resident_vram_probe_test.go:110: set GOINFER_MOE_SCALED_FIXTURE
+skip [goinfer] TestResidentSpecServe: resident_spec_serve_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel: rope_kv_mrope_batched_test.go:71: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestRopeKVMRoPEBatched_matchesCPUReference: rope_kv_mrope_batched_test.go:213: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestRouteGptOssGrowsPoolPastMoERoute: route_gptoss_reservation_test.go:60:   moe_route (the old warm-up)                  cost           0 B (0.0 MiB)
+skip [goinfer] TestS10DeepstackPrefillCUDA_anchorDump: s10_anchor_dump_test.go:40: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS10DeepstackPrefillCUDA_diag: s10_deepstack_prefill_test.go:427: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS10DeepstackPrefillCUDA_real: s10_deepstack_prefill_test.go:225: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS10DeepstackPrefillCUDA_speed: s10_deepstack_prefill_test.go:544: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS10DeepstackPrefillCUDA_tiny: s10_deepstack_prefill_test.go:74: no fixture at ../testdata/qwen3vl-tiny
+skip [goinfer] TestS17LeverA_wholeTower: s17_profile_test.go:218: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS17ProfileCUDA: s17_profile_test.go:120: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS17ProfileQwen25CUDA: s17_profile_test.go:337: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS4Towers_real/qwen2.5-vl: s4_towers_test.go:125: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower)
+skip [goinfer] TestS896_gateDump: s896_gate_test.go:36: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestS896_layerDump: s896_layerdump_test.go:32: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSP0_prize: sp0_prize_test.go:35: set SP0_TARGET, SP0_KIND and SP0_OUT
+skip [goinfer] TestSP2_foldCost: recurrent_spec_real_test.go:364: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestSP2_identity: recurrent_spec_real_test.go:189: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestSP2_speed: recurrent_spec_real_test.go:487: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestSampledDecodeLadder: sampled_decode_ladder_test.go:33: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSampledGumbelStreamIdentity: sampled_gumbel_identity_test.go:27: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSampledTopKStreamIdentity: sampled_topk_identity_test.go:30: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSiglipCUDA_fusedAttentionKernelDefectsReal: siglip_vision_test.go:419: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSiglipCUDA_int8VRAM: siglip_vision_test.go:376: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSiglipCUDA_int8VsFloat32: siglip_vision_test.go:242: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower twice)
+skip [goinfer] TestSiglipCUDA_real: siglip_vision_test.go:186: heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower)
+skip [goinfer] TestSiglipCUDA_speed: siglip_vision_test.go:311: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSlotAllocation_matchesGranularityForm: slot_granularity_test.go:41: no MoE fixture weights at ../testdata/gemma4-moe-scaled/model.safetensors — run scripts/pin_gemma4_moe_scaled.py (weights are gitignored; the fixture pins its own sha256)
+skip [goinfer] TestSpecDecode: specdecode_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestSpecDecodeCurve: spec_curve_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestSpecNonCopyLane: spec_noncopy_lane_test.go:30: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestSpecPagerInteraction: spec_pager_interaction_test.go:157: ISOLATED-RUN: NewBlockSpec hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+skip [goinfer] TestSpecResidentPrefillRegression: spec_prefill_regression_test.go:36: set GOINFER_HEAVY_TESTS=1 GOINFER_SPEC_PREFILL_REGRESSION=1
+skip [goinfer] TestSpecVerifyCeiling: spec_verify_ceiling_test.go:26: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestSplitKVCrossover: splitkv_crossover_test.go:31: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestSplitKV_bitIdentical: splitkv_bitident_test.go:25: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+skip [goinfer] TestSplitKV_bitIdentical_gemma3: splitkv_bitident_test.go:125: set GOINFER_HEAVY_TESTS=1 (loads Gemma-3-4B)
+skip [goinfer] TestThetaAB: theta_ab_test.go:35: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_AB=1
+skip [goinfer] TestThetaProbe_CUDA: theta_probe_test.go:36: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_PROBE=1
+skip [goinfer] TestTopKSelect_matchesReference: topk_test.go:26: set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the compiled topk kernel)
+skip [goinfer] TestTowerAttn_speed: tower_attn_test.go:207: heavy: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestUploadKV_matchesSequentialForward: uploadkv_parity_test.go:41: set GOINFER_HEAVY_TESTS=1
+skip [goinfer] TestVisionEncoder_forwardPatchesReleasesDeviceScratch: vision_encoder_leak_test.go:23: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestVisionTowerTiming: vision_tower_timing_test.go:31: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestVsumMechanism: vsum_mechanism_test.go:35: set GOINFER_HEAVY_TESTS=1 (real checkpoint; needs Phase A's reference files)
+skip [goinfer] TestVsumSplitFidelity: vsum_split_fidelity_test.go:35: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+skip [goinfer] TestVsumSplitGateVsReference: vsum_split_gate_test.go:71: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's reference files)
+skip [goinfer] TestWindowedKV_offsetsFastClass_real1p5B: kvwindow_offsets_test.go:205: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+baseline PASS 792, goinfer PASS 792, regressions 4: FAIL

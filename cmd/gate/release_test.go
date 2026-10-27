@@ -58,21 +58,21 @@ func writeMods(t *testing.T, root string, aikit map[string]string, gpu map[strin
 func TestRowPins(t *testing.T) {
 	root := t.TempDir()
 	agree := map[string]string{".": "v1.69.0", "gpu": "v1.69.0", "cuda": "v1.69.0", "metal": "v1.69.0", "demo/agent": "v1.69.0"}
-	writeMods(t, root, agree, map[string]string{"cuda": "v0.33.5", "metal": "v0.33.5"})
+	writeMods(t, root, agree, nil)
 	e := &relEnv{root: root}
 	if r := rowPins(e); r.State != "done" {
 		t.Fatalf("agreeing pins: %+v", r)
 	}
 	// one module on an older aikit
 	bad := map[string]string{".": "v1.69.0", "gpu": "v1.69.0", "cuda": "v1.68.0", "metal": "v1.69.0", "demo/agent": "v1.69.0"}
-	writeMods(t, root, bad, map[string]string{"cuda": "v0.33.5", "metal": "v0.33.5"})
+	writeMods(t, root, bad, nil)
 	if r := rowPins(e); r.State != "OWED" || !strings.Contains(strings.Join(r.Detail, " "), "aikit differs") {
 		t.Errorf("aikit disagreement: %+v", r)
 	}
-	// cuda and metal on different gpu pins (the 2026-09-24 case)
-	writeMods(t, root, agree, map[string]string{"cuda": "v0.33.3", "metal": "v0.33.1"})
+	// a module still requiring aikit's gpu module, which goinfer no longer uses
+	writeMods(t, root, agree, map[string]string{"cuda": "v0.35.0"})
 	if r := rowPins(e); r.State != "OWED" || !strings.Contains(strings.Join(r.Detail, " "), "aikit/gpu") {
-		t.Errorf("gpu disagreement: %+v", r)
+		t.Errorf("an aikit/gpu require read as done: %+v", r)
 	}
 	// nothing readable is not agreement
 	writeMods(t, root, nil, nil)

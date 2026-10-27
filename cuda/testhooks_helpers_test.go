@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"math"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -30,4 +31,18 @@ func mustResident(t testing.TB, mc *decoder.Model) *cudaResident {
 		t.Fatalf("the model did not build a CUDA resident (got %T): the build declined; see the [resident] line above", mc.ResidentForwardForTest())
 	}
 	return r
+}
+
+// cosineF32 is the cosine similarity of a and b in float64, 0 when either is all zeros.
+func cosineF32(a, b []float32) float64 {
+	var dot, na, nb float64
+	for i := range a {
+		dot += float64(a[i]) * float64(b[i])
+		na += float64(a[i]) * float64(a[i])
+		nb += float64(b[i]) * float64(b[i])
+	}
+	if na == 0 || nb == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }

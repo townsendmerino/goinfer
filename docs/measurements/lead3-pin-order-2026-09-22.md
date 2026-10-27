@@ -18,7 +18,7 @@ wiring (below).
 
 ## Method
 
-`TestLead3_pinOrderMicrobench` (`cuda/lead3_pin_order_bench_test.go`), RTX 2070 SUPER, driver 595.91.07, real
+`TestLead3_pinOrderMicrobench` (`cuda/kernels/lead3_pin_order_bench_test.go`), RTX 2070 SUPER, driver 595.91.07, real
 scale (11.4 GB, the doc's own cited figure for C′'s expert stack). Two arms, same total work (allocate N bytes
 of GPU-reachable host memory, fill it with real content), timed in two phases each so allocation cost and fill
 cost don't hide in one number:

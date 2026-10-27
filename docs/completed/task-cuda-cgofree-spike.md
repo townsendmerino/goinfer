@@ -225,7 +225,7 @@ macros doesn't scale. The right tool is **NVRTC**: `libnvrtc.so` compiles CUDA C
 *own* headers (no host libstdc++), dlopen'd — *more* cgo-free than nvcc. Driven via ctypes here;
 `megakernel.cu` scaffold and a verifiable `addone` kernel both compile to compute_75 PTX.
 
-**Layer A — the cgo-free plumbing — is proven working on the 2070 SUPER** (`cuda/gocudrv_proof_test.go`,
+**Layer A — the cgo-free plumbing — is proven working on the 2070 SUPER** (`cuda/kernels/gocudrv_proof_test.go`,
 `CGO_ENABLED=0 go test -tags cuda`): gocudrv v0.2.0 `Init` (dlopen `libcuda.so.1` + `cuInit`) →
 `LoadModule`(NVRTC PTX) → `Alloc[float32]`/`CopyHtoD` → event-timed `LaunchOn` → `CopyDtoH` →
 **correct GPU compute verified**. Measured (warm, best-of-8, CUDA-event):
@@ -255,7 +255,7 @@ kernel is the 80% and the open question.
 
 ### Phase-2 update — hot-path quant GEMV hits 85% of peak (2026-07-14)
 
-The decisive-proxy experiment (`cuda/gemv_bw_test.go`), since decode is weight-streaming-
+The decisive-proxy experiment (`cuda/kernels/gemv_bw_test.go`), since decode is weight-streaming-
 bound and WebGPU sits below the bandwidth ceiling by its glue wall. A hand W8A8 GEMV
 (`__dp4a` int8 dot, warp-per-row, matching the W8A8 packing), qwen2.5-1.5b FFN shape
 [N=8960 × K=1536], NVRTC-compiled, launched via gocudrv, CUDA-event-timed:
@@ -285,7 +285,7 @@ converts these signals into a measured GO.
 
 ### Phase-2 verdict — decode projection clears the GO bar 2.2× (2026-07-14)
 
-The decisive measurement (`cuda/decode_projection_test.go`): the REAL per-token quantized-GEMV
+The decisive measurement (`cuda/kernels/decode_projection_test.go`): the REAL per-token quantized-GEMV
 workload of qwen2.5-1.5b (all 28 layers × {QKV, O, gate, up, down} + LM head = 141 GEMVs),
 run as actual CUDA launches on the 2070 SUPER with the per-dispatch tax included, using the
 cosine-1.0-validated W8A8 kernel. CUDA-event timed, best of 8×5:
@@ -376,7 +376,7 @@ not 2.2× (projection-optimistic).
 ### Phase-2 FINAL — real end-to-end decode measured; verdict PAUSE (2026-07-14)
 
 The GEMV projection (244) and the ~1.3× inference are now **superseded by a measured end-to-end
-number** (`cuda/e2e_decode_test.go`): the full per-token work — GEMVs PLUS the glue the projection
+number** (`cuda/kernels/e2e_decode_test.go`): the full per-token work — GEMVs PLUS the glue the projection
 dropped (RMSNorm+quant, RoPE, GQA online-softmax attention, SwiGLU+quant, residual, argmax), the
 non-trivial kernels cosine-validated vs CPU refs. Shippable config confirmed: **(1)** PTX compiled
 offline (NVRTC) + `go:embed`'d + **driver-JIT'd** — `ldd`/strings show **no libnvrtc/libcuda** in

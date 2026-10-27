@@ -557,7 +557,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     of it** — the same discipline G5 row 3's `TestQKNorm_wholeVector` established: `TestLayerNormQuant`
     now exists on BOTH backends (Metal's already existed, built for GPT-2, and ALREADY covered the
     bias-free branch explicitly commented "Cohere's hasBias=0 path" — this row needed to write
-    only CUDA's twin, `cuda/layernorm_quant_test.go`). Both compare a real dispatch against an
+    only CUDA's twin, `cuda/kernels/layernorm_quant_test.go`). Both compare a real dispatch against an
     exact float64 CPU reference at a 0.9999 cosine floor (not exact equality — `rsqrtf` is not
     IEEE-exact, the same reason `quant_vec_exact_test.go`'s own comment gives for why
     `rmsnorm_quant` has no exact-equality gate either): Metal 0.9999887, CUDA 0.9999884 on real

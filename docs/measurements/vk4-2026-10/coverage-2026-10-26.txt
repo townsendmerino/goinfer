@@ -1,0 +1,45 @@
+fixture programs: 37
+families with a fixture program: 33 of 43
+  bailing_hybrid     bailing_hybrid-tiny
+  cohere             cohere-tiny
+  cohere2            cohere2-tiny
+  deepseek_v2        deepseek-tiny
+  deepseek_v3        deepseek-tiny
+  gemma              gemma1-tiny
+  gemma2             gemma2-hd-tiny, gemma2-tiny
+  gemma3             gemma3-vl-tiny
+  gemma4             gemma4-moe-kv-tiny, gemma4-moe-kv-tiny32
+  glm4_moe           glm-tiny, glm-tiny-bias
+  glm_ocr            glm-ocr-tiny
+  gpt-oss            NONE
+  gpt2               NONE
+  granite            granite-dense-tiny
+  granitemoehybrid   NONE
+  internlm2          NONE
+  kimi_k2            deepseek-tiny
+  laguna             NONE
+  lfm2               lfm2-tiny
+  llama              llama-attnfa-tiny, llama-tiny
+  llama4_text        llama4-tiny
+  mellum             mellum21-config
+  mistral            mistral-tiny-window
+  mistral3           ministral3-tiny
+  mixtral            mixtral-tiny
+  nemotron_h         nemotron-tiny, nemotron3nano-tiny
+  olmo3              olmo3-tiny
+  olmo_hybrid        olmo_hybrid-tiny
+  phi3               phi3-tiny
+  qwen2              NONE
+  qwen2_5_vl         qwen25vl-tiny
+  qwen2_moe          NONE
+  qwen3              NONE
+  qwen3_5            qwen35vl-tiny
+  qwen3_5_moe        qwen35-tiny
+  qwen3_asr          qwen3asr-tiny
+  qwen3_moe          qwen3moe-tiny, qwen3moe-tiny-k3
+  qwen3_next         qwen3next-tiny
+  qwen3_vl           NONE
+  qwen3_vl_moe       qwen3vlmoe-tiny
+  smollm3            smollm3-tiny
+  spark2_5           NONE
+  voxtral            voxtral-tiny

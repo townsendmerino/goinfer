@@ -449,7 +449,7 @@ for long enough that two people independently concluded 'the tests just interfer
 individually' and moved on."* The mechanism was known, the remedy was applied where it was found, and
 **nobody enumerated**. `errcheck -blank` then found **268 production sites** across four modules,
 including `cuda/`'s decode forward path — and the defect recurred in
-`cuda/e2e_decode_test.go`, a file the header does not cover, reproducing the *"they pass
+`cuda/kernels/e2e_decode_test.go`, a file the header does not cover, reproducing the *"they pass
 individually"* conclusion a second time, in the same repository, against a document describing it.
 
 Same family as W8A8-fixed/W4A8-missed and `capSlots`' inline copy: **a fix at the instance, with no

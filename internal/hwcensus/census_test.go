@@ -35,9 +35,9 @@ import (
 // entry names a predicate the source no longer has, and the entry is stale. Adding an entry with a made-up record
 // defeats the census: a record names a machine, a date, how it ran, both commits, and the gate that ran.
 //
-// WHAT IS SCANNED. goinfer's whole tree (all five modules) and, at the versions goinfer's go.mod files pin, aikit's root
-// module and aikit/gpu: the CPU feature predicates live in aikit's linalg, and the CUDA and Metal device queries partly
-// in aikit/gpu. A pinned module that cannot be found FAILS the test rather than skipping it: a census that silently left
+// WHAT IS SCANNED. goinfer's whole tree (all five modules, the CUDA and Metal device queries in cuda/internal/gpudev and
+// metal/internal/gpudev included) and aikit's root module at the version go.mod pins, where the CPU feature predicates
+// live in linalg. A pinned module that cannot be found FAILS the test rather than skipping it: a census that silently left
 // aikit out would cover nothing, the citation lint's rule for the same situation. go/scanner tokenizes each file, so a
 // comment never counts and a string literal (an objc selector, a sysctl name, a /proc path) does.
 //
@@ -248,9 +248,6 @@ func discover(t *testing.T) map[string][]string {
 	scanTree(t, root, "goinfer", found)
 	for _, v := range pinned(t, root, "github.com/townsendmerino/aikit", "go.mod") {
 		scanTree(t, moduleDir(t, root, "github.com/townsendmerino/aikit", v), "aikit", found)
-	}
-	for _, v := range pinned(t, root, "github.com/townsendmerino/aikit/gpu", "metal/go.mod", "cuda/go.mod") {
-		scanTree(t, moduleDir(t, root, "github.com/townsendmerino/aikit/gpu", v), "aikit/gpu", found)
 	}
 	return found
 }

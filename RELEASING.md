@@ -35,8 +35,9 @@ survives to a tag unless caught here.
   legitimately fails on perfectly good code that uses a root symbol added since. At tag time the
   root tag is published, which is when the answer means anything. Until 2026-09-02 the sentence
   here claimed a CI step that did not exist, and Step 2 below was the only thing checking it.
-- **Version alignment (B-07):** all five modules must agree on `aikit`, and `cuda`/`metal` must
-  agree on `aikit/gpu`. **Read the versions, do not read them here.**
+- **Version alignment (B-07):** all five modules must agree on `aikit`. **Read the versions, do not read them
+  here.** No module requires `aikit/gpu`: the device package is goinfer's own since Track AX
+  (`cuda/internal/gpudev`, `metal/internal/gpudev`), and `internal/movedpaths` fails on a require of it.
 
   ```sh
   for m in . gpu cuda metal demo/agent; do printf '%-12s ' "$m"; grep -h aikit $m/go.mod | tr '\n' ' '; echo; done
@@ -48,20 +49,9 @@ survives to a tag unless caught here.
   that drifts, which is the defect this repo keeps finding; the command above has no such failure
   mode. Act only if a module actually disagrees, **never downgrade**, and tidy the root last.
 
-  **Bump the `aikit/gpu` pin in `cuda` and `metal` together**, in one commit. Nothing forces it: `cuda`
-  and `metal` each pin `aikit/gpu` independently, and Go resolves each module's own pin, so bumping one
-  leaves the other's release binary on the older gpu code with no error. Measured 2026-09-24: `cuda` on
-  `v0.33.3`, `metal` still on `v0.33.1` — the Mac `goinfer-serve` built against gpu code from before
-  2026-09-14. `TestAikitPinsAgree/aikit/gpu` (`decoder/aikit_pin_test.go`) now fails on that; it checks
-  agreement only, not that the pin is the latest tag (that needs the network), so choosing the version
-  is still this step's job.
-
-  Two things the command will not tell you, so they are stated rather than restated:
-  `aikit` and `aikit/gpu` are **separate modules with separate tag series that do not track each
-  other** — equal-looking version numbers mean nothing across them, and a nested module must be
-  diffed across its own tags (see `docs/queue-release.md` E6). And `metal` needs an explicit `aikit`
-  require: it imports `aikit/linalg` and `aikit/mmap` while only `aikit/gpu` is implied. (That was
-  B-02; it is present now, and the command above is what confirms it still is.)
+  One thing the command will not tell you, so it is stated rather than restated: `metal` needs an
+  explicit `aikit` require, because it imports `aikit/linalg` and `aikit/mmap`. (That was B-02; it is
+  present now, and the command above is what confirms it still is.)
 
 ## Pre-flight (before touching versions)
 
