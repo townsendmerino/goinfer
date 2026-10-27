@@ -61,7 +61,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
-| SB8 | decision | census done (#338); the move to one package waits on its package shape (owner); nobara owes the Llama 3, Mellum 2 and Harmony token IDs; mac-ax01 | §8 SB8 |
+| SB8 | decision | census done (#338, #341, and nobara's IDs for Llama 3, Mellum 2 and Harmony); the move to one package waits on its package shape (owner); mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
@@ -2404,6 +2404,16 @@ calls only the API the serving routes call, in the order they call it. It adds t
   entries are unchanged, row for row. **Shown red:** dropping `mistral` from `SupportsTools` fails the contract;
   accepting an empty name fails it for ChatML and Llama 3. That second plant passed before the review, because no output
   had an empty name, so the table gained one (43 outputs). Both reverted.
+- **nobara's token IDs, recorded (2026-10-27 15:57 PDT).** On nobara (Go 1.27.3 linux/amd64), from a detached worktree
+  of `16e21d7f`, under the shared timing lock (load 1.3; the lock had been free since 15:56):
+  `go test ./chat -run 'TestCodecCensus$' -codec.update -codec.models '^(llama-3\.2-1b-instruct|mellum2|gpt-oss-20b)'`.
+  `-codec.models` limits discovery to the owed families; nobara holds about 80 models. The run added five sources and
+  changed no recorded file: `llama-3.2-1b-instruct-q4_k_m.gguf` (Llama 3), `mellum2-unq` and `mellum2.1-thinking`
+  (Mellum 2, the second with its four think modes), and gpt-oss-20b as both its HF `tokenizer.json` and its MXFP4 GGUF
+  (Harmony, three efforts). That makes 108 token-ID cases, every one round-tripping. The same run also checked 680 of
+  the Mac's recorded IDs against nobara's copies of the 18 Mac models it also holds: their vocabulary, template and
+  every ID matched. The census has 60 sources; the Mac checks 715 IDs and skips the 108 recorded on nobara, and renders
+  all 60.
 
 ### SB9 — the towers
 
