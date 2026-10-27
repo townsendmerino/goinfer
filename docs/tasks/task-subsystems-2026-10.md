@@ -1841,6 +1841,41 @@ item is parked until Francis picks one.
   `docs/capability-matrix.json` and `docs/hardware-matrix.md` generated from it, so they cannot drift from the code.
 - **Stops re-running:** finding out in a real run which path a request took. M.
 
+#### SB2 — the admission and routing census, registered 2026-10-27 before the code (nobara-sb01)
+
+Francis's decision (11:08): census first; the pure function must reproduce it exactly; the matrices generated from it must
+equal today's committed ones byte for byte; memory questions go through `internal/mem`; no change to what is admitted or
+routed (one that appears stops the work with DECISION NEEDED).
+
+Where today's decisions live (surveyed 2026-10-27): the decoder's load path (backend choice, the fit guards, which MM1's
+`TestDecisionCensus` already records, the resident gates, KV resolution, the path reports, CPU batching and speculative
+eligibility); each backend's `BuildResident` (CUDA alone has about 60 declines, several reading free VRAM or device
+attributes); and request-time routing. The census is layered to match, each layer a golden in the module that owns the
+decisions:
+
+- **Layer D (decoder; this step, tier 0).** `decoder`'s `TestAdmissionCensus` records, deterministically and without a
+  device:
+  - **model-free, per registered family (`representativeConfig`, as the hardware matrix does) × webgpu, cuda, metal:**
+    the runner-shape decline and every resident gate, for the default activations and for per-32 activations;
+  - **per tiny fixture × option cell × backend:** the outcome of a real `Load` with that backend name, a fake resident
+    backend standing in for cuda, metal and webgpu that builds whatever it is asked to, so the record is the decoder's
+    own decision: the load's error or success, whether the resident build was reached (admitted) or the decline's
+    reason, and `DecodePath`; on cpu also `PrefillPath`, `canBatchN(2)`, the CPU-batch model eligibility,
+    `CPUConcurrentSafe`, `specRollbackSafe` and the KV precision reports. Option cells: Quant int4, int8int8 and f32,
+    each with ActQuantGroup 0 and 32, and int4 with the `GOINFER_SSM_RESIDENT` knob set;
+  - **backend choice:** `autoBackend` for each `testdata/machines` profile (its own goarch and free bytes) × each
+    linked set (cpu; cpu+cuda; cpu+metal; cpu+cuda+metal).
+  The golden is the full text, gzipped (`testdata/sb2_admission_census.txt.gz`), so a diff names the cell; the run is
+  repeated in-process and must agree with itself. Host-independent by construction: every machine reading and goarch
+  comes from the profile, and nothing reads `runtime.GOOS`.
+- **Layers B (later steps, in the backend modules):** each backend's `BuildResident` decisions and device routes, with
+  every live read replaced by a profile input through the backend's existing seams: CUDA and WebGPU on nobara, Metal on
+  the Mac. Registered here; each gets its own registration of cells before its code.
+- **Then the pure function.** `Admit` must reproduce layer D with the census unchanged, and `docs/hardware-matrix.md` and
+  `docs/capability-matrix.json` generated from it must equal the committed files byte for byte. **Void:** none
+  (deterministic). **Stopping rule:** any change to a recorded decision stops with DECISION NEEDED. **Cost basis:**
+  measured on the first run and recorded here; expected under a minute (tiny loads).
+
 ### SB3 — family adapters
 
 Moved to VK2 (one file each) and VK4 (program fingerprints). With SB1 and SB2, adding a family is a file, a fixture and
