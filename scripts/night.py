@@ -377,8 +377,9 @@ def memory_readings(path=None):
 
 def night_profile(host, t, readings):
     """host's night profile at t from readings, or (None, why) when there are too few: a dict in testdata/machines' form, with
-    the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t. Each
-    night counts once, by its lowest reading, so a night with many jobs weighs no more than a night with one."""
+    the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t. The
+    figure is the lower of two percentiles: over each night's lowest reading (a night with many jobs weighs no more than a night
+    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it."""
     last = last_night_begun(t)
     first = last - dt.timedelta(days=NIGHT_WINDOW - 1)
     # Only host's own readings: a box's memory log is its own, so pricing another box from it would price the wrong machine.
@@ -392,13 +393,13 @@ def night_profile(host, t, readings):
     for r in use:
         n = night_of(r["t"])
         lowest[n] = min(lowest.get(n, r["available_mb"]), r["available_mb"])
-    mb = percentile(list(lowest.values()), NIGHT_PCT)
+    mb = min(percentile(list(lowest.values()), NIGHT_PCT), percentile([r["available_mb"] for r in use], NIGHT_PCT))
     return {"name": f"{host}-night", "available_bytes": int(mb * (1 << 20)), "percentile": NIGHT_PCT,
             "window_nights": NIGHT_WINDOW, "readings": len(use), "nights": len(nights),
             "from": nights[0].isoformat(), "to": nights[-1].isoformat(),
             "backfilled": sum(1 for r in use if r.get("source") == "backfill"),
             "computed_at": t.isoformat(timespec="seconds"),
-            "per_night": "lowest",
+            "per_night": "lowest; the figure is the lower of the per-night and per-reading percentiles",
             "source": "night.py: the fit guard's available reading at each job start in a night window, lowest per night"}, ""
 
 

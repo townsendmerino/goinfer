@@ -1328,8 +1328,10 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 **What changes.**
 - **The night profile is weighted by night, not by reading:** each night's lowest reading, then the 25th percentile over the
   nights in the window (still 14 nights, at least 3 of them, and at least 5 readings). One night with many short jobs no longer
-  outweighs the others. This lowers or keeps the profile's figure, never raises it, so the queue-time check can refuse more
-  night jobs; that is listed for Francis.
+  outweighs the others. **Amended before merge (coordinator, 10:27, from Gemini on #322):** per night alone can raise the
+  figure (a night with many low readings becomes one), so the figure is the lower of the per-night and the per-reading 25th
+  percentile. The change can then only lower the figure or keep it, so the queue-time check can refuse more night jobs, never
+  fewer; that is listed for Francis. The registration first claimed that of per night alone, which was wrong.
 - **A reading is a night reading by its time alone** (inside 22:00 to the deadline), in the runner as in backfill, because a
   backfilled log does not record its job's `--not-before`. The profile describes the box at night, whichever job read it.
   Pricing still goes by `--not-before`.
@@ -1351,8 +1353,8 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 | G-NP2-5 builds | `test_night.py`, `touched.py`, vet, the pinned staticcheck, the citation lint | — | runs to completion | about two minutes |
 
 **Read, 2026-10-27 (nobara): all five pass.**
-- G-NP2-1: `test_a_busy_night_counts_once`. Ten readings on one night and four single-reading nights give the 25th percentile
-  of five nights' minimums.
+- G-NP2-1, as amended: `test_a_busy_night_counts_once` (per reading is the lower figure there, and is taken) and
+  `test_per_night_weighting_never_raises_the_figure` (per night is the lower figure, and is taken).
 - G-NP2-2: the real runner records `night: false` at 20:00 and `night: true` at 23:00. A failed reading logs
   "the available reading failed" and records nothing. Backfill adds nothing for a job with a start reading. The hostmem test
   now requires a number: it failed in a shell without `go` on its PATH. nobara's `goinfer-night.service` has
@@ -1360,7 +1362,7 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 - G-NP2-3: `TestSolvePlacement_unpricedExperts` passes on CUDA, Metal and the CPU at 0 and 2 slots. With the guard
   disabled, it goes red (resident with 0 expert bytes).
 - G-NP2-4: the census dump is byte-identical with and without the change. No fixture's experts are unpriced, so nothing moves.
-- G-NP2-5: `test_night.py` (80 tests), `go test ./internal/mem/`; the rest is in the PR.
+- G-NP2-5: `test_night.py` (81 tests), `go test ./internal/mem/`; the rest is in the PR.
 
 ### 6.6 What it absorbs, and what stays outside
 

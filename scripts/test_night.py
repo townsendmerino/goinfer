@@ -1114,6 +1114,9 @@ class NightProfile(unittest.TestCase):
         vals = sorted(lowest.values())
         pos = (len(vals) - 1) * 0.25
         want = vals[int(pos)] + (vals[min(int(pos) + 1, len(vals) - 1)] - vals[int(pos)]) * (pos - int(pos))
+        allv = sorted(mb for _, _, mb in inside)
+        p2 = (len(allv) - 1) * 0.25
+        want = min(want, allv[int(p2)] + (allv[int(p2) + 1] - allv[int(p2)]) * (p2 - int(p2)))  # the lower of the two
         self.assertEqual(prof["available_bytes"], int(want * (1 << 20)))
         self.assertEqual((prof["percentile"], prof["window_nights"], prof["readings"]), (25, 14, len(inside)))
         self.assertEqual(prof["nights"], len({night.night_of(self.at(d, h)) for d, h, _ in inside}))
@@ -1205,8 +1208,8 @@ class NightProfile(unittest.TestCase):
         self.assertEqual(prof["available_bytes"], int(night.percentile([0, 6000, 6000, 6000, 6000], 25) * (1 << 20)))
 
     def test_a_busy_night_counts_once(self):
-        """G-NP2-1: ten readings on one night and one on each of four others: the profile is the 25th percentile of the five
-        nights' lowest readings, not of the fourteen readings."""
+        """G-NP2-1 as amended: ten readings on one night and one on each of four others: the profile is the lower of the 25th
+        percentile of the five nights' lowest readings and that of all fourteen readings."""
         for k in range(10):
             night.record_reading(self.at(1, 23) + dt.timedelta(minutes=k), "busy", True, 1000 + k, path=self.readings, host="box")
         for d in (2, 3, 4, 5):
@@ -1214,7 +1217,23 @@ class NightProfile(unittest.TestCase):
         prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
         self.assertIsNotNone(prof, why)
         self.assertEqual((prof["readings"], prof["nights"]), (14, 5))
-        self.assertEqual(prof["available_bytes"], int(night.percentile([1000, 6000, 6000, 6000, 6000], 25) * (1 << 20)))
+        busy = [1000 + k for k in range(10)]
+        want = min(night.percentile([1000, 6000, 6000, 6000, 6000], 25), night.percentile(busy + [6000] * 4, 25))
+        self.assertEqual(prof["available_bytes"], int(want * (1 << 20)))
+        # Here the per-reading percentile is the lower one: per night alone would have raised the figure.
+        self.assertLess(night.percentile(busy + [6000] * 4, 25), night.percentile([1000, 6000, 6000, 6000, 6000], 25))
+
+    def test_per_night_weighting_never_raises_the_figure(self):
+        """One quiet low night among busy high ones: per night is the lower figure, and it is the one taken."""
+        night.record_reading(self.at(1, 23), "j", True, 500, path=self.readings, host="box")
+        for d in (2, 3, 4):
+            for k in range(5):
+                night.record_reading(self.at(d, 23) + dt.timedelta(minutes=k), "j", True, 6000 + k, path=self.readings, host="box")
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        self.assertIsNotNone(prof, why)
+        per_night = night.percentile([500, 6000, 6000, 6000], 25)
+        per_reading = night.percentile([500] + [6000 + k for k in range(5)] * 3, 25)
+        self.assertEqual(prof["available_bytes"], int(min(per_night, per_reading) * (1 << 20)))
 
     def test_backfill_skips_a_job_with_a_start_reading(self):
         """A job whose start the runner recorded is not backfilled a second time from its fit-guard line."""
