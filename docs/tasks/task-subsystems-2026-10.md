@@ -61,7 +61,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
-| SB8 | decision | census done (#338); the move to one package waits on its package shape (owner); nobara owes the Llama 3, Mellum 2 and Harmony token IDs; mac-ax01 | §8 SB8 |
+| SB8 | decision | census done (#338, #341, and nobara's IDs for Llama 3, Mellum 2 and Harmony); the move to one package waits on its package shape (owner); mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
@@ -73,7 +73,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | decision | 14 of 82 packages cacheable; Gemini's third look fixed (§12.3); retire, allowlist or keep the deny-list is Francis's call; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
+| PW5 | done | retired 2026-10-27 (Francis: option A): `touched.py` passes `-count=1` everywhere again, and the test-cache scanner, its data and wiring are removed; the saving was about 9 s on a 133 s re-run and three review rounds each found a new hole | §12.3; `docs/measurements/pw5-2026-10.md` |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -2443,6 +2443,16 @@ calls only the API the serving routes call, in the order they call it. It adds t
   entries are unchanged, row for row. **Shown red:** dropping `mistral` from `SupportsTools` fails the contract;
   accepting an empty name fails it for ChatML and Llama 3. That second plant passed before the review, because no output
   had an empty name, so the table gained one (43 outputs). Both reverted.
+- **nobara's token IDs, recorded (2026-10-27 15:57 PDT).** On nobara (Go 1.27.3 linux/amd64), from a detached worktree
+  of `16e21d7f`, under the shared timing lock (load 1.3; the lock had been free since 15:56):
+  `go test ./chat -run 'TestCodecCensus$' -codec.update -codec.models '^(llama-3\.2-1b-instruct|mellum2|gpt-oss-20b)'`.
+  `-codec.models` limits discovery to the owed families; nobara holds about 80 models. The run added five sources and
+  changed no recorded file: `llama-3.2-1b-instruct-q4_k_m.gguf` (Llama 3), `mellum2-unq` and `mellum2.1-thinking`
+  (Mellum 2, the second with its four think modes), and gpt-oss-20b as both its HF `tokenizer.json` and its MXFP4 GGUF
+  (Harmony, three efforts). That makes 108 token-ID cases, every one round-tripping. The same run also checked 680 of
+  the Mac's recorded IDs against nobara's copies of the 18 Mac models it also holds: their vocabulary, template and
+  every ID matched. The census has 60 sources; the Mac checks 715 IDs and skips the 108 recorded on nobara, and renders
+  all 60.
 
 ### SB9 — the towers
 
@@ -2854,8 +2864,10 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 **PW5 after Gemini's third look (2026-10-27, `docs/measurements/pw5-2026-10.md` §6):**
 - Climbs are counted on cleaned literals and summed per package. A declaration counts only once applied.
 - The patterns are wider, and randomness is a hidden input.
-- **DECISION NEEDED (Francis): retire the cache (A), flip to an allowlist (B), or keep the deny-list (C).** The record
-  recommends A.
+- **Decided 2026-10-27: A, retire the cache** (Francis). `touched.py` passes `-count=1` for every package again; the
+  scanner (`internal/layout`'s test-cache classification), `internal/layout/test_cache.json`, its `-update` and
+  `touched.py`'s cache wiring are removed. Reason: about 9 s saved on a 133 s re-run, and three review rounds each found a
+  new hole.
 
 ## 13. Order, sizes, and what each step is worth alone
 

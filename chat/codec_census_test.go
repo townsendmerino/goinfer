@@ -14,6 +14,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -30,7 +31,10 @@ import (
 // calls only the API the routes call, in their order, so a golden that still matches means no prompt and no parsed call
 // changed. Record with `go test ./chat -run 'TestCodecCensus|TestToolCallParseCensus' -codec.update`.
 
-var codecUpdate = flag.Bool("codec.update", false, "rewrite the codec census goldens under testdata/codec")
+var (
+	codecUpdate = flag.Bool("codec.update", false, "rewrite the codec census goldens under testdata/codec")
+	codecModels = flag.String("codec.models", "", "with -codec.update: record only the local models whose path under GOINFER_MODELS_DIR matches this regexp")
+)
 
 const codecDir = "testdata/codec"
 
@@ -255,6 +259,10 @@ var constructors = map[string]func() *Template{
 // vocabulary) Detect accepts: a directory with a tokenizer, or a .gguf. Used only when recording.
 func discoverLocalSources(t *testing.T) []*censusSource {
 	root := modelsRoot()
+	only, err := regexp.Compile(*codecModels)
+	if err != nil {
+		t.Fatalf("-codec.models: %v", err)
+	}
 	var paths []string
 	dirs, _ := os.ReadDir(root)
 	for _, d := range dirs {
@@ -276,6 +284,9 @@ func discoverLocalSources(t *testing.T) []*censusSource {
 	}
 	var out []*censusSource
 	for _, rel := range paths {
+		if !only.MatchString(filepath.ToSlash(rel)) {
+			continue
+		}
 		tk, err := loadCensusTokenizer(filepath.Join(root, rel))
 		if err != nil {
 			t.Logf("codec census: %s: tokenizer does not load (%v); not a source", rel, err)
