@@ -752,7 +752,7 @@ from today's code (`origin/main` at the commit this branch starts from) and comm
 - **The host class.** Weight bytes depend on the CPU, because the loader repacks int4 differently on AVX2, AVX-512 VNNI and
   arm64. So the census is keyed by host class (GOARCH plus the measured bytes-per-element table), as `parityWantInt4ByArch` is
   keyed by architecture. This step records nobara's class natively and the VNNI class under Intel SDE, as the int4 parity
-  golden was. A class with no entry, arm64 included, is a capture run: the test logs the census hash and skips the comparison.
+  golden was (the read below: they are one class). A class with no entry, arm64 included, is a capture run: the test logs the census hash and skips the comparison.
   The Mac records arm64 when a session there takes it.
 
 **Gates.**
@@ -763,6 +763,20 @@ from today's code (`origin/main` at the commit this branch starts from) and comm
 | G-MM1-C2 determinism | two runs in one process, and a run in a second process, give the same census hash | the probe fake is not installed (a live reading leaked in) | runs to completion | seconds |
 | G-MM1-C3 the golden | the census equals `testdata/mm1_census.json.gz` for this host class, cell for cell and byte for byte. It is written once by `-update` in this PR and then frozen: MM1's `Solve` PRs reproduce it without `-update`. A cell added, removed or changed is a red run, and the PR that changes it says why | the host class has no entry (a capture run, reported as such, not a pass) | runs to completion | seconds |
 | G-MM1-C4 tier | the census test runs in under 30 s on nobara and under a minute in CI, with no model asset, no device and no network | — | — | measured on the first run and recorded here |
+
+**MM1 census read, 2026-10-26 (nobara, Ryzen 7 3700X; timing lock free, shared hold): all four pass.** The census is 29,637
+groups. Per decision: D1 8,435, D2 3,948, D3 11,760, D4 2,310, D5 2,730, D6 2 and D7 451, plus the loads group. It covers 105
+family variants, and 210 family loads succeeded. The loads that fail are the towers, encoders and ASR models, which the loads
+group lists (a family that stops loading is a red run). G-MM1-C1: every listed outcome is reached. G-MM1-C2: two in-process runs
+and a second process agree (`cce976c3…`). The first run did not agree: the long variants' temp-dir names reached the fit guard's
+line, and they now keep the fixture's name. G-MM1-C3: the golden is written for the amd64 class (bytes per element f32 4,
+int8 1.015625, int4 0.5625). Under SDE `-hsw` the census matches it, and under `-icx` the class and the census hash are the
+same, so VNNI and AVX2 hosts share it. arm64 is a capture run until the Mac records it. G-MM1-C4: `TestDecisionCensus` takes 16.3 s
+and the second-process test 16.6 s. One build of the census took 37 s on the first run and 22 s after the cuts below, and takes 8 s with D1, D3 and D4 in parallel
+(D2 stays serial at 5 s, because `decideGIWFit` reads the probe seam on every evaluation; `-race` is clean). Two cuts to the registered grid came first, and they change no
+decision's reach: stream-weights only for a `.gguf` (it moves nothing for a directory), and the CPU's KV f16 cell dropped (the
+CPU's precision is `KVQuant`'s). The golden holds a 16-hex SHA-256 prefix per group (199 KB); `-census.dump` writes the full text
+(92 MB) to diff a red run against its base.
 
 ### 6.6 What it absorbs, and what stays outside
 

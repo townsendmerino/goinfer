@@ -1,0 +1,10 @@
+{
+ "name": "m1pro-2026-10-20",
+ "source": "the 2026-10-20 refusal (this task doc, section 6.1): a 5.1 GB budget against a 5.6 GB need. Available is derived as the budget over the guard's 0.70.",
+ "assumed": "available derived from the logged budget",
+ "goarch": "arm64",
+ "physical_bytes": 17179869184,
+ "available_bytes": 7822976146,
+ "cuda_free_bytes": null,
+ "metal_budget_bytes": 7822976146
+}

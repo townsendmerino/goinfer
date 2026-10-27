@@ -63,6 +63,10 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    # MM1's decision census pins every fit decision: a change to the fit code or the machine zoo runs it.
+    Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
+                                            "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
+                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz")),
     # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
     Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity_manifest.json")),
     # VK2's forward census: every file the forward reaches is in a hash set or an own list.

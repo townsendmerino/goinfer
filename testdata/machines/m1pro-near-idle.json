@@ -1,0 +1,10 @@
+{
+ "name": "m1pro-near-idle",
+ "source": "kern.memorystatus_level 79% (docs/measurements/hostmem-available-2026-10/README.md, the 12:35 PT reading) times 16 GiB, less the 500 MiB pressure buffer, as the probe computes it.",
+ "assumed": "",
+ "goarch": "arm64",
+ "physical_bytes": 17179869184,
+ "available_bytes": 13047808655,
+ "cuda_free_bytes": null,
+ "metal_budget_bytes": 12025908428
+}
