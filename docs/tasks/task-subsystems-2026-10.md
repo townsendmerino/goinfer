@@ -1054,6 +1054,43 @@ read through an exported `ResidentFeaturesCover(cfg, backend)`.
   testhooks), gofmt, the layout tests, the citation lint.
 - The PR also regenerates `docs/ARCHITECTURE.md`'s import appendix. `TestArchitecture_importAppendix` is red on main since
   #301 added `cuda/internal/launchgeom`.
+
+#### MM6's night profile, registered 2026-10-27 before the code (nobara-mm01; Francis's option B of 05:56)
+
+**Francis's decision (05:56), replacing 1b after the replay:** option B. Each box gets a recorded "at night" profile, priced at
+the 25th percentile of real nights. On the Mac the memory in use at night is the setup itself: the Claude app, background
+sessions, their builds and tests. It persists. The replay's real refusals saw 2.9–7.7 GB available (median 6.6) against the
+idle profile's 12.2.
+
+**What is built.**
+- **Every job start records the fit guard's available reading.** It goes in the `=== START` line and in the box's
+  `memory.jsonl` under `~/goinfer-logs/night`, marked night or day by the job's `--not-before`. Today the runner logs only the
+  load average at a start, so this record starts now.
+- **The night profile is computed from those readings.** It is the 25th percentile (linear interpolation) of the night-job
+  readings in the last 14 nights. A reading belongs to the night that began at or before it, so 02:00 counts with the evening
+  before. The profile records its percentile, window, reading count, night count and dates. It is written to
+  `~/goinfer-logs/night/profile-night.json`, a per-box file, not committed. A committed profile would change the census's
+  machine zoo (`testdata/machines/*.json` is census input) and its golden every night, and each box's file is that box's own
+  data.
+- **Night jobs (`--not-before`) price against it; day jobs keep the apps-open profile.** With fewer than 5 readings or 3 nights
+  in the window, a night job falls back to the apps-open profile with a warning.
+- **`night.py profile`** prints the profile. `--backfill` seeds the history once from existing night logs: the fit guard's own
+  "currently has X GB of memory available" lines, in logs whose job started in a night window. That sample is biased low,
+  because those lines come from refusals and warnings, and it is marked `backfill` in the record.
+- **nobara is the same,** from its own readings.
+
+**The expected replay count, stated from the data before running.** The Mac's recorded night readings are the refusals'
+printed figures: 2.9, 3.9, 4.6, 6.4, 6.4, 6.6, 6.9, 7.0, 7.4, 7.5 and 7.7 GB. Their 25th percentile is about 5.5 GB, a budget
+of about 3.85 GB. The 8 counted jobs need 5.1, 12.6, 6.7, 5.5, 5.6, 5.1, 5.0 and 2.7 GB. So the night profile refuses rows
+1–7 and fits row 8: **expected 7 of 8**. Row 7 (5.0 GB) fits only if the 25th percentile reaches 7.2 GB.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-NP-1 the percentile and window | a fake-history test: the profile's figure is the 25th percentile of exactly the night readings in the last 14 nights (older readings and day readings excluded), with linear interpolation checked against a hand computation; the profile records percentile, window, count, nights and dates | — | runs to completion | seconds |
+| G-NP-2 the fallback | with fewer than 5 readings or 3 nights, a night job is priced on the apps-open profile and `add` prints a warning naming the count | — | runs to completion | seconds |
+| G-NP-3 the record | a job start through the real runner writes the available reading to the START line and to `memory.jsonl`, with the night flag | — | runs to completion | seconds |
+| G-NP-4 the replay (the Mac) | with the profile computed from the Mac's backfilled readings, the 8 counted jobs re-priced on it: **at least 7 refused** (the expectation above); the profile's figure and count are reported beside it | the profile falls back (too few readings), which is reported as such | every counted job | minutes |
+| G-NP-5 builds | `python3 scripts/test_night.py`; `touched.py`; the citation lint | — | runs to completion | about a minute |
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
