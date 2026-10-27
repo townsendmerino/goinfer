@@ -50,3 +50,5 @@ func TestMetalFitCtx_anAgentsFirstRequestFits(t *testing.T) {
 		})
 	}
 }
+
+func gb(b int64) float64 { return float64(b) / (1 << 30) }
