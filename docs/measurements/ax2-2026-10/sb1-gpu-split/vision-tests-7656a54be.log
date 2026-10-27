@@ -1,0 +1,118 @@
+=== RUN   TestG4VWebGPU_matchesCPU
+    gemma4_vision_test.go:123: tiny tower: hidden 32, 2 layers, 4 heads of 8, MLP 64, pool 3
+    gemma4_vision_test.go:136: block 0,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 0,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 0, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 0, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:152: planted (1) the clamps skipped: lowest soft-token cosine 0.946551440
+    gemma4_vision_test.go:152: planted (2) the x and y position tables swapped: lowest soft-token cosine 0.414320595
+    gemma4_vision_test.go:152: planted (3) RoPE not applied to k: lowest soft-token cosine 0.652461448
+    gemma4_vision_test.go:152: planted (4) the v norm skipped: lowest soft-token cosine 0.971320815
+    gemma4_vision_test.go:152: planted (5) k normed with q's weight: lowest soft-token cosine 0.740247015
+--- PASS: TestG4VWebGPU_matchesCPU (0.55s)
+=== RUN   TestG4VWebGPU_realE2B
+    gemma4_vision_test.go:205: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestG4VWebGPU_realE2B (0.00s)
+=== RUN   TestG4VWebGPU_speedGate
+    gemma4_vision_test.go:273: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestG4VWebGPU_speedGate (0.00s)
+=== RUN   TestGridVisionWebGPU_matchesCPU
+=== RUN   TestGridVisionWebGPU_matchesCPU/glm-ocr
+    grid_vision_test.go:178: GLM-OCR, block 0: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:178: GLM-OCR, block 5: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:188: GLM-OCR planted, the attention scale dropped: lowest 0.126404
+    grid_vision_test.go:188: GLM-OCR planted, the RoPE halves swapped: lowest 0.698253
+    grid_vision_test.go:188: GLM-OCR planted, the q and k norms skipped: lowest 0.118984
+    grid_vision_test.go:188: GLM-OCR planted, the patch bias dropped: lowest 0.531329
+=== RUN   TestGridVisionWebGPU_matchesCPU/qwen3
+    grid_vision_test.go:178: Qwen3.5, block 0: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:178: Qwen3.5, block 5: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:188: Qwen3.5 planted, the attention scale dropped: lowest 0.974966
+    grid_vision_test.go:188: Qwen3.5 planted, the RoPE halves swapped: lowest 0.996732
+    grid_vision_test.go:188: Qwen3.5 planted, the position rows for the transposed grid: lowest 0.994887
+    grid_vision_test.go:188: Qwen3.5 planted, the patch bias dropped: lowest 0.993714
+--- PASS: TestGridVisionWebGPU_matchesCPU (0.62s)
+    --- PASS: TestGridVisionWebGPU_matchesCPU/glm-ocr (0.30s)
+    --- PASS: TestGridVisionWebGPU_matchesCPU/qwen3 (0.31s)
+=== RUN   TestGridVisionWebGPU_deepstackTiny
+[G-S12.3e-1b] tiny [[1 4 6]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S12.3e-1b] tiny [[1 6 4] [1 4 4]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S12.3e-1b] tiny, taps one block late: merged 1.000000000, deep0 0.997922316, deep1 0.998646717
+--- PASS: TestGridVisionWebGPU_deepstackTiny (0.06s)
+=== RUN   TestGridVisionWebGPU_real
+    grid_vision_test.go:350: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGridVisionWebGPU_real (0.00s)
+=== RUN   TestGridVisionWebGPU_deepstackReal
+    grid_vision_test.go:396: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGridVisionWebGPU_deepstackReal (0.00s)
+=== RUN   TestGridVisionWebGPU_speedGate
+    grid_vision_test.go:454: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestGridVisionWebGPU_speedGate (0.00s)
+=== RUN   TestQwen25VisionWebGPU_matchesCPU
+    qwen25_vision_test.go:107: windowed kernels off false: lowest merged-token cosine 1.000000000 over 3 grid sets (3 blocks ran on the windowed kernels)
+    qwen25_vision_test.go:107: windowed kernels off true: lowest merged-token cosine 1.000000000 over 3 grid sets (0 blocks ran on the windowed kernels)
+    qwen25_vision_test.go:129: planted (1) the attention scale dropped: lowest 0.521762
+    qwen25_vision_test.go:129: planted (2) the RoPE halves swapped: lowest 0.749527
+    qwen25_vision_test.go:129: planted (3) every block attends its whole frame: lowest 0.848107
+    qwen25_vision_test.go:129: planted (4) the window reordering skipped: lowest 0.749652
+    qwen25_vision_test.go:129: planted (5) the windowed kernels read each key one row late: lowest 0.559122
+--- PASS: TestQwen25VisionWebGPU_matchesCPU (0.23s)
+=== RUN   TestQwen25VisionWebGPU_real
+    qwen25_vision_test.go:171: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen25VisionWebGPU_real (0.00s)
+=== RUN   TestQwen25VisionWebGPU_speedGate
+    qwen25_vision_test.go:208: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestQwen25VisionWebGPU_speedGate (0.00s)
+=== RUN   TestVisionEncoderF32_parity
+    vision_f32_test.go:127: float32 WebGPU tower against the CPU float32 tower: lowest token cosine 1.0000000 over 16 tokens
+    vision_f32_test.go:141: planted (1) the position table not added: lowest token cosine 0.7738707
+    vision_f32_test.go:141: planted (2) the q bias dropped in the first layer: lowest token cosine 0.9993055
+    vision_f32_test.go:141: planted (3) q and k weights swapped in the first layer: lowest token cosine 0.8156137
+    vision_f32_test.go:141: planted (4) the GELU skipped in the first layer: lowest token cosine 0.7019785
+    vision_f32_test.go:141: planted (5) the MLP residual dropped in the first layer: lowest token cosine 0.8009823
+--- PASS: TestVisionEncoderF32_parity (0.07s)
+=== RUN   TestVisionEncoderF32_largeActivations
+    vision_f32_test.go:166: with GELU inputs near ±40: lowest token cosine 1.0000000
+--- PASS: TestVisionEncoderF32_largeActivations (0.02s)
+=== RUN   TestVisionEnableResidentF32_parity
+--- PASS: TestVisionEnableResidentF32_parity (0.02s)
+=== RUN   TestVisionEncoderF32_realGemma3
+    vision_f32_test.go:231: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoderF32_realGemma3 (0.00s)
+=== RUN   TestVisionEncoderF32_tiledSmoke
+    vision_f32_test.go:342: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoderF32_tiledSmoke (0.00s)
+=== RUN   TestVisionEncoder_profile
+    vision_f32_test.go:420: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoder_profile (0.00s)
+=== RUN   TestVisionEncoderF32_speedGate
+    vision_f32_test.go:511: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestVisionEncoderF32_speedGate (0.00s)
+=== RUN   TestVisionLayerNorm_parity
+    vision_test.go:69: GPU LayerNorm vs CPU: max abs diff = 1.907e-06
+--- PASS: TestVisionLayerNorm_parity (0.01s)
+=== RUN   TestVisionSoftmax_parity
+    vision_test.go:122: GPU softmax vs CPU: max abs diff = 1.746e-10, row0 sum = 1.000000
+--- PASS: TestVisionSoftmax_parity (0.01s)
+=== RUN   TestVisionGelu_parity
+    vision_test.go:153: GPU gelu-tanh vs CPU: max abs diff = 4.574e-07
+--- PASS: TestVisionGelu_parity (0.00s)
+=== RUN   TestVisionEncoder_parity
+    vision_test.go:206: resident GPU vs CPU-W8A8 cosine=1.000000 | GPU vs HF golden cosine=0.999959
+--- PASS: TestVisionEncoder_parity (0.02s)
+=== RUN   TestVisionEnableResident_parity
+    vision_test.go:268: EnableResident Forward vs CPU cosine=1.000000
+--- PASS: TestVisionEnableResident_parity (0.02s)
+=== RUN   TestVisionEncoder_timing
+    vision_timing_test.go:14: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoder_timing (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	2.060s

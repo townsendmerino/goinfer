@@ -1,0 +1,19 @@
+=== RUN   TestTowerIdentity_webgpu
+    tower_identity_test.go:20: siglip             normal-9                     device=true  values=512     a3e521c07b665a7542603bdfaf2605346e320173f5a45083792a915ef0dd9e28
+    tower_identity_test.go:20: qwen2.5-vl         [[1 8 8]]                    device=true  values=1024    7c223664676ae88d96bee1885f9639a978af2f7ad8c47bf002bc735ec662f67a
+    tower_identity_test.go:20: qwen2.5-vl         [[1 12 16]]                  device=true  values=3072    ebe3fce646a0803eaf1aa405b5b1750d6aea3c589cb4f1be5b3919b4fb1429b4
+    tower_identity_test.go:20: qwen3              [[1 4 4]]                    device=true  values=256     4e7de1055fb5326f7481d34a7f22051684941f76f7b68635298e15664a8a8c8e
+    tower_identity_test.go:20: qwen3              [[1 6 8]]                    device=true  values=768     618c6eb1cd6e98985f15dd664144dbd53992ee2035cc10d343bbec7f6d730e85
+    tower_identity_test.go:20: qwen3              [[1 10 6]]                   device=true  values=960     e46fc8502c3cf4a36c13726256c4c01c6689cd945e06d2b569cfa4ee07a6e6fb
+    tower_identity_test.go:20: qwen3              [[1 4 4] [1 6 4]]            device=true  values=640     39b1de5b291d727e6b35241bbb96d494841d779a774833845b283e08d460565d
+    tower_identity_test.go:20: qwen3-deepstack    [[1 4 6]]                    device=true  values=1152    f1c20866c14ac87257782b75b4bf97f097413750e36cb0c7dc73fad890685c57
+    tower_identity_test.go:20: qwen3-deepstack    [[1 6 4] [1 4 4]]            device=true  values=1920    ddc313802a56bd72f1e2fe4285db158f56982fc1849b5133616fbee6934094c8
+    tower_identity_test.go:20: glm-ocr            [[1 4 4]]                    device=true  values=768     e355570eaa113b463881ed3757adffdd54f0c238ee8496dbdfd603b2c94af872
+    tower_identity_test.go:20: glm-ocr            [[1 6 8]]                    device=true  values=2304    0bc23289909195bb0494ff97b5bdde676a7eec7301787f08cd0c62e75a92a341
+    tower_identity_test.go:20: glm-ocr            [[1 10 6]]                   device=true  values=2880    3eecb5482c039d6b8a044b273dfe682617249b92ec6d3aeb94239ba0f25f1377
+    tower_identity_test.go:20: glm-ocr            [[1 4 4] [1 6 4]]            device=true  values=1920    0eeb88b8f675f5a15257652bbe1328b801838a0908759143295562cfa8438758
+    tower_identity_test.go:20: gemma4-vision      2x3 pooled                   device=true  values=144     0166db475b299d1dcab39db530bab07ff12fcf02a2167b86457f1db15890aa5b
+    tower_identity_test.go:20: gemma4-vision      3x2 pooled                   device=true  values=144     1391bdec05cf751e2c6582e6c5c9a3be88ee31b65d3a40ea3ba8e5b8c030637b
+--- PASS: TestTowerIdentity_webgpu (0.50s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	1.066s

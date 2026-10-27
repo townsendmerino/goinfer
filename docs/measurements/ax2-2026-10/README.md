@@ -148,3 +148,22 @@ Four findings. Two [test] findings held on origin/main; each got a test that was
 The records still equal AX2b's on the CPU (22 cases), Metal (17) and WebGPU (15); the fixes change no tower code. The CUDA
 change compiles here (`GOOS=linux`); nobara's `TestTowerIdentity_cuda` run follows, and it should now record the Whisper
 and Voxtral cases (17, as at AX2d) or fail.
+
+## SB1's gpu split: the WebGPU tower check on the Mac (2026-10-27, mac-ax01, for nobara-sb01)
+
+SB1's split (#317, merged) moved the WebGPU kernel layer from package `gpu` to `gpu/internal/kernels`, including the
+vision-tower files (`gemma4_vision.go`, `grid_vision.go`, `qwen25_vision.go`, `vision.go`, `vision_encoder.go`,
+`vision_register.go`). The rule was Francis's: their behavior stays identical, and AX2a's WebGPU record must match. Only a
+Mac can compare with that darwin record. The check ran at origin/main `7656a54be` (it contains #317), not at the branch head
+the brief named (`2404bb531`), because the split had merged. The timing lock was held shared, with 11.5 GB available. The
+1-minute load was 10.1 at the start, from other sessions; that does not void the check, which is a bit-identity check and
+not a timed run.
+
+- **Tower identity: PASS.** `TestTowerIdentity_webgpu` (still in package `gpu`) recorded 15 cases. `ax2_compare.py`
+  against `records-ax2a/webgpu-darwin-arm64.json` reads 0 differ, with all 15 on the device path. No AX2 step changed a
+  WebGPU hash, so AX2a's record is the right base.
+- **The moved vision tests: same outcome.** `go test -v -tags 'gpu goinfer_testhooks' -run 'Vision|G4V|GridVision|Qwen25Vision'`
+  in `gpu/internal/kernels` at `7656a54be`, and in package `gpu` at the split's base `cdfb45c53`: 12 PASS and 12 SKIP on
+  both sides, the same tests by name, the skips for the same reasons (heavy checkpoints and a timed gate, env-gated).
+
+Record and logs: `sb1-gpu-split/`.

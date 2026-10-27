@@ -94,6 +94,11 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		}
 		return p
 	}
+	// An MoE whose experts could not be priced (under a byte each) is not placed on unknown bytes, resident or cached.
+	if l.NExperts > 0 && l.ExpertBytesFull < int64(l.NExperts) {
+		return decline("the routed experts could not be priced (%d bytes over %d experts): nothing is placed on unknown bytes",
+			l.ExpertBytesFull, l.NExperts)
+	}
 	// reserve is the expert bytes priced before the context grows: an MoE placement's experts are reserved first (owner
 	// decision, docs/tasks/task-subsystems-2026-10.md, "MM1's MoE reserve"), or one more KV step could leave no room for them
 	// and more memory would give a worse placement.
@@ -204,11 +209,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		return decline("dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
 			gbf(l.DenseBytes), slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 	}
-	perExpert := l.ExpertBytesFull / int64(l.NExperts)
-	if perExpert <= 0 {
-		return decline("the routed experts could not be priced (%d bytes over %d experts): no expert cache is sized on unknown bytes",
-			l.ExpertBytesFull, l.NExperts)
-	}
+	perExpert := l.ExpertBytesFull / int64(l.NExperts) // at least 1: unpriced experts declined above
 	slots := int(remaining / perExpert)
 	if req.Slots > 0 && req.Slots < slots {
 		slots = req.Slots // an explicit, smaller request is honoured even if more would fit
