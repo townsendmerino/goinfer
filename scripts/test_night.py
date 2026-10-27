@@ -894,7 +894,8 @@ class FitCheckAtQueueTime(unittest.TestCase):
 
     def test_a_night_job_is_priced_on_the_night_profile_and_a_day_job_on_the_day_one(self):
         readings = Path(tempfile.mkdtemp(dir=_tmp)) / "memory.jsonl"
-        t = night.now().replace(hour=23, minute=0)
+        # Seeded on nights that have begun (a reading in the future is outside the window whatever the hour of the run).
+        t = dt.datetime.combine(night.last_night_begun(night.now()), dt.time(23, 0)).astimezone()
         for d in range(4):
             for mb in (5000, 6000):
                 night.record_reading(t - dt.timedelta(days=d), "j", True, mb, path=readings, host="nobara-pc")
@@ -1106,9 +1107,16 @@ class NightProfile(unittest.TestCase):
         night.record_reading(self.at(2, 2), "day", False, 50, path=self.readings, host="box")    # a day job: excluded
         prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
         self.assertIsNotNone(prof, why)
-        vals = sorted(mb for _, _, mb in inside)
-        pos = (len(vals) - 1) * 0.25  # 2.25: between the third and fourth values
-        want = vals[2] + (vals[3] - vals[2]) * (pos - 2)
+        lowest = {}
+        for d, h, mb in inside:  # each night once, by its lowest reading
+            n = night.night_of(self.at(d, h))
+            lowest[n] = min(lowest.get(n, mb), mb)
+        vals = sorted(lowest.values())
+        pos = (len(vals) - 1) * 0.25
+        want = vals[int(pos)] + (vals[min(int(pos) + 1, len(vals) - 1)] - vals[int(pos)]) * (pos - int(pos))
+        allv = sorted(mb for _, _, mb in inside)
+        p2 = (len(allv) - 1) * 0.25
+        want = min(want, allv[int(p2)] + (allv[int(p2) + 1] - allv[int(p2)]) * (p2 - int(p2)))  # the lower of the two
         self.assertEqual(prof["available_bytes"], int(want * (1 << 20)))
         self.assertEqual((prof["percentile"], prof["window_nights"], prof["readings"]), (25, 14, len(inside)))
         self.assertEqual(prof["nights"], len({night.night_of(self.at(d, h)) for d, h, _ in inside}))
@@ -1137,26 +1145,40 @@ class NightProfile(unittest.TestCase):
         self.assertTrue(any("6 night readings over 2 nights" in w and "m1pro-apps-open" in w for w in warnings), warnings)
         self.assertTrue(calls[0][calls[0].index("-profile") + 1].endswith("m1pro-apps-open.json"))
 
-    def test_a_job_start_records_its_reading(self):
-        """G-NP-3: the real runner writes the available reading into the START line and the memory log, with the night flag."""
+    def run_at(self, hour, name, avail=4321):
+        """Runs one queued job through the real runner with the clock at hour today; returns its log text and new readings."""
         for d in (night.QUEUE, night.RUNNING):
             if d.exists():
                 for f in d.glob("*"):
                     f.unlink()
-        marker = self.dir / "ran"
-        queue_job("np-start", marker)
+        real = night.now
+        off = real().replace(hour=hour, minute=0, second=0, microsecond=0) - real()
+        night.now = lambda: real() + off
+        queue_job(name, self.dir / f"{name}.ran")
         before = len(night.memory_readings())
-        Runner.avail = 4321
+        Runner.avail = avail
+        out = io.StringIO()
         try:
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stdout(out):
                 Runner(night.now() + dt.timedelta(hours=1), self.dir).run()
         finally:
-            Runner.avail = 6000
-        logs = list(self.dir.glob("np-start*.log"))
+            Runner.avail, night.now = 6000, real
+        logs = list(self.dir.glob(f"{name}*.log"))
         self.assertTrue(logs, "the job did not run")
-        self.assertRegex(logs[0].read_text(), r"=== START .* available 4321 MB")
-        recs = night.memory_readings()[before:]
-        self.assertEqual([(r["job"], r["available_mb"], r["night"]) for r in recs], [("np-start", 4321, False)])
+        return logs[0].read_text(), night.memory_readings()[before:], out.getvalue()
+
+    def test_a_job_start_records_its_reading(self):
+        """G-NP-3 and G-NP2-2: the real runner writes the available reading into the START line and the memory log; a start at
+        23:00 is a night reading and one at 20:00 is not; a failed reading is logged and records nothing."""
+        log, recs, _ = self.run_at(20, "np-day")
+        self.assertRegex(log, r"=== START .* available 4321 MB")
+        self.assertEqual([(r["job"], r["available_mb"], r["night"]) for r in recs], [("np-day", 4321, False)])
+        _, recs, _ = self.run_at(23, "np-night")
+        self.assertEqual([(r["job"], r["night"]) for r in recs], [("np-night", True)])
+        log, recs, out = self.run_at(23, "np-blind", avail=None)
+        self.assertRegex(log, r"available \? MB")
+        self.assertEqual(recs, [])
+        self.assertIn("np-blind: the available reading failed", out)
 
     def test_a_night_reading_is_by_the_window(self):
         """The night flag and the window: a --not-before in the night window is a night job, a 14:00 one is not; the window is the
@@ -1185,6 +1207,45 @@ class NightProfile(unittest.TestCase):
         self.assertEqual(prof["readings"], 5)
         self.assertEqual(prof["available_bytes"], int(night.percentile([0, 6000, 6000, 6000, 6000], 25) * (1 << 20)))
 
+    def test_a_busy_night_counts_once(self):
+        """G-NP2-1 as amended: ten readings on one night and one on each of four others: the profile is the lower of the 25th
+        percentile of the five nights' lowest readings and that of all fourteen readings."""
+        for k in range(10):
+            night.record_reading(self.at(1, 23) + dt.timedelta(minutes=k), "busy", True, 1000 + k, path=self.readings, host="box")
+        for d in (2, 3, 4, 5):
+            night.record_reading(self.at(d, 23), "j", True, 6000, path=self.readings, host="box")
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        self.assertIsNotNone(prof, why)
+        self.assertEqual((prof["readings"], prof["nights"]), (14, 5))
+        busy = [1000 + k for k in range(10)]
+        want = min(night.percentile([1000, 6000, 6000, 6000, 6000], 25), night.percentile(busy + [6000] * 4, 25))
+        self.assertEqual(prof["available_bytes"], int(want * (1 << 20)))
+        # Here the per-reading percentile is the lower one: per night alone would have raised the figure.
+        self.assertLess(night.percentile(busy + [6000] * 4, 25), night.percentile([1000, 6000, 6000, 6000, 6000], 25))
+
+    def test_per_night_weighting_never_raises_the_figure(self):
+        """One quiet low night among busy high ones: per night is the lower figure, and it is the one taken."""
+        night.record_reading(self.at(1, 23), "j", True, 500, path=self.readings, host="box")
+        for d in (2, 3, 4):
+            for k in range(5):
+                night.record_reading(self.at(d, 23) + dt.timedelta(minutes=k), "j", True, 6000 + k, path=self.readings, host="box")
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        self.assertIsNotNone(prof, why)
+        per_night = night.percentile([500, 6000, 6000, 6000], 25)
+        per_reading = night.percentile([500] + [6000 + k for k in range(5)] * 3, 25)
+        self.assertEqual(prof["available_bytes"], int(min(per_night, per_reading) * (1 << 20)))
+
+    def test_backfill_skips_a_job_with_a_start_reading(self):
+        """A job whose start the runner recorded is not backfilled a second time from its fit-guard line."""
+        runs = self.dir / "runs2" / "2026-10-20"
+        runs.mkdir(parents=True)
+        (runs / "seen.log").write_text("=== night job seen\n=== START    2026-10-20 23:05:00 PDT  loadavg 0.5  available 6800 MB\n"
+                                       "decoder: m needs ~5 GB; this machine currently has 6.6 GB of memory available (budget 5 GB)\n")
+        mem = self.dir / "bf2.jsonl"
+        night.record_reading(dt.datetime(2026, 10, 20, 23, 5).astimezone(), "seen", True, 6800, path=mem)
+        self.assertEqual(night.backfill_readings(runs=self.dir / "runs2", path=mem), 0)
+        self.assertEqual(len(night.memory_readings(mem)), 1)
+
     def test_backfill_reads_real_job_logs(self):
         """--backfill finds the START line after the job's header lines (a real log's shape), takes the fit guard's figure in a
         night job's log, skips a day job's, and adds nothing on a second run."""
@@ -1204,7 +1265,8 @@ class NightProfile(unittest.TestCase):
         """night.Runner.avail_mb (not the test Runner's stand-in) returns MiB or None, and None when hostmem fails."""
         r = night.Runner.__new__(night.Runner)
         got = r.avail_mb()
-        self.assertTrue(got is None or (isinstance(got, int) and got >= 0), got)
+        self.assertIsInstance(got, int, "cmd/hostmem gave no reading here (go run ./cmd/hostmem -mb)")
+        self.assertGreater(got, 0)
         import hostmem
         real = hostmem.available_mb
         hostmem.available_mb = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no hostmem"))

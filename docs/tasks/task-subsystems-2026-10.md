@@ -1131,7 +1131,7 @@ idle profile's 12.2.
 
 **What is built.**
 - **Every job start records the fit guard's available reading.** It goes in the `=== START` line and in the box's
-  `memory.jsonl` under `~/goinfer-logs/night`, marked night or day by the job's `--not-before`. Today the runner logs only the
+  `memory.jsonl` under `~/goinfer-logs/night`, marked night or day by the job's `--not-before` (as registered; since the follow-up below, by the start's time alone). Today the runner logs only the
   load average at a start, so this record starts now.
 - **The night profile is computed from those readings.** It is the 25th percentile (linear interpolation) of the night-job
   readings in the last 14 nights. A reading belongs to the night that began at or before it, so 02:00 counts with the evening
@@ -1167,8 +1167,8 @@ in-window readings (2.9, 3.9, 4.6, 6.4, 6.6, 6.9, 7.0, 7.7) give about 4.4 GB, a
   its percentile, window, readings and nights.
 - G-NP-2: 6 readings over 2 nights fall back to `m1pro-apps-open` with a warning naming the counts.
 - G-NP-3: a job through the real runner writes `available 4321 MB` to its START line and the reading to `memory.jsonl`.
-- G-NP-5: `test_night.py` (74 tests), `touched.py`, the citation lint.
-- nobara: a dry run of `--backfill` on its night logs finds no fit-guard availability lines (no refusals there). Its night
+- G-NP-5: `test_night.py` (74 tests at this read; 78 after the fixes before merge), `touched.py`, the citation lint.
+- nobara: a dry run of `--backfill` on its night logs finds no fit-guard availability lines (this was the `START_RE` bug, fixed below, not an empty history). Its night
   profile starts from the START readings, and its night jobs are priced on `nobara-desktop`, with the warning, until it has 5
   readings over 3 nights.
 
@@ -1319,6 +1319,50 @@ step a constructed Metal MoE load (8 experts, top-2, 512 KiB a KV step) falls fr
 passes; the unpriced-expert test goes red with the guard reverted. G-GF2-3: `TestPlanSlack_realSizeDiff` holds its golden and
 `TestPlanSlack_matchesTheBuild` passes on the RTX 2070 SUPER (exclusive timing lock). G-GF2-4: vet (testhooks, cuda, darwin
 metal), the pinned staticcheck with its canary red, gofmt, `touched.py`, the parity refresh, the citation lint.
+
+#### MM6 night profile and the unpriced MoE: Gemini on #312 and #320, registered 2026-10-27 before the code (nobara-mm01)
+
+Relayed by the coordinator at 10:02. #320's two test findings (an MoE decline unchecked at the same context; MoE Metal draws
+counted as searched) are on the monotone test that #321 rewrites: it asserts every load, MoE included, so they are fixed there.
+
+**What changes.**
+- **The night profile is weighted by night, not by reading:** each night's lowest reading, then the 25th percentile over the
+  nights in the window (still 14 nights, at least 3 of them, and at least 5 readings). One night with many short jobs no longer
+  outweighs the others. **Amended before merge (coordinator, 10:27, from Gemini on #322):** per night alone can raise the
+  figure (a night with many low readings becomes one), so the figure is the lower of the per-night and the per-reading 25th
+  percentile. The change can then only lower the figure or keep it, so the queue-time check can refuse more night jobs, never
+  fewer; that is listed for Francis. The registration first claimed that of per night alone, which was wrong.
+- **A reading is a night reading by its time alone** (inside 22:00 to the deadline), in the runner as in backfill, because a
+  backfilled log does not record its job's `--not-before`. The profile describes the box at night, whichever job read it.
+  Pricing still goes by `--not-before`.
+- **Backfill skips a job that already has a reading** of any source at the same start, so a refused night job is not counted
+  twice.
+- **A failed reading is logged** in the runner's log, instead of only `available ?` in the job's.
+- **An MoE whose experts could not be priced is declined on a device** (paged on the CPU), resident included, before any
+  context is chosen. Before, with no slot count asked, it went resident with 0 expert bytes. That changes what the planner
+  admits; the census diff is listed in the PR.
+- Tests: a job run through the real runner at 23:00 records a night reading; the queue-time test seeds past nights only;
+  the hostmem test asserts the reading is a number where hostmem works.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-NP2-1 per night | a fake history with one night of ten readings at 1 GB and four nights of one reading at 6 GB: the profile is the 25th percentile of the five nights' minimums, checked against a hand computation | — | runs to completion | seconds |
+| G-NP2-2 the record | through the real runner at 23:00 a job records `night: true`; at 20:00 `night: false`; a failed reading logs a line naming it; backfill adds nothing for a job that has a start reading | — | runs to completion | seconds |
+| G-NP2-3 the unpriced MoE | on loads that keep `DeviceLoad`'s invariants (CUDA with no host copy; Metal whose host copy is its experts'), an unpriced MoE declines on CUDA and Metal and pages on the CPU, at slot counts 0 and 2; `go test ./internal/mem/` passes | — | runs to completion | seconds |
+| G-NP2-4 the census | `TestDecisionCensus`: the diff with and without the change is listed in the PR body group by group before `-census.update`. Expected: no group moves, since no fixture's experts are unpriced. Any move is listed for Francis | the golden's class not found on an amd64 host | runs to completion | about a minute |
+| G-NP2-5 builds | `test_night.py`, `touched.py`, vet, the pinned staticcheck, the citation lint | — | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara): all five pass.**
+- G-NP2-1, as amended: `test_a_busy_night_counts_once` (per reading is the lower figure there, and is taken) and
+  `test_per_night_weighting_never_raises_the_figure` (per night is the lower figure, and is taken).
+- G-NP2-2: the real runner records `night: false` at 20:00 and `night: true` at 23:00. A failed reading logs
+  "the available reading failed" and records nothing. Backfill adds nothing for a job with a start reading. The hostmem test
+  now requires a number: it failed in a shell without `go` on its PATH. nobara's `goinfer-night.service` has
+  `/usr/local/go/bin` on its PATH, so its runner reads.
+- G-NP2-3: `TestSolvePlacement_unpricedExperts` passes on CUDA, Metal and the CPU at 0 and 2 slots. With the guard
+  disabled, it goes red (resident with 0 expert bytes).
+- G-NP2-4: the census dump is byte-identical with and without the change. No fixture's experts are unpriced, so nothing moves.
+- G-NP2-5: `test_night.py` (81 tests), `go test ./internal/mem/`; the rest is in the PR.
 
 ### 6.6 What it absorbs, and what stays outside
 

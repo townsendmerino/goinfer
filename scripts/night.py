@@ -377,7 +377,9 @@ def memory_readings(path=None):
 
 def night_profile(host, t, readings):
     """host's night profile at t from readings, or (None, why) when there are too few: a dict in testdata/machines' form, with
-    the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t."""
+    the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t. The
+    figure is the lower of two percentiles: over each night's lowest reading (a night with many jobs weighs no more than a night
+    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it."""
     last = last_night_begun(t)
     first = last - dt.timedelta(days=NIGHT_WINDOW - 1)
     # Only host's own readings: a box's memory log is its own, so pricing another box from it would price the wrong machine.
@@ -387,13 +389,18 @@ def night_profile(host, t, readings):
     if len(use) < NIGHT_MIN_READINGS or len(nights) < NIGHT_MIN_NIGHTS:
         return None, (f"only {len(use)} night readings over {len(nights)} nights in the last {NIGHT_WINDOW} "
                       f"(the night profile needs {NIGHT_MIN_READINGS} over {NIGHT_MIN_NIGHTS})")
-    mb = percentile([r["available_mb"] for r in use], NIGHT_PCT)
+    lowest = {}
+    for r in use:
+        n = night_of(r["t"])
+        lowest[n] = min(lowest.get(n, r["available_mb"]), r["available_mb"])
+    mb = min(percentile(list(lowest.values()), NIGHT_PCT), percentile([r["available_mb"] for r in use], NIGHT_PCT))
     return {"name": f"{host}-night", "available_bytes": int(mb * (1 << 20)), "percentile": NIGHT_PCT,
             "window_nights": NIGHT_WINDOW, "readings": len(use), "nights": len(nights),
             "from": nights[0].isoformat(), "to": nights[-1].isoformat(),
             "backfilled": sum(1 for r in use if r.get("source") == "backfill"),
             "computed_at": t.isoformat(timespec="seconds"),
-            "source": "night.py: the fit guard's available reading at each night job's start"}, ""
+            "per_night": "lowest; the figure is the lower of the per-night and per-reading percentiles",
+            "source": "night.py: the fit guard's available reading at each job start in a night window, lowest per night"}, ""
 
 
 def record_reading(t, job, night, available_mb, source="start", path=None, host=None):
@@ -955,7 +962,9 @@ class Runner:
             f.write(f"=== START    {t0.strftime('%F %T %Z')}  loadavg {os.getloadavg()[0]:.2f}"
                     f"  available {avail if avail is not None else '?'} MB\n")
             if avail is not None:
-                record_reading(t0, name, is_night_job(j.get("not_before")) and in_night(t0), avail)
+                record_reading(t0, name, in_night(t0), avail)  # the box at night, whichever job read it (as backfill reads)
+            else:
+                self.log(f"{name}: the available reading failed (cmd/hostmem), so no reading is recorded for the night profile")
             f.flush()
             j["_out_from"] = f.tell()  # where the job's own output starts: the header above (its note, its cmd) is not scanned
             # TE9: the job holds the timing lock, and its children (a run-*.sh, bench_peer.py) inherit it through the
@@ -1518,9 +1527,10 @@ START_RE = re.compile(r"^=== START\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", re.M)  #
 def backfill_readings(runs=None, path=None):
     """Seeds this box's memory log from existing night logs: in each job log whose job started in a night window (22:00 to
     the deadline), the first available figure the fit guard printed. Those lines come from refusals and warnings, so the
-    sample is biased low; each is marked "backfill", and a log already backfilled is skipped. Returns how many it added."""
+    sample is biased low; each is marked "backfill", and a job start that already has a reading (backfilled, or recorded by the
+    runner) is skipped. Returns how many it added."""
     runs = Path(runs or ROOT / "runs")
-    have = {(r.get("job"), r["t"].isoformat(timespec="seconds")) for r in memory_readings(path) if r.get("source") == "backfill"}
+    have = {(r.get("job"), int(r["t"].timestamp())) for r in memory_readings(path)}
     added = 0
     for log in sorted(runs.glob("*/*.log")):
         try:
@@ -1534,7 +1544,7 @@ def backfill_readings(runs=None, path=None):
         if not in_night(t):
             continue
         a = FIT_AVAIL_RE.search(text[m.end():])
-        if not a or (log.stem, t.isoformat(timespec="seconds")) in have:
+        if not a or (log.stem, int(t.timestamp())) in have:
             continue
         record_reading(t, log.stem, True, int(float(a.group(1)) * 1024), source="backfill", path=path)
         added += 1
