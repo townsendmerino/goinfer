@@ -878,6 +878,32 @@ class WaitForAJob(unittest.TestCase):
         self.assertEqual(code, 0, line)
         self.assertTrue(flag.exists(), "the job never ran its first, refused attempt")
 
+    def test_a_retry_record_is_not_final(self):
+        """The window finish() does not open today (it re-queues before it unlinks): the job gone from queue and running with a
+        retry record. wait must keep waiting, not report the refusal as the job's end."""
+        self.queue("w-window", "true")
+        qf = next(night.QUEUE.glob("*-w-window.json"))
+        seq = json.loads(qf.read_text())["seq"]
+        rec = self.rundir / "jobs" / f"{seq}-w-window.json"
+        rec.parent.mkdir(parents=True, exist_ok=True)
+        got = {}
+        t = threading.Thread(target=lambda: got.update(r=night.wait_job("w-window", timeout_min=1, poll_s=0.05)))
+        t.start()
+        time.sleep(0.3)
+        saved = qf.read_text()
+        qf.unlink()
+        rec.write_text(json.dumps({"name": "w-window", "seq": seq, "outcome": "retry 1 (its check refused; next at 00:00)",
+                                   "ended": "2026-10-26T23:00:00", "ran_min": 0.1, "log": "x"}))
+        time.sleep(0.5)
+        self.assertTrue(t.is_alive(), "wait took a retry record for the job's end")
+        qf.write_text(saved)
+        time.sleep(0.3)
+        qf.unlink()
+        rec.write_text(json.dumps({"name": "w-window", "seq": seq, "outcome": "ok", "ended": "2026-10-26T23:10:00", "ran_min": 0.1,
+                                   "log": "x"}))
+        t.join(10)
+        self.assertEqual(got["r"][0], 0, got["r"][1])
+
     def test_already_finished_returns_at_once(self):
         self.queue("w-done", "true")
         self.run_queue()
