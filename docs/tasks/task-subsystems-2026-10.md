@@ -1001,6 +1001,17 @@ D1–D7 run through `internal/mem`, and the census holds byte for byte.
 - The replay's commands and its pass rule are in the PR. Because the night profile is the idle Mac, the replay also
   measures whether the Mac's nights are idle: a refusal that printed about 7 GB available would not be refused on a 12.2 GB
   profile. That would be a finding about which profile prices night jobs (Francis's 1b), and it is reported as one.
+
+**G-MM6-5 read, 2026-10-27 (mac-vk01, the Mac, `origin/main` `014cbd54`): FAIL by its rule. The finding is about the
+night profile, not the code** (`docs/measurements/mm6-replay-2026-10-27.md`).
+- Nine fit-guard refusals in the window. One model is no longer on local disk, so 8 are counted. No `.giw` or swap-guard
+  refusals.
+- `m1pro-near-idle` refuses 1 of the 8 (the 7B at 12.6 GB). It fits the other 7, which need 2.7–6.7 GB against its 8.5 GB
+  budget.
+- `fit -profile` prices each load within 0.1 GB of the need the real refusal logged (rows 2–8). The real refusals printed
+  2.9–7.7 GB available, median 6.6, against the profile's 12.2: the Mac's nights were not idle.
+- `m1pro-apps-open` refuses 7 of the 8. The 1.5B fits there; its night had 2.9 GB.
+- **DECISION for Francis (1b):** which profile prices the Mac's night jobs, given these readings.
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
