@@ -802,7 +802,7 @@ func encodeCensus(t *testing.T, v any) []byte {
 	return b.Bytes()
 }
 
-// writeCensus writes b to path, gzipped when path ends in .gz (the per-source goldens: about 4.8 MB of JSON, 0.2 MB gzipped).
+// writeCensus writes b to path, gzipped when path ends in .gz (the per-source goldens; their sizes are in task-subsystems-2026-10.md §8 SB8).
 func writeCensus(t *testing.T, path string, b []byte) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
